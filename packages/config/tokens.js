@@ -58,6 +58,21 @@ const color = {
   'pill-green': '#E9F3EE',
   'pill-neutral': '#EDF1EF',
 
+  // Pastilles de type de publication (04-fil.md). Chaque type a son fond, son
+  // texte et son point — relevés dans 03 Accueil v2.dc.html, où ils portent le
+  // vocabulaire de la réaction (« Bravo », « Soutenir », « Utile »…).
+  'type-victory': '#E3F0EB',
+  'type-question': '#FBE3D4',
+  'type-info': '#F2F5F4',
+  'type-discussion': '#E8EEEC',
+
+  // Encarts du fil
+  'inset-step-done': '#EFF7F3', // « Étape franchie » sous une victoire
+  'inset-alert': '#FDF0E7', // « Alerte vigilance » de la colonne de droite
+  'on-dark-warm': '#F0C3A4', // libellé d'étape sur la carte parcours vert foncé
+  'placeholder-line': '#9FB3AB', // bordure pointillée « Créer une story »
+  'placeholder-text': '#7C8C85', // texte d'un emplacement d'image
+
   // États — jamais de rouge (règle dure §1.2)
   success: '#1F7A55', // résolu, présent, validé
   'neutral-state': '#8A958F', // étape en pause, archivé
@@ -126,6 +141,17 @@ const journeyColorAllowlist = [
   'JourneyPanelCard',
   'BlockedButton',
   'UnreadHelpCount',
+
+  // Le fil : la pastille et le cercle de compteur d'une QUESTION, et le cercle
+  // de compteur d'une VICTOIRE. Les deux relèvent des usages listés par T1 —
+  // une victoire est un jalon de parcours, une question est un appel à
+  // l'entraide dont le compteur est un compteur d'entraide.
+  //
+  // Visées par déclaration et non par composant : le terre cuite vit dans la
+  // table de styles, et autoriser PostCard en entier serait plus large que
+  // nécessaire. Une entrée `fichier:déclaration` dit exactement où il est admis.
+  'PostCard.tsx:TYPE_STYLE',
+  'Composer.tsx:TYPE_STYLE',
 
   // ── Quatre usages pratiqués par les maquettes, absents de T1 §2.1 ────────
   // Le point terre cuite du logo (helper `logo` de gen-helpers.js).

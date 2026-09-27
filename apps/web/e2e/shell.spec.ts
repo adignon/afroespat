@@ -187,10 +187,11 @@ test.describe('coquille mobile', () => {
   });
 
   test('la colonne de contexte passe sous le contenu, sans être dupliquée', async ({ page }) => {
-    const banner = page.getByText(/Aucun versement entre membres/);
-    // Un seul rendu dans le DOM : pas de copie mobile et de copie ordinateur.
-    await expect(banner).toHaveCount(1);
-    await expect(banner).toBeVisible();
+    // Un seul rendu dans le DOM : pas de copie mobile ET de copie ordinateur.
+    await expect(page.locator('aside')).toHaveCount(1);
+    const alert = page.getByRole('note');
+    await expect(alert).toHaveCount(1);
+    await expect(alert).toBeVisible();
 
     const main = await page.locator('main').first().boundingBox();
     const aside = await page.locator('aside').first().boundingBox();
@@ -199,10 +200,31 @@ test.describe('coquille mobile', () => {
 });
 
 test.describe('règles dures visibles à l’écran', () => {
-  // RÈGLE DURE §1.2 — le mot « certifié » n'apparaît nulle part dans l'interface.
-  test('le mot « certifié » est absent', async ({ page }) => {
-    const text = (await page.locator('body').innerText()).toLowerCase();
-    expect(text).not.toContain('certifi');
+  /**
+   * RÈGLE DURE §1.2 — le mot « certifié » n'apparaît pas dans l'interface.
+   *
+   * Portée exacte, telle que 05-guides.md §2 la définit : « rejetés par
+   * validation dans le titre et dans les libellés d'interface (PAS DANS LE
+   * CORPS, qui peut citer un document officiel) ».
+   *
+   * Le test porte donc sur les LIBELLÉS — boutons, liens, titres, onglets — et
+   * non sur le contenu rédigé par un membre, qui doit pouvoir écrire « le
+   * certificat Visale ». `certificat` est d'ailleurs épargné par la détection
+   * de @app/shared, `certification` non.
+   */
+  test('aucun libellé d’interface n’emploie « certifié »', async ({ page }) => {
+    const offenders = await page.evaluate(() => {
+      const selector = 'button, a[href], h1, h2, h3, label, [role="tab"], [class*="uppercase"]';
+      const out: string[] = [];
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
+        // `certificat` et `certificats` épargnés : ce sont des documents.
+        if (/certifi(?!cats?\b)/i.test(el.innerText)) {
+          out.push(`${el.tagName.toLowerCase()} « ${el.innerText.trim().slice(0, 40)} »`);
+        }
+      }
+      return out;
+    });
+    expect(offenders).toEqual([]);
   });
 
   // RÈGLE DURE §1.2 — aucun compteur de vues, sur aucun contenu, pour personne.

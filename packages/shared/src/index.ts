@@ -11,3 +11,4 @@ export * from './capabilities/capabilities.js';
 export * from './errors/errors.js';
 export * from './validation/pagination.js';
 export * from './constants/product.js';
+export * from './constants/post-types.js';

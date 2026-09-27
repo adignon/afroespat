@@ -51,14 +51,32 @@ test.describe('aucune régression de mise en page selon la largeur', () => {
         `débordement horizontal : ${overflow.scroll} px pour ${overflow.inner} px de fenêtre`,
       ).toBeLessThanOrEqual(overflow.inner + 1);
 
-      // 2. Aucun élément ne sort de la fenêtre par la droite.
+      /**
+       * 2. Aucun élément ne sort de la fenêtre par la droite.
+       *
+       * Sauf à l'intérieur d'un conteneur à DÉFILEMENT HORIZONTAL, où dépasser
+       * est précisément le comportement voulu : le bandeau de stories et la
+       * barre d'onglets mobile défilent par conception (T1 §3.2). Les compter
+       * comme des débordements ferait échouer le test sur un design correct.
+       */
       const clipped = await page.evaluate(() => {
+        const scrollsHorizontally = (el: HTMLElement): boolean => {
+          let node: HTMLElement | null = el.parentElement;
+          while (node !== null && node !== document.body) {
+            const overflow = getComputedStyle(node).overflowX;
+            if (overflow === 'auto' || overflow === 'scroll') return true;
+            node = node.parentElement;
+          }
+          return false;
+        };
+
         const out: string[] = [];
         for (const el of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
           const s = getComputedStyle(el);
           if (s.display === 'none' || s.visibility === 'hidden' || s.position === 'fixed') continue;
           const r = el.getBoundingClientRect();
           if (r.width === 0) continue;
+          if (scrollsHorizontally(el)) continue;
           if (r.right > window.innerWidth + 1) {
             out.push(
               `${el.tagName.toLowerCase()}.${el.className.toString().split(' ')[0]} dépasse de ${Math.round(r.right - window.innerWidth)} px`,

@@ -59,6 +59,11 @@ export const ICON_PATHS = {
   filter: 'M4 5h16l-6 8v6l-4-2v-4z',
   up: 'M7 11v9M7 11l4-7c1.5 0 2.5 1 2.5 2.5V10h5a2 2 0 0 1 2 2l-1.5 6a2 2 0 0 1-2 2H7',
   share: 'M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4',
+
+  // Icônes de réaction du fil, relevées dans 03 Accueil v2.dc.html : le bouton
+  // d'une victoire porte un trophée, celui d'une discussion deux bulles.
+  trophy: 'M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8',
+  chats: 'M4 5h12v8H8l-4 3zM20 9v8l-3-2h-6',
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

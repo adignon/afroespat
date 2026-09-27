@@ -233,14 +233,16 @@ export function JourneyPanelCard({
         <ProgressBar value={progressPct} onDark label={`Progression : ${progressPct} %`} />
       </div>
       <div className="mt-[14px] flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-[12.5px] text-[#A9CDBF]">{currentStepLabel}</span>
+        <span className="min-w-0 truncate text-[12.5px] font-semibold text-on-dark-warm">
+          {currentStepLabel}
+        </span>
         {/* Bouton de 44 px (T1 §2.3), pilule visuelle de 33 px comme la maquette. */}
         <button
           type="button"
           onClick={onContinue}
           className="flex h-touch shrink-0 items-center focus-visible:rounded-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface"
         >
-          <span className="rounded-[11px] bg-surface px-3 py-[7px] text-[12.5px] font-bold text-primary-strong">
+          <span className="rounded-full bg-surface px-[14px] py-[7px] text-[12.5px] font-bold text-primary-strong">
             {continueLabel}
           </span>
         </button>

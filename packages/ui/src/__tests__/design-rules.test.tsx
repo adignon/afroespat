@@ -8,8 +8,11 @@ import { VerifiedBadge } from '../icons/Icon';
 
 // Les règles dures de T1 vérifiées sur les composants réels, pas sur les jetons.
 describe('règles du design system', () => {
-  it('les 51 icônes du design sont portées et toutes non vides', () => {
-    expect(ICON_NAMES.length).toBe(51);
+  it('les icônes du design sont portées et toutes non vides', () => {
+    // Les 51 icônes de la carte `I` de gen-helpers.js, plus le trophée et les
+    // deux bulles relevés dans les boutons de réaction de 03 Accueil v2.
+    // Le compte est figé pour qu'une suppression accidentelle se voie.
+    expect(ICON_NAMES.length).toBe(53);
     for (const name of ICON_NAMES) {
       expect(ICON_PATHS[name].length).toBeGreaterThan(5);
     }

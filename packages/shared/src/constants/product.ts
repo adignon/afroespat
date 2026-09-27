@@ -24,13 +24,34 @@ export const FORBIDDEN_UI_WORDS = [
   'certifiées',
   'certification',
   'certifier',
+  'certifiant',
 ] as const;
 
-/** Vrai si un texte d'interface emploie un mot interdit. Insensible aux accents et à la casse. */
+/**
+ * `certificat` et `certificats` sont explicitement ÉPARGNÉS.
+ *
+ * 05-guides.md §2 précise la règle : le mot est rejeté « dans le titre et dans
+ * les libellés d'interface (PAS DANS LE CORPS, qui peut citer un document
+ * officiel) ». « Le certificat Visale » est un document réel, que les membres
+ * doivent pouvoir nommer — l'interdire rendrait la plateforme incapable de
+ * parler des démarches qu'elle accompagne.
+ *
+ * `certification` reste rejeté : c'est l'acte de certifier, pas un document.
+ * D'où la négation, qui exige une fin de mot juste après `certificat`.
+ */
+const FORBIDDEN_PATTERN = /certifi(?!cats?\b)/;
+
+/**
+ * Vrai si un texte emploie « certifié » ou un dérivé. Insensible aux accents et
+ * à la casse.
+ *
+ * À employer sur les TITRES et les LIBELLÉS d'interface, jamais sur le corps
+ * d'un contenu rédigé par un membre.
+ */
 export function containsForbiddenWord(text: string): boolean {
   const normalized = text
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
-  return normalized.includes('certifi');
+  return FORBIDDEN_PATTERN.test(normalized);
 }

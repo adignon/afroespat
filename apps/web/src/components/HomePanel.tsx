@@ -9,7 +9,14 @@ import {
   type PanelItem,
 } from '@app/ui';
 import { PRODUCT_NAME } from '@app/shared';
+import { cn } from '@app/ui';
 import { fr } from '@/i18n/fr';
+
+const NETWORK_TONES = {
+  green: 'bg-primary',
+  greenStrong: 'bg-primary-strong',
+  terracotta: 'bg-journey-strong',
+} as const;
 
 /**
  * Panneau Accueil — §10.1 et T5 §0.
@@ -39,7 +46,12 @@ export interface HomePanelProps {
     readonly help: number;
     readonly events: number;
   };
-  readonly myNetworks: readonly { readonly name: string; readonly memberCount: number }[];
+  readonly myNetworks: readonly {
+    readonly name: string;
+    readonly memberCount: number;
+    readonly initials: string;
+    readonly tone: keyof typeof NETWORK_TONES;
+  }[];
 }
 
 export function HomePanel({ viewer, journey, whatsNew, myNetworks }: HomePanelProps) {
@@ -91,34 +103,45 @@ export function HomePanel({ viewer, journey, whatsNew, myNetworks }: HomePanelPr
 
       <MenuCard title={t.community} items={communityItems} activeIndex={0} />
 
-      {/* Bloc du bas : les raccourcis vers ses réseaux. */}
+      {/* Bloc du bas : les raccourcis vers ses réseaux. « Modifier » vit dans
+          l'en-tête du bloc, comme dans la maquette A01. */}
       <Card padding={14}>
-        <div className="px-[6px] pb-2">
+        <div className="flex items-center justify-between gap-2 px-[6px] pb-2">
           <SectionLabel>{t.shortcuts}</SectionLabel>
-        </div>
-        {myNetworks.map((network) => (
+          {/* Marge négative : la cible fait 44 px sans épaissir l'en-tête. */}
           <a
-            key={network.name}
             href="/reseaux"
-            className="flex h-touch items-center gap-[11px] rounded-lg px-3 hover:bg-control-alt"
+            className="-my-[13px] flex h-touch items-center text-meta font-bold text-primary hover:text-primary-strong"
           >
-            {/* Pastille carrée : distingue un réseau d'un membre, qui est toujours rond. */}
-            <span className="h-[26px] w-[26px] shrink-0 rounded-md bg-primary-soft" aria-hidden />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13.5px] font-semibold">{network.name}</span>
-              <span className="block text-[11.5px] text-text-subtle">
-                {network.memberCount} {t.membersSuffix}
-              </span>
-            </span>
+            {t.edit}
           </a>
-        ))}
-        {/* Action autonome, pas un lien en ligne : 44 px comme les lignes au-dessus. */}
-        <a
-          href="/reseaux"
-          className="flex h-touch items-center rounded-lg px-3 text-[12.5px] font-bold text-primary hover:bg-control-alt hover:text-primary-strong"
-        >
-          {t.edit}
-        </a>
+        </div>
+        <div className="flex flex-col gap-[2px]">
+          {myNetworks.map((network) => (
+            <a
+              key={network.name}
+              href="/reseaux"
+              className="flex h-[50px] items-center gap-[11px] rounded-lg px-2 hover:bg-control-alt"
+            >
+              {/* Pastille CARRÉE arrondie : distingue un réseau d'un membre,
+                  dont l'avatar est toujours rond. */}
+              <span
+                className={cn(
+                  'flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[10px] font-bold text-text-on-dark',
+                  NETWORK_TONES[network.tone],
+                )}
+              >
+                {network.initials}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-meta font-bold">{network.name}</span>
+                <span className="block text-[11px] text-text-subtle">
+                  {network.memberCount} {t.membersSuffix}
+                </span>
+              </span>
+            </a>
+          ))}
+        </div>
       </Card>
     </SectionPanel>
   );

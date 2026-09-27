@@ -65,4 +65,23 @@ describe('mots interdits (T2)', () => {
       expect(containsForbiddenWord(s)).toBe(false);
     }
   });
+
+  // 05-guides.md §2 : « pas dans le corps, qui peut citer un document officiel ».
+  // « Le certificat Visale » est un document réel que les membres doivent
+  // pouvoir nommer ; l'interdire rendrait la plateforme incapable de parler des
+  // démarches qu'elle accompagne.
+  it('épargne « certificat », qui est un document administratif', () => {
+    for (const s of [
+      'Le certificat Visale est accepté d’office.',
+      'Joindre les certificats de scolarité',
+      'CERTIFICAT de naissance',
+    ]) {
+      expect(containsForbiddenWord(s)).toBe(false);
+    }
+  });
+
+  it('rejette bien « certification », qui est l’acte de certifier', () => {
+    expect(containsForbiddenWord('certification de compétences')).toBe(true);
+    expect(containsForbiddenWord('profil certifiant')).toBe(true);
+  });
 });

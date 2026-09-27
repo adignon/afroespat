@@ -22,6 +22,12 @@ import type { IconName } from '../icons/paths';
  *   · aucune ombre portée (T1 §2.3) — la seule exception est la carte en déplacement
  *   · cible tactile 44 px minimum sur tout élément cliquable (T1 §2.3)
  *   · une pastille d'état est toujours texte + fond, jamais couleur seule (T1 §6)
+ *
+ * Les props optionnelles transmises d'un composant à l'autre portent
+ * `| undefined` explicitement : avec `exactOptionalPropertyTypes`, TypeScript
+ * distingue « prop absente » de « prop présente valant undefined », et une
+ * transmission naïve ne compile pas. C'est verbeux, mais c'est la rigueur qu'on
+ * a demandée en activant l'option.
  */
 
 // ─── Avatar ──────────────────────────────────────────────────────────────────
@@ -130,7 +136,7 @@ export function Pill({
 }: {
   readonly children: ReactNode;
   readonly tone?: PillTone;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   return (
     <span
@@ -172,7 +178,7 @@ export function SectionLabel({
   className,
 }: {
   readonly children: ReactNode;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   return (
     <div className={cn('text-label uppercase text-text-subtle', className)}>{children}</div>
@@ -190,7 +196,7 @@ export function Card({
 }: {
   readonly children: ReactNode;
   readonly padding?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly as?: 'div' | 'section' | 'article' | 'aside';
 }) {
   return (
@@ -213,7 +219,7 @@ export function Tint({
   readonly children: ReactNode;
   readonly tone?: 'green' | 'greenSoft' | 'journey' | 'neutral' | 'inset';
   readonly padding?: number;
-  readonly className?: string;
+  readonly className?: string | undefined;
 }) {
   const tones = {
     green: 'bg-surface-tonal',
@@ -571,7 +577,7 @@ export function MemberRow({
   readonly avatar: AvatarProps;
   readonly name: string;
   readonly subtitle?: string;
-  readonly level?: 'L1' | 'L2';
+  readonly level?: 'L1' | 'L2' | undefined;
   readonly right?: ReactNode;
   readonly size?: AvatarSize;
 }) {

@@ -15,3 +15,7 @@ export * from './icons/Icon';
 export * from './primitives/primitives';
 export * from './states/states';
 export * from './navigation/navigation';
+export * from './feed/PostCard';
+export * from './feed/StoryStrip';
+export * from './feed/Composer';
+export * from './feed/aside';

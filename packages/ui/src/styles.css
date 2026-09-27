@@ -40,6 +40,17 @@
   --c-pill-green: #e9f3ee;
   --c-pill-neutral: #edf1ef;
 
+  /* Pastilles de type de publication et encarts du fil (03 Accueil v2). */
+  --c-type-victory: #e3f0eb;
+  --c-type-question: #fbe3d4;
+  --c-type-info: #f2f5f4;
+  --c-type-discussion: #e8eeec;
+  --c-inset-step-done: #eff7f3;
+  --c-inset-alert: #fdf0e7;
+  --c-on-dark-warm: #f0c3a4;
+  --c-placeholder-line: #9fb3ab;
+  --c-placeholder-text: #7c8c85;
+
   --c-success: #1f7a55;
   --c-neutral-state: #8a958f;
   --c-link: #4b3fa8;

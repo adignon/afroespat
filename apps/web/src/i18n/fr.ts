@@ -59,30 +59,49 @@ export const fr = {
   feed: {
     title: 'Fil d’actualité',
     subtitle: 'Ce que partage la diaspora autour de vous.',
-    composerPlaceholder: 'Partagez une information, une question, une réussite…',
+    composerPlaceholder: 'Que voulez-vous partager avec la diaspora ?',
     publish: 'Publier',
+    share: 'Partager',
+    bookmark: 'Enregistrer',
+    composerActions: {
+      poll: 'Créer un sondage',
+      guide: 'Lier un guide',
+      image: 'Ajouter une image',
+    },
     empty: {
       title: 'Le fil est encore calme',
       description:
         'Rejoignez un réseau de votre ville ou posez votre première question : l’entraide démarre là.',
       action: 'Découvrir les réseaux',
     },
-    types: {
-      victory: 'Réussite',
-      question: 'Question',
-      info: 'Information',
-      discussion: 'Discussion',
+  },
+
+  /** Bandeau des stories du jour (§10.1). */
+  stories: {
+    title: 'Stories du jour',
+    create: 'Créer une story',
+    filters: {
+      all: 'Tout',
+      information: 'Informations',
+      conseil: 'Conseils',
+      decouverte: 'Découvertes',
     },
   },
 
-  /** Colonne de contexte. Rappelle la règle qui protège les membres. */
+  /**
+   * Colonne de contexte. Les quatre blocs poussent tous vers le RÉEL : un
+   * événement physique, un membre à saluer, un parrain joignable.
+   */
   contextColumn: {
-    safetyTitle: 'La règle qui nous protège',
-    safetyBody:
-      'Aucun versement entre membres pour une démarche administrative. Si on vous demande de l’argent, signalez.',
-    report: 'Signaler',
-    reputationLabel: 'Ma réputation',
-    helpValidated: 'entraides validées',
+    eventsTitle: 'Événements à {ville}',
+    seeAll: 'Voir tout',
+    arrivalsTitle: 'Nouveaux arrivants',
+    greet: 'Saluer',
+    alertTitle: 'Alerte vigilance',
+    alertBody:
+      'Attention aux fausses offres de logement exigeant un virement avant toute visite.',
+    contactsTitle: 'Parrains et contacts',
+    online: 'En ligne',
   },
 
   states: {

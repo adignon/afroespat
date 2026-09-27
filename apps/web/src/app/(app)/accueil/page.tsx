@@ -1,79 +1,123 @@
+'use client';
+
+import { useState } from 'react';
+import type { PostType } from '@app/shared';
 import {
   AppShell,
-  Avatar,
-  Button,
-  Card,
-  Chips,
-  EmptyState,
-  PageTitle,
+  AsideCard,
+  Composer,
+  EventRow,
   MobileHeader,
-  SafetyBanner,
-  SectionLabel,
-  Stat,
+  NewArrivalRow,
+  OnlineContactRow,
+  PageTitle,
+  PostCard,
+  ScamAlert,
+  StoryStrip,
   TopBar,
 } from '@app/ui';
 import { HomePanel } from '@/components/HomePanel';
 import { fr } from '@/i18n/fr';
+import {
+  DEMO_ARRIVALS,
+  DEMO_EVENTS,
+  DEMO_JOURNEY,
+  DEMO_NETWORKS,
+  DEMO_ONLINE,
+  DEMO_POSTS,
+  DEMO_STORIES,
+  DEMO_VIEWER,
+  DEMO_WHATS_NEW,
+} from './demo-data';
 
 /**
- * A01 — Fil d'actualité.
+ * A01 — Fil d'actualité. Portée de `docs/template/03 Accueil v2.dc.html`.
  *
- * L'API n'existe pas encore (lot 0 en cours) : cet écran monte la coquille avec
- * les états vides et les données de démonstration ci-dessous, pour vérifier que le
- * portage du design rend bien. Les données viendront de hooks typés générés depuis
- * l'OpenAPI (§10.3) — aucune logique métier n'entrera dans ce composant.
+ * L'API du fil arrive au lot 3 : les contenus viennent de `demo-data.ts`, un
+ * seul fichier nommé pour ce qu'il est. Les données passeront par des hooks
+ * typés générés depuis l'OpenAPI (§10.3) sans que cet écran change de forme —
+ * aucune logique métier n'y vit.
+ *
+ * Ce que cet écran tient déjà :
+ *   · le vocabulaire des réactions suit le type (T1 §6), depuis @app/shared ;
+ *   · la ligne de contexte n'expose que le NOM DU TYPE de parcours, jamais le
+ *     titre personnel que le membre lui a donné (règle dure 04 §2) ;
+ *   · aucun compteur de vues, nulle part (règle dure §1.2) ;
+ *   · le signet est privé et sans compteur.
  */
 
-// Données de démonstration. Un seul endroit, nommé comme tel, à retirer au lot 3.
-const DEMO = {
-  viewer: { displayName: 'Amina Diallo', initials: 'AD' },
-  journey: {
-    title: 'Études en France · Lyon',
-    progressPct: 58,
-    currentStepPosition: 7,
-    currentStepTitle: 'Logement',
-  },
-  whatsNew: { help: 3, events: 2 },
-  myNetworks: [
-    { name: 'Lyon', memberCount: 412 },
-    { name: 'Bénin', memberCount: 1_284 },
-    { name: 'Cuisine et saveurs', memberCount: 87 },
-  ],
-  reputation: { helpValidated: 23 },
-} as const;
+const STORY_FILTERS = [
+  { label: fr.stories.filters.all, value: 'all' },
+  { label: fr.stories.filters.information, value: 'INFORMATION' },
+  { label: fr.stories.filters.conseil, value: 'CONSEIL' },
+  { label: fr.stories.filters.decouverte, value: 'DECOUVERTE' },
+];
+
+const CITY = 'Lyon';
 
 export default function FeedPage() {
+  const [storyFilter, setStoryFilter] = useState('all');
+  const [composerType, setComposerType] = useState<PostType>('QUESTION');
+  const [draft, setDraft] = useState('');
+
+  const stories =
+    storyFilter === 'all' ? DEMO_STORIES : DEMO_STORIES.filter((s) => s.kind === storyFilter);
+
   return (
     <AppShell
       mobileTab="home"
       mobileHeader={<MobileHeader title={fr.feed.title} />}
       panel={
         <HomePanel
-          viewer={DEMO.viewer}
-          journey={DEMO.journey}
-          whatsNew={DEMO.whatsNew}
-          myNetworks={DEMO.myNetworks}
+          viewer={DEMO_VIEWER}
+          journey={DEMO_JOURNEY}
+          whatsNew={DEMO_WHATS_NEW}
+          myNetworks={DEMO_NETWORKS}
         />
       }
       aside={
         <>
-          <Card padding={16}>
-            <SectionLabel>{fr.contextColumn.reputationLabel}</SectionLabel>
-            <div className="mt-2">
-              <Stat
-                value={DEMO.reputation.helpValidated}
-                label={fr.contextColumn.helpValidated}
-                tone="green"
+          <AsideCard
+            title={fr.contextColumn.eventsTitle.replace('{ville}', CITY)}
+            action={{ label: fr.contextColumn.seeAll, href: '/agenda' }}
+          >
+            {DEMO_EVENTS.map((event) => (
+              <EventRow key={event.title} {...event} />
+            ))}
+          </AsideCard>
+
+          <AsideCard title={fr.contextColumn.arrivalsTitle}>
+            {DEMO_ARRIVALS.map((person) => (
+              <NewArrivalRow
+                key={person.name}
+                avatar={{ initials: person.initials, tone: person.tone }}
+                name={person.name}
+                subtitle={person.subtitle}
+                greetLabel={fr.contextColumn.greet}
               />
-            </div>
-          </Card>
-          <SafetyBanner>{fr.contextColumn.safetyBody}</SafetyBanner>
+            ))}
+          </AsideCard>
+
+          {/* Terre cuite doux, usage autorisé (T1 §2.1). Rédigée par l'équipe. */}
+          <ScamAlert title={fr.contextColumn.alertTitle}>{fr.contextColumn.alertBody}</ScamAlert>
+
+          <AsideCard title={fr.contextColumn.contactsTitle}>
+            {DEMO_ONLINE.map((contact) => (
+              <OnlineContactRow
+                key={contact.name}
+                avatar={{ initials: contact.initials, tone: contact.tone }}
+                name={contact.name}
+                statusLabel={fr.contextColumn.online}
+                href={contact.href}
+              />
+            ))}
+          </AsideCard>
         </>
       }
     >
       <TopBar
-        displayName={DEMO.viewer.displayName.split(' ')[0] ?? DEMO.viewer.displayName}
-        initials={DEMO.viewer.initials}
+        displayName={DEMO_VIEWER.firstName}
+        initials={DEMO_VIEWER.initials}
         unreadMessages={1}
         unreadNotifications={3}
       />
@@ -82,39 +126,36 @@ export default function FeedPage() {
         <PageTitle title={fr.feed.title} subtitle={fr.feed.subtitle} />
       </div>
 
-      {/* Le composeur. Les chips sont les types de publication — pastilles texte,
-          jamais des icônes (T1 §2.4). Le conseil n'y est pas : c'est une story. */}
-      <Card>
-        <div className="flex items-start gap-3">
-          <Avatar initials={DEMO.viewer.initials} tone="terracotta" size="lg" />
-          <p className="flex-1 pt-[10px] text-body text-text-subtle">
-            {fr.feed.composerPlaceholder}
-          </p>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <Chips
-            items={[
-              { label: fr.feed.types.question, value: 'QUESTION' },
-              { label: fr.feed.types.info, value: 'INFO' },
-              { label: fr.feed.types.victory, value: 'VICTORY' },
-              { label: fr.feed.types.discussion, value: 'DISCUSSION' },
-            ]}
-            active="QUESTION"
-          />
-          {/* Désactivé tant que le corps est vide : une seule action primaire
-              par écran, et elle ne doit pas mentir sur sa disponibilité. */}
-          <Button disabled>{fr.feed.publish}</Button>
-        </div>
-      </Card>
+      {/* Le bandeau de jalons n'existe plus : les stories l'ont remplacé (§10.1). */}
+      <StoryStrip
+        title={fr.stories.title}
+        createLabel={fr.stories.create}
+        filters={STORY_FILTERS}
+        activeFilter={storyFilter}
+        stories={stories}
+        onFilter={setStoryFilter}
+      />
 
-      {/* État vide : un message et une action, jamais une page blanche (T1 §5). */}
-      <Card>
-        <EmptyState
-          title={fr.feed.empty.title}
-          description={fr.feed.empty.description}
-          actionLabel={fr.feed.empty.action}
+      <Composer
+        avatar={{ initials: DEMO_VIEWER.initials, tone: 'terracotta' }}
+        placeholder={fr.feed.composerPlaceholder}
+        publishLabel={fr.feed.publish}
+        activeType={composerType}
+        onSelectType={setComposerType}
+        actionLabels={fr.feed.composerActions}
+        value={draft}
+        onChange={setDraft}
+        canPublish={draft.trim().length > 0}
+      />
+
+      {DEMO_POSTS.map((post) => (
+        <PostCard
+          key={post.id}
+          {...post}
+          shareLabel={fr.feed.share}
+          bookmarkLabel={fr.feed.bookmark}
         />
-      </Card>
+      ))}
     </AppShell>
   );
 }
