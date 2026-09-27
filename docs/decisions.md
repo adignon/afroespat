@@ -23,6 +23,7 @@
 | 2026-09-27 | **Les 95 enums de `@app/shared` sont générés** depuis `prisma/schema/*.prisma`, pas recopiés | Recopiés à la main, 95 enums dérivent, et une dérive d'enum entre base et front est un bogue silencieux. §6.1 demande d'ailleurs cette réexportation. Un test d'intégration ferme la boucle en interrogeant `pg_enum` | — |
 | 2026-09-27 | **UUID v7 implémenté dans `@app/db`**, sans dépendance | 40 lignes et 5 tests, contre un paquet de plus dans la chaîne d'approvisionnement. La monotonie intra-milliseconde est couverte par un test de 10 000 identifiants | — |
 | 2026-09-27 | **Image MinIO servie depuis `quay.io/minio/minio`** | `minio/minio` n'est plus public sur Docker Hub | L'image du `docker-compose.yml` initial |
+| 2026-09-27 | **Les specs ne sont PAS réalignées sur les jetons v2.** `packages/ui`, porté depuis le code de design existant, est la source de vérité de l'interface ; `T1` §2 et `T5` §0 restent tels quels et sont à lire comme le brief d'origine, non comme l'état courant | Décision du porteur : réutiliser le code de design déjà réalisé plutôt que réécrire le dossier. Évite une édition de 88 écrans de prompts pour un gain nul — le code porté vaut mieux qu'une spec corrigée | Précise D2 : la divergence est assumée et documentée, pas corrigée |
 
 ---
 
@@ -36,4 +37,4 @@ Ils n'empêchent pas de construire, mais le dossier devrait être aligné.
 | `H09 Mes demandes` et `H10 Mes réponses` sont maquettés mais absents de l'inventaire, alors que le panneau Entraide les référence | `T5` §1, `05 Entraide.dc.html` | Les ajouter à l'inventaire (lot 4) |
 | Deux décisions contradictoires sur les jalons : « bandeau de jalons persistant, pas de stories » puis « stories 24 h en trois types ». `00` §10.1 tranche : « le bandeau de jalons n'existe plus » | `T4`, journal des décisions | Marquer la première ligne comme remplacée, selon la règle du journal |
 | STUDIES annoncé à 12 étapes, 15 listées — le document le reconnaît lui-même | `T3` §A.2 | Corriger le titre |
-| Jetons de design divergents entre `T1` §2 et les maquettes v2 | `T1`, `T5` §0 | Réécrire avec les valeurs v2, conformément à D2 |
+| Jetons de design divergents entre `T1` §2 et les maquettes v2 | `T1`, `T5` §0 | **Non corrigé, volontairement.** `packages/ui` fait foi ; lire `T1` §2 comme le brief d'origine |

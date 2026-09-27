@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Jetons en variables CSS — permet un thème sombre plus tard sans toucher aux
+ * composants (T1 §2.1). La V1 est en clair uniquement.
+ *
+ * Les valeurs par défaut vivent dans packages/config/tokens.js ; celles-ci sont
+ * la même table, exposée au navigateur.
+ */
+:root {
+  --c-primary: #16785e;
+  --c-primary-strong: #0f5c48;
+  --c-primary-soft: #e3f0eb;
+  --c-primary-alt: #2fa37d;
+
+  --c-journey: #e0733a;
+  --c-journey-soft: #fbe3d4;
+  --c-journey-softest: #fffbf8;
+  --c-journey-strong: #b4581f;
+
+  --c-bg: #f6f8f7;
+  --c-surface: #ffffff;
+  --c-surface-inset: #fafbfb;
+  --c-surface-tonal: #f3f7f5;
+  --c-control: #eef2f0;
+  --c-control-alt: #f2f5f4;
+
+  --c-border: #e6ebe9;
+  --c-border-strong: #dde3e0;
+  --c-border-inactive: #c9d2ce;
+
+  --c-text: #16211d;
+  --c-text-muted: #5d6b66;
+  --c-text-subtle: #8a958f;
+  --c-text-on-dark: #ffffff;
+  --c-text-on-rail: #cfe3da;
+
+  --c-pill-green: #e9f3ee;
+  --c-pill-neutral: #edf1ef;
+
+  --c-success: #1f7a55;
+  --c-neutral-state: #8a958f;
+  --c-link: #4b3fa8;
+}
+
+@layer base {
+  body {
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Focus visible 2 px primaire sur tout élément interactif (T1 §6, §10.6). */
+  :focus-visible {
+    outline: 2px solid var(--c-primary);
+    outline-offset: 2px;
+  }
+}

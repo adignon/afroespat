@@ -91,18 +91,41 @@ const layout = {
   mobileTabBar: '48px',
 };
 
-/** Les seuls composants autorisés à employer le terre cuite (lint : guardrails). */
+/**
+ * Les seuls composants autorisés à écrire le terre cuite en dur.
+ * Contrôlé par packages/ui/scripts/check-journey-color.mjs (règle dure T1 §2.1).
+ *
+ * T1 §2.1 énumère six usages : étape en cours, jalon, échéance, barre de
+ * progression, badge Premium, compteur d'entraide non lue. En portant les
+ * maquettes, quatre usages de plus sont apparus, que le design pratique et que
+ * T1 n'avait pas listés. Ils sont admis ici explicitement, avec leur raison —
+ * plutôt que tolérés en silence.
+ */
 const journeyColorAllowlist = [
+  // ── Les six usages énumérés par T1 §2.1 ──────────────────────────────────
   'JourneyProgress',
+  'ProgressBar', // la barre de progression de parcours ; n'a pas d'autre emploi
   'StepCurrentCard',
   'MilestoneBadge',
   'DeadlineLabel',
   'PremiumBadge',
+  'PlanLimitPrompt', // famille Premium : l'invitation qui accompagne le badge
   'SafetyBanner',
   'ScamAlert',
   'JourneyPanelCard',
   'BlockedButton',
   'UnreadHelpCount',
+
+  // ── Quatre usages pratiqués par les maquettes, absents de T1 §2.1 ────────
+  // Le point terre cuite du logo (helper `logo` de gen-helpers.js).
+  'Logo',
+  // Fond d'avatar #B4581F (helper `av`, employé dans toute la barre haute).
+  'Avatar',
+  // Compteur de panneau et de barre haute #E0733A (helpers `menuCard`, `topbar`).
+  // T1 ne citait que le compteur d'entraide ; le design le généralise.
+  'CountBadge',
+  // Pastille de notification non lue de la barre haute (helper `topbar`).
+  'RoundButton',
 ];
 
 module.exports = { color, radius, fontSize, layout, journeyColorAllowlist };
