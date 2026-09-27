@@ -100,10 +100,13 @@ test.describe('aucune régression de mise en page selon la largeur', () => {
 
       // 4. Sur ordinateur, les colonnes de la maquette tiennent leur largeur.
       if (isDesktop) {
-        const main = await page.locator('main').boundingBox();
+        // Scopé au cadre ORDINATEUR : le cadre mobile porte lui aussi un `main`
+        // — il est un écran à part entière quand il est visible — et un locator
+        // non scopé en trouverait deux, donc échouerait en mode strict.
+        const main = await page.locator('[data-frame="desktop"] main').boundingBox();
         expect(main!.width, 'le contenu ne dépasse pas 660 px (§10.1)').toBeLessThanOrEqual(660);
 
-        const aside = await page.locator('aside').boundingBox();
+        const aside = await page.locator('[data-frame="desktop"] aside').boundingBox();
         expect(aside!.width, 'la colonne de contexte fait 300 px').toBe(300);
       }
 
@@ -160,8 +163,18 @@ test.describe('cible tactile', () => {
         const transparent = s.backgroundColor === 'rgba(0, 0, 0, 0)' || s.backgroundColor === 'transparent';
         const noBorder = parseFloat(s.borderTopWidth) === 0 && parseFloat(s.borderLeftWidth) === 0;
         const fontSize = parseFloat(s.fontSize);
-        const compact = el.getBoundingClientRect().height <= fontSize * 1.8;
-        return transparent && noBorder && compact;
+        /**
+         * La PREMIÈRE ligne, pas la boîte englobante.
+         *
+         * « politique de confidentialité » dans une phrase de consentement passe
+         * à la ligne : son `getBoundingClientRect()` fait alors 36 px de haut,
+         * soit près de trois interlignes, et le lien se faisait prendre pour un
+         * bouton trop petit. `getClientRects()` rend une boîte par ligne — la
+         * hauteur d'une seule dit si ça ressemble à du texte.
+         */
+        const lines = el.getClientRects();
+        const lineHeight = lines.length > 0 ? (lines[0] as DOMRect).height : el.getBoundingClientRect().height;
+        return transparent && noBorder && lineHeight <= fontSize * 1.8;
       };
 
       for (const el of Array.from(document.querySelectorAll<HTMLElement>(selector))) {

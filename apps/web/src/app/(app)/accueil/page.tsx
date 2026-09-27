@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ScreenFrames } from '@/screens/frames';
 import { A01Desktop } from '@/screens/a01/desktop.generated';
 import { A01Mobile } from '@/screens/a01/mobile.generated';
 import {
@@ -47,26 +48,6 @@ export default function FeedPage() {
   };
 
   return (
-    <div data-screen="A01" style={{ background: '#F6F8F7', minHeight: '100vh' }}>
-      {/* Le cadre de la maquette est figé ; ici il est fluide. C'est la seule
-          liberté prise sur la forme, et elle est nécessaire : un écran bloqué
-          à 1440 px ne serait pas responsive. */}
-      {/* Les deux cadres sont rendus, l'un masqué par CSS. Next rend côté
-          serveur : il ne connaît pas la largeur de la fenêtre, et choisir en
-          JavaScript provoquerait un saut visible à l'hydratation. */}
-      {/* La maquette est dessinée à 1440 px. Au-delà, on CENTRE plutôt que
-          d'étirer : le contenu est déjà borné à 660 px, et l'étirement ne
-          ferait qu'éloigner les colonnes l'une de l'autre. */}
-      <div
-        data-frame="desktop"
-        className="mx-auto hidden min-h-screen max-w-[1440px] lg:flex"
-        style={{ position: 'relative' }}
-      >
-        <A01Desktop {...data} />
-      </div>
-      <div data-frame="mobile" className="flex min-h-screen flex-col lg:hidden" style={{ position: 'relative' }}>
-        <A01Mobile {...data} />
-      </div>
-    </div>
+    <ScreenFrames screen="A01" desktop={<A01Desktop {...data} />} mobile={<A01Mobile {...data} />} />
   );
 }

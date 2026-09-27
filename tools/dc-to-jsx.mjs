@@ -325,10 +325,23 @@ export function extractSection(html, id) {
  * l'ordinateur, celui de 390 px pour le mobile. La section contient aussi son
  * titre de planche et ses variantes, qui n'appartiennent pas à l'écran.
  */
-export function extractFrame(sectionHtml, width) {
-  const re = new RegExp(`<div style="width:${width}px[^"]*"[^>]*>`);
-  const m = re.exec(sectionHtml);
-  if (m === null) throw new Error(`Cadre de ${width} px introuvable`);
+/**
+ * Le cadre d'une largeur donnée dans une section.
+ *
+ * `occurrence` sert aux sections qui montrent DEUX cadres de même largeur —
+ * O05 présente ainsi ses deux atterrissages en 700 px. Sans ce paramètre, les
+ * deux variantes seraient transcodées à l'identique, et l'erreur passerait
+ * inaperçue : le fichier produit compile parfaitement.
+ */
+export function extractFrame(sectionHtml, width, occurrence = 0) {
+  const re = new RegExp(`<div style="width:${width}px[^"]*"[^>]*>`, 'g');
+  let m = null;
+  for (let i = 0; i <= occurrence; i += 1) {
+    m = re.exec(sectionHtml);
+    if (m === null) {
+      throw new Error(`Cadre de ${width} px n° ${occurrence + 1} introuvable`);
+    }
+  }
 
   const from = m.index + m[0].length;
   const close = findMatchingClose(sectionHtml, from, 'div');

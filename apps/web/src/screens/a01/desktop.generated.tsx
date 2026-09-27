@@ -1,4 +1,3 @@
-/* eslint-disable */
 // GÉNÉRÉ depuis docs/template/03 Accueil v2.dc.html, section A01, cadre 1440 px.
 // Ne pas modifier à la main : relancer `node tools/generate-screens.mjs`.
 //
@@ -9,10 +8,7 @@ import { Fragment } from 'react';
 import type { A01Data } from './data';
 
 export function A01Desktop(props: A01Data) {
-  const {
-    rail, panelFil, shortcuts, stories, storyFilters, postTypes, feedPosts,
-    events, arrivals, online, mTabs, mBottom,
-  } = props;
+  const { arrivals, events, feedPosts, online, panelFil, postTypes, rail, shortcuts, stories, storyFilters } = props;
 
   return (
     <>

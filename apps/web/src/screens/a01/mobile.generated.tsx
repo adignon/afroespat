@@ -1,4 +1,3 @@
-/* eslint-disable */
 // GÉNÉRÉ depuis docs/template/03 Accueil v2.dc.html, section A01, cadre 390 px.
 // Ne pas modifier à la main : relancer `node tools/generate-screens.mjs`.
 //
@@ -9,13 +8,11 @@ import { Fragment } from 'react';
 import type { A01Data } from './data';
 
 export function A01Mobile(props: A01Data) {
-  const {
-    rail, panelFil, shortcuts, stories, storyFilters, postTypes, feedPosts,
-    events, arrivals, online, mTabs, mBottom,
-  } = props;
+  const { feedPosts, mBottom, mTabs, stories } = props;
 
   return (
     <>
+      <main style={{ display: "contents" }}>
 
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 0", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" }}>
       <div style={{ width: "34px", height: "34px", borderRadius: "11px", background: "#0F5C48", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none" /></svg></div>
@@ -65,6 +62,7 @@ export function A01Mobile(props: A01Data) {
 ))}
     </div>
   
+      </main>
     </>
   );
 }

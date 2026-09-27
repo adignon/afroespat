@@ -123,8 +123,9 @@ test.describe('cadre ordinateur', () => {
   test('le contenu ne dépasse pas 660 px et la colonne de contexte fait 300 px', async ({
     page,
   }) => {
-    expect((await page.locator('main').boundingBox())!.width).toBeLessThanOrEqual(660);
-    expect((await page.locator('aside').boundingBox())!.width).toBe(300);
+    // Scopé au cadre ORDINATEUR : le cadre mobile porte aussi un `main`.
+    expect((await page.locator('[data-frame="desktop"] main').boundingBox())!.width).toBeLessThanOrEqual(660);
+    expect((await page.locator('[data-frame="desktop"] aside').boundingBox())!.width).toBe(300);
   });
 
   /**
