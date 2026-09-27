@@ -8,6 +8,10 @@
  *
  * Aucune logique métier ici : les composants reçoivent des données, ils n'en
  * cherchent pas (§4).
+ *
+ * Les ÉCRANS, eux, ne vivent pas ici : ils sont transcodés des maquettes par
+ * tools/dc-to-jsx.mjs et gardent leurs styles en ligne. Ce paquet ne porte que
+ * ce qui se partage entre écrans — jetons, icônes, états obligatoires.
  */
 export { cn } from './cn';
 export * from './icons/paths';
@@ -15,7 +19,3 @@ export * from './icons/Icon';
 export * from './primitives/primitives';
 export * from './states/states';
 export * from './navigation/navigation';
-export * from './feed/PostCard';
-export * from './feed/StoryStrip';
-export * from './feed/Composer';
-export * from './feed/aside';

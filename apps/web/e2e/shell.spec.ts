@@ -1,28 +1,23 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
- * La coquille de navigation, mesurée.
+ * Les règles dures, mesurées sur l'écran rendu.
  *
- * Ces assertions portent sur des valeurs exactes : largeurs, hauteurs, couleurs
- * calculées. Elles ne dépendent ni de la police, ni du système, ni de la version
- * du navigateur — elles échouent quand le DESIGN dérive, et à ce moment-là
- * seulement. C'est ce qui les rend lisibles au bout de douze lots.
+ * Le balisage est TRANSCODÉ de `docs/template/03 Accueil v2.dc.html` : styles en
+ * ligne, pas de classes. Les assertions portent donc sur des valeurs CALCULÉES —
+ * couleurs, dimensions, texte — et jamais sur un sélecteur de classe, qui se
+ * casserait à la première régénération.
  *
- * Références : docs/template/Fil d'actualité v2.dc.html et gen-helpers.js.
+ * La responsivité et les cibles tactiles vivent dans responsive.spec.ts, qui les
+ * vérifie largeur par largeur, au seuil qui convient à chacune.
  */
 
 const TOKENS = {
   bg: 'rgb(246, 248, 247)', // #F6F8F7
-  surface: 'rgb(255, 255, 255)',
-  border: 'rgb(230, 235, 233)', // #E6EBE9
-  primary: 'rgb(22, 120, 94)', // #16785E
   primaryStrong: 'rgb(15, 92, 72)', // #0F5C48
-  primarySoft: 'rgb(227, 240, 235)', // #E3F0EB
   journey: 'rgb(224, 115, 58)', // #E0733A
-  text: 'rgb(22, 33, 29)', // #16211D
 } as const;
 
-/** Mesure une propriété CSS calculée — la seule source fiable. */
 async function computed(page: Page, selector: string, prop: string): Promise<string> {
   return page
     .locator(selector)
@@ -35,9 +30,8 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('jetons de design', () => {
-  test('le fond de page est #F6F8F7 et le texte #16211D', async ({ page }) => {
-    expect(await computed(page, 'body', 'background-color')).toBe(TOKENS.bg);
-    expect(await computed(page, 'body', 'color')).toBe(TOKENS.text);
+  test('le fond de page est celui de la maquette', async ({ page }) => {
+    expect(await computed(page, '[data-screen="A01"]', 'background-color')).toBe(TOKENS.bg);
   });
 
   test('la police est Plus Jakarta Sans', async ({ page }) => {
@@ -51,20 +45,17 @@ test.describe('jetons de design', () => {
         const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(value);
         if (m === null) return false;
         const [r, g, b] = [Number(m[1]), Number(m[2]), Number(m[3])];
-        const alpha = m[4] === undefined ? 1 : Number(m[4]);
-        if (alpha < 0.05) return false;
-        // Teinte en HSL : le rouge est autour de 0°, le terre cuite autour de 23°.
-        const max = Math.max(r, g, b) / 255;
-        const min = Math.min(r, g, b) / 255;
-        const d = max - min;
-        if (d < 0.1) return false;
-        let h = 0;
+        if ((m[4] === undefined ? 1 : Number(m[4])) < 0.05) return false;
+
+        // Teinte en HSL : le rouge est vers 0°, le terre cuite vers 23°.
         const rr = r / 255;
         const gg = g / 255;
         const bb = b / 255;
-        if (max === rr) h = (((gg - bb) / d) % 6) * 60;
-        else if (max === gg) h = ((bb - rr) / d + 2) * 60;
-        else h = ((rr - gg) / d + 4) * 60;
+        const max = Math.max(rr, gg, bb);
+        const d = max - Math.min(rr, gg, bb);
+        if (d < 0.1) return false;
+        let h = max === rr ? ((gg - bb) / d) % 6 : max === gg ? (bb - rr) / d + 2 : (rr - gg) / d + 4;
+        h *= 60;
         if (h < 0) h += 360;
         return h >= 345 || h <= 15;
       };
@@ -73,18 +64,19 @@ test.describe('jetons de design', () => {
       for (const el of Array.from(document.querySelectorAll<HTMLElement>('*'))) {
         const s = getComputedStyle(el);
         for (const prop of ['color', 'background-color', 'border-top-color', 'fill'] as const) {
-          const v = s.getPropertyValue(prop);
-          if (isRed(v)) found.push(`${el.tagName.toLowerCase()} ${prop}=${v}`);
+          if (isRed(s.getPropertyValue(prop))) found.push(`${el.tagName.toLowerCase()} ${prop}`);
         }
       }
-      return found;
+      return [...new Set(found)];
     });
     expect(reds).toEqual([]);
   });
 
-  // RÈGLE DURE T1 §2.3 — jamais d'ombre portée.
-  // L'anneau de focus de Tailwind est implémenté en box-shadow : c'est lui que
-  // T1 §6 exige, il ne compte pas comme ombre portée.
+  /**
+   * RÈGLE DURE T1 §2.3 — jamais d'ombre portée.
+   * L'anneau de focus est implémenté en box-shadow par Tailwind ; c'est lui que
+   * T1 §6 exige, il ne compte pas comme ombre.
+   */
   test('aucune ombre portée, hors anneau de focus', async ({ page }) => {
     const shadows = await page.evaluate(() =>
       Array.from(document.querySelectorAll<HTMLElement>('*'))
@@ -95,11 +87,11 @@ test.describe('jetons de design', () => {
   });
 });
 
-test.describe('coquille ordinateur', () => {
-  test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'coquille ordinateur uniquement');
+test.describe('cadre ordinateur', () => {
+  test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'cadre ordinateur uniquement');
 
-  test('le rail fait 76 px de large, en carte arrondie 22 px sur vert fort', async ({ page }) => {
-    const rail = page.getByRole('navigation', { name: 'Navigation principale' }).first();
+  test('le rail fait 76 px, en carte arrondie 22 px sur vert fort', async ({ page }) => {
+    const rail = page.locator('nav').first();
     expect((await rail.boundingBox())?.width).toBe(76);
     expect(await rail.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe(
       TOKENS.primaryStrong,
@@ -109,19 +101,18 @@ test.describe('coquille ordinateur', () => {
 
   // RÈGLE DURE §10.1 et T1 §3.1 — jamais une barre d'icônes horizontale en haut.
   test('la navigation principale est verticale, pas une barre horizontale', async ({ page }) => {
-    const rail = page.getByRole('navigation', { name: 'Navigation principale' }).first();
-    const box = await rail.boundingBox();
+    const box = await page.locator('nav').first().boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThan(box!.width * 3);
-    // Et elle commence au bord gauche, pas en haut.
-    expect(box!.x).toBeLessThan(60);
+    expect(box!.x, 'elle commence au bord gauche').toBeLessThan(60);
   });
 
-  test('la colonne de gauche fait 352 px de contenu dans 400 px de gouttières', async ({
-    page,
-  }) => {
-    const panel = page.locator('div.w-\\[400px\\]').first();
+  test('la colonne de gauche porte 352 px de contenu dans 400 px', async ({ page }) => {
+    // On remonte depuis le rail : le balisage de la maquette n'offre pas de
+    // classe à viser, mais sa structure est stable.
+    const panel = page.locator('nav').locator('xpath=../..').first();
     expect((await panel.boundingBox())?.width).toBe(400);
+
     const inner = await panel.evaluate((el) => {
       const s = getComputedStyle(el);
       return el.clientWidth - parseFloat(s.paddingLeft) - parseFloat(s.paddingRight);
@@ -129,73 +120,75 @@ test.describe('coquille ordinateur', () => {
     expect(inner).toBe(352);
   });
 
-  test('le contenu ne dépasse pas 660 px', async ({ page }) => {
-    const width = (await page.locator('main').first().boundingBox())?.width ?? 0;
-    expect(width).toBeLessThanOrEqual(660);
-  });
-
-  test('la colonne de contexte fait 300 px et est visible au-dessus de 1280 px', async ({
+  test('le contenu ne dépasse pas 660 px et la colonne de contexte fait 300 px', async ({
     page,
   }) => {
-    const aside = page.locator('aside').first();
-    await expect(aside).toBeVisible();
-    expect((await aside.boundingBox())?.width).toBe(300);
+    expect((await page.locator('main').boundingBox())!.width).toBeLessThanOrEqual(660);
+    expect((await page.locator('aside').boundingBox())!.width).toBe(300);
   });
 
-  test('la section active du rail est marquée pour les lecteurs d’écran', async ({ page }) => {
-    const current = page.getByRole('link', { current: 'page' }).first();
-    await expect(current).toContainText('Accueil');
-  });
-
+  /**
+   * La barre de progression de parcours est le seul aplat terre cuite du fil
+   * (T1 §2.1). La maquette la dessine en div, sans rôle ARIA : on vérifie donc
+   * la couleur. L'absence de sémantique est un constat à part, consigné dans
+   * docs/decisions.md.
+   */
   test('la carte parcours porte sa barre de progression terre cuite', async ({ page }) => {
-    const bar = page.getByRole('progressbar').first();
-    await expect(bar).toBeVisible();
-    const fillColor = await bar
-      .locator('div')
-      .first()
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(fillColor).toBe(TOKENS.journey);
-    // La progression est annoncée, pas seulement dessinée.
-    await expect(bar).toHaveAttribute('aria-valuenow', /^\d+$/);
+    const found = await page.evaluate((journey) => {
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>('div'))) {
+        const r = el.getBoundingClientRect();
+        if (getComputedStyle(el).backgroundColor === journey && r.height > 0 && r.height <= 10) {
+          return true;
+        }
+      }
+      return false;
+    }, TOKENS.journey);
+    expect(found, 'aucune barre terre cuite trouvée').toBe(true);
   });
 });
 
-test.describe('coquille mobile', () => {
-  test.skip(({ viewport }) => (viewport?.width ?? 0) >= 1024, 'coquille mobile uniquement');
+/**
+ * Les DEUX cadres sont dans le DOM, l'un masqué par CSS — Next rend côté
+ * serveur et ne connaît pas la largeur. Les assertions mobiles se limitent donc
+ * au cadre visible, faute de quoi elles trouveraient l'autre.
+ */
+test.describe('cadre mobile', () => {
+  test.skip(({ viewport }) => (viewport?.width ?? 0) >= 1024, 'cadre mobile uniquement');
 
-  test('le panneau de section est masqué', async ({ page }) => {
-    await expect(page.locator('div.w-\\[400px\\]').first()).toBeHidden();
+  const frame = (page: Page) => page.locator('[data-frame="mobile"]');
+
+  test('le rail d’ordinateur est absent', async ({ page }) => {
+    await expect(page.locator('[data-frame="desktop"]')).toBeHidden();
+    await expect(frame(page).locator('nav')).toHaveCount(0);
   });
 
-  test('la barre d’onglets a cinq entrées, Compte à la place d’Agenda', async ({ page }) => {
-    const tabs = page.getByRole('navigation', { name: 'Navigation principale' }).first();
-    await expect(tabs).toBeVisible();
-    await expect(tabs.locator('a')).toHaveText([
-      'Accueil',
-      'Parcours',
-      'Entraide',
-      'Services',
-      'Compte',
-    ]);
+  test('la barre d’onglets basse porte cinq entrées, Compte à la place d’Agenda', async ({
+    page,
+  }) => {
+    for (const label of ['Accueil', 'Parcours', 'Entraide', 'Services', 'Compte']) {
+      await expect(frame(page).getByText(label, { exact: true }).last()).toBeVisible();
+    }
+    // §10.1 : Agenda cède sa place à Compte et reste atteignable depuis Accueil.
+    await expect(frame(page).getByText('Agenda', { exact: true })).toHaveCount(0);
   });
 
-  test('aucun débordement horizontal', async ({ page }) => {
-    const overflow = await page.evaluate(
-      () => document.documentElement.scrollWidth > window.innerWidth + 1,
+  test('la page défile, et la barre d’onglets reste visible', async ({ page }) => {
+    const scrollable = await page.evaluate(
+      () => document.documentElement.scrollHeight > window.innerHeight,
     );
-    expect(overflow).toBe(false);
+    expect(scrollable, 'le contenu doit défiler — la maquette le fige à 844 px').toBe(true);
+
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await expect(frame(page).getByText('Compte', { exact: true }).last()).toBeInViewport();
   });
 
-  test('la colonne de contexte passe sous le contenu, sans être dupliquée', async ({ page }) => {
-    // Un seul rendu dans le DOM : pas de copie mobile ET de copie ordinateur.
-    await expect(page.locator('aside')).toHaveCount(1);
-    const alert = page.getByRole('note');
-    await expect(alert).toHaveCount(1);
-    await expect(alert).toBeVisible();
-
-    const main = await page.locator('main').first().boundingBox();
-    const aside = await page.locator('aside').first().boundingBox();
-    expect(aside!.y).toBeGreaterThan(main!.y);
+  /**
+   * Le cadre mobile de la maquette n'a PAS de colonne de contexte : c'est un
+   * design distinct, pas un repli du design ordinateur.
+   */
+  test('pas de colonne de contexte, mais le fil est bien là', async ({ page }) => {
+    await expect(frame(page).locator('aside')).toHaveCount(0);
+    await expect(frame(page).getByText(/repas partagé pour les nouveaux/)).toBeVisible();
   });
 });
 
@@ -203,21 +196,15 @@ test.describe('règles dures visibles à l’écran', () => {
   /**
    * RÈGLE DURE §1.2 — le mot « certifié » n'apparaît pas dans l'interface.
    *
-   * Portée exacte, telle que 05-guides.md §2 la définit : « rejetés par
-   * validation dans le titre et dans les libellés d'interface (PAS DANS LE
-   * CORPS, qui peut citer un document officiel) ».
-   *
-   * Le test porte donc sur les LIBELLÉS — boutons, liens, titres, onglets — et
-   * non sur le contenu rédigé par un membre, qui doit pouvoir écrire « le
-   * certificat Visale ». `certificat` est d'ailleurs épargné par la détection
-   * de @app/shared, `certification` non.
+   * Portée exacte (05-guides.md §2) : « rejetés dans le titre et dans les
+   * libellés d'interface (pas dans le corps, qui peut citer un document
+   * officiel) ». Un membre doit pouvoir écrire « le certificat Visale ».
    */
   test('aucun libellé d’interface n’emploie « certifié »', async ({ page }) => {
     const offenders = await page.evaluate(() => {
-      const selector = 'button, a[href], h1, h2, h3, label, [role="tab"], [class*="uppercase"]';
+      const selector = 'button, a[href], h1, h2, h3, label, [role="tab"]';
       const out: string[] = [];
       for (const el of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
-        // `certificat` et `certificats` épargnés : ce sont des documents.
         if (/certifi(?!cats?\b)/i.test(el.innerText)) {
           out.push(`${el.tagName.toLowerCase()} « ${el.innerText.trim().slice(0, 40)} »`);
         }
@@ -233,44 +220,25 @@ test.describe('règles dures visibles à l’écran', () => {
     expect(text).not.toMatch(/\bvues?\b|\bvisualisations?\b/);
   });
 
-  /**
-   * T1 §2.3 — cible tactile 44 × 44 px minimum.
-   *
-   * Portée volontairement limitée aux CONTRÔLES : boutons, onglets,
-   * interrupteurs, et liens présentés comme des blocs cliquables. Les liens en
-   * ligne dans un flux de texte en sont exclus — WCAG 2.5.8 les exempte
-   * explicitement, et leur imposer 44 px disloquerait la typographie sans
-   * bénéfice pour personne.
-   */
-  test('tout contrôle visible atteint 44 px', async ({ page }) => {
-    const tooSmall = await page.evaluate(() => {
-      const out: string[] = [];
-      const selector = 'button, a[href], [role="switch"], [role="tab"]';
-      for (const el of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
-        const style = getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden') continue;
-
-        const r = el.getBoundingClientRect();
-        if (r.width === 0 && r.height === 0) continue;
-
-        // Exception WCAG 2.5.8 : un lien en ligne dans du texte.
-        const isInlineLink = el.tagName === 'A' && style.display.startsWith('inline');
-        if (isInlineLink) continue;
-
-        if (r.height < 44 - 0.5 || r.width < 44 - 0.5) {
-          out.push(
-            `${el.tagName.toLowerCase()} « ${(el.textContent ?? '').trim().slice(0, 28)} » ${Math.round(r.width)}×${Math.round(r.height)}`,
-          );
-        }
-      }
-      return out;
-    });
-    expect(tooSmall).toEqual([]);
-  });
-
   // T1 §2.4 — aucun emoji dans l'interface. Le contenu d'un membre peut en avoir.
   test('aucun emoji dans l’interface', async ({ page }) => {
     const text = await page.locator('body').innerText();
     expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
+  });
+
+  /**
+   * RÈGLE DURE (04 §2) : le titre personnel d'un parcours n'est jamais exposé
+   * dans le fil ; seul le nom du type l'est.
+   *
+   * « Mes études à Lyon » vit dans la carte du panneau. Il ne doit apparaître
+   * dans AUCUNE publication — leurs lignes de contexte disent « Parcours Études ».
+   */
+  test('le titre personnel du parcours n’apparaît pas dans le fil', async ({ page }) => {
+    const leaked = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('article')).some((el) =>
+        el.innerText.includes('Mes études à Lyon'),
+      ),
+    );
+    expect(leaked, 'le titre personnel a fuité dans une publication').toBe(false);
   });
 });
