@@ -124,3 +124,55 @@ Ils n'empêchent pas de construire, mais le dossier devrait être aligné.
 | Jetons de design divergents entre `T1` §2 et les maquettes v2 | `T1`, `T5` §0 | **Non corrigé, volontairement.** `packages/ui` fait foi ; lire `T1` §2 comme le brief d'origine |
 | `T1` §6 et §10.6 exigent AA, mais la palette du design ne l'atteint pas sur 8 paires | `T1` §2.1 et §6 | **Non corrigé, volontairement.** Écart mesuré, listé et affiché à chaque build par `check-contrast.mjs` |
 | `T1` §2.3 exige 44 px de cible tactile, la maquette donne 37 px aux chips et 33 px au bouton « Continuer » | `T1` §2.3, `gen-helpers.js` | **Corrigé sans toucher au visuel** : le bouton fait 44 px, la pilule visuelle garde sa taille d'origine à l'intérieur |
+
+
+---
+
+## Écarts relevés en implémentant entraide et guides
+
+Deux agents ont livré ces modules ; ces constats viennent de leur travail, vérifiés ensuite.
+
+### Colonnes annoncées par les specs et ABSENTES du schéma figé
+
+Aucune migration n'a été faite : le modèle des 106 tables est le contrat.
+
+| Colonne annoncée | Spec | Conséquence acceptée |
+|---|---|---|
+| `help_requests.reopened_at`, `archived_at` | 06 §3, « Ajoutée » | La fenêtre de 7 jours se calcule sur `resolved_at` ; une archive n'est pas datée, et deux réouvertures sont indiscernables |
+| `guides.published_at` | 05 §3 | L'onglet « Récents » trie sur `last_content_update_at` : proche, mais une correction acceptée refait remonter le guide |
+| `guides.view_count` | 05 §3 | La tâche `guide.view_count_flush` (§7) est **inapplicable** |
+| `guides.source_journey_id` | 05 §3 | Le lien entre un parcours et le guide qu'il a produit n'est pas tracé |
+| `guide_versions.revert_of_version_id` | 05 §3 | Un retour arrière se note dans `summary` (« Retour à la version N ») |
+| `help_requests.origin_story_id` | 06 §2.8 exige « marquée Depuis une story » | Non implémenté : rien ne permet de le marquer |
+| `help_responses.moderation_status` | 06 §2.7 veut masquer « toute réponse » | D'où un refus à la publication plutôt qu'un masquage après coup |
+
+**La limite « 3 guides publiés par jour » est comptée dans `audit_logs`** — seule trace horodatée d'une publication en l'absence de `published_at`. La table étant en ajout seul, le compteur n'est pas effaçable, ce qui est plutôt un avantage.
+
+### Deux énumérations qui ne coïncident pas
+
+`user_profiles.help_types` est `HelpType` (PAPERWORK · HOUSING · JOB · WELCOME · OTHER, module 01) ; `help_requests.type` est `HelpType2` (PAPERWORK · SERVICE · RIDE · MATERIAL · OTHER). Or `HOUSING` et `JOB` sont précisément ce que 06 §2.1 renvoie vers Services, et `SERVICE`/`RIDE`/`MATERIAL` n'ont aucun équivalent déclarable au profil.
+
+Une correspondance explicite a été posée (`WELCOME → SERVICE, RIDE, MATERIAL`). **Elle demande l'arbitrage du porteur** : le ciblage « Vous pouvez aider » en dépend entièrement.
+
+### §8 de 05 partiellement impossible
+
+`guide_revision_proposals.proposer_user_id`, `guide_contributors.user_id` et `guide_outdated_flags.user_id` sont **NOT NULL avec `onDelete: Cascade`**. « Propositions acceptées conservées avec `proposer_user_id = null` », « ligne `guide_contributors` conservée anonymisée » et « signalements conservés anonymisés » ne peuvent pas être tenus : soit la ligne part en cascade, soit elle garde son `user_id`. Seuls `guides.author_user_id` et `guide_versions.created_by_user_id` sont nullables — eux sont bien anonymisés.
+
+### Imprécisions tranchées, à confirmer
+
+| Point | Spec | Tranché |
+|---|---|---|
+| « OPEN sans réponse depuis 45 jours » | 06 §2.2 | Depuis la DERNIÈRE réponse, à défaut la création — sinon une demande vivante depuis deux mois serait archivée en pleine discussion |
+| Table de fraîcheur aux bornes recouvrantes (« 12–24 », « > 24 ») | 05 §2.3 | Bornes strictes : 24 mois pile → 0,4 ; 25 → 0,2 |
+| « FLAGGED depuis plus de 30 jours » sans colonne de date | 05 §2.6 vs §9 | `unpublish_deadline_at <= now`, que §2.6 fixe justement à `now + 30 j` |
+| Retrait d'un signalement d'obsolescence | 05 §4 déclare la route, §2.6 est muet | Repasser sous le seuil rend le guide à `PUBLISHED` — sinon la route ne sert à rien face à un signalement posé par erreur |
+| Proposition sur un guide « maintenu par la communauté » | 05 §2.4 | `ESCALATED` dès la création : aucun créateur, souvent anonymisé, ne doit décider |
+| Signaler son PROPRE guide | 05, non traité | Refusé : l'auteur a une voie d'édition directe |
+| Capacité du signalement d'obsolescence | absente de 00 §7.3 | `guide.propose_revision` (L1) et non `content.read` (L0) : trois signalements dépublient, l'ouvrir à L0 offrirait un moyen bon marché de faire tomber un guide |
+| Capacités de clôture d'une demande d'aide | absentes de 00 §7.3 | `help.ask`, faute de mieux. Aucune capacité n'a été inventée |
+| Où vit le corps d'un brouillon de guide | 05 §2.1 vs §3 | La version 1 est écrite dès la création et modifiée sur place tant que le guide est DRAFT. Sinon un brouillon n'existe nulle part, ou l'auto-enregistrement produit une version par frappe |
+
+### Corrections apportées à mes propres consignes
+
+- J'avais indiqué à l'agent guides que « une seule version PUBLISHED par (modèle, pays) » concernait les guides. **C'est faux** : l'index unique partiel de `20260927050000` porte sur `journey_template_versions` (03 §2.2). La seule contrainte guides de cette migration est `guides_country_scope`.
+- `help_request.created` figurait au catalogue d'événements sans consommateur : c'était une invention. 06 §6 dit `help_request.published`. Le doublon est retiré.

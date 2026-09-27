@@ -63,6 +63,23 @@ describe('boîte d’envoi (§9.1)', () => {
   });
 
   it('réclame les non publiés puis les marque, sans les rendre deux fois', async () => {
+    /**
+     * La file est VIDÉE d'abord.
+     *
+     * `claimUnpublished(100)` rend les cent plus ANCIENS en attente, et les autres
+     * suites d'intégration en laissent des centaines derrière elles — les
+     * événements n'ont pas de clé étrangère vers `users`, donc la suppression d'un
+     * compte de test ne les emporte pas. Le test cherchait alors ses trois
+     * événements dans une fenêtre où ils ne pouvaient pas être.
+     *
+     * Ce qu'on éprouve ici est le MÉCANISME de réclamation, pas le contenu de la
+     * file : dans une base de test, ce qui traîne est du débris.
+     */
+    await prisma.domainEvent.updateMany({
+      where: { publishedAt: null },
+      data: { publishedAt: new Date() },
+    });
+
     const ids = [newId(), newId(), newId()];
     await prisma.$transaction(async (tx) => {
       await outbox.emitMany(

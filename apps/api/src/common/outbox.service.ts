@@ -36,8 +36,27 @@ export type DomainEventType =
   | 'story.created'
   | 'guide.voted'
   | 'guide.published'
-  | 'help_request.created'
+  // Le reste du §6 du module 05. Chacun a son consommateur nommé : search et
+  // journeys pour les changements d'état (le lien d'étape doit cesser de pointer
+  // un guide retiré), reputation pour les votes et les contributions,
+  // notifications et moderation pour les propositions.
+  | 'guide.unpublished'
+  | 'guide.flagged'
+  | 'guide.restored'
+  | 'guide.vote_removed'
+  | 'guide.version_created'
+  | 'guide.proposal_created'
+  | 'guide.proposal_accepted'
+  | 'guide.proposal_rejected'
+  | 'guide.proposal_escalated'
+  // Les quatre événements de 06 §6. `published` et non `created` : c'est le nom
+  // que la spec donne, et celui que search, moderation et les notifications
+  // « Vous pouvez aider » attendent. `help_request.created` était une invention
+  // de ce catalogue, sans consommateur — retiré plutôt que gardé en doublon.
+  | 'help_request.published'
+  | 'help_request.responded'
   | 'help_request.resolved'
+  | 'help_request.reopened'
   | 'mentorship.requested'
   | 'mentorship.accepted'
   | 'mentorship.ended'
