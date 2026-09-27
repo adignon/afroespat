@@ -31,14 +31,15 @@ describe('chiffrement', () => {
 
   it('ne laisse jamais le numéro lisible dans les octets stockés', () => {
     const sealed = crypto.encryptPhone(PHONE);
-    expect(sealed.toString('utf8')).not.toContain('97000042');
-    expect(sealed.toString('hex')).not.toContain(Buffer.from(PHONE).toString('hex'));
+    const bytes = Buffer.from(sealed);
+    expect(bytes.toString('utf8')).not.toContain('97000042');
+    expect(bytes.toString('hex')).not.toContain(Buffer.from(PHONE).toString('hex'));
   });
 
   it('produit un texte chiffré différent à chaque appel — d’où le besoin d’une empreinte', () => {
     const a = crypto.encryptPhone(PHONE);
     const b = crypto.encryptPhone(PHONE);
-    expect(a.equals(b)).toBe(false);
+    expect(Buffer.from(a).equals(Buffer.from(b))).toBe(false);
     // …mais l'empreinte, elle, est stable : c'est ce qui rend l'unicité possible.
     expect(crypto.phoneFingerprint(PHONE)).toBe(crypto.phoneFingerprint(PHONE));
   });
@@ -50,10 +51,11 @@ describe('chiffrement', () => {
   // AES-GCM est authentifié : une altération est DÉTECTÉE, pas silencieuse.
   it('refuse un texte chiffré altéré au lieu de renvoyer des octets faux', () => {
     const sealed = crypto.encryptPhone(PHONE);
-    // On altère le dernier octet. `writeUInt8` plutôt qu'une indexation : avec
+    // On altère le dernier octet. `DataView` plutôt qu'une indexation : avec
     // noUncheckedIndexedAccess, `sealed[i]` vaut `number | undefined`.
+    const view = new DataView(sealed.buffer, sealed.byteOffset, sealed.byteLength);
     const last = sealed.length - 1;
-    sealed.writeUInt8(sealed.readUInt8(last) ^ 0xff, last);
+    view.setUint8(last, view.getUint8(last) ^ 0xff);
     expect(() => crypto.decryptPhone(sealed)).toThrow();
   });
 

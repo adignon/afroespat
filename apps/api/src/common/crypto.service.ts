@@ -30,15 +30,28 @@ const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // 96 bits, la taille recommandée pour GCM
 const TAG_LENGTH = 16;
 
+/**
+ * Ce que Prisma attend et rend pour une colonne `Bytes`.
+ *
+ * Ce n'est pas `Buffer` : un `Buffer` peut s'appuyer sur un `SharedArrayBuffer`,
+ * que Prisma refuse. Le chiffrement expose donc ce type-là, pour que la
+ * conversion se fasse une seule fois, ici, et non à chaque appelant.
+ */
+export type Sealed = Uint8Array<ArrayBuffer>;
+
 /** Format stocké : [iv | tag | texte chiffré], en un seul `bytea`. */
-function seal(plaintext: string, key: Buffer): Buffer {
+function seal(plaintext: string, key: Buffer): Sealed {
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
-  return Buffer.concat([iv, cipher.getAuthTag(), encrypted]);
+  const sealed = Buffer.concat([iv, cipher.getAuthTag(), encrypted]);
+  // Recopie dans un `ArrayBuffer` bien à lui : `Buffer.concat` peut rendre une
+  // vue sur un tampon partagé, et le type de Prisma l'exclut à juste titre.
+  return new Uint8Array(sealed.buffer.slice(sealed.byteOffset, sealed.byteOffset + sealed.byteLength));
 }
 
-function open(sealed: Buffer, key: Buffer): string {
+function open(sealedInput: Uint8Array, key: Buffer): string {
+  const sealed = Buffer.from(sealedInput.buffer, sealedInput.byteOffset, sealedInput.byteLength);
   if (sealed.length < IV_LENGTH + TAG_LENGTH) {
     throw new Error('Texte chiffré tronqué');
   }
@@ -73,11 +86,11 @@ export class CryptoService {
    * (runbook §7, procédure en deux passes). C'est un choix assumé — la
    * disponibilité du service prime ici sur la rotation périodique.
    */
-  encryptPhone(e164: string): Buffer {
+  encryptPhone(e164: string): Sealed {
     return seal(e164, this.phoneKey);
   }
 
-  decryptPhone(sealed: Buffer): string {
+  decryptPhone(sealed: Uint8Array): string {
     return open(sealed, this.phoneKey);
   }
 
@@ -107,11 +120,11 @@ export class CryptoService {
   // ── Contenus ──────────────────────────────────────────────────────────────
 
   /** Notes d'étape et messages privés. Clé rotée tous les 12 mois (runbook §1). */
-  encryptContent(plaintext: string): Buffer {
+  encryptContent(plaintext: string): Sealed {
     return seal(plaintext, this.contentKey);
   }
 
-  decryptContent(sealed: Buffer): string {
+  decryptContent(sealed: Uint8Array): string {
     return open(sealed, this.contentKey);
   }
 

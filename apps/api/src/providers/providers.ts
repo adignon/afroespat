@@ -28,20 +28,38 @@ export interface SmsProvider {
 export const SMS_PROVIDER = Symbol('SmsProvider');
 
 /**
- * SMS fictif : code fixe, journalisé, aucun envoi.
+ * SMS fictif : rien n'est envoyé, le message part au journal.
  *
- * `loadEnv` refuse le démarrage si un fournisseur reste fictif en production
- * (config/env.ts) — un OTP fixe en production ouvrirait la plateforme à
- * n'importe qui.
+ * Le code, lui, reste ALÉATOIRE — il est tiré par le service d'authentification,
+ * pas par ce fournisseur. Un code fixe en développement s'installerait dans les
+ * habitudes et finirait par être attendu ailleurs ; `loadEnv` refuse d'ailleurs
+ * le démarrage si un fournisseur reste fictif en production.
+ *
+ * Il conserve les messages envoyés, en mémoire : c'est ce qui permet aux tests
+ * de lire le code sans passer par le journal, dont l'écriture est tamponnée et
+ * les séquences de couleur difficiles à filtrer.
  */
 export class FakeSmsProvider implements SmsProvider {
   private readonly logger = new Logger('FakeSms');
+  /** Les CORPS seulement : le numéro n'a pas à être conservé, même ici. */
+  private readonly bodies: string[] = [];
 
   send(to: string, body: string): Promise<{ providerRef: string }> {
     // Seuls les quatre derniers chiffres, même en développement : on n'apprend
     // pas à l'équipe à voir des numéros entiers dans les journaux.
     this.logger.log(`SMS fictif vers …${to.slice(-4)} : ${body}`);
+    this.bodies.push(body);
     return Promise.resolve({ providerRef: `fake-sms-${Date.now()}` });
+  }
+
+  /** Le code à 6 chiffres du dernier message, ou `null` si aucun n'est parti. */
+  lastCodeSent(): string | null {
+    const last = this.bodies.at(-1);
+    return last?.match(/\b(\d{6})\b/)?.[1] ?? null;
+  }
+
+  sentCount(): number {
+    return this.bodies.length;
   }
 }
 

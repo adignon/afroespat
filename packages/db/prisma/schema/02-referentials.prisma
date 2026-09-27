@@ -45,6 +45,8 @@ model Country {
   placementsAsDestination PartnerPlacement[]       @relation("PlacementDestinationCountry")
 
   @@index([isActive])
+  otpChallenges OtpChallenge[]
+
   @@map("countries")
 }
 

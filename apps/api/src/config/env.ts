@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { z } from 'zod';
 
 /**
@@ -83,6 +85,8 @@ let cached: Env | undefined;
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (cached !== undefined) return cached;
 
+  if (source === process.env) loadDotEnvFromRepoRoot();
+
   const result = envSchema.safeParse(source);
   if (!result.success) {
     const problems = result.error.issues
@@ -115,4 +119,36 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 /** Réservé aux tests. */
 export function resetEnvCache(): void {
   cached = undefined;
+}
+
+/**
+ * Charge le `.env` de la racine du dépôt, hors production.
+ *
+ * Sans cela, `pnpm dev` ne fonctionne que lancé depuis la racine : le script du
+ * paquet, lui, ne charge rien. On ne s'en aperçoit qu'en lançant le serveur
+ * depuis `apps/api` — et on perd alors du temps à chercher dans le schéma de
+ * validation un défaut qui n'y est pas.
+ *
+ * En PRODUCTION, rien n'est chargé : les variables viennent de l'orchestrateur,
+ * et un fichier `.env` qui traînerait sur le serveur ne doit surtout pas les
+ * remplacer silencieusement.
+ */
+function loadDotEnvFromRepoRoot(): void {
+  if (process.env['NODE_ENV'] === 'production') return;
+
+  // On remonte jusqu'au pnpm-workspace.yaml : c'est ce qui définit la racine.
+  let dir = __dirname;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (existsSync(join(dir, 'pnpm-workspace.yaml'))) {
+      const envFile = join(dir, '.env');
+      // `loadEnvFile` n'écrase pas une variable déjà posée : le shell ou le
+      // conteneur gagnent sur le fichier. (Vérifié, pas supposé — c'est le
+      // comportement de `--env-file`, et il n'y a pas d'option pour le régler.)
+      if (existsSync(envFile)) process.loadEnvFile(envFile);
+      return;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return;
+    dir = parent;
+  }
 }

@@ -245,12 +245,30 @@ model OtpChallenge {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   phoneHmac  String     @map("phone_hmac")
+
+  /// Colonne ajoutée (§6.3 l'autorise pour les détails d'un module).
+  ///
+  /// Le numéro doit être retrouvable à la vérification pour créer
+  /// `phone_numbers.phone_encrypted` — sans quoi il serait impossible de le
+  /// masquer au membre plus tard. L'empreinte HMAC, elle, est irréversible par
+  /// construction : c'est tout son intérêt, et c'est pourquoi elle ne suffit pas.
+  ///
+  /// Purgée avec le reste du défi après 24 h (§8.4).
+  phoneEncrypted Bytes? @map("phone_encrypted")
+
+  /// Le pays SÉLECTIONNÉ par le membre, pas déduit de l'indicatif : +1 en
+  /// désigne deux, et `origin_country` n'est modifiable qu'une fois (§2.7).
+  /// Le déduire après coup ferait de ce choix unique une devinette.
+  countryId  String     @map("country_id") @db.Uuid
+
   purpose    OtpPurpose
   codeHash   String     @map("code_hash")
   attempts   Int        @default(0)
   expiresAt  DateTime   @map("expires_at") @db.Timestamptz
   consumedAt DateTime?  @map("consumed_at") @db.Timestamptz
   ip         String?    @db.Inet
+
+  country Country @relation(fields: [countryId], references: [id], onDelete: Restrict)
 
   @@index([phoneHmac])
   @@map("otp_challenges")
@@ -265,6 +283,22 @@ model AuthSession {
 
   userId           String  @map("user_id") @db.Uuid
   refreshTokenHash String  @unique @map("refresh_token_hash")
+
+  // ── La chaîne de rafraîchissement (colonnes ajoutées, §6.3) ───────────────
+  //
+  // §2.1 exige la « révocation de la chaîne en cas de réutilisation ». Un seul
+  // hachage, écrasé à chaque rotation, ne peut pas l'assurer : l'ancien jeton
+  // ne correspond alors plus à aucune ligne, et son rejeu est indiscernable
+  // d'un jeton inconnu. La chaîne est donc rendue explicite.
+  //
+  // Le jeton s'écrit `chainId.génération.secret`. On retrouve la session par la
+  // chaîne, et TOUTE génération inférieure à la courante est un rejeu — quel
+  // que soit son âge, sans conserver le moindre historique.
+
+  /// Identifie la chaîne ; stable d'une rotation à l'autre, contrairement au hachage.
+  chainId         String @unique @map("chain_id") @db.Uuid
+  /// Numéro de la génération en cours. Incrémenté à chaque rotation.
+  tokenGeneration Int    @default(0) @map("token_generation")
   deviceLabel      String? @map("device_label")
   ip               String? @db.Inet
   userAgent        String? @map("user_agent")
