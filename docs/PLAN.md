@@ -58,6 +58,32 @@
 
 ## 3. La méthode
 
+### Quels fichiers de maquette
+
+Les écrans vivent dans les **neuf fichiers numérotés** de `docs/template`. Trois
+pièges :
+
+| | |
+|---|---|
+| Il n'y a **pas de fichier 02** | La numérotation saute |
+| `03 Accueil` (v1) est **remplacé** par `03 Accueil v2` | Seul le v2 fait foi |
+| `Fil d'actualité v2`, `Bibliothèque UI v2`, `Carte Villes` | **Références**, pas des écrans |
+
+| Fichier | Écrans |
+|---|---|
+| `01 Accès et Onboarding` | P01 P02 P03 · O01 O02 O03 O04 O05 |
+| `03 Accueil v2` | A01 à A14 |
+| `04 Parcours` | J01 à J11 |
+| `05 Entraide` | H01 à H10 |
+| `06 Services` | S01 à S10 |
+| `07 Agenda` | E01 à E04 |
+| `08 Compte` | K01 à K10 |
+| `09 Messages et transverse` | M01 · X01 à X04 |
+| `10 Administration` | D01 à D16 |
+
+Ces fichiers contiennent **100 sections** pour 86 écrans : le surplus, ce sont
+les modales et les variantes d'onglets, traités ci-dessous.
+
 ### Les écrans se transcodent
 
 `tools/dc-to-jsx.mjs` traduit le dialecte des maquettes en JSX :
@@ -111,6 +137,106 @@ d'inventer un comportement intermédiaire que le design n'a pas défini.
 Les deux sont rendus, l'un masqué par CSS : Next rend côté serveur et ne connaît
 pas la largeur de la fenêtre ; choisir en JavaScript ferait sauter l'écran à
 l'hydratation.
+
+### Les modales et les feuilles
+
+Les maquettes en contiennent **57** : 29 voiles d'overlay, 21 feuilles du bas
+mobile, 7 modales centrées. Elles sont dessinées comme des SECTIONS À PART —
+`A01 Commentaires`, `A01 Partager`, `A01 Lier un guide`, `A01 Sondage`,
+`J03 Je suis bloqué·e`, `J04 Partager un jalon`, `X03 Signaler` — et non comme
+des états de l'écran parent.
+
+`T1` §4.4 fixe la règle : un `Sheet` est une **feuille du bas sur mobile, une
+modale centrée sur ordinateur**. `BlockerSheet` a trois volets.
+
+Transcoder le visuel ne suffit pas. Une modale exige, et c'est un chantier
+nommé du lot dans lequel elle tombe :
+
+| | Pourquoi |
+|---|---|
+| État d'ouverture, piégé au bon endroit | Une modale n'est pas une route, sauf quand elle l'est — `J03` mérite une URL |
+| `role="dialog"` + `aria-modal` + nom | Sans quoi elle n'existe pas pour un lecteur d'écran |
+| **Piège de focus** et retour au déclencheur | Sinon le clavier s'échappe derrière le voile |
+| Échap, clic sur le voile | Deux sorties attendues, jamais une seule |
+| Verrouillage du défilement de fond | Sinon la page glisse sous la feuille |
+
+### Le mouvement
+
+Les maquettes n'en contiennent **aucun** — zéro `transition`, zéro `@keyframes` :
+une image ne peut pas exprimer le mouvement. Et les specs n'en décrivent pas
+davantage.
+
+Le mouvement est donc **conçu**, pas transcodé. Il vit dans
+`packages/config/motion.js`, et le garde-fou `check-motion.mjs` refuse tout ce
+qui en sort.
+
+#### La thèse
+
+> **Le mouvement marque l'avancement et la résolution. Jamais l'attention.**
+
+Ce n'est pas une préférence esthétique, c'est une conséquence de §1 : *« le
+produit optimise le problème résolu, pas le temps passé »*, et de `T1` §1 :
+*« plus calme. Les membres sont souvent en situation de stress administratif :
+l'interface rassure, elle ne stimule pas. »*
+
+Animer le fil en ferait une machine à attention — exactement ce que le produit
+refuse. Animer une **étape franchie**, au contraire, rend sensible la seule
+chose qui compte : on avance.
+
+#### Les cinq mécaniques
+
+Tout ce qui bouge dans l'application est l'un de ces cinq mouvements.
+
+| Mécanique | Durée | Courbe | Où |
+|---|---|---|---|
+| Feuille du bas — glisse | 220 ms | sortie douce | mobile, `T1` §4.4 |
+| Modale centrée — fondu + 8 px | 180 ms | sortie douce | ordinateur |
+| Voile — fondu | 180 ms | linéaire | derrière les deux |
+| Toast — glisse + fondu | 200 ms | sortie douce | confirmations |
+| Changement d'état | 120 ms | linéaire | survol, focus, onglet |
+
+#### Les neuf moments signature
+
+Là où le mouvement **dit quelque chose**. Chacun est rattaché à son lot :
+
+| Moment | Ce qui bouge | Pourquoi il le mérite | Lot |
+|---|---|---|---|
+| **Barre de progression du parcours** | la barre monte en **600 ms** | LE moment du produit. Elle ne saute pas : on doit voir le chemin parcouru. Seul mouvement au-delà du plafond, et c'est délibéré | 2 |
+| **Coche « Étape franchie »** | le tracé se dessine, 280 ms | Une étape franchie se gagne. La coche doit se poser, pas apparaître | 3 |
+| **« Je suis bloqué » — 3 volets** | glissement latéral, 240 ms | Le mouvement dit : vous avancez dans une démarche, vous ne sautez pas d'écran en écran | 4 |
+| **Onboarding — 5 écrans** | même glissement, 240 ms | **Même grammaire que ci-dessus**, volontairement : cinq écrans, un seul chemin | 1 |
+| **Entraide résolue** | la carte passe en résolu, 280 ms | La boucle se ferme. C'est la mécanique centrale de la plateforme | 4 |
+| **Réaction** | l'icône se remplit, le compteur monte, 160 ms | Retour immédiat sur un geste. Sans lui, on doute d'avoir cliqué | 3 |
+| **Anneau de story** | épais → fin, 200 ms | Elle est vue. L'information est privée au lecteur | 3 |
+| **Squelette → contenu** | fondu, 180 ms | Un saut fait sursauter. `T1` §5 veut des squelettes, pas des spinners | 1 |
+| **Compteur de réputation** | le nombre monte, 280 ms | Le chiffre compte, pas l'effet. Il marque une entraide validée | 4 |
+
+#### Ce qu'on refuse, nommément
+
+La discipline d'ici est ce qui donne leur poids aux neuf moments ci-dessus. Un
+produit où tout bouge est un produit où rien ne signifie.
+
+- apparition au défilement (*scroll reveal*)
+- parallaxe
+- rebond, élasticité
+- boucle d'attention — pulsation, clignotement, halo
+- **toute animation dans le fil** : ce serait une machine à attention
+- illustration animée
+- transition de page plein écran
+
+#### `prefers-reduced-motion`
+
+Coupe **tout**, sans exception. Ce n'est pas une option d'accessibilité qu'on
+dégrade : c'est la même interface, sans transition. L'état final est identique,
+il est simplement atteint tout de suite. Un membre sujet aux troubles
+vestibulaires doit voir la même application, pas une version amoindrie.
+
+#### Le garde-fou
+
+`check-motion.mjs` échoue si une durée dépasse 300 ms sans porter `exempt`, si
+une courbe sort de la table, ou si une animation décorative apparaît. Le
+squelette de chargement fait exception : sa pulsation **dit** quelque chose —
+« ça arrive » — plutôt qu'elle ne décore.
 
 ### Ce que les maquettes ne donnent pas
 
@@ -187,6 +313,27 @@ dès ce lot, sinon les niveaux du lot 5 seront faux.
 Suppression de compte différée à 7 jours, avec exécution de tous les
 gestionnaires dans une transaction unique. Le mécanisme se pose ici même s'il ne
 supprime presque rien : chaque lot suivant vient y brancher le sien.
+
+**Le flux complet, écran par route.** C'est le chemin qu'un membre parcourt
+réellement, et chaque étape a sa route :
+
+| # | Écran | Route | Ce qui se passe |
+|---|---|---|---|
+| 1 | P01 | `POST /v1/auth/otp` | Indicatif vérifié contre les pays actifs, Turnstile validé, OTP envoyé. Un pays non couvert répond avant tout envoi de SMS |
+| 2 | P02 | `POST /v1/auth/otp/verify` | Code vérifié. Compte créé si le numéro est inconnu ; sinon connexion. Renvoie le couple de jetons |
+| 3 | O01 | `PATCH /v1/me` | Phase : pré-départ, arrivée récente, installé |
+| 4 | O02 | `PATCH /v1/me` | Pays d'origine — **modifiable une seule fois** — et ville |
+| 5 | O04 | `PATCH /v1/me/profile` | Nom affiché, handle généré puis ajustable, avatar, langues, compétences |
+| — | — | `POST /v1/me/consents` | `TERMS` et `PRIVACY`, horodatés avec l'IP (preuve RGPD) |
+| 6 | O03 O05 | *lot 2* | Objectif et atterrissage : ils créent le parcours |
+
+L'onboarding est donc **complet en deux temps** — les quatre premiers écrans au
+lot 1, les deux derniers au lot 2 quand le moteur de parcours existe.
+
+**Reprise** : un onboarding interrompu reprend où il s'est arrêté. L'état se
+déduit du profil — pas de phase → écran 3 ; pas de ville → écran 4 ; pas de
+handle → écran 5. Aucune colonne « étape courante » : elle mentirait dès qu'un
+membre modifie son profil plus tard.
 
 **Règles dures** numéro jamais renvoyé en clair · mineur → compte désactivé ·
 compte équipe et compte membre hermétiques · toute action admin auditée
