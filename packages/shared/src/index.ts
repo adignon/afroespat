@@ -14,5 +14,7 @@ export * from './validation/auth.js';
 export * from './validation/help.js';
 export * from './validation/guides.js';
 export * from './validation/communities.js';
+export * from './validation/cities.js';
+export * from './validation/events.js';
 export * from './constants/product.js';
 export * from './constants/post-types.js';

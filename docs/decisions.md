@@ -250,3 +250,98 @@ représente dès qu'on lance le serveur à la main.
 
 Second piège : **`docker compose exec` ne fonctionne pas depuis un worktree** (le
 nom de projet compose diffère). Il faut `docker exec -i afroespat-postgres-1`.
+
+
+---
+
+## Un piège JavaScript qui a frappé deux modules sur quatre
+
+Le motif est partout dans le dépôt, et il est légitime :
+
+```js
+{ ...(a ? { x: 1 } : {}), ...(b ? { y: 2 } : {}) }
+```
+
+Il devient un bogue dès que deux diffusions posent la **même clé** : la seconde
+écrase la première, sans erreur, sans avertissement de `tsc`, et sans que
+`no-dupe-keys` d'ESLint ne voie quoi que ce soit — cette règle ne regarde que les
+clés écrites littéralement.
+
+Deux vrais défauts, dans deux modules écrits séparément par deux agents :
+
+| Module | Clé | Conséquence |
+|---|---|---|
+| entraide | `author` | Le filtre de phase écrasait le filtre de visibilité : les comptes **désactivés et supprimés** revenaient dans la liste dès qu'on filtrait par phase |
+| villes | `profile` | Un visiteur anonyme filtrant par statut d'occupation perdait `isPublic: true` : l'annuaire lui rendait des **profils privés** |
+
+**Les deux ne se voient que sur la COMBINAISON de deux filtres.** Chacun pris
+seul fonctionne parfaitement, ce qui explique qu'ils aient passé la relecture.
+C'est la leçon la plus utile de cette série : *éprouver la combinaison, jamais
+chaque filtre isolément*.
+
+### Le garde-fou, et ce qu'il ne couvre pas
+
+`tools/check-duplicate-spread-keys.mjs`, branché sur `pnpm guardrails`.
+
+Il lit des **littéraux**. Il voit `...(cond ? { author: … } : {})` ; il ne voit
+pas `...(await this.baseWhere(…))` — il ne peut pas savoir quelles clés une
+fonction renvoie. Or c'est exactement la forme du bogue de l'entraide.
+
+**Vérifié en réintroduisant les deux défauts : celui des villes est signalé,
+celui de l'entraide ne l'est pas.** Un garde-fou dont on ne connaît pas la portée
+donne une fausse assurance, et c'est pire que pas de garde-fou.
+
+Ma première version comptait les clés à toutes les profondeurs : dix faux
+positifs pour deux vrais défauts. Un contrôle qu'on apprend à ignorer ne sert
+plus à rien — il ne retient donc que le premier niveau de chaque littéral.
+
+---
+
+## Écarts relevés en implémentant agenda et villes
+
+### Routes NON livrées, délibérément
+
+`PUT` / `DELETE /tips/:id/vote` : la table `city_tip_votes` de 09 §4 **n'existe
+pas**. Sans elle, « un vote par membre » n'a aucun support et le tri « par
+utilité » du §2.3 deviendrait un tri par acharnement. Livrer la route aurait été
+livrer un mensonge.
+
+### Colonnes annoncées et absentes, contournées sans migration
+
+| Colonne | Contournement |
+|---|---|
+| `events.cancelled_at`, `cancel_reason` | Motif dans la charge de `event.cancelled` + audit ; la fenêtre des 7 jours s'appuie sur `updated_at` |
+| `events.checked_in_count` | Compté à la requête |
+| `event_attendees.waitlist_position` | Dérivée de `responded_at` — même ordre |
+| `city_tips.venue_name`, `address_text` | Un commerce met nom et adresse dans le corps |
+| `user_profiles.show_as_newcomer` | **Aucun retrait possible** des nouveaux arrivants. Le critère le plus protecteur disponible est appliqué : un profil non public reste caché hors connexion |
+| `city_tip_votes` | Routes de vote non livrées, cf. ci-dessus |
+
+### Imprécisions tranchées
+
+| Point | Spec | Tranché |
+|---|---|---|
+| `EVENT_FULL` | §5 le liste comme erreur, annoté « → waitlist automatique » ; §3.2 dit « `WAITLIST` ». Les deux s'excluent | Le comportement, pas le code : la réponse porte `status: WAITLIST` + position. `EVENT_FULL` n'est pas déclaré — un code que rien ne lève finit par être attendu du front |
+| Fenêtre de présence de l'organisateur | §3.3 dit « après le début », sans borne | « Tant que l'événement est `SCHEDULED` ». Bornée à l'horloge, elle se fermait avant que la tâche horaire ne passe l'événement à `DONE` : l'organisateur perdait ses présences, donc **l'indicateur clé du projet**, en silence |
+| Sujet « démarches » des Guichets du jour | §2.3 ; `stories.category` est du texte libre | Comparaison sans casse ni accents sur le préfixe `demarche`. **À figer avec le module 04**, sinon les Guichets se videront au premier libellé différent |
+| Fuseau d'une ville | §3.5 lit un événement « dans le fuseau de sa ville » ; ni `cities` ni `countries` n'en portent | Table de correspondance par pays. **Une colonne `cities.timezone` réglerait cela** le jour où un second pays de destination ouvre |
+| Modération des événements | §3.1 dit « comme un post » ; `events` n'a pas de `moderation_status` | L'événement est émis pour que le pipeline s'y branche ; l'état n'est stockable nulle part |
+| Frontière du mois pour le quota | §3.1 muette | `AAAA-MM` en UTC : un événement créé le 1er à 00 h 30 à Paris compte pour le mois précédent. À trancher si cela compte |
+| « Note » d'un commerce | §2.3 la décrit, §4 ne l'ajoute pas | Aucune colonne, ni texte ni étoiles |
+
+### Deux défauts de concurrence, trouvés en raisonnant sur l'écriture
+
+- **Course sur le quota mensuel** : « vérifier puis écrire » est trivialement
+  gagnable quand la limite vaut 1 — deux requêtes simultanées passaient toutes
+  les deux. L'incrément vient d'abord (il pose un verrou de ligne), la
+  vérification ensuite ; le dépassement lève, ce qui annule l'incrément avec la
+  transaction.
+- **Dernière place d'un événement** : `SELECT … FOR UPDATE` avant de décider
+  `GOING` ou `WAITLIST`.
+
+### Un détail de tri que personne ne voit venir
+
+`ORDER BY profile.available_to_help DESC` met les **NULL d'abord** en PostgreSQL.
+L'écran 5 de l'onboarding étant passable, les membres sans profil passaient donc
+devant ceux qui se sont déclarés disponibles — l'inverse exact de ce que §2.2
+demande.

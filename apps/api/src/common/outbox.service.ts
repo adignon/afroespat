@@ -60,8 +60,18 @@ export type DomainEventType =
   | 'mentorship.requested'
   | 'mentorship.accepted'
   | 'mentorship.ended'
-  | 'event.created'
-  | 'event.attended'
+  // Module 09 §7. `event.created` et `event.attended` figuraient ici depuis le
+  // lot 0 et ne correspondent à AUCUNE ligne du §7 : c'étaient des inventions de
+  // ce catalogue, sans consommateur. Retirées plutôt que gardées en doublon, comme
+  // `help_request.created` l'avait été.
+  | 'event.published'
+  | 'event.updated'
+  | 'event.cancelled'
+  | 'event.done'
+  | 'event.rsvp_changed'
+  | 'event.checked_in'
+  | 'city_tip.published'
+  | 'city_tip.voted'
   | 'connection.created'
   // Consommé par presque tous les modules de contenu — fil, guides, entraide,
   // réseaux, agenda, services — pour leurs règles de visibilité.
