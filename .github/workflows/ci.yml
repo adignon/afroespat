@@ -60,6 +60,11 @@ jobs:
       - name: Migrations
         run: pnpm --filter @app/db migrate:deploy
 
+      # Les tests d'intégration de l'API interrogent des référentiels réels :
+      # sans eux, ils vérifieraient une base vide, donc rien.
+      - name: Données de départ
+        run: pnpm db:seed
+
       # Une migration manquante est un échec, pas un avertissement : le schéma
       # et l'historique doivent concorder exactement (§11.4).
       - name: Migrations à jour
