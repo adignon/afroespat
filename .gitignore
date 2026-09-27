@@ -16,3 +16,4 @@ test-results/
 
 # Client Prisma généré (régénéré par `pnpm db:generate`)
 packages/db/generated/
+next-env.d.ts

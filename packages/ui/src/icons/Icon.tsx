@@ -1,5 +1,5 @@
 import type { SVGProps } from 'react';
-import { ICON_PATHS, type IconName } from './paths.js';
+import { ICON_PATHS, type IconName } from './paths';
 
 export interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name' | 'children'> {
   readonly name: IconName;

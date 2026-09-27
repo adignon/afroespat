@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { Avatar, Button, Chips, Pill, ProgressBar, Toggle, RoundButton } from '../primitives/primitives.js';
-import { EmptyState, LevelUpPrompt, Skeleton } from '../states/states.js';
-import { IconRail, MobileTabBar } from '../navigation/navigation.js';
-import { ICON_NAMES, ICON_PATHS } from '../icons/paths.js';
-import { VerifiedBadge } from '../icons/Icon.js';
+import { Avatar, Button, Chips, Pill, ProgressBar, Toggle, RoundButton } from '../primitives/primitives';
+import { EmptyState, LevelUpPrompt, Skeleton } from '../states/states';
+import { IconRail, MobileTabBar } from '../navigation/navigation';
+import { ICON_NAMES, ICON_PATHS } from '../icons/paths';
+import { VerifiedBadge } from '../icons/Icon';
 
 // Les règles dures de T1 vérifiées sur les composants réels, pas sur les jetons.
 describe('règles du design system', () => {

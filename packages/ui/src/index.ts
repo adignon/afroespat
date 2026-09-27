@@ -9,9 +9,9 @@
  * Aucune logique métier ici : les composants reçoivent des données, ils n'en
  * cherchent pas (§4).
  */
-export { cn } from './cn.js';
-export * from './icons/paths.js';
-export * from './icons/Icon.js';
-export * from './primitives/primitives.js';
-export * from './states/states.js';
-export * from './navigation/navigation.js';
+export { cn } from './cn';
+export * from './icons/paths';
+export * from './icons/Icon';
+export * from './primitives/primitives';
+export * from './states/states';
+export * from './navigation/navigation';

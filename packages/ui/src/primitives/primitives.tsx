@@ -1,7 +1,13 @@
+'use client';
+
+// Composants interactifs : ils portent des gestionnaires d'événements, donc ils
+// s'exécutent côté client. §10.3 le prévoit — rendu serveur pour les pages
+// publiques, zone connectée en rendu client après authentification.
+
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
-import { cn } from '../cn.js';
-import { Icon, VerifiedBadge } from '../icons/Icon.js';
-import type { IconName } from '../icons/paths.js';
+import { cn } from '../cn';
+import { Icon, VerifiedBadge } from '../icons/Icon';
+import type { IconName } from '../icons/paths';
 
 /**
  * Primitives du design system — portées depuis docs/template/gen-helpers.js.
@@ -466,7 +472,7 @@ export function Chips({
   readonly dark?: boolean;
 }) {
   return (
-    <div className="flex shrink-0 flex-wrap gap-[6px]" role="tablist">
+    <div className="flex min-w-0 flex-wrap gap-[6px]" role="tablist">
       {items.map((item) =>
         item.value === '|' ? (
           <span key="sep" className="mx-1 w-px bg-border-strong" aria-hidden />

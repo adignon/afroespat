@@ -1,6 +1,12 @@
+'use client';
+
+// Composants interactifs : ils portent des gestionnaires d'événements, donc ils
+// s'exécutent côté client. §10.3 le prévoit — rendu serveur pour les pages
+// publiques, zone connectée en rendu client après authentification.
+
 import type { ReactNode } from 'react';
-import { cn } from '../cn.js';
-import { Button } from '../primitives/primitives.js';
+import { cn } from '../cn';
+import { Button } from '../primitives/primitives';
 
 /**
  * États obligatoires — T1 §5.

@@ -1,7 +1,13 @@
+'use client';
+
+// Composants interactifs : ils portent des gestionnaires d'événements, donc ils
+// s'exécutent côté client. §10.3 le prévoit — rendu serveur pour les pages
+// publiques, zone connectée en rendu client après authentification.
+
 import type { ReactNode } from 'react';
-import { cn } from '../cn.js';
-import { Icon } from '../icons/Icon.js';
-import type { IconName } from '../icons/paths.js';
+import { cn } from '../cn';
+import { Icon } from '../icons/Icon';
+import type { IconName } from '../icons/paths';
 import {
   Avatar,
   CountBadge,
@@ -9,7 +15,7 @@ import {
   ProgressBar,
   RoundButton,
   SectionLabel,
-} from '../primitives/primitives.js';
+} from '../primitives/primitives';
 
 /**
  * Coquille de navigation — portée depuis docs/template/Fil d'actualité v2.dc.html
@@ -264,16 +270,19 @@ export function SectionPanel({
   readonly renderLink?: ((href: string, children: ReactNode, key: string) => ReactNode) | undefined;
 }) {
   return (
-    <div className="flex w-[400px] shrink-0 flex-col px-6">
+    // Masquée sous 1024 px : la barre d'onglets basse prend le relais (T1 §3.2).
+    <div className="hidden w-[400px] shrink-0 flex-col px-6 lg:flex">
       <div className="flex h-16 items-center gap-[10px]">
         <Logo />
         <span className="text-[21px] font-extrabold tracking-[-0.5px] text-primary-strong">
           {productName}
         </span>
       </div>
-      <div className="flex gap-3 pt-3">
+      {/* Collante et bornée au viewport : le panneau défile seul quand il est long,
+          la page défile derrière. C'est le comportement de la maquette. */}
+      <div className="sticky top-4 flex max-h-[calc(100vh-32px)] gap-3 overflow-y-auto pt-3">
         <IconRail active={active} renderLink={renderLink} />
-        <div className="flex min-w-0 flex-1 flex-col gap-3">{children}</div>
+        <div className="flex min-w-0 flex-1 flex-col gap-3 pb-4">{children}</div>
       </div>
     </div>
   );
@@ -298,7 +307,7 @@ export function TopBar({
   readonly onCreate?: () => void;
 }) {
   return (
-    <div className="flex h-16 shrink-0 items-center gap-2">
+    <div className="hidden h-16 shrink-0 items-center gap-2 lg:flex">
       <button
         type="button"
         onClick={onSearch}
@@ -323,42 +332,101 @@ export function TopBar({
   );
 }
 
+/**
+ * En-tête mobile — porté des helpers `mTop` (titre de section) et `mBack`
+ * (page de détail avec retour).
+ *
+ * La barre haute d'ordinateur n'a pas d'équivalent mobile : l'écran est trop
+ * étroit pour la recherche, les trois boutons et l'avatar. Le design met donc le
+ * titre à gauche et deux boutons ronds à droite.
+ */
+export function MobileHeader({
+  title,
+  onBack,
+  actions,
+}: {
+  readonly title: string;
+  /** Présent = page de détail : une flèche de retour remplace le titre large. */
+  readonly onBack?: (() => void) | undefined;
+  readonly actions?: ReactNode;
+}) {
+  if (onBack !== undefined) {
+    return (
+      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 pb-[10px] pt-3">
+        <RoundButton icon="back" label="Retour" onClick={onBack} />
+        <span className="min-w-0 flex-1 truncate text-[16px] font-bold">{title}</span>
+        {actions}
+      </div>
+    );
+  }
+  return (
+    <div className="flex shrink-0 items-center gap-2 pb-1 pt-3">
+      <span className="min-w-0 flex-1 truncate text-[21px] font-extrabold tracking-[-0.6px]">
+        {title}
+      </span>
+      {actions}
+    </div>
+  );
+}
+
 // ─── Coquilles ───────────────────────────────────────────────────────────────
 
 /**
  * Coquille ordinateur (≥ 1024 px) : colonne gauche 352 px + contenu 660 px max +
  * colonne droite 300 px, masquée sous 1280 px.
  */
-export function DesktopShell({
+export function AppShell({
   panel,
   children,
   aside,
+  mobileTab,
+  mobileHeader,
 }: {
   readonly panel: ReactNode;
   readonly children: ReactNode;
-  /** Colonne de contexte. `null` étale le contenu sur toute la largeur. */
+  /** Colonne de contexte, masquée sous 1280 px. `null` étale le contenu. */
   readonly aside?: ReactNode | null;
+  /** Onglet actif de la barre basse mobile. Omis = pas de barre. */
+  readonly mobileTab?: MobileTab;
+  /** En-tête mobile, à la place de la barre haute d'ordinateur. */
+  readonly mobileHeader?: ReactNode;
 }) {
   return (
     <div className="flex min-h-screen bg-bg">
       {panel}
-      <div className="flex min-w-0 flex-1 flex-col pr-6">
+      <div className="flex min-w-0 flex-1 flex-col px-4 lg:pl-0 lg:pr-6">
+        {mobileHeader !== undefined ? (
+          <div className="lg:hidden">{mobileHeader}</div>
+        ) : null}
         <div className="flex items-start gap-6 pb-6 pt-3">
           {aside === null ? (
             <main className="flex min-w-0 flex-1 flex-col gap-[14px]">{children}</main>
           ) : (
             <>
-              <main className="flex min-w-0 max-w-content flex-1 flex-col gap-[14px]">
+              {/* Sur mobile le contenu prend toute la largeur ; la colonne de
+                  contexte passe en fin de page (T1 §3.2). */}
+              <main className="flex min-w-0 flex-1 flex-col gap-[14px] lg:max-w-content">
                 {children}
+                <div className="flex flex-col gap-3 xl:hidden">{aside}</div>
               </main>
               <aside className="hidden w-[300px] shrink-0 flex-col gap-3 xl:flex">{aside}</aside>
             </>
           )}
         </div>
+        {/* Réserve la hauteur de la barre d'onglets, qui est fixée en bas. */}
+        {mobileTab !== undefined ? <div className="h-[86px] lg:hidden" /> : null}
       </div>
+      {mobileTab !== undefined ? (
+        <div className="fixed inset-x-0 bottom-0 z-10 lg:hidden">
+          <MobileTabBar active={mobileTab} />
+        </div>
+      ) : null}
     </div>
   );
 }
+
+/** Ancien nom, conservé le temps que les écrans migrent. */
+export const DesktopShell = AppShell;
 
 /** Barre d'onglets basse mobile, 5 entrées. Agenda est accessible depuis Accueil. */
 export const MOBILE_TABS = [
