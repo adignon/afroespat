@@ -200,9 +200,14 @@ export class AuthService {
    * créer son parcours et demander de l'aide (§7.3) — un pré-départ doit
    * pouvoir commencer sans pièce d'identité.
    *
-   * `originCountryId` prend le pays que le membre a SÉLECTIONNÉ au premier
-   * écran, porté par le défi. L'onboarding le fait confirmer à l'écran O02 —
-   * et il n'est ensuite modifiable qu'une fois (§2.7).
+   * Le pays du NUMÉRO et le pays d'ORIGINE sont deux choses différentes, et les
+   * confondre est une erreur qui se voit mal : un membre déjà installé en France,
+   * avec un numéro français, se verrait attribuer la France comme pays d'origine
+   * — un pays `DESTINATION` (02 §2.1), donc sans réseau automatique ni modèle de
+   * parcours — et le choix étant modifiable une seule fois (§2.7), il y resterait.
+   *
+   * Le pays d'origine n'est demandé qu'à l'écran 3 de l'onboarding (§5). Ici on
+   * ne pose qu'une valeur provisoire, non figée, que cet écran remplacera.
    */
   private async createAccount(challenge: {
     phoneHmac: string;
@@ -217,6 +222,7 @@ export class AuthService {
       throw new Error('Défi OTP sans numéro chiffré : compte non créable.');
     }
 
+    const originCountryId = await this.provisionalOriginCountry(challenge.countryId);
     const userId = newId();
 
     await this.prisma.$transaction(async (tx) => {
@@ -229,10 +235,13 @@ export class AuthService {
           displayName: '',
           phase: 'PRE_DEPARTURE',
           verificationLevel: 'L0',
-          originCountryId: challenge.countryId,
+          originCountryId,
           plan: 'FREE',
           status: 'ACTIVE',
           timezone: 'Europe/Paris',
+          // L'écran 1 de §5 — téléphone et OTP — vient d'être franchi. Laisser 0
+          // renverrait le membre sur l'écran qu'il vient de terminer.
+          onboardingStep: 1,
           // `userId` est implicite : Prisma le déduit de la relation parente.
           stats: { create: { computedAt: new Date() } },
         },
@@ -259,6 +268,31 @@ export class AuthService {
     });
 
     return userId;
+  }
+
+  /**
+   * Valeur provisoire pour `origin_country_id`, qui est NOT NULL.
+   *
+   * Le pays du numéro convient s'il peut être un pays d'origine. Sinon — cas du
+   * numéro français — on prend le pays `ORIGIN` ouvert : au lancement il n'y en a
+   * qu'un (02 §2.1), et l'écran 3 de l'onboarding fait de toute façon choisir.
+   *
+   * `origin_country_locked_at` reste nul : ce n'est pas un choix du membre, et le
+   * figer ici lui volerait l'unique modification que §2.7 lui accorde.
+   */
+  private async provisionalOriginCountry(phoneCountryId: string): Promise<string> {
+    const phoneCountry = await this.prisma.country.findUnique({
+      where: { id: phoneCountryId },
+      select: { id: true, kind: true },
+    });
+    if (phoneCountry !== null && phoneCountry.kind !== 'DESTINATION') return phoneCountry.id;
+
+    const origin = await this.prisma.country.findFirstOrThrow({
+      where: { isActive: true, kind: { in: ['ORIGIN', 'BOTH'] } },
+      orderBy: { sortOrder: 'asc' },
+      select: { id: true },
+    });
+    return origin.id;
   }
 
   // ── Sessions ──────────────────────────────────────────────────────────────

@@ -1,11 +1,14 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { otpRequestSchema, otpVerifySchema, uuidSchema } from '@app/shared';
 import { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
 import { PublicRead, RateLimit, RequiresCapability } from '../../common/capability.decorator';
+import { ApiError } from '../../common/api-error';
+import { REFRESH_COOKIE, clearRefreshCookie, setRefreshCookie } from '../../common/refresh-cookie';
 import { zodPipe } from '../../common/zod.pipe';
+import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 
 /**
@@ -18,14 +21,18 @@ import { AuthService } from './auth.service';
  *
  * Elles portent en revanche des limites de débit resserrées : ce sont les seules
  * routes qu'un inconnu peut appeler, donc les seules qu'il peut marteler.
+ *
+ * Le jeton de rafraîchissement ne figure JAMAIS dans une réponse JSON : il part
+ * en cookie `httpOnly` (§4.1 « Corps : cookie »). Voir `refresh-cookie.ts`.
  */
-
-const refreshSchema = z.object({ refreshToken: z.string().min(16) });
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly users: UsersService,
+  ) {}
 
   @Post('otp/request')
   @HttpCode(200)
@@ -53,10 +60,11 @@ export class AuthController {
   @HttpCode(200)
   @PublicRead()
   @RateLimit(10)
-  @ApiOperation({ summary: 'Vérifie le code et ouvre une session' })
+  @ApiOperation({ summary: 'Vérifie le code, ouvre une session et pose le cookie' })
   async verifyOtp(
     @Body(zodPipe(otpVerifySchema)) body: z.infer<typeof otpVerifySchema>,
     @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
   ) {
     const ua = request.headers['user-agent'];
     const result = await this.auth.verifyOtp({
@@ -66,33 +74,45 @@ export class AuthController {
       userAgent: typeof ua === 'string' ? ua : undefined,
     });
 
-    // `userId` n'est PAS renvoyé : il est déjà dans le jeton, et l'exposer ici
-    // en ferait un identifiant que le front serait tenté d'employer ailleurs.
-    return {
-      accessToken: result.accessToken,
-      refreshToken: result.refreshToken,
-      isNewUser: result.isNewUser,
-    };
+    setRefreshCookie(response, result.refreshToken);
+
+    // §4.1 demande `user` dans la réponse : sans lui, le front devrait enchaîner
+    // sur `GET /me` avant de savoir s'il doit afficher l'onboarding ou l'accueil,
+    // et ce deuxième aller-retour se verrait à l'écran.
+    const me = await this.users.me(result.userId);
+
+    return { accessToken: result.accessToken, isNewUser: result.isNewUser, ...me };
   }
 
   @Post('refresh')
   @HttpCode(200)
   @PublicRead()
   @RateLimit(30)
-  @ApiOperation({ summary: 'Échange un jeton de rafraîchissement contre un nouveau couple' })
-  async refresh(
-    @Body(zodPipe(refreshSchema)) body: z.infer<typeof refreshSchema>,
-    @Req() request: Request,
-  ) {
-    return this.auth.refresh(body.refreshToken, clientIp(request));
+  @ApiOperation({ summary: 'Échange le cookie de rafraîchissement contre un jeton d’accès' })
+  async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const token = readRefreshCookie(request);
+    if (token === null) throw ApiError.transverse('UNAUTHENTICATED');
+
+    const result = await this.auth.refresh(token, clientIp(request));
+    setRefreshCookie(response, result.refreshToken);
+
+    return { accessToken: result.accessToken };
   }
 
   @Post('logout')
   @HttpCode(204)
   @RequiresCapability('content.read')
   @ApiOperation({ summary: 'Révoque la session courante' })
-  async logout(@Auth() auth: AuthContext): Promise<void> {
+  async logout(
+    @Auth() auth: AuthContext,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
     await this.auth.logout(auth.sessionId);
+    // Le cookie part aussi : le laisser en place ferait échouer le prochain
+    // rafraîchissement sur un jeton révoqué, ce que la détection de rejeu
+    // interpréterait comme une session déjà coupée. Exact, mais inutilement
+    // alarmant dans les journaux.
+    clearRefreshCookie(response);
   }
 
   @Get('sessions')
@@ -120,6 +140,21 @@ export class AuthController {
   async revokeOthers(@Auth() auth: AuthContext): Promise<void> {
     await this.auth.revokeOtherSessions(auth.userId, auth.sessionId);
   }
+}
+
+/**
+ * Lit le cookie de rafraîchissement.
+ *
+ * `request.cookies` est typé `any` par les types de `cookie-parser` : on le
+ * reprend en `unknown` et on le rétrécit soi-même, plutôt que de propager un
+ * `any` sur le chemin de l'authentification, où c'est le dernier endroit
+ * souhaitable.
+ */
+function readRefreshCookie(request: Request): string | null {
+  const jar: unknown = request.cookies;
+  if (typeof jar !== 'object' || jar === null) return null;
+  const raw = (jar as Record<string, unknown>)[REFRESH_COOKIE];
+  return typeof raw === 'string' && raw.length > 0 ? raw : null;
 }
 
 /**

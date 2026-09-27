@@ -124,6 +124,8 @@ export const updateProfileSchema = z
   })
   .strict();
 
+export type UpdateProfile = z.infer<typeof updateProfileSchema>;
+
 export const consentSchema = z.object({
   type: z.enum(['TERMS', 'PRIVACY', 'MARKETING_EMAIL', 'JOURNEY_VISIBILITY']),
   version: z.string().min(1).max(32),
@@ -179,11 +181,45 @@ export interface MeResponse {
   } | null;
   readonly phones: readonly { readonly id: string; readonly masked: string; readonly isDestination: boolean }[];
   readonly kyc: { readonly status: string } | null;
-  /** Ce qu'il reste à remplir. Déduit du profil, jamais stocké — voir §5. */
+  /** Compteurs de réputation, tels que `user_stats` les porte. */
+  readonly stats: {
+    readonly helpValidatedCount: number;
+    readonly guideHelpfulVotes: number;
+    readonly guideContributions: number;
+    readonly mentorshipsCompleted: number;
+    readonly eventsOrganized: number;
+  } | null;
+  /**
+   * Où en est l'onboarding. `step` est STOCKÉ (§5 : « pour reprendre là où le
+   * membre s'est arrêté »), et non déduit : cinq des six écrans sont passables,
+   * donc un profil vide ne dit pas si le membre a sauté l'écran ou ne l'a pas vu.
+   */
   readonly onboarding: {
-    readonly needsPhase: boolean;
-    readonly needsPlace: boolean;
-    readonly needsProfile: boolean;
+    /** 0 à 6. 6 = terminé. */
+    readonly step: number;
     readonly complete: boolean;
   };
 }
+
+/** Les six écrans de §5, dans l'ordre. L'onboarding avance d'un cran à la fois. */
+export const ONBOARDING_STEPS = [
+  'phone',
+  'phase',
+  'place',
+  'goal',
+  'profile',
+  'landing',
+] as const;
+
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+export const ONBOARDING_LAST_STEP = ONBOARDING_STEPS.length;
+
+/**
+ * Avancer l'onboarding. On envoie le NUMÉRO de l'écran franchi, pas un « suivant » :
+ * le membre peut revenir en arrière, et un simple incrément ferait alors reculer
+ * son avancement enregistré.
+ */
+export const onboardingAdvanceSchema = z.object({
+  step: z.number().int().min(1).max(ONBOARDING_LAST_STEP),
+});

@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import cookieParser from 'cookie-parser';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -30,6 +31,11 @@ async function bootstrap(): Promise<void> {
   // §4 fait des schémas zod de packages/shared la source unique. Chaque route
   // déclare son schéma via `zodPipe()`.
   app.useGlobalFilters(new ApiErrorFilter());
+
+  // Le jeton de rafraîchissement est un cookie httpOnly (T4 §2) : sans ce
+  // lecteur, `request.cookies` est indéfini et le rafraîchissement échoue
+  // silencieusement, comme si la session avait expiré.
+  app.use(cookieParser());
 
   // Deux origines seulement, déclarées : le front membres et le front équipe.
   app.enableCors({

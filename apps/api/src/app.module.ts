@@ -7,6 +7,8 @@ import { HealthController } from './modules/health/health.controller';
 import { PlacesController } from './modules/places/places.controller';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
+import { UsersController } from './modules/users/users.controller';
+import { UsersService } from './modules/users/users.service';
 import { AuthGuard } from './common/auth.guard';
 
 /**
@@ -17,14 +19,16 @@ import { AuthGuard } from './common/auth.guard';
  * analytics, admin.
  *
  * Lot 0 : le socle et `places` (module 02, lecture seule).
- * Lot 1 : `auth` (module 01). Les autres arrivent lot par lot, sans que ce
+ * Lot 1 : `auth` et `users` (module 01). Les autres arrivent lot par lot,
+ * sans que ce
  * fichier change de forme.
  */
 @Module({
   imports: [CommonModule, ProvidersModule, QueueModule],
-  controllers: [HealthController, PlacesController, AuthController],
+  controllers: [HealthController, PlacesController, AuthController, UsersController],
   providers: [
     AuthService,
+    UsersService,
     // Garde GLOBAL, et refusant par défaut : une route qui oublie de déclarer
     // sa capacité est rejetée, pas ouverte. Un garde qu'on pose route par route
     // protège exactement les routes auxquelles on a pensé.

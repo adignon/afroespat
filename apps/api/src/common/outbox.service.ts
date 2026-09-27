@@ -49,6 +49,15 @@ export type DomainEventType =
   | 'phone.removed'
   | 'user.level_changed'
   | 'user.registered'
+  // Le reste du §7 du module 01. Chacun a un consommateur nommé dans la spec :
+  // un type sans consommateur créerait une file que personne ne lit.
+  | 'user.onboarded'
+  | 'user.onboarded_location'
+  | 'user.phase_changed'
+  | 'user.deactivated'
+  | 'user.reactivated'
+  | 'user.deletion_requested'
+  | 'user.deleted'
   | 'subscription.changed'
   | 'report.created'
   | 'content.flagged';

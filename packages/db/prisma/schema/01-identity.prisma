@@ -122,6 +122,14 @@ model User {
   /// La progression automatique de phase ne s'applique pas si postérieure à arrival_date.
   phaseSetManuallyAt    DateTime? @map("phase_set_manually_at") @db.Timestamptz
 
+  /// Avancement de l'onboarding, 0 à 6 (§5, colonne ajoutée).
+  ///
+  /// STOCKÉ, et non déduit du profil : §5 le demande « pour reprendre là où le
+  /// membre s'est arrêté », et cinq des six écrans sont passables. Un membre qui
+  /// saute l'écran du profil a un profil vide — indistinguable, si l'on déduit,
+  /// de celui qui ne l'a pas encore vu.
+  onboardingStep        Int       @default(0) @map("onboarding_step")
+
   avatarAsset   MediaAsset? @relation("UserAvatar", fields: [avatarAssetId], references: [id], onDelete: SetNull)
   originCountry Country     @relation(fields: [originCountryId], references: [id], onDelete: Restrict)
   city          City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
