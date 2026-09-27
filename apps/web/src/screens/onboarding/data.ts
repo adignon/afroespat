@@ -23,6 +23,10 @@ import { useCallback, useMemo, useState } from 'react';
 export interface OnboardingState {
   /** Carte de phase sélectionnée à l'écran O01 : 0, 1 ou 2. */
   readonly phase: number;
+  /** Le numéro en cours de saisie (P01), tel que le membre le tape. */
+  readonly phone: string;
+  /** Le code reçu par SMS (P02), 0 à 6 chiffres. */
+  readonly code: string;
   /** O03 — créer le parcours proposé à la fin de l'inscription. */
   readonly create: boolean;
   /** O04 — « je suis disponible pour aider ». */
@@ -32,6 +36,11 @@ export interface OnboardingState {
 /** La maquette démarre sur la deuxième carte et les deux interrupteurs actifs. */
 export const INITIAL_ONBOARDING_STATE: OnboardingState = {
   phase: 1,
+  // La maquette montre « 97 12 34 42 » et trois chiffres déjà saisis : ce sont
+  // des EXEMPLES, faits pour illustrer une image. Un écran réel s'ouvre vide, et
+  // l'exemple du téléphone survit en `placeholder`.
+  phone: '',
+  code: '',
   create: true,
   help: true,
 };
@@ -103,7 +112,27 @@ const GOAL_CARDS: readonly {
   },
 ];
 
-export interface OnboardingVals {
+/**
+ * Ce que la PAGE fournit : l'appel à l'API et son état d'attente.
+ *
+ * Obligatoire, sans valeur par défaut. Un `() => {}` de repli donnerait des
+ * boutons silencieusement morts — le pire des défauts, puisque l'écran a l'air
+ * de fonctionner. Ici, oublier de les passer ne compile pas.
+ */
+export interface ScreenActions {
+  /** Un appel est en cours : les boutons se désactivent. */
+  readonly busy: boolean;
+  /** P01 — envoyer le code. */
+  readonly onSubmit: () => void;
+  /** O01 à O04 — enregistrer et passer à l'écran suivant. */
+  readonly onContinue: () => void;
+}
+
+export interface OnboardingVals extends ScreenActions {
+  readonly phoneValue: string;
+  readonly onPhoneChange: (event: { target: { value: string } }) => void;
+  readonly codeValue: string;
+  readonly onCodeChange: (event: { target: { value: string } }) => void;
   readonly phases: readonly {
     readonly title: string;
     readonly sub: string;
@@ -180,8 +209,10 @@ export interface OnboardingVals {
 export function onboardingVals(
   state: OnboardingState,
   patch: (next: Partial<OnboardingState>) => void,
+  actions: ScreenActions,
 ): OnboardingVals {
   return {
+    ...actions,
     phases: PHASE_CARDS.map((p, i) => {
       const on = state.phase === i;
       return {
@@ -195,6 +226,19 @@ export function onboardingVals(
       };
     }),
 
+    phoneValue: state.phone,
+    onPhoneChange: (event: { target: { value: string } }) => {
+      // Seuls les chiffres et les espaces : le reste est refusé à la FRAPPE,
+      // plutôt que signalé après envoi. `normalizePhone` fera le ménage côté
+      // API, mais un champ qui accepte des lettres laisse croire qu'elles
+      // comptent.
+      patch({ phone: event.target.value.replace(/[^\d\s]/g, '').slice(0, 20) });
+    },
+    codeValue: state.code,
+    onCodeChange: (event: { target: { value: string } }) => {
+      patch({ code: event.target.value.replace(/\D/g, '').slice(0, 6) });
+    },
+
     reassure: [
       {
         text: 'Chaque membre a une identité vérifiée',
@@ -206,13 +250,25 @@ export function onboardingVals(
       },
     ],
 
-    // Trois chiffres saisis, le curseur sur le quatrième : la maquette montre
-    // une saisie EN COURS, pas un champ vide ni un champ complet.
-    otp: ['4', '8', '2', '', '', ''].map((v, i) => ({
-      v,
-      bg: v ? '#fff' : '#F2F5F4',
-      bd: i === 3 ? '#16785E' : v ? '#E6EBE9' : '#EAEEEC',
-    })),
+    /**
+     * Les six cases du code.
+     *
+     * Elles AFFICHENT, elles ne saisissent pas : un seul champ les alimente. Six
+     * `<input>` casseraient le collage du code et l'autoremplissage depuis le
+     * SMS, qui sont précisément ce dont un membre a besoin ici.
+     *
+     * La maquette montre « 482 » avec le curseur sur la quatrième case : c'est
+     * une illustration de saisie en cours. Ici, la position du curseur suit ce
+     * qui est réellement tapé.
+     */
+    otp: Array.from({ length: 6 }, (_, i) => {
+      const v = state.code[i] ?? '';
+      return {
+        v,
+        bg: v === '' ? '#F2F5F4' : '#fff',
+        bd: i === state.code.length ? '#16785E' : v === '' ? '#EAEEEC' : '#E6EBE9',
+      };
+    }),
     otpBad: ['4', '8', '2', '9', '1', '7'],
 
     toc: [
@@ -332,8 +388,12 @@ export function onboardingVals(
 }
 
 /** L'état et les valeurs, pour un composant client. */
-export function useOnboarding(initial: OnboardingState = INITIAL_ONBOARDING_STATE): {
+export function useOnboarding(
+  actions: ScreenActions,
+  initial: OnboardingState = INITIAL_ONBOARDING_STATE,
+): {
   state: OnboardingState;
+  patch: (next: Partial<OnboardingState>) => void;
   vals: OnboardingVals;
 } {
   const [state, setState] = useState<OnboardingState>(initial);
@@ -341,6 +401,6 @@ export function useOnboarding(initial: OnboardingState = INITIAL_ONBOARDING_STAT
     (next: Partial<OnboardingState>) => setState((s) => ({ ...s, ...next })),
     [],
   );
-  const vals = useMemo(() => onboardingVals(state, patch), [state, patch]);
-  return { state, vals };
+  const vals = useMemo(() => onboardingVals(state, patch, actions), [state, patch, actions]);
+  return { state, patch, vals };
 }

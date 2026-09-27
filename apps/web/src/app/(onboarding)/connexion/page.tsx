@@ -1,28 +1,20 @@
-'use client';
-
-import { P01Desktop } from '@/screens/p01/desktop.generated';
-import { P01Mobile } from '@/screens/p01/mobile.generated';
-import { useOnboarding } from '@/screens/onboarding/data';
-import { ScreenFrames } from '@/screens/frames';
+import { RESUME_MESSAGES } from '@/screens/onboarding/resume';
+import { ConnexionScreen } from './connexion-screen';
 
 /**
- * P01 — Votre numéro de téléphone.
+ * Composant SERVEUR : il lit `?reprise=…` en propriété.
  *
- * Le JSX vient du TRANSCODAGE de `docs/template/01 Accès et Onboarding.dc.html` :
- * les styles en ligne sont ceux de la maquette, à l'identique.
- *
- * `useOnboarding` porte l'état que la maquette calcule dans son `renderVals()` —
- * carte de phase choisie, interrupteurs. C'est ce qui rend l'écran vivant plutôt
- * qu'illustratif.
+ * Pas de `useSearchParams()` — ce crochet force un rendu côté client et fait
+ * échouer `next build` sans frontière `Suspense`, ce que le serveur de
+ * développement accepte sans rien dire.
  */
-export default function Page() {
-  const { vals } = useOnboarding();
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const reason = (await searchParams)['reprise'];
+  const message = typeof reason === 'string' ? (RESUME_MESSAGES[reason] ?? null) : null;
 
-  return (
-    <ScreenFrames
-      screen="P01"
-      desktop={<P01Desktop {...vals} />}
-      mobile={<P01Mobile {...vals} />}
-    />
-  );
+  return <ConnexionScreen initialError={message} />;
 }

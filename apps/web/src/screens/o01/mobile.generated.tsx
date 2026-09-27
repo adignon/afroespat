@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O01Mobile(props: OnboardingVals) {
-  const { phases, seg1 } = props;
+  const { busy, onContinue, phases, seg1 } = props;
 
   return (
     <>
@@ -28,7 +28,7 @@ export function O01Mobile(props: OnboardingVals) {
 ))}
       </div>
       <div style={{ flex: "1" }}></div>
-      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }}>Continuer</button>
+      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
     
       </main>
     </>

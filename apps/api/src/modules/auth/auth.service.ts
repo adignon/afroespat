@@ -10,6 +10,7 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { TokenService } from '../../common/token.service';
+import { loadEnv } from '../../config/env';
 import { CryptoService } from '../../common/crypto.service';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
@@ -28,6 +29,15 @@ import { CAPTCHA_PROVIDER, SMS_PROVIDER, type CaptchaProvider, type SmsProvider 
  * `LOGIN`, et pourquoi les messages d'erreur ne distinguent jamais « numéro
  * inconnu » de « code faux ».
  */
+/** L'environnement, isolé pour que le service reste testable sans config. */
+function loadEnvOrDefault(): string {
+  try {
+    return loadEnv().NODE_ENV;
+  } catch {
+    return 'development';
+  }
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -114,24 +124,44 @@ export class AuthService {
     return { challengeId, expiresAt };
   }
 
+  /**
+   * La boucle locale échappe à la limite par IP, HORS PRODUCTION uniquement.
+   *
+   * En développement tout part de `127.0.0.1` : la limite de dix par heure et par
+   * IP y épuise le quota en quelques essais, et l'inscription devient intestable
+   * — le serveur refuse pour une raison juste, mais qui n'a aucun rapport avec ce
+   * qu'on éprouve. La limite par NUMÉRO, elle, reste appliquée : c'est celle qui
+   * protège un membre du harcèlement.
+   *
+   * En production la fonction rend toujours `false`. Une exemption ouverte là-bas
+   * suffirait à énumérer les numéros derrière un en-tête forgé.
+   */
+  private isExemptLocalIp(ip: string): boolean {
+    if (loadEnvOrDefault() === 'production') return false;
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+  }
+
   /** 3 envois par numéro et par heure, 10 par IP (§2.1). */
   private async assertWithinRateLimits(fingerprint: string, ip: string | undefined): Promise<void> {
     const since = new Date(Date.now() - 3_600_000);
 
+    // `RATE_LIMITED` et non `OTP_ATTEMPTS_EXCEEDED` : §4.1 donne le premier à
+    // l'ENVOI et le second à la VÉRIFICATION. Les confondre faisait lire au
+    // membre « Trop de tentatives, demandez un nouveau code » au moment précis
+    // où on venait de lui refuser un nouveau code.
+    const tooMany = () =>
+      ApiError.transverse('RATE_LIMITED', { retryAfterSeconds: 3600 });
+
     const byPhone = await this.prisma.otpChallenge.count({
       where: { phoneHmac: fingerprint, createdAt: { gte: since } },
     });
-    if (byPhone >= RATE_LIMITS.otpPerPhonePerHour) {
-      this.fail('OTP_ATTEMPTS_EXCEEDED', { retryAfterSeconds: 3600 });
-    }
+    if (byPhone >= RATE_LIMITS.otpPerPhonePerHour) throw tooMany();
 
-    if (ip !== undefined) {
+    if (ip !== undefined && !this.isExemptLocalIp(ip)) {
       const byIp = await this.prisma.otpChallenge.count({
         where: { ip, createdAt: { gte: since } },
       });
-      if (byIp >= RATE_LIMITS.otpPerIpPerHour) {
-        this.fail('OTP_ATTEMPTS_EXCEEDED', { retryAfterSeconds: 3600 });
-      }
+      if (byIp >= RATE_LIMITS.otpPerIpPerHour) throw tooMany();
     }
   }
 

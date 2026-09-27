@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O04Mobile(props: OnboardingVals) {
-  const { seg4, statuses } = props;
+  const { busy, onContinue, seg4, statuses } = props;
 
   return (
     <>
@@ -26,7 +26,7 @@ export function O04Mobile(props: OnboardingVals) {
 ))}</div>
       <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "16px", padding: "14px", display: "flex", alignItems: "center", gap: "10px" }}><span style={{ flex: "1", fontSize: "14px", fontWeight: "700" }}>Disponible pour aider</span><span style={{ width: "48px", height: "28px", borderRadius: "999px", background: "#16785E", position: "relative" }}><span style={{ position: "absolute", top: "3px", left: "23px", width: "22px", height: "22px", borderRadius: "999px", background: "#fff" }}></span></span></div>
       <div style={{ flex: "1" }}></div>
-      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }}>Continuer</button>
+      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
     
       </main>
     </>

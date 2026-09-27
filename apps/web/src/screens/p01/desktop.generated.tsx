@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function P01Desktop(props: OnboardingVals) {
-  const { reassure } = props;
+  const { busy, onPhoneChange, onSubmit, phoneValue, reassure } = props;
 
   return (
     <>
@@ -21,11 +21,11 @@ export function P01Desktop(props: OnboardingVals) {
           <p style={{ margin: "8px 0 0", fontSize: "14px", color: "#5D6B66", lineHeight: "1.55" }}>Pour vous connecter ou créer votre compte.</p>
           <div style={{ display: "flex", gap: "8px", marginTop: "24px" }}>
             <div style={{ height: "52px", padding: "0 14px", borderRadius: "14px", background: "#F2F5F4", border: "1px solid #EAEEEC", display: "flex", alignItems: "center", gap: "8px", fontSize: "14.5px", fontWeight: "600" }}><span style={{ width: "22px", height: "15px", borderRadius: "3px", background: "linear-gradient(90deg,#16785E 33%,#F2C94C 33% 66%,#E0733A 66%)" }}></span>+229<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg></div>
-            <div style={{ flex: "1", height: "52px", padding: "0 16px", borderRadius: "14px", background: "#fff", border: "1.5px solid #16785E", display: "flex", alignItems: "center", fontSize: "15px", fontWeight: "600", letterSpacing: ".5px" }}>97 12 34 42</div>
+            <input style={{ flex: "1", height: "52px", padding: "0 16px", borderRadius: "14px", background: "#fff", border: "1.5px solid #16785E", display: "flex", alignItems: "center", fontSize: "15px", fontWeight: "600", letterSpacing: ".5px" }} placeholder="97 12 34 42" type="tel" name="phone" inputMode="numeric" autoComplete="tel-national" aria-label="Votre numéro de téléphone" value={phoneValue} onChange={onPhoneChange} />
           </div>
           <p style={{ margin: "12px 0 0", fontSize: "12.5px", color: "#5D6B66", lineHeight: "1.55" }}>Nous vous envoyons un code par SMS. Votre numéro n'est jamais affiché aux autres membres.</p>
           <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", marginTop: "20px" }}><span style={{ width: "22px", height: "22px", borderRadius: "7px", background: "#16785E", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="m5 12 4.5 4.5L19 7" /></svg></span><span style={{ fontSize: "13px", lineHeight: "1.5" }}>J'accepte les <a href="#" style={{ fontWeight: "700" }}>conditions d'utilisation</a> et la <a href="#" style={{ fontWeight: "700" }}>politique de confidentialité</a>.</span></div>
-          <button style={{ width: "100%", height: "52px", marginTop: "22px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700", cursor: "pointer" }}>Recevoir le code</button>
+          <button style={{ width: "100%", height: "52px", marginTop: "22px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700", cursor: "pointer" }} onClick={onSubmit} disabled={busy}>Recevoir le code</button>
         </div>
         <div style={{ width: "420px", display: "flex", flexDirection: "column", gap: "10px" }}>
           {(reassure ?? []).map((r, rIndex) => (

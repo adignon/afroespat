@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O04Desktop(props: OnboardingVals) {
-  const { help, helpKnob, helpTrack, helpTypes, seg4, statuses, toggleHelp } = props;
+  const { busy, help, helpKnob, helpTrack, helpTypes, onContinue, seg4, statuses, toggleHelp } = props;
 
   return (
     <>
@@ -47,7 +47,7 @@ export function O04Desktop(props: OnboardingVals) {
 ))}</div></>) : null}
             </div>
           </div>
-          <button style={{ width: "100%", height: "52px", marginTop: "22px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }}>Continuer</button>
+          <button style={{ width: "100%", height: "52px", marginTop: "22px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
         </div>
       </div>
     

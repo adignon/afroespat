@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O02Mobile(props: OnboardingVals) {
-  const { cities, seg2 } = props;
+  const { busy, cities, onContinue, seg2 } = props;
 
   return (
     <>
@@ -26,7 +26,7 @@ export function O02Mobile(props: OnboardingVals) {
 <Fragment key={cIndex}><div style={{ height: "46px", display: "flex", alignItems: "center", gap: "10px", padding: "0 10px", borderRadius: "12px", background: c.bg, color: c.fg }}><span style={{ flex: "1", fontSize: "14px", fontWeight: "600" }}>{c.name}</span><span style={{ fontSize: "11.5px", fontWeight: "700", color: c.metaFg }}>{c.meta}</span></div></Fragment>
 ))}</div>
       <div style={{ flex: "1" }}></div>
-      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }}>Continuer</button>
+      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
     
       </main>
     </>

@@ -37,9 +37,22 @@ async function bootstrap(): Promise<void> {
   // silencieusement, comme si la session avait expiré.
   app.use(cookieParser());
 
-  // Deux origines seulement, déclarées : le front membres et le front équipe.
+  /**
+   * Origines DÉCLARÉES : le front membres et le front équipe (§8.3).
+   *
+   * Hors production s'y ajoute `:3100`, où les tests de bout en bout servent la
+   * compilation de production (`playwright.config.ts`). Sans elle, le navigateur
+   * de test rejette chaque réponse alors que le serveur répond 200 — et le
+   * parcours d'inscription échoue sans qu'aucun journal ne l'explique.
+   *
+   * En PRODUCTION la liste reste à deux entrées : une origine de test ouverte
+   * là-bas serait une porte laissée entrebâillée.
+   */
+  const origins = [env.WEB_ORIGIN, env.ADMIN_ORIGIN];
+  if (env.NODE_ENV !== 'production') origins.push('http://localhost:3100');
+
   app.enableCors({
-    origin: [env.WEB_ORIGIN, env.ADMIN_ORIGIN],
+    origin: origins,
     credentials: true, // le jeton de rafraîchissement est un cookie (T4 §2)
   });
 

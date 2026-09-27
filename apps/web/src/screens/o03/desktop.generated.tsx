@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O03Desktop(props: OnboardingVals) {
-  const { create, createBd, createBg, createHelp, goals, seg3, toggleCreate } = props;
+  const { busy, create, createBd, createBg, createHelp, goals, onContinue, seg3, toggleCreate } = props;
 
   return (
     <>
@@ -42,7 +42,7 @@ export function O03Desktop(props: OnboardingVals) {
             <div style={{ height: "64px", padding: "0 18px", borderRadius: "18px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", gap: "12px", fontSize: "14.5px", fontWeight: "700" }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="1.7" strokeLinecap="round"><circle cx="9" cy="8" r="3.5" /><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6" /></svg>M'intégrer, rencontrer du monde</div>
             <div style={{ height: "64px", padding: "0 18px", borderRadius: "18px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", gap: "12px", fontSize: "14.5px", fontWeight: "700" }}><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z" /></svg>Aider les autres</div>
           </div>
-          <button style={{ width: "100%", height: "52px", marginTop: "28px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }}>Continuer</button>
+          <button style={{ width: "100%", height: "52px", marginTop: "28px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
           <div style={{ textAlign: "center", marginTop: "14px" }}><a href="#" style={{ fontSize: "13px", fontWeight: "700", color: "#5D6B66" }}>Passer cette étape</a></div>
         </div>
       </div>

@@ -170,6 +170,105 @@ const A11Y_ANNOTATIONS = [
 ];
 
 /**
+ * LES CHAMPS DESSINÉS DEVIENNENT DE VRAIS CHAMPS.
+ *
+ * La maquette dessine ses saisies en `<div>` portant un exemple — « 97 12 34 42 »
+ * pour le téléphone. C'est juste pour une image ; dans l'application, rien ne
+ * s'y tape et le lecteur d'écran n'y voit aucun champ.
+ *
+ * Le `<div>` devient donc un `<input>`, avec EXACTEMENT les mêmes styles en
+ * ligne. L'exemple ne disparaît pas : il devient le `placeholder`, c'est-à-dire
+ * ce qu'il était déjà — une indication de forme attendue.
+ *
+ * La table est indexée sur le TEXTE D'EXEMPLE, qui est visible dans la maquette
+ * et donc vérifiable. Si la maquette le change, le générateur ne trouve plus le
+ * champ et le dit, au lieu de produire un écran muet.
+ */
+const FIELD_ADAPTATIONS = [
+  {
+    sample: '97 12 34 42',
+    why: 'Le champ de téléphone devient saisissable.',
+    attrs: [
+      'type="tel"',
+      'name="phone"',
+      'inputMode="numeric"',
+      // `autoComplete="tel-national"` : l'indicatif est choisi à part, le
+      // navigateur ne doit donc pas proposer un numéro international complet.
+      'autoComplete="tel-national"',
+      'aria-label="Votre numéro de téléphone"',
+      'value={phoneValue}',
+      'onChange={onPhoneChange}',
+    ],
+  },
+];
+
+/**
+ * LES BOUTONS DESSINÉS REÇOIVENT LEUR ACTION.
+ *
+ * La maquette dessine ses boutons sans comportement — c'est une image. La table
+ * est indexée sur le LIBELLÉ VISIBLE, qui vient d'elle et se relit d'un coup
+ * d'œil.
+ *
+ * `disabled` autant que `onClick` : un bouton d'envoi qu'on peut cliquer deux
+ * fois envoie deux SMS, et c'est le membre qui les paie en délai d'attente — la
+ * limite de trois par heure se consomme à la deuxième pression.
+ *
+ * P02 n'a volontairement aucun bouton : le code se vérifie dès le sixième
+ * chiffre saisi. C'est ce que la maquette montre, et c'est le bon comportement.
+ */
+const BUTTON_ACTIONS = [
+  { label: 'Recevoir le code', attrs: ['onClick={onSubmit}', 'disabled={busy}'] },
+  { label: 'Continuer', attrs: ['onClick={onContinue}', 'disabled={busy}'] },
+];
+
+/**
+ * Branche les boutons. Ne touche JAMAIS un bouton qui a déjà un `onClick` :
+ * « Créer mon parcours maintenant » porte celui de la maquette, et l'écraser
+ * casserait l'interrupteur de l'écran O03.
+ */
+function adaptButtons(jsx) {
+  const applied = [];
+  let out = jsx;
+
+  for (const action of BUTTON_ACTIONS) {
+    const pattern = new RegExp(`<button((?:(?!onClick)[^>])*?)>(\\s*)${action.label}</button>`);
+    const m = pattern.exec(out);
+    if (m === null) continue;
+    out =
+      out.slice(0, m.index) +
+      `<button${m[1]} ${action.attrs.join(' ')}>${m[2]}${action.label}</button>` +
+      out.slice(m.index + m[0].length);
+    applied.push(action);
+  }
+
+  return { jsx: out, applied };
+}
+
+/**
+ * Remplace les champs dessinés. Travaille sur le JSX complet, et non balise par
+ * balise, parce qu'il faut voir le CONTENU du `<div>` pour le reconnaître.
+ */
+function adaptFields(jsx) {
+  const applied = [];
+
+  let out = jsx;
+  for (const field of FIELD_ADAPTATIONS) {
+    const pattern = new RegExp(
+      `<div (style=\\{\\{ [^}]* \\}\\})[^>]*>${field.sample.replace(/ /g, '\\s')}</div>`,
+    );
+    const m = pattern.exec(out);
+    if (m === null) continue;
+    out =
+      out.slice(0, m.index) +
+      `<input ${m[1]} placeholder="${field.sample}" ${field.attrs.join(' ')} />` +
+      out.slice(m.index + m[0].length);
+    applied.push(field);
+  }
+
+  return { jsx: out, applied };
+}
+
+/**
  * RÔLES ET ÉTATS DES CONTRÔLES.
  *
  * La maquette DESSINE ses interrupteurs et ses cases à cocher — un `<button>`
@@ -274,7 +373,16 @@ function adaptFrame(jsx) {
   });
 
   const heading = promoteFirstHeading(adapted);
-  return { adapted: heading.jsx, counts, promotedHeading: heading.promoted, roles };
+  const fields = adaptFields(heading.jsx);
+  const buttons = adaptButtons(fields.jsx);
+  return {
+    adapted: buttons.jsx,
+    counts,
+    promotedHeading: heading.promoted,
+    roles,
+    fields: fields.applied,
+    buttons: buttons.applied,
+  };
 }
 
 /**
@@ -347,7 +455,7 @@ const JS_GLOBALS = new Set([
   'Math', 'String', 'Number', 'Array', 'Object', 'JSON', 'Date',
 ]);
 
-function collectProps(sectionHtml, frameHtml) {
+function collectProps(sectionHtml, frameHtml, appliedFields = []) {
   const loopVars = new Set();
   for (const m of sectionHtml.matchAll(/<sc-for[^>]*\bas="([^"]+)"/g)) {
     loopVars.add(m[1]);
@@ -363,6 +471,16 @@ function collectProps(sectionHtml, frameHtml) {
     if (loopVars.has(root) || JS_GLOBALS.has(root)) continue;
     names.add(root);
   }
+
+  // Les identifiants introduits par une adaptation de champ : ils ne figurent
+  // pas dans le dialecte de la maquette, puisque c'est nous qui les posons.
+  for (const field of appliedFields) {
+    for (const attr of field.attrs) {
+      const bound = /\{([A-Za-z_$][\w$]*)\}/.exec(attr);
+      if (bound !== null) names.add(bound[1]);
+    }
+  }
+
   return [...names].sort();
 }
 
@@ -388,7 +506,7 @@ for (const screen of SCREENS) {
 
   for (const frame of screen.frames) {
     const { inner } = extractFrame(section, frame.width, frame.occurrence ?? 0);
-    const { adapted: jsx, counts, promotedHeading, roles } = adaptFrame(transcode(inner));
+    const { adapted: jsx, counts, promotedHeading, roles, fields, buttons } = adaptFrame(transcode(inner));
 
     // Le libellé accessible est recopié du texte visible : s'il a changé dans la
     // maquette, on refuse de générer plutôt que de laisser dériver un nom que
@@ -402,7 +520,7 @@ for (const screen of SCREENS) {
         );
       }
     }
-    const used = collectProps(section, inner);
+    const used = collectProps(section, inner, [...fields, ...buttons]);
 
     // Le repère principal vit avec le CONTENU, pas dans le conteneur de mise en
     // page. La maquette du fil écrit déjà son `<main>` autour de la colonne
@@ -437,6 +555,8 @@ ${wrapped}
     for (const control of INTERACTIVE_ROLES) {
       if (roles.has(control.handler)) console.log(`      ${control.why}`);
     }
+    for (const field of fields) console.log(`      ${field.why}`);
+    for (const b of buttons) console.log(`      Bouton « ${b.label} » branché.`);
     if (!hasLandmark) console.log('      Repère `main` ajouté : la maquette n’en a pas.');
     if (!promotedHeading) {
       console.log('      ⚠ aucun <h2> à promouvoir en <h1> : la page n’aura pas de titre');

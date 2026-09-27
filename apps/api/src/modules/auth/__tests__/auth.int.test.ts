@@ -271,9 +271,10 @@ describe('authentification (01 §2.1)', () => {
         purpose: 'SIGNUP',
         ip: undefined,
       }),
-      // Le code est celui du §4.1 pour l'OTP : `OTP_ATTEMPTS_EXCEEDED`, qui
-      // couvre les envois comme les tentatives.
-    ).rejects.toMatchObject({ code: 'OTP_ATTEMPTS_EXCEEDED' });
+      // §4.1 attribue `RATE_LIMITED` à l'ENVOI et `OTP_ATTEMPTS_EXCEEDED` à la
+      // VÉRIFICATION. Le message compte : « demandez un nouveau code » n'a aucun
+      // sens quand c'est précisément d'en demander un qui vient d'être refusé.
+    ).rejects.toMatchObject({ code: 'RATE_LIMITED' });
   });
 
   it('épuise les 5 tentatives, puis exige un nouveau défi', async () => {

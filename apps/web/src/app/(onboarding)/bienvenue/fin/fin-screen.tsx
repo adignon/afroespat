@@ -2,7 +2,7 @@
 
 import { O05AvecParcours } from '@/screens/o05/avecparcours.generated';
 import { O05SansParcours } from '@/screens/o05/sansparcours.generated';
-import { useOnboarding } from '@/screens/onboarding/data';
+import { useOnboardingFlow } from '@/screens/onboarding/use-onboarding-flow';
 import { ScreenFrames } from '@/screens/frames';
 
 /**
@@ -17,7 +17,8 @@ import { ScreenFrames } from '@/screens/frames';
  * font 700 px. Le cadre unique s'étire donc, sans bascule au seuil de 1024 px.
  */
 export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
-  const { vals } = useOnboarding();
+  // Écran 6 : le dernier. `onContinue` y marque l'onboarding terminé.
+  const { vals } = useOnboardingFlow(6);
 
   return (
     <ScreenFrames

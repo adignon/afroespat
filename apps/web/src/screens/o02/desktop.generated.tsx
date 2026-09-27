@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O02Desktop(props: OnboardingVals) {
-  const { cities, seg2 } = props;
+  const { busy, cities, onContinue, seg2 } = props;
 
   return (
     <>
@@ -36,7 +36,7 @@ export function O02Desktop(props: OnboardingVals) {
 ))}
             </div>
           </div>
-          <button style={{ width: "100%", height: "52px", marginTop: "24px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }}>Continuer</button>
+          <button style={{ width: "100%", height: "52px", marginTop: "24px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
           <div style={{ textAlign: "center", marginTop: "14px" }}><a href="#" style={{ fontSize: "13px", fontWeight: "700", color: "#5D6B66" }}>Passer cette étape</a></div>
         </div>
       </div>

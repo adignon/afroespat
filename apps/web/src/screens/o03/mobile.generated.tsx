@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O03Mobile(props: OnboardingVals) {
-  const { create, createBd, createBg, goals, seg3, toggleCreate } = props;
+  const { busy, create, createBd, createBg, goals, onContinue, seg3, toggleCreate } = props;
 
   return (
     <>
@@ -25,7 +25,7 @@ export function O03Mobile(props: OnboardingVals) {
       <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", margin: "18px 0 8px", textAlign: "center" }}>SANS CRÉER DE PARCOURS</div>
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}><div style={{ height: "52px", padding: "0 14px", borderRadius: "16px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", fontSize: "14px", fontWeight: "700" }}>M'intégrer, rencontrer du monde</div><div style={{ height: "52px", padding: "0 14px", borderRadius: "16px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", fontSize: "14px", fontWeight: "700" }}>Aider les autres</div></div>
       <div style={{ flex: "1" }}></div>
-      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }}>Continuer</button>
+      <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
     
       </main>
     </>
