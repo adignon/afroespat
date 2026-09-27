@@ -80,6 +80,26 @@ export type DomainEventType =
   | 'user.reactivated'
   | 'user.deletion_requested'
   | 'user.deleted'
+  // 07-reseaux.md §6. Consommateurs nommés : search et notifications pour la vie
+  // du réseau, notifications et cities pour les adhésions.
+  //
+  // `community.activity` du §6 n'est PAS ici : son unique consommateur déclaré
+  // est « met à jour last_activity_at », que le service fait lui-même dans la
+  // transaction. Un événement pour se le renvoyer à soi-même ouvrirait une
+  // fenêtre où l'activité existe mais où la date d'archivage est encore vieille,
+  // et la tâche quotidienne pourrait endormir un réseau qui vient de vivre.
+  //
+  // `community.topic_replied` non plus : aucune route ne crée de réponse
+  // aujourd'hui, donc rien ne peut l'émettre.
+  | 'community.created'
+  | 'community.archived'
+  | 'community.reactivated'
+  | 'community.member_joined'
+  | 'community.member_left'
+  | 'community.member_banned'
+  | 'community.topic_created'
+  | 'community.topic_resolved'
+  | 'community.announcement_published'
   | 'subscription.changed'
   | 'report.created'
   | 'content.flagged';

@@ -292,6 +292,33 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     expect(back.step).toBe(4);
   });
 
+  it('émet `user.onboarded_location` à l’écran du LIEU, pas ailleurs', async () => {
+    const userId = await newMember();
+
+    await users.advanceOnboarding(userId, 2);
+    expect(
+      await prisma.domainEvent.count({
+        where: { aggregateId: userId, type: 'user.onboarded_location' },
+      }),
+    ).toBe(0);
+
+    await users.advanceOnboarding(userId, 3);
+    const emitted = await prisma.domainEvent.findFirst({
+      where: { aggregateId: userId, type: 'user.onboarded_location' },
+    });
+
+    /**
+     * Cet événement était DÉCLARÉ au catalogue et émis par personne. Le module
+     * réseaux l'attend pour inscrire le membre aux réseaux de sa ville et de son
+     * pays : sans lui, l'écran du lieu ne tient pas sa promesse.
+     */
+    expect(emitted).not.toBeNull();
+    // La charge porte les DEUX rattachements : le consommateur a besoin des deux
+    // pour créer les deux adhésions.
+    expect(JSON.stringify(emitted?.payload)).toContain('originCountryId');
+    expect(JSON.stringify(emitted?.payload)).toContain('cityId');
+  });
+
   it('émet `user.onboarded` au dernier écran, et pas avant', async () => {
     const userId = await newMember();
     await users.advanceOnboarding(userId, 5);

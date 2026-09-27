@@ -11,6 +11,8 @@ import { UsersController } from './modules/users/users.controller';
 import { UsersService } from './modules/users/users.service';
 import { ConsentsController } from './modules/consents/consents.controller';
 import { ConsentsService } from './modules/consents/consents.service';
+import { CommunitiesController } from './modules/communities/communities.controller';
+import { CommunitiesService } from './modules/communities/communities.service';
 import { GuidesController } from './modules/guides/guides.controller';
 import { GuidesService } from './modules/guides/guides.service';
 import { HelpController } from './modules/help/help.controller';
@@ -33,7 +35,7 @@ import { AuthGuard } from './common/auth.guard';
  */
 @Module({
   imports: [CommonModule, ProvidersModule, QueueModule],
-  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController],
+  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController],
   providers: [
     AuthService,
     UsersService,
@@ -41,6 +43,7 @@ import { AuthGuard } from './common/auth.guard';
     ConsentsService,
     HelpService,
     GuidesService,
+    CommunitiesService,
     // Garde GLOBAL, et refusant par défaut : une route qui oublie de déclarer
     // sa capacité est rejetée, pas ouverte. Un garde qu'on pose route par route
     // protège exactement les routes auxquelles on a pensé.

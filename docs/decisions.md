@@ -176,3 +176,77 @@ Une correspondance explicite a été posée (`WELCOME → SERVICE, RIDE, MATERIA
 
 - J'avais indiqué à l'agent guides que « une seule version PUBLISHED par (modèle, pays) » concernait les guides. **C'est faux** : l'index unique partiel de `20260927050000` porte sur `journey_template_versions` (03 §2.2). La seule contrainte guides de cette migration est `guides_country_scope`.
 - `help_request.created` figurait au catalogue d'événements sans consommateur : c'était une invention. 06 §6 dit `help_request.published`. Le doublon est retiré.
+
+
+---
+
+## Le trou le plus important du socle : rien ne consomme les événements
+
+Relevé en implémentant les réseaux, vérifié : **aucun `Worker` BullMQ n'est
+instancié nulle part.** `OutboxRelayService` dépose bien les travaux dans les
+files, et personne ne les retire. Toute l'architecture d'événements écrit sans
+que rien ne lise.
+
+Conséquence pratique : **aucune règle qui passe par un événement ne fonctionne
+aujourd'hui**, dans aucun module. Les modules livrés émettent correctement — c'est
+la moitié du contrat — mais la moitié « consommateur » n'existe pas. Le module
+réseaux a contourné en écrivant l'adhésion automatique comme un **recalcul
+idempotent** appelé à la lecture (`syncAutoMemberships`), ce qui marche et se
+rebranchera sur l'événement sans réécriture.
+
+C'est désormais la pièce la plus rentable du socle : elle débloque d'un coup les
+notifications, l'indexation de recherche, la réputation, les compteurs
+dénormalisés et les cascades de blocage et de suppression.
+
+À côté, deux manques du même ordre, déjà notés au plan : **aucun registre de
+tâches planifiées** (`apps/api/src/queue` n'a pas de travaux répétables), alors
+que trois modules ont livré leurs tâches sous forme de méthodes publiques testées
+que personne n'appelle — `help.archive`, les cinq tâches des guides, les trois des
+réseaux. Et **aucun registre de gestionnaires de suppression de compte**, alors
+que deux modules ont écrit le leur.
+
+### Un événement déclaré et jamais émis
+
+`user.onboarded_location` figurait au catalogue depuis le lot 1 et **n'était émis
+par personne**. Je l'avais pourtant annoncé comme existant au module réseaux, qui
+a vérifié plutôt que de me croire. Il est maintenant émis à l'écran 3 de
+l'onboarding, avec le pays et la ville dans sa charge, et un test le fixe.
+
+`user.city_changed`, que 07 §6 déclare consommer, n'est même pas déclaré.
+
+---
+
+## Écarts relevés en implémentant les réseaux
+
+### Colonnes annoncées par §3 et absentes du schéma figé
+
+| Colonne | Conséquence |
+|---|---|
+| `community_members.muted` | **La sourdine du §2.5 est impossible.** Le champ est volontairement absent du schéma zod, pour que le contrat ne promette pas ce que la base ne sait pas stocker — `{"muted":true}` renvoie 400. §2.3 « notification à tous les membres non en sourdine » est donc inapplicable |
+| `community_members.invited_by_user_id` | Invitations posées sans trace de l'invitant |
+| `communities.warning_sent_at` | `archiveInactive()` identifie les réseaux à avertir à 45 jours et rend la liste, mais ne notifie pas : sans marqueur, l'avertissement repartirait quinze jours de suite |
+
+### Imprécisions tranchées, à confirmer
+
+| Point | Spec | Tranché |
+|---|---|---|
+| Définition d'« activité » d'un réseau | §2.2 (« publication, sujet, réponse, événement ») vs §6 (`community.activity` = tous les événements, y compris `member_joined`) | §2.2 retenu. Un réseau que des gens rejoignent sans jamais y parler est exactement ce que l'archivage vise. Annonces, sondages et albums comptent aussi |
+| « 50 membres actifs » pour ouvrir la création | §2.2, non défini | Compté EN DIRECT, pas depuis `cities.member_count` recalculé chaque nuit : une porte qui s'ouvre à 50 ne peut pas avoir un jour de retard. Les deux valeurs divergeront |
+| `muted` sur la route de modération | §4 met une préférence personnelle sur `PATCH …/members/:userId`, qui porte aussi `role` et `status` | Sans objet pour l'instant, la colonne n'existant pas. Mélange à revoir |
+| Nommer un modérateur bénévole d'un réseau AUTO | §2.1 dit « nommés par l'équipe » | **Personne ne peut le faire aujourd'hui** : changer un rôle exige OWNER, et un réseau automatique n'en a pas. Il faudra la route admin du module 15 |
+| Capacité « publier dans un réseau » | absente de 00 §7.3 | `post.create` (L1) réutilisée, §2.3 disant « L1 pour publier ». Un `community.publish` serait plus juste mais toucherait la matrice figée |
+| « masquer une publication ou un sujet » | §2.4, sans route en §4 | `DELETE /topics/:id` ajoutée ; masquer une publication relève du module 04 |
+| Quitter un réseau dont on est propriétaire | non traité | Refusé (`OWNER_MUST_TRANSFER`) : un réseau sans propriétaire n'a plus personne pour en répondre |
+| Résultats d'un sondage non révélés | non traité | `voteCount: null` plutôt que la valeur : les renvoyer en demandant au front de ne pas les afficher revient à les publier |
+
+### Un piège d'environnement à connaître
+
+**`tsx` ne fait pas démarrer l'API** : l'injection de dépendances arrive
+`undefined` — `Reflector` n'est pas injecté dans `AuthGuard` — et *toutes* les
+routes rendent 500 sans que rien ne relie le symptôme à sa cause. Il faut
+`node -r @swc-node/register`, ce que fait le script `dev`. C'est le même défaut de
+métadonnées de décorateur que celui déjà consigné pour le lot 0, et il se
+représente dès qu'on lance le serveur à la main.
+
+Second piège : **`docker compose exec` ne fonctionne pas depuis un worktree** (le
+nom de projet compose diffère). Il faut `docker exec -i afroespat-postgres-1`.

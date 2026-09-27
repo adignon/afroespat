@@ -56,6 +56,9 @@ const RESERVED_HANDLES = new Set([
 
 const THIRTY_DAYS_MS = 30 * 86_400_000;
 
+/** L'écran du lieu, troisième des six de §5. */
+const PLACE_STEP = 3;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -347,8 +350,34 @@ export class UsersService {
 
     if (step <= user.onboardingStep) return { step: user.onboardingStep };
 
+    const place = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { originCountryId: true, cityId: true },
+    });
+
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { onboardingStep: step } });
+
+      /**
+       * L'écran 3 de §5 — pays d'origine et ville — déclenche l'adhésion
+       * automatique aux réseaux CITY et COUNTRY (07 §6).
+       *
+       * Cet événement était DÉCLARÉ au catalogue mais émis par personne : je
+       * l'avais annoncé comme existant au module réseaux, qui a vérifié plutôt
+       * que de me croire. Sans lui, un membre passait l'écran du lieu sans
+       * rejoindre aucun réseau — le contraire de ce que cet écran promet.
+       */
+      if (step === PLACE_STEP) {
+        await this.outbox.emit(tx, {
+          type: 'user.onboarded_location',
+          aggregateId: userId,
+          payload: {
+            originCountryId: place.originCountryId,
+            cityId: place.cityId,
+          },
+        });
+      }
+
       if (step >= ONBOARDING_LAST_STEP) {
         await this.outbox.emit(tx, {
           type: 'user.onboarded',
