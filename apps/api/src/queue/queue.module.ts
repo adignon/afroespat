@@ -1,5 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { loadEnv } from '../config/env';
+import { EventConsumerService } from './event-consumer.service';
+import { EventHandlerRegistry } from './event-handlers';
 import { OutboxRelayService } from './outbox-relay.service';
 import { QueueService } from './queue.service';
 
@@ -13,9 +15,21 @@ import { QueueService } from './queue.service';
  */
 const env = loadEnv();
 
+/**
+ * Le REGISTRE est disponible partout, le CONSOMMATEUR seulement dans le worker.
+ *
+ * Cette asymétrie est volontaire : les modules déclarent leurs abonnements dans
+ * leur `onModuleInit`, qui tourne aussi bien dans l'API que dans le worker. Si le
+ * registre n'existait que côté worker, l'API ne compilerait pas — et surtout, un
+ * module ne saurait plus où s'abonner.
+ */
 @Global()
 @Module({
-  providers: [QueueService, ...(env.APP_ROLE === 'worker' ? [OutboxRelayService] : [])],
-  exports: [QueueService],
+  providers: [
+    QueueService,
+    EventHandlerRegistry,
+    ...(env.APP_ROLE === 'worker' ? [OutboxRelayService, EventConsumerService] : []),
+  ],
+  exports: [QueueService, EventHandlerRegistry],
 })
 export class QueueModule {}

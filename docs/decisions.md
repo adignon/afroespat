@@ -345,3 +345,72 @@ livrer un mensonge.
 L'écran 5 de l'onboarding étant passable, les membres sans profil passaient donc
 devant ceux qui se sont déclarés disponibles — l'inverse exact de ce que §2.2
 demande.
+
+
+---
+
+## Le consommateur d'événements — le trou du socle, comblé
+
+Ce qui manquait : aucun `Worker` BullMQ n'était instancié. Le relais déposait les
+travaux dans la file `events` et personne ne les retirait. **Aucune règle qui
+passe par un événement ne fonctionnait, dans aucun module.**
+
+### Un ANNUAIRE, pas un aiguillage
+
+`EventHandlerRegistry` : chaque module déclare ce qu'il écoute, le worker ne
+connaît aucun module. Un `switch` dans le worker devrait importer les
+vingt-quatre modules, et grossirait à chaque livraison.
+
+Trois propriétés qu'un gestionnaire doit respecter, parce que la file les impose :
+
+- **idempotent** — la livraison est « au moins une fois », il sera rejoué ;
+- **indépendant** — l'échec de l'un ne doit pas priver les autres de leur travail ;
+- **qui lève pour réessayer** — une erreur avalée fait disparaître le travail.
+
+Les deux dernières se contredisent en apparence, et la résolution est le cœur du
+registre : chaque gestionnaire est isolé dans son `try`, **et la distribution lève
+à la fin** si l'un a échoué. Sans l'isolement, une anonymisation de guides
+échouerait parce que l'entraide a eu un problème de base. Sans la levée finale,
+BullMQ marquerait le travail terminé et le gestionnaire en échec ne serait jamais
+rejoué. Deux tests tiennent les deux moitiés.
+
+### Le câblage est dans UN fichier
+
+`event-subscriptions.service.ts`. Les services métier restent ignorants de la
+file : ils exposent des méthodes publiques et se construisent avec Prisma. Leurs
+tests d'intégration n'ont donc besoin ni de Redis ni de BullMQ — la différence
+entre une suite qui tourne en dix secondes et une qui demande un environnement.
+
+Et on lit en un coup d'œil qui écoute quoi. Éparpillés dans vingt-quatre
+`onModuleInit`, les abonnements deviennent invisibles : c'est précisément comment
+`user.onboarded_location` a pu rester sans lecteur pendant tout un lot.
+
+### Un bug d'ordre de démarrage, trouvé en lisant le journal du worker
+
+`QueueModule` est global, donc son `onModuleInit` tourne **avant** celui des
+providers du module racine — dont le câblage des abonnements. Le consommateur
+démarrait sur un registre vide.
+
+Ce n'était pas cosmétique : `dispatch` sort silencieusement quand personne
+n'écoute, et **BullMQ marque alors le travail TERMINÉ**. Tout événement arrivé
+dans cet intervalle était perdu, sans trace. Le consommateur démarre désormais
+dans `onApplicationBootstrap`, qui ne se déclenche qu'après tous les
+`onModuleInit`.
+
+L'avertissement « aucun gestionnaire abonné » est donc devenu fiable — il l'était
+faux avant, et un avertissement faux s'apprend à être ignoré.
+
+### Vérifié de bout en bout, sans rien appeler à la main
+
+Inscription par OTP → ville posée → écran 3 franchi → le worker crée les deux
+adhésions (`ville-lyon`, `pays-bj`). Personne n'a appelé `syncAutoMemberships`.
+
+### Ce qui manque encore du même ordre
+
+- **Aucun registre de tâches planifiées.** `apps/api/src/queue` n'a pas de travaux
+  répétables, alors que trois modules ont livré leurs tâches sous forme de méthodes
+  publiques testées que personne n'appelle : `help.archive`, les cinq tâches des
+  guides, les trois des réseaux, les quatre de l'agenda.
+- **Aucun registre de gestionnaires de suppression de compte.** Deux modules ont
+  écrit le leur, désormais branchés sur `user.deleted` — mais rien n'émet encore
+  cet événement, la suppression de compte n'étant pas livrée.

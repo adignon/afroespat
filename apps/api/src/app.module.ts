@@ -23,6 +23,7 @@ import { HelpController } from './modules/help/help.controller';
 import { HelpService } from './modules/help/help.service';
 import { BlocksController } from './modules/blocks/blocks.controller';
 import { BlocksService } from './modules/blocks/blocks.service';
+import { EventSubscriptionsService } from './queue/event-subscriptions.service';
 import { AuthGuard } from './common/auth.guard';
 
 /**
@@ -50,6 +51,10 @@ import { AuthGuard } from './common/auth.guard';
     CommunitiesService,
     EventsService,
     CitiesService,
+    // Le câblage des consommateurs d'événements. Placé ici, dans le module
+    // racine, parce qu'il dépend des services métier — et `QueueModule` ne doit
+    // pas les connaître.
+    EventSubscriptionsService,
     // Garde GLOBAL, et refusant par défaut : une route qui oublie de déclarer
     // sa capacité est rejetée, pas ouverte. Un garde qu'on pose route par route
     // protège exactement les routes auxquelles on a pensé.
