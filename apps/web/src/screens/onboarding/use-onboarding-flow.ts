@@ -1,15 +1,24 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ApiClientError,
   advanceOnboarding,
+  apiRequest,
+  listCities,
+  listCountries,
   requestOtp,
   updateMe,
+  updateProfile,
   verifyOtp,
 } from '@/lib/api';
 import {
+  type CityChoice,
+  type CountryChoice,
+  finalHandle,
+  helpTypeCodes,
+  occupationCode,
   type OnboardingState,
   type OnboardingVals,
   type ScreenActions,
@@ -69,6 +78,65 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
    */
   const latest = useRef<OnboardingState | null>(null);
 
+  /**
+   * Les pays proposés au sélecteur d'indicatif.
+   *
+   * Chargés une fois, sans bloquer l'écran : tant que la réponse n'est pas là, le
+   * sélecteur affiche l'indicatif de la maquette. Un écran d'attente pour remplir
+   * un menu serait disproportionné — surtout au premier écran d'une inscription,
+   * où chaque seconde d'hésitation coûte un membre.
+   *
+   * Seuls les pays d'ORIGINE sont retenus : le sélecteur sert à composer un
+   * numéro, et un pays de destination n'en fournit pas d'indicatif utile ici.
+   * L'exception est la France, qui est aussi le pays de résidence — un membre déjà
+   * installé a un numéro français, et l'API le gère.
+   */
+  const [countryOptions, setCountryOptions] = useState<readonly CountryChoice[]>([]);
+
+  /**
+   * Le catalogue des villes, chargé une fois.
+   *
+   * `activeOnly=false` : 02 §2.2 rend une ville inactive SÉLECTIONNABLE à
+   * l'inscription. Au lancement aucune ne l'est — elles le deviennent vers 20
+   * membres — donc filtrer sur l'activité rendrait une liste vide et l'écran
+   * paraîtrait cassé.
+   */
+  const [cityCatalogue, setCityCatalogue] = useState<readonly CityChoice[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    void listCities()
+      .then(({ items }) => {
+        if (alive) setCityCatalogue(items);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    void listCountries()
+      .then(({ items }) => {
+        if (!alive) return;
+        setCountryOptions(
+          items.map((c) => ({
+            id: c.id,
+            iso2: c.iso2,
+            nameFr: c.nameFr,
+            dialCode: c.dialCode,
+          })),
+        );
+      })
+      // Un échec ici ne doit pas empêcher de s'inscrire : le sélecteur reste sur
+      // l'indicatif dessiné, et le membre peut continuer.
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const run = useCallback(async (work: () => Promise<void>) => {
     setBusy(true);
     setError(null);
@@ -96,10 +164,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
 
       const challenge = await requestOtp({
         phone,
-        // TODO(pays) : l'indicatif est encore celui que la maquette dessine.
-        // Le sélecteur de pays réel demande une liste depuis /places/countries
-        // et un menu qui n'existe pas dans la maquette — à traiter à part.
-        countryIso2: 'BJ',
+        countryIso2: latest.current?.countryIso2 ?? 'BJ',
         // Turnstile en production ; le fournisseur fictif accepte n'importe quoi
         // en développement, et `loadEnv` refuse le démarrage s'il reste fictif
         // en production.
@@ -153,14 +218,53 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         await updateMe({ phase: PHASES[state.phase] ?? 'PRE_DEPARTURE' });
       }
 
+      if (step === 3 && state !== null) {
+        const patch: Record<string, unknown> = {};
+        // Le pays d'origine n'est envoyé que s'il a CHANGÉ du défaut : §2.7 ne
+        // permet qu'une modification, et la consommer pour confirmer une valeur
+        // déjà posée priverait le membre de sa seule correction.
+        const current = await apiRequest<{ user: { originCountryId: string } }>('/me');
+        const chosen = countryOptions.find((c) => c.iso2 === state.originIso2);
+        if (chosen !== undefined && chosen.id !== current.user.originCountryId) {
+          patch['originCountryId'] = chosen.id;
+        }
+        if (state.cityId !== null) patch['cityId'] = state.cityId;
+
+        if (Object.keys(patch).length > 0) await updateMe(patch);
+      }
+
+      /**
+       * Écran 5 — le profil (§5).
+       *
+       * Deux routes, parce que ce sont deux tables : `users` porte le nom et le
+       * pseudo, `user_profiles` le statut et la disponibilité. L'ordre compte —
+       * le pseudo peut être refusé (réservé, pris, délai de 30 jours), et
+       * échouer AVANT d'écrire le profil évite un compte à moitié rempli.
+       */
+      if (step === 5 && state !== null) {
+        const identity: Record<string, unknown> = {};
+        if (state.displayName.trim().length >= 2) identity['displayName'] = state.displayName.trim();
+        const handle = finalHandle(state.handle);
+        if (handle.length >= 3) identity['handle'] = handle;
+        if (Object.keys(identity).length > 0) await updateMe(identity);
+
+        await updateProfile({
+          occupationStatus: occupationCode(state.occupation),
+          availableToHelp: state.help,
+          // Les types d'aide ne valent que si la disponibilité est active : les
+          // envoyer sinon enregistrerait une intention que l'écran ne montre plus.
+          helpTypes: state.help ? helpTypeCodes(state.helpChoices) : [],
+        });
+      }
+
       await advanceOnboarding(step);
       router.push(NEXT_PATH[step] ?? '/accueil');
     });
   }, [router, run, step]);
 
   const actions: ScreenActions = useMemo(
-    () => ({ busy, onSubmit, onContinue }),
-    [busy, onSubmit, onContinue],
+    () => ({ busy, onSubmit, onContinue, countryOptions, cityCatalogue }),
+    [busy, onSubmit, onContinue, countryOptions, cityCatalogue],
   );
 
   const { state, vals } = useOnboarding(actions);

@@ -227,3 +227,27 @@ export interface CountryOption {
 export function listCountries(): Promise<{ items: CountryOption[] }> {
   return apiRequest<{ items: CountryOption[] }>('/places/countries');
 }
+
+export function updateProfile(patch: Record<string, unknown>): Promise<unknown> {
+  return apiRequest('/me/profile', { method: 'PATCH', body: patch });
+}
+
+export interface CityOption {
+  readonly id: string;
+  readonly name: string;
+  readonly region: string | null;
+  readonly isActive: boolean;
+  readonly memberCount: number;
+}
+
+/**
+ * Les villes proposées à l'onboarding.
+ *
+ * `activeOnly=false` est ESSENTIEL ici : 02 §2.2 dit qu'« une ville inactive est
+ * sélectionnable à l'inscription (le membre doit pouvoir indiquer où il vit) ».
+ * Au lancement AUCUNE ville n'est active — elles le deviennent vers 20 membres —
+ * donc le défaut `true` rendrait une liste vide et l'écran paraîtrait cassé.
+ */
+export function listCities(): Promise<{ items: CityOption[] }> {
+  return apiRequest<{ items: CityOption[] }>('/places/cities?activeOnly=false');
+}

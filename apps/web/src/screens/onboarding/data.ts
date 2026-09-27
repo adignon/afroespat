@@ -25,6 +25,21 @@ export interface OnboardingState {
   readonly phase: number;
   /** Le numéro en cours de saisie (P01), tel que le membre le tape. */
   readonly phone: string;
+  /** Le pays de l'INDICATIF choisi en P01. Distinct du pays d'origine (§2.7). */
+  readonly countryIso2: string;
+  /** Le pays d'ORIGINE choisi en O02. Modifiable une seule fois ensuite (§2.7). */
+  readonly originIso2: string;
+  /** Ce que le membre tape dans la recherche de ville (O02). */
+  readonly citySearch: string;
+  /** O04 — nom d'affichage et pseudo. */
+  readonly displayName: string;
+  readonly handle: string;
+  /** Le statut d'occupation choisi (O04), index dans `OCCUPATIONS`. */
+  readonly occupation: number;
+  /** Les types d'aide retenus (O04), index dans `HELP_TYPES`. */
+  readonly helpChoices: readonly number[];
+  /** L'identifiant de la ville retenue, ou `null`. */
+  readonly cityId: string | null;
   /** Le code reçu par SMS (P02), 0 à 6 chiffres. */
   readonly code: string;
   /** O03 — créer le parcours proposé à la fin de l'inscription. */
@@ -40,10 +55,42 @@ export const INITIAL_ONBOARDING_STATE: OnboardingState = {
   // des EXEMPLES, faits pour illustrer une image. Un écran réel s'ouvre vide, et
   // l'exemple du téléphone survit en `placeholder`.
   phone: '',
+  // La maquette dessine « +229 » : c'est le pays d'origine ouvert au lancement
+  // (02 §2.1), donc un défaut raisonnable — et le membre peut en changer.
+  countryIso2: 'BJ',
+  originIso2: 'BJ',
+  citySearch: '',
+  cityId: null,
+  // La maquette montre « Amina Diallo » et « @amina.d » : des EXEMPLES, qui
+  // survivent en `placeholder`. Un écran réel s'ouvre vide.
+  displayName: '',
+  handle: '',
+  // La maquette coche « Étudiant·e » et deux types d'aide : on reprend ces
+  // valeurs de départ, qui évitent un écran sans rien de sélectionné.
+  occupation: 0,
+  helpChoices: [0, 1],
   code: '',
   create: true,
   help: true,
 };
+
+/**
+ * Les villes correspondant à une saisie, sans accent ni casse.
+ *
+ * Comparer sans normaliser fait échouer « segou » sur « Ségou » et « lyon » sur
+ * « Lyon » — deux échecs que le membre lit comme « ma ville n'existe pas ».
+ *
+ * Aucun résultat sous deux caractères : le catalogue compte des dizaines de
+ * villes, et les afficher toutes ne rendrait service à personne.
+ */
+function matchCities(catalogue: readonly CityChoice[], search: string): readonly CityChoice[] {
+  const needle = fold(search.trim());
+  if (needle.length < 2) return [];
+  return catalogue.filter((c) => fold(c.name).includes(needle)).slice(0, 6);
+}
+
+/** Le pays que la maquette a dessiné : le seul dont elle fournit le drapeau. */
+const DRAWN_COUNTRY = 'BJ';
 
 /** Une pastille de choix : fond, texte et bord changent selon l'état. */
 interface Chip {
@@ -51,13 +98,97 @@ interface Chip {
   readonly bg: string;
   readonly fg: string;
   readonly bd: string;
+  /** Sélectionnée. Le générateur en fait `aria-pressed`. */
+  readonly on: boolean;
+  readonly onPick: () => void;
 }
 
-const chip = (label: string, on = false): Chip => ({
+/**
+ * Les statuts d'occupation, dans l'ordre de la maquette.
+ *
+ * Les libellés viennent d'elle ; les CODES, de l'enum `OccupationStatus` du
+ * schéma. Les tenir côte à côte évite qu'un libellé traduit parte vers l'API.
+ */
+const OCCUPATIONS = [
+  { label: 'Étudiant·e', code: 'STUDENT' },
+  { label: 'Salarié·e', code: 'EMPLOYEE' },
+  { label: 'En recherche', code: 'JOB_SEEKER' },
+  { label: 'Indépendant·e', code: 'ENTREPRENEUR' },
+  { label: 'Famille', code: 'OTHER' },
+] as const;
+
+/**
+ * Les types d'aide. La maquette en montre cinq ; l'enum `HelpType` en compte
+ * cinq aussi, mais « Trajet », « Traduction » et « Matériel » n'y ont pas de
+ * code propre — ils relèvent de `OTHER`, ce que la spec assume (§2.7 liste
+ * PAPERWORK, HOUSING, JOB, WELCOME, OTHER).
+ */
+const HELP_TYPES = [
+  { label: 'Démarches', code: 'PAPERWORK' },
+  { label: 'Relecture CV', code: 'JOB' },
+  { label: 'Trajet', code: 'OTHER' },
+  { label: 'Traduction', code: 'OTHER' },
+  { label: 'Matériel', code: 'OTHER' },
+] as const;
+
+const fold = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+/**
+ * Nettoie une saisie de pseudo — §2.6 : minuscules, chiffres, tiret, souligné.
+ *
+ * Les accents sont TRANSLITTÉRÉS, pas supprimés. Les retirer faisait de « Aïcha
+ * Sègbédji » un `achasgbdji` méconnaissable : le membre voit son nom se
+ * désagréger sous ses doigts. `fold` ramène chaque lettre accentuée à sa base,
+ * comme le fait `generateHandle` côté serveur — les deux doivent s'accorder,
+ * sinon le pseudo proposé et le pseudo saisi ne se ressemblent pas.
+ */
+export function toHandle(input: string): string {
+  return (
+    fold(input)
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9_-]/g, '')
+      // Pas de séparateurs consécutifs (§2.6).
+      .replace(/([_-])\1+/g, '$1')
+      // Pas de séparateur en TÊTE : aucun pseudo valide n'en commence par un, et
+      // le laisser ne mène qu'à un refus plus tard.
+      .replace(/^[_-]+/, '')
+      .slice(0, 30)
+  );
+}
+
+/**
+ * Le pseudo tel qu'il PART vers l'API.
+ *
+ * Le séparateur final est coupé ici, et non à la frappe : l'enlever pendant la
+ * saisie rendrait « jean-baptiste » impossible à taper, puisque le tiret
+ * disparaîtrait avant la seconde moitié. La règle du §2.6 est donc appliquée au
+ * moment où elle compte — à l'envoi.
+ */
+export function finalHandle(input: string): string {
+  return toHandle(input).replace(/[_-]+$/, '');
+}
+
+/** Le code à envoyer à l'API pour le statut choisi. */
+export function occupationCode(index: number): string {
+  return OCCUPATIONS[index]?.code ?? 'OTHER';
+}
+
+/** Les codes des types d'aide retenus, sans doublon. */
+export function helpTypeCodes(indexes: readonly number[]): string[] {
+  return [...new Set(indexes.map((i) => HELP_TYPES[i]?.code ?? 'OTHER'))];
+}
+
+const chip = (label: string, on: boolean, onPick: () => void): Chip => ({
   label,
   bg: on ? '#16785E' : '#fff',
   fg: on ? '#fff' : '#16211D',
   bd: on ? '#16785E' : '#E6EBE9',
+  on,
+  onPick,
 });
 
 /**
@@ -119,6 +250,24 @@ const GOAL_CARDS: readonly {
  * boutons silencieusement morts — le pire des défauts, puisque l'écran a l'air
  * de fonctionner. Ici, oublier de les passer ne compile pas.
  */
+/** Une ville proposée par la recherche de O02. */
+export interface CityChoice {
+  readonly id: string;
+  readonly name: string;
+  readonly region: string | null;
+  readonly isActive: boolean;
+  readonly memberCount: number;
+}
+
+/** Un pays proposé au sélecteur d'indicatif. */
+export interface CountryChoice {
+  /** L'API attend l'identifiant, pas le code ISO, pour `originCountryId`. */
+  readonly id: string;
+  readonly iso2: string;
+  readonly nameFr: string;
+  readonly dialCode: string;
+}
+
 export interface ScreenActions {
   /** Un appel est en cours : les boutons se désactivent. */
   readonly busy: boolean;
@@ -126,10 +275,49 @@ export interface ScreenActions {
   readonly onSubmit: () => void;
   /** O01 à O04 — enregistrer et passer à l'écran suivant. */
   readonly onContinue: () => void;
+  /**
+   * Les pays proposés, chargés depuis `/places/countries`.
+   *
+   * Vide tant que l'appel n'a pas répondu : le sélecteur montre alors le seul
+   * indicatif de la maquette, ce qui vaut mieux qu'un menu vide.
+   */
+  readonly countryOptions: readonly CountryChoice[];
+  /** Les villes du pays de destination, chargées une fois (02 §2.2). */
+  readonly cityCatalogue: readonly CityChoice[];
 }
 
 export interface OnboardingVals extends ScreenActions {
   readonly phoneValue: string;
+  /** L'indicatif du pays choisi, affiché dans le sélecteur. */
+  readonly dialCode: string;
+  readonly countryIso2: string;
+  readonly onCountryChange: (event: { target: { value: string } }) => void;
+  /**
+   * `none` dès que le pays choisi n'est plus celui que la maquette a dessiné.
+   * Un drapeau béninois à côté d'un « +33 » serait un défaut visible ; en
+   * inventer d'autres serait dessiner à la place du porteur.
+   */
+  readonly flagDisplay: string;
+
+  // ── O02 : pays d'origine et ville ─────────────────────────────────────────
+  readonly originName: string;
+  readonly originIso2: string;
+  readonly onOriginChange: (event: { target: { value: string } }) => void;
+  readonly originFlagDisplay: string;
+  /**
+   * Les pays proposés comme ORIGINE. La France en est exclue : elle est
+   * `DESTINATION` (02 §2.1), et l'API refuse de l'accepter comme pays d'origine.
+   * La proposer serait offrir un choix qui échoue.
+   */
+  readonly originOptions: readonly CountryChoice[];
+  readonly citySearch: string;
+  readonly onCitySearch: (event: { target: { value: string } }) => void;
+
+  // ── O04 : profil ──────────────────────────────────────────────────────────
+  readonly displayNameValue: string;
+  readonly onDisplayNameChange: (event: { target: { value: string } }) => void;
+  readonly handleValue: string;
+  readonly onHandleChange: (event: { target: { value: string } }) => void;
   readonly onPhoneChange: (event: { target: { value: string } }) => void;
   readonly codeValue: string;
   readonly onCodeChange: (event: { target: { value: string } }) => void;
@@ -163,6 +351,11 @@ export interface OnboardingVals extends ScreenActions {
   readonly seg2: readonly string[];
   readonly seg3: readonly string[];
   readonly seg4: readonly string[];
+  /**
+   * Les villes proposées. Chacune porte son gestionnaire : la maquette les
+   * dessinait en `<div>` sans comportement, et le générateur les convertit en
+   * boutons — il leur faut donc quelque chose à appeler.
+   */
   readonly cities: readonly {
     readonly name: string;
     readonly meta: string;
@@ -170,6 +363,7 @@ export interface OnboardingVals extends ScreenActions {
     readonly fg: string;
     readonly metaFg: string;
     readonly metaBg: string;
+    readonly onPick: () => void;
   }[];
   readonly goals: readonly {
     readonly title: string;
@@ -227,6 +421,13 @@ export function onboardingVals(
     }),
 
     phoneValue: state.phone,
+    countryIso2: state.countryIso2,
+    dialCode:
+      actions.countryOptions.find((c) => c.iso2 === state.countryIso2)?.dialCode ?? '+229',
+    flagDisplay: state.countryIso2 === DRAWN_COUNTRY ? 'block' : 'none',
+    onCountryChange: (event: { target: { value: string } }) => {
+      patch({ countryIso2: event.target.value });
+    },
     onPhoneChange: (event: { target: { value: string } }) => {
       // Seuls les chiffres et les espaces : le reste est refusé à la FRAPPE,
       // plutôt que signalé après envoi. `normalizePhone` fera le ménage côté
@@ -237,6 +438,29 @@ export function onboardingVals(
     codeValue: state.code,
     onCodeChange: (event: { target: { value: string } }) => {
       patch({ code: event.target.value.replace(/\D/g, '').slice(0, 6) });
+    },
+
+    originIso2: state.originIso2,
+    originName:
+      actions.countryOptions.find((c) => c.iso2 === state.originIso2)?.nameFr ?? 'Bénin',
+    originFlagDisplay: state.originIso2 === DRAWN_COUNTRY ? 'block' : 'none',
+    originOptions: actions.countryOptions.filter((c) => c.iso2 !== 'FR'),
+    onOriginChange: (event: { target: { value: string } }) => {
+      patch({ originIso2: event.target.value });
+    },
+    displayNameValue: state.displayName,
+    onDisplayNameChange: (event: { target: { value: string } }) => {
+      patch({ displayName: event.target.value.slice(0, 60) });
+    },
+    handleValue: state.handle,
+    onHandleChange: (event: { target: { value: string } }) => {
+      patch({ handle: toHandle(event.target.value) });
+    },
+    citySearch: state.citySearch,
+    onCitySearch: (event: { target: { value: string } }) => {
+      // La ville retenue est oubliée dès qu'on retape : garder l'ancienne
+      // enregistrerait une ville que le membre ne voit plus dans la liste.
+      patch({ citySearch: event.target.value, cityId: null });
     },
 
     reassure: [
@@ -307,40 +531,29 @@ export function onboardingVals(
     seg3: seg(3),
     seg4: seg(4),
 
-    cities: [
-      {
-        name: 'Lyon',
-        meta: '1 400 membres',
-        bg: '#E3F0EB',
-        fg: '#16211D',
-        metaFg: '#0F5C48',
-        metaBg: '#fff',
-      },
-      {
-        name: 'Lyon 7e — Guillotière',
-        meta: 'Quartier',
-        bg: 'transparent',
-        fg: '#16211D',
-        metaFg: '#5D6B66',
-        metaBg: '#F2F5F4',
-      },
-      {
-        name: 'Lys-lez-Lannoy',
-        meta: 'bientôt',
-        bg: 'transparent',
-        fg: '#8A958F',
-        metaFg: '#8A958F',
-        metaBg: '#F2F5F4',
-      },
-      {
-        name: 'Lyons-la-Forêt',
-        meta: 'bientôt',
-        bg: 'transparent',
-        fg: '#8A958F',
-        metaFg: '#8A958F',
-        metaBg: '#F2F5F4',
-      },
-    ],
+    /**
+     * Les villes qui correspondent à la saisie.
+     *
+     * La maquette en montre quatre en dur, avec « Lyon » retenue et deux villes
+     * « bientôt » en gris — c'est une illustration. Ici la liste vient du
+     * catalogue, filtrée SANS ACCENT ni casse.
+     *
+     * Les couleurs suivent celles de la maquette : la ville retenue est sur fond
+     * vert pâle, une ville sans réseau ouvert est grisée et porte « bientôt » —
+     * elle reste sélectionnable, comme 02 §2.2 l'exige.
+     */
+    cities: matchCities(actions.cityCatalogue, state.citySearch).map((city) => {
+      const chosen = state.cityId === city.id;
+      return {
+        name: city.name,
+        meta: city.isActive ? `${city.memberCount} membres` : 'bientôt',
+        bg: chosen ? '#E3F0EB' : 'transparent',
+        fg: city.isActive || chosen ? '#16211D' : '#8A958F',
+        metaFg: chosen ? '#0F5C48' : city.isActive ? '#5D6B66' : '#8A958F',
+        metaBg: chosen ? '#fff' : '#F2F5F4',
+        onPick: () => patch({ cityId: city.id, citySearch: city.name }),
+      };
+    }),
 
     goals: GOAL_CARDS.map((g) => ({
       ...g,
@@ -349,13 +562,10 @@ export function onboardingVals(
       iconBg: g.on ? '#fff' : '#E3F0EB',
     })),
 
-    statuses: [
-      chip('Étudiant·e', true),
-      chip('Salarié·e'),
-      chip('En recherche'),
-      chip('Indépendant·e'),
-      chip('Famille'),
-    ],
+    // Un seul statut à la fois : c'est une colonne unique dans `user_profiles`.
+    statuses: OCCUPATIONS.map((o, i) =>
+      chip(o.label, state.occupation === i, () => patch({ occupation: i })),
+    ),
 
     create: state.create,
     toggleCreate: () => patch({ create: !state.create }),
@@ -371,13 +581,16 @@ export function onboardingVals(
     // La pastille de l'interrupteur : 3 px à gauche, 23 px à droite. C'est le
     // SEUL mouvement de cet écran, et il tient en une transition de `left`.
     helpKnob: state.help ? '23px' : '3px',
-    helpTypes: [
-      chip('Démarches', true),
-      chip('Relecture CV', true),
-      chip('Trajet'),
-      chip('Traduction'),
-      chip('Matériel'),
-    ],
+    // Plusieurs types d'aide, au plus cinq (`updateProfileSchema`).
+    helpTypes: HELP_TYPES.map((h, i) =>
+      chip(h.label, state.helpChoices.includes(i), () =>
+        patch({
+          helpChoices: state.helpChoices.includes(i)
+            ? state.helpChoices.filter((x) => x !== i)
+            : [...state.helpChoices, i],
+        }),
+      ),
+    ),
 
     events: [
       { d: '24', m: 'FÉV', t: 'Apéro Diaspora et Étudiants', s: 'Berges du Rhône · 19h00' },

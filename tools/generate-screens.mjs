@@ -186,6 +186,7 @@ const A11Y_ANNOTATIONS = [
  */
 const FIELD_ADAPTATIONS = [
   {
+    screens: ['P01'],
     sample: '97 12 34 42',
     why: 'Le champ de téléphone devient saisissable.',
     attrs: [
@@ -200,7 +201,258 @@ const FIELD_ADAPTATIONS = [
       'onChange={onPhoneChange}',
     ],
   },
+  {
+    screens: ['O04'],
+    // Le bloc dessiné contient AUSSI une pastille de disponibilité et une coche :
+    // il reste donc le contenant, et seul l'exemple devient un champ.
+    inline: true,
+    // L'arobase reste en TEXTE : un membre ne la tape pas, et la mettre dans le
+    // champ la ferait partir vers l'API — où `handleSchema` la refuse.
+    prefix: '@',
+    sample: '@amina.d',
+    placeholder: 'amina.d',
+    why: 'Le pseudo devient saisissable.',
+    attrs: [
+      'type="text"',
+      'name="handle"',
+      // Le pseudo n'est ni un nom d'usage ni un identifiant que le navigateur
+      // connaît : `off` évite qu'il propose un email ou un nom complet.
+      'autoComplete="off"',
+      'aria-label="Votre pseudo"',
+      'value={handleValue}',
+      'onChange={onHandleChange}',
+    ],
+  },
+  {
+    screens: ['O04'],
+    sample: 'Amina Diallo',
+    why: 'Le nom d’affichage devient saisissable.',
+    attrs: [
+      'type="text"',
+      'name="displayName"',
+      'autoComplete="name"',
+      'aria-label="Votre nom d’affichage"',
+      'value={displayNameValue}',
+      'onChange={onDisplayNameChange}',
+    ],
+  },
 ];
+
+/**
+ * LES MENUS DESSINÉS DEVIENNENT DE VRAIS MENUS.
+ *
+ * La maquette dessine ses sélecteurs — fond, chevron, valeur — mais n'en montre
+ * qu'une seule : « +229 » et « Bénin » sont des textes littéraux, et le drapeau
+ * un dégradé béninois.
+ *
+ * Un menu NATIF transparent est posé par-dessus, à la taille du bloc dessiné.
+ * C'est la solution la moins inventive : elle ne dessine aucune liste, ne choisit
+ * aucune présentation, et donne pourtant un contrôle réel, au clavier comme au
+ * pouce. Le chevron dessiné tient enfin sa promesse.
+ *
+ * Le DRAPEAU disparaît dès que le pays choisi n'est plus celui que la maquette a
+ * dessiné. Afficher un drapeau béninois à côté d'un « +33 » serait un défaut que
+ * n'importe qui remarque ; en inventer d'autres serait dessiner à la place du
+ * porteur. Ne rien montrer est le seul choix honnête tant que les drapeaux ne
+ * sont pas fournis.
+ */
+const BENIN_FLAG = 'background: "linear-gradient(90deg,#16785E 33%,#F2C94C 33% 66%,#E0733A 66%)"';
+
+const DRAWN_SELECTS = [
+  {
+    screens: ['P01'],
+    literal: '+229',
+    label: 'Indicatif du pays',
+    value: 'dialCode',
+    selected: 'countryIso2',
+    onChange: 'onCountryChange',
+    options: 'countryOptions',
+    flag: 'flagDisplay',
+    optionLabel: '{c.nameFr} {c.dialCode}',
+    why: 'Le sélecteur d’indicatif devient un menu natif, le drapeau suit le choix.',
+  },
+  {
+    screens: ['O02'],
+    literal: 'Bénin',
+    label: 'Pays d’origine',
+    value: 'originName',
+    selected: 'originIso2',
+    onChange: 'onOriginChange',
+    options: 'originOptions',
+    flag: 'originFlagDisplay',
+    optionLabel: '{c.nameFr}',
+    why: 'Le sélecteur de pays d’origine devient un menu natif.',
+  },
+];
+
+function applyDrawnSelect(jsx, spec) {
+  const provides = [spec.value, spec.selected, spec.onChange, spec.options, spec.flag];
+
+  // Le bloc dessiné : un div dont le contenu porte la valeur littérale et aucun
+  // div imbriqué. Les cadres n'ont pas le même contenu — le mobile de P01 n'a ni
+  // drapeau ni chevron — d'où la capture du contenu tel quel.
+  const pattern = new RegExp(
+    `<div (style=\\{\\{ [^}]* \\}\\})>((?:(?!<div)[\\s\\S])*?${spec.literal.replace('+', '\\+')}(?:(?!<div)[\\s\\S])*?)<\\/div>`,
+  );
+  const m = pattern.exec(jsx);
+  if (m === null) return { jsx, applied: false, provides };
+
+  const style = m[1].replace('style={{ ', 'style={{ position: "relative", ');
+  const content = m[2]
+    .replace(spec.literal, `{${spec.value}}`)
+    // Le drapeau ne s'affiche que pour le pays dessiné.
+    .replace(BENIN_FLAG, `${BENIN_FLAG}, display: ${spec.flag}`);
+
+  const select =
+    `<select value={${spec.selected}} onChange={${spec.onChange}} aria-label="${spec.label}" ` +
+    'style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", ' +
+    'opacity: 0, cursor: "pointer", font: "inherit", border: "none", appearance: "none" }}>' +
+    `{(${spec.options} ?? []).map((c) => (<option key={c.iso2} value={c.iso2}>${spec.optionLabel}</option>))}` +
+    '</select>';
+
+  return {
+    jsx: `${jsx.slice(0, m.index)}<div ${style}>${content}${select}</div>${jsx.slice(m.index + m[0].length)}`,
+    applied: true,
+    provides,
+  };
+}
+
+/**
+ * LA RECHERCHE DE VILLE.
+ *
+ * La maquette dessine un champ contenant une loupe et « Ly » — une saisie en
+ * cours. Le `<div>` reste le contenant, pour garder l'icône, et le texte devient
+ * un `<input>` transparent qui occupe la place restante.
+ */
+const CITY_SEARCH = {
+  // BORNÉ à O02. La loupe de la maquette a le même tracé que celle du fil : sans
+  // cette borne, la barre de recherche de A01 devenait un champ « Votre ville ».
+  // C'est le genre de dérive qu'un motif trop large produit en silence.
+  screens: ['O02'],
+  why: 'La recherche de ville devient saisissable.',
+  provides: ['citySearch', 'onCitySearch'],
+  apply(jsx) {
+    /**
+     * DEUX formes, parce que les deux cadres diffèrent : celui d'ordinateur met
+     * une loupe devant le texte, celui de mobile n'en met pas. Un seul motif
+     * laissait le champ mobile en `<div>` — saisie impossible, et rien pour le
+     * signaler. C'est pourquoi une adaptation attendue qui ne s'applique pas est
+     * désormais un avertissement.
+     */
+    const patterns = [
+      // Avec loupe : le texte suit l'icône.
+      /(<div style=\{\{ [^}]*\}\}>(?:(?!<div)[\s\S])*?m20 20-3\.5-3\.5(?:(?!<div)[\s\S])*?<\/svg>)([^<]*)<\/div>/,
+      // Sans loupe : le div ne contient que l'exemple de saisie.
+      /(<div style=\{\{ [^}]*\}\}>)(Ly)<\/div>/,
+    ];
+
+    let m = null;
+    for (const pattern of patterns) {
+      m = pattern.exec(jsx);
+      if (m !== null) break;
+    }
+    if (m === null) return { jsx, applied: false };
+
+    const field =
+      '<input value={citySearch} onChange={onCitySearch} placeholder="Votre ville" ' +
+      'aria-label="Votre ville" autoComplete="address-level2" ' +
+      'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+      'font: "inherit", color: "inherit", outline: "none", padding: 0 }} />';
+
+    return {
+      jsx: `${jsx.slice(0, m.index)}${m[1]}${field}</div>${jsx.slice(m.index + m[0].length)}`,
+      applied: true,
+    };
+  },
+};
+
+/**
+ * LES LIGNES DE RÉSULTAT DEVIENNENT DES BOUTONS.
+ *
+ * La maquette les dessine en `<div>` — alors qu'elle emploie bien `<button>` pour
+ * les cartes de phase de O01. L'incohérence est la sienne ; ici on tranche pour
+ * le bouton, parce qu'une ligne qu'on clique doit être atteignable au clavier et
+ * annoncée comme actionnable.
+ *
+ * `textAlign: "left"` et `font: "inherit"` annulent ce qu'un `<button>` impose de
+ * lui-même : sans eux, le texte se centrerait et changerait de police.
+ */
+const CITY_ROWS = {
+  screens: ['O02'],
+  why: 'Les villes proposées deviennent des boutons, atteignables au clavier.',
+  provides: [],
+  apply(jsx) {
+    const pattern = /<div (style=\{\{ [^}]*background: c\.bg[^}]* \}\})>([\s\S]*?)<\/div>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    const style = m[1].replace(
+      ' }}',
+      ', border: "none", font: "inherit", textAlign: "left", cursor: "pointer", width: "100%" }}',
+    );
+    return {
+      jsx: `${jsx.slice(0, m.index)}<button type="button" onClick={c.onPick} ${style}>${m[2]}</button>${jsx.slice(m.index + m[0].length)}`,
+      applied: true,
+    };
+  },
+};
+
+/**
+ * LES PASTILLES DE CHOIX DEVIENNENT DES BOUTONS.
+ *
+ * La maquette les dessine en `<span>` — statut d'occupation, types d'aide — et
+ * leur donne bien un fond « actif », donc elles SONT des choix. Un `<span>` n'est
+ * ni atteignable au clavier ni annoncé comme actionnable : un membre au lecteur
+ * d'écran ne peut pas remplir son profil.
+ *
+ * `aria-pressed` plutôt que `role="checkbox"` : ce sont des bascules de filtre,
+ * et c'est l'attribut que les lecteurs d'écran annoncent le plus clairement pour
+ * une pastille qui reste ou non enfoncée.
+ */
+const CHIP_ROWS = [
+  { screens: ['O04'], list: 'statuses', item: 's', why: 'Les statuts deviennent sélectionnables.' },
+  { screens: ['O04'], list: 'helpTypes', item: 'h', why: 'Les types d’aide deviennent sélectionnables.' },
+];
+
+function applyChipRow(jsx, spec) {
+  /**
+   * `[^<]*?` — ni `[^}]*`, ni `[\s\S]*?`.
+   *
+   * Pas `[^}]*` : le style de la pastille contient un gabarit,
+   * `` border: `1px solid ${s.bd}` ``, donc des accolades ; une classe qui les
+   * exclut s'arrête dessus et le motif ne colle jamais.
+   *
+   * Pas `[\s\S]*?` non plus, et c'est le piège : même paresseux, il TRAVERSE les
+   * balises. Le motif partait d'un `<span` bien plus haut, sautait jusqu'au
+   * `background: s.bg` de la vraie pastille, et engloutissait au passage la
+   * flèche de retour et les six segments de progression — qui devenaient des
+   * boutons mal fermés. Le JSX produit ne compilait plus, ce qui était une
+   * chance : un motif trop large qui compile est bien plus difficile à voir.
+   *
+   * Un attribut `style` ne contient jamais de `<` : l'exclure borne le motif à
+   * une seule balise, tout en laissant passer les accolades du gabarit.
+   */
+  const pattern = new RegExp(
+    `<span (style=\\{\\{ [^<]*?background: ${spec.item}\\.bg[^<]*?\\}\\})>\\{${spec.item}\\.label\\}</span>`,
+  );
+  const m = pattern.exec(jsx);
+  if (m === null) return { jsx, applied: false };
+
+  // `font: "inherit"` et `cursor` annulent ce qu'un `<button>` impose de
+  // lui-même : sans eux la pastille changerait de police et perdrait sa main.
+  const style = m[1].replace(
+    ' }}',
+    ', font: "inherit", cursor: "pointer", lineHeight: "normal" }}',
+  );
+  const button =
+    `<button type="button" onClick={${spec.item}.onPick} aria-pressed={${spec.item}.on} ${style}>` +
+    `{${spec.item}.label}</button>`;
+
+  return {
+    jsx: `${jsx.slice(0, m.index)}${button}${jsx.slice(m.index + m[0].length)}`,
+    applied: true,
+  };
+}
 
 /**
  * LES BOUTONS DESSINÉS REÇOIVENT LEUR ACTION.
@@ -248,24 +500,85 @@ function adaptButtons(jsx) {
  * Remplace les champs dessinés. Travaille sur le JSX complet, et non balise par
  * balise, parce qu'il faut voir le CONTENU du `<div>` pour le reconnaître.
  */
-function adaptFields(jsx) {
+function adaptFields(jsx, section) {
   const applied = [];
+  const missed = [];
 
   let out = jsx;
+
+  for (const spec of DRAWN_SELECTS) {
+    if (!spec.screens.includes(section)) continue;
+    const result = applyDrawnSelect(out, spec);
+    if (!result.applied) continue;
+    out = result.jsx;
+    applied.push({ why: spec.why, provides: result.provides });
+  }
+
+  for (const spec of CHIP_ROWS) {
+    if (!spec.screens.includes(section)) continue;
+    const result = applyChipRow(out, spec);
+    if (!result.applied) {
+      missed.push(spec.why);
+      continue;
+    }
+    out = result.jsx;
+    applied.push(spec);
+  }
+
+  for (const transform of [CITY_SEARCH, CITY_ROWS]) {
+    if (!transform.screens.includes(section)) continue;
+    const result = transform.apply(out);
+    if (!result.applied) {
+      // Attendue sur cet écran mais introuvable : c'est un motif qui a cessé de
+      // coller, pas un cadre qui n'en a pas besoin. Le dire évite un écran muet
+      // qui compile parfaitement.
+      missed.push(transform.why);
+      continue;
+    }
+    out = result.jsx;
+    applied.push(transform);
+  }
+
   for (const field of FIELD_ADAPTATIONS) {
-    const pattern = new RegExp(
-      `<div (style=\\{\\{ [^}]* \\}\\})[^>]*>${field.sample.replace(/ /g, '\\s')}</div>`,
-    );
+    if (!field.screens.includes(section)) continue;
+
+    const placeholder = field.placeholder ?? field.sample;
+    const escaped = field.sample.replace(/ /g, '\\s').replace('@', '@').replace('+', '\\+');
+
+    if (field.inline === true) {
+      // Le bloc dessiné porte d'autres éléments : on ne remplace que l'exemple,
+      // et le champ occupe la place restante.
+      const pattern = new RegExp(escaped);
+      const m = pattern.exec(out);
+      if (m === null) {
+        missed.push(field.why);
+        continue;
+      }
+      const inline =
+        `${field.prefix ?? ''}<input placeholder="${placeholder}" ${field.attrs.join(' ')} ` +
+        'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+        'font: "inherit", color: "inherit", outline: "none", padding: 0 }} />';
+      out = out.slice(0, m.index) + inline + out.slice(m.index + m[0].length);
+      applied.push(field);
+      continue;
+    }
+
+    const pattern = new RegExp(`<div (style=\\{\\{ [^}]* \\}\\})[^>]*>${escaped}</div>`);
     const m = pattern.exec(out);
-    if (m === null) continue;
+    if (m === null) {
+      // Attendue sur cet écran mais introuvable : un exemple qui a changé dans la
+      // maquette, et un champ qui resterait muet sans que rien ne le dise.
+      missed.push(field.why);
+      continue;
+    }
     out =
       out.slice(0, m.index) +
-      `<input ${m[1]} placeholder="${field.sample}" ${field.attrs.join(' ')} />` +
+      `<input ${m[1]} placeholder="${placeholder}" ${field.attrs.join(' ')} />` +
       out.slice(m.index + m[0].length);
     applied.push(field);
   }
 
-  return { jsx: out, applied };
+  return { jsx: out, applied, missed };
 }
 
 /**
@@ -334,7 +647,7 @@ function promoteFirstHeading(jsx) {
 
 const ALL_ADAPTATIONS = [...FRAME_ADAPTATIONS, ...TOUCH_TARGET_ADAPTATIONS];
 
-function adaptFrame(jsx) {
+function adaptFrame(jsx, section) {
   const counts = ALL_ADAPTATIONS.map(() => 0);
   const roles = new Set();
 
@@ -373,7 +686,7 @@ function adaptFrame(jsx) {
   });
 
   const heading = promoteFirstHeading(adapted);
-  const fields = adaptFields(heading.jsx);
+  const fields = adaptFields(heading.jsx, section);
   const buttons = adaptButtons(fields.jsx);
   return {
     adapted: buttons.jsx,
@@ -381,6 +694,7 @@ function adaptFrame(jsx) {
     promotedHeading: heading.promoted,
     roles,
     fields: fields.applied,
+    missedFields: fields.missed ?? [],
     buttons: buttons.applied,
   };
 }
@@ -455,7 +769,7 @@ const JS_GLOBALS = new Set([
   'Math', 'String', 'Number', 'Array', 'Object', 'JSON', 'Date',
 ]);
 
-function collectProps(sectionHtml, frameHtml, appliedFields = []) {
+function collectProps(sectionHtml, frameHtml, appliedFields = [], producedJsx = '') {
   const loopVars = new Set();
   for (const m of sectionHtml.matchAll(/<sc-for[^>]*\bas="([^"]+)"/g)) {
     loopVars.add(m[1]);
@@ -475,7 +789,14 @@ function collectProps(sectionHtml, frameHtml, appliedFields = []) {
   // Les identifiants introduits par une adaptation de champ : ils ne figurent
   // pas dans le dialecte de la maquette, puisque c'est nous qui les posons.
   for (const field of appliedFields) {
-    for (const attr of field.attrs) {
+    // Une adaptation ANNONCE ce qu'elle peut fournir, mais les deux cadres n'ont
+    // pas le même contenu — le mobile de P01 n'a pas de drapeau. On ne retient
+    // donc que ce qui figure réellement dans le JSX produit, sinon le composant
+    // déclare une variable qu'il n'emploie pas, et le lint la refuse.
+    for (const provided of field.provides ?? []) {
+      if (new RegExp(`\\b${provided}\\b`).test(producedJsx)) names.add(provided);
+    }
+    for (const attr of field.attrs ?? []) {
       const bound = /\{([A-Za-z_$][\w$]*)\}/.exec(attr);
       if (bound !== null) names.add(bound[1]);
     }
@@ -506,7 +827,7 @@ for (const screen of SCREENS) {
 
   for (const frame of screen.frames) {
     const { inner } = extractFrame(section, frame.width, frame.occurrence ?? 0);
-    const { adapted: jsx, counts, promotedHeading, roles, fields, buttons } = adaptFrame(transcode(inner));
+    const { adapted: jsx, counts, promotedHeading, roles, fields, buttons, missedFields } = adaptFrame(transcode(inner), screen.section);
 
     // Le libellé accessible est recopié du texte visible : s'il a changé dans la
     // maquette, on refuse de générer plutôt que de laisser dériver un nom que
@@ -520,7 +841,7 @@ for (const screen of SCREENS) {
         );
       }
     }
-    const used = collectProps(section, inner, [...fields, ...buttons]);
+    const used = collectProps(section, inner, [...fields, ...buttons], jsx);
 
     // Le repère principal vit avec le CONTENU, pas dans le conteneur de mise en
     // page. La maquette du fil écrit déjà son `<main>` autour de la colonne
@@ -557,6 +878,7 @@ ${wrapped}
     }
     for (const field of fields) console.log(`      ${field.why}`);
     for (const b of buttons) console.log(`      Bouton « ${b.label} » branché.`);
+    for (const why of missedFields) console.log(`      ⚠ adaptation attendue introuvable : ${why}`);
     if (!hasLandmark) console.log('      Repère `main` ajouté : la maquette n’en a pas.');
     if (!promotedHeading) {
       console.log('      ⚠ aucun <h2> à promouvoir en <h1> : la page n’aura pas de titre');

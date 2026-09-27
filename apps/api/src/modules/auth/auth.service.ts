@@ -29,6 +29,24 @@ import { CAPTCHA_PROVIDER, SMS_PROVIDER, type CaptchaProvider, type SmsProvider 
  * `LOGIN`, et pourquoi les messages d'erreur ne distinguent jamais « numéro
  * inconnu » de « code faux ».
  */
+/**
+ * Pseudo provisoire, remplacé à l'écran O04 de l'onboarding.
+ *
+ * Il prend l'identifiant ENTIER, moins ce qui dépasse les 30 caractères permis
+ * (§2.6). Une version antérieure n'en gardait que 14 en affirmant qu'il était
+ * « unique par construction » — c'était faux : un UUID v7 commence par 48 bits
+ * d'horodatage, soit douze caractères hexadécimaux. Deux comptes créés dans la
+ * même milliseconde partageaient donc le même pseudo, et la création échouait sur
+ * la contrainte d'unicité. Trouvé quand deux tests ont inscrit deux membres en
+ * parallèle — jamais en relisant.
+ *
+ * Le `m` initial n'est pas décoratif : §2.6 interdit de commencer par un chiffre,
+ * et un identifiant hexadécimal commence par un chiffre une fois sur deux.
+ */
+export function provisionalHandle(userId: string): string {
+  return `m${userId.replace(/-/g, '').slice(0, 29)}`;
+}
+
 /** L'environnement, isolé pour que le service reste testable sans config. */
 function loadEnvOrDefault(): string {
   try {
@@ -259,9 +277,7 @@ export class AuthService {
       await tx.user.create({
         data: {
           id: userId,
-          // Handle provisoire : l'onboarding le remplace à l'écran O04. Il est
-          // unique par construction et jamais montré avant d'être choisi.
-          handle: `m${userId.replace(/-/g, '').slice(0, 14)}`,
+          handle: provisionalHandle(userId),
           displayName: '',
           phase: 'PRE_DEPARTURE',
           verificationLevel: 'L0',

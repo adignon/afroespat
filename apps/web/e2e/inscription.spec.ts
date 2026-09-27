@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { type Page, expect, test } from '@playwright/test';
 
 /**
  * L'inscription, de bout en bout, dans un vrai navigateur — 01-identite.md §5.
@@ -57,6 +57,21 @@ function codesSentTo(phone: string): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Inscrit un membre et le laisse connecté, pour éprouver un écran plus loin dans
+ * le parcours sans refaire le chemin à chaque test.
+ */
+async function signUp(page: Page): Promise<void> {
+  const phone = `97${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 100)}`;
+  await page.goto('/connexion');
+  await page.locator('input[name="phone"]:visible').fill(phone);
+  await page.getByRole('button', { name: 'Recevoir le code' }).click();
+  await page.waitForURL('**/connexion/code');
+  await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
+  await page.locator('input[autocomplete="one-time-code"]').fill(codesSentTo(phone)[0] as string);
+  await page.waitForURL('**/bienvenue/phase', { timeout: 20_000 });
 }
 
 test.describe('inscription complète', () => {
@@ -164,5 +179,145 @@ test.describe('inscription complète', () => {
     // valeur telle quelle ferait de cet écran un panneau d'affichage.
     await page.goto('/connexion?reprise=<script>alert(1)</script>');
     await expect(page.locator(BANNER)).toHaveCount(0);
+  });
+});
+
+test.describe('O02 — pays d’origine et ville', () => {
+  test.skip(async () => !(await apiUp()) || API_LOG === '', 'API ou journal absents');
+
+  test('la recherche de ville ignore accents et casse', async ({ page }) => {
+    await signUp(page);
+    await page.goto('/bienvenue/lieu');
+
+    const field = page.locator('input[aria-label="Votre ville"]:visible');
+    await field.fill('LYO');
+    // Comparer sans normaliser fait échouer « segou » sur « Ségou » — un échec
+    // que le membre lit comme « ma ville n'existe pas ».
+    await expect(page.locator('main:visible button', { hasText: 'Lyon' })).toHaveCount(1);
+  });
+
+  test('retenir une ville remplit le champ et l’enregistre', async ({ page }) => {
+    await signUp(page);
+    await page.goto('/bienvenue/lieu');
+
+    const field = page.locator('input[aria-label="Votre ville"]:visible');
+    await field.fill('lyo');
+    await page.locator('main:visible button', { hasText: 'Lyon' }).first().click();
+    await expect(field).toHaveValue('Lyon');
+
+    await page.getByRole('button', { name: 'Continuer' }).click();
+    await page.waitForURL('**/bienvenue/objectif', { timeout: 20_000 });
+    await expect(page.locator(BANNER)).toHaveCount(0);
+  });
+
+  test('ne propose PAS la France comme pays d’origine', async ({ page }) => {
+    await signUp(page);
+    await page.goto('/bienvenue/lieu');
+
+    const options = await page
+      .locator('main:visible select[aria-label="Pays d’origine"] option')
+      .allTextContents();
+    // La France est `DESTINATION` (02 §2.1) : l'API refuse de l'accepter comme
+    // pays d'origine, donc la proposer serait offrir un choix qui échoue.
+    expect(options.some((o) => o.includes('France'))).toBe(false);
+    expect(options.length).toBeGreaterThan(0);
+  });
+});
+
+test.describe('P01 — sélecteur d’indicatif', () => {
+  test('l’indicatif suit le choix, et le drapeau disparaît', async ({ page }) => {
+    await page.goto('/connexion');
+    const select = page.locator('main:visible select[aria-label="Indicatif du pays"]');
+    await expect(select).toHaveCount(1);
+
+    const dialCode = () =>
+      page.evaluate(() => {
+        const box = document.querySelector('main:not([hidden]) select')?.parentElement;
+        return (box?.textContent ?? '').match(/\+\d+/)?.[0] ?? '';
+      });
+
+    await expect.poll(dialCode).toBe('+229');
+    await select.selectOption('FR');
+    await expect.poll(dialCode).toBe('+33');
+
+    /**
+     * Le drapeau se cache dès que le pays choisi n'est plus celui que la maquette
+     * a dessiné. Un drapeau béninois à côté d'un « +33 » serait un défaut que
+     * n'importe qui remarque ; en inventer d'autres serait dessiner à la place du
+     * porteur.
+     */
+    const flagDisplay = await page.evaluate(() => {
+      const flag = document.querySelector<HTMLElement>(
+        'main:not([hidden]) select',
+      )?.parentElement?.querySelector('span');
+      return flag === null || flag === undefined ? 'absent' : getComputedStyle(flag).display;
+    });
+    expect(['none', 'absent']).toContain(flagDisplay);
+  });
+});
+
+test.describe('O04 — profil', () => {
+  test.skip(async () => !(await apiUp()) || API_LOG === '', 'API ou journal absents');
+
+  test('translittère les accents du pseudo au lieu de les supprimer', async ({ page }) => {
+    await signUp(page);
+    await page.goto('/bienvenue/profil');
+
+    const handle = page.locator('input[name="handle"]:visible');
+    await handle.fill('Aïcha SÈGBÉDJI!!');
+    // Les retirer faisait de « Aïcha Sègbédji » un `achasgbdji` méconnaissable :
+    // le membre voit son nom se désagréger sous ses doigts.
+    await expect(handle).toHaveValue('aicha-segbedji');
+  });
+
+  test('un seul statut à la fois, plusieurs types d’aide', async ({ page }) => {
+    await signUp(page);
+    await page.goto('/bienvenue/profil');
+
+    const pressed = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll('main:not([hidden]) button[aria-pressed="true"]')].map(
+          (b) => b.textContent?.trim() ?? '',
+        ),
+      );
+
+    await page.locator('main:visible button', { hasText: 'Indépendant·e' }).click();
+    // `user_profiles.occupation_status` est une colonne unique : deux statuts
+    // sélectionnés seraient un état que la base ne peut pas représenter.
+    expect(await pressed()).not.toContain('Étudiant·e');
+    expect(await pressed()).toContain('Indépendant·e');
+
+    /**
+     * Les types d'aide n'existent que dans le cadre ORDINATEUR.
+     *
+     * Ce n'est pas un oubli de transcodage : la maquette ne dessine pas la ligne
+     * « je suis disponible pour aider » dans son cadre de 390 px, donc ni
+     * l'interrupteur ni les pastilles qui en dépendent. Le test le CONSTATE, pour
+     * que le jour où la maquette l'ajoutera, l'écart se voie ici.
+     */
+    const hasHelpTypes = await page.locator('main:visible button', { hasText: 'Démarches' }).count();
+    if (hasHelpTypes === 0) {
+      expect(await page.locator('[data-frame="desktop"] button', { hasText: 'Démarches' }).count())
+        .toBe(1);
+      return;
+    }
+
+    await page.locator('main:visible button', { hasText: 'Trajet' }).click();
+    const after = await pressed();
+    expect(after).toContain('Démarches');
+    expect(after).toContain('Trajet');
+  });
+
+  test('les pastilles sont atteignables au clavier', async ({ page }) => {
+    await signUp(page);
+    await page.goto('/bienvenue/profil');
+
+    // La maquette les dessinait en `<span>` : ni focalisables, ni annoncées comme
+    // actionnables. Un membre au lecteur d'écran ne pouvait pas remplir son profil.
+    const chip = page.locator('main:visible button', { hasText: 'Salarié·e' });
+    await chip.focus();
+    await expect(chip).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
   });
 });

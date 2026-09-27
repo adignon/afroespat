@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O04Desktop(props: OnboardingVals) {
-  const { busy, help, helpKnob, helpTrack, helpTypes, onContinue, seg4, statuses, toggleHelp } = props;
+  const { busy, displayNameValue, handleValue, help, helpKnob, helpTrack, helpTypes, onContinue, onDisplayNameChange, onHandleChange, seg4, statuses, toggleHelp } = props;
 
   return (
     <>
@@ -29,12 +29,12 @@ export function O04Desktop(props: OnboardingVals) {
             <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
               <div style={{ width: "84px", height: "84px", borderRadius: "999px", background: "#F2F5F4", border: "1.5px dashed #CBD5D1", display: "flex", alignItems: "center", justifyContent: "center", color: "#8A958F", flexShrink: "0" }}><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z" /><circle cx="12" cy="13" r="3.5" /></svg></div>
               <div style={{ flex: "1", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "6px" }}>Pseudo</div><div style={{ height: "48px", padding: "0 14px", borderRadius: "14px", border: "1.5px solid #16785E", display: "flex", alignItems: "center", fontSize: "14.5px", fontWeight: "600" }}>@amina.d<span style={{ flex: "1" }}></span><svg width="16" height="16" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10" /><path d="m8 12 3 3 5-6" stroke="#fff" strokeWidth="2.2" fill="none" /></svg></div><div style={{ fontSize: "11.5px", color: "#16785E", fontWeight: "600", marginTop: "5px" }}>Disponible</div></div>
-                <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "6px" }}>Nom d'affichage</div><div style={{ height: "48px", padding: "0 14px", borderRadius: "14px", background: "#F2F5F4", border: "1px solid #EAEEEC", display: "flex", alignItems: "center", fontSize: "14.5px", fontWeight: "600" }}>Amina Diallo</div></div>
+                <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "6px" }}>Pseudo</div><div style={{ height: "48px", padding: "0 14px", borderRadius: "14px", border: "1.5px solid #16785E", display: "flex", alignItems: "center", fontSize: "14.5px", fontWeight: "600" }}>@<input placeholder="amina.d" type="text" name="handle" autoComplete="off" aria-label="Votre pseudo" value={handleValue} onChange={onHandleChange} style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", font: "inherit", color: "inherit", outline: "none", padding: 0 }} /><span style={{ flex: "1" }}></span><svg width="16" height="16" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10" /><path d="m8 12 3 3 5-6" stroke="#fff" strokeWidth="2.2" fill="none" /></svg></div><div style={{ fontSize: "11.5px", color: "#16785E", fontWeight: "600", marginTop: "5px" }}>Disponible</div></div>
+                <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "6px" }}>Nom d'affichage</div><input style={{ height: "48px", padding: "0 14px", borderRadius: "14px", background: "#F2F5F4", border: "1px solid #EAEEEC", display: "flex", alignItems: "center", fontSize: "14.5px", fontWeight: "600" }} placeholder="Amina Diallo" type="text" name="displayName" autoComplete="name" aria-label="Votre nom d’affichage" value={displayNameValue} onChange={onDisplayNameChange} /></div>
               </div>
             </div>
             <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "8px" }}>Statut</div><div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>{(statuses ?? []).map((s, sIndex) => (
-<Fragment key={sIndex}><span style={{ padding: "9px 16px", borderRadius: "999px", fontSize: "13px", fontWeight: "600", background: s.bg, color: s.fg, border: `1px solid ${s.bd}` }}>{s.label}</span></Fragment>
+<Fragment key={sIndex}><button type="button" onClick={s.onPick} aria-pressed={s.on} style={{ padding: "9px 16px", borderRadius: "999px", fontSize: "13px", fontWeight: "600", background: s.bg, color: s.fg, border: `1px solid ${s.bd}`, font: "inherit", cursor: "pointer", lineHeight: "normal" }}>{s.label}</button></Fragment>
 ))}</div></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
               <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "8px" }}>Compétences</div><div style={{ minHeight: "48px", padding: "6px", borderRadius: "14px", background: "#F2F5F4", border: "1px solid #EAEEEC", display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}><span style={{ background: "#fff", borderRadius: "999px", padding: "6px 12px", fontSize: "12.5px", fontWeight: "600" }}>Comptabilité</span><span style={{ background: "#fff", borderRadius: "999px", padding: "6px 12px", fontSize: "12.5px", fontWeight: "600" }}>Excel</span><span style={{ fontSize: "12.5px", color: "#8A958F", padding: "0 6px" }}>Rechercher…</span></div></div>
@@ -43,7 +43,7 @@ export function O04Desktop(props: OnboardingVals) {
             <div style={{ background: "#F3F7F5", borderRadius: "18px", padding: "16px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}><span style={{ flex: "1", fontSize: "14.5px", fontWeight: "700" }}>Je suis disponible pour aider</span><button onClick={toggleHelp} style={{ width: "48px", height: "28px", borderRadius: "999px", border: "none", background: helpTrack, position: "relative", cursor: "pointer", padding: "8px 0", boxSizing: "content-box", backgroundClip: "content-box" }} role="switch" aria-checked={help} aria-label="Je suis disponible pour aider"><span style={{ position: "absolute", top: "11px", left: helpKnob, width: "22px", height: "22px", borderRadius: "999px", background: "#fff" }}></span></button></div>
               {help ? (<><div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>{(helpTypes ?? []).map((h, hIndex) => (
-<Fragment key={hIndex}><span style={{ padding: "8px 14px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "600", background: h.bg, color: h.fg, border: `1px solid ${h.bd}` }}>{h.label}</span></Fragment>
+<Fragment key={hIndex}><button type="button" onClick={h.onPick} aria-pressed={h.on} style={{ padding: "8px 14px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "600", background: h.bg, color: h.fg, border: `1px solid ${h.bd}`, font: "inherit", cursor: "pointer", lineHeight: "normal" }}>{h.label}</button></Fragment>
 ))}</div></>) : null}
             </div>
           </div>
