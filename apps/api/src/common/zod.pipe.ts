@@ -38,6 +38,23 @@ export class ZodValidationPipe<Output, Input = unknown>
             // Le code zod est stable et exploitable par le front ; le message,
             // lui, reste en français côté interface (§5.2).
             code: issue.code.toUpperCase(),
+            /**
+             * Le message n'accompagne QUE les refus `custom`, et c'est tout
+             * l'enjeu.
+             *
+             * Un `.refine()` rend toujours le code `custom` : il ne dit rien, et
+             * seul le message écrit par l'auteur du schéma explique le refus. Sans
+             * lui, le membre lisait « Certaines informations sont incomplètes ou
+             * mal remplies » sur un refus qui a précisément besoin d'être
+             * expliqué — le mot « certifié » dans une fiche professionnelle, par
+             * exemple — et il ne pouvait que tâtonner. Trouvé au `curl` en
+             * livrant l'annuaire pro, pas en relisant.
+             *
+             * Pour les codes INTÉGRÉS (`too_small`, `invalid_string`…), le message
+             * reste exclu : il est en anglais, généré par zod, et le front a le
+             * code — qui lui suffit à écrire sa propre phrase en français.
+             */
+            ...(issue.code === 'custom' ? { message: issue.message } : {}),
           })),
         );
       }

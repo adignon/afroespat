@@ -7,7 +7,6 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
-    "guardrails": "node tools/check-duplicate-spread-keys.mjs && pnpm --filter @app/config guardrails",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:int": "turbo run test:int",
@@ -15,7 +14,7 @@
     "db:generate": "pnpm --filter @app/db generate",
     "db:migrate": "pnpm --filter @app/db migrate",
     "db:seed": "pnpm --filter @app/db seed",
-    "guardrails": "turbo run guardrails",
+    "guardrails": "node tools/check-duplicate-spread-keys.mjs && turbo run guardrails",
     "up": "docker compose up -d",
     "down": "docker compose down"
   },

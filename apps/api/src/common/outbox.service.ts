@@ -73,6 +73,31 @@ export type DomainEventType =
   | 'city_tip.published'
   | 'city_tip.voted'
   | 'connection.created'
+  // CONSOMMÉ par l'annuaire professionnel : 10 §4.3 conditionne une recommandation
+  // pro à l'existence d'une `connection`, donc la recommandation doit disparaître
+  // avec le contact. Le producteur est le module 08, non encore livré —
+  // l'abonnement l'attend plutôt que d'être oublié le jour où il arrivera.
+  | 'connection.removed'
+  // ── 10-services.md §8 ─────────────────────────────────────────────────────
+  //
+  // Absents faute de PRODUCTEUR : `pro.approved`, `pro.rejected` (validation
+  // humaine, module 15) et `pro.tier_changed` (facturation, module 14). Un type
+  // sans producteur est une file que personne ne remplit, et l'on croirait la
+  // chaîne branchée.
+  | 'housing.published'
+  | 'housing.updated'
+  | 'housing.expired'
+  | 'housing.taken'
+  | 'housing.contacted'
+  | 'job.published'
+  | 'job.sponsored'
+  | 'pro.registered'
+  | 'pro.contacted'
+  | 'pro.recommended'
+  // §3.3 exige de notifier l'auteur de l'offre d'une recommandation de membre, mais
+  // le tableau du §8 ne nomme pas l'événement. On l'ajoute plutôt que de détourner
+  // `job.published`, qui déclencherait une indexation d'offre inexistante.
+  | 'member.recommended'
   // Consommé par presque tous les modules de contenu — fil, guides, entraide,
   // réseaux, agenda, services — pour leurs règles de visibilité.
   | 'user.blocked'
@@ -112,7 +137,24 @@ export type DomainEventType =
   | 'community.announcement_published'
   | 'subscription.changed'
   | 'report.created'
-  | 'content.flagged';
+  | 'content.flagged'
+  // ── 13-moderation.md §6 ───────────────────────────────────────────────────
+  //
+  // `restored` couvre UNHIDE et DISMISS : du point de vue d'un module de contenu,
+  // le contenu redevient visible, et le motif qui l'a rendu ne le concerne pas.
+  //
+  // Chaque module de contenu doit s'abonner à `content_hidden` / `restored` /
+  // `removed` pour appliquer l'effet sur SA table : le service de modération n'y
+  // écrit jamais, hormis `users.status` que §4.2 exige mot pour mot.
+  | 'moderation.content_hidden'
+  | 'moderation.content_restored'
+  | 'moderation.content_removed'
+  | 'moderation.user_suspended'
+  | 'moderation.user_banned'
+  | 'moderation.user_reinstated'
+  | 'moderation.case_opened'
+  | 'moderation.case_resolved'
+  | 'scam_alert.published';
 
 export interface DomainEventInput {
   readonly type: DomainEventType;

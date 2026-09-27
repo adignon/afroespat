@@ -2,6 +2,10 @@ import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { CommunitiesService } from '../modules/communities/communities.service';
 import { GuidesService } from '../modules/guides/guides.service';
 import { HelpService } from '../modules/help/help.service';
+import { HousingService } from '../modules/housing/housing.service';
+import { JobsService } from '../modules/jobs/jobs.service';
+import { ModerationService } from '../modules/moderation/moderation.service';
+import { ProsService } from '../modules/pros/pros.service';
 import { EventHandlerRegistry } from './event-handlers';
 
 /**
@@ -31,6 +35,10 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly communities: CommunitiesService,
     private readonly help: HelpService,
     private readonly guides: GuidesService,
+    private readonly housing: HousingService,
+    private readonly jobs: JobsService,
+    private readonly pros: ProsService,
+    private readonly moderation: ModerationService,
   ) {}
 
   onModuleInit(): void {
@@ -65,6 +73,88 @@ export class EventSubscriptionsService implements OnModuleInit {
       await this.guides.handleUserDeleted(job.aggregateId);
     });
 
+    this.registry.on('user.deleted', 'housing', async (job) => {
+      await this.housing.handleUserDeleted(job.aggregateId);
+    });
+
+    this.registry.on('user.deleted', 'jobs', async (job) => {
+      await this.jobs.handleUserDeleted(job.aggregateId);
+    });
+
+    this.registry.on('user.deleted', 'pros', async (job) => {
+      await this.pros.handleUserDeleted(job.aggregateId);
+    });
+
+    // ── Annuaire professionnel : la recommandation suit le contact ────────────
+    //
+    // 10 §4.3 conditionne une recommandation pro à l'existence d'une `connection`.
+    // Elle doit donc disparaître quand le contact disparaît — sinon l'annuaire
+    // afficherait une recommandation que son auteur ne pourrait plus poster.
+    //
+    // La charge est lue DÉFENSIVEMENT : le producteur (module 08) n'existe pas
+    // encore, et un gestionnaire qui suppose une forme se casse le jour où elle
+    // arrive autrement.
+    this.registry.on('connection.removed', 'pros', async (job) => {
+      const connectionId = readString(job.payload, 'connectionId');
+      // Une charge inattendue ne doit pas mettre le travail en échec indéfiniment :
+      // il n'y a rien à faire, et lever le ferait rejouer dix fois pour rien.
+      if (connectionId === null) return;
+      await this.pros.handleConnectionRemoved(connectionId);
+    });
+
+    this.registry.on('user.blocked', 'pros', async (job) => {
+      const blocker = readString(job.payload, 'blockerUserId');
+      const blocked = readString(job.payload, 'blockedUserId');
+      if (blocker === null || blocked === null) return;
+      await this.pros.handleUserBlocked(blocker, blocked);
+    });
+
+    // ── Modération (13 §6) ───────────────────────────────────────────────────
+    //
+    // Le module de modération n'écrit dans AUCUNE table de contenu : il ouvre des
+    // dossiers et émet `moderation.content_hidden`. Chaque module de contenu
+    // appliquera l'effet sur sa propre table en s'y abonnant à son tour — c'est
+    // ce qui lui évite de connaître les douze types de sujet.
+    this.registry.on('user.deleted', 'moderation', async (job) => {
+      await this.moderation.handleUserDeleted(job.aggregateId);
+    });
+
+    // §4.4, anti-abus : plus de 20 blocages en 30 jours ouvre un dossier. Le
+    // service de blocage se contentait de journaliser, faute de ce module.
+    this.registry.on('user.blocked', 'moderation', async (job) => {
+      const blocker = readString(job.payload, 'blockerUserId');
+      if (blocker === null) return;
+      await this.moderation.handleUserBlocked(blocker);
+    });
+
+    this.registry.on('report.created', 'moderation', async (job) => {
+      await this.moderation.handleReportCreated(job.aggregateId);
+    });
+
+    // L'analyse IA d'un contenu publié. Asynchrone par construction : §2.3 ne
+    // laisse jamais l'IA empêcher une publication, elle masque après coup.
+    this.registry.on('help_request.published', 'moderation', async (job) => {
+      await this.moderation.handleContentPublished('HELP_REQUEST', job.aggregateId);
+    });
+
+    this.registry.on('event.published', 'moderation', async (job) => {
+      await this.moderation.handleContentPublished('EVENT', job.aggregateId);
+    });
+
     this.logger.log(`${this.registry.describe().length} type(s) d’événement écouté(s)`);
   }
+}
+
+/**
+ * Une chaîne d'une charge d'événement, ou `null`.
+ *
+ * La charge est du JSON venu de la base : son type est `unknown`, et il le reste.
+ * La lire défensivement importe surtout pour les événements dont le PRODUCTEUR
+ * n'existe pas encore — un gestionnaire qui suppose une forme se casse le jour où
+ * elle arrive autrement, et l'échec surviendrait dans le worker, loin de l'écran.
+ */
+function readString(payload: unknown, key: string): string | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }

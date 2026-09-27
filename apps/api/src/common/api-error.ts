@@ -50,7 +50,11 @@ export class ApiError extends HttpException {
     return ApiError.transverse('NOT_FOUND');
   }
 
-  static validation(fields: { path: string; code: string }[]): ApiError {
+  /**
+   * `message` n'est présent que sur les refus `custom` : voir `zod.pipe.ts`, où
+   * le raisonnement est écrit. Le front décide toujours sur le `code`.
+   */
+  static validation(fields: { path: string; code: string; message?: string }[]): ApiError {
     return ApiError.transverse('VALIDATION_FAILED', { fields });
   }
 }

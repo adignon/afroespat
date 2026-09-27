@@ -65,6 +65,17 @@ export const CAPABILITIES = {
   'help.ask': { minLevel: 'L0', planLimit: null, labelFr: 'publier une question d’entraide' },
   /** La demande de parrain est ouverte dès L0 : créer le lien avant l'avion (décision T4). */
   'mentorship.request': { minLevel: 'L0', planLimit: null, labelFr: 'demander un parrain' },
+  /**
+   * Signaler (13 §3) est ouvert dès L0 et ne sera JAMAIS payant.
+   *
+   * Un pré-départ non encore vérifié est la cible privilégiée des arnaques
+   * (13 §1) : exiger L1 pour signaler reviendrait à fermer l'alerte à ceux qui en
+   * ont le plus besoin, et à laisser l'arnaque vivre le temps d'une vérification
+   * d'identité.
+   */
+  'report.create': { minLevel: 'L0', planLimit: null, labelFr: 'signaler un contenu ou un profil' },
+  /** Contester une sanction (13 §4.3). Un droit, donc jamais conditionné. */
+  'sanction.appeal': { minLevel: 'L0', planLimit: null, labelFr: 'contester une sanction' },
 
   // ── Publication — exige une identité vérifiée (L1) ────────────────────────
   'post.create': { minLevel: 'L1', planLimit: null, labelFr: 'publier dans le fil' },

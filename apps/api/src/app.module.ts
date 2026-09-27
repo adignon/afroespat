@@ -11,6 +11,15 @@ import { UsersController } from './modules/users/users.controller';
 import { UsersService } from './modules/users/users.service';
 import { ConsentsController } from './modules/consents/consents.controller';
 import { ConsentsService } from './modules/consents/consents.service';
+import { ModerationConsumer } from './modules/moderation/moderation.consumer';
+import { ModerationController } from './modules/moderation/moderation.controller';
+import { ModerationService } from './modules/moderation/moderation.service';
+import { HousingController } from './modules/housing/housing.controller';
+import { HousingService } from './modules/housing/housing.service';
+import { JobsController } from './modules/jobs/jobs.controller';
+import { JobsService } from './modules/jobs/jobs.service';
+import { ProsController } from './modules/pros/pros.controller';
+import { ProsService } from './modules/pros/pros.service';
 import { CitiesController } from './modules/cities/cities.controller';
 import { CitiesService } from './modules/cities/cities.service';
 import { EventsController } from './modules/events/events.controller';
@@ -23,6 +32,9 @@ import { HelpController } from './modules/help/help.controller';
 import { HelpService } from './modules/help/help.service';
 import { BlocksController } from './modules/blocks/blocks.controller';
 import { BlocksService } from './modules/blocks/blocks.service';
+import { QUEUES } from './queue/queues';
+import { QueueService } from './queue/queue.service';
+import { MODERATION_QUEUE, type ModerationQueuePort } from './modules/moderation/moderation.service';
 import { EventSubscriptionsService } from './queue/event-subscriptions.service';
 import { AuthGuard } from './common/auth.guard';
 
@@ -40,7 +52,7 @@ import { AuthGuard } from './common/auth.guard';
  */
 @Module({
   imports: [CommonModule, ProvidersModule, QueueModule],
-  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController],
+  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController],
   providers: [
     AuthService,
     UsersService,
@@ -51,6 +63,38 @@ import { AuthGuard } from './common/auth.guard';
     CommunitiesService,
     EventsService,
     CitiesService,
+    HousingService,
+    JobsService,
+    ProsService,
+    ModerationService,
+    /**
+     * Le port de file de la modération.
+     *
+     * Le service le reçoit en `@Optional()` : sans lui, `check()` applique les
+     * règles locales et n'appelle PAS l'IA. C'est le bon comportement en test — il
+     * évite d'exiger Redis d'une suite d'intégration — mais pas en production, où
+     * la moitié asynchrone du pipeline disparaîtrait en silence.
+     *
+     * D'où ce fournisseur explicite : la file existe partout où l'API tourne, et
+     * le CONSOMMATEUR, lui, ne tourne que dans le worker.
+     */
+    {
+      provide: MODERATION_QUEUE,
+      inject: [QueueService],
+      useFactory: (queues: QueueService): ModerationQueuePort => ({
+        enqueue: async (job) => {
+          await queues.get(QUEUES.MODERATION).add('ai-analysis', job, {
+            // Une analyse perdue laisse un contenu non relu : on réessaie
+            // franchement, comme pour les événements de domaine.
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 10_000 },
+            removeOnComplete: { age: 3600, count: 1000 },
+            removeOnFail: { age: 86_400 * 7 },
+          });
+        },
+      }),
+    },
+    ModerationConsumer,
     // Le câblage des consommateurs d'événements. Placé ici, dans le module
     // racine, parce qu'il dépend des services métier — et `QueueModule` ne doit
     // pas les connaître.

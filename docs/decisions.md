@@ -414,3 +414,148 @@ adhésions (`ville-lyon`, `pays-bj`). Personne n'a appelé `syncAutoMemberships`
 - **Aucun registre de gestionnaires de suppression de compte.** Deux modules ont
   écrit le leur, désormais branchés sur `user.deleted` — mais rien n'émet encore
   cet événement, la suppression de compte n'étant pas livrée.
+
+
+---
+
+## Trois défauts du SOCLE trouvés par les agents de la vague 2
+
+Ils comptent plus que les modules eux-mêmes : ils étaient dans du code que tous
+les modules emploient.
+
+### `pnpm guardrails` ne lançait pas le garde-fou que je venais d'écrire
+
+J'avais ajouté une clé `"guardrails"` en DOUBLON dans le `package.json` racine.
+En JSON, la seconde gagne — silencieusement. Mon « garde-fous OK » du commit
+précédent ne mesurait donc pas le contrôle des clés écrasées.
+
+C'est la même famille de défaut que celui qu'il cherche à détecter : une clé qui
+en écrase une autre sans que rien ne le dise.
+
+### Le tuyau de validation perdait le message de tout `.refine()`
+
+`ZodValidationPipe` ne transmettait que `issue.code`. Or un `.refine()` rend
+TOUJOURS le code `custom`, qui ne dit rien : seul le message écrit par l'auteur du
+schéma explique le refus.
+
+Conséquence : le membre lisait « Certaines informations sont incomplètes ou mal
+remplies » sur le refus qui a le plus besoin d'être expliqué — le mot « certifié »
+dans une fiche professionnelle — et il ne pouvait que tâtonner. Trouvé au `curl`
+en livrant l'annuaire pro, jamais en relisant.
+
+Le correctif est PRÉCIS, et c'est ce qui compte : le message n'accompagne que les
+refus `custom`. Pour les codes intégrés (`too_small`, `invalid_string`), il reste
+exclu — il est en anglais, généré par zod, et le front a le code, qui lui suffit à
+écrire sa propre phrase (§5.2). Quatre tests tiennent la distinction.
+
+### Deux limites du socle, signalées et non corrigées
+
+- **`buildPage` sans `sortOf` casse silencieusement la pagination** dès que le tri
+  n'est pas l'identifiant : le curseur n'encode alors que l'`id`, et la page
+  suivante repart d'un `id >`. Des lignes se répètent, donc d'autres se perdent.
+  C'est un piège tendu à chaque module qui trie autrement. `cursor.ts` gagnerait à
+  rendre `sortOf` obligatoire, ou à lever quand `orderBy` n'est pas `id`.
+- **`audit_logs.target_id` est de type `Uuid`** : `AuditService.record()` ne peut
+  donc pas cibler une table dont la clé primaire est une chaîne, comme
+  `system_settings.key`. Or toute écriture d'administration doit laisser une trace.
+  Contourné en passant la clé en métadonnées ; la vraie correction est d'élargir la
+  colonne.
+
+### Un droit refusé par le garde : contester une sanction
+
+**Un membre suspendu ne peut pas contester sa sanction**, alors que 13 §4.3 lui en
+donne le droit. Le garde global refuse toute écriture d'un compte `SUSPENDED`
+(00 §7.3), et la contestation est une écriture. Démontré au `curl` avec un vrai
+jeton : `403 ACCOUNT_SUSPENDED` sur la contestation, `200` sur la lecture des
+sanctions.
+
+Le piège est double : la suspension révoque les sessions, donc le membre se
+reconnecte, et c'est son jeton NEUF qui porte `SUSPENDED` — le refus n'apparaît
+qu'à ce moment-là.
+
+La correction appartient au garde, pas au module : il faut un `@AllowSuspended()`
+pour les rares routes qu'un compte suspendu doit pouvoir appeler. **Non corrigé à
+ce stade**, et c'est un manque à combler avant tout lancement : une sanction sans
+recours effectif n'est pas une sanction, c'est une exclusion.
+
+---
+
+## Écarts relevés en implémentant services et modération
+
+### Deux capacités AJOUTÉES à la matrice du §7.3
+
+`report.create` et `sanction.appeal`, toutes deux L0 et `planLimit: null`. La
+matrice est une source unique, et l'étendre demande une justification :
+
+- aucune capacité existante ne convenait — `comment.create` aurait MENTI dans
+  l'invitation à monter de niveau que le front affiche sur `LEVEL_REQUIRED` ;
+- **L0 est délibéré** : 13 §1 fait du pré-départ non vérifié la cible privilégiée
+  des arnaques. Exiger L1 pour signaler fermerait l'alerte à ceux qui en ont le
+  plus besoin.
+
+### Ce que la modération NE fait pas, et pourquoi c'est juste
+
+Le service n'écrit dans **aucune** table de contenu. Il ouvre des dossiers et émet
+`moderation.content_hidden` ; chaque module de contenu applique l'effet sur sa
+propre table en s'y abonnant. C'est ce qui lui évite de connaître les douze types
+de sujet — et ce qui fait que masquer un guide relève des guides.
+
+La seule exception est `users.status` et la révocation des sessions sur
+suspension, que §4.2 exige mot pour mot.
+
+### Trois lectures de spec tranchées, qui changent le comportement
+
+| Point | Contradiction | Tranché |
+|---|---|---|
+| L'IA peut-elle empêcher une publication ? | §2.3 dit « masqué », §2.1 dit « non publié », §3 range les deux ensemble | **Seule une règle LOCALE empêche la publication.** L'IA masque après coup. C'est la seule lecture compatible avec une analyse asynchrone — et les guides bloquaient à tort sur un verdict IA |
+| `SELF_HARM` avec une étiquette bloquante | §2 dit « aucune autre action automatique » | **`SELF_HARM` domine, aucun masquage.** Un membre en détresse ne doit pas voir son appel disparaître. Testé avec `['SELF_HARM','SCAM']` à 0,97 |
+| `HARASSMENT` | §2.3 ne le met pas dans la liste bloquante, §3 le range en priorité 2 | File humaine, contenu visible. Les guides le bloquaient, plus large que la spec |
+
+### Une règle dure NON couverte, faute de table
+
+**« Un numéro banni ne peut pas se réinscrire »** : `banned_phone_hashes` n'existe
+pas dans le schéma figé, et aucun substitut n'est honnête. Le bannissement se
+contente aujourd'hui de désactiver le compte et de révoquer les sessions. Un test
+assertant l'absence de la table documente le trou.
+
+### Deux tables en ajout seul ont un effet de bord non prévu
+
+Le déclencheur d'ajout seul de `moderation_actions` refuse UPDATE et DELETE — y
+compris **ceux que les cascades déclenchent**. Conséquences vérifiées en base :
+
+- un `moderation_cases` porteur d'une action ne peut plus être supprimé ;
+- **un `staff_users` qui a pris une action ne peut plus être supprimé non plus**,
+  la cascade `SetNull` étant un UPDATE que le déclencheur refuse.
+
+Le départ d'un modérateur est donc un problème produit non traité.
+
+### Un calibrage à surveiller avant le lancement
+
+Le score de risque du logement (10 §2.2) : un L2 fraîchement vérifié porte d'office
+0,3 (« L2 depuis moins de 7 jours » + « première annonce »). **Un seul terme de la
+liste ajoute 0,4 et atteint exactement le seuil de blocage.** Or « virement » et
+« acompte » sont du vocabulaire locatif parfaitement normal.
+
+Conséquence : la première annonce d'un nouvel arrivant qui décrit son mode de
+paiement partira en file de modération. La règle est appliquée telle qu'écrite, et
+les poids sont **déjà lus** depuis `system_settings['housing.risk_weights']` — le
+réglage se fera sans déploiement.
+
+### Une route NON livrée, et une conséquence à connaître
+
+`POST /housing/:id/hide-from` : `hidden_from_user_ids` n'existe pas, et aucune
+table ne peut porter un masquage local sans en faire un blocage global — ce que
+§2.3 refuse. Une route qui accepterait l'appel sans rien masquer serait pire que
+son absence.
+
+Et surtout : **aucune fiche professionnelle ne peut passer en `APPROVED` par l'API
+aujourd'hui**, la validation humaine appartenant à l'administration. L'annuaire
+resterait donc vide en production.
+
+### Un piège de regex qui vaut pour tout le dépôt
+
+Une expression rationnelle portant le drapeau `g` et employée avec `test()`
+conserve son `lastIndex` entre deux appels : **elle laisse passer un contenu sur
+deux**. Sur des règles de sécurité, c'est une faille. `MODERATION_LOCAL_RULES`
+n'en porte aucun, et un test vérifie que quatre appels de suite donnent le même
+verdict.
