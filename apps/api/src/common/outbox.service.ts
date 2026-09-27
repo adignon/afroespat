@@ -44,6 +44,9 @@ export type DomainEventType =
   | 'event.created'
   | 'event.attended'
   | 'connection.created'
+  // Consommé par presque tous les modules de contenu — fil, guides, entraide,
+  // réseaux, agenda, services — pour leurs règles de visibilité.
+  | 'user.blocked'
   | 'kyc.status_changed'
   | 'phone.added'
   | 'phone.removed'

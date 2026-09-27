@@ -9,6 +9,8 @@ import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { UsersController } from './modules/users/users.controller';
 import { UsersService } from './modules/users/users.service';
+import { BlocksController } from './modules/blocks/blocks.controller';
+import { BlocksService } from './modules/blocks/blocks.service';
 import { AuthGuard } from './common/auth.guard';
 
 /**
@@ -25,10 +27,11 @@ import { AuthGuard } from './common/auth.guard';
  */
 @Module({
   imports: [CommonModule, ProvidersModule, QueueModule],
-  controllers: [HealthController, PlacesController, AuthController, UsersController],
+  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController],
   providers: [
     AuthService,
     UsersService,
+    BlocksService,
     // Garde GLOBAL, et refusant par défaut : une route qui oublie de déclarer
     // sa capacité est rejetée, pas ouverte. Un garde qu'on pose route par route
     // protège exactement les routes auxquelles on a pensé.
