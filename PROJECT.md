@@ -1,6 +1,6 @@
 # afroexpates.com — Dossier de spécifications
 
-**Plan de construction : `docs/PLAN.md`** — décisions à trancher, socle technique (lot 0), méthode de portage des maquettes, séquence des 12 lots corrigée, garde-fous, risques.
+**Plan de construction : `docs/PLAN.md`** — contrat de construction : état du projet, décisions, méthode de transcodage des maquettes, boucle de vérification, les 12 lots détaillés avec leurs écrans et modules, chiffrage, et ce qu'il faut du porteur à chaque étape.
 
 Lire dans cet ordre. Chaque fichier suppose les précédents.
 Tous les fichiers sont dans le dosssier docs/
