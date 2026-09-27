@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#E9EDEB;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#16211D;-webkit-font-smoothing:antialiased}
+a{color:#16785E;text-decoration:none}a:hover{color:#0F5C48}
+*{box-sizing:border-box}
+</style>
+</helmet>
+<div style="padding:64px;display:flex;flex-direction:column;gap:96px;width:max-content">
+
+<div>
+  <div style="font-size:12px;font-weight:700;letter-spacing:1px;color:#8A958F">AFROEXPATES.COM · LOT 1</div>
+  <h1 style="margin:8px 0 0;font-size:44px;font-weight:800;letter-spacing:-1.2px">Accès et Onboarding</h1>
+  <p style="margin:8px 0 0;font-size:16px;color:#5D6B66">P01 → P03, O01 → O05 · ordinateur 1440, mobile 390, états. Composants : Bibliothèque UI v2.</p>
+</div>
+
+<section id="P01" data-screen-label="P01 Connexion" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">P01</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Connexion / inscription</span><span style="font-size:13px;color:#8A958F">/connexion</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:1440px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column">
+      <div style="height:72px;padding:0 40px;display:flex;align-items:center;gap:10px"><div style="width:38px;height:38px;border-radius:12px;background:#0F5C48;display:flex;align-items:center;justify-content:center"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none"/></svg></div><span style="font-size:21px;font-weight:800;color:#0F5C48;letter-spacing:-0.5px">Diaspora</span></div>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px">
+        <div style="width:420px;background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:32px">
+          <h2 style="margin:0;font-size:28px;font-weight:800;letter-spacing:-0.8px">Votre numéro de téléphone</h2>
+          <p style="margin:8px 0 0;font-size:14px;color:#5D6B66;line-height:1.55">Pour vous connecter ou créer votre compte.</p>
+          <div style="display:flex;gap:8px;margin-top:24px">
+            <div style="height:52px;padding:0 14px;border-radius:14px;background:#F2F5F4;border:1px solid #EAEEEC;display:flex;align-items:center;gap:8px;font-size:14.5px;font-weight:600"><span style="width:22px;height:15px;border-radius:3px;background:linear-gradient(90deg,#16785E 33%,#F2C94C 33% 66%,#E0733A 66%)"></span>+229<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div style="flex:1;height:52px;padding:0 16px;border-radius:14px;background:#fff;border:1.5px solid #16785E;display:flex;align-items:center;font-size:15px;font-weight:600;letter-spacing:.5px">97 12 34 42</div>
+          </div>
+          <p style="margin:12px 0 0;font-size:12.5px;color:#5D6B66;line-height:1.55">Nous vous envoyons un code par SMS. Votre numéro n'est jamais affiché aux autres membres.</p>
+          <div style="display:flex;gap:12px;align-items:flex-start;margin-top:20px"><span style="width:22px;height:22px;border-radius:7px;background:#16785E;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"/></svg></span><span style="font-size:13px;line-height:1.5">J'accepte les <a href="#" style="font-weight:700">conditions d'utilisation</a> et la <a href="#" style="font-weight:700">politique de confidentialité</a>.</span></div>
+          <button style="width:100%;height:52px;margin-top:22px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700;cursor:pointer">Recevoir le code</button>
+        </div>
+        <div style="width:420px;display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ reassure }}" as="r" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:12px;font-size:13px;color:#5D6B66"><span style="width:32px;height:32px;border-radius:10px;background:#E3F0EB;color:#0F5C48;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ r.icon }}"/></svg></span>{{ r.text }}</div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:24px">
+      <div style="width:390px;height:844px;background:#F6F8F7;border-radius:40px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column;padding:56px 20px 28px">
+        <div style="display:flex;align-items:center;gap:8px"><div style="width:32px;height:32px;border-radius:10px;background:#0F5C48"></div><span style="font-size:18px;font-weight:800;color:#0F5C48">Diaspora</span></div>
+        <h2 style="margin:40px 0 0;font-size:27px;font-weight:800;letter-spacing:-0.8px;line-height:1.15">Votre numéro de téléphone</h2>
+        <div style="display:flex;gap:8px;margin-top:24px"><div style="height:52px;padding:0 12px;border-radius:14px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;gap:6px;font-size:14.5px;font-weight:600">+229</div><div style="flex:1;height:52px;padding:0 14px;border-radius:14px;background:#fff;border:1.5px solid #16785E;display:flex;align-items:center;font-size:15px;font-weight:600">97 12 34 42</div></div>
+        <p style="margin:12px 0 0;font-size:12.5px;color:#5D6B66;line-height:1.55">Nous vous envoyons un code par SMS. Votre numéro n'est jamais affiché aux autres membres.</p>
+        <div style="flex:1"></div>
+        <div style="display:flex;gap:10px;align-items:flex-start"><span style="width:22px;height:22px;border-radius:7px;background:#16785E;flex-shrink:0"></span><span style="font-size:12.5px;line-height:1.5">J'accepte les <a href="#" style="font-weight:700">conditions</a> et la <a href="#" style="font-weight:700">confidentialité</a>.</span></div>
+        <button style="width:100%;height:52px;margin-top:16px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Recevoir le code</button>
+      </div>
+    </div>
+    <div style="width:340px;display:flex;flex-direction:column;gap:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">ÉTATS</div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">PAYS NON COUVERT</div>
+        <div style="margin-top:12px;background:#F2F5F4;border-radius:14px;padding:14px;font-size:13px;line-height:1.55"><strong>Nous n'ouvrons pas encore dans ce pays.</strong><br><span style="color:#5D6B66">Laissez votre email, nous vous prévenons à l'ouverture.</span></div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">TROP DE TENTATIVES</div>
+        <div style="margin-top:12px;background:#FBE3D4;color:#B4581F;border-radius:14px;padding:14px;font-size:13px;font-weight:600;line-height:1.55">Trop de demandes de code. Réessayez dans 15 minutes.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">VÉRIFICATION INVISIBLE</div>
+        <button style="width:100%;height:48px;margin-top:12px;border-radius:14px;background:#CFE3DA;color:#0F5C48;border:none;font:inherit;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px"><span style="width:16px;height:16px;border-radius:999px;border:2.5px solid #16785E;border-right-color:transparent"></span>Vérification en cours…</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="P02" data-screen-label="P02 Code OTP" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">P02</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Code OTP</span><span style="font-size:13px;color:#8A958F">/connexion/code</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:1440px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column">
+      <div style="height:72px;padding:0 40px;display:flex;align-items:center;gap:10px"><div style="width:38px;height:38px;border-radius:12px;background:#0F5C48"></div><span style="font-size:21px;font-weight:800;color:#0F5C48;letter-spacing:-0.5px">Diaspora</span></div>
+      <div style="flex:1;display:flex;align-items:center;justify-content:center">
+        <div style="width:420px;background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:32px">
+          <a href="#" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg>Changer de numéro</a>
+          <h2 style="margin:18px 0 0;font-size:28px;font-weight:800;letter-spacing:-0.8px">Entrez le code reçu</h2>
+          <p style="margin:8px 0 0;font-size:14px;color:#5D6B66">Envoyé au <strong style="color:#16211D">+229 •• •• •• 42</strong></p>
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:24px">
+            <sc-for list="{{ otp }}" as="d" hint-placeholder-count="6"><div style="height:60px;border-radius:14px;background:{{ d.bg }};border:1.5px solid {{ d.bd }};display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:800">{{ d.v }}</div></sc-for>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;font-size:13px"><span style="color:#5D6B66">Nouveau code dans <strong style="color:#16211D;font-variant-numeric:tabular-nums">0:45</strong></span><span style="color:#8A958F;font-weight:700">Renvoyer</span></div>
+        </div>
+      </div>
+    </div>
+    <div style="width:390px;height:844px;background:#F6F8F7;border-radius:40px;overflow:hidden;border:1px solid #DDE3E0;padding:56px 20px 28px;display:flex;flex-direction:column">
+      <span style="width:44px;height:44px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg></span>
+      <h2 style="margin:28px 0 0;font-size:27px;font-weight:800;letter-spacing:-0.8px">Entrez le code reçu</h2>
+      <p style="margin:8px 0 0;font-size:14px;color:#5D6B66">Envoyé au <strong style="color:#16211D">+229 •• •• •• 42</strong></p>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:24px">
+        <sc-for list="{{ otp }}" as="d" hint-placeholder-count="6"><div style="height:54px;border-radius:12px;background:{{ d.bg }};border:1.5px solid {{ d.bd }};display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:800">{{ d.v }}</div></sc-for>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:13px"><span style="color:#5D6B66">Nouveau code dans <strong style="color:#16211D">0:45</strong></span><span style="color:#8A958F;font-weight:700">Renvoyer</span></div>
+    </div>
+    <div style="width:340px;display:flex;flex-direction:column;gap:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">ÉTATS</div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">CODE INVALIDE</div>
+        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:12px"><sc-for list="{{ otpBad }}" as="d" hint-placeholder-count="6"><div style="height:44px;border-radius:10px;border:1.5px solid #F0B892;background:#FFFBF8;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800">{{ d }}</div></sc-for></div>
+        <div style="font-size:12.5px;color:#B4581F;font-weight:600;margin-top:10px">Ce code ne correspond pas. Vérifiez et réessayez.</div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">CODE EXPIRÉ</div>
+        <div style="margin-top:12px;background:#F2F5F4;border-radius:14px;padding:14px;font-size:13px;line-height:1.55">Ce code a expiré. <a href="#" style="font-weight:700">Recevoir un nouveau code</a></div>
+      </div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:20px">
+        <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">5 TENTATIVES DÉPASSÉES</div>
+        <div style="margin-top:12px;background:#FBE3D4;color:#B4581F;border-radius:14px;padding:14px;font-size:13px;font-weight:600;line-height:1.55">Par sécurité, la saisie est suspendue 30 minutes.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="P03" data-screen-label="P03 Page statique" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">P03</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Page statique</span><span style="font-size:13px;color:#8A958F">/p/:slug</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:1440px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column">
+      <div style="height:72px;padding:0 40px;display:flex;align-items:center;gap:10px;border-bottom:1px solid #E6EBE9;background:#fff"><div style="width:38px;height:38px;border-radius:12px;background:#0F5C48"></div><span style="font-size:21px;font-weight:800;color:#0F5C48;letter-spacing:-0.5px">Diaspora</span></div>
+      <div style="flex:1;display:flex;gap:48px;justify-content:center;padding:48px 40px;overflow:hidden">
+        <nav style="width:220px;position:sticky;top:0;display:flex;flex-direction:column;gap:2px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F;padding:0 12px 10px">SOMMAIRE</div>
+          <sc-for list="{{ toc }}" as="t" hint-placeholder-count="5"><a href="#" style="height:40px;display:flex;align-items:center;padding:0 12px;border-radius:12px;font-size:13.5px;font-weight:{{ t.w }};background:{{ t.bg }};color:{{ t.fg }}">{{ t.label }}</a></sc-for>
+        </nav>
+        <article style="width:760px;background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:40px 48px">
+          <div style="display:flex;gap:8px"><span style="background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px">Version 3</span><span style="background:#F2F5F4;color:#5D6B66;font-size:11px;font-weight:700;padding:5px 11px;border-radius:999px">En vigueur depuis le 1er septembre 2026</span></div>
+          <h1 style="margin:18px 0 0;font-size:32px;font-weight:800;letter-spacing:-1px">Politique de confidentialité</h1>
+          <h2 style="margin:32px 0 0;font-size:19px;font-weight:700;letter-spacing:-0.3px">1. Ce que nous collectons</h2>
+          <p style="margin:10px 0 0;font-size:15px;line-height:1.7">Votre numéro de téléphone sert uniquement à vous connecter. Il n'est jamais affiché aux autres membres, ni transmis à un partenaire.</p>
+          <ul style="margin:12px 0 0;padding-left:20px;font-size:15px;line-height:1.8"><li>Pseudo, nom d'affichage, ville et phase de parcours</li><li>Contenus que vous publiez</li><li>Préférences de notification</li></ul>
+          <h2 style="margin:28px 0 0;font-size:19px;font-weight:700;letter-spacing:-0.3px">2. Où sont vos données</h2>
+          <p style="margin:10px 0 0;font-size:15px;line-height:1.7">Toutes les données sont hébergées en Europe. <a href="#" style="font-weight:700;text-decoration:underline">Voir nos sous-traitants</a>.</p>
+          <div style="margin-top:40px;padding-top:18px;border-top:1px solid #EAEEEC;font-size:12.5px;color:#8A958F">Dernière mise à jour le 1er septembre 2026</div>
+        </article>
+      </div>
+    </div>
+    <div style="width:560px;display:flex;flex-direction:column;gap:16px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">VARIANTE « RESSOURCES »</div>
+      <div style="background:#E3F0EB;border-radius:22px;padding:20px 22px;font-size:14px;line-height:1.6;color:#0F5C48"><strong>Vous traversez un moment difficile ?</strong> Ces services sont gratuits et confidentiels.</div>
+      <sc-for list="{{ resources }}" as="r" hint-placeholder-count="3">
+        <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:20px;display:flex;gap:14px">
+          <span style="width:44px;height:44px;border-radius:14px;background:#E3F0EB;color:#0F5C48;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></span>
+          <div style="flex:1;min-width:0"><div style="font-size:15px;font-weight:700;letter-spacing:-0.2px">{{ r.name }}</div><div style="font-size:13px;color:#5D6B66;margin-top:3px;line-height:1.5">{{ r.desc }}</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><span style="background:#16785E;color:#fff;font-size:12.5px;font-weight:700;padding:6px 12px;border-radius:999px">{{ r.phone }}</span><span style="background:#F2F5F4;color:#5D6B66;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:999px">{{ r.hours }}</span></div></div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section id="O01" data-screen-label="O01 Phase" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">O01</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Où en êtes-vous ?</span><span style="font-size:13px;color:#8A958F">/bienvenue/phase · cliquez une carte</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:1440px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column">
+      <div style="padding:24px 40px 0;display:flex;align-items:center;gap:20px">
+        <span style="width:44px;height:44px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg></span>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:6px"><sc-for list="{{ seg1 }}" as="s" hint-placeholder-count="6"><span style="height:6px;border-radius:999px;background:{{ s }}"></span></sc-for></div>
+        <span style="font-size:13px;font-weight:700;color:#5D6B66;font-variant-numeric:tabular-nums">1/6</span>
+      </div>
+      <div style="flex:1;display:flex;justify-content:center;padding-top:80px">
+        <div style="width:560px">
+          <h2 style="margin:0;font-size:29px;font-weight:800;letter-spacing:-0.9px">Où en êtes-vous ?</h2>
+          <p style="margin:8px 0 0;font-size:15px;color:#5D6B66;line-height:1.55">Nous adaptons l'accueil, les guides et les membres suggérés à votre situation.</p>
+          <div style="display:flex;flex-direction:column;gap:12px;margin-top:28px">
+            <sc-for list="{{ phases }}" as="p" hint-placeholder-count="3">
+              <button onClick="{{ p.onPick }}" style="min-height:76px;padding:14px 18px;border-radius:18px;background:{{ p.bg }};border:{{ p.bd }};font:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:14px">
+                <span style="width:46px;height:46px;border-radius:14px;background:{{ p.iconBg }};color:#0F5C48;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ p.icon }}"/></svg></span>
+                <span style="flex:1;min-width:0"><span style="display:block;font-size:15.5px;font-weight:700;color:#16211D;letter-spacing:-0.2px">{{ p.title }}</span><span style="display:block;font-size:13px;color:#5D6B66;margin-top:2px">{{ p.sub }}</span></span>
+                <span style="width:26px;height:26px;border-radius:999px;background:{{ p.checkBg }};border:{{ p.checkBd }};display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"/></svg></span>
+              </button>
+            </sc-for>
+          </div>
+          <button style="width:100%;height:52px;margin-top:32px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700;cursor:pointer">Continuer</button>
+          <div style="text-align:center;margin-top:14px"><a href="#" style="font-size:13px;font-weight:700;color:#5D6B66">Passer cette étape</a></div>
+        </div>
+      </div>
+    </div>
+    <div style="width:390px;height:844px;background:#F6F8F7;border-radius:40px;overflow:hidden;border:1px solid #DDE3E0;padding:56px 20px 28px;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:12px"><div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:4px"><sc-for list="{{ seg1 }}" as="s" hint-placeholder-count="6"><span style="height:5px;border-radius:999px;background:{{ s }}"></span></sc-for></div><span style="font-size:12px;font-weight:700;color:#5D6B66">1/6</span></div>
+      <h2 style="margin:32px 0 0;font-size:27px;font-weight:800;letter-spacing:-0.8px">Où en êtes-vous ?</h2>
+      <p style="margin:8px 0 0;font-size:14px;color:#5D6B66;line-height:1.55">Nous adaptons l'accueil à votre situation.</p>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:22px">
+        <sc-for list="{{ phases }}" as="p" hint-placeholder-count="3">
+          <button onClick="{{ p.onPick }}" style="min-height:70px;padding:12px 14px;border-radius:16px;background:{{ p.bg }};border:{{ p.bd }};font:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px">
+            <span style="width:42px;height:42px;border-radius:12px;background:{{ p.iconBg }};color:#0F5C48;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ p.icon }}"/></svg></span>
+            <span style="flex:1;min-width:0"><span style="display:block;font-size:14.5px;font-weight:700;color:#16211D">{{ p.title }}</span><span style="display:block;font-size:12.5px;color:#5D6B66;margin-top:2px">{{ p.sub }}</span></span>
+          </button>
+        </sc-for>
+      </div>
+      <div style="flex:1"></div>
+      <button style="width:100%;height:52px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Continuer</button>
+    </div>
+  </div>
+</section>
+
+<section id="O02" data-screen-label="O02 Lieu" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">O02</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Pays et ville</span><span style="font-size:13px;color:#8A958F">/bienvenue/lieu</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:1440px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column">
+      <div style="padding:24px 40px 0;display:flex;align-items:center;gap:20px">
+        <span style="width:44px;height:44px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg></span>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:6px"><sc-for list="{{ seg2 }}" as="s" hint-placeholder-count="6"><span style="height:6px;border-radius:999px;background:{{ s }}"></span></sc-for></div>
+        <span style="font-size:13px;font-weight:700;color:#5D6B66">2/6</span>
+      </div>
+      <div style="flex:1;display:flex;justify-content:center;padding-top:64px">
+        <div style="width:560px">
+          <h2 style="margin:0;font-size:29px;font-weight:800;letter-spacing:-0.9px">D'où venez-vous, où vivez-vous ?</h2>
+          <p style="margin:8px 0 0;font-size:15px;color:#5D6B66;line-height:1.55">Ces informations vous rattachent au réseau de votre ville et de votre pays.</p>
+          <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:22px;margin-top:28px">
+            <div style="font-size:13.5px;font-weight:700">D'où venez-vous ?</div>
+            <div style="height:52px;margin-top:10px;padding:0 16px;border-radius:14px;background:#F2F5F4;border:1px solid #EAEEEC;display:flex;align-items:center;gap:10px;font-size:14.5px;font-weight:600"><span style="width:22px;height:15px;border-radius:3px;background:linear-gradient(90deg,#16785E 33%,#F2C94C 33% 66%,#E0733A 66%)"></span>Bénin<span style="flex:1"></span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+            <div style="font-size:13.5px;font-weight:700;margin-top:22px">Où vivez-vous ?</div>
+            <div style="height:52px;margin-top:10px;padding:0 16px;border-radius:14px;background:#fff;border:1.5px solid #16785E;display:flex;align-items:center;gap:10px;font-size:14.5px;font-weight:600"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Ly</div>
+            <div style="margin-top:8px;border:1px solid #EAEEEC;border-radius:16px;padding:6px">
+              <sc-for list="{{ cities }}" as="c" hint-placeholder-count="4">
+                <div style="height:48px;display:flex;align-items:center;gap:12px;padding:0 12px;border-radius:12px;background:{{ c.bg }};color:{{ c.fg }}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg><span style="flex:1;font-size:14px;font-weight:600">{{ c.name }}</span><span style="font-size:12px;font-weight:700;color:{{ c.metaFg }};background:{{ c.metaBg }};padding:4px 10px;border-radius:999px">{{ c.meta }}</span></div>
+              </sc-for>
+            </div>
+          </div>
+          <button style="width:100%;height:52px;margin-top:24px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Continuer</button>
+          <div style="text-align:center;margin-top:14px"><a href="#" style="font-size:13px;font-weight:700;color:#5D6B66">Passer cette étape</a></div>
+        </div>
+      </div>
+    </div>
+    <div style="width:390px;height:844px;background:#F6F8F7;border-radius:40px;overflow:hidden;border:1px solid #DDE3E0;padding:56px 20px 28px;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:12px"><div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:4px"><sc-for list="{{ seg2 }}" as="s" hint-placeholder-count="6"><span style="height:5px;border-radius:999px;background:{{ s }}"></span></sc-for></div><span style="font-size:12px;font-weight:700;color:#5D6B66">2/6</span></div>
+      <h2 style="margin:32px 0 0;font-size:25px;font-weight:800;letter-spacing:-0.8px;line-height:1.15">D'où venez-vous, où vivez-vous ?</h2>
+      <div style="font-size:13px;font-weight:700;margin-top:24px">D'où venez-vous ?</div>
+      <div style="height:50px;margin-top:8px;padding:0 14px;border-radius:14px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;font-size:14.5px;font-weight:600">Bénin</div>
+      <div style="font-size:13px;font-weight:700;margin-top:18px">Où vivez-vous ?</div>
+      <div style="height:50px;margin-top:8px;padding:0 14px;border-radius:14px;background:#fff;border:1.5px solid #16785E;display:flex;align-items:center;font-size:14.5px;font-weight:600">Ly</div>
+      <div style="margin-top:8px;background:#fff;border:1px solid #EAEEEC;border-radius:16px;padding:6px"><sc-for list="{{ cities }}" as="c" hint-placeholder-count="4"><div style="height:46px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:12px;background:{{ c.bg }};color:{{ c.fg }}"><span style="flex:1;font-size:14px;font-weight:600">{{ c.name }}</span><span style="font-size:11.5px;font-weight:700;color:{{ c.metaFg }}">{{ c.meta }}</span></div></sc-for></div>
+      <div style="flex:1"></div>
+      <button style="width:100%;height:52px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Continuer</button>
+    </div>
+  </div>
+</section>
+
+<section id="O03" data-screen-label="O03 Objectif" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">O03</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Objectif</span><span style="font-size:13px;color:#8A958F">/bienvenue/objectif</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:1440px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column">
+      <div style="padding:24px 40px 0;display:flex;align-items:center;gap:20px">
+        <span style="width:44px;height:44px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg></span>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:6px"><sc-for list="{{ seg3 }}" as="s" hint-placeholder-count="6"><span style="height:6px;border-radius:999px;background:{{ s }}"></span></sc-for></div>
+        <span style="font-size:13px;font-weight:700;color:#5D6B66">3/6</span>
+      </div>
+      <div style="flex:1;display:flex;justify-content:center;padding-top:52px">
+        <div style="width:640px">
+          <h2 style="margin:0;font-size:29px;font-weight:800;letter-spacing:-0.9px">Quel est votre objectif ?</h2>
+          <p style="margin:8px 0 0;font-size:15px;color:#5D6B66;line-height:1.55">Un parcours découpe votre projet en étapes, avec les guides et les membres qui les ont franchies.</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:26px">
+            <sc-for list="{{ goals }}" as="g" hint-placeholder-count="4">
+              <div style="padding:18px;border-radius:18px;background:{{ g.bg }};border:{{ g.bd }};display:flex;flex-direction:column;gap:12px">
+                <span style="width:44px;height:44px;border-radius:14px;background:{{ g.iconBg }};color:#0F5C48;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ g.icon }}"/></svg></span>
+                <span><span style="display:block;font-size:15.5px;font-weight:700;letter-spacing:-0.2px">{{ g.title }}</span><span style="display:block;font-size:12.5px;color:#5D6B66;margin-top:2px">{{ g.steps }}</span></span>
+              </div>
+            </sc-for>
+          </div>
+          <button onClick="{{ toggleCreate }}" style="width:100%;margin-top:12px;padding:14px 16px;border-radius:16px;background:#F3F7F5;border:none;font:inherit;text-align:left;cursor:pointer;display:flex;align-items:flex-start;gap:12px">
+            <span style="width:22px;height:22px;border-radius:7px;background:{{ createBg }};border:{{ createBd }};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px"><sc-if value="{{ create }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"/></svg></sc-if></span>
+            <span><span style="display:block;font-size:14px;font-weight:700;color:#16211D">Créer mon parcours maintenant</span><span style="display:block;font-size:12.5px;color:#5D6B66;margin-top:2px;line-height:1.5">{{ createHelp }}</span></span>
+          </button>
+          <div style="display:flex;align-items:center;gap:12px;margin:22px 0 14px"><span style="flex:1;height:1px;background:#E0E5E3"></span><span style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">SANS CRÉER DE PARCOURS</span><span style="flex:1;height:1px;background:#E0E5E3"></span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div style="height:64px;padding:0 18px;border-radius:18px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;gap:12px;font-size:14.5px;font-weight:700"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="1.7" stroke-linecap="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>M'intégrer, rencontrer du monde</div>
+            <div style="height:64px;padding:0 18px;border-radius:18px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;gap:12px;font-size:14.5px;font-weight:700"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/></svg>Aider les autres</div>
+          </div>
+          <button style="width:100%;height:52px;margin-top:28px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Continuer</button>
+          <div style="text-align:center;margin-top:14px"><a href="#" style="font-size:13px;font-weight:700;color:#5D6B66">Passer cette étape</a></div>
+        </div>
+      </div>
+    </div>
+    <div style="width:390px;height:844px;background:#F6F8F7;border-radius:40px;overflow:hidden;border:1px solid #DDE3E0;padding:56px 20px 28px;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;gap:12px"><div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:4px"><sc-for list="{{ seg3 }}" as="s" hint-placeholder-count="6"><span style="height:5px;border-radius:999px;background:{{ s }}"></span></sc-for></div><span style="font-size:12px;font-weight:700;color:#5D6B66">3/6</span></div>
+      <h2 style="margin:28px 0 0;font-size:25px;font-weight:800;letter-spacing:-0.8px">Quel est votre objectif ?</h2>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:18px"><sc-for list="{{ goals }}" as="g" hint-placeholder-count="4"><div style="height:62px;padding:0 14px;border-radius:16px;background:{{ g.bg }};border:{{ g.bd }};display:flex;align-items:center;gap:12px"><span style="width:38px;height:38px;border-radius:12px;background:{{ g.iconBg }};color:#0F5C48;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ g.icon }}"/></svg></span><span><span style="display:block;font-size:14.5px;font-weight:700">{{ g.title }}</span><span style="display:block;font-size:12px;color:#5D6B66">{{ g.steps }}</span></span></div></sc-for></div>
+      <button onClick="{{ toggleCreate }}" style="margin-top:10px;padding:12px 14px;border-radius:14px;background:#F3F7F5;border:none;font:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border-radius:7px;background:{{ createBg }};border:{{ createBd }};display:flex;align-items:center;justify-content:center;flex-shrink:0"><sc-if value="{{ create }}" hint-placeholder-val="{{ true }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"/></svg></sc-if></span><span style="font-size:13.5px;font-weight:700;color:#16211D">Créer mon parcours maintenant</span></button>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F;margin:18px 0 8px;text-align:center">SANS CRÉER DE PARCOURS</div>
+      <div style="display:flex;flex-direction:column;gap:8px"><div style="height:52px;padding:0 14px;border-radius:16px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;font-size:14px;font-weight:700">M'intégrer, rencontrer du monde</div><div style="height:52px;padding:0 14px;border-radius:16px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;font-size:14px;font-weight:700">Aider les autres</div></div>
+      <div style="flex:1"></div>
+      <button style="width:100%;height:52px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Continuer</button>
+    </div>
+  </div>
+</section>
+
+<section id="O04" data-screen-label="O04 Profil" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">O04</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Profil</span><span style="font-size:13px;color:#8A958F">/bienvenue/profil · l'interrupteur est actif</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:1440px;height:1000px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column">
+      <div style="padding:24px 40px 0;display:flex;align-items:center;gap:20px">
+        <span style="width:44px;height:44px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;justify-content:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2" stroke-linecap="round"><path d="m15 18-6-6 6-6"/></svg></span>
+        <div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:6px"><sc-for list="{{ seg4 }}" as="s" hint-placeholder-count="6"><span style="height:6px;border-radius:999px;background:{{ s }}"></span></sc-for></div>
+        <span style="font-size:13px;font-weight:700;color:#5D6B66">4/6</span>
+      </div>
+      <div style="flex:1;display:flex;justify-content:center;padding-top:40px">
+        <div style="width:640px">
+          <h2 style="margin:0;font-size:29px;font-weight:800;letter-spacing:-0.9px">Présentez-vous</h2>
+          <p style="margin:8px 0 0;font-size:15px;color:#5D6B66">Seuls le pseudo et le nom sont obligatoires.</p>
+          <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:24px;margin-top:24px;display:flex;flex-direction:column;gap:18px">
+            <div style="display:flex;gap:20px;align-items:center">
+              <div style="width:84px;height:84px;border-radius:999px;background:#F2F5F4;border:1.5px dashed #CBD5D1;display:flex;align-items:center;justify-content:center;color:#8A958F;flex-shrink:0"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg></div>
+              <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                <div><div style="font-size:12.5px;font-weight:700;margin-bottom:6px">Pseudo</div><div style="height:48px;padding:0 14px;border-radius:14px;border:1.5px solid #16785E;display:flex;align-items:center;font-size:14.5px;font-weight:600">@amina.d<span style="flex:1"></span><svg width="16" height="16" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6" stroke="#fff" stroke-width="2.2" fill="none"/></svg></div><div style="font-size:11.5px;color:#16785E;font-weight:600;margin-top:5px">Disponible</div></div>
+                <div><div style="font-size:12.5px;font-weight:700;margin-bottom:6px">Nom d'affichage</div><div style="height:48px;padding:0 14px;border-radius:14px;background:#F2F5F4;border:1px solid #EAEEEC;display:flex;align-items:center;font-size:14.5px;font-weight:600">Amina Diallo</div></div>
+              </div>
+            </div>
+            <div><div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Statut</div><div style="display:flex;gap:8px;flex-wrap:wrap"><sc-for list="{{ statuses }}" as="s" hint-placeholder-count="5"><span style="padding:9px 16px;border-radius:999px;font-size:13px;font-weight:600;background:{{ s.bg }};color:{{ s.fg }};border:1px solid {{ s.bd }}">{{ s.label }}</span></sc-for></div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div><div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Compétences</div><div style="min-height:48px;padding:6px;border-radius:14px;background:#F2F5F4;border:1px solid #EAEEEC;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="background:#fff;border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600">Comptabilité</span><span style="background:#fff;border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600">Excel</span><span style="font-size:12.5px;color:#8A958F;padding:0 6px">Rechercher…</span></div></div>
+              <div><div style="font-size:12.5px;font-weight:700;margin-bottom:8px">Langues</div><div style="min-height:48px;padding:6px;border-radius:14px;background:#F2F5F4;border:1px solid #EAEEEC;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><span style="background:#fff;border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600">Français</span><span style="background:#fff;border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600">Fon</span><span style="background:#fff;border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600">Anglais</span></div></div>
+            </div>
+            <div style="background:#F3F7F5;border-radius:18px;padding:16px">
+              <div style="display:flex;align-items:center;gap:12px"><span style="flex:1;font-size:14.5px;font-weight:700">Je suis disponible pour aider</span><button onClick="{{ toggleHelp }}" style="width:48px;height:28px;border-radius:999px;border:none;background:{{ helpTrack }};position:relative;cursor:pointer;padding:0"><span style="position:absolute;top:3px;left:{{ helpKnob }};width:22px;height:22px;border-radius:999px;background:#fff"></span></button></div>
+              <sc-if value="{{ help }}" hint-placeholder-val="{{ true }}"><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"><sc-for list="{{ helpTypes }}" as="h" hint-placeholder-count="5"><span style="padding:8px 14px;border-radius:999px;font-size:12.5px;font-weight:600;background:{{ h.bg }};color:{{ h.fg }};border:1px solid {{ h.bd }}">{{ h.label }}</span></sc-for></div></sc-if>
+            </div>
+          </div>
+          <button style="width:100%;height:52px;margin-top:22px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Continuer</button>
+        </div>
+      </div>
+    </div>
+    <div style="width:390px;height:844px;background:#F6F8F7;border-radius:40px;overflow:hidden;border:1px solid #DDE3E0;padding:56px 20px 28px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:center;gap:12px"><div style="flex:1;display:grid;grid-template-columns:repeat(6,1fr);gap:4px"><sc-for list="{{ seg4 }}" as="s" hint-placeholder-count="6"><span style="height:5px;border-radius:999px;background:{{ s }}"></span></sc-for></div><span style="font-size:12px;font-weight:700;color:#5D6B66">4/6</span></div>
+      <h2 style="margin:14px 0 0;font-size:25px;font-weight:800;letter-spacing:-0.8px">Présentez-vous</h2>
+      <div style="width:76px;height:76px;border-radius:999px;background:#fff;border:1.5px dashed #CBD5D1"></div>
+      <div style="height:48px;padding:0 14px;border-radius:14px;border:1.5px solid #16785E;background:#fff;display:flex;align-items:center;font-size:14.5px;font-weight:600">@amina.d</div>
+      <div style="height:48px;padding:0 14px;border-radius:14px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;font-size:14.5px;font-weight:600">Amina Diallo</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ statuses }}" as="s" hint-placeholder-count="5"><span style="padding:8px 13px;border-radius:999px;font-size:12.5px;font-weight:600;background:{{ s.bg }};color:{{ s.fg }};border:1px solid {{ s.bd }}">{{ s.label }}</span></sc-for></div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:16px;padding:14px;display:flex;align-items:center;gap:10px"><span style="flex:1;font-size:14px;font-weight:700">Disponible pour aider</span><span style="width:48px;height:28px;border-radius:999px;background:#16785E;position:relative"><span style="position:absolute;top:3px;left:23px;width:22px;height:22px;border-radius:999px;background:#fff"></span></span></div>
+      <div style="flex:1"></div>
+      <button style="width:100%;height:52px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Continuer</button>
+    </div>
+  </div>
+</section>
+
+<section id="O05" data-screen-label="O05 Atterrissage" style="display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:center;gap:12px"><span style="background:#0F5C48;color:#fff;font-size:13px;font-weight:700;padding:6px 12px;border-radius:999px">O05</span><span style="font-size:22px;font-weight:800;letter-spacing:-0.4px">Atterrissage</span><span style="font-size:13px;color:#8A958F">/bienvenue/fin · deux variantes</span></div>
+  <div style="display:flex;gap:40px;align-items:flex-start">
+    <div style="width:700px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F;align-self:flex-start;margin-bottom:auto">AVEC PARCOURS</div>
+      <div style="width:520px">
+        <div style="width:64px;height:64px;border-radius:20px;background:#16785E;display:flex;align-items:center;justify-content:center"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg></div>
+        <h2 style="margin:22px 0 0;font-size:32px;font-weight:800;letter-spacing:-1px">Votre parcours est prêt</h2>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:14px;height:52px;padding:0 16px;border-radius:14px;background:#fff;border:1px solid #E6EBE9"><span style="flex:1;font-size:16px;font-weight:700">Mes études à Lyon</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></div>
+        <div style="margin-top:18px;border:1.5px solid #E0733A;border-radius:22px;padding:22px;background:#FFFBF8">
+          <div style="display:flex;gap:8px;align-items:center"><span style="background:#E0733A;color:#fff;font-size:10.5px;font-weight:700;letter-spacing:.8px;padding:5px 11px;border-radius:999px">ÉTAPE 1 SUR 12</span></div>
+          <div style="font-size:19px;font-weight:700;letter-spacing:-0.4px;margin-top:12px">Obtenir votre admission</div>
+          <p style="margin:6px 0 0;font-size:14px;color:#5D6B66;line-height:1.55">Campus France, choix des formations, lettre de motivation.</p>
+          <button style="width:100%;height:50px;margin-top:16px;border-radius:14px;background:#E0733A;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Commencer</button>
+        </div>
+        <div style="text-align:center;margin-top:18px"><a href="#" style="font-size:14px;font-weight:700">Aller à l'accueil</a></div>
+      </div>
+      <div style="margin-top:auto"></div>
+    </div>
+    <div style="width:700px;height:900px;background:#F6F8F7;border-radius:24px;overflow:hidden;border:1px solid #DDE3E0;display:flex;flex-direction:column;padding:40px">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">SANS PARCOURS</div>
+      <div style="width:520px;margin:48px auto 0;display:flex;flex-direction:column;gap:14px">
+        <h2 style="margin:0;font-size:32px;font-weight:800;letter-spacing:-1px">Bienvenue à Lyon</h2>
+        <div style="background:#0F5C48;border-radius:22px;padding:20px;color:#fff;display:flex;align-items:center;gap:14px"><span style="width:48px;height:48px;border-radius:14px;background:#16785E;display:flex;align-items:center;justify-content:center;font-weight:800">LY</span><span style="flex:1"><span style="display:block;font-size:16px;font-weight:700">Lyon et Rhône</span><span style="display:block;font-size:12.5px;color:#A9CDBF">1 400 membres · vous avez rejoint ce réseau</span></span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"/></svg></div>
+        <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">PROCHAINS ÉVÉNEMENTS</div>
+          <sc-for list="{{ events }}" as="e" hint-placeholder-count="3"><div style="display:flex;gap:12px;align-items:center;margin-top:12px"><div style="width:46px;height:46px;border-radius:14px;background:#E3F0EB;color:#0F5C48;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:15px;font-weight:800;line-height:1">{{ e.d }}</span><span style="font-size:9px;font-weight:700">{{ e.m }}</span></div><div><div style="font-size:13.5px;font-weight:700">{{ e.t }}</div><div style="font-size:12px;color:#8A958F">{{ e.s }}</div></div></div></sc-for>
+        </div>
+        <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px;display:flex;align-items:center;gap:12px"><span style="width:46px;height:46px;border-radius:999px;background:#0F5C48;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center">AD</span><span style="flex:1"><span style="display:flex;align-items:center;gap:5px;font-size:14px;font-weight:700">Aïcha Diop<svg width="14" height="14" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6" stroke="#fff" stroke-width="2.2" fill="none"/></svg></span><span style="display:block;font-size:12px;color:#8A958F">Parraine suggérée · installée · Lyon 7e</span></span><button style="height:40px;padding:0 18px;border-radius:999px;background:#16785E;color:#fff;border:none;font:inherit;font-size:13px;font-weight:700">Demander</button></div>
+        <button style="width:100%;height:52px;border-radius:14px;background:#16785E;color:#fff;border:none;font:inherit;font-size:15px;font-weight:700">Aller à l'accueil</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { phase: 1, help: true };
+  seg(n) { return Array.from({length:6},(_,i)=> i<n ? '#16785E' : '#DDE3E0'); }
+  renderVals() {
+    const ph = [
+      { title:'Je prépare mon départ', sub:'Visa, logement, budget avant d\u2019arriver', icon:'M3 16h18M6 16l2-8 4 3 4-3 2 8M12 3v5' },
+      { title:'Je viens d\u2019arriver (moins de 6 mois)', sub:'Premières démarches et premiers contacts', icon:'M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z' },
+      { title:'Je suis installé·e', sub:'Entraide, réseaux, transmettre', icon:'M4 11 12 4l8 7v9H4zM10 20v-6h4v6' },
+    ].map((p,i) => { const on = this.state.phase === i; return { ...p,
+      bg: on ? '#EFF7F3' : '#fff', bd: on ? '2px solid #16785E' : '1px solid #E6EBE9',
+      iconBg: on ? '#fff' : '#E3F0EB', checkBg: on ? '#16785E' : 'transparent', checkBd: on ? 'none' : '1.5px solid #CBD5D1',
+      onPick: () => this.setState({ phase: i }) }; });
+    const chip = (label,on)=>({ label, bg: on?'#16785E':'#fff', fg: on?'#fff':'#16211D', bd: on?'#16785E':'#E6EBE9' });
+    return {
+      reassure: [
+        { text:'Chaque membre a une identité vérifiée', icon:'M12 3 4 6v6c0 4.5 3.5 8 8 9 4.5-1 8-4.5 8-9V6zM9 12l2 2 4-4' },
+        { text:'Jamais de paiement pour obtenir de l\u2019aide', icon:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z' },
+      ],
+      otp: ['4','8','2','','',''].map((v,i)=>({ v, bg: v?'#fff':'#F2F5F4', bd: i===3?'#16785E':(v?'#E6EBE9':'#EAEEEC') })),
+      otpBad: ['4','8','2','9','1','7'],
+      toc: [
+        { label:'Ce que nous collectons', w:700, bg:'#E3F0EB', fg:'#0F5C48' },
+        { label:'Où sont vos données', w:500, bg:'transparent', fg:'#16211D' },
+        { label:'Vos droits', w:500, bg:'transparent', fg:'#16211D' },
+        { label:'Durées de conservation', w:500, bg:'transparent', fg:'#16211D' },
+        { label:'Nous contacter', w:500, bg:'transparent', fg:'#16211D' },
+      ],
+      resources: [
+        { name:'SOS Amitié', desc:'Écoute anonyme pour les personnes en détresse.', phone:'09 72 39 40 50', hours:'24 h / 24' },
+        { name:'Info Migrants — permanence juridique', desc:'Questions sur le titre de séjour et les recours.', phone:'01 43 14 84 84', hours:'Lun–ven · 9 h–17 h' },
+        { name:'Violences Femmes Info', desc:'Écoute, information, orientation.', phone:'3919', hours:'24 h / 24' },
+      ],
+      phases: ph,
+      seg1: this.seg(1), seg2: this.seg(2), seg3: this.seg(3), seg4: this.seg(4),
+      cities: [
+        { name:'Lyon', meta:'1 400 membres', bg:'#E3F0EB', fg:'#16211D', metaFg:'#0F5C48', metaBg:'#fff' },
+        { name:'Lyon 7e — Guillotière', meta:'Quartier', bg:'transparent', fg:'#16211D', metaFg:'#5D6B66', metaBg:'#F2F5F4' },
+        { name:'Lys-lez-Lannoy', meta:'bientôt', bg:'transparent', fg:'#8A958F', metaFg:'#8A958F', metaBg:'#F2F5F4' },
+        { name:'Lyons-la-Forêt', meta:'bientôt', bg:'transparent', fg:'#8A958F', metaFg:'#8A958F', metaBg:'#F2F5F4' },
+      ],
+      goals: [
+        { title:'Étudier', steps:'12 étapes', icon:'M2 9 12 4l10 5-10 5zM6 11v5c3 2 9 2 12 0v-5', on:true },
+        { title:'Travailler', steps:'10 étapes', icon:'M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2' },
+        { title:'Rejoindre ma famille', steps:'9 étapes', icon:'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5' },
+        { title:'Régulariser ma situation', steps:'8 étapes', icon:'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5' },
+      ].map(g=>({ ...g, bg: g.on?'#EFF7F3':'#fff', bd: g.on?'2px solid #16785E':'1px solid #E6EBE9', iconBg: g.on?'#fff':'#E3F0EB' })),
+      statuses: [chip('Étudiant·e',true),chip('Salarié·e'),chip('En recherche'),chip('Indépendant·e'),chip('Famille')],
+      create: this.state.create !== false,
+      toggleCreate: () => this.setState(s => ({ create: s.create === false })),
+      createBg: this.state.create !== false ? '#16785E' : '#fff',
+      createBd: this.state.create !== false ? 'none' : '1.5px solid #CBD5D1',
+      createHelp: this.state.create !== false ? 'Le parcours « Étudier » (12 étapes) sera créé à la fin de l\u2019inscription.' : 'Aucun parcours ne sera créé. Vous pourrez en créer un plus tard depuis Parcours.',
+      help: this.state.help,
+      toggleHelp: () => this.setState(s=>({ help: !s.help })),
+      helpTrack: this.state.help ? '#16785E' : '#CBD5D1',
+      helpKnob: this.state.help ? '23px' : '3px',
+      helpTypes: [chip('Démarches',true),chip('Relecture CV',true),chip('Trajet'),chip('Traduction'),chip('Matériel')],
+      events: [
+        { d:'24', m:'FÉV', t:'Apéro Diaspora et Étudiants', s:'Berges du Rhône · 19h00' },
+        { d:'02', m:'MAR', t:'Atelier CV et stage', s:'Maison des Assos · 14h30' },
+        { d:'09', m:'MAR', t:'Permanence titre de séjour', s:'Lyon 3e · 10h00' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

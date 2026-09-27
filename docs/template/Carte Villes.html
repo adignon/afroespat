@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Carte des membres</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<style>
+html,body{margin:0;height:100%;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#16211D}
+#map{position:absolute;inset:0;background:#EEF2F0}
+.leaflet-tile-pane{filter:saturate(.35) brightness(1.04)}
+.cl{display:flex;flex-direction:column;align-items:center;gap:6px;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer}
+.cl .dot{border-radius:999px;background:rgba(22,120,94,.22);border:2px solid #16785E;display:flex;align-items:center;justify-content:center;color:#0F5C48;font-weight:800;font-size:13px}
+.cl .dot span{background:#16785E;color:#fff;border-radius:999px;padding:3px 8px;font-size:12px}
+.cl .lab{background:#fff;border:1px solid #E6EBE9;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.cl.me .dot{background:rgba(224,115,58,.2);border-color:#E0733A}.cl.me .dot span{background:#E0733A}
+.bar{position:absolute;top:14px;left:14px;right:14px;z-index:500;display:flex;gap:8px;align-items:center;pointer-events:none}
+.bar>*{pointer-events:auto}
+.chip{height:40px;padding:0 14px;border-radius:999px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;cursor:pointer}
+.chip.on{background:#16785E;color:#fff;border-color:#16785E}
+.card{position:absolute;right:14px;bottom:14px;z-index:500;width:280px;background:#fff;border:1px solid #E6EBE9;border-radius:20px;padding:16px;display:none}
+.card h3{margin:0;font-size:18px;font-weight:800}
+.card .s{font-size:12.5px;color:#5D6B66;margin-top:2px}
+.card .bars{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.card .b{display:flex;align-items:center;gap:8px;font-size:12px}.card .b i{flex:1;height:6px;border-radius:999px;background:#EEF2F0;overflow:hidden}.card .b i b{display:block;height:100%;background:#16785E}
+.card a{display:flex;align-items:center;justify-content:center;margin-top:14px;height:42px;border-radius:14px;background:#16785E;color:#fff;font-size:13.5px;font-weight:700;text-decoration:none}
+.legend{position:absolute;left:14px;bottom:14px;z-index:500;background:#fff;border:1px solid #E6EBE9;border-radius:16px;padding:10px 14px;font-size:12px;color:#5D6B66;display:flex;gap:14px;align-items:center}
+.legend span{display:flex;align-items:center;gap:6px}.legend i{width:12px;height:12px;border-radius:999px;border:2px solid #16785E;background:rgba(22,120,94,.22)}
+.leaflet-control-zoom{border:none!important;margin-top:70px!important}.leaflet-control-zoom a{border-radius:12px!important;margin-bottom:4px;border:1px solid #E6EBE9!important;width:36px!important;height:36px!important;line-height:34px!important}
+</style></head><body>
+<div id="map"></div>
+<div class="bar"><div class="chip on" data-f="all">Pays d'origine : Tous ▾</div><div class="chip" data-f="SN">Sénégal</div><div class="chip" data-f="BJ">Bénin</div><div class="chip" data-f="CI">Côte d'Ivoire</div></div>
+<div class="legend"><span><i></i>Regroupement de membres</span><span>Zoomez pour voir les quartiers</span></div>
+<div class="card" id="card"><h3 id="cn"></h3><div class="s" id="cs"></div><div class="bars" id="cb"></div><a href="#">Voir la fiche ville</a></div>
+<script>
+const cities=[
+ {n:'Paris',ll:[48.8566,2.3522],m:2100,r:'Île-de-France',c:{SN:520,CI:610,BJ:210,CM:340}},
+ {n:'Lyon',ll:[45.764,4.8357],m:1400,r:'Auvergne-Rhône-Alpes',c:{SN:312,CI:246,BJ:178,CM:142},me:true},
+ {n:'Marseille',ll:[43.2965,5.3698],m:620,r:"Provence-Alpes-Côte d'Azur",c:{SN:140,CI:90,BJ:40,CM:80}},
+ {n:'Bordeaux',ll:[44.8378,-0.5792],m:410,r:'Nouvelle-Aquitaine',c:{SN:80,CI:70,BJ:60,CM:40}},
+ {n:'Toulouse',ll:[43.6047,1.4442],m:380,r:'Occitanie',c:{SN:90,CI:60,BJ:30,CM:50}},
+ {n:'Lille',ll:[50.6292,3.0573],m:340,r:'Hauts-de-France',c:{SN:60,CI:80,BJ:50,CM:40}},
+ {n:'Nantes',ll:[47.2184,-1.5536],m:190,r:'Pays de la Loire',c:{SN:40,CI:30,BJ:20,CM:20}},
+ {n:'Strasbourg',ll:[48.5734,7.7521],m:160,r:'Grand Est',c:{SN:30,CI:30,BJ:10,CM:30}},
+ {n:'Montpellier',ll:[43.6108,3.8767],m:150,r:'Occitanie',c:{SN:30,CI:20,BJ:20,CM:30}},
+ {n:'Rennes',ll:[48.1173,-1.6778],m:120,r:'Bretagne',c:{SN:20,CI:20,BJ:20,CM:10}},
+ {n:'Grenoble',ll:[45.1885,5.7245],m:110,r:'Auvergne-Rhône-Alpes',c:{SN:20,CI:20,BJ:10,CM:20}},
+];
+const quarters=[
+ {n:'Lyon 3e',ll:[45.759,4.851],m:320},{n:'Lyon 7e',ll:[45.745,4.842],m:290},{n:'Villeurbanne',ll:[45.771,4.89],m:260},{n:'Lyon 8e',ll:[45.734,4.869],m:180},{n:'Vénissieux',ll:[45.697,4.886],m:170},{n:'Lyon 9e',ll:[45.774,4.806],m:110},
+ {n:'Paris 18e',ll:[48.892,2.348],m:410},{n:'Paris 19e',ll:[48.887,2.384],m:330},{n:'Saint-Denis',ll:[48.936,2.357],m:380},{n:'Montreuil',ll:[48.861,2.443],m:290},{n:'Paris 20e',ll:[48.864,2.398],m:260}
+];
+const map=L.map('map',{zoomControl:true,attributionControl:true}).setView([46.6,2.4],6);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:15,attribution:'© OpenStreetMap contributors'}).addTo(map);
+let layer=L.layerGroup().addTo(map), filt='all';
+const count=c=>filt==='all'?c.m:(c.c?c.c[filt]||0:Math.round(c.m*.25));
+const fmt=n=>n.toLocaleString('fr-FR');
+function draw(){
+  layer.clearLayers();
+  const z=map.getZoom(), data=z>=10?quarters:cities;
+  data.forEach(c=>{
+    const n=count(c); if(!n) return;
+    const s=Math.round(Math.max(30,Math.min(96,Math.sqrt(n)*2.1)));
+    const html=`<div class="cl${c.me?' me':''}"><div class="dot" style="width:${s}px;height:${s}px"><span>${fmt(n)}</span></div><div class="lab">${c.n}</div></div>`;
+    const mk=L.marker(c.ll,{icon:L.divIcon({html,className:'',iconSize:[0,0]})}).addTo(layer);
+    mk.on('click',()=>{ if(z<10 && c.c){ show(c); } map.flyTo(c.ll, z<10?11:13,{duration:.8}); });
+  });
+}
+function show(c){
+  const card=document.getElementById('card'); card.style.display='block';
+  document.getElementById('cn').textContent=c.n;
+  document.getElementById('cs').textContent=c.r+' · '+fmt(c.m)+' membres';
+  const names={SN:'Sénégal',CI:"Côte d'Ivoire",BJ:'Bénin',CM:'Cameroun'}; const max=Math.max(...Object.values(c.c));
+  document.getElementById('cb').innerHTML=Object.entries(c.c).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="b"><span style="width:84px">${names[k]}</span><i><b style="width:${v/max*100}%"></b></i><strong>${v}</strong></div>`).join('');
+}
+map.on('zoomend',draw);
+document.querySelectorAll('.chip').forEach(ch=>ch.onclick=()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));ch.classList.add('on');filt=ch.dataset.f;draw();});
+draw(); show(cities[1]);
+</script>
+</body></html>

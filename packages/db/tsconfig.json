@@ -1,0 +1,5 @@
+{
+  "extends": "@app/config/tsconfig/node.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src", "module": "ESNext", "moduleResolution": "Bundler" },
+  "include": ["src"]
+}

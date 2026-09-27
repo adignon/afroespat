@@ -1,0 +1,15 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env.example"],
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**", ".next/**", "!.next/cache/**"] },
+    "dev": { "cache": false, "persistent": true },
+    "lint": { "dependsOn": ["^build"] },
+    "typecheck": { "dependsOn": ["^build"] },
+    "test": { "dependsOn": ["^build"], "outputs": ["coverage/**"] },
+    "test:int": { "dependsOn": ["^build"], "cache": false },
+    "test:e2e": { "dependsOn": ["^build"], "cache": false },
+    "guardrails": { "dependsOn": ["^build"] },
+    "generate": { "cache": false }
+  }
+}

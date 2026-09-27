@@ -1,0 +1,149 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 02 — Référentiels  ·  5 tables
+// Données administrées par l'équipe, lues par tous les modules. Aucune écriture membre.
+// Porte la logique mono-pays au lancement : activer un pays est une écriture en
+// back-office, jamais un déploiement (02-referentiels.md §2.1).
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CountryKind {
+  ORIGIN
+  DESTINATION
+  BOTH
+}
+
+/// Pays d'origine et de destination. Un pays inactif n'apparaît nulle part côté
+/// membres, et son indicatif est refusé à l'envoi d'OTP.
+model Country {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  iso2     String      @unique
+  nameFr   String      @map("name_fr")
+  /// Ex. +229. Sert à autoriser l'indicatif avant tout envoi de SMS.
+  dialCode String      @map("dial_code")
+  kind     CountryKind
+  isActive Boolean     @map("is_active")
+  sortOrder Int        @map("sort_order")
+
+  // Colonne ajoutée par 02-referentiels.md §3.
+  /// Ville proposée par défaut à l'onboarding pour ce pays de destination.
+  defaultCityId String? @map("default_city_id") @db.Uuid
+
+  defaultCity City? @relation("CountryDefaultCity", fields: [defaultCityId], references: [id], onDelete: SetNull)
+
+  cities                 City[]                    @relation("CityCountry")
+  users                  User[]
+  phoneNumbers           PhoneNumber[]
+  templateVersions       JourneyTemplateVersion[]
+  journeys               Journey[]
+  guides                 Guide[]
+  communities            Community[]
+  searchDocuments        SearchDocument[]
+  scamAlerts             ScamAlert[]
+  placementsAsOrigin     PartnerPlacement[]        @relation("PlacementOriginCountry")
+  placementsAsDestination PartnerPlacement[]       @relation("PlacementDestinationCountry")
+
+  @@index([isActive])
+  @@map("countries")
+}
+
+/// Villes. Maille géographique la plus fine de la plateforme : aucune position
+/// individuelle n'est jamais collectée (règle dure §1.2).
+model City {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  countryId String  @map("country_id") @db.Uuid
+  name      String
+  slug      String  @unique
+  region    String?
+
+  /// Centre-ville, saisi à la main. Sert au tri par proximité (haversine) — pas de PostGIS.
+  latitude  Decimal @db.Decimal(9, 6)
+  longitude Decimal @db.Decimal(9, 6)
+
+  /// Une ville inactive est sélectionnable à l'inscription mais n'a ni réseau,
+  /// ni carte, ni fiche. Activée par l'équipe, en général à 20 membres.
+  isActive Boolean @map("is_active")
+  /// Dénormalisé — recalculé chaque nuit par city.member_count_recompute.
+  memberCount Int   @default(0) @map("member_count")
+
+  /// Fusion de doublons : redirige membres et contenus. Irréversible.
+  mergedIntoCityId String? @map("merged_into_city_id") @db.Uuid
+
+  // Colonnes ajoutées par 02-referentiels.md §3.
+  postalPrefix String?   @map("postal_prefix")
+  activatedAt  DateTime? @map("activated_at") @db.Timestamptz
+
+  country        Country @relation("CityCountry", fields: [countryId], references: [id], onDelete: Restrict)
+  mergedIntoCity City?   @relation("CityMerge", fields: [mergedIntoCityId], references: [id], onDelete: SetNull)
+  mergedFrom     City[]  @relation("CityMerge")
+
+  defaultForCountries Country[]           @relation("CountryDefaultCity")
+  users               User[]
+  journeys            Journey[]
+  posts               Post[]
+  stories             Story[]
+  guides              Guide[]
+  helpRequests        HelpRequest[]
+  communities         Community[]
+  cityTips            CityTip[]
+  events              Event[]
+  housingListings     HousingListing[]
+  jobListings         JobListing[]
+  proProfileCities    ProProfileCity[]
+  searchDocuments     SearchDocument[]
+  searchZeroResults   SearchZeroResult[]
+  scamAlerts          ScamAlert[]
+
+  @@index([countryId])
+  @@index([isActive])
+  @@map("cities")
+}
+
+/// Liste fermée. Un membre ne peut pas créer une valeur, seulement la suggérer.
+model Language {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  code   String @unique
+  nameFr String @map("name_fr")
+
+  userLanguages UserLanguage[]
+
+  @@map("languages")
+}
+
+/// 60 à 80 entrées de départ, catégorisées (T3 partie B).
+/// Une entrée inactive reste affichée sur les profils qui l'ont déjà.
+model Skill {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  nameFr   String  @unique @map("name_fr")
+  category String?
+  isActive Boolean @map("is_active")
+
+  userSkills UserSkill[]
+
+  @@map("skills")
+}
+
+/// Métiers de l'annuaire professionnel — liste plus restreinte que les compétences.
+model Profession {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  nameFr   String  @unique @map("name_fr")
+  category String?
+  isActive Boolean @map("is_active")
+
+  proProfiles ProProfile[]
+
+  @@map("professions")
+}

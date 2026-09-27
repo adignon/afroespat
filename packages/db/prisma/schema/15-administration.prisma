@@ -1,0 +1,173 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 15 — Administration  ·  7 tables
+// Comptes équipe, audit, feature flags, pages statiques, annonces, paramètres.
+//
+// RÈGLE DURE : un compte équipe ne peut jamais se connecter à l'application
+// membres avec ses identifiants, ni l'inverse. Deux domaines de sécurité séparés :
+// les membres n'ont pas de mot de passe, l'équipe n'a pas d'OTP.
+// RÈGLE DURE : toute écriture depuis l'application admin passe par
+// AuditService.record() avant validation de la transaction.
+// RÈGLE DURE : l'application admin n'affiche jamais un numéro de téléphone en
+// clair, ni ne permet de lire une conversation privée hors d'un dossier de
+// modération qui la joint.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum StaffRole {
+  SUPER_ADMIN
+  CONTENT_ADMIN
+  MODERATOR
+  SUPPORT
+}
+
+enum AuditActorType {
+  STAFF
+  SYSTEM
+  MEMBER
+}
+
+/// Comptes de l'équipe, séparés des membres. Email + mot de passe argon2id + TOTP
+/// OBLIGATOIRE. Les modérateurs bénévoles issus des membres ne sont PAS ici :
+/// c'est un rôle contextuel (community_members.role).
+model StaffUser {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  email       String @unique @db.Citext
+  displayName String @map("display_name")
+  /// argon2id — jamais bcrypt, jamais de mot de passe pour un membre.
+  passwordHash String @map("password_hash")
+  /// Secret TOTP chiffré au repos. Le second facteur n'est pas optionnel.
+  totpSecretEncrypted Bytes @map("totp_secret_encrypted")
+
+  role        StaffRole
+  isActive    Boolean   @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at") @db.Timestamptz
+
+  sessions            StaffSession[]
+  staticPages         StaticPage[]
+  announcements       Announcement[]
+  systemSettings      SystemSetting[]
+  publishedVersions   JourneyTemplateVersion[]
+  reviewedCorrections TemplateCorrectionProposal[]
+  reviewedProposals   GuideRevisionProposal[]
+  assignedCases       ModerationCase[]
+  moderationActions   ModerationAction[]
+  sanctionsIssued     Sanction[]
+  scamAlertsCreated   ScamAlert[]
+
+  @@index([role])
+  @@map("staff_users")
+}
+
+/// Sessions admin : cookie de session distinct, jamais de JWT membre (T4 §2).
+model StaffSession {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  staffId   String    @map("staff_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  ip        String?   @db.Inet
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([staffId])
+  @@map("staff_sessions")
+}
+
+/// Journal d'audit. EN AJOUT SEUL : aucune route de modification ni de suppression.
+/// Conservation 5 ans (§8.4). Alimenté par tout service admin et par les actions
+/// système sensibles (suspension automatique, dépublication).
+model AuditLog {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  actorType AuditActorType @map("actor_type")
+  actorId   String?        @map("actor_id") @db.Uuid
+  /// Ex. user.suspend, template.publish.
+  action     String
+  targetType String  @map("target_type")
+  targetId   String? @map("target_id") @db.Uuid
+  /// Avant / après, motif — JAMAIS de donnée sensible en clair.
+  metadata Json?
+  ip       String? @db.Inet
+
+  @@index([actorId])
+  @@index([action])
+  @@index([targetId])
+  @@map("audit_logs")
+}
+
+/// Activation progressive. Le runbook §2 impose un flag par lancement de section :
+/// activer par ville, observer, élargir.
+model FeatureFlag {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  key        String  @unique
+  isEnabled  Boolean @map("is_enabled")
+  rolloutPct Int     @default(0) @map("rollout_pct")
+  /// Villes, pays, phases.
+  conditions Json?
+
+  @@map("feature_flags")
+}
+
+/// Conditions, confidentialité, règles, ressources.
+/// `version` est référencée par consents.version : une nouvelle version des CGU
+/// redemande le consentement à la prochaine connexion, sans bloquer la lecture.
+model StaticPage {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  slug    String @unique
+  title   String
+  body    String
+  version String
+
+  publishedAt       DateTime? @map("published_at") @db.Timestamptz
+  updatedByStaffId  String?   @map("updated_by_staff_id") @db.Uuid
+
+  updatedByStaff StaffUser? @relation(fields: [updatedByStaffId], references: [id], onDelete: SetNull)
+
+  @@map("static_pages")
+}
+
+/// Annonces globales ou ciblées.
+model Announcement {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  title String
+  body  String
+  /// city_ids, country_ids, phases — vide = tous.
+  target Json?
+
+  startsAt DateTime  @map("starts_at") @db.Timestamptz
+  endsAt   DateTime? @map("ends_at") @db.Timestamptz
+
+  createdByStaffId String @map("created_by_staff_id") @db.Uuid
+
+  createdByStaff StaffUser @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+
+  @@map("announcements")
+}
+
+/// Paramètres modifiables sans déploiement : seuils, délais, prix,
+/// handles réservés, housing.risk_queue_threshold…
+model SystemSetting {
+  key   String @id
+  value Json
+
+  updatedByStaffId String?  @map("updated_by_staff_id") @db.Uuid
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  updatedByStaff StaffUser? @relation(fields: [updatedByStaffId], references: [id], onDelete: SetNull)
+
+  @@map("system_settings")
+}

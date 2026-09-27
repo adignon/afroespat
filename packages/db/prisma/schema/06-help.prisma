@@ -1,0 +1,105 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 06 — Fil d'entraide  ·  2 tables
+// Demandes et offres avec état ouvert/résolu, clôture « ça m'a aidé ».
+//
+// RÈGLE DURE : l'entraide n'est JAMAIS derrière un paiement, et payer ne donne
+// aucune priorité sur l'aide reçue (§1.2 et 14 §2). Aucune route de ce module
+// ne lit users.plan.
+//
+// RÈGLE DURE : chaque page de la section affiche en permanence « Aucun versement
+// entre membres pour une démarche administrative. Si on vous demande de l'argent,
+// signalez. » — le bandeau est renvoyé par l'API, pas codé en dur dans le front.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// REQUEST est ouverte dès L0 (un pré-départ doit pouvoir demander de l'aide) ;
+/// OFFER exige L1 (§7.3).
+enum HelpKind {
+  REQUEST
+  OFFER
+}
+
+enum HelpType2 {
+  PAPERWORK
+  SERVICE
+  RIDE
+  MATERIAL
+  OTHER
+}
+
+enum HelpStatus {
+  OPEN
+  RESOLVED
+  ARCHIVED
+}
+
+/// Demande ou offre ponctuelle, à résolution rapide.
+model HelpRequest {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  authorUserId String    @map("author_user_id") @db.Uuid
+  kind         HelpKind
+  type         HelpType2
+  title        String
+  body         String
+  cityId       String    @map("city_id") @db.Uuid
+  status       HelpStatus
+
+  /// Si issue d'un « Je suis bloqué » : l'étape reçoit une activité HELP_RECEIVED
+  /// à la résolution, et l'interface propose « Marquer l'étape comme franchie ? ».
+  originJourneyStepId String? @map("origin_journey_step_id") @db.Uuid
+  originBlockerId     String? @map("origin_blocker_id") @db.Uuid
+
+  /// Échéance héritée de l'étape.
+  dueDate       DateTime? @map("due_date") @db.Date
+  responseCount Int       @default(0) @map("response_count")
+
+  resolvedAt            DateTime? @map("resolved_at") @db.Timestamptz
+  /// Réponse marquée « ça m'a aidé » : crée un contact et crédite la réputation.
+  resolvedByResponseId  String?   @map("resolved_by_response_id") @db.Uuid
+
+  moderationStatus ModerationStatus @map("moderation_status")
+
+  author            User            @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  city              City            @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  originJourneyStep JourneyStep?    @relation(fields: [originJourneyStepId], references: [id], onDelete: SetNull)
+  originBlocker     BlockerRequest? @relation(fields: [originBlockerId], references: [id], onDelete: SetNull)
+  resolvedByResponse HelpResponse?  @relation("HelpResolvingResponse", fields: [resolvedByResponseId], references: [id], onDelete: SetNull)
+
+  responses HelpResponse[] @relation("HelpRequestResponses")
+
+  @@index([authorUserId])
+  @@index([type])
+  @@index([cityId])
+  @@index([status])
+  @@index([originJourneyStepId])
+  @@index([createdAt])
+  @@map("help_requests")
+}
+
+/// Réponse publique à une demande.
+model HelpResponse {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  helpRequestId String @map("help_request_id") @db.Uuid
+  authorUserId  String @map("author_user_id") @db.Uuid
+  body          String
+
+  /// Vrai = clôture : connexion créée (origin = HELP_VALIDATED), réputation créditée.
+  markedHelpful Boolean   @default(false) @map("marked_helpful")
+  markedAt      DateTime? @map("marked_at") @db.Timestamptz
+
+  helpRequest HelpRequest @relation("HelpRequestResponses", fields: [helpRequestId], references: [id], onDelete: Cascade)
+  author      User        @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  resolvedRequests HelpRequest[] @relation("HelpResolvingResponse")
+
+  @@index([helpRequestId])
+  @@index([authorUserId])
+  @@map("help_responses")
+}

@@ -1,0 +1,427 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 01 — Identité et compte  ·  12 tables
+// Compte, téléphone, OTP, sessions, KYC, profil, consentements, suppression.
+// Spec : 00-fondations.md §6.3 · règles : 01-identite.md
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Phase {
+  PRE_DEPARTURE
+  RECENT_ARRIVAL
+  SETTLED
+}
+
+/// Niveaux cumulatifs (§7.2). L0 téléphone · L1 KYC approuvé · L2 numéro de destination.
+enum VerificationLevel {
+  L0
+  L1
+  L2
+}
+
+enum UserPlan {
+  FREE
+  PREMIUM
+}
+
+enum UserStatus {
+  ACTIVE
+  DEACTIVATED
+  SUSPENDED
+  DELETION_PENDING
+  DELETED
+}
+
+enum OtpPurpose {
+  SIGNUP
+  LOGIN
+  ADD_PHONE
+  DELETE_ACCOUNT
+  REACTIVATE
+}
+
+enum KycProvider {
+  DIDIT
+}
+
+enum KycStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  APPROVED
+  DECLINED
+  IN_REVIEW
+  ABANDONED
+  EXPIRED
+}
+
+enum OccupationStatus {
+  STUDENT
+  EMPLOYEE
+  ENTREPRENEUR
+  JOB_SEEKER
+  OTHER
+}
+
+enum HelpType {
+  PAPERWORK
+  HOUSING
+  JOB
+  WELCOME
+  OTHER
+}
+
+enum ConsentType {
+  TERMS
+  PRIVACY
+  MARKETING_EMAIL
+  JOURNEY_VISIBILITY
+}
+
+enum DataExportStatus {
+  PENDING
+  READY
+  EXPIRED
+}
+
+/// Le compte d'un membre. Une ligne par personne.
+/// Aucun mot de passe : l'identifiant est le numéro de téléphone (OTP).
+model User {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  /// Pseudo public, insensible à la casse. Modifiable 1 fois par 30 jours.
+  handle        String  @unique @db.Citext
+  displayName   String  @map("display_name")
+  avatarAssetId String? @map("avatar_asset_id") @db.Uuid
+
+  phase Phase
+
+  /// Dénormalisé — recalculé sur kyc.status_changed, phone.added, phone.removed.
+  verificationLevel VerificationLevel @map("verification_level")
+
+  originCountryId String  @map("origin_country_id") @db.Uuid
+  /// Ville de résidence, ou ville cible si pré-départ. Maille la plus fine : jamais de position.
+  cityId          String? @map("city_id") @db.Uuid
+
+  arrivalDate           DateTime? @map("arrival_date") @db.Date
+  plannedDepartureDate  DateTime? @map("planned_departure_date") @db.Date
+
+  /// Dénormalisé depuis subscriptions.
+  plan     UserPlan
+  status   UserStatus
+  timezone String     @default("Europe/Paris")
+
+  lastSeenAt     DateTime? @map("last_seen_at") @db.Timestamptz
+  deactivatedAt  DateTime? @map("deactivated_at") @db.Timestamptz
+
+  // ── Colonnes ajoutées par 01-identite.md §3 ───────────────────────────────
+  /// Date du premier changement de pays d'origine ; non nul = figé.
+  originCountryLockedAt DateTime? @map("origin_country_locked_at") @db.Timestamptz
+  /// Limite d'un changement de handle par 30 jours.
+  handleChangedAt       DateTime? @map("handle_changed_at") @db.Timestamptz
+  /// La progression automatique de phase ne s'applique pas si postérieure à arrival_date.
+  phaseSetManuallyAt    DateTime? @map("phase_set_manually_at") @db.Timestamptz
+
+  avatarAsset   MediaAsset? @relation("UserAvatar", fields: [avatarAssetId], references: [id], onDelete: SetNull)
+  originCountry Country     @relation(fields: [originCountryId], references: [id], onDelete: Restrict)
+  city          City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
+
+  phoneNumbers            PhoneNumber[]
+  authSessions            AuthSession[]
+  kycVerifications        KycVerification[]
+  profile                 UserProfile?
+  languages               UserLanguage[]
+  skills                  UserSkill[]
+  stats                   UserStats?
+  consents                Consent[]
+  deletionRequests        AccountDeletionRequest[]
+  dataExports             DataExport[]
+  mediaAssets             MediaAsset[]             @relation("MediaOwner")
+  bookmarks               Bookmark[]
+  reputationEvents        ReputationEvent[]
+  journeys                Journey[]
+  journeyMemberships      JourneyMember[]          @relation("JourneyMemberUser")
+  journeyInvitesSent      JourneyMember[]          @relation("JourneyMemberInviter")
+  journeyActivities       JourneyActivity[]
+  templateCorrections     TemplateCorrectionProposal[]
+  posts                   Post[]
+  postReactions           PostReaction[]
+  comments                Comment[]
+  stories                 Story[]
+  storyReactions          StoryReaction[]
+  storyViews              StoryView[]
+  guides                  Guide[]
+  guideVersions           GuideVersion[]
+  guideVotes              GuideVote[]
+  guideProposals          GuideRevisionProposal[]  @relation("GuideProposer")
+  guideReviews            GuideRevisionProposal[]  @relation("GuideReviewer")
+  guideContributions      GuideContributor[]
+  guideOutdatedFlags      GuideOutdatedFlag[]
+  helpRequests            HelpRequest[]
+  helpResponses           HelpResponse[]
+  communitiesCreated      Community[]
+  communityMemberships    CommunityMember[]
+  topics                  Topic[]
+  communityAnnouncements  CommunityAnnouncement[]
+  polls                   Poll[]
+  pollVotes               PollVote[]
+  albumsCreated           Album[]
+  albumPhotos             AlbumPhoto[]
+  mentorProfile           MentorProfile?
+  mentorshipsAsMentor     Mentorship[]             @relation("MentorshipMentor")
+  mentorshipsAsMentee     Mentorship[]             @relation("MentorshipMentee")
+  reviewsWritten          MentorshipReview[]       @relation("ReviewAuthor")
+  reviewsReceived         MentorshipReview[]       @relation("ReviewSubject")
+  connectionsAsA          Connection[]             @relation("ConnectionUserA")
+  connectionsAsB          Connection[]             @relation("ConnectionUserB")
+  connectionRequestsSent  ConnectionRequest[]      @relation("ConnectionRequestFrom")
+  connectionRequestsRecvd ConnectionRequest[]      @relation("ConnectionRequestTo")
+  blocksMade              Block[]                  @relation("Blocker")
+  blocksReceived          Block[]                  @relation("Blocked")
+  conversationMemberships ConversationMember[]
+  messages                Message[]
+  cityTips                CityTip[]
+  eventsOrganized         Event[]
+  eventAttendances        EventAttendee[]
+  housingListings         HousingListing[]
+  jobListings             JobListing[]
+  jobSeekerProfile        JobSeekerProfile?
+  recommendationsMade     MemberRecommendation[]   @relation("RecommendationFrom")
+  recommendationsReceived MemberRecommendation[]   @relation("RecommendationTo")
+  proProfile              ProProfile?
+  proRecommendations      ProRecommendation[]
+  proContactLogs          ProContactLog[]
+  savedAlerts             SavedAlert[]
+  notifications           Notification[]
+  notificationPreferences NotificationPreferences?
+  pushSubscriptions       PushSubscription[]
+  outboundMessages        OutboundMessage[]
+  reportsFiled            Report[]
+  moderationCases         ModerationCase[]
+  sanctions               Sanction[]
+  subscriptions           Subscription[]
+  payments                Payment[]
+  usageCounters           UsageCounter[]
+  affiliateClicks         AffiliateClick[]
+
+  @@index([phase])
+  @@index([verificationLevel])
+  @@index([originCountryId])
+  @@index([cityId])
+  @@index([status])
+  @@map("users")
+}
+
+/// Numéros de téléphone vérifiés. Le numéro n'est JAMAIS stocké en clair (§8.1),
+/// et n'est jamais renvoyé par l'API après sa saisie — seul un masque (règle dure).
+model PhoneNumber {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId    String @map("user_id") @db.Uuid
+  countryId String @map("country_id") @db.Uuid
+
+  /// AES-256-GCM. Clé jamais rotée (runbook §7 : rotation = réchiffrement complet).
+  phoneEncrypted Bytes  @map("phone_encrypted")
+  /// HMAC-SHA256 : unicité et recherche sans déchiffrer.
+  phoneHmac      String @unique @map("phone_hmac")
+
+  isPrimary     Boolean  @map("is_primary")
+  /// Vrai si l'indicatif est celui d'un pays de destination actif → condition du niveau L2.
+  isDestination Boolean  @map("is_destination")
+  verifiedAt    DateTime @map("verified_at") @db.Timestamptz
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  country Country @relation(fields: [countryId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("phone_numbers")
+}
+
+/// Défis OTP en cours. Purgés après 24 h (§8.4). 6 chiffres, 10 min, 5 tentatives.
+model OtpChallenge {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  phoneHmac  String     @map("phone_hmac")
+  purpose    OtpPurpose
+  codeHash   String     @map("code_hash")
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @map("expires_at") @db.Timestamptz
+  consumedAt DateTime?  @map("consumed_at") @db.Timestamptz
+  ip         String?    @db.Inet
+
+  @@index([phoneHmac])
+  @@map("otp_challenges")
+}
+
+/// Sessions de connexion. Jeton de rafraîchissement 30 jours, rotation à chaque usage,
+/// révocation de la chaîne en cas de réutilisation.
+model AuthSession {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId           String  @map("user_id") @db.Uuid
+  refreshTokenHash String  @unique @map("refresh_token_hash")
+  deviceLabel      String? @map("device_label")
+  ip               String? @db.Inet
+  userAgent        String? @map("user_agent")
+
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz
+
+  /// Vrai après changement de niveau : force un nouveau jeton d'accès (401 TOKEN_STALE).
+  levelRefreshRequired Boolean @default(false) @map("level_refresh_required")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("auth_sessions")
+}
+
+/// Sessions de vérification d'identité (Didit). Règle dure : aucune pièce d'identité
+/// n'est reçue ni stockée. Seuls le statut, la date de décision et is_adult sont conservés.
+model KycVerification {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId            String      @map("user_id") @db.Uuid
+  provider          KycProvider
+  providerSessionId String      @unique @map("provider_session_id")
+  status            KycStatus
+
+  /// Seule donnée dérivée conservée. false → compte désactivé (plateforme réservée aux majeurs).
+  isAdult           Boolean?  @map("is_adult")
+  /// Code fournisseur, sans détail.
+  declineReasonCode String?   @map("decline_reason_code")
+  decidedAt         DateTime? @map("decided_at") @db.Timestamptz
+  expiresAt         DateTime? @map("expires_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@map("kyc_verifications")
+}
+
+/// Informations de profil éditables.
+model UserProfile {
+  userId    String   @id @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  /// ≤ 500 caractères.
+  bio              String?
+  occupationStatus OccupationStatus @map("occupation_status")
+  availableToHelp  Boolean          @map("available_to_help")
+  helpTypes        HelpType[]       @map("help_types")
+  /// Profil visible hors connexion. Par défaut non — l'option la plus protectrice.
+  isPublic         Boolean          @default(false) @map("is_public")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([availableToHelp])
+  @@map("user_profiles")
+}
+
+model UserLanguage {
+  userId     String @map("user_id") @db.Uuid
+  languageId String @map("language_id") @db.Uuid
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  language Language @relation(fields: [languageId], references: [id], onDelete: Cascade)
+
+  @@id([userId, languageId])
+  @@map("user_languages")
+}
+
+model UserSkill {
+  userId  String @map("user_id") @db.Uuid
+  skillId String @map("skill_id") @db.Uuid
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([userId, skillId])
+  @@map("user_skills")
+}
+
+/// Compteurs de réputation. Pas de score unique, pas de classement de popularité (§9.4).
+/// Maintenus par reputation_events, jamais édités à la main.
+model UserStats {
+  userId    String   @id @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  helpValidatedCount   Int      @default(0) @map("help_validated_count")
+  guideHelpfulVotes    Int      @default(0) @map("guide_helpful_votes")
+  guideContributions   Int      @default(0) @map("guide_contributions")
+  mentorshipsCompleted Int      @default(0) @map("mentorships_completed")
+  eventsOrganized      Int      @default(0) @map("events_organized")
+  computedAt           DateTime @map("computed_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_stats")
+}
+
+/// Consentements horodatés (preuve RGPD). Table en ajout seul.
+model Consent {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  userId  String      @map("user_id") @db.Uuid
+  type    ConsentType
+  /// Version du document accepté — référence static_pages.version.
+  version String
+  granted Boolean
+  ip      String?     @db.Inet
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("consents")
+}
+
+/// Demandes de suppression avec délai de rétractation de 7 jours.
+model AccountDeletionRequest {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId       String    @map("user_id") @db.Uuid
+  requestedAt  DateTime  @map("requested_at") @db.Timestamptz
+  /// requested_at + 7 jours. Une connexion OTP avant l'échéance annule la demande.
+  executeAfter DateTime  @map("execute_after") @db.Timestamptz
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz
+  executedAt   DateTime? @map("executed_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("account_deletion_requests")
+}
+
+/// Exports RGPD : JSON par module + PDF du ou des parcours. Une demande par 30 jours.
+model DataExport {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId  String           @map("user_id") @db.Uuid
+  status  DataExportStatus
+  assetId String?          @map("asset_id") @db.Uuid
+  readyAt DateTime?        @map("ready_at") @db.Timestamptz
+  /// Lien valable 7 jours.
+  expiresAt DateTime?      @map("expires_at") @db.Timestamptz
+
+  user  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  asset MediaAsset? @relation("DataExportAsset", fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("data_exports")
+}

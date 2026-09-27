@@ -1,0 +1,142 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 09 — Villes et agenda  ·  3 tables
+// Fiche ville communautaire et événements physiques — le convertisseur en ligne → réel.
+// La présence effective (checked_in) est l'indicateur clé de la plateforme.
+//
+// RÈGLE DURE : aucune position individuelle. La carte ne montre que des agrégats
+// par ville, et jamais en dessous de 3 membres pour un filtre pays (sinon
+// « moins de 3 »). L'adresse d'un événement est du texte libre, jamais géocodé.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CityTipKind {
+  TIP
+  SHOP
+  BUDGET
+  TESTIMONY
+}
+
+enum EventType {
+  PICNIC
+  SPORT
+  CV_WORKSHOP
+  COOKING
+  NETWORKING
+  OUTING
+  CONFERENCE
+  OTHER
+}
+
+enum EventStatus {
+  SCHEDULED
+  CANCELLED
+  DONE
+}
+
+enum AttendeeStatus {
+  GOING
+  MAYBE
+  DECLINED
+  WAITLIST
+}
+
+/// Contenu communautaire de la fiche ville : astuces, commerces du pays,
+/// budgets réels, témoignages.
+model CityTip {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  cityId       String      @map("city_id") @db.Uuid
+  authorUserId String?     @map("author_user_id") @db.Uuid
+  kind         CityTipKind
+  body         String
+  /// Si BUDGET : montant en centimes, jamais en flottant (§4).
+  amountCents  Int?        @map("amount_cents")
+
+  /// Découverte gardée depuis une story : c'est ainsi qu'une story utile survit
+  /// à ses 24 h.
+  sourceStoryId String? @map("source_story_id") @db.Uuid
+
+  helpfulCount Int           @default(0) @map("helpful_count")
+  status       ContentStatus
+
+  city        City   @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  author      User?  @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  sourceStory Story? @relation(fields: [sourceStoryId], references: [id], onDelete: SetNull)
+
+  @@index([cityId])
+  @@index([authorUserId])
+  @@index([kind])
+  @@map("city_tips")
+}
+
+/// Événement physique local. Création exigeant L1 ; 1 par mois en plan gratuit.
+model Event {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  organizerUserId String    @map("organizer_user_id") @db.Uuid
+  /// Null = public ; sinon réservé aux membres du réseau.
+  communityId     String?   @map("community_id") @db.Uuid
+  type            EventType
+  title           String
+  description     String?
+
+  cityId    String  @map("city_id") @db.Uuid
+  venueName String? @map("venue_name")
+  /// Texte libre, JAMAIS géocodé (pas de PostGIS, pas de géocodage — décision T4).
+  addressText String? @map("address_text")
+
+  startsAt DateTime  @map("starts_at") @db.Timestamptz
+  endsAt   DateTime? @map("ends_at") @db.Timestamptz
+
+  capacity      Int?
+  attendeeCount Int         @default(0) @map("attendee_count")
+  status        EventStatus
+
+  coverAssetId   String?   @map("cover_asset_id") @db.Uuid
+  /// Tâche event.reminders toutes les 15 min.
+  reminderSentAt DateTime? @map("reminder_sent_at") @db.Timestamptz
+
+  organizer  User        @relation(fields: [organizerUserId], references: [id], onDelete: Cascade)
+  community  Community?  @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  city       City        @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  coverAsset MediaAsset? @relation("EventCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+
+  attendees EventAttendee[]
+  albums    Album[]
+
+  @@index([organizerUserId])
+  @@index([communityId])
+  @@index([type])
+  @@index([cityId])
+  @@index([startsAt])
+  @@index([status])
+  @@map("events")
+}
+
+/// Réponses RSVP et présence effective.
+model EventAttendee {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  eventId     String         @map("event_id") @db.Uuid
+  userId      String         @map("user_id") @db.Uuid
+  status      AttendeeStatus
+  respondedAt DateTime       @map("responded_at") @db.Timestamptz
+
+  /// Alimente l'indicateur clé : la participation physique réelle, pas le RSVP.
+  checkedIn Boolean @default(false) @map("checked_in")
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([eventId])
+  @@index([userId])
+  @@map("event_attendees")
+}

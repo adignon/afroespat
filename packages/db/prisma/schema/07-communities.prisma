@@ -1,0 +1,267 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 07 — Réseaux  ·  9 tables
+// Réseaux automatiques (ville, pays d'origine) et d'intérêt : sujets, annonces,
+// sondages, albums, rôles contextuels.
+//
+// Un réseau vide décourage plus qu'il n'attire (décision T4) : 5 invités exigés à
+// la création d'un réseau d'intérêt, seuil de 50 membres par ville, archivage
+// automatique après 60 jours d'inactivité (INTEREST seulement).
+//
+// Les modérateurs bénévoles sont un rôle contextuel ici, pas un compte équipe (§7.4).
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum CommunityKind {
+  CITY
+  COUNTRY
+  INTEREST
+}
+
+enum CommunityVisibility {
+  PUBLIC
+  ON_REQUEST
+  INVITE_ONLY
+}
+
+enum CommunityStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CommunityMemberRole {
+  OWNER
+  MODERATOR
+  MEMBER
+}
+
+enum CommunityMemberStatus {
+  ACTIVE
+  PENDING
+  INVITED
+  BANNED
+}
+
+enum TopicStatus {
+  OPEN
+  RESOLVED
+  ARCHIVED
+}
+
+enum TopicPinKind {
+  NONE
+  RULES
+  RESOURCE
+  WELCOME
+}
+
+/// Réseau de ville, de pays d'origine ou d'intérêt.
+/// CITY et COUNTRY sont créés automatiquement à l'activation du référentiel (02 §2).
+model Community {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  kind CommunityKind
+  /// Requis si CITY.
+  cityId    String? @map("city_id") @db.Uuid
+  /// Requis si COUNTRY.
+  countryId String? @map("country_id") @db.Uuid
+
+  name        String
+  slug        String  @unique
+  description String?
+  /// Intérêt : cuisine, sport, entrepreneuriat…
+  category    String?
+
+  visibility      CommunityVisibility
+  createdByUserId String?             @map("created_by_user_id") @db.Uuid
+  coverAssetId    String?             @map("cover_asset_id") @db.Uuid
+
+  memberCount Int             @default(0) @map("member_count")
+  status      CommunityStatus
+
+  /// Archivage automatique après 60 jours (INTEREST seulement).
+  lastActivityAt DateTime  @map("last_activity_at") @db.Timestamptz
+  archivedAt     DateTime? @map("archived_at") @db.Timestamptz
+
+  city        City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  country     Country?    @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  createdBy   User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  coverAsset  MediaAsset? @relation("CommunityCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+
+  members         CommunityMember[]
+  topics          Topic[]
+  announcements   CommunityAnnouncement[]
+  polls           Poll[]
+  albums          Album[]
+  posts           Post[]
+  events          Event[]
+  searchDocuments SearchDocument[]
+
+  @@index([kind])
+  @@index([cityId])
+  @@index([countryId])
+  @@index([status])
+  @@index([lastActivityAt])
+  @@map("communities")
+}
+
+model CommunityMember {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  communityId String                @map("community_id") @db.Uuid
+  userId      String                @map("user_id") @db.Uuid
+  role        CommunityMemberRole
+  status      CommunityMemberStatus
+  joinedAt    DateTime?             @map("joined_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, userId])
+  @@index([communityId])
+  @@index([userId])
+  @@map("community_members")
+}
+
+/// Sujet persistant : structure forum, affichage en cartes.
+model Topic {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  communityId  String       @map("community_id") @db.Uuid
+  authorUserId String       @map("author_user_id") @db.Uuid
+  title        String
+  body         String
+  status       TopicStatus
+  pinKind      TopicPinKind @map("pin_kind")
+
+  replyCount  Int       @default(0) @map("reply_count")
+  lastReplyAt DateTime? @map("last_reply_at") @db.Timestamptz
+
+  /// Question déplacée depuis le fil global vers ce réseau.
+  originPostId String? @map("origin_post_id") @db.Uuid
+
+  community  Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author     User      @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  originPost Post?     @relation("TopicOriginPost", fields: [originPostId], references: [id], onDelete: SetNull)
+
+  postsMovedHere Post[] @relation("PostMovedToTopic")
+
+  @@index([communityId])
+  @@index([authorUserId])
+  @@index([status])
+  @@index([lastReplyAt])
+  @@map("topics")
+}
+
+/// Annonce du créateur, notifiée à tous les membres du réseau.
+model CommunityAnnouncement {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  communityId  String    @map("community_id") @db.Uuid
+  authorUserId String    @map("author_user_id") @db.Uuid
+  body         String
+  notifiedAt   DateTime? @map("notified_at") @db.Timestamptz
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([communityId])
+  @@map("community_announcements")
+}
+
+model Poll {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  communityId  String    @map("community_id") @db.Uuid
+  authorUserId String    @map("author_user_id") @db.Uuid
+  question     String
+  isMultiple   Boolean   @map("is_multiple")
+  closesAt     DateTime? @map("closes_at") @db.Timestamptz
+
+  community Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  author    User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  options   PollOption[]
+
+  @@index([communityId])
+  @@map("polls")
+}
+
+model PollOption {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  pollId    String @map("poll_id") @db.Uuid
+  label     String
+  position  Int
+  voteCount Int    @default(0) @map("vote_count")
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@index([pollId])
+  @@map("poll_options")
+}
+
+model PollVote {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  pollOptionId String @map("poll_option_id") @db.Uuid
+  userId       String @map("user_id") @db.Uuid
+
+  pollOption PollOption @relation(fields: [pollOptionId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([pollOptionId, userId])
+  @@index([pollOptionId])
+  @@map("poll_votes")
+}
+
+/// Album partagé d'un réseau, souvent lié à un événement.
+/// Photos réelles d'événements ou aucune image — jamais d'illustration générique (T1 §6).
+model Album {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  communityId     String  @map("community_id") @db.Uuid
+  eventId         String? @map("event_id") @db.Uuid
+  title           String
+  createdByUserId String  @map("created_by_user_id") @db.Uuid
+
+  community Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  event     Event?       @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdBy User         @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  photos    AlbumPhoto[]
+
+  @@index([communityId])
+  @@map("albums")
+}
+
+model AlbumPhoto {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  albumId          String  @map("album_id") @db.Uuid
+  mediaAssetId     String  @map("media_asset_id") @db.Uuid
+  uploadedByUserId String  @map("uploaded_by_user_id") @db.Uuid
+  caption          String?
+
+  album      Album      @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  uploadedBy User       @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([albumId])
+  @@map("album_photos")
+}

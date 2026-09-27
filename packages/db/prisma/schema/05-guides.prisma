@@ -1,0 +1,221 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 05 — Guides et Démarches  ·  6 tables
+// Versions, votes d'utilité, propositions de mise à jour, fraîcheur, obsolescence.
+//
+// À la suppression d'un compte, les guides sont ANONYMISÉS, pas supprimés
+// (décision T4 : mémoire collective, conforme si non réidentifiable).
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum GuideCategory {
+  PRE_DEPARTURE
+  ARRIVAL
+  HOUSING
+  DAILY_LIFE
+  WORK_STUDIES
+  SCAM_ALERTS
+}
+
+enum GuideScope {
+  UNIVERSAL
+  COUNTRY
+}
+
+enum GuideStatus {
+  DRAFT
+  PUBLISHED
+  FLAGGED
+  UNPUBLISHED
+  ARCHIVED
+}
+
+/// Le vote négatif signale, il ne déclasse pas.
+enum GuideVoteValue {
+  HELPFUL
+  NOT_HELPFUL
+}
+
+enum GuideProposalStatus {
+  PENDING
+  ACCEPTED
+  AMENDED
+  REJECTED
+  ESCALATED
+}
+
+/// Guide rédigé par un membre. Le contenu vit dans guide_versions.
+/// RÈGLE DURE : le mot « certifié » et ses dérivés sont rejetés par validation
+/// dans le titre et les libellés d'interface (05-guides.md §2).
+model Guide {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  /// Null après anonymisation (suppression du compte de l'auteur).
+  authorUserId String? @map("author_user_id") @db.Uuid
+
+  title String
+  slug  String        @unique
+  category GuideCategory
+  scope    GuideScope
+
+  /// Requis si scope = COUNTRY.
+  originCountryId String? @map("origin_country_id") @db.Uuid
+  cityId          String? @map("city_id") @db.Uuid
+
+  currentVersionId String? @map("current_version_id") @db.Uuid
+  status           GuideStatus
+
+  /// Vrai après 6 mois d'inactivité de l'auteur ou après anonymisation :
+  /// les propositions sont alors validées par la modération.
+  maintainedByCommunity Boolean @default(false) @map("maintained_by_community")
+
+  helpfulCount Int @default(0) @map("helpful_count")
+  /// helpful_count × coefficient de fraîcheur — recalculé chaque nuit.
+  freshnessScore Decimal @default(0) @map("freshness_score") @db.Decimal(10, 4)
+  /// Affichée aussi visiblement que le titre (T1 §6).
+  lastContentUpdateAt DateTime @map("last_content_update_at") @db.Timestamptz
+
+  outdatedFlagCount Int @default(0) @map("outdated_flag_count")
+  /// Fixée à 3 signalements ; dépublication si dépassée (tâche quotidienne).
+  unpublishDeadlineAt DateTime? @map("unpublish_deadline_at") @db.Timestamptz
+
+  author         User?         @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
+  originCountry  Country?      @relation(fields: [originCountryId], references: [id], onDelete: SetNull)
+  city           City?         @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  currentVersion GuideVersion? @relation("GuideCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  versions      GuideVersion[]          @relation("GuideVersions")
+  votes         GuideVote[]
+  proposals     GuideRevisionProposal[]
+  contributors  GuideContributor[]
+  outdatedFlags GuideOutdatedFlag[]
+  stepDefinitions StepDefinition[]
+
+  @@index([authorUserId])
+  @@index([category])
+  @@index([originCountryId])
+  @@index([cityId])
+  @@index([status])
+  @@index([freshnessScore])
+  @@index([lastContentUpdateAt])
+  @@map("guides")
+}
+
+/// Historique intégral du contenu. Table en ajout seul.
+model GuideVersion {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  guideId String @map("guide_id") @db.Uuid
+  version Int
+  body    String
+  /// Résumé des changements.
+  summary String?
+
+  createdByUserId  String? @map("created_by_user_id") @db.Uuid
+  sourceProposalId String? @map("source_proposal_id") @db.Uuid
+
+  guide          Guide                  @relation("GuideVersions", fields: [guideId], references: [id], onDelete: Cascade)
+  createdBy      User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  sourceProposal GuideRevisionProposal?  @relation("ProposalResultingVersion", fields: [sourceProposalId], references: [id], onDelete: SetNull)
+
+  currentOfGuides   Guide[]                 @relation("GuideCurrentVersion")
+  proposalsBasedOn  GuideRevisionProposal[] @relation("ProposalBaseVersion")
+
+  @@unique([guideId, version])
+  @@index([guideId])
+  @@map("guide_versions")
+}
+
+/// Vote « ça m'a aidé ». Un par membre et par guide. Alimente la réputation.
+model GuideVote {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  guideId String         @map("guide_id") @db.Uuid
+  userId  String         @map("user_id") @db.Uuid
+  value   GuideVoteValue
+
+  guide Guide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([guideId, userId])
+  @@index([guideId])
+  @@map("guide_votes")
+}
+
+/// Proposition de mise à jour d'un passage, validée par le créateur du guide.
+/// Sans réponse au bout de 14 jours, elle est escaladée à la modération.
+model GuideRevisionProposal {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  guideId         String @map("guide_id") @db.Uuid
+  proposerUserId  String @map("proposer_user_id") @db.Uuid
+  baseVersionId   String @map("base_version_id") @db.Uuid
+
+  /// Passage ciblé — permet l'affichage avant/après (ProposalDiff).
+  targetExcerpt String @map("target_excerpt")
+  replacement   String
+  /// Motif obligatoire.
+  reason        String
+  sourceUrl     String? @map("source_url")
+
+  status GuideProposalStatus
+  /// created_at + 14 jours → escalade vers la modération.
+  escalateAt DateTime @map("escalate_at") @db.Timestamptz
+
+  reviewerUserId  String?   @map("reviewer_user_id") @db.Uuid
+  reviewerStaffId String?   @map("reviewer_staff_id") @db.Uuid
+  rejectReason    String?   @map("reject_reason")
+  decidedAt       DateTime? @map("decided_at") @db.Timestamptz
+
+  guide         Guide        @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  proposer      User         @relation("GuideProposer", fields: [proposerUserId], references: [id], onDelete: Cascade)
+  baseVersion   GuideVersion @relation("ProposalBaseVersion", fields: [baseVersionId], references: [id], onDelete: Cascade)
+  reviewerUser  User?        @relation("GuideReviewer", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+  reviewerStaff StaffUser?   @relation(fields: [reviewerStaffId], references: [id], onDelete: SetNull)
+
+  resultingVersions GuideVersion[] @relation("ProposalResultingVersion")
+
+  @@index([guideId])
+  @@index([proposerUserId])
+  @@index([status])
+  @@map("guide_revision_proposals")
+}
+
+/// Crédit des contributeurs d'un guide. Alimente la réputation (GUIDE_CONTRIBUTION).
+model GuideContributor {
+  guideId String @map("guide_id") @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+
+  acceptedCount Int      @default(0) @map("accepted_count")
+  firstAt       DateTime @map("first_at") @db.Timestamptz
+
+  guide Guide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([guideId, userId])
+  @@index([guideId])
+  @@map("guide_contributors")
+}
+
+/// Signalement « l'information a changé ». Distinct du signalement d'abus (module 13).
+/// À 3 signalements, unpublish_deadline_at est fixée à 30 jours.
+model GuideOutdatedFlag {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  guideId String  @map("guide_id") @db.Uuid
+  userId  String  @map("user_id") @db.Uuid
+  comment String?
+
+  guide Guide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([guideId, userId])
+  @@index([guideId])
+  @@map("guide_outdated_flags")
+}

@@ -1,0 +1,267 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 14 — Monétisation  ·  7 tables
+//
+// Rien de ce qui relève de l'aide n'est payant.
+//
+// RÈGLE DURE : l'entraide, les guides, le parrainage, les réseaux et la
+// participation aux événements ne sont jamais conditionnés à un plan. Aucune route
+// de ces modules ne vérifie users.plan.
+// RÈGLE DURE : un plan ne donne jamais de priorité d'affichage dans l'entraide,
+// le parrainage ni les guides.
+// RÈGLE DURE : aucun encart partenaire dans le fil, l'entraide, les guides, les
+// réseaux, la messagerie. Ils vivent uniquement sur une étape de parcours et en
+// pied de la section Logement.
+// RÈGLE DURE : aucune donnée de carte ne transite par le serveur.
+// RÈGLE DURE : aucune donnée personnelle dans un lien d'affiliation — seulement click_id.
+//
+// Aucune publicité display. Aucune vente de données.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum PlanCode {
+  FREE
+  PREMIUM
+  PRO
+  PRO_PLUS
+}
+
+enum PlanInterval {
+  MONTH
+  YEAR
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentProviderKind {
+  STRIPE
+  MOBILE_MONEY
+}
+
+enum PaymentMethodKind {
+  CARD
+  MTN_MOMO
+  MOOV_MONEY
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum UsageMetric {
+  EVENTS_CREATED
+  PRO_CONTACTS
+}
+
+enum PartnerCategory {
+  INSURANCE
+  AIRLINE
+  BANK
+  REMITTANCE
+  HOUSING_GUARANTEE
+  TELECOM
+  OTHER
+}
+
+enum PayoutModel {
+  CPA
+  CPC
+  FLAT
+}
+
+/// Plans et limites. `limits` est la SOURCE UNIQUE des quotas : les modules les
+/// lisent via PlanService.limitsFor(userId), jamais en dur.
+/// Les prix vivent aussi dans system_settings pour tester des variantes sans déploiement.
+model Plan {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  code       PlanCode     @unique
+  nameFr     String       @map("name_fr")
+  priceCents Int          @map("price_cents")
+  currency   String
+  interval   PlanInterval
+  /// max_active_journeys, events_per_month, pro_contacts_per_month…
+  limits     Json
+  isActive   Boolean      @map("is_active")
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+/// Abonnement d'un membre (Premium) ou d'une fiche pro (Pro, Pro+).
+/// Premium et Pro sont indépendants. Mobile Money fonctionne par périodes, sans
+/// récurrence : cancel_at_period_end = true par construction (décision T4).
+model Subscription {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId       String  @map("user_id") @db.Uuid
+  /// Renseigné pour PRO / PRO_PLUS.
+  proProfileId String? @map("pro_profile_id") @db.Uuid
+  planId       String  @map("plan_id") @db.Uuid
+
+  status   SubscriptionStatus
+  provider PaymentProviderKind
+  providerRef String?          @map("provider_ref")
+
+  currentPeriodStart DateTime @map("current_period_start") @db.Timestamptz
+  currentPeriodEnd   DateTime @map("current_period_end") @db.Timestamptz
+
+  cancelAtPeriodEnd Boolean   @default(false) @map("cancel_at_period_end")
+  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamptz
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  proProfile ProProfile? @relation(fields: [proProfileId], references: [id], onDelete: SetNull)
+  plan       Plan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  payments Payment[]
+
+  @@index([userId])
+  @@index([proProfileId])
+  @@index([status])
+  @@index([currentPeriodEnd])
+  @@map("subscriptions")
+}
+
+/// Paiement unitaire. Montants en centimes (ou plus petite unité pour le XOF).
+model Payment {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId         String  @map("user_id") @db.Uuid
+  subscriptionId String? @map("subscription_id") @db.Uuid
+
+  amountCents Int    @map("amount_cents")
+  /// EUR · XOF (parité fixe 655,957).
+  currency    String
+
+  provider PaymentProviderKind
+  method   PaymentMethodKind
+  /// Idempotence des webhooks entrants.
+  providerRef String? @unique @map("provider_ref")
+
+  status      PaymentStatus
+  failureCode String?       @map("failure_code")
+
+  invoiceNumber  String? @unique @map("invoice_number")
+  invoiceAssetId String? @map("invoice_asset_id") @db.Uuid
+  paidAt         DateTime? @map("paid_at") @db.Timestamptz
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  invoiceAsset MediaAsset?   @relation("PaymentInvoice", fields: [invoiceAssetId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([subscriptionId])
+  @@index([status])
+  @@map("payments")
+}
+
+/// Compteurs mensuels pour les limites du plan gratuit.
+model UsageCounter {
+  userId    String      @map("user_id") @db.Uuid
+  metric    UsageMetric
+  /// AAAA-MM.
+  periodKey String      @map("period_key")
+  count     Int         @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, metric, periodKey])
+  @@index([userId])
+  @@map("usage_counters")
+}
+
+/// Partenaires d'affiliation. Le lien de transparence est obligatoire à l'affichage.
+model Partner {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  name         String
+  category     PartnerCategory
+  logoAssetId  String?         @map("logo_asset_id") @db.Uuid
+  /// Contient {click_id} — et rien d'autre du membre (règle dure).
+  affiliateUrlTemplate String @map("affiliate_url_template")
+  payoutModel  PayoutModel     @map("payout_model")
+
+  contractStart DateTime? @map("contract_start") @db.Date
+  contractEnd   DateTime? @map("contract_end") @db.Date
+  isActive      Boolean   @map("is_active")
+
+  logoAsset MediaAsset? @relation("PartnerLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
+
+  placements PartnerPlacement[]
+
+  @@index([isActive])
+  @@map("partners")
+}
+
+/// Encart partenaire sur une étape de parcours. Un seul par étape et par
+/// combinaison de pays. Jamais ailleurs que sur une étape ou en pied de Logement.
+model PartnerPlacement {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  partnerId        String  @map("partner_id") @db.Uuid
+  stepDefinitionId String  @map("step_definition_id") @db.Uuid
+  originCountryId      String? @map("origin_country_id") @db.Uuid
+  destinationCountryId String? @map("destination_country_id") @db.Uuid
+
+  headline    String
+  description String?
+  ctaLabel    String  @map("cta_label")
+
+  startsAt DateTime? @map("starts_at") @db.Timestamptz
+  endsAt   DateTime? @map("ends_at") @db.Timestamptz
+  isActive Boolean   @map("is_active")
+
+  partner            Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  stepDefinition     StepDefinition @relation(fields: [stepDefinitionId], references: [id], onDelete: Cascade)
+  originCountry      Country?       @relation("PlacementOriginCountry", fields: [originCountryId], references: [id], onDelete: SetNull)
+  destinationCountry Country?       @relation("PlacementDestinationCountry", fields: [destinationCountryId], references: [id], onDelete: SetNull)
+
+  clicks AffiliateClick[]
+
+  @@unique([stepDefinitionId, originCountryId, destinationCountryId])
+  @@index([partnerId])
+  @@index([stepDefinitionId])
+  @@index([isActive])
+  @@map("partner_placements")
+}
+
+/// Clics et conversions d'affiliation. Le membre est identifiable en base,
+/// jamais dans l'URL (règle dure).
+model AffiliateClick {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  placementId   String  @map("placement_id") @db.Uuid
+  userId        String? @map("user_id") @db.Uuid
+  journeyStepId String? @map("journey_step_id") @db.Uuid
+
+  clickedAt     DateTime  @map("clicked_at") @db.Timestamptz
+  convertedAt   DateTime? @map("converted_at") @db.Timestamptz
+  conversionRef String?   @map("conversion_ref")
+  payoutCents   Int?      @map("payout_cents")
+
+  placement   PartnerPlacement @relation(fields: [placementId], references: [id], onDelete: Cascade)
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  journeyStep JourneyStep?     @relation(fields: [journeyStepId], references: [id], onDelete: SetNull)
+
+  @@index([placementId])
+  @@index([userId])
+  @@map("affiliate_clicks")
+}

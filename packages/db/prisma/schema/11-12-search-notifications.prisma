@@ -1,0 +1,195 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Modules 11 et 12 — Recherche et notifications  ·  6 tables
+//
+// Recherche en PostgreSQL full-text (tsvector + unaccent + pg_trgm), pas de moteur
+// dédié : volume V1 < 100 000 documents, une brique de moins à héberger, et
+// l'interface SearchService permet de migrer plus tard (décision T4).
+//
+// RÈGLE DURE : une requête ne renvoie jamais un document COMMUNITY d'un réseau
+// dont le demandeur n'est pas membre, ni un document dont l'auteur est bloqué
+// dans un sens ou dans l'autre.
+// RÈGLE DURE : aucun email n'est jamais envoyé pour la catégorie SOCIAL.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SearchSubjectType {
+  GUIDE
+  TOPIC
+  HELP_REQUEST
+  HOUSING
+  JOB
+  EVENT
+  USER
+  CITY
+  PRO
+}
+
+/// Les parcours privés ne sont JAMAIS indexés — et les parcours publics non plus
+/// (règle dure 03 §3.7 : jamais indexés par la recherche).
+enum SearchVisibility {
+  PUBLIC
+  COMMUNITY
+  NONE
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  PUSH
+}
+
+enum OutboundStatus {
+  QUEUED
+  SENT
+  FAILED
+  BOUNCED
+}
+
+/// Index de recherche dénormalisé. Alimenté par les événements de domaine via la
+/// file search-index, jamais écrit à la main.
+///
+/// La colonne tsv est un tsvector, que Prisma ne modélise pas : elle est déclarée
+/// Unsupported et son index GIN est posé en SQL dans la migration.
+model SearchDocument {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  subjectType SearchSubjectType @map("subject_type")
+  subjectId   String            @map("subject_id") @db.Uuid
+
+  title    String
+  bodyText String @map("body_text")
+
+  cityId      String? @map("city_id") @db.Uuid
+  countryId   String? @map("country_id") @db.Uuid
+  /// Renseigné → restreint aux membres du réseau.
+  communityId String? @map("community_id") @db.Uuid
+
+  visibility SearchVisibility
+
+  /// unaccent + configuration française ; index GIN posé par migration SQL.
+  tsv Unsupported("tsvector")
+
+  city      City?      @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  country   Country?   @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  community Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+
+  @@unique([subjectType, subjectId])
+  @@index([subjectType])
+  @@index([cityId])
+  @@index([countryId])
+  @@index([communityId])
+  @@index([visibility])
+  @@map("search_documents")
+}
+
+/// Recherches sans résultat, anonymisées. Sert au produit (revue hebdomadaire du
+/// runbook) et à la proposition « publier la question dans l'entraide ».
+model SearchZeroResult {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  queryNormalized String   @map("query_normalized")
+  cityId          String?  @map("city_id") @db.Uuid
+  occurredOn      DateTime @map("occurred_on") @db.Date
+  count           Int      @default(1)
+
+  city City? @relation(fields: [cityId], references: [id], onDelete: SetNull)
+
+  @@unique([queryNormalized, cityId, occurredOn])
+  @@index([queryNormalized])
+  @@map("search_zero_results")
+}
+
+/// Notification in-app. Table en ajout seul.
+model Notification {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  userId String @map("user_id") @db.Uuid
+  /// Ex. help.response_received, journey.step_due.
+  type   String
+  title  String
+  body   String?
+
+  refType String? @map("ref_type")
+  refId   String? @map("ref_id") @db.Uuid
+
+  readAt DateTime? @map("read_at") @db.Timestamptz
+  /// IN_APP · PUSH · EMAIL — ce qui a effectivement été envoyé.
+  channelsSent String[] @map("channels_sent")
+
+  // Colonne ajoutée par 11-recherche-12-notifications.md §3.
+  /// JOURNEY_DEADLINE · JOURNEY_TEAM · HELP · MENTORSHIP · COMMUNITY · SERVICES ·
+  /// MODERATION · BOOKMARK · SOCIAL · ACCOUNT — pilote les canaux autorisés.
+  category String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([readAt])
+  @@map("notifications")
+}
+
+/// Réglages par canal et par catégorie.
+model NotificationPreferences {
+  userId    String   @id @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  /// { catégorie: bool }
+  push  Json
+  email Json
+  weeklyDigest Boolean @map("weekly_digest")
+  /// Plage horaire sans notification push.
+  quietHours   Json?   @map("quiet_hours")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// Abonnements Web Push (VAPID). La permission n'est demandée qu'APRÈS une action
+/// explicite du membre (§10.4) — jamais au chargement.
+model PushSubscription {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId    String  @map("user_id") @db.Uuid
+  endpoint  String  @unique
+  p256dh    String
+  auth      String
+  userAgent String? @map("user_agent")
+
+  lastSuccessAt DateTime? @map("last_success_at") @db.Timestamptz
+  /// Supprimé après 5 échecs.
+  failureCount  Int       @default(0) @map("failure_count")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+/// Journal des envois email / SMS / push, avec réessais exponentiels.
+model OutboundMessage {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  channel  NotificationChannel
+  userId   String?             @map("user_id") @db.Uuid
+  template String
+  status   OutboundStatus
+
+  providerRef String?   @map("provider_ref")
+  error       String?
+  sentAt      DateTime? @map("sent_at") @db.Timestamptz
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([channel])
+  @@index([userId])
+  @@index([status])
+  @@map("outbound_messages")
+}

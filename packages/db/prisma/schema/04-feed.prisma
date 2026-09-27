@@ -1,0 +1,298 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 04 — Fil d'actualité  ·  7 tables
+// Publications typées, réactions à vocabulaire variable, commentaires à une
+// profondeur, stories 24 h (conseil · découverte · information).
+//
+// Un jalon n'est PAS une table : c'est une publication VICTORY liée à une
+// journey_step (décision T4 — la table milestones dupliquait trois autres).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Le conseil n'est pas un type de publication : c'est une story (décision T4).
+enum PostType {
+  VICTORY
+  QUESTION
+  INFO
+  DISCUSSION
+}
+
+enum ContentStatus {
+  PUBLISHED
+  HIDDEN
+  REMOVED
+}
+
+/// Le pipeline de modération met en file et masque ; il ne supprime jamais (§13 §2).
+enum ModerationStatus {
+  PENDING
+  CLEARED
+  FLAGGED
+}
+
+/// Le libellé affiché dépend du type de publication : Bravo sur une victoire,
+/// Utile sur un conseil, Je soutiens sur une question.
+enum ReactionKind {
+  BRAVO
+  USEFUL
+  SUPPORT
+  LIKE
+}
+
+enum CommentSubjectType {
+  POST
+  TOPIC
+  GUIDE
+  EVENT
+}
+
+enum StoryType {
+  CONSEIL
+  DECOUVERTE
+  INFORMATION
+}
+
+enum StoryTextStyle {
+  BOLD
+  SERIF
+  MONO
+}
+
+enum StoryAudience {
+  ALL
+  CITY
+}
+
+enum StoryStatus {
+  ACTIVE
+  EXPIRED
+  HIDDEN
+  REMOVED
+}
+
+/// Deux votes par type de story, avec compteurs affichés.
+/// CONSEIL : USEFUL / NOT_USEFUL · DECOUVERTE : WANT_TO_GO / BEEN_THERE ·
+/// INFORMATION : CONFIRM / CHANGED. Seuls les deux kinds du type sont acceptés.
+enum StoryReactionKind {
+  USEFUL
+  NOT_USEFUL
+  WANT_TO_GO
+  BEEN_THERE
+  CONFIRM
+  CHANGED
+}
+
+/// Publication du fil global ou du fil d'un réseau.
+model Post {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  authorUserId String   @map("author_user_id") @db.Uuid
+  type         PostType
+  /// Markdown restreint (gras, italique, listes, liens). Jamais du HTML (§6.1).
+  body         String
+
+  /// Contexte géographique, sert au tri par proximité.
+  cityId      String? @map("city_id") @db.Uuid
+  /// Null = fil global ; sinon fil du réseau.
+  communityId String? @map("community_id") @db.Uuid
+
+  /// Contexte « Parcours Études ». Le titre personnel du parcours n'est jamais exposé.
+  journeyId String? @map("journey_id") @db.Uuid
+  /// Victoire liée à une étape franchie → encart « Étape franchie · N sur M ».
+  /// Null = réussite personnelle sans étape.
+  journeyStepId String? @map("journey_step_id") @db.Uuid
+
+  status           ContentStatus
+  moderationStatus ModerationStatus @map("moderation_status")
+
+  reactionCount Int @default(0) @map("reaction_count")
+  commentCount  Int @default(0) @map("comment_count")
+  // Aucun view_count : règle dure §1.2 — aucun compteur de vues, pour personne.
+
+  /// Question déplacée vers un réseau par la modération ou l'auteur.
+  movedToTopicId String? @map("moved_to_topic_id") @db.Uuid
+
+  author      User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  city        City?        @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  community   Community?   @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  journey     Journey?     @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  journeyStep JourneyStep? @relation(fields: [journeyStepId], references: [id], onDelete: SetNull)
+  movedToTopic Topic?      @relation("PostMovedToTopic", fields: [movedToTopicId], references: [id], onDelete: SetNull)
+
+  media           PostMedia[]
+  reactions       PostReaction[]
+  topicsFromPost  Topic[]        @relation("TopicOriginPost")
+
+  @@index([authorUserId])
+  @@index([type])
+  @@index([cityId])
+  @@index([communityId])
+  @@index([journeyStepId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model PostMedia {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  postId       String @map("post_id") @db.Uuid
+  mediaAssetId String @map("media_asset_id") @db.Uuid
+  position     Int
+
+  post       Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("post_media")
+}
+
+model PostReaction {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  postId String       @map("post_id") @db.Uuid
+  userId String       @map("user_id") @db.Uuid
+  kind   ReactionKind
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@index([postId])
+  @@map("post_reactions")
+}
+
+/// Commentaires, polymorphes : publications, sujets, guides, événements.
+/// Une seule profondeur de réponse (T1 §4.2 : CommentThread).
+model Comment {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  subjectType CommentSubjectType @map("subject_type")
+  subjectId   String             @map("subject_id") @db.Uuid
+
+  authorUserId    String  @map("author_user_id") @db.Uuid
+  parentCommentId String? @map("parent_comment_id") @db.Uuid
+  body            String
+  status          ContentStatus
+
+  author        User      @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  parentComment Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies       Comment[] @relation("CommentReplies")
+
+  @@index([subjectType, subjectId])
+  @@index([authorUserId])
+  @@map("comments")
+}
+
+/// Story à durée de vie limitée (24 h). Le format story se justifie pour du
+/// contenu périssable ; le type impose l'utilité (décision T4).
+///
+/// RÈGLE DURE : une story ne contient ni lien, ni numéro, ni email. Expirée, elle
+/// n'est renvoyée qu'à son auteur et aux membres qui l'ont enregistrée. Aucun
+/// compteur de vues n'est exposé à personne.
+model Story {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  authorUserId String    @map("author_user_id") @db.Uuid
+  type         StoryType
+  /// ≤ 280 caractères, ni lien ni numéro (validé à l'écriture).
+  body         String
+
+  /// Couleur de la palette si fond couleur.
+  backgroundColor   String? @map("background_color")
+  backgroundAssetId String? @map("background_asset_id") @db.Uuid
+  /// Le bouton Aa de l'éditeur.
+  textStyle         StoryTextStyle @map("text_style")
+
+  cityId String @map("city_id") @db.Uuid
+  /// CONSEIL rattaché à une étape — c'est ce qui le rend réutilisable.
+  stepDefinitionId String? @map("step_definition_id") @db.Uuid
+
+  /// Sujet (conseil, information) ou catégorie de découverte (lieu, produit, sortie).
+  category   String?
+  /// Découverte : lieu · Information : guichet ou lieu concerné.
+  placeLabel String? @map("place_label")
+
+  /// Information : fin de validité si plus courte que 24 h.
+  validUntil DateTime? @map("valid_until") @db.Timestamptz
+  /// Publication + 24 h, ou valid_until. Tâche story.expire toutes les 5 min.
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+
+  audience      StoryAudience
+  allowMessages Boolean       @map("allow_messages")
+
+  positiveCount Int     @default(0) @map("positive_count")
+  negativeCount Int     @default(0) @map("negative_count")
+  /// Recalculé toutes les 15 min ; le classement dépend du type.
+  score         Decimal @default(0) @db.Decimal(10, 4)
+
+  status           StoryStatus
+  moderationStatus ModerationStatus @map("moderation_status")
+
+  /// Une découverte gardée devient un city_tip ; une information peut devenir une demande.
+  convertedToType String? @map("converted_to_type")
+  convertedToId   String? @map("converted_to_id") @db.Uuid
+
+  author          User            @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  backgroundAsset MediaAsset?     @relation("StoryBackground", fields: [backgroundAssetId], references: [id], onDelete: SetNull)
+  city            City            @relation(fields: [cityId], references: [id], onDelete: Restrict)
+  stepDefinition  StepDefinition? @relation(fields: [stepDefinitionId], references: [id], onDelete: SetNull)
+
+  reactions StoryReaction[]
+  views     StoryView[]
+  cityTips  CityTip[]
+
+  @@index([authorUserId])
+  @@index([type])
+  @@index([cityId])
+  @@index([stepDefinitionId])
+  @@index([category])
+  @@index([expiresAt])
+  @@index([score])
+  @@index([status])
+  @@map("stories")
+}
+
+model StoryReaction {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  storyId String            @map("story_id") @db.Uuid
+  userId  String            @map("user_id") @db.Uuid
+  kind    StoryReactionKind
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])
+  @@index([storyId])
+  @@map("story_reactions")
+}
+
+/// Anneau vu / non vu, synchronisé entre appareils.
+/// Sert UNIQUEMENT à cela : aucun compteur de vues n'est exposé, à personne,
+/// pas même à l'auteur (règle dure §1.2).
+model StoryView {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  storyId String @map("story_id") @db.Uuid
+  userId  String @map("user_id") @db.Uuid
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])
+  @@index([storyId])
+  @@index([userId])
+  @@map("story_views")
+}

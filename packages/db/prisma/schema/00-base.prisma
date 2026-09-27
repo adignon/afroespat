@@ -1,0 +1,27 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Socle du schéma. Le modèle relationnel de 00-fondations.md §6 est la source
+// de vérité : un module peut ajouter des colonnes de détail, il ne renomme
+// jamais une table, ne déplace jamais une relation, ne change jamais un type
+// d'identifiant (§0.2).
+//
+// Conventions (§6.1) :
+//   · Identifiants   UUID v7, générés par l'application (jamais par la base).
+//   · Horodatage     created_at / updated_at sur toute table modifiable.
+//   · Suppression    deleted_at sur tout contenu produit par un membre ;
+//                    les requêtes l'excluent par défaut.
+//   · Enums          enums PostgreSQL natifs, réexportés vers @app/shared.
+//   · Texte membre   stocké brut, jamais du HTML. Markdown restreint au rendu.
+//   · Montants       entiers, en centimes, avec code devise ISO 4217.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../../generated/client"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [unaccent, pg_trgm, citext]
+}

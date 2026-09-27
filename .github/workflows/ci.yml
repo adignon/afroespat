@@ -1,0 +1,91 @@
+# Intégration continue — 00-fondations.md §11.4.
+# Ordre imposé : installation → lint → types → unitaires → intégration →
+# migrations à jour → build → bout en bout.
+#
+# La CI échoue sur un AVERTISSEMENT, pas seulement sur une erreur (§4).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  DATABASE_URL: postgresql://app:app@localhost:5432/app?schema=public
+  REDIS_URL: redis://localhost:6379
+  NODE_ENV: test
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: app
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with: { version: 9.15.0 }
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+
+      - name: Installation
+        run: pnpm install --frozen-lockfile
+
+      - name: Secrets de test
+        # Les fournisseurs externes sont tous simulés en CI (§11.3) :
+        # aucun appel sortant, aucun coût, aucune dépendance réseau.
+        run: cp .env.example .env
+
+      - name: Client de base de données
+        run: pnpm db:generate
+
+      - name: Migrations
+        run: pnpm --filter @app/db migrate:deploy
+
+      # Une migration manquante est un échec, pas un avertissement : le schéma
+      # et l'historique doivent concorder exactement (§11.4).
+      - name: Migrations à jour
+        run: pnpm --filter @app/db migrate:status
+
+      - name: Enums réexportés à jour
+        # Le fichier généré est commité : s'il diffère, c'est que le schéma a
+        # bougé sans régénérer. Voir packages/shared/scripts/generate-enums.mjs.
+        run: pnpm --filter @app/shared generate:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Vérification des types
+        run: pnpm typecheck
+
+      - name: Tests unitaires
+        run: pnpm test
+
+      - name: Tests d'intégration
+        run: pnpm test:int
+
+      - name: Build
+        run: pnpm build
+
+      # Garde-fous des règles dures (§0.7 du plan) : capacités déclarées,
+      # terre cuite réservée, mots interdits, absence de rouge, masquage des PII.
+      - name: Garde-fous
+        run: pnpm guardrails

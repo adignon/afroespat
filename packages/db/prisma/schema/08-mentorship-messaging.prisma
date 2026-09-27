@@ -1,0 +1,270 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 08 — Parrainage, contacts et messagerie  ·  9 tables
+//
+// Parrainage : 90 jours, 2 filleuls maximum, L2 requis pour devenir parrain,
+// mais la demande est ouverte dès L0 — « créer le lien avant l'avion » (T4).
+//
+// RÈGLE DURE : le parrainage n'implique jamais d'argent. La modération IA marque
+// MONEY_REQUEST dans une conversation de parrainage en priorité 1.
+// RÈGLE DURE : aucun compteur public de contacts. Le nombre n'est visible que de soi-même.
+//
+// Les messages sont chiffrés au repos mais PAS de bout en bout : la modération
+// doit pouvoir traiter un signalement (décision T4).
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MentorshipStatus {
+  REQUESTED
+  ACCEPTED
+  DECLINED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum MentorshipEndReason {
+  COMPLETED
+  MENTOR_LEFT
+  MENTEE_LEFT
+  BLOCKED
+  ADMIN
+}
+
+/// Un contact naît d'une interaction réelle, pas d'un clic.
+enum ConnectionOrigin {
+  HELP_VALIDATED
+  MENTORSHIP
+  EVENT
+  GUIDE
+  MANUAL
+}
+
+enum ConnectionRequestStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+}
+
+enum ConversationKind {
+  DIRECT
+  JOURNEY
+  MENTORSHIP
+}
+
+/// Profil de parrain. Niveau L2 requis (présence sur le territoire).
+model MentorProfile {
+  userId    String   @id @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  isAvailable Boolean @map("is_available")
+  /// Défaut 2 — protège les parrains de la saturation (décision T4).
+  maxMentees        Int @default(2) @map("max_mentees")
+  activeMenteeCount Int @default(0) @map("active_mentee_count")
+
+  bio String?
+  /// Types de parcours que le parrain connaît.
+  journeyTemplateIds String[] @map("journey_template_ids") @db.Uuid
+
+  completedCount Int      @default(0) @map("completed_count")
+  avgRating      Decimal? @map("avg_rating") @db.Decimal(3, 2)
+
+  enabledAt  DateTime  @map("enabled_at") @db.Timestamptz
+  disabledAt DateTime? @map("disabled_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([isAvailable])
+  @@map("mentor_profiles")
+}
+
+/// Relation parrain / filleul, bornée à 3 mois (tâche mentorship.end_due).
+model Mentorship {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  mentorUserId String  @map("mentor_user_id") @db.Uuid
+  menteeUserId String  @map("mentee_user_id") @db.Uuid
+  /// Parcours du filleul : le parrain devient SUPPORTER automatiquement (03 §3.4).
+  journeyId    String? @map("journey_id") @db.Uuid
+
+  status MentorshipStatus
+  /// Obligatoire.
+  requestMessage String @map("request_message")
+
+  acceptedAt DateTime?            @map("accepted_at") @db.Timestamptz
+  /// accepted_at + 3 mois.
+  endsAt     DateTime?            @map("ends_at") @db.Timestamptz
+  endedAt    DateTime?            @map("ended_at") @db.Timestamptz
+  endReason  MentorshipEndReason? @map("end_reason")
+
+  conversationId String? @map("conversation_id") @db.Uuid
+
+  mentor       User          @relation("MentorshipMentor", fields: [mentorUserId], references: [id], onDelete: Cascade)
+  mentee       User          @relation("MentorshipMentee", fields: [menteeUserId], references: [id], onDelete: Cascade)
+  journey      Journey?      @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation("MentorshipConversation", fields: [conversationId], references: [id], onDelete: SetNull)
+
+  reviews       MentorshipReview[]
+  conversations Conversation[]     @relation("ConversationMentorship")
+
+  @@index([mentorUserId])
+  @@index([menteeUserId])
+  @@index([status])
+  @@map("mentorships")
+}
+
+/// Évaluation à la clôture, dans les deux sens. Jamais affichée comme un classement.
+model MentorshipReview {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  mentorshipId   String  @map("mentorship_id") @db.Uuid
+  reviewerUserId String  @map("reviewer_user_id") @db.Uuid
+  revieweeUserId String  @map("reviewee_user_id") @db.Uuid
+  /// 1 à 5.
+  rating         Int
+  comment        String?
+
+  mentorship Mentorship @relation(fields: [mentorshipId], references: [id], onDelete: Cascade)
+  reviewer   User       @relation("ReviewAuthor", fields: [reviewerUserId], references: [id], onDelete: Cascade)
+  reviewee   User       @relation("ReviewSubject", fields: [revieweeUserId], references: [id], onDelete: Cascade)
+
+  @@unique([mentorshipId, reviewerUserId])
+  @@index([mentorshipId])
+  @@index([revieweeUserId])
+  @@map("mentorship_reviews")
+}
+
+/// Contact entre deux membres. Paire ordonnée : contrainte user_a_id < user_b_id,
+/// posée en SQL dans la migration (Prisma n'exprime pas les CHECK).
+model Connection {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userAId String           @map("user_a_id") @db.Uuid
+  userBId String           @map("user_b_id") @db.Uuid
+  origin  ConnectionOrigin
+
+  originRefType String? @map("origin_ref_type")
+  originRefId   String? @map("origin_ref_id") @db.Uuid
+  /// Retrait automatique sur blocage.
+  removedAt     DateTime? @map("removed_at") @db.Timestamptz
+
+  userA User @relation("ConnectionUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("ConnectionUserB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  proRecommendations ProRecommendation[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@map("connections")
+}
+
+/// Demande manuelle de contact : motif obligatoire, même ville.
+model ConnectionRequest {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  fromUserId String                  @map("from_user_id") @db.Uuid
+  toUserId   String                  @map("to_user_id") @db.Uuid
+  message    String
+  status     ConnectionRequestStatus
+  decidedAt  DateTime?               @map("decided_at") @db.Timestamptz
+
+  fromUser User @relation("ConnectionRequestFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("ConnectionRequestTo", fields: [toUserId], references: [id], onDelete: Cascade)
+
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("connection_requests")
+}
+
+/// Blocage entre membres. JAMAIS notifié au bloqué.
+/// Effet : retire le contact, retire de l'équipe d'un parcours, masque
+/// réciproquement dans la recherche (règle dure 11 §2).
+model Block {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  blockerUserId String @map("blocker_user_id") @db.Uuid
+  blockedUserId String @map("blocked_user_id") @db.Uuid
+
+  blocker User @relation("Blocker", fields: [blockerUserId], references: [id], onDelete: Cascade)
+  blocked User @relation("Blocked", fields: [blockedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerUserId, blockedUserId])
+  @@index([blockerUserId])
+  @@index([blockedUserId])
+  @@map("blocks")
+}
+
+/// Fil de messages : direct, groupe de parcours, parrainage.
+/// La conversation JOURNEY est créée dès l'ouverture d'un parcours (03 §3.1) —
+/// c'est pourquoi ces trois tables appartiennent au lot 2, pas au lot 7.
+model Conversation {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  kind          ConversationKind
+  journeyId     String?          @map("journey_id") @db.Uuid
+  mentorshipId  String?          @map("mentorship_id") @db.Uuid
+  lastMessageAt DateTime?        @map("last_message_at") @db.Timestamptz
+
+  journey    Journey?    @relation("ConversationJourney", fields: [journeyId], references: [id], onDelete: SetNull)
+  mentorship Mentorship? @relation("ConversationMentorship", fields: [mentorshipId], references: [id], onDelete: SetNull)
+
+  members               ConversationMember[]
+  messages              Message[]
+  journeysAsGroup       Journey[]            @relation("JourneyGroupConversation")
+  mentorshipsAsMain     Mentorship[]         @relation("MentorshipConversation")
+
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  conversationId String @map("conversation_id") @db.Uuid
+  userId         String @map("user_id") @db.Uuid
+
+  joinedAt   DateTime  @map("joined_at") @db.Timestamptz
+  leftAt     DateTime? @map("left_at") @db.Timestamptz
+  lastReadAt DateTime? @map("last_read_at") @db.Timestamptz
+  isMuted    Boolean   @default(false) @map("is_muted")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([conversationId])
+  @@index([userId])
+  @@map("conversation_members")
+}
+
+/// Message privé, chiffré au repos (§8.1). Pas de chiffrement de bout en bout en V1.
+model Message {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  conversationId String  @map("conversation_id") @db.Uuid
+  senderUserId   String  @map("sender_user_id") @db.Uuid
+  bodyEncrypted  Bytes   @map("body_encrypted")
+  mediaAssetId   String? @map("media_asset_id") @db.Uuid
+  sentAt         DateTime @map("sent_at") @db.Timestamptz
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderUserId], references: [id], onDelete: Cascade)
+  mediaAsset   MediaAsset?  @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([senderUserId])
+  @@index([sentAt])
+  @@map("messages")
+}

@@ -1,0 +1,336 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 10 — Services : logement, emploi, annuaire  ·  10 tables
+//
+// Le logement est la surface d'attaque principale des arnaques : publication
+// réservée au niveau L2, score de risque, file de modération dédiée.
+//
+// RÈGLE DURE : le bandeau « Aucun versement avant visite ou vérification. Si une
+// annonce demande un acompte à distance, signalez-la. » est renvoyé par l'API sur
+// chaque liste et chaque annonce.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum HousingKind {
+  RENT
+  FLATSHARE
+  SUBLET
+  TEMPORARY
+  SEEKING_HOUSING
+  SEEKING_FLATMATE
+}
+
+enum HousingStatus {
+  ACTIVE
+  PAUSED
+  TAKEN
+  EXPIRED
+  REMOVED
+}
+
+enum JobKind {
+  JOB
+  INTERNSHIP
+  APPRENTICESHIP
+  GIG
+}
+
+enum JobStatus {
+  ACTIVE
+  EXPIRED
+  REMOVED
+}
+
+enum ProContactMethod {
+  PLATFORM_MESSAGE
+  EMAIL
+  PHONE_ON_REQUEST
+}
+
+enum ProVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ProTier {
+  FREE
+  PRO
+  PRO_PLUS
+}
+
+enum ProStatus {
+  ACTIVE
+  PAUSED
+  REMOVED
+}
+
+enum AlertKind {
+  HOUSING
+  JOB
+}
+
+/// Annonce ou recherche de logement. Publication réservée au niveau L2 — le seul
+/// endroit de la plateforme où L2 est exigé pour publier (§7.3).
+model HousingListing {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  authorUserId String      @map("author_user_id") @db.Uuid
+  kind         HousingKind
+  title        String
+  description  String
+
+  cityId   String  @map("city_id") @db.Uuid
+  district String?
+
+  /// Entier, en centimes (§4). Jamais de flottant sur un montant.
+  priceCents Int?   @map("price_cents")
+  currency   String @default("EUR")
+
+  isFurnished    Boolean?  @map("is_furnished")
+  availableFrom  DateTime? @map("available_from") @db.Date
+  durationMonths Int?      @map("duration_months")
+
+  status HousingStatus
+
+  /// 0–1. Un prix anormalement bas est le signal principal d'arnaque.
+  /// Au-delà du seuil housing.risk_queue_threshold, l'annonce part en modération.
+  riskScore Decimal  @default(0) @map("risk_score") @db.Decimal(4, 3)
+  riskFlags String[] @map("risk_flags")
+
+  moderationStatus ModerationStatus @map("moderation_status")
+  /// 60 jours, renouvelable (tâche listing.expire).
+  expiresAt        DateTime         @map("expires_at") @db.Timestamptz
+
+  /// Compteurs internes : jamais exposés à un membre (règle dure §1.2).
+  /// Ils servent à la modération et au pilotage admin uniquement.
+  viewCount    Int @default(0) @map("view_count")
+  contactCount Int @default(0) @map("contact_count")
+
+  author User @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  city   City @relation(fields: [cityId], references: [id], onDelete: Restrict)
+
+  photos HousingPhoto[]
+
+  @@index([authorUserId])
+  @@index([kind])
+  @@index([cityId])
+  @@index([status])
+  @@index([riskScore])
+  @@index([availableFrom])
+  @@map("housing_listings")
+}
+
+model HousingPhoto {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  listingId    String @map("listing_id") @db.Uuid
+  mediaAssetId String @map("media_asset_id") @db.Uuid
+  position     Int
+
+  listing    HousingListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset     @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@index([listingId])
+  @@map("housing_photos")
+}
+
+/// Offre d'emploi, stage, alternance, mission.
+model JobListing {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  authorUserId String  @map("author_user_id") @db.Uuid
+  kind         JobKind
+  title        String
+  description  String
+  companyName  String? @map("company_name")
+
+  /// Null = télétravail ou national.
+  cityId         String? @map("city_id") @db.Uuid
+  contractType   String? @map("contract_type")
+  sector         String?
+  educationLevel String? @map("education_level")
+  externalUrl    String? @map("external_url")
+
+  /// Premium : mise en avant, toujours signalée comme telle dans l'interface.
+  isSponsored    Boolean   @default(false) @map("is_sponsored")
+  sponsoredUntil DateTime? @map("sponsored_until") @db.Timestamptz
+
+  status    JobStatus
+  /// 45 jours (tâche listing.expire).
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+
+  author User  @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  city   City? @relation(fields: [cityId], references: [id], onDelete: SetNull)
+
+  memberRecommendations MemberRecommendation[]
+
+  @@index([authorUserId])
+  @@index([kind])
+  @@index([cityId])
+  @@index([sector])
+  @@index([isSponsored])
+  @@index([status])
+  @@map("job_listings")
+}
+
+/// Membre en recherche, visible dans « profils disponibles ».
+/// Mis à jour par un « Je suis bloqué » de cible JOBS.
+model JobSeekerProfile {
+  userId    String   @id @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  headline      String
+  sectors       String[]
+  contractTypes String[] @map("contract_types")
+  isVisible     Boolean  @map("is_visible")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([isVisible])
+  @@map("job_seeker_profiles")
+}
+
+/// Un membre recommande un autre membre pour un emploi.
+model MemberRecommendation {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  fromUserId   String  @map("from_user_id") @db.Uuid
+  toUserId     String  @map("to_user_id") @db.Uuid
+  jobListingId String? @map("job_listing_id") @db.Uuid
+  comment      String?
+
+  fromUser   User        @relation("RecommendationFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser     User        @relation("RecommendationTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  jobListing JobListing? @relation(fields: [jobListingId], references: [id], onDelete: SetNull)
+
+  @@unique([fromUserId, toUserId, jobListingId])
+  @@index([fromUserId])
+  @@index([toUserId])
+  @@map("member_recommendations")
+}
+
+/// Fiche d'un membre qui exerce un métier. Niveau L2 + justificatif d'activité.
+/// Le mot « certifié » n'apparaît jamais : la plateforme ne vérifie aucun dossier.
+model ProProfile {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  userId       String  @unique @map("user_id") @db.Uuid
+  professionId String  @map("profession_id") @db.Uuid
+  businessName String? @map("business_name")
+  description  String?
+  /// Tarifs indicatifs, texte libre.
+  priceHint    String? @map("price_hint")
+
+  contactMethod ProContactMethod @map("contact_method")
+
+  /// Justificatif d'activité : stocké, accès équipe uniquement, JAMAIS affiché (§8.1).
+  siret        String?
+  proofAssetId String? @map("proof_asset_id") @db.Uuid
+
+  verificationStatus ProVerificationStatus @map("verification_status")
+  tier               ProTier
+  tierUntil          DateTime?             @map("tier_until") @db.Timestamptz
+  status             ProStatus
+
+  recommendationCount Int @default(0) @map("recommendation_count")
+  /// Statistiques réservées au titulaire de la fiche (offre Pro), jamais publiques.
+  viewCount           Int @default(0) @map("view_count")
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profession Profession  @relation(fields: [professionId], references: [id], onDelete: Restrict)
+  proofAsset MediaAsset? @relation("ProProof", fields: [proofAssetId], references: [id], onDelete: SetNull)
+
+  cities          ProProfileCity[]
+  recommendations ProRecommendation[]
+  contactLogs     ProContactLog[]
+  subscriptions   Subscription[]
+
+  @@index([professionId])
+  @@index([verificationStatus])
+  @@index([tier])
+  @@index([status])
+  @@map("pro_profiles")
+}
+
+/// Zones d'intervention. Plusieurs villes réservées à Pro+.
+model ProProfileCity {
+  proProfileId String @map("pro_profile_id") @db.Uuid
+  cityId       String @map("city_id") @db.Uuid
+
+  proProfile ProProfile @relation(fields: [proProfileId], references: [id], onDelete: Cascade)
+  city       City       @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@id([proProfileId, cityId])
+  @@map("pro_profile_cities")
+}
+
+/// Recommandation d'un pro par un membre qui a RÉELLEMENT interagi avec lui :
+/// un contact est obligatoire entre les deux. C'est ce qui empêche l'achat d'avis.
+model ProRecommendation {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  proProfileId String  @map("pro_profile_id") @db.Uuid
+  authorUserId String  @map("author_user_id") @db.Uuid
+  connectionId String  @map("connection_id") @db.Uuid
+  comment      String?
+
+  proProfile ProProfile @relation(fields: [proProfileId], references: [id], onDelete: Cascade)
+  author     User       @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([proProfileId, authorUserId])
+  @@index([proProfileId])
+  @@map("pro_recommendations")
+}
+
+/// Contacts d'une fiche pro. Sert au quota : 3 par mois en plan gratuit.
+model ProContactLog {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  proProfileId String @map("pro_profile_id") @db.Uuid
+  userId       String @map("user_id") @db.Uuid
+  /// AAAA-MM.
+  periodKey    String @map("period_key")
+
+  proProfile ProProfile @relation(fields: [proProfileId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([proProfileId])
+  @@index([userId])
+  @@index([periodKey])
+  @@map("pro_contact_logs")
+}
+
+/// Alertes logement / emploi personnalisées (Premium).
+/// Aucune alerte sur l'entraide, les guides ou le parrainage : ils ne sont jamais payants.
+model SavedAlert {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId   String    @map("user_id") @db.Uuid
+  kind     AlertKind
+  /// Ville, budget, type…
+  criteria Json
+  isActive Boolean   @map("is_active")
+  /// Regroupement : une notification par heure et par alerte maximum.
+  lastNotifiedAt DateTime? @map("last_notified_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("saved_alerts")
+}

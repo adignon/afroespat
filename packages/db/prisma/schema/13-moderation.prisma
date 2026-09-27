@@ -1,0 +1,265 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 13 — Modération et sécurité  ·  6 tables
+//
+// La modération protège d'abord le segment pré-départ, cible privilégiée des arnaques.
+//
+// RÈGLE DURE : l'IA ne suspend jamais un compte et ne supprime jamais définitivement
+// un contenu. Elle masque et met en file ; un humain tranche.
+// RÈGLE DURE : le texte envoyé à l'API IA est toujours passé par redactForModeration
+// (téléphones, emails, noms propres remplacés par [TEL] [EMAIL] [NOM]). Un test
+// vérifie qu'un numéro et un email ne quittent pas le serveur.
+//
+// Le texte masqué n'est PAS stocké : seuls les étiquettes, le score et la latence.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ReportSubjectType {
+  POST
+  COMMENT
+  TOPIC
+  GUIDE
+  HELP_REQUEST
+  HELP_RESPONSE
+  HOUSING
+  JOB
+  PRO
+  EVENT
+  MESSAGE
+  USER
+}
+
+enum ReportReason {
+  SCAM
+  MONEY_REQUEST
+  HARASSMENT
+  SPAM
+  INAPPROPRIATE
+  OTHER
+}
+
+enum ReportStatus {
+  NEW
+  ATTACHED
+  RESOLVED
+  DISMISSED
+}
+
+enum ModerationSource {
+  REPORT
+  AI
+  RISK_SCORE
+  AUTO_RULE
+}
+
+enum ModerationCaseStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+}
+
+enum AiVerdict {
+  ALLOW
+  QUEUE
+  BLOCK
+}
+
+enum ModerationResolution {
+  KEEP
+  HIDE
+  REMOVE
+  WARN
+  SUSPEND
+}
+
+enum ModerationActionType {
+  HIDE
+  UNHIDE
+  REMOVE
+  WARN
+  SUSPEND_USER
+  BAN_USER
+  DISMISS
+  NOTE
+}
+
+enum SanctionType {
+  WARNING
+  SUSPENSION
+  BAN
+}
+
+enum ScamAlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+/// Signalement d'un membre sur un contenu ou un profil. Un par membre et par sujet.
+/// Le signaleur reçoit une confirmation, puis une notification à la clôture du
+/// dossier — sans détail de la décision.
+model Report {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  reporterUserId String            @map("reporter_user_id") @db.Uuid
+  subjectType    ReportSubjectType @map("subject_type")
+  subjectId      String            @map("subject_id") @db.Uuid
+  reason         ReportReason
+  /// ≤ 500 caractères.
+  details        String?
+  status         ReportStatus
+
+  caseId String? @map("case_id") @db.Uuid
+
+  reporter       User            @relation(fields: [reporterUserId], references: [id], onDelete: Cascade)
+  moderationCase ModerationCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@unique([reporterUserId, subjectType, subjectId])
+  @@index([reporterUserId])
+  @@index([subjectId])
+  @@index([status])
+  @@index([caseId])
+  @@map("reports")
+}
+
+/// Dossier de modération : regroupe signalements et détections sur un même sujet.
+/// File unique triée par priorité puis SLA. Un dossier assigné depuis 2 h sans
+/// action revient en file.
+model ModerationCase {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  subjectType         ReportSubjectType @map("subject_type")
+  subjectId           String            @map("subject_id") @db.Uuid
+  subjectAuthorUserId String?           @map("subject_author_user_id") @db.Uuid
+
+  source ModerationSource
+  /// 1 = arnaque ou demande d'argent, contenu bloqué par l'IA, SELF_HARM … 5 = autre.
+  priority Int
+  status   ModerationCaseStatus
+
+  aiVerdict AiVerdict? @map("ai_verdict")
+  aiLabels  String[]   @map("ai_labels")
+  aiScore   Decimal?   @map("ai_score") @db.Decimal(4, 3)
+
+  assignedStaffId String? @map("assigned_staff_id") @db.Uuid
+  /// created_at + 24 h ; priorité 1 : + 4 h.
+  slaDueAt        DateTime @map("sla_due_at") @db.Timestamptz
+
+  resolution ModerationResolution?
+  resolvedAt DateTime?             @map("resolved_at") @db.Timestamptz
+
+  subjectAuthor User?      @relation(fields: [subjectAuthorUserId], references: [id], onDelete: SetNull)
+  assignedStaff StaffUser? @relation(fields: [assignedStaffId], references: [id], onDelete: SetNull)
+
+  reports    Report[]
+  actions    ModerationAction[]
+  sanctions  Sanction[]
+  scamAlerts ScamAlert[]
+
+  @@index([subjectId])
+  @@index([subjectAuthorUserId])
+  @@index([priority])
+  @@index([status])
+  @@index([assignedStaffId])
+  @@index([slaDueAt])
+  @@map("moderation_cases")
+}
+
+/// Actions prises sur un dossier. Table en ajout seul : aucune route de
+/// modification ni de suppression.
+model ModerationAction {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  caseId String @map("case_id") @db.Uuid
+  /// Null si action automatique (masquage par l'IA).
+  staffId String? @map("staff_id") @db.Uuid
+  action  ModerationActionType
+  reason  String
+
+  moderationCase ModerationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  staff          StaffUser?     @relation(fields: [staffId], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@map("moderation_actions")
+}
+
+/// Sanctions appliquées à un membre. issued_by_staff_id est NON NUL :
+/// la décision humaine est obligatoire, l'IA ne sanctionne jamais.
+model Sanction {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId String       @map("user_id") @db.Uuid
+  type   SanctionType
+  reason String
+
+  startsAt DateTime  @map("starts_at") @db.Timestamptz
+  /// Null = définitif (bannissement, réservé au SUPER_ADMIN).
+  endsAt   DateTime? @map("ends_at") @db.Timestamptz
+
+  issuedByStaffId String  @map("issued_by_staff_id") @db.Uuid
+  caseId          String? @map("case_id") @db.Uuid
+  liftedAt        DateTime? @map("lifted_at") @db.Timestamptz
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  issuedByStaff  StaffUser       @relation(fields: [issuedByStaffId], references: [id], onDelete: Restrict)
+  moderationCase ModerationCase? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@map("sanctions")
+}
+
+/// Alertes arnaques épinglées, rédigées par l'équipe. Ciblables par ville ou par pays.
+model ScamAlert {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  title    String
+  body     String
+  severity ScamAlertSeverity
+
+  cityId    String? @map("city_id") @db.Uuid
+  countryId String? @map("country_id") @db.Uuid
+
+  isPinned    Boolean   @map("is_pinned")
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+  expiresAt   DateTime? @map("expires_at") @db.Timestamptz
+
+  createdByStaffId String  @map("created_by_staff_id") @db.Uuid
+  relatedCaseId    String? @map("related_case_id") @db.Uuid
+
+  city           City?           @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  country        Country?        @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  createdByStaff StaffUser       @relation(fields: [createdByStaffId], references: [id], onDelete: Restrict)
+  relatedCase    ModerationCase? @relation(fields: [relatedCaseId], references: [id], onDelete: SetNull)
+
+  @@index([isPinned])
+  @@index([publishedAt])
+  @@map("scam_alerts")
+}
+
+/// Trace de chaque analyse IA. Le texte masqué n'est PAS stocké.
+model AiModerationCheck {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  subjectType ReportSubjectType @map("subject_type")
+  subjectId   String            @map("subject_id") @db.Uuid
+  model       String
+  verdict     AiVerdict
+  labels      String[]
+  score       Decimal?          @db.Decimal(4, 3)
+
+  /// Vrai : téléphones, emails et noms propres ont été masqués avant l'envoi.
+  /// Un check avec redacted = false est un bogue, et le test de la règle dure échoue.
+  redacted  Boolean
+  latencyMs Int?    @map("latency_ms")
+
+  @@index([subjectId])
+  @@index([verdict])
+  @@map("ai_moderation_checks")
+}

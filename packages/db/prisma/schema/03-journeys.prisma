@@ -1,0 +1,476 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module 03 — Parcours  ·  12 tables
+// La colonne vertébrale : le parcours ne crée aucun contenu, il ORCHESTRE les
+// autres modules. Modèles versionnés (équipe) ; parcours instanciés (membres).
+// Règles : 03-parcours.md
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum TemplateVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum StepCategory {
+  PRE_DEPARTURE
+  ARRIVAL
+  SETTLEMENT
+}
+
+/// Routage du bouton « Je suis bloqué » vers la section qui peut aider.
+enum BlockerTarget {
+  HELP
+  HOUSING
+  JOBS
+  MENTORSHIP
+  NONE
+}
+
+enum JourneyStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ABANDONED
+  ARCHIVED
+}
+
+/// PUBLIC = progression seule, membres connectés uniquement, jamais indexé,
+/// et jamais exposé si le parcours est en pause ou arrêté (règle dure §3.7).
+enum JourneyVisibility {
+  PRIVATE
+  SHARED
+  PUBLIC
+}
+
+/// Règle dure : aucun état ni libellé d'échec n'existe, ni en base ni à l'écran.
+/// Une étape se met « en pause », elle n'échoue jamais.
+enum JourneyStepStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  PAUSED
+}
+
+enum JourneyMemberRole {
+  OBSERVER
+  SUPPORTER
+}
+
+enum JourneyMemberStatus {
+  INVITED
+  ACTIVE
+  REMOVED
+}
+
+enum JourneyActivityType {
+  STEP_STARTED
+  STEP_DONE
+  STEP_PAUSED
+  BLOCKER_PUBLISHED
+  HELP_RECEIVED
+  MEMBER_JOINED
+  MILESTONE_SHARED
+  NOTE
+}
+
+enum BlockerStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
+enum CorrectionProposalStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+/// Type de parcours : Études, Travail, Regroupement familial, Installation.
+model JourneyTemplate {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  code        String  @unique
+  nameFr      String  @map("name_fr")
+  description String?
+  /// Phase attendue à la création.
+  targetPhase Phase   @map("target_phase")
+  icon        String?
+  isActive    Boolean @map("is_active")
+  sortOrder   Int     @map("sort_order")
+
+  versions JourneyTemplateVersion[]
+
+  @@map("journey_templates")
+}
+
+/// Version d'un type. Un parcours en cours reste FIGÉ sur sa version :
+/// règle dure — publier une version ne modifie jamais un journey existant.
+model JourneyTemplateVersion {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  templateId String @map("template_id") @db.Uuid
+  version    Int
+  /// Null = version générique ; sinon déclinaison par pays d'origine.
+  originCountryId String? @map("origin_country_id") @db.Uuid
+
+  status TemplateVersionStatus
+  /// Résumé des changements, montré aux parcours en cours (« la procédure a évolué »).
+  changelog String?
+
+  publishedAt        DateTime? @map("published_at") @db.Timestamptz
+  publishedByStaffId String?   @map("published_by_staff_id") @db.Uuid
+
+  template         JourneyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  originCountry    Country?        @relation(fields: [originCountryId], references: [id], onDelete: Restrict)
+  publishedByStaff StaffUser?      @relation(fields: [publishedByStaffId], references: [id], onDelete: SetNull)
+
+  steps            TemplateStep[]
+  stepDependencies StepDependency[]
+  journeys         Journey[]
+  corrections      TemplateCorrectionProposal[]
+
+  @@unique([templateId, version, originCountryId])
+  @@index([templateId])
+  @@index([originCountryId])
+  @@index([status])
+  @@map("journey_template_versions")
+}
+
+/// Bibliothèque d'étapes réutilisables entre types (« Ouvrir un compte bancaire »
+/// sert à Études et à Travail). Données de départ : T3 partie A.1, 30 définitions.
+model StepDefinition {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  code        String       @unique
+  nameFr      String       @map("name_fr")
+  description String?
+  category    StepCategory
+
+  /// Durée indicative, corrigée par les délais réels observés.
+  defaultDurationDays Int? @map("default_duration_days")
+  /// Guide lié, affiché sur l'étape. Null au lancement → « guide à venir ».
+  guideId             String? @map("guide_id") @db.Uuid
+
+  blockerTarget BlockerTarget @map("blocker_target")
+  /// Gabarit pré-rempli. Variables : {etape} {parcours} {ville} {echeance}.
+  blockerTemplate String?     @map("blocker_template")
+
+  /// Déclenche la proposition de partage de jalon à la clôture.
+  isMajorMilestone Boolean @map("is_major_milestone")
+  /// Étape à fort taux de blocage : affiche risk_message avant de commencer.
+  isRisky          Boolean @map("is_risky")
+  riskMessage      String? @map("risk_message")
+
+  /// Libellés cochables uniquement. AUCUN document n'est stocké (03 §3.3).
+  documentChecklist String[] @map("document_checklist")
+
+  guide Guide? @relation(fields: [guideId], references: [id], onDelete: SetNull)
+
+  templateSteps      TemplateStep[]
+  journeySteps       JourneyStep[]
+  stories            Story[]
+  corrections        TemplateCorrectionProposal[]
+  partnerPlacements  PartnerPlacement[]
+
+  @@map("step_definitions")
+}
+
+/// Étapes composant une version de type, ordonnées.
+model TemplateStep {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  templateVersionId String @map("template_version_id") @db.Uuid
+  stepDefinitionId  String @map("step_definition_id") @db.Uuid
+  position          Int
+  isOptional        Boolean @map("is_optional")
+
+  /// Rétro-planning : l'étape doit être franchie N jours avant la date d'arrivée cible.
+  /// Négatif = après l'arrivée.
+  daysBeforeArrival Int? @map("days_before_arrival")
+  /// Surcharges locales de la définition (nom, gabarit).
+  overrides         Json?
+
+  templateVersion JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Cascade)
+  stepDefinition  StepDefinition         @relation(fields: [stepDefinitionId], references: [id], onDelete: Restrict)
+
+  journeySteps      JourneyStep[]
+  dependenciesFrom  StepDependency[] @relation("DependencyStep")
+  dependenciesTo    StepDependency[] @relation("DependencyTarget")
+
+  @@unique([templateVersionId, position])
+  @@index([templateVersionId])
+  @@map("template_steps")
+}
+
+/// Dépendances entre étapes d'une même version (pas de visa sans admission).
+/// Ne s'appliquent qu'aux étapes issues du modèle, pas aux étapes ajoutées par le membre.
+model StepDependency {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  templateVersionId String @map("template_version_id") @db.Uuid
+  stepId            String @map("step_id") @db.Uuid
+  dependsOnStepId   String @map("depends_on_step_id") @db.Uuid
+
+  templateVersion JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Cascade)
+  step            TemplateStep           @relation("DependencyStep", fields: [stepId], references: [id], onDelete: Cascade)
+  dependsOnStep   TemplateStep           @relation("DependencyTarget", fields: [dependsOnStepId], references: [id], onDelete: Cascade)
+
+  @@unique([stepId, dependsOnStepId])
+  @@index([templateVersionId])
+  @@map("step_dependencies")
+}
+
+/// Le parcours d'un membre. Objet central de la plateforme.
+/// Limite du plan gratuit : un seul ACTIVE ou PAUSED (COMPLETED/ABANDONED/ARCHIVED ne comptent pas).
+model Journey {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  ownerUserId       String @map("owner_user_id") @db.Uuid
+  templateVersionId String @map("template_version_id") @db.Uuid
+
+  /// Nom donné par le membre — affiché dans la navigation.
+  /// N'est JAMAIS exposé dans le fil : seul le nom du type l'est (règle dure 04 §2).
+  title String
+
+  status     JourneyStatus
+  visibility JourneyVisibility @default(PRIVATE)
+
+  originCountryId    String @map("origin_country_id") @db.Uuid
+  destinationCityId  String @map("destination_city_id") @db.Uuid
+
+  /// Pivot du rétro-planning : due_date = target_arrival_date − days_before_arrival.
+  targetArrivalDate DateTime? @map("target_arrival_date") @db.Date
+
+  currentStepId String? @map("current_step_id") @db.Uuid
+  /// Dénormalisé : étapes DONE / étapes non optionnelles × 100, arrondi.
+  progressPct   Int     @default(0) @map("progress_pct")
+
+  /// Conversation de groupe créée à l'ouverture du parcours (module 08, kind = JOURNEY).
+  groupConversationId String? @map("group_conversation_id") @db.Uuid
+
+  lastActivityAt DateTime  @map("last_activity_at") @db.Timestamptz
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz
+  /// Relance UNIQUE après 60 jours d'inactivité. Aucune relance ensuite.
+  inactivityPromptSentAt DateTime? @map("inactivity_prompt_sent_at") @db.Timestamptz
+
+  owner           User                   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  templateVersion JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  originCountry   Country                @relation(fields: [originCountryId], references: [id], onDelete: Restrict)
+  destinationCity City                   @relation(fields: [destinationCityId], references: [id], onDelete: Restrict)
+  currentStep     JourneyStep?           @relation("JourneyCurrentStep", fields: [currentStepId], references: [id], onDelete: SetNull)
+  groupConversation Conversation?        @relation("JourneyGroupConversation", fields: [groupConversationId], references: [id], onDelete: SetNull)
+
+  steps         JourneyStep[]   @relation("JourneySteps")
+  members       JourneyMember[]
+  activities    JourneyActivity[]
+  blockers      BlockerRequest[]
+  posts         Post[]
+  mentorships   Mentorship[]
+  conversations Conversation[]  @relation("ConversationJourney")
+
+  @@index([ownerUserId])
+  @@index([templateVersionId])
+  @@index([status])
+  @@index([visibility])
+  @@index([destinationCityId])
+  @@index([lastActivityAt])
+  @@map("journeys")
+}
+
+/// Instance d'étape dans un parcours. Le membre peut ajouter, supprimer,
+/// renommer et réordonner ; il peut aussi rouvrir une étape franchie.
+model JourneyStep {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  journeyId String @map("journey_id") @db.Uuid
+  /// Null si étape ajoutée par le membre.
+  templateStepId   String? @map("template_step_id") @db.Uuid
+  stepDefinitionId String? @map("step_definition_id") @db.Uuid
+
+  title       String
+  description String?
+  position    Int
+  status      JourneyStepStatus
+
+  /// Calculée par le rétro-planning, ou saisie à la main.
+  dueDate DateTime? @map("due_date") @db.Date
+  /// Colonne ajoutée par 03-parcours.md §2.3 : une échéance saisie à la main
+  /// n'est jamais écrasée par le recalcul du rétro-planning.
+  dueDateManual Boolean @default(false) @map("due_date_manual")
+
+  startedAt   DateTime? @map("started_at") @db.Timestamptz
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  pausedAt    DateTime? @map("paused_at") @db.Timestamptz
+  /// Durée réelle, calculée à la clôture — alimente les statistiques et les durées
+  /// affichées sur les parcours publics.
+  durationDays Int? @map("duration_days")
+
+  /// Notes personnelles, chiffrées au repos (§8.1). Jamais exposées, même sur un
+  /// parcours public (règle dure §3.7).
+  notesEncrypted Bytes? @map("notes_encrypted")
+
+  isCustom Boolean @default(false) @map("is_custom")
+  /// Le membre a décliné le partage de ce jalon — ne plus jamais reproposer.
+  sharePromptDismissedAt DateTime? @map("share_prompt_dismissed_at") @db.Timestamptz
+
+  journey        Journey         @relation("JourneySteps", fields: [journeyId], references: [id], onDelete: Cascade)
+  templateStep   TemplateStep?   @relation(fields: [templateStepId], references: [id], onDelete: SetNull)
+  stepDefinition StepDefinition? @relation(fields: [stepDefinitionId], references: [id], onDelete: SetNull)
+
+  currentOfJourneys Journey[]                   @relation("JourneyCurrentStep")
+  checklistItems    JourneyStepChecklistItem[]
+  activities        JourneyActivity[]
+  blockers          BlockerRequest[]
+  posts             Post[]
+  helpRequests      HelpRequest[]
+  affiliateClicks   AffiliateClick[]
+
+  @@unique([journeyId, position])
+  @@index([journeyId])
+  @@index([status])
+  @@index([dueDate])
+  @@map("journey_steps")
+}
+
+/// Checklist de documents d'une étape : libellés cochables, modifiables.
+/// AUCUN fichier attaché en V1 — « Cochez ce que vous avez réuni. Les documents
+/// restent chez vous. »
+model JourneyStepChecklistItem {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  journeyStepId String    @map("journey_step_id") @db.Uuid
+  label         String
+  position      Int
+  isChecked     Boolean   @default(false) @map("is_checked")
+  checkedAt     DateTime? @map("checked_at") @db.Timestamptz
+
+  journeyStep JourneyStep @relation(fields: [journeyStepId], references: [id], onDelete: Cascade)
+
+  @@index([journeyStepId])
+  @@map("journey_step_checklist_items")
+}
+
+/// Équipe du parcours : maximum 10 membres. Le co-porteur n'existe pas en V1.
+/// OBSERVER voit les étapes et la progression ; SUPPORTER participe en plus à la
+/// discussion. Ni l'un ni l'autre ne voit les notes. Un blocage retire automatiquement.
+model JourneyMember {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  journeyId       String              @map("journey_id") @db.Uuid
+  userId          String              @map("user_id") @db.Uuid
+  role            JourneyMemberRole
+  invitedByUserId String              @map("invited_by_user_id") @db.Uuid
+  status          JourneyMemberStatus
+
+  acceptedAt DateTime? @map("accepted_at") @db.Timestamptz
+  removedAt  DateTime? @map("removed_at") @db.Timestamptz
+
+  journey   Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  user      User    @relation("JourneyMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy User    @relation("JourneyMemberInviter", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@unique([journeyId, userId])
+  @@index([journeyId])
+  @@index([userId])
+  @@map("journey_members")
+}
+
+/// Journal du parcours. Base de l'export PDF et de la conversion en guide.
+model JourneyActivity {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  journeyId     String  @map("journey_id") @db.Uuid
+  actorUserId   String? @map("actor_user_id") @db.Uuid
+  journeyStepId String? @map("journey_step_id") @db.Uuid
+
+  type    JourneyActivityType
+  refType String?             @map("ref_type")
+  refId   String?             @map("ref_id") @db.Uuid
+  payload Json?
+
+  journey     Journey      @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  actor       User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  journeyStep JourneyStep? @relation(fields: [journeyStepId], references: [id], onDelete: SetNull)
+
+  @@index([journeyId])
+  @@map("journey_activities")
+}
+
+/// Trace d'un « Je suis bloqué » : brouillon pré-rempli, puis publication validée.
+///
+/// RÈGLE DURE : l'objet cible n'est créé qu'à l'appel explicite de la route de
+/// publication, avec le texte tel que renvoyé par le client. Le brouillon n'est
+/// jamais promu sans cet appel. Aucune publication n'est jamais faite
+/// automatiquement au nom d'un membre (§1.2).
+model BlockerRequest {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  journeyId     String        @map("journey_id") @db.Uuid
+  journeyStepId String        @map("journey_step_id") @db.Uuid
+  target        BlockerTarget
+
+  /// Vrai : envoyé aux accompagnants et au parrain seulement, rien de public.
+  isPrivate Boolean @map("is_private")
+  draftText String  @map("draft_text")
+  status    BlockerStatus
+
+  publishedRefType String?   @map("published_ref_type")
+  publishedRefId   String?   @map("published_ref_id") @db.Uuid
+  publishedAt      DateTime? @map("published_at") @db.Timestamptz
+
+  journey     Journey     @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  journeyStep JourneyStep @relation(fields: [journeyStepId], references: [id], onDelete: Cascade)
+
+  helpRequests HelpRequest[]
+
+  @@index([journeyId])
+  @@index([journeyStepId])
+  @@map("blocker_requests")
+}
+
+/// « Signaler une erreur dans ce modèle » : corrections proposées par les membres,
+/// traitées en back-office. Le membre est notifié de la décision.
+model TemplateCorrectionProposal {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  templateVersionId String  @map("template_version_id") @db.Uuid
+  stepDefinitionId  String? @map("step_definition_id") @db.Uuid
+  userId            String  @map("user_id") @db.Uuid
+  message           String
+  status            CorrectionProposalStatus
+
+  reviewedByStaffId String?   @map("reviewed_by_staff_id") @db.Uuid
+  reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz
+
+  templateVersion JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Cascade)
+  stepDefinition  StepDefinition?        @relation(fields: [stepDefinitionId], references: [id], onDelete: SetNull)
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedByStaff StaffUser?             @relation(fields: [reviewedByStaffId], references: [id], onDelete: SetNull)
+
+  @@index([templateVersionId])
+  @@index([status])
+  @@map("template_correction_proposals")
+}

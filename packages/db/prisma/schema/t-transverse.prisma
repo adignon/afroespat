@@ -1,0 +1,154 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Module T — Transverse  ·  4 tables
+// Fichiers, boîte d'envoi des événements de domaine, signets, réputation.
+// Ces quatre tables sont consommées par tous les lots : elles appartiennent au socle.
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MediaKind {
+  AVATAR
+  POST
+  HOUSING
+  EVENT_COVER
+  ALBUM
+  MESSAGE
+  PROOF
+  LOGO
+  EXPORT
+  INVOICE
+}
+
+enum MediaStatus {
+  PENDING
+  SCANNING
+  READY
+  REJECTED
+}
+
+/// Sujets signetables. Les signets sont privés : aucun compteur nulle part (règle dure §1.2).
+enum BookmarkSubjectType {
+  STORY
+  GUIDE
+  POST
+  HELP_REQUEST
+  EVENT
+  HOUSING
+  JOB
+  PRO
+  MENTOR
+  USER
+  TOPIC
+  CITY
+}
+
+enum ReputationEventType {
+  HELP_VALIDATED
+  GUIDE_HELPFUL_VOTE
+  GUIDE_CONTRIBUTION
+  MENTORSHIP_COMPLETED
+  EVENT_ORGANIZED
+}
+
+/// Tout fichier importé. Les métadonnées EXIF sont supprimées à l'import (§8.1 :
+/// elles contiennent souvent la position GPS), et le type réel est vérifié aux
+/// octets magiques avant publication, avec analyse antivirus dans le worker.
+model MediaAsset {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  ownerUserId String? @map("owner_user_id") @db.Uuid
+  kind        MediaKind
+
+  /// Clé dans le stockage objet — région UE obligatoire (règle dure §8.2).
+  storageKey String @unique @map("storage_key")
+  mime       String
+  sizeBytes  BigInt @map("size_bytes")
+  width      Int?
+  height     Int?
+
+  status       MediaStatus
+  exifStripped Boolean     @default(false) @map("exif_stripped")
+  /// Clés des tailles générées par sharp dans le worker.
+  variants     Json?
+
+  owner User? @relation("MediaOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  avatarOfUsers    User[]         @relation("UserAvatar")
+  dataExports      DataExport[]   @relation("DataExportAsset")
+  postMedia        PostMedia[]
+  storyBackgrounds Story[]        @relation("StoryBackground")
+  communityCovers  Community[]    @relation("CommunityCover")
+  albumPhotos      AlbumPhoto[]
+  messages         Message[]
+  eventCovers      Event[]        @relation("EventCover")
+  housingPhotos    HousingPhoto[]
+  proProofs        ProProfile[]   @relation("ProProof")
+  partnerLogos     Partner[]      @relation("PartnerLogo")
+  invoices         Payment[]      @relation("PaymentInvoice")
+
+  @@index([ownerUserId])
+  @@index([status])
+  @@map("media_assets")
+}
+
+/// Boîte d'envoi transactionnelle (§9.1). Un service qui modifie l'état écrit,
+/// DANS LA MÊME TRANSACTION, une ligne ici. Un relais (toutes les secondes) les
+/// publie dans la file `events` et les marque publiés.
+///
+/// C'est ce qui garantit qu'aucun effet de bord n'est perdu, ni exécuté pour une
+/// écriture annulée. Les effets de bord ne passent JAMAIS par un appel direct (§3.3).
+///
+/// Nommage : <entité>.<verbe_passé> — journey.step_completed, guide.voted.
+model DomainEvent {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  type        String
+  aggregateId String   @map("aggregate_id") @db.Uuid
+  payload     Json
+  occurredAt  DateTime @map("occurred_at") @db.Timestamptz
+
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+
+  @@index([type])
+  @@index([publishedAt])
+  @@map("domain_events")
+}
+
+/// Signet transverse « Enregistrer ». Privé. Limite 500 par membre.
+/// Aucun compteur d'enregistrements n'est exposé à personne (règle dure §1.2).
+model Bookmark {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  userId      String              @map("user_id") @db.Uuid
+  subjectType BookmarkSubjectType @map("subject_type")
+  subjectId   String              @map("subject_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subjectType, subjectId])
+  @@index([userId])
+  @@index([subjectId])
+  @@map("bookmarks")
+}
+
+/// Événements de réputation. La contrainte d'unicité garantit qu'un événement
+/// source ne compte qu'une fois ; un vote retiré supprime la ligne et décrémente
+/// le compteur. Jamais de score unique, jamais de classement (§9.4).
+model ReputationEvent {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  userId     String              @map("user_id") @db.Uuid
+  type       ReputationEventType
+  sourceType String              @map("source_type")
+  sourceId   String              @map("source_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, sourceType, sourceId])
+  @@index([userId])
+  @@map("reputation_events")
+}
