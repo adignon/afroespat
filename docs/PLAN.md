@@ -330,10 +330,19 @@ réellement, et chaque étape a sa route :
 L'onboarding est donc **complet en deux temps** — les quatre premiers écrans au
 lot 1, les deux derniers au lot 2 quand le moteur de parcours existe.
 
-**Reprise** : un onboarding interrompu reprend où il s'est arrêté. L'état se
-déduit du profil — pas de phase → écran 3 ; pas de ville → écran 4 ; pas de
-handle → écran 5. Aucune colonne « étape courante » : elle mentirait dès qu'un
-membre modifie son profil plus tard.
+**Reprise** : un onboarding interrompu reprend où il s'est arrêté, grâce à
+`users.onboarding_step` — **colonne ajoutée que `01-identite.md` §5 exige
+nommément** (« l'état d'avancement est stocké côté serveur […] pour reprendre là
+où le membre s'est arrêté », entier 0–6).
+
+> Ce paragraphe affirmait l'inverse : « aucune colonne étape courante, elle
+> mentirait dès qu'un membre modifie son profil plus tard ». C'était une erreur
+> de ce plan, corrigée en implémentant. Déduire l'avancement du profil ne marche
+> pas, précisément parce que cinq des six écrans sont PASSABLES : un profil vide
+> ne distingue pas le membre qui a sauté l'écran de celui qui ne l'a pas vu, et
+> on le renverrait indéfiniment sur un écran qu'il a choisi d'ignorer.
+> L'avancement enregistré ne recule jamais, ce qui répond à l'objection
+> d'origine — modifier son profil plus tard ne le fait pas régresser.
 
 **Règles dures** numéro jamais renvoyé en clair · mineur → compte désactivé ·
 compte équipe et compte membre hermétiques · toute action admin auditée
