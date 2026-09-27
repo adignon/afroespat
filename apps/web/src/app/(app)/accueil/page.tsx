@@ -54,7 +54,14 @@ export default function FeedPage() {
       {/* Les deux cadres sont rendus, l'un masqué par CSS. Next rend côté
           serveur : il ne connaît pas la largeur de la fenêtre, et choisir en
           JavaScript provoquerait un saut visible à l'hydratation. */}
-      <div data-frame="desktop" className="hidden min-h-screen lg:flex" style={{ position: 'relative' }}>
+      {/* La maquette est dessinée à 1440 px. Au-delà, on CENTRE plutôt que
+          d'étirer : le contenu est déjà borné à 660 px, et l'étirement ne
+          ferait qu'éloigner les colonnes l'une de l'autre. */}
+      <div
+        data-frame="desktop"
+        className="mx-auto hidden min-h-screen max-w-[1440px] lg:flex"
+        style={{ position: 'relative' }}
+      >
         <A01Desktop {...data} />
       </div>
       <div data-frame="mobile" className="flex min-h-screen flex-col lg:hidden" style={{ position: 'relative' }}>

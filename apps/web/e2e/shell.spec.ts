@@ -128,6 +128,74 @@ test.describe('cadre ordinateur', () => {
   });
 
   /**
+   * Les deux colonnes restent à l'écran pendant que le fil défile.
+   *
+   * La maquette ne l'exprime pas — c'est une image, rien n'y défile. C'est donc
+   * une adaptation, faite dans le générateur et non à la main, pour qu'elle
+   * survive à la prochaine régénération. Ce test la tient.
+   */
+  test('la barre haute et les deux colonnes restent à l’écran au défilement', async ({ page }) => {
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await page.waitForTimeout(250);
+
+    const positions = await page.evaluate(() => {
+      const frame = document.querySelector('[data-frame="desktop"]')!;
+      const top = (el: Element | null) => (el === null ? null : Math.round(el.getBoundingClientRect().top));
+
+      const bar = Array.from(frame.querySelectorAll('div')).find(
+        (d) => getComputedStyle(d).position === 'sticky' && d.offsetHeight === 64,
+      );
+      const rail = frame.querySelector('nav');
+      const panel = rail?.parentElement?.parentElement ?? null;
+
+      return {
+        barreHaute: top(bar ?? null),
+        colonneGauche: top(panel),
+        colonneDroite: top(frame.querySelector('aside')),
+        defile: Math.round(window.scrollY),
+      };
+    });
+
+    expect(positions.defile, 'la page doit avoir défilé').toBeGreaterThan(800);
+
+    // Sans `sticky`, les trois seraient remontées de 1200 px hors de l'écran.
+    expect(positions.barreHaute, 'la barre haute a suivi le défilement').toBe(0);
+    expect(positions.colonneGauche, 'la colonne de gauche a suivi').toBe(0);
+    // La colonne de contexte s'arrête SOUS la barre haute, pas dessous elle.
+    expect(positions.colonneDroite, 'la colonne de contexte a suivi').toBe(76);
+  });
+
+  /**
+   * Une barre collante sans fond laisse voir le contenu défiler au travers.
+   * La maquette n'en a pas besoin — rien n'y défile — donc l'oubli est facile.
+   */
+  test('la barre haute collante porte un fond opaque', async ({ page }) => {
+    const bg = await page.evaluate(() => {
+      const frame = document.querySelector('[data-frame="desktop"]')!;
+      const bar = Array.from(frame.querySelectorAll('div')).find(
+        (d) => getComputedStyle(d).position === 'sticky' && d.offsetHeight === 64,
+      );
+      return bar === undefined ? null : getComputedStyle(bar).backgroundColor;
+    });
+    expect(bg).toBe(TOKENS.bg);
+  });
+
+  /**
+   * La maquette est dessinée à 1440 px. Au-delà, on centre plutôt que d'étirer :
+   * le contenu est déjà borné à 660 px, et l'étirement ne ferait qu'éloigner
+   * les colonnes l'une de l'autre.
+   */
+  test('au-delà de 1440 px, la mise en page est centrée', async ({ page }) => {
+    await page.setViewportSize({ width: 1800, height: 900 });
+    await page.goto('/accueil', { waitUntil: 'networkidle' });
+
+    const frame = (await page.locator('[data-frame="desktop"]').boundingBox())!;
+    expect(frame.width).toBe(1440);
+    // Marges égales de part et d'autre, à un pixel près.
+    expect(Math.abs(frame.x - (1800 - frame.width - frame.x))).toBeLessThanOrEqual(1);
+  });
+
+  /**
    * La barre de progression de parcours est le seul aplat terre cuite du fil
    * (T1 §2.1). La maquette la dessine en div, sans rôle ARIA : on vérifie donc
    * la couleur. L'absence de sémantique est un constat à part, consigné dans

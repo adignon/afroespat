@@ -62,6 +62,40 @@ const FRAME_ADAPTATIONS = [
       ),
   },
   {
+    why: 'La colonne de gauche reste à l’écran pendant que le fil défile.',
+    match: (style) =>
+      style.includes('width: "400px"') &&
+      style.includes('flexShrink: "0"') &&
+      style.includes('padding: "0 24px"'),
+    apply: (style) =>
+      `${style}, position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto"`,
+  },
+  {
+    why: 'La barre haute — recherche et actions — reste à l’écran.',
+    // `gap: 8px` la distingue de la ligne du logo, qui fait aussi 64 px mais
+    // avec un gap de 10 px et vit dans la colonne de gauche.
+    match: (style) =>
+      style.includes('height: "64px"') &&
+      style.includes('gap: "8px"') &&
+      style.includes('flexShrink: "0"'),
+    // Le fond est indispensable : sans lui, le fil défilerait visiblement sous
+    // la barre. La maquette n'en a pas besoin — rien n'y défile.
+    apply: (style) =>
+      `${style}, position: "sticky", top: "0", zIndex: 20, background: "#F6F8F7"`,
+  },
+  {
+    why: 'La colonne de contexte reste à l’écran, sous la barre haute.',
+    match: (style) =>
+      style.includes('width: "300px"') &&
+      style.includes('flexDirection: "column"') &&
+      style.includes('flexShrink: "0"') &&
+      !style.includes('position:'),
+    // 76 px = les 64 de la barre haute + 12 de respiration. En collant à 12,
+    // la colonne passerait SOUS la barre au lieu de s'arrêter dessous.
+    apply: (style) =>
+      `${style}, position: "sticky", top: "76px", alignSelf: "flex-start", maxHeight: "calc(100vh - 88px)", overflowY: "auto"`,
+  },
+  {
     why: 'La barre d’onglets basse doit rester visible quand la page défile.',
     match: (style) => style.includes('borderTop: "1px solid #E6EBE9"') && style.includes('repeat(5,1fr)'),
     apply: (style) =>
