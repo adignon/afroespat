@@ -1,4 +1,7 @@
 import { Global, Module } from '@nestjs/common';
+import { AuditService } from './audit.service';
+import { CryptoService } from './crypto.service';
+import { OutboxService } from './outbox.service';
 import { PrismaService } from './prisma.service';
 
 /**
@@ -6,5 +9,8 @@ import { PrismaService } from './prisma.service';
  * en dépendent tous, les importer un à un n'apporterait rien.
  */
 @Global()
-@Module({ providers: [PrismaService], exports: [PrismaService] })
+@Module({
+  providers: [PrismaService, CryptoService, OutboxService, AuditService],
+  exports: [PrismaService, CryptoService, OutboxService, AuditService],
+})
 export class CommonModule {}

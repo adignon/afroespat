@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { CommonModule } from './common/common.module';
+import { ProvidersModule } from './providers/providers.module';
+import { QueueModule } from './queue/queue.module';
 import { HealthController } from './modules/health/health.controller';
 import { PlacesController } from './modules/places/places.controller';
 
@@ -14,7 +16,7 @@ import { PlacesController } from './modules/places/places.controller';
  * autres arrivent lot par lot, sans que ce fichier change de forme.
  */
 @Module({
-  imports: [CommonModule],
+  imports: [CommonModule, ProvidersModule, QueueModule],
   controllers: [HealthController, PlacesController],
 })
 export class AppModule {}

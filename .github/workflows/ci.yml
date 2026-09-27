@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      # Le worker et la boîte d'envoi ont besoin de Redis : sans lui, les tests
+      # d'intégration vérifieraient une chaîne débranchée.
       postgres:
         image: postgres:16
         env:

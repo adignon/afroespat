@@ -150,7 +150,7 @@ importers:
         version: 10.6.1(postcss@8.5.28)
       eslint:
         specifier: ^9.17.0
-        version: 9.39.5(jiti@2.7.0)
+        version: 9.39.5(jiti@1.21.7)
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
@@ -160,6 +160,49 @@ importers:
       tailwindcss:
         specifier: ^3.4.17
         version: 3.4.19(tsx@4.23.15)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.18.1
+        version: 8.70.1(eslint@9.39.5(jiti@1.21.7))(typescript@5.9.3)
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.4)(jsdom@25.0.1)
+
+  apps/worker:
+    dependencies:
+      '@app/api':
+        specifier: workspace:*
+        version: link:../api
+      '@nestjs/common':
+        specifier: ^10.4.15
+        version: 10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core':
+        specifier: ^10.4.15
+        version: 10.4.22(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@10.4.22)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+    devDependencies:
+      '@app/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@eslint/js':
+        specifier: ^9.17.0
+        version: 9.39.5
+      '@swc-node/register':
+        specifier: ^1.10.9
+        version: 1.12.1(@swc/core@1.16.2)(@swc/types@0.1.28)(typescript@5.9.3)
+      '@swc/core':
+        specifier: ^1.10.1
+        version: 1.16.2
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.4
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.5(jiti@2.7.0)
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -177,16 +220,16 @@ importers:
         version: 9.39.5
       eslint:
         specifier: ^9.17.0
-        version: 9.39.5(jiti@1.21.7)
+        version: 9.39.5(jiti@2.7.0)
       eslint-plugin-react-hooks:
         specifier: ^5.1.0
-        version: 5.2.0(eslint@9.39.5(jiti@1.21.7))
+        version: 5.2.0(eslint@9.39.5(jiti@2.7.0))
       tailwindcss:
         specifier: ^3.4.17
         version: 3.4.19(tsx@4.23.15)
       typescript-eslint:
         specifier: ^8.18.1
-        version: 8.70.1(eslint@9.39.5(jiti@1.21.7))(typescript@5.9.3)
+        version: 8.70.1(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
 
   packages/db:
     dependencies:
@@ -5170,9 +5213,9 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-plugin-react-hooks@5.2.0(eslint@9.39.5(jiti@1.21.7)):
+  eslint-plugin-react-hooks@5.2.0(eslint@9.39.5(jiti@2.7.0)):
     dependencies:
-      eslint: 9.39.5(jiti@1.21.7)
+      eslint: 9.39.5(jiti@2.7.0)
 
   eslint-scope@8.4.0:
     dependencies:
