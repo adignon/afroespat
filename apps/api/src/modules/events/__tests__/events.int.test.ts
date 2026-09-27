@@ -2,12 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
-import {
-  CANCELLED_VISIBLE_DAYS,
-  EVENT_MAX_LEAD_MS,
-  EVENT_MIN_LEAD_MS,
-  EVENT_ORGANIZED_MIN_CHECKINS,
-} from '@app/shared';
+import { CANCELLED_VISIBLE_DAYS, EVENT_MAX_LEAD_MS, EVENT_MIN_LEAD_MS, EVENT_ORGANIZED_MIN_CHECKINS, calendarQuerySchema, createEventSchema, rsvpSchema } from '@app/shared';
 import { AuditService } from '../../../common/audit.service';
 import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
@@ -556,9 +551,8 @@ describe('agenda (09 §3)', () => {
       expect(result.attendeeCount).toBe(1);
     });
 
-    it('n’accepte pas WAITLIST demandé par le client', async () => {
+    it('n’accepte pas WAITLIST demandé par le client', () => {
       // Le schéma refuse la valeur : c'est une décision du serveur (§3.2).
-      const { rsvpSchema } = await import('@app/shared');
       expect(rsvpSchema.safeParse({ status: 'WAITLIST' }).success).toBe(false);
       expect(rsvpSchema.safeParse({ status: 'GOING' }).success).toBe(true);
     });
@@ -604,8 +598,7 @@ describe('agenda (09 §3)', () => {
       ).rejects.toMatchObject({ code: 'TOO_FAR' });
     });
 
-    it('exige une adresse : aucun événement en ligne (§3.5)', async () => {
-      const { createEventSchema } = await import('@app/shared');
+    it('exige une adresse : aucun événement en ligne (§3.5)', () => {
       const base = {
         type: 'CONFERENCE',
         title: 'Conférence en ligne',
@@ -620,7 +613,6 @@ describe('agenda (09 §3)', () => {
 
     it('refuse une fin avant le début', async () => {
       const organizer = await member();
-      const { createEventSchema } = await import('@app/shared');
       const parsed = createEventSchema.safeParse({
         type: 'PICNIC',
         title: 'Pique-nique inversé',
@@ -895,8 +887,7 @@ describe('agenda (09 §3)', () => {
       expect(event.localDate).toBe(localDay);
     });
 
-    it('refuse un intervalle de calendrier de plus de 62 jours', async () => {
-      const { calendarQuerySchema } = await import('@app/shared');
+    it('refuse un intervalle de calendrier de plus de 62 jours', () => {
       expect(calendarQuerySchema.safeParse({ from: '2027-01-01', to: '2027-03-31' }).success).toBe(
         false,
       );

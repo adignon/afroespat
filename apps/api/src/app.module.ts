@@ -11,6 +11,20 @@ import { UsersController } from './modules/users/users.controller';
 import { UsersService } from './modules/users/users.service';
 import { ConsentsController } from './modules/consents/consents.controller';
 import { ConsentsService } from './modules/consents/consents.service';
+import {
+  CommentsController,
+  FeedController,
+  MyStoriesController,
+  PostsController,
+  StoriesController,
+} from './modules/feed/feed.controller';
+import { FeedService } from './modules/feed/feed.service';
+import { ConnectionsController } from './modules/connections/connections.controller';
+import { ConnectionsService } from './modules/connections/connections.service';
+import { MentorshipController } from './modules/mentorship/mentorship.controller';
+import { MentorshipService } from './modules/mentorship/mentorship.service';
+import { MessagingController } from './modules/messaging/messaging.controller';
+import { MessagingService } from './modules/messaging/messaging.service';
 import { ModerationConsumer } from './modules/moderation/moderation.consumer';
 import { ModerationController } from './modules/moderation/moderation.controller';
 import { ModerationService } from './modules/moderation/moderation.service';
@@ -52,7 +66,10 @@ import { AuthGuard } from './common/auth.guard';
  */
 @Module({
   imports: [CommonModule, ProvidersModule, QueueModule],
-  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController],
+  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
+    FeedController, PostsController, CommentsController, StoriesController, MyStoriesController,
+    MentorshipController, ConnectionsController, MessagingController,
+  ],
   providers: [
     AuthService,
     UsersService,
@@ -67,6 +84,10 @@ import { AuthGuard } from './common/auth.guard';
     JobsService,
     ProsService,
     ModerationService,
+    FeedService,
+    MentorshipService,
+    ConnectionsService,
+    MessagingService,
     /**
      * Le port de file de la modération.
      *

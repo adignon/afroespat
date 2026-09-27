@@ -559,3 +559,91 @@ conserve son `lastIndex` entre deux appels : **elle laisse passer un contenu sur
 deux**. Sur des règles de sécurité, c'est une faille. `MODERATION_LOCAL_RULES`
 n'en porte aucun, et un test vérifie que quatre appels de suite donnent le même
 verdict.
+
+
+---
+
+## Le fil et le parrainage — et deux erreurs dans MON code du socle
+
+### `post-types.ts` contredisait la spec, et c'était consultable
+
+Ma table donnait à `INFO` la réaction `USEFUL`, l'action « Utile » et le compteur
+« mentions utiles ». §2.1 dit `LIKE`, « J'ai vu », « N réactions ».
+
+Ce n'était pas cosmétique : la règle dure §9 se LIT dans cette table, et un
+service qui l'aurait suivie aurait **écrit `USEFUL` en base pour une publication
+INFO** — un type de réaction que §2.1 réserve au vote d'une story `CONSEIL`.
+
+Pire, trois sources donnaient trois vocabulaires : §2.1, ma table, et le
+commentaire de l'enum `ReactionKind` dans `04-feed.prisma` (« Utile sur un
+conseil, Je soutiens sur une question »). §2.1 tranche.
+
+### La cascade de blocage, éprouvée par le chemin réel
+
+Le test de cascade construit le **vrai** fichier d'abonnements, puis fait passer
+l'événement par la boîte d'envoi — et il a aussi été éprouvé au `curl` avec un
+worker réel : relais, BullMQ, Redis. Vérifié en base ensuite : parrainage `ENDED`
+motif `BLOCKED`, compteur de filleuls remis à zéro, dossier de modération
+priorité 2, contact retiré, `left_at` posé **des deux côtés** de la conversation.
+
+C'est le niveau de preuve que je veux pour une règle dure qui traverse trois
+modules.
+
+---
+
+## La suite d'intégration : trois défauts, et une cause qui n'en était pas une
+
+474 tests partagent une base de données. Trois défauts distincts se présentaient
+tous comme des **échecs de tests innocents**, et chacun a demandé d'être mesuré
+plutôt que supposé.
+
+### 1. Saturation des connexions
+
+Chaque fichier tourne dans son propre processus et y construit son
+`PrismaService`, donc son bassin — une vingtaine de connexions. PostgreSQL en
+accepte cent. Au-delà de quatre ou cinq fichiers simultanés, les suivants
+attendent une connexion qui ne vient pas.
+
+### 2. Interférence de données entre fichiers
+
+Plusieurs requêtes sont GLOBALES par nature : les « nouveaux arrivants » d'une
+ville, la boîte d'envoi, la file de modération. Les membres et les dossiers qu'un
+fichier crée apparaissent dans les résultats d'un autre.
+
+Deux tests ont dû être rendus robustes — sans être affaiblis :
+
+- la **pagination de la file de modération** parcourait vingt pages fixes. Le
+  module emploi ouvre aussi des dossiers de type `JOB` : les cinq du test se
+  retrouvaient au-delà. Le test parcourt maintenant jusqu'à les avoir tous
+  trouvés ; la propriété éprouvée — aucune ligne répétée, toutes atteignables —
+  est inchangée ;
+- la **cascade de blocage** réclamait la boîte d'envoi partagée et se faisait
+  voler ses événements. Elle vide maintenant la file par lots jusqu'au bout, en ne
+  distribuant que les événements de ses propres membres — distribuer ceux des
+  autres suites rejouerait des faits sur des membres supprimés entre-temps.
+
+**Les deux suites sont donc SÉRIELLES** (`maxWorkers: 1`, `fileParallelism: false`).
+Le coût est du temps de mur, assumé : un échec qu'on doit rejouer pour savoir s'il
+est réel coûte bien plus cher. Pour paralléliser un jour, la voie est **une base
+par fichier** — pas des assertions plus lâches, qui reviendraient à tester moins.
+
+### 3. Ce qui n'était PAS un défaut du produit
+
+Un test différent bloquait à 60 s à chaque exécution. J'ai vérifié
+`pg_stat_activity` pendant les blocages : **aucun verrou, aucune requête active**.
+Le processus attendait en JavaScript.
+
+Deux causes, toutes deux d'outillage :
+
+- **`await import()` DANS un test.** Trois fichiers en portaient, et vitest
+  imputait au test la transcompilation de tout `@app/shared` — mesurée de moins
+  d'une seconde à plus d'une minute selon la charge. Remontés en import statique,
+  le coût retombe dans la phase de collecte, commune au fichier ;
+- **réutilisation des processus entre fichiers.** `prepare` tombait de 62 s à
+  2,6 s d'une exécution à l'autre, ce qui le trahissait : un processus réutilisé
+  garde le tas et les modules du fichier précédent. `isolate: true` explicite, et
+  le délai porté à 150 s pour couvrir la variance mesurée.
+
+**Aucun code de produit n'était en cause.** C'est la conclusion qui importe, et
+elle a demandé d'écarter méthodiquement trois hypothèses fausses — un verrou de
+ligne, une saturation de bassin, un test lent.

@@ -8,6 +8,7 @@ import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/provide
 import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../../auth/auth.service';
 import { UsersService } from '../users.service';
+import { newId } from '@app/db';
 
 /**
  * Compte et profil — 01-identite.md §2.2, §2.6, §2.7 et §4.4.
@@ -149,7 +150,6 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     } else {
       // Un seul pays d'origine en base : on en crée un le temps du test, sinon la
       // règle du §2.7 ne serait vérifiée par rien.
-      const { newId } = await import('@app/db');
       const temp = await prisma.country.create({
         data: {
           id: newId(),
@@ -407,7 +407,7 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
 
     await prisma.block.create({
       data: {
-        id: (await import('@app/db')).newId(),
+        id: newId(),
         blockerUserId: a,
         blockedUserId: b,
       },

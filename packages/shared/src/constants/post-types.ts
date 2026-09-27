@@ -46,20 +46,32 @@ export const POST_TYPE_VOCABULARY = {
     countWordSingular: 'réponse',
     commentLabel: 'Répondre',
   },
+  // INFO et DISCUSSION ont été RECALÉS sur le tableau de 04-fil.md §2.1, qu'ils
+  // contredisaient : la table donnait à INFO la réaction `USEFUL`, l'action
+  // « Utile » et le compteur « mentions utiles », et à DISCUSSION l'action
+  // « Participer » et le compteur « participations ». §2.1 dit : INFO →
+  // réaction stockée `LIKE`, action « J'ai vu », compteur « N réactions » ;
+  // DISCUSSION → `LIKE`, « J'aime », « N réactions ».
+  //
+  // Ce n'était pas cosmétique : la règle dure §9 (« le vocabulaire de réaction
+  // renvoyé correspond au type de publication ») se lit dans cette table, et un
+  // service qui l'aurait suivie aurait écrit `USEFUL` en base pour une INFO —
+  // un `kind` que §2.1 réserve au vote de story CONSEIL. Aucun autre fichier
+  // ne lisait cette table au moment de la correction.
   INFO: {
     label: 'Info',
-    reaction: 'USEFUL',
-    actionLabel: 'Utile',
-    countWord: 'mentions utiles',
-    countWordSingular: 'mention utile',
+    reaction: 'LIKE',
+    actionLabel: 'J’ai vu',
+    countWord: 'réactions',
+    countWordSingular: 'réaction',
     commentLabel: 'Commenter',
   },
   DISCUSSION: {
     label: 'Discussion',
     reaction: 'LIKE',
-    actionLabel: 'Participer',
-    countWord: 'participations',
-    countWordSingular: 'participation',
+    actionLabel: 'J’aime',
+    countWord: 'réactions',
+    countWordSingular: 'réaction',
     commentLabel: 'Commenter',
   },
 } as const satisfies Record<PostType, PostTypeVocabulary>;

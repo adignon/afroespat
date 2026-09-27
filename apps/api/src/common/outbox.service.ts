@@ -32,8 +32,26 @@ export type DomainEventType =
   | 'journey.step_started'
   | 'journey.completed'
   | 'blocker.published'
-  | 'post.created'
-  | 'story.created'
+  // ── 04-fil.md §6 ──────────────────────────────────────────────────────────
+  //
+  // `post.created` et `story.created` sont RETIRÉS : §6 ne les nomme pas, et
+  // personne ne les émettait ni ne les écoutait. Même traitement que
+  // `help_request.created` et `event.created` avant eux — un type inventé finit
+  // par faire croire la chaîne branchée.
+  | 'post.published'
+  | 'post.reacted'
+  | 'post.commented'
+  | 'post.moved_to_topic'
+  | 'story.published'
+  | 'story.expired'
+  | 'story.reacted'
+  | 'story.converted'
+  // ── 08-parrainage-messagerie.md §9 ────────────────────────────────────────
+  | 'mentorship.declined'
+  | 'mentorship.extended'
+  | 'connection.requested'
+  | 'message.sent'
+  | 'journey.member_joined'
   | 'guide.voted'
   | 'guide.published'
   // Le reste du §6 du module 05. Chacun a son consommateur nommé : search et

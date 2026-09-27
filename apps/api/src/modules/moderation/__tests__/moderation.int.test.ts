@@ -1228,7 +1228,22 @@ describe('modération (13)', () => {
       const seen = new Set((first.items as { id: string }[]).map((c) => c.id));
       let cursor = first.nextCursor;
       let guard = 0;
-      while (cursor !== null && guard < 20) {
+
+      /**
+       * On parcourt jusqu'à retrouver LES CINQ, pas un nombre fixe de pages.
+       *
+       * La file de modération est globale, et d'autres suites y laissent des
+       * dossiers du même type — l'emploi en ouvre sur détection d'arnaque. Une
+       * borne de vingt pages faisait échouer ce test dès que la base en portait
+       * assez pour repousser les siens au-delà, alors que la pagination elle-même
+       * était juste.
+       *
+       * La propriété éprouvée ne change pas : aucune ligne répétée, et toutes
+       * atteignables. La borne haute n'est là que contre une boucle infinie si le
+       * curseur cessait d'avancer.
+       */
+      const allSeen = () => ids.every((id) => seen.has(id));
+      while (cursor !== null && !allSeen() && guard < 500) {
         const next = await moderation.listCases(moderatorA, {
           limit: 2,
           assigned: 'any',

@@ -4,6 +4,10 @@ import { GuidesService } from '../modules/guides/guides.service';
 import { HelpService } from '../modules/help/help.service';
 import { HousingService } from '../modules/housing/housing.service';
 import { JobsService } from '../modules/jobs/jobs.service';
+import { ConnectionsService } from '../modules/connections/connections.service';
+import { FeedService } from '../modules/feed/feed.service';
+import { MentorshipService } from '../modules/mentorship/mentorship.service';
+import { MessagingService } from '../modules/messaging/messaging.service';
 import { ModerationService } from '../modules/moderation/moderation.service';
 import { ProsService } from '../modules/pros/pros.service';
 import { EventHandlerRegistry } from './event-handlers';
@@ -39,6 +43,10 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly jobs: JobsService,
     private readonly pros: ProsService,
     private readonly moderation: ModerationService,
+    private readonly mentorship: MentorshipService,
+    private readonly connections: ConnectionsService,
+    private readonly messaging: MessagingService,
+    private readonly feed: FeedService,
   ) {}
 
   onModuleInit(): void {
@@ -141,6 +149,79 @@ export class EventSubscriptionsService implements OnModuleInit {
       await this.moderation.handleContentPublished('EVENT', job.aggregateId);
     });
 
+    // ── La cascade du blocage (08 §4) ────────────────────────────────────────
+    //
+    // §4 la décrit comme des « effets immédiats (transaction) », mais §9 fait de
+    // `user.blocked` un événement consommé par tous les modules : une transaction
+    // unique entre modules est impossible. La cascade est donc en plusieurs
+    // transactions — et la LECTURE, elle, est protégée dès la première, puisque
+    // `VisibilityService` lit la table `blocks` et non ses conséquences.
+    this.registry.on('user.blocked', 'connections', async (job) => {
+      const pair = blockPair(job.payload);
+      if (pair === null) return;
+      await this.connections.handleUserBlocked(pair.blocker, pair.blocked);
+    });
+
+    this.registry.on('user.blocked', 'mentorship', async (job) => {
+      const pair = blockPair(job.payload);
+      if (pair === null) return;
+      await this.mentorship.handleUserBlocked(pair.blocker, pair.blocked);
+    });
+
+    this.registry.on('user.blocked', 'messaging', async (job) => {
+      const pair = blockPair(job.payload);
+      if (pair === null) return;
+      await this.messaging.handleUserBlocked(pair.blocker, pair.blocked);
+    });
+
+    this.registry.on('mentorship.ended', 'connections', async (job) => {
+      // Le gestionnaire lit la CHARGE, pas l'identifiant d'agrégat : il lui faut
+      // les deux membres et le motif de fin — un parrainage terminé pour cause de
+      // blocage ne doit évidemment pas produire un contact.
+      await this.connections.handleMentorshipEnded(job.payload as Parameters<
+        ConnectionsService['handleMentorshipEnded']
+      >[0]);
+    });
+
+    // Conversation de parcours : recalcul idempotent. `journey.created` et
+    // `journey.member_joined` n'ont pas encore de producteur (module 03).
+    this.registry.on('journey.created', 'messaging', async (job) => {
+      await this.messaging.syncJourneyConversation(job.aggregateId);
+    });
+
+    this.registry.on('journey.member_joined', 'messaging', async (job) => {
+      await this.messaging.syncJourneyConversation(job.aggregateId);
+    });
+
+    this.registry.on('user.deleted', 'mentorship', async (job) => {
+      await this.mentorship.handleUserDeleted(job.aggregateId);
+    });
+
+    this.registry.on('user.deleted', 'connections', async (job) => {
+      await this.connections.handleUserDeleted(job.aggregateId);
+    });
+
+    this.registry.on('user.deleted', 'messaging', async (job) => {
+      await this.messaging.handleUserDeleted(job.aggregateId);
+    });
+
+    // ── Fil (04 §6) ──────────────────────────────────────────────────────────
+    this.registry.on('user.deleted', 'feed', async (job) => {
+      await this.feed.handleUserDeleted(job.aggregateId);
+    });
+
+    this.registry.on('moderation.content_hidden', 'feed', async (job) => {
+      await this.feed.handleContentHidden(job.payload);
+    });
+
+    this.registry.on('user.blocked', 'feed', async (job) => {
+      await this.feed.handleUserBlocked(job.payload);
+    });
+
+    this.registry.on('journey.step_completed', 'feed', async (job) => {
+      await this.feed.handleJourneyStepCompleted(job.payload);
+    });
+
     this.logger.log(`${this.registry.describe().length} type(s) d’événement écouté(s)`);
   }
 }
@@ -157,4 +238,17 @@ function readString(payload: unknown, key: string): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const value = (payload as Record<string, unknown>)[key];
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+/**
+ * Les deux membres d'un blocage, ou `null` si la charge n'a pas la forme attendue.
+ *
+ * Trois modules en ont besoin, d'où la fonction plutôt que trois lectures
+ * recopiées : une seule définition de ce qu'est une charge valide.
+ */
+function blockPair(payload: unknown): { blocker: string; blocked: string } | null {
+  const blocker = readString(payload, 'blockerUserId');
+  const blocked = readString(payload, 'blockedUserId');
+  if (blocker === null || blocked === null) return null;
+  return { blocker, blocked };
 }

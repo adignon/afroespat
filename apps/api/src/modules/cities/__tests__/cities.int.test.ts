@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
-import { CITY_COUNT_PRIVACY_THRESHOLD, NEWCOMER_WINDOW_DAYS } from '@app/shared';
+import { CITY_COUNT_PRIVACY_THRESHOLD, NEWCOMER_WINDOW_DAYS, createCityTipSchema } from '@app/shared';
 import { AuditService } from '../../../common/audit.service';
 import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
@@ -457,8 +457,7 @@ describe('villes et membres (09 §2)', () => {
       expect(page.meta).toMatchObject({ medianCents: 50_000 });
     });
 
-    it('respecte les longueurs par kind, et le montant réservé au budget', async () => {
-      const { createCityTipSchema } = await import('@app/shared');
+    it('respecte les longueurs par kind, et le montant réservé au budget', () => {
       const base = { kind: 'TIP' as const, body: 'x'.repeat(501) };
       expect(createCityTipSchema.safeParse(base).success).toBe(false);
       expect(createCityTipSchema.safeParse({ ...base, body: 'x'.repeat(500) }).success).toBe(true);
