@@ -14,6 +14,7 @@ import { AuditService } from '../../common/audit.service';
 import { CryptoService } from '../../common/crypto.service';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
+import { ConsentsService } from '../consents/consents.service';
 
 /**
  * Compte et profil — 01-identite.md §2.6, §2.7 et §4.2.
@@ -62,6 +63,7 @@ export class UsersService {
     private readonly crypto: CryptoService,
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
+    private readonly consents: ConsentsService,
   ) {}
 
   private fail(code: AuthErrorCode, details?: Record<string, unknown>): never {
@@ -139,6 +141,10 @@ export class UsersService {
               mentorshipsCompleted: user.stats.mentorshipsCompleted,
               eventsOrganized: user.stats.eventsOrganized,
             },
+      // §2.10 : une nouvelle version des CGU redemande le consentement « sans
+      // bloquer la lecture ». Le front a donc besoin de la liste ICI, dans la
+      // réponse qu'il lit à chaque chargement.
+      consents: { outstanding: await this.consents.outstanding(userId) },
       onboarding: {
         step: user.onboardingStep,
         complete: user.onboardingStep >= ONBOARDING_LAST_STEP,

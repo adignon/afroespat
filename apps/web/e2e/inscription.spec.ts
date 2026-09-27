@@ -67,6 +67,9 @@ async function signUp(page: Page): Promise<void> {
   const phone = `97${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 100)}`;
   await page.goto('/connexion');
   await page.locator('input[name="phone"]:visible').fill(phone);
+  // §5 : la case est obligatoire, et l'API la vérifie aussi. Sans ce clic, tout
+  // le parcours s'arrête au premier écran — c'est le but.
+  await page.locator('main:visible [role="checkbox"]').click();
   await page.getByRole('button', { name: 'Recevoir le code' }).click();
   await page.waitForURL('**/connexion/code');
   await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
@@ -99,6 +102,7 @@ test.describe('inscription complète', () => {
     await field.fill(phone);
     await expect(field).toHaveValue(phone);
 
+    await page.locator('main:visible [role="checkbox"]').click();
     await page.getByRole('button', { name: 'Recevoir le code' }).click();
     await page.waitForURL('**/connexion/code');
 
@@ -319,5 +323,101 @@ test.describe('O04 — profil', () => {
     await expect(chip).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  });
+});
+
+test.describe('P01 — consentement (§5 et §2.10)', () => {
+  test('la case est DÉCOCHÉE au départ', async ({ page }) => {
+    await page.goto('/connexion');
+    const box = page.locator('main:visible [role="checkbox"]');
+
+    /**
+     * La maquette la dessine COCHÉE. Ce n'est pas un défaut à reproduire : une
+     * case pré-cochée n'est pas un consentement valide, et la preuve enregistrée
+     * ne vaudrait rien. L'état dessiné est une illustration.
+     */
+    await expect(box).toHaveAttribute('aria-checked', 'false');
+  });
+
+  test('refuse l’envoi sans acceptation, SANS appeler l’API', async ({ page }) => {
+    let called = false;
+    await page.route('**/auth/otp/request', (route) => {
+      called = true;
+      return route.continue();
+    });
+
+    await page.goto('/connexion');
+    await page.locator('input[name="phone"]:visible').fill('971234567');
+    await page.getByRole('button', { name: 'Recevoir le code' }).click();
+
+    await expect(page.locator(BANNER)).toContainText('accepter les conditions');
+    // Le message est local : l'API le refuserait aussi, mais le membre verrait un
+    // message générique sans savoir quoi corriger.
+    expect(called).toBe(false);
+  });
+
+  test('agrandit la cible sans grossir la case dessinée', async ({ page }) => {
+    await page.goto('/connexion');
+
+    const measured = await page.evaluate(() => {
+      // La case AFFICHÉE, pas celle du cadre d'ordinateur : sous 1024 px ce
+      // dernier est en `display: none` et toutes ses boîtes valent zéro.
+      const el = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].find(
+        (candidate) => candidate.getBoundingClientRect().height > 0,
+      );
+      if (el === undefined) throw new Error('case affichée introuvable');
+      const style = getComputedStyle(el);
+      const box = el.getBoundingClientRect();
+      return {
+        target: Math.round(Math.min(box.width, box.height)),
+        painted: parseFloat(style.width),
+        clip: style.backgroundClip,
+      };
+    });
+
+    expect(measured.target).toBeGreaterThanOrEqual(44);
+    // La case garde ses 22 px dessinés : une « correction » d'accessibilité qui
+    // grossit le visuel serait un changement de design, pas un correctif.
+    expect(measured.painted).toBe(22);
+    expect(measured.clip).toBe('content-box');
+  });
+
+  /**
+   * Le retour visuel de la case, dans le cadre qui est affiché.
+   *
+   * Les deux cadres ne le donnent pas de la même façon, et c'est la maquette qui
+   * en décide : celui d'ORDINATEUR dessine une coche blanche, celui de MOBILE
+   * n'en dessine aucune — seul le fond distingue les deux états. Le test éprouve
+   * donc ce qui existe, au lieu d'exiger partout ce qu'un seul cadre fournit.
+   */
+  test('montre l’état de la case, par la coche ou par le fond', async ({ page }) => {
+    await page.goto('/connexion');
+
+    const visual = () =>
+      page.evaluate(() => {
+        const box = [...document.querySelectorAll<HTMLElement>('[role="checkbox"]')].find(
+          (candidate) => candidate.getBoundingClientRect().height > 0,
+        );
+        if (box === undefined) throw new Error('case affichée introuvable');
+        const path = box.querySelector('svg path');
+        return {
+          background: getComputedStyle(box).backgroundColor,
+          check: path === null ? null : getComputedStyle(path).stroke,
+        };
+      });
+
+    const before = await visual();
+    await page.locator('main:visible [role="checkbox"]').click();
+    const after = await visual();
+
+    // Le fond change toujours : c'est le seul signal commun aux deux cadres.
+    expect(after.background).not.toBe(before.background);
+
+    if (before.check !== null) {
+      // Là où la maquette dessine une coche, elle est transparente puis blanche —
+      // rien ne bouge dans la mise en page.
+      expect(before.check).toContain('rgba(0, 0, 0, 0)');
+      expect(after.check).toBe('rgb(255, 255, 255)');
+    }
   });
 });

@@ -80,6 +80,19 @@ export const otpRequestSchema = z.object({
   /** Turnstile, obligatoire avant tout envoi (§2.1). */
   captchaToken: z.string().min(1),
   purpose: otpPurposeSchema.default('SIGNUP'),
+  /**
+   * L'acceptation des CGU et de la politique de confidentialité — §5, « case à
+   * cocher obligatoire » à l'écran 1.
+   *
+   * Champ AJOUTÉ au corps que décrit §4.1, et c'est délibéré. Vérifier la case
+   * uniquement côté écran laisserait créer un compte par appel direct, dont la
+   * ligne de consentement dirait « accordé » sans que personne n'ait rien
+   * accepté. Une preuve fausse est pire qu'une preuve absente.
+   *
+   * `literal(true)` et non `boolean` : `false` doit être un refus de la requête,
+   * pas une valeur acceptée qu'on oublierait de tester.
+   */
+  acceptTerms: z.literal(true),
 });
 
 export type OtpRequest = z.infer<typeof otpRequestSchema>;
@@ -194,6 +207,13 @@ export interface MeResponse {
    * membre s'est arrêté »), et non déduit : cinq des six écrans sont passables,
    * donc un profil vide ne dit pas si le membre a sauté l'écran ou ne l'a pas vu.
    */
+  /**
+   * Les consentements à (re)demander — §2.10.
+   *
+   * « Sans bloquer la lecture » : le front affiche une invitation, il ne ferme
+   * pas l'application. D'où une liste, et non un drapeau.
+   */
+  readonly consents: { readonly outstanding: readonly string[] };
   readonly onboarding: {
     /** 0 à 6. 6 = terminé. */
     readonly step: number;

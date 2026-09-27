@@ -184,6 +184,8 @@ export function requestOtp(input: {
   countryIso2: string;
   captchaToken: string;
   purpose?: 'SIGNUP' | 'LOGIN';
+  /** §5 : la case est obligatoire, et l'API la vérifie aussi. */
+  acceptTerms: true;
 }): Promise<OtpRequested> {
   return apiRequest<OtpRequested>('/auth/otp/request', { method: 'POST', body: input });
 }

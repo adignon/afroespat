@@ -166,3 +166,43 @@ export const PROFESSIONS: { nameFr: string; category: string }[] = [
   ...['Professeur particulier', 'Formateur', 'Coach'].map((n) => ({ nameFr: n, category: 'Enseignement' })),
   ...['Infirmier libéral', 'Kinésithérapeute', 'Psychologue', 'Sage-femme', 'Auxiliaire de vie', "Garde d'enfants", 'Agent de nettoyage'].map((n) => ({ nameFr: n, category: 'Santé et aide à la personne' })),
 ];
+
+/**
+ * Les pages statiques dont un consentement a besoin — 01 §2.10.
+ *
+ * Leur contenu est ÉDITORIAL et attend le porteur : ces entrées sont des
+ * gabarits explicites, en version `0`.
+ *
+ * Ce n'est pas un pis-aller mais le mécanisme prévu. §2.10 dit qu'« une nouvelle
+ * version des CGU redemande le consentement à la prochaine connexion » : les
+ * membres qui acceptent la version 0 seront donc resollicités dès que le vrai
+ * texte arrivera en version 1. L'alternative — enregistrer un consentement sans
+ * document — produirait une preuve RGPD qui ne prouve rien.
+ */
+export const STATIC_PAGES: {
+  slug: string;
+  title: string;
+  version: string;
+  body: string;
+}[] = [
+  {
+    slug: 'cgu',
+    title: 'Conditions générales d’utilisation',
+    version: '0',
+    body:
+      'Texte provisoire, en attente de rédaction.\n\n' +
+      'Cette page existe pour que le consentement enregistré à l’inscription porte ' +
+      'sur un document identifié. Dès que les conditions définitives seront publiées ' +
+      'en version 1, le consentement sera redemandé à la connexion suivante (§2.10).',
+  },
+  {
+    slug: 'confidentialite',
+    title: 'Politique de confidentialité',
+    version: '0',
+    body:
+      'Texte provisoire, en attente de rédaction.\n\n' +
+      'Cette page existe pour que le consentement enregistré à l’inscription porte ' +
+      'sur un document identifié. Dès que la politique définitive sera publiée en ' +
+      'version 1, le consentement sera redemandé à la connexion suivante (§2.10).',
+  },
+];

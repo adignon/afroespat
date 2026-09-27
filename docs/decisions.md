@@ -66,6 +66,27 @@
 | 2026-09-27 | **Le pays d'origine n'est envoyé que s'il a CHANGÉ** | §2.7 ne permet qu'une modification. La consommer pour confirmer une valeur déjà posée priverait le membre de sa seule correction | — |
 | 2026-09-27 | **Les motifs du générateur excluent `<`, pas `}`** | Le style d'une pastille contient un gabarit — `` border: `1px solid ${s.bd}` `` — donc des accolades : une classe qui les exclut s'arrête dessus. Mais `[\s\S]*?`, même paresseux, TRAVERSE les balises : le motif partait d'un `<span` bien plus haut et engloutissait la flèche de retour et les six segments de progression. Un attribut `style` ne contient jamais de `<` | Le JSX produit ne compilait plus, ce qui fut une chance : un motif trop large qui compile est bien plus difficile à voir |
 | 2026-09-27 | **Chaque adaptation du générateur est BORNÉE à ses écrans, et signale ses échecs** | La loupe de la recherche de ville a le même tracé que celle du fil : sans borne, la barre de recherche de A01 devenait un champ « Votre ville ». Et une adaptation attendue qui ne s'applique pas est désormais un avertissement — sans quoi un champ reste muet dans un écran qui compile parfaitement | — |
+| 2026-09-27 | **La case de consentement est DÉCOCHÉE par défaut**, contre ce que la maquette dessine | Ce n'est pas une divergence de forme mais de droit : une case pré-cochée n'est pas un consentement valide, et la preuve RGPD enregistrée ne vaudrait rien. L'état coché que montre la maquette est une illustration | Premier cas où l'on s'écarte sciemment de l'état dessiné |
+| 2026-09-27 | **`acceptTerms: true` est AJOUTÉ au corps de `POST /auth/otp/request`**, que §4.1 ne prévoit pas | Vérifier la case seulement côté écran laisserait créer un compte par appel direct, dont la ligne de consentement dirait « accordé » sans que personne n'ait rien accepté. Une preuve fausse est pire qu'une preuve absente. `z.literal(true)` et non `boolean` : `false` doit être un refus, pas une valeur acceptée qu'on oublierait de tester | Écart assumé au corps décrit par §4.1, imposé par §5 |
+| 2026-09-27 | **Le consentement porte l'IP du DÉFI, pas celle de la vérification** | La preuve doit dire quand et d'où l'acceptation a eu lieu — c'est au moment où la case est cochée, pas quelques secondes plus tard à la saisie du code | — |
+| 2026-09-27 | **`static_pages` est amorcée avec des gabarits en version `0`** | Le contenu des CGU et de la confidentialité est éditorial et attend le porteur. Sans document publié, un consentement ne référencerait rien : le service refuse alors de l'enregistrer. Le gabarit n'est pas un pis-aller — §2.10 prévoit qu'« une nouvelle version redemande le consentement », donc les membres qui acceptent la version 0 seront resollicités dès le vrai texte en version 1. Le seed ne met à jour ni le corps ni la version, pour ne pas ramener tout le monde à 0 | — |
+| 2026-09-27 | **Un retrait de consentement s'AJOUTE, il n'écrase pas** | `consents` n'a ni `updated_at` ni suppression : l'historique EST la preuve. L'état courant est la DERNIÈRE ligne par type, jamais le nombre de lignes accordées — qui donnerait un consentement encore valide après sa révocation | — |
+| 2026-09-27 | **La version annoncée par le client est VÉRIFIÉE, pas crue** | Un consentement enregistré sur une version qui n'a jamais existé a l'air valide. Le service renvoie `CONFLICT` avec la version attendue, pour que le front recharge | — |
+| 2026-09-27 | **Un consentement REFUSÉ n'est pas marqué périmé à chaque publication** | `outdated` ne concerne qu'un consentement accordé sur une version dépassée. Un refus reste à demander, mais pour la bonne raison — et le distinguer évite de traiter un refus comme un oubli | — |
+
+---
+
+## Travail en parallèle — ce qui a été mis en place
+
+| | |
+|---|---|
+| **Pourquoi** | Douze lots séquentiels ne se terminent pas. Les modules de contenu sont largement indépendants : ils lisent `users` et les référentiels, écrivent leurs propres tables, et communiquent par événements |
+| **La brique préalable** | `VisibilityService` — presque tous consomment `user.blocked`. Sans elle, chaque module aurait inventé sa règle de visibilité |
+| **Isolation** | Un worktree git par agent (pas de conflit de fichiers) et **une base PostgreSQL par agent** (`app_a1` à `app_a4`, migrées et amorcées). Sans bases séparées, leurs tests d'intégration se piétineraient |
+| **Ports** | 3011 à 3014 — le 3001 reste au tronc commun |
+| **Interdits aux agents** | `packages/db/prisma/schema/**` (les 106 tables sont figées), `docs/PLAN.md`, `docs/decisions.md`, les autres modules. Ils peuvent toucher `app.module.ts` et l'index de `@app/shared` : les conflits y sont de deux lignes |
+| **La limite réelle** | La machine. Quatre agents suffisent à faire passer la suite e2e de 40 s à 4 min, et à produire des échecs qui disparaissent en exécution isolée. Au-delà, on ne mesurerait plus rien de fiable |
+| **Ce que ça ne remplace pas** | La relecture. Le code qui revient doit être éprouvé avant d'être fusionné : un agent qui livre du code compilable et testé n'a pas pour autant exercé son module comme je l'aurais fait |
 
 ---
 

@@ -31,6 +31,14 @@ export interface OnboardingState {
   readonly originIso2: string;
   /** Ce que le membre tape dans la recherche de ville (O02). */
   readonly citySearch: string;
+  /**
+   * L'acceptation des CGU et de la confidentialité (P01).
+   *
+   * FAUX par défaut, alors que la maquette dessine la case cochée. Ce n'est pas
+   * une divergence de forme mais de droit : un consentement pré-coché n'est pas
+   * un consentement, et la preuve enregistrée ne vaudrait rien.
+   */
+  readonly consentAccepted: boolean;
   /** O04 — nom d'affichage et pseudo. */
   readonly displayName: string;
   readonly handle: string;
@@ -61,6 +69,7 @@ export const INITIAL_ONBOARDING_STATE: OnboardingState = {
   originIso2: 'BJ',
   citySearch: '',
   cityId: null,
+  consentAccepted: false,
   // La maquette montre « Amina Diallo » et « @amina.d » : des EXEMPLES, qui
   // survivent en `placeholder`. Un écran réel s'ouvre vide.
   displayName: '',
@@ -298,6 +307,12 @@ export interface OnboardingVals extends ScreenActions {
    * inventer d'autres serait dessiner à la place du porteur.
    */
   readonly flagDisplay: string;
+  readonly consentAccepted: boolean;
+  readonly onToggleConsent: () => void;
+  readonly consentBg: string;
+  readonly consentBorder: string;
+  /** Transparent quand la case est décochée : la coche disparaît sans bouger. */
+  readonly consentCheck: string;
 
   // ── O02 : pays d'origine et ville ─────────────────────────────────────────
   readonly originName: string;
@@ -456,6 +471,11 @@ export function onboardingVals(
     onHandleChange: (event: { target: { value: string } }) => {
       patch({ handle: toHandle(event.target.value) });
     },
+    consentAccepted: state.consentAccepted,
+    onToggleConsent: () => patch({ consentAccepted: !state.consentAccepted }),
+    consentBg: state.consentAccepted ? '#16785E' : '#fff',
+    consentBorder: state.consentAccepted ? 'none' : '1.5px solid #CBD5D1',
+    consentCheck: state.consentAccepted ? '#fff' : 'transparent',
     citySearch: state.citySearch,
     onCitySearch: (event: { target: { value: string } }) => {
       // La ville retenue est oubliée dès qu'on retape : garder l'ancienne

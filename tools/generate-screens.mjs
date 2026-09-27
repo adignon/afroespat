@@ -398,6 +398,68 @@ const CITY_ROWS = {
 };
 
 /**
+ * LA CASE DE CONSENTEMENT DEVIENT UNE VRAIE CASE.
+ *
+ * La maquette la dessine COCHÉE, en `<span>`. Deux problèmes, et le second est
+ * juridique :
+ *
+ *   · un `<span>` ne se décoche pas et n'est pas annoncé comme une case ;
+ *   · une case **pré-cochée n'est pas un consentement valide**. L'état que la
+ *     maquette montre est une illustration, pas un défaut — et le reprendre tel
+ *     quel rendrait la preuve RGPD inutilisable.
+ *
+ * La cible passe à 44 px (`T1` §2.3) par la même mécanique que l'interrupteur :
+ * remplissage en `content-box` et peinture bornée au contenu, pour que la case
+ * garde ses 22 px dessinés.
+ */
+const CONSENT_CHECKBOX = {
+  screens: ['P01'],
+  why: 'La case de consentement devient une vraie case, décochée par défaut.',
+  provides: ['consentAccepted', 'consentBg', 'consentBorder', 'consentCheck', 'onToggleConsent'],
+  apply(jsx) {
+    const pattern =
+      /<span style=\{\{ width: "22px", height: "22px", borderRadius: "7px", background: "#16785E"([^<]*?)\}\}>([\s\S]*?)<\/span>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    const inner = m[2].replace('stroke="#fff"', 'stroke={consentCheck}');
+
+    /**
+     * Le style est recomposé par MORCEAUX joints d'une virgule, et non concaténé.
+     * Deux tentatives de concaténation ont échoué en sens inverse — une virgule
+     * en trop, puis une virgule manquante — parce que le reste du style capturé
+     * commence par une virgule mais n'en finit pas par une. Joindre des morceaux
+     * nettoyés ne laisse pas de place à cette erreur.
+     */
+    const rest = m[1]
+      .split(',')
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0);
+
+    const style = [
+      'width: "22px"',
+      'height: "22px"',
+      'borderRadius: "7px"',
+      'background: consentBg',
+      'border: consentBorder',
+      ...rest,
+      // La cible passe à 44 px sans que la case peinte change de taille.
+      'padding: "11px"',
+      'boxSizing: "content-box"',
+      'backgroundClip: "content-box"',
+      'cursor: "pointer"',
+    ].join(', ');
+
+    const box =
+      '<button type="button" role="checkbox" aria-checked={consentAccepted} ' +
+      'onClick={onToggleConsent} aria-label="J’accepte les conditions d’utilisation et la politique de confidentialité" ' +
+      `style={{ ${style} }}>${inner}</button>`;
+
+    return { jsx: jsx.slice(0, m.index) + box + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
  * LES PASTILLES DE CHOIX DEVIENNENT DES BOUTONS.
  *
  * La maquette les dessine en `<span>` — statut d'occupation, types d'aide — et
@@ -525,7 +587,7 @@ function adaptFields(jsx, section) {
     applied.push(spec);
   }
 
-  for (const transform of [CITY_SEARCH, CITY_ROWS]) {
+  for (const transform of [CITY_SEARCH, CITY_ROWS, CONSENT_CHECKBOX]) {
     if (!transform.screens.includes(section)) continue;
     const result = transform.apply(out);
     if (!result.applied) {

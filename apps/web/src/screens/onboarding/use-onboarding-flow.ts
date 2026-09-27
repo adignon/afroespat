@@ -162,6 +162,14 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         return;
       }
 
+      // §5 : la case est obligatoire. On le dit ICI plutôt que de laisser l'API
+      // refuser : le membre verrait sinon un message générique sans savoir quoi
+      // corriger. L'API le vérifie aussi — un écran n'est pas une garantie.
+      if (latest.current?.consentAccepted !== true) {
+        setError('Vous devez accepter les conditions et la politique de confidentialité.');
+        return;
+      }
+
       const challenge = await requestOtp({
         phone,
         countryIso2: latest.current?.countryIso2 ?? 'BJ',
@@ -170,6 +178,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         // en production.
         captchaToken: 'dev',
         purpose: 'SIGNUP',
+        acceptTerms: true,
       });
 
       sessionStorage.setItem(CHALLENGE_KEY, challenge.challengeId);

@@ -10,6 +10,7 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { TokenService } from '../../common/token.service';
+import { ConsentsService } from '../consents/consents.service';
 import { loadEnv } from '../../config/env';
 import { CryptoService } from '../../common/crypto.service';
 import { OutboxService } from '../../common/outbox.service';
@@ -65,6 +66,7 @@ export class AuthService {
     private readonly crypto: CryptoService,
     private readonly outbox: OutboxService,
     private readonly tokens: TokenService,
+    private readonly consents: ConsentsService,
     @Inject(SMS_PROVIDER) private readonly sms: SmsProvider,
     @Inject(CAPTCHA_PROVIDER) private readonly captcha: CaptchaProvider,
   ) {}
@@ -257,11 +259,15 @@ export class AuthService {
    * Le pays d'origine n'est demandé qu'à l'écran 3 de l'onboarding (§5). Ici on
    * ne pose qu'une valeur provisoire, non figée, que cet écran remplacera.
    */
-  private async createAccount(challenge: {
-    phoneHmac: string;
-    countryId: string;
-    phoneEncrypted: Uint8Array<ArrayBuffer> | null;
-  }): Promise<string> {
+  private async createAccount(
+    challenge: {
+      phoneHmac: string;
+      countryId: string;
+      phoneEncrypted: Uint8Array<ArrayBuffer> | null;
+      /** L'IP du moment où la case a été cochée — la preuve porte celle-là. */
+      ip: string | null;
+    },
+  ): Promise<string> {
     // Un défi sans numéro chiffré ne peut pas créer de compte : le membre ne
     // pourrait plus jamais voir son propre numéro masqué. Mieux vaut échouer
     // ici que fabriquer un compte estropié.
@@ -305,6 +311,14 @@ export class AuthService {
           verifiedAt: new Date(),
         },
       });
+
+      // §5 : `TERMS` et `PRIVACY` sont recueillis à l'écran 1, case obligatoire.
+      // Ils s'écrivent DANS la transaction de création : un compte sans preuve de
+      // consentement serait un compte qu'on n'a pas le droit d'avoir ouvert.
+      // L'IP du DÉFI, c'est-à-dire du moment où le membre a coché la case, et non
+      // celle de la vérification quelques secondes plus tard. La preuve doit dire
+      // quand et d'où l'acceptation a eu lieu.
+      await this.consents.recordSignupConsents(tx, userId, challenge.ip ?? undefined);
 
       await this.outbox.emit(tx, {
         type: 'user.registered',

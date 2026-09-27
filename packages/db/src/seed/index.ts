@@ -1,7 +1,14 @@
 import { resolve } from 'node:path';
 import { PrismaClient } from '../../generated/client/index.js';
 import { newId } from '../uuid.js';
-import { CITIES, COUNTRIES, LANGUAGES, PROFESSIONS, SKILLS } from './referentials.js';
+import {
+  CITIES,
+  COUNTRIES,
+  LANGUAGES,
+  PROFESSIONS,
+  SKILLS,
+  STATIC_PAGES,
+} from './referentials.js';
 
 /**
  * Chargement des données de départ (T3).
@@ -57,6 +64,20 @@ async function main(): Promise<void> {
     });
   }
   log(`  villes : ${CITIES.length} (toutes inactives — la ville pilote s’active en back-office)`);
+
+  // ── Pages statiques référencées par les consentements (01 §2.10) ────────
+  for (const page of STATIC_PAGES) {
+    await prisma.staticPage.upsert({
+      where: { slug: page.slug },
+      // Le CORPS et la VERSION ne sont pas mis à jour : le jour où le porteur
+      // publie son texte en version 1, un rechargement du seed ne doit pas le
+      // ramener à la version 0 — ce qui redemanderait le consentement à tout le
+      // monde, pour rien.
+      update: { title: page.title },
+      create: { id: newId(), ...page, publishedAt: new Date() },
+    });
+  }
+  log(`  pages statiques : ${STATIC_PAGES.length} (gabarits en version 0 — texte à venir)`);
 
   // ── Listes fermées du profil ────────────────────────────────────────────
   for (const l of LANGUAGES) {

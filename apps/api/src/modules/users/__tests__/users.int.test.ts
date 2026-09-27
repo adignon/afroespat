@@ -5,6 +5,7 @@ import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { TokenService } from '../../../common/token.service';
 import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
+import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../../auth/auth.service';
 import { UsersService } from '../users.service';
 
@@ -55,12 +56,13 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     await prisma.$connect();
     const crypto = new CryptoService();
     const outbox = new OutboxService(prisma);
-    users = new UsersService(prisma, crypto, outbox, new AuditService(prisma));
+    users = new UsersService(prisma, crypto, outbox, new AuditService(prisma), new ConsentsService(prisma));
     auth = new AuthService(
       prisma,
       crypto,
       outbox,
       new TokenService(),
+      new ConsentsService(prisma),
       sms,
       new FakeCaptchaProvider(),
     );

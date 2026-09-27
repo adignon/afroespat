@@ -4,6 +4,7 @@ import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { type AccessClaims, TokenService } from '../../../common/token.service';
 import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
+import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../auth.service';
 
 /**
@@ -63,6 +64,7 @@ describe('authentification (01 §2.1)', () => {
       crypto,
       new OutboxService(prisma),
       new TokenService(),
+      new ConsentsService(prisma),
       sms,
       new FakeCaptchaProvider(),
     );
