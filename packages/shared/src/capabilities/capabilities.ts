@@ -14,14 +14,14 @@
  * que leurs services ne lisent jamais `users.plan`.
  */
 
-export const VERIFICATION_LEVELS = ['L0', 'L1', 'L2'] as const;
-export type VerificationLevel = (typeof VERIFICATION_LEVELS)[number];
+// Les niveaux et les plans viennent du schéma, jamais d'une copie : ils sont
+// générés depuis les enums PostgreSQL (voir scripts/generate-enums.mjs).
+import { UserPlan, VerificationLevel } from '../enums/generated.js';
+
+export { UserPlan, VerificationLevel };
 
 /** Ordre pour la comparaison : L0 < L1 < L2. Les niveaux sont cumulatifs (§7.2). */
 const LEVEL_RANK: Record<VerificationLevel, number> = { L0: 0, L1: 1, L2: 2 };
-
-export const USER_PLANS = ['FREE', 'PREMIUM'] as const;
-export type UserPlan = (typeof USER_PLANS)[number];
 
 /** Clé de quota dans `plans.limits`. `null` = la capacité n'est jamais limitée par un plan. */
 export type PlanLimitKey =

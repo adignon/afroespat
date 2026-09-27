@@ -22,17 +22,22 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --exclude \"**/*.int.test.ts\"",
-    "test:int": "vitest run src/__tests__/*.int.test.ts"
+    "test:int": "vitest run src/__tests__/*.int.test.ts",
+    "lint": "eslint src"
   },
   "dependencies": {
     "@prisma/client": "^6.1.0"
   },
   "devDependencies": {
+    "@app/config": "workspace:*",
+    "@app/shared": "workspace:*",
+    "@types/node": "^26.6.3",
     "prisma": "^6.1.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
-    "@app/config": "workspace:*",
     "vitest": "^2.1.8",
-    "@app/shared": "workspace:*"
+    "eslint": "^9.17.0",
+    "typescript-eslint": "^8.18.1",
+    "@eslint/js": "^9.17.0"
   }
 }

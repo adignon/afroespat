@@ -57,7 +57,6 @@ if (duplicates.length > 0) {
 }
 
 const lines = [
-  '/* eslint-disable */',
   '// GÉNÉRÉ depuis packages/db/prisma/schema/*.prisma — ne pas modifier à la main.',
   '// Régénérer : pnpm --filter @app/shared generate',
   '//',

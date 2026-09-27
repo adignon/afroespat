@@ -62,18 +62,20 @@ function format(ms: number, seq: number): string {
   // Variante RFC (0b10) sur les 2 bits hauts de l'octet 8 ; le reste est aléatoire.
   scratch[8] = 0x80 | (scratch[8]! & 0x3f);
 
-  const h = HEX;
+  // `scratch` fait exactement 16 octets et HEX couvre les 256 valeurs possibles :
+  // aucun accès ne peut être hors bornes. Le helper isole l'unique assertion.
+  const byteAt = (i: number): string => HEX[scratch[i] as number] as string;
+
   return (
-    h[scratch[0]!]! + h[scratch[1]!]! + h[scratch[2]!]! + h[scratch[3]!]! +
+    byteAt(0) + byteAt(1) + byteAt(2) + byteAt(3) +
     '-' +
-    h[scratch[4]!]! + h[scratch[5]!]! +
+    byteAt(4) + byteAt(5) +
     '-' +
-    h[scratch[6]!]! + h[scratch[7]!]! +
+    byteAt(6) + byteAt(7) +
     '-' +
-    h[scratch[8]!]! + h[scratch[9]!]! +
+    byteAt(8) + byteAt(9) +
     '-' +
-    h[scratch[10]!]! + h[scratch[11]!]! + h[scratch[12]!]! +
-    h[scratch[13]!]! + h[scratch[14]!]! + h[scratch[15]!]!
+    byteAt(10) + byteAt(11) + byteAt(12) + byteAt(13) + byteAt(14) + byteAt(15)
   );
 }
 
