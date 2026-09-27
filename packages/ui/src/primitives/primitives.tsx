@@ -477,26 +477,34 @@ export function Chips({
         item.value === '|' ? (
           <span key="sep" className="mx-1 w-px bg-border-strong" aria-hidden />
         ) : (
+          // Le design donne 37 px de haut à une chip ; T1 §2.3 exige 44 px de
+          // cible tactile. Le BOUTON fait donc 44 px — mesurable, donc auditable —
+          // et la pilule visuelle à l'intérieur garde ses 37 px exacts.
+          // Un pseudo-élément aurait étendu la zone cliquable sans que la mesure
+          // le voie : invisible à un audit, donc invérifiable.
           <button
             key={item.value}
             type="button"
             role="tab"
             aria-selected={item.value === active}
             onClick={() => onSelect?.(item.value)}
-            className={cn(
-              'whitespace-nowrap rounded-full border px-[13px] py-2 text-[12.5px] font-bold',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-              item.value === active
-                ? dark
-                  ? 'border-text bg-text text-text-on-dark'
-                  : 'border-primary bg-primary text-text-on-dark'
-                : 'border-border bg-surface text-text hover:bg-control-alt',
-            )}
+            className="flex h-touch items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:rounded-full"
           >
-            {item.label}
-            {item.count !== undefined ? (
-              <span className="ml-[6px] opacity-70">{item.count}</span>
-            ) : null}
+            <span
+              className={cn(
+                'flex items-center whitespace-nowrap rounded-full border px-[13px] py-2 text-[12.5px] font-bold',
+                item.value === active
+                  ? dark
+                    ? 'border-text bg-text text-text-on-dark'
+                    : 'border-primary bg-primary text-text-on-dark'
+                  : 'border-border bg-surface text-text hover:bg-control-alt',
+              )}
+            >
+              {item.label}
+              {item.count !== undefined ? (
+                <span className="ml-[6px] font-semibold">{item.count}</span>
+              ) : null}
+            </span>
           </button>
         ),
       )}
@@ -520,19 +528,23 @@ export function Segmented({
       role="tablist"
     >
       {items.map((item) => (
+        // Même principe que les chips : bouton de 44 px, visuel du design dedans.
         <button
           key={item.value}
           type="button"
           role="tab"
           aria-selected={item.value === active}
           onClick={() => onSelect?.(item.value)}
-          className={cn(
-            'whitespace-nowrap rounded-md px-4 py-[9px] text-[13px] font-bold',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
-            item.value === active ? 'bg-surface text-text' : 'text-text-muted',
-          )}
+          className="flex h-touch items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:rounded-md"
         >
-          {item.label}
+          <span
+            className={cn(
+              'flex items-center whitespace-nowrap rounded-md px-4 py-[9px] text-[13px] font-bold',
+              item.value === active ? 'bg-surface text-text' : 'text-text-muted',
+            )}
+          >
+            {item.label}
+          </span>
         </button>
       ))}
     </div>
@@ -597,16 +609,23 @@ export function Stat({
   readonly label: string;
   readonly tone?: 'surface' | 'green' | 'journey' | 'dark';
 }) {
+  // Chaque ton porte sa couleur de libellé EXPLICITE, jamais une opacité.
+  //
+  // `opacity` sur du texte est un piège d'accessibilité : elle mélange la couleur
+  // avec le fond, fait chuter le contraste réel, et reste invisible à un contrôle
+  // au niveau des jetons — qui ne voit que la couleur déclarée. Trouvé par
+  // axe-core au navigateur, sur ce composant même.
   const tones = {
-    surface: 'bg-surface border border-border text-text',
-    green: 'bg-primary-soft text-primary-strong',
-    journey: 'bg-journey-soft text-journey-strong',
-    dark: 'bg-primary-strong text-text-on-dark',
+    surface: { box: 'bg-surface border border-border', value: 'text-text', label: 'text-text-muted' },
+    green: { box: 'bg-primary-soft', value: 'text-primary-strong', label: 'text-primary-strong' },
+    journey: { box: 'bg-journey-soft', value: 'text-journey-strong', label: 'text-journey-strong' },
+    dark: { box: 'bg-primary-strong', value: 'text-text-on-dark', label: 'text-text-on-dark' },
   } as const;
+  const t = tones[tone];
   return (
-    <div className={cn('rounded-xl p-4', tones[tone])}>
-      <div className="text-[24px] font-extrabold tracking-[-0.6px]">{value}</div>
-      <div className="mt-[2px] text-meta opacity-80">{label}</div>
+    <div className={cn('rounded-xl p-4', t.box)}>
+      <div className={cn('text-[24px] font-extrabold tracking-[-0.6px]', t.value)}>{value}</div>
+      <div className={cn('mt-[2px] text-meta', t.label)}>{label}</div>
     </div>
   );
 }

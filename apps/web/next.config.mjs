@@ -1,6 +1,12 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Un package-lock.json existe au-dessus du projet : sans cela, Next infère la
+  // mauvaise racine et trace des fichiers hors du dépôt.
+  outputFileTracingRoot: resolve(dirname(fileURLToPath(import.meta.url)), '..', '..'),
   // @app/ui est publié en source : Next le transpile comme le reste de l'application.
   transpilePackages: ['@app/ui', '@app/shared'],
   // §8.3 — en-têtes de sécurité. La CSP stricte viendra avec les domaines réels

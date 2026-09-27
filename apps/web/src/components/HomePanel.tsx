@@ -74,12 +74,18 @@ export function HomePanel({ viewer, journey, whatsNew, myNetworks }: HomePanelPr
 
       {/* Le parcours, juste sous le profil : c'est la colonne vertébrale du produit. */}
       {journey === undefined ? (
-        <JourneyPanelCardEmpty />
+        <JourneyPanelCardEmpty
+          label={fr.journeyCard.label}
+          pitch={fr.journeyCard.pitch}
+          createLabel={fr.journeyCard.create}
+        />
       ) : (
         <JourneyPanelCard
+          label={fr.journeyCard.label}
           title={journey.title}
           progressPct={journey.progressPct}
           currentStepLabel={`${fr.journeyCard.stepPrefix} ${journey.currentStepPosition} : ${journey.currentStepTitle}`}
+          continueLabel={fr.journeyCard.continue}
         />
       )}
 
@@ -106,9 +112,10 @@ export function HomePanel({ viewer, journey, whatsNew, myNetworks }: HomePanelPr
             </span>
           </a>
         ))}
+        {/* Action autonome, pas un lien en ligne : 44 px comme les lignes au-dessus. */}
         <a
           href="/reseaux"
-          className="mt-1 block px-3 text-[12.5px] font-bold text-primary hover:text-primary-strong"
+          className="flex h-touch items-center rounded-lg px-3 text-[12.5px] font-bold text-primary hover:bg-control-alt hover:text-primary-strong"
         >
           {t.edit}
         </a>

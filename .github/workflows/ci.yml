@@ -86,6 +86,14 @@ jobs:
         run: pnpm build
 
       # Garde-fous des règles dures (§0.7 du plan) : capacités déclarées,
-      # terre cuite réservée, mots interdits, absence de rouge, masquage des PII.
+      # terre cuite réservée, mots interdits, absence de rouge, contraste AA.
       - name: Garde-fous
         run: pnpm guardrails
+
+      - name: Navigateurs Playwright
+        run: pnpm --filter @app/web exec playwright install --with-deps chromium
+
+      # Géométrie, jetons, responsivité de 320 à 1920 px, accessibilité axe-core.
+      # Déterministe : aucune comparaison d'image ici (voir playwright.config.ts).
+      - name: Tests de bout en bout
+        run: pnpm --filter @app/web test:e2e

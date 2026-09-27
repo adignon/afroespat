@@ -6,6 +6,17 @@
  * Voir docs/decisions.md D2 : en cas de divergence, les maquettes v2 gagnent sur T1 §2.
  *
  * Toute couleur hors de cette table est interdite (T1 §2.1). Aucun rouge. Aucune ombre portée.
+ *
+ * ÉCART ASSUMÉ — contraste. Ces valeurs sont celles de la maquette, à l'identique,
+ * par décision du porteur. Trois paires n'atteignent pas le seuil AA que T1 §6 et
+ * §10.6 demandent :
+ *
+ *   text-subtle sur blanc              3,10:1   (il en faudrait 4,5)
+ *   journey-strong sur journey-soft    3,91:1   (il en faudrait 4,5)
+ *   border-inactive sur blanc          1,54:1   (il en faudrait 3,0)
+ *
+ * guardrails/check-contrast.mjs les connaît et les laisse passer nommément : il
+ * échoue sur toute paire NOUVELLE qui manquerait le seuil. Voir docs/decisions.md.
  */
 
 const color = {

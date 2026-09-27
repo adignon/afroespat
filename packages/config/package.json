@@ -19,6 +19,6 @@
     "tailwindcss": "^3.4.17"
   },
   "scripts": {
-    "guardrails": "node guardrails/check-colors.mjs"
+    "guardrails": "node guardrails/check-colors.mjs && node guardrails/check-contrast.mjs"
   }
 }

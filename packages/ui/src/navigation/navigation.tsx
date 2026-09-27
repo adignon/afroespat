@@ -204,17 +204,25 @@ export function JourneyPanelCard({
   progressPct,
   currentStepLabel,
   onContinue,
+  continueLabel,
+  label,
 }: {
   readonly title: string;
   readonly progressPct: number;
   readonly currentStepLabel: string;
   readonly onContinue?: () => void;
+  /** Libellé du bouton : @app/ui ne porte aucun texte en dur (§10.5). */
+  readonly continueLabel: string;
+  /** Libellé « Mon parcours ». */
+  readonly label: string;
 }) {
   return (
     <section className="shrink-0 rounded-2xl bg-primary-strong p-[18px] text-text-on-dark">
       <div className="flex items-start justify-between gap-[10px]">
         <div className="min-w-0">
-          <div className="text-[10.5px] font-bold tracking-[1px] text-[#A9CDBF]">MON PARCOURS</div>
+          <div className="text-[10.5px] font-bold uppercase tracking-[1px] text-[#A9CDBF]">
+            {label}
+          </div>
           <div className="mt-[5px] truncate text-[14.5px] font-bold tracking-[-0.2px]">{title}</div>
         </div>
         <span className="text-[22px] font-extrabold tabular-nums tracking-[-0.8px]">
@@ -226,12 +234,15 @@ export function JourneyPanelCard({
       </div>
       <div className="mt-[14px] flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-[12.5px] text-[#A9CDBF]">{currentStepLabel}</span>
+        {/* Bouton de 44 px (T1 §2.3), pilule visuelle de 33 px comme la maquette. */}
         <button
           type="button"
           onClick={onContinue}
-          className="shrink-0 rounded-[11px] bg-surface px-3 py-[7px] text-[12.5px] font-bold text-primary-strong"
+          className="flex h-touch shrink-0 items-center focus-visible:rounded-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-surface"
         >
-          Continuer
+          <span className="rounded-[11px] bg-surface px-3 py-[7px] text-[12.5px] font-bold text-primary-strong">
+            {continueLabel}
+          </span>
         </button>
       </div>
     </section>
@@ -239,19 +250,27 @@ export function JourneyPanelCard({
 }
 
 /** Variante sans parcours : l'invitation à en créer un. */
-export function JourneyPanelCardEmpty({ onCreate }: { readonly onCreate?: () => void }) {
+export function JourneyPanelCardEmpty({
+  onCreate,
+  pitch,
+  createLabel,
+  label,
+}: {
+  readonly onCreate?: () => void;
+  readonly pitch: string;
+  readonly createLabel: string;
+  readonly label: string;
+}) {
   return (
     <section className="shrink-0 rounded-2xl bg-primary-strong p-[18px] text-text-on-dark">
-      <div className="text-[10.5px] font-bold tracking-[1px] text-[#A9CDBF]">MON PARCOURS</div>
-      <p className="mt-[6px] text-[13.5px] leading-normal">
-        Listez vos étapes, suivez vos échéances, trouvez de l’aide au bon moment.
-      </p>
+      <div className="text-[10.5px] font-bold uppercase tracking-[1px] text-[#A9CDBF]">{label}</div>
+      <p className="mt-[6px] text-[13.5px] leading-normal">{pitch}</p>
       <button
         type="button"
         onClick={onCreate}
         className="mt-[14px] h-touch w-full rounded-[11px] bg-surface text-[13px] font-bold text-primary-strong"
       >
-        Créer mon parcours
+        {createLabel}
       </button>
     </section>
   );
@@ -398,18 +417,18 @@ export function AppShell({
         {mobileHeader !== undefined ? (
           <div className="lg:hidden">{mobileHeader}</div>
         ) : null}
-        <div className="flex items-start gap-6 pb-6 pt-3">
+        {/* Une seule colonne sous 1280 px, deux au-dessus. La colonne de contexte
+            n'est rendue QU'UNE FOIS : elle passe simplement sous le contenu sur
+            mobile (T1 §3.2), plutôt que d'être dupliquée dans le DOM. */}
+        <div className="flex flex-col items-start gap-6 pb-6 pt-3 xl:flex-row">
           {aside === null ? (
-            <main className="flex min-w-0 flex-1 flex-col gap-[14px]">{children}</main>
+            <main className="flex w-full min-w-0 flex-1 flex-col gap-[14px]">{children}</main>
           ) : (
             <>
-              {/* Sur mobile le contenu prend toute la largeur ; la colonne de
-                  contexte passe en fin de page (T1 §3.2). */}
-              <main className="flex min-w-0 flex-1 flex-col gap-[14px] lg:max-w-content">
+              <main className="flex w-full min-w-0 flex-1 flex-col gap-[14px] lg:max-w-content">
                 {children}
-                <div className="flex flex-col gap-3 xl:hidden">{aside}</div>
               </main>
-              <aside className="hidden w-[300px] shrink-0 flex-col gap-3 xl:flex">{aside}</aside>
+              <aside className="flex w-full shrink-0 flex-col gap-3 xl:w-[300px]">{aside}</aside>
             </>
           )}
         </div>
