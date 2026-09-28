@@ -33,12 +33,12 @@ model StaffUser {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  email       String @unique @db.Citext
-  displayName String @map("display_name")
+  email               String @unique @db.Citext
+  displayName         String @map("display_name")
   /// argon2id — jamais bcrypt, jamais de mot de passe pour un membre.
-  passwordHash String @map("password_hash")
+  passwordHash        String @map("password_hash")
   /// Secret TOTP chiffré au repos. Le second facteur n'est pas optionnel.
-  totpSecretEncrypted Bytes @map("totp_secret_encrypted")
+  totpSecretEncrypted Bytes  @map("totp_secret_encrypted")
 
   role        StaffRole
   isActive    Boolean   @map("is_active")
@@ -84,15 +84,15 @@ model AuditLog {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  actorType AuditActorType @map("actor_type")
-  actorId   String?        @map("actor_id") @db.Uuid
+  actorType  AuditActorType @map("actor_type")
+  actorId    String?        @map("actor_id") @db.Uuid
   /// Ex. user.suspend, template.publish.
   action     String
-  targetType String  @map("target_type")
-  targetId   String? @map("target_id") @db.Uuid
+  targetType String         @map("target_type")
+  targetId   String?        @map("target_id") @db.Uuid
   /// Avant / après, motif — JAMAIS de donnée sensible en clair.
-  metadata Json?
-  ip       String? @db.Inet
+  metadata   Json?
+  ip         String?        @db.Inet
 
   @@index([actorId])
   @@index([action])
@@ -129,8 +129,8 @@ model StaticPage {
   body    String
   version String
 
-  publishedAt       DateTime? @map("published_at") @db.Timestamptz
-  updatedByStaffId  String?   @map("updated_by_staff_id") @db.Uuid
+  publishedAt      DateTime? @map("published_at") @db.Timestamptz
+  updatedByStaffId String?   @map("updated_by_staff_id") @db.Uuid
 
   updatedByStaff StaffUser? @relation(fields: [updatedByStaffId], references: [id], onDelete: SetNull)
 
@@ -143,8 +143,8 @@ model Announcement {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  title String
-  body  String
+  title  String
+  body   String
   /// city_ids, country_ids, phases — vide = tous.
   target Json?
 

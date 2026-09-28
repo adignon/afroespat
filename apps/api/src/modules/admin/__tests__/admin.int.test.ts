@@ -1258,6 +1258,13 @@ describe('administration (15)', () => {
       'POST /v1/admin/billing/placements',
       'PATCH /v1/admin/billing/placements/{id}',
       'POST /v1/admin/billing/affiliate/import',
+      /**
+       * `moderation/__tests__/banned-phones.int.test.ts` : la levée d'un
+       * bannissement y est éprouvée avec sa trace d'audit, à côté de la règle
+       * qu'elle sert — « un banni ne peut pas se réinscrire » traverse trois
+       * modules, et son test vit avec la règle plutôt qu'avec la route.
+       */
+      'POST /v1/admin/users/{id}/unban',
       // `kyc/__tests__/kyc.int.test.ts` (module 01) : la rétrogradation, son
       // recalcul de niveau, la péremption des jetons et sa trace d'audit y sont
       // éprouvés ensemble — le service appelé appartient au module 01.

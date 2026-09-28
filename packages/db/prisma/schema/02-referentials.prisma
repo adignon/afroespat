@@ -18,13 +18,13 @@ model Country {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  iso2     String      @unique
-  nameFr   String      @map("name_fr")
+  iso2      String      @unique
+  nameFr    String      @map("name_fr")
   /// Ex. +229. Sert à autoriser l'indicatif avant tout envoi de SMS.
-  dialCode String      @map("dial_code")
-  kind     CountryKind
-  isActive Boolean     @map("is_active")
-  sortOrder Int        @map("sort_order")
+  dialCode  String      @map("dial_code")
+  kind      CountryKind
+  isActive  Boolean     @map("is_active")
+  sortOrder Int         @map("sort_order")
 
   // Colonne ajoutée par 02-referentiels.md §3.
   /// Ville proposée par défaut à l'onboarding pour ce pays de destination.
@@ -32,21 +32,20 @@ model Country {
 
   defaultCity City? @relation("CountryDefaultCity", fields: [defaultCityId], references: [id], onDelete: SetNull)
 
-  cities                 City[]                    @relation("CityCountry")
-  users                  User[]
-  phoneNumbers           PhoneNumber[]
-  templateVersions       JourneyTemplateVersion[]
-  journeys               Journey[]
-  guides                 Guide[]
-  communities            Community[]
-  searchDocuments        SearchDocument[]
-  scamAlerts             ScamAlert[]
-  placementsAsOrigin     PartnerPlacement[]        @relation("PlacementOriginCountry")
+  cities                  City[]                   @relation("CityCountry")
+  users                   User[]
+  phoneNumbers            PhoneNumber[]
+  templateVersions        JourneyTemplateVersion[]
+  journeys                Journey[]
+  guides                  Guide[]
+  communities             Community[]
+  searchDocuments         SearchDocument[]
+  scamAlerts              ScamAlert[]
+  placementsAsOrigin      PartnerPlacement[]       @relation("PlacementOriginCountry")
   placementsAsDestination PartnerPlacement[]       @relation("PlacementDestinationCountry")
+  otpChallenges           OtpChallenge[]
 
   @@index([isActive])
-  otpChallenges OtpChallenge[]
-
   @@map("countries")
 }
 
@@ -68,9 +67,9 @@ model City {
 
   /// Une ville inactive est sélectionnable à l'inscription mais n'a ni réseau,
   /// ni carte, ni fiche. Activée par l'équipe, en général à 20 membres.
-  isActive Boolean @map("is_active")
+  isActive    Boolean @map("is_active")
   /// Dénormalisé — recalculé chaque nuit par city.member_count_recompute.
-  memberCount Int   @default(0) @map("member_count")
+  memberCount Int     @default(0) @map("member_count")
 
   /// Fusion de doublons : redirige membres et contenus. Irréversible.
   mergedIntoCityId String? @map("merged_into_city_id") @db.Uuid
@@ -83,7 +82,7 @@ model City {
   mergedIntoCity City?   @relation("CityMerge", fields: [mergedIntoCityId], references: [id], onDelete: SetNull)
   mergedFrom     City[]  @relation("CityMerge")
 
-  defaultForCountries Country[]           @relation("CountryDefaultCity")
+  defaultForCountries Country[]          @relation("CountryDefaultCity")
   users               User[]
   journeys            Journey[]
   posts               Post[]

@@ -57,12 +57,12 @@ model MentorProfile {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  isAvailable Boolean @map("is_available")
+  isAvailable       Boolean @map("is_available")
   /// Défaut 2 — protège les parrains de la saturation (décision T4).
-  maxMentees        Int @default(2) @map("max_mentees")
-  activeMenteeCount Int @default(0) @map("active_mentee_count")
+  maxMentees        Int     @default(2) @map("max_mentees")
+  activeMenteeCount Int     @default(0) @map("active_mentee_count")
 
-  bio String?
+  bio                String?
   /// Types de parcours que le parrain connaît.
   journeyTemplateIds String[] @map("journey_template_ids") @db.Uuid
 
@@ -89,9 +89,9 @@ model Mentorship {
   /// Parcours du filleul : le parrain devient SUPPORTER automatiquement (03 §3.4).
   journeyId    String? @map("journey_id") @db.Uuid
 
-  status MentorshipStatus
+  status         MentorshipStatus
   /// Obligatoire.
-  requestMessage String @map("request_message")
+  requestMessage String           @map("request_message")
 
   acceptedAt DateTime?            @map("accepted_at") @db.Timestamptz
   /// accepted_at + 3 mois.
@@ -148,8 +148,8 @@ model Connection {
   userBId String           @map("user_b_id") @db.Uuid
   origin  ConnectionOrigin
 
-  originRefType String? @map("origin_ref_type")
-  originRefId   String? @map("origin_ref_id") @db.Uuid
+  originRefType String?   @map("origin_ref_type")
+  originRefId   String?   @map("origin_ref_id") @db.Uuid
   /// Retrait automatique sur blocage.
   removedAt     DateTime? @map("removed_at") @db.Timestamptz
 
@@ -219,10 +219,10 @@ model Conversation {
   journey    Journey?    @relation("ConversationJourney", fields: [journeyId], references: [id], onDelete: SetNull)
   mentorship Mentorship? @relation("ConversationMentorship", fields: [mentorshipId], references: [id], onDelete: SetNull)
 
-  members               ConversationMember[]
-  messages              Message[]
-  journeysAsGroup       Journey[]            @relation("JourneyGroupConversation")
-  mentorshipsAsMain     Mentorship[]         @relation("MentorshipConversation")
+  members           ConversationMember[]
+  messages          Message[]
+  journeysAsGroup   Journey[]            @relation("JourneyGroupConversation")
+  mentorshipsAsMain Mentorship[]         @relation("MentorshipConversation")
 
   @@index([lastMessageAt])
   @@map("conversations")
@@ -253,10 +253,10 @@ model Message {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz
 
-  conversationId String  @map("conversation_id") @db.Uuid
-  senderUserId   String  @map("sender_user_id") @db.Uuid
-  bodyEncrypted  Bytes   @map("body_encrypted")
-  mediaAssetId   String? @map("media_asset_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  senderUserId   String   @map("sender_user_id") @db.Uuid
+  bodyEncrypted  Bytes    @map("body_encrypted")
+  mediaAssetId   String?  @map("media_asset_id") @db.Uuid
   sentAt         DateTime @map("sent_at") @db.Timestamptz
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

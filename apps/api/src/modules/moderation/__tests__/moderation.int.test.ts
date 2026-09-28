@@ -842,13 +842,26 @@ describe('modération (13)', () => {
       expect((await prisma.authSession.findUniqueOrThrow({ where: { id: sessionId } })).revokedAt).not.toBeNull();
       expect(await events(author, 'moderation.user_banned')).toHaveLength(1);
 
-      // RÈGLE DURE §13 « un numéro banni ne peut pas se réinscrire » : NON
-      // COUVERTE. La table `banned_phone_hashes` du §7 n'existe pas dans le
-      // schéma figé, et ce module ne migre pas. Signalé dans le rapport.
+      /**
+       * RÈGLE DURE §4.2 « un numéro banni ne peut pas se réinscrire » — DÉSORMAIS
+       * COUVERTE, et cette assertion a changé de sens.
+       *
+       * Elle vérifiait l'INVERSE : que la table `banned_phone_hashes` n'existait
+       * pas, pour documenter que la règle ne tenait qu'à moitié. Le porteur du
+       * projet a tranché, la table est migrée, et le même test dit maintenant que
+       * le bannissement l'alimente.
+       *
+       * Ce membre n'a PAS de numéro — le `member()` de ce fichier n'en crée pas —
+       * donc il n'y a rien à inscrire, et c'est exactement ce qu'on vérifie : le
+       * bannissement d'un compte sans numéro ne lève pas et n'invente rien. La
+       * chaîne complète, avec numéro et compte supprimé, est éprouvée dans
+       * `banned-phones.int.test.ts`, avec ses mutations.
+       */
       const tables = await prisma.$queryRaw<{ c: bigint }[]>`
         SELECT count(*) AS c FROM information_schema.tables
         WHERE table_schema = 'public' AND table_name = 'banned_phone_hashes'`;
-      expect(Number(tables[0]?.c ?? 0)).toBe(0);
+      expect(Number(tables[0]?.c ?? 0)).toBe(1);
+      expect(await prisma.bannedPhoneHash.count({ where: { sanctionId: ban.id } })).toBe(0);
     });
 
     it('refuse une sanction sur un dossier dont l’auteur est inconnu', async () => {

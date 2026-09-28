@@ -237,6 +237,25 @@ export class AdminController {
     return this.admin.setMemberActive(staff, id, true, body);
   }
 
+  /**
+   * `SUPER_ADMIN` SEUL, et pas `STAFF_SCOPES.moderation` comme la réactivation
+   * voisine : 15 §2.2 réserve « Bannir définitivement » au SUPER_ADMIN, et lever la
+   * sanction est la même décision prise à l'envers. Un modérateur qui pourrait
+   * débannir pourrait contourner le bannissement qu'il n'a pas le droit de poser.
+   */
+  @Post('users/:id/unban')
+  @RequiresStaffRole('SUPER_ADMIN')
+  @ApiOperation({
+    summary: 'Lève un bannissement et retire le numéro de la liste noire (13 §4.2)',
+  })
+  async unban(
+    @Staff() staff: StaffUser,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(memberReasonSchema)) body: z.infer<typeof memberReasonSchema>,
+  ) {
+    return this.admin.unbanMember(staff, id, body);
+  }
+
   @Post('users/:id/phase')
   @RequiresStaffRole(...STAFF_SCOPES.rgpd)
   @ApiOperation({ summary: 'Force la phase d’un membre, à sa demande. Tracé.' })

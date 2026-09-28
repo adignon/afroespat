@@ -212,6 +212,33 @@ export class AuthService {
     let userId: string;
     let isNewUser: boolean;
     if (existing === null) {
+      /**
+       * UN NUMÉRO BANNI NE SE RÉINSCRIT PAS — 13 §4.2, et §11 : « un banni supprimé
+       * reste banni ».
+       *
+       * Le contrôle est ICI, sur la branche « aucun compte ne porte ce numéro »,
+       * et c'est précisément la branche que rien ne protégeait. Quand le compte
+       * banni EXISTE encore, on ne passe jamais par là : `phone_numbers.phone_hmac`
+       * est unique, la recherche juste au-dessus le trouve, et `resumeAccount`
+       * refuse avec `ACCOUNT_BANNED`. La faille était l'autre cas — un compte banni
+       * SUPPRIMÉ vide `phone_numbers`, l'empreinte redevient libre, et le banni
+       * revenait avec le même téléphone. Vérifié en base.
+       *
+       * On refuse avec le MÊME code et le MÊME message que le compte banni
+       * existant. Deux refus distincts diraient à qui tâtonne si le compte a été
+       * supprimé ou non, et cela ne regarde personne.
+       */
+      const banned = await this.prisma.bannedPhoneHash.findUnique({
+        where: { phoneHmac: challenge.phoneHmac },
+        select: { phoneHmac: true },
+      });
+      if (banned !== null) {
+        throw new ApiError(
+          'ACCOUNT_BANNED',
+          ACCOUNT_ERROR_MESSAGES.ACCOUNT_BANNED,
+          ACCOUNT_ERROR_CODES.ACCOUNT_BANNED,
+        );
+      }
       userId = await this.createAccount(challenge);
       isNewUser = true;
     } else {

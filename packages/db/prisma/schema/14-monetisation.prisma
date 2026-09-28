@@ -110,9 +110,9 @@ model Subscription {
   proProfileId String? @map("pro_profile_id") @db.Uuid
   planId       String  @map("plan_id") @db.Uuid
 
-  status   SubscriptionStatus
-  provider PaymentProviderKind
-  providerRef String?          @map("provider_ref")
+  status      SubscriptionStatus
+  provider    PaymentProviderKind
+  providerRef String?             @map("provider_ref")
 
   currentPeriodStart DateTime @map("current_period_start") @db.Timestamptz
   currentPeriodEnd   DateTime @map("current_period_end") @db.Timestamptz
@@ -146,16 +146,16 @@ model Payment {
   /// EUR · XOF (parité fixe 655,957).
   currency    String
 
-  provider PaymentProviderKind
-  method   PaymentMethodKind
+  provider    PaymentProviderKind
+  method      PaymentMethodKind
   /// Idempotence des webhooks entrants.
-  providerRef String? @unique @map("provider_ref")
+  providerRef String?             @unique @map("provider_ref")
 
   status      PaymentStatus
   failureCode String?       @map("failure_code")
 
-  invoiceNumber  String? @unique @map("invoice_number")
-  invoiceAssetId String? @map("invoice_asset_id") @db.Uuid
+  invoiceNumber  String?   @unique @map("invoice_number")
+  invoiceAssetId String?   @map("invoice_asset_id") @db.Uuid
   paidAt         DateTime? @map("paid_at") @db.Timestamptz
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -189,12 +189,12 @@ model Partner {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  name         String
-  category     PartnerCategory
-  logoAssetId  String?         @map("logo_asset_id") @db.Uuid
+  name                 String
+  category             PartnerCategory
+  logoAssetId          String?         @map("logo_asset_id") @db.Uuid
   /// Contient {click_id} — et rien d'autre du membre (règle dure).
-  affiliateUrlTemplate String @map("affiliate_url_template")
-  payoutModel  PayoutModel     @map("payout_model")
+  affiliateUrlTemplate String          @map("affiliate_url_template")
+  payoutModel          PayoutModel     @map("payout_model")
 
   contractStart DateTime? @map("contract_start") @db.Date
   contractEnd   DateTime? @map("contract_end") @db.Date
@@ -215,8 +215,8 @@ model PartnerPlacement {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  partnerId        String  @map("partner_id") @db.Uuid
-  stepDefinitionId String  @map("step_definition_id") @db.Uuid
+  partnerId            String  @map("partner_id") @db.Uuid
+  stepDefinitionId     String  @map("step_definition_id") @db.Uuid
   originCountryId      String? @map("origin_country_id") @db.Uuid
   destinationCountryId String? @map("destination_country_id") @db.Uuid
 

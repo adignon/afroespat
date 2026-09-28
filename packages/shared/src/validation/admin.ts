@@ -493,6 +493,15 @@ export const AUDIT_ACTIONS = {
   userSessionsRevoked: 'user.sessions_revoked',
   userDeactivated: 'user.deactivated',
   userReactivated: 'user.reactivated',
+  /**
+   * La LEVÉE d'un bannissement — distincte d'une réactivation, et à dessein.
+   *
+   * Réactiver rend l'accès à un compte désactivé ; lever un bannissement annule une
+   * décision de modération ET retire le numéro de la liste noire. Les confondre dans
+   * le journal rendrait impossible de répondre à « qui a débanni ce membre, et
+   * quand », qui est exactement la question qu'on posera.
+   */
+  userUnbanned: 'user.unbanned',
   userPhaseForced: 'user.phase_forced',
   userCityForced: 'user.city_forced',
   /** §3.2 : « Rétrograder le niveau » — marque le KYC `DECLINED` avec motif. */

@@ -321,11 +321,11 @@ model SavedAlert {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  userId   String    @map("user_id") @db.Uuid
-  kind     AlertKind
+  userId         String    @map("user_id") @db.Uuid
+  kind           AlertKind
   /// Ville, budget, type…
-  criteria Json
-  isActive Boolean   @map("is_active")
+  criteria       Json
+  isActive       Boolean   @map("is_active")
   /// Regroupement : une notification par heure et par alerte maximum.
   lastNotifiedAt DateTime? @map("last_notified_at") @db.Timestamptz
 

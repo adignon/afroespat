@@ -984,6 +984,83 @@ export class AdminService {
     return { userId, phase: input.phase };
   }
 
+  /**
+   * LEVER un bannissement — réservé au SUPER_ADMIN, comme le bannissement lui-même
+   * (15 §2.2 : « Bannir définitivement : SUPER_ADMIN »).
+   *
+   * POURQUOI CETTE ROUTE EXISTE. La liste noire des numéros (13 §4.2) rend la règle
+   * « un banni ne peut pas se réinscrire » réellement tenue — y compris après la
+   * suppression du compte, qui est le seul cas où elle ne tenait pas. Mais une liste
+   * noire sans remède serait indéfendable : il fallait un chemin pour en sortir, et
+   * il n'en existait AUCUN. `liftedAt` n'était posé que par l'expiration automatique
+   * des suspensions ; aucune action de modération ne lève un bannissement, et
+   * `ModerationActionType` n'a pas de valeur pour cela.
+   *
+   * Elle donne aussi son PRODUCTEUR à `moderation.user_reinstated`, que 13 §7
+   * déclare et que les notifications consomment depuis le début sans que personne
+   * ne l'émette.
+   *
+   * LA LISTE NOIRE EST VIDÉE PAR `sanction_id`, et non par les numéros du membre.
+   * C'est ce qui permet de lever un bannissement dont le compte a été supprimé : les
+   * lignes de `phone_numbers` ont disparu, la liste noire non — elle ne porte aucune
+   * référence au membre, c'est ce qui lui permet de lui survivre. L'identifiant de
+   * la sanction reste lisible dans `audit_logs`, conservé cinq ans.
+   *
+   * Tout est dans UNE transaction : un bannissement levé sans que la liste noire le
+   * soit laisserait un membre réintégré incapable de se réinscrire s'il supprimait
+   * son compte — et rien ne le signalerait.
+   */
+  async unbanMember(staff: StaffUser, userId: string, input: MemberReason) {
+    const ban = await this.prisma.sanction.findFirst({
+      where: { userId, type: 'BAN', liftedAt: null },
+      select: { id: true, reason: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (ban === null) {
+      throw ApiError.transverse('CONFLICT', { reason: 'aucun bannissement actif sur ce compte' });
+    }
+
+    const now = new Date();
+    const cleared = await this.prisma.$transaction(async (tx) => {
+      await tx.sanction.update({ where: { id: ban.id }, data: { liftedAt: now } });
+
+      const removed = await tx.bannedPhoneHash.deleteMany({ where: { sanctionId: ban.id } });
+
+      /**
+       * Le statut revient à `ACTIVE` seulement si le compte n'a pas été supprimé.
+       * Un `updateMany` et non un `update` : sur un compte supprimé il ne touche
+       * rien, là où `update` lèverait — et lever ici empêcherait de retirer le
+       * numéro de la liste noire, c'est-à-dire la seule chose qui reste à faire.
+       */
+      await tx.user.updateMany({
+        where: { id: userId, deletedAt: null },
+        data: { status: 'ACTIVE', deactivatedAt: null },
+      });
+
+      await this.record(tx, staff, {
+        action: AUDIT_ACTIONS.userUnbanned,
+        targetType: 'user',
+        targetId: userId,
+        metadata: {
+          reason: input.reason,
+          sanctionId: ban.id,
+          bannedFor: ban.reason,
+          phoneHashesCleared: removed.count,
+        },
+      });
+
+      await this.outbox.emit(tx, {
+        type: 'moderation.user_reinstated',
+        aggregateId: userId,
+        payload: { userId, sanctionId: ban.id, byStaffId: staff.staffId },
+      });
+
+      return removed.count;
+    });
+
+    return { userId, sanctionId: ban.id, liftedAt: now.toISOString(), phoneHashesCleared: cleared };
+  }
+
   /** §3.2 : « Forcer … une ville » — SUPPORT. */
   async forceMemberCity(staff: StaffUser, userId: string, input: MemberCity) {
     const user = await this.prisma.user.findUnique({

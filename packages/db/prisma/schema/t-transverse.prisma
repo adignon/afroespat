@@ -57,7 +57,7 @@ model MediaAsset {
   updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz
 
-  ownerUserId String? @map("owner_user_id") @db.Uuid
+  ownerUserId String?   @map("owner_user_id") @db.Uuid
   kind        MediaKind
 
   /// Clé dans le stockage objet — région UE obligatoire (règle dure §8.2).

@@ -133,7 +133,7 @@ model ModerationCase {
   subjectId           String            @map("subject_id") @db.Uuid
   subjectAuthorUserId String?           @map("subject_author_user_id") @db.Uuid
 
-  source ModerationSource
+  source   ModerationSource
   /// 1 = arnaque ou demande d'argent, contenu bloqué par l'IA, SELF_HARM … 5 = autre.
   priority Int
   status   ModerationCaseStatus
@@ -142,7 +142,7 @@ model ModerationCase {
   aiLabels  String[]   @map("ai_labels")
   aiScore   Decimal?   @map("ai_score") @db.Decimal(4, 3)
 
-  assignedStaffId String? @map("assigned_staff_id") @db.Uuid
+  assignedStaffId String?  @map("assigned_staff_id") @db.Uuid
   /// created_at + 24 h ; priorité 1 : + 4 h.
   slaDueAt        DateTime @map("sla_due_at") @db.Timestamptz
 
@@ -172,9 +172,9 @@ model ModerationAction {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  caseId String @map("case_id") @db.Uuid
+  caseId  String               @map("case_id") @db.Uuid
   /// Null si action automatique (masquage par l'IA).
-  staffId String? @map("staff_id") @db.Uuid
+  staffId String?              @map("staff_id") @db.Uuid
   action  ModerationActionType
   reason  String
 
@@ -200,8 +200,8 @@ model Sanction {
   /// Null = définitif (bannissement, réservé au SUPER_ADMIN).
   endsAt   DateTime? @map("ends_at") @db.Timestamptz
 
-  issuedByStaffId String  @map("issued_by_staff_id") @db.Uuid
-  caseId          String? @map("case_id") @db.Uuid
+  issuedByStaffId String    @map("issued_by_staff_id") @db.Uuid
+  caseId          String?   @map("case_id") @db.Uuid
   liftedAt        DateTime? @map("lifted_at") @db.Timestamptz
 
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -262,4 +262,43 @@ model AiModerationCheck {
   @@index([subjectId])
   @@index([verdict])
   @@map("ai_moderation_checks")
+}
+
+/// Les numéros bannis — 13 §4.2 : « numéros conservés en liste noire (empreinte
+/// HMAC) pour empêcher la réinscription », et §11 : « un banni supprimé reste
+/// banni ».
+///
+/// POURQUOI UNE TABLE À PART, et non une colonne de `sanctions`.
+///
+/// `sanctions.user_id` est `NOT NULL` et en `Cascade` : la sanction DISPARAÎT avec
+/// le membre. Or c'est exactement le cas que la règle doit couvrir — tant que le
+/// compte banni existe, `phone_numbers.phone_hmac` (unique) suffit déjà à refuser
+/// une réinscription, et `resumeAccount` le fait. La faille est ailleurs : dès que
+/// le compte est SUPPRIMÉ — droit à l'effacement, ou suppression immédiate par
+/// l'équipe — `phone_numbers` est vidée, l'empreinte redevient libre, et le banni
+/// se réinscrit avec le même téléphone. Vérifié en base avant d'écrire cette table.
+///
+/// Elle ne porte donc AUCUNE référence au membre. C'est ce qui lui permet de
+/// survivre à sa suppression, et c'est aussi ce qui la rend défendable : elle ne
+/// contient rien qui désigne une personne, seulement une empreinte à clé secrète
+/// qu'on ne peut pas inverser et qu'on ne peut interroger qu'en connaissant déjà le
+/// numéro. Un numéro entré à l'inscription est comparé, il n'est jamais retrouvé.
+///
+/// CE QUE CELA COÛTE, et qu'il faut assumer : une empreinte de numéro est une
+/// donnée personnelle pseudonymisée, conservée sans limite de durée pour empêcher
+/// le contournement d'une sanction. C'est un intérêt légitime — la protection des
+/// autres membres — et c'est ce que §11 demande explicitement. Le jour où une
+/// sanction est levée, la ligne doit être retirée : c'est `unban()` qui le fait.
+model BannedPhoneHash {
+  /// L'empreinte EST la clé : deux bannissements du même numéro sont le même fait.
+  phoneHmac String   @id @map("phone_hmac")
+  bannedAt  DateTime @default(now()) @map("banned_at") @db.Timestamptz
+
+  /// La sanction d'origine, SANS clé étrangère — elle s'efface avec le membre,
+  /// alors que cette ligne doit rester. Sert à retrouver la décision dans
+  /// `audit_logs`, qui lui survit (cinq ans, table en ajout seul).
+  sanctionId String? @map("sanction_id") @db.Uuid
+
+  @@index([bannedAt])
+  @@map("banned_phone_hashes")
 }

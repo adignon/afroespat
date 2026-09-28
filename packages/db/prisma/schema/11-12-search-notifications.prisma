@@ -106,7 +106,7 @@ model Notification {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  userId String @map("user_id") @db.Uuid
+  userId String  @map("user_id") @db.Uuid
   /// Ex. help.response_received, journey.step_due.
   type   String
   title  String
@@ -115,9 +115,9 @@ model Notification {
   refType String? @map("ref_type")
   refId   String? @map("ref_id") @db.Uuid
 
-  readAt DateTime? @map("read_at") @db.Timestamptz
+  readAt       DateTime? @map("read_at") @db.Timestamptz
   /// IN_APP · PUSH · EMAIL — ce qui a effectivement été envoyé.
-  channelsSent String[] @map("channels_sent")
+  channelsSent String[]  @map("channels_sent")
 
   // Colonne ajoutée par 11-recherche-12-notifications.md §3.
   /// JOURNEY_DEADLINE · JOURNEY_TEAM · HELP · MENTORSHIP · COMMUNITY · SERVICES ·
@@ -138,8 +138,8 @@ model NotificationPreferences {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   /// { catégorie: bool }
-  push  Json
-  email Json
+  push         Json
+  email        Json
   weeklyDigest Boolean @map("weekly_digest")
   /// Plage horaire sans notification push.
   quietHours   Json?   @map("quiet_hours")

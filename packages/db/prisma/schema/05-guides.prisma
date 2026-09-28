@@ -54,8 +54,8 @@ model Guide {
   /// Null après anonymisation (suppression du compte de l'auteur).
   authorUserId String? @map("author_user_id") @db.Uuid
 
-  title String
-  slug  String        @unique
+  title    String
+  slug     String        @unique
   category GuideCategory
   scope    GuideScope
 
@@ -63,20 +63,20 @@ model Guide {
   originCountryId String? @map("origin_country_id") @db.Uuid
   cityId          String? @map("city_id") @db.Uuid
 
-  currentVersionId String? @map("current_version_id") @db.Uuid
+  currentVersionId String?     @map("current_version_id") @db.Uuid
   status           GuideStatus
 
   /// Vrai après 6 mois d'inactivité de l'auteur ou après anonymisation :
   /// les propositions sont alors validées par la modération.
   maintainedByCommunity Boolean @default(false) @map("maintained_by_community")
 
-  helpfulCount Int @default(0) @map("helpful_count")
+  helpfulCount        Int      @default(0) @map("helpful_count")
   /// helpful_count × coefficient de fraîcheur — recalculé chaque nuit.
-  freshnessScore Decimal @default(0) @map("freshness_score") @db.Decimal(10, 4)
+  freshnessScore      Decimal  @default(0) @map("freshness_score") @db.Decimal(10, 4)
   /// Affichée aussi visiblement que le titre (T1 §6).
   lastContentUpdateAt DateTime @map("last_content_update_at") @db.Timestamptz
 
-  outdatedFlagCount Int @default(0) @map("outdated_flag_count")
+  outdatedFlagCount   Int       @default(0) @map("outdated_flag_count")
   /// Fixée à 3 signalements ; dépublication si dépassée (tâche quotidienne).
   unpublishDeadlineAt DateTime? @map("unpublish_deadline_at") @db.Timestamptz
 
@@ -85,11 +85,11 @@ model Guide {
   city           City?         @relation(fields: [cityId], references: [id], onDelete: SetNull)
   currentVersion GuideVersion? @relation("GuideCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
-  versions      GuideVersion[]          @relation("GuideVersions")
-  votes         GuideVote[]
-  proposals     GuideRevisionProposal[]
-  contributors  GuideContributor[]
-  outdatedFlags GuideOutdatedFlag[]
+  versions        GuideVersion[]          @relation("GuideVersions")
+  votes           GuideVote[]
+  proposals       GuideRevisionProposal[]
+  contributors    GuideContributor[]
+  outdatedFlags   GuideOutdatedFlag[]
   stepDefinitions StepDefinition[]
 
   @@index([authorUserId])
@@ -107,7 +107,7 @@ model GuideVersion {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  guideId String @map("guide_id") @db.Uuid
+  guideId String  @map("guide_id") @db.Uuid
   version Int
   body    String
   /// Résumé des changements.
@@ -118,10 +118,10 @@ model GuideVersion {
 
   guide          Guide                  @relation("GuideVersions", fields: [guideId], references: [id], onDelete: Cascade)
   createdBy      User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
-  sourceProposal GuideRevisionProposal?  @relation("ProposalResultingVersion", fields: [sourceProposalId], references: [id], onDelete: SetNull)
+  sourceProposal GuideRevisionProposal? @relation("ProposalResultingVersion", fields: [sourceProposalId], references: [id], onDelete: SetNull)
 
-  currentOfGuides   Guide[]                 @relation("GuideCurrentVersion")
-  proposalsBasedOn  GuideRevisionProposal[] @relation("ProposalBaseVersion")
+  currentOfGuides  Guide[]                 @relation("GuideCurrentVersion")
+  proposalsBasedOn GuideRevisionProposal[] @relation("ProposalBaseVersion")
 
   @@unique([guideId, version])
   @@index([guideId])
@@ -152,20 +152,20 @@ model GuideRevisionProposal {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  guideId         String @map("guide_id") @db.Uuid
-  proposerUserId  String @map("proposer_user_id") @db.Uuid
-  baseVersionId   String @map("base_version_id") @db.Uuid
+  guideId        String @map("guide_id") @db.Uuid
+  proposerUserId String @map("proposer_user_id") @db.Uuid
+  baseVersionId  String @map("base_version_id") @db.Uuid
 
   /// Passage ciblé — permet l'affichage avant/après (ProposalDiff).
-  targetExcerpt String @map("target_excerpt")
+  targetExcerpt String  @map("target_excerpt")
   replacement   String
   /// Motif obligatoire.
   reason        String
   sourceUrl     String? @map("source_url")
 
-  status GuideProposalStatus
+  status     GuideProposalStatus
   /// created_at + 14 jours → escalade vers la modération.
-  escalateAt DateTime @map("escalate_at") @db.Timestamptz
+  escalateAt DateTime            @map("escalate_at") @db.Timestamptz
 
   reviewerUserId  String?   @map("reviewer_user_id") @db.Uuid
   reviewerStaffId String?   @map("reviewer_staff_id") @db.Uuid

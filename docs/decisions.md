@@ -1684,3 +1684,90 @@ C'est la troisième fois aujourd'hui qu'un rouge vient de la machine et non du
 code (les deux autres : le hachage scrypt à 5 002 ms, et la file de modération
 qui dépassait cinquante lignes). À chaque fois, la bonne question n'est pas
 « qu'ai-je cassé » mais « qu'est-ce qui a changé **autour** ».
+
+---
+
+## DÉCISION DU PORTEUR — « un banni ne peut pas se réinscrire »
+
+Tranchée le 28 septembre 2026, **contre l'état du schéma** : la table
+`banned_phone_hashes` que 13 §4.2 exige mot pour mot n'existait pas, et le gel des
+106 tables l'interdisait. Elle est migrée
+(`20260928055334_banned_phone_hashes`), et la règle est désormais tenue.
+
+### Ce qui manquait exactement, et rien d'autre
+
+La règle tenait déjà à moitié, et il fallait délimiter laquelle :
+
+* **le compte banni existe encore** → `phone_numbers.phone_hmac` est unique, une
+  réinscription retombe sur lui, et `resumeAccount` refuse. Déjà couvert.
+* **le compte banni est SUPPRIMÉ** — droit à l'effacement, ou la « suppression
+  immédiate » de 15 §3.2 → la cascade vide `phone_numbers`, l'empreinte redevient
+  libre, et le banni revient avec le même téléphone. **C'était le trou**, vérifié en
+  base avant d'écrire quoi que ce soit.
+
+### Une table sans aucune référence au membre
+
+C'est ce qui lui permet de survivre à sa suppression, et c'est aussi ce qui la rend
+défendable : elle ne contient rien qui désigne une personne, seulement une empreinte
+à clé secrète qu'on ne peut pas inverser et qu'on ne peut interroger qu'en
+connaissant déjà le numéro. **Un numéro entré à l'inscription est comparé, jamais
+retrouvé.**
+
+Ce que cela coûte, et qu'il faut assumer : une empreinte de numéro reste une donnée
+personnelle pseudonymisée, conservée sans limite de durée pour empêcher le
+contournement d'une sanction. C'est un intérêt légitime — la protection des autres
+membres — et c'est ce que §11 demande (« un banni supprimé reste banni »).
+
+### Il n'existait AUCUN chemin pour lever un bannissement
+
+`liftedAt` n'était posé que par l'expiration automatique des suspensions, et
+`ModerationActionType` n'a pas de valeur pour une levée. Une liste noire sans remède
+serait indéfendable : d'où `POST /admin/users/:id/unban`, **SUPER_ADMIN seul** — 15
+§2.2 réserve « bannir définitivement » au SUPER_ADMIN, et lever est la même décision
+prise à l'envers ; un modérateur qui pourrait débannir contournerait le pouvoir qu'il
+n'a pas.
+
+Elle donne au passage son **producteur** à `moderation.user_reinstated`, que 13 §7
+déclare et que les notifications consomment depuis le début sans que personne ne
+l'émette.
+
+La liste noire est vidée **par `sanction_id`**, et non par les numéros du membre :
+c'est ce qui permet de lever un bannissement dont le compte a été supprimé, puisque
+les lignes de `phone_numbers` ont disparu et que la liste noire, elle, ne porte
+aucune référence.
+
+### Le refus d'inscription dit la même chose que le refus de connexion
+
+Même code, même message. Deux refus distincts diraient à qui tâtonne si le compte a
+été supprimé ou non, et cela ne regarde personne.
+
+### Trois mutations, trois maillons indépendants
+
+| Mutation | Résultat |
+|---|---|
+| le bannissement n'écrit plus la liste noire | **3 tests tombent** |
+| l'inscription ne consulte plus la liste noire | **1 tombe** — le cas du compte supprimé |
+| la levée ne vide plus la liste noire | **1 tombe** |
+
+Que M2 et M3 n'en tuent **qu'un chacune** est le point : l'écriture, la lecture et
+l'effacement sont couverts séparément, donc aucun ne se cache derrière un autre.
+
+### Deux défauts de mes propres tests, trouvés en les exécutant
+
+1. **L'empreinte porte sur l'E.164.** Ma fixture stockait celle du format national
+   (`06…` au lieu de `+336…`) : les deux hachages différaient, la liste noire ne
+   correspondait jamais, et le test échouait **en accusant le code** alors que
+   c'était lui qui mesurait la mauvaise chose. Toute fixture qui écrit un
+   `phone_hmac` à la main doit passer par l'E.164 — le test d'administration a le
+   même motif et ne s'en aperçoit pas, parce qu'il ne croise jamais le chemin d'OTP.
+2. **Supprimer un dossier de modération est interdit.** La cascade atteint
+   `moderation_actions`, en ajout seul, et le déclencheur refuse `DELETE`. Les six
+   tests passaient et le FICHIER était rouge, sur une erreur levée dans le
+   nettoyage — un cas où l'on cherche le défaut dans le code éprouvé.
+
+### Un test qui a changé de sens
+
+`moderation.int.test.ts` **affirmait que la table n'existait pas**, pour documenter
+le trou. Il affirme maintenant qu'elle existe et que le bannissement l'alimente. Un
+garde-fou qui signale un manque doit signaler aussi qu'il est comblé — sinon il
+devient un mensonge au premier correctif.

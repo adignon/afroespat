@@ -85,8 +85,8 @@ model Event {
   title           String
   description     String?
 
-  cityId    String  @map("city_id") @db.Uuid
-  venueName String? @map("venue_name")
+  cityId      String  @map("city_id") @db.Uuid
+  venueName   String? @map("venue_name")
   /// Texte libre, JAMAIS géocodé (pas de PostGIS, pas de géocodage — décision T4).
   addressText String? @map("address_text")
 

@@ -112,12 +112,12 @@ model JourneyTemplateVersion {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  templateId String @map("template_id") @db.Uuid
-  version    Int
+  templateId      String  @map("template_id") @db.Uuid
+  version         Int
   /// Null = version générique ; sinon déclinaison par pays d'origine.
   originCountryId String? @map("origin_country_id") @db.Uuid
 
-  status TemplateVersionStatus
+  status    TemplateVersionStatus
   /// Résumé des changements, montré aux parcours en cours (« la procédure a évolué »).
   changelog String?
 
@@ -153,13 +153,13 @@ model StepDefinition {
   category    StepCategory
 
   /// Durée indicative, corrigée par les délais réels observés.
-  defaultDurationDays Int? @map("default_duration_days")
+  defaultDurationDays Int?    @map("default_duration_days")
   /// Guide lié, affiché sur l'étape. Null au lancement → « guide à venir ».
   guideId             String? @map("guide_id") @db.Uuid
 
-  blockerTarget BlockerTarget @map("blocker_target")
+  blockerTarget   BlockerTarget @map("blocker_target")
   /// Gabarit pré-rempli. Variables : {etape} {parcours} {ville} {echeance}.
-  blockerTemplate String?     @map("blocker_template")
+  blockerTemplate String?       @map("blocker_template")
 
   /// Déclenche la proposition de partage de jalon à la clôture.
   isMajorMilestone Boolean @map("is_major_milestone")
@@ -172,11 +172,11 @@ model StepDefinition {
 
   guide Guide? @relation(fields: [guideId], references: [id], onDelete: SetNull)
 
-  templateSteps      TemplateStep[]
-  journeySteps       JourneyStep[]
-  stories            Story[]
-  corrections        TemplateCorrectionProposal[]
-  partnerPlacements  PartnerPlacement[]
+  templateSteps     TemplateStep[]
+  journeySteps      JourneyStep[]
+  stories           Story[]
+  corrections       TemplateCorrectionProposal[]
+  partnerPlacements PartnerPlacement[]
 
   @@map("step_definitions")
 }
@@ -187,23 +187,23 @@ model TemplateStep {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  templateVersionId String @map("template_version_id") @db.Uuid
-  stepDefinitionId  String @map("step_definition_id") @db.Uuid
+  templateVersionId String  @map("template_version_id") @db.Uuid
+  stepDefinitionId  String  @map("step_definition_id") @db.Uuid
   position          Int
   isOptional        Boolean @map("is_optional")
 
   /// Rétro-planning : l'étape doit être franchie N jours avant la date d'arrivée cible.
   /// Négatif = après l'arrivée.
-  daysBeforeArrival Int? @map("days_before_arrival")
+  daysBeforeArrival Int?  @map("days_before_arrival")
   /// Surcharges locales de la définition (nom, gabarit).
   overrides         Json?
 
   templateVersion JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Cascade)
   stepDefinition  StepDefinition         @relation(fields: [stepDefinitionId], references: [id], onDelete: Restrict)
 
-  journeySteps      JourneyStep[]
-  dependenciesFrom  StepDependency[] @relation("DependencyStep")
-  dependenciesTo    StepDependency[] @relation("DependencyTarget")
+  journeySteps     JourneyStep[]
+  dependenciesFrom StepDependency[] @relation("DependencyStep")
+  dependenciesTo   StepDependency[] @relation("DependencyTarget")
 
   @@unique([templateVersionId, position])
   @@index([templateVersionId])
@@ -247,8 +247,8 @@ model Journey {
   status     JourneyStatus
   visibility JourneyVisibility @default(PRIVATE)
 
-  originCountryId    String @map("origin_country_id") @db.Uuid
-  destinationCityId  String @map("destination_city_id") @db.Uuid
+  originCountryId   String @map("origin_country_id") @db.Uuid
+  destinationCityId String @map("destination_city_id") @db.Uuid
 
   /// Pivot du rétro-planning : due_date = target_arrival_date − days_before_arrival.
   targetArrivalDate DateTime? @map("target_arrival_date") @db.Date
@@ -260,25 +260,25 @@ model Journey {
   /// Conversation de groupe créée à l'ouverture du parcours (module 08, kind = JOURNEY).
   groupConversationId String? @map("group_conversation_id") @db.Uuid
 
-  lastActivityAt DateTime  @map("last_activity_at") @db.Timestamptz
-  completedAt    DateTime? @map("completed_at") @db.Timestamptz
+  lastActivityAt         DateTime  @map("last_activity_at") @db.Timestamptz
+  completedAt            DateTime? @map("completed_at") @db.Timestamptz
   /// Relance UNIQUE après 60 jours d'inactivité. Aucune relance ensuite.
   inactivityPromptSentAt DateTime? @map("inactivity_prompt_sent_at") @db.Timestamptz
 
-  owner           User                   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
-  templateVersion JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
-  originCountry   Country                @relation(fields: [originCountryId], references: [id], onDelete: Restrict)
-  destinationCity City                   @relation(fields: [destinationCityId], references: [id], onDelete: Restrict)
-  currentStep     JourneyStep?           @relation("JourneyCurrentStep", fields: [currentStepId], references: [id], onDelete: SetNull)
-  groupConversation Conversation?        @relation("JourneyGroupConversation", fields: [groupConversationId], references: [id], onDelete: SetNull)
+  owner             User                   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  templateVersion   JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  originCountry     Country                @relation(fields: [originCountryId], references: [id], onDelete: Restrict)
+  destinationCity   City                   @relation(fields: [destinationCityId], references: [id], onDelete: Restrict)
+  currentStep       JourneyStep?           @relation("JourneyCurrentStep", fields: [currentStepId], references: [id], onDelete: SetNull)
+  groupConversation Conversation?          @relation("JourneyGroupConversation", fields: [groupConversationId], references: [id], onDelete: SetNull)
 
-  steps         JourneyStep[]   @relation("JourneySteps")
+  steps         JourneyStep[]     @relation("JourneySteps")
   members       JourneyMember[]
   activities    JourneyActivity[]
   blockers      BlockerRequest[]
   posts         Post[]
   mentorships   Mentorship[]
-  conversations Conversation[]  @relation("ConversationJourney")
+  conversations Conversation[]    @relation("ConversationJourney")
 
   @@index([ownerUserId])
   @@index([templateVersionId])
@@ -296,7 +296,7 @@ model JourneyStep {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  journeyId String @map("journey_id") @db.Uuid
+  journeyId        String  @map("journey_id") @db.Uuid
   /// Null si étape ajoutée par le membre.
   templateStepId   String? @map("template_step_id") @db.Uuid
   stepDefinitionId String? @map("step_definition_id") @db.Uuid
@@ -307,23 +307,23 @@ model JourneyStep {
   status      JourneyStepStatus
 
   /// Calculée par le rétro-planning, ou saisie à la main.
-  dueDate DateTime? @map("due_date") @db.Date
+  dueDate       DateTime? @map("due_date") @db.Date
   /// Colonne ajoutée par 03-parcours.md §2.3 : une échéance saisie à la main
   /// n'est jamais écrasée par le recalcul du rétro-planning.
-  dueDateManual Boolean @default(false) @map("due_date_manual")
+  dueDateManual Boolean   @default(false) @map("due_date_manual")
 
-  startedAt   DateTime? @map("started_at") @db.Timestamptz
-  completedAt DateTime? @map("completed_at") @db.Timestamptz
-  pausedAt    DateTime? @map("paused_at") @db.Timestamptz
+  startedAt    DateTime? @map("started_at") @db.Timestamptz
+  completedAt  DateTime? @map("completed_at") @db.Timestamptz
+  pausedAt     DateTime? @map("paused_at") @db.Timestamptz
   /// Durée réelle, calculée à la clôture — alimente les statistiques et les durées
   /// affichées sur les parcours publics.
-  durationDays Int? @map("duration_days")
+  durationDays Int?      @map("duration_days")
 
   /// Notes personnelles, chiffrées au repos (§8.1). Jamais exposées, même sur un
   /// parcours public (règle dure §3.7).
   notesEncrypted Bytes? @map("notes_encrypted")
 
-  isCustom Boolean @default(false) @map("is_custom")
+  isCustom               Boolean   @default(false) @map("is_custom")
   /// Le membre a décliné le partage de ce jalon — ne plus jamais reproposer.
   sharePromptDismissedAt DateTime? @map("share_prompt_dismissed_at") @db.Timestamptz
 
@@ -331,7 +331,7 @@ model JourneyStep {
   templateStep   TemplateStep?   @relation(fields: [templateStepId], references: [id], onDelete: SetNull)
   stepDefinition StepDefinition? @relation(fields: [stepDefinitionId], references: [id], onDelete: SetNull)
 
-  currentOfJourneys Journey[]                   @relation("JourneyCurrentStep")
+  currentOfJourneys Journey[]                  @relation("JourneyCurrentStep")
   checklistItems    JourneyStepChecklistItem[]
   activities        JourneyActivity[]
   blockers          BlockerRequest[]
@@ -431,8 +431,8 @@ model BlockerRequest {
   target        BlockerTarget
 
   /// Vrai : envoyé aux accompagnants et au parrain seulement, rien de public.
-  isPrivate Boolean @map("is_private")
-  draftText String  @map("draft_text")
+  isPrivate Boolean       @map("is_private")
+  draftText String        @map("draft_text")
   status    BlockerStatus
 
   publishedRefType String?   @map("published_ref_type")
@@ -456,9 +456,9 @@ model TemplateCorrectionProposal {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  templateVersionId String  @map("template_version_id") @db.Uuid
-  stepDefinitionId  String? @map("step_definition_id") @db.Uuid
-  userId            String  @map("user_id") @db.Uuid
+  templateVersionId String                   @map("template_version_id") @db.Uuid
+  stepDefinitionId  String?                  @map("step_definition_id") @db.Uuid
+  userId            String                   @map("user_id") @db.Uuid
   message           String
   status            CorrectionProposalStatus
 

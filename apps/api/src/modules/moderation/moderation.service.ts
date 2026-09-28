@@ -1261,6 +1261,40 @@ export class ModerationService {
         });
       }
 
+      /**
+       * LES NUMÉROS DU BANNI PASSENT EN LISTE NOIRE — 13 §4.2, et c'est ce qui
+       * rend la règle « un banni ne peut pas se réinscrire » réellement tenue.
+       *
+       * Sans cette liste, la règle ne tenait qu'à `phone_numbers.phone_hmac`, qui
+       * est unique : tant que le compte banni existe, une réinscription retombe
+       * dessus et se fait refuser. Mais `users.status` vaut `DEACTIVATED` sur un
+       * bannissement — la valeur `BANNED` n'existe pas dans l'énumération — et le
+       * jour où ce compte est SUPPRIMÉ, `phone_numbers` est vidée : l'empreinte
+       * redevient libre et le banni revient avec le même téléphone. Vérifié en
+       * base avant d'écrire ces lignes.
+       *
+       * L'écriture est DANS la transaction de la sanction. Un bannissement dont la
+       * liste noire n'aurait pas été écrite serait un bannissement contournable, et
+       * rien ne le signalerait — c'est exactement le genre d'écart qu'on ne
+       * découvre que le jour où quelqu'un l'exploite.
+       *
+       * `createMany` + `skipDuplicates` : l'empreinte est la clé primaire, et un
+       * même numéro peut avoir déjà été banni sur un autre compte. Bannir deux fois
+       * le même numéro est le même fait, pas une erreur.
+       */
+      if (input.action === 'BAN_USER') {
+        const phones = await tx.phoneNumber.findMany({
+          where: { userId: target as string },
+          select: { phoneHmac: true },
+        });
+        if (phones.length > 0) {
+          await tx.bannedPhoneHash.createMany({
+            data: phones.map((phone) => ({ phoneHmac: phone.phoneHmac, sanctionId })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
       // ── Contenu : un événement, jamais une écriture directe (§10) ────────
       const contentEvent = CONTENT_EVENT_BY_ACTION[input.action];
       if (contentEvent !== null) {

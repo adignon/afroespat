@@ -98,7 +98,7 @@ model Post {
   communityId String? @map("community_id") @db.Uuid
 
   /// Contexte « Parcours Études ». Le titre personnel du parcours n'est jamais exposé.
-  journeyId String? @map("journey_id") @db.Uuid
+  journeyId     String? @map("journey_id") @db.Uuid
   /// Victoire liée à une étape franchie → encart « Étape franchie · N sur M ».
   /// Null = réussite personnelle sans étape.
   journeyStepId String? @map("journey_step_id") @db.Uuid
@@ -113,16 +113,16 @@ model Post {
   /// Question déplacée vers un réseau par la modération ou l'auteur.
   movedToTopicId String? @map("moved_to_topic_id") @db.Uuid
 
-  author      User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
-  city        City?        @relation(fields: [cityId], references: [id], onDelete: SetNull)
-  community   Community?   @relation(fields: [communityId], references: [id], onDelete: SetNull)
-  journey     Journey?     @relation(fields: [journeyId], references: [id], onDelete: SetNull)
-  journeyStep JourneyStep? @relation(fields: [journeyStepId], references: [id], onDelete: SetNull)
-  movedToTopic Topic?      @relation("PostMovedToTopic", fields: [movedToTopicId], references: [id], onDelete: SetNull)
+  author       User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+  city         City?        @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  community    Community?   @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  journey      Journey?     @relation(fields: [journeyId], references: [id], onDelete: SetNull)
+  journeyStep  JourneyStep? @relation(fields: [journeyStepId], references: [id], onDelete: SetNull)
+  movedToTopic Topic?       @relation("PostMovedToTopic", fields: [movedToTopicId], references: [id], onDelete: SetNull)
 
-  media           PostMedia[]
-  reactions       PostReaction[]
-  topicsFromPost  Topic[]        @relation("TopicOriginPost")
+  media          PostMedia[]
+  reactions      PostReaction[]
+  topicsFromPost Topic[]        @relation("TopicOriginPost")
 
   @@index([authorUserId])
   @@index([type])
@@ -176,8 +176,8 @@ model Comment {
   subjectType CommentSubjectType @map("subject_type")
   subjectId   String             @map("subject_id") @db.Uuid
 
-  authorUserId    String  @map("author_user_id") @db.Uuid
-  parentCommentId String? @map("parent_comment_id") @db.Uuid
+  authorUserId    String        @map("author_user_id") @db.Uuid
+  parentCommentId String?       @map("parent_comment_id") @db.Uuid
   body            String
   status          ContentStatus
 
@@ -208,12 +208,12 @@ model Story {
   body         String
 
   /// Couleur de la palette si fond couleur.
-  backgroundColor   String? @map("background_color")
-  backgroundAssetId String? @map("background_asset_id") @db.Uuid
+  backgroundColor   String?        @map("background_color")
+  backgroundAssetId String?        @map("background_asset_id") @db.Uuid
   /// Le bouton Aa de l'éditeur.
   textStyle         StoryTextStyle @map("text_style")
 
-  cityId String @map("city_id") @db.Uuid
+  cityId           String  @map("city_id") @db.Uuid
   /// CONSEIL rattaché à une étape — c'est ce qui le rend réutilisable.
   stepDefinitionId String? @map("step_definition_id") @db.Uuid
 

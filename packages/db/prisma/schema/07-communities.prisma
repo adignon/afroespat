@@ -60,11 +60,11 @@ model Community {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  kind CommunityKind
+  kind      CommunityKind
   /// Requis si CITY.
-  cityId    String? @map("city_id") @db.Uuid
+  cityId    String?       @map("city_id") @db.Uuid
   /// Requis si COUNTRY.
-  countryId String? @map("country_id") @db.Uuid
+  countryId String?       @map("country_id") @db.Uuid
 
   name        String
   slug        String  @unique
@@ -83,10 +83,10 @@ model Community {
   lastActivityAt DateTime  @map("last_activity_at") @db.Timestamptz
   archivedAt     DateTime? @map("archived_at") @db.Timestamptz
 
-  city        City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
-  country     Country?    @relation(fields: [countryId], references: [id], onDelete: SetNull)
-  createdBy   User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
-  coverAsset  MediaAsset? @relation("CommunityCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  city       City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  country    Country?    @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  createdBy  User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  coverAsset MediaAsset? @relation("CommunityCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
 
   members         CommunityMember[]
   topics          Topic[]
