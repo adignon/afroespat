@@ -681,3 +681,80 @@ donc **pas contestable**, et le membre ne verrait qu'un « introuvable ».
 Aucune route ne pose de sanction aujourd'hui (l'application d'équipe n'existe
 pas), donc le cas ne peut pas encore se produire. À combler quand elle arrivera :
 soit toute sanction porte un dossier, soit la contestation sait s'en passer.
+
+---
+
+## Ordonnanceur : deux mécanismes, et pourquoi aucun ne suffit seul
+
+Les 27 tâches du §10 tournent sur **deux** mécanismes empilés, ce qui ressemble
+d'abord à une redondance :
+
+* **l'horloge** est une tâche répétable BullMQ (`repeat.pattern`, fuseau
+  `Europe/Paris`) — elle décide *quand demander* ;
+* **l'exécution** est protégée par un verrou Redis explicite (`SET NX PX` pour
+  prendre, script Lua comparaison-puis-suppression pour rendre) — il décide *qui
+  fait*.
+
+Le verrou seul ne suffit pas : il n'a pas d'horloge, quelqu'un doit demander.
+Et la tâche répétable seule ne suffit pas non plus, pour trois raisons qui se
+produisent toutes en exploitation normale :
+
+1. un travail **bloqué** (`stalled`) est repris par un autre ouvrier — BullMQ le
+   rejoue, c'est son travail, mais la tâche s'exécuterait deux fois ;
+2. un **rejeu après échec** redemande la même chose ;
+3. un **déploiement progressif** fait cohabiter deux générations d'ouvriers, qui
+   déclarent chacune les 27 tâches.
+
+Preuve faite plutôt que déduite : Redis vidé, deux ouvriers réels
+(`APP_ROLE=worker`) démarrés, chacun déclarant ses 27 tâches, puis **12 travaux
+distincts** (`jobId` différents, la déduplication BullMQ ne peut donc rien)
+déposés sur `community.member_count_recompute` — résultat **exactement 1
+exécution** (`w1.log:1`, `w2.log:0`).
+
+La durée du bail est `clamp(0,8 × période, 30 s, 12 h)` : gardée en cas de
+succès (pour que la fenêtre suivante ne rejoue pas), rendue en cas d'échec (pour
+qu'un autre ouvrier puisse reprendre tout de suite).
+
+### La politique de reprise dépend de la cadence
+
+En dessous d'un jour : **1 tentative**. La balayage suivant reposera la même
+question dans une minute ou une heure ; réessayer, c'est faire deux fois le même
+travail pour rien.
+
+À partir d'un jour : **3 tentatives**. Parce que `sanctions.expire` ne fait pas
+que nettoyer — elle **rend l'accès** à un compte suspendu. Un échec silencieux y
+prolonge une sanction d'une journée entière, ce qui est une décision de
+modération prise par une panne.
+
+### Trois cadences corrigées contre le brief, en faveur des spécifications
+
+L'agent a relevé trois écarts entre mon brief et les documents, et a suivi les
+documents. C'est le bon arbitrage : le brief est un résumé, la spécification est
+la source.
+
+### Deux `'error'` sans écouteur, trouvés par ricochet
+
+En vérifiant ses affirmations j'ai constaté que **ni** le `Worker` de
+`event-consumer.service.ts` **ni** celui de `moderation.consumer.ts` n'avait
+d'écouteur `'error'`. Sur un `EventEmitter` de Node, un `'error'` sans écouteur
+devient une exception non rattrapée : **un hoquet Redis passager tuait le
+processus**, donc tous les consommateurs d'un coup. Corrigé sur les deux.
+
+### Neuf tâches déclarées mais non enregistrées
+
+Neuf tâches du §10 n'ont pas encore de méthode de service. Elles ne sont **pas**
+enregistrées : un gestionnaire qui ne fait rien est pire qu'une absence, parce
+qu'il fait croire la chaîne branchée. Une en particulier mérite d'être nommée :
+
+**`city.member_count_recompute`.** `CitiesService` *lit* `cities.member_count`
+(la carte, l'activation d'une ville autour de 20 membres) et **personne ne
+l'écrit** — vérifié : les seules écritures de `memberCount` du dépôt portent sur
+`communities`. L'ouverture des villes dépend donc aujourd'hui d'un compteur qui
+reste à zéro. À combler avant toute mise en service.
+
+### Angle mort d'observabilité, accepté
+
+La ligne « créneau déjà pris, on passe » est en niveau `debug`, que
+`apps/worker/src/main.ts` exclut : les **sauts** sont invisibles, les
+**exécutions** sont tracées. Acceptable pour l'instant — on voit ce qui se fait,
+pas ce qui ne se fait pas.

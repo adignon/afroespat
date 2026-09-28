@@ -54,6 +54,21 @@ export class ModerationConsumer implements OnApplicationBootstrap, OnModuleDestr
       { connection: this.connection, concurrency: 3 },
     );
 
+    /**
+     * L'écouteur `'error'` n'est PAS optionnel.
+     *
+     * Un `Worker` BullMQ est un `EventEmitter`, et un événement `'error'` sans
+     * écouteur devient une exception non rattrapée qui TUE le processus. Le worker
+     * perdrait donc tous ses consommateurs pour une coupure Redis passagère dont
+     * BullMQ se relève seul.
+     *
+     * On journalise et on laisse BullMQ se reconnecter. Relevé par l'agent de
+     * l'ordonnanceur, qui en avait posé un sur le sien.
+     */
+    this.worker.on('error', (error) => {
+      this.logger.error(`file ${QUEUES.MODERATION} : ${error.message}`);
+    });
+
     this.worker.on('failed', (job, error) => {
       // Un masquage incomplet arrive ici : `analyze()` lève AVANT l'envoi, et
       // c'est le comportement voulu (règle dure §2). La trace doit donc être

@@ -61,6 +61,21 @@ export class EventConsumerService implements OnApplicationBootstrap, OnModuleDes
     // Un échec est JOURNALISÉ ici, et non avalé dans le gestionnaire : BullMQ
     // rejoue jusqu'à dix fois, et sans cette trace un événement qui échoue à
     // chaque tentative finirait en échec définitif sans que rien ne le dise.
+    /**
+     * L'écouteur `'error'` n'est PAS optionnel.
+     *
+     * Un `Worker` BullMQ est un `EventEmitter`, et un événement `'error'` sans
+     * écouteur devient une exception non rattrapée qui TUE le processus. Le worker
+     * perdrait donc tous ses consommateurs pour une coupure Redis passagère dont
+     * BullMQ se relève seul.
+     *
+     * On journalise et on laisse BullMQ se reconnecter. Relevé par l'agent de
+     * l'ordonnanceur, qui en avait posé un sur le sien.
+     */
+    this.worker.on('error', (error) => {
+      this.logger.error(`file ${QUEUES.EVENTS} : ${error.message}`);
+    });
+
     this.worker.on('failed', (job, error) => {
       this.logger.error(
         `événement ${job?.name ?? '?'} (${job?.id ?? '?'}) — tentative ` +

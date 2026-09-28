@@ -26,6 +26,22 @@ const providerMode = <T extends string>(...real: T[]) =>
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
+  /**
+   * Interrupteur des tâches planifiées de §9.3, dans le worker.
+   *
+   * `false` coupe les balayages SANS couper le worker : les consommateurs de
+   * files et le relais de la boîte d'envoi continuent. C'est ce que le runbook §5
+   * demande de pouvoir faire pendant un incident de base — sinon la seule option
+   * serait d'arrêter le worker, ce qui bloquerait aussi les notifications.
+   *
+   * `z.coerce.boolean()` serait FAUX ici : il rend `true` pour la chaîne
+   * « false », et l'interrupteur ne couperait jamais rien.
+   */
+  SCHEDULER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
   /** api : serveur HTTP. worker : mêmes modules, processeurs de files actifs (§3.1). */
   APP_ROLE: z.enum(['api', 'worker']).default('api'),
   APP_NAME: z.string().min(1),

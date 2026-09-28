@@ -49,6 +49,7 @@ import { BlocksService } from './modules/blocks/blocks.service';
 import { QUEUES } from './queue/queues';
 import { QueueService } from './queue/queue.service';
 import { MODERATION_QUEUE, type ModerationQueuePort } from './modules/moderation/moderation.service';
+import { TaskRegistrationsService } from './queue/task-registrations.service';
 import { EventSubscriptionsService } from './queue/event-subscriptions.service';
 import { AuthGuard } from './common/auth.guard';
 
@@ -120,6 +121,16 @@ import { AuthGuard } from './common/auth.guard';
     // racine, parce qu'il dépend des services métier — et `QueueModule` ne doit
     // pas les connaître.
     EventSubscriptionsService,
+    /**
+     * Le câblage des tâches planifiées de §9.3, ici pour la même raison que celui
+     * des événements : il dépend des services métier, que `QueueModule` ne doit pas
+     * connaître.
+     *
+     * Il tourne dans l'API AUSSI — seul le planificateur, c'est-à-dire l'horloge,
+     * est réservé au worker. Enregistrer des deux côtés ne déclenche rien côté API
+     * et garde le registre lisible depuis un test qui ne lève pas de worker.
+     */
+    TaskRegistrationsService,
     // Garde GLOBAL, et refusant par défaut : une route qui oublie de déclarer
     // sa capacité est rejetée, pas ouverte. Un garde qu'on pose route par route
     // protège exactement les routes auxquelles on a pensé.

@@ -1,0 +1,334 @@
+import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { CommunitiesService } from '../modules/communities/communities.service';
+import { ConnectionsService } from '../modules/connections/connections.service';
+import { EventsService } from '../modules/events/events.service';
+import { FeedService } from '../modules/feed/feed.service';
+import { GuidesService } from '../modules/guides/guides.service';
+import { HelpService } from '../modules/help/help.service';
+import { HousingService } from '../modules/housing/housing.service';
+import { JobsService } from '../modules/jobs/jobs.service';
+import { MentorshipService } from '../modules/mentorship/mentorship.service';
+import { ModerationService } from '../modules/moderation/moderation.service';
+import { ProsService } from '../modules/pros/pros.service';
+import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, weeklyAt } from './scheduled-tasks';
+
+/**
+ * Le câblage des tâches planifiées — 00-fondations.md §9.3.
+ *
+ * TOUT est ici, et nulle part ailleurs, pour les deux raisons qui valent déjà pour
+ * `event-subscriptions.service.ts` :
+ *
+ *   · les services métier restent IGNORANTS de l'ordonnanceur. Ils exposent des
+ *     méthodes publiques, idempotentes, avec un `now` en paramètre — et leurs
+ *     tests d'intégration n'ont donc besoin ni de Redis ni de BullMQ ;
+ *   · on lit en un coup d'œil CE QUI TOURNE et À QUELLE HEURE. Une cadence
+ *     éparpillée dans vingt-quatre `onModuleInit` est une cadence que personne ne
+ *     peut vérifier contre la spec, et c'est ainsi qu'une tâche disparaît.
+ *
+ * LES NOMS sont ceux de §9.3 et des commentaires des méthodes appelées, pas des
+ * inventions : ils apparaissent dans le journal, dans la file `scheduled` et dans
+ * le runbook. Une tâche qu'on cherche sous le nom de la spec doit se trouver.
+ *
+ * LES HEURES sont ÉTALÉES, et c'est le seul choix de ce fichier qui ne vienne pas
+ * de la spec. Dix-neuf tâches quotidiennes toutes posées à 3 h 00 ouvriraient
+ * dix-neuf balayages dans la même seconde ; la concurrence 4 du planificateur en
+ * ferait une file d'attente, mais les quatre premiers se battraient tout de même
+ * pour le même bassin de connexions. Dix minutes d'écart ne coûtent rien à des
+ * règles qui se comptent en jours.
+ *
+ * DEUX TÂCHES DE §9.3 NE SONT PAS ICI, et c'est volontaire :
+ *   · `outbox.relay` (1 s) — déjà tenue par `OutboxRelayService`, à son propre
+ *     rythme. Un travail BullMQ par seconde coûterait plus que le balayage lui-même ;
+ *   · les tâches dont AUCUN module n'expose encore la méthode. Elles sont listées
+ *     en fin de fichier, pour que l'écart avec §9.3 se lise ici plutôt que de se
+ *     découvrir en production.
+ */
+@Injectable()
+export class TaskRegistrationsService implements OnModuleInit {
+  private readonly logger = new Logger(TaskRegistrationsService.name);
+
+  constructor(
+    private readonly registry: ScheduledTaskRegistry,
+    private readonly help: HelpService,
+    private readonly guides: GuidesService,
+    private readonly communities: CommunitiesService,
+    private readonly events: EventsService,
+    private readonly housing: HousingService,
+    private readonly jobs: JobsService,
+    private readonly pros: ProsService,
+    private readonly moderation: ModerationService,
+    private readonly mentorship: MentorshipService,
+    private readonly connections: ConnectionsService,
+    private readonly feed: FeedService,
+  ) {}
+
+  onModuleInit(): void {
+    // ── Fil d'actualité (04 §7) ──────────────────────────────────────────────
+    //
+    // `story.expire` est la plus fréquente des vingt-sept, et celle que §9.3 cite
+    // en exemple du verrou : sans lui, trois workers retireraient la même story
+    // du fil trois fois par créneau.
+    this.registry.register({
+      name: 'story.expire',
+      module: 'feed',
+      schedule: every(5),
+      handle: (ctx) => this.feed.expireStories(ctx.now),
+    });
+
+    // Le seul balayage qui n'a PAS de `now` : c'est un `UPDATE … WHERE score <>
+    // positive_count - negative_count`, donc une comparaison d'état, sans notion
+    // d'échéance. Rien à lui passer, et rien à lui reprocher.
+    this.registry.register({
+      name: 'story.score_recompute',
+      module: 'feed',
+      schedule: every(15),
+      handle: () => this.feed.recomputeStoryScores(),
+    });
+
+    this.registry.register({
+      name: 'story.purge_history',
+      module: 'feed',
+      schedule: dailyAt(4, 45),
+      handle: (ctx) => this.feed.purgeStoryHistory(ctx.now),
+    });
+
+    // ── Agenda (09 §8) ───────────────────────────────────────────────────────
+    //
+    // `event.reminders` envoie J−1 et H−2 : le quart d'heure de §9.3 est une
+    // borne de précision, pas un confort. À l'heure, un rappel « dans deux
+    // heures » pourrait partir avec cinquante-neuf minutes de retard.
+    this.registry.register({
+      name: 'event.reminders',
+      module: 'events',
+      schedule: every(15),
+      handle: (ctx) => this.events.sendDueReminders(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'event.mark_done',
+      module: 'events',
+      schedule: hourlyAt(5),
+      handle: (ctx) => this.events.markDone(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'event.hide_cancelled',
+      module: 'events',
+      schedule: dailyAt(3, 40),
+      handle: (ctx) => this.events.hideCancelled(ctx.now),
+    });
+
+    // ── Modération (13 §11) ──────────────────────────────────────────────────
+    //
+    // Les trois horaires sont décalées de cinq minutes : elles touchent les mêmes
+    // tables (`moderation_cases`, `sanctions`) et se suivre plutôt que se croiser
+    // évite des verrous de ligne inutiles.
+    this.registry.register({
+      name: 'moderation.release_stale',
+      module: 'moderation',
+      schedule: hourlyAt(10),
+      handle: (ctx) => this.moderation.releaseStaleAssignments(ctx.now),
+    });
+
+    // Celle-ci REND l'accès à un compte suspendu dont la peine est purgée. Un
+    // retard se voit côté membre, d'où l'heure et non la journée.
+    this.registry.register({
+      name: 'sanctions.expire',
+      module: 'moderation',
+      schedule: hourlyAt(15),
+      handle: (ctx) => this.moderation.expireSanctions(ctx.now),
+    });
+
+    // `moderation.sla_alert` ne fait pour l'instant que LIRE : `overdueUrgentCases`
+    // rend les dossiers de priorité 1 hors SLA, sans notifier personne — le module
+    // 12 n'existe pas encore. La tâche est enregistrée quand même : sa ligne de
+    // journal est aujourd'hui la seule alerte SLA que le runbook §4 puisse
+    // observer, et le jour où les notifications arrivent, seul le gestionnaire
+    // change.
+    this.registry.register({
+      name: 'moderation.sla_alert',
+      module: 'moderation',
+      schedule: every(15),
+      handle: (ctx) => this.moderation.overdueUrgentCases(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'scam_alerts.expire',
+      module: 'moderation',
+      schedule: dailyAt(4, 5),
+      handle: (ctx) => this.moderation.expireScamAlerts(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'moderation.purge_reports',
+      module: 'moderation',
+      schedule: dailyAt(4, 10),
+      handle: (ctx) => this.moderation.purgeOldReportDetails(ctx.now),
+    });
+
+    // ── Entraide (06 §7) ─────────────────────────────────────────────────────
+    this.registry.register({
+      name: 'help.archive',
+      module: 'help',
+      schedule: dailyAt(3, 0),
+      handle: (ctx) => this.help.archiveDue(ctx.now),
+    });
+
+    // ── Guides (05 §2) ───────────────────────────────────────────────────────
+    this.registry.register({
+      name: 'guide.freshness_recompute',
+      module: 'guides',
+      schedule: dailyAt(3, 10),
+      handle: (ctx) => this.guides.recomputeFreshness(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'guide.proposal_escalation',
+      module: 'guides',
+      schedule: dailyAt(3, 20),
+      handle: (ctx) => this.guides.escalateStaleProposals(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'guide.outdated_unpublish',
+      module: 'guides',
+      schedule: dailyAt(3, 25),
+      handle: (ctx) => this.guides.unpublishOutdated(ctx.now),
+    });
+
+    // HEBDOMADAIRE et non quotidienne : §9.3 le dit, et la règle porte sur six
+    // mois d'inactivité — la vérifier chaque nuit coûterait un balayage de la
+    // table des membres pour un effet mensuel.
+    this.registry.register({
+      name: 'guide.author_inactivity',
+      module: 'guides',
+      schedule: weeklyAt(1, 5, 0),
+      handle: (ctx) => this.guides.switchInactiveAuthorsToCommunity(ctx.now),
+    });
+
+    // ── Réseaux (07 §7) ──────────────────────────────────────────────────────
+    this.registry.register({
+      name: 'community.archive_inactive',
+      module: 'communities',
+      schedule: dailyAt(3, 30),
+      handle: (ctx) => this.communities.archiveInactive(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'community.topic_archive',
+      module: 'communities',
+      schedule: dailyAt(3, 35),
+      handle: (ctx) => this.communities.archiveStaleTopics(ctx.now),
+    });
+
+    // SEULE au bout de la tranche nocturne : c'est un `UPDATE` de toute la table
+    // `communities` depuis une agrégation de `community_members`, la plus lourde
+    // des vingt-sept. La laisser croiser un autre balayage ferait s'attendre deux
+    // transactions longues.
+    this.registry.register({
+      name: 'community.member_count_recompute',
+      module: 'communities',
+      schedule: dailyAt(4, 30),
+      handle: () => this.communities.recomputeMemberCounts(),
+    });
+
+    // ── Services : logement, emploi, annuaire (10 §9) ─────────────────────────
+    //
+    // §9.3 n'annonce qu'une ligne, `listing.expire` (« logement 60 jours, emploi
+    // 45 jours »), mais les deux moitiés vivent dans deux modules et deux
+    // méthodes. DEUX TÂCHES, donc, et non un gestionnaire qui appelle les deux :
+    // sous un seul nom, une erreur côté logement empêcherait l'expiration des
+    // offres d'emploi, et le verrou d'un balayage serait tenu par l'autre. Le nom
+    // de la spec reste le préfixe, pour qu'on les trouve.
+    this.registry.register({
+      name: 'listing.expire.housing',
+      module: 'housing',
+      schedule: dailyAt(3, 45),
+      handle: (ctx) => this.housing.expireDueListings(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'listing.expire.jobs',
+      module: 'jobs',
+      schedule: dailyAt(3, 50),
+      handle: (ctx) => this.jobs.expireDueJobs(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'sponsored.expire',
+      module: 'jobs',
+      schedule: dailyAt(3, 55),
+      handle: (ctx) => this.jobs.expireSponsorships(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'pro.tier_expire',
+      module: 'pros',
+      schedule: dailyAt(4, 0),
+      handle: (ctx) => this.pros.expireTiers(ctx.now),
+    });
+
+    // ── Parrainage et contacts (08 §10) ──────────────────────────────────────
+    this.registry.register({
+      name: 'mentorship.end_due',
+      module: 'mentorship',
+      schedule: dailyAt(4, 15),
+      handle: (ctx) => this.mentorship.endDueMentorships(ctx.now),
+    });
+
+    // Deux tâches nommées « expire_requests » dans DEUX modules, avec deux délais
+    // (7 jours pour un parrainage, 30 pour un contact) : le préfixe du nom n'est
+    // pas décoratif, il est ce qui les distingue dans le journal et dans Redis.
+    this.registry.register({
+      name: 'mentorship.expire_requests',
+      module: 'mentorship',
+      schedule: dailyAt(4, 20),
+      handle: (ctx) => this.mentorship.expireRequests(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'connection.expire_requests',
+      module: 'connections',
+      schedule: dailyAt(4, 25),
+      handle: (ctx) => this.connections.expireRequests(ctx.now),
+    });
+
+    // Boucle sur tous les profils de mentor, une transaction chacun : posée en fin
+    // de tranche, comme le recalcul des compteurs de réseaux, et pour la même
+    // raison.
+    this.registry.register({
+      name: 'mentor.rating_recompute',
+      module: 'mentorship',
+      schedule: dailyAt(4, 40),
+      handle: () => this.mentorship.recomputeAllRatings(),
+    });
+
+    /**
+     * ── CE QUI MANQUE ENCORE ─────────────────────────────────────────────────
+     *
+     * Neuf tâches de §9.3 n'ont AUCUNE méthode de service à appeler. Elles ne
+     * sont pas enregistrées — un gestionnaire vide serait pire qu'une absence,
+     * puisque le journal de démarrage affirmerait qu'elles tournent :
+     *
+     *   · `journey.reminders` (horaire) et `journey.inactivity_check` (quotidienne)
+     *     — module 03, qui n'existe pas encore ;
+     *   · `user.phase_progression` (quotidienne) et `account.deletion_execute`
+     *     (horaire) — module 01 ; `UsersService` n'expose ni l'une ni l'autre,
+     *     alors que plusieurs modules citent déjà `account.deletion_execute` comme
+     *     le déclencheur de leur propre nettoyage ;
+     *   · `city.member_count_recompute` (quotidienne) — module 02 ; `CitiesService`
+     *     LIT `cities.member_count` (carte, profil, activation autour de 20
+     *     membres) et rien ne l'écrit. Le pendant réseaux existe pourtant :
+     *     `communities.recomputeMemberCounts` ;
+     *   · `bookmark.state_refresh` (horaire) et `retention.purge` (quotidienne) —
+     *     transverse ;
+     *   · `notifications.weekly_digest` (lundi 8 h) — module 12 ;
+     *   · `billing.expiry_reminders` (quotidienne) — module 14.
+     *
+     * Le jour où la méthode existe, une entrée de ce fichier suffit. Rien d'autre
+     * ne change, ni dans le registre, ni dans le planificateur.
+     */
+
+    this.logger.log(`${this.registry.all().length} tâche(s) planifiée(s) enregistrée(s) (§9.3)`);
+  }
+}
