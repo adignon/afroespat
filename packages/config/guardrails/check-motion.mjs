@@ -10,6 +10,30 @@
  *   · toute durée supérieure à 300 ms ;
  *   · toute courbe hors des deux autorisées ;
  *   · les animations décoratives — rebond, pulsation, rotation, ping.
+ *
+ * ── CE CONTRÔLE A MENTI, ET VOICI POURQUOI ────────────────────────────────────
+ *
+ * Il lit `packages/ui/src` et `apps/web/src` — des fichiers HORS de son propre
+ * paquet, donc hors de l'empreinte que Turbo calcule pour décider s'il peut
+ * rejouer un cache. Résultat : `pnpm guardrails` rendait **0** avec une vraie
+ * violation en place, pendant que ce script, lancé directement, rendait **1**.
+ *
+ * Mesuré, pas supposé : une règle `transition: width 900ms` ajoutée à
+ * `packages/ui/src/styles.css` → `pnpm guardrails` sortie 0, `node
+ * packages/config/guardrails/check-motion.mjs` sortie 1.
+ *
+ * L'étape « garde-fous » de la barre de qualité était donc inopérante sur
+ * EXACTEMENT les fichiers qu'un lot fait changer. Un contrôle qui dit toujours oui
+ * vaut moins qu'un contrôle absent : on cesse de le regarder.
+ *
+ * Corrigé par `"cache": false` sur la tâche `guardrails` de `turbo.json` — que
+ * JSON ne permet pas de commenter, d'où cette note ici.
+ *
+ * C'est la deuxième fois que ce dépôt voit un garde-fou mentir. La première, une
+ * clé `guardrails` dupliquée dans `package.json` faisait que le second écrasait le
+ * premier et que le contrôle ne tournait jamais. Le motif est le même : la mesure
+ * existe, le chemin qui y mène est cassé. **Éprouver un garde-fou en lui donnant
+ * une vraie violation est la seule façon de savoir qu'il fonctionne.**
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
