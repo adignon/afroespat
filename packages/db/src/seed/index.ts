@@ -9,6 +9,7 @@ import {
   SKILLS,
   STATIC_PAGES,
 } from './referentials.js';
+import { seedJourneyTemplates } from './templates.js';
 
 /**
  * Chargement des données de départ (T3).
@@ -65,6 +66,8 @@ async function main(): Promise<void> {
   }
   log(`  villes : ${CITIES.length} (toutes inactives — la ville pilote s’active en back-office)`);
 
+  await activatePilotCity(log);
+
   // ── Pages statiques référencées par les consentements (01 §2.10) ────────
   for (const page of STATIC_PAGES) {
     await prisma.staticPage.upsert({
@@ -106,6 +109,68 @@ async function main(): Promise<void> {
     });
   }
   log(`  métiers : ${PROFESSIONS.length}`);
+
+  // ── Modèles de parcours (T3 partie A) ───────────────────────────────────
+  const templates = await seedJourneyTemplates(prisma);
+  log(`  définitions d’étapes : ${templates.definitions}`);
+  log(`  types de parcours : ${templates.templates}`);
+  for (const version of templates.versions) {
+    const origin = version.originIso2 === null ? 'générique' : `pays ${version.originIso2}`;
+    log(`    ${version.templateCode} (${origin}) : ${version.outcome}`);
+  }
+}
+
+/**
+ * Active la ville pilote — et SEULEMENT si on la lui demande explicitement.
+ *
+ * T3 B.2 est catégorique : « toutes inactives au lancement sauf la ville pilote »,
+ * et « la ville pilote est activée à la main le jour du lancement ». Le seed ne
+ * choisit donc AUCUNE ville : la spec ne nomme pas la pilote, et une carte
+ * peuplée d'office par un chargement de données serait une décision produit prise
+ * par un script.
+ *
+ * Reste qu'en développement une base sans aucune ville active rend la carte,
+ * l'annuaire des villes et leur indexation intestables. D'où cet interrupteur,
+ * explicite et refusé en production :
+ *
+ *     SEED_PILOT_CITY_SLUG=lyon pnpm db:seed
+ *
+ * LIMITE ASSUMÉE : l'activation réelle doit créer le `community` CITY et y
+ * inscrire les membres, via l'événement `city.activated` (02 §6). Le seed n'a pas
+ * de boîte d'envoi, et la route `POST /v1/admin/ref/cities/:id/activate` (02 §4.2)
+ * n'existe pas encore. Cette activation-ci ne fait donc que poser `is_active` et
+ * `activated_at` : elle rend la ville visible, pas son réseau.
+ */
+async function activatePilotCity(log: (s: string) => void): Promise<void> {
+  const slug = process.env['SEED_PILOT_CITY_SLUG']?.trim();
+  if (slug === undefined || slug.length === 0) return;
+
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error(
+      'SEED_PILOT_CITY_SLUG est refusé en production : la ville pilote s’active à la main, ' +
+        'en back-office, pour que son réseau soit créé (02 §6).',
+    );
+  }
+
+  const city = await prisma.city.findUnique({
+    where: { slug },
+    select: { id: true, name: true, isActive: true, activatedAt: true },
+  });
+  if (city === null) {
+    throw new Error(`Aucune ville au slug « ${slug} » : rien n’a été activé.`);
+  }
+
+  // Idempotent, et l'horodatage d'activation n'est pas RÉÉCRIT : la date à
+  // laquelle une ville s'est ouverte est un fait, pas une valeur de seed.
+  if (city.isActive && city.activatedAt !== null) {
+    log(`  ville pilote : ${city.name} (déjà active)`);
+    return;
+  }
+  await prisma.city.update({
+    where: { id: city.id },
+    data: { isActive: true, activatedAt: city.activatedAt ?? new Date() },
+  });
+  log(`  ville pilote : ${city.name} activée (développement — réseau NON créé)`);
 }
 
 main()

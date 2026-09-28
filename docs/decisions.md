@@ -1094,3 +1094,128 @@ ligne ait changé. Le délai est aligné sur le **coût des paramètres**, pas
 l'inverse : on n'abaisse pas N pour faire passer un test, on dit au test combien
 coûte la sécurité choisie. Un test qui dépend de la charge apprend à ignorer le
 rouge, ce qui coûte plus cher que le test ne rapporte.
+
+---
+
+## Seed des modèles de parcours (T3 partie A) — et ce qu'il refuse de faire
+
+30 définitions d'étapes, 4 types, 6 versions publiées (générique × 4 + déclinaisons
+Bénin de STUDIES et WORK), 68 étapes composées, 57 dépendances. Idempotent :
+second passage, « inchangée » six fois, identifiants compris.
+`GET /journey-templates` ne renvoie plus une liste vide — le module 03 a enfin son
+contenu.
+
+### Mon brief était faux, et l'agent a suivi la spec
+
+Je lui avais demandé d'« activer les villes que la spec désigne comme actives au
+lancement ». **La spec n'en désigne aucune.** T3 B.2 : « toutes inactives au
+lancement sauf la ville pilote », « la ville pilote est activée à la main le jour
+du lancement » — et la ville pilote **n'est nommée nulle part** dans les 22
+fichiers. 02 §2.2 fixe le critère : décision d'équipe, « en général à 20 membres ».
+
+Un seed qui active une ville prendrait donc une décision produit à la place du
+porteur. L'agent a livré à la place un interrupteur explicite, hors défaut, refusé
+en production (`SEED_PILOT_CITY_SLUG=lyon`), avec une limite documentée : cette
+activation rend la ville visible mais **ne crée pas son réseau CITY**, parce que
+la spec passe par l'événement `city.activated` et que le seed n'a pas de boîte
+d'envoi.
+
+C'est le bon arbitrage, et il met au jour un blocage plus sérieux (voir plus bas).
+
+### Le test de rétro-planning était TAUTOLOGIQUE — chez l'agent aussi
+
+Sa première version calculait l'échéance attendue **à partir de la donnée qu'elle
+testait**, relue en base :
+
+```ts
+const offset = step.templateStep?.daysBeforeArrival;
+expect(ISO_DATE(step.dueDate)).toBe(minusDays(arrival, offset as number));
+```
+
+La mutation `240 → 200` passait : **cinq tests verts sur une donnée fausse**. Le
+test se comparait à lui-même. Corrigé en recopiant la table de T3 A.2 **à la
+main** dans le test et en retirant `daysBeforeArrival` du `select`, pour qu'on ne
+puisse pas y revenir par inadvertance.
+
+Vérifié moi-même plutôt que sur parole : le `select` ne porte plus la colonne, et
+j'ai rejoué la mutation de bout en bout — donnée modifiée, seed rechargé (« STUDIES
+republiée »), le test **tombe**. Puis restauré et rechargé. J'ai aussi confronté
+quatre valeurs de la table recopiée à T3 A.2 : `CHOOSE_PROGRAM` 240,
+`OFII_VALIDATION` −30, `CAF` −45, `RESIDENCE_PERMIT` −270 — conformes. Le risque
+s'était déplacé de « le test ne prouve rien » vers « la table recopiée est
+fausse », et il fallait aller y regarder.
+
+C'est le troisième agent sur cinq à découvrir ce défaut chez lui. La leçon est
+générale : **un test qui lit la valeur attendue dans la source qu'il vérifie ne
+vérifie rien**, et seule la mutation le révèle.
+
+### Une mutation de DONNÉES ne se voit qu'après purge
+
+Retirer les déclinaisons Bénin du seed n'a d'abord fait tomber aucun test : le seed
+**n'archive jamais une version qu'il ne décrit plus**. C'est voulu — une version
+publiée peut porter des parcours, et `journeys.template_version_id` est en
+`Restrict` — mais ce n'était pas énoncé. Conséquence d'exploitation à connaître :
+**retirer une déclinaison du fichier de données ne la retire pas de la base**, il
+faut la désactiver en back-office.
+
+### Trois contradictions arbitrées
+
+1. **STUDIES « 12 étapes » puis 15 listées** (le document le reconnaît) → la liste.
+2. **CAF dépend de « 8 **ou** HOUSING_AFTER »** — une disjonction que
+   `step_dependencies` ne peut pas représenter, la table étant conjonctive. Pire :
+   `HOUSING_AFTER` n'est pas composée par STUDIES v1, donc la seconde branche n'a
+   **littéralement pas de cible** (la clé étrangère pointe les `template_steps` de
+   la même version). → une seule dépendance. Rien d'inventé.
+3. **SETTLEMENT position 1 : « REGULARIZATION ou STATUS_CHANGE ou RENEWAL, le
+   membre choisit à la création »** — impossible : `@@unique(version, position)`
+   interdit trois alternatives sur une position, et `createJourneySchema` est
+   `.strict()` **sans paramètre de variante**. → REGULARIZATION seule ; les deux
+   autres restent en bibliothèque.
+
+### Trois manques qui bloquent la mise en service
+
+1. **Tout le CRUD `/v1/admin/ref/*` de 02 §4.2 est absent** —
+   `POST /cities/:id/activate`, `/countries/:id/activate`, `/cities/:id/merge`,
+   `/cities/import`, et les CRUD des cinq référentiels. Sans la route
+   d'activation, **il n'existe aucun chemin correct pour ouvrir la ville pilote** :
+   celui qui crée le réseau CITY et y inscrit les membres déjà rattachés. C'est le
+   premier geste du jour du lancement, et il n'a pas de bouton.
+2. **`languages` n'a pas de colonne `is_active`**, alors que 02 §2.3 l'exige pour
+   « langues, compétences **et** métiers ». `skills` et `professions` l'ont. Une
+   langue ne peut donc pas être retirée des propositions.
+3. **`step_dependencies` n'est lu ni écrit par aucun code applicatif** (zéro
+   occurrence dans `apps/api` et `packages/shared`). Les 57 lignes posées sont de
+   la donnée sans consommateur : l'alerte d'incompatibilité d'échéances de 03 §2.3
+   n'existe pas. Elles sont posées quand même — A.2 les prescrit, et le jour où
+   l'alerte arrive, elle trouvera la donnée.
+
+### Ce que le seed refuse d'écrire, et pourquoi c'est juste
+
+* **T3 partie C (paramètres système) — non amorcée.** `SETTINGS_REGISTRY` porte
+  déjà toutes ces valeurs comme **défauts de code**, et `GET /admin/settings` rend
+  les clés jamais écrites avec `isDefault: true`. Les écrire ferait apparaître 34
+  réglages comme surchargés à la main alors que personne ne les a touchés, et
+  créerait une seconde source de vérité pour chaque seuil. Pire : la moitié des
+  clés de T3 ne correspond pas aux noms lus par le code (`handle.reserved` contre
+  `reserved_handles`, `community.interest_threshold_members` contre
+  `community_city_threshold`) — on aurait amorcé des clés que personne ne lit.
+* **`step_definitions.description` — nulle pour les 30.** T3 A.1 n'en donne aucune.
+  Rédiger des descriptions de démarches administratives créerait une autorité
+  concurrente des guides communautaires, ce que T3 A.3 interdit explicitement
+  (« les montants et délais ne sont pas inscrits en dur : ils renvoient aux guides
+  communautaires, seuls à être mis à jour »). **Texte éditorial à écrire par le
+  porteur.** Les seules descriptions présentes sont les trois surcharges Bénin que
+  la spec prescrit nommément — sans montant ni délai, verrouillé par une regex et
+  une mutation.
+* **`blocker_template` et `risk_message` — nuls.** T3 A.1 en donne 4 par cible et
+  1 message, pas 30 de chaque. Ils vivent dans `@app/shared` et le service y
+  retombe ; les recopier trente fois créerait une duplication qui dériverait au
+  premier ajustement de texte.
+
+### Résidu de mon propre exercice
+
+Rejouer la mutation de bout en bout a laissé **4 versions `ARCHIVED`** dans la base
+de développement (deux passages × deux déclinaisons de STUDIES). C'est exactement
+ce que fait le chemin de republication, la règle « une seule publiée par (type,
+pays) » tient, et les données courantes sont justes. Noté plutôt que nettoyé : une
+suppression serait une opération destructive pour un résidu inoffensif.
