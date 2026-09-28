@@ -9,8 +9,9 @@
  * Relancer après une modification de maquette : `node tools/generate-screens.mjs`.
  * Les fichiers produits portent `.generated.tsx` et ne se modifient pas à la main.
  */
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { adaptModalFrame, extractFrame, extractSection, markTriggers, transcode } from './dc-to-jsx.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
@@ -735,27 +736,26 @@ const MODAL_ADAPTATIONS = [
 ];
 
 /**
- * LE TITRE D'UNE MODALE, promu en `<h2>` — déclaré, jamais deviné.
+ * LE TITRE D'UNE MODALE est DÉCLARÉ PAR L'ÉCRAN, pas deviné, et pas dans une table
+ * globale.
  *
- * Une modale ne prend PAS le `<h1>` de la page : le `<h1>` appartient à l'écran
- * qui est derrière, et il ne disparaît pas parce qu'une fenêtre s'ouvre par-dessus.
- * Ce qu'il faut, c'est que la boîte de dialogue porte un nom accessible — c'est
+ * Une modale ne prend PAS le `<h1>` de la page : le `<h1>` appartient à l'écran qui
+ * est derrière, et il ne disparaît pas parce qu'une fenêtre s'ouvre par-dessus. Ce
+ * qu'il faut, c'est que la boîte de dialogue porte un nom accessible — c'est
  * `aria-labelledby` qui le lui donne, et il lui faut donc un élément à désigner.
  *
- * Le titre est DÉCLARÉ ici, texte visible compris, et non déduit d'un motif de
- * style. Les quatre modales ne le dessinent pas de la même façon : `<span>` de
- * 18 px pour les commentaires (avec un compteur imbriqué), `<span>` de 20 px pour
- * le partage et le sondage, `<div>` de 20 px pour le guide. Un motif qui couvrirait
- * les quatre attraperait aussi des sous-titres, en silence. Et si la maquette
- * change son texte, le tableau ne correspond plus et l'outil le DIT.
+ * Le titre est déclaré avec l'écran (`modalTitle`), texte visible compris, et non
+ * déduit d'un motif de style. Les modales ne le dessinent pas de la même façon :
+ * `<span>` de 18 px pour les commentaires (avec un compteur imbriqué), `<span>` de
+ * 20 px pour le partage et le sondage, `<div>` de 20 px pour le guide. Un motif qui
+ * couvrirait les quatre attraperait aussi des sous-titres, en silence. Et si la
+ * maquette change son texte, la déclaration ne correspond plus et l'outil le DIT.
+ *
+ * Il vivait dans une table indexée par section, ici même. La sortir de ce fichier
+ * est la même décision que pour les déclarations d'écran : cinquante-sept modales
+ * restent à transcoder, et une table partagée serait un conflit de fusion à chaque
+ * contribution.
  */
-const MODAL_TITLES = {
-  A01C: 'Commentaires',
-  A01P: 'Partager',
-  A01G: 'Lier un guide',
-  A01S: 'Créer un sondage',
-};
-
 /**
  * Promeut l'élément qui porte le titre en `<h2 id="…">`, style inchangé.
  *
@@ -765,8 +765,7 @@ const MODAL_TITLES = {
  * — le design ne serait plus celui de la maquette, pour une raison invisible à la
  * lecture du code.
  */
-function promoteModalTitle(jsx, section) {
-  const title = MODAL_TITLES[section];
+function promoteModalTitle(jsx, section, title) {
   if (title === undefined) return { jsx, promoted: false, id: null };
 
   // L'élément dont le contenu COMMENCE par le titre, et qui porte fontWeight 800.
@@ -881,95 +880,33 @@ function adaptFrame(jsx, section, modal = false) {
  * contenu flex:1 borné à 660, colonne de contexte 300 px — et s'adaptent seules
  * entre 1024 et 1920 px.
  */
-const SCREENS = [
-  {
-    file: 'docs/template/03 Accueil v2.dc.html',
-    section: 'A01',
-    out: 'apps/web/src/screens/a01',
-    dataModule: './data',
-    dataType: 'A01Data',
-    /**
-     * Les deux fenêtres que le fil ouvre, et que la maquette nomme sous ses
-     * planches : « Commentaires — ouverts depuis « Commenter » » et « Partager ».
-     *
-     * Le libellé du bouton de commentaire est une DONNÉE (`p.comment`), pas un
-     * texte en dur : le marqueur porte donc l'interpolation du dialecte, telle
-     * qu'elle est dans la maquette.
-     */
-    triggers: [
-      { marker: '</svg>{{ p.comment }}', modal: 'A01C' },
-      { marker: '</svg>Partager', modal: 'A01P' },
-    ],
-    frames: [
-      { width: 1440, name: 'Desktop' },
-      { width: 390, name: 'Mobile' },
-    ],
-  },
-
-  // ── Lot 1 · accès et onboarding (01 Accès et Onboarding.dc.html) ──────────
-  //
-  // Les huit sections partagent UN SEUL jeu de données et UN SEUL état, comme
-  // dans la maquette : un unique `renderVals()` les sert toutes. Les séparer
-  // donnerait huit copies de `seg()` et des barres de progression qui
-  // divergeraient.
-  ...[
-    { section: 'P01', frames: [1440, 390] },
-    { section: 'P02', frames: [1440, 390] },
-    // 560 px : la variante « Ressources », pas un mobile.
-    { section: 'P03', frames: [1440, 560], names: ['Desktop', 'Ressources'] },
-    { section: 'O01', frames: [1440, 390] },
-    { section: 'O02', frames: [1440, 390] },
-    { section: 'O03', frames: [1440, 390] },
-    { section: 'O04', frames: [1440, 390] },
-    // O05 n'a pas de cadre mobile : deux variantes de 700 px, « avec parcours »
-    // et « sans parcours » — les deux atterrissages de §5, écran 6.
-    { section: 'O05', frames: [700, 700], names: ['AvecParcours', 'SansParcours'] },
-  ].map((s) => ({
-    file: 'docs/template/01 Accès et Onboarding.dc.html',
-    section: s.section,
-    out: `apps/web/src/screens/${s.section.toLowerCase()}`,
-    dataModule: '../onboarding/data',
-    dataType: 'OnboardingVals',
-    frames: s.frames.map((width, i) => ({
-      width,
-      name: s.names?.[i] ?? (i === 0 ? 'Desktop' : 'Mobile'),
-      // Deux cadres de MÊME largeur dans une section : il faut prendre le
-      // second, pas rechercher la même ouverture deux fois.
-      occurrence: s.frames.indexOf(width) === i ? 0 : i,
-    })),
-  })),
-
-  /**
-   * ── Lot 1 · les quatre modales du fil (03 Accueil v2.dc.html) ──────────────
-   *
-   * La maquette les annonce elle-même : « fenêtre sur web, feuille sur mobile ».
-   * Elle DESSINE les deux formes — fenêtre centrée de 720 px sur ordinateur,
-   * feuille du bas à 88 % avec sa poignée sur mobile — donc il n'y a aucune forme
-   * à inventer, seulement le comportement à brancher (`Modal`).
-   *
-   * Elles partagent les données de A01, parce que la maquette les met dans le
-   * MÊME `renderVals()` : le fil de commentaires et les contacts de partage
-   * cohabitent avec les stories et le fil. Les séparer donnerait deux sources
-   * pour un seul écran.
-   */
-  ...[
-    { section: 'A01C', why: 'Commentaires' },
-    { section: 'A01P', why: 'Partager' },
-    { section: 'A01G', why: 'Lier un guide' },
-    { section: 'A01S', why: 'Créer un sondage' },
-  ].map((m) => ({
-    file: 'docs/template/03 Accueil v2.dc.html',
-    section: m.section,
-    out: `apps/web/src/screens/${m.section.toLowerCase()}`,
-    dataModule: '../a01/data',
-    dataType: 'A01Data',
-    modal: true,
-    frames: [
-      { width: 1440, name: 'Desktop' },
-      { width: 390, name: 'Mobile' },
-    ],
-  })),
-];
+/**
+ * Les écrans à produire, LUS DANS `tools/screens/`, un fichier par maquette.
+ *
+ * Ils vivaient dans un tableau unique ici même. Les quatre-vingt-sept sections
+ * qui restent seront transcodées en parallèle, et tant que les déclarations
+ * partageaient un fichier, chaque contribution se disputait le même tableau : la
+ * fusion demandait une résolution à la main, à chaque fois, pour des blocs qui ne
+ * se recouvrent jamais. Un fichier par maquette supprime le conflit plutôt que de
+ * le résoudre.
+ *
+ * L'ordre est celui des noms de fichier, donc celui des numéros de maquette —
+ * stable d'une machine à l'autre, ce que `readdir` ne garantit pas seul.
+ */
+const SCREENS = (
+  await Promise.all(
+    readdirSync(resolve(ROOT, 'tools', 'screens'))
+      .filter((f) => f.endsWith('.mjs'))
+      .sort()
+      .map(async (f) => {
+        const module = await import(pathToFileURL(resolve(ROOT, 'tools', 'screens', f)).href);
+        if (!Array.isArray(module.screens)) {
+          throw new Error(`tools/screens/${f} doit exporter « screens », un tableau.`);
+        }
+        return module.screens;
+      }),
+  )
+).flat();
 
 /**
  * Les identifiants que le cadre consomme, DÉDUITS de la maquette.
@@ -1086,7 +1023,9 @@ for (const screen of SCREENS) {
      * clavier et `aria-labelledby` — voir `apps/web/src/components/modal.tsx`.
      */
     const isModal = screen.modal === true;
-    const titled = isModal ? promoteModalTitle(jsx, screen.section) : { jsx, promoted: false, id: null };
+    const titled = isModal
+      ? promoteModalTitle(jsx, screen.section, screen.modalTitle)
+      : { jsx, promoted: false, id: null };
     const hasLandmark = /<main[\s>]/.test(titled.jsx);
     const wrapped = isModal
       ? titled.jsx
@@ -1152,7 +1091,7 @@ ${wrapped}
         console.log(`      Titre promu en <h2 id="${titled.id}"> : la boîte de dialogue le désignera par aria-labelledby.`);
       } else {
         console.log(
-          `      ⚠ titre « ${MODAL_TITLES[screen.section] ?? '?'} » introuvable : la modale n’aura pas de nom accessible. Mettre MODAL_TITLES à jour.`,
+          `      ⚠ titre « ${screen.modalTitle ?? '(non déclaré)'} » introuvable : la modale n’aura pas de nom accessible. Corriger « modalTitle » dans sa déclaration.`,
         );
       }
     } else if (!hasLandmark) {
