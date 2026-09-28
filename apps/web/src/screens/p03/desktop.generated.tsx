@@ -25,7 +25,7 @@ export function P03Desktop(props: OnboardingVals) {
         <article style={{ width: "760px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "40px 48px" }}>
           <div style={{ display: "flex", gap: "8px" }}><span style={{ background: "#E3F0EB", color: "#0F5C48", fontSize: "11px", fontWeight: "700", padding: "5px 11px", borderRadius: "999px" }}>Version 3</span><span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11px", fontWeight: "700", padding: "5px 11px", borderRadius: "999px" }}>En vigueur depuis le 1er septembre 2026</span></div>
           <h1 style={{ margin: "18px 0 0", fontSize: "32px", fontWeight: "800", letterSpacing: "-1px" }}>Politique de confidentialité</h1>
-          <h1 style={{ margin: "32px 0 0", fontSize: "19px", fontWeight: "700", letterSpacing: "-0.3px" }}>1. Ce que nous collectons</h1>
+          <h2 style={{ margin: "32px 0 0", fontSize: "19px", fontWeight: "700", letterSpacing: "-0.3px" }}>1. Ce que nous collectons</h2>
           <p style={{ margin: "10px 0 0", fontSize: "15px", lineHeight: "1.7" }}>Votre numéro de téléphone sert uniquement à vous connecter. Il n'est jamais affiché aux autres membres, ni transmis à un partenaire.</p>
           <ul style={{ margin: "12px 0 0", paddingLeft: "20px", fontSize: "15px", lineHeight: "1.8" }}><li>Pseudo, nom d'affichage, ville et phase de parcours</li><li>Contenus que vous publiez</li><li>Préférences de notification</li></ul>
           <h2 style={{ margin: "28px 0 0", fontSize: "19px", fontWeight: "700", letterSpacing: "-0.3px" }}>2. Où sont vos données</h2>

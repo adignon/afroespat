@@ -136,6 +136,24 @@ function styleToJsx(value) {
   }
   declarations.push(current);
 
+  /**
+   * UNE PROPRIÉTÉ, UNE VALEUR — la DERNIÈRE, comme en CSS.
+   *
+   * La maquette écrit parfois deux fois la même propriété dans un seul attribut
+   * `style`, et cinquante-six fois dans « 03 Accueil v2 » :
+   *
+   *   background:#EEF2F0; … ; background:rgba(255,255,255,.9)
+   *
+   * En CSS c'est licite et la seconde gagne — le navigateur affiche donc le fond
+   * translucide. Dans un objet JSX, deux fois la même clé est une ERREUR de
+   * compilation (`TS1117`), et c'est une chance : c'est exactement le motif « deux
+   * écritures pour une clé » qui a déjà coûté un filtre de visibilité et une fuite
+   * de profils dans ce dépôt. `markClosers` le traite déjà ainsi pour les styles
+   * qu'il fusionne ; il fallait le faire une fois pour toutes, ici.
+   *
+   * Garder la DERNIÈRE reproduit exactement ce que le navigateur fait de la
+   * maquette : ce n'est pas une décision de design, c'est la sémantique de CSS.
+   */
   const entries = [];
   for (const declaration of declarations) {
     const trimmed = declaration.trim();
@@ -146,9 +164,34 @@ function styleToJsx(value) {
     const property = trimmed.slice(0, colon).trim();
     const raw = trimmed.slice(colon + 1).trim();
     const key = property.startsWith('--') ? `'${property}'` : kebabToCamel(property);
-    entries.push(`${key}: ${valueToJs(raw)}`);
+    entries.push({ key, value: valueToJs(raw) });
   }
-  return `{{ ${entries.join(', ')} }}`;
+
+  /**
+   * UNE PROPRIÉTÉ DÉCLARÉE DEUX FOIS : la dernière gagne, et l'ancienne DISPARAÎT.
+   *
+   * Les maquettes composent leurs styles par AJOUT : elles recopient le style de base
+   * d'un bouton puis lui collent la variante à la fin —
+   * `height:44px;…;flex-shrink:0;height:50px`. En CSS c'est licite et sans surprise :
+   * la dernière déclaration l'emporte. Dans un objet JSX, c'est la clé écrite deux
+   * fois, et TypeScript la refuse (TS1117), ESLint aussi (`no-dupe-keys`).
+   *
+   * Le compte est loin d'être anecdotique : 59 attributs `style` dans `05 Entraide`,
+   * 6 dans `07 Agenda`, 56 dans `03 Accueil v2`. Sans cette fusion, vingt-sept des
+   * vingt-sept cadres de ce lot ne compilaient pas.
+   *
+   * LA DERNIÈRE OCCURRENCE GARDE SA PLACE, elle ne remonte pas à celle de la première.
+   * L'ordre d'un objet de style n'est pas décoratif : `backgroundClip` posé entre deux
+   * `background` serait réinitialisé par le raccourci s'il passait après lui. Remonter
+   * la valeur à la position de la première occurrence inverserait ce rapport, en
+   * silence et sans erreur — exactement le genre d'écart que le transcodage existe
+   * pour supprimer.
+   */
+  const lastIndex = new Map();
+  entries.forEach((entry, i) => lastIndex.set(entry.key, i));
+  const merged = entries.filter((entry, i) => lastIndex.get(entry.key) === i);
+
+  return `{{ ${merged.map((e) => `${e.key}: ${e.value}`).join(', ')} }}`;
 }
 
 // ─── Analyse ─────────────────────────────────────────────────────────────────

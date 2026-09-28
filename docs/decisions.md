@@ -1878,3 +1878,119 @@ décision produit — et l'on finit par le corriger sans le lire.
 La troisième est la plus utile : un consommateur d'événement est rejoué, et une
 boucle d'inscriptions créerait un doublon au second passage. `syncAutoMemberships`
 recalcule, donc il ne fait rien la seconde fois.
+
+---
+
+## Front, lot 2 — accueil (17 sections), entraide et agenda (14 sections)
+
+31 sections transcodées, 92 cadres de plus — 118 au total. Ce que ces deux lots ont
+révélé compte plus que le décompte.
+
+### CINQ PAGES ÉTAIENT SERVIES VIDES
+
+Elles lisaient l'URL avec `useSearchParams()`, ce qui force Next à rendre côté
+navigateur tout ce que le crochet enveloppe. Sur une page statique, le HTML envoyé
+ne contient **rien** : `/villes` faisait huit kilo-octets de script et **zéro mot de
+contenu**. Invisible à l'écran — la page s'affichait parfaitement — et il fallait
+lire la réponse du serveur pour le voir. Le dépôt avait déjà payé cette leçon une
+fois, et elle était écrite dans `(onboarding)/bienvenue/fin/page.tsx`.
+
+Corrigé : cinq pages repassées en composants serveur qui reçoivent `searchParams` en
+propriété. Vérifié après coup — `/villes` fait 29 515 octets et 196 mots.
+
+**Une nuance apprise en tentant de reproduire le défaut :** Next **refuse de
+construire** une page qui emploie ce crochet **sans** barrière de suspension
+(`missing-suspense-with-csr-bailout`). Le cas non enveloppé échoue donc bruyamment ;
+le cas enveloppé produit une coquille vide en silence. C'est exactement pourquoi
+personne ne l'avait vu.
+
+### Une adaptation qui se comptait comme appliquée sans rien faire
+
+La barre d'onglets basse n'a **jamais** été collante sur les maquettes autres que
+celle de l'accueil : l'adaptation opérait par `replace('position: "relative"', …)`,
+et seule cette maquette-là écrit `position:relative` sur cette barre. Ailleurs le
+remplacement ne trouvait rien — l'adaptation **se comptait comme appliquée** et
+posait `bottom: 0` et un `z-index` sur un élément `position: static`. Deux
+déclarations sans le moindre effet, sur onze cadres mobiles, sans aucun
+avertissement.
+
+La leçon est encodée dans le commentaire de l'adaptation : **ce qu'une adaptation
+change doit figurer dans son `match`, ou être écrit pour réussir dans tous les cas.**
+
+### Un second `<h1>` sur la politique de confidentialité, depuis le début
+
+`promoteFirstHeading` promouvait le premier `<h2>` sans regarder si la maquette
+écrivait déjà un `<h1>`. Sur P03, « 1. Ce que nous collectons » était donc un second
+`<h1>` — invisible à l'œil, les tailles étant en ligne, et non attrapé par axe.
+C'est la **seule** sortie d'un écran existant qui change, et c'est une correction.
+
+### Les maquettes composent leurs styles par AJOUT
+
+`height:44px; … ; flex-shrink:0; height:50px` — licite en CSS, refusé dans un objet
+JSX (TS1117). **59 attributs dans l'entraide, 6 dans l'agenda, 56 dans l'accueil.**
+Sans fusion, aucun des cadres ne compilait.
+
+La fusion garde la **dernière** valeur **à sa place**, et non à celle de la
+première. L'ordre n'est pas décoratif : un `background-clip` posé entre deux
+`background` serait réinitialisé par le raccourci s'il passait après lui. Je l'ai
+rencontré moi-même en élargissant la cible tactile de la poignée d'une feuille.
+
+### Seules deux maquettes emploient le dialecte
+
+`01 Accès et Onboarding` et `03 Accueil v2` ont un `renderVals()` ; **les sept
+autres ont `return {}`**, aucune interpolation, aucune boucle — tout le contenu est
+écrit en clair dans le HTML. Ces écrans n'ont donc **aucune donnée à reprendre**, et
+les 41 sections restantes seront dans le même cas. En extraire une structure serait
+en choisir une que la maquette n'a pas choisie.
+
+### Deux mécanismes de titre, et une dette assumée
+
+Les deux lots ont eu le même besoin — aucune de ces sections n'a de `<h2>` à
+promouvoir — et l'ont résolu séparément : `heading` déclaré par écran d'un côté,
+`title` déclaré par cadre de l'autre, reconnu par une **mesure** (≥ 16 px, graisse
+≥ 700) qui le distingue d'une pastille de filtre portant le même mot.
+
+Les deux cohabitent, chacun sur ses déclarations. Les fusionner pendant
+l'intégration de trente-et-une sections aurait été le meilleur moyen de casser les
+deux. **À unifier dans un lot qui ne fait que cela** — et le journal, lui, a été
+unifié tout de suite : les deux mécanismes avertissaient chacun pour les écrans que
+l'autre avait traités, et le compte est passé de 10 à 47 « aucun titre », tous faux.
+Un avertissement qui crie à tort en cache un vrai.
+
+### Et une erreur de ma part, exactement celle que je traque
+
+`networkidle` bloquait les tests d'entraide : Next précharge les liens visibles d'une
+page, donc le réseau ne retombe jamais au calme et `page.goto` expire au bout de
+trente secondes. Mesuré et corrigé : de « trois échecs en 4,2 minutes » à « dix
+verts en 1,1 minute ».
+
+**J'ai alors remplacé `networkidle` partout — quatorze autres appels — et dix-huit
+tests sont tombés d'un coup.** Ces suites comptent des éléments rendus côté client,
+et c'est l'attente du réseau qui leur laissait le temps d'arriver. Tout remis sauf
+le fichier où j'avais mesuré le problème.
+
+**Corriger un défaut mesuré sur un fichier ne donne pas le droit de changer quatorze
+appels qu'on n'a pas mesurés.** C'est la même faute que « un filtre de plus peut
+répondre à la place de celui qu'on croit éprouver », prise par l'autre bout.
+
+### Écarts de maquette signalés, non corrigés en silence
+
+* **Sous 390 px, trois rangées d'actions débordent** (H01 363 px, H04 370, H07 376) :
+  leurs enfants sont `flex-shrink: 0` et `white-space: nowrap`. Une ligne suffirait,
+  mais le motif touche aussi 31 rangées des écrans déjà livrés. **Mesuré et épinglé
+  dans un test**, décision à prendre.
+* **La règle dure 06 §2.7** (« chaque page affiche en permanence » la promesse de
+  non-paiement) est présente sur les dix cadres d'ordinateur et **absente de sept
+  des neuf cadres mobiles**. Non ajoutée — ce serait réécrire la maquette, et sur une
+  règle dure c'est la dernière chose à faire en silence. La liste est épinglée dans
+  un test qui tombe **dans les deux sens**.
+* **Pastilles de couleur à 34 px sur mobile**, sous les 44 px de T1 §2.3.
+* **Trois coquilles CSS dans les maquettes** (`padding:…14pxpx`) : déclaration
+  invalide, donc ignorée par le navigateur. Transcodée à l'identique.
+
+### Une mutation passée au VERT, et pourquoi
+
+Retirer **une** occurrence de « Aucun versement entre membres » laissait le test
+vert : la règle est **dessinée trois fois** sur le même écran. Il a fallu retirer les
+trois. Même mécanisme que le filtre de trop — une seconde occurrence répondait à la
+place de celle qu'on croyait mesurer.

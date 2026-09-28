@@ -27,12 +27,24 @@ export function ScreenFrames({
   desktop,
   mobile,
   background = '#F6F8F7',
+  direction = 'row',
 }: {
   readonly screen: string;
   readonly desktop: ReactNode;
   /** Absent quand la maquette ne donne pas de cadre mobile — O05 par exemple. */
   readonly mobile?: ReactNode;
   readonly background?: string;
+  /**
+   * La direction du cadre d'ordinateur, telle que la maquette l'écrit dans son
+   * conteneur — celui que le générateur retire parce qu'il portait la taille fixe.
+   *
+   * Presque tous les cadres sont en RANGÉE : rail à gauche, contenu à droite. A05,
+   * l'éditeur de guide, est le seul en colonne (barre d'outils au-dessus du corps),
+   * et sans cette bascule sa barre se retrouvait à côté du texte au lieu d'être
+   * dessus. Le cadre mobile, lui, est en colonne partout — la maquette ne dessine
+   * pas de téléphone en rangée.
+   */
+  readonly direction?: 'row' | 'column';
 }) {
   return (
     <div data-screen={screen} style={{ background, minHeight: '100vh' }}>
@@ -43,7 +55,7 @@ export function ScreenFrames({
             ? 'mx-auto flex min-h-screen max-w-[1440px]'
             : 'mx-auto hidden min-h-screen max-w-[1440px] lg:flex'
         }
-        style={{ position: 'relative' }}
+        style={{ position: 'relative', flexDirection: direction }}
       >
         {desktop}
       </div>

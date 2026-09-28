@@ -18,6 +18,25 @@ import { defineConfig, devices } from '@playwright/test';
  * lit plus au bout d'un mois. Ce qui doit vraiment être tenu — les jetons, les
  * dimensions, la cible tactile, l'absence d'ombre — se mesure exactement.
  */
+/**
+ * LE PORT EST CONFIGURABLE, et ce n'est pas un confort.
+ *
+ * Ce dépôt se travaille en arbres de travail (`git worktree`) parallèles. Un port
+ * codé en dur veut dire qu'un seul arbre peut être éprouvé au navigateur à la fois :
+ * le second trouve le 3100 occupé, `reuseExistingServer` réutilise alors le serveur
+ * du VOISIN, et la suite s'exécute contre un build qui n'est pas le sien. C'est
+ * arrivé pendant ce lot, et le symptôme ne désigne pas la cause — on voit des 404
+ * sur des routes qui existent pourtant dans le build local.
+ *
+ * Le symptôme n'est d'ailleurs pas toujours un échec : c'est souvent un SUCCÈS QUI
+ * NE PROUVE RIEN — la suite passe, contre une application construite ailleurs.
+ *
+ * `WEB_PORT` laisse chaque arbre prendre le sien. Le défaut reste 3100, donc rien ne
+ * change pour qui n'en a qu'un.
+ */
+const PORT = process.env.WEB_PORT ?? '3100';
+const BASE_URL = `http://localhost:${PORT}`;
+
 export default defineConfig({
   testDir: '.',
   // Sur le chemin critique : un test instable fait plus de mal qu'un test absent.
@@ -27,7 +46,7 @@ export default defineConfig({
   reporter: process.env.CI ? [['github'], ['list']] : [['list']],
 
   use: {
-    baseURL: 'http://localhost:3100',
+    baseURL: BASE_URL,
     trace: 'on-first-retry',
     // Fige ce qui varie d'une machine à l'autre.
     locale: 'fr-FR',
@@ -87,8 +106,8 @@ export default defineConfig({
   webServer: [
     {
       // `next start` directement : le script `start` porte déjà son propre port.
-      command: 'pnpm build && npx next start -p 3100',
-      url: 'http://localhost:3100/accueil',
+      command: `pnpm build && npx next start -p ${PORT}`,
+      url: `${BASE_URL}/accueil`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
     },

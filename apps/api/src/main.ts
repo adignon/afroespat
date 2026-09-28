@@ -57,11 +57,21 @@ async function bootstrap(): Promise<void> {
    * de test rejette chaque réponse alors que le serveur répond 200 — et le
    * parcours d'inscription échoue sans qu'aucun journal ne l'explique.
    *
+   * Le PORT suit `WEB_PORT`, la même variable que `apps/web/playwright.config.ts`,
+   * et c'est une leçon payée : le dépôt se travaille en plusieurs arbres, 3100 s'y
+   * trouve occupé, et la suite lancée sur un autre port voyait le serveur répondre
+   * 200 pendant que le navigateur jetait chaque réponse. Le message de Playwright ne
+   * nomme jamais la cause — il dit « did not find some options » sur un `<select>`
+   * resté vide. Les deux côtés lisent donc la même variable : régler l'un sans
+   * l'autre n'est plus possible.
+   *
    * En PRODUCTION la liste reste à deux entrées : une origine de test ouverte
-   * là-bas serait une porte laissée entrebâillée.
+   * là-bas serait une porte laissée entrebâillée, et `WEB_PORT` n'y change rien.
    */
   const origins = [env.WEB_ORIGIN, env.ADMIN_ORIGIN];
-  if (env.NODE_ENV !== 'production') origins.push('http://localhost:3100');
+  if (env.NODE_ENV !== 'production') {
+    origins.push(`http://localhost:${process.env['WEB_PORT'] ?? '3100'}`);
+  }
 
   app.enableCors({
     origin: origins,

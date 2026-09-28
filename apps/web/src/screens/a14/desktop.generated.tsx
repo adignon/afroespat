@@ -1,0 +1,78 @@
+// GÉNÉRÉ depuis docs/template/03 Accueil v2.dc.html, section A14, cadre 1440 px.
+// Ne pas modifier à la main : relancer `node tools/generate-screens.mjs`.
+//
+// Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
+// extérieur, lui, est fluide : la maquette le fige à 1440 px, ce qui ne
+// serait pas responsive.
+import { Fragment } from 'react';
+import type { AccueilData } from '../accueil/data';
+
+export function A14Desktop(props: AccueilData) {
+  const { attachSteps, attachTopics, audience, msgsKnob, msgsTrack, photoTools, toggleMsgs, w, webKind, webKinds, webPalette, webPill, writeBg } = props;
+
+  return (
+    <>
+      <div style={{ background: "#101A17", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <main style={{ display: "contents" }}>
+
+    <div style={{ position: "absolute", top: "24px", left: "28px", display: "flex", alignItems: "center", gap: "10px" }}><div style={{ width: "36px", height: "36px", borderRadius: "12px", background: "#0F5C48", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none" /></svg></div><span style={{ fontSize: "19px", fontWeight: "800", color: "#fff" }}>Diaspora</span></div>
+    <span style={{ position: "absolute", top: "22px", right: "28px", width: "44px", height: "44px", borderRadius: "999px", background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg></span>
+    <div style={{ display: "flex", gap: "28px", alignItems: "stretch" }}>
+      <div style={{ width: "420px", height: "746px", borderRadius: "28px", overflow: "hidden", background: writeBg, color: "#fff", display: "flex", flexDirection: "column", justifyContent: "center", padding: "32px", position: "relative", flexShrink: "0" }}>
+        <div style={{ position: "absolute", top: "18px", left: "18px", right: "18px", display: "flex", alignItems: "center", gap: "10px", zIndex: "2" }}><span style={{ width: "36px", height: "36px", borderRadius: "999px", border: "2px solid #fff", background: "#B4581F", fontSize: "11px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center" }}>AD</span><span style={{ fontSize: "13.5px", fontWeight: "700", flex: "1", minWidth: "0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Amina Diallo</span><span style={{ background: "#fff", color: "#16785E", fontSize: "10px", fontWeight: "800", letterSpacing: ".8px", padding: "5px 11px", borderRadius: "999px", whiteSpace: "nowrap", flexShrink: "0" }}>{webPill}</span></div>
+        {w.color ? (<><div style={{ fontSize: "11px", fontWeight: "800", letterSpacing: "1.4px", color: "rgba(255,255,255,.75)" }}>{webKind}</div>
+        <div style={{ fontSize: "30px", fontWeight: "800", lineHeight: "1.2", letterSpacing: "-0.6px", marginTop: "14px" }}>Pour Visale, déposez votre VLS-TS dès sa validation sur l'ANEF. Réponse en 48 h.{w.s1 ? (<><span style={{ display: "inline-block", width: "3px", height: "32px", background: "#fff", verticalAlign: "-6px", marginLeft: "3px", borderRadius: "2px" }}></span></>) : null}</div>
+        {w.s1 ? (<><div style={{ fontSize: "12.5px", fontWeight: "700", color: "rgba(255,255,255,.7)", marginTop: "12px" }}>118 / 280</div></>) : null}</>) : null}
+        {w.photo ? (<><div style={{ position: "absolute", inset: "0", background: "repeating-linear-gradient(135deg,#46564F 0 14px,#3E4D47 14px 28px)" }}></div><div style={{ position: "absolute", left: "0", right: "0", top: "30%", textAlign: "center", fontSize: "12px", fontWeight: "600", color: "rgba(255,255,255,.55)" }}>Votre photo</div><div style={{ position: "absolute", left: "0", right: "0", bottom: "0", height: "60%", background: "linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.75))" }}></div>
+          <div style={{ position: "absolute", left: "28px", right: "28px", bottom: "44px", border: w.frameBd, borderRadius: "14px", padding: "16px" }}>{w.s1 ? (<><span style={{ position: "absolute", left: "-6px", top: "-6px", width: "12px", height: "12px", borderRadius: "999px", background: "#fff" }}></span><span style={{ position: "absolute", right: "-6px", top: "-6px", width: "12px", height: "12px", borderRadius: "999px", background: "#fff" }}></span><span style={{ position: "absolute", left: "-6px", bottom: "-6px", width: "12px", height: "12px", borderRadius: "999px", background: "#fff" }}></span><span style={{ position: "absolute", right: "-6px", bottom: "-6px", width: "12px", height: "12px", borderRadius: "999px", background: "#fff" }}></span></>) : null}<div style={{ fontSize: "11px", fontWeight: "800", letterSpacing: "1.4px", color: "rgba(255,255,255,.8)" }}>DÉCOUVERTE</div><div style={{ fontSize: "26px", fontWeight: "800", lineHeight: "1.2", letterSpacing: "-0.5px", marginTop: "8px" }}>Épicerie Wax et Saveurs : attiéké frais le samedi matin.</div></div></>) : null}
+      </div>
+      <div style={{ width: "460px", height: "746px", background: "#fff", borderRadius: "28px", padding: "26px", display: "flex", flexDirection: "column", gap: "16px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "6px" }}>{(w.steps ?? []).map((s, sIndex) => (
+<Fragment key={sIndex}><button style={{ border: "none", background: "none", padding: "0", font: "inherit", textAlign: "left", cursor: "pointer", display: "flex", flexDirection: "column", gap: "8px" }}><span style={{ height: "5px", borderRadius: "999px", background: s.bar }}></span><span style={{ fontSize: "12px", fontWeight: "700", color: s.fg }}>{s.label}</span></button></Fragment>
+))}</div>
+
+        {w.s1 ? (<><div style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.6px" }}>Écrire votre story</div>
+          <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "8px" }}>Type</div><div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "4px", background: "#EEF2F0", borderRadius: "14px", padding: "4px" }}>{(webKinds ?? []).map((k, kIndex) => (
+<Fragment key={kIndex}><button onClick={k.onPick} style={{ height: "40px", borderRadius: "11px", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700", cursor: "pointer", background: k.bg, color: k.fg }}>{k.label}</button></Fragment>
+))}</div></div>
+          <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "8px" }}>Texte</div><div style={{ border: "1.5px solid #16785E", borderRadius: "16px", padding: "14px", fontSize: "14.5px", lineHeight: "1.55", minHeight: "96px" }}>Pour Visale, déposez votre VLS-TS dès sa validation sur l'ANEF. Réponse en 48 h.</div><div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", fontSize: "12px", color: "#8A958F" }}><span>Un seul message, court et utile.</span><span style={{ fontWeight: "700" }}>118 / 280</span></div></div>
+          <div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "8px" }}>Fond</div><div style={{ display: "flex", gap: "10px", alignItems: "center" }}>{(webPalette ?? []).map((c, cIndex) => (
+<Fragment key={cIndex}><button onClick={c.onPick} style={{ width: "34px", height: "34px", borderRadius: "999px", background: c.hex, border: "none", outline: c.ring, outlineOffset: "3px", cursor: "pointer", padding: "0" }} aria-label={`Fond ${c.hex}`} aria-pressed={c.on}></button></Fragment>
+))}<span style={{ flex: "1" }}></span><button onClick={w.onPhoto} style={{ height: "40px", padding: "0 14px", borderRadius: "999px", border: "none", background: w.photoBg, color: w.photoFg, font: "inherit", display: "flex", alignItems: "center", gap: "7px", fontSize: "13px", fontWeight: "700", cursor: "pointer" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="3" /><path d="m5 17 5-5 3 3 2-2 4 4" /><circle cx="9" cy="9" r="1.4" /></svg>Photo</button></div></div>
+          {w.photo ? (<><div style={{ background: "#F6F8F7", borderRadius: "16px", padding: "14px" }}><div style={{ fontSize: "12.5px", fontWeight: "700" }}>Photo</div><div style={{ display: "flex", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>{(photoTools ?? []).map((t, tIndex) => (
+<Fragment key={tIndex}><span style={{ height: "36px", padding: "0 13px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", fontSize: "12.5px", fontWeight: "700" }}>{t}</span></Fragment>
+))}</div><div style={{ fontSize: "12px", color: "#5D6B66", marginTop: "10px", lineHeight: "1.45" }}>Glissez le cadre du texte sur l'aperçu pour le déplacer, tirez les poignées pour le redimensionner.</div></div></>) : null}
+          <div style={{ display: "flex", gap: "8px" }}><span style={{ height: "40px", padding: "0 14px", borderRadius: "12px", background: "#F2F5F4", display: "flex", alignItems: "center", gap: "7px", fontSize: "13px", fontWeight: "700" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M7 12h10M5 18h14" /></svg>Centré</span><span style={{ height: "40px", padding: "0 14px", borderRadius: "12px", background: "#F2F5F4", display: "flex", alignItems: "center", fontSize: "13px", fontWeight: "800" }}>Aa · Gras</span></div></>) : null}
+
+        {w.s2 ? (<><div><div style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.6px" }}>Ce conseil concerne…</div><div style={{ fontSize: "13px", color: "#5D6B66", marginTop: "4px" }}>Il sera montré à ceux qui passent par la même étape.</div></div>
+          <div style={{ height: "44px", borderRadius: "999px", background: "#F2F5F4", padding: "0 16px", display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", color: "#8A958F" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>Rechercher une étape ou un sujet</div>
+          <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>MON PARCOURS · ÉTUDES</div>
+          {(attachSteps ?? []).map((a, aIndex) => (
+<Fragment key={aIndex}><div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", borderRadius: "16px", background: a.bg, border: a.bd }}><span style={{ flex: "1", minWidth: "0" }}><span style={{ display: "block", fontSize: "14px", fontWeight: "700" }}>{a.t}</span><span style={{ display: "block", fontSize: "12px", color: "#5D6B66", marginTop: "1px" }}>{a.s}</span></span><span style={{ width: "24px", height: "24px", borderRadius: "999px", background: a.cBg, border: a.cBd, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round"><path d="m5 12 4.5 4.5L19 7" /></svg></span></div></Fragment>
+))}
+          <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>SUJETS</div>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>{(attachTopics ?? []).map((t, tIndex) => (
+<Fragment key={tIndex}><span style={{ padding: "8px 13px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", fontSize: "12.5px", fontWeight: "600" }}>{t}</span></Fragment>
+))}</div></>) : null}
+
+        {w.s3 ? (<><div style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.6px" }}>Prêt à publier</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <div style={{ background: "#F6F8F7", borderRadius: "16px", padding: "14px" }}><div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>SUJET</div><div style={{ fontSize: "14px", fontWeight: "700", marginTop: "4px" }}>Logement · Visale</div><div style={{ fontSize: "12px", color: "#5D6B66", marginTop: "2px" }}>Étape 7 de mon parcours</div></div>
+            <div style={{ background: "#F6F8F7", borderRadius: "16px", padding: "14px" }}><div style={{ fontSize: "10px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VISIBLE</div><div style={{ fontSize: "14px", fontWeight: "700", marginTop: "4px" }}>24 heures</div><div style={{ fontSize: "12px", color: "#5D6B66", marginTop: "2px", lineHeight: "1.4" }}>puis gardé par ceux qui l'enregistrent</div></div>
+          </div>
+          <div><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", marginBottom: "8px" }}>QUI LE VOIT</div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", background: "#EEF2F0", borderRadius: "14px", padding: "4px" }}>{(audience ?? []).map((a, aIndex) => (
+<Fragment key={aIndex}><button onClick={a.onPick} style={{ height: "42px", borderRadius: "11px", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700", cursor: "pointer", background: a.bg, color: a.fg }}>{a.label}</button></Fragment>
+))}</div></div>
+          <div style={{ background: "#F6F8F7", borderRadius: "16px", padding: "14px", display: "flex", alignItems: "center", gap: "12px" }}><span style={{ flex: "1", fontSize: "14px", fontWeight: "700" }}>Autoriser les messages</span><button onClick={toggleMsgs} style={{ width: "48px", height: "28px", borderRadius: "999px", border: "none", background: msgsTrack, position: "relative", cursor: "pointer", padding: "8px 0", boxSizing: "content-box", backgroundClip: "content-box" }}><span style={{ position: "absolute", top: "3px", left: msgsKnob, width: "22px", height: "22px", borderRadius: "999px", background: "#fff" }}></span></button></div>
+          <div style={{ background: "#FBE3D4", color: "#B4581F", borderRadius: "16px", padding: "12px 14px", fontSize: "12.5px", fontWeight: "700" }}>Pas de lien, de numéro ni de montant précis.</div></>) : null}
+
+        <div style={{ flex: "1" }}></div>
+        <div style={{ display: "flex", gap: "8px" }}><button style={{ height: "50px", padding: "0 22px", borderRadius: "14px", background: "#fff", color: "#0F5C48", border: "1.5px solid #CFE3DA", font: "inherit", fontSize: "14.5px", fontWeight: "700", cursor: "pointer" }}>{w.prev}</button><button style={{ flex: "1", height: "50px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "14.5px", fontWeight: "700", cursor: "pointer" }}>{w.next}</button></div>
+      </div>
+    </div>
+  
+      </main>
+      </div>
+    </>
+  );
+}
