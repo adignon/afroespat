@@ -52,6 +52,14 @@ export type DomainEventType =
   | 'connection.requested'
   | 'message.sent'
   | 'journey.member_joined'
+  // §7 du module 03 : consommateur `messaging`, qui recalcule l'appartenance à la
+  // conversation du parcours. Sans ce type, un accompagnant retiré de l'équipe
+  // resterait indéfiniment dans la discussion — `journey.member_joined` est le
+  // seul événement auquel la messagerie se réabonne, et le réutiliser pour un
+  // retrait serait un mensonge sur le nom. Les autres états du §7
+  // (`step_paused`, `paused`, `abandoned`, `member_invited`,
+  // `template_version_published`) restent ABSENTS faute de consommateur livré.
+  | 'journey.member_removed'
   | 'guide.voted'
   | 'guide.published'
   // Le reste du §6 du module 05. Chacun a son consommateur nommé : search et
@@ -98,9 +106,20 @@ export type DomainEventType =
   | 'connection.removed'
   // ── 10-services.md §8 ─────────────────────────────────────────────────────
   //
-  // Absents faute de PRODUCTEUR : `pro.approved`, `pro.rejected` (validation
-  // humaine, module 15) et `pro.tier_changed` (facturation, module 14). Un type
-  // sans producteur est une file que personne ne remplit, et l'on croirait la
+  // `pro.approved` et `pro.rejected` ONT désormais leur producteur : la validation
+  // humaine du §4.1, livrée par le module 15 (`AdminService.approveProProfile`).
+  // Ils sont donc ajoutés — c'est ce qui débloque l'annuaire, qui restait vide
+  // faute de pouvoir passer une fiche en `APPROVED`.
+  //
+  // Leurs consommateurs déclarés par 10 §8 — indexation de recherche, notification
+  // au membre — n'existent pas encore, et rien n'est câblé pour eux dans
+  // `event-subscriptions.service.ts` : un abonnement vide serait une chaîne qu'on
+  // croirait branchée. La trace de la décision, elle, est dans `audit_logs`, donc
+  // rien n'est perdu en attendant.
+  | 'pro.approved'
+  | 'pro.rejected'
+  // Absent faute de PRODUCTEUR : `pro.tier_changed` (facturation, module 14). Un
+  // type sans producteur est une file que personne ne remplit, et l'on croirait la
   // chaîne branchée.
   | 'housing.published'
   | 'housing.updated'

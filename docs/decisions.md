@@ -758,3 +758,94 @@ La ligne « créneau déjà pris, on passe » est en niveau `debug`, que
 `apps/worker/src/main.ts` exclut : les **sauts** sont invisibles, les
 **exécutions** sont tracées. Acceptable pour l'instant — on voit ce qui se fait,
 pas ce qui ne se fait pas.
+
+---
+
+## Modules 03 (parcours) et 15 (équipe) — ce qui attend un arbitrage
+
+### Une dépendance à trancher : argon2id absent du verrou
+
+`00` §8.3 et `15` §2.1 nomment **argon2id** pour les mots de passe d'équipe.
+Aucun paquet argon2 n'est dans le `pnpm-lock.yaml`, et l'environnement s'installe
+en `--frozen-lockfile` : l'ajouter n'était pas à la main de l'agent.
+
+Repli livré : **scrypt** (N=2¹⁷, r=8, p=1), la seule fonction à coût mémoire de
+`node:crypto`. Le condensé stocké porte son nom et ses paramètres
+(`scrypt$N$r$p$sel$condensé`) et `needsRehash()` fait la bascule à la connexion
+suivante — donc adopter argon2id plus tard n'invalidera **aucun** mot de passe.
+C'est le bon repli, mais c'est une décision de dépendance, pas un détail.
+
+### Le départ d'un modérateur n'a pas de solution technique
+
+Vérifié en base, pas déduit : `delete from staff_users` d'un compte ayant agi en
+modération échoue —
+`ERROR: table moderation_actions est en ajout seul : UPDATE interdit`. Les
+tables qui bloquent sont `moderation_actions`, `sanctions` et `announcements`
+(`Restrict`) ; un compte qui n'a écrit que dans `audit_logs` **est** supprimable.
+
+`DELETE /staff/:id` répond donc `409` explicite plutôt qu'un 404 de routeur, et
+`isActive=false` coupe les sessions à l'instant. Reste la vraie question, qui
+n'est pas technique : **que fait-on du nom et de l'email d'un modérateur parti**,
+entre son droit RGPD et l'obligation de tracer qui a sanctionné qui ?
+
+### Un bannissement n'est pas lisible dans `users`
+
+`UserStatus` n'a pas de `BANNED` ; `13` §4.2 écrit `DEACTIVATED`. Un banni est
+donc indistinguable d'un membre qui s'est simplement désactivé — et
+`POST /users/:id/reactivate`, ouverte au MODERATOR, **débannissait** en silence,
+contournant une décision réservée au SUPER_ADMIN. Colmaté par la lecture d'une
+`sanctions` `type='BAN'` non levée (mutation → le test tombe), mais le colmatage
+ne remplace pas la valeur d'enum manquante.
+
+### `member_notes` : refus délibéré de contourner
+
+§3.2 veut des notes internes sur un membre. La table n'existe pas. Les écrire
+dans `audit_logs` les rendrait **ineffaçables**, alors que §11 exige leur
+suppression quand le membre est supprimé : ce serait fabriquer une obligation
+RGPD intenable. Non livré, et c'est le bon choix.
+
+### Colonnes annoncées, absentes, et contournées sans migration
+
+`staff_users.{failed_attempts,locked_until,totp_enrolled_at,created_by_staff_id}`,
+`staff_sessions.last_seen_at`, `pro_profiles.{approved_at,approved_by_staff_id,rejection_reason}`,
+`metric_snapshots`, `journeys.{last_viewed_at,migrated_from_version_id}`,
+`journey_steps.deleted_at`, `guides.quotable`, `city_tips.quotable`.
+
+Contournements notables : le verrouillage après 5 échecs est **compté dans
+`audit_logs`**, ce qui est durable et inter-instances — meilleur que deux
+colonnes ; l'historique des décisions pro y est **complet**, pas seulement la
+dernière. Deux conséquences en revanche :
+`journey_steps.deleted_at` manquant rend la suppression d'étape **physique** là
+où §3.2 demande un effacement logique ; et `metric_snapshots` absente bloque les
+trois tableaux de bord du §5.
+
+### `JourneyMemberStatus` n'a pas de `DECLINED`
+
+Un refus d'invitation est enregistré en `REMOVED`, donc **indistinguable d'une
+exclusion**. Un membre qui décline poliment apparaît comme ayant été retiré.
+
+### Le seed des modèles de parcours n'existe pas
+
+0 ligne dans `journey_templates` / `step_definitions`. Le module 03 est complet
+et `GET /journey-templates` renvoie une liste **vide** : la fonctionnalité est
+livrée sans son contenu. T3 partie A est donc bloquante pour la mise en service,
+pas optionnelle.
+
+### Deux points de matrice à confirmer
+
+1. §2.2 donne la validation des fiches pro à SUPER_ADMIN / CONTENT_ADMIN /
+   **SUPPORT** mais **pas** à MODERATOR — alors que la file de modération est à
+   MODERATOR. Un modérateur ne peut donc pas trancher une fiche pro signalée
+   dans sa propre file. Implémenté tel quel ; c'est peut-être voulu.
+2. §3.1 fait chercher un membre « par … email ». **`users` n'a pas de colonne
+   email** — les membres s'authentifient par OTP téléphone. Livré : handle, nom
+   d'affichage, empreinte HMAC du numéro.
+
+### Une règle tenue par la base, qu'il faudra ne pas oublier
+
+Deux index uniques partiels (`journey_template_versions_one_published_generic`
+et `…_per_country`), posés par migration et **absents des fichiers
+`schema/*.prisma`**, rendent impossible de publier une v2 avant d'archiver la v1.
+La future route `POST /versions/:id/publish` doit donc archiver et publier **dans
+la même transaction**, sinon elle échouera en production. Trouvé parce qu'un test
+a levé `P2002`, pas par lecture.

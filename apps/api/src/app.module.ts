@@ -42,8 +42,15 @@ import { CommunitiesController } from './modules/communities/communities.control
 import { CommunitiesService } from './modules/communities/communities.service';
 import { GuidesController } from './modules/guides/guides.controller';
 import { GuidesService } from './modules/guides/guides.service';
+import { JourneysController } from './modules/journeys/journeys.controller';
+import { JourneysService } from './modules/journeys/journeys.service';
 import { HelpController } from './modules/help/help.controller';
 import { HelpService } from './modules/help/help.service';
+import { AdminController } from './modules/admin/admin.controller';
+import { AdminModerationController } from './modules/admin/admin-moderation.controller';
+import { AdminService } from './modules/admin/admin.service';
+import { StaffAuthController } from './modules/admin/staff-auth.controller';
+import { StaffAuthService } from './modules/admin/staff-auth.service';
 import { BlocksController } from './modules/blocks/blocks.controller';
 import { BlocksService } from './modules/blocks/blocks.service';
 import { QUEUES } from './queue/queues';
@@ -52,6 +59,7 @@ import { MODERATION_QUEUE, type ModerationQueuePort } from './modules/moderation
 import { TaskRegistrationsService } from './queue/task-registrations.service';
 import { EventSubscriptionsService } from './queue/event-subscriptions.service';
 import { AuthGuard } from './common/auth.guard';
+import { StaffGuard } from './common/staff.guard';
 
 /**
  * Module racine. §3.3 : un dossier par module métier, dans l'ordre de
@@ -68,8 +76,10 @@ import { AuthGuard } from './common/auth.guard';
 @Module({
   imports: [CommonModule, ProvidersModule, QueueModule],
   controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
+    // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
+    StaffAuthController, AdminController, AdminModerationController,
     FeedController, PostsController, CommentsController, StoriesController, MyStoriesController,
-    MentorshipController, ConnectionsController, MessagingController,
+    MentorshipController, ConnectionsController, MessagingController, JourneysController,
   ],
   providers: [
     AuthService,
@@ -85,10 +95,13 @@ import { AuthGuard } from './common/auth.guard';
     JobsService,
     ProsService,
     ModerationService,
+    StaffAuthService,
+    AdminService,
     FeedService,
     MentorshipService,
     ConnectionsService,
     MessagingService,
+    JourneysService,
     /**
      * Le port de file de la modération.
      *
@@ -135,6 +148,22 @@ import { AuthGuard } from './common/auth.guard';
     // sa capacité est rejetée, pas ouverte. Un garde qu'on pose route par route
     // protège exactement les routes auxquelles on a pensé.
     { provide: APP_GUARD, useClass: AuthGuard },
+    /**
+     * Le garde d'ÉQUIPE, second garde global — 15 §2.1, règle dure sur
+     * l'hermétisme des deux domaines.
+     *
+     * Deux gardes et non un seul, et l'ORDRE compte : Nest les exécute dans
+     * l'ordre de déclaration. `AuthGuard` passe le premier et LAISSE PASSER sans
+     * rien lire toute route qui déclare `@RequiresStaffRole` ; `StaffGuard` passe
+     * ensuite et refuse tout ce qui n'a pas de session d'équipe. Une route
+     * appartient toujours à exactement un des deux domaines — celle qui
+     * déclarerait les deux est refusée par `AuthGuard`, à chaque appel.
+     *
+     * Les inverser n'ouvrirait rien, mais rendrait le refus moins lisible : c'est
+     * `AuthGuard` qui porte le « refus par défaut » du §7.3, et il doit rester le
+     * premier à parler.
+     */
+    { provide: APP_GUARD, useClass: StaffGuard },
   ],
 })
 export class AppModule {}

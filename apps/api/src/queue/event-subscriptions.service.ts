@@ -6,6 +6,7 @@ import { HousingService } from '../modules/housing/housing.service';
 import { JobsService } from '../modules/jobs/jobs.service';
 import { ConnectionsService } from '../modules/connections/connections.service';
 import { FeedService } from '../modules/feed/feed.service';
+import { JourneysService } from '../modules/journeys/journeys.service';
 import { MentorshipService } from '../modules/mentorship/mentorship.service';
 import { MessagingService } from '../modules/messaging/messaging.service';
 import { ModerationService } from '../modules/moderation/moderation.service';
@@ -47,6 +48,7 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly connections: ConnectionsService,
     private readonly messaging: MessagingService,
     private readonly feed: FeedService,
+    private readonly journeys: JourneysService,
   ) {}
 
   onModuleInit(): void {
@@ -220,6 +222,42 @@ export class EventSubscriptionsService implements OnModuleInit {
 
     this.registry.on('journey.step_completed', 'feed', async (job) => {
       await this.feed.handleJourneyStepCompleted(job.payload);
+    });
+
+    // ── Parcours (03 §7, « Consommés ») ──────────────────────────────────────
+    //
+    // Les trois gestionnaires sont INDÉPENDANTS et IDEMPOTENTS, comme le contrat
+    // de ce fichier l'exige : un rejeu n'ajoute ni second accompagnant, ni
+    // seconde activité, ni second événement — et chacun LÈVE quand il échoue,
+    // pour être rejoué plutôt que perdu.
+    //
+    // §2.3 du module 08 fait voyager `journeyId` dans `mentorship.accepted`
+    // précisément pour celui-ci : « le parrain devient SUPPORTER », et c'est au
+    // module 03 de l'inscrire — jamais au parrainage d'écrire dans
+    // `journey_members`.
+    this.registry.on('mentorship.accepted', 'journeys', async (job) => {
+      await this.journeys.handleMentorshipAccepted(job.payload);
+    });
+
+    // §3.4 : « Un blocage retire automatiquement. » Dans les deux sens.
+    this.registry.on('user.blocked', 'journeys', async (job) => {
+      const pair = blockPair(job.payload);
+      if (pair === null) return;
+      await this.journeys.handleUserBlocked(pair.blocker, pair.blocked);
+    });
+
+    // 06 §2.5 : « si `origin_journey_step_id` : activité HELP_RECEIVED sur
+    // l'étape ». L'identifiant d'agrégat de `help_request.resolved` EST la
+    // demande — le gestionnaire remonte de là vers l'étape, plutôt que de
+    // supposer une forme de charge utile.
+    this.registry.on('help_request.resolved', 'journeys', async (job) => {
+      await this.journeys.handleHelpRequestResolved(job.aggregateId);
+    });
+
+    // La conversation du parcours suit aussi les DÉPARTS : sans cet abonnement,
+    // un accompagnant retiré de l'équipe continuerait de lire la discussion.
+    this.registry.on('journey.member_removed', 'messaging', async (job) => {
+      await this.messaging.syncJourneyConversation(job.aggregateId);
     });
 
     this.logger.log(`${this.registry.describe().length} type(s) d’événement écouté(s)`);

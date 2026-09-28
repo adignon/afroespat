@@ -9,6 +9,7 @@ import type { Request } from 'express';
 import { type Capability, levelSatisfies } from '@app/shared';
 import { ApiError } from './api-error';
 import { ALLOW_SUSPENDED_KEY, CAPABILITY_KEY, PUBLIC_READ_KEY } from './capability.decorator';
+import { STAFF_ROLE_KEY } from './staff-role.decorator';
 import { type AccessClaims, TokenService } from './token.service';
 
 /**
@@ -58,6 +59,34 @@ export class AuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
+
+    /**
+     * ROUTE D'ÉQUIPE — règle dure 15 §2.1 et 00 §7.4 : « les comptes équipe et
+     * les comptes membres sont hermétiques ».
+     *
+     * Ce bloc est AVANT toute lecture de jeton, et c'est le point entier : sur
+     * une route d'équipe, le domaine membre n'est pas « insuffisant », il
+     * n'existe pas. Aucun `request.auth` n'est posé, donc `@Auth()` y lève, donc
+     * aucun contrôleur d'équipe ne peut par accident agir au nom d'un membre.
+     * C'est `StaffGuard` — l'autre garde global — qui décide de l'accès.
+     *
+     * Une route qui déclare LES DEUX est refusée. Ce n'est pas un refus d'accès
+     * mais un défaut de code : la passerelle que la règle dure interdit ne peut
+     * naître que d'une route mixte, et on préfère qu'elle échoue à chaque appel
+     * plutôt qu'elle décide laquelle des deux autorisations l'emporte.
+     */
+    const staffRoles = this.reflector.getAllAndOverride<readonly string[] | undefined>(
+      STAFF_ROLE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (staffRoles !== undefined) {
+      if (capability !== undefined || isPublicRead === true) {
+        throw ApiError.transverse('FORBIDDEN', {
+          reason: 'route déclarée à la fois membre et équipe',
+        });
+      }
+      return true;
+    }
 
     // Un jeton présent est toujours lu, même sur une route publique : une
     // lecture ouverte se personnalise (réactions déjà posées, éléments

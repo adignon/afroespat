@@ -184,6 +184,10 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
       connections,
       messaging,
       inert(),
+      // Le module 03, livré après ce test : il s'abonne au même `user.blocked`
+      // pour retirer l'accompagnant de l'équipe du parcours (03 §3.4). Inerte
+      // ici — sa propre suite l'éprouve.
+      inert(),
     ).onModuleInit();
 
     const country = await prisma.country.findFirstOrThrow({
