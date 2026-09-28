@@ -83,6 +83,44 @@ describe('couverture des capacités (règle dure §7.3)', () => {
     expect(missing).toEqual([]);
   });
 
+  /**
+   * LES ROUTES DE WEBHOOK SONT UNE LISTE FERMÉE.
+   *
+   * Un webhook est la seule écriture que le garde laisse passer sans jeton :
+   * son autorisation est une SIGNATURE, vérifiée dans le service. C'est donc la
+   * surface la plus sensible du projet, et la seule qu'un oubli ouvre à tout
+   * l'Internet.
+   *
+   * D'où une liste écrite EN DUR. Elle ne vérifie pas que la signature est
+   * vérifiée — aucun test statique ne peut le faire — mais elle garantit qu'une
+   * route de webhook de plus FAIT ROUGIR ce test, donc oblige quelqu'un à venir
+   * l'inscrire ici, donc à se demander si elle vérifie bien sa signature. C'est
+   * tout ce qu'un contrôle peut apporter, et c'est déjà beaucoup : les trois
+   * routes ci-dessous ont chacune leur test de signature falsifiée, à côté de leur
+   * logique.
+   *
+   * Le préfixe `webhook:` ne peut pas être confondu avec une capacité de
+   * `@app/shared` ni avec `none:public-read` — c'est la raison pour laquelle le
+   * décorateur nomme le fournisseur au lieu d'employer une sentinelle générique.
+   */
+  it('[RÈGLE DURE] les routes de webhook sont exactement celles qu’on attend', () => {
+    const webhooks: string[] = [];
+    for (const [path, operations] of Object.entries(document.paths)) {
+      for (const [verb, op] of Object.entries(operations)) {
+        const capability = op['x-capability'];
+        if (capability !== undefined && capability.startsWith('webhook:')) {
+          webhooks.push(`${verb.toUpperCase()} ${path} → ${capability}`);
+        }
+      }
+    }
+
+    expect(webhooks.sort()).toEqual([
+      'POST /v1/webhooks/didit → webhook:didit',
+      'POST /v1/webhooks/mobile-money → webhook:mobile-money',
+      'POST /v1/webhooks/stripe → webhook:stripe',
+    ]);
+  });
+
   it('aucune route n’expose un compteur de vues (règle dure §1.2)', () => {
     // Le schéma OpenAPI est le contrat : si viewCount y apparaît, il finira à l'écran.
     const serialized = JSON.stringify(document);

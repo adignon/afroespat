@@ -1570,3 +1570,60 @@ un webhook `none:public-read` satisferait le test de couverture **en mentant** s
 la nature de la route, et l'on chercherait ensuite pourquoi une « lecture
 publique » accepte des POST. La métadonnée énumérable du lot 11 est gardée, pour
 qu'on puisse compter ces routes sans lire les contrôleurs.
+
+---
+
+## Trois défauts de tests trouvés en fusionnant, et ce qu'ils enseignent
+
+### 1. Mon garde-fou d'hier a attrapé la fusion d'aujourd'hui
+
+`metadata-consumed.test.ts` — écrit le matin contre la classe de défaut de
+`@RateLimit` — a signalé, dès la fusion suivante, une clé `app:signedWebhook`
+posée par le décorateur de webhook et **lue par personne**. Deux agents l'avaient
+proposée « pour pouvoir énumérer ces routes ».
+
+Elle est retirée. Le `x-capability: webhook:<fournisseur>` fait déjà ce travail : il
+est dans l'OpenAPI, il nomme le fournisseur, et le test de couverture l'énumère
+désormais **dans une liste fermée** — une route de webhook de plus fait rougir le
+test, donc oblige quelqu'un à venir dire pourquoi elle en est une. Deux marqueurs
+pour un seul fait, c'est un fait qui finit par diverger.
+
+### 2. Un test qui dépendait du VOLUME de données étrangères
+
+Le test « la combinaison de deux filtres » de la file de modération lisait **une
+seule page de 50**. La file est globale : le jour où la suite a dépassé cinquante
+dossiers `GUIDE` non assignés — parce que d'autres modules en créent — il a rougi
+sans qu'une ligne de code métier ait changé.
+
+Et les **deux** directions étaient fausses, en sens contraire : le dossier attendu
+pouvait manquer parce qu'il était en page 2 (échec à tort), et les dossiers
+interdits pouvaient être absents pour la même raison — **succès à tort**, ce qui est
+de loin le plus dangereux des deux.
+
+Corrigé en parcourant tout l'ensemble filtré au curseur, et surtout en ajoutant
+l'assertion qui ne dépend d'aucun volume : **aucune ligne rendue ne viole l'un des
+deux filtres**.
+
+### 3. Le même test était CREUX dans une dimension depuis le début
+
+En le réécrivant, la mutation a montré que retirer le filtre « non assigné » le
+laissait **vert**. La cause est instructive : la requête portait un troisième
+filtre, `status: 'OPEN'`, et `assignCase` passe le dossier en `IN_REVIEW`. Le
+dossier « bon type mais assigné » était donc écarté par le filtre de **statut**,
+jamais par celui d'assignation.
+
+Le test affirmait éprouver « non assigné × type » et n'éprouvait que
+« statut × type ». Trois filtres pour deux règles, et c'est le troisième qui
+répondait à la place du premier. Corrigé en n'employant **que** les deux filtres que
+le test nomme ; les deux mutations le tuent maintenant, chacune en nommant le sien.
+
+La leçon vaut au-delà de ce test : **un filtre de plus dans une requête de test est
+un filtre qui peut répondre à la place de celui qu'on croit éprouver.**
+
+### Et un aveu de méthode
+
+J'ai commité le reliquat du lot 1 avec un test unitaire **rouge** : ma commande
+enchaînait le commit sur un `grep` réussi, pas sur le code de sortie de la suite.
+Le `grep` trouvait bien des lignes — dont celle de l'échec. Corrigé en séparant les
+étapes et en lisant `$?`. C'est exactement le genre de raccourci qui fait dire
+« tout est vert » sans que rien ne l'ait vérifié.

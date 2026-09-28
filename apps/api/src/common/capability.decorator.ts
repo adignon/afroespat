@@ -61,18 +61,22 @@ export function PublicRead() {
  * accepte des POST. Le préfixe `webhook:` ne peut pas être confondu avec une
  * capacité de `@app/shared`, exactement comme `staff:`.
  *
- * La métadonnée `WEBHOOK_KEY` n'est pas décorative : elle dit, dans le code, que
- * cette route est ouverte EXPRÈS, et permet de les énumérer — on doit pouvoir les
- * compter sans lire les contrôleurs.
+ * IL N'Y A PAS DE MÉTADONNÉE PROPRE AUX WEBHOOKS, et c'est délibéré.
  *
- * Aucune route ne doit le porter sans vérifier la signature dès sa première
- * ligne : sans cela, la route serait une écriture ouverte à tout l'Internet.
+ * Une version de ce décorateur posait aussi une clé `app:signedWebhook`, « pour
+ * pouvoir les énumérer ». Personne ne la lisait : le test
+ * `metadata-consumed.test.ts` l'a signalée à la fusion suivante, et il avait
+ * raison. Le `x-capability` fait déjà ce travail — il est dans l'OpenAPI, il nomme
+ * le fournisseur, et `capability-coverage.int.test.ts` l'énumère. Deux marqueurs
+ * pour un seul fait, c'est un fait qui finit par diverger.
+ *
+ * Aucune route ne doit porter ce décorateur sans vérifier la signature dès sa
+ * première ligne : sans cela, elle serait une écriture ouverte à tout l'Internet.
+ * La liste FERMÉE du test de couverture est ce qui l'impose — une route de webhook
+ * de plus fait rougir le test, donc oblige à venir dire pourquoi elle en est une.
  */
-export const WEBHOOK_KEY = 'app:signedWebhook';
-
 export function SignedWebhook(provider: string) {
   return applyDecorators(
-    SetMetadata(WEBHOOK_KEY, provider),
     // Le garde n'a pas de branche propre aux webhooks : il n'en a pas besoin, et
     // lui en ajouter une serait un chemin d'autorisation de plus à auditer.
     SetMetadata(PUBLIC_READ_KEY, true),

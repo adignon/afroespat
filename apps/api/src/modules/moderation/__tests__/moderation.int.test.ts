@@ -1186,13 +1186,62 @@ describe('modération (13)', () => {
       });
       await moderation.assignCase(moderatorB, assignedGuideCase);
 
-      const page = await moderation.listCases(moderatorA, {
-        limit: 50,
-        assigned: 'nobody',
-        subjectType: 'GUIDE',
-        status: 'OPEN',
-      });
-      const ids = (page.items as { id: string }[]).map((c) => c.id);
+      /**
+       * ON PARCOURT TOUT L'ENSEMBLE FILTRÉ, page par page, et non la première page.
+       *
+       * La file de modération est GLOBALE : tous les fichiers de la suite y
+       * déposent des dossiers. Une seule page de 50 ne suffit donc pas, et ce test
+       * a effectivement rougi le jour où la suite a dépassé cinquante dossiers
+       * `GUIDE` non assignés — sans qu'une ligne de code métier ait changé.
+       *
+       * Le pire est que les DEUX directions étaient fausses, en sens contraire :
+       * le dossier attendu pouvait manquer parce qu'il était en page 2 (échec à
+       * tort), et les deux dossiers interdits pouvaient être absents pour la même
+       * raison (succès à tort — l'assertion la plus dangereuse des deux, puisqu'un
+       * filtre cassé aurait pu passer inaperçu).
+       *
+       * Le tri est `priority asc, slaDueAt asc` : les dossiers les plus anciens
+       * d'abord. Les trois que ce test vient de créer sont donc les DERNIERS de la
+       * file, c'est-à-dire exactement ceux qu'une lecture d'une seule page ne voit
+       * jamais.
+       */
+      const ids: string[] = [];
+      let cursor: string | undefined;
+      // Borne de sûreté : si la pagination bouclait, mieux vaut échouer sur le
+      // nombre de pages que tourner indéfiniment.
+      for (let page = 0; page < 40; page += 1) {
+        /**
+         * EXACTEMENT LES DEUX FILTRES QUE CE TEST NOMME, et surtout PAS `status`.
+         *
+         * La version précédente ajoutait `status: 'OPEN'`, et c'est ce qui la rendait
+         * creuse : `assignCase` passe le dossier en `IN_REVIEW`, donc le dossier
+         * « bon type mais assigné » était écarté par le filtre de STATUT, jamais par
+         * celui d'assignation. Le test affirmait éprouver la combinaison
+         * « non assigné × type » et n'éprouvait en réalité que « statut × type ».
+         *
+         * Découvert par mutation : le filtre d'assignation retiré, le test restait
+         * VERT. Trois filtres pour deux règles, et c'est le troisième qui répondait
+         * à la place du premier.
+         */
+        const result = await moderation.listCases(moderatorA, {
+          limit: 50,
+          assigned: 'nobody',
+          subjectType: 'GUIDE',
+          ...(cursor === undefined ? {} : { cursor }),
+        });
+        const items = result.items as { id: string; subjectType: string; assignedStaffId: string | null }[];
+        // Le cœur de la règle, et il ne dépend d'aucun volume : AUCUNE ligne rendue
+        // ne doit violer l'un des deux filtres. Si l'un est écrasé par l'autre, une
+        // ligne fautive apparaît ici, quelle que soit la taille de la file.
+        for (const item of items) {
+          expect(item.subjectType).toBe('GUIDE');
+          expect(item.assignedStaffId).toBeNull();
+        }
+        ids.push(...items.map((c) => c.id));
+        if (result.nextCursor === null || result.nextCursor === undefined) break;
+        cursor = result.nextCursor;
+      }
+
       expect(ids).toContain(guideCase);
       // Le bon type mais assigné : exclu par le premier filtre.
       expect(ids).not.toContain(assignedGuideCase);
