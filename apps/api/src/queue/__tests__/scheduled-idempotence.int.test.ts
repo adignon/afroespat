@@ -119,6 +119,18 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'mentorship.expire_requests',
       'connection.expire_requests',
       'mentor.rating_recompute',
+      // Ajoutées quand les modules qui les portent sont arrivés. La liste est
+      // écrite EN DUR, et c'est voulu : la comparer au registre lui-même ne
+      // prouverait rien. Une tâche qui disparaît doit faire rougir ce test, et
+      // une tâche qui apparaît doit obliger à venir l'inscrire ici — donc à
+      // vérifier son nom contre §9.3, puisque c'est sous ce nom qu'on la
+      // cherchera dans le journal et dans le runbook.
+      'city.member_count_recompute',
+      'notifications.quiet_hours_flush',
+      'notifications.weekly_digest',
+      'notifications.purge',
+      'push.cleanup',
+      'staff.session_cleanup',
     ];
 
     expect(registry.all().map((t) => t.name).sort()).toEqual([...attendues].sort());

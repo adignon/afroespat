@@ -847,6 +847,62 @@ export class CitiesService {
     if (tip.authorUserId !== authorUserId) throw ApiError.notFound();
     return tip;
   }
+
+  // ══ Tâches planifiées ══════════════════════════════════════════════════════
+
+  /**
+   * `city.member_count_recompute` — chaque nuit. 02 §2.2 : « Recalculé chaque
+   * nuit : membres actifs avec `city_id` = cette ville. Utilisé par la carte. »
+   *
+   * CETTE MÉTHODE N'EXISTAIT PAS, et `cities.member_count` valait donc zéro pour
+   * toutes les villes, depuis toujours. Personne ne l'écrivait — vérifié : les
+   * seules écritures de `memberCount` du dépôt portaient sur `communities`.
+   * Pourtant trois lectures en dépendent, et le commentaire de `map()` affirmait
+   * déjà un recalcul nocturne :
+   *
+   *   · le TRI de la carte (`orderBy: [{ memberCount: 'desc' }, { name: 'asc' }]`)
+   *     — les villes les plus peuplées d'abord. Avec un compteur uniformément nul,
+   *     le premier critère ne départageait rien et la carte sortait dans l'ordre
+   *     ALPHABÉTIQUE. C'est la conséquence la plus visible, et la plus silencieuse :
+   *     une liste triée par un critère mort reste une liste triée ;
+   *   · le compteur rendu par la carte et par la fiche de ville, donc « 0 membre »
+   *     partout ;
+   *   · le nombre que l'ÉQUIPE regarde pour activer une ville. §2.2 est explicite :
+   *     l'activation « passe active quand l'équipe le décide, en GÉNÉRAL à 20
+   *     membres » — ce n'est pas un seuil automatique, c'est un jugement humain
+   *     nourri par ce chiffre. Le chiffre étant faux, la décision l'était aussi.
+   *
+   * LA DÉFINITION est celle que toutes les autres lectures emploient déjà
+   * (`countsByCity`, `breakdownByCountry`) : membre `ACTIVE`, non supprimé,
+   * rattaché à la ville. Il fallait qu'elle coïncide — un compteur qui ne compte
+   * pas la même chose que la liste qu'il annonce est pire qu'un compteur absent.
+   *
+   * TOUTES les villes sont recalculées, y compris les INACTIVES : c'est justement
+   * leur compteur qui sert à décider de leur activation. Les villes FUSIONNÉES
+   * aussi, et elles tomberont naturellement à zéro puisque §2.2 redirige leurs
+   * membres vers la ville cible — si l'une d'elles garde un compte non nul, c'est
+   * que la redirection est incomplète, et le voir vaut mieux que le masquer.
+   *
+   * `WHERE member_count <> sub.total` : seules les lignes qui changent sont
+   * écrites. Sur un balayage nocturne de toutes les villes, cela évite de réveiller
+   * les déclencheurs et de gonfler les WAL pour des valeurs identiques.
+   */
+  async recomputeMemberCounts(): Promise<number> {
+    return this.prisma.$executeRaw`
+      UPDATE cities c
+      SET member_count = sub.total
+      FROM (
+        SELECT ci.id, COUNT(u.id) AS total
+        FROM cities ci
+        LEFT JOIN users u
+          ON u.city_id = ci.id
+         AND u.deleted_at IS NULL
+         AND u.status::text = 'ACTIVE'
+        GROUP BY ci.id
+      ) AS sub
+      WHERE c.id = sub.id AND c.member_count <> sub.total
+    `;
+  }
 }
 
 /**
@@ -864,4 +920,5 @@ export function isPaperworkSubject(category: string | null): boolean {
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
   return normalized.startsWith('demarche');
+
 }

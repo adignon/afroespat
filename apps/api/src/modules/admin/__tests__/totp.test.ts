@@ -108,7 +108,25 @@ describe('TOTP (RFC 6238)', () => {
   });
 });
 
-describe('mot de passe d’équipe', () => {
+/**
+ * UN DÉLAI EXPLICITE, et la raison est le cœur du sujet.
+ *
+ * `hashStaffPassword` emploie scrypt à N=2¹⁷ : la fonction est LENTE PAR DESSEIN,
+ * c'est exactement ce qu'on lui demande — un attaquant qui essaie des millions de
+ * mots de passe paie ce coût à chaque essai. Un hachage prend ici près de deux
+ * secondes, et plusieurs de ces tests en enchaînent deux ou trois.
+ *
+ * Avec le délai par défaut de cinq secondes, ils passaient sur une machine au
+ * repos et échouaient sur une machine chargée — c'est ainsi qu'ils sont arrivés
+ * verts et qu'ils ont rougi ensuite, sans qu'une ligne ait changé. Un test qui
+ * dépend de la charge apprend à ignorer le rouge, ce qui coûte plus cher que le
+ * test ne rapporte.
+ *
+ * Le délai est donc aligné sur le COÛT DES PARAMÈTRES, pas l'inverse : on
+ * n'abaisse pas N pour faire passer un test, on dit au test combien coûte la
+ * sécurité qu'on a choisie.
+ */
+describe('mot de passe d’équipe', { timeout: 30_000 }, () => {
   it('vérifie le mot de passe qu’il a haché, et refuse les autres', async () => {
     const hash = await hashStaffPassword('un mot de passe de plus de douze');
     expect(await verifyStaffPassword('un mot de passe de plus de douze', hash)).toBe(true);

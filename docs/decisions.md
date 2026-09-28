@@ -1013,3 +1013,84 @@ clé orpheline. Sa portée est honnête — il voit qu'une clé est LUE, pas qu'
 correctement appliquée. Contre cela, la défense reste le test de comportement et
 sa mutation. Les deux sont nécessaires : celui-ci attrape l'oubli complet, l'autre
 l'erreur d'application.
+
+---
+
+## `cities.member_count` : un tri par un critère mort
+
+02 §2.2, mot pour mot : « Recalculé chaque nuit : membres actifs avec `city_id` =
+cette ville. Utilisé par la carte. » **Personne ne l'écrivait.** Vérifié plutôt
+que supposé : les seules écritures de `memberCount` du dépôt portaient sur
+`communities`. Le compteur valait donc zéro pour toutes les villes, depuis
+toujours — et le commentaire de `map()` affirmait déjà un recalcul nocturne.
+
+Trois lectures en dépendaient, et la plus insidieuse n'est pas celle qu'on
+attend :
+
+1. **le TRI de la carte.** `orderBy: [{ memberCount: 'desc' }, { name: 'asc' }]`
+   — les villes les plus peuplées d'abord. Avec un compteur uniformément nul, le
+   premier critère ne départage rien et la carte sortait dans l'ordre
+   **alphabétique**. Aucune erreur, aucun test rouge : une liste triée par un
+   critère mort reste une liste triée. C'est la classe de défaut la plus difficile
+   à voir, parce que le résultat *a l'air* correct.
+2. le compteur rendu par la carte et par la fiche de ville — « 0 membre » partout.
+3. le nombre que l'**équipe** regarde pour activer une ville.
+
+### Une correction à ma propre note
+
+J'avais écrit plus haut que « l'activation d'une ville autour de 20 membres »
+dépendait de ce compteur, comme s'il s'agissait d'un seuil automatique. §2.2 dit
+autre chose : une ville « passe active quand l'**équipe** le décide, en général à
+20 membres ». C'est un jugement humain nourri par ce chiffre, pas une bascule.
+Le chiffre étant faux, la décision l'était aussi — mais rien ne s'ouvrait ni ne se
+fermait tout seul.
+
+### La définition doit coïncider, pas seulement être juste
+
+Le recalcul emploie exactement la définition que `countsByCity` et
+`breakdownByCountry` emploient déjà : membre `ACTIVE`, non supprimé, rattaché à la
+ville. Un test le verrouille explicitement, et c'est le plus important du fichier :
+`map()` sans filtre rend `member_count`, avec un filtre de pays il **recalcule en
+direct**. Si les deux chemins divergeaient, le même écran afficherait deux nombres
+selon qu'un filtre est actif — et on attribuerait l'incohérence à un cache.
+
+Trois mutations, chacune tue son test : le filtre `ACTIVE` retiré, le filtre
+`deleted_at` retiré, et l'écriture rendue inconditionnelle (qui ne tue que
+l'idempotence — la bonne portée).
+
+## Six tâches enregistrées, quatre encore orphelines
+
+Les modules qui manquaient sont arrivés : `city.member_count_recompute` (02),
+`notifications.quiet_hours_flush`, `notifications.weekly_digest`,
+`notifications.purge`, `push.cleanup` (12) et `staff.session_cleanup` (15). 27 → 33.
+
+**Les cadences viennent de la documentation des méthodes, pas de leur nom.** Une
+surprend, et c'est la bonne : `notifications.weekly_digest` tourne **chaque
+heure**. §2.6 dit « lundi 8 h par fuseau » et §6 « exécutions horaires avec filtre
+de fuseau » ; seule la seconde lecture est réalisable, et c'est celle que la
+méthode implémente — elle choisit ses destinataires selon *leur* fuseau. La poser
+le lundi à 8 h heure de Paris n'aurait servi qu'un seul fuseau, et le nom de la
+tâche aurait suffi à le faire croire correct.
+
+Restent quatre tâches sans méthode de service (`user.phase_progression`,
+`account.deletion_execute`, `bookmark.state_refresh`, `retention.purge`,
+`billing.expiry_reminders`), plus trois du module 03 qui est livré mais n'expose
+pas de point d'entrée pour elles. Elles ne sont pas enregistrées : un gestionnaire
+vide ferait affirmer au journal de démarrage qu'elles tournent.
+
+À noter : `notifications.purge` couvre la conservation de 90 jours du module 12,
+**pas** la rétention transverse du §9.3, qui porte sur d'autres tables.
+
+## Un test qui passait selon la charge de la machine
+
+Deux tests de hachage de mot de passe d'équipe échouaient à 5 002 ms — un
+dépassement de délai, pas une assertion fausse. `hashStaffPassword` emploie scrypt
+à N=2¹⁷ : la fonction est **lente par dessein**, c'est exactement ce qu'on lui
+demande. Un hachage coûte près de deux secondes, et ces tests en enchaînent deux
+ou trois.
+
+Ils sont donc arrivés verts d'un worktree peu chargé et ont rougi ici sans qu'une
+ligne ait changé. Le délai est aligné sur le **coût des paramètres**, pas
+l'inverse : on n'abaisse pas N pour faire passer un test, on dit au test combien
+coûte la sécurité choisie. Un test qui dépend de la charge apprend à ignorer le
+rouge, ce qui coûte plus cher que le test ne rapporte.

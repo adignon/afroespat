@@ -1,4 +1,5 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { CitiesService } from '../modules/cities/cities.service';
 import { CommunitiesService } from '../modules/communities/communities.service';
 import { ConnectionsService } from '../modules/connections/connections.service';
 import { EventsService } from '../modules/events/events.service';
@@ -9,7 +10,9 @@ import { HousingService } from '../modules/housing/housing.service';
 import { JobsService } from '../modules/jobs/jobs.service';
 import { MentorshipService } from '../modules/mentorship/mentorship.service';
 import { ModerationService } from '../modules/moderation/moderation.service';
+import { NotificationsService } from '../modules/notifications/notifications.service';
 import { ProsService } from '../modules/pros/pros.service';
+import { StaffAuthService } from '../modules/admin/staff-auth.service';
 import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, weeklyAt } from './scheduled-tasks';
 
 /**
@@ -60,6 +63,9 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly mentorship: MentorshipService,
     private readonly connections: ConnectionsService,
     private readonly feed: FeedService,
+    private readonly cities: CitiesService,
+    private readonly notifications: NotificationsService,
+    private readonly staffAuth: StaffAuthService,
   ) {}
 
   onModuleInit(): void {
@@ -303,27 +309,88 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: () => this.mentorship.recomputeAllRatings(),
     });
 
+    // ── Référentiels (02 §2.2) ───────────────────────────────────────────────
+    //
+    // §2.2 mot pour mot : « Recalculé chaque nuit : membres actifs avec `city_id`
+    // = cette ville. Utilisé par la carte. » Personne ne l'écrivait, et le
+    // compteur valait donc zéro pour toutes les villes depuis toujours — ce qui
+    // faisait sortir la carte dans l'ordre ALPHABÉTIQUE, son premier critère de
+    // tri ne départageant rien. Voir le commentaire de la méthode.
+    this.registry.register({
+      name: 'city.member_count_recompute',
+      module: '02',
+      schedule: dailyAt(3, 5),
+      handle: async () => ({ villes: await this.cities.recomputeMemberCounts() }),
+    });
+
+    // ── Notifications (12 §6) ────────────────────────────────────────────────
+    //
+    // Les quatre cadences viennent de la documentation des méthodes elles-mêmes,
+    // pas de mon interprétation. Une seule surprend, et c'est la bonne :
+    // `weekly_digest` tourne CHAQUE HEURE, non le lundi à 8 h. §2.6 dit « lundi
+    // 8 h par fuseau » et §6 « exécutions horaires avec filtre de fuseau » ; seule
+    // la seconde lecture est réalisable, et c'est celle qu'implémente la méthode,
+    // qui choisit ses destinataires selon LEUR fuseau. La poser le lundi à 8 h
+    // heure de Paris ne servirait donc qu'un seul fuseau, et le nom de la tâche
+    // aurait suffi à le faire croire correct.
+    this.registry.register({
+      name: 'notifications.quiet_hours_flush',
+      module: '12',
+      schedule: hourlyAt(10),
+      handle: async ({ now }) => this.notifications.flushQuietHours(now),
+    });
+    this.registry.register({
+      name: 'notifications.weekly_digest',
+      module: '12',
+      schedule: hourlyAt(25),
+      handle: async ({ now }) => this.notifications.weeklyDigest(now),
+    });
+    this.registry.register({
+      name: 'notifications.purge',
+      module: '12',
+      schedule: dailyAt(3, 15),
+      handle: async ({ now }) => this.notifications.purge(now),
+    });
+    this.registry.register({
+      name: 'push.cleanup',
+      module: '12',
+      schedule: dailyAt(3, 25),
+      handle: async () => ({ abonnements: await this.notifications.cleanupPushSubscriptions() }),
+    });
+
+    // ── Équipe (15 §10) ──────────────────────────────────────────────────────
+    //
+    // Supprime, là où les sessions de MEMBRES sont conservées trente jours (00
+    // §8.4) : une session d'équipe expirée n'a aucune valeur d'enquête, la trace
+    // de la connexion étant dans `audit_logs` pour cinq ans, et plus complète.
+    this.registry.register({
+      name: 'staff.session_cleanup',
+      module: '15',
+      schedule: hourlyAt(40),
+      handle: async ({ now }) => ({ sessions: await this.staffAuth.cleanupSessions(now) }),
+    });
+
     /**
      * ── CE QUI MANQUE ENCORE ─────────────────────────────────────────────────
      *
-     * Neuf tâches de §9.3 n'ont AUCUNE méthode de service à appeler. Elles ne
+     * Quatre tâches de §9.3 n'ont AUCUNE méthode de service à appeler. Elles ne
      * sont pas enregistrées — un gestionnaire vide serait pire qu'une absence,
      * puisque le journal de démarrage affirmerait qu'elles tournent :
      *
-     *   · `journey.reminders` (horaire) et `journey.inactivity_check` (quotidienne)
-     *     — module 03, qui n'existe pas encore ;
      *   · `user.phase_progression` (quotidienne) et `account.deletion_execute`
      *     (horaire) — module 01 ; `UsersService` n'expose ni l'une ni l'autre,
      *     alors que plusieurs modules citent déjà `account.deletion_execute` comme
      *     le déclencheur de leur propre nettoyage ;
-     *   · `city.member_count_recompute` (quotidienne) — module 02 ; `CitiesService`
-     *     LIT `cities.member_count` (carte, profil, activation autour de 20
-     *     membres) et rien ne l'écrit. Le pendant réseaux existe pourtant :
-     *     `communities.recomputeMemberCounts` ;
      *   · `bookmark.state_refresh` (horaire) et `retention.purge` (quotidienne) —
-     *     transverse ;
-     *   · `notifications.weekly_digest` (lundi 8 h) — module 12 ;
+     *     transverse. Noter que `notifications.purge` couvre la conservation de
+     *     90 jours du module 12, mais PAS la rétention transverse du §9.3, qui
+     *     porte sur d'autres tables.
      *   · `billing.expiry_reminders` (quotidienne) — module 14.
+     *
+     * Trois autres du module 03 attendent une méthode publique : le module est
+     * livré, mais `journey.reminders`, `journey.inactivity_check` et
+     * `journey.progress_recompute` n'ont pas de point d'entrée — seule la RÉPONSE
+     * à la relance (`POST /inactivity-response`) existe, pas son déclencheur.
      *
      * Le jour où la méthode existe, une entrée de ce fichier suffit. Rien d'autre
      * ne change, ni dans le registre, ni dans le planificateur.
