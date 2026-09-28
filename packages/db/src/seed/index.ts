@@ -44,16 +44,40 @@ async function main(): Promise<void> {
   }
   log(`  pays : ${COUNTRIES.length}`);
 
-  const france = await prisma.country.findUniqueOrThrow({ where: { iso2: 'FR' } });
+  /**
+   * Les pays des villes, lus UNE fois.
+   *
+   * La liste ne portait que la France ; elle porte désormais aussi le Bénin et le
+   * Togo (décision du porteur, voir `referentials.ts`). Le pays est donc résolu par
+   * son code plutôt que supposé — et `countryId` entre dans l'`update`, sans quoi
+   * une ville dont on corrigerait le pays resterait rattachée à l'ancien.
+   */
+  const countryIds = new Map<string, string>();
+  for (const iso2 of ['FR', 'BJ', 'TG']) {
+    const row = await prisma.country.findUniqueOrThrow({ where: { iso2 } });
+    countryIds.set(iso2, row.id);
+  }
+  const countryIdOf = (iso2: string): string => {
+    const id = countryIds.get(iso2);
+    if (id === undefined) throw new Error(`Pays « ${iso2} » absent : la liste des pays est incomplète.`);
+    return id;
+  };
 
   // ── Villes ──────────────────────────────────────────────────────────────
   for (const c of CITIES) {
+    const countryId = countryIdOf(c.countryIso2 ?? 'FR');
     await prisma.city.upsert({
       where: { slug: c.slug },
-      update: { name: c.name, region: c.region, latitude: c.latitude, longitude: c.longitude },
+      update: {
+        name: c.name,
+        region: c.region,
+        latitude: c.latitude,
+        longitude: c.longitude,
+        countryId,
+      },
       create: {
         id: newId(),
-        countryId: france.id,
+        countryId,
         name: c.name,
         slug: c.slug,
         region: c.region,

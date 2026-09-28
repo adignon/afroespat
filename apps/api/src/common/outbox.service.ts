@@ -152,6 +152,26 @@ export type DomainEventType =
   | 'user.reactivated'
   | 'user.deletion_requested'
   | 'user.deleted'
+  /**
+   * ── 02-referentiels.md §2.2 et §4.2 ──────────────────────────────────────
+   *
+   * L'activation d'une ville ou d'un pays. §2.2 : « À l'activation : création du
+   * `community` CITY. Les membres déjà rattachés y sont inscrits PAR ÉVÉNEMENT. »
+   *
+   * Le réseau, lui, est créé par le service dans la foulée — il en a besoin
+   * immédiatement pour le rendre dans sa réponse. Ce qui passe par l'événement,
+   * c'est l'INSCRIPTION des membres déjà rattachés, qui peut en concerner des
+   * centaines et n'a aucune raison de tenir la transaction d'activation.
+   *
+   * `city.merged` suit la même logique : les membres sont déplacés dans la
+   * transaction — c'est une écriture bornée sur `users` — et le recalcul de leurs
+   * réseaux, qui ne l'est pas, se fait après.
+   *
+   * Consommateur : `communities`, qui recalcule les adhésions automatiques.
+   */
+  | 'city.activated'
+  | 'country.activated'
+  | 'city.merged'
   // 07-reseaux.md §6. Consommateurs nommés : search et notifications pour la vie
   // du réseau, notifications et cities pour les adhésions.
   //

@@ -713,11 +713,27 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
       .expect(422);
     expect((origin.body as ErrorBody).error.code).toBe('PHONE_NOT_DESTINATION');
 
+    /**
+     * LE PAYS FERMÉ EST CHOISI DANS LA BASE, et non nommé en dur.
+     *
+     * Ce test employait « TG » comme exemple, avec le commentaire « le Togo est
+     * chargé mais INACTIF ». Le jour où le porteur a demandé d'intégrer le Togo, il
+     * a rougi — en rendant `PHONE_NOT_DESTINATION` au lieu de
+     * `COUNTRY_NOT_SUPPORTED`, c'est-à-dire le bon refus pour un pays d'origine
+     * ouvert. La règle éprouvée n'avait pas bougé ; c'est l'exemple qui avait
+     * changé de camp.
+     *
+     * Un test qui nomme une donnée pour illustrer une règle se casse à la première
+     * décision produit. Celui-ci demande à la base quel pays est fermé.
+     */
+    const closedCountry = await prisma.country.findFirstOrThrow({
+      where: { isActive: false },
+      select: { iso2: true },
+    });
     const closed = await request(httpServer(app))
       .post('/v1/me/phones')
       .set('authorization', `Bearer ${fresh}`)
-      // Le Togo est chargé mais INACTIF (02 §2.1).
-      .send({ phone: nextPhone(), countryIso2: 'TG', captchaToken: 'test' })
+      .send({ phone: nextPhone(), countryIso2: closedCountry.iso2, captchaToken: 'test' })
       .expect(400);
     expect((closed.body as ErrorBody).error.code).toBe('COUNTRY_NOT_SUPPORTED');
   });

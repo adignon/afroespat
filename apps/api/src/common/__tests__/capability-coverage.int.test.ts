@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { AppModule } from '../../app.module';
+import { PrismaService } from '../prisma.service';
 
 type OpenApiView = { paths: Record<string, Record<string, { 'x-capability'?: string }>> };
 
@@ -167,11 +168,33 @@ describe('conventions d’API (§5.2)', () => {
 
   // RÈGLE (02 §2.1) : un pays inactif n'apparaît nulle part côté membres.
   it('seuls les pays actifs sont exposés', async () => {
+    /**
+     * CE TEST ÉPINGLAIT UNE LISTE, il éprouve maintenant la RÈGLE.
+     *
+     * Il affirmait « le Togo est chargé mais inactif : il ne doit pas sortir ».
+     * Le jour où le porteur a demandé d'intégrer le Togo, il a rougi — alors que la
+     * règle qu'il sert, « seuls les pays actifs sont exposés », n'avait pas bougé
+     * d'un pouce. Un test qui fige une DONNÉE au lieu d'éprouver une RÈGLE se casse
+     * à chaque décision produit, et on finit par le corriger sans le lire.
+     *
+     * La forme correcte se compare à la base : tout pays exposé est actif, et tout
+     * pays actif est exposé. Elle survit à n'importe quelle décision d'ouverture.
+     */
     const res = await request(httpServer(app)).get('/v1/places/countries').expect(200);
-    const iso = (res.body as CountryList).items.map((c) => c.iso2);
-    expect(iso).toContain('FR');
-    expect(iso).toContain('BJ');
-    // Le Togo est chargé mais inactif : il ne doit pas sortir.
-    expect(iso).not.toContain('TG');
+    const exposed = (res.body as CountryList).items.map((c) => c.iso2).sort();
+
+    const active = (
+      await app.get(PrismaService).country.findMany({
+        where: { isActive: true },
+        select: { iso2: true },
+      })
+    )
+      .map((c) => c.iso2)
+      .sort();
+
+    expect(exposed).toEqual(active);
+    // Et la liste n'est pas vide : sans cela, l'égalité ci-dessus passerait pour
+    // la pire des raisons — aucun pays exposé et aucun actif.
+    expect(exposed.length).toBeGreaterThan(0);
   });
 });

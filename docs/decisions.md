@@ -1771,3 +1771,110 @@ l'effacement sont couverts séparément, donc aucun ne se cache derrière un aut
 le trou. Il affirme maintenant qu'elle existe et que le bannissement l'alimente. Un
 garde-fou qui signale un manque doit signaler aussi qu'il est comblé — sinon il
 devient un mensonge au premier correctif.
+
+---
+
+## Villes du Bénin et du Togo, et le CRUD des référentiels (02 §4.2)
+
+Deux demandes du porteur, tranchées le 28 septembre 2026.
+
+### `kind` portait DEUX sens, et c'est ce qui a mordu
+
+Ma première réponse à « intègre les villes du Togo et du Bénin » a été de passer ces
+deux pays en `BOTH`, puisque 02 §2.2 écrit qu'« une ville appartient à un pays
+`DESTINATION` ou `BOTH` ». **Six tests sont tombés, dans quatre fichiers**, et la
+raison mérite d'être gardée :
+
+`countries.kind` décide de deux choses à la fois —
+
+* d'où viennent les membres, et où l'on modélise des villes ;
+* quel numéro de téléphone prouve une **présence dans le pays de destination**, via
+  `phone_numbers.is_destination`. C'est la condition du niveau **L2** (01 §2.5).
+
+Passer le Bénin en `BOTH` faisait donc passer en L2 tout membre muni d'un numéro
+béninois : logement, parrainage et annuaire pro ouverts à quelqu'un qui n'est pas
+encore arrivé. La décision ne portait que sur les villes.
+
+**On a donc relâché la règle des VILLES** — un pays `ORIGIN` peut avoir des villes —
+**et laissé intacte celle qui décide d'un NIVEAU.** Deux règles distinctes valent
+mieux qu'une colonne qui en porte deux. Ce qu'on perd : plus rien n'empêche de créer
+une ville sous un pays où le produit n'ira jamais. C'est un contrôle de saisie, pas
+une règle dure, et l'écran d'administration est le bon endroit pour le rendre.
+
+### 22 villes, et une liste qui ne prétend pas être un annuaire
+
+Douze chefs-lieux et grandes villes du Bénin (départements), dix du Togo (régions).
+Coordonnées du centre-ville saisies à la main, comme §2.2 le prescrit — pas de
+géocodage, aucune position individuelle n'est collectée. **La liste est celle des
+villes principales**, et en ajouter une n'exige plus de toucher le fichier de
+départ : c'est à cela que sert le CRUD livré avec elles. Une donnée de départ doit
+démarrer le produit, pas prétendre le compléter.
+
+### Le geste du jour du lancement a enfin un bouton
+
+`POST /v1/admin/ref/cities/:id/activate` — c'était **le blocage le plus concret du
+projet**. §2.2 dit qu'une ville « passe active quand l'équipe le décide » et qu'« à
+l'activation : création du `community` CITY, les membres déjà rattachés y sont
+inscrits par événement ». Aucune route ne le faisait, et le commentaire
+d'`ensureAutoCommunity` le disait déjà : l'événement `city.activated` « que personne
+n'émet encore ».
+
+Trois effets, dans cet ordre, et l'ordre compte : le drapeau et sa trace dans une
+transaction ; puis le réseau, parce qu'`ensureAutoCommunity` **lit**
+`cities.is_active` et refuserait avant ; puis l'événement, dont le consommateur
+inscrit les membres — ce qui peut concerner des centaines de personnes et n'a aucune
+raison de tenir une transaction d'administration.
+
+Éprouvé pour de vrai, sur l'API : sans session `401`, avec une session
+`CONTENT_ADMIN` le Togo s'ouvre, son réseau de pays est créé, la trace et
+l'événement sont écrits.
+
+### Vingt routes, et ce qui est délibérément absent
+
+CRUD des cinq référentiels, activation d'un pays et d'une ville, désactivation,
+fusion, import CSV. Trois choix à connaître :
+
+* **la fusion exige le SLUG tapé à la main.** Elle est irréversible (§2.2) ; un
+  booléen `confirm: true` aurait la force d'un bouton, c'est-à-dire aucune. Taper le
+  slug est la seule confirmation qu'on ne donne pas par réflexe.
+* **l'import VALIDE sans écrire par défaut** (`apply: false`), et refuse ligne par
+  ligne en disant pourquoi. Importer est le genre d'opération qu'on lance une fois
+  sur un fichier qu'on n'a pas relu.
+* **refermer une ville GARDE son réseau.** Une ville qu'on referme le temps de
+  corriger ses données doit pouvoir rouvrir sans que ses membres aient perdu leurs
+  sujets et leurs annonces.
+
+`languages` n'a **pas** de colonne `is_active`, alors que §2.3 l'exige pour les trois
+listes. La liste le DIT (`meta.deactivatable: false`) au lieu de faire semblant de
+filtrer. Non migré.
+
+### Trois tests qui épinglaient une DONNÉE au lieu d'une RÈGLE
+
+C'est la leçon de cette séance, et elle s'est répétée trois fois :
+
+1. « seuls les pays actifs sont exposés » affirmait « le Togo est chargé mais
+   inactif : il ne doit pas sortir ». Il compare maintenant la liste exposée à celle
+   des pays actifs **en base** — et vérifie qu'elle n'est pas vide, sans quoi
+   l'égalité passerait pour la pire des raisons.
+2. « refuse un indicatif de pays fermé » employait `TG` comme exemple de pays fermé.
+   Il demande maintenant à la base lequel l'est.
+3. **Mon propre test** a pollué la base : il prenait un pays inactif au hasard, le
+   passait en `BOTH`, puis le restaurait en `'ORIGIN'` — une valeur **devinée**. Il
+   est tombé sur le Togo et a écrasé le réglage du seed ; le test suivant échouait
+   en accusant l'import. Une donnée de référence partagée se restaure à ce qu'elle
+   **était**, jamais à ce qu'on croit qu'elle était.
+
+Un test qui nomme une donnée pour illustrer une règle se casse à la première
+décision produit — et l'on finit par le corriger sans le lire.
+
+### Trois mutations
+
+| Mutation | Résultat |
+|---|---|
+| l'activation ne crée plus le réseau | **2 tests tombent** |
+| l'activation n'émet plus l'événement | **1 tombe** |
+| l'inscription INSCRIT au lieu de RECALCULER | **1 tombe** — le rejeu |
+
+La troisième est la plus utile : un consommateur d'événement est rejoué, et une
+boucle d'inscriptions créerait un doublon au second passage. `syncAutoMemberships`
+recalcule, donc il ne fait rien la seconde fois.

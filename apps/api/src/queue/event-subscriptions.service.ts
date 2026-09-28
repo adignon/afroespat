@@ -302,6 +302,32 @@ export class EventSubscriptionsService implements OnModuleInit {
     // `registry.dispatch(job)` — au lieu d'appeler un gestionnaire à la main. Le
     // câblage reste ici, visible d'un coup d'œil, et c'est bien lui qui est testé.
     registerNotificationSubscriptions(this.registry, this.notifications, this.notificationEvents);
+    /**
+     * ── Référentiels (02 §2.2) ───────────────────────────────────────────────
+     *
+     * Activer une ville ou un pays, ou fusionner deux villes, change l'appartenance
+     * automatique de membres déjà inscrits. Le service fait l'écriture bornée dans
+     * sa transaction — le drapeau, le réseau, le déplacement des membres — et
+     * délègue ICI le recalcul, qui peut concerner des centaines de personnes et n'a
+     * aucune raison de tenir une transaction d'administration.
+     *
+     * Les trois événements appellent le MÊME gestionnaire : ils posent la même
+     * question, « quels membres doivent voir leurs adhésions recalculées ».
+     */
+    this.registry.on('city.activated', 'communities', async (job) => {
+      await this.communities.handleLocationActivated({ cityId: job.aggregateId });
+    });
+    this.registry.on('country.activated', 'communities', async (job) => {
+      await this.communities.handleLocationActivated({ countryId: job.aggregateId });
+    });
+    this.registry.on('city.merged', 'communities', async (job) => {
+      // Les membres ont été déplacés vers la cible : c'est SA population qu'il faut
+      // recalculer, pas celle de la ville absorbée, qui n'en a plus.
+      const target = readString(job.payload, 'targetCityId');
+      if (target === null) return;
+      await this.communities.handleLocationActivated({ cityId: target });
+    });
+
     registerSearchSubscriptions(this.registry, this.search);
 
     this.logger.log(`${this.registry.describe().length} type(s) d’événement écouté(s)`);

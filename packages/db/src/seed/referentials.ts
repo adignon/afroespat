@@ -25,8 +25,31 @@ export interface CountrySeed {
 
 export const COUNTRIES: CountrySeed[] = [
   { iso2: 'FR', nameFr: 'France', dialCode: '+33', kind: 'DESTINATION', isActive: true, sortOrder: 0 },
+  /**
+   * BÉNIN ET TOGO RESTENT `ORIGIN`, ET LEURS VILLES SONT POURTANT MODÉLISÉES.
+   *
+   * C'est la décision du porteur du projet — « intègre les villes du Togo et du
+   * Bénin » — et j'ai d'abord cru qu'il suffisait de les passer en `BOTH`, puisque
+   * 02 §2.2 écrit qu'« une ville appartient à un pays `DESTINATION` ou `BOTH` ».
+   * Les tests ont montré que c'était faux, et la raison mérite d'être écrite.
+   *
+   * `kind` porte DEUX sens à la fois :
+   *   · d'où viennent les membres, et où l'on modélise des villes ;
+   *   · quel numéro de téléphone prouve une présence dans le pays de destination —
+   *     c'est la condition du niveau L2 (01 §2.5), dérivée de `kind` par
+   *     `phone_numbers.is_destination`.
+   *
+   * Passer le Bénin en `BOTH` faisait donc passer en L2 tout membre muni d'un
+   * numéro béninois : logement, parrainage et annuaire pro ouverts à quelqu'un qui
+   * n'est pas encore arrivé. Six tests l'ont attrapé, dans quatre fichiers.
+   *
+   * La décision ne portait que sur les villes. On relâche donc la règle qui
+   * l'empêchait — un pays `ORIGIN` peut avoir des villes — et on ne touche pas au
+   * sens qui décide d'un niveau de vérification. Deux règles distinctes valent
+   * mieux qu'une colonne qui en porte deux.
+   */
   { iso2: 'BJ', nameFr: 'Bénin', dialCode: '+229', kind: 'ORIGIN', isActive: true, sortOrder: 1 },
-  { iso2: 'TG', nameFr: 'Togo', dialCode: '+228', kind: 'ORIGIN', isActive: false, sortOrder: 2 },
+  { iso2: 'TG', nameFr: 'Togo', dialCode: '+228', kind: 'ORIGIN', isActive: true, sortOrder: 2 },
   { iso2: 'CI', nameFr: "Côte d'Ivoire", dialCode: '+225', kind: 'ORIGIN', isActive: false, sortOrder: 3 },
   { iso2: 'SN', nameFr: 'Sénégal', dialCode: '+221', kind: 'ORIGIN', isActive: false, sortOrder: 4 },
   { iso2: 'CM', nameFr: 'Cameroun', dialCode: '+237', kind: 'ORIGIN', isActive: false, sortOrder: 5 },
@@ -49,6 +72,11 @@ export interface CitySeed {
   region: string;
   latitude: number;
   longitude: number;
+  /**
+   * Le pays de la ville. Absent = France, qui reste le cas de loin le plus
+   * fréquent et évite de répéter `countryIso2: 'FR'` quarante-trois fois.
+   */
+  countryIso2?: 'FR' | 'BJ' | 'TG';
 }
 
 /**
@@ -105,6 +133,59 @@ export const CITIES: CitySeed[] = [
   { name: 'Cergy', slug: 'cergy', region: 'Île-de-France', latitude: 49.0355, longitude: 2.0602 },
   { name: 'Évry', slug: 'evry', region: 'Île-de-France', latitude: 48.6238, longitude: 2.4295 },
   { name: 'Versailles', slug: 'versailles', region: 'Île-de-France', latitude: 48.8014, longitude: 2.1301 },
+
+  /**
+   * ── Bénin et Togo ────────────────────────────────────────────────────────
+   *
+   * Décision du porteur du projet : les villes des deux pays d'origine sont
+   * modélisées, contrairement à ce que 02 §2.2 prévoyait pour la V1. Les deux
+   * pays passent en `BOTH`, ce qui satisfait la règle « une ville appartient à un
+   * pays DESTINATION ou BOTH » au lieu de la contourner.
+   *
+   * CE QUE CELA SERT : un membre en phase « avant départ » vit chez lui. Sans
+   * ville d'origine il ne peut pas dire où, sa carte est vide, et le réseau de sa
+   * ville n'existe pas tant qu'il n'a pas émigré. C'est la moitié du parcours que
+   * le produit accompagne.
+   *
+   * LES COORDONNÉES sont celles du centre-ville, saisies à la main comme §2.2 le
+   * prescrit — pas de géocodage, aucune position individuelle n'est collectée.
+   * Elles servent au tri par proximité et au compteur « à moins de 30 km ».
+   *
+   * CETTE LISTE EST CELLE DES VILLES PRINCIPALES, pas un annuaire exhaustif :
+   * douze chefs-lieux et grandes villes du Bénin, dix du Togo. En ajouter une
+   * n'exige plus de toucher ce fichier — c'est précisément à cela que sert le CRUD
+   * des référentiels (02 §4.2), livré avec elles. Une donnée de départ doit
+   * démarrer le produit, pas prétendre le complèter.
+   *
+   * Les régions sont les DÉPARTEMENTS au Bénin et les RÉGIONS au Togo : ce sont
+   * les découpages administratifs que les membres emploient pour se situer.
+   */
+
+  // Bénin — départements.
+  { countryIso2: 'BJ', name: 'Cotonou', slug: 'cotonou', region: 'Littoral', latitude: 6.3703, longitude: 2.3912 },
+  { countryIso2: 'BJ', name: 'Porto-Novo', slug: 'porto-novo', region: 'Ouémé', latitude: 6.4969, longitude: 2.6289 },
+  { countryIso2: 'BJ', name: 'Abomey-Calavi', slug: 'abomey-calavi', region: 'Atlantique', latitude: 6.4485, longitude: 2.3556 },
+  { countryIso2: 'BJ', name: 'Parakou', slug: 'parakou', region: 'Borgou', latitude: 9.3372, longitude: 2.6303 },
+  { countryIso2: 'BJ', name: 'Bohicon', slug: 'bohicon', region: 'Zou', latitude: 7.1782, longitude: 2.0667 },
+  { countryIso2: 'BJ', name: 'Djougou', slug: 'djougou', region: 'Donga', latitude: 9.7085, longitude: 1.666 },
+  { countryIso2: 'BJ', name: 'Natitingou', slug: 'natitingou', region: 'Atacora', latitude: 10.3042, longitude: 1.3796 },
+  { countryIso2: 'BJ', name: 'Ouidah', slug: 'ouidah', region: 'Atlantique', latitude: 6.3629, longitude: 2.0852 },
+  { countryIso2: 'BJ', name: 'Lokossa', slug: 'lokossa', region: 'Mono', latitude: 6.6389, longitude: 1.7167 },
+  { countryIso2: 'BJ', name: 'Kandi', slug: 'kandi', region: 'Alibori', latitude: 11.1342, longitude: 2.9386 },
+  { countryIso2: 'BJ', name: 'Abomey', slug: 'abomey', region: 'Zou', latitude: 7.1826, longitude: 1.9912 },
+  { countryIso2: 'BJ', name: 'Savalou', slug: 'savalou', region: 'Collines', latitude: 7.9281, longitude: 1.9756 },
+
+  // Togo — régions.
+  { countryIso2: 'TG', name: 'Lomé', slug: 'lome', region: 'Maritime', latitude: 6.1319, longitude: 1.2228 },
+  { countryIso2: 'TG', name: 'Sokodé', slug: 'sokode', region: 'Centrale', latitude: 8.9833, longitude: 1.1333 },
+  { countryIso2: 'TG', name: 'Kara', slug: 'kara', region: 'Kara', latitude: 9.5511, longitude: 1.1861 },
+  { countryIso2: 'TG', name: 'Kpalimé', slug: 'kpalime', region: 'Plateaux', latitude: 6.9, longitude: 0.6333 },
+  { countryIso2: 'TG', name: 'Atakpamé', slug: 'atakpame', region: 'Plateaux', latitude: 7.5333, longitude: 1.1167 },
+  { countryIso2: 'TG', name: 'Dapaong', slug: 'dapaong', region: 'Savanes', latitude: 10.862, longitude: 0.2075 },
+  { countryIso2: 'TG', name: 'Tsévié', slug: 'tsevie', region: 'Maritime', latitude: 6.4264, longitude: 1.2133 },
+  { countryIso2: 'TG', name: 'Aného', slug: 'aneho', region: 'Maritime', latitude: 6.2281, longitude: 1.5914 },
+  { countryIso2: 'TG', name: 'Bassar', slug: 'bassar', region: 'Kara', latitude: 9.25, longitude: 0.7833 },
+  { countryIso2: 'TG', name: 'Notsé', slug: 'notse', region: 'Plateaux', latitude: 6.95, longitude: 1.1667 },
 ];
 
 /** T3 B.3 — langues du profil, dont les langues nationales du Bénin et de la région. */

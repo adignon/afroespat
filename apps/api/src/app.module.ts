@@ -96,6 +96,8 @@ import { MODERATION_QUEUE, type ModerationQueuePort } from './modules/moderation
 import { TaskRegistrationsService } from './queue/task-registrations.service';
 import { EventSubscriptionsService } from './queue/event-subscriptions.service';
 import { AuthGuard } from './common/auth.guard';
+import { ReferentialsController } from './modules/referentials/referentials.controller';
+import { ReferentialsService } from './modules/referentials/referentials.service';
 import { StaffGuard } from './common/staff.guard';
 import {
   DEFAULT_RATE_LIMITS,
@@ -121,6 +123,8 @@ import {
   controllers: [HealthController, PlacesController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
     StaffAuthController, AdminController, AdminModerationController,
+    // Module 02 — les référentiels, tenus par CONTENT_ADMIN (§4.2).
+    ReferentialsController,
     SearchController, NotificationsController, NotificationSettingsController,
     FeedController, PostsController, CommentsController, StoriesController, MyStoriesController,
     MentorshipController, ConnectionsController, MessagingController, JourneysController,
@@ -149,6 +153,7 @@ import {
     ModerationService,
     StaffAuthService,
     AdminService,
+    ReferentialsService,
     SearchService,
     NotificationsService,
     NotificationEventsService,

@@ -1259,6 +1259,28 @@ describe('administration (15)', () => {
       'PATCH /v1/admin/billing/placements/{id}',
       'POST /v1/admin/billing/affiliate/import',
       /**
+       * `referentials/__tests__/referentials.int.test.ts` (module 02 §4.2) : les
+       * vingt routes de `/admin/ref/*` y sont éprouvées avec leurs traces, à côté
+       * des règles qu'elles servent — l'activation d'une ville, la fusion,
+       * l'import. Les tester ici demanderait de reconstruire les mêmes fixtures de
+       * villes et de réseaux, loin de ce qu'elles vérifient.
+       */
+      'POST /v1/admin/ref/languages',
+      'PATCH /v1/admin/ref/languages/{id}',
+      'POST /v1/admin/ref/skills',
+      'PATCH /v1/admin/ref/skills/{id}',
+      'POST /v1/admin/ref/professions',
+      'PATCH /v1/admin/ref/professions/{id}',
+      'POST /v1/admin/ref/countries',
+      'PATCH /v1/admin/ref/countries/{id}',
+      'POST /v1/admin/ref/countries/{id}/activate',
+      'POST /v1/admin/ref/cities',
+      'PATCH /v1/admin/ref/cities/{id}',
+      'POST /v1/admin/ref/cities/{id}/activate',
+      'POST /v1/admin/ref/cities/{id}/deactivate',
+      'POST /v1/admin/ref/cities/{id}/merge',
+      'POST /v1/admin/ref/cities/import',
+      /**
        * `moderation/__tests__/banned-phones.int.test.ts` : la levée d'un
        * bannissement y est éprouvée avec sa trace d'audit, à côté de la règle
        * qu'elle sert — « un banni ne peut pas se réinscrire » traverse trois

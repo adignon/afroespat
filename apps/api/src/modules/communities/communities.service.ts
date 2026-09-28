@@ -2129,6 +2129,71 @@ export class CommunitiesService {
     return withReplies.count + never.count;
   }
 
+  /**
+   * L'inscription des membres au réseau d'une ville ou d'un pays qui vient d'être
+   * activé — 02 §2.2 : « les membres déjà rattachés y sont inscrits par événement ».
+   *
+   * Consommateur de `city.activated`, `country.activated` et `city.merged`. Les
+   * trois posent la même question — « quels membres doivent voir leurs adhésions
+   * automatiques recalculées ? » — et la réponse est la même fonction.
+   *
+   * ON RECALCULE, ON N'INSCRIT PAS. `syncAutoMemberships` compare l'état attendu à
+   * l'état existant et corrige dans les deux sens ; c'est ce qui le rend rejouable
+   * autant de fois qu'il faut, ce qu'un consommateur d'événement doit être. Une
+   * boucle d'inscriptions, elle, créerait des doublons au second passage.
+   *
+   * MEMBRE PAR MEMBRE, et c'est assumé : une ville s'active vers vingt membres
+   * (§2.2), et la correction d'une adhésion demande de regarder les DEUX réseaux du
+   * membre — sa ville et son pays d'origine — ce qu'une requête d'ensemble ne sait
+   * pas faire sans réécrire toute la logique une seconde fois. Le jour où une ville
+   * s'active avec dix mille membres, c'est le lot qu'il faudra revoir, pas la règle.
+   *
+   * Un échec sur un membre N'ARRÊTE PAS les autres, mais il est compté et la
+   * méthode LÈVE à la fin : le travail sera rejoué, et le rejeu est sans effet sur
+   * ceux qui étaient déjà corrects. Sans cette levée, BullMQ marquerait le travail
+   * fait et les membres restants ne seraient jamais inscrits.
+   */
+  async handleLocationActivated(input: {
+    cityId?: string;
+    countryId?: string;
+  }): Promise<{ scanned: number; joined: number; left: number; failed: number }> {
+    const where =
+      input.cityId !== undefined
+        ? { cityId: input.cityId }
+        : input.countryId !== undefined
+          ? { originCountryId: input.countryId }
+          : null;
+    if (where === null) return { scanned: 0, joined: 0, left: 0, failed: 0 };
+
+    const members = await this.prisma.user.findMany({
+      where: { ...where, deletedAt: null, status: 'ACTIVE' },
+      select: { id: true },
+    });
+
+    let joined = 0;
+    let left = 0;
+    let failed = 0;
+    for (const member of members) {
+      try {
+        const result = await this.syncAutoMemberships(member.id);
+        joined += result.joined.length;
+        left += result.left.length;
+      } catch (error) {
+        failed += 1;
+        this.logger.error(
+          `adhésion automatique impossible pour ${member.id} : ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    if (failed > 0) {
+      throw new Error(
+        `${failed} membre(s) sur ${members.length} n’ont pas pu être inscrits : le travail sera rejoué.`,
+      );
+    }
+    return { scanned: members.length, joined, left, failed };
+  }
+
   /** `community.member_count_recompute` — quotidienne (§7). */
   async recomputeMemberCounts(): Promise<number> {
     const updated = await this.prisma.$executeRaw`
