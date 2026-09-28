@@ -97,6 +97,20 @@ export const envSchema = z.object({
   KYC_PROVIDER: providerMode('didit'),
   PAYMENT_PROVIDER: providerMode('stripe'),
   MOBILE_MONEY_PROVIDER: providerMode('fedapay', 'kkiapay', 'paydunya'),
+  /**
+   * Les secrets de SIGNATURE des webhooks entrants (T4 §8, 14 §7.1).
+   *
+   * FACULTATIFS, et leur absence n'est pas un oubli : aucune clé Stripe n'existe,
+   * et l'agrégateur Mobile Money n'est pas désigné (décision D4). Sans secret, le
+   * vérificateur refuse TOUT webhook — voir `UnconfiguredWebhookVerifier`. C'est le
+   * comportement voulu : un webhook accepté sans vérification serait une activation
+   * d'abonnement ouverte à quiconque connaît l'URL.
+   *
+   * 32 caractères minimum QUAND ils sont présents : un secret partagé court se
+   * force, et celui-ci ouvre le droit d'activer un abonnement.
+   */
+  STRIPE_WEBHOOK_SECRET: z.string().min(32).optional(),
+  MOBILE_MONEY_WEBHOOK_SECRET: z.string().min(32).optional(),
   AI_MODERATION_PROVIDER: providerMode('anthropic'),
   CAPTCHA_PROVIDER: providerMode('turnstile'),
   ANTIVIRUS_HOST: z.string().default('localhost'),

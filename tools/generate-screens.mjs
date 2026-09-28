@@ -11,7 +11,7 @@
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { extractFrame, extractSection, transcode } from './dc-to-jsx.mjs';
+import { adaptModalFrame, extractFrame, extractSection, markTriggers, transcode } from './dc-to-jsx.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
@@ -709,8 +709,122 @@ function promoteFirstHeading(jsx) {
 
 const ALL_ADAPTATIONS = [...FRAME_ADAPTATIONS, ...TOUCH_TARGET_ADAPTATIONS];
 
-function adaptFrame(jsx, section) {
-  const counts = ALL_ADAPTATIONS.map(() => 0);
+/**
+ * ADAPTATIONS D'UNE MODALE — elles REMPLACENT celle du contenu qui coule.
+ *
+ * L'adaptation « le contenu vertical était borné par ses 844 px : il doit
+ * couler » est juste pour un écran plein : la page défile, donc rien ne doit être
+ * coupé. Appliquée au corps d'une modale, elle est FAUSSE, et activement nuisible :
+ * elle retire `flex: 1` et `min-height: 0`, alors qu'un panneau de modale est
+ * borné PAR DESSEIN (`top: 40px; bottom: 40px` sur l'ordinateur, `height: 88%` sur
+ * le mobile). Sans eux, le corps déborde du panneau et va se dessiner par-dessus
+ * le voile — la modale paraît cassée alors que le transcodage est fidèle.
+ *
+ * Ce qu'il faut ici est l'inverse : GARDER les bornes et faire défiler à
+ * l'intérieur. C'est ce que fait cette table, et elle ne contient rien d'autre.
+ */
+const MODAL_ADAPTATIONS = [
+  {
+    why: 'Le corps d’une modale défile DANS son panneau : le panneau est borné par dessein.',
+    match: (style) =>
+      style.includes('overflow: "hidden"') &&
+      style.includes('flex: "1"') &&
+      style.includes('minHeight: "0"'),
+    apply: (style) => style.replace('overflow: "hidden"', 'overflowY: "auto"'),
+  },
+];
+
+/**
+ * LE TITRE D'UNE MODALE, promu en `<h2>` — déclaré, jamais deviné.
+ *
+ * Une modale ne prend PAS le `<h1>` de la page : le `<h1>` appartient à l'écran
+ * qui est derrière, et il ne disparaît pas parce qu'une fenêtre s'ouvre par-dessus.
+ * Ce qu'il faut, c'est que la boîte de dialogue porte un nom accessible — c'est
+ * `aria-labelledby` qui le lui donne, et il lui faut donc un élément à désigner.
+ *
+ * Le titre est DÉCLARÉ ici, texte visible compris, et non déduit d'un motif de
+ * style. Les quatre modales ne le dessinent pas de la même façon : `<span>` de
+ * 18 px pour les commentaires (avec un compteur imbriqué), `<span>` de 20 px pour
+ * le partage et le sondage, `<div>` de 20 px pour le guide. Un motif qui couvrirait
+ * les quatre attraperait aussi des sous-titres, en silence. Et si la maquette
+ * change son texte, le tableau ne correspond plus et l'outil le DIT.
+ */
+const MODAL_TITLES = {
+  A01C: 'Commentaires',
+  A01P: 'Partager',
+  A01G: 'Lier un guide',
+  A01S: 'Créer un sondage',
+};
+
+/**
+ * Promeut l'élément qui porte le titre en `<h2 id="…">`, style inchangé.
+ *
+ * `margin: 0` est AJOUTÉ, et c'est la seule liberté : un `<h2>` arrive avec des
+ * marges par défaut du navigateur que le `<span>` ou le `<div>` d'origine n'avait
+ * pas. Sans cette ligne, changer la balise déplacerait le titre de quelques pixels
+ * — le design ne serait plus celui de la maquette, pour une raison invisible à la
+ * lecture du code.
+ */
+function promoteModalTitle(jsx, section) {
+  const title = MODAL_TITLES[section];
+  if (title === undefined) return { jsx, promoted: false, id: null };
+
+  // L'élément dont le contenu COMMENCE par le titre, et qui porte fontWeight 800.
+  const marker = `>${title}`;
+  const at = jsx.indexOf(marker);
+  if (at < 0) return { jsx, promoted: false, id: null };
+
+  // Remonter à l'ouverture de la balise qui contient ce texte.
+  const open = jsx.lastIndexOf('<', at);
+  const tagMatch = /^<(span|div)( [^>]*)>$/.exec(jsx.slice(open, at + 1));
+  if (tagMatch === null) return { jsx, promoted: false, id: null };
+  const [, tag, attrs] = tagMatch;
+  if (!attrs.includes('fontWeight: "800"')) return { jsx, promoted: false, id: null };
+
+  // La fermeture correspondante, imbrication comprise — « Commentaires · 8 » a un
+  // `<span>` dedans.
+  let depth = 1;
+  let i = at + 1;
+  const openRe = new RegExp(`<${tag}[\\s>]`, 'g');
+  const closeRe = new RegExp(`</${tag}>`, 'g');
+  for (;;) {
+    openRe.lastIndex = i;
+    closeRe.lastIndex = i;
+    const nextOpen = openRe.exec(jsx);
+    const nextClose = closeRe.exec(jsx);
+    if (nextClose === null) return { jsx, promoted: false, id: null };
+    if (nextOpen !== null && nextOpen.index < nextClose.index) {
+      depth += 1;
+      i = nextOpen.index + 1;
+      continue;
+    }
+    depth -= 1;
+    if (depth === 0) {
+      const id = `${section.toLowerCase()}-titre`;
+      const newAttrs = attrs.replace(/style=\{\{ /, 'style={{ margin: "0", ');
+      const out =
+        jsx.slice(0, open) +
+        `<h2 id="${id}"${newAttrs}>` +
+        jsx.slice(at + 1, nextClose.index) +
+        '</h2>' +
+        jsx.slice(nextClose.index + nextClose[0].length);
+      return { jsx: out, promoted: true, id };
+    }
+    i = nextClose.index + 1;
+  }
+}
+
+/** La table à employer : celle des modales exclut l'adaptation du contenu qui coule. */
+function adaptationsFor(modal) {
+  if (!modal) return ALL_ADAPTATIONS;
+  const flowing = FRAME_ADAPTATIONS.findIndex((a) => a.why.includes('doit couler'));
+  const kept = FRAME_ADAPTATIONS.filter((_, i) => i !== flowing);
+  return [...MODAL_ADAPTATIONS, ...kept, ...TOUCH_TARGET_ADAPTATIONS];
+}
+
+function adaptFrame(jsx, section, modal = false) {
+  const ADAPTATIONS = adaptationsFor(modal);
+  const counts = ADAPTATIONS.map(() => 0);
   const roles = new Set();
 
   const adapted = jsx.replace(/<(\w+)([^>]*?style=\{\{ [^}]* \}\}[^>]*?)(\/?)>/g, (whole, tag, attrs, selfClose) => {
@@ -720,7 +834,7 @@ function adaptFrame(jsx, section) {
     let style = styleMatch[1];
     const extra = [];
 
-    ALL_ADAPTATIONS.forEach((adaptation, i) => {
+    ADAPTATIONS.forEach((adaptation, i) => {
       if (!adaptation.match(style)) return;
       style = adaptation.apply(style);
       counts[i] += 1;
@@ -774,6 +888,18 @@ const SCREENS = [
     out: 'apps/web/src/screens/a01',
     dataModule: './data',
     dataType: 'A01Data',
+    /**
+     * Les deux fenêtres que le fil ouvre, et que la maquette nomme sous ses
+     * planches : « Commentaires — ouverts depuis « Commenter » » et « Partager ».
+     *
+     * Le libellé du bouton de commentaire est une DONNÉE (`p.comment`), pas un
+     * texte en dur : le marqueur porte donc l'interpolation du dialecte, telle
+     * qu'elle est dans la maquette.
+     */
+    triggers: [
+      { marker: '</svg>{{ p.comment }}', modal: 'A01C' },
+      { marker: '</svg>Partager', modal: 'A01P' },
+    ],
     frames: [
       { width: 1440, name: 'Desktop' },
       { width: 390, name: 'Mobile' },
@@ -811,6 +937,37 @@ const SCREENS = [
       // second, pas rechercher la même ouverture deux fois.
       occurrence: s.frames.indexOf(width) === i ? 0 : i,
     })),
+  })),
+
+  /**
+   * ── Lot 1 · les quatre modales du fil (03 Accueil v2.dc.html) ──────────────
+   *
+   * La maquette les annonce elle-même : « fenêtre sur web, feuille sur mobile ».
+   * Elle DESSINE les deux formes — fenêtre centrée de 720 px sur ordinateur,
+   * feuille du bas à 88 % avec sa poignée sur mobile — donc il n'y a aucune forme
+   * à inventer, seulement le comportement à brancher (`Modal`).
+   *
+   * Elles partagent les données de A01, parce que la maquette les met dans le
+   * MÊME `renderVals()` : le fil de commentaires et les contacts de partage
+   * cohabitent avec les stories et le fil. Les séparer donnerait deux sources
+   * pour un seul écran.
+   */
+  ...[
+    { section: 'A01C', why: 'Commentaires' },
+    { section: 'A01P', why: 'Partager' },
+    { section: 'A01G', why: 'Lier un guide' },
+    { section: 'A01S', why: 'Créer un sondage' },
+  ].map((m) => ({
+    file: 'docs/template/03 Accueil v2.dc.html',
+    section: m.section,
+    out: `apps/web/src/screens/${m.section.toLowerCase()}`,
+    dataModule: '../a01/data',
+    dataType: 'A01Data',
+    modal: true,
+    frames: [
+      { width: 1440, name: 'Desktop' },
+      { width: 390, name: 'Mobile' },
+    ],
   })),
 ];
 
@@ -888,8 +1045,17 @@ for (const screen of SCREENS) {
   const section = extractSection(html, screen.section);
 
   for (const frame of screen.frames) {
-    const { inner } = extractFrame(section, frame.width, frame.occurrence ?? 0);
-    const { adapted: jsx, counts, promotedHeading, roles, fields, buttons, missedFields } = adaptFrame(transcode(inner), screen.section);
+    const raw = extractFrame(section, frame.width, frame.occurrence ?? 0);
+    /**
+     * Une MODALE n'est pas un écran : elle se superpose à celui qui est déjà là.
+     * Deux artifices de planche doivent donc tomber — le fond fantôme qui esquisse
+     * l'écran sous-jacent, et le `position: absolute` qui se cale sur le cadre de
+     * 1440 px au lieu de la fenêtre. Voir `adaptModalFrame`.
+     */
+    const modal = screen.modal === true ? adaptModalFrame(raw.inner) : null;
+    const triggered = markTriggers(modal === null ? raw.inner : modal.inner, screen.triggers);
+    const inner = triggered.html;
+    const { adapted: jsx, counts, promotedHeading, roles, fields, buttons, missedFields } = adaptFrame(transcode(inner), screen.section, screen.modal === true);
 
     // Le libellé accessible est recopié du texte visible : s'il a changé dans la
     // maquette, on refuse de générer plutôt que de laisser dériver un nom que
@@ -909,10 +1075,24 @@ for (const screen of SCREENS) {
     // page. La maquette du fil écrit déjà son `<main>` autour de la colonne
     // centrale ; l'envelopper d'un second serait invalide, et ferait mesurer le
     // conteneur à tout test qui cherche `main`.
-    const hasLandmark = /<main[\s>]/.test(jsx);
-    const wrapped = hasLandmark
-      ? jsx
-      : `      <main style={{ display: "contents" }}>\n${jsx}\n      </main>`;
+    /**
+     * UNE MODALE N'EST PAS UN REPÈRE `main`, et ne doit surtout pas en porter un.
+     *
+     * `<main>` désigne le contenu principal de la page — il y en a exactement un,
+     * et c'est celui de l'écran qui est DERRIÈRE la modale. En envelopper une
+     * seconde donnerait deux `main` dans le document dès qu'une fenêtre s'ouvre,
+     * ce qu'aucun lecteur d'écran ne sait interpréter. Le rôle correct est
+     * `dialog`, et c'est le composant `Modal` qui le pose, avec le piège au
+     * clavier et `aria-labelledby` — voir `apps/web/src/components/modal.tsx`.
+     */
+    const isModal = screen.modal === true;
+    const titled = isModal ? promoteModalTitle(jsx, screen.section) : { jsx, promoted: false, id: null };
+    const hasLandmark = /<main[\s>]/.test(titled.jsx);
+    const wrapped = isModal
+      ? titled.jsx
+      : hasLandmark
+        ? titled.jsx
+        : `      <main style={{ display: "contents" }}>\n${titled.jsx}\n      </main>`;
 
     const destructure =
       used.length === 0
@@ -932,7 +1112,7 @@ ${wrapped}
     const path = resolve(ROOT, screen.out, `${frame.name.toLowerCase()}.generated.tsx`);
     writeFileSync(path, body, 'utf8');
     console.log(`  ${screen.section} ${frame.width} px → ${path.replace(ROOT + '/', '')} (${jsx.length} caractères, ${used.length} données)`);
-    ALL_ADAPTATIONS.forEach((a, i) => {
+    adaptationsFor(screen.modal === true).forEach((a, i) => {
       if (counts[i] > 0) console.log(`      ${counts[i]}× ${a.why}`);
     });
     for (const control of INTERACTIVE_ROLES) {
@@ -941,8 +1121,44 @@ ${wrapped}
     for (const field of fields) console.log(`      ${field.why}`);
     for (const b of buttons) console.log(`      Bouton « ${b.label} » branché.`);
     for (const why of missedFields) console.log(`      ⚠ adaptation attendue introuvable : ${why}`);
-    if (!hasLandmark) console.log('      Repère `main` ajouté : la maquette n’en a pas.');
-    if (!promotedHeading) {
+    if (modal !== null) {
+      // Les comptes sont rapportés parce que l'absence est licite : deux des huit
+      // cadres de modale n'ont pas de fond fantôme. C'est donc le CHIFFRE qui
+      // signale une maquette qui aurait changé de forme, jamais une exception.
+      console.log(
+        `      Modale : ${modal.ghosts} fantôme(s) retiré(s), ${modal.overlays} voile et ${modal.panels} panneau marqués, ${modal.fixed} en position: fixed, ${modal.closers} fermeture(s) promue(s) en bouton.`,
+      );
+      if (modal.closers === 0) {
+        console.log(
+          '      ⚠ aucune fermeture promue : ni croix ni poignée reconnue. La modale ne se fermera qu’au voile et à Échap.',
+        );
+      }
+      if (modal.overlays !== 1 || modal.panels !== 1) {
+        console.log(
+          `      ⚠ ${modal.overlays} voile et ${modal.panels} panneau : « Modal » attend exactement un de chaque. Un clic hors panneau ne fermera pas ce qu’on croit.`,
+        );
+      }
+    }
+    for (const t of triggered.applied) {
+      console.log(`      Déclencheur de ${t.modal} branché sur « ${t.marker.replace('</svg>', '')} ».`);
+    }
+    for (const t of triggered.missed) {
+      console.log(
+        `      ⚠ déclencheur de ${t.modal} introuvable (« ${t.marker} ») : la modale sera inatteignable depuis cet écran.`,
+      );
+    }
+    if (isModal) {
+      if (titled.promoted) {
+        console.log(`      Titre promu en <h2 id="${titled.id}"> : la boîte de dialogue le désignera par aria-labelledby.`);
+      } else {
+        console.log(
+          `      ⚠ titre « ${MODAL_TITLES[screen.section] ?? '?'} » introuvable : la modale n’aura pas de nom accessible. Mettre MODAL_TITLES à jour.`,
+        );
+      }
+    } else if (!hasLandmark) {
+      console.log('      Repère `main` ajouté : la maquette n’en a pas.');
+    }
+    if (!promotedHeading && !isModal) {
       console.log('      ⚠ aucun <h2> à promouvoir en <h1> : la page n’aura pas de titre');
     }
   }

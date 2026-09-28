@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { PrismaClient } from '../../generated/client/index.js';
 import { newId } from '../uuid.js';
+import { seedBilling } from './billing.js';
 import {
   CITIES,
   COUNTRIES,
@@ -118,6 +119,17 @@ async function main(): Promise<void> {
     const origin = version.originIso2 === null ? 'générique' : `pays ${version.originIso2}`;
     log(`    ${version.templateCode} (${origin}) : ${version.outcome}`);
   }
+
+  // ── Monétisation (14 §3) ────────────────────────────────────────────────
+  //
+  // `plans.limits` est la source unique des quotas, et quatre modules livrés la
+  // lisent déjà. Sans cet amorçage, ils retombent chacun sur une constante de
+  // leur propre code — voir src/seed/billing.ts.
+  const billing = await seedBilling(prisma);
+  log(
+    `  plans : ${billing.plans} · ancre partenaire Logement ${billing.housingAnchor} · ` +
+      `prix annuels ${billing.yearPrices}`,
+  );
 }
 
 /**

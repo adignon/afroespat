@@ -195,6 +195,9 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
       inert(),
       inert(),
       inert(),
+      // Le module 14, arrivé après ce test : il s'abonne à `journey.step_completed`
+      // (l'essai Premium) et à `user.deleted`, pas à `user.blocked`. Inerte ici.
+      inert(),
     ).onModuleInit();
 
     const country = await prisma.country.findFirstOrThrow({

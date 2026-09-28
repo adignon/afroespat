@@ -274,6 +274,97 @@ export const mBottom = M_BOTTOM.map(([label, icon], i) => ({
 }));
 
 /** Ce que les deux cadres générés consomment. */
+
+// ─── Les quatre modales du fil (A01C, A01P, A01G, A01S) ──────────────────────
+//
+// Elles vivent ICI, et non dans un fichier à part, parce que la maquette les met
+// dans le MÊME `renderVals()` que les stories et le fil : c'est un seul écran,
+// avec des fenêtres qui s'ouvrent par-dessus. Les séparer donnerait deux sources
+// pour un même état.
+//
+// A01G (« Lier un guide ») et A01S (« Créer un sondage ») ne consomment AUCUNE
+// donnée : leur balisage est entièrement statique dans la maquette. Rien à écrire
+// pour elles, et c'est le transcodeur qui le dit — il les génère avec zéro
+// propriété.
+
+/**
+ * A01C — le fil de commentaires.
+ *
+ * `likeFg` est dérivé, exactement comme la maquette le dérive : au-delà de trois
+ * appuis, le compteur passe au vert. `indent` et `indentM` sont deux valeurs
+ * distinctes parce que la réponse est moins décalée sur mobile — la maquette les
+ * écrit séparément plutôt que de calculer un pourcentage.
+ */
+export const thread = (
+  [
+    // `author: false` est ÉCRIT sur les quatre autres, alors que la maquette se
+    // contente de l'omettre. Une propriété absente donne cinq formes d'objet
+    // différentes, et `c.author` devient inaccessible sur l'union — c'est ce que
+    // `tsc` a signalé. `false` dit la même chose que l'absence, et le dit à tous.
+    { i: 'SM', bg: '#0F5C48', name: 'Sandra M.', phase: 'Installée · Lyon 3e', author: false, text: 'Bravo Amina ! Tu as pris quelle banque au final ? Je conseille souvent celle-là aux nouveaux.', time: 'il y a 1 h', likes: 6, indent: '0px', indentM: '0px', canReply: true, av: '38px' },
+    { i: 'AD', bg: '#B4581F', name: 'Amina Diallo', phase: 'Étudiante · Lyon', author: true, text: 'Merci ! La banque partenaire de mon école, virement reçu en 5 jours.', time: 'il y a 50 min', likes: 3, indent: '50px', indentM: '44px', canReply: false, av: '32px' },
+    { i: 'KB', bg: '#E0733A', name: 'Kofi Boateng', phase: 'Arrivé · Lyon 3e', author: false, text: 'Félicitations ! Prochaine étape le logement, courage pour Visale.', time: 'il y a 40 min', likes: 2, indent: '0px', indentM: '0px', canReply: true, av: '38px' },
+    { i: 'FN', bg: '#2FA37D', name: 'Fatou Ndiaye', phase: 'Installée · Lyon 7e', author: false, text: 'Super nouvelle. Garde bien l’attestation, la préfecture la redemande parfois.', time: 'il y a 20 min', likes: 4, indent: '0px', indentM: '0px', canReply: true, av: '38px' },
+    { i: 'MK', bg: '#16785E', name: 'Marc Koudou', phase: 'Installé · Paris', author: false, text: 'Bien vu Fatou, c’est arrivé à mon cousin l’an dernier.', time: 'il y a 10 min', likes: 1, indent: '50px', indentM: '44px', canReply: false, av: '32px' },
+  ] as const
+).map((c) => ({ ...c, likeFg: c.likes > 3 ? '#16785E' : '#8A958F' }));
+
+/** La sélection de départ de la maquette : les deux premiers contacts, 0 et 2. */
+export const SHARE_SELECTION_DEFAULT: readonly number[] = [0, 2];
+
+const SHARE_CONTACTS = [
+  { i: 'SM', name: 'Sandra M.', bg: '#0F5C48' },
+  { i: 'AD', name: 'Aïcha Diop', bg: '#16785E' },
+  { i: 'KB', name: 'Kofi B.', bg: '#E0733A' },
+  { i: 'FN', name: 'Fatou N.', bg: '#2FA37D' },
+  { i: 'YB', name: 'Yasmine B.', bg: '#B4581F' },
+] as const;
+
+/**
+ * A01P — les contacts de partage, sélectionnables.
+ *
+ * « cliquez les contacts », écrit la maquette sous sa planche : c'est une
+ * véritable interaction, pas une illustration. L'anneau vert marque la sélection,
+ * et `onPick` bascule — d'où le passage de l'état, comme pour `storyFiltersFor`.
+ *
+ * L'anneau non sélectionné est `2.5px solid transparent` et non `none` : une
+ * bordure qui apparaît déplacerait l'avatar de deux pixels et demi à chaque clic.
+ */
+export const shareContactsFor = (selected: readonly number[], onToggle: (index: number) => void) =>
+  SHARE_CONTACTS.map((c, i) => {
+    const on = selected.includes(i);
+    return {
+      ...c,
+      on,
+      ring: on ? '2.5px solid #16785E' : '2.5px solid transparent',
+      onPick: () => onToggle(i),
+    };
+  });
+
+/**
+ * Le bouton d'envoi, dont le libellé COMPTE les contacts choisis.
+ *
+ * Sans sélection il devient inerte et le dit — « Choisissez un contact » — au lieu
+ * d'un bouton désactivé qui n'explique rien. La maquette le calcule ainsi, et
+ * c'est la bonne façon : le libellé porte l'état.
+ */
+export const shareButtonFor = (count: number) => ({
+  shareBtn: count > 0 ? `Envoyer à ${count} contact${count > 1 ? 's' : ''}` : 'Choisissez un contact',
+  shareBtnBg: count > 0 ? '#16785E' : '#CFE3DA',
+  shareBtnFg: count > 0 ? '#fff' : '#5D8A79',
+});
+
+export const shareNets = [
+  { i: 'LY', name: 'Lyon et Rhône', sub: '1 400 membres', bg: '#16785E' },
+  { i: 'BN', name: 'Béninois en France', sub: '890 membres', bg: '#E0733A' },
+] as const;
+
+export const shareOut = [
+  { label: 'Copier le lien', icon: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1' },
+  { label: 'WhatsApp', icon: 'M3 21l1.6-5A8.5 8.5 0 1 1 8 19.4zM9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z' },
+  { label: 'Email', icon: 'M3 6h18v12H3zM3 7l9 6 9-6' },
+] as const;
+
 export interface A01Data {
   rail: typeof rail;
   panelFil: typeof panelFil;
@@ -287,4 +378,15 @@ export interface A01Data {
   online: typeof online;
   mTabs: typeof mTabs;
   mBottom: typeof mBottom;
+
+  // Les modales du fil. Elles partagent ce type parce qu'elles partagent l'écran :
+  // le transcodeur les génère avec `A01Data` en signature, et une modale qui
+  // n'emploie rien reçoit simplement `_props`.
+  thread: typeof thread;
+  shareContacts: ReturnType<typeof shareContactsFor>;
+  shareNets: typeof shareNets;
+  shareOut: typeof shareOut;
+  shareBtn: string;
+  shareBtnBg: string;
+  shareBtnFg: string;
 }

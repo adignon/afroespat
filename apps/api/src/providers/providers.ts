@@ -162,6 +162,26 @@ export interface PaymentProvider {
     currency: string;
   }): Promise<{ providerRef: string; checkoutUrl: string }>;
   cancelSubscription(providerRef: string): Promise<void>;
+  /**
+   * Annulation À LA FIN DE PÉRIODE, et sa réversion (14 §4.3 : « effet en fin de
+   * période, réversible jusqu'à la fin »).
+   *
+   * Distincte de `cancelSubscription`, qui coupe tout de suite : les deux gestes
+   * existent chez Stripe et n'ont pas le même effet pour le membre. Confondre les
+   * deux ferait perdre à un membre les trois semaines qu'il a payées.
+   */
+  setCancelAtPeriodEnd(providerRef: string, cancelAtPeriodEnd: boolean): Promise<void>;
+  /**
+   * Mensuel ↔ annuel, « au prochain renouvellement » (14 §4.3). La PÉRIODE est
+   * tenue par le fournisseur, pas par nous : `subscriptions` n'a pas de colonne
+   * `period` dans le schéma figé, donc la mémoriser localement créerait une
+   * seconde vérité qui divergerait au premier prorata.
+   */
+  changePeriod(providerRef: string, period: 'MONTH' | 'YEAR'): Promise<void>;
+  /** Le portail client du §4.1 — factures, moyen de paiement, résiliation. */
+  createPortalUrl(providerRef: string): Promise<string>;
+  /** Remboursement (§4.4), traité par SUPPORT. Montant en centimes. */
+  refund(providerRef: string, amountCents: number): Promise<{ refundRef: string }>;
 }
 
 export const PAYMENT_PROVIDER = Symbol('PaymentProvider');
@@ -170,7 +190,7 @@ export class FakePaymentProvider implements PaymentProvider {
   private readonly logger = new Logger('FakePayment');
 
   createCheckout(input: { userId: string; planCode: string }): Promise<{ providerRef: string; checkoutUrl: string }> {
-    const providerRef = `fake-pay-${Date.now()}`;
+    const providerRef = fakeRef('fake-pay');
     this.logger.log(`Paiement fictif ${input.planCode} — succès immédiat`);
     return Promise.resolve({ providerRef, checkoutUrl: `/dev/paiement/${providerRef}` });
   }
@@ -179,6 +199,37 @@ export class FakePaymentProvider implements PaymentProvider {
     this.logger.log(`Annulation fictive ${providerRef}`);
     return Promise.resolve();
   }
+
+  setCancelAtPeriodEnd(providerRef: string, cancelAtPeriodEnd: boolean): Promise<void> {
+    this.logger.log(`Annulation fin de période fictive ${providerRef} : ${cancelAtPeriodEnd}`);
+    return Promise.resolve();
+  }
+
+  changePeriod(providerRef: string, period: 'MONTH' | 'YEAR'): Promise<void> {
+    this.logger.log(`Changement de période fictif ${providerRef} → ${period}`);
+    return Promise.resolve();
+  }
+
+  createPortalUrl(providerRef: string): Promise<string> {
+    return Promise.resolve(`/dev/portail/${providerRef}`);
+  }
+
+  refund(providerRef: string, amountCents: number): Promise<{ refundRef: string }> {
+    this.logger.log(`Remboursement fictif ${providerRef} : ${amountCents}`);
+    return Promise.resolve({ refundRef: fakeRef('fake-refund') });
+  }
+}
+
+/**
+ * Une référence de fournisseur fictive, UNIQUE.
+ *
+ * `Date.now()` seul ne l'est pas : `payments.provider_ref` porte une contrainte
+ * d'unicité, et deux paiements créés dans la même milliseconde — ce qui arrive en
+ * test bien plus qu'en production — échouaient sur une violation de contrainte
+ * sans rapport apparent avec la cause.
+ */
+function fakeRef(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 // ── Mobile Money ────────────────────────────────────────────────────────────
@@ -209,7 +260,7 @@ export class FakeMobileMoneyProvider implements MobileMoneyProvider {
   private readonly logger = new Logger('FakeMobileMoney');
 
   requestPayment(input: { amountCents: number }): Promise<{ providerRef: string; status: 'PENDING' }> {
-    const providerRef = `fake-momo-${Date.now()}`;
+    const providerRef = fakeRef('fake-momo');
     this.logger.log(`Mobile Money fictif : ${input.amountCents} (plus petite unité)`);
     return Promise.resolve({ providerRef, status: 'PENDING' });
   }

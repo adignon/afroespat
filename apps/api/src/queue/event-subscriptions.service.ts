@@ -14,6 +14,7 @@ import { ProsService } from '../modules/pros/pros.service';
 import { NotificationEventsService } from '../modules/notifications/notifications.events';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { SearchService } from '../modules/search/search.service';
+import { BillingService } from '../modules/billing/billing.service';
 import { EventHandlerRegistry } from './event-handlers';
 
 /**
@@ -55,6 +56,7 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly notifications: NotificationsService,
     private readonly notificationEvents: NotificationEventsService,
     private readonly search: SearchService,
+    private readonly billing: BillingService,
   ) {}
 
   onModuleInit(): void {
@@ -228,6 +230,33 @@ export class EventSubscriptionsService implements OnModuleInit {
 
     this.registry.on('journey.step_completed', 'feed', async (job) => {
       await this.feed.handleJourneyStepCompleted(job.payload);
+    });
+
+    // ── Facturation (14 §3 et §9, « Consommés ») ─────────────────────────────
+    //
+    // L'ESSAI PREMIUM s'ouvre à la PREMIÈRE ÉTAPE FRANCHIE, jamais à
+    // l'inscription : « le membre doit avoir vu la valeur » (14 §3, et décision
+    // T4 de 2026-09). C'est le seul déclencheur automatique du module, et le
+    // module 03 émet déjà l'événement — d'où la faisabilité de ce lot.
+    //
+    // IDEMPOTENT et SILENCIEUX : la deuxième étape franchie, comme un rejeu de la
+    // file, ne doit ni lever ni offrir un second essai. `grantTrial` prend un
+    // verrou sur la ligne du membre et ne rend rien quand l'essai a déjà servi.
+    //
+    // La charge est lue DÉFENSIVEMENT, comme partout ici : sans `ownerUserId`,
+    // il n'y a rien à faire et lever ferait rejouer dix fois pour rien.
+    this.registry.on('journey.step_completed', 'billing', async (job) => {
+      const ownerUserId = readString(job.payload, 'ownerUserId');
+      if (ownerUserId === null) return;
+      await this.billing.handleStepCompleted(ownerUserId);
+    });
+
+    // §11 : « Abonnements : annulés immédiatement chez le fournisseur. » La ligne,
+    // elle, disparaît avec le membre — `subscriptions.user_id` est NOT NULL et en
+    // CASCADE, donc l'anonymisation que §11 demande est impossible en base. Voir
+    // `BillingService.handleUserDeleted`.
+    this.registry.on('user.deleted', 'billing', async (job) => {
+      await this.billing.handleUserDeleted(job.aggregateId);
     });
 
     // ── Parcours (03 §7, « Consommés ») ──────────────────────────────────────
@@ -465,6 +494,28 @@ export function registerNotificationSubscriptions(
   });
   registry.on('user.deletion_requested', 'notifications', async (job) => {
     await events.onDeletionRequested(job.aggregateId);
+  });
+
+  // ── 14 Abonnement et paiements ────────────────────────────────────────────
+  //
+  // `subscription.changed` figurait dans le catalogue d'événements depuis le lot 0
+  // SANS aucun consommateur : le module 14 n'existait pas. Le voici — c'est ce qui
+  // autorise le module à l'émettre.
+  //
+  // UN SEUL type porte les huit faits du §9 (activation, expiration, annulation,
+  // essai, rappels), distingués par `payload.reason` : c'est la forme déjà employée
+  // par `event.updated` + `reminder: 'H_MINUS_2'` (module 09), et elle évite sept
+  // types sans consommateur propre.
+  registry.on('subscription.changed', 'notifications', async (job) => {
+    await events.onSubscriptionChanged(job.aggregateId, job.payload);
+  });
+
+  registry.on('payment.failed', 'notifications', async (job) => {
+    await events.onPaymentFailed(job.payload);
+  });
+
+  registry.on('payment.refunded', 'notifications', async (job) => {
+    await events.onPaymentRefunded(job.payload);
   });
 
   // §7 : notifications, préférences et abonnements push supprimés ;

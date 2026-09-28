@@ -66,6 +66,22 @@ import {
 } from './modules/notifications/notifications.service';
 import { NotificationEventsService } from './modules/notifications/notifications.events';
 import { BullOutboundQueue, OutboundConsumer } from './modules/notifications/notifications.outbound';
+import { BillingController } from './modules/billing/billing.controller';
+import { BillingAdminController } from './modules/billing/billing-admin.controller';
+import { BillingService } from './modules/billing/billing.service';
+import { PlanService } from './modules/billing/plan.service';
+import {
+  HmacWebhookVerifier,
+  INVOICE_PDF,
+  MOBILE_MONEY_WEBHOOK_VERIFIER,
+  NoInvoicePdfPort,
+  STRIPE_WEBHOOK_VERIFIER,
+  UnconfiguredWebhookVerifier,
+  type WebhookVerifier,
+} from './modules/billing/billing.ports';
+import { PartnersController } from './modules/partners/partners.controller';
+import { PartnersService } from './modules/partners/partners.service';
+import { loadEnv } from './config/env';
 import { BlocksController } from './modules/blocks/blocks.controller';
 import { BlocksService } from './modules/blocks/blocks.service';
 import { QUEUES } from './queue/queues';
@@ -74,7 +90,6 @@ import { MODERATION_QUEUE, type ModerationQueuePort } from './modules/moderation
 import { TaskRegistrationsService } from './queue/task-registrations.service';
 import { EventSubscriptionsService } from './queue/event-subscriptions.service';
 import { AuthGuard } from './common/auth.guard';
-import { loadEnv } from './config/env';
 import { StaffGuard } from './common/staff.guard';
 import {
   DEFAULT_RATE_LIMITS,
@@ -103,6 +118,9 @@ import {
     SearchController, NotificationsController, NotificationSettingsController,
     FeedController, PostsController, CommentsController, StoriesController, MyStoriesController,
     MentorshipController, ConnectionsController, MessagingController, JourneysController,
+    // Module 14 — les revenus. Le contrôleur membre porte aussi les deux webhooks
+    // entrants (T4 §8), qui n'ont pas de membre et se déclarent `@SignedWebhook()`.
+    BillingController, PartnersController, BillingAdminController,
   ],
   providers: [
     AuthService,
@@ -184,6 +202,41 @@ import {
      */
     { provide: EMAIL_ADDRESS, useClass: NoEmailAddressPort },
 
+    // ── Module 14 ────────────────────────────────────────────────────────────
+    PlanService,
+    BillingService,
+    PartnersService,
+
+    /**
+     * Les deux VÉRIFICATEURS de signature de webhook (T4 §8).
+     *
+     * Même forme que `EMAIL_ADDRESS` : le fournisseur est ce qui rend la
+     * dépendance satisfaite ou non, et il le dit. Sans secret configuré — ce qui
+     * est le cas tant qu'aucune clé Stripe n'existe et que l'agrégateur Mobile
+     * Money n'est pas désigné (décision D4) — c'est
+     * `UnconfiguredWebhookVerifier` qui répond, et il REFUSE TOUT. Un webhook
+     * accepté sans vérification serait une activation d'abonnement Premium
+     * ouverte à quiconque connaît l'URL.
+     *
+     * Le jour où le prestataire arrive, ces deux fournisseurs changent, et RIEN
+     * d'autre : ni le service, ni le contrôleur, ni les tests.
+     */
+    { provide: STRIPE_WEBHOOK_VERIFIER, useFactory: (): WebhookVerifier => verifierFor('stripe') },
+    {
+      provide: MOBILE_MONEY_WEBHOOK_VERIFIER,
+      useFactory: (): WebhookVerifier => verifierFor('mobile-money'),
+    },
+
+    /**
+     * La facture PDF — AUCUN rendu, et c'est une dépendance non satisfaite.
+     *
+     * Aucun moteur de rendu n'est installé, `media_assets` n'a pas de pipeline
+     * d'écriture serveur, et `users.email` n'existe pas dans le schéma figé : une
+     * facture ne peut donc être ni rendue ni envoyée. Le NUMÉRO, lui, est bien
+     * attribué et séquentiel. Voir `NoInvoicePdfPort`.
+     */
+    { provide: INVOICE_PDF, useClass: NoInvoicePdfPort },
+
     // Le câblage des consommateurs d'événements. Placé ici, dans le module
     // racine, parce qu'il dépend des services métier — et `QueueModule` ne doit
     // pas les connaître.
@@ -241,3 +294,18 @@ import {
   ],
 })
 export class AppModule {}
+
+/**
+ * Le vérificateur d'un canal, selon le secret configuré.
+ *
+ * Hors du décorateur pour rester lisible, et sans injection de configuration :
+ * `loadEnv()` est déjà mémoïsée et employée ainsi par `ProvidersModule`.
+ */
+function verifierFor(channel: 'stripe' | 'mobile-money'): WebhookVerifier {
+  const env = loadEnv();
+  const secret =
+    channel === 'stripe' ? env.STRIPE_WEBHOOK_SECRET : env.MOBILE_MONEY_WEBHOOK_SECRET;
+  return secret === undefined
+    ? new UnconfiguredWebhookVerifier(channel)
+    : new HmacWebhookVerifier(channel, secret);
+}

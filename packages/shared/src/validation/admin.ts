@@ -8,6 +8,11 @@ import {
   type HousingRiskFlag,
 } from './housing.js';
 import {
+  BILLING_YEAR_PRICES_SETTING_KEY,
+  PLAN_YEAR_PRICES_DEFAULT,
+  yearPricesSchema,
+} from './billing.js';
+import {
   MODERATION_THRESHOLD_DEFAULTS,
   MODERATION_THRESHOLDS_SETTING_KEY,
   moderationThresholdsSchema,
@@ -365,6 +370,24 @@ export const SETTINGS_REGISTRY = {
     defaultValue: [],
     role: STAFF_SCOPES.content,
     description: 'Handles réservés en plus de la liste en dur (01 §2.6).',
+  },
+  /**
+   * Les prix ANNUELS, en centimes d'euro, par code de plan.
+   *
+   * §3 du module 14 : « Prix en `system_settings` pour pouvoir tester des
+   * variantes sans déploiement. » Seul l'ANNUEL vit ici : le mensuel est dans
+   * `plans.price_cents`, et `plans.code` étant unique, la table ne peut pas
+   * porter deux lignes pour un même plan. Voir l'arbitrage écrit dans
+   * validation/billing.ts.
+   *
+   * SUPER_ADMIN, comme le veut §7.2 du module 14 (« GET/PUT /plans — prix et
+   * limites (SUPER_ADMIN) ») : un prix est un engagement, pas un contenu.
+   */
+  [BILLING_YEAR_PRICES_SETTING_KEY]: {
+    schema: yearPricesSchema,
+    defaultValue: PLAN_YEAR_PRICES_DEFAULT,
+    role: STAFF_SCOPES.staffAdmin,
+    description: 'Prix annuels en centimes d’euro, par plan (14 §3).',
   },
   admin_allowed_cidrs: {
     schema: z.array(cidrSchema).max(200),

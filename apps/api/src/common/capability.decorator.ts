@@ -41,6 +41,38 @@ export function PublicRead() {
 }
 
 /**
+ * WEBHOOK ENTRANT SIGNÉ — T4 §8.
+ *
+ * Une route d'écriture qui n'a AUCUN membre : c'est un fournisseur qui appelle.
+ * Elle ne peut donc pas déclarer de capacité — aucune de la matrice du §7.3 ne
+ * lui va — et elle ne peut pas non plus se taire, puisque le test de couverture
+ * exige un `x-capability` sur toute route.
+ *
+ * D'où ce troisième décorateur, sur le même procédé que `@PublicRead()` : un
+ * `x-capability` sentinelle, `none:signed-webhook`, qu'aucune capacité réelle ne
+ * peut imiter. `AuthGuard` la laisse passer par le chemin des lectures ouvertes,
+ * et c'est VOULU : l'autorisation d'un webhook n'est pas un jeton, c'est une
+ * SIGNATURE, vérifiée par le service avant que le corps ne soit lu. Une route de
+ * webhook qui exigerait un jeton de membre serait une route qu'aucun fournisseur
+ * ne pourrait appeler.
+ *
+ * La métadonnée `WEBHOOK_KEY` n'est pas décorative : elle dit, dans le code, que
+ * cette route est ouverte EXPRÈS, et permet de les énumérer — trois aujourd'hui,
+ * et on doit pouvoir les compter sans lire les contrôleurs.
+ */
+export const WEBHOOK_KEY = 'app:signedWebhook';
+
+export function SignedWebhook() {
+  return applyDecorators(
+    SetMetadata(WEBHOOK_KEY, true),
+    // Le garde n'a pas de branche propre aux webhooks : il n'en a pas besoin, et
+    // lui en ajouter une serait un chemin d'autorisation de plus à auditer.
+    SetMetadata(PUBLIC_READ_KEY, true),
+    ApiExtension('x-capability', 'none:signed-webhook'),
+  );
+}
+
+/**
  * Limite de débit propre à la route. Par défaut 120 requêtes/min et 30
  * écritures/min par membre (§5.5) ; les routes sensibles resserrent.
  *

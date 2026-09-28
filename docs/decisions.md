@@ -1219,3 +1219,227 @@ de développement (deux passages × deux déclinaisons de STUDIES). C'est exacte
 ce que fait le chemin de republication, la règle « une seule publiée par (type,
 pays) » tient, et les données courantes sont justes. Noté plutôt que nettoyé : une
 suppression serait une opération destructive pour un résidu inoffensif.
+
+---
+
+## Lot 11 — revenus (`billing`, `partners`)
+
+### MON BRIEF ÉTAIT PLUS STRICT QUE LA SPEC, et l'agent l'a dit
+
+Je lui avais écrit que « un plan ne donne aucune priorité d'affichage : aucun tri,
+aucun boost, **nulle part** ». La règle dure du §2 est plus étroite : elle interdit
+la priorité « dans l'affichage de **l'entraide, du parrainage et des guides** ». Et
+§3 accorde explicitement au Premium un « profil mis en avant dans l'annuaire des
+membres », au Pro une « fiche mise en avant dans sa ville ».
+
+L'agent a donc verrouillé les trois surfaces que la spec nomme — statiquement
+*et* fonctionnellement, mutations comprises — et **n'a pas** verrouillé les deux
+annuaires. C'est le bon arbitrage : ma formulation aurait interdit une
+fonctionnalité que la spec vend.
+
+**À trancher :** veut-on la version stricte (aucune mise en avant payante nulle
+part) ou celle de la spec ? Les deux sont défendables, et la seconde est ce qui
+est livré.
+
+### Trois façons de verrouiller une règle tenue par l'ABSENCE de code
+
+C'est la question que je lui avais posée — « aucun encart partenaire hors étape de
+parcours » est tenue par le fait que rien n'appelle `PartnersService`, et une
+absence ne lève jamais. Ses trois procédés, tous éprouvés par mutation :
+
+1. **une liste fermée que le test COMPTE.** `PLACEMENT_SECTIONS` vaut exactement
+   `['HOUSING']` ; y ajouter `'FEED'` fait tomber trois tests.
+2. **un test statique qui lit la source**, commentaires retirés — sans quoi la
+   phrase « ce fichier ne lit jamais `users.plan` » se signalerait elle-même. Sur
+   des fichiers **nommés**, parce que la spec les nomme.
+3. **un test sur le SCHÉMA plutôt que sur le code**, pour les données de carte :
+   une donnée qu'aucune colonne ne peut accueillir ne fuira pas, quel que soit le
+   code écrit demain. Ajouter une colonne `card_last4` au schéma fait tomber le
+   test.
+
+Le troisième est le plus solide des trois, et c'est celui auquel je n'avais pas
+pensé.
+
+### Un test creux, encore — quatrième agent sur six
+
+La mutation « `deleteMany` sur `journeys` dans `endTrials` » **passait** : le
+membre de la fixture n'avait aucun parcours, donc zéro avant et zéro après. Le
+test affirmait « la dégradation ne supprime aucun parcours » en ne prouvant rien.
+Corrigé : la fixture crée un vrai parcours (modèle, version, étapes) et vérifie
+qu'il survit **intact** — `deletedAt` nul, statut `ACTIVE` — pas seulement qu'il
+existe.
+
+### Deux pièges de colonne nullable, rencontrés dans les deux sens
+
+* `expireSubscriptions` doit exclure les essais (`provider_ref LIKE 'trial-%'`).
+  Écrit `{ not: { startsWith } }`, un abonnement **payé** dont `provider_ref` est
+  NULL n'aurait **jamais expiré** — `NULL NOT LIKE …` est NULL, donc faux.
+* Le filtrage pays des encarts : `(origin_country_id IS NULL OR = $1)` avec `$1` à
+  NULL — un membre sans pays d'origine — aurait écarté **aussi** les placements
+  génériques, c'est-à-dire le cas courant.
+
+### Un index unique qui ne protège rien
+
+`partner_placements` porte
+`UNIQUE (step_definition_id, origin_country_id, destination_country_id)`. En
+PostgreSQL, `NULLS DISTINCT` est le défaut : **deux placements génériques sur la
+même étape entrent en base**, et le générique est précisément le cas courant. Le
+conflit est donc appliqué dans le service sous verrou consultatif, et un test
+écrit *directement en base* démontre la faille. Correctif propre :
+`NULLS NOT DISTINCT` (PG 15+) ou un index partiel sur `COALESCE`. **Non migré.**
+
+### `@SignedWebhook()` — une décision à valider
+
+Un webhook est une écriture **sans membre**. Aucune capacité de la matrice §7.3
+ne lui va, et le test de couverture exige un `x-capability` sur toute route non-GET.
+D'où une sentinelle, sur le modèle de `none:public-read` :
+`x-capability: none:signed-webhook`. **L'autorisation est la signature**, et le
+garde d'authentification n'a pas été modifié.
+
+Sans secret configuré, `UnconfiguredWebhookVerifier` **refuse tout** et le
+journalise. C'est le bon défaut : un `{ ok: true }` « en attendant » aurait fait
+de `/v1/webhooks/stripe` une activation de Premium ouverte à qui connaît l'URL.
+
+`main.ts` reçoit `rawBody: true` — une signature porte sur des **octets**, et
+recalculer `JSON.stringify(req.body)` donne un ordre de clés différent de celui du
+fournisseur, donc une vérification toujours fausse, qu'on finit par désactiver.
+
+### Six colonnes annoncées par §6 qui n'existent pas
+
+`subscriptions.{is_trial,trial_ends_at,grace_until,period}`,
+`payments.exchange_rate`, `partners.transparency_text`,
+`users.hide_partners_override`. Contournements notables :
+
+* un **essai** est une ligne d'abonnement dont `provider_ref` commence par
+  `trial-`, et son `provider` vaut `MOBILE_MONEY` — pis-aller assumé, l'enum n'ayant
+  pas « aucun ». MOBILE_MONEY plutôt que STRIPE parce qu'aucun chemin de code
+  n'appelle un fournisseur pour ce canal : un essai marqué STRIPE aurait fini par
+  déclencher une annulation chez Stripe avec une référence inventée. **Effet de
+  bord à connaître :** les essais apparaissent dans
+  `GET /admin/billing/subscriptions?provider=MOBILE_MONEY`, d'où un filtre
+  `trialsOnly` pour les isoler ;
+* la **période** (mensuel/annuel) n'est pas mirrorée localement : à l'activation
+  elle est **déduite du montant** (rapport ×10, donc sans ambiguïté sauf si le prix
+  change entre le paiement et le webhook) ;
+* `payments.exchange_rate` est inutile : la parité EUR/XOF est **fixe** (655,957),
+  donc une constante, pas une donnée.
+
+### Une obligation comptable impossible en base
+
+§11 exige des lignes de paiement « conservées anonymisées (obligation comptable) »
+et des factures gardées dix ans. `subscriptions.user_id` et `payments.user_id` sont
+**NOT NULL en CASCADE** : la ligne disparaît avec le membre. La suppression fait la
+seule chose possible — couper l'abonnement chez le fournisseur avant. La
+conservation comptable demande le stockage séparé que §11 prévoit par ailleurs.
+
+### `users.plan` est écrit dans la transaction, pas par l'événement
+
+Écart assumé avec le §9 (« consommateur : users (plan) ») : passer par l'outbox
+laissait environ une seconde où l'abonnement est `ACTIVE` et le plan encore `FREE`
+— un membre qui vient de payer se faisait refuser son second parcours.
+`recomputeUserPlan` **recalcule** depuis les abonnements plutôt que de poser une
+valeur, donc reste idempotent et rejouable.
+
+### `level_refresh_required` n'est écrit ni lu par personne
+
+Aucune implémentation de `TOKEN_STALE` dans le garde. L'agent a donc **renoncé** à
+le poser lors d'un changement de plan : ce serait un câblage mort. Conséquence à
+connaître : le `plan` du jeton peut être périmé jusqu'à quinze minutes. **Les
+quotas ne sont pas touchés** — les quatre modules qui en lisent un lisent
+`users.plan` en base, mis à jour dans la même transaction. C'est un trou du
+module 01, et il reste ouvert.
+
+---
+
+## Les modales du fil — « fenêtre sur web, feuille sur mobile »
+
+C'est la maquette elle-même qui l'écrit, sous chacune de ses quatre planches
+(A01C commentaires, A01P partage, A01G lier un guide, A01S créer un sondage). Et
+elle **dessine les deux formes** : fenêtre centrée de 720 px sur ordinateur,
+feuille du bas avec sa poignée sur mobile. Il n'y avait donc rien à inventer —
+seulement à transcoder, puis à brancher ce qu'une image ne peut pas contenir.
+
+### Ce que le transcodeur a appris à faire
+
+Quatre adaptations, et **aucune** ne touche au dessin :
+
+1. **le fond fantôme tombe.** La maquette esquisse l'écran sous-jacent à
+   `opacity:.5` pour que la planche se lise seule ; dans l'application, ce qu'il y
+   a derrière est le vrai écran. Deux des huit cadres n'en ont pas, donc l'absence
+   est licite : c'est le COMPTE qui est rapporté, jamais une exception.
+2. **`position: absolute` → `fixed`, sur les enfants DIRECTS seulement.** Dans la
+   maquette le voile et le panneau se calent sur le cadre de 1440 px ; dans
+   l'application une modale couvre la fenêtre. Le panneau contient des dizaines de
+   `position: absolute` internes qui sont du design et ne doivent pas bouger — un
+   remplacement par expression régulière sur tout le fragment les aurait tous
+   touchés, et le décalage ne se serait vu qu'à l'œil.
+3. **le voile et le panneau sont MARQUÉS** (`data-modal-overlay`,
+   `data-modal-panel`). Le composant a besoin de savoir lequel est lequel : un clic
+   sur le voile ferme, un clic dans le panneau non. Le lui faire deviner dans le
+   DOM — « le dernier enfant », « celui qui a un fond blanc » — serait une règle
+   fragile écrite loin de la maquette.
+4. **les fermetures deviennent de vrais boutons.** La croix sur ordinateur, la
+   poignée sur mobile. La maquette les dessine en `<span>`, comme tous ses
+   contrôles ; sans promotion, la seule façon de fermer serait Échap et le voile,
+   et aucun des deux n'est atteignable au clavier depuis l'intérieur du panneau.
+
+### Trois défauts que ce chantier a révélés, et qui auraient été livrés
+
+* **L'adaptation « le contenu doit couler » est FAUSSE dans une modale.** Elle
+  retire `flex: 1` et `min-height: 0` pour qu'une page défile — juste pour un écran
+  plein, nuisible pour un panneau, qui est borné **par dessein** (`top: 40px;
+  bottom: 40px`). Sans eux, le corps débordait du panneau et se dessinait
+  par-dessus le voile : la modale paraissait cassée alors que le transcodage était
+  fidèle. Les modales ont donc leur propre table d'adaptation, qui garde les bornes
+  et fait défiler **dedans**.
+* **Trois panneaux sur quatre se centrent sur les DEUX axes** (`translate(-50%,-50%)`),
+  seul celui des commentaires sur un seul. Ma première image-clé écrivait
+  `transform: translateY(8px) translateX(-50%)` — elle aurait écrasé le centrage
+  pendant toute l'animation : trois panneaux partaient un demi-écran trop bas et
+  sautaient en place à la fin. Corrigé en animant la propriété `translate`, qui se
+  **compose** avec `transform` au lieu de le remplacer. L'animation n'a ainsi rien
+  à savoir du centrage de chaque panneau.
+* **La poignée de la feuille mesure 40 × 5 px** — une cible tactile de cinq pixels,
+  et c'est le **seul** contrôle de la feuille mobile. La barre visible reste au
+  pixel près ; la zone cliquable passe à 88 × 25 par du remplissage, avec
+  `box-sizing: content-box` et `background-clip: content-box` pour que la pastille
+  grise ne s'étale pas sur tout le remplissage.
+
+### Un seul cadre rendu, contrairement aux écrans
+
+`ScreenFrames` rend les deux cadres et en masque un, parce que Next rend côté
+serveur et ignore la largeur de la fenêtre. Une modale **n'existe qu'après une
+action**, donc jamais dans le rendu du serveur : choisir en JavaScript est ici sans
+danger, et c'est nécessaire — les deux cadres portent le **même** identifiant de
+titre (`a01c-titre`), et deux fois le même `id` rend `aria-labelledby` ambigu. La
+boîte de dialogue aurait pris le nom du cadre masqué.
+
+### Un titre promu en `<h2>`, pas en `<h1>`
+
+Le `<h1>` appartient à l'écran qui est derrière, et il ne disparaît pas parce
+qu'une fenêtre s'ouvre par-dessus. Ce qu'il faut, c'est un élément à désigner par
+`aria-labelledby`. Les quatre titres sont **déclarés** dans le transcodeur, texte
+visible compris : les quatre modales ne les dessinent pas de la même façon, et un
+motif de style qui couvrirait les quatre attraperait aussi des sous-titres, en
+silence. `margin: 0` est ajouté — un `<h2>` arrive avec des marges de navigateur
+que le `<span>` n'avait pas, et changer la balise aurait déplacé le titre.
+
+### Le mouvement consomme enfin `motion.js`
+
+`packages/config/motion.js` existait depuis le lot 0 et **rien ne le lisait** — le
+garde-fou `check-motion.mjs` annonçait « 0 durées vérifiées ». Il en vérifie
+maintenant cinq. Les trois mouvements employés sont exactement ceux que le fichier
+prévoit : `overlayIn` (180 ms linéaire, un fondu), `modalIn` (180 ms, huit pixels
+de montée), `sheetIn` (220 ms, toute la hauteur). Le ciblage passe par les
+attributs que le transcodeur pose, donc **rien n'est ajouté aux fichiers générés**.
+
+### Ce qui reste, et qui est dit plutôt que fait
+
+* **A01G et A01S sont transcodées mais inatteignables.** Ce sont des pièces jointes
+  du composeur — lier un guide, créer un sondage — et les brancher demande l'état
+  du brouillon, pas seulement un interrupteur d'ouverture.
+* **Toutes les publications partagent la même fenêtre de commentaires.** La maquette
+  ne fournit qu'un jeu de commentaires ; inventer un fil par publication serait
+  inventer de la donnée. À brancher sur l'API au lot 3.
+* **Le glissement vers le bas pour refermer la feuille** n'est pas fait. La poignée
+  l'annonce visuellement ; elle est opérable au clic et au clavier, pas au geste.

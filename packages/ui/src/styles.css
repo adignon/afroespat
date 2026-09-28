@@ -70,3 +70,94 @@
     outline-offset: 2px;
   }
 }
+
+/**
+ * MOUVEMENT DES MODALES — packages/config/motion.js est la source.
+ *
+ * Les valeurs sont recopiées ici pour le navigateur, comme les jetons de couleur
+ * plus haut. Le garde-fou `check-motion.mjs` vérifie qu'elles ne dérivent pas :
+ * durée sous le plafond de 300 ms et courbe prise dans la table.
+ *
+ * TROIS mouvements, et ce sont ceux que `motion.js` prévoit exactement :
+ *   · `overlayIn` — 180 ms linéaire, un simple fondu. Une courbe se verrait
+ *     comme un scintillement sur un voile.
+ *   · `modalIn`   — 180 ms, huit pixels de montée. Assez pour se voir, pas pour
+ *     distraire.
+ *   · `sheetIn`   — 220 ms, la feuille parcourt toute sa hauteur, donc un peu
+ *     plus de temps.
+ *
+ * Le ciblage passe par les attributs que le transcodeur POSE sur le voile et le
+ * panneau (`tools/dc-to-jsx.mjs`, `adaptModalFrame`). Rien n'est donc ajouté aux
+ * fichiers générés, qui restent la maquette à l'identique.
+ *
+ * Le seuil de 1024 px est celui de §10.1, le même que `ScreenFrames` : au-dessus
+ * une fenêtre centrée, en dessous une feuille du bas. Les deux cadres sont dans
+ * le document — l'un masqué par CSS, parce que Next rend côté serveur et ignore
+ * la largeur de la fenêtre — donc le panneau masqué reçoit lui aussi son
+ * animation, sans effet visible.
+ */
+@keyframes dp-overlay-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/**
+ * ON ANIME `translate`, PAS `transform`, et c'est le point délicat.
+ *
+ * Les panneaux se centrent eux-mêmes avec `transform` — et pas de la même
+ * façon : `translateX(-50%)` pour les commentaires, qui s'étirent du haut au bas
+ * de l'écran, mais `translate(-50%,-50%)` pour les trois autres, centrés sur les
+ * deux axes. Une image-clé qui écrirait `transform` ÉCRASERAIT ce centrage
+ * pendant toute sa durée : trois panneaux sur quatre partaient un demi-écran trop
+ * bas et sautaient en place à la fin.
+ *
+ * La propriété `translate` est indépendante de `transform` et se compose avec
+ * elle. L'animation n'a donc rien à savoir du centrage de chaque panneau — ce qui
+ * est exactement ce qu'on veut, puisque ce centrage vient de la maquette et peut
+ * différer d'une modale à l'autre.
+ */
+@keyframes dp-modal-in {
+  from { opacity: 0; translate: 0 8px; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
+@keyframes dp-sheet-in {
+  from { translate: 0 100%; }
+  to   { translate: 0 0; }
+}
+
+[data-modal-overlay] {
+  animation: dp-overlay-in 180ms linear both;
+}
+
+/**
+ * La feuille par DÉFAUT, la fenêtre au-dessus de 1024 px.
+ *
+ * Dans cet ordre à dessein : si une requête de média échouait, c'est la feuille
+ * qui s'afficherait — un glissement depuis le bas reste lisible sur un grand
+ * écran, alors qu'une fenêtre centrée sur un téléphone déborde.
+ */
+[data-modal-panel] {
+  animation: dp-sheet-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (min-width: 1024px) {
+  [data-modal-panel] {
+    animation: dp-modal-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+/**
+ * `prefers-reduced-motion` coupe TOUT, sans exception — le texte de
+ * `motion.js` est explicite : « ce n'est pas une option d'accessibilité qu'on
+ * dégrade : c'est la même interface, sans transition. L'état final est identique,
+ * il est simplement atteint tout de suite. »
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

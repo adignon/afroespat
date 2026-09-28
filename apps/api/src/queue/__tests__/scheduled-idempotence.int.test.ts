@@ -131,6 +131,14 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'notifications.purge',
       'push.cleanup',
       'staff.session_cleanup',
+      // Module 14 (§10). `billing.expiry_reminders` figurait dans la liste
+      // « ce qui manque encore » de `task-registrations.service.ts` : elle en est
+      // sortie avec la livraison du module. `affiliate.reconcile` y reste, faute de
+      // partenaire exposant une API à interroger.
+      'billing.expiry_reminders',
+      'billing.expire_subscriptions',
+      'billing.trial_end',
+      'usage.reset',
     ];
 
     expect(registry.all().map((t) => t.name).sort()).toEqual([...attendues].sort());

@@ -1247,6 +1247,17 @@ describe('administration (15)', () => {
       'POST /v1/admin/moderation/scam-alerts/{id}/retire',
       // Refusée par construction : elle n'écrit jamais rien (voir `deleteStaff`).
       'DELETE /v1/admin/staff/{id}',
+      // Module 14. L'audit de ces sept routes est vérifié dans
+      // `modules/billing/__tests__/billing.int.test.ts` (plans, remboursement) et
+      // `modules/partners/__tests__/partners.int.test.ts` (partenaires, encarts,
+      // import de conversions) — chacun à côté de la logique qu'il trace.
+      'PUT /v1/admin/billing/plans/{code}',
+      'POST /v1/admin/billing/payments/{id}/refund',
+      'POST /v1/admin/billing/partners',
+      'PATCH /v1/admin/billing/partners/{id}',
+      'POST /v1/admin/billing/placements',
+      'PATCH /v1/admin/billing/placements/{id}',
+      'POST /v1/admin/billing/affiliate/import',
     ]);
 
     const uncovered: string[] = [];

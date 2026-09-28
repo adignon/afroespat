@@ -13,6 +13,7 @@ import { ModerationService } from '../modules/moderation/moderation.service';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { ProsService } from '../modules/pros/pros.service';
 import { StaffAuthService } from '../modules/admin/staff-auth.service';
+import { BillingService } from '../modules/billing/billing.service';
 import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, weeklyAt } from './scheduled-tasks';
 
 /**
@@ -66,6 +67,7 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly cities: CitiesService,
     private readonly notifications: NotificationsService,
     private readonly staffAuth: StaffAuthService,
+    private readonly billing: BillingService,
   ) {}
 
   onModuleInit(): void {
@@ -370,6 +372,52 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: async ({ now }) => ({ sessions: await this.staffAuth.cleanupSessions(now) }),
     });
 
+    // ── Monétisation (14 §10) ────────────────────────────────────────────────
+    //
+    // Les QUATRE tâches du §10 qui ont désormais une méthode. `billing.expiry_reminders`
+    // était nommément citée par la liste « ce qui manque encore » ci-dessous : elle
+    // en sort.
+    //
+    // `affiliate.reconcile` (quotidienne) reste ABSENTE : §10 la décrit comme un
+    // « import automatique SI le partenaire expose une API », et aucun partenaire
+    // n'est configuré — il n'y a donc aucune API à interroger. L'import manuel de
+    // CSV existe, lui : `POST /admin/billing/affiliate/import`.
+    this.registry.register({
+      name: 'billing.expiry_reminders',
+      module: 'billing',
+      schedule: dailyAt(5, 10),
+      handle: (ctx) => this.billing.sendExpiryReminders(ctx.now),
+    });
+
+    // Horaire, et à la minute 15 : une expiration à l'heure près suffit (la grâce
+    // se compte en jours), mais pas à la journée — un membre qui renouvelle doit
+    // retrouver son Premium dans l'heure.
+    this.registry.register({
+      name: 'billing.expire_subscriptions',
+      module: 'billing',
+      schedule: hourlyAt(15),
+      handle: (ctx) => this.billing.expireSubscriptions(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'billing.trial_end',
+      module: 'billing',
+      schedule: hourlyAt(20),
+      handle: (ctx) => this.billing.endTrials(ctx.now),
+    });
+
+    // §10 l'appelle `usage.reset` et explique aussitôt qu'il n'y a rien à
+    // réinitialiser : « les compteurs sont par `period_key`, donc simple purge à
+    // 13 mois ». Le NOM de la spec est gardé — c'est celui qu'on cherchera dans le
+    // journal — et le travail est bien une purge. Mensuelle : une purge quotidienne
+    // de treize mois d'historique ne trouverait rien 29 jours sur 30.
+    this.registry.register({
+      name: 'usage.reset',
+      module: 'billing',
+      schedule: dailyAt(5, 20),
+      handle: (ctx) => this.billing.purgeUsageCounters(ctx.now),
+    });
+
     /**
      * ── CE QUI MANQUE ENCORE ─────────────────────────────────────────────────
      *
@@ -385,7 +433,13 @@ export class TaskRegistrationsService implements OnModuleInit {
      *     transverse. Noter que `notifications.purge` couvre la conservation de
      *     90 jours du module 12, mais PAS la rétention transverse du §9.3, qui
      *     porte sur d'autres tables.
-     *   · `billing.expiry_reminders` (quotidienne) — module 14.
+     *   · `affiliate.reconcile` (quotidienne) — module 14 : §10 la conditionne à un
+     *     partenaire qui expose une API, et aucun partenaire n'est configuré. Il n'y
+     *     a donc rien à interroger. L'import CSV, lui, est livré en route d'équipe.
+     *
+     * `billing.expiry_reminders` et `notifications.weekly_digest` ne sont PLUS dans
+     * cette liste : les modules 14 et 12 les ont livrées. Chaque ligne qui en sort
+     * est un trou comblé, et c'est le seul endroit où cela se lit.
      *
      * Trois autres du module 03 attendent une méthode publique : le module est
      * livré, mais `journey.reminders`, `journey.inactivity_check` et

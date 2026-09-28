@@ -21,6 +21,15 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('bootstrap');
 
   const app = await NestFactory.create(AppModule, {
+    /**
+     * Le CORPS BRUT est conservé, pour les webhooks signés (T4 §8).
+     *
+     * Une signature porte sur des octets. Sans `rawBody`, il faudrait recalculer
+     * `JSON.stringify(req.body)` — dont l'ordre des clés et l'espacement ne sont
+     * pas ceux du fournisseur — et la vérification serait toujours fausse. Ce qui
+     * finit par se « corriger » en la désactivant.
+     */
+    rawBody: true,
     logger: env.NODE_ENV === 'production' ? ['error', 'warn', 'log'] : ['error', 'warn', 'log', 'debug'],
   });
 

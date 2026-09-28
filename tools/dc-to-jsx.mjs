@@ -307,6 +307,307 @@ function findMatchingClose(html, from, tag) {
   }
 }
 
+/**
+ * Les enfants DIRECTS d'un fragment de balisage, avec leur étendue.
+ *
+ * Nécessaire aux modales : l'adaptation qui les concerne porte sur le voile et
+ * le panneau, qui sont les enfants directs du cadre — jamais sur les `position:
+ * absolute` internes du panneau, dont il y a des dizaines et qui sont du design.
+ * Un remplacement par expression régulière sur tout le fragment les toucherait
+ * tous, et le décalage ne se verrait qu'à l'œil, sur un écran monté.
+ */
+function directChildren(html) {
+  const children = [];
+  let i = 0;
+  while (i < html.length) {
+    if (html[i] !== '<' || html[i + 1] === '/' || html[i + 1] === '!') {
+      i += 1;
+      continue;
+    }
+    const tagMatch = /^<([a-zA-Z][\w-]*)/.exec(html.slice(i, i + 40));
+    if (tagMatch === null) {
+      i += 1;
+      continue;
+    }
+    const tag = tagMatch[1];
+    const openEnd = findTagEnd(html, i);
+    if (openEnd === -1) break;
+    // Une balise auto-fermante ou vide n'a pas de fermeture à chercher.
+    if (html[openEnd - 1] === '/' || VOID_ELEMENTS.has(tag.toLowerCase())) {
+      children.push({ tag, start: i, end: openEnd + 1 });
+      i = openEnd + 1;
+      continue;
+    }
+    const close = findMatchingClose(html, openEnd + 1, tag);
+    children.push({ tag, start: i, end: close.end, openEnd: openEnd + 1 });
+    i = close.end;
+  }
+  return children;
+}
+
+
+/**
+ * Adapte le cadre d'une MODALE — deux transformations, et deux seulement.
+ *
+ * La maquette dessine une modale dans un cadre de taille fixe, ce qui impose deux
+ * artifices qu'un écran réel ne doit pas hériter :
+ *
+ *   1. **le fond fantôme.** Un premier enfant à `opacity:.5` esquisse l'écran
+ *      sous-jacent, pour que la planche se lise seule. Dans l'application, ce
+ *      qu'il y a derrière est le VRAI écran : ce calque doit disparaître, sinon il
+ *      dessine une seconde interface par-dessus la première.
+ *      Il n'est pas toujours là — deux des huit cadres n'en ont pas — donc son
+ *      absence est licite, et c'est le COMPTE qui est rapporté : un fantôme qui
+ *      apparaîtrait ailleurs, ou disparaîtrait ici, se verrait.
+ *
+ *   2. **`position: absolute` → `position: fixed`**, sur le voile et le panneau
+ *      uniquement. Dans la maquette ils se calent sur le cadre de 1440 px, qui est
+ *      leur parent positionné ; dans l'application il n'y a pas de cadre, et une
+ *      modale doit couvrir la FENÊTRE. Appliquée aux seuls enfants directs :
+ *      le panneau contient des dizaines de `position: absolute` internes qui sont
+ *      du design et ne doivent pas bouger.
+ *
+ * Tout le reste — largeur de 720 px, rayons, la feuille à 88 % et sa poignée sur
+ * mobile — est transcodé à la lettre. La maquette dessine DÉJÀ les deux formes,
+ * il n'y a rien à inventer.
+ */
+/**
+ * Les DÉCLENCHEURS de modale, marqués sur l'écran qui les porte.
+ *
+ * Le fil ouvre deux fenêtres, et la maquette le dit sous ses planches :
+ * « Commentaires — ouverts depuis « Commenter » » et « Partager ». Ces deux
+ * contrôles existent déjà dans le fil ; il ne manque que le lien.
+ *
+ * Le marquage se fait ici plutôt qu'en injectant un `onClick` dans le JSX, pour la
+ * même raison que les fermetures : les fichiers générés restent de la pure
+ * présentation, et aucune propriété n'a besoin de traverser le fil pour atteindre
+ * un bouton enfoui à cinq niveaux dans une boucle.
+ *
+ * LES MARQUEURS INCLUENT LE `</svg>` QUI PRÉCÈDE, et ce n'est pas une coquetterie :
+ * « Partager » apparaît DEUX FOIS dans le cadre mobile — une fois comme bouton
+ * d'action, une fois dans le texte d'invite du composeur (« Partager avec la
+ * communauté… »). Sans le `</svg>`, c'est l'invite qui devenait cliquable, et le
+ * vrai bouton restait mort. Le défaut aurait été invisible à la relecture.
+ */
+export function markTriggers(html, triggers) {
+  let out = html;
+  const applied = [];
+  const missed = [];
+
+  for (const trigger of triggers ?? []) {
+    const at = out.indexOf(trigger.marker);
+    if (at < 0) {
+      missed.push(trigger);
+      continue;
+    }
+
+    // Remonter jusqu'à la balise ouvrante qui contient le marqueur.
+    let openIdx = at;
+    let tag = null;
+    while (openIdx > 0) {
+      openIdx = out.lastIndexOf('<', openIdx - 1);
+      if (openIdx < 0) break;
+      const m = /^<(button|span|div)[\s>]/.exec(out.slice(openIdx, openIdx + 10));
+      if (m !== null) {
+        tag = m[1];
+        break;
+      }
+    }
+    if (tag === null) {
+      missed.push(trigger);
+      continue;
+    }
+
+    const openEnd = findTagEnd(out, openIdx) + 1;
+    const openTag = out.slice(openIdx, openEnd);
+
+    if (tag === 'button') {
+      // Déjà un bouton : on ne touche QUE l'attribut. Le style, le type et un
+      // éventuel `onClick` de la maquette restent intacts.
+      out = out.slice(0, openEnd - 1) + ` data-modal-open="${trigger.modal}"` + out.slice(openEnd - 1);
+    } else {
+      const close = findMatchingClose(out, openEnd, tag);
+      const style = /style="([^"]*)"/.exec(openTag);
+      const styleAttr =
+        style === null
+          ? ' style="border:none;padding:0;font:inherit;cursor:pointer"'
+          : ` style="${style[1]};border:none;padding:0;font:inherit;cursor:pointer"`;
+      out =
+        out.slice(0, openIdx) +
+        `<button type="button" data-modal-open="${trigger.modal}"${styleAttr}>` +
+        out.slice(openEnd, close.start) +
+        '</button>' +
+        out.slice(close.end);
+    }
+    applied.push(trigger);
+  }
+
+  return { html: out, applied, missed };
+}
+
+/**
+ * Les FERMETURES d'une modale, promues en vrais boutons.
+ *
+ * La maquette les dessine en `<span>`, comme tous ses contrôles : une image n'a
+ * pas besoin d'être opérable. Un écran, si. Sans cette promotion, la seule façon
+ * de fermer serait la touche Échap et le clic sur le voile — ni l'un ni l'autre
+ * n'est annoncé à un lecteur d'écran, et ni l'un ni l'autre n'est atteignable au
+ * clavier depuis l'intérieur du panneau.
+ *
+ * DEUX signatures, structurelles et non textuelles :
+ *
+ *   · la CROIX de l'ordinateur — un rond de 40 px qui contient le tracé de la
+ *     croix. Le tracé seul ne suffit pas : le fil de commentaires en porte un
+ *     second, de 14 px, qui retire la citation d'une réponse. Le confondre avec
+ *     la fermeture aurait fermé la modale en voulant effacer une citation.
+ *   · la POIGNÉE de la feuille mobile — 40 × 5 px, arrondie. C'est le seul
+ *     contrôle que la feuille porte : elle n'a pas de croix.
+ *
+ * Les styles de la maquette sont conservés, et trois déclarations sont AJOUTÉES —
+ * `border:none;padding:0;font:inherit`. Un `<button>` arrive avec une bordure, un
+ * remplissage et une police du navigateur que le `<span>` n'avait pas : sans elles,
+ * promouvoir la balise changerait le dessin. `cursor:pointer` dit que c'est
+ * cliquable, ce que le `<span>` ne disait pas non plus.
+ *
+ * Ce qui n'est PAS fait, et qu'il faut savoir : le glissement vers le bas pour
+ * refermer la feuille. La poignée l'annonce visuellement ; elle est opérable au
+ * clic et au clavier, pas encore au geste.
+ */
+function markClosers(html) {
+  const NEUTRALISE = ';border:none;padding:0;font:inherit;cursor:pointer';
+  let out = html;
+  let closers = 0;
+
+  /**
+   * Fusionne les déclarations PAR PROPRIÉTÉ, la dernière gagnant.
+   *
+   * Sans cela, `padding: 0` de la neutralisation et `padding: 10px 24px` de la
+   * poignée coexistaient dans le même style. À l'exécution la seconde gagne, donc
+   * le rendu était juste — mais l'objet JSX produit portait DEUX FOIS la clé
+   * `padding`, ce qu'ESLint refuse (`no-dupe-keys`), et c'est exactement le motif
+   * « deux écritures pour une clé » qui a déjà coûté un filtre de visibilité et
+   * une fuite de profils dans ce dépôt. Une clé, une valeur.
+   */
+  const mergeStyle = (...parts) => {
+    const seen = new Map();
+    for (const part of parts.join(';').split(';')) {
+      const trimmed = part.trim();
+      if (trimmed === '') continue;
+      const colon = trimmed.indexOf(':');
+      if (colon < 0) continue;
+      seen.set(trimmed.slice(0, colon).trim(), trimmed.slice(colon + 1).trim());
+    }
+    return [...seen].map(([k, v]) => `${k}:${v}`).join(';');
+  };
+
+  const promote = (openIdx, openEnd, closeStart, closeEnd, label, extra = '') => {
+    const openTag = out.slice(openIdx, openEnd);
+    const style = /style="([^"]*)"/.exec(openTag);
+    const base = style === null ? '' : style[1];
+    const styleAttr = ` style="${mergeStyle(base, NEUTRALISE, extra)}"`;
+    out =
+      out.slice(0, openIdx) +
+      `<button type="button" aria-label="${label}" data-modal-close=""${styleAttr}>` +
+      out.slice(openEnd, closeStart) +
+      '</button>' +
+      out.slice(closeEnd);
+    closers += 1;
+  };
+
+  // La croix : un rond de 40 px qui contient le tracé de la croix.
+  const roundRe = /<span style="([^"]*width:40px;height:40px;border-radius:999px[^"]*)"[^>]*>/g;
+  let m;
+  while ((m = roundRe.exec(out)) !== null) {
+    const openEnd = m.index + m[0].length;
+    const close = findMatchingClose(out, openEnd, 'span');
+    if (!out.slice(openEnd, close.start).includes('M18 6 6 18M6 6l12 12')) continue;
+    promote(m.index, openEnd, close.start, close.end, 'Fermer');
+    break;
+  }
+
+  // La poignée de la feuille : 40 × 5 px, arrondie.
+  const handleRe = /<span style="([^"]*width:40px;height:5px[^"]*)"[^>]*>/;
+  const h = handleRe.exec(out);
+  if (h !== null) {
+    const openEnd = h.index + h[0].length;
+    const close = findMatchingClose(out, openEnd, 'span');
+    /**
+     * LA POIGNÉE MESURE 40 × 5 px — une cible tactile de CINQ pixels de haut.
+     *
+     * C'est juste comme dessin : une poignée doit être discrète. C'est inutilisable
+     * comme bouton, et c'est le SEUL contrôle de la feuille mobile — donc sur un
+     * téléphone, la seule façon de refermer par un contrôle.
+     *
+     * La barre visible reste à 40 × 5 px, au pixel près. Ce qui grandit est la
+     * zone cliquable, par du remplissage : `box-sizing: content-box` laisse la
+     * boîte de contenu à 40 × 5, le remplissage porte la cible à 88 × 25, et
+     * `background-clip: content-box` ne peint le fond QUE dans la boîte de contenu
+     * — sans quoi la pastille grise s'étendrait sur tout le remplissage et la
+     * poignée deviendrait un gros rectangle.
+     *
+     * `margin-top` passe à 0 : les 10 px d'origine séparaient la poignée du bord,
+     * et le remplissage les fournit désormais. Les garder décalerait la feuille.
+     */
+    promote(
+      h.index,
+      openEnd,
+      close.start,
+      close.end,
+      'Fermer',
+      ';box-sizing:content-box;padding:10px 24px;margin-top:0;background-clip:content-box',
+    );
+  }
+
+  return { html: out, closers };
+}
+
+export function adaptModalFrame(inner) {
+  const children = directChildren(inner);
+  let ghosts = 0;
+  let fixed = 0;
+  let overlays = 0;
+  let panels = 0;
+
+  // À rebours, pour que les indices restent valides pendant qu'on modifie.
+  let out = inner;
+  for (const child of [...children].reverse()) {
+    const openTag = out.slice(child.start, child.openEnd ?? child.end);
+    if (/opacity:\.5/.test(openTag)) {
+      out = out.slice(0, child.start) + out.slice(child.end);
+      ghosts += 1;
+      continue;
+    }
+    if (!openTag.includes('position:absolute')) continue;
+
+    /**
+     * LE VOILE ET LE PANNEAU SONT MARQUÉS ICI, et non reconnus à l'exécution.
+     *
+     * Le composant `Modal` a besoin de savoir lequel est lequel : un clic sur le
+     * voile ferme, un clic dans le panneau non. Le lui faire deviner dans le DOM —
+     * « le dernier enfant », « celui qui a un fond blanc » — serait une règle
+     * fragile écrite loin de la maquette, qui casserait en silence le jour où une
+     * modale ajoute un troisième calque.
+     *
+     * La distinction est nette dans la maquette : le voile a `inset: 0` et un fond
+     * `rgba(…)` translucide ; le panneau a une géométrie et un fond opaque. Elle
+     * est donc lue une fois, au transcodage, et posée en attribut. Les comptes
+     * remontent, pour qu'un cadre qui n'aurait pas exactement un voile et un
+     * panneau se signale.
+     */
+    const isOverlay = openTag.includes('inset:0') && /background:rgba\(/.test(openTag);
+    const marker = isOverlay ? ' data-modal-overlay=""' : ' data-modal-panel=""';
+    if (isOverlay) overlays += 1;
+    else panels += 1;
+
+    const replaced = openTag.replace('position:absolute', 'position:fixed').replace(/>$/, `${marker}>`);
+    out = out.slice(0, child.start) + replaced + out.slice(child.openEnd ?? child.end);
+    fixed += 1;
+  }
+
+  const closed = markClosers(out);
+  return { inner: closed.html, ghosts, fixed, overlays, panels, closers: closed.closers };
+}
+
 // ─── Extraction d'une section ────────────────────────────────────────────────
 
 /** Isole `<section id="A01" …>…</section>` dans le fichier de maquette. */

@@ -964,6 +964,84 @@ export class NotificationEventsService {
     });
   }
 
+  // ══ Monétisation (14 §9) ══════════════════════════════════════════════════
+
+  /**
+   * `subscription.changed` — l'unique événement d'abonnement, huit motifs.
+   *
+   * §9 donne à `subscription.changed` cinq consommateurs, dont les notifications.
+   * Voici cette moitié — et c'est ce qui autorise le module 14 à émettre le type,
+   * qui figurait au catalogue depuis le lot 0 sans que personne ne l'écoute.
+   *
+   * La catégorie est `ACCOUNT` : un abonnement est une affaire de compte, et §2.1
+   * du module 12 y autorise l'in-app, le push et l'email. L'email ne partira pas
+   * pour autant tant que `users.email` n'existe pas (`NoEmailAddressPort`) — le
+   * canal est DÉCIDÉ, pas envoyé, et c'est visible dans `channels_sent`.
+   *
+   * `TRIAL_ENDING`, `RENEWAL_J7` et `RENEWAL_J1` sont des RAPPELS, pas des
+   * changements : ils portent le même type d'événement parce que le tableau du §9
+   * leur donne les mêmes consommateurs, et parce qu'un type par rappel aurait
+   * multiplié les entrées du catalogue sans rien ajouter. Leur idempotence vient de
+   * `deliver()`, qui rend `DUPLICATE` sur un rejeu — il n'y a pas de colonne
+   * `reminder_sent_at` sur `subscriptions`, et le schéma est gelé.
+   */
+  async onSubscriptionChanged(subscriptionId: string, payload: unknown): Promise<void> {
+    const userId = readString(payload, 'userId');
+    const reason = readString(payload, 'reason');
+    if (userId === null || reason === null) return;
+
+    const notice = SUBSCRIPTION_NOTICES[reason];
+    // Un motif que l'on ne notifie pas — `RESUMED`, `CANCEL_SCHEDULED` — n'est pas
+    // une charge invalide : le membre vient de faire le geste lui-même, et le lui
+    // annoncer serait du bruit. Sortir en silence est la bonne réponse.
+    if (notice === undefined) return;
+
+    await this.notifications.deliver({
+      userId,
+      category: 'ACCOUNT',
+      type: notice.type,
+      title: notice.title,
+      body: notice.body,
+      refType: 'SUBSCRIPTION',
+      refId: subscriptionId,
+      url: '/compte/abonnement',
+    });
+  }
+
+  /** Carte refusée (§4.3) : trois tentatives sur sept jours, et on le dit. */
+  async onPaymentFailed(payload: unknown): Promise<void> {
+    const userId = readString(payload, 'userId');
+    if (userId === null) return;
+
+    await this.notifications.deliver({
+      userId,
+      category: 'ACCOUNT',
+      type: 'billing.payment_failed',
+      title: 'Votre paiement n’a pas abouti',
+      body: 'Mettez à jour votre moyen de paiement pour conserver votre formule Premium.',
+      refType: 'SUBSCRIPTION',
+      refId: userId,
+      url: '/compte/abonnement',
+    });
+  }
+
+  /** Remboursement traité par l'équipe (§4.4). Le membre doit l'apprendre de nous. */
+  async onPaymentRefunded(payload: unknown): Promise<void> {
+    const userId = readString(payload, 'userId');
+    if (userId === null) return;
+
+    await this.notifications.deliver({
+      userId,
+      category: 'ACCOUNT',
+      type: 'billing.payment_refunded',
+      title: 'Votre paiement a été remboursé',
+      body: 'Le remboursement est en route vers votre moyen de paiement.',
+      refType: 'SUBSCRIPTION',
+      refId: userId,
+      url: '/compte/abonnement',
+    });
+  }
+
   // ══ Outils ════════════════════════════════════════════════════════════════
 
   /**
@@ -1042,6 +1120,57 @@ const PROFILE_HELP_TYPE: Record<string, 'PAPERWORK' | 'HOUSING' | 'JOB' | 'WELCO
  * La charge d'un événement est du JSON venu de la base : son type est `unknown`, et
  * il le reste. Ces trois lecteurs sont la seule porte d'entrée.
  */
+/**
+ * Le texte de chaque motif de `subscription.changed` (14 §9).
+ *
+ * Une TABLE et non un `switch` : les textes de l'interface vivent ensemble, se
+ * relisent d'un coup d'œil, et un motif absent de la table est silencieusement
+ * ignoré — ce qui est le comportement voulu pour `RESUMED` et `CANCEL_SCHEDULED`,
+ * que le membre vient de déclencher lui-même.
+ */
+const SUBSCRIPTION_NOTICES: Record<string, { type: string; title: string; body: string }> = {
+  ACTIVATED: {
+    type: 'billing.subscription_activated',
+    title: 'Votre Premium est actif',
+    body: 'Merci de soutenir la plateforme. Vos parcours sont désormais illimités.',
+  },
+  EXPIRED: {
+    type: 'billing.subscription_expired',
+    title: 'Votre Premium a pris fin',
+    body: 'Rien n’est perdu : vos parcours et vos contenus restent en place.',
+  },
+  CANCELLED: {
+    type: 'billing.subscription_cancelled',
+    title: 'Votre abonnement est terminé',
+    body: 'Rien n’est perdu : vos parcours et vos contenus restent en place.',
+  },
+  TRIAL_STARTED: {
+    type: 'billing.trial_started',
+    title: 'Vos 14 jours de Premium sont ouverts',
+    body: 'Parcours illimités, alertes, filtres avancés. Aucun moyen de paiement demandé.',
+  },
+  TRIAL_ENDING: {
+    type: 'billing.trial_ending',
+    title: 'Votre essai se termine dans 3 jours',
+    body: 'Vous reviendrez au plan gratuit, sans coupure et sans rien perdre.',
+  },
+  TRIAL_ENDED: {
+    type: 'billing.trial_ended',
+    title: 'Votre essai est terminé',
+    body: 'Vous êtes revenu·e au plan gratuit. Vos parcours restent consultables.',
+  },
+  RENEWAL_J7: {
+    type: 'billing.renewal_j7',
+    title: 'Votre Premium expire dans 7 jours',
+    body: 'Renouvelez en un clic depuis Compte → Abonnement.',
+  },
+  RENEWAL_J1: {
+    type: 'billing.renewal_j1',
+    title: 'Votre Premium expire demain',
+    body: 'Après expiration, vous gardez 3 jours pour renouveler sans coupure.',
+  },
+};
+
 function readString(payload: unknown, key: string): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const value = (payload as Record<string, unknown>)[key];

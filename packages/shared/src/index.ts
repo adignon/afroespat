@@ -28,5 +28,7 @@ export * from './validation/events.js';
 export * from './validation/admin.js';
 export * from './validation/search.js';
 export * from './validation/notifications.js';
+export * from './validation/billing.js';
+export * from './validation/partners.js';
 export * from './constants/product.js';
 export * from './constants/post-types.js';

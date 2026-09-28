@@ -172,7 +172,30 @@ export type DomainEventType =
   | 'community.topic_created'
   | 'community.topic_resolved'
   | 'community.announcement_published'
+  // ── 14-monetisation.md §9 ─────────────────────────────────────────────────
+  //
+  // `subscription.changed` était dans ce catalogue depuis le lot 0 SANS aucun
+  // consommateur : le module 14 n'existait pas, et personne ne l'écoutait. Il a
+  // désormais les deux moitiés — producteur (BillingService, pour l'activation,
+  // l'expiration, l'essai et les rappels) et consommateur (les notifications du
+  // module 12, `NotificationEventsService.onSubscriptionChanged`).
+  //
+  // UN SEUL type porte les huit faits du §9, distingués par `payload.reason` :
+  // huit types en auraient laissé sept sans consommateur propre, et le tableau du
+  // §9 leur donne de toute façon les MÊMES consommateurs. C'est la forme déjà
+  // employée par `event.updated` + `reminder: 'H_MINUS_2'` (module 09).
   | 'subscription.changed'
+  // Les deux autres événements de paiement du §9 qui ont un consommateur réel :
+  // un refus de carte et un remboursement doivent être DITS au membre, et aucun
+  // autre événement ne les porte. `payment.succeeded` n'est PAS ici : l'activation
+  // qu'il annoncerait est déjà portée par `subscription.changed`, et deux
+  // notifications pour un seul acte valent moins qu'une.
+  //
+  // `affiliate.clicked` / `affiliate.converted` (§9) ne sont pas ici non plus :
+  // leur unique consommateur déclaré est « analytics », qui n'existe pas. Les
+  // clics et conversions sont en base, donc rien n'est perdu.
+  | 'payment.failed'
+  | 'payment.refunded'
   | 'report.created'
   | 'content.flagged'
   // ── 13-moderation.md §6 ───────────────────────────────────────────────────
