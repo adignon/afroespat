@@ -1627,3 +1627,60 @@ enchaînait le commit sur un `grep` réussi, pas sur le code de sortie de la sui
 Le `grep` trouvait bien des lignes — dont celle de l'échec. Corrigé en séparant les
 étapes et en lisant `$?`. C'est exactement le genre de raccourci qui fait dire
 « tout est vert » sans que rien ne l'ait vérifié.
+
+---
+
+## Les modales éprouvées au navigateur, et ce que les mutations ont dit
+
+14 tests Playwright sur les modales, et la suite complète du front à **103/103** —
+sur une machine saine. Ce que les mutations ont appris :
+
+| Mutation | Résultat |
+|---|---|
+| `aria-labelledby` retiré de `Modal` | **2 tests tombent** — le nom accessible et « Partager ouvre SA fenêtre » |
+| piège au clavier désarmé | **1 tombe** — Tab sort du panneau |
+| largeur du panneau 720 → 600 px | **1 tombe** — la géométrie mesure bien |
+| `position: fixed` → `absolute` dans le fichier généré | **rien ne tombe** |
+
+La dernière ligne est la plus instructive, et je l'ai écrite dans le transcodeur
+plutôt que de la taire : l'enveloppe de `Modal` est déjà `position: fixed;
+inset: 0`, donc un enfant `absolute` s'y cale et couvre exactement la même
+surface. Mon commentaire affirmait que l'adaptation était *nécessaire* ; elle ne
+l'est pas dans ce chemin-là. Elle reste, parce qu'elle rend le panneau juste même
+rendu **sans** cette enveloppe — dans `ScreenFrames`, dont le conteneur est
+`position: relative`, un panneau `absolute` serait enfermé dans le cadre. C'est
+une ceinture en plus de la bretelle, et **aucun test ne distingue les deux
+aujourd'hui**.
+
+## Une dépendance implicite entre deux suites
+
+Deux tests d'inscription échouaient sur
+`locator.selectOption: Test timeout` — et le message de Playwright ne nommait pas
+la cause. Le détail qui l'a donnée :
+
+```
+locator resolved to <select aria-label="Indicatif du pays"></select>
+```
+
+Le `<select>` est **vide**. Ses options viennent de `/places/countries`, donc de
+l'API — que `playwright.config.ts` ne démarrait pas. La suite du front passait
+donc sur les machines où une API de développement tournait déjà, et échouait
+ailleurs sans dire pourquoi. Et comme le `<select>` est superposé en
+`opacity: 0`, sans option il n'a aucune taille : Playwright dit « waiting for
+element to be visible and enabled », ce qui envoie chercher un problème de CSS.
+
+L'API est désormais **déclarée** dans `webServer`, aux côtés de Next. Vérifié :
+API debout, les dix tests d'inscription passent en 2,1 s.
+
+## Un rappel utile sur les échecs qui ne veulent rien dire
+
+Une relance ultérieure a donné onze échecs éparpillés dans cinq fichiers sans
+rapport — dont `ERR_NETWORK_IO_SUSPENDED` et treize dépassements de délai. La
+cause n'était pas le code : `uptime` annonçait une **charge moyenne de 49** sur
+une machine redémarrée trente minutes plus tôt, Docker Desktop encore en train de
+s'initialiser. La même suite, même code, passait 103/103 une demi-heure avant.
+
+C'est la troisième fois aujourd'hui qu'un rouge vient de la machine et non du
+code (les deux autres : le hachage scrypt à 5 002 ms, et la file de modération
+qui dépassait cinquante lignes). À chaque fois, la bonne question n'est pas
+« qu'ai-je cassé » mais « qu'est-ce qui a changé **autour** ».

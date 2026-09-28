@@ -64,11 +64,39 @@ export default defineConfig({
     },
   ],
 
-  webServer: {
-    // `next start` directement : le script `start` porte déjà son propre port.
-    command: 'pnpm build && npx next start -p 3100',
-    url: 'http://localhost:3100/accueil',
-    reuseExistingServer: !process.env.CI,
-    timeout: 180_000,
-  },
+  /**
+   * DEUX serveurs, et le second n'est pas un confort.
+   *
+   * L'écran du téléphone remplit son sélecteur d'indicatif depuis
+   * `/places/countries` : sans l'API, le `<select>` est VIDE et le test
+   * « l'indicatif suit le choix » expire sur un `selectOption('FR')` qui n'a aucune
+   * option à choisir. Il a échoué exactement ainsi, et le message de Playwright ne
+   * nomme pas la cause — il dit « waiting for element to be visible and enabled »,
+   * parce qu'un `<select>` sans option, superposé et en `opacity: 0`, n'a pas de
+   * taille.
+   *
+   * La dépendance existait donc depuis toujours, et elle était IMPLICITE : la suite
+   * passait sur les machines où une API de développement tournait déjà, et échouait
+   * ailleurs sans dire pourquoi. La déclarer est la seule façon de rendre la suite
+   * autonome — et de faire que son échec, s'il revient, désigne la bonne chose.
+   *
+   * `reuseExistingServer` hors CI : on ne relance pas l'API de quelqu'un qui
+   * développe. L'API a besoin de PostgreSQL et de Redis (les deux conteneurs du
+   * dépôt) ; c'est ce que `/health` vérifie avant de répondre.
+   */
+  webServer: [
+    {
+      // `next start` directement : le script `start` porte déjà son propre port.
+      command: 'pnpm build && npx next start -p 3100',
+      url: 'http://localhost:3100/accueil',
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+    {
+      command: 'pnpm --filter @app/api dev',
+      url: 'http://localhost:3001/v1/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+  ],
 });

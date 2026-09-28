@@ -362,10 +362,20 @@ function directChildren(html) {
  *
  *   2. **`position: absolute` → `position: fixed`**, sur le voile et le panneau
  *      uniquement. Dans la maquette ils se calent sur le cadre de 1440 px, qui est
- *      leur parent positionné ; dans l'application il n'y a pas de cadre, et une
- *      modale doit couvrir la FENÊTRE. Appliquée aux seuls enfants directs :
- *      le panneau contient des dizaines de `position: absolute` internes qui sont
- *      du design et ne doivent pas bouger.
+ *      leur parent positionné ; dans l'application une modale doit couvrir la
+ *      FENÊTRE. Appliquée aux seuls enfants directs : le panneau contient des
+ *      dizaines de `position: absolute` internes qui sont du design et ne doivent
+ *      pas bouger.
+ *
+ *      HONNÊTETÉ SUR CETTE LIGNE : avec le composant `Modal`, elle ne change RIEN.
+ *      Son enveloppe est déjà `position: fixed; inset: 0`, donc un enfant
+ *      `absolute` s'y cale et couvre exactement la même surface. Vérifié par
+ *      mutation : remettre `absolute` laisse les quatorze tests VERTS, alors que
+ *      muter la largeur du panneau en fait tomber un. L'adaptation reste, parce
+ *      qu'elle rend le panneau juste même rendu SANS cette enveloppe — dans
+ *      `ScreenFrames`, dont le conteneur est `position: relative`, un panneau
+ *      `absolute` serait enfermé dans le cadre. C'est une ceinture en plus de la
+ *      bretelle, et aucun test ne distingue les deux aujourd'hui.
  *
  * Tout le reste — largeur de 720 px, rayons, la feuille à 88 % et sa poignée sur
  * mobile — est transcodé à la lettre. La maquette dessine DÉJÀ les deux formes,
