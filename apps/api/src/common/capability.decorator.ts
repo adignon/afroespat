@@ -43,11 +43,52 @@ export function PublicRead() {
 /**
  * Limite de débit propre à la route. Par défaut 120 requêtes/min et 30
  * écritures/min par membre (§5.5) ; les routes sensibles resserrent.
+ *
+ * La clé est une CONSTANTE EXPORTÉE, et non plus une chaîne écrite ici et
+ * relue ailleurs. Pendant longtemps ce décorateur ne limitait rien du tout :
+ * il posait sa métadonnée, annonçait `x-rate-limit` dans l'OpenAPI, et
+ * personne ne la lisait — une seule occurrence de « app:rateLimit » dans tout
+ * le dépôt, sa propre déclaration. Quinze contrôleurs déclaraient une limite,
+ * dont les routes d'OTP qui coûtent un SMS par appel. Une chaîne écrite deux
+ * fois peut diverger en silence ; un symbole importé ne peut pas.
+ *
+ * Le garde qui la lit est `RateLimitGuard` (`common/rate-limit.guard.ts`).
  */
-export function RateLimit(perMinute: number) {
+export const RATE_LIMIT_KEY = 'app:rateLimit';
+
+/**
+ * La période d'un budget de route.
+ *
+ * ELLE N'EXISTAIT PAS, et son absence rendait plusieurs règles inexprimables.
+ *
+ * `@RateLimit(n)` voulait dire « n par minute », point. Or les spécifications
+ * énoncent souvent l'heure : 01 §4.4 écrit « `PATCH /me` 20/h » et 01 §2 « 10 par
+ * IP et par heure » pour l'envoi d'un code. Ces routes portaient donc
+ * `@RateLimit(20)` et `@RateLimit(10)` — soixante fois plus permissif que la
+ * règle, avec un commentaire qui citait l'heure juste au-dessus. Tant que le
+ * décorateur ne limitait rien, l'écart ne coûtait rien ; le rendre effectif l'a
+ * mis au jour.
+ *
+ * La journée n'est PAS proposée. Les quotas journaliers des spécifications
+ * (« 30 publications/jour », « 3 stories/jour », « 10 contacts/jour ») sont des
+ * règles MÉTIER : elles doivent survivre à un redémarrage de Redis, être lisibles
+ * par le membre, et compter des objets créés — pas des requêtes reçues. Elles
+ * appartiennent au service, qui compte des lignes en base. Une limite de débit
+ * protège la minute et l'heure ; au-delà, c'est un quota, et ce n'est pas la même
+ * chose.
+ */
+export type RateLimitPeriod = 'minute' | 'hour';
+
+export interface RateLimitRule {
+  readonly count: number;
+  readonly period: RateLimitPeriod;
+}
+
+export function RateLimit(count: number, period: RateLimitPeriod = 'minute') {
+  const rule: RateLimitRule = { count, period };
   return applyDecorators(
-    SetMetadata('app:rateLimit', perMinute),
-    ApiExtension('x-rate-limit', `${perMinute}/min`),
+    SetMetadata(RATE_LIMIT_KEY, rule),
+    ApiExtension('x-rate-limit', `${count}/${period === 'hour' ? 'h' : 'min'}`),
   );
 }
 

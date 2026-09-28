@@ -74,7 +74,14 @@ import { MODERATION_QUEUE, type ModerationQueuePort } from './modules/moderation
 import { TaskRegistrationsService } from './queue/task-registrations.service';
 import { EventSubscriptionsService } from './queue/event-subscriptions.service';
 import { AuthGuard } from './common/auth.guard';
+import { loadEnv } from './config/env';
 import { StaffGuard } from './common/staff.guard';
+import {
+  DEFAULT_RATE_LIMITS,
+  RATE_LIMIT_CONFIG,
+  type RateLimitConfig,
+  RateLimitGuard,
+} from './common/rate-limit.guard';
 
 /**
  * Module racine. §3.3 : un dossier par module métier, dans l'ordre de
@@ -211,6 +218,26 @@ import { StaffGuard } from './common/staff.guard';
      * premier à parler.
      */
     { provide: APP_GUARD, useClass: StaffGuard },
+    /**
+     * La limite de débit — §5.5. TROISIÈME garde global, et l'ordre est
+     * nécessaire : elle doit connaître l'identité de l'appelant pour lui
+     * attribuer un budget, et ce sont les deux gardes précédents qui la posent
+     * (`request.auth` par `AuthGuard`, `request.staff` par `StaffGuard`).
+     * Placée avant eux, elle ne verrait que des adresses IP et ferait partager
+     * un même budget à tous les membres d'un réseau d'entreprise.
+     *
+     * Elle ne protège d'aucune faille : elle protège d'un abus, et d'un coût —
+     * les routes d'OTP envoient un SMS à chaque appel. C'est pourquoi une panne
+     * Redis la fait LAISSER PASSER plutôt que tout refuser.
+     */
+    { provide: APP_GUARD, useClass: RateLimitGuard },
+    {
+      provide: RATE_LIMIT_CONFIG,
+      useFactory: (): RateLimitConfig => ({
+        enabled: loadEnv().RATE_LIMIT_ENABLED,
+        ...DEFAULT_RATE_LIMITS,
+      }),
+    },
   ],
 })
 export class AppModule {}

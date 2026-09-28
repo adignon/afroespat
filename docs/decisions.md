@@ -928,3 +928,88 @@ désormais vérifiée par la machine, non affirmée dans un commentaire.
   `NoEmailAddressPort` dit la vérité — `has()` rend `false`, donc aucun email
   n'est décidé, ce qui est exactement ce que §3 prescrit. Le jour où la colonne
   arrive, un seul fournisseur change.
+
+---
+
+## La limite de débit : un décorateur qui ne limitait rien
+
+`@RateLimit(n)` posait sa métadonnée, émettait `x-rate-limit` dans l'OpenAPI, et
+**personne ne la lisait**. Une seule occurrence de `app:rateLimit` dans tout le
+dépôt : sa propre déclaration. **Quinze contrôleurs** déclaraient une limite qui
+n'existait pas, dont les routes d'OTP — celles qui envoient un SMS, donc qui
+coûtent de l'argent à chaque appel. L'OpenAPI annonçait la protection, ce qui est
+pire qu'une absence : on ne cherche pas ce qu'on croit avoir.
+
+Trouvé par un `grep`, en vérifiant le rapport d'un agent. Rien ne pouvait le
+révéler autrement : **un décorateur muet ne casse aucun test**, et il n'y en avait
+aucun.
+
+### Rendre la limite effective a révélé que son unité était fausse
+
+Le décorateur ne savait dire que « par minute ». Or les spécifications chiffrent
+souvent l'heure :
+
+* 01 §2 : « **10 par IP et par heure** » pour l'envoi d'un code ;
+* 01 §4.4 : « `PATCH /me` **20/h** ».
+
+Ces deux routes portaient `@RateLimit(10)` et `@RateLimit(20)` — soit **soixante
+fois plus permissif que la règle**, avec le bon chiffre en commentaire juste
+au-dessus. Tant que le décorateur ne limitait rien, l'écart ne coûtait rien.
+`RateLimit(count, period)` accepte donc `'minute' | 'hour'`, et les deux routes
+sont corrigées.
+
+La **journée** n'est volontairement pas proposée. Les quotas journaliers des
+specs (« 30 publications/jour », « 3 stories/jour », « 10 contacts/jour ») sont
+des règles métier : elles doivent survivre à un redémarrage de Redis, être
+lisibles par le membre, et compter des **objets créés** — pas des requêtes reçues.
+Elles appartiennent au service, qui compte des lignes en base. Une limite de débit
+protège la minute et l'heure ; au-delà, c'est un quota, et ce n'est pas la même
+chose.
+
+### Trois budgets qui s'additionnent
+
+120 requêtes/min et 30 écritures/min par membre (§5.5), plus celui de la route.
+Le premier dépassé refuse, et **tous sont incrémentés de toute façon** : sinon une
+rafale refusée par la route échapperait au plafond global.
+
+L'identité est le membre, puis le compte d'équipe, puis l'IP. L'IP en dernier
+parce qu'elle est partagée — un foyer, un NAT d'opérateur — mais c'est la seule
+identité disponible sur la connexion, qui est précisément la route à protéger.
+Conséquence assumée : deux membres du même foyer se partagent le budget de l'OTP.
+
+Le garde est le **troisième** garde global, et l'ordre est nécessaire : il lui faut
+`request.auth` (posé par `AuthGuard`) et `request.staff` (posé par `StaffGuard`).
+Placé avant eux, il ne verrait que des adresses.
+
+### Fenêtre fixe, et panne Redis qui laisse passer
+
+Fenêtre fixe, pas glissante : elle autorise une pointe à cheval sur deux fenêtres,
+mais une fenêtre glissante demande un horodatage par requête, donc une structure
+par identité que rien n'expire toute seule. §5.5 raisonne « par minute » ; la
+fenêtre fixe dit exactement cela. L'incrément et l'expiration sont posés par un
+**seul script Lua** : en deux allers-retours, un processus qui meurt entre les deux
+laisse une clé SANS expiration, et l'identité est bloquée pour toujours.
+
+En cas de panne Redis, **on laisse passer**. Refuser ferait d'un hoquet Redis une
+panne totale de l'API, alors que cette limite protège d'un abus et d'un coût, pas
+d'une faille. L'échec est journalisé en `error`.
+
+### Le test qui compte, et la classe de défaut
+
+Le test central appelle `otp/request` avec un numéro **différent** à chaque fois :
+la limite par numéro que le service applique déjà ne se déclenche pas, et il ne
+reste debout que la limite par IP — exactement la protection qui manquait, et la
+seule qui arrête quelqu'un qui essaie des numéros en série à nos frais. Avant le
+garde, les onze appels passaient et onze SMS partaient.
+
+Trois mutations, chacune tue son test : le garde qui ne refuse jamais (le bogue
+d'origine) en tue quatre, la période ignorée tue l'assertion sur `Retry-After`,
+et l'identité retombée sur l'IP tue « le budget est porté par le membre ».
+
+Enfin, `metadata-consumed.test.ts` attaque la **classe** de défaut plutôt que ce
+cas : pour chaque clé de métadonnée déclarée dans `common/`, il exige qu'au moins
+un garde, intercepteur ou filtre la lise. Vérifié en coupant le lien : il nomme la
+clé orpheline. Sa portée est honnête — il voit qu'une clé est LUE, pas qu'elle est
+correctement appliquée. Contre cela, la défense reste le test de comportement et
+sa mutation. Les deux sont nécessaires : celui-ci attrape l'oubli complet, l'autre
+l'erreur d'application.

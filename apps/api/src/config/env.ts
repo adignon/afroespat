@@ -42,6 +42,23 @@ export const envSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  /**
+   * La limite de débit du §5.5. Même forme que ci-dessus, et pour la même
+   * raison : `z.coerce.boolean()` rend `true` pour la chaîne « false ».
+   *
+   * Par défaut ACTIVE : le défaut d'un interrupteur de protection doit être la
+   * protection. Le dépôt la coupe dans son `.env` de développement, parce que la
+   * suite d'intégration appelle des dizaines de fois la même route depuis la même
+   * IP — une limite active y ferait échouer des tests pour une raison sans
+   * rapport avec ce qu'ils éprouvent. Le test de la limite elle-même ne dépend
+   * pas de cette variable : il fournit sa propre configuration (voir
+   * `RATE_LIMIT_CONFIG` dans `common/rate-limit.guard.ts`).
+   */
+  RATE_LIMIT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+
   /** api : serveur HTTP. worker : mêmes modules, processeurs de files actifs (§3.1). */
   APP_ROLE: z.enum(['api', 'worker']).default('api'),
   APP_NAME: z.string().min(1),

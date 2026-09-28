@@ -51,7 +51,10 @@ describe('jobId BullMQ (queue/job-id.ts)', () => {
    * valeur, jamais sur le nom de la clé.
    */
   it('[RÈGLE DURE] aucun fichier ne construit un jobId littéral à la main', () => {
-    const root = resolve(import.meta.dirname, '../../../../..');
+    // `__dirname`, pas `import.meta` : le paquet compile en CommonJS (voir
+    // `apps/api/tsconfig.json`), et `import.meta` y est refusé par tsc — alors que
+    // SWC l'accepte à l'exécution. L'erreur n'apparaît donc qu'au typecheck.
+    const root = resolve(__dirname, '..', '..', '..', '..', '..');
     /**
      * `--others --exclude-standard` en plus de `--cached`, et ce n'est pas un
      * détail : sans eux, `git ls-files` ne liste que les fichiers SUIVIS, donc

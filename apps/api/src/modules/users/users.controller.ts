@@ -36,9 +36,11 @@ export class UsersController {
 
   @Patch('me')
   @RequiresCapability('content.read')
-  // §4.4 : 20 par heure. Un formulaire de profil qui enregistre à chaque frappe
-  // atteindrait cette limite en quelques secondes — c'est voulu, il ne doit pas.
-  @RateLimit(20)
+  // §4.4 : « `PATCH /me` 20/h ». Un formulaire de profil qui enregistre à chaque
+  // frappe atteindrait cette limite en quelques secondes — c'est voulu, il ne doit
+  // pas. La période était ABSENTE, donc lue comme la minute : le commentaire citait
+  // l'heure et le code appliquait soixante fois plus.
+  @RateLimit(20, 'hour')
   @ApiOperation({ summary: 'Modifie le compte (pseudo, phase, ville, dates)' })
   async updateMe(
     @Auth() auth: AuthContext,
@@ -49,7 +51,11 @@ export class UsersController {
 
   @Patch('me/profile')
   @RequiresCapability('content.read')
-  @RateLimit(20)
+  // §4.4 ne chiffre que `PATCH /me`. La même période est appliquée ici : c'est la
+  // même surface d'édition de profil, coupée en deux routes pour des raisons de
+  // schéma, et laisser la seconde soixante fois plus ouverte viderait la première
+  // de son sens. Hypothèse, et non lecture littérale de la spec.
+  @RateLimit(20, 'hour')
   @ApiOperation({ summary: 'Modifie le profil (bio, statut, langues, compétences)' })
   async updateProfile(
     @Auth() auth: AuthContext,

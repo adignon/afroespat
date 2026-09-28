@@ -37,10 +37,14 @@ export class AuthController {
   @Post('otp/request')
   @HttpCode(200)
   @PublicRead()
-  // 10 par minute et par IP, au-dessus des 3 par heure et par numéro que le
-  // service applique : celle-ci arrête le balayage de numéros, celle-là le
+  // 01 §2 : « 10 par IP et par HEURE », au-dessus des 3 par heure et par numéro
+  // que le service applique — celle-ci arrête le balayage de numéros, celle-là le
   // harcèlement d'un numéro précis.
-  @RateLimit(10)
+  //
+  // Elle disait `@RateLimit(10)` sans période, donc 10 par MINUTE : soixante fois
+  // la règle, alors que chaque appel coûte un SMS. L'écart ne se voyait pas tant
+  // que le décorateur ne limitait rien.
+  @RateLimit(10, 'hour')
   @ApiOperation({ summary: 'Envoie un code à 6 chiffres par SMS' })
   async requestOtp(
     @Body(zodPipe(otpRequestSchema)) body: z.infer<typeof otpRequestSchema>,
