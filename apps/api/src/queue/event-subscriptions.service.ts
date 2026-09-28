@@ -11,6 +11,9 @@ import { MentorshipService } from '../modules/mentorship/mentorship.service';
 import { MessagingService } from '../modules/messaging/messaging.service';
 import { ModerationService } from '../modules/moderation/moderation.service';
 import { ProsService } from '../modules/pros/pros.service';
+import { NotificationEventsService } from '../modules/notifications/notifications.events';
+import { NotificationsService } from '../modules/notifications/notifications.service';
+import { SearchService } from '../modules/search/search.service';
 import { EventHandlerRegistry } from './event-handlers';
 
 /**
@@ -49,6 +52,9 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly messaging: MessagingService,
     private readonly feed: FeedService,
     private readonly journeys: JourneysService,
+    private readonly notifications: NotificationsService,
+    private readonly notificationEvents: NotificationEventsService,
+    private readonly search: SearchService,
   ) {}
 
   onModuleInit(): void {
@@ -259,6 +265,15 @@ export class EventSubscriptionsService implements OnModuleInit {
     this.registry.on('journey.member_removed', 'messaging', async (job) => {
       await this.messaging.syncJourneyConversation(job.aggregateId);
     });
+    // ── Notifications (12) et recherche (11) ────────────────────────
+    //
+    // Les deux blocs sont des FONCTIONS exportées plutôt que du code en ligne, et
+    // pour une raison de test : un test d'intégration peut alors poser les VRAIS
+    // abonnements sur un registre neuf et éprouver la chaîne PAR L'ÉVÉNEMENT —
+    // `registry.dispatch(job)` — au lieu d'appeler un gestionnaire à la main. Le
+    // câblage reste ici, visible d'un coup d'œil, et c'est bien lui qui est testé.
+    registerNotificationSubscriptions(this.registry, this.notifications, this.notificationEvents);
+    registerSearchSubscriptions(this.registry, this.search);
 
     this.logger.log(`${this.registry.describe().length} type(s) d’événement écouté(s)`);
   }
@@ -289,4 +304,289 @@ function blockPair(payload: unknown): { blocker: string; blocked: string } | nul
   const blocked = readString(payload, 'blockedUserId');
   if (blocker === null || blocked === null) return null;
   return { blocker, blocked };
+}
+
+/**
+ * Les consommateurs de NOTIFICATIONS — 12-notifications.md.
+ *
+ * C'est la moitié manquante de huit chaînes : tous les modules livrés émettaient,
+ * aucun ne notifiait. Un module = un bloc ; les gestionnaires sont indépendants, et
+ * le registre isole leurs échecs.
+ *
+ * L'ordre suit celui des modules, pas celui des événements : on cherche bien plus
+ * souvent « qu'est-ce que l'agenda notifie ? » que « qui écoute event.updated ? ».
+ */
+export function registerNotificationSubscriptions(
+  registry: EventHandlerRegistry,
+  notifications: NotificationsService,
+  events: NotificationEventsService,
+): void {
+  // ── 06 Entraide ───────────────────────────────────────────────────────────
+  registry.on('help_request.published', 'notifications', async (job) => {
+    await events.onHelpPublished(job.aggregateId, job.payload);
+  });
+  registry.on('help_request.responded', 'notifications', async (job) => {
+    await events.onHelpResponded(job.aggregateId, job.payload);
+  });
+  registry.on('help_request.resolved', 'notifications', async (job) => {
+    await events.onHelpResolved(job.aggregateId, job.payload);
+  });
+
+  // ── 08 Parrainage ─────────────────────────────────────────────────────────
+  registry.on('mentorship.requested', 'notifications', async (job) => {
+    await events.onMentorshipRequested(job.payload);
+  });
+  registry.on('mentorship.accepted', 'notifications', async (job) => {
+    await events.onMentorshipAccepted(job.payload);
+  });
+  registry.on('mentorship.declined', 'notifications', async (job) => {
+    await events.onMentorshipDeclined(job.payload);
+  });
+  registry.on('mentorship.ended', 'notifications', async (job) => {
+    await events.onMentorshipEnded(job.payload);
+  });
+
+  // ── 08 Messagerie et contacts ─────────────────────────────────────────────
+  registry.on('message.sent', 'notifications', async (job) => {
+    await events.onMessageSent(job.payload);
+  });
+  registry.on('connection.requested', 'notifications', async (job) => {
+    await events.onConnectionRequested(job.payload);
+  });
+
+  // ── 04 Fil — le regroupement du §2.3 ──────────────────────────────────────
+  registry.on('post.reacted', 'notifications', async (job) => {
+    await events.onPostReacted(job.aggregateId, job.payload);
+  });
+  registry.on('post.commented', 'notifications', async (job) => {
+    await events.onPostCommented(job.aggregateId, job.payload);
+  });
+
+  // ── 07 Réseaux ────────────────────────────────────────────────────────────
+  registry.on('community.announcement_published', 'notifications', async (job) => {
+    await events.onCommunityAnnouncement(job.payload);
+  });
+  registry.on('community.member_joined', 'notifications', async (job) => {
+    await events.onCommunityMemberJoined(job.payload);
+  });
+  registry.on('community.created', 'notifications', async (job) => {
+    await events.onCommunityCreated(job.aggregateId, job.payload);
+  });
+  registry.on('community.archived', 'notifications', async (job) => {
+    await events.onCommunityArchived(job.aggregateId, job.payload);
+  });
+
+  // ── 09 Agenda ─────────────────────────────────────────────────────────────
+  //
+  // `event.updated` porte DEUX faits : la modification notable, et le rappel H−2
+  // que la tâche planifiée du module 09 émet avec `reminder: 'H_MINUS_2'`.
+  registry.on('event.updated', 'notifications', async (job) => {
+    await events.onEventUpdated(job.aggregateId, job.payload);
+  });
+  registry.on('event.cancelled', 'notifications', async (job) => {
+    await events.onEventCancelled(job.aggregateId, job.payload);
+  });
+  registry.on('event.rsvp_changed', 'notifications', async (job) => {
+    await events.onEventRsvpChanged(job.aggregateId, job.payload);
+  });
+
+  // ── 10 Services ───────────────────────────────────────────────────────────
+  registry.on('housing.published', 'notifications', async (job) => {
+    await events.onListingPublished('HOUSING', job.aggregateId, job.payload);
+  });
+  registry.on('job.published', 'notifications', async (job) => {
+    await events.onListingPublished('JOB', job.aggregateId, job.payload);
+  });
+  registry.on('housing.contacted', 'notifications', async (job) => {
+    await events.onListingContacted('HOUSING', job.payload);
+  });
+  registry.on('pro.contacted', 'notifications', async (job) => {
+    await events.onListingContacted('PRO', job.payload);
+  });
+  registry.on('pro.recommended', 'notifications', async (job) => {
+    await events.onRecommended('PRO', job.aggregateId, job.payload);
+  });
+  registry.on('member.recommended', 'notifications', async (job) => {
+    await events.onRecommended('MEMBER', job.aggregateId, job.payload);
+  });
+  registry.on('housing.expired', 'notifications', async (job) => {
+    await events.onHousingExpired(job.aggregateId, job.payload);
+  });
+
+  // ── 05 Guides ─────────────────────────────────────────────────────────────
+  registry.on('guide.proposal_created', 'notifications', async (job) => {
+    await events.onGuideProposalCreated(job.aggregateId, job.payload);
+  });
+  registry.on('guide.proposal_accepted', 'notifications', async (job) => {
+    await events.onGuideProposalDecided('ACCEPTED', job.aggregateId, job.payload);
+  });
+  registry.on('guide.proposal_rejected', 'notifications', async (job) => {
+    await events.onGuideProposalDecided('REJECTED', job.aggregateId, job.payload);
+  });
+  registry.on('guide.proposal_escalated', 'notifications', async (job) => {
+    await events.onGuideProposalDecided('ESCALATED', job.aggregateId, job.payload);
+  });
+  registry.on('guide.flagged', 'notifications', async (job) => {
+    await events.onGuideFlagged(job.aggregateId, job.payload);
+  });
+
+  // ── 13 Modération — catégorie NON DÉSACTIVABLE (§2.2) ─────────────────────
+  registry.on('moderation.content_hidden', 'notifications', async (job) => {
+    await events.onModerationContent('HIDDEN', job.payload);
+  });
+  registry.on('moderation.content_removed', 'notifications', async (job) => {
+    await events.onModerationContent('REMOVED', job.payload);
+  });
+  registry.on('moderation.content_restored', 'notifications', async (job) => {
+    await events.onModerationContent('RESTORED', job.payload);
+  });
+  registry.on('moderation.user_suspended', 'notifications', async (job) => {
+    await events.onSanction('SUSPENDED', job.payload);
+  });
+  registry.on('moderation.user_banned', 'notifications', async (job) => {
+    await events.onSanction('BANNED', job.payload);
+  });
+  registry.on('moderation.user_reinstated', 'notifications', async (job) => {
+    await events.onSanction('REINSTATED', job.payload);
+  });
+  registry.on('moderation.case_resolved', 'notifications', async (job) => {
+    await events.onModerationCaseResolved(job.aggregateId);
+  });
+
+  // ── 01 Compte ─────────────────────────────────────────────────────────────
+  registry.on('user.registered', 'notifications', async (job) => {
+    await events.onUserRegistered(job.aggregateId);
+  });
+  registry.on('user.level_changed', 'notifications', async (job) => {
+    await events.onLevelChanged(job.aggregateId, job.payload);
+  });
+  registry.on('kyc.status_changed', 'notifications', async (job) => {
+    await events.onKycStatusChanged(job.aggregateId, job.payload);
+  });
+  registry.on('user.deletion_requested', 'notifications', async (job) => {
+    await events.onDeletionRequested(job.aggregateId);
+  });
+
+  // §7 : notifications, préférences et abonnements push supprimés ;
+  // `outbound_messages` anonymisés.
+  registry.on('user.deleted', 'notifications', async (job) => {
+    await notifications.handleUserDeleted(job.aggregateId);
+  });
+}
+
+/**
+ * Les consommateurs de la RECHERCHE — 11-recherche.md §2.5.
+ *
+ * « Abonné aux événements `*.published`, `*.updated`, `*.unpublished`,
+ * `*.archived`, `*.hidden`, `user.profile_updated`, `user.blocked` (pas de
+ * réindexation, exclusion à la requête). »
+ *
+ * DEUX écarts, tous deux imposés par le catalogue d'événements :
+ *
+ *   · `user.blocked` n'a PAS d'abonnement, et c'est exactement ce que la spec dit
+ *     entre parenthèses : le blocage s'applique à la REQUÊTE. Réindexer serait faux
+ *     de toute façon — un document n'est pas caché en soi, il est caché POUR un
+ *     demandeur ;
+ *   · `user.profile_updated` n'existe pas dans `DomainEventType` et aucun service ne
+ *     l'émet. On s'abonne donc à ce qui existe (`user.onboarded`,
+ *     `user.phase_changed`, `user.deactivated`, `user.reactivated`), et un
+ *     changement de bio ne réindexe rien jusqu'à la réindexation d'admin. Voir le
+ *     rapport.
+ *
+ * Tous les gestionnaires passent par `enqueueReindex`, qui RELIT LA SOURCE : aucun
+ * ne reçoit de titre dans sa charge, donc l'ordre d'arrivée des événements n'a pas
+ * d'importance — ce qui compte pour une livraison « au moins une fois » qui ne
+ * garantit aucun ordre.
+ */
+export function registerSearchSubscriptions(
+  registry: EventHandlerRegistry,
+  search: SearchService,
+): void {
+  const guideEvents = [
+    'guide.published',
+    'guide.unpublished',
+    'guide.flagged',
+    'guide.restored',
+    'guide.version_created',
+    'guide.proposal_accepted',
+  ] as const;
+  for (const type of guideEvents) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('GUIDE', job.aggregateId);
+    });
+  }
+
+  for (const type of ['help_request.published', 'help_request.resolved', 'help_request.reopened'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('HELP_REQUEST', job.aggregateId);
+    });
+  }
+
+  for (const type of ['housing.published', 'housing.updated', 'housing.taken', 'housing.expired'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('HOUSING', job.aggregateId);
+    });
+  }
+
+  for (const type of ['job.published', 'job.sponsored'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('JOB', job.aggregateId);
+    });
+  }
+
+  for (const type of ['event.published', 'event.updated', 'event.cancelled', 'event.done'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('EVENT', job.aggregateId);
+    });
+  }
+
+  for (const type of ['community.topic_created', 'community.topic_resolved'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('TOPIC', job.aggregateId);
+    });
+  }
+
+  // Un réseau archivé ou réactivé change la visibilité de TOUS ses sujets et
+  // événements : la cascade est portée ici, parce qu'aucun événement ne concerne les
+  // sujets eux-mêmes.
+  for (const type of ['community.archived', 'community.reactivated'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.reindexCommunityChildren(job.aggregateId);
+    });
+  }
+
+  registry.on('pro.registered', 'search', async (job) => {
+    await search.enqueueReindex('PRO', job.aggregateId);
+  });
+
+  for (const type of ['user.onboarded', 'user.phase_changed', 'user.deactivated', 'user.reactivated'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('USER', job.aggregateId);
+    });
+  }
+
+  // §5 : « Documents USER supprimés ; les autres documents de l'auteur suivent le
+  // sort de leur source. »
+  registry.on('user.deleted', 'search', async (job) => {
+    await search.handleUserDeleted(job.aggregateId);
+  });
+
+  // Un contenu masqué, retiré ou rétabli doit sortir de l'index ou y revenir. Le
+  // type de sujet est traduit en type de document ; `POST`, `COMMENT`, `MESSAGE` et
+  // `STORY` n'en ont pas — ils ne sont JAMAIS indexés (§2.1), donc rien à faire.
+  const moderationEvents = [
+    'moderation.content_hidden',
+    'moderation.content_removed',
+    'moderation.content_restored',
+  ] as const;
+  for (const type of moderationEvents) {
+    registry.on(type, 'search', async (job) => {
+      const payload = job.payload as { subjectType?: unknown; subjectId?: unknown } | null;
+      const subjectType = typeof payload?.subjectType === 'string' ? payload.subjectType : null;
+      const subjectId = typeof payload?.subjectId === 'string' ? payload.subjectId : job.aggregateId;
+      const searchType = SearchService.searchTypeOfModerationSubject(subjectType);
+      if (searchType === null) return;
+      await search.enqueueReindex(searchType, subjectId);
+    });
+  }
 }

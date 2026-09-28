@@ -10,6 +10,7 @@ import { loadEnv } from '../../config/env';
 import { QueueService } from '../../queue/queue.service';
 import { QUEUES } from '../../queue/queues';
 import { type AiAnalysisJob, type ModerationQueuePort, ModerationService } from './moderation.service';
+import { jobIdOf } from '../../queue/job-id';
 
 /**
  * L'étape 3 du §2 : l'analyse IA, asynchrone, sur la file `moderation`.
@@ -109,7 +110,7 @@ export class BullModerationQueue implements ModerationQueuePort {
       removeOnFail: { age: 86_400 },
       // Un même sujet analysé deux fois de suite ne vaut qu'un travail : la clé
       // rend la mise en file idempotente sur une rafale d'enregistrements.
-      jobId: `analyze:${job.subjectType}:${job.subjectId}`,
+      jobId: jobIdOf('analyze', job.subjectType, job.subjectId),
     });
   }
 }

@@ -188,6 +188,13 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
       // pour retirer l'accompagnant de l'équipe du parcours (03 §3.4). Inerte
       // ici — sa propre suite l'éprouve.
       inert(),
+      // Les modules 11 et 12, arrivés après ce test : la cascade de blocage ne les
+      // concerne pas, mais le fichier de câblage les exige désormais. Noter que 11
+      // n'a VOLONTAIREMENT aucun abonnement à `user.blocked` — 11 §2.5 exclut les
+      // auteurs bloqués à la REQUÊTE, pas à l'indexation.
+      inert(),
+      inert(),
+      inert(),
     ).onModuleInit();
 
     const country = await prisma.country.findFirstOrThrow({

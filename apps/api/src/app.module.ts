@@ -51,6 +51,21 @@ import { AdminModerationController } from './modules/admin/admin-moderation.cont
 import { AdminService } from './modules/admin/admin.service';
 import { StaffAuthController } from './modules/admin/staff-auth.controller';
 import { StaffAuthService } from './modules/admin/staff-auth.service';
+import { SearchController } from './modules/search/search.controller';
+import { SearchService, SEARCH_INDEX_QUEUE } from './modules/search/search.service';
+import { BullSearchIndexQueue, SearchIndexConsumer } from './modules/search/search.consumer';
+import {
+  NotificationSettingsController,
+  NotificationsController,
+} from './modules/notifications/notifications.controller';
+import {
+  EMAIL_ADDRESS,
+  NoEmailAddressPort,
+  NotificationsService,
+  OUTBOUND_QUEUE,
+} from './modules/notifications/notifications.service';
+import { NotificationEventsService } from './modules/notifications/notifications.events';
+import { BullOutboundQueue, OutboundConsumer } from './modules/notifications/notifications.outbound';
 import { BlocksController } from './modules/blocks/blocks.controller';
 import { BlocksService } from './modules/blocks/blocks.service';
 import { QUEUES } from './queue/queues';
@@ -78,6 +93,7 @@ import { StaffGuard } from './common/staff.guard';
   controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
     StaffAuthController, AdminController, AdminModerationController,
+    SearchController, NotificationsController, NotificationSettingsController,
     FeedController, PostsController, CommentsController, StoriesController, MyStoriesController,
     MentorshipController, ConnectionsController, MessagingController, JourneysController,
   ],
@@ -97,6 +113,9 @@ import { StaffGuard } from './common/staff.guard';
     ModerationService,
     StaffAuthService,
     AdminService,
+    SearchService,
+    NotificationsService,
+    NotificationEventsService,
     FeedService,
     MentorshipService,
     ConnectionsService,
@@ -130,6 +149,34 @@ import { StaffGuard } from './common/staff.guard';
       }),
     },
     ModerationConsumer,
+
+    /**
+     * Les trois files des modules 11 et 12, branchées comme celle de la modération :
+     * l'adaptateur existe PARTOUT (l'API comme le worker produit), les consommateurs
+     * ne tournent que dans le worker — ils le vérifient eux-mêmes sur `APP_ROLE`.
+     *
+     * Les deux ports sont `@Optional()` dans leurs services, et ces fournisseurs sont
+     * ce qui rend la file réelle en exécution. En test, leur absence fait retomber la
+     * recherche sur une indexation SUR PLACE (même appel, même résultat) et les
+     * notifications sur une décision écrite en base sans envoi — ce qui est
+     * précisément ce qu'une suite d'intégration doit pouvoir vérifier sans Redis.
+     */
+    { provide: SEARCH_INDEX_QUEUE, useClass: BullSearchIndexQueue },
+    SearchIndexConsumer,
+    { provide: OUTBOUND_QUEUE, useClass: BullOutboundQueue },
+    OutboundConsumer,
+
+    /**
+     * L'adresse email d'un membre — AUCUNE, et c'est une dépendance non satisfaite.
+     *
+     * 12 §3 annonce `users.email` « ajoutée au module 01 » ; la colonne n'existe pas
+     * dans le schéma figé, donc aucune table ne peut porter l'adresse. Ce fournisseur
+     * dit la vérité plutôt que de la masquer : `has()` rend `false`, donc AUCUN canal
+     * email n'est jamais décidé, conformément au §3 (« sans email, pas de canal
+     * email »). Le jour où la colonne arrive, ce seul fournisseur change.
+     */
+    { provide: EMAIL_ADDRESS, useClass: NoEmailAddressPort },
+
     // Le câblage des consommateurs d'événements. Placé ici, dans le module
     // racine, parce qu'il dépend des services métier — et `QueueModule` ne doit
     // pas les connaître.

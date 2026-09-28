@@ -849,3 +849,82 @@ et `…_per_country`), posés par migration et **absents des fichiers
 La future route `POST /versions/:id/publish` doit donc archiver et publier **dans
 la même transaction**, sinon elle échouera en production. Trouvé parce qu'un test
 a levé `P2002`, pas par lecture.
+
+---
+
+## Modules 11 (recherche) et 12 (notifications)
+
+### `jobId` BullMQ : aucun push ni aucun email ne partait jamais
+
+Le défaut le plus coûteux de tout le lot, et il était **invisible en test**.
+
+BullMQ refuse un `jobId` contenant « : » — **sauf** s'il compte exactement trois
+segments, une compatibilité laissée aux anciens travaux répétables que son propre
+code marque « TODO ». Mesuré contre un vrai Redis :
+
+```
+push:abc          → REFUSÉ  « Custom Id cannot contain : »
+email:abc         → REFUSÉ
+analyze:POST:abc  → ACCEPTÉ   ← trois segments, donc toléré
+a:b:c:d           → REFUSÉ
+push-abc          → ACCEPTÉ
+```
+
+`push:<uuid>` et `email:<uuid>` en comptaient deux : la mise en file levait,
+l'erreur était journalisée, et la ligne `outbound_messages` restait
+**éternellement en `QUEUED`**. La doublure de file des tests est en mémoire et
+n'a pas cette contrainte — seul le lancement du worker l'a révélé.
+
+Et le pire n'était pas la ligne fautive : `analyze:<type>:<id>` de la modération
+fonctionnait **par accident**, en tombant juste sur les trois segments tolérés.
+Un segment ajouté ou retiré aurait arrêté toute l'analyse de modération, en
+silence. Corriger la ligne fautive et laisser la ligne chanceuse, c'était garder
+la mine et retirer le panneau : d'où `queue/job-id.ts`, un seul constructeur qui
+lève à l'écriture du code plutôt qu'à la mise en file, et un test qui interdit au
+dépôt entier de reconstruire un `jobId` littéral à la main.
+
+### Deux angles morts de MES outils, trouvés en les éprouvant
+
+1. **`git ls-files` ne liste que les fichiers SUIVIS.** Les deux contrôles ne
+   voyaient donc aucun fichier neuf — précisément ceux qui ont le plus de chances
+   de porter le défaut. Constaté en réintroduisant le bogue du `jobId` dans un
+   module pas encore commité : le contrôle restait **vert**. Corrigé par
+   `--cached --others --exclude-standard` dans les deux.
+2. **Le contrôle des diffusions lisait ses propres commentaires.** Un commentaire
+   qui explique le motif le contient forcément, et l'outil signalait sa propre
+   documentation. Il signalait aussi deux conditions **exclusives** sur la même
+   valeur (`s === 'A'` puis `s === 'B'`), qui ne peuvent pas s'écraser.
+
+Un garde-fou qui crie à tort finit ignoré, et c'est alors qu'il cesse d'attraper
+le vrai. Les deux corrections sont donc verrouillées par un `--self-test` de
+9 cas — ce que l'outil doit dire **et** ce qu'il doit taire, y compris le trou
+qu'il ne bouche pas (le cas de l'entraide, clé venue d'un appel). Sa portée est
+désormais vérifiée par la machine, non affirmée dans un commentaire.
+
+### Trois autres défauts que l'exercice a révélés
+
+* **Un membre BANNI d'un réseau lisait ses sujets par la RECHERCHE.**
+  `community_members` porte aussi `PENDING`, `INVITED`, `BANNED` ; la lecture
+  d'appartenance ne filtrait pas `status: 'ACTIVE'`. La règle dure 07 §2.1 était
+  contournée par une porte que personne ne regarde. Vérifié moi-même par
+  mutation : le filtre retiré, le test tombe en nommant le document rendu.
+* **`users.display_name` vaut `''` juste après l'inscription** — pas `null`,
+  donc aucun `??` ne l'attrape. Le titre produit était « ␣a répondu à votre
+  demande ».
+* **`@@unique` sur une colonne NULLABLE** dans `search_zero_results` : Postgres
+  traite deux `NULL` comme distincts, donc un `upsert` aurait inséré une ligne
+  par appel, toutes à `count: 1`, et l'agrégat produit aurait été faux **sans
+  rien signaler**.
+
+### Deux contournements qui coûtent une garantie
+
+* **`notifications.group_key` n'existe pas** (annoncée par §3). Le regroupement
+  se fait donc par fenêtre SQL + `pg_advisory_xact_lock`, et non par la fenêtre
+  Redis du §2.3 — d'où une file `notifications` **sans producteur**, écart assumé.
+* **`search_documents.author_user_id` n'existe pas.** La règle dure « auteur
+  bloqué » ne peut pas être tenue en SQL : filtre applicatif avec sur-cueillette,
+  et les compteurs par type deviennent **bornés** au lieu d'exacts.
+* **`users.email` n'existe pas** : aucun canal email réel. Le port
+  `NoEmailAddressPort` dit la vérité — `has()` rend `false`, donc aucun email
+  n'est décidé, ce qui est exactement ce que §3 prescrit. Le jour où la colonne
+  arrive, un seul fournisseur change.
