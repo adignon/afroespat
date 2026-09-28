@@ -8,7 +8,7 @@ import {
 } from '@app/shared';
 import type { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
-import { PublicRead, RateLimit, RequiresCapability } from '../../common/capability.decorator';
+import { AllowSuspended, PublicRead, RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { zodPipe } from '../../common/zod.pipe';
 import { ModerationService } from './moderation.service';
 
@@ -74,6 +74,7 @@ export class ModerationController {
    * dans le rapport de livraison ; le service, lui, traite la contestation
    * correctement dès qu'on l'appelle.
    */
+  @AllowSuspended()
   @Post('sanctions/:id/appeal')
   @RequiresCapability('sanction.appeal')
   @RateLimit(5)

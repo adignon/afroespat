@@ -8,7 +8,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { type Capability, levelSatisfies } from '@app/shared';
 import { ApiError } from './api-error';
-import { CAPABILITY_KEY, PUBLIC_READ_KEY } from './capability.decorator';
+import { ALLOW_SUSPENDED_KEY, CAPABILITY_KEY, PUBLIC_READ_KEY } from './capability.decorator';
 import { type AccessClaims, TokenService } from './token.service';
 
 /**
@@ -22,7 +22,9 @@ import { type AccessClaims, TokenService } from './token.service';
  * Trois contrôles, dans cet ordre, parce que chacun suppose le précédent :
  *   1. le jeton est-il valide (sinon 401) ;
  *   2. le compte est-il suspendu (sinon 403 — mais la LECTURE reste permise,
- *      §7.3 : « un compte suspendu peut toujours consulter ») ;
+ *      §7.3 : « un compte suspendu peut toujours consulter », et `@AllowSuspended()`
+ *      ouvre les rares écritures qu'un DROIT du membre exige, comme contester une
+ *      sanction) ;
  *   3. le niveau de vérification atteint-il celui que la capacité demande
  *      (sinon 403 LEVEL_REQUIRED, avec de quoi proposer la montée de niveau).
  */
@@ -80,7 +82,17 @@ export class AuthGuard implements CanActivate {
     // Le critère est la MÉTHODE HTTP, et non un champ « écriture » ajouté à la
     // matrice du §7.3 : celle-ci est la spec, et lui greffer une donnée dérivée
     // ferait deux sources là où il n'en faut qu'une.
-    if (claims.status === 'SUSPENDED' && request.method !== 'GET' && request.method !== 'HEAD') {
+    const allowSuspended = this.reflector.getAllAndOverride<boolean | undefined>(
+      ALLOW_SUSPENDED_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (
+      claims.status === 'SUSPENDED' &&
+      request.method !== 'GET' &&
+      request.method !== 'HEAD' &&
+      allowSuspended !== true
+    ) {
       throw ApiError.transverse('ACCOUNT_SUSPENDED');
     }
     if (claims.status === 'DELETED' || claims.status === 'DEACTIVATED') {

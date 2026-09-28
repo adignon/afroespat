@@ -647,3 +647,37 @@ Deux causes, toutes deux d'outillage :
 **Aucun code de produit n'était en cause.** C'est la conclusion qui importe, et
 elle a demandé d'écarter méthodiquement trois hypothèses fausses — un verrou de
 ligne, une saturation de bassin, un test lent.
+
+
+---
+
+## `@AllowSuspended()` — une sanction doit rester contestable
+
+Deux règles se heurtaient, et c'est le refus qui gagnait :
+
+- `00` §7.3 refuse **toute écriture** à un compte suspendu, et c'est juste : un
+  membre sanctionné ne doit pas continuer à publier ;
+- `13` §4.3 lui donne le droit de **contester** sa sanction — et contester est une
+  écriture.
+
+La contestation renvoyait donc `403 ACCOUNT_SUSPENDED`. **Une sanction sans
+recours effectif n'est pas une sanction, c'est une exclusion.**
+
+Le piège était double : la suspension révoque les sessions, le membre se
+reconnecte, et c'est son jeton NEUF qui porte `SUSPENDED` — le refus n'apparaissait
+qu'à ce moment-là, et jamais sur le jeton de la session en cours.
+
+L'exemption est **nommée route par route**, et c'est la moitié qui compte autant
+que l'autre : quatre tests éprouvent qu'un compte suspendu peut contester et lire
+ses sanctions, et qu'il **ne peut toujours ni publier ni signaler**. Une exemption
+large aurait rendu la sanction inopérante.
+
+### Un angle mort découvert au passage
+
+`appeal()` refuse en **404** une sanction sans `case_id`, la contestation
+s'écrivant dans l'historique du dossier. Une sanction posée sans dossier ne serait
+donc **pas contestable**, et le membre ne verrait qu'un « introuvable ».
+
+Aucune route ne pose de sanction aujourd'hui (l'application d'équipe n'existe
+pas), donc le cas ne peut pas encore se produire. À combler quand elle arrivera :
+soit toute sanction porte un dossier, soit la contestation sait s'en passer.

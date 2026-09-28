@@ -50,3 +50,28 @@ export function RateLimit(perMinute: number) {
     ApiExtension('x-rate-limit', `${perMinute}/min`),
   );
 }
+
+/**
+ * Route qu'un compte SUSPENDU peut appeler, bien qu'elle écrive.
+ *
+ * §7.3 refuse toute écriture à un compte suspendu, et c'est juste : un membre
+ * sanctionné ne doit pas continuer à publier. Mais `13` §4.3 lui donne le droit
+ * de CONTESTER sa sanction, et contester est une écriture.
+ *
+ * Sans cette exemption, la contestation renvoyait `403 ACCOUNT_SUSPENDED` — donc
+ * une sanction sans recours effectif, ce qui n'est pas une sanction mais une
+ * exclusion. Le piège était double : la suspension révoque les sessions, le membre
+ * se reconnecte, et c'est son jeton NEUF qui porte `SUSPENDED` — le refus
+ * n'apparaissait qu'à ce moment-là.
+ *
+ * À employer avec parcimonie, et seulement là où un droit du membre l'exige. Toute
+ * route qui le porte doit se justifier en une phrase, ici ou dans son commentaire.
+ */
+export const ALLOW_SUSPENDED_KEY = 'app:allowSuspended';
+
+export function AllowSuspended() {
+  return applyDecorators(
+    SetMetadata(ALLOW_SUSPENDED_KEY, true),
+    ApiExtension('x-allow-suspended', true),
+  );
+}
