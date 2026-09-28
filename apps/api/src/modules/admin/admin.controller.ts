@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   STAFF_SCOPES,
   auditQuerySchema,
+  kycDowngradeSchema,
   memberCitySchema,
   memberPhaseSchema,
   memberReasonSchema,
@@ -20,6 +21,7 @@ import type { z } from 'zod';
 import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { Staff, type StaffUser } from '../../common/staff.guard';
 import { zodPipe } from '../../common/zod.pipe';
+import { KycService } from '../kyc/kyc.service';
 import { AdminService } from './admin.service';
 
 /**
@@ -37,7 +39,10 @@ import { AdminService } from './admin.service';
 @ApiTags('admin')
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly kyc: KycService,
+  ) {}
 
   // ── §2.2 — Comptes équipe ─────────────────────────────────────────────────
 
@@ -252,5 +257,31 @@ export class AdminController {
     @Body(zodPipe(memberCitySchema)) body: z.infer<typeof memberCitySchema>,
   ) {
     return this.admin.forceMemberCity(staff, id, body);
+  }
+
+  /**
+   * §3.2 : « Rétrograder le niveau — MODERATOR — marque le KYC `DECLINED` avec
+   * motif ; recalcul. »
+   *
+   * `STAFF_SCOPES.moderation` et non `memberRead` : c'est une décision qui retire
+   * des droits à un membre, au même titre qu'une suspension.
+   *
+   * Elle ne porte QUE `@RequiresStaffRole`, jamais aussi `@RequiresCapability` :
+   * `AuthGuard` refuse à chaque appel une route qui déclarerait les deux (règle dure
+   * 15 §2.1, les deux domaines sont hermétiques).
+   *
+   * Le service appelé est celui du module 01 — la vérification d'identité lui
+   * appartient, et §2.4 veut qu'un seul code calcule le niveau. L'application
+   * d'équipe décide, le module concerné exécute.
+   */
+  @Post('users/:id/kyc/downgrade')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
+  @ApiOperation({ summary: 'Rétrograde le niveau : marque le KYC DECLINED avec motif' })
+  async downgradeKyc(
+    @Staff() staff: StaffUser,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(kycDowngradeSchema)) body: z.infer<typeof kycDowngradeSchema>,
+  ) {
+    return this.kyc.downgrade({ staffId: staff.staffId, ip: staff.ip }, id, body.reason);
   }
 }

@@ -51,10 +51,17 @@ describe('jobId BullMQ (queue/job-id.ts)', () => {
    * valeur, jamais sur le nom de la clé.
    */
   it('[RÈGLE DURE] aucun fichier ne construit un jobId littéral à la main', () => {
-    // `__dirname`, pas `import.meta` : le paquet compile en CommonJS (voir
-    // `apps/api/tsconfig.json`), et `import.meta` y est refusé par tsc — alors que
-    // SWC l'accepte à l'exécution. L'erreur n'apparaît donc qu'au typecheck.
-    const root = resolve(__dirname, '..', '..', '..', '..', '..');
+    /**
+     * La racine vient de GIT, et non d'un `resolve(import.meta.dirname, '../../…')`.
+     *
+     * Deux raisons. D'abord `import.meta` ne compile pas sous le `module`
+     * commonjs du `tsconfig` de ce paquet : `tsc --noEmit` échouait en TS1343,
+     * donc la barre de qualité était rouge en permanence sans que le test, lui,
+     * échoue — vitest transcompile en ESM et ne voyait rien. Ensuite, compter cinq
+     * `..` casse au premier fichier déplacé, et le symptôme serait un contrôle qui
+     * ne trouve plus aucun fichier et passe donc au vert.
+     */
+    const root = execSync('git rev-parse --show-toplevel', { encoding: 'utf8' }).trim();
     /**
      * `--others --exclude-standard` en plus de `--cached`, et ce n'est pas un
      * détail : sans eux, `git ls-files` ne liste que les fichiers SUIVIS, donc

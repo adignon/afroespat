@@ -43,32 +43,40 @@ export function PublicRead() {
 /**
  * WEBHOOK ENTRANT SIGNÉ — T4 §8.
  *
- * Une route d'écriture qui n'a AUCUN membre : c'est un fournisseur qui appelle.
- * Elle ne peut donc pas déclarer de capacité — aucune de la matrice du §7.3 ne
- * lui va — et elle ne peut pas non plus se taire, puisque le test de couverture
- * exige un `x-capability` sur toute route.
+ * Une route d'écriture qui n'a AUCUN membre, et aucun compte d'équipe : c'est un
+ * fournisseur qui appelle. Elle ne peut donc déclarer ni capacité — aucune de la
+ * matrice du §7.3 ne lui va — ni rôle, et elle ne peut pas non plus se taire,
+ * puisque le test de couverture exige un `x-capability` sur toute route non-GET.
  *
- * D'où ce troisième décorateur, sur le même procédé que `@PublicRead()` : un
- * `x-capability` sentinelle, `none:signed-webhook`, qu'aucune capacité réelle ne
- * peut imiter. `AuthGuard` la laisse passer par le chemin des lectures ouvertes,
- * et c'est VOULU : l'autorisation d'un webhook n'est pas un jeton, c'est une
- * SIGNATURE, vérifiée par le service avant que le corps ne soit lu. Une route de
- * webhook qui exigerait un jeton de membre serait une route qu'aucun fournisseur
- * ne pourrait appeler.
+ * D'où ce troisième décorateur. Il réemploie la métadonnée de `@PublicRead()` —
+ * « le garde ne demande rien » — parce que l'autorisation d'un webhook n'est pas
+ * un jeton mais une SIGNATURE, vérifiée dans le service, qui seul détient le
+ * secret du bon fournisseur. Une route de webhook qui exigerait un jeton de membre
+ * serait une route qu'aucun fournisseur ne pourrait appeler.
+ *
+ * LA CAPACITÉ NOMME LE FOURNISSEUR — `webhook:stripe`, `webhook:didit` — et non
+ * une sentinelle générique. Deux agents ont proposé les deux formes, et celle-ci
+ * est la bonne : `none:public-read` satisferait le test en MENTANT sur la nature
+ * de la route, et l'on chercherait ensuite pourquoi une « lecture publique »
+ * accepte des POST. Le préfixe `webhook:` ne peut pas être confondu avec une
+ * capacité de `@app/shared`, exactement comme `staff:`.
  *
  * La métadonnée `WEBHOOK_KEY` n'est pas décorative : elle dit, dans le code, que
- * cette route est ouverte EXPRÈS, et permet de les énumérer — trois aujourd'hui,
- * et on doit pouvoir les compter sans lire les contrôleurs.
+ * cette route est ouverte EXPRÈS, et permet de les énumérer — on doit pouvoir les
+ * compter sans lire les contrôleurs.
+ *
+ * Aucune route ne doit le porter sans vérifier la signature dès sa première
+ * ligne : sans cela, la route serait une écriture ouverte à tout l'Internet.
  */
 export const WEBHOOK_KEY = 'app:signedWebhook';
 
-export function SignedWebhook() {
+export function SignedWebhook(provider: string) {
   return applyDecorators(
-    SetMetadata(WEBHOOK_KEY, true),
+    SetMetadata(WEBHOOK_KEY, provider),
     // Le garde n'a pas de branche propre aux webhooks : il n'en a pas besoin, et
     // lui en ajouter une serait un chemin d'autorisation de plus à auditer.
     SetMetadata(PUBLIC_READ_KEY, true),
-    ApiExtension('x-capability', 'none:signed-webhook'),
+    ApiExtension('x-capability', `webhook:${provider}`),
   );
 }
 

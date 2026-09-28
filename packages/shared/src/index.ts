@@ -11,6 +11,7 @@ export * from './capabilities/capabilities.js';
 export * from './errors/errors.js';
 export * from './validation/pagination.js';
 export * from './validation/auth.js';
+export * from './validation/account.js';
 export * from './validation/help.js';
 export * from './validation/journeys.js';
 export * from './validation/guides.js';

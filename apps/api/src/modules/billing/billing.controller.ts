@@ -177,7 +177,7 @@ export class BillingController {
   /**
    * Les deux points d'entrée des fournisseurs.
    *
-   * `@SignedWebhook()` et non `@RequiresCapability` : il n'y a pas de membre au
+   * `@SignedWebhook('<fournisseur>')` et non `@RequiresCapability` : il n'y a pas de membre au
    * bout, et l'autorisation est la SIGNATURE. Le service la vérifie avant de lire
    * quoi que ce soit du corps — et refuse tout tant qu'aucun secret n'est
    * configuré, ce qui est le cas aujourd'hui pour les deux canaux.
@@ -187,7 +187,7 @@ export class BillingController {
    */
   @Post('webhooks/stripe')
   @HttpCode(200)
-  @SignedWebhook()
+  @SignedWebhook('stripe')
   @ApiOperation({ summary: 'Webhook Stripe — signé, idempotent' })
   async stripeWebhook(
     @Req() request: RawBodyRequest,
@@ -198,7 +198,7 @@ export class BillingController {
 
   @Post('webhooks/mobile-money')
   @HttpCode(200)
-  @SignedWebhook()
+  @SignedWebhook('mobile-money')
   @ApiOperation({ summary: 'Webhook Mobile Money — signé, idempotent' })
   async mobileMoneyWebhook(
     @Req() request: RawBodyRequest,

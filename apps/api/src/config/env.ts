@@ -95,6 +95,19 @@ export const envSchema = z.object({
   EMAIL_SMTP_URL: z.string().optional(),
   PUSH_PROVIDER: providerMode('webpush'),
   KYC_PROVIDER: providerMode('didit'),
+  /**
+   * Le secret qui signe le webhook Didit (T4 §8, 01 §4.3 : « webhook signé,
+   * en-tête HMAC »).
+   *
+   * OPTIONNEL dans le schéma, EXIGÉ en production dès que `KYC_PROVIDER` n'est
+   * plus fictif — voir le garde-fou de `loadEnv`. Le rendre obligatoire tout de
+   * suite empêcherait de démarrer tout environnement de développement existant
+   * pour une clé qu'aucun fournisseur fictif n'emploie ; l'omettre du schéma
+   * laisserait la vérification de signature silencieusement désactivée en
+   * production, ce qui est bien pire : la route accepterait alors de n'importe
+   * qui un « KYC approuvé ».
+   */
+  DIDIT_WEBHOOK_SECRET: z.string().min(16).optional(),
   PAYMENT_PROVIDER: providerMode('stripe'),
   MOBILE_MONEY_PROVIDER: providerMode('fedapay', 'kkiapay', 'paydunya'),
   /**
@@ -155,6 +168,19 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       throw new Error(
         `Fournisseurs encore en mode fictif en production : ${fakes.join(', ')}.\n` +
           'Un OTP fictif en production ouvrirait la plateforme à n’importe qui.',
+      );
+    }
+
+    /**
+     * Le webhook KYC doit être vérifiable. Sans ce secret, `POST /webhooks/didit`
+     * refuse tout — donc aucun membre ne passerait jamais L1 —, et le découvrir en
+     * production coûterait une journée de vérifications d'identité perdues.
+     */
+    if (result.data.KYC_PROVIDER !== 'fake' && result.data.DIDIT_WEBHOOK_SECRET === undefined) {
+      throw new Error(
+        'DIDIT_WEBHOOK_SECRET est absent alors que KYC_PROVIDER n’est pas fictif : le webhook ' +
+          'signé de 01 §4.3 ne pourrait pas être vérifié, donc aucun résultat de vérification ' +
+          'd’identité ne serait accepté.',
       );
     }
   }

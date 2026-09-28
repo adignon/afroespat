@@ -14,6 +14,8 @@ import { NotificationsService } from '../modules/notifications/notifications.ser
 import { ProsService } from '../modules/pros/pros.service';
 import { StaffAuthService } from '../modules/admin/staff-auth.service';
 import { BillingService } from '../modules/billing/billing.service';
+import { AccountService } from '../modules/users/account.service';
+import { KycService } from '../modules/kyc/kyc.service';
 import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, weeklyAt } from './scheduled-tasks';
 
 /**
@@ -68,6 +70,8 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly notifications: NotificationsService,
     private readonly staffAuth: StaffAuthService,
     private readonly billing: BillingService,
+    private readonly account: AccountService,
+    private readonly kyc: KycService,
   ) {}
 
   onModuleInit(): void {
@@ -418,17 +422,68 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: (ctx) => this.billing.purgeUsageCounters(ctx.now),
     });
 
+    // ── Compte et identité (01 §8) ───────────────────────────────────────────
+    //
+    // `account.deletion_execute` est HORAIRE, comme §8 et §9.3 le disent, et non
+    // quotidienne : le délai de sept jours est une promesse faite au membre
+    // (« votre compte sera supprimé le … »), et l'exécuter à une heure fixe le
+    // ferait attendre jusqu'à vingt-quatre heures de plus. C'est aussi la tâche que
+    // dix autres modules attendaient : `user.deleted` avait dix consommateurs et
+    // aucun producteur, donc AUCUN nettoyage de suppression de compte n'avait jamais
+    // lieu, dans aucun module.
+    this.registry.register({
+      name: 'account.deletion_execute',
+      module: 'users',
+      schedule: hourlyAt(20),
+      handle: (ctx) => this.account.executeDueDeletions(ctx.now),
+    });
+
+    // §8 : « Défis expirés depuis plus de 24 h. » Horaire, décalée de la
+    // précédente : les deux effacent, mais dans des tables sans rapport.
+    this.registry.register({
+      name: 'otp.purge',
+      module: 'users',
+      schedule: hourlyAt(25),
+      handle: (ctx) => this.account.purgeOtpChallenges(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'user.phase_progression',
+      module: 'users',
+      schedule: dailyAt(2, 30),
+      handle: (ctx) => this.account.progressPhases(ctx.now),
+    });
+
+    // Celle-ci SUPPRIME des comptes : elle est posée seule, avant la tranche des
+    // recalculs, pour qu'un incident sur elle se lise sans être noyé.
+    this.registry.register({
+      name: 'account.deactivated_purge',
+      module: 'users',
+      schedule: dailyAt(2, 45),
+      handle: (ctx) => this.account.purgeDeactivated(ctx.now),
+    });
+
+    // §8 : « `IN_PROGRESS` → `EXPIRED` après 48 h sans résultat. » Quotidienne
+    // suffit : la borne est à 48 h, et un membre dont la session vient d'expirer
+    // peut de toute façon en ouvrir une autre sans attendre (aucun délai après un
+    // `EXPIRED`, voir `KycService.retryAvailableAt`).
+    this.registry.register({
+      name: 'kyc.expire_sessions',
+      module: 'kyc',
+      schedule: dailyAt(2, 50),
+      handle: (ctx) => this.kyc.expireStaleSessions(ctx.now),
+    });
+
     /**
      * ── CE QUI MANQUE ENCORE ─────────────────────────────────────────────────
      *
-     * Quatre tâches de §9.3 n'ont AUCUNE méthode de service à appeler. Elles ne
-     * sont pas enregistrées — un gestionnaire vide serait pire qu'une absence,
-     * puisque le journal de démarrage affirmerait qu'elles tournent :
+     * Ce qui reste n'a AUCUNE méthode de service à appeler — sauf le module 03, qui
+     * est livré mais n'expose pas de point d'entrée. Rien n'est enregistré : un
+     * gestionnaire vide serait pire qu'une absence, puisque le journal de démarrage
+     * affirmerait que la tâche tourne.
      *
-     *   · `user.phase_progression` (quotidienne) et `account.deletion_execute`
-     *     (horaire) — module 01 ; `UsersService` n'expose ni l'une ni l'autre,
-     *     alors que plusieurs modules citent déjà `account.deletion_execute` comme
-     *     le déclencheur de leur propre nettoyage ;
+     *   · `export.purge` (quotidienne) — 01 §8 ; aucune route d'export RGPD n'est
+     *     livrée, donc `data_exports` reste vide et il n'y a rien à purger ;
      *   · `bookmark.state_refresh` (horaire) et `retention.purge` (quotidienne) —
      *     transverse. Noter que `notifications.purge` couvre la conservation de
      *     90 jours du module 12, mais PAS la rétention transverse du §9.3, qui

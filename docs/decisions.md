@@ -1443,3 +1443,130 @@ attributs que le transcodeur pose, donc **rien n'est ajouté aux fichiers géné
   inventer de la donnée. À brancher sur l'API au lot 3.
 * **Le glissement vers le bas pour refermer la feuille** n'est pas fait. La poignée
   l'annonce visuellement ; elle est opérable au clic et au clavier, pas au geste.
+
+---
+
+## Reliquat du lot 1 — et la chaîne de défauts qu'il a dénouée
+
+Cinq défauts qui s'enchaînent, et dont chacun rendait le suivant invisible. C'est
+l'exercice de la séquence entière qui les a sortis, jamais la relecture.
+
+### 1. Un membre s'inscrivant avec un numéro français restait bloqué en L1 À JAMAIS
+
+`phone_numbers.is_destination` était câblé à **`false`** pour tous les comptes
+créés. C'est la condition du niveau L2. Un membre qui s'inscrivait directement avec
+un numéro français n'y accédait donc jamais — logement, parrainage et annuaire pro
+fermés, **sans message**, et **sans recours** : §2.5 refuse d'ajouter un numéro déjà
+lié à un compte, en l'occurrence le sien. Corrigé : la colonne est déduite du pays
+du numéro.
+
+### 2. `level_refresh_required` était écrit et lu par personne
+
+Le drapeau était remis à zéro par `refresh()` et **aucun garde ne le lisait**. Un
+membre passé L1 restait un quart d'heure sans pouvoir publier ; et surtout, un
+membre **rétrogradé gardait un quart d'heure ses droits L1**.
+
+C'est le même motif que `@RateLimit` : une métadonnée posée, jamais lue, et une
+protection qu'on croit avoir. Deux occurrences en deux jours dans le même socle.
+
+### 3. Le remède au n° 2 ouvrait lui-même une fenêtre
+
+`/auth/refresh` remet le drapeau à `false` pour la session — et l'**ancien** jeton
+d'accès, encore valide un quart d'heure, redevenait alors acceptable **avec son
+ancien niveau**. Sur une rétrogradation L1 → L0, c'est une élévation de privilège
+de quinze minutes **créée par la correction**.
+
+Fermée par la comparaison `claims.level` ≠ base, gratuite puisque la session est
+déjà lue. C'est le « second tour » que j'avais signalé dans le brief, et il
+n'apparaît qu'en éprouvant la séquence complète : poser le drapeau, rafraîchir,
+réessayer avec l'ancien jeton.
+
+### 4. Un mineur annulait sa propre désactivation en deux écrans
+
+Le webhook KYC désactive et révoque les sessions ; §2.8 promet « réactivation par
+simple connexion OTP » ; le mineur relançait l'inscription, tombait sur son numéro
+connu, et revenait. **Même faille pour un banni** — 13 §4.2 écrit
+`status = DEACTIVATED` sur un bannissement, donc un banni est indistinguable d'un
+désactivé si l'on ne regarde que `users.status`.
+
+Fermé en lisant la seule source qui porte la distinction :
+`kyc_verifications.is_adult = false` et une `sanctions type BAN` non levée.
+
+### 5. La purge des comptes désactivés supprimait les bannis — et LIBÉRAIT leur numéro
+
+La suppression vide `phone_numbers`, donc l'empreinte HMAC — **seule contrainte
+d'unicité qui empêche la réinscription** — redevenait libre six mois après la
+sanction. Vérifié en base : après purge d'un compte ordinaire,
+`count(phone_numbers) = 0`.
+
+### 6. `POST /auth/logout` ne tuait que le rafraîchissement
+
+« Sessions révoquées immédiatement » (§2.8, 13 §4.2) voulait dire « dans un quart
+d'heure » : un compte désactivé, suspendu ou en cours de suppression gardait tous
+ses droits d'écriture le temps de son jeton d'accès. Corrigé — et la distinction
+qui compte est que `revoked_at` est une preuve **positive** : l'absence de ligne
+n'en est pas une.
+
+### Un compte suspendu ne pouvait pas quitter la plateforme
+
+§7.3 lui retire toute écriture, y compris `POST /me/deletion` — donc une
+plateforme qui garde ses données contre sa volonté, ce qui n'est pas une sanction
+mais une rétention (RGPD art. 17). `@AllowSuspended()` posé sur cette seule route,
+et une règle vérifie que l'exemption **ne s'élargit pas**.
+
+### `banned_phone_hashes` : exactement ce qui est couvert, et ce qui ne l'est pas
+
+13 §4.2 exige la table mot pour mot. Elle n'est pas dans les 106. L'agent a
+délimité la couverture réelle plutôt que de l'affirmer :
+
+* **couvert** — tant que le compte banni existe, `phone_numbers.phone_hmac` reste
+  pris ; une réinscription retombe sur le compte banni et est refusée ;
+* **couvert** — la purge à six mois exclut les bannissements non levés, donc elle
+  ne libère jamais le numéro d'un banni ;
+* **NON couvert, et non couvrable sans migration** — si le compte banni est un jour
+  **supprimé** (droit à l'effacement, ou la « suppression immédiate » de 15 §3.2),
+  `phone_numbers` est vidée et l'empreinte redevient libre : le banni se réinscrit
+  avec le même téléphone. Aucune table présente ne peut porter l'empreinte après
+  l'effacement.
+
+C'est un arbitrage **RGPD contre modération**, et il demande une décision : soit
+`banned_phone_hashes`, soit une colonne `sanctions.phone_hmac`. En attendant, la
+route « suppression immédiate » de 15 §3.2 n'est **pas livrée** — la livrer
+créerait ce trou à la demande d'un opérateur.
+
+### Deux contradictions tranchées, et une route délibérément absente
+
+1. **`POST /me/deactivate` « confirmation par OTP »** contre l'enum figé :
+   `otp_challenges.purpose` n'a **aucune valeur** pour une désactivation.
+   Réemployer `DELETE_ACCOUNT` ferait qu'un code demandé « pour supprimer »
+   désactive — exactement le brouillage que le contrôle du `purpose` existe pour
+   empêcher. Arbitrage : **pas d'OTP sur la désactivation**, qui est entièrement
+   réversible par une connexion ; la suppression, elle, l'exige.
+2. **`DELETE /me/deletion`** contre « sessions révoquées immédiatement » : les deux
+   ne peuvent être vraies ensemble — après la demande le membre n'a plus de session,
+   donc la route est inatteignable, et s'il se reconnecte par OTP cette connexion a
+   **déjà** annulé la demande. La route n'est **pas livrée**, et aucune méthode
+   d'annulation morte n'existe : une route qui ne peut répondre que 401 ou 409 ferait
+   croire au front qu'il tient un bouton « Annuler ».
+
+### Deux fois la mutation lui a appris que son test ne prouvait rien
+
+* la suite « approbation → `TOKEN_STALE` » restait verte quand on retirait le
+  drapeau du garde, **parce que la comparaison de niveau la couvrait aussi**. Il a
+  fallu un cas où jeton et base concordent et où seul le drapeau parle ;
+* la prise d'idempotence de la suppression n'est pas exerçable en séquentiel — au
+  second appel la sélection ne trouve plus rien. Il a fallu un test **concurrent**.
+
+Et une leçon de méthode : l'annulation d'une demande est défendue par **deux**
+couches ; casser une seule laisse l'autre attraper, donc la mutation ne mesurerait
+que la redondance. Elle porte sur les deux.
+
+### `@SignedWebhook` — deux agents, la même invention
+
+Le lot 11 et le lot 1 ont proposé indépendamment le même décorateur, avec deux
+formes : une sentinelle `none:signed-webhook`, ou `webhook:<fournisseur>`. Les deux
+sont fusionnées, et c'est la seconde forme qui l'emporte pour la capacité : marquer
+un webhook `none:public-read` satisferait le test de couverture **en mentant** sur
+la nature de la route, et l'on chercherait ensuite pourquoi une « lecture
+publique » accepte des POST. La métadonnée énumérable du lot 11 est gardée, pour
+qu'on puisse compter ces routes sans lire les contrôleurs.

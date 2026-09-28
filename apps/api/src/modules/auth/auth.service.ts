@@ -2,6 +2,8 @@ import { randomInt } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@app/db';
 import {
+  ACCOUNT_ERROR_CODES,
+  ACCOUNT_ERROR_MESSAGES,
   AUTH_ERROR_MESSAGES,
   AUTH_ERROR_CODES,
   RATE_LIMITS,
@@ -200,9 +202,42 @@ export class AuthService {
     ip: string | undefined;
     userAgent: string | undefined;
   }): Promise<{ accessToken: string; refreshToken: string; isNewUser: boolean; userId: string }> {
-    const challenge = await this.prisma.otpChallenge.findUnique({
-      where: { id: input.challengeId },
+    const challenge = await this.consumeChallenge(input.challengeId, input.code);
+
+    const existing = await this.prisma.phoneNumber.findUnique({
+      where: { phoneHmac: challenge.phoneHmac },
+      select: { userId: true },
     });
+
+    let userId: string;
+    let isNewUser: boolean;
+    if (existing === null) {
+      userId = await this.createAccount(challenge);
+      isNewUser = true;
+    } else {
+      userId = existing.userId;
+      isNewUser = false;
+      // §2.8 : une connexion OTP réveille un compte désactivé et ANNULE une
+      // suppression en attente. Elle refuse en revanche un mineur et un banni.
+      await this.resumeAccount(userId);
+    }
+
+    const session = await this.openSession(userId, input.ip, input.userAgent);
+    return { ...session, isNewUser, userId };
+  }
+
+  /**
+   * Éprouve un code et CONSOMME le défi. Extrait de `verifyOtp` parce que trois
+   * autres actions en dépendent — ajout de numéro (§2.5), suppression de compte et
+   * désactivation (§2.8) — et qu'une seconde copie de ces cinq contrôles finirait
+   * par en oublier un.
+   *
+   * Le défi est consommé dès que le code est bon, AVANT toute suite : un code
+   * valide ne doit jamais pouvoir servir deux fois, même si l'action qu'il autorise
+   * échoue ensuite.
+   */
+  private async consumeChallenge(challengeId: string, code: string) {
+    const challenge = await this.prisma.otpChallenge.findUnique({ where: { id: challengeId } });
 
     // Un défi inconnu et un défi consommé donnent la MÊME erreur : distinguer
     // les deux dirait à un attaquant qu'il a trouvé un identifiant valide.
@@ -213,7 +248,7 @@ export class AuthService {
       this.fail('OTP_ATTEMPTS_EXCEEDED');
     }
 
-    if (!this.crypto.verifyToken(input.code, challenge.codeHash)) {
+    if (!this.crypto.verifyToken(code, challenge.codeHash)) {
       // On incrémente AVANT de répondre : sinon un attaquant coupe la connexion
       // après chaque essai et le compteur ne monte jamais.
       await this.prisma.otpChallenge.update({
@@ -229,18 +264,172 @@ export class AuthService {
       data: { consumedAt: new Date() },
     });
 
-    const existing = await this.prisma.phoneNumber.findUnique({
-      where: { phoneHmac: challenge.phoneHmac },
-      select: { userId: true },
+    return challenge;
+  }
+
+  /**
+   * Confirme une action du compte par OTP — §2.8 (« confirmation par OTP
+   * `purpose = DELETE_ACCOUNT` ») et §2.5 (ajout d'un numéro).
+   *
+   * DEUX CONTRÔLES qu'un simple `consumeChallenge` n'a pas :
+   *
+   *   · le `purpose`. Sans lui, le code de connexion que le membre vient de
+   *     recevoir confirmerait la suppression de son compte — et une page piégée
+   *     n'aurait plus qu'à le lui demander sous un autre prétexte.
+   *   · le PROPRIÉTAIRE, quand `ownedBy` est fourni. Le défi doit porter
+   *     l'empreinte d'un numéro du membre : sans cela, n'importe qui pourrait
+   *     confirmer la suppression du compte d'autrui avec un code reçu sur SON
+   *     propre téléphone.
+   *
+   * Rend l'empreinte et le pays du défi, dont l'ajout de numéro a besoin.
+   */
+  async confirmWithOtp(input: {
+    challengeId: string;
+    code: string;
+    purpose: OtpPurpose;
+    /** Identifiant du membre dont le défi doit porter un numéro, ou `null`. */
+    ownedBy: string | null;
+  }): Promise<{ phoneHmac: string; countryId: string; phoneEncrypted: Uint8Array<ArrayBuffer> | null }> {
+    const challenge = await this.consumeChallenge(input.challengeId, input.code);
+
+    if (challenge.purpose !== input.purpose) {
+      throw new ApiError(
+        'OTP_PURPOSE_MISMATCH',
+        ACCOUNT_ERROR_MESSAGES.OTP_PURPOSE_MISMATCH,
+        ACCOUNT_ERROR_CODES.OTP_PURPOSE_MISMATCH,
+        { expected: input.purpose, given: challenge.purpose },
+      );
+    }
+
+    if (input.ownedBy !== null) {
+      const owned = await this.prisma.phoneNumber.findFirst({
+        where: { userId: input.ownedBy, phoneHmac: challenge.phoneHmac },
+        select: { id: true },
+      });
+      // 404 et non 403 : T4 §3 interdit de dire à qui appartient un numéro.
+      if (owned === null) throw ApiError.notFound();
+    }
+
+    return {
+      phoneHmac: challenge.phoneHmac,
+      countryId: challenge.countryId,
+      phoneEncrypted: challenge.phoneEncrypted,
+    };
+  }
+
+  /**
+   * Ce qu'une connexion OTP fait à un compte qui n'est pas simplement `ACTIVE` —
+   * §2.8, et la règle dure « un membre mineur est désactivé et ne peut pas se
+   * reconnecter » (§10).
+   *
+   * C'EST LE PIÈGE DE CE MODULE, et il ne se voit qu'au SECOND tour. Le webhook
+   * Didit désactive le compte d'un mineur et révoque ses sessions ; le membre
+   * relance simplement l'inscription, tombe sur son numéro déjà connu, et §2.8
+   * promet « réactivation par simple connexion OTP ». Sans le contrôle ci-dessous,
+   * la désactivation était donc annulée par la victime elle-même en deux écrans, et
+   * rien dans les journaux ne le disait. Le même raisonnement vaut pour un banni :
+   * 13 §4.2 écrit `status = DEACTIVATED` sur un `BAN_USER`, ce qui rend un banni
+   * indistinguable d'un désactivé si l'on ne regarde que `users.status`.
+   *
+   * La distinction se lit ailleurs, et dans les deux cas sur une donnée que la
+   * suppression RGPD ne touche pas tant que le compte existe :
+   *   · mineur → une ligne `kyc_verifications` avec `is_adult = false` ;
+   *   · banni → une `sanctions` de type `BAN` non levée.
+   */
+  private async resumeAccount(userId: string): Promise<void> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { status: true, deletedAt: true, deactivatedAt: true },
     });
 
-    const { userId, isNewUser } =
-      existing === null
-        ? { userId: await this.createAccount(challenge), isNewUser: true }
-        : { userId: existing.userId, isNewUser: false };
+    // Un compte supprimé n'a plus de numéro (§9 vide `phone_numbers`), donc on ne
+    // devrait jamais arriver ici par son empreinte. Si cela se produit, la ligne
+    // `phone_numbers` a survécu à une suppression incomplète : on refuse plutôt que
+    // de rouvrir un compte anonymisé.
+    if (user.status === 'DELETED' || user.deletedAt !== null) {
+      throw ApiError.transverse('CONFLICT', { reason: 'compte supprimé' });
+    }
 
-    const session = await this.openSession(userId, input.ip, input.userAgent);
-    return { ...session, isNewUser, userId };
+    const minor = await this.prisma.kycVerification.findFirst({
+      where: { userId, isAdult: false },
+      select: { id: true },
+    });
+    if (minor !== null) this.fail('ACCOUNT_MINOR');
+
+    /**
+     * `liftedAt: null` est écrit EXPLICITEMENT.
+     *
+     * Un `liftedAt: { not: … }` ou une comparaison sur une colonne NULLABLE rend
+     * NULL — donc faux — pour les lignes non levées, c'est-à-dire exactement celles
+     * qu'on cherche. Le bannissement serait alors invisible et le banni reviendrait.
+     */
+    const ban = await this.prisma.sanction.findFirst({
+      where: { userId, type: 'BAN', liftedAt: null },
+      select: { id: true },
+    });
+    if (ban !== null) {
+      throw new ApiError(
+        'ACCOUNT_BANNED',
+        ACCOUNT_ERROR_MESSAGES.ACCOUNT_BANNED,
+        ACCOUNT_ERROR_CODES.ACCOUNT_BANNED,
+      );
+    }
+
+    if (user.status === 'DEACTIVATED') {
+      /**
+       * On réveille SANS regarder les six mois de §2.8.
+       *
+       * Le délai est tenu par la tâche `account.deactivated_purge`, pas ici. Si
+       * elle a du retard, refuser la connexion laisserait le membre dehors pour une
+       * raison qui n'est pas la sienne ; l'accepter le remet en `ACTIVE`, ce qui le
+       * SORT du balayage de la tâche. L'inverse — accueillir puis supprimer à 3 h du
+       * matin — serait le pire des deux.
+       */
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: userId },
+          data: { status: 'ACTIVE', deactivatedAt: null },
+        });
+        await this.outbox.emit(tx, {
+          type: 'user.reactivated',
+          aggregateId: userId,
+          payload: { userId, deactivatedAt: user.deactivatedAt?.toISOString() ?? null },
+        });
+      });
+      this.logger.log(`Compte ${userId} réactivé par connexion OTP (§2.8)`);
+      return;
+    }
+
+    if (user.status === 'DELETION_PENDING') {
+      const pending = await this.prisma.accountDeletionRequest.findFirst({
+        where: { userId, cancelledAt: null, executedAt: null },
+        orderBy: { requestedAt: 'desc' },
+        select: { id: true, executeAfter: true },
+      });
+
+      /**
+       * « PENDANT 7 JOURS, une connexion OTP annule la demande » (§2.8). Au-delà,
+       * non : l'échéance est passée, la tâche horaire va exécuter, et accueillir le
+       * membre pour lui prendre son compte une heure plus tard serait un mensonge.
+       */
+      if (pending === null || pending.executeAfter.getTime() <= Date.now()) {
+        throw ApiError.transverse('CONFLICT', { reason: 'suppression en cours d’exécution' });
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.accountDeletionRequest.update({
+          where: { id: pending.id },
+          data: { cancelledAt: new Date() },
+        });
+        await tx.user.update({ where: { id: userId }, data: { status: 'ACTIVE' } });
+        await this.outbox.emit(tx, {
+          type: 'user.reactivated',
+          aggregateId: userId,
+          payload: { userId, cancelledDeletionRequestId: pending.id },
+        });
+      });
+      this.logger.log(`Suppression du compte ${userId} annulée par connexion OTP (§2.8)`);
+    }
   }
 
   /**
@@ -279,6 +468,26 @@ export class AuthService {
     const originCountryId = await this.provisionalOriginCountry(challenge.countryId);
     const userId = newId();
 
+    /**
+     * `is_destination` DÉDUIT du pays du numéro, et non posé à `false`.
+     *
+     * BOGUE CORRIGÉ : la colonne était câblée à `false` pour tous les comptes
+     * créés. C'est la condition du niveau L2 (§7.2) — « un numéro d'un pays de
+     * destination actif vérifié par OTP » — et la fausser signifiait qu'un membre
+     * inscrit DIRECTEMENT avec un numéro français restait bloqué en L1 quoi qu'il
+     * fasse : logement, parrainage et annuaire professionnel fermés, sans aucun
+     * message pour le lui dire, et sans recours puisque §2.5 refuse d'ajouter un
+     * numéro déjà lié à un compte — le sien.
+     */
+    const phoneCountry = await this.prisma.country.findUnique({
+      where: { id: challenge.countryId },
+      select: { kind: true, isActive: true },
+    });
+    const isDestination =
+      phoneCountry !== null &&
+      phoneCountry.isActive &&
+      (phoneCountry.kind === 'DESTINATION' || phoneCountry.kind === 'BOTH');
+
     await this.prisma.$transaction(async (tx) => {
       await tx.user.create({
         data: {
@@ -307,7 +516,7 @@ export class AuthService {
           phoneEncrypted,
           phoneHmac: challenge.phoneHmac,
           isPrimary: true,
-          isDestination: false,
+          isDestination,
           verifiedAt: new Date(),
         },
       });

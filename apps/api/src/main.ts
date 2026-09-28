@@ -21,16 +21,19 @@ async function bootstrap(): Promise<void> {
   const logger = new Logger('bootstrap');
 
   const app = await NestFactory.create(AppModule, {
+    logger: env.NODE_ENV === 'production' ? ['error', 'warn', 'log'] : ['error', 'warn', 'log', 'debug'],
     /**
-     * Le CORPS BRUT est conservé, pour les webhooks signés (T4 §8).
+     * Le corps BRUT est conservé, en plus du JSON analysé — T4 §8.
      *
-     * Une signature porte sur des octets. Sans `rawBody`, il faudrait recalculer
-     * `JSON.stringify(req.body)` — dont l'ordre des clés et l'espacement ne sont
-     * pas ceux du fournisseur — et la vérification serait toujours fausse. Ce qui
-     * finit par se « corriger » en la désactivant.
+     * Les webhooks entrants (`/webhooks/didit`, et demain Stripe et Mobile Money)
+     * ont une signature HMAC qui porte sur les OCTETS REÇUS. Reconstruire ces
+     * octets depuis l'objet analysé est impossible en pratique : l'ordre des clés,
+     * les espaces et l'échappement Unicode ne se devinent pas, et `JSON.stringify`
+     * produit une chaîne qui ressemble à l'originale sans lui être identique — donc
+     * une signature qui ne correspond jamais. Sans ce drapeau, tout webhook signé
+     * repart en `401`, et aucune vérification d'identité n'aboutit.
      */
     rawBody: true,
-    logger: env.NODE_ENV === 'production' ? ['error', 'warn', 'log'] : ['error', 'warn', 'log', 'debug'],
   });
 
   // Préfixe /v1 pour les membres, /v1/admin pour l'équipe (§5.1).

@@ -495,6 +495,27 @@ export const AUDIT_ACTIONS = {
   userReactivated: 'user.reactivated',
   userPhaseForced: 'user.phase_forced',
   userCityForced: 'user.city_forced',
+  /** §3.2 : « Rétrograder le niveau » — marque le KYC `DECLINED` avec motif. */
+  userKycDowngraded: 'user.kyc_downgraded',
+} as const;
+
+/**
+ * Les actions d'audit écrites par le SYSTÈME, hors application admin — 00 §8.5
+ * (« alimentée par tout service admin ET par les actions système sensibles »).
+ *
+ * Elles vivent ici, avec les autres, parce que la page « Journal d'audit » les
+ * filtre au même endroit : une suppression de compte exécutée par une tâche doit se
+ * retrouver dans le même écran qu'une suppression décidée par l'équipe.
+ */
+export const SYSTEM_AUDIT_ACTIONS = {
+  /** 01 §8 : la tâche `account.deletion_execute` a anonymisé un compte. */
+  accountDeletionExecuted: 'account.deletion_executed',
+  /** 01 §8 : `account.deactivated_purge`, après six mois de désactivation. */
+  accountDeactivatedPurged: 'account.deactivated_purged',
+  /** 01 §2.8 : le membre a demandé la suppression de son compte. */
+  accountDeletionRequested: 'account.deletion_requested',
+  /** 01 §2.8 : le membre a désactivé son compte lui-même. */
+  accountDeactivatedBySelf: 'account.deactivated_by_self',
 } as const;
 
 /**

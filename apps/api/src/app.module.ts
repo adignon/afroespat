@@ -9,6 +9,12 @@ import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { UsersController } from './modules/users/users.controller';
 import { UsersService } from './modules/users/users.service';
+import { AccountController } from './modules/users/account.controller';
+import { AccountService } from './modules/users/account.service';
+import { PhonesService } from './modules/users/phones.service';
+import { VerificationLevelService } from './modules/users/verification-level.service';
+import { KycController } from './modules/kyc/kyc.controller';
+import { KycService } from './modules/kyc/kyc.service';
 import { ConsentsController } from './modules/consents/consents.controller';
 import { ConsentsService } from './modules/consents/consents.service';
 import {
@@ -112,7 +118,7 @@ import {
  */
 @Module({
   imports: [CommonModule, ProvidersModule, QueueModule],
-  controllers: [HealthController, PlacesController, AuthController, UsersController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
+  controllers: [HealthController, PlacesController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
     StaffAuthController, AdminController, AdminModerationController,
     SearchController, NotificationsController, NotificationSettingsController,
@@ -125,6 +131,11 @@ import {
   providers: [
     AuthService,
     UsersService,
+    // Module 01, reliquat du lot 1 : niveaux, numéros, KYC, cycle de vie du compte.
+    VerificationLevelService,
+    PhonesService,
+    AccountService,
+    KycService,
     BlocksService,
     ConsentsService,
     HelpService,

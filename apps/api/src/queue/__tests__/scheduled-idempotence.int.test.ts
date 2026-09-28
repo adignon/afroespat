@@ -139,6 +139,17 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'billing.expire_subscriptions',
       'billing.trial_end',
       'usage.reset',
+      // ── Module 01 : compte et identité (01 §8) ──────────────────────────────
+      //
+      // `account.deletion_execute` est la tâche que dix modules attendaient : leur
+      // gestionnaire `handleUserDeleted` était abonné à `user.deleted`, et personne
+      // n'émettait cet événement. Aucune suppression de compte n'aboutissait, dans
+      // aucun module.
+      'account.deletion_execute',
+      'account.deactivated_purge',
+      'user.phase_progression',
+      'otp.purge',
+      'kyc.expire_sessions',
     ];
 
     expect(registry.all().map((t) => t.name).sort()).toEqual([...attendues].sort());
