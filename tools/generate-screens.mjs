@@ -12,7 +12,14 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { adaptModalFrame, extractFrame, extractSection, markTriggers, transcode } from './dc-to-jsx.mjs';
+import {
+  adaptModalFrame,
+  extractFrame,
+  extractSection,
+  markTriggers,
+  transcode,
+  MODAL_WINDOW_SOURCE,
+} from './dc-to-jsx.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
 
@@ -641,6 +648,44 @@ const BUTTON_ACTIONS = [
    * pour une transition locale serait un mensonge sur ce qui se passe.
    */
   { screens: ['A14'], label: 'Continuer', attrs: ['onClick={onContinue}'] },
+
+  /**
+   * Le « Continuer » de J02 fait passer à l'étape suivante du choix de parcours :
+   * pas d'appel réseau, donc pas de `disabled`. Il était branché par l'entrée de
+   * l'onboarding, SANS bornage — juste par chance, et c'est exactement ce que le
+   * bornage par écran existe pour empêcher.
+   */
+  { screens: ['J02'], label: 'Continuer', attrs: ['onClick={onContinue}'] },
+
+  /**
+   * LES TROIS VOLETS DE « JE SUIS BLOQUÉ·E » (03 §3.5).
+   *
+   * « Flux en quatre temps, sans jamais publier automatiquement » — et la règle
+   * dure : « l'objet cible n'est créé qu'à l'appel explicite de la route de
+   * publication ». Le bouton « Publier » n'existe QUE sur le troisième volet de
+   * la maquette ; c'est ce qui rend la règle vérifiable à l'écran, et c'est ce
+   * qu'éprouve `e2e/parcours-bloque.spec.ts`.
+   */
+  { screens: ['J03'], label: 'Suivant', attrs: ['onClick={onNext}'] },
+  { screens: ['J03'], label: 'Voir l’aperçu', attrs: ['onClick={onNext}'] },
+  { screens: ['J03'], label: 'Retour', attrs: ['onClick={onBack}'] },
+  // « Annuler » → `CANCELLED` (§3.5). Côté écran, cela referme la feuille.
+  { screens: ['J03'], label: 'Annuler', attrs: ['onClick={onCancel}'] },
+
+  /**
+   * « Publier » N'EST BRANCHÉ NULLE PART, et c'est délibéré.
+   *
+   * §3.5, règle dure : « l'objet cible n'est créé qu'à l'appel explicite de la
+   * route de publication, avec le texte tel que renvoyé par le client ». Ce lot
+   * ne branche aucune route — comme le composeur du fil, dont « Publier » est
+   * inerte lui aussi. Un `onClick` qui refermerait la feuille ferait CROIRE au
+   * membre qu'il a publié : c'est pire qu'un bouton inerte, et c'est exactement
+   * ce que la règle dure cherche à empêcher.
+   */
+
+
+  /** §3.6 — « Publier / Plus tard » sur le partage de jalon. */
+  { screens: ['J04'], label: 'Plus tard', attrs: ['onClick={onCancel}'] },
 ];
 
 /**
@@ -648,13 +693,23 @@ const BUTTON_ACTIONS = [
  * « Créer mon parcours maintenant » porte celui de la maquette, et l'écraser
  * casserait l'interrupteur de l'écran O03.
  */
+/** `’` et les autres caractères réservés d'une expression régulière. */
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 function adaptButtons(jsx, section) {
   const applied = [];
   let out = jsx;
 
   for (const action of BUTTON_ACTIONS) {
     if (!action.screens.includes(section)) continue;
-    const pattern = new RegExp(`<button((?:(?!onClick)[^>])*?)>(\\s*)${action.label}</button>`);
+    /**
+     * Le libellé est ÉCHAPPÉ avant d'entrer dans l'expression régulière : la
+     * maquette écrit « Voir l’aperçu » avec une apostrophe typographique, et
+     * d'autres libellés portent des parenthèses. Sans échappement, le motif ne
+     * correspond à rien — et le journal dit simplement que le bouton n'a pas été
+     * branché, ce qui ressemble à une absence plutôt qu'à une erreur.
+     */
+    const pattern = new RegExp(`<button((?:(?!onClick)[^>])*?)>(\\s*)${escapeRe(action.label)}</button>`);
     const m = pattern.exec(out);
     if (m === null) continue;
     out =
@@ -944,117 +999,158 @@ const MODAL_ADAPTATIONS = [
  * lecture du code.
  */
 /**
- * Rebalise en `heading` l'élément ouvert en `open`, dont le texte commence en `at`.
+ * Promeut en `tag` l'élément dont le contenu COMMENCE par `text`.
  *
- * Le corps est recopié tel quel, imbrication comprise — « Commentaires · 8 » a un
- * `<span>` dedans, « Aïcha Diop » un `<svg>` de coche. Il faut donc trouver LA
- * fermeture correspondante, et non la première venue.
+ * `requires` est le fragment de style qui LÈVE L'AMBIGUÏTÉ, et il est
+ * indispensable : « Checklist de documents » figure DEUX FOIS dans le cadre
+ * d'ordinateur de J06 — une fois comme entrée du panneau de gauche, une fois
+ * comme titre de la page. Le premier des deux dans l'ordre du document est
+ * l'entrée du panneau. Sans discriminant, c'est elle qu'on promouvrait en titre
+ * de page, et le défaut serait invisible : le texte affiché est le même.
+ *
+ * On PARCOURT donc toutes les occurrences et on retient la première qui porte
+ * ce style. Une seule occurrence était examinée auparavant ; les quatre modales
+ * déjà transcodées tombaient sur la bonne du premier coup, la régénération le
+ * confirme.
  */
-function retagAsHeading(jsx, { open, at, tag, attrs, heading, id }) {
-  let depth = 1;
-  let i = at + 1;
-  const openRe = new RegExp(`<${tag}[\\s>]`, 'g');
-  const closeRe = new RegExp(`</${tag}>`, 'g');
-  for (;;) {
-    openRe.lastIndex = i;
-    closeRe.lastIndex = i;
-    const nextOpen = openRe.exec(jsx);
-    const nextClose = closeRe.exec(jsx);
-    if (nextClose === null) return null;
-    if (nextOpen !== null && nextOpen.index < nextClose.index) {
-      depth += 1;
-      i = nextOpen.index + 1;
-      continue;
-    }
-    depth -= 1;
-    if (depth === 0) {
-      const newAttrs = attrs.replace(/style=\{\{ /, 'style={{ margin: "0", ');
-      const idAttr = id === null ? '' : ` id="${id}"`;
-      return (
-        jsx.slice(0, open) +
-        `<${heading}${idAttr}${newAttrs}>` +
-        jsx.slice(at + 1, nextClose.index) +
-        `</${heading}>` +
-        jsx.slice(nextClose.index + nextClose[0].length)
-      );
-    }
-    i = nextClose.index + 1;
-  }
-}
-
-function promoteModalTitle(jsx, section, title) {
-  if (title === undefined) return { jsx, promoted: false, id: null };
-
-  // L'élément dont le contenu COMMENCE par le titre, et qui porte fontWeight 800.
-  const marker = `>${title}`;
-  const at = jsx.indexOf(marker);
-  if (at < 0) return { jsx, promoted: false, id: null };
-
-  // Remonter à l'ouverture de la balise qui contient ce texte.
-  const open = jsx.lastIndexOf('<', at);
-  const tagMatch = /^<(span|div)( [^>]*)>$/.exec(jsx.slice(open, at + 1));
-  if (tagMatch === null) return { jsx, promoted: false, id: null };
-  const [, tag, attrs] = tagMatch;
-  if (!attrs.includes('fontWeight: "800"')) return { jsx, promoted: false, id: null };
-
-  const id = `${section.toLowerCase()}-titre`;
-  const out = retagAsHeading(jsx, { open, at, tag, attrs, heading: 'h2', id });
-  if (out === null) return { jsx, promoted: false, id: null };
-  return { jsx: out, promoted: true, id };
-}
-
-/**
- * LE TITRE D'UN ÉCRAN, DÉCLARÉ PAR LE CADRE, promu en `<h1>`.
- *
- * Les maquettes 05 et 07 n'ont AUCUN `<h2>` dans leurs sections : leur unique
- * `<h1>` est celui de la planche de documentation, hors section. `promoteFirstHeading`
- * n'a donc rien à promouvoir, et les quatorze écrans seraient partis sans titre —
- * `page-has-heading-one` chez axe, et un lecteur d'écran qui ne sait pas de quoi la
- * page parle.
- *
- * Le titre est DÉCLARÉ avec le cadre, texte visible compris, pour la même raison que
- * celui d'une modale : les deux cadres d'un même écran ne le disent pas toujours
- * pareil — H09 titre « Mes demandes » sur ordinateur et « Fil d'entraide » sur
- * mobile, parce que le mobile met les onglets sous un en-tête commun. Le deviner
- * aurait inventé un titre ; le déclarer le rend vérifiable d'un coup d'œil sur la
- * maquette, et si elle change son texte, l'outil le DIT au lieu de promouvoir autre
- * chose.
- *
- * LE CRITÈRE DE RECONNAISSANCE est une MESURE, pas une position : au moins 16 px et
- * une graisse d'au moins 700. C'est ce qui distingue, dans ces deux maquettes, un
- * titre d'écran (16 à 28 px, graisse 700 ou 800) d'une pastille de filtre qui porte
- * le même mot (12,5 px, graisse 700) — le cas se présente sur H05, dont une pastille
- * mobile s'appelle aussi « Parrainage ».
- *
- * Toutes les occurrences sont parcourues, pas seulement la première : le panneau de
- * gauche porte des entrées de menu nommées « Mes demandes », « Mes parrainages »,
- * « Mes réponses », dans un `<span style="flex:1">` sans graisse. Elles précèdent le
- * titre dans le document. S'arrêter à la première aurait laissé quatre écrans sans
- * `<h1>`, en silence.
- */
-function promoteScreenTitle(jsx, title) {
-  if (title === undefined) return { jsx, promoted: false };
-
-  const marker = `>${title}<`;
-  for (let from = 0; ; ) {
-    const at = jsx.indexOf(marker, from);
-    if (at < 0) return { jsx, promoted: false };
-    from = at + 1;
-
+function promoteTextTo(jsx, { text, tag: as, id, requires }) {
+  const marker = `>${text}`;
+  for (let at = jsx.indexOf(marker); at >= 0; at = jsx.indexOf(marker, at + 1)) {
+    // Remonter à l'ouverture de la balise qui contient ce texte.
     const open = jsx.lastIndexOf('<', at);
     const tagMatch = /^<(span|div)( [^>]*)>$/.exec(jsx.slice(open, at + 1));
     if (tagMatch === null) continue;
     const [, tag, attrs] = tagMatch;
+    /**
+     * SANS DISCRIMINANT, ON EN FABRIQUE UN — et ce n'est pas un raffinement.
+     *
+     * `attrs.includes(undefined)` compare littéralement la chaîne « undefined » :
+     * aucun candidat ne passe, et le titre est déclaré introuvable. C'est ce qui
+     * est arrivé à la fusion — vingt-sept cadres d'entraide et d'agenda, déjà
+     * livrés, ont perdu leur `<h1>` d'un coup, avec un avertissement qui accusait
+     * la déclaration alors que le défaut était ici.
+     *
+     * Mais se contenter de sauter le contrôle serait pire : on prendrait la
+     * PREMIÈRE occurrence du texte, et sur ces maquettes la première est souvent
+     * l'entrée du panneau de gauche — « Mes demandes », « Checklist de documents »
+     * figurent deux fois. Le titre promu serait le mauvais, et invisiblement,
+     * puisque le texte affiché est le même.
+     *
+     * À défaut de discriminant déclaré, on demande donc à l'élément de RESSEMBLER
+     * à un titre : au moins 16 px et une graisse d'au moins 700. C'est la règle
+     * qu'un lot parallèle avait trouvée de son côté, et elle distingue un titre
+     * d'écran d'une pastille de filtre portant le même mot.
+     */
+    if (requires === undefined) {
+      const size = /fontSize: "([\d.]+)px"/.exec(attrs);
+      const weight = /fontWeight: "(\d+)"/.exec(attrs);
+      if (size === null || Number(size[1]) < 16) continue;
+      if (weight === null || Number(weight[1]) < 700) continue;
+    } else if (!attrs.includes(requires)) {
+      continue;
+    }
 
-    const size = Number(/fontSize: "([\d.]+)px"/.exec(attrs)?.[1] ?? 0);
-    const weight = Number(/fontWeight: "(\d+)"/.exec(attrs)?.[1] ?? 0);
-    if (size < 16 || weight < 700) continue;
-
-    const out = retagAsHeading(jsx, { open, at, tag, attrs, heading: 'h1', id: null });
-    if (out === null) continue;
-    return { jsx: out, promoted: true };
+    // La fermeture correspondante, imbrication comprise — « Commentaires · 8 » a
+    // un `<span>` dedans.
+    let depth = 1;
+    let i = at + 1;
+    const openRe = new RegExp(`<${tag}[\\s>]`, 'g');
+    const closeRe = new RegExp(`</${tag}>`, 'g');
+    for (;;) {
+      openRe.lastIndex = i;
+      closeRe.lastIndex = i;
+      const nextOpen = openRe.exec(jsx);
+      const nextClose = closeRe.exec(jsx);
+      if (nextClose === null) return { jsx, promoted: false, id: null };
+      if (nextOpen !== null && nextOpen.index < nextClose.index) {
+        depth += 1;
+        i = nextOpen.index + 1;
+        continue;
+      }
+      depth -= 1;
+      if (depth === 0) {
+        /**
+         * `margin: 0` est AJOUTÉ, et c'est la seule liberté : un titre arrive avec
+         * les marges par défaut du navigateur, que le `<span>` ou le `<div>`
+         * d'origine n'avait pas. Sans cette ligne, changer la balise déplacerait le
+         * titre — le design ne serait plus celui de la maquette, pour une raison
+         * invisible à la lecture du code. Sur un `<h1>` la marge par défaut fait
+         * 0,67 em, soit une vingtaine de pixels à 30 px de corps.
+         */
+        const newAttrs = attrs.replace(/style=\{\{ /, 'style={{ margin: "0", ');
+        const idAttr = id === undefined ? '' : ` id="${id}"`;
+        const out =
+          jsx.slice(0, open) +
+          `<${as}${idAttr}${newAttrs}>` +
+          jsx.slice(at + 1, nextClose.index) +
+          `</${as}>` +
+          jsx.slice(nextClose.index + nextClose[0].length);
+        return { jsx: out, promoted: true, id: id ?? null };
+      }
+      i = nextClose.index + 1;
+    }
   }
+  return { jsx, promoted: false, id: null };
 }
+
+function promoteModalTitle(jsx, section, title) {
+  if (title === undefined) return { jsx, promoted: false, id: null };
+  return promoteTextTo(jsx, {
+    text: title,
+    tag: 'h2',
+    id: `${section.toLowerCase()}-titre`,
+    requires: 'fontWeight: "800"',
+  });
+}
+
+/**
+ * LE TITRE D'UNE PAGE, quand la maquette n'écrit aucun `<h2>`.
+ *
+ * `04 Parcours` n'en contient pas un seul — `01 Accès` en a seize, `03 Accueil`
+ * onze. Ses trente cadres de page arrivaient donc SANS AUCUN TITRE : rien à
+ * promouvoir en `<h1>`, et un lecteur d'écran qui arrive sur `/parcours/:id` ne
+ * sait pas de quoi la page parle.
+ *
+ * Le titre est donc DÉCLARÉ avec le cadre — son texte visible et son corps —
+ * exactement comme celui d'une modale, et pour la même raison : la maquette les
+ * dessine tous différemment (30 px sur J01, 18 px sur J01D, 16 px sur les
+ * en-têtes mobiles), et un motif qui couvrirait les trente attraperait aussi des
+ * sous-titres, en silence.
+ *
+ * Le CORPS est ce qui distingue le titre de son homonyme du panneau de gauche.
+ *
+ * Aucun `id` n'est posé, à la différence d'une modale : `ScreenFrames` rend LES
+ * DEUX cadres et en masque un — deux fois le même identifiant dans le document.
+ * Un `<h1>` n'a besoin d'aucun identifiant, donc on n'en met pas.
+ */
+/** Le libellé d'un titre, qu'il soit une chaîne ou un objet `{ text, size }`. */
+function titleLabel(title) {
+  if (title === undefined) return '(non déclaré)';
+  return typeof title === 'string' ? title : `${title.text} (${title.size})`;
+}
+
+function promoteScreenTitle(jsx, title) {
+  if (title === undefined) return { jsx, promoted: false, id: null };
+  /**
+   * `title` ACCEPTE DEUX FORMES, parce que deux lots l'ont inventée séparément :
+   * une simple chaîne (le texte visible) ou un objet `{ text, size }` qui ajoute
+   * un discriminant de taille.
+   *
+   * Le discriminant n'est pas un raffinement : « Checklist de documents » figure
+   * DEUX FOIS dans un cadre de parcours — une fois comme entrée du panneau de
+   * gauche, une fois comme titre de page — et c'est l'entrée du panneau qui vient
+   * en premier dans le document. Sans lui, on promeut la mauvaise, et le défaut
+   * est invisible : le texte affiché est le même.
+   *
+   * Là où une chaîne suffit, elle suffit. Exiger l'objet partout obligerait à
+   * relire la taille de quarante-quatre titres qui n'ont aucune ambiguïté.
+   */
+  if (typeof title === 'string') {
+    return promoteTextTo(jsx, { text: title, tag: 'h1' });
+  }
+  return promoteTextTo(jsx, { text: title.text, tag: 'h1', requires: `fontSize: "${title.size}"` });
+}
+
 
 /** La table à employer : celle des modales exclut l'adaptation du contenu qui coule. */
 function adaptationsFor(modal) {
@@ -1275,8 +1371,22 @@ for (const screen of SCREENS) {
      * l'écran sous-jacent, et le `position: absolute` qui se cale sur le cadre de
      * 1440 px au lieu de la fenêtre. Voir `adaptModalFrame`.
      */
-    const modal = screen.modal === true ? adaptModalFrame(raw.inner) : null;
-    const triggered = markTriggers(modal === null ? raw.inner : modal.inner, screen.triggers);
+    const modal = screen.modal === true ? adaptModalFrame(raw.inner, raw.openTag, section) : null;
+    /**
+     * UN DÉCLENCHEUR PEUT NE VALOIR QUE POUR CERTAINS CADRES.
+     *
+     * La maquette ne dessine pas le même contrôle aux deux largeurs : « Inviter »
+     * porte son texte sur ordinateur et se réduit à un « + » sans texte dans
+     * l'en-tête mobile. Un marqueur visant le tracé de cette icône est juste sur
+     * la planche mobile et AMBIGU sur celle d'ordinateur, qui en compte trois.
+     *
+     * Sans `frames`, le déclencheur vaut pour tous les cadres — c'est le cas
+     * courant, et celui des quatre modales du fil.
+     */
+    const triggersForFrame = (screen.triggers ?? []).filter(
+      (t) => t.frames === undefined || t.frames.includes(frame.name),
+    );
+    const triggered = markTriggers(modal === null ? raw.inner : modal.inner, triggersForFrame);
     const inner = triggered.html;
     const {
       adapted: jsx, counts, promotedHeading, headingAlreadyThere, headingDeclared,
@@ -1411,8 +1521,28 @@ ${shelled}
       // cadres de modale n'ont pas de fond fantôme. C'est donc le CHIFFRE qui
       // signale une maquette qui aurait changé de forme, jamais une exception.
       console.log(
-        `      Modale : ${modal.ghosts} fantôme(s) retiré(s), ${modal.overlays} voile et ${modal.panels} panneau marqués, ${modal.fixed} en position: fixed, ${modal.closers} fermeture(s) promue(s) en bouton.`,
+        `      Modale : ${modal.ghosts} fantôme(s) retiré(s), ${modal.scenery} décor(s) de l’écran de dessous retiré(s), ${modal.overlays} voile et ${modal.panels} panneau marqués, ${modal.fixed} en position: fixed, ${modal.closers} fermeture(s) promue(s) en bouton.`,
       );
+      if (modal.borrowedVeil) {
+        /**
+         * La planche d'ordinateur de cette modale est une CARTE NUE : ni voile ni
+         * positionnement. Le cadre devient le panneau, centré avec les valeurs que
+         * `03 Accueil` écrit pour ses propres fenêtres, et le voile est emprunté aux
+         * planches mobiles de la MÊME section. On refuse de produire si le motif
+         * recopié a disparu de sa maquette d'origine : sans cette vérification, la
+         * recopie dériverait en silence.
+         */
+        const source = readFileSync(resolve(ROOT, MODAL_WINDOW_SOURCE.file), 'utf8');
+        if (!source.includes(MODAL_WINDOW_SOURCE.pattern)) {
+          throw new Error(
+            `${screen.section} : le centrage de fenêtre « ${MODAL_WINDOW_SOURCE.pattern} » ` +
+              `ne figure plus dans ${MODAL_WINDOW_SOURCE.file}. Mettre MODAL_WINDOW_CENTRING à jour.`,
+          );
+        }
+        console.log(
+          `      Carte nue : le cadre devient le panneau, centré comme les fenêtres de ${MODAL_WINDOW_SOURCE.file} ; voile emprunté aux planches mobiles de la section.`,
+        );
+      }
       if (modal.closers === 0) {
         console.log(
           '      ⚠ aucune fermeture promue : ni croix ni poignée reconnue. La modale ne se fermera qu’au voile et à Échap.',
@@ -1425,7 +1555,20 @@ ${shelled}
       }
     }
     for (const t of triggered.applied) {
-      console.log(`      Déclencheur de ${t.modal} branché sur « ${t.marker.replace('</svg>', '')} ».`);
+      console.log(
+        `      Déclencheur de ${t.modal} branché sur « ${t.marker.replace('</svg>', '')} » (${t.count} bouton${t.count > 1 ? 's' : ''})${t.label === undefined ? '' : `, nommé « ${t.label} »`}.`,
+      );
+      if (t.silent > 0) {
+        /**
+         * axe-core relève ce cas en `critical` (`button-name`), et §10.6 exige
+         * « un nom accessible sur tout élément interactif ». Le générateur le dit
+         * AVANT le contrôle, parce qu'il est le seul à savoir que le bouton
+         * qu'il vient de créer ne contient qu'une icône.
+         */
+        console.log(
+          `      ⚠ ${t.silent} bouton(s) créé(s) autour d’une ICÔNE SEULE, sans nom accessible : ajouter « label » au déclencheur de ${t.modal}.`,
+        );
+      }
     }
     for (const t of triggered.missed) {
       console.log(
@@ -1478,14 +1621,14 @@ ${shelled}
       } else if (headingDeclared) {
         console.log(`      Titre déclaré « ${frame.heading ?? screen.heading} » promu en <h1> : ce cadre n’en balise aucun.`);
       } else if (screenTitle.promoted) {
-        console.log(`      Titre « ${frame.title} » promu en <h1>.`);
+        console.log(`      Titre « ${titleLabel(frame.title)} » promu en <h1>.`);
       } else if (headingDeclaredMissed) {
         console.log(
           `      ⚠ titre déclaré « ${frame.heading ?? screen.heading} » introuvable : la page n’aura pas de titre. Corriger « heading » dans sa déclaration.`,
         );
       } else if (frame.title !== undefined) {
         console.log(
-          `      ⚠ titre déclaré « ${frame.title} » introuvable dans ce cadre : la page n’aura pas de <h1>. ` +
+          `      ⚠ titre déclaré « ${titleLabel(frame.title)} » introuvable dans ce cadre : la page n’aura pas de <h1>. ` +
             'Corriger « title » dans la déclaration du cadre.',
         );
       } else if (!promotedHeading) {

@@ -45,6 +45,8 @@ export function Modal({
   name,
   desktop,
   mobile,
+  mobileOnly,
+  phase,
 }: {
   readonly open: boolean;
   readonly onClose: () => void;
@@ -52,12 +54,60 @@ export function Modal({
   readonly titleId: string;
   /** Le nom de la planche — `A01C`… — pour que les tests désignent la bonne modale. */
   readonly name: string;
-  readonly desktop: ReactNode;
+  /**
+   * ABSENT quand la maquette ne dessine pas de fenêtre pour cette feuille.
+   *
+   * `04 Parcours` en compte quatre : « Mes parcours » (J01M), « Inviter dans
+   * l'équipe » (J05), « Exporter mon parcours » (J07) et la confirmation d'arrêt
+   * (J08). Chacune n'existe qu'en planche mobile. On ne leur INVENTE pas une
+   * fenêtre centrée : la feuille sert alors aux deux largeurs, ce que
+   * `packages/ui/src/styles.css` prévoit déjà — la feuille y est la forme par
+   * défaut, « un glissement depuis le bas reste lisible sur un grand écran ».
+   *
+   * C'est un manque de la maquette, pas un choix de conception : il est consigné
+   * dans `docs/decisions.md` pour que le porteur tranche.
+   */
+  readonly desktop?: ReactNode;
   readonly mobile: ReactNode;
+  /**
+   * CETTE FEUILLE N'EXISTE QU'EN MOBILE, et ce n'est pas la même chose que
+   * `desktop` absent.
+   *
+   * `desktop` absent veut dire « la maquette n'a pas dessiné de fenêtre pour
+   * cette feuille » : la feuille sert alors aux deux largeurs, faute de mieux.
+   * `mobileOnly` veut dire « sur grand écran, ce n'est pas une fenêtre, c'est
+   * autre chose » — le sélecteur de parcours de J01M s'ouvre EN PLACE dans la
+   * carte du panneau sur ordinateur, et la maquette dessine cette page complète
+   * à part. Superposer la feuille par-dessus afficherait deux fois la liste.
+   */
+  readonly mobileOnly?: boolean;
+  /**
+   * LE VOLET COURANT, pour les fenêtres qui en ont plusieurs (J03, §3.5).
+   *
+   * À partir de 1, la boîte reçoit `data-modal-phase` et son panneau joue
+   * `moments.panelAdvance` au lieu de son animation d'ouverture : la feuille
+   * AVANCE d'un cran au lieu de se rouvrir. Voir `packages/ui/src/styles.css`.
+   */
+  readonly phase?: number;
 }) {
   const root = useRef<HTMLDivElement | null>(null);
   const restoreTo = useRef<Element | null>(null);
-  const [isDesktop, setIsDesktop] = useState(true);
+  /**
+   * La largeur est lue DÈS LE PREMIER RENDU CLIENT, pas seulement dans l'effet.
+   *
+   * L'initialisation à `true` suffisait tant qu'une modale ne s'ouvrait qu'après
+   * un clic : la valeur était corrigée par l'effet avant qu'on la voie. Le
+   * sélecteur de parcours, lui, peut être ouvert DÈS L'ARRIVÉE sur
+   * `/parcours/:id?etat=parcours`, et un `mobileOnly` initialisé à « ordinateur »
+   * ne rendait rien puis apparaissait au second rendu — un clignotement, et un
+   * test qui passait ou non selon le moment où il regardait.
+   *
+   * `window` est absent au rendu serveur, où ce composant rend `null` de toute
+   * façon (garde `typeof document`).
+   */
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window === 'undefined' || window.matchMedia(DESKTOP_QUERY).matches,
+  );
 
   // La largeur est relue à chaque ouverture ET suivie ensuite : une fenêtre
   // redimensionnée, ou un téléphone qu'on tourne, doit changer de forme.
@@ -109,6 +159,34 @@ export function Modal({
       if (restoreTo.current instanceof HTMLElement) restoreTo.current.focus();
     };
   }, [open]);
+
+  /**
+   * LE FOCUS REVIENT DANS LE PANNEAU QUAND SON CONTENU EST REMPLACÉ.
+   *
+   * Trouvé au navigateur, et invisible autrement. Les trois volets de « Je suis
+   * bloqué·e » sont trois PLANCHES distinctes : passer de l'une à l'autre démonte
+   * le bouton qu'on vient d'actionner. Le focus retombe alors sur `<body>`, hors
+   * du portail — et comme `onKeyDown` est posé sur la boîte de dialogue, plus
+   * aucune touche ne lui parvient.
+   *
+   * Conséquence mesurée : après « Suivant », ÉCHAP NE FERMAIT PLUS, et le piège
+   * au clavier ne retenait plus rien. `aria-modal="true"` promet pourtant que le
+   * reste de la page est hors de portée ; la promesse était fausse dès le
+   * deuxième volet. Le membre à la souris ne voyait rien, celui au clavier était
+   * coincé.
+   *
+   * L'effet est SÉPARÉ de celui d'ouverture, et il ne touche pas `restoreTo` :
+   * le recapturer ici enregistrerait `<body>` comme élément de retour, et
+   * refermer la feuille renverrait au début du document au lieu du bouton
+   * d'origine — on aurait échangé un défaut contre l'autre.
+   */
+  useEffect(() => {
+    if (!open || phase === undefined) return;
+    const dansLaBoite = root.current?.contains(document.activeElement) ?? false;
+    if (dansLaBoite) return;
+    const first = root.current?.querySelector<HTMLElement>(FOCUSABLE);
+    (first ?? root.current)?.focus();
+  }, [open, phase]);
 
   /**
    * Échap ferme, et Tab tourne EN ROND dans le panneau.
@@ -171,6 +249,9 @@ export function Modal({
   );
 
   if (!open) return null;
+  // Voir `mobileOnly` : sur grand écran, cet état a une autre forme, dessinée
+  // ailleurs. Rien à superposer.
+  if (mobileOnly === true && isDesktop) return null;
   // `document` n'existe pas au rendu serveur ; une modale n'y arrive jamais,
   // mais la garde évite que ce fichier devienne impossible à rendre côté serveur
   // si quelqu'un l'appelle depuis un composant qui l'est.
@@ -183,12 +264,13 @@ export function Modal({
       aria-modal="true"
       aria-labelledby={titleId}
       data-modal={name}
+      {...(phase !== undefined && phase > 0 ? { 'data-modal-phase': phase } : {})}
       tabIndex={-1}
       onKeyDown={onKeyDown}
       onClick={onClick}
       style={{ position: 'fixed', inset: 0, zIndex: 60 }}
     >
-      {isDesktop ? desktop : mobile}
+      {isDesktop && desktop !== undefined ? desktop : mobile}
     </div>,
     document.body,
   );

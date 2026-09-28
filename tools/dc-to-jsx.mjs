@@ -119,6 +119,20 @@ function textToJsx(text) {
  *
  * Les valeurs sont conservées MOT POUR MOT : c'est tout l'intérêt du
  * transcodage. Aucune conversion vers un jeton, aucune interprétation.
+ *
+ * UNE SEULE ENTRÉE PAR PROPRIÉTÉ, la DERNIÈRE l'emportant — comme en CSS.
+ *
+ * `04 Parcours` écrit ses boutons avec un gabarit suivi de surcharges :
+ * `height:44px;…;white-space:nowrap;height:38px`. En CSS la seconde gagne, donc
+ * la maquette s'affiche juste. Transcrit tel quel, l'objet JSX portait DEUX FOIS
+ * la clé `height` : `tsc` le refuse (TS1117) sur 34 styles de cette maquette —
+ * `03 Accueil` n'en avait aucun, ce qui explique que le défaut ait attendu ici.
+ *
+ * Le rendu aurait pourtant été correct : en JavaScript aussi la dernière clé
+ * gagne. C'est précisément ce qui rend le motif dangereux, et c'est celui que ce
+ * dépôt a déjà payé deux fois (voir `tools/check-duplicate-spread-keys.mjs`).
+ * Fusionner ici donne UNE valeur par propriété, celle que le navigateur aurait
+ * appliquée — la fidélité au dessin est intacte, l'ambiguïté disparaît.
  */
 function styleToJsx(value) {
   const declarations = [];
@@ -448,51 +462,150 @@ export function markTriggers(html, triggers) {
   const missed = [];
 
   for (const trigger of triggers ?? []) {
-    const at = out.indexOf(trigger.marker);
-    if (at < 0) {
-      missed.push(trigger);
-      continue;
-    }
-
-    // Remonter jusqu'à la balise ouvrante qui contient le marqueur.
-    let openIdx = at;
-    let tag = null;
-    while (openIdx > 0) {
-      openIdx = out.lastIndexOf('<', openIdx - 1);
-      if (openIdx < 0) break;
-      const m = /^<(button|span|div)[\s>]/.exec(out.slice(openIdx, openIdx + 10));
-      if (m !== null) {
-        tag = m[1];
+    /**
+     * `all: true` — MARQUER TOUTES LES OCCURRENCES, pas seulement la première.
+     *
+     * « Je suis bloqué·e » est dessiné DEUX FOIS dans le cadre d'ordinateur de
+     * J01 : une fois dans la carte du panneau de gauche, une fois dans la carte
+     * de l'étape en cours. Les deux doivent ouvrir la même feuille. Marquer la
+     * première seulement laissait le bouton de la timeline — celui que le membre
+     * voit et vise — parfaitement inerte, sans que rien ne le signale.
+     *
+     * Le défaut par défaut reste « la première », parce que c'est ce dont un
+     * marqueur posé DANS une boucle a besoin : `03 Accueil` écrit un seul
+     * « Commenter » pour toutes ses publications.
+     */
+    let from = 0;
+    let marked = 0;
+    let silent = 0;
+    for (;;) {
+      const at = out.indexOf(trigger.marker, from);
+      if (at < 0) {
+        if (marked === 0) missed.push(trigger);
         break;
       }
-    }
-    if (tag === null) {
-      missed.push(trigger);
-      continue;
+
+      // Remonter jusqu'à la balise ouvrante qui contient le marqueur.
+      let openIdx = at;
+      let tag = null;
+      while (openIdx > 0) {
+        openIdx = out.lastIndexOf('<', openIdx - 1);
+        if (openIdx < 0) break;
+        const m = /^<(button|span|div)[\s>]/.exec(out.slice(openIdx, openIdx + 10));
+        if (m !== null) {
+          tag = m[1];
+          break;
+        }
+      }
+      if (tag === null) {
+        if (marked === 0) missed.push(trigger);
+        break;
+      }
+
+      const openEnd = findTagEnd(out, openIdx) + 1;
+      const openTag = out.slice(openIdx, openEnd);
+      const attr = ` data-modal-open="${trigger.modal}"`;
+
+      /**
+       * UN ÉLÉMENT NE REÇOIT PAS DEUX FOIS L'ATTRIBUT.
+       *
+       * Deux marqueurs peuvent remonter au MÊME élément : sur la planche
+       * d'ordinateur de J05, le tracé du « + » se trouve dans un bouton déjà
+       * marqué par « Je suis bloqué·e ». Le JSX produit portait alors
+       * `data-modal-open="J03" data-modal-open="J05I"` — que `tsc` refuse
+       * (TS17001), et dont React n'aurait de toute façon gardé qu'une valeur.
+       * On passe à l'occurrence suivante plutôt que de s'arrêter : le marqueur
+       * a peut-être une autre cible, légitime, plus loin.
+       */
+      if (openTag.includes('data-modal-open=')) {
+        from = at + trigger.marker.length;
+        continue;
+      }
+
+      if (tag === 'button') {
+        // Déjà un bouton : on ne touche QUE l'attribut. Le style, le type et un
+        // éventuel `onClick` de la maquette restent intacts.
+        out = out.slice(0, openEnd - 1) + attr + out.slice(openEnd - 1);
+        // Reprendre APRÈS le marqueur à sa NOUVELLE position : l'attribut a été
+        // inséré avant lui, donc il a glissé d'autant. Repartir de `at` ferait
+        // retomber le tour suivant sur le même bouton, indéfiniment.
+        from = at + attr.length + trigger.marker.length;
+      } else {
+        const close = findMatchingClose(out, openEnd, tag);
+        const style = /style="([^"]*)"/.exec(openTag);
+        const styleAttr =
+          style === null
+            ? ' style="border:none;padding:0;font:inherit;cursor:pointer"'
+            : ` style="${style[1]};border:none;padding:0;font:inherit;cursor:pointer"`;
+
+        /**
+         * UN BOUTON CRÉÉ AUTOUR D'UNE ICÔNE N'A AUCUN NOM ACCESSIBLE.
+         *
+         * Trouvé par axe-core, en `critical` (`button-name`), et SEULEMENT à la
+         * largeur mobile : la planche d'ordinateur de J05 écrit « Inviter » à
+         * côté de son icône, la planche mobile réduit le contrôle à un « + » nu.
+         * Le déclencheur visait alors le tracé de l'icône, et le `<button>` créé
+         * ne contenait qu'un `<svg>` — muet au lecteur d'écran.
+         *
+         * Le nom est donc DÉCLARÉ avec le déclencheur, comme le titre d'une
+         * modale, et le compte de déclencheurs muets remonte pour qu'un oubli se
+         * signale au lieu de passer.
+         */
+        const contenu = out
+          .slice(openEnd, close.start)
+          .replace(/<svg[\s\S]*?<\/svg>/g, '')
+          .replace(/<[^>]+>/g, '')
+          .trim();
+        const labelAttr =
+          trigger.label === undefined ? '' : ` aria-label="${trigger.label}"`;
+        if (contenu === '' && trigger.label === undefined) silent += 1;
+
+        /**
+         * LA CIBLE TACTILE D'UN CONTRÔLE EN ICÔNE, portée à 44 px SANS DÉPLACER
+         * UN PIXEL.
+         *
+         * `T1` §2.3 demande 44 px. La maquette dessine ses ronds d'action à
+         * 40 × 40 — juste comme dessin, court comme cible : c'est le « + » de
+         * l'en-tête Équipe, visé au pouce sur un téléphone.
+         *
+         * Le calcul est celui de l'interrupteur (`TOUCH_TARGET_ADAPTATIONS`),
+         * avec une marge en plus :
+         *   · `box-sizing: content-box` laisse la boîte de contenu à 40 × 40 ;
+         *   · `padding: 2px` porte la boîte de bordure — donc la cible — à 44 ;
+         *   · `background-clip: content-box` ne peint QUE les 40 px du milieu,
+         *     sinon la pastille grise s'étendrait sur tout le remplissage ;
+         *   · `margin: -2px` rend au voisinage les 4 px que le remplissage a
+         *     pris. Sans elle, la ligne de l'en-tête passait de 40 à 44 px de
+         *     haut et tout ce qui suit descendait d'autant.
+         *
+         * `box-sizing` est explicite : la préparation Tailwind met tout en
+         * `border-box`, où `height: 40px` avec ce remplissage ne laisserait que
+         * 36 px de contenu et la pastille rétrécirait.
+         */
+        const rond = /width:40px;height:40px;border-radius:999px/.test(styleAttr);
+        const cible = rond
+          ? ';box-sizing:content-box;padding:2px;margin:-2px;background-clip:content-box'
+          : '';
+        const styleFinal =
+          cible === '' ? styleAttr : styleAttr.replace(/"$/, `${cible}"`);
+
+        const replacement = `<button type="button"${attr}${labelAttr}${styleFinal}>`;
+        out =
+          out.slice(0, openIdx) +
+          replacement +
+          out.slice(openEnd, close.start) +
+          '</button>' +
+          out.slice(close.end);
+        from = at + replacement.length - (openEnd - openIdx) + trigger.marker.length;
+      }
+
+      marked += 1;
+      if (trigger.all !== true) break;
     }
 
-    const openEnd = findTagEnd(out, openIdx) + 1;
-    const openTag = out.slice(openIdx, openEnd);
-
-    if (tag === 'button') {
-      // Déjà un bouton : on ne touche QUE l'attribut. Le style, le type et un
-      // éventuel `onClick` de la maquette restent intacts.
-      out = out.slice(0, openEnd - 1) + ` data-modal-open="${trigger.modal}"` + out.slice(openEnd - 1);
-    } else {
-      const close = findMatchingClose(out, openEnd, tag);
-      const style = /style="([^"]*)"/.exec(openTag);
-      const styleAttr =
-        style === null
-          ? ' style="border:none;padding:0;font:inherit;cursor:pointer"'
-          : ` style="${style[1]};border:none;padding:0;font:inherit;cursor:pointer"`;
-      out =
-        out.slice(0, openIdx) +
-        `<button type="button" data-modal-open="${trigger.modal}"${styleAttr}>` +
-        out.slice(openEnd, close.start) +
-        '</button>' +
-        out.slice(close.end);
-    }
-    applied.push(trigger);
+    // Un déclencheur est RAPPORTÉ une fois, avec le NOMBRE de boutons marqués :
+    // c'est ce chiffre qui dira qu'une maquette a cessé d'en dessiner deux.
+    if (marked > 0) applied.push({ ...trigger, count: marked, silent });
   }
 
   return { html: out, applied, missed };
@@ -614,24 +727,109 @@ function markClosers(html) {
   return { html: out, closers };
 }
 
-export function adaptModalFrame(inner) {
-  const children = directChildren(inner);
+/**
+ * LE CENTRAGE D'UNE FENÊTRE DE MODALE, tel que les maquettes l'écrivent.
+ *
+ * `04 Parcours.dc.html` dessine ses deux modales — J03 « Je suis bloqué·e » et
+ * J04 « Partager un jalon » — en CARTE NUE posée sur la planche : 540 px de
+ * large, fond blanc, coins de 28 px, même remplissage de 24 px, mais sans voile
+ * et sans positionnement. Le texte de la planche dit pourtant « modale sur
+ * ordinateur, feuille du bas sur mobile ».
+ *
+ * La forme manquante n'est donc pas à inventer : `03 Accueil v2.dc.html` la
+ * DESSINE pour ses propres fenêtres (A01G, A01S, A01P), et c'est exactement le
+ * même objet — carte blanche de 28 px de rayon, 24 px de remplissage. Les trois
+ * déclarations ci-dessous sont recopiées de ces panneaux, mot pour mot.
+ *
+ * `MODAL_WINDOW_SOURCE` existe pour que la recopie ne DÉRIVE pas : le générateur
+ * vérifie que ce motif figure encore dans la maquette d'origine et refuse de
+ * produire sinon — la même discipline que les libellés d'`INTERACTIVE_ROLES`.
+ */
+export const MODAL_WINDOW_CENTRING = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%)';
+export const MODAL_WINDOW_SOURCE = {
+  file: 'docs/template/03 Accueil v2.dc.html',
+  pattern: 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)',
+};
+
+/** Le voile d'une modale, reconnu à sa géométrie et à son fond translucide. */
+const VEIL_RE = /<div style="position:absolute;inset:0;background:rgba\([^"]*"[^>]*>/;
+
+/**
+ * @param inner    le contenu du cadre, tel qu'`extractFrame` le rend
+ * @param openTag  la balise ouvrante du cadre — nécessaire quand le cadre EST le panneau
+ * @param section  la section entière, où chercher le voile que la planche d'ordinateur omet
+ */
+export function adaptModalFrame(inner, openTag = null, section = '') {
   let ghosts = 0;
   let fixed = 0;
   let overlays = 0;
   let panels = 0;
+  let scenery = 0;
+  let borrowedVeil = false;
+
+  /**
+   * UNE CARTE NUE : le cadre lui-même est le panneau.
+   *
+   * Aucun enfant direct n'est positionné — donc la planche ne dessine ni voile ni
+   * panneau, elle dessine la carte TOUTE SEULE. C'est la forme que `04 Parcours`
+   * emploie pour ses fenêtres d'ordinateur. Le cadre devient alors le panneau, et
+   * le voile est emprunté à la MÊME SECTION : ses planches mobiles le dessinent,
+   * avec sa valeur exacte. S'il n'y en a aucune, on n'en invente pas — le compte
+   * reste à zéro et le générateur le dit.
+   */
+  const bare =
+    openTag !== null && !directChildren(inner).some((c) => inner.slice(c.start, c.openEnd ?? c.end).includes('position:absolute'));
+
+  if (bare) {
+    const veil = VEIL_RE.exec(section);
+    const style = /style="([^"]*)"/.exec(openTag);
+    const panelStyle = style === null ? MODAL_WINDOW_CENTRING : `${MODAL_WINDOW_CENTRING};${style[1]}`;
+    const panelTag = `<div style="${panelStyle}" data-modal-panel="">`;
+    panels += 1;
+    fixed += 1;
+
+    let head = '';
+    if (veil !== null) {
+      head = veil[0].replace('position:absolute', 'position:fixed').replace(/>$/, ' data-modal-overlay="">') + '</div>';
+      overlays += 1;
+      fixed += 1;
+      borrowedVeil = true;
+    }
+
+    const closed = markClosers(`${head}${panelTag}${inner}</div>`);
+    return { inner: closed.html, ghosts, fixed, overlays, panels, scenery, borrowedVeil, closers: closed.closers };
+  }
+
+  const children = directChildren(inner);
 
   // À rebours, pour que les indices restent valides pendant qu'on modifie.
   let out = inner;
   for (const child of [...children].reverse()) {
-    const openTag = out.slice(child.start, child.openEnd ?? child.end);
-    if (/opacity:\.5/.test(openTag)) {
+    const childTag = out.slice(child.start, child.openEnd ?? child.end);
+    if (/opacity:\.5/.test(childTag)) {
       out = out.slice(0, child.start) + out.slice(child.end);
       ghosts += 1;
       continue;
     }
-    if (!openTag.includes('position:absolute')) continue;
-
+    /**
+     * LE DÉCOR TOMBE, et pas seulement le fond fantôme.
+     *
+     * `03 Accueil` esquisse l'écran sous-jacent avec `opacity:.5` — un fantôme,
+     * reconnaissable. `04 Parcours` le dessine PLEIN : la planche mobile de J01M
+     * porte l'en-tête « Mes études à Lyon » en clair, au-dessus du voile dans
+     * l'ordre du document. Transcodé tel quel, cet en-tête se retrouvait DANS la
+     * boîte de dialogue, qui affichait donc deux fois le titre de l'écran.
+     *
+     * Un enfant direct qui n'est ni le voile ni le panneau est le décor de
+     * l'écran de DERRIÈRE : cet écran est déjà rendu par la page, sous la modale.
+     * Le garder le dupliquerait. Le compte remonte, parce qu'une planche qui
+     * perdrait soudain son panneau se signalerait par là.
+     */
+    if (!childTag.includes('position:absolute')) {
+      out = out.slice(0, child.start) + out.slice(child.end);
+      scenery += 1;
+      continue;
+    }
     /**
      * LE VOILE ET LE PANNEAU SONT MARQUÉS ICI, et non reconnus à l'exécution.
      *
@@ -647,18 +845,18 @@ export function adaptModalFrame(inner) {
      * remontent, pour qu'un cadre qui n'aurait pas exactement un voile et un
      * panneau se signale.
      */
-    const isOverlay = openTag.includes('inset:0') && /background:rgba\(/.test(openTag);
+    const isOverlay = childTag.includes('inset:0') && /background:rgba\(/.test(childTag);
     const marker = isOverlay ? ' data-modal-overlay=""' : ' data-modal-panel=""';
     if (isOverlay) overlays += 1;
     else panels += 1;
 
-    const replaced = openTag.replace('position:absolute', 'position:fixed').replace(/>$/, `${marker}>`);
+    const replaced = childTag.replace('position:absolute', 'position:fixed').replace(/>$/, `${marker}>`);
     out = out.slice(0, child.start) + replaced + out.slice(child.openEnd ?? child.end);
     fixed += 1;
   }
 
   const closed = markClosers(out);
-  return { inner: closed.html, ghosts, fixed, overlays, panels, closers: closed.closers };
+  return { inner: closed.html, ghosts, fixed, overlays, panels, scenery, borrowedVeil, closers: closed.closers };
 }
 
 // ─── Extraction d'une section ────────────────────────────────────────────────

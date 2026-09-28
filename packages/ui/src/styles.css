@@ -148,6 +148,42 @@
 }
 
 /**
+ * `moments.panelAdvance` — LES TROIS VOLETS DE « JE SUIS BLOQUÉ·E » (03 §3.5).
+ *
+ * `packages/config/motion.js` est la source : 240 ms, la courbe `out`, seize
+ * pixels de glissement latéral et un fondu. Le texte du jeton dit pourquoi :
+ * « le mouvement dit : vous avancez dans une démarche, vous ne sautez pas d'un
+ * écran à l'autre. »
+ *
+ * IL REMPLACE L'ANIMATION D'ENTRÉE, il ne s'y ajoute pas — et c'est tout
+ * l'intérêt. Chaque volet est une PLANCHE distincte de la maquette : changer de
+ * volet démonte un composant et en monte un autre, donc l'animation d'ouverture
+ * (`dp-sheet-in`) repartait de zéro et la feuille remontait tout entière depuis
+ * le bas à chaque « Suivant ». Le membre voyait une nouvelle feuille s'ouvrir là
+ * où il devait voir la MÊME feuille avancer d'un cran.
+ *
+ * `data-modal-phase` n'est posé qu'à partir du deuxième volet : la PREMIÈRE
+ * ouverture reste une ouverture, feuille ou fenêtre selon la largeur.
+ *
+ * `translate` et non `transform` : les panneaux se centrent eux-mêmes avec
+ * `transform`, et une image-clé qui l'écrirait écraserait ce centrage — voir
+ * `dp-modal-in` plus haut, où le défaut a déjà été payé.
+ */
+@keyframes dp-panel-advance {
+  from { opacity: 0; translate: 16px 0; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
+[data-modal-phase] [data-modal-panel] {
+  animation: dp-panel-advance 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/** Le voile, lui, ne rejoue pas : la feuille est déjà ouverte, il est déjà là. */
+[data-modal-phase] [data-modal-overlay] {
+  animation: none;
+}
+
+/**
  * `prefers-reduced-motion` coupe TOUT, sans exception — le texte de
  * `motion.js` est explicite : « ce n'est pas une option d'accessibilité qu'on
  * dégrade : c'est la même interface, sans transition. L'état final est identique,

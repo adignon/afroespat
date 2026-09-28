@@ -52,6 +52,28 @@ const PAGES = [
   { path: '/agenda/42', name: 'E02 Événement' },
   { path: '/agenda/nouveau', name: 'E03 Créer un événement' },
   { path: '/agenda/42/presence', name: 'E04 Présence' },
+  /**
+   * Les douze routes du module Parcours (`docs/specs/T5-pages-et-prompts.md` §5).
+   *
+   * §10.6 demande le contrôle « sur chaque page principale » : les y ajouter
+   * une par une est la seule lecture honnête de cette phrase. Elles passent
+   * toutes, et deux adaptations du générateur y sont pour beaucoup — le `<h1>`
+   * promu depuis le titre visible (la maquette n'écrit aucun `<h2>` : sans cela
+   * les douze pages arrivaient sans aucun titre) et les fermetures de modale
+   * promues en vrais `<button>` avec leur nom accessible.
+   */
+  { path: '/parcours', name: 'J11 Mes parcours' },
+  { path: '/parcours/nouveau', name: 'J02 Créer un parcours' },
+  { path: '/parcours/1', name: 'J01 Parcours' },
+  { path: '/parcours/1/etapes/7', name: 'J01S Étape en cours' },
+  { path: '/parcours/1/discussion', name: 'J01D Discussion' },
+  { path: '/parcours/1/equipe', name: 'J05 Équipe' },
+  { path: '/parcours/1/documents', name: 'J06 Checklist de documents' },
+  { path: '/parcours/1/historique', name: 'J07 Historique' },
+  { path: '/parcours/1/reglages', name: 'J08 Réglages' },
+  { path: '/parcours/1/abouti', name: 'J10 Fin de parcours' },
+  { path: '/parcours/publics', name: 'J09 Parcours publics' },
+  { path: '/parcours/publics/1', name: 'J09 Vue publique d’un parcours' },
 ] as const;
 
 for (const { path, name } of PAGES) {
