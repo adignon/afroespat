@@ -206,7 +206,26 @@ export function Modal({
       if (event.key !== 'Tab') return;
 
       const focusables = [...(root.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])];
-      if (focusables.length === 0) return;
+      /**
+       * UNE BOÎTE SANS AUCUN CONTRÔLE RETIENT QUAND MÊME LA TABULATION.
+       *
+       * Trouvé au navigateur, sur la confirmation de X03 : « Merci. Nous regardons
+       * sous 24 heures. » — un pictogramme, deux phrases, et RIEN de focalisable,
+       * parce que la maquette ne lui dessine ni croix ni poignée.
+       *
+       * Le retour anticipé laissait alors Tab quitter la boîte : le focus repartait
+       * dans le fil, derrière un voile opaque, sur des contrôles que le membre ne
+       * voit plus. `aria-modal="true"` promet exactement le contraire, et la
+       * promesse était fausse — silencieusement, puisque les sept autres modales du
+       * dépôt ont toutes au moins un bouton.
+       *
+       * On empêche donc le déplacement plutôt que de ne rien faire : le focus reste
+       * sur la boîte elle-même (`tabIndex={-1}`), d'où Échap et le voile referment.
+       */
+      if (focusables.length === 0) {
+        event.preventDefault();
+        return;
+      }
       const first = focusables[0];
       const last = focusables[focusables.length - 1];
       if (first === undefined || last === undefined) return;

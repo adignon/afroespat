@@ -1,0 +1,65 @@
+'use client';
+
+import { EcranCompte, useCompte } from '@/screens/compte/ecran';
+import { VOLETS_PAIEMENT, type VoletPaiement } from '@/screens/compte/data';
+import { K06Desktop } from '@/screens/k06/desktop.generated';
+import { K06Mobile } from '@/screens/k06/mobile.generated';
+import { K06Numero } from '@/screens/k06momo/numero.generated';
+import { K06Attente } from '@/screens/k06momo/attente.generated';
+import { K06Succes } from '@/screens/k06momo/succes.generated';
+
+/**
+ * K06 — « Abonnement et Premium », et le flux Mobile Money (14 §4.2).
+ *
+ * Les trois volets sont trois PLANCHES de la maquette, pas trois états d'un
+ * composant : « Étape 1 sur 3 · saisie du numéro », « 2 · ATTENTE », « 3 ·
+ * SUCCÈS ». Le volet hors bornes retombe sur le premier — `noUncheckedIndexedAccess`
+ * l'exige, et c'est de toute façon le repli qu'on veut : jamais le succès, qui
+ * annoncerait un paiement qui n'a pas eu lieu.
+ *
+ * LE VOLET VIENT DE L'URL, et rien d'autre ne le fait avancer.
+ *
+ * 14 §4.2 : « notification USSD/push de l'opérateur → webhook de confirmation →
+ * activation ». Les deux derniers volets n'ont AUCUN contrôle dans la maquette :
+ * l'attente est un sablier avec son compte à rebours, le succès une confirmation.
+ * Ce qui les fait avancer est le réseau, et ce lot ne branche aucune route. Brancher
+ * « Payer 2 600 F » sur un passage local au volet d'attente annoncerait un paiement
+ * que personne n'a demandé — c'est la même règle dure que « Publier » côté Parcours.
+ *
+ * Le paramètre d'URL les rend atteignables sans rien affirmer, exactement comme
+ * `?etat=` le fait dans le module Parcours pour les états dont la maquette ne
+ * dessine pas le contrôle. Il n'ajoute aucun pixel et se teste.
+ */
+const PLANCHES = [K06Numero, K06Attente, K06Succes] as const;
+
+export function AbonnementEcran({ volet }: { readonly volet: VoletPaiement | null }) {
+  /**
+   * La fenêtre s'ouvre DÈS L'ARRIVÉE quand l'URL nomme un volet. `Modal` sait le
+   * faire depuis le premier rendu client — il lit la largeur à l'initialisation
+   * de son état pour cette raison exacte, et le module Parcours l'emploie déjà
+   * pour `/parcours/:id?etat=parcours`.
+   */
+  const { ouverte, onOuvrir, onFermer } = useCompte(volet === null ? null : 'K06M');
+
+  const index = volet === null ? 0 : VOLETS_PAIEMENT.indexOf(volet);
+  const Planche = PLANCHES[index] ?? K06Numero;
+
+  return (
+    <EcranCompte
+      screen="K06"
+      desktop={<K06Desktop />}
+      mobile={<K06Mobile />}
+      ouverte={ouverte}
+      onOuvrir={onOuvrir}
+      onFermer={onFermer}
+      modales={{
+        K06M: {
+          mobile: <Planche />,
+          // `moments.panelAdvance` : « vous avancez dans une démarche, vous ne
+          // sautez pas d'un écran à l'autre ». Le premier volet reste une ouverture.
+          phase: index,
+        },
+      }}
+    />
+  );
+}

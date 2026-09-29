@@ -108,6 +108,45 @@ const PAGES = [
   { path: '/admin/revenus', name: 'D14 Abonnements et revenus' },
   { path: '/admin/reglages', name: 'D15 Réglages' },
   { path: '/admin/impact', name: 'D16 Rapport d’impact' },
+  /**
+   * Messages et transverse (`09 Messages et transverse.dc.html`) — M01, X01 à X04.
+   *
+   * X04 n'y figure pas : T5 le range en « composants » et ne lui donne aucune route.
+   * X03 n'en a pas non plus (T5 écrit « — ») ; sa feuille est servie en état d'URL sur
+   * la conversation, et c'est à ce titre qu'elle est contrôlée ici — une boîte de
+   * dialogue ouverte est ce qu'axe doit voir.
+   */
+  { path: '/messages', name: 'M01 Messagerie — liste' },
+  { path: '/messages/1', name: 'M01 Messagerie — conversation' },
+  { path: '/messages/1?feuille=signaler', name: 'X03 Signaler — feuille' },
+  { path: '/messages/1?feuille=merci', name: 'X03 Signaler — confirmation' },
+  { path: '/recherche', name: 'X01 Recherche' },
+  { path: '/notifications', name: 'X02 Notifications — page complète' },
+  { path: '/notifications?vue=panneau', name: 'X02 Notifications — panneau déroulant' },
+  /**
+   * Les dix écrans du module Compte (`docs/specs/T5-pages-et-prompts.md` §9).
+   *
+   * `/@fatou.n` porte l'arobase DANS le segment : c'est la forme que T5 écrit, et
+   * la seule que l'App Router puisse servir — un dossier `@handle` serait un slot
+   * de route parallèle, sans segment d'URL.
+   *
+   * Les trois variantes `?paiement=` ne sont pas listées : elles n'ajoutent aucun
+   * balisage à la PAGE — la fenêtre vit dans un portail, hors du document au
+   * rendu serveur, et axe-core ne la verrait pas. Ce qu'elle promet
+   * (`aria-modal`, `aria-labelledby`, le piège au clavier) est éprouvé par
+   * `e2e/compte.spec.ts`, qui l'ouvre vraiment.
+   */
+  { path: '/compte/profil', name: 'K01 Mon profil' },
+  { path: '/@fatou.n', name: 'K02 Profil d’un membre' },
+  { path: '/compte/verification', name: 'K03 Vérification et niveaux' },
+  { path: '/compte/securite', name: 'K04 Téléphones et sessions' },
+  { path: '/compte/contacts', name: 'K05 Contacts' },
+  { path: '/compte/abonnement', name: 'K06 Abonnement et Premium' },
+  { path: '/premium', name: 'K06 Premium' },
+  { path: '/compte/notifications', name: 'K07 Réglages des notifications' },
+  { path: '/compte/donnees', name: 'K08 Mes données' },
+  { path: '/compte/sanctions', name: 'K09 Sanctions' },
+  { path: '/compte/enregistres', name: 'K10 Enregistrés' },
 ] as const;
 
 for (const { path, name } of PAGES) {

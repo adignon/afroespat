@@ -753,6 +753,14 @@ function adaptFields(jsx, section) {
 
   let out = jsx;
 
+  for (const spec of ICON_BUTTON_NAMES) {
+    if (!spec.screens.includes(section)) continue;
+    const result = applyIconButtonName(out, spec, section);
+    if (!result.applied) continue;
+    out = result.jsx;
+    applied.push({ why: spec.why, provides: [] });
+  }
+
   for (const spec of DRAWN_SELECTS) {
     if (!spec.screens.includes(section)) continue;
     const result = applyDrawnSelect(out, spec);
@@ -826,6 +834,65 @@ function adaptFields(jsx, section) {
   }
 
   return { jsx: out, applied, missed };
+}
+
+/**
+ * UN BOUTON QUI NE CONTIENT QU'UNE ICÔNE REÇOIT SON NOM.
+ *
+ * La maquette dessine certains boutons SANS AUCUN TEXTE — le « ··· » du profil
+ * d'un membre (K02) n'a qu'un tracé SVG à trois points. C'est juste pour une
+ * image ; dans l'application, c'est un bouton muet au lecteur d'écran, et axe le
+ * relève en `critical` (`button-name`). §10.6 exige « un nom accessible sur tout
+ * élément interactif ».
+ *
+ * `markTriggers` sait déjà nommer les boutons QU'IL CRÉE (`label`). Ceux-ci
+ * existaient déjà en `<button>` dans la maquette : ils ne passent par aucun
+ * déclencheur, donc rien ne les voyait.
+ *
+ * LE NOM EST RECOPIÉ DE LA MAQUETTE, jamais inventé : elle écrit « Menu ··· :
+ * Bloquer · Signaler » en légende sous la carte, donc le contrôle s'appelle
+ * « Menu ». C'est la même honnêteté que `Fond ${c.hex}` pour les pastilles de
+ * couleur d'A14 — un nom mécanique vaut mieux qu'un nom décidé à la place du
+ * porteur, et le jour où `T2 textes-interface` le nomme, cette table change d'une
+ * ligne.
+ *
+ * `source` est la phrase de la maquette d'où le nom vient : le générateur refuse
+ * de produire si elle en a disparu, comme pour les libellés d'`INTERACTIVE_ROLES`.
+ * Sans cela, le nom accessible dériverait en silence.
+ *
+ * BORNÉ PAR ÉCRAN, comme tout le reste de ce fichier : un tracé SVG est un motif
+ * très large, et « trois points alignés » sert ailleurs de poignée de
+ * réordonnancement.
+ */
+const ICON_BUTTON_NAMES = [
+  {
+    screens: ['K02'],
+    path: 'M5 12h.01M12 12h.01M19 12h.01',
+    label: 'Menu',
+    source: 'Menu ··· : Bloquer · Signaler',
+    why: 'Le bouton « ··· » ne contient qu’une icône : son nom est celui que la maquette lui donne en légende.',
+  },
+];
+
+function applyIconButtonName(jsx, spec, section) {
+  if (!jsx.includes(spec.path)) return { jsx, applied: false };
+
+  const pattern = /<button((?:(?!aria-label)[^>])*?)>((?:(?!<button)[\s\S])*?)<\/button>/g;
+  let m;
+  while ((m = pattern.exec(jsx)) !== null) {
+    if (!m[2].includes(spec.path)) continue;
+    // Le bouton porte-t-il déjà du texte ? S'il en a, il a un nom et on n'y touche pas.
+    if (m[2].replace(/<[^>]*>/g, '').trim() !== '') continue;
+    return {
+      jsx:
+        jsx.slice(0, m.index) +
+        `<button aria-label="${spec.label}"${m[1]}>${m[2]}</button>` +
+        jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  }
+  // Le tracé est là mais pas dans un bouton muet : rien à nommer sur ce cadre.
+  return { jsx, applied: false, section };
 }
 
 /**
@@ -1599,8 +1666,31 @@ ${shelled}
               `ne figure plus dans ${MODAL_WINDOW_SOURCE.file}. Mettre MODAL_WINDOW_CENTRING à jour.`,
           );
         }
+                /**
+         * LE VOILE DE REPLI EST VÉRIFIÉ COMME LE CENTRAGE, et pour la même raison.
+         *
+         * Une maquette qui ne dessine aucun voile — `08 Compte` n'en a pas un seul —
+         * reçoit celui des quatre fenêtres du fil. Sans cette vérification, la
+         * recopie dériverait en silence le jour où ces planches changent de teinte,
+         * et le défaut ne se verrait que sur la maquette qui n'en a pas.
+         */
+        if (modal.veilFrom === 'source' && !source.includes(MODAL_WINDOW_SOURCE.veil)) {
+          throw new Error(
+            `${screen.section} : le voile de fenêtre « ${MODAL_WINDOW_SOURCE.veil} » ` +
+              `ne figure plus dans ${MODAL_WINDOW_SOURCE.file}. Mettre MODAL_WINDOW_SOURCE.veil à jour.`,
+          );
+        }
+        /**
+         * D'OÙ VIENT LE VOILE, dit dans le journal. Un emprunt hors maquette est une
+         * liberté, et une liberté se lit. Le journal affirmait « emprunté aux planches
+         * mobiles de la section » même quand il venait d'ailleurs.
+         */
+        const origineVoile =
+          modal.veilFrom === 'section'
+            ? 'voile emprunté aux planches mobiles de la section'
+            : `voile emprunté à ${MODAL_WINDOW_SOURCE.file} — cette maquette n’en dessine aucun`;
         console.log(
-          `      Carte nue : le cadre devient le panneau, centré comme les fenêtres de ${MODAL_WINDOW_SOURCE.file} ; voile emprunté aux planches mobiles de la section.`,
+          `      Carte nue : le cadre devient le panneau, centré comme les fenêtres de ${MODAL_WINDOW_SOURCE.file} ; ${origineVoile}.`,
         );
       }
       if (modal.closers === 0) {

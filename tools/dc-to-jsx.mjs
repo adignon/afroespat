@@ -765,10 +765,38 @@ export const MODAL_WINDOW_CENTRING = 'position:fixed;left:50%;top:50%;transform:
 export const MODAL_WINDOW_SOURCE = {
   file: 'docs/template/03 Accueil v2.dc.html',
   pattern: 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)',
+  /**
+   * LE VOILE, QUAND LA SECTION N'EN DESSINE AUCUN.
+   *
+   * `04 Parcours` s'en tirait : ses fenêtres d'ordinateur sont des cartes nues,
+   * mais ses planches MOBILES dessinent le voile, dans la même section, et
+   * `adaptModalFrame` le leur emprunte.
+   *
+   * `08 Compte` ne le peut pas : ses trois fenêtres — « Ajouter aux contacts »,
+   * « Payer avec Mobile Money », « Supprimer mon compte » — n'ont AUCUNE planche
+   * mobile, et le fichier entier ne contient pas un seul `inset:0` translucide.
+   * Compté : zéro. Sans voile, `Modal` reçoit un panneau seul — un clic hors du
+   * panneau ne ferme plus rien, et le générateur le dit déjà (« 0 voile et
+   * 1 panneau »). Le membre à la souris se retrouve devant une fenêtre qui ne se
+   * ferme qu'à Échap ou à la croix.
+   *
+   * La valeur n'est PAS inventée : c'est celle des quatre fenêtres d'A01C, A01G,
+   * A01P et A01S — les mêmes planches dont le centrage est déjà recopié
+   * ci-dessus. Elles écrivent toutes les quatre `rgba(22,33,29,.55)`, et
+   * `04 Parcours` n'en écrit pas d'autre non plus. Un voile et un centrage venus
+   * du même objet restent un objet ; en mélanger deux sources serait recomposer
+   * une fenêtre qui n'existe nulle part.
+   *
+   * Le générateur vérifie que ce motif figure encore dans la maquette d'origine
+   * et refuse de produire sinon — même discipline que pour le centrage.
+   */
+  veil: '<div style="position:absolute;inset:0;background:rgba(22,33,29,.55)">',
 };
 
 /** Le voile d'une modale, reconnu à sa géométrie et à son fond translucide. */
 const VEIL_RE = /<div style="position:absolute;inset:0;background:rgba\([^"]*"[^>]*>/;
+
+const MODAL_VEIL_FALLBACK = MODAL_WINDOW_SOURCE.veil;
 
 /**
  * @param inner    le contenu du cadre, tel qu'`extractFrame` le rend
@@ -782,6 +810,8 @@ export function adaptModalFrame(inner, openTag = null, section = '') {
   let panels = 0;
   let scenery = 0;
   let borrowedVeil = false;
+  /** D'où vient le voile : « section » s'il est dessiné là, « source » s'il est emprunté. */
+  let veilFrom = null;
 
   /**
    * UNE CARTE NUE : le cadre lui-même est le panneau.
@@ -804,16 +834,27 @@ export function adaptModalFrame(inner, openTag = null, section = '') {
     panels += 1;
     fixed += 1;
 
-    let head = '';
-    if (veil !== null) {
-      head = veil[0].replace('position:absolute', 'position:fixed').replace(/>$/, ' data-modal-overlay="">') + '</div>';
-      overlays += 1;
-      fixed += 1;
-      borrowedVeil = true;
-    }
+    /**
+     * Le voile vient de la SECTION quand elle en dessine un, de la maquette source
+     * sinon. `veilFrom` dit lequel, pour que le journal le dise aussi : un emprunt
+     * hors maquette est une liberté, et une liberté se lit.
+     *
+     * Sans ce repli, une maquette qui ne dessine AUCUN voile — `08 Compte` n'en a
+     * pas un seul — produisait une fenêtre sans voile : un clic à côté ne fermait
+     * rien, et le journal disait « 0 voile et 1 panneau » sans que personne ne le
+     * lise. Trois fenêtres du module étaient dans ce cas.
+     */
+    const borrowed = veil === null ? MODAL_VEIL_FALLBACK : veil[0];
+    veilFrom = veil === null ? 'source' : 'section';
+    const head =
+      borrowed.replace('position:absolute', 'position:fixed').replace(/>$/, ' data-modal-overlay="">') +
+      '</div>';
+    overlays += 1;
+    fixed += 1;
+    borrowedVeil = true;
 
     const closed = markClosers(`${head}${panelTag}${inner}</div>`);
-    return { inner: closed.html, ghosts, fixed, overlays, panels, scenery, borrowedVeil, closers: closed.closers };
+    return { inner: closed.html, ghosts, fixed, overlays, panels, scenery, borrowedVeil, veilFrom, closers: closed.closers };
   }
 
   const children = directChildren(inner);
