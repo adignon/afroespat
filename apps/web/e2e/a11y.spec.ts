@@ -74,6 +74,40 @@ const PAGES = [
   { path: '/parcours/1/abouti', name: 'J10 Fin de parcours' },
   { path: '/parcours/publics', name: 'J09 Parcours publics' },
   { path: '/parcours/publics/1', name: 'J09 Vue publique d’un parcours' },
+
+  /**
+   * Les seize écrans de l'application d'ÉQUIPE (`10 Administration`, T5 §11).
+   *
+   * §10.6 demande le contrôle « sur chaque page principale », et l'administration
+   * en fait partie : l'équipe y passe ses journées, et c'est l'écran le plus dense
+   * du produit. Les trois états de la connexion sont comptés séparément parce
+   * qu'ils changent réellement de balisage.
+   *
+   * DEUX PAGES N'ONT PAS DE `<h1>` — `/admin` et `/admin/membres` — parce que la
+   * maquette n'y écrit aucun titre hors du menu latéral. `page-has-heading-one` est
+   * une règle « best-practice » d'axe-core, hors des étiquettes WCAG retenues ici :
+   * la suite reste donc verte, et le manque est épinglé dans
+   * `e2e/administration.spec.ts`, qui exige explicitement zéro `<h1>` sur ces deux
+   * routes. Le jour où la maquette leur donne un titre, c'est là que ça tombe.
+   */
+  { path: '/admin', name: 'D02 Tableau de bord' },
+  { path: '/admin/connexion', name: 'D01 Connexion admin' },
+  { path: '/admin/connexion?etape=totp', name: 'D01 Connexion — code TOTP' },
+  { path: '/admin/connexion?etape=enrolement', name: 'D01 Connexion — enrôlement forcé' },
+  { path: '/admin/membres', name: 'D03 Membres' },
+  { path: '/admin/moderation', name: 'D04 Modération — file' },
+  { path: '/admin/moderation/4812', name: 'D05 Modération — dossier' },
+  { path: '/admin/parcours', name: 'D06 Modèles de parcours' },
+  { path: '/admin/etapes', name: 'D07 Bibliothèque d’étapes' },
+  { path: '/admin/referentiels', name: 'D08 Référentiels' },
+  { path: '/admin/guides', name: 'D09 Guides' },
+  { path: '/admin/services', name: 'D10 Services' },
+  { path: '/admin/alertes', name: 'D11 Alertes arnaques' },
+  { path: '/admin/contenu', name: 'D12 Pages et annonces' },
+  { path: '/admin/partenaires', name: 'D13 Partenaires' },
+  { path: '/admin/revenus', name: 'D14 Abonnements et revenus' },
+  { path: '/admin/reglages', name: 'D15 Réglages' },
+  { path: '/admin/impact', name: 'D16 Rapport d’impact' },
 ] as const;
 
 for (const { path, name } of PAGES) {

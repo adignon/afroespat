@@ -132,10 +132,31 @@ const FRAME_ADAPTATIONS = [
   },
   {
     why: 'La colonne de contexte reste à l’écran, sous la barre haute.',
+    /**
+     * UNE CARTE DE 300 PX N'EST PAS UNE COLONNE DE CONTEXTE, et le journal du
+     * générateur l'a dit avant que personne ne le voie à l'écran.
+     *
+     * La règle ne demandait qu'une largeur de 300 px, une direction en colonne et
+     * `flex-shrink: 0`. `10 Administration` dessine ses trois pages de rapport
+     * d'impact exactement ainsi — `width:300px; height:420px; …; flex-direction:
+     * column; flex-shrink:0` — et les trois recevaient `position: sticky`,
+     * `max-height: calc(100vh - 88px)` et `overflow-y: auto`. Trois aperçus de
+     * rapport, posés côte à côte dans une rangée, devenaient des colonnes collantes
+     * qui se mettaient à défiler toutes seules sous 508 px de hauteur de fenêtre.
+     *
+     * Ce qui distingue une colonne d'une carte est vérifiable dans les six maquettes
+     * qui en dessinent une : la colonne de contexte n'a NI hauteur NI remplissage —
+     * elle descend aussi loin que son contenu et son remplissage vit dans chacune de
+     * ses cartes. Une carte a les deux. C'est la même leçon que `CITY_SEARCH` et
+     * `BUTTON_ACTIONS` ont déjà apprise à ce fichier : un motif trop large produit
+     * une dérive en silence.
+     */
     match: (style) =>
       style.includes('width: "300px"') &&
       style.includes('flexDirection: "column"') &&
       style.includes('flexShrink: "0"') &&
+      !style.includes('height:') &&
+      !style.includes('padding:') &&
       !style.includes('position:'),
     // 76 px = les 64 de la barre haute + 12 de respiration. En collant à 12,
     // la colonne passerait SOUS la barre au lieu de s'arrêter dessous.
@@ -1463,9 +1484,35 @@ for (const screen of SCREENS) {
      * la taille fixe, le rayon du téléphone dessiné, son cadre et le `overflow` qui
      * coupait ce qui dépasse. Le reste est du design, et reste.
      */
+    /**
+     * UNE CARTE N'EST PAS UNE PLANCHE, et `frameIsCard` est la différence.
+     *
+     * Tout ce qui précède suppose que le conteneur extérieur d'un cadre DESSINE LA
+     * PLANCHE : le rectangle de 1440 × 760 px, le téléphone de 390 × 844 px, leur
+     * rayon, leur trait `#DDE3E0` et le `overflow: hidden` qui coupe ce qui dépasse.
+     * Retirer tout cela est juste, et c'est le cas de tous les cadres transcodés
+     * jusqu'ici.
+     *
+     * D01 est le premier où cette supposition est FAUSSE. La maquette n'y dessine
+     * aucune planche : elle pose directement les trois cartes de connexion, 420 px
+     * de large, fond blanc, bordure `#DDE3E0`, rayon 28 px, remplissage 24 px. Ce
+     * conteneur EST la carte — le retirer laissait un bloc blanc sans bord, sans
+     * coin arrondi et étalé sur toute la largeur de la fenêtre. Le défaut se voit à
+     * l'œil, mais rien ne l'aurait dit : le JSX compile parfaitement.
+     *
+     * Ce qui reste retiré ici, c'est exactement ce qui est INCOMPATIBLE avec un
+     * écran réel :
+     *   · `height`, qui figerait la carte à la hauteur de l'image ;
+     *   · la largeur fixe, qui devient `width: 100%` borné par `maxWidth` — c'est
+     *     la même adaptation que celle appliquée aux planches, « une maquette est
+     *     une image de taille fixe », sauf qu'ici la borne est GARDÉE : 420 px est
+     *     la largeur voulue de la carte, pas celle de l'écran qui la porte.
+     */
     const PLANK_ONLY = new Set(['width', 'height', 'borderRadius', 'overflow', 'flexShrink']);
+    const CARD_DROPPED = new Set(['height']);
+    const asCard = screen.frameIsCard === true;
     const shell =
-      screen.keepFrameStyle !== true
+      screen.keepFrameStyle !== true && !asCard
         ? null
         : (() => {
             const style = /style=\{\{ ([^}]*) \}\}/.exec(transcode(raw.openTag));
@@ -1474,12 +1521,18 @@ for (const screen of SCREENS) {
               .split(/, (?=[A-Za-z'-]+:)/)
               .filter((entry) => {
                 const key = entry.slice(0, entry.indexOf(':'));
+                if (asCard) return !CARD_DROPPED.has(key);
                 // La bordure de la planche est `1px solid #DDE3E0` — le trait qui
                 // dessine le téléphone. Une bordure d'une AUTRE valeur serait du
                 // design, donc on ne retire que celle-là.
                 if (key === 'border') return !entry.includes('#DDE3E0');
                 return !PLANK_ONLY.has(key);
-              });
+              })
+              .map((entry) =>
+                asCard && entry.startsWith('width:')
+                  ? `width: "100%", maxWidth: "${frame.width}px"`
+                  : entry,
+              );
             return kept.length === 0 ? null : kept.join(', ');
           })();
 
@@ -1507,6 +1560,13 @@ ${shelled}
     // mobiles de huit écrans vivent dans les planches MOB et MOB2.
     const origin = frame.section === undefined ? '' : ` [section ${frame.section} n° ${(frame.occurrence ?? 0) + 1}]`;
     console.log(`  ${screen.section} ${frame.width} px${origin} → ${path.replace(ROOT + '/', '')} (${jsx.length} caractères, ${used.length} données)`);
+    if (asCard) {
+      console.log(
+        shell === null
+          ? '      ⚠ cadre déclaré « carte » mais son conteneur ne porte aucun style : rien à garder.'
+          : `      Conteneur gardé : ce cadre est une CARTE, pas une planche ; sa largeur de ${frame.width} px devient une borne.`,
+      );
+    }
     adaptationsFor(screen.modal === true).forEach((a, i) => {
       if (counts[i] > 0) console.log(`      ${counts[i]}× ${a.why}`);
     });

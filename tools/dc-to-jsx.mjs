@@ -100,8 +100,24 @@ function textToJsx(text) {
   let last = 0;
   let m;
 
-  const literal = (chunk) =>
-    chunk.replace(/\{/g, "{'{'}").replace(/\}/g, "{'}'}");
+  /**
+   * UN SEUL PARCOURS ICI AUSSI, et ce n'était pas le cas.
+   *
+   * Deux `replace` enchaînés s'appliquaient l'un au résultat de l'autre : le
+   * premier posait `{'{'}` pour chaque `{`, et le second venait échapper le `}`
+   * que ce remplacement venait d'introduire. « pour {ville} » devenait
+   * `pour {'{'{'}'}ville{'}'}`, un JSX qui ne compile pas.
+   *
+   * Le défaut dormait depuis le début : aucune des maquettes 01 à 09 n'écrit une
+   * accolade dans son texte. `10 Administration` est la première — D07 dessine le
+   * gabarit de description d'une étape, « Constituez votre dossier pour {ville}
+   * avant {échéance}. », où les accolades sont le VOCABULAIRE DU PRODUIT (les
+   * variables d'un gabarit d'étape) et non du dialecte de maquette.
+   *
+   * `tsc` l'a dit tout de suite, ce qui est une chance : un échappement à moitié
+   * faux qui compile serait invisible.
+   */
+  const literal = (chunk) => chunk.replace(/[{}]/g, (c) => `{'${c}'}`);
 
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(literal(text.slice(last, m.index)));
