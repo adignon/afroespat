@@ -152,6 +152,26 @@ const FORBIDDEN_MOTION = [
  */
 const MAX_DURATION_MS = 300;
 
+/**
+ * COMMENT EMPLOYER UN MOMENT EXEMPTÉ.
+ *
+ * Le garde-fou lit `exempt`, mais il ne devine pas qu'une durée de 600 ms trouvée
+ * dans une feuille de style EST la barre de progression. Autoriser toute durée de
+ * 600 ms ferait de l'exception une porte ouverte : n'importe quelle animation lente
+ * qui tomberait sur ce chiffre passerait.
+ *
+ * La ligne doit donc NOMMER le moment :
+ *
+ *     transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);  // motion:journeyProgress
+ *
+ * Le nom doit correspondre à un moment `exempt`, ET sa durée doit être celle qui est
+ * déclarée ici. Un `motion:journeyProgress` posé à côté de 900 ms est refusé.
+ *
+ * Même discipline que partout dans ce dépôt : déclaré, jamais deviné. Et le nom écrit
+ * à côté de la valeur permet de retrouver d'un `grep` tous les endroits qui emploient
+ * ce moment.
+ */
+
 module.exports = {
   duration, easing, motion, moments,
   REDUCED_MOTION_CSS, MAX_DURATION_MS, FORBIDDEN_MOTION,

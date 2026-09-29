@@ -42,7 +42,33 @@ import { createRequire } from 'node:module';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { easing, MAX_DURATION_MS } = require(resolve(here, '..', 'motion.js'));
+const { easing, moments, MAX_DURATION_MS } = require(resolve(here, '..', 'motion.js'));
+
+/**
+ * LES MOMENTS EXEMPTÉS, et comment on les reconnaît.
+ *
+ * `motion.js` marque `journeyProgress` — 600 ms — d'un `exempt: true`, et explique
+ * pourquoi : « on doit VOIR le chemin parcouru, c'est la raison d'être du produit,
+ * et 300 ms ne suffisent pas à la rendre sensible ». Ce contrôle ne lisait pas ce
+ * marqueur : il aurait refusé le seul mouvement que le système autorise
+ * volontairement au-delà du plafond, le jour où une barre de progression bougerait.
+ *
+ * L'EXEMPTION EST DÉCLARÉE AU POINT D'USAGE, et c'est le point. Autoriser toute
+ * durée de 600 ms laisserait passer n'importe quelle animation lente qui tomberait
+ * sur ce chiffre — et l'exception, écrite une fois dans `motion.js`, deviendrait une
+ * porte ouverte. La ligne doit donc NOMMER le moment :
+ *
+ *     transition: width 600ms cubic-bezier(0.16, 1, 0.3, 1);  // motion:journeyProgress
+ *
+ * C'est la même discipline que partout ailleurs ici : déclaré, jamais deviné. Et le
+ * nom écrit à côté de la valeur est ce qui permettra, plus tard, de retrouver d'un
+ * `grep` tous les endroits qui emploient ce moment.
+ */
+const EXEMPT = new Map(
+  Object.entries(moments)
+    .filter(([, m]) => m.exempt === true)
+    .map(([name, m]) => [name, Number.parseInt(m.duration, 10)]),
+);
 
 const ROOTS = [
   resolve(here, '..', '..', 'ui', 'src'),
@@ -97,9 +123,21 @@ for (const root of ROOTS) {
         if (!/duration|transition|animation/i.test(line)) continue;
         const ms = raw.endsWith('ms') ? Number(m[1]) : Number(m[1]) * 1000;
         durations += 1;
-        if (ms > MAX_DURATION_MS && ms > 1) {
-          violations.push(`${where} — ${raw} dépasse le plafond de ${MAX_DURATION_MS} ms`);
-        }
+        if (ms <= MAX_DURATION_MS || ms <= 1) continue;
+
+        // Le moment nommé sur la ligne, s'il y en a un, et si sa durée correspond.
+        const named = /motion:(\w+)/.exec(line);
+        const allowed = named !== null && EXEMPT.get(named[1]) === ms;
+        if (allowed) continue;
+
+        violations.push(
+          named === null
+            ? `${where} — ${raw} dépasse le plafond de ${MAX_DURATION_MS} ms`
+            : `${where} — ${raw} dépasse le plafond, et « ${named[1]} » ne l’autorise pas` +
+              (EXEMPT.has(named[1])
+                ? ` (il vaut ${EXEMPT.get(named[1])} ms)`
+                : ' (ce moment n’est pas exempté dans motion.js)'),
+        );
       }
 
       for (const m of line.matchAll(/cubic-bezier\([^)]*\)/g)) {
