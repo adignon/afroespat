@@ -691,6 +691,55 @@ describe('villes et membres (09 §2)', () => {
      * cache avec son propre filtre et fait disparaître du contenu pour des gens qui
      * n'ont rien demandé.)
      */
+    /**
+     * ═══ RÈGLE DURE ═══
+     *
+     * Une information de guichet publiée est visible sans attendre l'expiration.
+     *
+     * CE QUE CE TEST EXISTE POUR EMPÊCHER DE REVENIR, et c'était mesuré sur l'API
+     * qui tournait : `desks()` garde cinq minutes, et la SEULE purge du cache
+     * vivait dans `createTip` — qui écrit `city_tips`, alors que `desks()` lit
+     * `stories`. Elle ne pouvait donc rien changer, et RIEN sur le chemin des
+     * stories ne purgeait. Une information publiée par `POST /stories` restait
+     * invisible jusqu'au redémarrage du processus, la route continuant de rendre
+     * `{"items":[],"meta":{"cached":true}}`.
+     *
+     * C'est le miroir de ce que le fichier de câblage des événements raconte à son
+     * propre sujet : là un événement sans lecteur, ici un lecteur sans événement.
+     *
+     * Le test remplit le cache, publie, puis relit. Sans l'oubli, la seconde
+     * lecture rend l'entrée d'avant la publication — et `meta.cached` le dit.
+     */
+    it('[RÈGLE DURE] une information publiée n’attend pas l’expiration du cache', async () => {
+      const ville = await prisma.city.findFirstOrThrow({
+        where: { mergedIntoCityId: null, memberCount: 0, id: { notIn: [cityId] } },
+        orderBy: { slug: 'asc' },
+        select: { id: true, slug: true },
+      });
+      await prisma.city.update({ where: { id: ville.id }, data: { isActive: true } });
+
+      const auteur = await member();
+
+      // Premier appel : le cache se remplit sur une fiche encore vide.
+      const avant = await cities.desks(ville.slug, auteur);
+      expect((avant.items as { placeLabel: string }[]).map((i) => i.placeLabel)).not.toContain(
+        'Sous-préfecture',
+      );
+
+      await information(auteur, 'Sous-préfecture', 'Ouvert le mardi matin.', {
+        cityId: ville.id,
+      });
+
+      // C'est ce que l'abonnement à `story.published` déclenche en production.
+      cities.oublierGuichets(ville.id);
+
+      const apres = await cities.desks(ville.slug, auteur);
+      expect(
+        (apres.items as { placeLabel: string }[]).map((i) => i.placeLabel),
+        'le cache a survécu à la publication : l’information reste invisible',
+      ).toContain('Sous-préfecture');
+    });
+
     it('[RÈGLE DURE] le cache ne sert pas à un lecteur la réponse calculée pour un autre', async () => {
       /**
        * SA PROPRE VILLE, et ce n'est pas une précaution de confort.

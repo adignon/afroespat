@@ -1,4 +1,5 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { CitiesService } from '../modules/cities/cities.service';
 import { CommunitiesService } from '../modules/communities/communities.service';
 import { GuidesService } from '../modules/guides/guides.service';
 import { HelpService } from '../modules/help/help.service';
@@ -60,6 +61,7 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly search: SearchService,
     private readonly billing: BillingService,
     private readonly dataExports: DataExportService,
+    private readonly cities: CitiesService,
     private readonly realtime: RealtimeRelayService,
   ) {}
 
@@ -114,6 +116,41 @@ export class EventSubscriptionsService implements OnModuleInit {
      * AUCUN CORPS DE MESSAGE dans la charge (§8.1). `recipientUserIds` vient de
      * l'émetteur, qui a déjà exclu l'expéditeur.
      */
+    /**
+     * ── Fraîcheur des guichets d'une ville (09 §2.3) ─────────────────────────
+     *
+     * UN LECTEUR SANS ÉVÉNEMENT — le miroir exact de ce que le préambule de ce
+     * fichier raconte à propos de `user.onboarded_location`.
+     *
+     * `CitiesService.desks()` garde cinq minutes en mémoire, et la seule purge
+     * vivait dans `createTip`, qui écrit `city_tips`. Or `desks()` lit `stories` :
+     * la purge ne pouvait RIEN changer, et rien sur le chemin des stories ne
+     * purgeait. Mesuré par l'agent qui branchait la fiche ville : une information
+     * de guichet publiée par `POST /stories` est restée invisible jusqu'au
+     * redémarrage du processus, la route continuant de rendre
+     * `{"items":[],"meta":{"cached":true}}`.
+     *
+     * DEUX événements, et le choix est vérifié. `story.expired` compte autant que
+     * `story.published` : sans elle, le cache maintiendrait une information en vie
+     * cinq minutes de plus que sa propre échéance.
+     *
+     * `story.converted` est EXCLUE, et ce n'est pas un oubli : la conversion
+     * n'écrit que `convertedToType` et `convertedToId` — ni le statut, ni
+     * l'échéance, ni le lieu. La story reste légitimement sur la fiche, donc il
+     * n'y a rien à oublier. `story.deleted` n'existe pas : ce n'est pas un type du
+     * domaine, et le compilateur l'a dit quand j'ai essayé de m'y abonner.
+     *
+     * `cityId` vient de la charge — une story n'est pas toujours rattachée à une
+     * ville, et sans ville il n'y a pas de fiche à oublier.
+     */
+    for (const type of ['story.published', 'story.expired'] as const) {
+      this.registry.on(type, 'cities', async (job) => {
+        const cityId = (job.payload as { cityId?: string | null } | null)?.cityId;
+        if (typeof cityId === 'string') this.cities.oublierGuichets(cityId);
+        return Promise.resolve();
+      });
+    }
+
     this.registry.on('message.sent', 'realtime', async (job) => {
       const payload = job.payload as { conversationId?: unknown; messageId?: unknown; recipientUserIds?: unknown };
       const recipients = Array.isArray(payload?.recipientUserIds) ? payload.recipientUserIds : [];

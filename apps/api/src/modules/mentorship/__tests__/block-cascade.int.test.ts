@@ -202,6 +202,10 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
       // test. Le premier ne s'abonne qu'à `user.export_requested`, le second à
       // `message.sent` : ni l'un ni l'autre n'est sur le chemin d'un blocage.
       inert(),
+      // Le module 09, arrivé après ce test : il s'abonne à `story.published` et
+      // `story.expired` pour oublier le cache des guichets d'une ville. Un blocage
+      // ne publie ni ne fait expirer de story — inerte ici.
+      inert(),
       inert(),
     ).onModuleInit();
 

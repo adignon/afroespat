@@ -836,13 +836,52 @@ export class CitiesService {
       return row;
     });
 
-    // Une ville a maintenant AUTANT D'ENTRÉES que d'audiences distinctes l'ont
-    // consultée : les effacer toutes, sinon une astuce nouvelle resterait invisible
-    // pour tout lecteur dont la liste de blocage n'est pas vide.
-    for (const key of this.desksCache.keys()) {
-      if (key.startsWith(`${city.id}|`)) this.desksCache.delete(key);
-    }
+    /**
+     * Cette purge ne sert à RIEN, et elle reste — lisez `oublierGuichets`.
+     *
+     * `createTip` écrit dans `city_tips` ; `desks()` lit `stories`. Purger ici ne
+     * peut donc rien changer à ce que la fiche des guichets rend. On la garde
+     * parce qu'elle est juste — une contribution ne doit pas laisser de vue
+     * périmée derrière elle — et parce que le jour où `desks()` lira aussi les
+     * astuces, elle sera déjà au bon endroit.
+     *
+     * Le VRAI déclencheur est sur le chemin des stories, et il manquait : voir
+     * `oublierGuichets` et son abonnement dans `event-subscriptions.service.ts`.
+     */
+    this.oublierGuichets(city.id);
     return tip;
+  }
+
+  /**
+   * OUBLIER LES GUICHETS D'UNE VILLE — et pourquoi cette méthode est publique.
+   *
+   * `desks()` lit `stories`. Or la seule purge du cache vivait dans `createTip`,
+   * qui écrit `city_tips` : elle ne pouvait rien changer, et RIEN sur le chemin
+   * des stories ne purgeait. Mesuré : une information de guichet publiée par
+   * `POST /stories` restait invisible jusqu'au redémarrage du processus, la fiche
+   * continuant de rendre `{"items":[],"meta":{"cached":true}}`.
+   *
+   * C'est le miroir exact du défaut que le fichier de câblage des événements
+   * raconte à son propre sujet — un événement sans lecteur — sauf qu'ici c'est un
+   * lecteur sans événement.
+   *
+   * Publique, donc, pour que le câblage l'abonne aux événements de story. Les
+   * services métier restent ignorants de la file : ils exposent une méthode, le
+   * fichier de câblage décide qui l'appelle.
+   *
+   * RÉSERVE À CONNAÎTRE : ce cache vit dans la MÉMOIRE DU PROCESSUS. Avec
+   * plusieurs instances d'API, seule celle qui traite l'événement oublie ; les
+   * autres attendent l'expiration. Ce n'est pas introduit ici — c'est la nature
+   * du cache — mais cela veut dire que la fraîcheur reste garantie par la durée
+   * de vie, et que la purge ne fait que l'améliorer là où elle passe.
+   */
+  oublierGuichets(cityId: string): void {
+    // Une ville a AUTANT D'ENTRÉES que d'audiences distinctes l'ont consultée :
+    // les effacer toutes, sinon une information nouvelle resterait invisible pour
+    // tout lecteur dont la liste de blocage n'est pas vide.
+    for (const key of this.desksCache.keys()) {
+      if (key.startsWith(`${cityId}|`)) this.desksCache.delete(key);
+    }
   }
 
   async updateTip(tipId: string, authorUserId: string, patch: UpdateCityTip) {
