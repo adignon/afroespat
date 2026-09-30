@@ -1,6 +1,7 @@
 'use client';
 
 import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { CODE_REGULARISER } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J02Desktop } from '@/screens/j02/desktop.generated';
 import { J02Mobile } from '@/screens/j02/mobile.generated';
@@ -27,7 +28,24 @@ import { J02MobilePlanAtteint } from '@/screens/j02/mobileplanatteint.generated'
 export type EtapeCreation = 'type' | 'regulariser' | 'plan';
 
 export function NouveauEcran({ etape }: { readonly etape: EtapeCreation }) {
-  const { ouverte, onOuvrir, onFermer, volet, data } = useParcours();
+  /**
+   * « CONTINUER » DE LA VARIANTE RÉGULARISER CRÉE LE PARCOURS (§3.1, T5).
+   *
+   * C'est le seul bouton de J02 que le générateur branche : la maquette dessine
+   * bien « Créer le parcours » sur la planche des types, mais ce libellé n'est pas
+   * dans les actions que le transcodeur reconnaît, donc aucun `onClick` n'y est
+   * posé. Et les quatre cartes de type sont des `<div>`, pas des boutons.
+   *
+   * Le code du modèle n'est donné QUE sur cette variante. Sur la planche des
+   * types, « Continuer » n'existe pas ; sur celle du plan atteint, créer serait
+   * absurde — c'est précisément l'écran qui dit que la limite est atteinte.
+   *
+   * Un CODE et non un identifiant : `journey_templates.code` est le contrat, un
+   * identifiant est propre à une base. Coder l'identifiant en dur aurait marché en
+   * développement et créé un parcours inexistant en production.
+   */
+  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } =
+    useParcours(null, etape === 'regulariser' ? { creerCode: CODE_REGULARISER } : {});
 
   const mobile =
     etape === 'regulariser' ? (
@@ -47,6 +65,9 @@ export function NouveauEcran({ etape }: { readonly etape: EtapeCreation }) {
       onOuvrir={onOuvrir}
       onFermer={onFermer}
       modales={{ J03: plancheBlocage(volet, data) }}
+      erreur={erreur}
+      niveauRequis={niveauRequis}
+      oublierNiveauRequis={oublierNiveauRequis}
     />
   );
 }

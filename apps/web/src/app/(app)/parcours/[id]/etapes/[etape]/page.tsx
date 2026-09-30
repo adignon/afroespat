@@ -1,6 +1,7 @@
 'use client';
 
 import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage, plancheJalon } from '@/screens/parcours/modales';
 import { J01SDesktop } from '@/screens/j01s/desktop.generated';
 import { J01SMobile } from '@/screens/j01s/mobile.generated';
@@ -26,7 +27,7 @@ import { J01SMobile } from '@/screens/j01s/mobile.generated';
  * aucune barre ne bouge tant qu'aucune étape ne change d'état.
  */
 export default function Page() {
-  const { ouverte, onOuvrir, onFermer, volet, data } = useParcours();
+  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(null, useContexteParcours());
 
   return (
     <EcranParcours
@@ -37,6 +38,9 @@ export default function Page() {
       onOuvrir={onOuvrir}
       onFermer={onFermer}
       modales={{ J03: plancheBlocage(volet, data), J04: plancheJalon(data) }}
+      erreur={erreur}
+      niveauRequis={niveauRequis}
+      oublierNiveauRequis={oublierNiveauRequis}
     />
   );
 }

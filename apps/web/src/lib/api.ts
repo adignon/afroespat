@@ -1,14 +1,15 @@
 'use client';
 
-import { z } from 'zod';
 import {
   meResponseSchema,
+  onboardingAdvanceResponseSchema,
   onboardingAdvanceSchema,
   otpRequestResponseSchema,
   otpVerifyResponseSchema,
   placesCitiesResponseSchema,
   placesCountriesResponseSchema,
   type MeResponse,
+  type OnboardingAdvanceResponse,
   type OtpRequest,
   type OtpRequestResponse,
   type OtpVerify,
@@ -71,9 +72,16 @@ export async function verifyOtp(input: OtpVerify): Promise<OtpVerifyResponse> {
  * applique à l'entrée (§4 : source unique). Valider aussi côté client n'est pas une
  * redondance : un numéro d'écran hors bornes devient une erreur ici, sur le champ,
  * au lieu d'un aller-retour qui rend `400 VALIDATION_FAILED`.
+ *
+ * LA RÉPONSE, ELLE, ÉTAIT DÉCRITE ICI — `z.object({ step: z.number().int() })`,
+ * écrit à la ligne d'appel. C'était la seule entorse restante à la consigne du
+ * socle (« écrivez le schéma manquant dans `packages/shared`, jamais dans un
+ * fichier du front »), et elle était facile à ne pas voir parce qu'elle tenait sur
+ * une ligne. `onboardingAdvanceResponseSchema` vit maintenant à côté du schéma de
+ * requête, et le type de retour se dérive de lui — plus rien n'est écrit deux fois.
  */
-export function advanceOnboarding(step: number): Promise<{ step: number }> {
-  return memberApi.post('/me/onboarding', z.object({ step: z.number().int() }), {
+export function advanceOnboarding(step: number): Promise<OnboardingAdvanceResponse> {
+  return memberApi.post('/me/onboarding', onboardingAdvanceResponseSchema, {
     body: onboardingAdvanceSchema.parse({ step }),
   });
 }

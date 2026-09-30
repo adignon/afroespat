@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { connecter } from './session';
 
 /**
  * Les dix écrans transcodés de `docs/template/06 Services.dc.html` — S01 à S10 —
@@ -878,10 +879,28 @@ test.describe('règles dures', () => {
     }
   }
 
+  /**
+   * K04 EXIGE MAINTENANT UNE SESSION, et c'est ce test qui l'a rendu visible.
+   *
+   * Il est la preuve de non-vacuité du détecteur : appliqué à l'écran qui affiche un
+   * téléphone — masqué — il doit en TROUVER un. Depuis que K04 lit `GET /me`, une
+   * visite sans session n'affiche plus que l'état d'attente : le détecteur ne
+   * trouvait plus rien, et ce test rougissait. Son échec était juste — il disait
+   * exactement ce qu'il est là pour dire, « je ne vois plus de numéro » — et la
+   * réponse n'est pas de l'assouplir mais de lui donner la session que l'écran
+   * réclame désormais.
+   *
+   * Sans lui, les vingt cas ci-dessus continueraient de passer sur un détecteur
+   * devenu aveugle, et personne ne le saurait.
+   */
   test('le même détecteur TROUVE le numéro masqué de K04 — il n’est donc pas aveugle', async ({
+    context,
     page,
+    request,
   }) => {
+    await connecter(context, request);
     await visiter(page, '/compte/securite', 1440);
+    await page.locator('[data-screen="K04"]').waitFor({ state: 'attached', timeout: 20_000 });
     const texte = await page.locator('[data-frame="desktop"]').innerText();
     expect(texte).toMatch(TELEPHONE);
   });

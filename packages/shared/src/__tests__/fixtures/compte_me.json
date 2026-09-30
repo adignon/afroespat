@@ -1,0 +1,47 @@
+{
+  "user": {
+    "id": "01a0f3b6-4e70-7000-aa59-1330de42ccb5",
+    "handle": "m-01a0f3b64e70",
+    "displayName": "Awa Konaté",
+    "avatarUrl": null,
+    "phase": "RECENT_ARRIVAL",
+    "verificationLevel": "L0",
+    "plan": "FREE",
+    "status": "ACTIVE",
+    "originCountryId": "01a0e1b0-03eb-7000-8568-a65c501769f6",
+    "cityId": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "originCountryLocked": false
+  },
+  "profile": {
+    "bio": "Relevé pour les fixtures.",
+    "occupationStatus": "STUDENT",
+    "availableToHelp": true,
+    "helpTypes": [
+      "PAPERWORK",
+      "JOB"
+    ],
+    "isPublic": true
+  },
+  "phones": [
+    {
+      "id": "01a0f3b6-4e78-7000-87b4-fceb8aacf759",
+      "masked": "+229 •• •• •• 53",
+      "isDestination": false
+    }
+  ],
+  "kyc": null,
+  "stats": {
+    "helpValidatedCount": 0,
+    "guideHelpfulVotes": 0,
+    "guideContributions": 0,
+    "mentorshipsCompleted": 0,
+    "eventsOrganized": 0
+  },
+  "consents": {
+    "outstanding": []
+  },
+  "onboarding": {
+    "step": 1,
+    "complete": false
+  }
+}

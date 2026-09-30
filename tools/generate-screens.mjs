@@ -1160,6 +1160,256 @@ function applyBorrows(inner, borrows, section) {
 }
 
 /**
+ * ─── `donnees` : LA PRISE OÙ BRANCHER L'API SUR UNE MAQUETTE STATIQUE ────────
+ *
+ * LE DÉFAUT QUE CETTE CLÉ CORRIGE, mesuré et non supposé. Sur les neuf maquettes
+ * produit, DEUX emploient le dialecte (`01 Accès et Onboarding` : 120
+ * interpolations, 24 boucles ; `03 Accueil v2` : 767 et 114). Les SEPT autres —
+ * 04, 05, 06, 07, 08, 09, 10 — écrivent tout leur contenu en clair : zéro `{{ }}`,
+ * zéro `<sc-for>`, comptés. Conséquence sur les cadres produits : 198 sur 250
+ * portaient une signature `(_props: XData)`. Le souligné dit que le paramètre
+ * n'est pas lu. Ces écrans recevaient des données et les IGNORAIENT — il n'existait
+ * aucune prise où brancher l'API sur 79 % des cadres.
+ *
+ * On ne peut pas la créer en ajoutant des `{{ }}` dans `docs/template/` : le
+ * porteur a été formel, ON NE RÉÉCRIT PAS LES MAQUETTES. Et on ne peut pas non plus
+ * la créer en retouchant les `*.generated.tsx` : la régénération suivante les
+ * efface. La prise doit donc se DÉCLARER, avec l'écran, dans `tools/screens/*.mjs` —
+ * exactement là où vivent déjà l'emprunt, le déclencheur et le titre.
+ *
+ * ── CE QUE C'EST : `applyBorrows`, APPLIQUÉ À LA DONNÉE ─────────────────────
+ *
+ * Aucun second mécanisme n'est inventé ici. Un emprunt remplace un fragment de la
+ * maquette par un autre fragment DESSINÉ ailleurs ; une donnée remplace un fragment
+ * de la maquette par le MÊME fragment où une valeur littérale devient une
+ * interpolation. Ce sont les mêmes trois contrôles, et le troisième — « ce qu'on
+ * injecte, moins l'ancre, moins les motifs, doit être vide » — est le modèle suivi
+ * ici, parce que sans lui « lier une donnée » redeviendrait « redessiner un peu ».
+ *
+ *   · `noeud`   — LE LITTÉRAL DE LA MAQUETTE, verbatim, qui devient une donnée.
+ *                 Texte affiché (« Amina Diallo ») ou fragment de HTML entier (les
+ *                 trois cartes de session dessinées côte à côte).
+ *   · `fois`    — combien de fois la maquette l'écrit DANS CE CADRE. Défaut 1.
+ *                 C'EST LE GARDE-FOU : si le compte ne tombe pas juste, la
+ *                 génération ÉCHOUE en nommant le fragment. Un designer qui retire
+ *                 « Amina Diallo » d'une planche ne produit donc pas un écran où la
+ *                 donnée ne s'affiche plus en silence — il produit un arrêt qui la
+ *                 nomme. C'est la même famille de défaut que `cities.member_count`,
+ *                 écrit par personne, qui faisait trier la carte par ordre
+ *                 alphabétique sans que rien ne le dise.
+ *   · `devient` — la réécriture, DANS LE DIALECTE de la maquette : `{{ … }}` pour
+ *                 une valeur, `<sc-for>` pour une liste, `<sc-if>` pour un état.
+ *                 Pas de nouveau langage : celui que `01` et `03` emploient déjà, et
+ *                 que `transcode` sait lire. C'est ce qui fait converger la forme
+ *                 des sept maquettes statiques vers celle de `screens/a01` — un seul
+ *                 chemin de code, `collectProps` déduit la signature du cadre, et
+ *                 rien n'est ajouté à l'émetteur de JSX.
+ *   · `motifs`  — les fragments que `devient` réemploie mais que `noeud` ne contient
+ *                 pas : ils viennent d'ailleurs dans la maquette, ou d'une autre
+ *                 maquette (`{ from, pattern }`). Vérifiés comme ceux d'un emprunt.
+ *   · `texte`   — LE TEXTE QUI NE VIENT D'AUCUNE MAQUETTE, déclaré comme tel et
+ *                 annoncé par un `⚠` à chaque exécution. Même clé, même sens et même
+ *                 exigence d'honnêteté que pour un emprunt.
+ *   · `why`     — la phrase du journal. Une donnée qui remplace un texte de maquette
+ *                 se LIT à chaque exécution : elle n'est jamais silencieuse.
+ *
+ * ── LE TROISIÈME CONTRÔLE, SHARPENED POUR LA DONNÉE ─────────────────────────
+ *
+ * Un emprunt vérifie que `into` moins l'ancre moins les motifs est vide. Ici l'ancre
+ * n'est pas recopiée dans `devient` — on ne colle pas la carte deux fois — donc le
+ * contrôle est formulé à l'endroit : ce qui reste de `devient` quand on en retire
+ * les interpolations, les balises du dialecte, les motifs déclarés et le `texte`
+ * déclaré doit être fait de fragments DESSINÉS DANS `noeud`, ET DANS L'ORDRE OÙ LA
+ * MAQUETTE LES DESSINE.
+ *
+ * Ce contrôle attrape trois dérives que rien d'autre ne verrait :
+ *   · un mot inventé — il n'est dans aucun fragment, donc introuvable ;
+ *   · une couleur retouchée — `#0F5C48` devenu `#0A4234` n'est plus dessiné là, et
+ *     la génération s'arrête. La règle « ne pas assombrir les couleurs » devient
+ *     exécutable, au lieu d'être une consigne ;
+ *   · un remontage — deux fragments recollés dans l'autre sens ne passent pas le
+ *     curseur, et il faut alors les DÉCLARER en `motifs`, c'est-à-dire le dire.
+ *
+ * ── CE QUE CETTE CLÉ NE FAIT PAS ────────────────────────────────────────────
+ *
+ * Elle ne décide rien. `devient` nomme une expression ; c'est le `data.ts` du
+ * module qui dit d'où elle vient, et lui seul appelle l'API. C'est le contrat que
+ * l'en-tête de `screens/services/data.ts` a écrit d'avance : « c'est ici que les
+ * champs arriveront, et le JSX transcodé n'aura pas à bouger ».
+ */
+
+/** Les balises du dialecte et les interpolations : l'échafaudage, jamais du dessin. */
+const ECHAFAUDAGE = [
+  /\{\{[\s\S]*?\}\}/g,
+  /<sc-for\b[^>]*>/g,
+  /<\/sc-for>/g,
+  /<sc-if\b[^>]*>/g,
+  /<\/sc-if>/g,
+];
+
+/** Séparateur de fragments : un caractère qu'aucune maquette n'écrit. */
+const COUPE = '\u0000';
+
+/**
+ * LES FRAGMENTS DE DESSIN que `devient` contient, une fois l'échafaudage ôté.
+ *
+ * Chacun devra être retrouvé dans `noeud`, dans l'ordre. Le `texte` déclaré est
+ * retiré EN DERNIER, exprès, et pour la raison qu'`applyBorrows` a déjà écrite :
+ * s'il figurait par hasard dans un motif, c'est le motif qui compte, et la
+ * déclaration cesserait d'être signalée — le pire des deux mondes.
+ */
+function fragmentsDeDessin(devient, motifs, textes) {
+  let reste = devient;
+  for (const motif of motifs) reste = reste.replace(motif.pattern, COUPE);
+  for (const re of ECHAFAUDAGE) reste = reste.replace(re, COUPE);
+  for (const phrase of textes) reste = reste.replace(phrase, COUPE);
+  return reste.split(COUPE).filter((f) => f !== '');
+}
+
+/**
+ * Lie les données déclarées d'un cadre. Rend le HTML de la maquette où les
+ * littéraux liés sont devenus des interpolations du dialecte.
+ *
+ * `frameName` entre dans chaque message : les deux cadres d'un écran n'ont pas le
+ * même contenu — le mobile de K04 écrit « Dernier numéro, non retirable » là où
+ * l'ordinateur laisse un bouton — et un compte qui tombe faux doit dire LEQUEL des
+ * deux cadres il a lu, sinon on cherche le défaut dans le mauvais.
+ */
+function applyData(inner, donnees, section, frameName) {
+  let out = inner;
+  const applied = [];
+
+  for (const lien of donnees ?? []) {
+    const attendu = lien.fois ?? 1;
+    const motifs = (lien.motifs ?? []).map((p) =>
+      typeof p === 'string' ? { from: lien.from, pattern: p } : p,
+    );
+
+    /**
+     * PREMIER CONTRÔLE — le fragment est-il toujours dessiné, et autant de fois ?
+     *
+     * C'est celui pour lequel cette clé existe. Une retouche du designer qui retire
+     * ou dédouble le littéral ARRÊTE la génération en le nommant, au lieu de
+     * produire un écran où la donnée ne s'affiche plus — défaut qu'aucun `tsc`,
+     * aucun lint et aucun test de forme ne verrait, puisque le JSX compile.
+     */
+    const trouve = out.split(lien.noeud).length - 1;
+    if (trouve !== attendu) {
+      throw new Error(
+        `${section} ${frameName} : le fragment lié à une donnée « ${lien.noeud.slice(0, 90)}… » ` +
+          `figure ${trouve} fois dans ce cadre, et la déclaration en attend ${attendu}. ` +
+          'Si la maquette a changé, mettre « donnees » à jour dans sa déclaration d’écran ; ' +
+          'ne jamais laisser la donnée disparaître en silence.',
+      );
+    }
+
+    // DEUXIÈME CONTRÔLE — un motif venu d'ailleurs doit y être encore dessiné.
+    // Même garde-fou, même message que pour un emprunt : voir `applyBorrows`.
+    for (const motif of motifs) {
+      if (motif.from === undefined) {
+        if (inner.includes(motif.pattern)) continue;
+        throw new Error(
+          `${section} ${frameName} : le motif « ${motif.pattern.slice(0, 80)}… » réemployé par ` +
+            'une donnée ne figure pas dans ce cadre. Déclarer « from » s’il vient d’une autre maquette.',
+        );
+      }
+      if (lireSourceEmpruntee(motif.from).includes(motif.pattern)) continue;
+      throw new Error(
+        `${section} ${frameName} : le motif « ${motif.pattern.slice(0, 80)}… » réemployé par une ` +
+          `donnée ne figure plus dans ${motif.from}. Mettre « donnees » à jour dans sa déclaration.`,
+      );
+    }
+
+    /**
+     * TROISIÈME CONTRÔLE — RIEN D'INVENTÉ, ET RIEN DE REMONTÉ.
+     *
+     * Le modèle est celui d'`applyBorrows`, à l'endroit : ce qui reste de `devient`
+     * quand on retire l'échafaudage du dialecte, les motifs déclarés et le `texte`
+     * déclaré doit être fait de fragments dessinés DANS `noeud`, dans l'ordre.
+     */
+    const fragments = fragmentsDeDessin(lien.devient, motifs, lien.texte ?? []);
+    let curseur = 0;
+    for (const fragment of fragments) {
+      const at = lien.noeud.indexOf(fragment, curseur);
+      if (at < 0) {
+        throw new Error(
+          `${section} ${frameName} : la donnée ajoute du dessin que la maquette n’écrit pas là — ` +
+            `« ${fragment.slice(0, 120)} ». Une donnée est faite du fragment de la maquette, des ` +
+            'interpolations du dialecte, des « motifs » déclarés et du « texte » DÉCLARÉ, et de ' +
+            'rien d’autre — dans l’ordre où la maquette le dessine.',
+        );
+      }
+      curseur = at + fragment.length;
+    }
+
+    /**
+     * QUATRIÈME CONTRÔLE — une donnée doit VRAIMENT en être une.
+     *
+     * Un `devient` sans aucune interpolation ne lie rien : il recopierait le
+     * fragment à l'identique, le journal annoncerait une donnée, et l'écran
+     * continuerait d'afficher la valeur de la maquette. C'est précisément le
+     * mensonge que ce mécanisme existe pour empêcher.
+     */
+    if (!/\{\{[\s\S]*?\}\}/.test(lien.devient)) {
+      throw new Error(
+        `${section} ${frameName} : la donnée déclarée sur « ${lien.noeud.slice(0, 60)}… » ne porte ` +
+          'aucune interpolation `{{ … }}` : elle ne lie rien et l’écran garderait la valeur de la maquette.',
+      );
+    }
+
+    out = out.split(lien.noeud).join(lien.devient);
+    applied.push({ ...lien, motifs, fois: attendu });
+  }
+
+  return { html: out, applied };
+}
+
+/**
+ * EXPORTÉE POUR ÊTRE ÉPROUVÉE DE L'EXTÉRIEUR, sur les octets réels des maquettes.
+ *
+ * Le garde-fou de cette clé ne se démontre qu'en RETIRANT un fragment d'une
+ * maquette et en vérifiant que la génération refuse. Or `docs/` ne se modifie pas —
+ * le porteur l'a interdit, et `git status docs/` doit rester vide. La mutation se
+ * fait donc sur une COPIE EN MÉMOIRE du fichier, ce qui exige d'appeler cette
+ * fonction depuis ailleurs que ce module.
+ *
+ * ATTENTION : importer ce fichier DÉCLENCHE la génération, qui vit au niveau du
+ * module. C'est sans danger — elle est idempotente, vérifiée — mais l'appelant doit
+ * s'attendre à son journal.
+ */
+export { applyData };
+
+/** `{{ x }}` → `{x}` : la règle de texte de `transcode`, pour relire un titre lié. */
+const dialecteEnJsx = (s) => s.replace(/\{\{\s*([\s\S]+?)\s*\}\}/g, '{$1}');
+
+/**
+ * UN TITRE PEUT ÊTRE UNE DONNÉE, et il doit rester promu en `<h1>`.
+ *
+ * K02 titre la page avec le NOM DU MEMBRE — « Fatou Ndiaye » — et c'est exactement
+ * le genre de littéral qui devient une donnée. Sans cette reprise, la liaison
+ * faisait disparaître le texte que `promoteTitle` cherche : la page perdait son
+ * `<h1>`, le journal criait « titre déclaré introuvable », et la cause était à deux
+ * mécanismes de distance. On remplace donc le texte attendu par sa forme LIÉE, et
+ * le journal le dit.
+ */
+function retitrerSurDonnees(spec, applied) {
+  if (spec === undefined) return { spec, lie: null };
+  /**
+   * Le `noeud` d'une liaison de texte s'écrit avec ses DÉLIMITEURS — `>Fatou
+   * Ndiaye<` — parce que c'est ce qui le rend non ambigu dans le HTML : « Lyon »
+   * seul figure aussi au milieu d'une autre phrase. Un titre déclaré, lui, est le
+   * texte nu. On compare donc les deux dépouillés, sinon la reprise ne déclenche
+   * jamais et l'avertissement accuse la déclaration de titre — ce qui est
+   * exactement ce qui est arrivé la première fois.
+   */
+  const nu = (s) => s.replace(/^>/, '').replace(/<$/, '');
+  const lien = applied.find((d) => nu(d.noeud) === spec.text);
+  if (lien === undefined) return { spec, lie: null };
+  const texte = dialecteEnJsx(nu(lien.devient));
+  return { spec: { ...spec, text: texte, label: `${spec.label} → ${texte}` }, lie: texte };
+}
+
+/**
  * ADAPTATIONS D'UNE MODALE — elles REMPLACENT celle du contenu qui coule.
  *
  * L'adaptation « le contenu vertical était borné par ses 844 px : il doit
@@ -1878,9 +2128,232 @@ const FRAME_TESTS = [
   },
 ];
 
+/**
+ * ─── ÉPREUVE DE `donnees`, LA PRISE OÙ SE BRANCHE L'API ──────────────────────
+ *
+ * Chaque cas porte le DÉFAUT RÉEL qu'il prévient, et chacun a été éprouvé en
+ * cassant la règle qu'il garde : on retire le contrôle, on vérifie que le cas
+ * ROUGIT, on remet. Un test qui survit à la suppression de sa règle est creux.
+ *
+ * Le dernier cas est une MUTATION TÉMOIN — il change un endroit qui ne décide de
+ * rien et vérifie que le résultat ne bouge PAS. Sans lui, un contrôle pourrait
+ * s'appuyer sur la mauvaise occurrence et les autres cas passeraient quand même.
+ */
+const DATA_TESTS = [
+  {
+    name: 'le fragment déclaré est lié, et le dialecte de la maquette en sort',
+    run: () => {
+      const cadre = '<div><span>Amina Diallo</span></div>';
+      const out = applyData(
+        cadre,
+        [{ noeud: '>Amina Diallo<', devient: '>{{ moi.nom }}<', why: '' }],
+        'T',
+        'Desktop',
+      );
+      return out.html;
+    },
+    expect: '<div><span>{{ moi.nom }}</span></div>',
+  },
+  {
+    /**
+     * LE GARDE-FOU. Une retouche du designer qui retire le fragment ne doit PAS
+     * produire un écran où la donnée ne s'affiche plus en silence : elle doit
+     * arrêter la génération, EN NOMMANT le fragment. C'est le défaut de la même
+     * famille que `cities.member_count`, écrit par personne, qui faisait trier la
+     * carte par ordre alphabétique sans que rien ne le dise.
+     */
+    name: 'le fragment RETIRÉ de la maquette fait ÉCHOUER la génération, en le nommant',
+    run: () => {
+      try {
+        applyData(
+          '<div><span>Aminata Sow</span></div>',
+          [{ noeud: '>Amina Diallo<', devient: '>{{ moi.nom }}<', why: '' }],
+          'K01',
+          'Desktop',
+        );
+        return 'aucune erreur — le défaut passerait en silence';
+      } catch (e) {
+        const nomme = e.message.includes('Amina Diallo');
+        const situe = e.message.includes('K01') && e.message.includes('Desktop');
+        return `refus:${nomme}:${situe}`;
+      }
+    },
+    expect: 'refus:true:true',
+  },
+  {
+    /** Un fragment DÉDOUBLÉ est aussi une dérive : on n'en lie pas deux au hasard. */
+    name: 'un fragment qui apparaît DEUX fois là où on en déclare une fait échouer',
+    run: () => {
+      try {
+        applyData(
+          '<b>Lyon</b><i>Lyon</i>',
+          [{ noeud: '>Lyon<', devient: '>{{ ville }}<', why: '' }],
+          'T',
+          'Mobile',
+        );
+        return 'aucune erreur';
+      } catch (e) {
+        return e.message.includes('figure 2 fois') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /**
+     * LE TROISIÈME CONTRÔLE, celui d'`applyBorrows`. Un mot inventé n'est dessiné
+     * nulle part dans le fragment qu'il remplace : sans ce contrôle, « lier une
+     * donnée » redeviendrait « redessiner un peu », et le peu ne se relit jamais.
+     */
+    name: 'un mot AJOUTÉ que la maquette n’écrit pas là fait échouer',
+    run: () => {
+      try {
+        applyData(
+          '<span>Lyon</span>',
+          [{ noeud: '>Lyon<', devient: '>Ville de {{ ville }}<', why: '' }],
+          'T',
+          'Desktop',
+        );
+        return 'aucune erreur';
+      } catch (e) {
+        return e.message.includes('Ville de') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /**
+     * LA RÈGLE « NE PAS ASSOMBRIR LES COULEURS » DEVIENT EXÉCUTABLE. Huit paires
+     * de ce projet passent sous le seuil AA, et c'est une décision assumée du
+     * porteur. Une liaison qui en profiterait pour corriger une teinte en passant
+     * est refusée par le même contrôle, sans qu'il ait fallu l'écrire pour ça.
+     */
+    name: 'une couleur RETOUCHÉE au passage est refusée par le même contrôle',
+    run: () => {
+      try {
+        applyData(
+          '<span style="color:#5D6B66">Lyon</span>',
+          [
+            {
+              noeud: '<span style="color:#5D6B66">Lyon</span>',
+              devient: '<span style="color:#2A3330">{{ ville }}</span>',
+              why: '',
+            },
+          ],
+          'T',
+          'Desktop',
+        );
+        return 'aucune erreur';
+      } catch (e) {
+        return e.message.includes('#2A3330') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /**
+     * UN REMONTAGE DOIT SE DÉCLARER. Deux fragments recollés dans l'autre sens ne
+     * passent pas le curseur : il faut alors les DÉCLARER en `motifs`, c'est-à-dire
+     * le dire. C'est la même discipline que celle d'un emprunt qui assemble deux
+     * sources et doit se lire comme tel.
+     */
+    name: 'deux fragments REMONTÉS à l’envers sont refusés tant qu’ils ne sont pas déclarés',
+    run: () => {
+      const cadre = '<b>Un</b><i>Deux</i>';
+      const lien = {
+        noeud: '<b>Un</b><i>Deux</i>',
+        devient: '<i>Deux</i><b>{{ x }}</b>',
+        why: '',
+      };
+      let sansMotif = 'aucune erreur';
+      try {
+        applyData(cadre, [lien], 'T', 'Desktop');
+      } catch {
+        sansMotif = 'refus';
+      }
+      const avecMotif = applyData(
+        cadre,
+        [{ ...lien, motifs: ['<i>Deux</i>'] }],
+        'T',
+        'Desktop',
+      ).html;
+      return `${sansMotif}|${avecMotif}`;
+    },
+    expect: 'refus|<i>Deux</i><b>{{ x }}</b>',
+  },
+  {
+    /**
+     * UNE DONNÉE DOIT EN ÊTRE UNE. Un `devient` sans interpolation recopierait le
+     * fragment à l'identique : le journal annoncerait une donnée et l'écran
+     * garderait la valeur de la maquette. C'est le mensonge le plus difficile à
+     * repérer, puisque tout compile et que l'écran a l'air juste.
+     */
+    name: 'une liaison SANS interpolation est refusée : elle ne lierait rien',
+    run: () => {
+      try {
+        applyData('<span>Lyon</span>', [{ noeud: '>Lyon<', devient: '>Lyon<', why: '' }], 'T', 'D');
+        return 'aucune erreur';
+      } catch (e) {
+        return e.message.includes('aucune interpolation') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /** Un titre lié reste promu : c'est le cas K02, « Fatou Ndiaye » devenue donnée. */
+    name: 'un titre devenu donnée est repris sur sa forme liée, et le dit',
+    run: () => {
+      const applied = [{ noeud: '>Fatou Ndiaye<', devient: '>{{ membre.nom }}<', why: '' }];
+      const spec = { text: 'Fatou Ndiaye', tag: 'h1', requires: SHAPED, key: 'title', label: 'F' };
+      const { spec: repris, lie } = retitrerSurDonnees(spec, applied);
+      return `${repris.text}|${lie}`;
+    },
+    expect: '{membre.nom}|{membre.nom}',
+  },
+  {
+    /**
+     * MUTATION TÉMOIN. On change ce qui NE DÉCIDE DE RIEN — la phrase du journal —
+     * et le résultat doit être IDENTIQUE. Si ce cas rougissait, un contrôle
+     * s'appuierait sur `why`, c'est-à-dire sur de la prose.
+     */
+    name: 'témoin : changer la phrase du journal ne change RIEN au HTML produit',
+    run: () => {
+      const cadre = '<span>Lyon</span>';
+      const lien = { noeud: '>Lyon<', devient: '>{{ ville }}<' };
+      const a = applyData(cadre, [{ ...lien, why: 'une phrase' }], 'T', 'Desktop').html;
+      const b = applyData(cadre, [{ ...lien, why: 'une TOUTE AUTRE phrase' }], 'T', 'Desktop').html;
+      return a === b ? `identique:${a}` : `divergent:${a}≠${b}`;
+    },
+    expect: 'identique:<span>{{ ville }}</span>',
+  },
+  {
+    /**
+     * LA MAQUETTE ELLE-MÊME, et non un fragment fabriqué pour le test : les
+     * déclarations de `08 Compte` doivent s'appliquer sur les vrais cadres. C'est
+     * le cas qui casse le jour où le designer retouche la planche.
+     */
+    name: 'la maquette elle-même : les deux listes de K04 se lient sur le vrai cadre',
+    run: () => {
+      const compte = SCREENS.find((s) => s.section === 'K04' && s.donnees !== undefined);
+      const section = extractSection(readFileSync(resolve(ROOT, compte.file), 'utf8'), 'K04');
+      const inner = extractFrame(section, 1440).inner;
+      const liens = compte.donnees.filter((d) => d.frames?.includes('Desktop') === true);
+      const out = applyData(inner, liens, 'K04', 'Desktop');
+      return [
+        out.html.includes('<sc-for list="{{ telephones }}" as="t">'),
+        out.html.includes('<sc-for list="{{ sessions }}" as="s">'),
+        out.html.includes('<sc-if value="{{ s.courante }}">'),
+        // Les numéros d'exemple de la maquette ont DISPARU du cadre lié : c'est ce
+        // qui prouve que l'écran affichera ceux de l'API, et non les siens.
+        out.html.includes('+229 •• •• •• 42'),
+      ].join(',');
+    },
+    expect: 'true,true,true,false',
+  },
+];
+
 if (process.argv.includes('--self-test')) {
   let failed = 0;
-  for (const t of [...TITLE_TESTS, ...FRAME_TESTS]) {
+  for (const t of [...TITLE_TESTS, ...FRAME_TESTS, ...DATA_TESTS]) {
     let got;
     try {
       got = t.run();
@@ -1892,14 +2365,15 @@ if (process.argv.includes('--self-test')) {
     console.log(`  ${ok ? '✓' : '✗'} ${t.name}`);
     if (!ok) console.log(`      attendu « ${t.expect} », obtenu « ${got} »`);
   }
-  const total = TITLE_TESTS.length + FRAME_TESTS.length;
+  const total = TITLE_TESTS.length + FRAME_TESTS.length + DATA_TESTS.length;
   if (failed > 0) {
     console.error(`\n${failed} cas sur ${total} ne se comporte(nt) pas comme documenté.\n`);
     process.exit(1);
   }
   console.log(
     `\n  ${total} cas : LEQUEL des titres et QUEL texte promouvoir restent deux questions,\n` +
-      '  et une planche est désignée par ce qu’elle est.\n',
+      '  une planche est désignée par ce qu’elle est, et une donnée liée à un fragment\n' +
+      '  disparu de la maquette ARRÊTE la génération au lieu de s’effacer en silence.\n',
   );
   process.exit(0);
 }
@@ -1969,7 +2443,25 @@ for (const screen of SCREENS) {
       (t) => t.frames === undefined || t.frames.includes(frame.name),
     );
     const triggered = markTriggers(modal === null ? raw.inner : modal.inner, triggersForFrame);
-    const inner = triggered.html;
+    /**
+     * LA LIAISON DES DONNÉES PASSE EN DERNIER SUR LE HTML, et l'ordre se justifie
+     * aux deux bouts.
+     *
+     * APRÈS `markTriggers` et `adaptModalFrame` : leurs marqueurs sont des textes de
+     * la maquette (« Ajouter aux contacts</button> »), et une liaison posée avant eux
+     * les ferait chercher un texte qui n'existe plus — la fenêtre deviendrait
+     * inatteignable, avec pour seul indice un `⚠` à l'autre bout du journal.
+     *
+     * AVANT `transcode` : c'est là toute l'idée. Le dialecte injecté suit le chemin
+     * DÉJÀ existant — `transcode` en fait du JSX, `collectProps` en déduit la
+     * signature du cadre — donc aucune ligne n'est ajoutée à l'émetteur, et la forme
+     * produite est celle de `screens/a01`, pas une seconde forme à côté.
+     */
+    const donneesForFrame = (screen.donnees ?? []).filter(
+      (d) => d.frames === undefined || d.frames.includes(frame.name),
+    );
+    const bound = applyData(triggered.html, donneesForFrame, screen.section, frame.name);
+    const inner = bound.html;
     const {
       adapted: jsx, counts, promotedHeading, headingAlreadyThere,
       roles, fields, buttons, missedFields,
@@ -2023,7 +2515,8 @@ for (const screen of SCREENS) {
      * rendait possible. Une fenêtre, elle, n'a pas de `<h1>` à disputer : son titre
      * est un `<h2>` que `aria-labelledby` désigne, et il est toujours promu.
      */
-    const spec = titleFor(screen, frame);
+    const retitre = retitrerSurDonnees(titleFor(screen, frame), bound.applied);
+    const spec = retitre.spec;
     const titled = isModal || !promotedHeading
       ? promoteTitle(jsx, spec)
       : { jsx, promoted: false, id: null };
@@ -2172,6 +2665,36 @@ ${shelled}
           `      ⚠ texte fourni par le porteur, aucune maquette ne l’écrit : « ${phrase} »`,
         );
       }
+    }
+    /**
+     * UNE DONNÉE QUI REMPLACE UN TEXTE DE MAQUETTE SE LIT, à chaque exécution.
+     *
+     * C'est la même exigence que pour le `texte` d'un emprunt, et pour la même
+     * raison : un relecteur qui tombe six mois plus tard sur un écran où « Amina
+     * Diallo » a disparu doit pouvoir savoir que c'est une LIAISON, pas une
+     * maquette qui aurait changé. Le journal nomme le littéral de la maquette et
+     * l'expression qui le remplace — la liaison n'est jamais silencieuse.
+     */
+    for (const d of bound.applied) {
+      const exprs = [...new Set([...d.devient.matchAll(/\{\{\s*([\s\S]+?)\s*\}\}/g)].map((m) => m[1]))];
+      const combien = d.fois === 1 ? '' : ` (${d.fois} occurrences)`;
+      const abrege = d.noeud.length > 70 ? `${d.noeud.slice(0, 70)}…` : d.noeud;
+      console.log(
+        `      Donnée « ${exprs.join(' · ')} » ← « ${abrege} »${combien} : ${d.why}`,
+      );
+      for (const motif of d.motifs) {
+        console.log(
+          `        motif réemployé, dessiné dans ${motif.from ?? 'ce cadre'} : « ${motif.pattern.slice(0, 60)}… »`,
+        );
+      }
+      for (const phrase of d.texte ?? []) {
+        console.log(
+          `      ⚠ texte fourni par le porteur, aucune maquette ne l’écrit : « ${phrase} »`,
+        );
+      }
+    }
+    if (retitre.lie !== null) {
+      console.log(`      Titre lié à une donnée : il sera promu sur « ${retitre.lie} ».`);
     }
     for (const b of buttons) console.log(`      Bouton « ${b.label} » branché.`);
     for (const why of missedFields) console.log(`      ⚠ adaptation attendue introuvable : ${why}`);

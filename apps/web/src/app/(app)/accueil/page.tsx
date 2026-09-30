@@ -17,14 +17,11 @@ import {
   shortcuts,
   storyFiltersFor,
   rail,
-  thread,
-  shareContactsFor,
-  shareButtonFor,
-  shareNets,
-  shareOut,
-  SHARE_SELECTION_DEFAULT,
 } from '@/screens/a01/data';
+import { shareContactsDe, shareButtonFor, shareNets, shareOut } from '@/screens/a01p/data';
 import { useFil } from '@/screens/accueil/use-fil';
+import { threadFrom } from '@/screens/accueil/from-api';
+import { usePublication } from '@/screens/publication/use-publication';
 
 /**
  * A01 — Fil d'actualité, et les deux fenêtres qu'il ouvre. BRANCHÉ SUR L'API.
@@ -63,7 +60,18 @@ export default function FeedPage() {
   const [storyFilter, setStoryFilter] = useState(-1);
   const [postType, setPostType] = useState(0);
   const [open, setOpen] = useState<OpenModal>(null);
-  const [shareSel, setShareSel] = useState<readonly number[]>(SHARE_SELECTION_DEFAULT);
+  /** La publication dont la fenêtre parle. `null` = aucune, donc aucun fil servi. */
+  const [sujet, setSujet] = useState<string | null>(null);
+  /**
+   * AUCUN CONTACT PRÉ-COCHÉ.
+   *
+   * La maquette en coche deux (`SHARE_SELECTION_DEFAULT`, les rangs 0 et 2) parce
+   * qu'une planche doit montrer l'état sélectionné. Avec de VRAIS contacts, deux
+   * cases cochées d'avance désigneraient deux personnes que le membre n'a pas
+   * choisies. On part donc de rien — et le bouton dit alors « Choisissez un
+   * contact », qui est exactement l'état que la maquette dessine pour zéro.
+   */
+  const [shareSel, setShareSel] = useState<readonly number[]>([]);
 
   const fil = useFil(storyFilter, postType);
 
@@ -82,13 +90,18 @@ export default function FeedPage() {
    * ce qui fait la valeur du transcodage. Le transcodeur pose `data-modal-open` sur
    * les deux, et un seul écouteur ici suffit.
    *
-   * CE QUI RESTE À FAIRE, ET QUI EST UNE LIMITE RÉELLE : toutes les publications
-   * partagent encore la même fenêtre de commentaires. Le transcodeur ne pose pas
-   * l'identifiant de la publication sur le déclencheur, donc cet écouteur ne peut
-   * pas savoir LAQUELLE a été cliquée. Y remédier demande une adaptation du
-   * générateur (poser `data-post-index` dans la boucle), pas un changement ici —
-   * et surtout pas une modification du JSX généré, que la prochaine régénération
-   * effacerait. Remonté au rapport de lot.
+   * ── LA FENÊTRE SAIT MAINTENANT DE QUELLE PUBLICATION ELLE PARLE ──────────
+   *
+   * Ce n'était pas le cas, et c'était un vrai défaut : le nom de la fenêtre était
+   * le seul renseignement porté par le déclencheur, donc les cinq publications du
+   * fil ouvraient LE MÊME fil de commentaires — celui d'aucune d'entre elles.
+   *
+   * La correction est dans le GÉNÉRATEUR (`markTriggers`, et la déclaration
+   * `subject: 'p.postId'` dans `tools/screens/03-accueil.mjs`), qui pose désormais
+   * `data-modal-subject={p.postId}` À CÔTÉ du nom de la fenêtre. L'expression est
+   * évaluée DANS la boucle, donc une valeur par carte, et `closest()` la relit ici.
+   *
+   * Elle n'est surtout PAS dans le JSX généré : la régénération l'effacerait.
    */
   const onOpen = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
     const target = event.target;
@@ -96,7 +109,15 @@ export default function FeedPage() {
     const trigger = target.closest('[data-modal-open]');
     if (trigger === null) return;
     const which = trigger.getAttribute('data-modal-open');
-    if (which === 'A01C' || which === 'A01P') setOpen(which);
+    if (which !== 'A01C' && which !== 'A01P') return;
+    /**
+     * `getAttribute` rend `null` quand l'attribut manque — ce qui arrive pour un
+     * déclencheur hors boucle, ou pour une carte sans identifiant. On ouvre alors
+     * la fenêtre SANS sujet plutôt que sur le sujet précédent : une fenêtre vide se
+     * voit, un fil de commentaires qui n'est pas le bon ne se voit pas.
+     */
+    setSujet(trigger.getAttribute('data-modal-subject'));
+    setOpen(which);
   }, []);
 
   const close = useCallback((): void => setOpen(null), []);
@@ -110,26 +131,48 @@ export default function FeedPage() {
     postTypes: postTypesFor(postType, setPostType),
     mTabs,
     mBottom,
-    /**
-     * Le fil de commentaires de la fenêtre A01C reste celui de la maquette, et il
-     * faut le dire franchement plutôt que de le masquer : faute d'identifiant de
-     * publication sur le déclencheur (voir `onOpen`), on ne peut pas encore
-     * appeler `GET /comments?subjectType=POST&subjectId=…` pour la BONNE
-     * publication. `threadFrom` est écrit, éprouvé et prêt dans `from-api.ts` ; il
-     * lui manque l'identifiant, pas la donnée.
-     */
-    thread,
-    shareContacts: shareContactsFor(shareSel, toggleContact),
-    shareNets,
-    shareOut,
-    ...shareButtonFor(shareSel.length),
-
     // ── Donnée : l'API ──
     feedPosts: fil.feedPosts,
     stories: fil.stories,
     events: fil.events,
     arrivals: fil.arrivals,
     online: fil.online,
+  };
+
+  /**
+   * LE FIL DE COMMENTAIRES DE LA FENÊTRE, POUR LA PUBLICATION CLIQUÉE.
+   *
+   * `avecPublication: false` : la carte est déjà à l'écran derrière la fenêtre, et
+   * recharger `GET /posts/:id` pour l'afficher une seconde fois serait un appel de
+   * plus pour rien. On ne demande que `GET /comments?subjectType=POST&subjectId=…`.
+   *
+   * Le crochet part dès que `sujet` change, y compris quand il repasse à `null` —
+   * il rend alors une liste vide, ce qui est exactement ce qu'on veut : la fenêtre
+   * ne garde pas le fil de la publication précédente.
+   */
+  const commentaires = usePublication(sujet, false);
+  const thread = commentaires.fil === null ? [] : threadFrom(commentaires.fil.items);
+
+  /**
+   * LA FENÊTRE « PARTAGER ».
+   *
+   * Les contacts proposés sont RÉELS : ce sont les contacts en ligne que
+   * `GET /feed/sidebar` calcule (`last_seen_at` < 10 min, §2.7), et non cinq
+   * initiales d'exemple.
+   *
+   * Ce qui n'est PAS branché, et qui ne peut pas l'être : L'ENVOI. Il n'existe
+   * aucune route de partage — ni `POST /posts/:id/share`, ni compteur de partages
+   * sur `postCardSchema`. Le bouton « Envoyer à N contacts » n'a donc rien à
+   * appeler. C'est remonté au rapport de lot, pas comblé ici.
+   *
+   * `shareNets` reste du dessin : la seule source possible est le module
+   * `communities`, qui n'a pas de schéma de réponse dans `packages/shared`.
+   */
+  const partage = {
+    shareContacts: shareContactsDe(fil.online, shareSel, toggleContact),
+    shareNets,
+    shareOut,
+    ...shareButtonFor(shareSel.length),
   };
 
   return (
@@ -144,16 +187,16 @@ export default function FeedPage() {
         onClose={close}
         titleId="a01c-titre"
         name="A01C"
-        desktop={<A01CDesktop {...data} />}
-        mobile={<A01CMobile {...data} />}
+        desktop={<A01CDesktop thread={thread} />}
+        mobile={<A01CMobile thread={thread} />}
       />
       <Modal
         open={open === 'A01P'}
         onClose={close}
         titleId="a01p-titre"
         name="A01P"
-        desktop={<A01PDesktop {...data} />}
-        mobile={<A01PMobile {...data} />}
+        desktop={<A01PDesktop {...partage} />}
+        mobile={<A01PMobile {...partage} />}
       />
     </div>
   );

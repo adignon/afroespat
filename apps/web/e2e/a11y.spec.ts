@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { connecter } from './session';
 
 /**
  * Accessibilité — §10.6 : « contrôle automatisé (axe-core) sur chaque page
@@ -9,6 +10,18 @@ import { expect, test } from '@playwright/test';
  * axe-core ne remplace pas une relecture humaine : il attrape le contraste, les
  * noms accessibles manquants, la structure de titres. Il ne dit rien de la
  * pertinence d'un libellé. C'est un plancher, pas un plafond.
+ *
+ * ── DIX PAGES EXIGENT MAINTENANT UNE SESSION ────────────────────────────────
+ *
+ * Les dix écrans du module Compte lisent l'API depuis le lot de branchement. Sans
+ * session, ils ne rendent plus que leur état d'attente puis une invitation à se
+ * reconnecter — et axe-core auditerait ce bloc de trois lignes en annonçant zéro
+ * violation. Ce serait le pire résultat possible : un SUCCÈS QUI NE PROUVE RIEN,
+ * sur dix pages, sans que rien ne le signale.
+ *
+ * Elles portent donc `session: true`, et le test ouvre une vraie session avant de
+ * naviguer. Le surcoût est borné à ces dix pages : les autres n'en ont pas besoin,
+ * et en ouvrir une pour chacune des soixante allongerait la suite pour rien.
  */
 
 const PAGES = [
@@ -168,17 +181,26 @@ const PAGES = [
    * (`aria-modal`, `aria-labelledby`, le piège au clavier) est éprouvé par
    * `e2e/compte.spec.ts`, qui l'ouvre vraiment.
    */
-  { path: '/compte/profil', name: 'K01 Mon profil' },
-  { path: '/@fatou.n', name: 'K02 Profil d’un membre' },
-  { path: '/compte/verification', name: 'K03 Vérification et niveaux' },
-  { path: '/compte/securite', name: 'K04 Téléphones et sessions' },
-  { path: '/compte/contacts', name: 'K05 Contacts' },
-  { path: '/compte/abonnement', name: 'K06 Abonnement et Premium' },
-  { path: '/premium', name: 'K06 Premium' },
-  { path: '/compte/notifications', name: 'K07 Réglages des notifications' },
-  { path: '/compte/donnees', name: 'K08 Mes données' },
-  { path: '/compte/sanctions', name: 'K09 Sanctions' },
-  { path: '/compte/enregistres', name: 'K10 Enregistrés' },
+  /**
+   * `session: true` sur les dix : voir l'en-tête. Sans elle, axe auditerait l'état
+   * d'attente et annoncerait zéro violation en ne regardant rien.
+   *
+   * `path: null` sur K02 : son adresse est celle du membre que la session vient de
+   * créer, et elle n'est donc connue qu'à l'exécution. La maquette écrivait
+   * `/@fatou.n` ; ce pseudo n'existe dans aucune base, et il n'en existait pas non
+   * plus avant — la page se contentait d'afficher le nom dessiné.
+   */
+  { path: '/compte/profil', name: 'K01 Mon profil', session: true },
+  { path: null, name: 'K02 Profil d’un membre', session: true },
+  { path: '/compte/verification', name: 'K03 Vérification et niveaux', session: true },
+  { path: '/compte/securite', name: 'K04 Téléphones et sessions', session: true },
+  { path: '/compte/contacts', name: 'K05 Contacts', session: true },
+  { path: '/compte/abonnement', name: 'K06 Abonnement et Premium', session: true },
+  { path: '/premium', name: 'K06 Premium', session: true },
+  { path: '/compte/notifications', name: 'K07 Réglages des notifications', session: true },
+  { path: '/compte/donnees', name: 'K08 Mes données', session: true },
+  { path: '/compte/sanctions', name: 'K09 Sanctions', session: true },
+  { path: '/compte/enregistres', name: 'K10 Enregistrés', session: true },
   /**
    * Les dix écrans du module Services (`06 Services.dc.html`, 10 §7).
    *
@@ -204,9 +226,36 @@ const PAGES = [
   { path: '/services/alertes', name: 'S10 Mes alertes' },
 ] as const;
 
-for (const { path, name } of PAGES) {
-  test(`${name} ne présente aucune violation d’accessibilité`, async ({ page }) => {
-    await page.goto(path, { waitUntil: 'networkidle' });
+for (const entree of PAGES) {
+  const { path, name } = entree;
+  const besoinSession = 'session' in entree && entree.session === true;
+
+  test(`${name} ne présente aucune violation d’accessibilité`, async ({ context, page, request }) => {
+    /**
+     * LA SESSION D'ABORD, l'adresse ensuite.
+     *
+     * K02 a `path: null` : son adresse est `/@` suivi du pseudo du membre que la
+     * session vient de créer. La calculer avant d'ouvrir la session serait
+     * impossible, et la remplacer par un pseudo écrit en dur donnerait une 404 —
+     * qu'axe auditerait sans broncher.
+     */
+    const adresse = besoinSession
+      ? await (async () => {
+          const membre = await connecter(context, request, { displayName: 'Awa Konaté' });
+          return path ?? `/@${membre.handle}`;
+        })()
+      : (path as string);
+
+    await page.goto(adresse, { waitUntil: 'networkidle' });
+
+    /**
+     * Sur une page qui charge ses données, on attend le CADRE avant d'auditer.
+     * `networkidle` ne suffit pas : Next précharge les liens visibles, donc il
+     * retombe parfois au calme avant que les appels de l'écran n'aient répondu.
+     */
+    if (besoinSession) {
+      await page.locator('[data-screen]').first().waitFor({ state: 'attached', timeout: 20_000 });
+    }
 
     const results = await new AxeBuilder({ page })
       // AA est la cible (§10.6). AAA n'est pas exigé et produirait du bruit.
@@ -233,6 +282,6 @@ for (const { path, name } of PAGES) {
           .join('\n    ')}`,
     );
 
-    expect(summary, `Violations sur ${path} :\n${summary.join('\n')}`).toEqual([]);
+    expect(summary, `Violations sur ${adresse} :\n${summary.join('\n')}`).toEqual([]);
   });
 }

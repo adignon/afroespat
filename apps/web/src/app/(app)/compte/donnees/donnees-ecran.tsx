@@ -1,5 +1,7 @@
 'use client';
 
+import { chargerK08 } from '@/screens/compte/appels';
+import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { K08Desktop } from '@/screens/k08/desktop.generated';
 import { K08Mobile } from '@/screens/k08/mobile.generated';
@@ -13,6 +15,15 @@ import { K08Confirmation } from '@/screens/k08suppression/confirmation.generated
  * délai de 7 jours, confirmation par code SMS »). Elle n'a qu'une planche, donc
  * la même sert aux deux largeurs — `Modal` le prévoit dans son type.
  *
+ * CETTE PLANCHE NE DESSINE AUCUNE DONNÉE, et il faut le dire plutôt que d'en
+ * inventer une. Ses trois blocs sont du TEXTE DE RÈGLE — « Préparé sous 48 h. Lien
+ * valable 7 jours. », « Reconnectez-vous dans les 6 mois », « Définitif après
+ * 7 jours. » — c'est-à-dire les bornes de 01 §2.7 et §2.8, vraies pour tout le
+ * monde et en tout temps. `GET /me/export/latest` sait dire où en est l'archive du
+ * membre, et `lireExport()` la lit et la valide déjà ; la maquette n'a nulle part
+ * où l'écrire. Lui faire une place serait redessiner la planche. Signalé au
+ * porteur ; cet écran ne lit donc que le bandeau de compte.
+ *
  * « Confirmer la suppression » EST INERTE, et c'est la décision la plus
  * importante de cet écran. 01 §5 rend la suppression définitive après sept jours ;
  * ce lot ne branche aucune route. Un `onClick` qui refermerait la fenêtre ferait
@@ -24,14 +35,18 @@ export function DonneesEcran() {
   const { ouverte, onOuvrir, onFermer } = useCompte();
 
   return (
-    <EcranCompte
-      screen="K08"
-      desktop={<K08Desktop />}
-      mobile={<K08Mobile />}
-      ouverte={ouverte}
-      onOuvrir={onOuvrir}
-      onFermer={onFermer}
-      modales={{ K08S: { mobile: <K08Confirmation /> } }}
-    />
+    <EcranDonnees charger={chargerK08}>
+      {(donnees) => (
+        <EcranCompte
+          screen="K08"
+          desktop={<K08Desktop {...donnees} />}
+          mobile={<K08Mobile {...donnees} />}
+          ouverte={ouverte}
+          onOuvrir={onOuvrir}
+          onFermer={onFermer}
+          modales={{ K08S: { mobile: <K08Confirmation /> } }}
+        />
+      )}
+    </EcranDonnees>
   );
 }

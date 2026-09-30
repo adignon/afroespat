@@ -1,0 +1,38 @@
+{
+  "id": "01a0f3b8-c911-7000-ac2c-5beb0c7bafe1",
+  "communityId": "01a0f3b8-c8e9-7000-ba9a-4d00a53fdc38",
+  "title": "Un sujet pour mesurer la charge",
+  "body": "Corps du sujet de mesure.",
+  "status": "OPEN",
+  "pinKind": "RULES",
+  "replyCount": 0,
+  "lastReplyAt": null,
+  "createdAt": "2026-09-30T19:09:28.723Z",
+  "authorUserId": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+  "author": {
+    "id": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+    "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
+    "displayName": ""
+  },
+  "community": {
+    "id": "01a0f3b8-c8e9-7000-ba9a-4d00a53fdc38",
+    "slug": "reseau-de-mesure-1790795368666",
+    "name": "Reseau de mesure 1790795368666"
+  },
+  "canResolve": true,
+  "canPin": true,
+  "canEdit": true,
+  "replies": [
+    {
+      "id": "01a0f3b8-c994-7000-a6a3-5e9897f83bfb",
+      "body": "Une reponse de mesure.",
+      "createdAt": "2026-09-30T19:09:28.854Z",
+      "parentCommentId": null,
+      "author": {
+        "id": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+        "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
+        "displayName": ""
+      }
+    }
+  ]
+}

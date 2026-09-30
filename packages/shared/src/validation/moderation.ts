@@ -4,6 +4,7 @@ import {
   ModerationCaseStatus,
   ReportReason,
   ReportSubjectType,
+  SanctionType,
   ScamAlertSeverity,
 } from '../enums/generated.js';
 import { cursorQuerySchema, uuidSchema } from './pagination.js';
@@ -355,6 +356,43 @@ export const appealSchema = z
   .strict();
 
 export type Appeal = z.infer<typeof appealSchema>;
+
+/**
+ * `GET /me/sanctions` — mes sanctions et ce que je peux encore en faire (§8.1).
+ *
+ * DEUX CHAMPS SONT DÉRIVÉS PAR LE SERVEUR, et l'écran K09 ne doit surtout pas les
+ * recalculer :
+ *
+ *   · `active` — vrai tant que la sanction n'est ni levée ni échue. Le comparer à
+ *     `endsAt` côté front demanderait de connaître l'heure du serveur, et une
+ *     horloge de navigateur décalée afficherait « suspendu » à un membre libre.
+ *   · `appealable` — §4.3 : « contester UNE FOIS ». C'est le serveur qui sait si
+ *     une contestation a déjà été déposée. L'écran affiche le formulaire quand ce
+ *     drapeau est vrai ; il ne le déduit pas, et l'API refuse de toute façon.
+ *
+ * `rule` est la RÈGLE ENFREINTE du §4.2 — le motif du modérateur, écrit pour être
+ * lu par le membre. La planche l'affiche telle quelle (« Règle : Coordonnées
+ * personnelles »), et la reformuler côté front serait inventer un texte
+ * d'interface que T2 ne donne pas.
+ */
+export const mySanctionsResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: uuidSchema,
+      type: z.enum(SanctionType),
+      rule: z.string(),
+      startsAt: z.string().datetime(),
+      endsAt: z.string().datetime().nullable(),
+      liftedAt: z.string().datetime().nullable(),
+      active: z.boolean(),
+      appealable: z.boolean(),
+    }),
+  ),
+  /** Toujours `null` : le service ne pagine pas cette liste. */
+  nextCursor: z.null(),
+});
+
+export type MySanctionsResponse = z.infer<typeof mySanctionsResponseSchema>;
 
 /**
  * Une action de modération (§4.2).

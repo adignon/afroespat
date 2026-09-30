@@ -5,9 +5,9 @@
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
-import type { AccueilData } from '../accueil/data';
+import type { A13Data } from './data';
 
-export function A13Mobile(props: AccueilData) {
+export function A13Mobile(props: A13Data) {
   const { st } = props;
 
   return (

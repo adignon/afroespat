@@ -1,6 +1,13 @@
 import { z } from 'zod';
-import { GuideCategory, GuideScope, GuideVoteValue } from '../enums/generated.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import {
+  GuideCategory,
+  GuideProposalStatus,
+  GuideScope,
+  GuideStatus,
+  GuideVoteValue,
+  VerificationLevel,
+} from '../enums/generated.js';
+import { cursorQuerySchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Guides et démarches — 05-guides.md §2 et §4.
@@ -380,3 +387,328 @@ export interface GuideListItem {
   readonly city: { readonly id: string; readonly name: string } | null;
   readonly banners: readonly GuideBanner[];
 }
+
+// ── Schémas de réponse (§4) ─────────────────────────────────────────────────
+//
+// CHAQUE CHAMP CI-DESSOUS A ÉTÉ RELEVÉ SUR UNE CHARGE RÉELLE, pas déduit du
+// code. Les quatre lectures publiques de §4 ont été appelées sur l'API qui
+// tourne, et c'est leur JSON qui a tranché les trois points qu'une lecture du
+// service aurait manqués :
+//
+//   1. `banners[].months` est ABSENT sur `COMMUNITY_MAINTAINED` et sur
+//      `OUTDATED_REPORTED` — pas `null`. `bannersFor` pousse `{ kind }` sans la
+//      clé, et `JSON.stringify` n'écrit pas les clés absentes. Un `.nullable()`
+//      aurait refusé TOUT guide maintenu par la communauté en le nommant
+//      « contrat cassé » ;
+//   2. `freshnessScore` arrive en NOMBRE JSON ordinaire — `31` et `2.4` — bien
+//      que la colonne soit `numeric(10,4)` : `toListItem` appelle `.toNumber()`
+//      sur le Decimal. Ni chaîne, ni `31.0000` ;
+//   3. les dates sont des CHAÎNES ISO (`"2026-08-21T19:15:07.903Z"`), jamais des
+//      `Date`. L'interface `GuideListItem` ci-dessus décrit l'objet CÔTÉ
+//      SERVEUR, avant sérialisation, et ses `Date` ne décrivent donc PAS ce que
+//      le front reçoit. C'est précisément pourquoi ces schémas existent à part
+//      plutôt que d'être dérivés d'elle.
+//
+// `.strict()` PARTOUT SUR LES FORMES DE CONTENU, et c'est structurel, pas un
+// goût pour la rigueur : `guides.view_count` EXISTE — §3 l'ajoute, une tâche
+// horaire le remplit depuis Redis — et la règle dure `00` §49 interdit qu'il
+// soit exposé à quiconque, sur aucun contenu. Le guide est le seul contenu du
+// produit à porter un tel compteur ; c'est donc ici que la règle est la plus
+// facile à enfreindre. Sans `.strict()`, un `select` élargi d'une ligne le
+// ferait sortir sans qu'aucun test ne bronche. Avec, la frontière le refuse pour
+// TOUS les écrans à la fois.
+
+/** Les trois bandeaux de §2.3 et §2.6, calculés par le serveur. */
+export const guideBannerSchema = z
+  .object({
+    kind: z.enum(['TO_VERIFY', 'OUTDATED_REPORTED', 'COMMUNITY_MAINTAINED']),
+    /**
+     * `.optional()` ET NON `.nullable()` — relevé sur la charge : le bandeau
+     * `COMMUNITY_MAINTAINED` arrive `{"kind":"COMMUNITY_MAINTAINED"}`, sans la
+     * clé. Seul `TO_VERIFY` la porte, parce que seul lui l'affiche
+     * (« dernière mise à jour il y a N mois »).
+     */
+    months: z.number().int().optional(),
+  })
+  .strict();
+
+/** L'auteur d'un guide, tel que `LIST_INCLUDE` le sélectionne : TROIS champs. */
+export const guideAuthorRefSchema = z
+  .object({
+    handle: z.string(),
+    displayName: z.string(),
+    verificationLevel: z.enum(VerificationLevel),
+  })
+  .strict();
+
+/** L'auteur d'une VERSION et le proposant d'une correction : deux champs seulement. */
+export const guidePersonRefSchema = z
+  .object({ handle: z.string(), displayName: z.string() })
+  .strict();
+
+export const guideCountryRefSchema = z
+  .object({ id: uuidSchema, iso2: z.string().length(2), nameFr: z.string() })
+  .strict();
+
+export const guideCityRefSchema = z.object({ id: uuidSchema, name: z.string() }).strict();
+
+/**
+ * Une carte de liste — `GET /guides`, `GET /me/guides`.
+ *
+ * RÈGLE DURE (§9, T1 §6) : `lastContentUpdateAt` est REQUIS, sur chaque guide de
+ * liste, « aussi visible que le titre ». Le rendre facultatif ici suffirait à ce
+ * qu'un jour une route l'omette sans que rien ne le dise.
+ *
+ * `author` est nullable : l'anonymisation (§8) met `author_user_id` à null et
+ * CONSERVE le guide. Un guide sans auteur est donc un cas normal, pas une panne.
+ */
+export const guideListItemSchema = z
+  .object({
+    id: uuidSchema,
+    slug: z.string(),
+    title: z.string(),
+    category: z.enum(GuideCategory),
+    scope: z.enum(GuideScope),
+    status: z.enum(GuideStatus),
+    lastContentUpdateAt: z.string().datetime(),
+    helpfulCount: z.number().int(),
+    freshnessScore: z.number(),
+    maintainedByCommunity: z.boolean(),
+    author: guideAuthorRefSchema.nullable(),
+    country: guideCountryRefSchema.nullable(),
+    city: guideCityRefSchema.nullable(),
+    banners: z.array(guideBannerSchema),
+  })
+  .strict();
+
+export type GuideListItemView = z.infer<typeof guideListItemSchema>;
+
+/**
+ * `GET /guides` — A03.
+ *
+ * `meta.staleAfterMonths` voyage AVEC la liste (T4 §4) : le seuil de 24 mois est
+ * une règle métier, et le front qui le coderait en dur finirait par afficher un
+ * bandeau que le serveur ne pose plus.
+ */
+export const guideListResponseSchema = pageSchema(guideListItemSchema).extend({
+  meta: z.object({ tab: guideListTabSchema, staleAfterMonths: z.number().int() }).strict(),
+});
+
+export type GuideListResponse = z.infer<typeof guideListResponseSchema>;
+
+/** `GET /me/guides` — tous statuts, sans `meta`. */
+export const myGuidesResponseSchema = pageSchema(guideListItemSchema);
+
+export type MyGuidesResponse = z.infer<typeof myGuidesResponseSchema>;
+
+/** La version courante telle que `GET /guides/:slug` la porte : SIX champs. */
+export const guideCurrentVersionSchema = z
+  .object({
+    id: uuidSchema,
+    version: z.number().int(),
+    body: z.string(),
+    summary: z.string().nullable(),
+    createdAt: z.string().datetime(),
+    createdBy: guidePersonRefSchema.nullable(),
+  })
+  .strict();
+
+/**
+ * `GET /guides/:slug` — A04.
+ *
+ * Le guide reprend la carte de liste et lui ajoute cinq champs. `myVote` et
+ * `myOutdatedFlag` valent `null` pour un visiteur anonyme — relevé : la route
+ * est `@PublicRead()`, et le service court-circuite les deux requêtes quand il
+ * n'y a pas de lecteur.
+ *
+ * `isAuthor` vient du SERVEUR et ne sert qu'à l'AFFICHAGE : les gestes de
+ * l'auteur (modifier, dépublier) sont tentés, et c'est l'API qui refuse. Le lire
+ * pour AUTORISER serait la faille de quinze minutes rejouée dans le front.
+ */
+export const guideDetailResponseSchema = z
+  .object({
+    guide: guideListItemSchema
+      .extend({
+        originCountryId: uuidSchema.nullable(),
+        outdatedFlagCount: z.number().int(),
+        unpublishDeadlineAt: z.string().datetime().nullable(),
+        createdAt: z.string().datetime(),
+        isAuthor: z.boolean(),
+      })
+      .strict(),
+    /** `null` tant qu'aucune version n'est courante (brouillon en cours d'écriture). */
+    currentVersion: guideCurrentVersionSchema.nullable(),
+    contributors: z.array(
+      z
+        .object({
+          acceptedCount: z.number().int(),
+          firstAt: z.string().datetime(),
+          user: guidePersonRefSchema,
+        })
+        .strict(),
+    ),
+    myVote: z.enum(GuideVoteValue).nullable(),
+    myOutdatedFlag: z
+      .object({ id: uuidSchema, comment: z.string().nullable() })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export type GuideDetailResponse = z.infer<typeof guideDetailResponseSchema>;
+
+/**
+ * `GET /guides/:slug/versions` — l'historique de §2.7.
+ *
+ * Le CORPS n'y est pas, et c'est voulu côté service : l'historique sert à
+ * choisir une version, pas à télécharger le guide vingt fois. `.strict()` le
+ * tient : si `body` y revenait, la validation le dirait.
+ */
+export const guideVersionRowSchema = z
+  .object({
+    id: uuidSchema,
+    version: z.number().int(),
+    summary: z.string().nullable(),
+    createdAt: z.string().datetime(),
+    sourceProposalId: uuidSchema.nullable(),
+    createdBy: guidePersonRefSchema.nullable(),
+  })
+  .strict();
+
+export const guideVersionsResponseSchema = pageSchema(guideVersionRowSchema).extend({
+  meta: z.object({ currentVersionId: uuidSchema.nullable() }).strict(),
+});
+
+export type GuideVersionsResponse = z.infer<typeof guideVersionsResponseSchema>;
+
+/** `GET /guides/:slug/versions/:versionId` — la même ligne, corps compris. */
+export const guideVersionDetailSchema = guideVersionRowSchema.extend({ body: z.string() });
+
+export type GuideVersionDetail = z.infer<typeof guideVersionDetailSchema>;
+
+/**
+ * Ce que rendent les SIX écritures de l'auteur — `POST /guides`,
+ * `PATCH /guides/:id`, `publish`, `unpublish`, `revert`, `journeys/:id/to-guide`.
+ *
+ * Elles partagent toutes `byIdForAuthor`, et sa forme n'est PAS celle de
+ * `GET /guides/:slug` : l'objet est PLAT (aucune enveloppe `guide`), il n'a pas
+ * de `createdAt`, et sa `currentVersion` ne porte que QUATRE champs — ni
+ * `createdAt`, ni `createdBy`. Deux formes voisines pour deux routes voisines :
+ * les confondre donnerait un `ApiShapeError` à la première sauvegarde de
+ * l'éditeur, et `.strict()` fait que le message nommerait le champ en trop.
+ */
+export const guideEditorResponseSchema = guideListItemSchema
+  .extend({
+    originCountryId: uuidSchema.nullable(),
+    outdatedFlagCount: z.number().int(),
+    unpublishDeadlineAt: z.string().datetime().nullable(),
+    isAuthor: z.boolean(),
+    currentVersion: z
+      .object({
+        id: uuidSchema,
+        version: z.number().int(),
+        body: z.string(),
+        summary: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export type GuideEditorResponse = z.infer<typeof guideEditorResponseSchema>;
+
+/**
+ * Une proposition telle que `GET /guides/:id/proposals` la rend — A06.
+ *
+ * `sourceUrl` est NULLABLE et non facultatif : c'est une colonne nullable
+ * SÉLECTIONNÉE, et Prisma rend `null` pour une colonne vide — jamais une clé
+ * manquante. C'est l'inverse exact de `banners[].months`, et les deux ont été
+ * relevés plutôt que devinés.
+ *
+ * `rejectReason` N'EST PAS dans cette liste : le service ne le sélectionne pas
+ * ici, parce que cette route ne montre jamais de proposition refusée à un tiers
+ * (§4 : « pour l'auteur : en attente ; pour tous : acceptées »). Il n'apparaît
+ * que dans `/me/proposals`, où le proposant a le droit de lire le motif de son
+ * propre refus.
+ */
+export const guideProposalSchema = z
+  .object({
+    id: uuidSchema,
+    status: z.enum(GuideProposalStatus),
+    targetExcerpt: z.string(),
+    replacement: z.string(),
+    reason: z.string(),
+    sourceUrl: z.string().nullable(),
+    /** §2.4 : `created_at + 14 jours`. L'écran en tire le délai restant. */
+    escalateAt: z.string().datetime(),
+    decidedAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+    proposer: guidePersonRefSchema,
+  })
+  .strict();
+
+export type GuideProposalView = z.infer<typeof guideProposalSchema>;
+
+export const guideProposalsResponseSchema = pageSchema(guideProposalSchema);
+
+export type GuideProposalsResponse = z.infer<typeof guideProposalsResponseSchema>;
+
+/**
+ * Ce que rendent `POST /guides/:id/proposals` et les trois décisions
+ * (`accept`, `amend`, `reject`) : `proposalView`, qui ajoute `guideId` et
+ * `rejectReason` à la ligne ci-dessus.
+ */
+export const guideProposalDetailSchema = guideProposalSchema.extend({
+  guideId: uuidSchema,
+  rejectReason: z.string().nullable(),
+});
+
+export type GuideProposalDetail = z.infer<typeof guideProposalDetailSchema>;
+
+/**
+ * `GET /me/proposals` — mes propositions envoyées.
+ *
+ * Le proposant voit `rejectReason` (§2.4 : « proposant notifié », motif
+ * obligatoire), et le guide visé y est réduit à ses trois champs de lien. Il n'y
+ * a PAS de `proposer` : c'est moi.
+ */
+export const myProposalRowSchema = z
+  .object({
+    id: uuidSchema,
+    status: z.enum(GuideProposalStatus),
+    targetExcerpt: z.string(),
+    replacement: z.string(),
+    reason: z.string(),
+    sourceUrl: z.string().nullable(),
+    rejectReason: z.string().nullable(),
+    escalateAt: z.string().datetime(),
+    decidedAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+    guide: z.object({ id: uuidSchema, slug: z.string(), title: z.string() }).strict(),
+  })
+  .strict();
+
+export const myProposalsResponseSchema = pageSchema(myProposalRowSchema);
+
+export type MyProposalsResponse = z.infer<typeof myProposalsResponseSchema>;
+
+/**
+ * `PUT /guides/:id/vote` et `DELETE` — §2.2.
+ *
+ * `helpfulCount` est RELU du serveur et remplace le compteur affiché. Pas
+ * d'incrément local : `NOT_HELPFUL` ne le bouge PAS (règle dure §9), et un front
+ * qui incrémenterait « de son côté » inventerait le seul chiffre que la règle
+ * interdit de bouger.
+ */
+export const guideVoteResponseSchema = z
+  .object({ value: z.enum(GuideVoteValue).nullable(), helpfulCount: z.number().int() })
+  .strict();
+
+export type GuideVoteResponse = z.infer<typeof guideVoteResponseSchema>;
+
+/** `POST /guides/:id/outdated` et `DELETE` — §2.6. */
+export const guideOutdatedResponseSchema = z
+  .object({ outdatedFlagCount: z.number().int(), status: z.enum(GuideStatus) })
+  .strict();
+
+export type GuideOutdatedResponse = z.infer<typeof guideOutdatedResponseSchema>;

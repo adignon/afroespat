@@ -361,3 +361,91 @@ export type AuthSessionsResponse = z.infer<typeof authSessionsResponseSchema>;
 export const onboardingAdvanceSchema = z.object({
   step: z.number().int().min(1).max(ONBOARDING_LAST_STEP),
 });
+
+/**
+ * `GET /users/:handle` — le profil PUBLIC d'un membre (§2.9).
+ *
+ * Écrit ici, à côté de `meResponseSchema` et des schémas de requête du même
+ * module, parce que `00` §4 fait de ce paquet la source unique : un schéma de
+ * réponse recopié dans un fichier du front est une deuxième source, et elle
+ * divergera.
+ *
+ * CE SCHÉMA EST CE QUI REND `/me` INSUFFISANT POUR L'ÉCRAN K01, et cela vaut
+ * d'être dit ici plutôt que découvert deux fois : `meResponseSchema` rend
+ * `cityId` et `originCountryId`, DES UUID. La planche « Mon profil » affiche
+ * « Lyon » et « Bénin ». Aucune route du domaine MEMBRE ne résout ces
+ * identifiants — `/referentials/countries` et `/referentials/cities` sont des
+ * routes d'ÉQUIPE (`@RequiresStaffRole`). La seule façon honnête d'afficher les
+ * noms est donc d'appeler CETTE route sur son propre pseudo, ce que l'écran K01
+ * fait. C'est un aller-retour de plus pour une donnée que `/me` a déjà en base,
+ * et c'est un écart à remonter au porteur, pas à corriger en devinant.
+ *
+ * `memberSince` est un `datetime` : le service rend `user.createdAt`, que Nest
+ * sérialise en ISO. Le déclarer `z.string()` laisserait passer n'importe quoi.
+ */
+export const publicProfileResponseSchema = z
+  .object({
+    handle: handleSchema,
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+    phase: z.enum(Phase),
+    verificationLevel: z.enum(VerificationLevel),
+    country: z.object({ iso2: z.string(), nameFr: z.string() }),
+    city: z.object({ id: uuidSchema, name: z.string() }).nullable(),
+    languages: z.array(z.object({ code: z.string(), nameFr: z.string() })),
+    skills: z.array(z.object({ id: uuidSchema, nameFr: z.string() })),
+    bio: z.string().nullable(),
+    /** `null` quand le membre n'a pas encore de profil : le service le rend tel quel. */
+    occupationStatus: z.enum(OccupationStatus).nullable(),
+    availableToHelp: z.boolean(),
+    helpTypes: z.array(z.enum(HelpType)),
+    memberSince: z.string().datetime(),
+    stats: z
+      .object({
+        helpValidatedCount: z.number().int(),
+        guideHelpfulVotes: z.number().int(),
+        guideContributions: z.number().int(),
+        mentorshipsCompleted: z.number().int(),
+        eventsOrganized: z.number().int(),
+      })
+      .nullable(),
+  })
+  /**
+   * `.strict()` — UN CHAMP DE PLUS SUR UNE ROUTE D'IDENTITÉ DOIT ARRÊTER.
+   *
+   * Sans lui, zod DÉPOUILLE en silence ce qu'il ne connaît pas, et c'est exactement
+   * le mauvais comportement ici : le jour où cette route joindrait un numéro de
+   * téléphone, une date de naissance ou une adresse, la donnée aurait TRANSITÉ —
+   * et 01 §2.1 comme 00 §8.1 parlent de ce qui transite, pas de ce qui s'affiche.
+   * Le contrat le refuse donc bruyamment, en `ApiShapeError`, qui est un incident
+   * et non une règle métier.
+   *
+   * Le jeu de clés vient de la charge RELEVÉE sur l'API
+   * (`__tests__/fixtures/compte_profil_public.json`), et non d'une lecture du
+   * service : c'est cette distinction qui a déjà rattrapé une erreur sur
+   * `GET /me/blocks`, où le contrôleur enveloppe ce que le service rend nu.
+   */
+  .strict();
+
+export type PublicProfileResponse = z.infer<typeof publicProfileResponseSchema>;
+
+/**
+ * Ce que `POST /me/onboarding` répond — l'écran ENREGISTRÉ.
+ *
+ * Il vivait en `z.object({ step: z.number().int() })` dans un fichier du front,
+ * écrit à la ligne d'appel. C'était la deuxième définition d'une forme dont la
+ * première est ci-dessus : §4 de `00` fait de ce paquet la source unique, et le
+ * socle d'appel le répète mot pour mot (« écrivez le schéma manquant dans
+ * `packages/shared`, jamais dans un fichier du front »).
+ *
+ * Il n'est PAS `onboardingAdvanceSchema` : la requête borne l'écran à
+ * `ONBOARDING_LAST_STEP`, la réponse rend ce que le SERVEUR a retenu — et le
+ * serveur garde le maximum, donc un écran refait rend un numéro plus grand que
+ * celui envoyé. Réutiliser le schéma de requête aurait paru économe et aurait
+ * refusé une réponse juste.
+ */
+export const onboardingAdvanceResponseSchema = z.object({
+  step: z.number().int().min(0),
+});
+
+export type OnboardingAdvanceResponse = z.infer<typeof onboardingAdvanceResponseSchema>;

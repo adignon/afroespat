@@ -1,5 +1,7 @@
 'use client';
 
+import { chargerK06 } from '@/screens/compte/appels';
+import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { VOLETS_PAIEMENT, type VoletPaiement } from '@/screens/compte/data';
 import { K06Desktop } from '@/screens/k06/desktop.generated';
@@ -44,22 +46,43 @@ export function AbonnementEcran({ volet }: { readonly volet: VoletPaiement | nul
   const index = volet === null ? 0 : VOLETS_PAIEMENT.indexOf(volet);
   const Planche = PLANCHES[index] ?? K06Numero;
 
+  /**
+   * LES PRIX VIENNENT DE `GET /plans`, JAMAIS DU FRONT.
+   *
+   * `packages/shared` porte `PREMIUM_MONTH_PRICE_CENTS`, et il aurait été tentant
+   * de l'employer : c'est la même source, après tout. Non — c'est la même
+   * valeur d'AMORÇAGE. La table `plans` est modifiable depuis l'administration
+   * (15 §3), et un prix figé dans le front afficherait 4 € le jour où le porteur
+   * passe à 5 €, sur un écran où le membre s'engage à payer. Le serveur calcule
+   * aussi la conversion en francs CFA, avec son taux — la refaire ici en
+   * donnerait un second, et deux taux de change dans un même produit finissent
+   * toujours par ne plus coïncider.
+   *
+   * 14 §4.1, RÈGLE DURE : aucune donnée de carte. Les trois routes lues n'en
+   * portent aucune, et `myPaymentsResponseSchema` le rend EXÉCUTABLE : ni numéro,
+   * ni empreinte, ni quatre derniers chiffres. `method` est le CANAL, pas
+   * l'instrument.
+   */
   return (
-    <EcranCompte
-      screen="K06"
-      desktop={<K06Desktop />}
-      mobile={<K06Mobile />}
-      ouverte={ouverte}
-      onOuvrir={onOuvrir}
-      onFermer={onFermer}
-      modales={{
-        K06M: {
-          mobile: <Planche />,
-          // `moments.panelAdvance` : « vous avancez dans une démarche, vous ne
-          // sautez pas d'un écran à l'autre ». Le premier volet reste une ouverture.
-          phase: index,
-        },
-      }}
-    />
+    <EcranDonnees charger={chargerK06}>
+      {(donnees) => (
+        <EcranCompte
+          screen="K06"
+          desktop={<K06Desktop {...donnees} />}
+          mobile={<K06Mobile {...donnees} />}
+          ouverte={ouverte}
+          onOuvrir={onOuvrir}
+          onFermer={onFermer}
+          modales={{
+            K06M: {
+              mobile: <Planche />,
+              // `moments.panelAdvance` : « vous avancez dans une démarche, vous ne
+              // sautez pas d'un écran à l'autre ». Le premier volet reste une ouverture.
+              phase: index,
+            },
+          }}
+        />
+      )}
+    </EcranDonnees>
   );
 }

@@ -1,0 +1,1 @@
+{"error":{"code":"LEVEL_REQUIRED","message":"Cette action demande de vérifier votre compte.","details":{"capability":"post.create","requiredLevel":"L1","currentLevel":"L0","labelFr":"publier dans le fil"}}}

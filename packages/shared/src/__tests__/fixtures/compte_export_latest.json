@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "EXPORT_NOT_FOUND",
+    "message": "Vous n’avez encore demandé aucune archive de vos données."
+  }
+}

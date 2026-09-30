@@ -5,9 +5,9 @@
 // extérieur, lui, est fluide : la maquette le fige à 1440 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
-import type { AccueilData } from '../accueil/data';
+import type { A08Data } from './data';
 
-export function A08Desktop(props: AccueilData) {
+export function A08Desktop(props: A08Data) {
   const { netTabs, ownerActions, panelReseaux, rail, shortcuts, topics } = props;
 
   return (

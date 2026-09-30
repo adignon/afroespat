@@ -1,3 +1,7 @@
+'use client';
+
+import { chargerK10 } from '@/screens/compte/appels';
+import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { K10Desktop } from '@/screens/k10/desktop.generated';
 import { K10Mobile } from '@/screens/k10/mobile.generated';
@@ -5,20 +9,31 @@ import { K10Mobile } from '@/screens/k10/mobile.generated';
 /**
  * K10 — « Enregistrés » (`/compte/enregistres`, T5 §9).
  *
- * Le JSX vient du TRANSCODAGE de `docs/template/08 Compte.dc.html`. Rien n'est
- * réécrit ; la page ne fait que servir les deux cadres de la maquette.
+ * AUCUNE ROUTE N'EXISTE POUR CET ÉCRAN, et c'est le seul des dix dans ce cas.
  *
- * T5 K10 : « Aucun compteur public, aucune notion de partage. » La planche tient
- * la règle par le dessin — le seul compteur est « 14 enregistrés », qui est celui
- * du membre, et aucune carte ne porte de bouton de partage. Vérifié, pas supposé.
+ * `apps/api/src/modules/bookmarks/` ne contient qu'un `bookmarks.service.ts` : il
+ * n'y a ni contrôleur, ni `GET /me/bookmarks`, et le mot `bookmark` n'apparaît dans
+ * aucun `*.controller.ts` du dépôt — vérifié, pas supposé. Les six lignes de la
+ * planche — « Obtenir la garantie Visale sans CDI », « Story de Aïcha », leurs
+ * états « Expiré, gardé pour vous », « Plus disponible », « Contenu retiré » —
+ * attendent donc une route qui n'est pas écrite.
  *
- * L'ÉTAT VIDE N'EST PAS LIVRÉ, et il faut le dire : la maquette le dessine bien
- * (« Vous n'avez rien enregistré »), mais dans une planche de DOCUMENTATION de
- * 320 px intitulée « ÉTATS », qui porte sa légende « VIDE » à l'intérieur du
- * cadre. Ce n'est pas un cadre d'écran : l'extraire produirait une page dont le
- * titre serait le mot « ÉTATS ». Il est signalé au porteur plutôt que monté à
- * moitié.
+ * Les libellés d'état, eux, EXISTENT déjà côté texte : `T2` les nomme
+ * (`bookmark.state.unavailable`, `bookmark.state.updated`,
+ * `bookmark.state.removed`). C'est donc bien la ROUTE qui manque, pas la décision
+ * produit. Signalé au porteur ; on ne fabrique pas une source, et cette page ne lit
+ * que le bandeau de compte, qui lui est réel.
  */
 export default function EnregistresPage() {
-  return <ScreenFrames screen="K10" desktop={<K10Desktop />} mobile={<K10Mobile />} />;
+  return (
+    <EcranDonnees charger={chargerK10}>
+      {(donnees) => (
+        <ScreenFrames
+          screen="K10"
+          desktop={<K10Desktop {...donnees} />}
+          mobile={<K10Mobile {...donnees} />}
+        />
+      )}
+    </EcranDonnees>
+  );
 }

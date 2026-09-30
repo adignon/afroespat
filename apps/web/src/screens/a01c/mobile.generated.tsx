@@ -5,9 +5,9 @@
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
-import type { A01Data } from '../a01/data';
+import type { A01CData } from './data';
 
-export function A01CMobile(props: A01Data) {
+export function A01CMobile(props: A01CData) {
   const { thread } = props;
 
   return (

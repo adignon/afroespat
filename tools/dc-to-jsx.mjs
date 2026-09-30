@@ -466,6 +466,28 @@ function directChildren(html) {
  * présentation, et aucune propriété n'a besoin de traverser le fil pour atteindre
  * un bouton enfoui à cinq niveaux dans une boucle.
  *
+ * ── LE DÉCLENCHEUR DIT QUI IL OUVRE, MAIS AUSSI SUR QUOI ────────────────────
+ *
+ * `data-modal-open` nomme la FENÊTRE. Il ne disait pas le SUJET, et c'était un
+ * défaut mesuré, pas une limite théorique : le « Commenter » du fil est écrit UNE
+ * SEULE FOIS dans la maquette, à l'intérieur de la boucle sur les publications.
+ * Toutes les cartes portaient donc exactement le même attribut, et l'écouteur
+ * délégué de la page — qui ne voit que l'élément cliqué — ne pouvait pas savoir
+ * LAQUELLE avait été touchée. Conséquence : les cinq publications du fil
+ * ouvraient la même fenêtre de commentaires, celle d'aucune d'entre elles.
+ *
+ * `trigger.subject` répare cela en posant, À CÔTÉ du nom de la fenêtre, une
+ * EXPRESSION du dialecte — `{{ p.postId }}` — que le transcodeur rend en
+ * `data-modal-subject={p.postId}`. L'identifiant est donc évalué DANS la boucle,
+ * une valeur par carte, et l'écouteur délégué le relit par `closest()`.
+ *
+ * Il est déclaré AVEC LE DÉCLENCHEUR (`tools/screens/*.mjs`) et non deviné ici :
+ * le nom de la variable de boucle appartient à la maquette, et le transcodeur ne
+ * le connaît pas. Un déclencheur hors boucle — la plupart — n'en déclare aucun et
+ * ne change pas d'un octet.
+ *
+ * NE JAMAIS CORRIGER CELA DANS LE JSX GÉNÉRÉ : la régénération l'effacerait.
+ *
  * LES MARQUEURS INCLUENT LE `</svg>` QUI PRÉCÈDE, et ce n'est pas une coquetterie :
  * « Partager » apparaît DEUX FOIS dans le cadre mobile — une fois comme bouton
  * d'action, une fois dans le texte d'invite du composeur (« Partager avec la
@@ -520,7 +542,15 @@ export function markTriggers(html, triggers) {
 
       const openEnd = findTagEnd(out, openIdx) + 1;
       const openTag = out.slice(openIdx, openEnd);
-      const attr = ` data-modal-open="${trigger.modal}"`;
+      /**
+       * Le sujet est posé EN DIALECTE, pas en JSX : `markTriggers` tourne AVANT
+       * `transcode`, sur le HTML de la maquette. Écrire `{p.postId}` ici donnerait
+       * la chaîne littérale « {p.postId} » dans un attribut ; `{{ p.postId }}`
+       * passe par `valueToJs` et devient l'expression attendue.
+       */
+      const subjectAttr =
+        trigger.subject === undefined ? '' : ` data-modal-subject="{{ ${trigger.subject} }}"`;
+      const attr = ` data-modal-open="${trigger.modal}"${subjectAttr}`;
 
       /**
        * UN ÉLÉMENT NE REÇOIT PAS DEUX FOIS L'ATTRIBUT.

@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { BlockerTarget, JourneyMemberRole, JourneyVisibility } from '../enums/generated.js';
+import {
+  BlockerStatus,
+  BlockerTarget,
+  JourneyMemberRole,
+  JourneyStatus,
+  JourneyVisibility,
+  Phase,
+} from '../enums/generated.js';
 import { cursorQuerySchema, handleSchema, uuidSchema } from './pagination.js';
 
 /**
@@ -388,3 +395,221 @@ export type PublicJourneysQuery = z.infer<typeof publicJourneysQuerySchema>;
 export const journeyActivitiesQuerySchema = cursorQuerySchema;
 
 export type JourneyActivitiesQuery = z.infer<typeof journeyActivitiesQuerySchema>;
+
+// ── Réponses ────────────────────────────────────────────────────────────────
+
+/**
+ * LES SCHÉMAS DE RÉPONSE VIVENT ICI, PAS DANS LE FRONT.
+ *
+ * `00` §4 fait de ce paquet la source unique, et le socle d'appel du front
+ * (`apps/web/src/lib/api/index.ts` §2) exige un schéma sur chaque appel. Un
+ * schéma recopié dans un fichier du front serait une deuxième définition de la
+ * même chose : elle divergerait, et c'est le front qui se tairait.
+ *
+ * ILS SONT FIGÉS SUR L'API QUI TOURNE, pas sur ce que le dossier promet — la
+ * différence a été mesurée route par route au `curl`. Deux écarts valent d'être
+ * écrits, parce qu'ils auraient cassé le front en silence :
+ *
+ *   · `GET /journey-templates` et `GET /journeys` NE PORTENT PAS `nextCursor`.
+ *     `pageSchema(item)` le rend obligatoire (§5.3 : « null en fin de liste »),
+ *     donc l'employer ici ferait lever `ApiShapeError` sur une réponse
+ *     parfaitement valide. Ces deux routes rendent une liste BORNÉE — quatre
+ *     modèles, un parcours en gratuit — et n'ont jamais de page suivante ;
+ *
+ *   · le `meta` de ces routes n'est pas décoratif : il porte la phrase de la
+ *     checklist, le plafond d'équipe et les délais de relance (§3.3, §3.4, §3.9).
+ *     Il est donc DÉCRIT plutôt que laissé en `record(unknown)`.
+ */
+
+/** Le bandeau commun aux routes de parcours (§3.3, §3.4, §3.9). */
+export const journeyMetaSchema = z.object({
+  /** §3.3, règle dure : « les documents restent chez vous ». */
+  checklistNotice: z.string(),
+  maxMembers: z.number().int(),
+  reminderDays: z.array(z.number().int()),
+  inactivityDays: z.number().int(),
+});
+
+export type JourneyMeta = z.infer<typeof journeyMetaSchema>;
+
+/** La version du modèle servie par `GET /journey-templates` (§2.1, §2.4). */
+export const journeyTemplateVersionSchema = z.object({
+  id: uuidSchema,
+  version: z.number().int(),
+  /**
+   * LE NOMBRE D'ÉTAPES VIENT D'ICI, ET DE NULLE PART AILLEURS.
+   *
+   * La maquette de O03 écrit « 12 étapes » sous « Étudier » : c'est une
+   * ILLUSTRATION. L'API répond 15 pour `STUDIES`, parce que le modèle a été
+   * rechargé en version 3. Recopier le nombre de la maquette afficherait un
+   * engagement faux au moment précis où le membre choisit son parcours.
+   */
+  stepCount: z.number().int(),
+  isCountrySpecific: z.boolean(),
+  changelog: z.string().nullable(),
+});
+
+export const journeyTemplateSchema = z.object({
+  id: uuidSchema,
+  code: z.string(),
+  nameFr: z.string(),
+  description: z.string().nullable(),
+  targetPhase: z.enum(Phase),
+  icon: z.string().nullable(),
+  version: journeyTemplateVersionSchema,
+});
+
+export type JourneyTemplate = z.infer<typeof journeyTemplateSchema>;
+
+/**
+ * `GET /journey-templates` — les types proposés, résolus pour mon pays (§2.1).
+ *
+ * Sans `nextCursor` : voir la note d'en-tête de cette section. Mesuré sur l'API.
+ */
+export const journeyTemplatesResponseSchema = z.object({
+  items: z.array(journeyTemplateSchema),
+  meta: journeyMetaSchema,
+});
+
+export type JourneyTemplatesResponse = z.infer<typeof journeyTemplatesResponseSchema>;
+
+/**
+ * Le parcours tel que `POST /journeys` et `GET /journeys/:id` le rendent.
+ *
+ * Décrit ce dont le front a besoin pour NAVIGUER et pour nommer — l'identifiant,
+ * le titre, l'étape en cours, l'avancement. Les champs que zod ne nomme pas sont
+ * retirés à la validation, ce qui est le comportement voulu : un champ ajouté par
+ * l'API ne casse rien, et un champ RETIRÉ lève `ApiShapeError` à l'appel.
+ */
+export const journeySummarySchema = z.object({
+  id: uuidSchema,
+  title: z.string(),
+  status: z.enum(JourneyStatus),
+  visibility: z.enum(JourneyVisibility),
+  progressPct: z.number(),
+  /** `null` sur un parcours dont toutes les étapes sont franchies. */
+  currentStepId: uuidSchema.nullable(),
+  doneCount: z.number().int(),
+  totalCount: z.number().int(),
+});
+
+export type JourneySummary = z.infer<typeof journeySummarySchema>;
+
+/** `POST /journeys` (§3.1) et `GET /journeys/:id`. */
+export const journeyDetailResponseSchema = z.object({
+  journey: journeySummarySchema,
+  viewerRole: z.string(),
+  meta: journeyMetaSchema.optional(),
+});
+
+export type JourneyDetailResponse = z.infer<typeof journeyDetailResponseSchema>;
+
+/**
+ * UNE LIGNE DE `GET /journeys`, ET CE N'EST PAS LA MÊME FORME QUE `POST /journeys`.
+ *
+ * Le piège, et il a bien mordu : la liste et le détail décrivent le même objet
+ * avec des clés DIFFÉRENTES. Réutiliser `journeySummarySchema` pour les deux
+ * paraissait économe, et c'est faux sur trois champs —
+ *
+ *   · la liste rend `currentStep: { id, title }` là où le détail rend
+ *     `currentStepId` ;
+ *   · la liste rend `stepCount`, le détail `totalCount` ;
+ *   · la liste rend `isOwner`, `memberCount` et `lastActivityAt`, que le détail
+ *     n'a pas ; le détail rend `viewerRole` et `owner`, que la liste n'a pas.
+ *
+ * ── COMMENT L'ERREUR EST PASSÉE, ET CE QU'ELLE COÛTAIT ──────────────────────
+ *
+ * Elle ne se voyait PAS sur une liste VIDE : `z.array(item)` accepte `[]` quel que
+ * soit `item`. L'écran d'atterrissage O05 — le seul appelant — lit justement cette
+ * route pour savoir si un parcours existe, et son cas « aucun parcours » passait
+ * donc parfaitement. Le cas « un parcours » levait `ApiShapeError`, que l'écran
+ * avale, et il retombait sur la variante de l'URL : le membre qui venait de créer
+ * son parcours voyait quand même « votre parcours est prêt » — par accident, pour
+ * la mauvaise raison, et il aurait vu la même chose sans en avoir aucun.
+ *
+ * Le test de bout en bout ne l'a pas vu non plus, parce que sa variante par défaut
+ * était celle qu'il attendait. C'est la CHARGE RELEVÉE qui l'a montré, en une
+ * lecture — et c'est tout l'argument des fixtures : un schéma déduit du code décrit
+ * ce que son auteur croyait.
+ */
+export const journeyListItemSchema = z.object({
+  id: uuidSchema,
+  title: z.string(),
+  /** §3.4 : accompagnant ou propriétaire — la liste mêle les deux. */
+  isOwner: z.boolean(),
+  status: z.enum(JourneyStatus),
+  visibility: z.enum(JourneyVisibility),
+  progressPct: z.number(),
+  /** `null` quand toutes les étapes sont franchies. */
+  currentStep: z.object({ id: uuidSchema, title: z.string() }).nullable(),
+  doneCount: z.number().int(),
+  stepCount: z.number().int(),
+  memberCount: z.number().int(),
+});
+
+export type JourneyListItem = z.infer<typeof journeyListItemSchema>;
+
+/** `GET /journeys` (§5.1). Sans `nextCursor` — voir la note d'en-tête. */
+export const journeysListResponseSchema = z.object({
+  items: z.array(journeyListItemSchema),
+  meta: journeyMetaSchema,
+});
+
+export type JourneysListResponse = z.infer<typeof journeysListResponseSchema>;
+
+/**
+ * `POST /journeys/:id/steps/:stepId/blocker` — le BROUILLON (§3.5).
+ *
+ * `draftText` est le gabarit rempli par le serveur. Il n'est PAS ce qui sera
+ * publié : la règle dure de §3.5 veut que le texte publié soit celui du corps de
+ * `POST /blockers/:id/publish`. Le brouillon existe pour être relu et réécrit.
+ */
+export const blockerDraftResponseSchema = z.object({
+  blocker: z.object({
+    id: uuidSchema,
+    journeyId: uuidSchema,
+    journeyStepId: uuidSchema,
+    target: z.enum(BlockerTarget),
+    status: z.enum(BlockerStatus),
+    draftText: z.string(),
+  }),
+  meta: journeyMetaSchema.optional(),
+});
+
+export type BlockerDraftResponse = z.infer<typeof blockerDraftResponseSchema>;
+
+/** `POST /blockers/:id/publish` (§3.5) — la seule route qui promeut. */
+export const blockerPublishedResponseSchema = z.object({
+  blocker: z.object({
+    id: uuidSchema,
+    status: z.enum(BlockerStatus),
+    target: z.enum(BlockerTarget),
+    isPrivate: z.boolean(),
+    publishedRefType: z.string().nullable(),
+    publishedRefId: uuidSchema.nullable(),
+    publishedAt: z.string().nullable(),
+  }),
+  meta: journeyMetaSchema.optional(),
+});
+
+export type BlockerPublishedResponse = z.infer<typeof blockerPublishedResponseSchema>;
+
+/**
+ * `POST /blockers/:id/cancel` (§3.5).
+ *
+ * La forme est PLATE — `{ id, status }` — là où la création et la publication
+ * enveloppent dans `blocker`. Mesuré sur l'API ; supposer l'enveloppe ferait
+ * lever `ApiShapeError` sur une annulation qui a pourtant réussi, et le membre
+ * lirait « une erreur est survenue » après un geste qui a bien eu lieu.
+ */
+export const blockerCancelledResponseSchema = z.object({
+  id: uuidSchema,
+  status: z.enum(BlockerStatus),
+});
+
+export type BlockerCancelledResponse = z.infer<typeof blockerCancelledResponseSchema>;
+
+/** `POST /journeys/:id/steps/:stepId/dismiss-share` (§3.6). */
+export const dismissShareResponseSchema = z.object({ dismissed: z.boolean() });
+
+export type DismissShareResponse = z.infer<typeof dismissShareResponseSchema>;

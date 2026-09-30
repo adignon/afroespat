@@ -392,6 +392,51 @@ export const notificationPreferencesSchema = z.object({
 export type NotificationPreferencesInput = z.infer<typeof notificationPreferencesSchema>;
 
 /**
+ * `GET /me/notification-preferences` — ce que l'API RENVOIE, et non ce qu'elle
+ * accepte en écriture.
+ *
+ * Les deux formes sont volontairement différentes, et les confondre serait une
+ * faute : l'écriture est un DELTA (tout est facultatif, « absent ne change pas »),
+ * la lecture est un ÉTAT COMPLET — une ligne par catégorie, avec son libellé
+ * français, ce que chaque canal permet et ce que le membre a choisi.
+ *
+ * `locked` porte la règle dure du §2.1 que l'écran K07 dessine : la catégorie
+ * « Sécurité et compte » est grisée et marquée « Non désactivable ». Elle vient
+ * du SERVEUR — `NON_DISABLEABLE_CATEGORIES` — et l'écran l'affiche ; il ne la
+ * décide pas, sinon la grille et le serveur divergeraient au premier ajustement.
+ */
+export const notificationPreferencesResponseSchema = z.object({
+  categories: z.array(
+    z.object({
+      category: notificationCategorySchema,
+      /** Le libellé français, composé par l'API : `CATEGORY_LABELS_FR`. */
+      label: z.string(),
+      /** L'in-app n'est pas une préférence : il est toujours là, ou jamais. */
+      inApp: z.boolean(),
+      push: z.object({
+        available: z.boolean(),
+        enabled: z.boolean(),
+        locked: z.boolean(),
+      }),
+      email: z.object({
+        available: z.boolean(),
+        enabled: z.boolean(),
+        locked: z.boolean(),
+      }),
+    }),
+  ),
+  weeklyDigest: z.boolean(),
+  /** `null` = heures calmes désactivées. L'écran affiche « 22 h – 7 h » sinon. */
+  quietHours: quietHoursSchema.nullable(),
+  /** §3 : sans adresse vérifiée, pas de canal email à proposer. */
+  emailAvailable: z.boolean(),
+});
+
+export type NotificationPreferencesResponse = z.infer<
+  typeof notificationPreferencesResponseSchema
+>;
+
+/**
  * `POST /me/push-subscriptions` — la forme exacte d'un `PushSubscription` du
  * navigateur, aplatie. `endpoint` est unique en base : réenregistrer le même
  * appareil met à jour, il ne duplique pas.

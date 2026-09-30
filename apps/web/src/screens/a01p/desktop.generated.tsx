@@ -5,9 +5,9 @@
 // extérieur, lui, est fluide : la maquette le fige à 1440 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
-import type { A01Data } from '../a01/data';
+import type { A01PData } from './data';
 
-export function A01PDesktop(props: A01Data) {
+export function A01PDesktop(props: A01PData) {
   const { shareBtn, shareBtnBg, shareBtnFg, shareContacts, shareNets, shareOut } = props;
 
   return (

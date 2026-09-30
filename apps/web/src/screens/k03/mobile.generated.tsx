@@ -4,9 +4,9 @@
 // Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
-import type { CompteData } from '../compte/data';
+import type { K03Data } from '../compte/data';
 
-export function K03Mobile(_props: CompteData) {
+export function K03Mobile(_props: K03Data) {
   return (
     <>
       <main style={{ display: "contents" }}>

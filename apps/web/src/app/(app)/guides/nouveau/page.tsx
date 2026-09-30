@@ -3,7 +3,7 @@
 import { ScreenFrames } from '@/screens/frames';
 import { A05Desktop } from '@/screens/a05/desktop.generated';
 import { A05Mobile } from '@/screens/a05/mobile.generated';
-import { accueilData } from '@/screens/accueil/props';
+import { mdTools, rules, type A05Data } from '@/screens/a05/data';
 
 /**
  * A05 — l'éditeur de guide. `/guides/nouveau`
@@ -15,7 +15,7 @@ import { accueilData } from '@/screens/accueil/props';
  * corps du guide au lieu d'être au-dessus.
  */
 export default function NouveauGuidePage() {
-  const data = accueilData();
+  const data: A05Data = { mdTools, rules };
   return (
     <ScreenFrames
       screen="A05"

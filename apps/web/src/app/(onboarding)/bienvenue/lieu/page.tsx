@@ -5,6 +5,7 @@ import { O02Mobile } from '@/screens/o02/mobile.generated';
 import { useOnboardingFlow } from '@/screens/onboarding/use-onboarding-flow';
 import { ScreenFrames } from '@/screens/frames';
 import { FlowError } from '@/screens/onboarding/flow-error';
+import { LevelInvitation } from '@/components/level-invitation';
 
 /**
  * O02 — D’où venez-vous, où vivez-vous ?. Écran 3 des six de §5.
@@ -13,7 +14,7 @@ import { FlowError } from '@/screens/onboarding/flow-error';
  * Seuls le comportement et l'appel à l'API s'écrivent ici.
  */
 export default function Page() {
-  const { vals, error } = useOnboardingFlow(3);
+  const { vals, error, levelRequired, dismissLevelRequired } = useOnboardingFlow(3);
 
   return (
     <>
@@ -23,6 +24,7 @@ export default function Page() {
         mobile={<O02Mobile {...vals} />}
       />
       <FlowError message={error} />
+      <LevelInvitation details={levelRequired} onClose={dismissLevelRequired} />
     </>
   );
 }

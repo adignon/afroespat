@@ -1,0 +1,32 @@
+{
+  "handle": "m-01a0f3b64e70",
+  "displayName": "Awa Konaté",
+  "avatarUrl": null,
+  "phase": "RECENT_ARRIVAL",
+  "verificationLevel": "L0",
+  "country": {
+    "iso2": "BJ",
+    "nameFr": "Bénin"
+  },
+  "city": {
+    "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "name": "Lyon"
+  },
+  "languages": [],
+  "skills": [],
+  "bio": "Relevé pour les fixtures.",
+  "occupationStatus": "STUDENT",
+  "availableToHelp": true,
+  "helpTypes": [
+    "PAPERWORK",
+    "JOB"
+  ],
+  "memberSince": "2026-09-30T19:06:46.260Z",
+  "stats": {
+    "helpValidatedCount": 0,
+    "guideHelpfulVotes": 0,
+    "guideContributions": 0,
+    "mentorshipsCompleted": 0,
+    "eventsOrganized": 0
+  }
+}

@@ -59,6 +59,45 @@ function loadEnvOrDefault(): string {
   }
 }
 
+/**
+ * LE CODE OTP FIXE DU FOURNISSEUR FICTIF — `SMS_FAKE_FIXED_CODE`.
+ *
+ * Ce réglage EXISTAIT et ne servait à rien. Il est déclaré dans `envSchema`
+ * (`/^\d{6}$/`, défaut `123456`), documenté dans `.env.example` en ces termes —
+ * « En local et en test : FAKE partout (§11.3) » — et il n'était lu par PERSONNE :
+ * `FakeSmsProvider` ne reçoit aucune configuration, et le code était tiré au hasard
+ * ici puis seulement JOURNALISÉ. C'est la même famille de défaut que
+ * `cities.member_count`, écrit par personne : un réglage qui a l'air branché et ne
+ * l'est pas.
+ *
+ * Il coûtait quelque chose de concret : aucun test de bout en bout ne pouvait se
+ * connecter. Il fallait relire le journal du serveur pour trouver le code, ce qu'un
+ * navigateur piloté ne sait pas faire — donc les dix écrans du module Compte, qui
+ * exigent une session depuis qu'ils lisent l'API, étaient inéprouvables à l'écran.
+ *
+ * TROIS CONDITIONS, et aucune n'est superflue :
+ *   · `SMS_PROVIDER === 'fake'` — un vrai SMS porte un vrai code ;
+ *   · `NODE_ENV !== 'production'` — ceinture ET bretelles. `loadEnv` refuse déjà de
+ *     démarrer en production avec un fournisseur fictif, mais un OTP prédictible est
+ *     la clé de tous les comptes : la garde doit être ici AUSSI, là où le code est
+ *     fabriqué, et pas seulement dans le chargement de la configuration ;
+ *   · la configuration doit se charger. Sans elle, on retombe sur le hasard.
+ *
+ * `randomInt` reste le chemin par défaut, et le commentaire d'origine reste vrai :
+ * « un OTP prédictible ne protège rien, et c'est exactement le genre de raccourci
+ * qui survit ». Celui-ci ne survit pas à la production, par construction.
+ */
+function otpCodeFixe(): string | null {
+  try {
+    const env = loadEnv();
+    if (env.NODE_ENV === 'production') return null;
+    if (env.SMS_PROVIDER !== 'fake') return null;
+    return env.SMS_FAKE_FIXED_CODE;
+  } catch {
+    return null;
+  }
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -117,7 +156,10 @@ export class AuthService {
 
     // 4. Le code. `randomInt` et non `Math.random` : un OTP prédictible ne
     //    protège rien, et c'est exactement le genre de raccourci qui survit.
-    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    //    `otpCodeFixe()` ne rend un code que hors production ET avec le
+    //    fournisseur SMS fictif — voir son commentaire, et pourquoi ce réglage
+    //    déclaré n'était branché à rien.
+    const code = otpCodeFixe() ?? String(randomInt(0, 1_000_000)).padStart(6, '0');
     const expiresAt = new Date(Date.now() + RATE_LIMITS.otpTtlSeconds * 1000);
     const challengeId = newId();
 

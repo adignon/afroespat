@@ -79,10 +79,23 @@ export const screens = [
      * Le libellé du bouton de commentaire est une DONNÉE (`p.comment`), pas un
      * texte en dur : le marqueur porte donc l'interpolation du dialecte, telle
      * qu'elle est dans la maquette.
+     *
+     * ── `subject` : SANS LUI, LES CINQ PUBLICATIONS OUVRAIENT LA MÊME FENÊTRE ──
+     *
+     * Les deux boutons sont DANS la boucle `sc-for` des publications — la maquette
+     * ne les écrit qu'une fois. Le nom de la fenêtre suffisait donc à dire QUOI
+     * ouvrir, jamais SUR QUOI : l'écouteur délégué de `/accueil` recevait le même
+     * `data-modal-open="A01C"` pour n'importe quelle carte, et servait toujours le
+     * même fil de commentaires.
+     *
+     * `p.postId` est l'identifiant que `feedPostFrom` fait déjà voyager avec la
+     * carte (`screens/accueil/from-api.ts`). Il est évalué DANS la boucle, donc une
+     * valeur par publication. C'est la seule chose qui manquait : `threadFrom` est
+     * écrit et éprouvé depuis le lot précédent.
      */
     triggers: [
-      { marker: '</svg>{{ p.comment }}', modal: 'A01C' },
-      { marker: '</svg>Partager', modal: 'A01P' },
+      { marker: '</svg>{{ p.comment }}', modal: 'A01C', subject: 'p.postId' },
+      { marker: '</svg>Partager', modal: 'A01P', subject: 'p.postId' },
     ],
     frames: [
       { width: 1440, name: 'Desktop' },
@@ -118,18 +131,33 @@ export const screens = [
    * (`background:…;width:100%`), donc même un sélecteur acceptant les pourcentages
    * l'aurait manquée tant qu'il restait ancré. Elles sont maintenant atteignables ;
    * les MONTER est un autre lot, avec ses routes et ses données.
+   *
+   * ── DEUX DES QUATRE ONT MAINTENANT LEUR PROPRE CONTRAT ────────────────────
+   *
+   * A01C ne lit qu'UNE prise (`thread`), A01P six. Les quatre déclaraient pourtant
+   * `A01Data` — les vingt prises du fil entier. Cela obligeait la page à passer
+   * tout A01 à une fenêtre de commentaires, et surtout RIEN NE DISAIT ce que ces
+   * fenêtres consomment : au moment de les brancher sur `GET /comments`, il faut
+   * savoir quoi remplir, et `A01Data` répond pour A01, pas pour A01C.
+   *
+   * A01G et A01S restent sur `A01Data` : elles ne consomment AUCUNE donnée — leur
+   * balisage est entièrement statique — donc le transcodeur les génère avec
+   * `_props`, et leur donner un type à elles n'apporterait rien.
+   *
+   * La DONNÉE, elle, ne bouge pas : elle reste dans `screens/a01/data.ts` où le
+   * `renderVals()` unique de la maquette la met. Seul le CONTRAT est déplacé.
    */
   ...[
-    { section: 'A01C', modalTitle: 'Commentaires' },
-    { section: 'A01P', modalTitle: 'Partager' },
+    { section: 'A01C', modalTitle: 'Commentaires', data: './data', type: 'A01CData' },
+    { section: 'A01P', modalTitle: 'Partager', data: './data', type: 'A01PData' },
     { section: 'A01G', modalTitle: 'Lier un guide' },
     { section: 'A01S', modalTitle: 'Créer un sondage' },
   ].map((m) => ({
     file: 'docs/template/03 Accueil v2.dc.html',
     section: m.section,
     out: `apps/web/src/screens/${m.section.toLowerCase()}`,
-    dataModule: '../a01/data',
-    dataType: 'A01Data',
+    dataModule: m.data ?? '../a01/data',
+    dataType: m.type ?? 'A01Data',
     modal: true,
     modalTitle: m.modalTitle,
     frames: [
@@ -191,6 +219,25 @@ export const screens = [
   // ══ Lot 2 · les dix-sept sections restantes ═════════════════════════════════
 
   /**
+   * ── POURQUOI A02, A13 ET A14 NE PARTAGENT PLUS `AccueilData` ───────────────
+   *
+   * `AccueilData` décrit les CINQUANTE prises des dix-sept écrans de cette
+   * maquette, parce qu'elle n'a qu'un `renderVals()`. C'était le bon défaut tant
+   * que rien n'était branché : un écran statique n'a pas besoin de savoir ce qu'il
+   * consomme. Au branchement, cela devient un piège — on ne sait pas quoi remplir,
+   * et une page qui rend A13 déclare les prises de A08.
+   *
+   * Les trois écrans branchés sur `feed`/`stories` déclarent donc leur contrat :
+   * `A02Data` (commentaires et guides rattachés), `A13Data` (la story lue),
+   * `A14Data` (l'état de composition). La DONNÉE de la maquette reste dans
+   * `screens/accueil/data.ts` — les contrats la réexportent — parce qu'elle y est
+   * écrite une fois pour tous les cadres, et que la dupliquer donnerait deux
+   * endroits où corriger une faute de frappe.
+   *
+   * Les quatorze autres écrans gardent `AccueilData` : ils ne sont pas de ce lot.
+   */
+
+  /**
    * A02 — une publication et son fil de réponses. `/publications/:id`
    *
    * AUCUN `heading` déclaré, et c'est délibéré : ce cadre ne dessine pas de titre.
@@ -199,7 +246,7 @@ export const screens = [
    * l'en-tête de `dc-to-jsx.mjs` raconte. Le générateur le signale, et c'est bien :
    * c'est un manque de la MAQUETTE, pas du transcodage.
    */
-  { section: 'A02', frames: desktopAndMobile },
+  { section: 'A02', dataModule: './data', dataType: 'A02Data', frames: desktopAndMobile },
 
   /**
    * A13 — une story en lecture plein écran. `/stories/:id`
@@ -207,7 +254,7 @@ export const screens = [
    * « un composant, trois types · AUCUN COMPTEUR DE VUES », écrit la maquette sous
    * sa planche. Elle tient la règle dure §1.2 d'elle-même : rien à signaler.
    */
-  { section: 'A13', frames: desktopAndMobile },
+  { section: 'A13', dataModule: './data', dataType: 'A13Data', frames: desktopAndMobile },
 
   /**
    * A14 — création d'une story, en trois étapes. `/stories/nouvelle`
@@ -224,6 +271,8 @@ export const screens = [
    */
   {
     section: 'A14',
+    dataModule: './data',
+    dataType: 'A14Data',
     keepFrameStyle: true,
     frames: [
       { width: 1440, name: 'Desktop' },
@@ -239,8 +288,21 @@ export const screens = [
 
   // ── Guides · A03 à A06 ──────────────────────────────────────────────────────
 
-  /** A03 — la liste des guides. `/guides` */
-  { section: 'A03', frames: [{ width: 1440, name: 'Desktop' }, fromMob(0, 'MOB', 'Mobile', 'Guides et Démarches')] },
+  /**
+   * A03 — la liste des guides. `/guides`
+   *
+   * `dataModule` PROPRE, et c'est le changement de fond du lot : A03 lisait
+   * `AccueilData`, dont les guides étaient décrits par `typeof guides` — donc par
+   * les TROIS cartes d'exemple de la maquette. `cat` n'y était pas `string` mais
+   * l'union des trois catégories écrites à la main, et aucune donnée venue de
+   * l'API ne pouvait satisfaire ce contrat. Voir l'en-tête de `a03/data.ts`.
+   */
+  {
+    section: 'A03',
+    dataModule: './data',
+    dataType: 'A03Data',
+    frames: [{ width: 1440, name: 'Desktop' }, fromMob(0, 'MOB', 'Mobile', 'Guides et Démarches')],
+  },
 
   /**
    * A04 — la lecture d'un guide. `/guides/:slug`
@@ -257,6 +319,8 @@ export const screens = [
    */
   {
     section: 'A04',
+    dataModule: './data',
+    dataType: 'A04Data',
     frames: [
       { width: 1440, name: 'Desktop', occurrence: 0 },
       // Le cadre mobile ne BALISE pas son titre, alors que celui d'ordinateur le
@@ -280,6 +344,8 @@ export const screens = [
   {
     section: 'A05',
     heading: 'Nouveau guide',
+    dataModule: './data',
+    dataType: 'A05Data',
     frames: [
       { width: 1440, name: 'Desktop' },
       // « Nouveau guide » est le titre du cadre d'ORDINATEUR seul. Le cadre mobile
@@ -319,6 +385,8 @@ export const screens = [
    */
   {
     section: 'A06',
+    dataModule: './data',
+    dataType: 'A06Data',
     frames: [
       { width: 1440, name: 'Desktop', occurrence: 1 },
       { width: 390, name: 'Mobile', occurrence: 1, heading: 'Propositions reçues' },
@@ -332,7 +400,14 @@ export const screens = [
   // ── Réseaux · A07 à A10 ─────────────────────────────────────────────────────
 
   /** A07 — mes réseaux et la découverte. `/reseaux` */
-  { section: 'A07', frames: [{ width: 1440, name: 'Desktop' }, fromMob(4, 'MOB', 'Mobile', 'Réseaux')] },
+  {
+    section: 'A07',
+    // Branché sur `GET /communities` : ses prises sont DÉCLARÉES dans son propre
+    // fichier de données, et non déduites d'un jeu d'exemple partagé.
+    dataModule: './data',
+    dataType: 'A07Data',
+    frames: [{ width: 1440, name: 'Desktop' }, fromMob(4, 'MOB', 'Mobile', 'Réseaux')],
+  },
 
   /**
    * A08 — un réseau, onglet Sujets. `/reseaux/:slug`
@@ -344,6 +419,8 @@ export const screens = [
   {
     section: 'A08',
     heading: 'Béninois en France',
+    dataModule: './data',
+    dataType: 'A08Data',
     frames: [{ width: 1440, name: 'Desktop' }, fromMob(5)],
   },
 
@@ -398,6 +475,8 @@ export const screens = [
   /** A09 — un sujet du réseau. `/reseaux/:slug/sujets/:id` */
   {
     section: 'A09',
+    dataModule: './data',
+    dataType: 'A09Data',
     frames: [
       { width: 1440, name: 'Desktop' },
       fromMob(6, 'MOB', 'Mobile', 'Renouveler son passeport béninois depuis la France'),
@@ -407,6 +486,8 @@ export const screens = [
   /** A10 — créer un réseau. `/reseaux/nouveau` */
   {
     section: 'A10',
+    dataModule: './data',
+    dataType: 'A10Data',
     frames: [{ width: 1440, name: 'Desktop' }, fromMob(7, 'MOB', 'Mobile', "Nouveau réseau d'intérêt")],
   },
 

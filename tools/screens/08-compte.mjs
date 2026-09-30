@@ -4,23 +4,42 @@
  * Un fichier par maquette : voir l'en-tête de `01-onboarding.mjs` pour la raison.
  *
  * ────────────────────────────────────────────────────────────────────────────
- * CETTE MAQUETTE EST ENTIÈREMENT STATIQUE, comme 04, 05 et 07.
+ * CETTE MAQUETTE N'EMPLOIE PAS LE DIALECTE, ET C'EST `donnees` QUI S'EN CHARGE.
  *
  * Son `renderVals()` rend `{}`, elle ne contient ni `{{ … }}` ni `<sc-for>` —
- * zéro de chacun, compté. Il n'y a donc RIEN à recopier dans un `data.ts` :
- * chaque valeur affichée est écrite en clair dans le HTML et se retrouve telle
- * quelle dans le JSX transcodé. Voir l'en-tête de `05-entraide.mjs`, qui détaille
- * la conséquence, et `apps/web/src/screens/compte/data.ts`, qui la porte.
+ * zéro de chacun, compté — et tout son contenu est écrit en clair. Comme 04, 05,
+ * 06, 07, 09 et 10 : sept maquettes sur neuf.
  *
- * ELLE N'ÉCRIT NON PLUS AUCUN `<h2>` : son unique `<h1>` est celui de la planche
- * de documentation, hors section. Les titres de page sont donc DÉCLARÉS ici, avec
+ * La conséquence était mesurable : les vingt-cinq cadres de ce module portaient
+ * une signature `(_props: CompteData)`. Le souligné dit que le paramètre n'est pas
+ * lu — ces écrans recevaient des données et les IGNORAIENT, et il n'existait aucune
+ * prise où brancher l'API.
+ *
+ * On ne la crée PAS en ajoutant des `{{ }}` dans `docs/template/` : le porteur a
+ * été formel, on ne réécrit pas les maquettes. On la DÉCLARE, ici, avec l'écran —
+ * c'est la clé `donnees`, dont `tools/generate-screens.mjs` porte le raisonnement
+ * complet et les quatre contrôles. Ce qu'il faut en savoir pour lire ce fichier :
+ *
+ *   · `noeud` est le littéral de la maquette, VERBATIM, qui devient une donnée ;
+ *   · `fois` dit combien de fois la maquette l'écrit DANS CE CADRE, et la
+ *     génération ÉCHOUE si le compte ne tombe pas juste. Une retouche du designer
+ *     ne peut donc pas faire disparaître une donnée en silence ;
+ *   · `devient` est la réécriture, dans le dialecte que `01` et `03` emploient
+ *     déjà — et rien de plus : ce qui reste de `devient` quand on en ôte les
+ *     interpolations doit être dessiné dans `noeud`, dans l'ordre.
+ *
+ * Les valeurs, elles, vivent dans `apps/web/src/screens/compte/data.ts` — comme
+ * celles de `screens/a01/data.ts`. Le JSX transcodé n'a pas bougé d'une virgule.
+ * ────────────────────────────────────────────────────────────────────────────
+ *
+ * ELLE N'ÉCRIT AUCUN `<h2>` : son unique `<h1>` est celui de la planche de
+ * documentation, hors section. Les titres de page sont donc DÉCLARÉS ici, avec
  * leur texte visible ET leur corps — le corps n'est pas du zèle : « Contacts »
  * figure deux fois dans le cadre d'ordinateur de K05 (l'entrée du panneau
  * « MON COMPTE » d'abord, le titre de la page ensuite), et « Enregistrés »,
  * « Notifications », « Abonnement », « Sanctions » de même. Sans discriminant on
  * promouvrait l'entrée du panneau, et le défaut serait invisible : le texte
  * affiché est le même.
- * ────────────────────────────────────────────────────────────────────────────
  *
  * ─── LES CINQ FENÊTRES DE CE MODULE ────────────────────────────────────────
  *
@@ -43,12 +62,12 @@
 
 const FILE = 'docs/template/08 Compte.dc.html';
 
-const screen = ({ section, out, frames, ...rest }) => ({
+const screen = ({ section, out, frames, dataType = 'CompteData', ...rest }) => ({
   file: FILE,
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule: '../compte/data',
-  dataType: 'CompteData',
+  dataType,
   frames,
   ...rest,
 });
@@ -71,6 +90,131 @@ const page = (desktop, mobile) => [
   f(390, 'Mobile', 0, t(mobile, '21px')),
 ];
 
+/**
+ * ─── LE BANDEAU DE COMPTE, LIÉ SUR LES DIX CADRES D'ORDINATEUR ──────────────
+ *
+ * Les dix planches d'ordinateur de cette maquette dessinent le même bandeau : le
+ * rail, le panneau « MON COMPTE », la carte d'identité du membre et la barre
+ * haute. Ce sont donc les mêmes quatre littéraux à lier dix fois, et les compter
+ * a montré qu'ils sont RIGOUREUSEMENT réguliers — « Amina Diallo » une fois,
+ * « AD » deux fois, le pseudo-et-niveau une fois, le prénom une fois — SAUF sur
+ * K01, où la page parle du membre lui-même et les répète (3 et 4).
+ *
+ * D'où cette fonction plutôt que dix copies : les deux nombres sont l'argument, et
+ * ce qu'ils valent est VÉRIFIÉ à chaque génération. Le jour où le designer ajoute
+ * un avatar au bandeau, la génération s'arrête sur le cadre concerné en nommant
+ * « AD » — elle ne produit pas neuf écrans justes et un faux.
+ *
+ * `moi.demandes` est la pastille orange du panneau, à côté de « Contacts ». Elle
+ * compte les demandes de contact REÇUES (08 §3.1), et c'est la donnée la plus
+ * facile à laisser figée : « 2 » est un nombre plausible pour toujours. Son ancre
+ * porte la fin du style du rond, parce que « 2 » seul figure ailleurs.
+ */
+const PASTILLE_DEMANDES =
+  '<span style="background:#E0733A;color:#fff;font-size:11px;font-weight:700;min-width:22px;height:22px;padding:0 7px;border-radius:999px;display:flex;align-items:center;justify-content:center">2</span>';
+
+const bandeau = ({ nom = 1, initiales = 2 } = {}) => [
+  {
+    noeud: '>Amina Diallo<',
+    devient: '>{{ moi.nom }}<',
+    fois: nom,
+    frames: ['Desktop'],
+    why: 'Le nom affiché du membre connecté, de `GET /me`.',
+  },
+  {
+    noeud: '>AD<',
+    devient: '>{{ moi.initiales }}<',
+    fois: initiales,
+    frames: ['Desktop'],
+    why: 'Les initiales de l’avatar de repli, dérivées du nom affiché.',
+  },
+  {
+    noeud: '>@amina.d · niveau 2<',
+    devient: '>{{ moi.pseudo }} · niveau {{ moi.niveau }}<',
+    fois: 1,
+    frames: ['Desktop'],
+    why: 'Pseudo et niveau de vérification, de `GET /me` — affichés, jamais employés pour autoriser.',
+  },
+  {
+    noeud: '>Amina<',
+    devient: '>{{ moi.prenom }}<',
+    fois: 1,
+    frames: ['Desktop'],
+    why: 'Le prénom de la barre haute, premier mot du nom affiché.',
+  },
+  {
+    noeud: PASTILLE_DEMANDES,
+    devient:
+      '<sc-if value="{{ moi.demandes }}">' +
+      PASTILLE_DEMANDES.replace('>2</span>', '>{{ moi.demandes }}</span>') +
+      '</sc-if>',
+    fois: 1,
+    frames: ['Desktop'],
+    why: 'La pastille « Contacts » compte les demandes reçues (`GET /me/connection-requests`) ; à zéro, elle disparaît au lieu d’afficher un rond orange vide.',
+  },
+];
+
+// ─── Les cartes que la maquette répète, écrites UNE fois ─────────────────────
+//
+// Chaque fabrique ci-dessous reproduit une carte de la maquette à l'identique, ses
+// textes en paramètres. Elle sert DEUX FOIS : à écrire le `noeud` (les cartes
+// telles que la maquette les dessine, avec leurs textes d'exemple) et à écrire le
+// `devient` (la même carte, une fois, avec des interpolations). Le contrôle du
+// générateur compare les deux — si la maquette change d'un pixel, la génération
+// s'arrête. C'est ce qui rend ces longues chaînes sûres plutôt que fragiles : rien
+// ici ne peut dériver sans être dit.
+
+/** K04 — une ligne de téléphone. Les deux planches de la maquette sont identiques. */
+const CARTE_TELEPHONE = (masque, role) =>
+  '<div style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid #F0F3F2">' +
+  '<span style="width:38px;height:38px;border-radius:12px;background:#E3F0EB;display:flex;align-items:center;justify-content:center">' +
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></span>' +
+  '<div style="flex:1"><div style="font-size:14px;font-weight:700">' +
+  masque +
+  '</div><div style="font-size:12px;color:#8A958F">' +
+  role +
+  '</div></div><button style="height:44px;padding:0 18px;border-radius:14px;background:#F2F5F4;color:#16211D;border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:36px">Retirer</button></div>';
+
+/** K04 — une ligne de session. `fin` est la pastille « Actuelle » ou le bouton. */
+const CARTE_SESSION = (appareil, vu, fin) =>
+  '<div style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid #F0F3F2">' +
+  '<span style="width:38px;height:38px;border-radius:12px;background:#F2F5F4;display:flex;align-items:center;justify-content:center">' +
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M5 3h14v18H5zM11 18h2"/></svg></span>' +
+  '<div style="flex:1"><div style="font-size:14px;font-weight:700">' +
+  appareil +
+  '</div><div style="font-size:12px;color:#8A958F">' +
+  vu +
+  '</div></div>' +
+  fin +
+  '</div>';
+
+const PASTILLE_ACTUELLE =
+  '<span style="background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Actuelle</span>';
+
+const BOUTON_REVOQUER =
+  '<button style="height:44px;padding:0 18px;border-radius:14px;background:#F2F5F4;color:#16211D;border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:36px">Révoquer</button>';
+
+/** K05 — une ligne de contact. Les trois planches ne diffèrent que par leurs textes. */
+const CARTE_CONTACT = (fond, initiales, nom, sousTitre, origine) =>
+  '<div style="padding:12px 0;border-bottom:1px solid #F0F3F2"><div style="display:flex;align-items:center;gap:12px">' +
+  '<span style="width:40px;height:40px;border-radius:999px;background:' +
+  fond +
+  ';color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
+  initiales +
+  '</span><span style="flex:1;min-width:0"><span style="display:flex;align-items:center;gap:5px;font-size:14px;font-weight:700">' +
+  nom +
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10"/>' +
+  '<path d="m8 12 3 3 5-6" stroke="#fff" stroke-width="2.2" fill="none"/></svg></span>' +
+  '<span style="display:block;font-size:12px;color:#8A958F">' +
+  sousTitre +
+  '</span></span><span style="display:flex;gap:8px;align-items:center">' +
+  '<span style="background:#F2F5F4;color:#5D6B66;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">' +
+  origine +
+  '</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M4 5h16v11H9l-5 4z"/></svg></span></div></div>';
+
 export const screens = [
   /**
    * ── K01 · /compte/profil ───────────────────────────────────────────────────
@@ -82,8 +226,95 @@ export const screens = [
    *
    * 01 §2.1 — AUCUN NUMÉRO EN CLAIR : ce cadre n'en affiche aucun, vérifié plutôt
    * que supposé. Le seul téléphone du module est masqué, sur K04.
+   *
+   * BRANCHÉ SUR `GET /me` ET `GET /users/{pseudo}`, et les DEUX sont nécessaires.
+   * `/me` rend `cityId` et `originCountryId` — des UUID — là où la planche écrit
+   * « Lyon » et « Bénin ». Aucune route du domaine MEMBRE ne les résout : les deux
+   * référentiels sont des routes d'ÉQUIPE. Le profil public de son propre pseudo
+   * est donc le seul chemin honnête vers les noms. Écart remonté au porteur, pas
+   * contourné en devinant.
    */
-  screen({ section: 'K01', out: 'k01', frames: page('Mon profil', 'Compte') }),
+  screen({
+    section: 'K01',
+    out: 'k01',
+    dataType: 'K01Data',
+    frames: page('Mon profil', 'Compte'),
+    donnees: [
+      ...bandeau({ nom: 3, initiales: 4 }),
+      {
+        noeud: '>@amina.d<',
+        devient: '>{{ moi.pseudo }}<',
+        fois: 1,
+        frames: ['Desktop'],
+        why: 'Le champ « Pseudo » du formulaire, de `GET /me`.',
+      },
+      {
+        noeud: '>Étudiante · Lyon · Bénin<',
+        devient: '>{{ profil.statut }} · {{ profil.ville }} · {{ profil.pays }}<',
+        frames: ['Desktop'],
+        why: 'La ligne de l’aperçu public : statut, ville, pays d’origine.',
+      },
+      {
+        noeud: '>Étudiante en gestion à Lyon 3, arrivée de Cotonou en septembre.<',
+        devient: '>{{ profil.bio }}<',
+        frames: ['Desktop'],
+        why: 'La bio, de `GET /me` (`profile.bio`).',
+      },
+      {
+        noeud: '>Je viens d’arriver<',
+        devient: '>{{ profil.phase }}<',
+        frames: ['Desktop'],
+        why: 'La phase du membre (§2.2), de `GET /me`.',
+      },
+      {
+        noeud: '>Lyon<',
+        devient: '>{{ profil.ville }}<',
+        why: 'La ville de résidence, résolue par `GET /users/{pseudo}`.',
+      },
+      {
+        noeud: '>Bénin<',
+        devient: '>{{ profil.pays }}<',
+        frames: ['Desktop'],
+        why: 'Le pays d’origine, résolu par `GET /users/{pseudo}` — verrouillé après un changement.',
+      },
+      {
+        noeud: '>Comptabilité, Excel<',
+        devient: '>{{ profil.competences }}<',
+        frames: ['Desktop'],
+        why: 'Les compétences du membre, nommées par `GET /users/{pseudo}`.',
+      },
+      {
+        noeud: '>Français, Fon, Anglais<',
+        devient: '>{{ profil.langues }}<',
+        frames: ['Desktop'],
+        why: 'Les langues du membre, nommées par `GET /users/{pseudo}`.',
+      },
+      {
+        noeud: '>Démarches, relecture de CV<',
+        devient: '>{{ profil.aides }}<',
+        frames: ['Desktop'],
+        why: 'Les types d’aide proposés (`profile.helpTypes`).',
+      },
+      {
+        noeud: '>Amina Diallo<',
+        devient: '>{{ moi.nom }}<',
+        frames: ['Mobile'],
+        why: 'Le nom affiché, sur le cadre mobile.',
+      },
+      {
+        noeud: '>AD<',
+        devient: '>{{ moi.initiales }}<',
+        frames: ['Mobile'],
+        why: 'Les initiales de l’avatar, sur le cadre mobile.',
+      },
+      {
+        noeud: '>@amina.d<',
+        devient: '>{{ moi.pseudo }}<',
+        frames: ['Mobile'],
+        why: 'Le pseudo, sur le cadre mobile.',
+      },
+    ],
+  }),
 
   /**
    * ── K02 · /@:handle — le profil d'un autre membre ──────────────────────────
@@ -95,10 +326,17 @@ export const screens = [
    * L'élément qui le porte contient AUSSI la pastille « Niveau 2 » : c'est la
    * maquette qui les met dans le même `<div>`, et le `<h1>` promu les garde tous
    * les deux. Les séparer serait redessiner.
+   *
+   * CE TITRE EST UNE DONNÉE, et c'est le cas qui a fait écrire
+   * `retitrerSurDonnees` : lier « Fatou Ndiaye » faisait disparaître le texte que
+   * la promotion cherche, la page perdait son `<h1>` et le journal accusait la
+   * déclaration de titre. Le générateur reprend donc le titre sur sa forme liée,
+   * et le dit.
    */
   screen({
     section: 'K02',
     out: 'k02',
+    dataType: 'K02Data',
     /**
      * DEUX LIBELLÉS POUR UNE MÊME FENÊTRE : « Ajouter aux contacts » sur
      * ordinateur, « Ajouter » sur mobile — la maquette raccourcit le bouton
@@ -111,6 +349,70 @@ export const screens = [
     frames: [
       f(1440, 'Desktop', 0, t('Fatou Ndiaye', '24px')),
       f(390, 'Mobile', 0, t('Fatou Ndiaye', '20px')),
+    ],
+    donnees: [
+      ...bandeau(),
+      {
+        noeud: '>Fatou Ndiaye<',
+        devient: '>{{ membre.nom }}<',
+        frames: ['Desktop'],
+        why: 'Le nom du membre visité, de `GET /users/{pseudo}` — et le titre de la page.',
+      },
+      {
+        noeud: '>Niveau 2<',
+        devient: '>Niveau {{ membre.niveau }}<',
+        frames: ['Desktop'],
+        why: 'Le niveau de vérification du membre visité, affiché et non employé pour autoriser.',
+      },
+      {
+        noeud: '>@fatou.n · Installée · Lyon 7e · Sénégal · membre depuis 2024<',
+        devient:
+          '>{{ membre.pseudo }} · {{ membre.phase }} · {{ membre.ville }} · {{ membre.pays }} · membre depuis {{ membre.depuis }}<',
+        frames: ['Desktop'],
+        why: 'La ligne d’identité du profil visité, cinq champs de `GET /users/{pseudo}`.',
+      },
+      {
+        noeud: ">Assistante RH, j'aide volontiers sur le CV, la CAF et les premiers mois.<",
+        devient: '>{{ membre.bio }}<',
+        frames: ['Desktop'],
+        why: 'La bio du membre visité.',
+      },
+      {
+        noeud: '>Disponible pour aider · Démarches, CV<',
+        devient: '>Disponible pour aider · {{ membre.aides }}<',
+        frames: ['Desktop'],
+        why: 'Les types d’aide du membre visité (`helpTypes`).',
+      },
+      {
+        noeud: '>18<',
+        devient: '>{{ membre.entraides }}<',
+        why: 'Le compteur d’entraides validées, de `stats.helpValidatedCount`.',
+      },
+      /**
+       * LE CADRE MOBILE AUSSI, et pas par symétrie décorative : `ScreenFrames` rend
+       * les DEUX cadres et n'en masque qu'un. Lier le nom sur l'ordinateur seulement
+       * laisserait « Fatou Ndiaye » écrit en dur dans le document servi, donc dans
+       * ce que lit un test, un moteur de recherche ou un lecteur d'écran sur
+       * téléphone. La moitié de l'écran mentirait.
+       */
+      {
+        noeud: '>FN<',
+        devient: '>{{ membre.initiales }}<',
+        frames: ['Mobile'],
+        why: 'Les initiales de l’avatar du membre visité.',
+      },
+      {
+        noeud: '>Fatou Ndiaye<',
+        devient: '>{{ membre.nom }}<',
+        frames: ['Mobile'],
+        why: 'Le nom du membre visité — et le titre du cadre mobile.',
+      },
+      {
+        noeud: '>Installée · Lyon 7e · Sénégal<',
+        devient: '>{{ membre.phase }} · {{ membre.ville }} · {{ membre.pays }}<',
+        frames: ['Mobile'],
+        why: 'La ligne d’identité, raccourcie par la maquette sur mobile.',
+      },
     ],
   }),
   /**
@@ -129,25 +431,188 @@ export const screens = [
     frames: [f(420, 'Ajout')],
   }),
 
-  // ── K03 · /compte/verification ─────────────────────────────────────────────
-  //
-  // 01 §3 — les trois niveaux, et les quatre états KYC que la planche liste
-  // (en cours, en revue, refusée, mineur). L'en-tête mobile titre la section.
-  screen({ section: 'K03', out: 'k03', frames: page('Vérification et niveaux', 'Compte') }),
+  /**
+   * ── K03 · /compte/verification ─────────────────────────────────────────────
+   *
+   * 01 §3 — les trois niveaux, et les quatre états KYC que la planche liste
+   * (en cours, en revue, refusée, mineur). L'en-tête mobile titre la section.
+   *
+   * CE QUI EST LIÉ ICI, ET CE QUI NE PEUT PAS L'ÊTRE. Les trois pastilles
+   * « Acquis » / « À faire » sont la seule donnée de cette planche : elles disent
+   * où en est LE MEMBRE, et elles se déduisent de `verificationLevel`. Leur
+   * libellé ET leurs deux couleurs deviennent donc des données — lier le seul
+   * libellé laisserait un « À faire » sur fond vert d'acquis, ce qui serait pire
+   * que la maquette figée.
+   *
+   * Les quatre états KYC, eux, restent dessinés : la maquette les montre TOUS LES
+   * QUATRE côte à côte, dans une colonne intitulée « ÉTATS KYC ». C'est une
+   * planche de documentation des états, pas l'état du membre — les piloter
+   * demanderait de choisir lequel afficher, donc de redessiner la colonne.
+   * Signalé au porteur.
+   */
+  screen({
+    section: 'K03',
+    out: 'k03',
+    dataType: 'K03Data',
+    frames: page('Vérification et niveaux', 'Compte'),
+    donnees: [
+      ...bandeau(),
+      {
+        noeud:
+          '>Compte créé</div></div><span style="background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Acquis</span>',
+        devient:
+          '>Compte créé</div></div><span style="background:{{ niveaux.n0.fond }};color:{{ niveaux.n0.texte }};font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">{{ niveaux.n0.etat }}</span>',
+        frames: ['Desktop'],
+        why: 'La pastille du niveau N0 : acquise dès la création du compte.',
+      },
+      {
+        noeud:
+          '>Identité vérifiée</div></div><span style="background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Acquis</span>',
+        devient:
+          '>Identité vérifiée</div></div><span style="background:{{ niveaux.n1.fond }};color:{{ niveaux.n1.texte }};font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">{{ niveaux.n1.etat }}</span>',
+        frames: ['Desktop'],
+        why: 'La pastille du niveau N1, selon `verificationLevel` de `GET /me`.',
+      },
+      {
+        noeud: '>À faire<',
+        devient: '>{{ niveaux.n2.etat }}<',
+        frames: ['Desktop'],
+        why: 'La pastille du niveau N2 — présence en France vérifiée (01 §3).',
+      },
+    ],
+  }),
 
   /**
    * ── K04 · /compte/securite ─────────────────────────────────────────────────
    *
    * 01 §2.1, RÈGLE DURE : aucun numéro en clair. La maquette la tient par le
    * DESSIN — « +229 •• •• •• 42 », « +33 6 •• •• •• 18 » — et le transcodage la
-   * conserve par construction, puisqu'il ne réécrit rien. C'est la propriété la
-   * plus facile à perdre d'un module qui parle de téléphones, et c'est celle que
-   * `e2e/compte.spec.ts` éprouve en premier.
+   * conserve par construction, puisqu'il ne réécrit rien.
+   *
+   * ELLE NE SE TIENT PLUS PAR LE DESSIN DÈS QUE L'API ARRIVE, et c'est la
+   * décision la plus importante de cet écran : `{{ t.masque }}` reçoit ce que
+   * l'API envoie. Le rempart est donc ailleurs, et il est à DEUX étages :
+   *
+   *   · côté serveur, `meResponseSchema` ne décrit AUCUN champ de numéro en
+   *     clair — `phones[].masked` est le seul, et un `e164` qui apparaîtrait
+   *     serait dépouillé à la validation de réponse avant d'atteindre l'écran ;
+   *   · côté écran, `e2e/compte.spec.ts` éprouve la règle SUR LES DONNÉES RÉELLES
+   *     de l'API, et non plus seulement sur celles de la maquette.
+   *
+   * LES DEUX CADRES NE DISENT PAS LA MÊME CHOSE du numéro principal, et c'est la
+   * maquette : le cadre mobile écrit « Dernier numéro, non retirable » à sa droite
+   * — ce que T5 K04 demande — là où le cadre d'ordinateur lui laisse un bouton
+   * « Retirer ». L'écart est transcodé tel quel et signalé au porteur.
    */
-  screen({ section: 'K04', out: 'k04', frames: page('Téléphones et sessions', 'Compte') }),
+  screen({
+    section: 'K04',
+    out: 'k04',
+    dataType: 'K04Data',
+    frames: page('Téléphones et sessions', 'Compte'),
+    donnees: [
+      ...bandeau(),
+      {
+        noeud:
+          CARTE_TELEPHONE('+229 •• •• •• 42', 'Bénin · principal') +
+          CARTE_TELEPHONE('+33 6 •• •• •• 18', 'France · destination'),
+        devient:
+          '<sc-for list="{{ telephones }}" as="t">' +
+          CARTE_TELEPHONE('{{ t.masque }}', '{{ t.role }}') +
+          '</sc-for>',
+        frames: ['Desktop'],
+        why: 'Les numéros du membre, MASQUÉS par le serveur (`phones[].masked`) — jamais en clair.',
+      },
+      {
+        noeud:
+          CARTE_SESSION('MacBook · Chrome · cet appareil', 'Lyon · maintenant', PASTILLE_ACTUELLE) +
+          CARTE_SESSION('iPhone · application', 'Lyon · il y a 2 h', BOUTON_REVOQUER) +
+          CARTE_SESSION(
+            'Android · Chrome',
+            'Cotonou (approx.) · il y a 3 semaines',
+            BOUTON_REVOQUER,
+          ),
+        devient:
+          '<sc-for list="{{ sessions }}" as="s">' +
+          CARTE_SESSION(
+            '{{ s.appareil }}',
+            '{{ s.vu }}',
+            '<sc-if value="{{ s.courante }}">' +
+              PASTILLE_ACTUELLE +
+              '</sc-if><sc-if value="{{ s.revocable }}">' +
+              BOUTON_REVOQUER +
+              '</sc-if>',
+          ) +
+          '</sc-for>',
+        frames: ['Desktop'],
+        why: 'Les sessions actives, de `GET /auth/sessions` : la pastille « Actuelle » et le bouton « Révoquer » sont les DEUX variantes que la maquette dessine, chacune sous sa condition.',
+      },
+    ],
+  }),
 
-  // ── K05 · /compte/contacts ─────────────────────────────────────────────────
-  screen({ section: 'K05', out: 'k05', frames: page('Contacts', 'Contacts') }),
+  /**
+   * ── K05 · /compte/contacts ─────────────────────────────────────────────────
+   *
+   * LES QUATRE ONGLETS SONT DESSINÉS CÔTE À CÔTE, pas pilotés : la planche
+   * d'ordinateur montre « Mes contacts · 12 » ET les demandes reçues, les
+   * suggestions et les bloqués, chacun dans sa carte.
+   *
+   * LE SOUS-TITRE D'UN CONTACT EST UN ÉCART À REMONTER. La maquette écrit
+   * « Installée · Lyon 3e » — la phase et la ville. `GET /me/connections` ne rend
+   * ni l'une ni l'autre : son `MEMBER_SELECT` s'arrête à l'identifiant, au pseudo,
+   * au nom et à l'avatar. On y met donc la date de mise en relation, qui est une
+   * donnée RÉELLE de la même route, et on le signale — plutôt que de composer une
+   * phase et une ville que personne n'a envoyées.
+   */
+  screen({
+    section: 'K05',
+    out: 'k05',
+    dataType: 'K05Data',
+    frames: page('Contacts', 'Contacts'),
+    donnees: [
+      ...bandeau(),
+      {
+        noeud: '>Mes contacts · 12<',
+        devient: '>Mes contacts · {{ contacts.total }}<',
+        frames: ['Desktop'],
+        why: 'Mon nombre de contacts (`meta.count`) — jamais celui d’un autre (08 §3.2).',
+      },
+      {
+        noeud: '>Demandes · 2<',
+        devient: '>Demandes · {{ contacts.demandes }}<',
+        why: 'Le nombre de demandes de contact reçues, de `GET /me/connection-requests`.',
+      },
+      {
+        noeud:
+          CARTE_CONTACT('#0F5C48', 'SM', 'Sandra M.', 'Installée · Lyon 3e', 'Entraide') +
+          CARTE_CONTACT('#16785E', 'AI', 'Aïcha Diop', 'Installée · Lyon 7e', 'Parrainage') +
+          CARTE_CONTACT('#E0733A', 'KB', 'Kofi Boateng', 'Arrivé · Lyon 3e', 'Rencontre'),
+        devient:
+          '<sc-for list="{{ contacts.liste }}" as="c">' +
+          CARTE_CONTACT(
+            '{{ c.fond }}',
+            '{{ c.initiales }}',
+            '{{ c.nom }}',
+            '{{ c.depuis }}',
+            '{{ c.origine }}',
+          ) +
+          '</sc-for>',
+        frames: ['Desktop'],
+        why: 'Mes contacts, de `GET /me/connections` — nom, initiales, couleur d’avatar et origine de la mise en relation.',
+      },
+      {
+        noeud: '>Paul A.<',
+        devient: '>{{ bloque.nom }}<',
+        frames: ['Desktop'],
+        why: 'Le membre bloqué, de `GET /me/blocks` (08 §4).',
+      },
+      {
+        noeud: '>Bloqué le 3 mars<',
+        devient: '>Bloqué le {{ bloque.date }}<',
+        frames: ['Desktop'],
+        why: 'La date du blocage, de `GET /me/blocks`.',
+      },
+    ],
+  }),
 
   /**
    * ── K06 · /compte/abonnement et /premium ───────────────────────────────────
@@ -155,12 +620,67 @@ export const screens = [
    * L'en-tête mobile titre « Premium » : la planche mobile ne montre QUE le
    * comparatif, pas le plan courant ni les factures. C'est ce que la maquette
    * dessine, et le titre le dit.
+   *
+   * 14 §4.1, RÈGLE DURE : aucune donnée de carte ne transite par le serveur. Les
+   * routes lues ici — `/plans`, `/me/subscription`, `/me/payments` — n'en portent
+   * aucune, et `myPaymentsResponseSchema` en fait une preuve exécutable : ni
+   * numéro, ni empreinte, ni quatre derniers chiffres, ni date d'expiration. Une
+   * API qui se mettrait à en joindre verrait sa réponse REFUSÉE à la frontière.
+   *
+   * LE PRIX ANNUEL N'EST PAS LIÉ, et c'est délibéré : la maquette écrit
+   * « Annuel · −20 % » comme un ONGLET, sans montant. Lier un montant là
+   * demanderait d'en dessiner un.
    */
   screen({
     section: 'K06',
     out: 'k06',
+    dataType: 'K06Data',
     triggers: [{ marker: 'Passer à Premium</button>', modal: 'K06M', all: true }],
     frames: page('Abonnement et Premium', 'Premium'),
+    donnees: [
+      ...bandeau(),
+      {
+        noeud: '<div style="font-size:20px;font-weight:800">Gratuit</div>',
+        devient: '<div style="font-size:20px;font-weight:800">{{ abonnement.plan }}</div>',
+        frames: ['Desktop'],
+        why: 'Le plan courant, de `GET /me/subscription` — le nom français vient de `GET /plans`.',
+      },
+      {
+        noeud: '>Essai Premium : 5 jours restants<',
+        devient: '>Essai Premium : {{ abonnement.essai }} jours restants<',
+        frames: ['Desktop'],
+        why: 'Les jours d’essai restants (14 §4.6), de `trial.endsAt`.',
+      },
+      {
+        noeud: '>2 / 3<',
+        devient: '>{{ abonnement.contactsPro }}<',
+        frames: ['Desktop'],
+        why: 'Le compteur de contacts pro du mois et son plafond (`usage.items`).',
+      },
+      {
+        noeud: '>4 €/mois<',
+        devient: '>{{ premium.prixMois }}<',
+        why: 'Le prix mensuel de Premium en euros, de `GET /plans` — jamais figé dans le front.',
+      },
+      {
+        noeud: '>Au Bénin : 2 600 F/mois · MTN ou Moov<',
+        devient: '>Au Bénin : {{ premium.prixXof }} · MTN ou Moov<',
+        frames: ['Desktop'],
+        why: 'Le même prix en francs CFA, calculé par le serveur — les deux devises arrivent toujours ensemble.',
+      },
+      {
+        noeud: '>Août 2026 · 4 €<',
+        devient: '>{{ factures.derniere }}<',
+        frames: ['Desktop'],
+        why: 'La dernière facture, de `GET /me/payments` (14 §4.4).',
+      },
+      {
+        noeud: '>Juillet 2026 · 4 €<',
+        devient: '>{{ factures.precedente }}<',
+        frames: ['Desktop'],
+        why: 'La facture précédente, de `GET /me/payments`.',
+      },
+    ],
   }),
   /**
    * ── K06 · le flux Mobile Money, TROIS VOLETS (14 §4.2) ─────────────────────
@@ -185,8 +705,49 @@ export const screens = [
     frames: [f(380, 'Numero', 0), f(380, 'Attente', 1), f(380, 'Succes', 2)],
   }),
 
-  // ── K07 · /compte/notifications ────────────────────────────────────────────
-  screen({ section: 'K07', out: 'k07', frames: page('Notifications', 'Notifications') }),
+  /**
+   * ── K07 · /compte/notifications ────────────────────────────────────────────
+   *
+   * LES INTERRUPTEURS DE LA GRILLE RESTENT DESSINÉS, et c'est délibéré — comme
+   * avant l'arrivée de l'API, et pour une raison qui n'a pas changé. La maquette
+   * dessine, pour CHAQUE case de la grille, un `<span>` de 46 × 26 px dont la
+   * pastille est positionnée en dur. Lier ces positions demanderait une ancre par
+   * case, et les cases de deux catégories sont dessinées à l'identique : rien ne
+   * distinguerait « Mon parcours · push » de « Messages · push ». Les lier au
+   * hasard serait exactement le défaut que `fois` existe pour empêcher. Remonté au
+   * porteur : il faudrait que la maquette distingue ses cases.
+   *
+   * CE QUI EST LIÉ, en revanche, l'est complètement : l'adresse email, la plage
+   * des heures calmes et le jour du résumé viennent de
+   * `GET /me/notification-preferences`.
+   */
+  screen({
+    section: 'K07',
+    out: 'k07',
+    dataType: 'K07Data',
+    frames: page('Notifications', 'Notifications'),
+    donnees: [
+      ...bandeau(),
+      {
+        noeud: '<strong>Email</strong> · amina.d@mail.com ',
+        devient: '<strong>Email</strong> · {{ prefs.email }} ',
+        frames: ['Desktop'],
+        why: 'L’adresse email du membre, de `GET /me/notification-preferences`.',
+      },
+      {
+        noeud: '>Aucune notification push de 22 h à 7 h<',
+        devient: '>Aucune notification push de {{ prefs.calmeDebut }} à {{ prefs.calmeFin }}<',
+        frames: ['Desktop'],
+        why: 'Les heures calmes du membre (12 §2), bornes réelles et non les valeurs par défaut.',
+      },
+      {
+        noeud: '>Chaque lundi par email<',
+        devient: '>{{ prefs.resume }}<',
+        frames: ['Desktop'],
+        why: 'L’état du résumé hebdomadaire (`weeklyDigest`).',
+      },
+    ],
+  }),
 
   /**
    * ── K08 · /compte/donnees ──────────────────────────────────────────────────
@@ -195,12 +756,23 @@ export const screens = [
    * mobile dessine les trois blocs mais ne donne un bouton qu'au premier
    * (« Demander »). Le déclencheur est donc borné à `Desktop`, et c'est la
    * maquette qui le décide, pas un oubli de déclaration.
+   *
+   * CETTE PLANCHE NE DESSINE AUCUNE DONNÉE, et il faut le dire plutôt que d'en
+   * inventer une. Ses trois blocs sont du TEXTE DE RÈGLE — « Préparé sous 48 h.
+   * Lien valable 7 jours. », « Reconnectez-vous dans les 6 mois », « Définitif
+   * après 7 jours. » — c'est-à-dire les bornes de 01 §2.7 et §2.8, vraies pour
+   * tout le monde et en tout temps. `GET /me/export/latest` sait dire où en est
+   * l'archive du membre ; la maquette n'a nulle part où l'écrire. Lui faire une
+   * place serait redessiner la planche, donc : signalé au porteur, et cet écran ne
+   * lit que le bandeau de compte.
    */
   screen({
     section: 'K08',
     out: 'k08',
+    dataType: 'K08Data',
     triggers: [{ marker: 'Supprimer</button>', modal: 'K08S', frames: ['Desktop'] }],
     frames: page('Mes données', 'Mes données'),
+    donnees: [...bandeau()],
   }),
   /**
    * La confirmation détaillée, planche de 440 px (T5 K08 : « ce qui est supprimé,
@@ -214,18 +786,67 @@ export const screens = [
     frames: [f(440, 'Confirmation')],
   }),
 
-  // ── K09 · /compte/sanctions ────────────────────────────────────────────────
-  //
-  // La contestation est une carte DANS LA PAGE sur ordinateur (« CONTESTER ·
-  // UNE SEULE FOIS »), et la maquette n'en dessine pas sur mobile. Aucun
-  // déclencheur, donc : on n'ouvre pas une fenêtre par-dessus une carte qui dit
-  // déjà la même chose, et on n'en invente pas une là où il n'y en a pas.
-  screen({ section: 'K09', out: 'k09', frames: page('Sanctions', 'Sanctions') }),
+  /**
+   * ── K09 · /compte/sanctions ────────────────────────────────────────────────
+   *
+   * La contestation est une carte DANS LA PAGE sur ordinateur (« CONTESTER ·
+   * UNE SEULE FOIS »), et la maquette n'en dessine pas sur mobile. Aucun
+   * déclencheur, donc : on n'ouvre pas une fenêtre par-dessus une carte qui dit
+   * déjà la même chose, et on n'en invente pas une là où il n'y en a pas.
+   *
+   * `active` et `appealable` NE SONT PAS RECALCULÉS ICI : le serveur les dérive
+   * (13 §4.3, « contester une fois »), et comparer `endsAt` à l'horloge du
+   * navigateur afficherait « suspendu » à un membre libre dès que sa machine est
+   * décalée.
+   */
+  screen({
+    section: 'K09',
+    out: 'k09',
+    dataType: 'K09Data',
+    frames: page('Sanctions', 'Sanctions'),
+    donnees: [
+      ...bandeau(),
+      {
+        noeud: '>Publication masquée<',
+        devient: '>{{ sanction.type }}<',
+        why: 'Le type de la sanction, de `GET /me/sanctions`.',
+      },
+      {
+        noeud: '>Règle : Coordonnées personnelles · 12 janvier 2026<',
+        devient: '>Règle : {{ sanction.regle }} · {{ sanction.date }}<',
+        frames: ['Desktop'],
+        why: 'La règle enfreinte telle que le modérateur l’a écrite (13 §4.2), et la date.',
+      },
+      {
+        noeud: '>Contestation en cours<',
+        devient: '>{{ sanction.etat }}<',
+        frames: ['Desktop'],
+        why: 'L’état de la contestation, dérivé par le serveur (`appealable`).',
+      },
+    ],
+  }),
 
-  // ── K10 · /compte/enregistres ──────────────────────────────────────────────
-  //
-  // La planche de 320 px « ÉTATS · VIDE » n'est PAS un cadre d'écran : c'est une
-  // note de documentation, caption comprise, posée à côté des deux cadres. La
-  // transcoder produirait une page dont le titre serait le mot « ÉTATS ».
-  screen({ section: 'K10', out: 'k10', frames: page('Enregistrés', 'Enregistrés') }),
+  /**
+   * ── K10 · /compte/enregistres ──────────────────────────────────────────────
+   *
+   * La planche de 320 px « ÉTATS · VIDE » n'est PAS un cadre d'écran : c'est une
+   * note de documentation, caption comprise, posée à côté des deux cadres. La
+   * transcoder produirait une page dont le titre serait le mot « ÉTATS ».
+   *
+   * AUCUNE ROUTE N'EXISTE POUR CET ÉCRAN, et c'est le seul des dix dans ce cas.
+   * `apps/api/src/modules/bookmarks/` ne contient qu'un `bookmarks.service.ts` :
+   * il n'y a NI contrôleur, NI route `GET /me/bookmarks`, et le mot n'apparaît
+   * dans aucun `*.controller.ts` du dépôt. Les six lignes de la planche —
+   * « Obtenir la garantie Visale sans CDI », « Story de Aïcha », leurs états
+   * « Expiré, gardé pour vous », « Contenu retiré » — attendent donc une route
+   * qui n'est pas écrite. Signalé au porteur ; cet écran ne lit que le bandeau de
+   * compte, et on ne lui fabrique pas une source.
+   */
+  screen({
+    section: 'K10',
+    out: 'k10',
+    dataType: 'K10Data',
+    frames: page('Enregistrés', 'Enregistrés'),
+    donnees: [...bandeau()],
+  }),
 ];

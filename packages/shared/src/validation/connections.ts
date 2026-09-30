@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { cursorQuerySchema, handleSchema } from './pagination.js';
+import { ConnectionOrigin } from '../enums/generated.js';
+import { cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Contacts — 08-parrainage-messagerie.md §3.
@@ -110,3 +111,114 @@ export const acceptSuggestionSchema = z
   .strict();
 
 export type AcceptSuggestion = z.infer<typeof acceptSuggestionSchema>;
+
+// ── Réponses (§3.1, §3.2, §4) ───────────────────────────────────────────────
+
+/**
+ * Un membre tel que les listes de ce module le montrent : le strict nécessaire
+ * pour une carte de contact, et rien de plus.
+ *
+ * Pas de niveau, pas de ville, pas de téléphone. Ce sont les colonnes de
+ * `MEMBER_SELECT` côté service, et le schéma les reprend à l'identique plutôt que
+ * d'espérer : une liste de contacts qui se mettrait à transporter un numéro serait
+ * une violation de 01 §2.1 que rien n'aurait signalée.
+ */
+const connectionMemberSchema = z.object({
+  id: uuidSchema,
+  handle: handleSchema,
+  displayName: z.string(),
+});
+
+/**
+ * `GET /me/connections` (§3.2).
+ *
+ * `meta.count` est MON nombre de contacts, et la règle dure du §3.2 dit « jamais
+ * celui d'un autre ». Il arrive dans `meta`, ce que `pageSchema` prévoit, et il est
+ * resserré ici parce que l'écran K05 l'affiche : « Mes contacts · 12 ».
+ */
+export const myConnectionsResponseSchema = pageSchema(
+  z.object({
+    userId: uuidSchema,
+    handle: handleSchema,
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+    origin: z.enum(ConnectionOrigin),
+    connectedAt: z.string().datetime(),
+  }),
+).extend({ meta: z.object({ count: z.number().int() }) });
+
+export type MyConnectionsResponse = z.infer<typeof myConnectionsResponseSchema>;
+
+/**
+ * `GET /me/connection-requests` (§3.1).
+ *
+ * `nextCursor` N'Y FIGURE PAS : le service rend `{ items }` seul, borné à cinquante
+ * demandes en attente. Employer `pageSchema` ici ferait refuser la vraie réponse —
+ * un schéma décrit ce que l'API envoie, pas ce qu'on aurait aimé qu'elle envoie.
+ * L'écart avec §5.3 est réel et se remonte ; on ne le masque pas d'un `.optional()`.
+ */
+export const connectionRequestsResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: uuidSchema,
+      /** Le message obligatoire de §3.1, 20 à 500 caractères. */
+      message: z.string().nullable(),
+      createdAt: z.string().datetime(),
+      expiresAt: z.string().datetime(),
+      user: connectionMemberSchema,
+    }),
+  ),
+});
+
+export type ConnectionRequestsResponse = z.infer<typeof connectionRequestsResponseSchema>;
+
+/** `GET /me/connection-suggestions` (§3.1) : calculées, jamais stockées. */
+export const connectionSuggestionsResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      origin: z.enum(CONNECTION_SUGGESTION_ORIGINS),
+      user: connectionMemberSchema,
+      /** La phrase que l'API compose (« Vous étiez tous les deux à … »). */
+      reason: z.string(),
+      refId: uuidSchema,
+    }),
+  ),
+});
+
+export type ConnectionSuggestionsResponse = z.infer<typeof connectionSuggestionsResponseSchema>;
+
+/**
+ * `GET /me/blocks` — 08 §4.
+ *
+ * `{ items }`, SANS `nextCursor` : le contrôleur enveloppe ce que le service rend
+ * en liste nue, et il ne pagine pas.
+ *
+ * CE SCHÉMA A ÉTÉ ÉCRIT FAUX D'ABORD, et la leçon vaut d'être notée ici parce
+ * qu'elle se rejouera sur chaque route d'un autre module. Il déclarait un TABLEAU
+ * NU, parce qu'il avait été écrit en lisant `BlocksService.list()` — qui rend bien
+ * `blocks.map(…)`. C'est le CONTRÔLEUR qui pose l'enveloppe, une ligne plus haut :
+ * `return { items: await this.blocks.list(…) }`.
+ *
+ * Le défaut n'est pas passé inaperçu, et c'est le seul point qui compte : la
+ * validation de réponse a refusé la réponse réelle, l'écran K05 est resté sur son
+ * état d'attente, et TROIS tests de bout en bout ont rougi. Un type écrit à la main
+ * l'aurait laissé passer jusqu'à un `.map` sur `undefined`, plusieurs composants
+ * plus loin. Le schéma est la source unique ; il se lit sur le CONTRÔLEUR, jamais
+ * sur le service.
+ *
+ * Il vit dans ce fichier et non dans un fichier à part parce que le blocage est
+ * décrit par le même document que les contacts (08 §3 et §4), et que l'écran K05
+ * les montre côte à côte.
+ */
+export const myBlocksResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      userId: uuidSchema,
+      handle: handleSchema,
+      displayName: z.string(),
+      blockedAt: z.string().datetime(),
+    }),
+  ),
+});
+
+export type MyBlocksResponse = z.infer<typeof myBlocksResponseSchema>;

@@ -36,15 +36,23 @@
  * du point de vue d'un cadre donné : `collectProps` ne déclare à chaque
  * composant que ce qu'il emploie réellement.
  *
- * `onPublish` n'existe pas, et son absence est la règle dure §3.5 rendue
- * visible : « l'objet cible n'est créé qu'à l'appel explicite de la route de
- * publication ». Ce lot ne branche aucune route, donc « Publier » reste inerte
- * plutôt que de refermer la feuille en laissant croire à une publication.
+ * `onPublish` N'EXISTE TOUJOURS PAS, et c'est la règle dure §3.5 rendue visible :
+ * « l'objet cible n'est créé qu'à l'appel explicite de la route de publication ».
+ * Le générateur ne reconnaît pas le libellé « Publier », donc aucun `onClick`
+ * n'est posé sur ce bouton — et aucune suite de clics ne publie. Le brouillon,
+ * lui, est bien créé et bien annulable : voir `use-parcours-api.ts`.
+ *
+ * CE QUI A CHANGÉ : ces gestes ne sont plus inertes. `onContinue`, `onCancel` et
+ * l'ouverture de J03 appellent de vraies routes de `journeys` — création du
+ * parcours (§3.1), brouillon de blocage et son annulation (§3.5), refus de
+ * partage (§3.6). Ils restent inertes là où l'URL ne nomme aucun parcours, parce
+ * qu'il n'y aurait rien à écrire ; `use-parcours-api.ts` dit lesquelles et
+ * pourquoi.
  */
 export type ParcoursData = {
   /** Un envoi est en cours : les boutons d'action se désactivent. */
   readonly busy: boolean;
-  /** J02 « Régulariser » — passer à l'étape suivante de la création. */
+  /** J02 « Régulariser » — crée le parcours « Régulariser ma situation » (§3.1). */
   readonly onContinue: () => void;
   /** J03 — volet suivant (« Suivant », « Voir l'aperçu »). */
   readonly onNext: () => void;

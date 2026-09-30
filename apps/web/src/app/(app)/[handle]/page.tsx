@@ -39,10 +39,11 @@ import { ProfilMembreEcran } from './profil-membre-ecran';
  * `%` invalide — une URL malformée est une 404, pas une erreur 500.
  * ────────────────────────────────────────────────────────────────────────────
  *
- * Composant SERVEUR : les paramètres de route arrivent en propriété. Le pseudo
- * n'est pas affiché — la maquette écrit « Fatou Ndiaye » en clair et ce lot ne
- * branche pas l'API. L'interpoler serait inventer une donnée que la maquette n'a
- * pas choisi de calculer.
+ * Composant SERVEUR : les paramètres de route arrivent en propriété. Le pseudo est
+ * maintenant PASSÉ À L'ÉCRAN, qui appelle `GET /users/{pseudo}` — la maquette
+ * écrivait « Fatou Ndiaye » en clair, et ce littéral est devenu une interpolation
+ * par une DÉCLARATION (`donnees`) dans `tools/screens/08-compte.mjs`, sans qu'une
+ * ligne de la maquette ni du JSX transcodé ne bouge.
  */
 function pseudo(segment: string): string | null {
   let decode: string;
@@ -60,7 +61,8 @@ export default async function ProfilMembrePage({
   readonly params: Promise<{ readonly handle: string }>;
 }) {
   const { handle } = await params;
-  if (pseudo(handle) === null) notFound();
+  const nom = pseudo(handle);
+  if (nom === null) notFound();
 
-  return <ProfilMembreEcran />;
+  return <ProfilMembreEcran pseudo={nom} />;
 }

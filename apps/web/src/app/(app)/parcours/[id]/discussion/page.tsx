@@ -1,6 +1,7 @@
 'use client';
 
 import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J01DDesktop } from '@/screens/j01d/desktop.generated';
 import { J01DMobile } from '@/screens/j01d/mobile.generated';
@@ -15,7 +16,7 @@ import { J01DMobile } from '@/screens/j01d/mobile.generated';
  * décide de rien, il affiche la planche.
  */
 export default function Page() {
-  const { ouverte, onOuvrir, onFermer, volet, data } = useParcours();
+  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(null, useContexteParcours());
 
   return (
     <EcranParcours
@@ -26,6 +27,9 @@ export default function Page() {
       onOuvrir={onOuvrir}
       onFermer={onFermer}
       modales={{ J03: plancheBlocage(volet, data) }}
+      erreur={erreur}
+      niveauRequis={niveauRequis}
+      oublierNiveauRequis={oublierNiveauRequis}
     />
   );
 }

@@ -1,9 +1,15 @@
 'use client';
 
 import { useCallback, useState, type ReactNode } from 'react';
+import type { LevelRequiredDetailsParsed } from '@app/shared';
 import { Modal } from '@/components/modal';
+import { FlowError } from '@/screens/onboarding/flow-error';
+import { LevelInvitation } from '@/components/level-invitation';
 import { ScreenFrames } from '@/screens/frames';
 import { MODALES, VOLETS_BLOCAGE, type NomModale, type ParcoursData } from './data';
+import { useParcoursApi, type ContexteParcours } from './use-parcours-api';
+
+export type { ContexteParcours };
 
 /**
  * La coquille commune aux douze écrans du module Parcours.
@@ -57,6 +63,9 @@ export function EcranParcours({
   onOuvrir,
   onFermer,
   modales,
+  erreur = null,
+  niveauRequis = null,
+  oublierNiveauRequis,
 }: {
   readonly screen: string;
   readonly desktop: ReactNode;
@@ -71,6 +80,20 @@ export function EcranParcours({
    * de `node tools/generate-screens.mjs` le signale cadre par cadre.
    */
   readonly modales?: Partial<Record<NomModale, PlancheModale>>;
+  /**
+   * LE RETOUR DES APPELS, rendu ICI plutôt que dans chaque page.
+   *
+   * Douze écrans du module partagent les mêmes gestes (§3.5, §3.6) donc les mêmes
+   * refus. Laisser chaque page écrire son affichage aurait donné douze variantes
+   * du même message — c'est l'argument que `displayMessageFor` porte déjà dans le
+   * socle, appliqué un cran plus haut.
+   *
+   * La bannière et l'invitation sont DEUX choses : 00 §7.3 exige une invitation à
+   * monter de niveau, « jamais une simple erreur ».
+   */
+  readonly erreur?: string | null;
+  readonly niveauRequis?: LevelRequiredDetailsParsed | null;
+  readonly oublierNiveauRequis?: () => void;
 }) {
   return (
     <div onClick={onOuvrir}>
@@ -92,6 +115,8 @@ export function EcranParcours({
           mobile={planche.mobile}
         />
       ))}
+      <FlowError message={erreur} />
+      <LevelInvitation details={niveauRequis} onClose={oublierNiveauRequis ?? (() => undefined)} />
     </div>
   );
 }
@@ -117,21 +142,42 @@ export function EcranParcours({
  * une fenêtre s'ouvrira autrement qu'au clic, celle de l'ouverture ne s'appliquera
  * plus. Le test mesure la PROPRIÉTÉ, pas la ligne.
  */
-export function useParcours(ouverteInitiale: NomModale | null = null) {
+export function useParcours(
+  ouverteInitiale: NomModale | null = null,
+  contexte: ContexteParcours = {},
+) {
   const [ouverte, setOuverte] = useState<NomModale | null>(ouverteInitiale);
   const [volet, setVolet] = useState(0);
+  const api = useParcoursApi(contexte);
 
-  const onOuvrir = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
-    const cible = event.target;
-    if (!(cible instanceof Element)) return;
-    const bouton = cible.closest('[data-modal-open]');
-    if (bouton === null) return;
-    const nom = bouton.getAttribute('data-modal-open');
-    if (nom !== null && nom in MODALES) {
-      setOuverte(nom as NomModale);
-      setVolet(0);
-    }
-  }, []);
+  const onOuvrir = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>): void => {
+      const cible = event.target;
+      if (!(cible instanceof Element)) return;
+      const bouton = cible.closest('[data-modal-open]');
+      if (bouton === null) return;
+      const nom = bouton.getAttribute('data-modal-open');
+      if (nom !== null && nom in MODALES) {
+        setOuverte(nom as NomModale);
+        setVolet(0);
+        /**
+         * OUVRIR « JE SUIS BLOQUÉ·E » CRÉE LE BROUILLON (§3.5, premier temps).
+         *
+         * C'est le flux du dossier, pas une optimisation : la route
+         * `POST /journeys/:id/steps/:stepId/blocker` « crée le BROUILLON et rend
+         * le texte pré-rempli ». Elle ne publie rien — la seule route qui promeut
+         * est `POST /blockers/:id/publish`, et ce lot ne l'appelle pas.
+         *
+         * Le brouillon sert à ce que « Annuler » ait quelque chose à annuler :
+         * §3.5 veut un brouillon `CANCELLED`, et sans création il n'y aurait rien
+         * en base à passer dans cet état — « Annuler » n'aurait été qu'une
+         * fermeture de fenêtre déguisée en décision.
+         */
+        if (nom === 'J03') api.ouvrirBlocage();
+      }
+    },
+    [api],
+  );
 
   const onFermer = useCallback((): void => {
     setOuverte(null);
@@ -144,32 +190,63 @@ export function useParcours(ouverteInitiale: NomModale | null = null) {
   const precedent = useCallback((): void => setVolet((n) => Math.max(n - 1, 0)), []);
 
   /**
+   * « ANNULER » ET « PLUS TARD » SONT LE MÊME BOUTON POUR LE GÉNÉRATEUR, ET DEUX
+   * DÉCISIONS DIFFÉRENTES POUR LE MEMBRE.
+   *
+   * Le transcodeur écrit `onClick={onCancel}` sur les deux : « Annuler » de J03 et
+   * « Plus tard » de J04. Un seul nom, donc, pour deux routes :
+   *
+   *   · J03 → `POST /blockers/:id/cancel` : le brouillon passe en `CANCELLED`
+   *     (§3.5). Le membre a renoncé à demander de l'aide ;
+   *   · J04 → `POST /journeys/:id/steps/:stepId/dismiss-share` : le partage n'est
+   *     PLUS JAMAIS reproposé pour cette étape (§3.6). Ce n'est pas un report.
+   *
+   * On dispatche donc sur la fenêtre OUVERTE. Le faire dans les planches aurait
+   * demandé deux `ParcoursData` distincts par écran — et le générateur n'écrirait
+   * toujours qu'un seul nom.
+   *
+   * La fenêtre se ferme DANS TOUS LES CAS, même si l'appel échoue. Le membre a
+   * cliqué « Plus tard » : laisser la feuille ouverte parce que le serveur n'a pas
+   * répondu lui redemanderait une décision qu'il vient de prendre. C'est le même
+   * arbitrage que `logout()` dans le socle, et pour la même raison.
+   */
+  const onCancel = useCallback((): void => {
+    if (ouverte === 'J03') api.annulerBlocage();
+    else if (ouverte === 'J04') api.declinerPartage();
+    onFermer();
+  }, [api, onFermer, ouverte]);
+
+  /**
    * Ce que les composants transcodés reçoivent.
    *
-   * `busy` est toujours `false` dans ce lot : aucune requête ne part encore. Il
-   * est déclaré parce que le générateur écrit `disabled={busy}` sur les boutons
-   * qu'il reconnaît, et un composant ne doit pas inventer la valeur qu'il rend.
+   * `busy` n'est plus une constante : il suit les appels réellement en vol, et le
+   * générateur écrit `disabled={busy}` sur les boutons qu'il reconnaît. Un double
+   * clic sur « Continuer » de J02 créerait sinon deux parcours — dont le second
+   * serait refusé par `PLAN_LIMIT_REACHED`, ce qui ressemblerait à un bogue.
    *
-   * `onContinue` NE FAIT RIEN, et il faut le dire plutôt que de le maquiller :
-   * sur J02 « Régulariser », « Continuer » mène à l'étape suivante de la
-   * création, que la maquette ne dessine pas et que §3.1 fait aboutir à
-   * `POST /journeys` — une route que ce lot ne branche pas. Lui faire changer
-   * d'écran inventerait une étape de flux absente du design ; lui faire refermer
-   * quelque chose serait un effet arbitraire. Il reste donc inerte, comme
-   * « Publier », comme « Créer un parcours » : tous les boutons de ce lot qui
-   * attendent l'API le sont.
-   *
-   * Il est branché tout de même, parce que le générateur écrit `onClick=
-   * {onContinue}` sur ce libellé ; ne pas fournir la fonction ferait échouer la
-   * compilation, pas un bouton plus vivant.
+   * `onContinue` est celui de J02 « Régulariser » (§3.1) : il crée le parcours
+   * « Régulariser ma situation » et mène au parcours créé. Il reste inerte sur les
+   * écrans qui ne passent pas de contexte de création — il n'y aurait alors aucun
+   * modèle à créer, et deviner lequel serait pire que ne rien faire.
    */
   const data: ParcoursData = {
-    busy: false,
-    onContinue: () => undefined,
+    busy: api.busy,
+    onContinue: api.creer,
     onNext: suivant,
     onBack: precedent,
-    onCancel: onFermer,
+    onCancel,
   };
 
-  return { ouverte, onOuvrir, onFermer, volet, data };
+  return {
+    ouverte,
+    onOuvrir,
+    onFermer,
+    volet,
+    data,
+    /** Le refus à afficher, ou `null`. Décidé sur `error.code` (§5.2). */
+    erreur: api.erreur,
+    /** §7.3 — l'invitation à monter de niveau, ou `null`. Jamais une erreur. */
+    niveauRequis: api.niveauRequis,
+    oublierNiveauRequis: api.oublierNiveauRequis,
+  };
 }

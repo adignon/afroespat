@@ -3,7 +3,7 @@
 import { ScreenFrames } from '@/screens/frames';
 import { A06Desktop } from '@/screens/a06/desktop.generated';
 import { A06Mobile } from '@/screens/a06/mobile.generated';
-import { accueilData } from '@/screens/accueil/props';
+import { panelGuides, rail, shortcuts, type A06Data } from '@/screens/a06/data';
 
 /**
  * A06 · planche 2 — « Propositions reçues » de l'auteur. `/guides/:slug/propositions`
@@ -13,7 +13,7 @@ import { accueilData } from '@/screens/accueil/props';
  * elle-même : voir `/guides/:slug/corriger`.
  */
 export default function PropositionsPage() {
-  const data = accueilData();
+  const data: A06Data = { rail, panelGuides, shortcuts };
   return (
     <ScreenFrames screen="A06" desktop={<A06Desktop {...data} />} mobile={<A06Mobile {...data} />} />
   );

@@ -1,30 +1,14 @@
-'use client';
-
-import { ScreenFrames } from '@/screens/frames';
-import { A13Desktop } from '@/screens/a13/desktop.generated';
-import { A13Mobile } from '@/screens/a13/mobile.generated';
-import { accueilData } from '@/screens/accueil/props';
+import { StoryEcran } from './story-ecran';
 
 /**
  * A13 — une story en lecture plein écran. `/stories/:id`
  *
- * AUCUN COMPTEUR DE VUES, et c'est la maquette elle-même qui l'écrit sous sa
- * planche : « un composant, trois types · aucun compteur de vues ». Elle tient la
- * règle dure §1.2 sans qu'on ait à la corriger. Ce qui se compte est la RÉACTION —
- * « 31 trouvent utile », « 2 confirment » — un jugement donné volontairement, et non
- * une mesure d'attention subie.
- *
- * Le fond est sombre (`#101A17`) : une story se lit comme une photo, pas comme une
- * page. C'est la maquette qui le fixe, sur ses deux cadres.
+ * Composant SERVEUR, qui n'attend que le paramètre de route : sous Next 15,
+ * `params` est une promesse. La lecture elle-même est cliente — elle porte le jeton
+ * que le socle garde en mémoire, et `GET /stories/:id` MARQUE LA STORY VUE, donc
+ * elle ne doit pas partir au rendu du serveur pour un visiteur qui n'a rien ouvert.
  */
-export default function StoryPage() {
-  const data = accueilData();
-  return (
-    <ScreenFrames
-      screen="A13"
-      background="#101A17"
-      desktop={<A13Desktop {...data} />}
-      mobile={<A13Mobile {...data} />}
-    />
-  );
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return <StoryEcran storyId={id} />;
 }

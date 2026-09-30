@@ -5,9 +5,9 @@
 // extérieur, lui, est fluide : la maquette le fige à 1440 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
-import type { AccueilData } from '../accueil/data';
+import type { A14Data } from './data';
 
-export function A14Desktop(props: AccueilData) {
+export function A14Desktop(props: A14Data) {
   const { attachSteps, attachTopics, audience, msgsKnob, msgsTrack, photoTools, toggleMsgs, w, webKind, webKinds, webPalette, webPill, writeBg } = props;
 
   return (

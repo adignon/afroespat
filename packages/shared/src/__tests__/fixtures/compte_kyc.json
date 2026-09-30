@@ -1,0 +1,11 @@
+{
+  "status": "NOT_STARTED",
+  "sessionId": null,
+  "decidedAt": null,
+  "expiresAt": null,
+  "declineReasonCode": null,
+  "retryAvailableAt": null,
+  "attemptsUsed": 0,
+  "attemptsMax": 3,
+  "isMinor": false
+}

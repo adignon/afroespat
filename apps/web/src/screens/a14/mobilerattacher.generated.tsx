@@ -5,9 +5,9 @@
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
-import type { AccueilData } from '../accueil/data';
+import type { A14Data } from './data';
 
-export function A14MobileRattacher(props: AccueilData) {
+export function A14MobileRattacher(props: A14Data) {
   const { attachSteps, attachTopics, onContinue } = props;
 
   return (

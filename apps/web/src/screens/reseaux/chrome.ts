@@ -1,0 +1,137 @@
+/**
+ * LE DESSIN COMMUN AUX QUATRE ÉCRANS DE RÉSEAUX — et rien d'autre.
+ *
+ * Le rail, le panneau de section, les chips et les onglets sont identiques sur
+ * A07, A08, A09 et A10 : la maquette les dessine une fois et les répète. Ils sont
+ * donc écrits une fois ici, et les quatre `data.ts` les réexportent.
+ *
+ * ── POURQUOI ILS NE VIENNENT PAS DE `screens/accueil/data.ts` ───────────────
+ *
+ * Parce que quatre agents travaillent en parallèle sur ce module, et que ce
+ * fichier est celui qui les ferait se percuter. Les recopier ici coûte quelques
+ * lignes ; se marcher dessus coûte le lot.
+ *
+ * ── CE QUE CE FICHIER NE CONTIENT PAS ──────────────────────────────────────
+ *
+ * Aucune donnée. Pas un nom de réseau, pas un compteur, pas un libellé de sujet :
+ * tout cela vient de l'API, par `from-api.ts`. Ici il n'y a que du DESSIN —
+ * chemins d'icônes et couleurs, tels que la maquette les fixe. Aucune couleur
+ * n'est assombrie (T1 §1.2).
+ */
+
+// ─── Chemins d'icônes, tels que la maquette les définit ─────────────────────
+
+export const I = {
+  home: 'M4 11 12 4l8 7v9H4z',
+  path: 'M5 5h6a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h10',
+  heart: 'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z',
+  serv: 'M4 20V8l8-4 8 4v12',
+  cal: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  feed: 'M15 18h-5M18 14h-8M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2M10 6h8v4h-8z',
+  book: 'M12 7v14M16 12h2M16 8h2M6 12h2M6 8h2M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+  net: 'M12 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM5 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 8v4M12 12l-5 4M12 12l5 4',
+  city: 'M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z',
+  mentor: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 14s1.5 2 4 2 4-2 4-2M9 10h.01M15 10h.01',
+} as const;
+
+/** Les quatre icônes que les sujets et la modération emploient. */
+export const PIN = 'M12 17v5M9 3h6l-1 6 4 4H6l4-4z';
+export const CHAT = 'M4 5h16v11H9l-5 4z';
+export const LOCK = 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3';
+export const EYE =
+  'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
+
+// ─── Navigation ─────────────────────────────────────────────────────────────
+
+const RAIL_ITEMS: readonly (readonly [string, string])[] = [
+  ['Accueil', I.home],
+  ['Parcours', I.path],
+  ['Entraide', I.heart],
+  ['Services', I.serv],
+  ['Agenda', I.cal],
+];
+
+export const rail = RAIL_ITEMS.map(([label, icon], i) => ({
+  label,
+  icon,
+  bg: i === 0 ? '#FFFFFF' : 'rgba(255,255,255,.08)',
+  fg: i === 0 ? '#0F5C48' : '#CFE3DA',
+}));
+
+const PANEL_ITEMS: readonly (readonly [string, string, number | null])[] = [
+  ["Fil d'actualité", I.feed, null],
+  ['Guides & Démarches', I.book, null],
+  ["Fil d'entraide", I.heart, 12],
+  ['Réseaux', I.net, null],
+  ['Parrainage', I.mentor, null],
+  ['Villes & Membres', I.city, null],
+  ['Événements', I.cal, 3],
+];
+
+export const panel = (active: number) =>
+  PANEL_ITEMS.map(([label, icon, count], i) => ({
+    label,
+    icon,
+    count,
+    bg: i === active ? '#E3F0EB' : 'transparent',
+    fg: i === active ? '#0F5C48' : '#16211D',
+    w: i === active ? 700 : 500,
+  }));
+
+/** « Réseaux » est la quatrième entrée : c'est elle qui s'allume sur A07–A10. */
+export const panelReseaux = panel(3);
+
+export const chip = (label: string, on = false) => ({
+  label,
+  bg: on ? '#16785E' : '#fff',
+  fg: on ? '#fff' : '#16211D',
+  bd: on ? '#16785E' : '#E6EBE9',
+});
+
+export const tab = (label: string, on: boolean) => ({
+  label,
+  w: on ? 700 : 500,
+  fg: on ? '#0F5C48' : '#5D6B66',
+  bd: on ? '#16785E' : 'transparent',
+});
+
+/** Les six onglets du réseau. Le deuxième — « Sujets » — est celui que A08 montre. */
+export const NET_TABS = ['Fil', 'Sujets', 'Événements', 'Membres', 'Album', 'À propos'] as const;
+
+export const netTabsFor = (active: number) => NET_TABS.map((l, i) => tab(l, i === active));
+
+// ─── Identité visuelle d'une personne et d'un réseau ────────────────────────
+
+/** La palette d'avatars de la maquette, dans son ordre. Aucune teinte ajoutée. */
+const AVATAR_COLORS = ['#0F5C48', '#16785E', '#B4581F', '#2FA37D', '#E0733A'] as const;
+
+/**
+ * Les initiales, comme la maquette les dessine : une ou deux lettres majuscules.
+ *
+ * `Array.from` et non `split('')` : « Émile » commence par un caractère qui tient
+ * sur deux unités de code dans certaines compositions, et `split('')` le couperait
+ * en deux moitiés invalides.
+ */
+export function initials(label: string): string {
+  const mots = label
+    .trim()
+    .split(/\s+/)
+    .filter((m) => m.length > 0);
+  if (mots.length === 0) return '·';
+  const lettre = (m: string): string => (Array.from(m)[0] ?? '').toLocaleUpperCase('fr-FR');
+  return mots.length === 1
+    ? lettre(mots[0] as string)
+    : `${lettre(mots[0] as string)}${lettre(mots[1] as string)}`;
+}
+
+/**
+ * Couleur STABLE dérivée d'une clé — handle d'un membre, slug d'un réseau.
+ *
+ * Stable importe : une couleur tirée au hasard changerait à chaque rendu, et le
+ * même réseau serait de deux couleurs entre « Mes réseaux » et « Découvrir ».
+ */
+export function tint(key: string): string {
+  let somme = 0;
+  for (const c of key) somme = (somme + c.codePointAt(0)!) % 9973;
+  return AVATAR_COLORS[somme % AVATAR_COLORS.length] as string;
+}

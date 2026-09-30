@@ -1,6 +1,7 @@
 'use client';
 
 import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J05Desktop } from '@/screens/j05/desktop.generated';
 import { J05Mobile } from '@/screens/j05/mobile.generated';
@@ -18,7 +19,7 @@ import { J05MobileInvitation } from '@/screens/j05invitation/mobileinvitation.ge
  * manque est consigné dans `docs/decisions.md`.
  */
 export default function Page() {
-  const { ouverte, onOuvrir, onFermer, volet, data } = useParcours();
+  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(null, useContexteParcours());
 
   return (
     <EcranParcours
@@ -32,6 +33,9 @@ export default function Page() {
         J03: plancheBlocage(volet, data),
         J05I: { mobile: <J05MobileInvitation {...data} /> },
       }}
+      erreur={erreur}
+      niveauRequis={niveauRequis}
+      oublierNiveauRequis={oublierNiveauRequis}
     />
   );
 }

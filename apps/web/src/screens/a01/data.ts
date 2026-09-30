@@ -599,6 +599,22 @@ export const shareOut = [
  * elle-même, et ils arrivent vides depuis l'API. Remonté au rapport de lot.
  */
 export interface FeedPostView {
+  /**
+   * L'IDENTIFIANT DE LA PUBLICATION, et il n'est pas DESSINÉ : il est POSÉ.
+   *
+   * Les deux boutons « Commenter » et « Partager » vivent dans la boucle des
+   * publications, et le transcodeur y pose maintenant
+   * `data-modal-subject={p.postId}` (déclaré par `subject` dans
+   * `tools/screens/03-accueil.mjs`). Sans ce champ, le JSX généré ne compilerait
+   * pas — et c'est voulu : la prise du cadre et le convertisseur doivent se
+   * répondre, sinon l'attribut arriverait vide sans que rien ne le dise.
+   *
+   * FACULTATIF parce que les cartes d'exemple de ce fichier n'ont pas
+   * d'identifiant : ce sont des dessins, pas des publications. React n'écrit
+   * alors aucun attribut, et l'écouteur délégué n'ouvre rien — plutôt que
+   * d'ouvrir la fenêtre d'une autre publication, ce qui était le défaut.
+   */
+  readonly postId?: string;
   readonly name: string;
   readonly i: string;
   readonly bg: string;
@@ -705,15 +721,27 @@ export interface A01Data {
   online: readonly PersonView[];
   mTabs: typeof mTabs;
   mBottom: typeof mBottom;
-
-  // Les modales du fil. Elles partagent ce type parce qu'elles partagent l'écran :
-  // le transcodeur les génère avec `A01Data` en signature, et une modale qui
-  // n'emploie rien reçoit simplement `_props`.
-  thread: readonly CommentView[];
-  shareContacts: ReturnType<typeof shareContactsFor>;
-  shareNets: typeof shareNets;
-  shareOut: typeof shareOut;
-  shareBtn: string;
-  shareBtnBg: string;
-  shareBtnFg: string;
 }
+
+// ─── CE QUE `A01Data` NE DÉCLARE PLUS, ET POURQUOI ──────────────────────────
+//
+// Les sept prises des deux fenêtres du fil — `thread` pour A01C, les six du
+// partage pour A01P — étaient déclarées ici, parce que le transcodeur donnait
+// `A01Data` en signature aux quatre modales. Elles sont parties dans
+// `screens/a01c/data.ts` et `screens/a01p/data.ts`, qui déclarent chacun le
+// contrat de SES cadres.
+//
+// Ce n'est pas du rangement. Tant que la fenêtre de commentaires exigeait
+// `A01Data`, la page devait lui passer le fil entier — stories, colonne droite,
+// filtres — pour afficher cinq lignes de texte, et RIEN ne disait ce qu'elle
+// consomme vraiment. Au moment de la brancher sur `GET /comments`, c'est
+// précisément la question à laquelle il faut répondre.
+//
+// La DONNÉE, elle, n'a pas bougé : `thread`, `shareContactsFor`, `shareNets` et
+// `shareOut` restent ci-dessus, là où le `renderVals()` unique de la maquette les
+// met. A01G et A01S gardent `A01Data` : elles ne consomment rien.
+//
+// `shareContactsFor` et `SHARE_SELECTION_DEFAULT` ne servent plus à l'écran
+// branché — les contacts de partage viennent de l'API (`shareContactsDe`, dans
+// `screens/a01p/data.ts`) et rien n'est coché d'avance. Ils restent le DESSIN de
+// la maquette, et c'est à ce titre qu'ils sont conservés.

@@ -31,6 +31,8 @@ import { A08TAdminAProposEditionMobile } from '@/screens/a08t/adminaproposeditio
 import { A08TAdminAnnonceMobile } from '@/screens/a08t/adminannoncemobile.generated';
 import { accueilData, type AccueilState } from '@/screens/accueil/props';
 import type { AccueilData } from '@/screens/accueil/data';
+import { a08Fallback } from '@/screens/a08/data';
+import { useReseau } from '@/screens/reseaux/use-reseau';
 
 /**
  * A08 et ses treize onglets. `/reseaux/:slug`
@@ -76,7 +78,6 @@ type Tab = {
  */
 const MEMBRE: Record<string, Tab> = {
   fil: { desktop: (d) => <A08TFil {...d} />, mobile: (d) => <A08TFilMobile {...d} /> },
-  sujets: { desktop: (d) => <A08Desktop {...d} />, mobile: (d) => <A08Mobile {...d} /> },
   evenements: {
     desktop: (d) => <A08TEvenements {...d} />,
     mobile: (d) => <A08TEvenementsMobile {...d} />,
@@ -147,35 +148,100 @@ const BOARD: React.CSSProperties = {
   width: '100%',
 };
 
+/**
+ * ── POURQUOI SEUL « SUJETS » EST BRANCHÉ ────────────────────────────────────
+ *
+ * Les douze autres planches A08T ne consomment AUCUNE donnée : le générateur
+ * leur écrit `_props`, parce que la maquette les dessine entièrement en dur —
+ * noms, compteurs, photos, tout. Les brancher demanderait de les REDESSINER en
+ * cadres à prises, ce qui est interdit ici et n'est pas un travail de branchement.
+ *
+ * `sujets` est le seul onglet dont la maquette fait un cadre à prises : c'est
+ * A08 lui-même. Il reçoit donc `A08Data`, rempli par l'API ; les autres reçoivent
+ * `AccueilData` tel que la maquette le dessine, inchangé. L'écart est remonté.
+ */
 export function ReseauScreen({
   onglet,
   owner,
+  slug: reseauSlug,
 }: {
   readonly onglet: string;
   readonly owner: boolean;
+  readonly slug: string;
 }) {
   const slug = onglet;
+  const rang = Math.max(0, SLUGS.indexOf(slug as (typeof SLUGS)[number]));
+
+  const { data, pret, echec, membre, contenuFerme, reseau } = useReseau(reseauSlug, rang);
 
   const table = owner ? PROPRIETAIRE : MEMBRE;
   // Un onglet inconnu — ou réservé au propriétaire quand on ne l'est pas — retombe
   // sur « Sujets », qui est ce que la maquette montre par défaut.
-  const tab = table[slug] ?? MEMBRE[slug] ?? MEMBRE['sujets'];
-  if (tab === undefined) return null;
-
-  const state: AccueilState = {
-    netTab: Math.max(0, SLUGS.indexOf(slug as (typeof SLUGS)[number])),
-  };
-  const data = accueilData(state);
+  const tab = table[slug] ?? MEMBRE[slug];
 
   // L'onglet « Sujets » en vue membre EST le cadre complet de A08, rail compris :
   // il n'a pas de coque de planche à reconstituer.
-  const plain = slug === 'sujets' && !owner;
+  const plain = (slug === 'sujets' || tab === undefined) && !owner;
+
+  const a08 = pret && echec === null ? data : a08Fallback;
+
+  if (plain) {
+    return (
+      <>
+        <ScreenFrames
+          screen="A08"
+          desktop={<A08Desktop {...a08} />}
+          mobile={<A08Mobile {...a08} />}
+        />
+        {/**
+         * L'INVITATION À REJOINDRE — et c'est ici que la règle la plus grave du
+         * module se tient côté front.
+         *
+         * `contenuFerme` vient d'un `403 NOT_A_MEMBER` mesuré, pas d'une liste
+         * vide. La distinction est tout : une liste vide veut dire « aucun
+         * sujet », un refus veut dire « je ne vous le dirai pas ». Écrire
+         * « aucun sujet pour le moment » sur un refus apprendrait au lecteur que
+         * le réseau est mort alors qu'il est seulement fermé — et ferait passer
+         * pour une information ce que le serveur a justement refusé de donner.
+         *
+         * On n'affiche donc NI les compteurs de l'en-tête (masqués à zéro pour
+         * un passant) NI de liste de substitution : seulement le bouton que le
+         * serveur autorise, d'après `canJoin` qu'il calcule lui-même.
+         */}
+        {contenuFerme && (
+          <p role="status" style={{ padding: '12px 24px', color: '#16211D', fontSize: '14px' }}>
+            {reseau?.canJoin === true
+              ? 'Rejoignez ce réseau pour voir ses sujets et ses membres.'
+              : reseau?.myStatus === 'PENDING'
+                ? 'Votre demande est en attente : un modérateur doit l’accepter.'
+                : reseau?.myStatus === 'INVITED'
+                  ? 'Vous êtes invité·e : acceptez pour accéder au contenu.'
+                  : 'Ce contenu est réservé aux membres du réseau.'}
+          </p>
+        )}
+        {echec !== null && !membre && (
+          <p role="status" style={{ padding: '0 24px 12px', color: '#B4581F', fontSize: '13px' }}>
+            {echec.message}
+          </p>
+        )}
+      </>
+    );
+  }
+
+  if (tab === undefined) return null;
+
+  /**
+   * Les douze autres onglets restent sur les données de la maquette : leurs
+   * planches ne lisent rien, donc leur passer l'API ne changerait pas un pixel.
+   */
+  const state: AccueilState = { netTab: rang };
+  const statique = accueilData(state);
 
   return (
     <ScreenFrames
-      screen={plain ? 'A08' : `A08T-${slug}`}
-      desktop={plain ? tab.desktop(data) : <div style={BOARD}>{tab.desktop(data)}</div>}
-      mobile={tab.mobile(data)}
+      screen={`A08T-${slug}`}
+      desktop={<div style={BOARD}>{tab.desktop(statique)}</div>}
+      mobile={tab.mobile(statique)}
     />
   );
 }

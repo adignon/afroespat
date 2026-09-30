@@ -1,0 +1,35 @@
+{
+  "items": [
+    {
+      "id": "01a0f3b8-c966-7000-89b6-fe30eed79f2f",
+      "question": "Quelle charge mesurer ?",
+      "isMultiple": false,
+      "closesAt": null,
+      "closed": false,
+      "createdAt": "2026-09-30T19:09:28.808Z",
+      "author": {
+        "id": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+        "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
+        "displayName": ""
+      },
+      "myOptionIds": [],
+      "resultsVisible": false,
+      "totalVotes": null,
+      "options": [
+        {
+          "id": "01a0f3b8-c967-7000-af81-f11c9e6d0991",
+          "label": "La premiere",
+          "position": 0,
+          "voteCount": null
+        },
+        {
+          "id": "01a0f3b8-c967-7001-833c-652cbf4eaf22",
+          "label": "La seconde",
+          "position": 1,
+          "voteCount": null
+        }
+      ]
+    }
+  ],
+  "nextCursor": null
+}

@@ -398,16 +398,27 @@ test('A12 · deux onglets montrent deux contenus', async ({ page }) => {
 });
 
 /**
- * A02 — LE VOTE SUR UN GUIDE RATTACHÉ CHANGE CE QU'ON VOIT.
+ * A02 — AUCUN GUIDE N'EST AFFIRMÉ RATTACHÉ À UNE PUBLICATION.
  *
- * C'est le seul comportement de cet écran, et il a un sens de produit : le membre
- * dit si le rattachement automatique est utile, et c'est ce retour qui corrige les
- * suggestions. Sans cette boucle, la liste ne s'améliore jamais.
+ * ── CE TEST A REMPLACÉ « VOTER “UTILE” SUR UN GUIDE SE VOIT », ET IL FAUT DIRE
+ *    POURQUOI ─────────────────────────────────────────────────────────────────
  *
- * Le test lit la couleur CALCULÉE avant et après, plutôt que de chercher un attribut
- * d'état : ce qui compte est que le membre VOIE que son vote est pris.
+ * L'ancien test gardait un vrai comportement — le fond du pouce passait du gris au
+ * vert — mais il le gardait sur des guides d'EXEMPLE. Au branchement, la question
+ * s'est posée autrement : aucune route ne rattache un guide à une publication.
+ * Vérifié route par route et schéma par schéma — ni `postCardSchema`, ni
+ * `postDetailResponseSchema`, ni le module `guides`. Le vote « utile / pas utile »
+ * n'avait donc rien à enregistrer, et les trois guides affichés affirmaient un
+ * rattachement à une publication réelle.
+ *
+ * Ce test garde maintenant le CONSTAT, qui est ce qui doit rester vrai tant que le
+ * back n'a pas tranché : la liste arrive vide. Il rougira le jour où quelqu'un la
+ * remplira de nouveau avec les guides de la maquette — ce qui remettrait à l'écran
+ * trois affirmations sans source — et il rougira aussi, utilement, le jour où le
+ * back branchera vraiment la route : il faudra alors venir lire ce commentaire et
+ * rendre au pouce son comportement.
  */
-test('A02 · voter « utile » sur un guide se voit', async ({ page }) => {
+test('A02 · aucun guide n’est affirmé rattaché tant que l’API n’en donne pas', async ({ page }) => {
   /**
    * Le bloc « GUIDES LIÉS » n'existe que dans le cadre d'ORDINATEUR : le cadre
    * mobile de A02 ne dessine que la publication et ses réponses. Ce n'est pas une
@@ -422,20 +433,16 @@ test('A02 · voter « utile » sur un guide se voit', async ({ page }) => {
   await page.goto('/publications/repas-partage', { waitUntil: 'networkidle' });
 
   /**
-   * `title="Pertinent"` vient de la MAQUETTE : c'est elle qui nomme ce bouton, qui
-   * ne porte autrement qu'un pouce. Le viser par son nom accessible, et non par sa
-   * position, veut dire que le test suit le libellé si la maquette le change — et
-   * tombe s'il disparaît, ce qui serait une régression d'accessibilité.
+   * L'EN-TÊTE DE SECTION RESTE : c'est du dessin de la maquette, et le retirer
+   * serait redessiner. C'est la LISTE qui est vide, et c'est ce qui est vérifié.
+   *
+   * `title="Pertinent"` est le nom que la maquette donne au pouce — un bouton qui
+   * ne porte autrement qu'un pictogramme. Le viser par son nom accessible plutôt
+   * que par sa position veut dire que ce test suit le libellé, et tombe s'il
+   * réapparaît.
    */
-  const button = frame(page).getByTitle('Pertinent').first();
-  await expect(button).toBeVisible();
-
-  const before = await button.evaluate((el) => getComputedStyle(el).backgroundColor);
-  await button.click();
-  const after = await button.evaluate((el) => getComputedStyle(el).backgroundColor);
-
-  expect(before, 'le fond de départ est le gris neutre de la maquette').toBe('rgb(242, 245, 244)');
-  expect(after, 'voter passe le bouton au vert primaire').toBe('rgb(22, 120, 94)');
+  await expect(frame(page).getByText('GUIDES LIÉS', { exact: false })).toBeVisible();
+  await expect(frame(page).getByTitle('Pertinent')).toHaveCount(0);
 });
 
 /**

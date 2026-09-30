@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Vous n’avez pas accès à cette action.",
+    "details": {
+      "reason": "NOT_A_MEMBER",
+      "communityId": "01a0f3b8-c8e9-7000-ba9a-4d00a53fdc38"
+    }
+  }
+}

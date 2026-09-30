@@ -1,0 +1,220 @@
+{
+  "categories": [
+    {
+      "category": "JOURNEY_DEADLINE",
+      "label": "Échéances de mon parcours",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      }
+    },
+    {
+      "category": "JOURNEY_TEAM",
+      "label": "Mon équipe de parcours",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "HELP",
+      "label": "Entraide",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "MENTORSHIP",
+      "label": "Parrainage",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      }
+    },
+    {
+      "category": "MESSAGE",
+      "label": "Messages privés",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "SOCIAL",
+      "label": "Réactions et commentaires",
+      "inApp": true,
+      "push": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "GUIDE",
+      "label": "Guides",
+      "inApp": true,
+      "push": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      },
+      "email": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      }
+    },
+    {
+      "category": "COMMUNITY",
+      "label": "Réseaux",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "EVENT",
+      "label": "Événements",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "SERVICES",
+      "label": "Logement, emploi, professionnels",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "BOOKMARK",
+      "label": "Mes éléments enregistrés",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      }
+    },
+    {
+      "category": "ACCOUNT",
+      "label": "Mon compte",
+      "inApp": true,
+      "push": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      },
+      "email": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      }
+    },
+    {
+      "category": "MODERATION",
+      "label": "Modération",
+      "inApp": true,
+      "push": {
+        "available": false,
+        "enabled": false,
+        "locked": true
+      },
+      "email": {
+        "available": true,
+        "enabled": true,
+        "locked": true
+      }
+    },
+    {
+      "category": "DIGEST",
+      "label": "Résumé hebdomadaire",
+      "inApp": false,
+      "push": {
+        "available": false,
+        "enabled": false,
+        "locked": false
+      },
+      "email": {
+        "available": true,
+        "enabled": true,
+        "locked": false
+      }
+    }
+  ],
+  "weeklyDigest": true,
+  "quietHours": {
+    "start": "22:00",
+    "end": "08:00"
+  },
+  "emailAvailable": false
+}

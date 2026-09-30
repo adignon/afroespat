@@ -1,0 +1,143 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { commentsResponseSchema, postDetailResponseSchema } from '@app/shared';
+import { commentairesA02From, GUIDES_RATTACHES_SANS_SOURCE } from './from-api';
+
+/**
+ * LE FIL DE RÉPONSES DE A02, ÉPROUVÉ SUR DES CHARGES RÉELLES.
+ *
+ * Les fixtures sont celles de `packages/shared/src/__tests__/fixtures/` — des
+ * réponses relevées OCTET POUR OCTET sur une API qui tournait — et elles sont
+ * PARSÉES par le schéma partagé avant d'entrer dans le convertisseur. L'ordre
+ * compte : c'est ce qui fait que ce fichier éprouve la chaîne complète (charge
+ * réelle → schéma partagé → prises du cadre) plutôt que le convertisseur seul
+ * contre un objet façonné à sa mesure.
+ */
+
+const FIXTURES = resolve(
+  import.meta.dirname,
+  '../../../../../packages/shared/src/__tests__/fixtures',
+);
+
+const charge = (nom: string): unknown =>
+  JSON.parse(readFileSync(resolve(FIXTURES, `${nom}.json`), 'utf8'));
+
+const detail = postDetailResponseSchema.parse(charge('post_detail'));
+const fil = commentsResponseSchema.parse(charge('comments'));
+
+describe('les commentaires d’une publication, convertis pour A02', () => {
+  const lignes = commentairesA02From(fil.items);
+
+  it('la fixture porte une racine ET une réponse — sinon tout ce qui suit est creux', () => {
+    const racines = fil.items.length;
+    const reponses = fil.items.reduce((n, r) => n + r.replies.length, 0);
+    expect(racines).toBeGreaterThanOrEqual(1);
+    expect(reponses).toBeGreaterThanOrEqual(1);
+    expect(lignes.length).toBe(racines + reponses);
+  });
+
+  /**
+   * §2.5 N'AUTORISE QU'UNE SEULE PROFONDEUR, et le cadre la dessine par un
+   * DÉCALAGE, pas par un arbre. Les deux valeurs — 48 px, 34 px sur mobile — sont
+   * celles de la maquette de A02, et elles ne sont pas celles de A01C (50 et 44).
+   * Les confondre ferait glisser les réponses de deux pixels sur l'un des deux
+   * écrans, et personne ne saurait lequel est juste.
+   */
+  it('une réponse est décalée, une racine ne l’est pas — et jamais un troisième niveau', () => {
+    const racines = lignes.filter((l) => l.indent === '0px');
+    const reponses = lignes.filter((l) => l.indent !== '0px');
+    expect(racines.length).toBe(fil.items.length);
+    for (const r of reponses) {
+      expect(r.indent).toBe('48px');
+      expect(r.indentM).toBe('34px');
+    }
+    // Deux décalages possibles, jamais trois : le troisième niveau n'existe pas.
+    expect(new Set(lignes.map((l) => l.indent))).toEqual(new Set(['0px', '48px']));
+  });
+
+  /**
+   * `canReply` SUIT LA PROFONDEUR, PAS UN DROIT. On répond à une racine, jamais à
+   * une réponse — le service répond `DEPTH_EXCEEDED` (mesuré 422). Proposer
+   * « Répondre » sous une réponse offrirait une action qui échoue toujours.
+   */
+  it('on ne propose de répondre qu’aux racines', () => {
+    for (const l of lignes) expect(l.canReply).toBe(l.indent === '0px');
+  });
+
+  /**
+   * L'HORODATAGE VIENT DU SERVEUR. « il y a 2 h » est composé côté API
+   * (`relativeTime`) ; le recalculer ici l'exposerait à l'horloge du navigateur, et
+   * un poste décalé afficherait « dans 3 h » sur un commentaire d'hier.
+   */
+  it('l’heure affichée est celle que le serveur compose, jamais une horloge locale', () => {
+    const attendus = fil.items.flatMap((r) => [r.relativeTime, ...r.replies.map((x) => x.relativeTime)]);
+    expect(lignes.map((l) => l.time)).toEqual(attendus);
+  });
+
+  /**
+   * LA CARTE « GUIDE » EST MORTE DANS LA MAQUETTE ELLE-MÊME — son balisage la
+   * dessine sous un `sc-if`, son `renderVals()` ne pose jamais le champ — et l'API
+   * n'a aucun champ pour la remplir. Elle arrive donc `null` : une carte affichée
+   * serait une affirmation sur le commentaire, et le clic ne mènerait nulle part.
+   */
+  it('aucune carte de guide n’est fabriquée sous un commentaire', () => {
+    for (const l of lignes) expect(l.guide).toBeNull();
+  });
+
+  /**
+   * AUCUN COMPTEUR DE « J'AIME » NE S'INVENTE. Aucune réaction de commentaire
+   * n'existe, ni en base ni dans aucune réponse. `commentThreadSchema` étant
+   * `.strict()`, un champ ajouté serait refusé à la frontière ; ici on vérifie que
+   * le convertisseur n'en fabrique pas un de son côté.
+   */
+  it('le convertisseur ne pose aucun compteur que l’API ne donne pas', () => {
+    for (const l of lignes) {
+      expect(Object.keys(l)).not.toContain('likes');
+      expect(Object.keys(l)).not.toContain('likeFg');
+    }
+  });
+
+  /**
+   * §2.5 : la modification est ouverte QUINZE MINUTES, et c'est le SERVEUR qui
+   * tranche. Le front ne recalcule pas l'écart entre `createdAt` et maintenant —
+   * il recopie `canEdit`.
+   */
+  it('le droit de modifier est celui du serveur, jamais un calcul d’ici', () => {
+    const attendus = fil.items.flatMap((r) => [r.canEdit, ...r.replies.map((x) => x.canEdit)]);
+    expect(lignes.map((l) => l.canEdit)).toEqual(attendus);
+  });
+});
+
+describe('`GET /posts/:id` sert déjà le fil, et A02 s’en sert', () => {
+  it('le détail porte la publication ET ses premiers commentaires', () => {
+    expect(detail.post.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(Array.isArray(detail.comments.items)).toBe(true);
+  });
+
+  it('les commentaires du détail se convertissent par le même chemin', () => {
+    const lignes = commentairesA02From(detail.comments.items);
+    expect(lignes.length).toBe(
+      detail.comments.items.length +
+        detail.comments.items.reduce((n, r) => n + r.replies.length, 0),
+    );
+  });
+});
+
+/**
+ * LES GUIDES RATTACHÉS N'ONT AUCUNE SOURCE, et ce test garde ce CONSTAT.
+ *
+ * Il rougirait le jour où quelqu'un remplirait la liste avec les trois guides
+ * d'exemple de la maquette — ce qui mettrait à l'écran trois rattachements
+ * affirmés sur une publication réelle, et un vote qui n'irait nulle part.
+ */
+describe('les guides rattachés à une publication', () => {
+  it('arrivent vides tant qu’aucune route n’en donne', () => {
+    expect(GUIDES_RATTACHES_SANS_SOURCE).toEqual([]);
+  });
+
+  it('et la réponse de détail n’en porte toujours aucun', () => {
+    expect(Object.keys(detail.post)).not.toContain('guides');
+    expect(Object.keys(detail.post)).not.toContain('relatedGuides');
+  });
+});

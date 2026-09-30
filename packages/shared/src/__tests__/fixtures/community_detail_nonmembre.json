@@ -1,0 +1,26 @@
+{
+  "id": "01a0f3b8-c8e9-7000-ba9a-4d00a53fdc38",
+  "kind": "INTEREST",
+  "name": "Reseau de mesure 1790795368666",
+  "slug": "reseau-de-mesure-1790795368666",
+  "description": "Cree pour relever les charges reelles de l API.",
+  "category": "cuisine",
+  "visibility": "PUBLIC",
+  "status": "ACTIVE",
+  "cityId": null,
+  "countryId": null,
+  "memberCount": 1,
+  "coverAssetId": null,
+  "lastActivityAt": "2026-09-30T19:09:28.835Z",
+  "createdAt": "2026-09-30T19:09:28.685Z",
+  "myRole": null,
+  "myStatus": null,
+  "canJoin": true,
+  "canLeave": false,
+  "counters": {
+    "members": 1,
+    "topics": 0,
+    "announcements": 0
+  },
+  "pinned": []
+}

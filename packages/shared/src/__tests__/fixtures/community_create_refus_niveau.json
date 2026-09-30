@@ -1,0 +1,12 @@
+{
+  "error": {
+    "code": "LEVEL_REQUIRED",
+    "message": "Cette action demande de vérifier votre compte.",
+    "details": {
+      "capability": "community.create",
+      "requiredLevel": "L1",
+      "currentLevel": "L0",
+      "labelFr": "créer un réseau"
+    }
+  }
+}

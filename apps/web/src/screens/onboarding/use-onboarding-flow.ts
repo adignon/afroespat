@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type { LevelRequiredDetailsParsed } from '@app/shared';
 import {
-  ApiClientError,
+  ApiError,
+  displayMessageFor,
   advanceOnboarding,
   fetchMe,
   listCities,
@@ -13,6 +15,7 @@ import {
   updateProfile,
   verifyOtp,
 } from '@/lib/api';
+import { createJourney, listJourneyTemplates } from '@/screens/parcours/api';
 import {
   type CityChoice,
   type CountryChoice,
@@ -24,6 +27,7 @@ import {
   type ScreenActions,
   useOnboarding,
 } from './data';
+import { toTemplateChoices, type JourneyTemplateChoice } from './from-api';
 import { REASON_EXPIRED } from './resume';
 
 /**
@@ -42,7 +46,6 @@ import { REASON_EXPIRED } from './resume';
 
 const CHALLENGE_KEY = 'dp_otp_challenge';
 
-
 /** L'écran suivant, par chemin. L'ordre est celui de §5. */
 const NEXT_PATH: Record<number, string> = {
   1: '/bienvenue/phase',
@@ -54,11 +57,78 @@ const NEXT_PATH: Record<number, string> = {
 
 const PHASES = ['PRE_DEPARTURE', 'RECENT_ARRIVAL', 'SETTLED'] as const;
 
+/**
+ * L'écran O03, celui de l'objectif.
+ *
+ * Nommé plutôt qu'écrit en chiffre à trois endroits : c'est LUI qui charge les
+ * modèles de parcours, et ce n'est pas un détail d'implémentation — appeler
+ * `GET /journey-templates` depuis P01, avant l'OTP, enverrait un `401` puis un
+ * rafraîchissement sans cookie, ce qui marque la session MORTE avant même
+ * qu'elle naisse. Le membre verrait ensuite « session expirée » sur un écran
+ * d'inscription, et la cause serait invisible.
+ */
+const STEP_OBJECTIF = 4;
+
+/**
+ * Les refus de `POST /journeys` qui ne doivent PAS arrêter l'inscription.
+ *
+ * Décidé sur le CODE, jamais sur le message (§5.2) : « Vous avez déjà un parcours
+ * actif » est une phrase que l'équipe des textes peut réécrire demain, et un
+ * `if (message === …)` casserait alors en silence — en bloquant l'inscription.
+ */
+const TOLERATED_ON_CREATE: ReadonlySet<string> = new Set([
+  'PLAN_LIMIT_REACHED',
+  'LOCATION_REQUIRED',
+]);
+
+/**
+ * LE PSEUDO REFUSÉ MÉRITE SA PHRASE — trouvé en faisant le tour au navigateur.
+ *
+ * `PATCH /me` refuse un pseudo déjà pris par un `409 CONFLICT`, avec
+ * `details: { field: 'handle', reason: 'HANDLE_TAKEN' }`. Le catalogue partagé
+ * traduit `CONFLICT` par « Cette action n'est plus possible dans l'état actuel. »
+ * — ce qui est juste pour la plupart des conflits et INCOMPRÉHENSIBLE ici : le
+ * membre vient de taper un pseudo, il lit une phrase qui ne parle pas de pseudo, et
+ * rien ne lui dit qu'il suffit d'en choisir un autre. L'inscription s'arrête au
+ * cinquième écran sur six.
+ *
+ * Mesuré, pas supposé : le parcours de bout en bout est tombé exactement là, sur
+ * un pseudo qu'une exécution précédente avait pris.
+ *
+ * On décide sur `code` PUIS sur `details.field` — jamais sur le message, qui est du
+ * texte d'interface et sera réécrit (§5.2). Les autres conflits gardent la phrase du
+ * catalogue : préciser ceux qu'on ne connaît pas serait inventer leur cause.
+ */
+const CONFLITS_DE_PSEUDO: Readonly<Record<string, string>> = {
+  HANDLE_TAKEN: 'Ce pseudo est déjà pris. Choisissez-en un autre.',
+  HANDLE_RESERVED: 'Ce pseudo est réservé. Choisissez-en un autre.',
+};
+
+function messagePourEchec(cause: unknown): string {
+  if (cause instanceof ApiError && cause.is('CONFLICT') && cause.details['field'] === 'handle') {
+    const raison = cause.details['reason'];
+    const precise = typeof raison === 'string' ? CONFLITS_DE_PSEUDO[raison] : undefined;
+    if (precise !== undefined) return precise;
+  }
+  return displayMessageFor(cause);
+}
+
 export interface FlowResult {
   readonly vals: OnboardingVals;
   readonly state: OnboardingState;
   /** Message d'erreur à afficher, ou `null`. Vient du serveur (§5.2). */
   readonly error: string | null;
+  /**
+   * Les détails d'un `403 LEVEL_REQUIRED`, ou `null`.
+   *
+   * SÉPARÉS de `error`, et ce n'est pas du rangement : 00 §7.3 exige une
+   * INVITATION à monter de niveau, « jamais une simple erreur ». Les mêler
+   * aurait fait afficher « Cette action demande de vérifier votre compte » dans
+   * la bannière orange des refus — une porte fermée là où il faut un chemin.
+   */
+  readonly levelRequired: LevelRequiredDetailsParsed | null;
+  /** Ferme l'invitation sans rien changer au compte. */
+  readonly dismissLevelRequired: () => void;
 }
 
 /**
@@ -68,6 +138,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
+  const [levelRequired, setLevelRequired] = useState<LevelRequiredDetailsParsed | null>(null);
 
   /**
    * L'état vivant, lu par les gestionnaires.
@@ -137,17 +208,64 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     };
   }, []);
 
+  /**
+   * Le catalogue des modèles de parcours (03 §2.1), chargé au seul écran O03.
+   *
+   * Vide ailleurs, et volontairement : voir `STEP_OBJECTIF`. Un échec ne doit pas
+   * empêcher de s'inscrire — les cartes de la maquette s'affichent alors sans
+   * nombre d'étapes, et « Continuer » n'essaiera simplement pas de créer.
+   */
+  const [templates, setTemplates] = useState<readonly JourneyTemplateChoice[]>([]);
+
+  useEffect(() => {
+    if (step !== STEP_OBJECTIF) return undefined;
+    let alive = true;
+    void listJourneyTemplates()
+      .then((response) => {
+        // La conversion vit dans `from-api.ts`, avec son test : c'est là que se
+        // décide que le nombre d'étapes vient de la VERSION du modèle et non de
+        // la maquette, et cette décision mérite mieux qu'un test de navigateur.
+        if (alive) setTemplates(toTemplateChoices(response));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [step]);
+
   const run = useCallback(async (work: () => Promise<void>) => {
     setBusy(true);
     setError(null);
+    setLevelRequired(null);
     try {
       await work();
     } catch (cause) {
-      setError(
-        cause instanceof ApiClientError
-          ? cause.displayMessage
-          : 'Connexion impossible. Vérifiez votre réseau et réessayez.',
-      );
+      /**
+       * ON DÉCIDE SUR `error.code`, ET `displayMessageFor` FAIT LE RESTE.
+       *
+       * Deux corrections tiennent dans ces six lignes, et les deux étaient des
+       * messages faux :
+       *
+       *   · `instanceof ApiError` ne rattrape PAS `ApiShapeError` — c'est
+       *     délibéré dans le socle. Le repli « Connexion impossible » habillait
+       *     donc un CONTRAT CASSÉ en panne de réseau : on faisait vérifier son
+       *     wifi à un membre pendant que l'API avait changé de forme.
+       *     `displayMessageFor` traite les trois échecs, chacun avec sa phrase ;
+       *
+       *   · un `429` sur `POST /auth/otp/request` (10 par HEURE et par IP) porte
+       *     `Retry-After: 3600`. Le message du serveur dit « patientez un
+       *     instant ». `ApiError.displayMessage` le remplace par « réessayez dans
+       *     une heure », et chaque essai de trop coûte un SMS aux autres derrière
+       *     le même NAT. On ne rejoue donc JAMAIS un `429` ici : l'erreur remonte
+       *     telle quelle, sans nouvelle tentative.
+       */
+      const invitation = cause instanceof ApiError ? cause.levelRequired : null;
+      if (invitation !== null) {
+        // §7.3 : une invitation, pas une erreur. La bannière reste vide.
+        setLevelRequired(invitation);
+      } else {
+        setError(messagePourEchec(cause));
+      }
     } finally {
       setBusy(false);
     }
@@ -221,8 +339,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     void run(async () => {
       const state = latest.current;
 
-      // Chaque écran écrit ce qui lui appartient (§5). O03 crée le parcours, qui
-      // relève du module 03 : rien à écrire ici pour l'instant.
+      // Chaque écran écrit ce qui lui appartient (§5).
       if (step === 2 && state !== null) {
         await updateMe({ phase: PHASES[state.phase] ?? 'PRE_DEPARTURE' });
       }
@@ -247,6 +364,46 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       }
 
       /**
+       * Écran 4 — l'objectif, et la CRÉATION DU PARCOURS (03 §3.1).
+       *
+       * « Créer mon parcours maintenant » était une case qui ne créait rien. Elle
+       * est maintenant tenue : `POST /journeys` part avec le modèle mis en avant
+       * par la maquette, et le membre arrive sur O05 avec un vrai parcours.
+       *
+       * TROIS REFUS SONT NORMAUX ICI, et aucun ne doit arrêter l'inscription — le
+       * parcours est un bonus de §5, pas une étape obligatoire (« le parcours
+       * n'est jamais imposé », règle dure de 03 §1.2) :
+       *
+       *   · `PLAN_LIMIT_REACHED` — un parcours actif existe déjà en gratuit. Un
+       *     membre qui repasse par O03 après avoir déjà créé son parcours le
+       *     rencontre, et c'est le cas NORMAL. L'arrêter là lui interdirait de
+       *     finir son inscription pour une raison qui n'en est pas une ;
+       *   · `LOCATION_REQUIRED` — la ville n'a pas été renseignée à O02, qui est
+       *     passable. Mesuré sur l'API : la création est refusée avant O02 ;
+       *   · `LEVEL_REQUIRED`     — `journey.create` est L0 dans la matrice §7.3,
+       *     donc ce refus ne devrait pas venir. S'il vient, c'est que la matrice a
+       *     changé, et l'invitation du §7.3 s'affiche — sans bloquer l'écran.
+       *
+       * L'AVANCEMENT EST ENREGISTRÉ QUAND MÊME, et c'est là le point : `advance`
+       * est APRÈS ce bloc, hors du chemin d'échec. Faire échouer l'écran sur un
+       * `PLAN_LIMIT_REACHED` aurait bloqué l'inscription au quatrième écran sur six
+       * — la pire façon de perdre un membre, pour un parcours qu'il a déjà.
+       */
+      if (step === STEP_OBJECTIF && state !== null && state.create) {
+        const chosen = templates[0];
+        if (chosen !== undefined) {
+          try {
+            await createJourney({ templateId: chosen.id });
+          } catch (cause) {
+            if (!(cause instanceof ApiError)) throw cause;
+            const invitation = cause.levelRequired;
+            if (invitation !== null) setLevelRequired(invitation);
+            else if (!TOLERATED_ON_CREATE.has(cause.code)) throw cause;
+          }
+        }
+      }
+
+      /**
        * Écran 5 — le profil (§5).
        *
        * Deux routes, parce que ce sont deux tables : `users` porte le nom et le
@@ -256,7 +413,8 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
        */
       if (step === 5 && state !== null) {
         const identity: Record<string, unknown> = {};
-        if (state.displayName.trim().length >= 2) identity['displayName'] = state.displayName.trim();
+        if (state.displayName.trim().length >= 2)
+          identity['displayName'] = state.displayName.trim();
         const handle = finalHandle(state.handle);
         if (handle.length >= 3) identity['handle'] = handle;
         if (Object.keys(identity).length > 0) await updateMe(identity);
@@ -273,11 +431,14 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       await advanceOnboarding(step);
       router.push(NEXT_PATH[step] ?? '/accueil');
     });
-  }, [router, run, step]);
+    // `templates` est dans la liste : sans lui, `onContinue` garderait la liste
+    // vide du premier rendu et la case « Créer mon parcours » ne créerait rien —
+    // exactement le défaut qu'on vient de corriger, réintroduit par une clôture.
+  }, [countryOptions, router, run, step, templates]);
 
   const actions: ScreenActions = useMemo(
-    () => ({ busy, onSubmit, onContinue, countryOptions, cityCatalogue }),
-    [busy, onSubmit, onContinue, countryOptions, cityCatalogue],
+    () => ({ busy, onSubmit, onContinue, countryOptions, cityCatalogue, templates }),
+    [busy, onSubmit, onContinue, countryOptions, cityCatalogue, templates],
   );
 
   const { state, vals } = useOnboarding(actions);
@@ -302,5 +463,13 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     [vals, verify],
   );
 
-  return { state, error, vals: { ...vals, onCodeChange } };
+  const dismissLevelRequired = useCallback(() => setLevelRequired(null), []);
+
+  return {
+    state,
+    error,
+    levelRequired,
+    dismissLevelRequired,
+    vals: { ...vals, onCodeChange },
+  };
 }

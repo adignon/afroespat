@@ -4,9 +4,9 @@
 // Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
-import type { AccueilData } from '../accueil/data';
+import type { A04Data } from './data';
 
-export function A04Mobile(_props: AccueilData) {
+export function A04Mobile(_props: A04Data) {
   return (
     <>
       <main style={{ display: "contents" }}>

@@ -549,15 +549,43 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     // boucle ou saute.
     const seen: string[] = [];
     let cursor: string | undefined;
-    for (let page = 0; page < 12; page += 1) {
+    /**
+     * LE PLAFOND N'EST PAS UNE BORNE DE CORRECTION, c'est un garde-fou contre une
+     * boucle infinie — et il doit le DIRE quand c'est lui qui arrête.
+     *
+     * Il valait 12 pages de 2, soit 24 éléments, ce qui suffisait quand le fil de
+     * développement était presque vide. Le fil a grossi ; le test a vu ses 24
+     * éléments, s'est arrêté sur son plafond, et a conclu qu'une publication était
+     * PERDUE. Il accusait la pagination de ce que sa propre borne causait — le même
+     * défaut qu'un test de collage calibré sur cinq publications d'exemple, qui
+     * mesurait la hauteur du contenu en croyant mesurer le `sticky`.
+     *
+     * Deux changements, et le second compte plus que le premier :
+     *   · le plafond suit la taille du fil au lieu d'être un nombre écrit à la main ;
+     *   · atteindre le plafond est un ÉCHEC NOMMÉ, pas une sortie silencieuse. Sans
+     *     cela, la prochaine fois que le fil grandira, le test remettra la faute sur
+     *     le curseur.
+     */
+    const totalPublications = await prisma.post.count({ where: { deletedAt: null } });
+    const plafond = Math.ceil(totalPublications / 2) + 4;
+    let arretParFinDeFil = false;
+    for (let page = 0; page < plafond; page += 1) {
       const result = await feed.feed(
         reader,
         feedQuerySchema.parse(cursor === undefined ? { limit: 2 } : { limit: 2, cursor }),
       );
       seen.push(...result.items.map((i) => (i as { id: string }).id));
-      if (result.nextCursor === null) break;
+      if (result.nextCursor === null) {
+        arretParFinDeFil = true;
+        break;
+      }
       cursor = result.nextCursor;
     }
+
+    expect(
+      arretParFinDeFil,
+      `la pagination n’a pas atteint la fin du fil en ${plafond} pages : c’est le plafond du test qui a arrêté, pas le curseur`,
+    ).toBe(true);
 
     expect(new Set(seen).size).toBe(seen.length); // aucune répétition
     for (const id of expectedIds) expect(seen).toContain(id);

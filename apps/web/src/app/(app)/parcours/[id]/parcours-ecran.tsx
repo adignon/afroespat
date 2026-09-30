@@ -1,6 +1,7 @@
 'use client';
 
 import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage, plancheJalon } from '@/screens/parcours/modales';
 import { J01Desktop } from '@/screens/j01/desktop.generated';
 import { J01Mobile } from '@/screens/j01/mobile.generated';
@@ -52,9 +53,7 @@ export function ParcoursEcran({ etat }: { readonly etat: EtatParcours }) {
    * dessous, que le transcodeur retire. Inventer ce contrôle serait réécrire la
    * maquette ; laisser l'état inatteignable serait livrer une planche morte.
    */
-  const { ouverte, onOuvrir, onFermer, volet, data } = useParcours(
-    etat === 'parcours' ? 'J01M' : null,
-  );
+  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(etat === 'parcours' ? 'J01M' : null, useContexteParcours());
 
   const desktop =
     etat === 'vide' ? (
@@ -93,6 +92,9 @@ export function ParcoursEcran({ etat }: { readonly etat: EtatParcours }) {
         J05I: { mobile: <J05MobileInvitation {...data} /> },
         J01M: { mobile: <J01MMobile {...data} />, mobileOnly: true },
       }}
+      erreur={erreur}
+      niveauRequis={niveauRequis}
+      oublierNiveauRequis={oublierNiveauRequis}
     />
   );
 }

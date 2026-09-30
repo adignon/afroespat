@@ -6,6 +6,7 @@ import { useCallback, useMemo, useState } from 'react';
 // client au lieu de l'objet — le piège déjà payé sur `resume.ts` (voir
 // docs/decisions.md). Un type, lui, est effacé à la compilation.
 import type { HelpType, OccupationStatus } from '@app/shared';
+import { createAnnounce, goalCards, type GoalCard, type JourneyTemplateChoice } from './from-api';
 
 /**
  * Données et état des écrans d'accès et d'onboarding.
@@ -242,29 +243,16 @@ const PHASE_CARDS = [
   },
 ] as const;
 
-/** `on` explicite sur chaque carte : sans lui, `as const` donne quatre types
- *  différents et `g.on` n'existe que sur la première. */
-const GOAL_CARDS: readonly {
-  readonly title: string;
-  readonly steps: string;
-  readonly icon: string;
-  readonly on: boolean;
-}[] = [
-  { title: 'Étudier', steps: '12 étapes', icon: 'M2 9 12 4l10 5-10 5zM6 11v5c3 2 9 2 12 0v-5', on: true },
-  { title: 'Travailler', steps: '10 étapes', icon: 'M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', on: false },
-  {
-    title: 'Rejoindre ma famille',
-    steps: '9 étapes',
-    icon: 'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5',
-    on: false,
-  },
-  {
-    title: 'Régulariser ma situation',
-    steps: '8 étapes',
-    icon: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5',
-    on: false,
-  },
-];
+/**
+ * Les cartes d'objectif et la phrase d'engagement viennent de `from-api.ts`.
+ *
+ * Elles y sont parce que ce sont des CONVERSIONS — de la réponse de l'API vers
+ * les prises du JSX — et non des valeurs de la maquette. Les garder ici les
+ * rendait inéprouvables sans monter un navigateur : la règle « le nombre d'étapes
+ * vient du serveur, jamais de la maquette » n'était gardée que par un test de
+ * bout en bout. C'est la forme que le branchement de A01 a posée : `api.ts` pour
+ * les appels, `from-api.ts` pour la conversion, `use-*.ts` pour l'état.
+ */
 
 /**
  * Ce que la PAGE fournit : l'appel à l'API et son état d'attente.
@@ -307,6 +295,19 @@ export interface ScreenActions {
   readonly countryOptions: readonly CountryChoice[];
   /** Les villes du pays de destination, chargées une fois (02 §2.2). */
   readonly cityCatalogue: readonly CityChoice[];
+  /**
+   * Les modèles de parcours, chargés depuis `GET /journey-templates` (03 §2.1).
+   *
+   * VIDE tant que l'appel n'a pas répondu, et vide aussi sur les écrans qui n'en
+   * ont pas besoin : la route demande un jeton, donc l'appeler depuis P01 —
+   * avant l'OTP — enverrait un `401` puis un rafraîchissement sans cookie, ce qui
+   * marque la session morte avant même qu'elle naisse.
+   *
+   * Tant qu'elle est vide, O03 montre les quatre cartes de la maquette, sans
+   * nombre d'étapes : le nombre est la seule chose qu'on ne peut pas afficher
+   * sans mentir, et un écran vide serait pire.
+   */
+  readonly templates: readonly JourneyTemplateChoice[];
 }
 
 export interface OnboardingVals extends ScreenActions {
@@ -394,15 +395,16 @@ export interface OnboardingVals extends ScreenActions {
     readonly metaBg: string;
     readonly onPick: () => void;
   }[];
-  readonly goals: readonly {
-    readonly title: string;
-    readonly steps: string;
-    readonly icon: string;
-    readonly on: boolean;
+  /**
+   * Les cartes d'objectif : ce que `from-api.ts` en tire, plus les couleurs que la
+   * maquette leur donne. `GoalCard` n'est pas recopié ici — une seconde définition
+   * de la même forme divergerait au premier champ ajouté.
+   */
+  readonly goals: readonly (GoalCard & {
     readonly bg: string;
     readonly bd: string;
     readonly iconBg: string;
-  }[];
+  })[];
   readonly statuses: readonly Chip[];
   readonly create: boolean;
   readonly toggleCreate: () => void;
@@ -589,7 +591,21 @@ export function onboardingVals(
       };
     }),
 
-    goals: GOAL_CARDS.map((g) => ({
+    /**
+     * Les cartes d'objectif, alimentées par `GET /journey-templates`.
+     *
+     * LA MAQUETTE NE LES REND PAS CLIQUABLES — ni le cadre de 1440 px ni celui
+     * de 390 px : elles sont dessinées en `<div>`, sans déclencheur, et la
+     * première est simplement mise en avant. On n'ajoute donc PAS de sélecteur.
+     * Le seul contrôle de cet écran est la case « Créer mon parcours maintenant »,
+     * et c'est elle que `onContinue` respecte.
+     *
+     * Conséquence à connaître, et à remonter plutôt qu'à corriger d'autorité : le
+     * parcours créé est celui du PREMIER modèle servi — celui que la maquette
+     * met en avant. Le choix réel du type se fait sur J02 (`/parcours/nouveau`),
+     * où la maquette dessine bien quatre cartes sélectionnables.
+     */
+    goals: goalCards(actions.templates).map((g) => ({
       ...g,
       bg: g.on ? '#EFF7F3' : '#fff',
       bd: g.on ? '2px solid #16785E' : '1px solid #E6EBE9',
@@ -605,9 +621,21 @@ export function onboardingVals(
     toggleCreate: () => patch({ create: !state.create }),
     createBg: state.create ? '#16785E' : '#fff',
     createBd: state.create ? 'none' : '1.5px solid #CBD5D1',
-    createHelp: state.create
-      ? 'Le parcours « Étudier » (12 étapes) sera créé à la fin de l’inscription.'
-      : 'Aucun parcours ne sera créé. Vous pourrez en créer un plus tard depuis Parcours.',
+    /**
+     * La phrase sous la case, avec le NOM et le NOMBRE D'ÉTAPES du vrai modèle.
+     *
+     * La maquette écrit « Le parcours « Étudier » (12 étapes) sera créé » : c'est
+     * une illustration, et son nombre est faux depuis que le modèle `STUDIES` est
+     * en version 3 (15 étapes, mesuré sur l'API). La phrase est un ENGAGEMENT —
+     * elle annonce ce qui va être créé — donc elle se dérive de la réponse.
+     *
+     * Tant que la liste n'est pas arrivée, on annonce le parcours sans le
+     * chiffrer : promettre un nombre qu'on ne connaît pas est exactement la faute
+     * que la maquette commettait.
+     */
+    createHelp: !state.create
+      ? 'Aucun parcours ne sera créé. Vous pourrez en créer un plus tard depuis Parcours.'
+      : createAnnounce(actions.templates),
 
     help: state.help,
     toggleHelp: () => patch({ help: !state.help }),

@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "01a0f3b9-e70c-7000-9c8d-b8b326d46ab0",
+      "type": "DISCUSSION",
+      "body": "Une publication de mesure dans le reseau.",
+      "createdAt": "2026-09-30T19:10:41.933Z",
+      "reactionCount": 0,
+      "commentCount": 0,
+      "author": {
+        "id": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+        "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
+        "displayName": ""
+      }
+    }
+  ],
+  "nextCursor": null
+}

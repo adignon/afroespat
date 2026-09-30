@@ -6,6 +6,7 @@ import {
   PlanCode,
   PlanInterval,
   SubscriptionStatus,
+  UsageMetric,
 } from '../enums/generated.js';
 import { cursorQuerySchema, uuidSchema } from './pagination.js';
 
@@ -547,3 +548,145 @@ export function monthKeyOf(date: Date): string {
 export function nextMonthStart(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1, 0, 0, 0, 0));
 }
+
+// ── Réponses (§7.1, §4.3, §4.4, §4.5) ───────────────────────────────────────
+
+/**
+ * Un montant, tel que toute route de ce module l'envoie : des CENTIMES entiers et
+ * une devise, jamais un flottant.
+ *
+ * §4.1 et la table `payments` sont d'accord là-dessus, et c'est la seule forme qui
+ * ne perde rien : `2600 / 100` donne 26 en EUR, mais un XOF n'a pas de centime et
+ * un arrondi de flottant sur une facture est une erreur comptable. Le front
+ * formate à l'affichage ; il ne convertit pas.
+ */
+export const moneyResponseSchema = z.object({
+  amountCents: z.number().int(),
+  currency: z.string(),
+});
+
+/**
+ * `GET /plans` (§7.1) — LES DEUX DEVISES, toujours.
+ *
+ * Le serveur n'en choisit pas une : « le membre peut être béninois en France, ou
+ * français au Bénin, et le pays déduit d'une IP serait faux la moitié du temps ».
+ * L'écran K06 montre celle qui correspond au canal de paiement choisi.
+ */
+export const plansResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      code: z.enum(PlanCode),
+      nameFr: z.string(),
+      month: z.object({ eur: moneyResponseSchema, xof: moneyResponseSchema }),
+      year: z.object({ eur: moneyResponseSchema, xof: moneyResponseSchema }),
+      limits: planLimitsSchema,
+    }),
+  ),
+});
+
+export type PlansResponse = z.infer<typeof plansResponseSchema>;
+
+/** Un abonnement tel que `GET /me/subscription` le montre (§4.3). */
+const subscriptionViewSchema = z.object({
+  id: uuidSchema,
+  planCode: z.enum(PlanCode),
+  status: z.enum(SubscriptionStatus),
+  provider: z.enum(PaymentProviderKind),
+  /** Dérivé, faute de colonne `is_trial` (§6). */
+  isTrial: z.boolean(),
+  currentPeriodStart: z.string().datetime(),
+  currentPeriodEnd: z.string().datetime(),
+  cancelAtPeriodEnd: z.boolean(),
+  /** Dérivée, et SEULEMENT pour Mobile Money (§4.2) : trois jours de grâce. */
+  graceUntil: z.string().datetime().nullable(),
+  cancelledAt: z.string().datetime().nullable(),
+});
+
+/**
+ * `GET /me/subscription` (§4.3, §4.5).
+ *
+ * `items` PLUTÔT QU'UN OBJET, et ce n'est pas une maladresse de l'API : un membre
+ * peut porter deux abonnements à la fois — Premium et Pro sont des plans
+ * différents (§3) — et `history` porte en plus les expirés, parce qu'« un membre
+ * dont l'abonnement vient d'expirer doit pouvoir le constater plutôt que de voir
+ * un écran vide qui laisse croire qu'il n'a jamais payé ».
+ *
+ * `usage.items[].limit` vaut `null` pour « illimité ». L'écran affiche « illimité »,
+ * jamais « 0 sur null » — le commentaire du service le dit déjà, et le schéma le
+ * rend vérifiable.
+ */
+export const mySubscriptionResponseSchema = z.object({
+  items: z.array(subscriptionViewSchema),
+  history: z.array(subscriptionViewSchema),
+  trial: z.object({
+    used: z.boolean(),
+    active: z.boolean(),
+    endsAt: z.string().datetime().nullable(),
+  }),
+  usage: z.object({
+    /** `AAAA-MM`, la clé de `usage_counters.period_key`. */
+    periodKey: monthKeySchema,
+    resetsAt: z.string().datetime(),
+    items: z.array(
+      z.object({
+        metric: z.enum(UsageMetric),
+        used: z.number().int(),
+        limit: z.number().int().nullable(),
+      }),
+    ),
+  }),
+});
+
+export type MySubscriptionResponse = z.infer<typeof mySubscriptionResponseSchema>;
+
+/**
+ * `GET /me/payments` (§4.4) — l'historique des factures.
+ *
+ * RÈGLE DURE §4.1 : aucune donnée de carte ne transite par le serveur. Ce schéma
+ * en est une preuve exécutable côté lecture : il n'y a ni numéro, ni empreinte, ni
+ * quatre derniers chiffres, ni date d'expiration. `method` est un KIND — `CARD`,
+ * `MOBILE_MONEY` — c'est-à-dire le CANAL, pas l'instrument. Si l'API se mettait un
+ * jour à joindre un `last4`, la validation de réponse le refuserait au lieu de le
+ * laisser atteindre l'écran.
+ *
+ * `nextCursor` est là et vaut toujours `null` : le service ne pagine pas encore
+ * cette liste, et le déclarer `z.null()` dirait faux le jour où il le fera.
+ *
+ * ── `.strict()` SUR LA LIGNE DE PAIEMENT, ET C'EST LÀ QUE TIENT LA RÈGLE ────
+ *
+ * Sans lui, ce schéma DÉPOUILLE en silence une clé qu'il ne connaît pas : une API
+ * qui se mettrait à joindre `last4`, `fingerprint` ou `exp_month` verrait sa réponse
+ * acceptée, la donnée n'atteindrait pas l'écran, et tout le monde conclurait que la
+ * règle est tenue. Elle ne le serait pas : §4.1 dit « aucune donnée de carte ne
+ * TRANSITE par le serveur », et une donnée dépouillée à l'arrivée a transité.
+ *
+ * Avec `.strict()`, elle lève `ApiShapeError` — un INCIDENT, pas un message métier,
+ * et `ApiShapeError` n'hérite pas d'`ApiError` précisément pour qu'aucun `catch`
+ * métier ne puisse l'avaler. La règle cesse d'être une consigne de relecture et
+ * devient un refus.
+ *
+ * CE N'EST PAS UNE PRÉCAUTION THÉORIQUE : la mutation qui ajoute `last4: '4242'` au
+ * service de facturation ne faisait ROUGIR AUCUN TEST avant ce `.strict()`. Le test
+ * de bout en bout qui balayait le corps des trois routes restait vert, parce qu'un
+ * membre neuf n'a aucun paiement — `items` est vide, il n'y avait rien à trouver.
+ * Un test qui ne peut pas échouer est un test creux, et celui-là l'était à moitié.
+ */
+export const paymentViewSchema = z
+  .object({
+    id: uuidSchema,
+    amount: moneyResponseSchema,
+    provider: z.enum(PaymentProviderKind),
+    method: z.enum(PaymentMethodKind),
+    status: z.enum(PaymentStatus),
+    invoiceNumber: z.string().nullable(),
+    paidAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export const myPaymentsResponseSchema = z.object({
+  items: z.array(paymentViewSchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type MyPaymentsResponse = z.infer<typeof myPaymentsResponseSchema>;

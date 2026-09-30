@@ -1,0 +1,15 @@
+{
+  "items": [
+    {
+      "id": "01a0f3b8-c959-7000-9d27-13959990daf8",
+      "body": "Une annonce de mesure.",
+      "createdAt": "2026-09-30T19:09:28.794Z",
+      "author": {
+        "id": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+        "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
+        "displayName": ""
+      }
+    }
+  ],
+  "nextCursor": null
+}

@@ -5,6 +5,7 @@ import { P01Mobile } from '@/screens/p01/mobile.generated';
 import { useOnboardingFlow } from '@/screens/onboarding/use-onboarding-flow';
 import { ScreenFrames } from '@/screens/frames';
 import { FlowError } from '@/screens/onboarding/flow-error';
+import { LevelInvitation } from '@/components/level-invitation';
 
 /**
  * P01 — Votre numéro de téléphone. Écran 1 des six de §5.
@@ -14,7 +15,7 @@ import { FlowError } from '@/screens/onboarding/flow-error';
  * « 97 12 34 42 » devient le `placeholder` — ce qu'il était déjà.
  */
 export function ConnexionScreen({ initialError }: { readonly initialError: string | null }) {
-  const { vals, error } = useOnboardingFlow(1, initialError);
+  const { vals, error, levelRequired, dismissLevelRequired } = useOnboardingFlow(1, initialError);
 
   return (
     <>
@@ -24,6 +25,7 @@ export function ConnexionScreen({ initialError }: { readonly initialError: strin
         mobile={<P01Mobile {...vals} />}
       />
       <FlowError message={error} />
+      <LevelInvitation details={levelRequired} onClose={dismissLevelRequired} />
     </>
   );
 }

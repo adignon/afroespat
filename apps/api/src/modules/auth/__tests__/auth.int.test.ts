@@ -133,6 +133,69 @@ describe('authentification (01 §2.1)', () => {
     expect(challenge.phoneHmac).not.toContain(phone.replace(/^0+/, ''));
   });
 
+  // ── RÈGLE DURE : `is_destination` se DÉRIVE de `countries.kind` ────────────
+
+  /**
+   * LE DÉFAUT HISTORIQUE DE CE CHEMIN, ET LA RAISON DE CES DEUX TESTS.
+   *
+   * `phone_numbers.is_destination` était CODÉ EN DUR à `false` à la création du
+   * compte. Conséquence : un membre s'inscrivant avec un numéro français restait
+   * à L1 POUR TOUJOURS — jamais L2 — sans message ni recours, puisque
+   * `VerificationLevelService` cherche un numéro `isDestination: true` sous un
+   * pays actif et n'en trouvait aucun. Rien ne cassait, rien ne le disait.
+   *
+   * Mesuré en reposant le défaut : remettre `const isDestination = false;` ici ne
+   * faisait tomber qu'UN test, et pour une raison accidentelle (une précondition
+   * de fixture sur les doublons de numéro). La montée L1 → L2 restait verte,
+   * parce qu'elle passe par `POST /me/phones` — un AUTRE site d'écriture, dans
+   * `phones.service.ts`. Le chemin de l'INSCRIPTION n'était donc pas gardé, et
+   * c'est exactement celui où le défaut avait vécu.
+   *
+   * D'où ces deux tests, qui portent sur la COLONNE et non sur le niveau : ils
+   * disent que la valeur est DÉRIVÉE, dans les deux sens. Un seul des deux ne
+   * suffirait pas — `true` partout et `false` partout passent chacun la moitié.
+   */
+  it('pose `is_destination` sur un numéro de pays DESTINATION, à l’inscription', async () => {
+    const { userId } = await signIn(nextPhone(), 'FR');
+
+    const stored = await prisma.phoneNumber.findFirstOrThrow({
+      where: { userId },
+      select: { isDestination: true, country: { select: { iso2: true, kind: true } } },
+    });
+
+    // La valeur n'est pas recopiée d'ailleurs : elle vient de `countries.kind`.
+    expect(stored.country.iso2).toBe('FR');
+    expect(stored.country.kind).toBe('DESTINATION');
+    expect(
+      stored.isDestination,
+      'Un numéro d’un pays DESTINATION doit porter `is_destination`. Sans lui, le ' +
+        'membre reste à L1 pour toujours, sans message ni recours — le défaut ' +
+        'historique de ce chemin.',
+    ).toBe(true);
+  });
+
+  it('ne le pose PAS sur un numéro de pays d’ORIGINE', async () => {
+    const { userId } = await signIn(nextPhone(), 'BJ');
+
+    const stored = await prisma.phoneNumber.findFirstOrThrow({
+      where: { userId },
+      select: { isDestination: true, country: { select: { iso2: true, kind: true } } },
+    });
+
+    expect(stored.country.iso2).toBe('BJ');
+    expect(stored.country.kind).toBe('ORIGIN');
+    /**
+     * 00 §7.2 : L2 veut dire « personne réelle PRÉSENTE SUR LE TERRITOIRE ». Un
+     * numéro béninois n'atteste aucune présence en France — c'est précisément ce
+     * que le passage du Bénin en `BOTH` avait cassé.
+     */
+    expect(
+      stored.isDestination,
+      'Un numéro d’un pays d’ORIGINE ne doit pas porter `is_destination` : il ' +
+        'ferait prouver une présence en France à qui n’y est pas.',
+    ).toBe(false);
+  });
+
   // ── RÈGLE DURE : révocation de la chaîne en cas de réutilisation ───────────
 
   describe('rotation et rejeu du jeton de rafraîchissement', () => {

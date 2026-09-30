@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "01a0f3b8-c97f-7000-bf04-5991cbcbec06",
+      "title": "Album de mesure",
+      "eventId": null,
+      "createdAt": "2026-09-30T19:09:28.833Z",
+      "createdBy": {
+        "id": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+        "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
+        "displayName": ""
+      },
+      "photoCount": 0,
+      "photos": []
+    }
+  ],
+  "nextCursor": null
+}

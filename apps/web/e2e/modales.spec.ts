@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -17,9 +19,107 @@ import { expect, test, type Page } from '@playwright/test';
 /** Ce fichier pilote lui-même ses tailles : un seul projet suffit. */
 test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
+/**
+ * LE FIL EST SERVI PAR DES CHARGES RELEVÉES, ET IL DOIT L'ÊTRE.
+ *
+ * Ces tests échouaient tous, et pour une raison qu'il faut nommer : depuis que le
+ * fil est branché sur l'API, ses cartes — donc les DÉCLENCHEURS des deux fenêtres,
+ * qui vivent dans la boucle des publications — n'existent que s'il y a des
+ * publications. Un navigateur de test arrive sans session : `GET /feed` répond
+ * `401`, le fil est vide, et `[data-modal-open]` ne désigne plus rien. Les
+ * quatorze tests attendaient un bouton qui ne pouvait pas être là.
+ *
+ * Ouvrir une vraie session dans ces tests serait le mauvais remède : ils éprouvent
+ * la FORME et les promesses d'`aria-modal`, pas l'authentification, et ils ne
+ * doivent pas se mettre à dépendre d'un jeu de données en base.
+ *
+ * Les charges viennent donc de `packages/shared/src/__tests__/fixtures/` — les
+ * mêmes réponses relevées OCTET POUR OCTET que les tests unitaires emploient, pas
+ * des objets écrits pour la circonstance. Si le contrat de l'API bouge, ces
+ * fixtures cessent d'être valides et les tests unitaires le disent aussi.
+ */
+/**
+ * `__dirname`, ET SURTOUT PAS `import.meta` : Playwright transpile ses specs en
+ * CommonJS, où toute mention d'`import.meta` échoue AU CHARGEMENT — et l'erreur se
+ * présente en « No tests found », qui ne désigne pas la cause. Une heure peut y
+ * passer. Les tests unitaires (Vitest, en module) emploient `import.meta.dirname` ;
+ * les deux mondes ne se ressemblent pas sur ce point.
+ */
+const FIXTURES = resolve(__dirname, '../../../packages/shared/src/__tests__/fixtures');
+
+const charge = (nom: string): Record<string, unknown> =>
+  JSON.parse(readFileSync(resolve(FIXTURES, `${nom}.json`), 'utf8')) as Record<string, unknown>;
+
+async function servirLeFil(page: Page): Promise<void> {
+  const fil = charge('feed');
+  const bandeau = charge('stories_band');
+  const commentaires = charge('comments');
+
+  /**
+   * `onlineContacts` est VIDE dans la charge relevée — le membre de la session
+   * mesurée n'avait aucun contact vu depuis moins de dix minutes. La fenêtre de
+   * partage n'aurait alors personne à cocher, et le test du libellé n'éprouverait
+   * rien.
+   *
+   * On y place donc deux membres pris dans `newArrivals` de la MÊME charge : des
+   * objets `memberSummary` réels, dans leur forme exacte, et non deux contacts
+   * inventés. C'est la seule retouche, et elle est ici plutôt que dans la fixture
+   * — celle-ci doit rester ce que l'API a répondu.
+   */
+  const colonne = charge('feed_sidebar');
+  const arrivants = (colonne['newArrivals'] as { items: unknown[] }).items;
+  const sidebar = { ...colonne, onlineContacts: arrivants.slice(0, 2) };
+
+  /**
+   * `Access-Control-Allow-Origin: *` NE MARCHE PAS ICI, et l'erreur ne ressemble
+   * à rien d'utile — « Failed to load resource », le fil vide, aucun déclencheur.
+   *
+   * Le socle envoie `credentials: 'include'` (le cookie de rafraîchissement en
+   * dépend), et pour une requête créditée le navigateur REFUSE le joker : l'origine
+   * doit être écrite, et `Access-Control-Allow-Credentials: true` présent. On
+   * RENVOIE donc l'origine de la requête plutôt que d'écrire un port en dur —
+   * `WEB_PORT` change d'un arbre de travail à l'autre.
+   */
+  const entetes = (route: { request(): { headers(): Record<string, string> } }) => ({
+    'access-control-allow-origin': route.request().headers()['origin'] ?? '*',
+    'access-control-allow-credentials': 'true',
+  });
+
+  const servir = (body: unknown) => (route: Parameters<Parameters<Page['route']>[1]>[0]) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: entetes(route),
+      body: JSON.stringify(body),
+    });
+
+  /**
+   * La reprise de session n'a RIEN à reprendre, et elle doit échouer proprement :
+   * un `401` avec les bons en-têtes, comme l'API le renvoie. Laisser la vraie route
+   * répondre marcherait aussi, mais ces tests ne doivent pas dépendre de l'API.
+   */
+  await page.route('**/v1/auth/refresh', (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: 'application/json',
+      headers: entetes(route),
+      body: '{"error":{"code":"UNAUTHENTICATED","message":"Session expirée."}}',
+    }),
+  );
+  await page.route('**/v1/feed/sidebar*', servir(sidebar));
+  await page.route('**/v1/feed?**', servir(fil));
+  await page.route('**/v1/feed', servir(fil));
+  await page.route('**/v1/stories?**', servir(bandeau));
+  await page.route('**/v1/stories', servir(bandeau));
+  await page.route('**/v1/comments?**', servir(commentaires));
+}
+
 async function visit(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
+  await servirLeFil(page);
   await page.goto('/accueil', { waitUntil: 'networkidle' });
+  // Le fil arrive après le premier rendu : les déclencheurs n'existent qu'ensuite.
+  await page.locator('[data-modal-open="A01C"]').first().waitFor({ state: 'attached' });
 }
 
 /** Le déclencheur visible à cette largeur — les deux cadres sont dans le document. */
@@ -207,16 +307,97 @@ test.describe('ce que `aria-modal` promet', () => {
 });
 
 test.describe('le partage se manipule', () => {
-  test('choisir des contacts change le libellé du bouton', async ({ page }) => {
+  /**
+   * LE LIBELLÉ PORTE L'ÉTAT, et il part maintenant de ZÉRO contact.
+   *
+   * La maquette en coche deux d'avance (rangs 0 et 2) parce qu'une planche doit
+   * montrer l'état sélectionné. Avec de VRAIS contacts — ceux que
+   * `GET /feed/sidebar` calcule — deux cases cochées désigneraient deux personnes
+   * que le membre n'a pas choisies. L'écran part donc de rien, et le bouton dit
+   * « Choisissez un contact » : c'est exactement l'état que la maquette dessine
+   * pour zéro, donc rien n'est inventé.
+   */
+  test('choisir un contact change le libellé du bouton', async ({ page }) => {
     await visit(page, 1440);
     await trigger(page, 'A01P', 1440).click();
 
     const dialog = page.getByRole('dialog');
-    // La maquette part avec deux contacts choisis.
-    await expect(dialog.getByText(/Envoyer à 2 contacts/)).toBeVisible();
+    await expect(dialog.getByText(/Choisissez un contact/)).toBeVisible();
+
+    /**
+     * Les contacts sont visés PAR LEUR NOM, lu dans la charge servie — donc de
+     * vrais membres, et un test qui tombe si le nom cesse d'être affiché.
+     *
+     * Et non par `aria-pressed` : LA MAQUETTE NE LE POSE PAS sur ces boutons. La
+     * sélection n'y est marquée que par un anneau vert, ce qui ne dit rien à un
+     * lecteur d'écran — le générateur pose bien `aria-pressed` sur les pastilles de
+     * palette de A14, jamais ici. C'est un manque réel, remonté au rapport de lot ;
+     * ce test ne le contourne pas en silence, il le nomme.
+     */
+    const contacts = (charge('feed_sidebar')['newArrivals'] as {
+      items: { displayName: string }[];
+    }).items;
 
     // « cliquez les contacts », dit la maquette : c'est une vraie interaction.
-    await dialog.getByRole('button', { name: /Sandra M\./ }).click();
+    await dialog.getByRole('button', { name: new RegExp(contacts[0]!.displayName) }).click();
     await expect(dialog.getByText(/Envoyer à 1 contact$/)).toBeVisible();
+
+    // Et un second choix passe au pluriel — le libellé COMPTE, il n'alterne pas.
+    await dialog.getByRole('button', { name: new RegExp(contacts[1]!.displayName) }).click();
+    await expect(dialog.getByText(/Envoyer à 2 contacts$/)).toBeVisible();
+  });
+});
+
+/**
+ * LE DÉFAUT RÉPARÉ, VU DEPUIS LE NAVIGATEUR.
+ *
+ * Le test unitaire (`src/screens/publication/declencheur.test.tsx`) garde le JSX
+ * généré ; celui-ci garde la CHAÎNE COMPLÈTE : le clic, l'écouteur délégué de la
+ * page, et l'appel réseau qui en sort. C'est la moitié qu'un test de rendu ne peut
+ * pas voir — un attribut correct que la page lirait mal ne réparerait rien.
+ *
+ * Avant la correction, les quatre publications de la charge ouvraient la même
+ * fenêtre : le déclencheur ne portait que le NOM de la fenêtre, et l'écouteur, qui
+ * ne voit que l'élément cliqué, ne pouvait pas savoir laquelle.
+ */
+test.describe('la fenêtre de commentaires sait DE QUELLE publication elle parle', () => {
+  test('chaque carte porte son propre identifiant', async ({ page }) => {
+    await visit(page, 1440);
+    const sujets = await page
+      .locator('[data-frame="desktop"] [data-modal-open="A01C"]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-modal-subject')));
+
+    expect(sujets.length, 'la charge doit porter plusieurs publications').toBeGreaterThan(1);
+    expect(sujets.every((s) => s !== null && s !== '')).toBe(true);
+    expect(new Set(sujets).size, 'deux cartes ne peuvent pas désigner la même').toBe(sujets.length);
+  });
+
+  test('cliquer la seconde carte demande LES commentaires de la seconde', async ({ page }) => {
+    await visit(page, 1440);
+    const boutons = page.locator('[data-frame="desktop"] [data-modal-open="A01C"]');
+    const attendu = await boutons.nth(1).getAttribute('data-modal-subject');
+
+    const appel = page.waitForRequest(
+      (r) => r.url().includes('/comments') && r.url().includes('subjectType=POST'),
+    );
+    await boutons.nth(1).click();
+    const url = new URL((await appel).url());
+
+    expect(url.searchParams.get('subjectId')).toBe(attendu);
+    await expect(page.getByRole('dialog')).toBeVisible();
+  });
+
+  test('et cliquer la première demande ceux de la première', async ({ page }) => {
+    await visit(page, 1440);
+    const boutons = page.locator('[data-frame="desktop"] [data-modal-open="A01C"]');
+    const premier = await boutons.nth(0).getAttribute('data-modal-subject');
+    const second = await boutons.nth(1).getAttribute('data-modal-subject');
+    expect(premier).not.toBe(second);
+
+    const appel = page.waitForRequest(
+      (r) => r.url().includes('/comments') && r.url().includes('subjectType=POST'),
+    );
+    await boutons.nth(0).click();
+    expect(new URL((await appel).url()).searchParams.get('subjectId')).toBe(premier);
   });
 });

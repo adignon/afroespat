@@ -1,6 +1,7 @@
 'use client';
 
 import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J07Desktop } from '@/screens/j07/desktop.generated';
 import { J07Mobile } from '@/screens/j07/mobile.generated';
@@ -15,7 +16,7 @@ import { J07MobileExport } from '@/screens/j07export/mobileexport.generated';
  * mobile. Les deux ouvrent la même feuille.
  */
 export default function Page() {
-  const { ouverte, onOuvrir, onFermer, volet, data } = useParcours();
+  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(null, useContexteParcours());
 
   return (
     <EcranParcours
@@ -29,6 +30,9 @@ export default function Page() {
         J03: plancheBlocage(volet, data),
         J07X: { mobile: <J07MobileExport {...data} /> },
       }}
+      erreur={erreur}
+      niveauRequis={niveauRequis}
+      oublierNiveauRequis={oublierNiveauRequis}
     />
   );
 }

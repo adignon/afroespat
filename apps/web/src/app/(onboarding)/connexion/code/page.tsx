@@ -6,6 +6,7 @@ import { useOnboardingFlow } from '@/screens/onboarding/use-onboarding-flow';
 import { ScreenFrames } from '@/screens/frames';
 import { CodeInput } from '@/screens/onboarding/code-input';
 import { FlowError } from '@/screens/onboarding/flow-error';
+import { LevelInvitation } from '@/components/level-invitation';
 
 /**
  * P02 — le code reçu par SMS. Écran 1 de §5, seconde moitié.
@@ -15,7 +16,7 @@ import { FlowError } from '@/screens/onboarding/flow-error';
  * pourquoi six cases séparées seraient un recul.
  */
 export default function Page() {
-  const { vals, error } = useOnboardingFlow(1);
+  const { vals, error, levelRequired, dismissLevelRequired } = useOnboardingFlow(1);
 
   return (
     <>
@@ -26,6 +27,7 @@ export default function Page() {
         mobile={<P02Mobile {...vals} />}
       />
       <FlowError message={error} />
+      <LevelInvitation details={levelRequired} onClose={dismissLevelRequired} />
     </>
   );
 }

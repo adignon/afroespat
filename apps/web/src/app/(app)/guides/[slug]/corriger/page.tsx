@@ -3,7 +3,7 @@
 import { ScreenFrames } from '@/screens/frames';
 import { A06CorrigerDesktop } from '@/screens/a06/corrigerdesktop.generated';
 import { A06CorrigerMobile } from '@/screens/a06/corrigermobile.generated';
-import { accueilData } from '@/screens/accueil/props';
+import { panelGuides, rail, shortcuts, type A06Data } from '@/screens/a06/data';
 
 /**
  * A06 · planche 1 — proposer une correction. `/guides/:slug/corriger`
@@ -23,7 +23,7 @@ import { accueilData } from '@/screens/accueil/props';
  * A06 — du travail de lot 3, pas quelque chose que le transcodage puisse deviner.
  */
 export default function CorrigerPage() {
-  const data = accueilData();
+  const data: A06Data = { rail, panelGuides, shortcuts };
   return (
     <ScreenFrames
       screen="A06-corriger"

@@ -1,0 +1,15 @@
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Certaines informations sont incomplètes ou mal remplies.",
+    "details": {
+      "fields": [
+        {
+          "path": "inviteHandles",
+          "code": "CUSTOM",
+          "message": "Invitez au moins 5 membres."
+        }
+      ]
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { KycStatus } from '../enums/generated.js';
+import { DataExportStatus, KycStatus } from '../enums/generated.js';
 import { uuidSchema } from './pagination.js';
 
 /**
@@ -160,22 +160,38 @@ export const diditWebhookSchema = z.object({
 
 export type DiditWebhook = z.infer<typeof diditWebhookSchema>;
 
-/** Ce que `GET /me/kyc` renvoie (§4.3). Jamais autre chose que ces champs. */
-export interface KycStatusResponse {
-  readonly status: (typeof KycStatus)[number];
-  readonly sessionId: string | null;
-  readonly decidedAt: string | null;
-  readonly expiresAt: string | null;
+/**
+ * Ce que `GET /me/kyc` renvoie (§4.3). Jamais autre chose que ces champs.
+ *
+ * C'ÉTAIT UNE `interface`, ÉCRITE À LA MAIN, et c'est ce qui a changé ici. Le
+ * socle d'appel de l'API pose la règle sans exception : « tout appel porte un
+ * schéma de réponse » et « n'écris jamais un type de réponse à la main : dérive-le
+ * par `z.infer` ». Un type seul ne vérifie RIEN à l'exécution : l'écran K03 aurait
+ * reçu `status: undefined` d'une API qui aurait changé de forme, et le défaut se
+ * serait vu six composants plus loin, sur un écran blanc, sans jamais nommer la
+ * route. Le schéma refuse à l'endroit où la donnée entre.
+ *
+ * Le nom du type est inchangé — `KycService.status()` l'annonce déjà en retour —
+ * donc l'API continue de s'en servir sans une ligne à toucher, et il n'existe
+ * toujours qu'UNE définition.
+ */
+export const kycStatusResponseSchema = z.object({
+  status: z.enum(KycStatus),
+  sessionId: z.string().nullable(),
+  decidedAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
   /** Motif GÉNÉRIQUE : §6 dit « motif générique + délai de nouvelle tentative ». */
-  readonly declineReasonCode: string | null;
+  declineReasonCode: z.string().nullable(),
   /** Null si aucune nouvelle tentative n'est nécessaire ou possible. */
-  readonly retryAvailableAt: string | null;
+  retryAvailableAt: z.string().datetime().nullable(),
   /** Tentatives consommées sur la fenêtre de 30 jours (§2.3). */
-  readonly attemptsUsed: number;
-  readonly attemptsMax: number;
+  attemptsUsed: z.number().int(),
+  attemptsMax: z.number().int(),
   /** §2.3 : un mineur voit son compte désactivé, et le front doit le dire. */
-  readonly isMinor: boolean;
-}
+  isMinor: z.boolean(),
+});
+
+export type KycStatusResponse = z.infer<typeof kycStatusResponseSchema>;
 
 /**
  * §15 §3.2 : « Rétrograder le niveau — MODERATOR — marque le KYC `DECLINED` avec
@@ -222,3 +238,28 @@ export interface DeletionStatusResponse {
   /** `requested_at` + 7 jours. Une connexion OTP avant cette date annule tout. */
   readonly executeAfter: string;
 }
+
+/**
+ * `GET /me/export/latest` — l'état de la dernière archive demandée (§2.7).
+ *
+ * `status` est l'énumération de la base, mais le service peut annoncer `EXPIRED`
+ * alors que la colonne dit encore `READY` : « une archive expirée est annoncée
+ * EXPIRED même si la purge n'a pas encore écrit la colonne ». Le schéma accepte
+ * donc l'énumération complète, ce qui est exact — il ne doit pas refuser la
+ * réponse la plus juste que l'API sache donner.
+ *
+ * `downloadUrl` n'est présente que pendant les sept jours de validité, et la route
+ * répond `EXPORT_NOT_FOUND` quand aucune archive n'a jamais été demandée. Un écran
+ * qui lit cette route traite donc le 404 comme « rien à télécharger », pas comme
+ * une panne.
+ */
+export const dataExportStatusResponseSchema = z.object({
+  id: uuidSchema,
+  status: z.enum(DataExportStatus),
+  requestedAt: z.string().datetime(),
+  readyAt: z.string().datetime().nullable(),
+  expiresAt: z.string().datetime().nullable(),
+  downloadUrl: z.string().nullable(),
+});
+
+export type DataExportStatusResponse = z.infer<typeof dataExportStatusResponseSchema>;

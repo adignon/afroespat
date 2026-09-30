@@ -1,0 +1,156 @@
+{
+  "items": [
+    {
+      "code": "FREE",
+      "nameFr": "Gratuit",
+      "month": {
+        "eur": {
+          "amountCents": 0,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 0,
+          "currency": "XOF"
+        }
+      },
+      "year": {
+        "eur": {
+          "amountCents": 0,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 0,
+          "currency": "XOF"
+        }
+      },
+      "limits": {
+        "maxActiveJourneys": 1,
+        "eventsPerMonth": 1,
+        "proContactsPerMonth": 3,
+        "sponsoredJobsPerMonth": 0,
+        "hidePartners": false,
+        "featuredInDirectory": false,
+        "featuredInCity": false,
+        "multiCity": false,
+        "featuredInGlobalSearch": false,
+        "alerts": false,
+        "journeyExport": false,
+        "advancedSearch": false
+      }
+    },
+    {
+      "code": "PREMIUM",
+      "nameFr": "Premium",
+      "month": {
+        "eur": {
+          "amountCents": 400,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 2600,
+          "currency": "XOF"
+        }
+      },
+      "year": {
+        "eur": {
+          "amountCents": 4000,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 26200,
+          "currency": "XOF"
+        }
+      },
+      "limits": {
+        "maxActiveJourneys": null,
+        "eventsPerMonth": null,
+        "proContactsPerMonth": null,
+        "sponsoredJobsPerMonth": 5,
+        "hidePartners": true,
+        "featuredInDirectory": true,
+        "featuredInCity": false,
+        "multiCity": false,
+        "featuredInGlobalSearch": false,
+        "alerts": true,
+        "journeyExport": true,
+        "advancedSearch": true
+      }
+    },
+    {
+      "code": "PRO",
+      "nameFr": "Pro",
+      "month": {
+        "eur": {
+          "amountCents": 2500,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 16300,
+          "currency": "XOF"
+        }
+      },
+      "year": {
+        "eur": {
+          "amountCents": 25000,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 163900,
+          "currency": "XOF"
+        }
+      },
+      "limits": {
+        "maxActiveJourneys": 1,
+        "eventsPerMonth": 1,
+        "proContactsPerMonth": 3,
+        "sponsoredJobsPerMonth": 0,
+        "hidePartners": false,
+        "featuredInDirectory": false,
+        "featuredInCity": true,
+        "multiCity": false,
+        "featuredInGlobalSearch": false,
+        "alerts": false,
+        "journeyExport": false,
+        "advancedSearch": false
+      }
+    },
+    {
+      "code": "PRO_PLUS",
+      "nameFr": "Pro+",
+      "month": {
+        "eur": {
+          "amountCents": 4000,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 26200,
+          "currency": "XOF"
+        }
+      },
+      "year": {
+        "eur": {
+          "amountCents": 40000,
+          "currency": "EUR"
+        },
+        "xof": {
+          "amountCents": 262300,
+          "currency": "XOF"
+        }
+      },
+      "limits": {
+        "maxActiveJourneys": 1,
+        "eventsPerMonth": 1,
+        "proContactsPerMonth": 3,
+        "sponsoredJobsPerMonth": 0,
+        "hidePartners": false,
+        "featuredInDirectory": false,
+        "featuredInCity": true,
+        "multiCity": true,
+        "featuredInGlobalSearch": true,
+        "alerts": false,
+        "journeyExport": false,
+        "advancedSearch": false
+      }
+    }
+  ]
+}

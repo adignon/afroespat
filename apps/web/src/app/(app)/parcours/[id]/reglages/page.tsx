@@ -1,6 +1,7 @@
 'use client';
 
 import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J08Desktop } from '@/screens/j08/desktop.generated';
 import { J08Mobile } from '@/screens/j08/mobile.generated';
@@ -21,7 +22,7 @@ import { J08MobileArret } from '@/screens/j08arret/mobilearret.generated';
  * même chose.
  */
 export default function Page() {
-  const { ouverte, onOuvrir, onFermer, volet, data } = useParcours();
+  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(null, useContexteParcours());
 
   return (
     <EcranParcours
@@ -35,6 +36,9 @@ export default function Page() {
         J03: plancheBlocage(volet, data),
         J08A: { mobile: <J08MobileArret {...data} />, mobileOnly: true },
       }}
+      erreur={erreur}
+      niveauRequis={niveauRequis}
+      oublierNiveauRequis={oublierNiveauRequis}
     />
   );
 }

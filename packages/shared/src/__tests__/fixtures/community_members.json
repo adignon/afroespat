@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "userId": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
+      "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
+      "displayName": "",
+      "avatarUrl": null,
+      "phase": "PRE_DEPARTURE",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon"
+      },
+      "role": "OWNER",
+      "status": "ACTIVE",
+      "joinedAt": "2026-09-30T19:09:28.687Z"
+    }
+  ],
+  "nextCursor": null
+}

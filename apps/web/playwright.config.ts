@@ -37,6 +37,33 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = process.env.WEB_PORT ?? '3100';
 const BASE_URL = `http://localhost:${PORT}`;
 
+/**
+ * LE PORT DE L'API EST CONFIGURABLE POUR LA MÊME RAISON QUE CELUI DU WEB, et
+ * l'oubli coûtait exactement le défaut décrit au-dessus — en pire.
+ *
+ * Il était codé à 3001. Deux arbres de travail côte à côte : le second trouve le
+ * 3001 occupé, `reuseExistingServer` réutilise l'API DU VOISIN, et toute la suite
+ * s'exécute contre un back qui n'est pas le sien. Mesuré pendant ce lot : une API
+ * d'un autre arbre écoutait 3001, et rien dans la sortie de Playwright ne l'aurait
+ * dit.
+ *
+ * Le symptôme est le pire qui existe : un SUCCÈS QUI NE PROUVE RIEN. La suite
+ * passe, contre des routes construites ailleurs — et un échec, lui, accuse le code
+ * local d'un défaut qui est dans le voisin.
+ *
+ * `API_PORT` est la même variable que celle du `.env` de l'API, donc les deux se
+ * règlent ensemble. Le défaut reste 3001 : rien ne change pour qui n'a qu'un arbre.
+ *
+ * `NEXT_PUBLIC_API_URL` est passé au serveur web : sans lui, le navigateur
+ * appellerait 3001 quel que soit le port de l'API, puisque c'est LUI qui compose
+ * l'URL (voir `src/lib/api/base.ts`). Et `WEB_PORT` va sur les DEUX commandes —
+ * l'API construit sa liste d'origines CORS avec, et une origine manquante fait
+ * rejeter chaque réponse par le navigateur alors que le serveur répond 200. On voit
+ * alors un sélecteur vide, jamais un refus : c'est l'heure déjà perdue ici.
+ */
+const API_PORT = process.env.API_PORT ?? '3001';
+const API_URL = `http://localhost:${API_PORT}/v1`;
+
 export default defineConfig({
   testDir: '.',
   // Sur le chemin critique : un test instable fait plus de mal qu'un test absent.
@@ -109,6 +136,9 @@ export default defineConfig({
       command: `pnpm build && npx next start -p ${PORT}`,
       url: `${BASE_URL}/accueil`,
       reuseExistingServer: !process.env.CI,
+      // `NEXT_PUBLIC_…` est inlinée à la CONSTRUCTION : elle doit donc être là
+      // pour `pnpm build`, pas seulement pour `next start`.
+      env: { WEB_PORT: PORT, NEXT_PUBLIC_API_URL: API_URL },
       /**
        * VINGT MINUTES, et le chiffre est mesuré, pas choisi.
        *
@@ -130,8 +160,11 @@ export default defineConfig({
     },
     {
       command: 'pnpm --filter @app/api dev',
-      url: 'http://localhost:3001/v1/health',
+      url: `${API_URL}/health`,
       reuseExistingServer: !process.env.CI,
+      // `WEB_PORT` ici aussi : c'est `apps/api/src/main.ts` qui en construit sa
+      // liste d'origines autorisées. Sans lui, CORS bloque tout en silence.
+      env: { WEB_PORT: PORT, API_PORT },
       timeout: 120_000,
     },
   ],
