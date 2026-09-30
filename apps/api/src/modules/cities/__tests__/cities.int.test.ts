@@ -610,7 +610,14 @@ describe('villes et membres (09 §2)', () => {
       authorUserId: string,
       placeLabel: string,
       body: string,
-      options: { category?: string; expired?: boolean; positive?: number; negative?: number } = {},
+      options: {
+        category?: string;
+        expired?: boolean;
+        positive?: number;
+        negative?: number;
+        /** La ville par défaut est celle du fichier ; un test qui doit s'isoler du cache en donne une autre. */
+        cityId?: string;
+      } = {},
     ): Promise<string> {
       const id = newId();
       await prisma.story.create({
@@ -620,7 +627,7 @@ describe('villes et membres (09 §2)', () => {
           type: 'INFORMATION',
           body,
           textStyle: 'BOLD',
-          cityId,
+          cityId: options.cityId ?? cityId,
           category: options.category ?? 'démarches',
           placeLabel,
           expiresAt: new Date(Date.now() + (options.expired === true ? -3_600_000 : 86_400_000)),
@@ -662,6 +669,73 @@ describe('villes et membres (09 §2)', () => {
       expect(prefecture?.confirmations).toBe(7);
       expect(prefecture?.changedReports).toBe(1);
       expect(items.some((i) => i.placeLabel === 'CAF')).toBe(true);
+    });
+
+    /**
+     * ═══ RÈGLE DURE ═══
+     *
+     * Le cache de la fiche ville ne fait pas franchir un blocage.
+     *
+     * CE QUE CE TEST EXISTE POUR EMPÊCHER DE REVENIR. `desks()` filtrait les
+     * auteurs séparés du lecteur, PUIS mettait le résultat filtré en cache sous la
+     * seule clé `city.id` — pendant cinq minutes, la réponse calculée pour un
+     * lecteur était resservie à tous les autres.
+     *
+     * L'ordre des deux appels ci-dessous est le cœur du test, et c'est la moitié
+     * GRAVE du défaut : celui qui NE bloque PAS interroge d'abord, donc le cache se
+     * remplit SANS filtre ; puis celui qui a bloqué l'auteur interroge à son tour et
+     * reçoit l'entrée toute prête. Le blocage est contourné par un cache, sans qu'une
+     * seule ligne de la logique de blocage soit fausse.
+     *
+     * (L'autre moitié est symétrique et bénigne : un lecteur qui bloque remplit le
+     * cache avec son propre filtre et fait disparaître du contenu pour des gens qui
+     * n'ont rien demandé.)
+     */
+    it('[RÈGLE DURE] le cache ne sert pas à un lecteur la réponse calculée pour un autre', async () => {
+      /**
+       * SA PROPRE VILLE, et ce n'est pas une précaution de confort.
+       *
+       * Le cache vit dans le service et TRAVERSE les tests : écrit sous la clé de
+       * la ville partagée par un test antérieur dont le lecteur n'avait aucun
+       * blocage, il serait resservi ici — mon premier jet a justement reçu
+       * `['CAF', 'Préfecture']`, l'entrée d'un autre test. Le test aurait alors
+       * mesuré la persistance du cache en croyant mesurer le blocage.
+       */
+      const autreVille = await prisma.city.findFirstOrThrow({
+        where: { mergedIntoCityId: null, memberCount: 0, id: { not: cityId } },
+        orderBy: { name: 'desc' },
+        select: { id: true, slug: true },
+      });
+
+      // La fiche ville refuse une ville fermée : l'activer fait partie du décor,
+      // pas de ce que le test éprouve.
+      await prisma.city.update({ where: { id: autreVille.id }, data: { isActive: true } });
+
+      const auteur = await member();
+      const bloqueur = await member();
+      const neutre = await member();
+
+      await information(auteur, 'Trésor public', 'Le guichet ouvre à 8 h 30.', {
+        cityId: autreVille.id,
+      });
+
+      await prisma.block.create({
+        data: { id: newId(), blockerUserId: bloqueur, blockedUserId: auteur },
+      });
+
+      // Le lecteur NEUTRE d'abord : il voit l'information, et il remplit le cache.
+      const vueNeutre = await cities.desks(autreVille.slug, neutre);
+      expect(
+        (vueNeutre.items as { placeLabel: string }[]).map((i) => i.placeLabel),
+        'le lecteur sans blocage doit voir l’information',
+      ).toContain('Trésor public');
+
+      // Puis celui qui a bloqué l'auteur. Il ne doit pas hériter de la vue du premier.
+      const vueBloqueur = await cities.desks(autreVille.slug, bloqueur);
+      expect(
+        (vueBloqueur.items as { placeLabel: string }[]).map((i) => i.placeLabel),
+        'le cache a fait franchir un blocage : la story d’un auteur bloqué est servie',
+      ).not.toContain('Trésor public');
     });
 
     it('écarte les informations expirées et les autres sujets', async () => {

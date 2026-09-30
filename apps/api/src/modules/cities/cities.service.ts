@@ -97,6 +97,21 @@ function parseMemberCursor(
   return { group: groupNumber, createdAt: new Date(timestamp), id: after.id };
 }
 
+/**
+ * L'AUDIENCE d'une réponse de fiche ville : qui elle exclut, et rien d'autre.
+ *
+ * Deux lecteurs qui bloquent exactement les mêmes personnes ont droit à la même
+ * réponse — ils peuvent donc partager une entrée de cache. Deux lecteurs dont les
+ * listes diffèrent, même d'un seul nom, n'y ont pas droit.
+ *
+ * Trié avant d'être joint : la base ne promet aucun ordre, et sans le tri deux
+ * lecteurs équivalents obtiendraient deux entrées — ce qui ne serait pas faux,
+ * seulement inutile. `aucun` plutôt que la chaîne vide, pour qu'une clé se relise.
+ */
+function desksAudience(separated: readonly string[]): string {
+  return separated.length === 0 ? 'aucun' : [...separated].sort().join(',');
+}
+
 @Injectable()
 export class CitiesService {
   private readonly logger = new Logger(CitiesService.name);
@@ -449,12 +464,32 @@ export class CitiesService {
     if (city === null) throw ApiError.notFound();
     if (!city.isActive) this.fail('CITY_INACTIVE');
 
-    const cached = this.desksCache.get(city.id);
+    /**
+     * LA SÉPARATION EST CALCULÉE AVANT LE CACHE, et elle entre dans sa clé.
+     *
+     * Elle était calculée APRÈS, et la clé ne portait que `city.id` : le résultat
+     * DÉJÀ FILTRÉ pour un lecteur était donc resservi à tous les autres pendant
+     * cinq minutes. Les deux moitiés du défaut n'ont pas la même gravité :
+     *
+     *   · un lecteur sans blocage remplit le cache, et celui qui a bloqué l'auteur
+     *     reçoit ensuite SA story — c'est un contournement du blocage, pas un
+     *     défaut d'affichage ;
+     *   · à l'inverse, un lecteur qui bloque remplit le cache avec son propre
+     *     filtre, et fait disparaître du contenu pour des gens qui n'ont rien
+     *     demandé.
+     *
+     * Deux lecteurs qui bloquent les mêmes personnes partagent légitimement une
+     * entrée : ce qu'on leur doit est identique. La clé est donc la ville PLUS
+     * l'empreinte de la liste triée — triée, sinon deux lecteurs équivalents
+     * auraient deux entrées selon l'ordre rendu par la base.
+     */
+    const separated = await this.visibility.separatedFrom(viewerId);
+    const desksKey = `${city.id}|${desksAudience(separated)}`;
+
+    const cached = this.desksCache.get(desksKey);
     if (cached !== undefined && Date.now() - cached.at < CITY_DESKS_CACHE_MS) {
       return { items: cached.items, nextCursor: null, meta: { cached: true } };
     }
-
-    const separated = await this.visibility.separatedFrom(viewerId);
     const stories = await this.prisma.story.findMany({
       where: {
         cityId: city.id,
@@ -516,7 +551,7 @@ export class CitiesService {
     }
 
     const items = [...byPlace.values()].sort((a, b) => b.at.getTime() - a.at.getTime());
-    this.desksCache.set(city.id, { at: Date.now(), items });
+    this.desksCache.set(desksKey, { at: Date.now(), items });
     return { items, nextCursor: null, meta: { cached: false } };
   }
 
@@ -801,7 +836,12 @@ export class CitiesService {
       return row;
     });
 
-    this.desksCache.delete(city.id);
+    // Une ville a maintenant AUTANT D'ENTRÉES que d'audiences distinctes l'ont
+    // consultée : les effacer toutes, sinon une astuce nouvelle resterait invisible
+    // pour tout lecteur dont la liste de blocage n'est pas vide.
+    for (const key of this.desksCache.keys()) {
+      if (key.startsWith(`${city.id}|`)) this.desksCache.delete(key);
+    }
     return tip;
   }
 
