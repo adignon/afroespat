@@ -123,16 +123,46 @@ export const RATE_LIMIT_KEY = 'app:rateLimit';
  */
 export type RateLimitPeriod = 'minute' | 'hour';
 
+/**
+ * PAR QUOI le budget est compté — et ce n'est pas un détail de forme.
+ *
+ * `caller` est le défaut, et il est juste pour presque tout : le membre est la
+ * seule identité qui ne soit pas partagée, et §5.5 le nomme.
+ *
+ * `ip` existe pour les routes où le budget PROTÈGE UN SECRET au lieu de protéger
+ * un service, et où l'appelant est donc par nature l'adversaire. Sur une route de
+ * connexion, compter par appelant se retourne : `@PublicRead()` fait que
+ * `AuthGuard` pose `request.auth` dès qu'un jeton de membre valide accompagne la
+ * requête, même sur une route d'équipe qui n'en fera rien. `identityOf` préfère
+ * alors ce membre à l'IP, et chaque compte membre apporte UN BUDGET NEUF : mesuré
+ * sur `POST /admin/auth/login`, deux comptes gratuits donnaient 15 tentatives par
+ * minute depuis une seule IP au lieu de 5. Le verrou anti-force-brute était
+ * affaibli d'un facteur égal au nombre de comptes que l'attaquant se crée.
+ *
+ * DÉCLARÉ, jamais inféré. Forcer l'IP sur toutes les routes `@PublicRead()`
+ * serait plus large que le besoin — certaines gagnent à compter par membre — et
+ * une règle inférée ne se relit pas sur la route qu'elle protège.
+ */
+export type RateLimitIdentity = 'caller' | 'ip';
+
 export interface RateLimitRule {
   readonly count: number;
   readonly period: RateLimitPeriod;
+  readonly by: RateLimitIdentity;
 }
 
-export function RateLimit(count: number, period: RateLimitPeriod = 'minute') {
-  const rule: RateLimitRule = { count, period };
+export function RateLimit(
+  count: number,
+  period: RateLimitPeriod = 'minute',
+  by: RateLimitIdentity = 'caller',
+) {
+  const rule: RateLimitRule = { count, period, by };
   return applyDecorators(
     SetMetadata(RATE_LIMIT_KEY, rule),
-    ApiExtension('x-rate-limit', `${count}/${period === 'hour' ? 'h' : 'min'}`),
+    ApiExtension(
+      'x-rate-limit',
+      `${count}/${period === 'hour' ? 'h' : 'min'}${by === 'ip' ? ' par IP' : ''}`,
+    ),
   );
 }
 

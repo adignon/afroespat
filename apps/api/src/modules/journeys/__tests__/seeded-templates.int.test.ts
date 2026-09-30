@@ -6,13 +6,19 @@ import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { TokenService } from '../../../common/token.service';
 import { VisibilityService } from '../../../common/visibility.service';
-import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
+import {
+  FakeCaptchaProvider,
+  FakeEmailProvider,
+  FakePushProvider,
+  FakeSmsProvider,
+} from '../../../providers/providers';
 import { AuthService } from '../../auth/auth.service';
 import { ConnectionsService } from '../../connections/connections.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { FeedService } from '../../feed/feed.service';
 import { HelpService } from '../../help/help.service';
 import { MessagingService } from '../../messaging/messaging.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { JourneysService, type JourneyActor } from '../journeys.service';
 
 /**
@@ -132,6 +138,7 @@ describe('modèles amorcés (T3 partie A) vus du service', () => {
       new HelpService(prisma, outbox, audit, visibility),
       new FeedService(prisma, outbox, audit, visibility),
       messaging,
+      new NotificationsService(prisma, new FakeEmailProvider(), new FakePushProvider()),
     );
     auth = new AuthService(
       prisma,

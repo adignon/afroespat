@@ -1026,61 +1026,6 @@ function promoteFirstHeading(jsx) {
   return { jsx: promoted, promoted: true };
 }
 
-/**
- * LE TITRE DE PAGE D'UN CADRE QUI N'EN DESSINE PAS, déclaré par l'écran.
- *
- * Six cadres de « 03 Accueil v2 » n'ont ni `<h1>` ni `<h2>` : A05 (l'éditeur), A08
- * (un réseau), A12 (une fiche ville), A02, A13, A14. La maquette y écrit pourtant
- * un titre bien visible — « Nouveau guide », « Béninois en France », « Lyon » — mais
- * dans un `<div>`, parce qu'une planche de documentation n'a pas de plan de lecture
- * à tenir. Une PAGE en a un : sans `<h1>`, un lecteur d'écran ne sait pas de quoi
- * elle parle, et axe le signale (`page-has-heading-one`).
- *
- * Le texte est DÉCLARÉ avec l'écran, jamais deviné par un motif de style : les six
- * cadres ne le dessinent pas de la même façon (16 px pour A05, 24 px pour A08,
- * 30 px pour A12), et un motif assez large pour les couvrir attraperait aussi
- * « 1 050 € » — la médiane de budget de la fiche ville, qui fait aussi 30 px et
- * gras. Déclarer le texte visible le rend vérifiable d'un coup d'œil, et si la
- * maquette le change, l'outil ne trouve plus rien et LE DIT.
- *
- * `margin: 0` est ajouté pour la même raison que dans `promoteModalTitle` : un
- * `<h1>` arrive avec les marges du navigateur que le `<div>` n'avait pas, et sans
- * cette ligne le titre se déplacerait de quelques pixels.
- */
-function promoteDeclaredHeading(jsx, title) {
-  if (title === undefined) return { jsx, promoted: false };
-
-  /**
-   * Le marqueur inclut la FERMETURE : `>Lyon<`, et non `>Lyon`.
-   *
-   * La fiche ville écrit « Lyon » en 30 px, mais aussi « Réseau Lyon et Rhône » dans
-   * sa colonne de contexte. Sans le `<` final, le titre déclaré « Lyon » collait au
-   * préfixe du second et la page s'appelait « Lyon et Rhône ». Le `<` exige que
-   * l'élément contienne le titre ET RIEN D'AUTRE, ce qui est vérifiable à l'œil dans
-   * la maquette.
-   */
-  const marker = `>${title}<`;
-  const at = jsx.indexOf(marker);
-  if (at < 0) return { jsx, promoted: false };
-
-  const open = jsx.lastIndexOf('<', at);
-  const tagMatch = /^<(span|div)( [^>]*)>$/.exec(jsx.slice(open, at + 1));
-  if (tagMatch === null) return { jsx, promoted: false };
-  const [, tag, attrs] = tagMatch;
-
-  const close = jsx.indexOf(`</${tag}>`, at);
-  if (close === -1) return { jsx, promoted: false };
-  // Le titre déclaré est un texte SIMPLE : s'il y a une balise entre lui et la
-  // fermeture, le motif a attrapé autre chose et on refuse plutôt que de deviner.
-  if (jsx.slice(at + 1, close).includes('<')) return { jsx, promoted: false };
-
-  const newAttrs = attrs.replace(/style=\{\{ /, 'style={{ margin: "0", ');
-  return {
-    jsx: `${jsx.slice(0, open)}<h1${newAttrs}>${jsx.slice(at + 1, close)}</h1>${jsx.slice(close + tag.length + 3)}`,
-    promoted: true,
-  };
-}
-
 const ALL_ADAPTATIONS = [...FRAME_ADAPTATIONS, ...TOUCH_TARGET_ADAPTATIONS];
 
 /**
@@ -1240,79 +1185,186 @@ const MODAL_ADAPTATIONS = [
 ];
 
 /**
- * LE TITRE D'UNE MODALE est DÉCLARÉ PAR L'ÉCRAN, pas deviné, et pas dans une table
- * globale.
+ * ─── LE TITRE D'UN CADRE : UN SEUL MÉCANISME, DEUX QUESTIONS ─────────────────
  *
- * Une modale ne prend PAS le `<h1>` de la page : le `<h1>` appartient à l'écran qui
- * est derrière, et il ne disparaît pas parce qu'une fenêtre s'ouvre par-dessus. Ce
- * qu'il faut, c'est que la boîte de dialogue porte un nom accessible — c'est
- * `aria-labelledby` qui le lui donne, et il lui faut donc un élément à désigner.
+ * Trois mécanismes vivaient ici, arrivés par accumulation de lots parallèles :
+ * `heading` déclaré par écran, `title` déclaré par cadre, et `promoteTextTo` avec
+ * son `requires` pour les fenêtres. Deux lots récents y ont ajouté
+ * `frame.modalTitle` — un titre par CADRE pour une fenêtre à plusieurs volets — et
+ * `screen.modalTitleRequires` — une surcharge du discriminant. Chacun marchait sur
+ * ses propres déclarations ; ensemble ils faisaient trois chemins de code, DEUX
+ * positions dans le pipeline et cinq branches de journal pour une seule idée.
  *
- * Le titre est déclaré avec l'écran (`modalTitle`), texte visible compris, et non
- * déduit d'un motif de style. Les modales ne le dessinent pas de la même façon :
- * `<span>` de 18 px pour les commentaires (avec un compteur imbriqué), `<span>` de
- * 20 px pour le partage et le sondage, `<div>` de 20 px pour le guide. Un motif qui
- * couvrirait les quatre attraperait aussi des sous-titres, en silence. Et si la
- * maquette change son texte, la déclaration ne correspond plus et l'outil le DIT.
+ * Ce qui les distinguait n'était pas trois idées mais DEUX, et les aplatir en une
+ * casse des titres. Le mécanisme unifié les garde donc séparées, chacune dans sa
+ * fonction :
  *
- * Il vivait dans une table indexée par section, ici même. La sortir de ce fichier
- * est la même décision que pour les déclarations d'écran : cinquante-sept modales
- * restent à transcoder, et une table partagée serait un conflit de fusion à chaque
- * contribution.
+ *   LEQUEL des titres — quel titre vaut pour CE cadre.
+ *     Un cadre porte le sien (`frame.…`) ou, à défaut, celui de l'écran
+ *     (`screen.…`). Les quatre planches de la fenêtre « Contribuer » de A12C sont
+ *     UNE SEULE fenêtre et portent QUATRE titres : « Contribuer à la fiche Lyon »
+ *     sur l'étape 1 d'ordinateur, « Produit du pays » et « Budget réel » sur
+ *     l'étape 2, « Contribuer à Lyon » sur la feuille mobile. C'est `titleFor`,
+ *     et elle ne lit QUE des déclarations — jamais la maquette.
+ *
+ *   QUEL texte promouvoir — quel élément de la maquette porte ce titre.
+ *     Le texte ne suffit pas : « Checklist de documents » figure DEUX FOIS dans le
+ *     cadre d'ordinateur de J06, et c'est l'entrée du panneau de gauche qui vient
+ *     en premier dans le document. Il faut un discriminant. C'est `promoteTitle`,
+ *     et elle ne lit QUE la maquette — elle ignore d'où le titre vient.
+ *
+ * Aucune des deux ne peut répondre pour l'autre. `modalTitleRequires` le montre :
+ * il ne dit pas LEQUEL des titres mais QUEL texte, et il se surcharge donc sur
+ * l'axe du discriminant, pas sur celui de la provenance.
  */
+
 /**
- * Promeut l'élément qui porte le titre en `<h2 id="…">`, style inchangé.
+ * LE DISCRIMINANT — la moitié « QUEL », et il a TROIS valeurs, pas deux.
  *
- * `margin: 0` est AJOUTÉ, et c'est la seule liberté : un `<h2>` arrive avec des
- * marges par défaut du navigateur que le `<span>` ou le `<div>` d'origine n'avait
- * pas. Sans cette ligne, changer la balise déplacerait le titre de quelques pixels
- * — le design ne serait plus celui de la maquette, pour une raison invisible à la
- * lecture du code.
+ * Les deux qui ne sont pas un fragment de style ne sont pas des commodités :
+ * chacune est la seule réponse juste pour une famille de déclarations, et la
+ * mesure a été faite en régénérant.
+ *
+ *   · un FRAGMENT DE STYLE déclaré (`'fontSize: "30px"'`, `'fontWeight: "700"'`)
+ *     — le cas des titres ambigus, où la maquette écrit deux fois le même texte et
+ *     où seule la taille ou la graisse les sépare ;
+ *
+ *   · `SHAPED` — l'élément doit RESSEMBLER à un titre : au moins 16 px et une
+ *     graisse d'au moins 700. C'est ce qui distingue « Parrainage » le titre de
+ *     H05 de « Parrainage » la pastille de filtre du même cadre, et ce qui permet
+ *     de ne pas relire la taille de quarante-quatre titres sans ambiguïté ;
+ *
+ *   · `WHOLE` — aucun style exigé, mais l'élément doit contenir le titre ET RIEN
+ *     D'AUTRE. C'est un discriminant de CONTENU, et il est indispensable : les
+ *     en-têtes mobiles de A01N, A05 et A10 titrent en 15 et 15,5 px, SOUS le
+ *     plancher de `SHAPED`. Leur imposer la mesure leur retire leur `<h1>` —
+ *     trois cadres, mesuré en régénérant, pas supposé. C'est aussi lui qui évite
+ *     que « Lyon » attrape le début de « Lyon et Rhône » dans la colonne de
+ *     contexte de la fiche ville.
+ *
+ * Il n'y a PAS de quatrième valeur, et surtout pas de « n'importe quoi » : sans
+ * borne, promouvoir tout ce qui ressemble à une étiquette ferait remonter
+ * « COMPOSANTS » ou « BLOQUÉS » en titre de fenêtre.
  */
+const SHAPED = Symbol('titre reconnu à sa forme : au moins 16 px et graisse ≥ 700');
+const WHOLE = Symbol('titre reconnu à ce que l’élément ne contient rien d’autre');
+
 /**
- * Promeut en `tag` l'élément dont le contenu COMMENCE par `text`.
+ * LEQUEL DES TITRES vaut pour ce cadre — et rien d'autre.
  *
- * `requires` est le fragment de style qui LÈVE L'AMBIGUÏTÉ, et il est
- * indispensable : « Checklist de documents » figure DEUX FOIS dans le cadre
- * d'ordinateur de J06 — une fois comme entrée du panneau de gauche, une fois
- * comme titre de la page. Le premier des deux dans l'ordre du document est
- * l'entrée du panneau. Sans discriminant, c'est elle qu'on promouvrait en titre
- * de page, et le défaut serait invisible : le texte affiché est le même.
+ * La fonction rend une DÉCLARATION RÉSOLUE, jamais du JSX : `{ text, tag, id,
+ * requires, key, label }`. Elle ne touche pas à la maquette, donc elle ne peut pas
+ * se tromper d'élément ; c'est le travail de `promoteTitle`, et la séparation est
+ * ce qui rend chacune des deux vérifiable seule.
  *
- * On PARCOURT donc toutes les occurrences et on retient la première qui porte
- * ce style. Une seule occurrence était examinée auparavant ; les quatre modales
- * déjà transcodées tombaient sur la bonne du premier coup, la régénération le
- * confirme.
+ * `key` nomme la clé de déclaration employée, pour que l'avertissement dise quoi
+ * corriger. Le journal a déjà accusé la mauvaise déclaration une fois.
+ *
+ * LA PRÉCÉDENCE EST UNIQUE, et c'était l'autre moitié de la dette : `heading` était
+ * un repli de la maquette, `title` s'appliquait INCONDITIONNELLEMENT après elle.
+ * Un cadre qui aurait balisé son titre ET déclaré un `title` recevait donc DEUX
+ * `<h1>` en silence. Aucun ne le fait aujourd'hui — vérifié, zéro fichier produit
+ * n'a deux `<h1>` — mais la forme unifiée le rend impossible plutôt que improbable.
  */
-function promoteTextTo(jsx, { text, tag: as, id, requires }) {
-  const marker = `>${text}`;
+function titleFor(screen, frame) {
+  if (screen.modal === true) {
+    const text = frame.modalTitle ?? screen.modalTitle;
+    if (text === undefined) return undefined;
+    return {
+      text,
+      tag: 'h2',
+      /**
+       * L'`id` est celui de l'ÉCRAN, jamais du cadre, même quand le titre vient du
+       * cadre. `ScreenFrames` ne rend qu'une planche à la fois : un seul
+       * `a12c-titre` existe dans le document, et `aria-labelledby` le désigne sans
+       * ambiguïté quel que soit le volet ouvert.
+       */
+      id: `${screen.section.toLowerCase()}-titre`,
+      /**
+       * `fontWeight: "800"` est le bon défaut : les huit fenêtres du dépôt titrent
+       * toutes en 800. Le MENU DE LA CONVERSATION de M01 n'en fait pas partie — la
+       * maquette le nomme par l'étiquette de sa carte, en 10,5 px / 700, comme elle
+       * nomme « BLOQUÉS » dans `08 Compte`. La surcharge est DÉCLARÉE, jamais
+       * devinée, et elle porte sur le discriminant seul.
+       */
+      requires: frame.modalTitleRequires ?? screen.modalTitleRequires ?? 'fontWeight: "800"',
+      key: 'modalTitle',
+      label: text,
+    };
+  }
+
+  /**
+   * `heading` — le titre d'une PAGE que la maquette écrit dans un `<div>`.
+   *
+   * Trente cadres de `04 Parcours` et six de `03 Accueil v2` n'ont ni `<h1>` ni
+   * `<h2>` : une planche de documentation n'a pas de plan de lecture à tenir. Une
+   * page en a un, et sans `<h1>` un lecteur d'écran ne sait pas de quoi elle parle
+   * (`page-has-heading-one`).
+   *
+   * Aucun `id` n'est posé, à la différence d'une fenêtre : `ScreenFrames` rend LES
+   * DEUX cadres et en masque un, donc un `id` y serait deux fois dans le document.
+   * Un `<h1>` n'en a pas besoin.
+   */
+  const declared = frame.heading ?? screen.heading;
+  if (declared !== undefined) {
+    return { text: declared, tag: 'h1', requires: WHOLE, key: 'heading', label: declared };
+  }
+
+  const title = frame.title;
+  if (title === undefined) return undefined;
+  /**
+   * `title` accepte DEUX FORMES, et la plus simple reste légitime : une chaîne (le
+   * texte visible, reconnu à sa forme) ou `{ text, size }` qui déclare la taille
+   * quand deux éléments portent le même texte. Exiger l'objet partout obligerait à
+   * relire la taille de quarante-quatre titres sans ambiguïté.
+   */
+  if (typeof title === 'string') {
+    return { text: title, tag: 'h1', requires: SHAPED, key: 'title', label: title };
+  }
+  return {
+    text: title.text,
+    tag: 'h1',
+    requires: `fontSize: "${title.size}"`,
+    key: 'title',
+    label: `${title.text} (${title.size})`,
+  };
+}
+
+/**
+ * QUEL TEXTE PROMOUVOIR — et rien d'autre. `spec` vient de `titleFor`.
+ *
+ * On PARCOURT toutes les occurrences du texte et on retient la première qui passe
+ * le discriminant. Une seule était examinée à l'origine, et c'était un piège : sur
+ * ces maquettes la première occurrence est souvent l'entrée du panneau de gauche —
+ * « Mes demandes », « Checklist de documents » figurent deux fois — donc le titre
+ * promu était le mauvais, invisiblement, puisque le texte affiché est le même.
+ *
+ * `margin: 0` est AJOUTÉ, et c'est la seule liberté prise sur la maquette : un
+ * titre arrive avec les marges par défaut du navigateur, que le `<span>` ou le
+ * `<div>` d'origine n'avait pas. Sans cette ligne, changer la balise déplacerait le
+ * titre — sur un `<h1>` la marge par défaut fait 0,67 em, une vingtaine de pixels à
+ * 30 px de corps. Le design ne serait plus celui de la maquette, pour une raison
+ * invisible à la lecture du code.
+ */
+function promoteTitle(jsx, spec) {
+  if (spec === undefined) return { jsx, promoted: false, id: null };
+  const { text, tag: as, id, requires } = spec;
+
+  // `WHOLE` exige que l'élément s'arrête au titre : son marqueur porte la fermeture.
+  const marker = requires === WHOLE ? `>${text}<` : `>${text}`;
+
   for (let at = jsx.indexOf(marker); at >= 0; at = jsx.indexOf(marker, at + 1)) {
     // Remonter à l'ouverture de la balise qui contient ce texte.
     const open = jsx.lastIndexOf('<', at);
     const tagMatch = /^<(span|div)( [^>]*)>$/.exec(jsx.slice(open, at + 1));
     if (tagMatch === null) continue;
     const [, tag, attrs] = tagMatch;
-    /**
-     * SANS DISCRIMINANT, ON EN FABRIQUE UN — et ce n'est pas un raffinement.
-     *
-     * `attrs.includes(undefined)` compare littéralement la chaîne « undefined » :
-     * aucun candidat ne passe, et le titre est déclaré introuvable. C'est ce qui
-     * est arrivé à la fusion — vingt-sept cadres d'entraide et d'agenda, déjà
-     * livrés, ont perdu leur `<h1>` d'un coup, avec un avertissement qui accusait
-     * la déclaration alors que le défaut était ici.
-     *
-     * Mais se contenter de sauter le contrôle serait pire : on prendrait la
-     * PREMIÈRE occurrence du texte, et sur ces maquettes la première est souvent
-     * l'entrée du panneau de gauche — « Mes demandes », « Checklist de documents »
-     * figurent deux fois. Le titre promu serait le mauvais, et invisiblement,
-     * puisque le texte affiché est le même.
-     *
-     * À défaut de discriminant déclaré, on demande donc à l'élément de RESSEMBLER
-     * à un titre : au moins 16 px et une graisse d'au moins 700. C'est la règle
-     * qu'un lot parallèle avait trouvée de son côté, et elle distingue un titre
-     * d'écran d'une pastille de filtre portant le même mot.
-     */
-    if (requires === undefined) {
+
+    if (requires === WHOLE) {
+      // Le `<` du marqueur doit être CELUI DE LA FERMETURE. S'il ouvre une balise
+      // imbriquée, l'élément contient autre chose que le titre : ce n'est pas lui.
+      if (!jsx.startsWith(`</${tag}>`, at + 1 + text.length)) continue;
+    } else if (requires === SHAPED) {
       const size = /fontSize: "([\d.]+)px"/.exec(attrs);
       const weight = /fontWeight: "(\d+)"/.exec(attrs);
       if (size === null || Number(size[1]) < 16) continue;
@@ -1340,14 +1392,6 @@ function promoteTextTo(jsx, { text, tag: as, id, requires }) {
       }
       depth -= 1;
       if (depth === 0) {
-        /**
-         * `margin: 0` est AJOUTÉ, et c'est la seule liberté : un titre arrive avec
-         * les marges par défaut du navigateur, que le `<span>` ou le `<div>`
-         * d'origine n'avait pas. Sans cette ligne, changer la balise déplacerait le
-         * titre — le design ne serait plus celui de la maquette, pour une raison
-         * invisible à la lecture du code. Sur un `<h1>` la marge par défaut fait
-         * 0,67 em, soit une vingtaine de pixels à 30 px de corps.
-         */
         const newAttrs = attrs.replace(/style=\{\{ /, 'style={{ margin: "0", ');
         const idAttr = id === undefined ? '' : ` id="${id}"`;
         const out =
@@ -1364,79 +1408,6 @@ function promoteTextTo(jsx, { text, tag: as, id, requires }) {
   return { jsx, promoted: false, id: null };
 }
 
-/**
- * LE DISCRIMINANT DU TITRE D'UNE MODALE EST SURCHARGEABLE, et il l'a fallu.
- *
- * `fontWeight: "800"` est le bon défaut : les huit fenêtres du dépôt titrent
- * toutes en 800. Le MENU DE LA CONVERSATION de M01, lui, n'a pas de titre en 800 —
- * la maquette le nomme par l'étiquette de sa carte, « MENU DE LA CONVERSATION »,
- * en 10,5 px / 700, exactement comme elle nomme « BLOQUÉS » ou « SUGGESTIONS »
- * dans `08 Compte`. Sans cette surcharge, la boîte de dialogue n'avait AUCUN nom
- * accessible, et `aria-labelledby` désignait un identifiant absent.
- *
- * La surcharge est déclarée par écran (`modalTitleRequires`), pas devinée : un
- * repli automatique sur « n'importe quelle graisse » aurait attrapé le premier
- * texte venu sur les huit autres fenêtres, en silence.
- */
-function promoteModalTitle(jsx, section, title, requires = 'fontWeight: "800"') {
-  if (title === undefined) return { jsx, promoted: false, id: null };
-  return promoteTextTo(jsx, {
-    text: title,
-    tag: 'h2',
-    id: `${section.toLowerCase()}-titre`,
-    requires,
-  });
-}
-
-/**
- * LE TITRE D'UNE PAGE, quand la maquette n'écrit aucun `<h2>`.
- *
- * `04 Parcours` n'en contient pas un seul — `01 Accès` en a seize, `03 Accueil`
- * onze. Ses trente cadres de page arrivaient donc SANS AUCUN TITRE : rien à
- * promouvoir en `<h1>`, et un lecteur d'écran qui arrive sur `/parcours/:id` ne
- * sait pas de quoi la page parle.
- *
- * Le titre est donc DÉCLARÉ avec le cadre — son texte visible et son corps —
- * exactement comme celui d'une modale, et pour la même raison : la maquette les
- * dessine tous différemment (30 px sur J01, 18 px sur J01D, 16 px sur les
- * en-têtes mobiles), et un motif qui couvrirait les trente attraperait aussi des
- * sous-titres, en silence.
- *
- * Le CORPS est ce qui distingue le titre de son homonyme du panneau de gauche.
- *
- * Aucun `id` n'est posé, à la différence d'une modale : `ScreenFrames` rend LES
- * DEUX cadres et en masque un — deux fois le même identifiant dans le document.
- * Un `<h1>` n'a besoin d'aucun identifiant, donc on n'en met pas.
- */
-/** Le libellé d'un titre, qu'il soit une chaîne ou un objet `{ text, size }`. */
-function titleLabel(title) {
-  if (title === undefined) return '(non déclaré)';
-  return typeof title === 'string' ? title : `${title.text} (${title.size})`;
-}
-
-function promoteScreenTitle(jsx, title) {
-  if (title === undefined) return { jsx, promoted: false, id: null };
-  /**
-   * `title` ACCEPTE DEUX FORMES, parce que deux lots l'ont inventée séparément :
-   * une simple chaîne (le texte visible) ou un objet `{ text, size }` qui ajoute
-   * un discriminant de taille.
-   *
-   * Le discriminant n'est pas un raffinement : « Checklist de documents » figure
-   * DEUX FOIS dans un cadre de parcours — une fois comme entrée du panneau de
-   * gauche, une fois comme titre de page — et c'est l'entrée du panneau qui vient
-   * en premier dans le document. Sans lui, on promeut la mauvaise, et le défaut
-   * est invisible : le texte affiché est le même.
-   *
-   * Là où une chaîne suffit, elle suffit. Exiger l'objet partout obligerait à
-   * relire la taille de quarante-quatre titres qui n'ont aucune ambiguïté.
-   */
-  if (typeof title === 'string') {
-    return promoteTextTo(jsx, { text: title, tag: 'h1' });
-  }
-  return promoteTextTo(jsx, { text: title.text, tag: 'h1', requires: `fontSize: "${title.size}"` });
-}
-
-
 /** La table à employer : celle des modales exclut l'adaptation du contenu qui coule. */
 function adaptationsFor(modal) {
   if (!modal) return ALL_ADAPTATIONS;
@@ -1445,7 +1416,7 @@ function adaptationsFor(modal) {
   return [...MODAL_ADAPTATIONS, ...kept, ...TOUCH_TARGET_ADAPTATIONS];
 }
 
-function adaptFrame(jsx, section, modal = false, heading = undefined) {
+function adaptFrame(jsx, section, modal = false) {
   const ADAPTATIONS = adaptationsFor(modal);
   const counts = ADAPTATIONS.map(() => 0);
   const roles = new Set();
@@ -1484,19 +1455,24 @@ function adaptFrame(jsx, section, modal = false, heading = undefined) {
     return `<${tag}${newAttrs}${suffix}${selfClose}>`;
   });
 
-  // Le `<h2>` de la maquette d'abord — c'est le cas courant. Le titre DÉCLARÉ n'est
-  // une solution de repli que pour les cadres qui n'écrivent aucun titre balisé.
+  /**
+   * LE `<h2>` QUE LA MAQUETTE BALISE DÉJÀ — la SOURCE la plus sûre, et la seule
+   * que `adaptFrame` connaisse.
+   *
+   * Le titre DÉCLARÉ est un repli, et il est promu ailleurs : une seule fois, après
+   * `adaptFields` et `adaptButtons`, par `promoteTitle`. Il était promu ICI pour
+   * `heading` et LÀ-BAS pour `title` — deux positions dans le pipeline pour la même
+   * opération. Le déplacement a été mesuré : les 250 cadres sortent identiques,
+   * octet pour octet.
+   */
   const fromMarkup = promoteFirstHeading(adapted);
-  const title = fromMarkup.promoted ? fromMarkup : promoteDeclaredHeading(fromMarkup.jsx, heading);
-  const fields = adaptFields(title.jsx, section);
+  const fields = adaptFields(fromMarkup.jsx, section);
   const buttons = adaptButtons(fields.jsx, section);
   return {
     adapted: buttons.jsx,
     counts,
-    promotedHeading: title.promoted,
+    promotedHeading: fromMarkup.promoted,
     headingAlreadyThere: fromMarkup.alreadyThere === true,
-    headingDeclared: !fromMarkup.promoted && title.promoted,
-    headingDeclaredMissed: !fromMarkup.promoted && !title.promoted && heading !== undefined,
     roles,
     fields: fields.applied,
     missedFields: fields.missed ?? [],
@@ -1625,6 +1601,310 @@ ${needsFragment ? "import { Fragment } from 'react';\n" : ''}import type { ${dat
 `;
 
 /**
+ * ─── ÉPREUVE DU MÉCANISME DE TITRE ET DU SÉLECTEUR DE PLANCHE ────────────────
+ *
+ * `node tools/generate-screens.mjs --self-test` — branché sur `pnpm guardrails`,
+ * comme le `--self-test` de `check-duplicate-spread-keys.mjs`.
+ *
+ * Chaque cas porte LE DÉFAUT RÉEL d'où il vient. Un test qui ne meurt pas quand on
+ * casse la règle qu'il prétend garder est un test creux : ceux-ci ont tous été
+ * éprouvés en cassant la règle et en vérifiant que le cas rougit.
+ *
+ * Les fragments sont écrits dans le dialecte que `transcode` produit — `style={{ … }}`
+ * — parce que c'est sur CELUI-LÀ que `promoteTitle` travaille, jamais sur le HTML.
+ */
+
+/** Deux volets d'une même fenêtre, chacun avec SON titre. Voir A12C. */
+const VOLET_PRODUIT =
+  '<div style={{ padding: "24px" }}>' +
+  '<span style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px" }}>ÉTAPE 2 SUR 2</span>' +
+  '<span style={{ fontSize: "20px", fontWeight: "800" }}>Produit du pays</span>' +
+  '</div>';
+
+/** L'en-tête d'une carte de conversation : 10,5 px / 700, comme M01. */
+const MENU_CONVERSATION =
+  '<div style={{ padding: "8px" }}>' +
+  '<span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>MENU DE LA CONVERSATION</span>' +
+  '<span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>BLOQUÉS</span>' +
+  '</div>';
+
+/** L'en-tête mobile de A01N : le titre fait 15,5 px — SOUS le plancher de `SHAPED`. */
+const ENTETE_MOBILE =
+  '<div style={{ display: "flex" }}>' +
+  '<span style={{ fontSize: "15.5px", fontWeight: "700", flex: "1" }}>Nouvelle publication</span>' +
+  '</div>';
+
+/** Une pastille de filtre PUIS le vrai titre, même mot. Cas réel de H05. */
+const PASTILLE_PUIS_TITRE =
+  '<div>' +
+  '<span style={{ padding: "8px 12px", fontSize: "12.5px", fontWeight: "600" }}>Parrainage</span>' +
+  '<span style={{ fontSize: "28px", fontWeight: "800" }}>Parrainage</span>' +
+  '</div>';
+
+/** « Lyon » le titre, et « Lyon et Rhône » la colonne de contexte. Cas réel de A12. */
+const LYON_ET_RHONE =
+  '<div>' +
+  '<div style={{ fontSize: "13px", fontWeight: "600" }}>Lyon et Rhône</div>' +
+  '<div style={{ fontSize: "30px", fontWeight: "800" }}>Lyon</div>' +
+  '</div>';
+
+/** « Checklist de documents » deux fois : l'entrée du panneau d'abord. Cas réel de J06. */
+const CHECKLIST_DEUX_FOIS =
+  '<div>' +
+  '<span style={{ fontSize: "14px", fontWeight: "700" }}>Checklist de documents</span>' +
+  '<span style={{ fontSize: "26px", fontWeight: "800" }}>Checklist de documents</span>' +
+  '</div>';
+
+/** « Commentaires · 8 » : le compteur est un `<span>` IMBRIQUÉ dans le titre. */
+const COMMENTAIRES =
+  '<div><span style={{ fontSize: "18px", fontWeight: "800" }}>Commentaires<span style={{ color: "#8A958F" }}> · 8</span></span></div>';
+
+const TITLE_TESTS = [
+  // ── LEQUEL des titres ────────────────────────────────────────────────────
+  {
+    name: 'LEQUEL · le titre du CADRE passe devant celui de l’écran (A12C, 4 volets 1 fenêtre)',
+    run: () => {
+      const spec = titleFor(
+        { section: 'A12C', modal: true, modalTitle: 'Contribuer à la fiche Lyon' },
+        { modalTitle: 'Produit du pays' },
+      );
+      return `${spec.text}|${spec.id}|${spec.tag}`;
+    },
+    expect: 'Produit du pays|a12c-titre|h2',
+  },
+  {
+    name: 'LEQUEL · l’écran fournit le titre quand le cadre n’en déclare pas',
+    run: () => titleFor({ section: 'A01C', modal: true, modalTitle: 'Commentaires' }, {}).text,
+    expect: 'Commentaires',
+  },
+  {
+    name: 'LEQUEL · quatre volets, quatre titres, UN SEUL id — et c’est promu sur la maquette',
+    run: () => {
+      const a12c = SCREENS.find((s) => s.section === 'A12C');
+      const titres = a12c.frames.map((f) => titleFor(a12c, f));
+      const textes = new Set(titres.map((t) => t.text));
+      const ids = new Set(titres.map((t) => t.id));
+      // Et le titre de chaque volet est bien PROMU dans le JSX de CE volet-là.
+      const promus = a12c.frames.map((frame) => {
+        const section = extractSection(readFileSync(resolve(ROOT, a12c.file), 'utf8'), frame.section);
+        const raw = extractFrame(section, frame.width, frame.occurrence ?? 0, frame.requires ?? '');
+        const { adapted } = adaptFrame(transcode(raw.inner), a12c.section, true);
+        return promoteTitle(adapted, titleFor(a12c, frame)).promoted;
+      });
+      return `${textes.size} titres · ${ids.size} id · promus ${promus.filter(Boolean).length}/${promus.length}`;
+    },
+    expect: '4 titres · 1 id · promus 4/4',
+  },
+  // ── QUEL texte promouvoir ────────────────────────────────────────────────
+  {
+    name: 'QUEL · surcharge DÉCLARÉE du discriminant : 700 promeut « MENU DE LA CONVERSATION »',
+    run: () => {
+      const spec = titleFor(
+        { section: 'M01', modal: true, modalTitle: 'MENU DE LA CONVERSATION', modalTitleRequires: 'fontWeight: "700"' },
+        {},
+      );
+      const out = promoteTitle(MENU_CONVERSATION, spec);
+      return `${out.promoted}|${out.jsx.includes('<h2 id="m01-titre"') ? 'h2' : 'rien'}`;
+    },
+    expect: 'true|h2',
+  },
+  {
+    name: 'QUEL · sans la surcharge, le défaut 800 ne le promeut PAS — et ne se rabat sur rien',
+    run: () => {
+      const spec = titleFor({ section: 'M01', modal: true, modalTitle: 'MENU DE LA CONVERSATION' }, {});
+      return String(promoteTitle(MENU_CONVERSATION, spec).promoted);
+    },
+    expect: 'false',
+  },
+  {
+    name: 'QUEL · un intitulé de section NE MÉRITE PAS d’être promu : « BLOQUÉS » reste un span',
+    run: () => {
+      // La surcharge de M01 est en place : le discriminant seul ne suffit donc plus,
+      // c'est le TEXTE DÉCLARÉ qui borne. « BLOQUÉS » n'est déclaré nulle part.
+      const spec = titleFor({ section: 'K05', modal: true, modalTitle: 'BLOQUÉS' }, {});
+      const avec700 = titleFor(
+        { section: 'K05', modal: true, modalTitle: 'BLOQUÉS', modalTitleRequires: 'fontWeight: "700"' },
+        {},
+      );
+      return `defaut=${promoteTitle(MENU_CONVERSATION, spec).promoted} declare=${promoteTitle(MENU_CONVERSATION, avec700).promoted}`;
+    },
+    expect: 'defaut=false declare=true',
+  },
+  {
+    name: 'QUEL · `WHOLE` promeut un en-tête mobile de 15,5 px que `SHAPED` refuse (A01N, A05, A10)',
+    run: () => {
+      const whole = promoteTitle(ENTETE_MOBILE, { text: 'Nouvelle publication', tag: 'h1', requires: WHOLE });
+      const shaped = promoteTitle(ENTETE_MOBILE, { text: 'Nouvelle publication', tag: 'h1', requires: SHAPED });
+      return `whole=${whole.promoted} shaped=${shaped.promoted}`;
+    },
+    expect: 'whole=true shaped=false',
+  },
+  {
+    name: 'QUEL · `SHAPED` saute la pastille de filtre et prend le titre (H05)',
+    run: () => {
+      const out = promoteTitle(PASTILLE_PUIS_TITRE, { text: 'Parrainage', tag: 'h1', requires: SHAPED });
+      return `${out.promoted}|${/<h1 style=\{\{ margin: "0", fontSize: "28px"/.test(out.jsx)}`;
+    },
+    expect: 'true|true',
+  },
+  {
+    name: 'QUEL · `WHOLE` ne prend pas le préfixe d’un texte plus long (« Lyon » ≠ « Lyon et Rhône »)',
+    run: () => {
+      const out = promoteTitle(LYON_ET_RHONE, { text: 'Lyon', tag: 'h1', requires: WHOLE });
+      return `${out.promoted}|${/<h1 style=\{\{ margin: "0", fontSize: "30px"/.test(out.jsx)}`;
+    },
+    expect: 'true|true',
+  },
+  {
+    name: 'QUEL · un discriminant de taille déclaré saute la PREMIÈRE occurrence (J06)',
+    run: () => {
+      const out = promoteTitle(CHECKLIST_DEUX_FOIS, {
+        text: 'Checklist de documents',
+        tag: 'h1',
+        requires: 'fontSize: "26px"',
+      });
+      return `${out.promoted}|${/<h1 style=\{\{ margin: "0", fontSize: "26px"/.test(out.jsx)}`;
+    },
+    expect: 'true|true',
+  },
+  {
+    name: 'QUEL · la fermeture est la BONNE malgré un span imbriqué (« Commentaires · 8 »)',
+    run: () => {
+      const out = promoteTitle(COMMENTAIRES, {
+        text: 'Commentaires',
+        tag: 'h2',
+        id: 'a01c-titre',
+        requires: 'fontWeight: "800"',
+      });
+      return out.jsx.includes('> · 8</span></h2>') ? 'fermeture juste' : `fermeture fausse : ${out.jsx}`;
+    },
+    expect: 'fermeture juste',
+  },
+  {
+    name: 'QUEL · `margin: "0"` est ajouté, sinon le titre se déplace en changeant de balise',
+    run: () => String(promoteTitle(ENTETE_MOBILE, { text: 'Nouvelle publication', tag: 'h1', requires: WHOLE }).jsx.includes('<h1 style={{ margin: "0", fontSize: "15.5px"')),
+    expect: 'true',
+  },
+  {
+    name: 'LEQUEL · aucune déclaration, aucune promotion — et pas d’exception',
+    run: () => `${titleFor({ section: 'A01' }, {}) === undefined}|${promoteTitle(ENTETE_MOBILE, undefined).promoted}`,
+    expect: 'true|false',
+  },
+];
+
+/** La planche de J01M et la colonne de mise en page qui la porte, même largeur. */
+const PLANCHE_ET_COLONNE =
+  '<div style="display:flex;flex-direction:column;gap:10px;width:390px">' +
+  '<span>MOBILE · FEUILLE</span>' +
+  '<div style="width:390px;height:844px;border-radius:40px;overflow:hidden">le téléphone</div>' +
+  '</div>';
+
+const FRAME_TESTS = [
+  {
+    name: 'la largeur est reconnue où qu’elle soit DÉCLARÉE (`position:relative;width:760px`, A12T)',
+    run: () => extractFrame('<div style="position:relative;width:760px;height:820px">volet</div>', 760).inner,
+    expect: 'volet',
+  },
+  {
+    name: 'la largeur peut n’être PAS en pixels (`width:100%`, la carte du composeur de A01S)',
+    run: () => extractFrame('<div style="width:100%;background:#fff;border-radius:22px">carte</div>', '100%').inner,
+    expect: 'carte',
+  },
+  {
+    name: 'la largeur peut être déclarée EN DERNIER (`background:…;width:480px`, X04)',
+    run: () => extractFrame('<div style="background:#E3F0EB;border-radius:22px;width:480px">encart</div>', 480).inner,
+    expect: 'encart',
+  },
+  {
+    name: '`width:` doit OUVRIR une déclaration : `min-width` et `max-width` ne sont pas des planches',
+    run: () => {
+      try {
+        extractFrame('<div style="min-width:760px"><div style="max-width:760px">x</div></div>', 760);
+        return 'attrapé à tort';
+      } catch (e) {
+        return e.message.startsWith('Cadre de 760px n° 1 introuvable') ? 'refusé' : `autre erreur : ${e.message}`;
+      }
+    },
+    expect: 'refusé',
+  },
+  {
+    name: '`requires` désigne la PLANCHE et non la colonne de même largeur (J01M)',
+    run: () => extractFrame(PLANCHE_ET_COLONNE, 390, 0, 'height:844px').inner,
+    expect: 'le téléphone',
+  },
+  {
+    name: 'sans `requires`, c’est la colonne qui vient en premier — la règle est bien ACTIVE',
+    run: () => extractFrame(PLANCHE_ET_COLONNE, 390, 0).inner.startsWith('<span>MOBILE') ? 'la colonne' : 'autre',
+    expect: 'la colonne',
+  },
+  {
+    name: '`occurrence` ne compte que les candidats qui passent `requires`',
+    run: () => {
+      const html =
+        '<div style="width:700px">colonne A</div>' +
+        '<div style="width:700px;height:600px">planche A</div>' +
+        '<div style="width:700px">colonne B</div>' +
+        '<div style="width:700px;height:600px">planche B</div>';
+      return `${extractFrame(html, 700, 0, 'height:600px').inner}/${extractFrame(html, 700, 1, 'height:600px').inner}`;
+    },
+    expect: 'planche A/planche B',
+  },
+  {
+    name: 'la maquette elle-même : les trois volets « Contribuer » de A12T, SANS préfixe déclaré',
+    run: () => {
+      const section = extractSection(
+        readFileSync(resolve(ROOT, 'docs/template/03 Accueil v2.dc.html'), 'utf8'),
+        'A12T',
+      );
+      // Chaque volet porte SON titre : c'est ce qui prouve qu'on a bien les trois,
+      // et dans l'ordre que la maquette leur donne.
+      const attendus = ['Contribuer à la fiche Lyon', 'Produit du pays', 'Budget réel'];
+      return attendus.map((t, o) => extractFrame(section, 760, o).inner.includes(t)).join(',');
+    },
+    expect: 'true,true,true',
+  },
+  {
+    name: 'la maquette elle-même : la carte du composeur de A01S est atteignable et transcodable',
+    run: () => {
+      const section = extractSection(
+        readFileSync(resolve(ROOT, 'docs/template/03 Accueil v2.dc.html'), 'utf8'),
+        'A01S',
+      );
+      const col = extractFrame(section, 760);
+      const card = extractFrame(col.inner, '100%');
+      return `${card.inner.includes('repas partagé')}|${transcode(card.inner).startsWith('<div style={{')}`;
+    },
+    expect: 'true|true',
+  },
+];
+
+if (process.argv.includes('--self-test')) {
+  let failed = 0;
+  for (const t of [...TITLE_TESTS, ...FRAME_TESTS]) {
+    let got;
+    try {
+      got = t.run();
+    } catch (e) {
+      got = `exception : ${e.message}`;
+    }
+    const ok = got === t.expect;
+    if (!ok) failed += 1;
+    console.log(`  ${ok ? '✓' : '✗'} ${t.name}`);
+    if (!ok) console.log(`      attendu « ${t.expect} », obtenu « ${got} »`);
+  }
+  const total = TITLE_TESTS.length + FRAME_TESTS.length;
+  if (failed > 0) {
+    console.error(`\n${failed} cas sur ${total} ne se comporte(nt) pas comme documenté.\n`);
+    process.exit(1);
+  }
+  console.log(
+    `\n  ${total} cas : LEQUEL des titres et QUEL texte promouvoir restent deux questions,\n` +
+      '  et une planche est désignée par ce qu’elle est.\n',
+  );
+  process.exit(0);
+}
+
+/**
  * UN CADRE PEUT VENIR D'UNE AUTRE SECTION QUE SON ÉCRAN, et c'est la maquette
  * « 03 Accueil v2 » qui l'impose, pas un confort d'outillage.
  *
@@ -1649,9 +1929,14 @@ for (const screen of SCREENS) {
 
   for (const frame of screen.frames) {
     const section = extractSection(html, frame.section ?? screen.section);
-    // `stylePrefix` : voir `extractFrame`. Absent partout sauf sur les trois
-    // fenêtres de contribution de A12T, dont le style commence par `position:relative`.
-    const raw = extractFrame(section, frame.width, frame.occurrence ?? 0, frame.stylePrefix ?? '');
+    /**
+     * `frame.width` est la largeur que la planche DÉCLARE — un nombre de pixels, ou
+     * une chaîne pour toute autre valeur CSS (`'100%'`). `frame.requires` est le
+     * discriminant de style, pour une planche qu'une autre de même largeur imite.
+     * Voir `extractFrame` : la place de `width:` dans le style n'entre plus en jeu,
+     * et `stylePrefix` a disparu avec elle.
+     */
+    const raw = extractFrame(section, frame.width, frame.occurrence ?? 0, frame.requires ?? '');
     /**
      * L'EMPRUNT PASSE AVANT TOUT LE RESTE, et il le doit : `adaptModalFrame`
      * promeut les fermetures en boutons, et une croix empruntée qui arriverait
@@ -1686,16 +1971,9 @@ for (const screen of SCREENS) {
     const triggered = markTriggers(modal === null ? raw.inner : modal.inner, triggersForFrame);
     const inner = triggered.html;
     const {
-      adapted: jsx, counts, promotedHeading, headingAlreadyThere, headingDeclared,
-      headingDeclaredMissed, roles, fields, buttons, missedFields,
-    } = adaptFrame(
-      transcode(inner),
-      screen.section,
-      screen.modal === true,
-      // Le titre déclaré peut l'être par le CADRE — A14 dessine quatre étapes, donc
-      // quatre titres différents — ou par l'écran quand ses cadres le partagent.
-      frame.heading ?? screen.heading,
-    );
+      adapted: jsx, counts, promotedHeading, headingAlreadyThere,
+      roles, fields, buttons, missedFields,
+    } = adaptFrame(transcode(inner), screen.section, screen.modal === true);
 
     // Le libellé accessible est recopié du texte visible : s'il a changé dans la
     // maquette, on refuse de générer plutôt que de laisser dériver un nom que
@@ -1731,31 +2009,24 @@ for (const screen of SCREENS) {
      * clavier et `aria-labelledby` — voir `apps/web/src/components/modal.tsx`.
      */
     const isModal = screen.modal === true;
-    const screenTitle = isModal ? { jsx, promoted: false } : promoteScreenTitle(jsx, frame.title);
-    const titled = isModal
-      ? // LE TITRE PEUT ÊTRE CELUI DU CADRE, comme `heading` l'est déjà pour une page.
-        // Les quatre planches de la fenêtre de contribution portent quatre titres
-        // différents — « Contribuer à la fiche Lyon » sur l'étape 1 d'ordinateur,
-        // « Produit du pays » et « Budget réel » sur l'étape 2, « Contribuer à Lyon »
-        // sur la feuille mobile — alors qu'elles sont UNE SEULE fenêtre. L'`id`, lui,
-        // reste celui de l'écran : une seule planche est rendue à la fois, donc un
-        // seul `a12c-titre` existe dans le document, et `aria-labelledby` le désigne
-        // sans ambiguïté quel que soit le volet ouvert.
-        //
-        // `modalTitleRequires` est l'autre moitié, et elle répond à une question
-        // distincte : QUEL texte promouvoir, pas LEQUEL des titres. Le discriminant
-        // par défaut exige 800, mais « MENU DE LA CONVERSATION » est en 10,5 px / 700
-        // — comme « BLOQUÉS » ou « DEMANDES REÇUES » dans `08 Compte`. La surcharge
-        // est DÉCLARÉE par écran, jamais devinée : sans elle, promouvoir tout ce qui
-        // ressemble à une étiquette ferait remonter des intitulés de section en titre
-        // de fenêtre.
-        promoteModalTitle(
-          jsx,
-          screen.section,
-          frame.modalTitle ?? screen.modalTitle,
-          screen.modalTitleRequires,
-        )
-      : { jsx: screenTitle.jsx, promoted: false, id: null };
+    /**
+     * L'UNIQUE POINT DE PROMOTION D'UN TITRE DÉCLARÉ.
+     *
+     * Deux questions, deux fonctions, un seul appel : `titleFor` dit LEQUEL des
+     * titres vaut pour ce cadre, `promoteTitle` dit QUEL élément le porte. Voir le
+     * bloc « LE TITRE D'UN CADRE » — il explique pourquoi les deux axes ne peuvent
+     * pas se confondre, et ce qu'il en coûte de les aplatir.
+     *
+     * Le titre balisé par la maquette PASSE DEVANT : quand `promoteFirstHeading` a
+     * déjà donné son `<h1>` au cadre, la déclaration ne s'applique pas. C'est ce qui
+     * interdit STRUCTURELLEMENT le second `<h1>` qu'une promotion inconditionnelle
+     * rendait possible. Une fenêtre, elle, n'a pas de `<h1>` à disputer : son titre
+     * est un `<h2>` que `aria-labelledby` désigne, et il est toujours promu.
+     */
+    const spec = titleFor(screen, frame);
+    const titled = isModal || !promotedHeading
+      ? promoteTitle(jsx, spec)
+      : { jsx, promoted: false, id: null };
     const hasLandmark = /<main[\s>]/.test(titled.jsx);
     const wrapped = isModal
       ? titled.jsx
@@ -1986,61 +2257,36 @@ ${shelled}
         `      ⚠ déclencheur de ${t.modal} introuvable (« ${t.marker} ») : la modale sera inatteignable depuis cet écran.`,
       );
     }
+    /**
+     * UNE SEULE CHAÎNE DE JUGEMENT, et non trois journaux côte à côte.
+     *
+     * Les mécanismes réunis plus haut avertissaient chacun pour les cadres que
+     * l'autre avait traités : le compte est passé de 10 à 47 « aucun titre » d'un
+     * coup, tous faux. Un avertissement qui crie à tort en cache un vrai — c'est
+     * exactement ce que ce journal existe pour éviter.
+     *
+     * Chaque cadre est donc jugé UNE fois. `spec.key` nomme la clé à corriger, pour
+     * que l'avertissement ne puisse plus accuser la mauvaise déclaration.
+     */
     if (isModal) {
       if (titled.promoted) {
         console.log(`      Titre promu en <h2 id="${titled.id}"> : la boîte de dialogue le désignera par aria-labelledby.`);
       } else {
         console.log(
-          `      ⚠ titre « ${frame.modalTitle ?? screen.modalTitle ?? '(non déclaré)'} » introuvable : la modale n’aura pas de nom accessible. Corriger « modalTitle » dans sa déclaration.`,
+          `      ⚠ titre « ${spec?.label ?? '(non déclaré)'} » introuvable : la modale n’aura pas de nom accessible. ` +
+            `Corriger « ${spec?.key ?? 'modalTitle'} » dans sa déclaration.`,
         );
       }
-    } else if (!hasLandmark) {
-      console.log('      Repère `main` ajouté : la maquette n’en a pas.');
-    }
-    /**
-     * DEUX MÉCANISMES DE TITRE COHABITENT ICI, et c'est une dette assumée.
-     *
-     * Deux lots parallèles ont eu le même besoin — aucune de ces maquettes n'a de
-     * `<h2>` à promouvoir — et l'ont résolu séparément : `heading` déclaré par écran
-     * d'un côté, `title` déclaré par cadre de l'autre. Les deux marchent, chacun sur
-     * ses déclarations, et les fusionner pendant l'intégration de trente-et-un
-     * écrans aurait été le meilleur moyen de casser les deux.
-     *
-     * Ce qu'ils apportent séparément, et qu'une version unifiée devra garder :
-     *   · `heading` garde le `<h1>` que la maquette écrit DÉJÀ — c'est lui qui a
-     *     révélé un second `<h1>` sur la politique de confidentialité, présent
-     *     depuis le début ;
-     *   · `title` reconnaît le titre par une MESURE (≥ 16 px, graisse ≥ 700) et
-     *     parcourt toutes les occurrences, ce qui le distingue d'une pastille de
-     *     filtre portant le même mot — cas réel sur H05.
-     *
-     * À unifier dans un lot qui ne fait que cela.
-     */
-    /**
-     * UNE SEULE CHAÎNE, et non deux journaux côte à côte.
-     *
-     * Les deux mécanismes réunis plus haut avertissaient chacun pour les écrans que
-     * l'autre avait traités : le compte est passé de 10 à 47 « aucun titre » d'un
-     * coup, tous faux. Un avertissement qui crie à tort en cache un vrai — c'est
-     * exactement ce que ce journal existe pour éviter.
-     *
-     * Chaque cadre est donc jugé UNE fois, par le mécanisme qu'il emploie.
-     */
-    if (!isModal) {
+    } else {
+      if (!hasLandmark) console.log('      Repère `main` ajouté : la maquette n’en a pas.');
       if (headingAlreadyThere) {
         console.log('      <h1> déjà dans la maquette : aucun <h2> promu (ses <h2> sont les sections du contenu).');
-      } else if (headingDeclared) {
-        console.log(`      Titre déclaré « ${frame.heading ?? screen.heading} » promu en <h1> : ce cadre n’en balise aucun.`);
-      } else if (screenTitle.promoted) {
-        console.log(`      Titre « ${titleLabel(frame.title)} » promu en <h1>.`);
-      } else if (headingDeclaredMissed) {
+      } else if (titled.promoted) {
+        console.log(`      Titre déclaré « ${spec.label} » promu en <h1> : ce cadre n’en balise aucun.`);
+      } else if (spec !== undefined && !promotedHeading) {
         console.log(
-          `      ⚠ titre déclaré « ${frame.heading ?? screen.heading} » introuvable : la page n’aura pas de titre. Corriger « heading » dans sa déclaration.`,
-        );
-      } else if (frame.title !== undefined) {
-        console.log(
-          `      ⚠ titre déclaré « ${titleLabel(frame.title)} » introuvable dans ce cadre : la page n’aura pas de <h1>. ` +
-            'Corriger « title » dans la déclaration du cadre.',
+          `      ⚠ titre déclaré « ${spec.label} » introuvable dans ce cadre : la page n’aura pas de <h1>. ` +
+            `Corriger « ${spec.key} » dans sa déclaration.`,
         );
       } else if (!promotedHeading) {
         console.log('      ⚠ aucun <h2> à promouvoir en <h1> : la page n’aura pas de titre');

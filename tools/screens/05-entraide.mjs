@@ -21,7 +21,8 @@
  * Aucune section de cette maquette ne contient de `<h2>` : son unique `<h1>` est
  * celui de la planche de documentation, hors section. Le titre de page est donc
  * déclaré ici, avec son TEXTE VISIBLE, et le générateur promeut l'élément qui le
- * porte en `<h1>` (voir `promoteScreenTitle`).
+ * porte en `<h1>` (voir `titleFor` et `promoteTitle` : `title` répond à LEQUEL des
+ * titres, son discriminant à QUEL texte promouvoir).
  *
  * Les deux cadres d'un même écran ne le disent pas toujours pareil, et c'est la
  * maquette qui en décide : H09 titre « Mes demandes » sur ordinateur, mais

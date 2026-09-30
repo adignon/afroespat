@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { cursorQuerySchema } from './pagination.js';
+import { CountryKind } from '../enums/generated.js';
+import { cursorQuerySchema, pageSchema } from './pagination.js';
 
 /**
  * Administration des référentiels — 02-referentiels.md §4.2.
@@ -167,3 +168,54 @@ export const importCitiesSchema = z.object({
   apply: z.boolean().default(false),
 });
 export type ImportCities = z.infer<typeof importCitiesSchema>;
+
+// ── Lecture publique : `GET /v1/places/…` ────────────────────────────────────
+//
+// Les schémas ci-dessus décrivent l'ADMINISTRATION des référentiels (§4.2). Ceux
+// qui suivent décrivent ce que le côté MEMBRE en lit — les listes servies par
+// `PlacesController`, que l'inscription consomme dès le premier écran.
+//
+// Ce sont des schémas de RÉPONSE, validés à la frontière par le client
+// (`apps/web/src/lib/api`). Ils vivent ICI, et non dans le front, parce que §4 fait
+// de `packages/shared` la source unique : un schéma de réponse recopié côté client
+// est une deuxième définition, qui divergera le jour où la route gagne un champ.
+//
+// Il manque encore `languages`, `skills` et `professions` — trois listes de la même
+// forme, servies par le même contrôleur. Elles ne sont pas écrites ici parce que
+// rien ne les consomme encore, et un schéma que personne n'emploie est un schéma que
+// personne ne corrige. À ajouter en branchant l'écran du profil (O04).
+
+/** Un pays, tel que `GET /v1/places/countries` le renvoie. */
+export const placesCountrySchema = z.object({
+  id: z.string().uuid(),
+  iso2: z.string().length(2),
+  nameFr: z.string(),
+  /** `+33`, `+229`… La saisie du numéro s'y appuie (voir `normalizePhone`). */
+  dialCode: z.string(),
+  kind: z.enum(CountryKind),
+});
+export type PlacesCountry = z.infer<typeof placesCountrySchema>;
+
+export const placesCountriesResponseSchema = pageSchema(placesCountrySchema);
+
+/**
+ * Une ville, telle que `GET /v1/places/cities` la renvoie.
+ *
+ * `isActive` est RENVOYÉ et doit l'être : 02 §2.2 rend une ville inactive
+ * sélectionnable à l'inscription — le membre doit pouvoir dire où il vit — alors
+ * qu'elle n'a « ni réseau, ni carte, ni fiche ». L'écran a besoin de la distinction,
+ * et la route s'appelle donc avec `activeOnly=false` à l'inscription. Au lancement
+ * AUCUNE ville n'est active (elles le deviennent vers 20 membres) : filtrer sur
+ * l'activité rendrait une liste vide, et l'écran paraîtrait cassé.
+ */
+export const placesCitySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  slug: z.string(),
+  region: z.string().nullable(),
+  isActive: z.boolean(),
+  memberCount: z.number().int().nonnegative(),
+});
+export type PlacesCity = z.infer<typeof placesCitySchema>;
+
+export const placesCitiesResponseSchema = pageSchema(placesCitySchema);

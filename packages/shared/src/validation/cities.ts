@@ -18,6 +18,23 @@ export const CITY_COUNT_PRIVACY_THRESHOLD = 3;
 /** §2.4 : nouveaux arrivants des 14 derniers jours. */
 export const NEWCOMER_WINDOW_DAYS = 14;
 
+/**
+ * 02-referentiels.md §2.2 : une ville « passe active quand l'équipe le décide, en
+ * général à 20 membres ».
+ *
+ * CE N'EST PAS UN SEUIL D'ACTIVATION, et la nuance est tout le sujet : rien
+ * n'active une ville automatiquement — §2.2 en fait un jugement humain, et
+ * l'activation crée un réseau CITY et y inscrit des membres, ce qu'aucune route ne
+ * défait. Ce nombre est le seuil à partir duquel la tâche hebdomadaire
+ * `city.activation_suggest` (02 §7) SIGNALE la ville à l'équipe, qui décide.
+ *
+ * Il vit ici plutôt que dans `system_settings` parce que T3 §… n'en donne AUCUNE
+ * clé : la table des paramètres réglables du seed ne le liste pas, là où elle liste
+ * `community.interest_threshold_members`. Le jour où l'équipe veut le régler sans
+ * déploiement, c'est une clé à ajouter à T3 — pas une valeur à deviner ici.
+ */
+export const CITY_ACTIVATION_SUGGEST_MEMBERS = 20;
+
 /** §2.3 : « Calculé à la requête, cache 5 minutes. » */
 export const CITY_DESKS_CACHE_MS = 5 * 60 * 1000;
 

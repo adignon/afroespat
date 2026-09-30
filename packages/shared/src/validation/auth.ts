@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import {
+  HelpType,
+  KycStatus,
+  OccupationStatus,
+  Phase,
+  UserPlan,
+  UserStatus,
+  VerificationLevel,
+} from '../enums/generated.js';
 import { handleSchema, uuidSchema } from './pagination.js';
 
 /**
@@ -109,7 +118,11 @@ export const updateMeSchema = z
   .object({
     displayName: z.string().min(2).max(60).optional(),
     handle: handleSchema.optional(),
-    phase: z.enum(['PRE_DEPARTURE', 'RECENT_ARRIVAL', 'SETTLED']).optional(),
+    // `z.enum(Phase)` et non la liste recopiée : `Phase` est GÉNÉRÉ depuis
+    // `prisma/schema/*.prisma` (D — les 95 enums), donc la base, l'API et ce
+    // formulaire ne peuvent pas diverger. Une liste écrite ici à la main survivrait
+    // à l'ajout d'une phase en base sans jamais l'accepter.
+    phase: z.enum(Phase).optional(),
     cityId: uuidSchema.optional(),
     /** Modifiable UNE SEULE FOIS (§2.7) : il pilote réseaux et modèles. */
     originCountryId: uuidSchema.optional(),
@@ -125,11 +138,19 @@ export type UpdateMe = z.infer<typeof updateMeSchema>;
 export const updateProfileSchema = z
   .object({
     bio: z.string().max(500).optional(),
-    occupationStatus: z
-      .enum(['STUDENT', 'EMPLOYEE', 'ENTREPRENEUR', 'JOB_SEEKER', 'OTHER'])
-      .optional(),
+    occupationStatus: z.enum(OccupationStatus).optional(),
     availableToHelp: z.boolean().optional(),
-    helpTypes: z.array(z.enum(['PAPERWORK', 'HOUSING', 'JOB', 'WELCOME', 'OTHER'])).max(5).optional(),
+    /**
+     * `HelpType` — celui du module 01, PAS `HelpType2`.
+     *
+     * Les deux existent et n'ont pas les mêmes membres : `HelpType` est
+     * `PAPERWORK | HOUSING | JOB | WELCOME | OTHER` (ce que le profil déclare
+     * savoir faire), `HelpType2` est `PAPERWORK | SERVICE | RIDE | MATERIAL | OTHER`
+     * (le type d'une demande d'entraide du module 06). Trois membres sur cinq
+     * diffèrent, et une liste recopiée à la main ne dit pas laquelle des deux elle
+     * voulait dire — c'est précisément pourquoi elle est importée.
+     */
+    helpTypes: z.array(z.enum(HelpType)).max(5).optional(),
     languageIds: z.array(uuidSchema).max(10).optional(),
     skillIds: z.array(uuidSchema).max(10).optional(),
     /** Profil visible hors connexion. Par défaut non — l'option la plus protectrice. */
@@ -166,62 +187,14 @@ export const RATE_LIMITS = {
 } as const;
 
 /**
- * Le membre courant, tel que `GET /me` le renvoie.
+ * Les six écrans de §5, dans l'ordre. L'onboarding avance d'un cran à la fois.
  *
- * RÈGLE DURE (§2.1) : le numéro n'est JAMAIS renvoyé en clair, seulement masqué,
- * et seulement à son propriétaire. Le type ne porte donc que `masked`.
+ * DÉCLARÉ AVANT `meResponseSchema`, qui borne `onboarding.step` avec
+ * `ONBOARDING_LAST_STEP`. Les schémas zod se construisent à l'ÉVALUATION du
+ * module, pas à l'appel : une constante lue plus haut qu'elle n'est déclarée lève
+ * une `ReferenceError` au premier `import`, et l'ordre ici n'est donc pas une
+ * question de goût.
  */
-export interface MeResponse {
-  readonly user: {
-    readonly id: string;
-    readonly handle: string;
-    readonly displayName: string;
-    readonly avatarUrl: string | null;
-    readonly phase: string;
-    readonly verificationLevel: string;
-    readonly plan: string;
-    readonly status: string;
-    readonly originCountryId: string;
-    readonly cityId: string | null;
-    readonly originCountryLocked: boolean;
-  };
-  readonly profile: {
-    readonly bio: string | null;
-    readonly occupationStatus: string;
-    readonly availableToHelp: boolean;
-    readonly helpTypes: readonly string[];
-    readonly isPublic: boolean;
-  } | null;
-  readonly phones: readonly { readonly id: string; readonly masked: string; readonly isDestination: boolean }[];
-  readonly kyc: { readonly status: string } | null;
-  /** Compteurs de réputation, tels que `user_stats` les porte. */
-  readonly stats: {
-    readonly helpValidatedCount: number;
-    readonly guideHelpfulVotes: number;
-    readonly guideContributions: number;
-    readonly mentorshipsCompleted: number;
-    readonly eventsOrganized: number;
-  } | null;
-  /**
-   * Où en est l'onboarding. `step` est STOCKÉ (§5 : « pour reprendre là où le
-   * membre s'est arrêté »), et non déduit : cinq des six écrans sont passables,
-   * donc un profil vide ne dit pas si le membre a sauté l'écran ou ne l'a pas vu.
-   */
-  /**
-   * Les consentements à (re)demander — §2.10.
-   *
-   * « Sans bloquer la lecture » : le front affiche une invitation, il ne ferme
-   * pas l'application. D'où une liste, et non un drapeau.
-   */
-  readonly consents: { readonly outstanding: readonly string[] };
-  readonly onboarding: {
-    /** 0 à 6. 6 = terminé. */
-    readonly step: number;
-    readonly complete: boolean;
-  };
-}
-
-/** Les six écrans de §5, dans l'ordre. L'onboarding avance d'un cran à la fois. */
 export const ONBOARDING_STEPS = [
   'phone',
   'phase',
@@ -234,6 +207,151 @@ export const ONBOARDING_STEPS = [
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 
 export const ONBOARDING_LAST_STEP = ONBOARDING_STEPS.length;
+
+/**
+ * Le membre courant, tel que `GET /me` le renvoie — EN SCHÉMA.
+ *
+ * RÈGLE DURE (§2.1) : le numéro n'est JAMAIS renvoyé en clair, seulement masqué,
+ * et seulement à son propriétaire. Le schéma ne porte donc que `masked` — et,
+ * étant `z.object`, il RETIRE tout autre champ : si un jour la route renvoyait le
+ * numéro en clair par accident, il ne traverserait pas cette frontière.
+ *
+ * POURQUOI UN SCHÉMA, ALORS QU'UNE INTERFACE SUFFISAIT À L'API.
+ *
+ * C'était une interface, et l'API l'employait comme type de retour — ce qui est
+ * correct de son côté, puisque le compilateur vérifie l'objet qu'elle construit.
+ * Mais côté front, un type ne vérifie RIEN à l'exécution : `await r.json() as
+ * MeResponse` accepte n'importe quoi, et une réponse qui change de forme donne un
+ * `user` indéfini qui se propage jusqu'à un écran blanc, plusieurs composants plus
+ * loin, sans jamais nommer l'API. Le schéma refuse à l'endroit où la donnée entre.
+ *
+ * `MeResponse` reste exporté sous le même nom, mais INFÉRÉ : il n'y a donc qu'une
+ * seule définition, et l'API continue de s'en servir comme avant.
+ *
+ * LES ÉNUMÉRATIONS SONT IMPORTÉES, pas recopiées. `verificationLevel` était
+ * `string`, ce qui acceptait `"L9"` comme `"L0"`. C'est le champ le plus sensible
+ * du projet — c'est lui qui décide des droits — et le seul endroit où sa liste de
+ * valeurs fait autorité est l'enum généré depuis le schéma Prisma.
+ */
+export const meResponseSchema = z.object({
+  user: z.object({
+    id: uuidSchema,
+    handle: z.string(),
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+    phase: z.enum(Phase),
+    verificationLevel: z.enum(VerificationLevel),
+    plan: z.enum(UserPlan),
+    status: z.enum(UserStatus),
+    originCountryId: uuidSchema,
+    cityId: uuidSchema.nullable(),
+    originCountryLocked: z.boolean(),
+  }),
+  profile: z
+    .object({
+      bio: z.string().nullable(),
+      occupationStatus: z.enum(OccupationStatus),
+      availableToHelp: z.boolean(),
+      helpTypes: z.array(z.enum(HelpType)),
+      isPublic: z.boolean(),
+    })
+    .nullable(),
+  phones: z.array(
+    z.object({ id: uuidSchema, masked: z.string(), isDestination: z.boolean() }),
+  ),
+  kyc: z.object({ status: z.enum(KycStatus) }).nullable(),
+  /** Compteurs de réputation, tels que `user_stats` les porte. */
+  stats: z
+    .object({
+      helpValidatedCount: z.number().int(),
+      guideHelpfulVotes: z.number().int(),
+      guideContributions: z.number().int(),
+      mentorshipsCompleted: z.number().int(),
+      eventsOrganized: z.number().int(),
+    })
+    .nullable(),
+  /**
+   * Les consentements à (re)demander — §2.10.
+   *
+   * « Sans bloquer la lecture » : le front affiche une invitation, il ne ferme
+   * pas l'application. D'où une liste, et non un drapeau.
+   */
+  consents: z.object({ outstanding: z.array(z.string()) }),
+  /**
+   * Où en est l'onboarding. `step` est STOCKÉ (§5 : « pour reprendre là où le
+   * membre s'est arrêté »), et non déduit : cinq des six écrans sont passables,
+   * donc un profil vide ne dit pas si le membre a sauté l'écran ou ne l'a pas vu.
+   */
+  onboarding: z.object({
+    /** 0 à 6. 6 = terminé. */
+    step: z.number().int().min(0).max(ONBOARDING_LAST_STEP),
+    complete: z.boolean(),
+  }),
+});
+
+export type MeResponse = z.infer<typeof meResponseSchema>;
+
+/** `POST /auth/otp/request` — §4.1. Le code part par SMS, jamais dans la réponse. */
+export const otpRequestResponseSchema = z.object({
+  challengeId: uuidSchema,
+  expiresAt: z.string().datetime(),
+});
+
+export type OtpRequestResponse = z.infer<typeof otpRequestResponseSchema>;
+
+/**
+ * `POST /auth/otp/verify` — §4.1.
+ *
+ * La réponse est `MeResponse` AUGMENTÉE de deux champs : §4.1 demande `user` dans
+ * la réponse pour que le front sache tout de suite s'il doit afficher l'onboarding
+ * ou l'accueil, sans un second aller-retour qui se verrait à l'écran.
+ *
+ * Le jeton de RAFRAÎCHISSEMENT n'y figure pas, et son absence est une règle, pas
+ * un oubli : il part en cookie `httpOnly` (T4 §2). Un schéma qui l'accepterait
+ * inviterait un jour quelqu'un à le lire depuis JavaScript, ce qui annulerait tout
+ * le bénéfice du cookie.
+ */
+export const otpVerifyResponseSchema = meResponseSchema.extend({
+  accessToken: z.string().min(1),
+  isNewUser: z.boolean(),
+});
+
+export type OtpVerifyResponse = z.infer<typeof otpVerifyResponseSchema>;
+
+/**
+ * `POST /auth/refresh` — §4.1.
+ *
+ * UN SEUL champ, et c'est le point : le nouveau jeton de rafraîchissement part en
+ * cookie, seul le jeton d'accès revient en JSON. Le niveau que porte ce jeton est
+ * celui de la base À CET INSTANT — c'est pourquoi un rafraîchissement ne peut pas
+ * servir à conserver un ancien niveau (voir `apps/web/src/lib/api/member.ts`).
+ */
+export const refreshResponseSchema = z.object({
+  accessToken: z.string().min(1),
+});
+
+export type RefreshResponse = z.infer<typeof refreshResponseSchema>;
+
+/**
+ * `GET /auth/sessions` — les appareils connectés (§4.1).
+ *
+ * Pas d'IP : elle approche une position, et §8.1 ne collecte aucune position plus
+ * fine que la ville. Le schéma ne la prévoit donc pas — et la retirerait si elle
+ * apparaissait.
+ */
+export const authSessionsResponseSchema = z.object({
+  sessions: z.array(
+    z.object({
+      id: uuidSchema,
+      deviceLabel: z.string(),
+      lastUsedAt: z.string().datetime(),
+      createdAt: z.string().datetime(),
+      isCurrent: z.boolean(),
+    }),
+  ),
+});
+
+export type AuthSessionsResponse = z.infer<typeof authSessionsResponseSchema>;
 
 /**
  * Avancer l'onboarding. On envoie le NUMÉRO de l'écran franchi, pas un « suivant » :

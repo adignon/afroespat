@@ -458,8 +458,9 @@ export const screens = [
    * LE TITRE EST L'ÉTIQUETTE DE LA CARTE, pas un titre inventé. La maquette nomme
    * ce bloc « MENU DE LA CONVERSATION », en 10,5 px / 700 — exactement comme elle
    * nomme « BLOQUÉS » ou « DEMANDES REÇUES » dans `08 Compte`. Le discriminant
-   * par défaut de `promoteModalTitle` exige 800 ; il est donc surchargé ici, et
-   * seulement ici. Sans nom accessible, `aria-labelledby` pointerait dans le vide
+   * par défaut de `titleFor` exige 800 ; `modalTitleRequires` le surcharge ici, et
+   * seulement ici. La surcharge porte sur QUEL texte promouvoir, pas sur LEQUEL des
+   * titres : les deux questions restent séparées. Sans nom accessible, `aria-labelledby` pointerait dans le vide
    * et axe-core le relèverait.
    *
    * AUCUNE DES QUATRE ENTRÉES N'EST BRANCHÉE : la maquette les dessine en
@@ -603,11 +604,15 @@ export const screens = [
    * c'est la démonstration de ce que la maquette annonce en légende, « ne bloquent
    * jamais la navigation ».
    *
-   * Les deux planches de 480 px ne sont PAS extraites : la maquette y écrit
-   * `background:…;width:480px`, la largeur n'ouvre donc pas l'attribut `style` et
-   * `extractFrame` ne les reconnaît pas. Élargir son motif le rendrait ambigu pour
-   * toutes les autres maquettes ; le cadre mobile donne déjà les deux composants,
-   * au même dessin près la largeur. Consigné au rapport.
+   * Les deux planches de 480 px — « NIVEAU » et « PLAN » — écrivent
+   * `background:…;width:480px` : la largeur n'ouvre pas l'attribut `style`, et
+   * `extractFrame` les ancrait sur son début. Elles étaient donc introuvables.
+   * ELLES SONT MAINTENANT ATTEIGNABLES : la largeur est reconnue où qu'elle soit
+   * déclarée, et `extractFrame(section, 480, 0)` / `(…, 480, 1)` les rend.
+   *
+   * ELLES NE SONT PAS MONTÉES : le cadre mobile donne déjà les deux composants, au
+   * dessin près la largeur, et les monter serait un lot de transcodage. Recensées
+   * par le lot qui a réparé la sélection, laissées à celui qui les montera.
    */
   screen({
     section: 'X04',

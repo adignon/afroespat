@@ -37,6 +37,34 @@ export function emptyPage<T>(meta?: Record<string, unknown>): Page<T> {
   return meta === undefined ? { items: [], nextCursor: null } : { items: [], nextCursor: null, meta };
 }
 
+/**
+ * L'enveloppe de liste, en SCHÉMA — de quoi valider une réponse à la frontière.
+ *
+ * `Page<T>` ci-dessus est un TYPE : il décrit ce que l'API promet, et il ne
+ * vérifie rien à l'exécution. Un client qui écrit `await res.json() as Page<City>`
+ * sur une réponse qui a changé de forme obtient un objet dont `items` est
+ * `undefined`, et le défaut ne se voit qu'au premier `.map` — plusieurs appels
+ * plus loin, dans un composant qui n'a rien fait de mal. D'où ce constructeur :
+ * `pageSchema(citySchema)` rend un schéma qui REFUSE cette réponse, à l'endroit
+ * où elle arrive.
+ *
+ * `nextCursor` est requis et nullable, pas facultatif : §5.3 dit « null en fin de
+ * liste », donc une réponse sans le champ est une réponse cassée, et l'accepter
+ * ferait prendre une pagination muette pour une fin de liste — le fil s'arrêterait
+ * sans raison visible.
+ *
+ * `meta` reste un enregistrement libre (T4 §4) : c'est par là que passent les
+ * bandeaux obligatoires et les compteurs, dont la forme varie par route. Le module
+ * qui en dépend le resserre chez lui avec `pageSchema(item).extend({ meta: … })`.
+ */
+export function pageSchema<T extends z.ZodTypeAny>(item: T) {
+  return z.object({
+    items: z.array(item),
+    nextCursor: z.string().nullable(),
+    meta: z.record(z.unknown()).optional(),
+  });
+}
+
 /** Le handle public d'un membre (01-identite.md §2.6). */
 export const handleSchema = z
   .string()

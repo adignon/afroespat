@@ -105,6 +105,20 @@ export const ACCOUNT_LIMITS = {
   /** §8.4 : les défis OTP sont purgés après 24 h. */
   otpRetentionHours: 24,
   /**
+   * 00-fondations.md §8.4 : « Sessions expirées : 30 jours. »
+   *
+   * Appliqué par la tâche transverse `retention.purge` (§9.3), et sur les sessions
+   * de MEMBRES : celles de l'équipe partent à l'heure (`staff.session_cleanup`),
+   * parce qu'une session d'équipe expirée n'a aucune valeur d'enquête — la trace de
+   * la connexion étant dans `audit_logs` pour cinq ans, et plus complète.
+   *
+   * Trente jours et non zéro : une session expirée porte l'appareil, l'adresse IP et
+   * la date de dernier usage. C'est exactement ce qu'un membre regarde quand il
+   * signale un accès qu'il ne reconnaît pas, et l'effacer à l'expiration lui
+   * retirerait la preuve en même temps que l'accès.
+   */
+  sessionRetentionDays: 30,
+  /**
    * §2.8 : « une demande par 30 jours ».
    *
    * Un QUOTA MÉTIER, et non un `@RateLimit` : la doctrine de

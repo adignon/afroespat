@@ -1,4 +1,5 @@
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { BookmarksService } from '../modules/bookmarks/bookmarks.service';
 import { CitiesService } from '../modules/cities/cities.service';
 import { CommunitiesService } from '../modules/communities/communities.service';
 import { ConnectionsService } from '../modules/connections/connections.service';
@@ -8,8 +9,10 @@ import { GuidesService } from '../modules/guides/guides.service';
 import { HelpService } from '../modules/help/help.service';
 import { HousingService } from '../modules/housing/housing.service';
 import { JobsService } from '../modules/jobs/jobs.service';
+import { JourneysService } from '../modules/journeys/journeys.service';
 import { MentorshipService } from '../modules/mentorship/mentorship.service';
 import { ModerationService } from '../modules/moderation/moderation.service';
+import { NotificationEventsService } from '../modules/notifications/notifications.events';
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { ProsService } from '../modules/pros/pros.service';
 import { StaffAuthService } from '../modules/admin/staff-auth.service';
@@ -44,12 +47,17 @@ import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, quarterlyAt, weeklyAt 
  * pour le même bassin de connexions. Dix minutes d'écart ne coûtent rien à des
  * règles qui se comptent en jours.
  *
- * DEUX TÂCHES DE §9.3 NE SONT PAS ICI, et c'est volontaire :
+ * TROIS TÂCHES DES SPECS NE SONT PAS ICI, et chacune pour une raison écrite :
  *   · `outbox.relay` (1 s) — déjà tenue par `OutboxRelayService`, à son propre
  *     rythme. Un travail BullMQ par seconde coûterait plus que le balayage lui-même ;
- *   · les tâches dont AUCUN module n'expose encore la méthode. Elles sont listées
- *     en fin de fichier, pour que l'écart avec §9.3 se lise ici plutôt que de se
- *     découvrir en production.
+ *   · `audit.retention` et `affiliate.reconcile` — la première est une
+ *     contradiction de spec qui appartient au propriétaire, la seconde attend un
+ *     partenaire qui expose une API. Les deux sont détaillées en fin de fichier,
+ *     pour que l'écart avec §9.3 se lise ici plutôt que de se découvrir en
+ *     production.
+ *
+ * `event.waitlist_promote` (09 §8) n'est pas une tâche : la spec la donne « à la
+ * désinscription (immédiat, pas planifié) », et elle est tenue par le service.
  */
 @Injectable()
 export class TaskRegistrationsService implements OnModuleInit {
@@ -76,6 +84,9 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly kyc: KycService,
     private readonly analytics: AnalyticsService,
     private readonly dataExports: DataExportService,
+    private readonly journeys: JourneysService,
+    private readonly bookmarks: BookmarksService,
+    private readonly notificationEvents: NotificationEventsService,
   ) {}
 
   onModuleInit(): void {
@@ -190,6 +201,42 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: (ctx) => this.help.archiveDue(ctx.now),
     });
 
+    // ── Parcours (03 §8) ─────────────────────────────────────────────────────
+    //
+    // LES TROIS TÂCHES DU MODULE 03. Elles figuraient dans la liste « ce qui manque
+    // encore » ci-dessous : le module était livré, mais aucune des trois n'avait de
+    // point d'entrée — seule la RÉPONSE à la relance (`POST /inactivity-response`)
+    // existait, pas son déclencheur. Autrement dit l'écran de relance de §3.9, avec
+    // ses quatre réponses, n'était montré à personne.
+    //
+    // §9.3 n'en nomme que DEUX (`journey.reminders`, `journey.inactivity_check`) ;
+    // la troisième, `journey.progress_recompute`, vient du tableau du §8 du module.
+    // Les deux tableaux se complètent plutôt qu'ils ne se contredisent, et les noms
+    // sont ceux du module — c'est sous eux que le runbook les cherchera.
+    this.registry.register({
+      name: 'journey.reminders',
+      module: 'journeys',
+      schedule: hourlyAt(30),
+      handle: (ctx) => this.journeys.sendDueReminders(ctx.now),
+    });
+
+    this.registry.register({
+      name: 'journey.inactivity_check',
+      module: 'journeys',
+      schedule: dailyAt(2, 35),
+      handle: (ctx) => this.journeys.runInactivityCheck(ctx.now),
+    });
+
+    // Posée dans la tranche des RECALCULS, avec les compteurs de réseaux et les
+    // notes de parrains, et pour la même raison : elle ouvre une transaction par
+    // parcours et n'a aucune raison de croiser un balayage qui expire des lignes.
+    this.registry.register({
+      name: 'journey.progress_recompute',
+      module: 'journeys',
+      schedule: dailyAt(4, 50),
+      handle: (ctx) => this.journeys.recomputeAllProgress(ctx.now),
+    });
+
     // ── Guides (05 §2) ───────────────────────────────────────────────────────
     this.registry.register({
       name: 'guide.freshness_recompute',
@@ -220,6 +267,21 @@ export class TaskRegistrationsService implements OnModuleInit {
       module: 'guides',
       schedule: weeklyAt(1, 5, 0),
       handle: (ctx) => this.guides.switchInactiveAuthorsToCommunity(ctx.now),
+    });
+
+    // La SEULE tâche de ce fichier qui vide un tampon Redis au lieu de balayer une
+    // table — 05 §5 : « compteur approximatif (incrément Redis, flush horaire) ».
+    //
+    // Elle ne reçoit PAS `ctx.now`, et c'est exact : elle ne répond à aucune
+    // échéance. Elle prélève ce qui s'est accumulé depuis le dernier passage, quel
+    // que soit l'instant — son idempotence vient du prélèvement atomique, pas d'une
+    // borne de temps. Voir `GuidesService.flushViewCounts`, où l'ordre des deux
+    // opérations est tout le sujet.
+    this.registry.register({
+      name: 'guide.view_count_flush',
+      module: 'guides',
+      schedule: hourlyAt(35),
+      handle: async () => this.guides.flushViewCounts(),
     });
 
     // ── Réseaux (07 §7) ──────────────────────────────────────────────────────
@@ -284,6 +346,31 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: (ctx) => this.pros.expireTiers(ctx.now),
     });
 
+    // APRÈS `listing.expire.housing` (3 h 45), et l'ordre est une règle, pas un
+    // confort : la médiane ne compte que les annonces ACTIVES, et une annonce
+    // expirée cette nuit ne doit plus y peser. Calculée avant l'expiration, la
+    // médiane de la journée serait tirée par des annonces déjà mortes — et c'est
+    // cette médiane qui décide de mettre une annonce en modération (§2.2).
+    this.registry.register({
+      name: 'housing.price_median_recompute',
+      module: 'housing',
+      schedule: dailyAt(4, 55),
+      handle: (ctx) => this.housing.recomputePriceMedians(ctx.now),
+    });
+
+    // Module 10 §9 par son TRAVAIL, module 12 par son CODE : le répartiteur vit dans
+    // `NotificationEventsService`, à côté du chemin par événement
+    // (`onListingPublished`) avec lequel il partage `last_notified_at`, la fenêtre
+    // d'une heure et le filtrage des critères. Deux copies de « cette alerte
+    // correspond-elle ? » finiraient par ne plus répondre pareil, et le membre
+    // recevrait deux fois, ou zéro fois.
+    this.registry.register({
+      name: 'alerts.dispatch',
+      module: '10',
+      schedule: hourlyAt(45),
+      handle: (ctx) => this.notificationEvents.dispatchSavedAlerts(ctx.now),
+    });
+
     // ── Parrainage et contacts (08 §10) ──────────────────────────────────────
     this.registry.register({
       name: 'mentorship.end_due',
@@ -331,6 +418,22 @@ export class TaskRegistrationsService implements OnModuleInit {
       module: '02',
       schedule: dailyAt(3, 5),
       handle: async () => ({ villes: await this.cities.recomputeMemberCounts() }),
+    });
+
+    // LUNDI 6 H, et la position n'est pas neutre : T4 §6 range « Villes à activer »
+    // dans la revue HEBDOMADAIRE de l'équipe, qui se fait en semaine. La liste doit
+    // donc être fraîche quand l'équipe arrive, et posée APRÈS le recalcul nocturne
+    // des compteurs (3 h 05) qu'elle lit — une semaine de retard sur le compteur
+    // ferait manquer une ville tout juste arrivée au seuil.
+    //
+    // Elle ne fait que LIRE. §2.2 réserve l'activation à une décision humaine, et
+    // cette décision crée un réseau CITY et y inscrit des membres — ce qu'aucune
+    // route ne défait. Même forme que `moderation.sla_alert`, et même raison.
+    this.registry.register({
+      name: 'city.activation_suggest',
+      module: '02',
+      schedule: weeklyAt(1, 6, 0),
+      handle: async () => this.cities.suggestActivations(),
     });
 
     // ── Notifications (12 §6) ────────────────────────────────────────────────
@@ -491,6 +594,51 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: (ctx) => this.dataExports.purgeExpired(ctx.now),
     });
 
+    // ── Transverse (00 §8.4 et §9.3) ─────────────────────────────────────────
+    //
+    // LES DEUX TÂCHES QUE §9.3 ÉTIQUETTE « transverse », et qui n'appartiennent donc
+    // à aucun module. Toutes deux sortent de la liste « ce qui manque encore ».
+    //
+    // `retention.purge` applique §8.4. Sur ses sept durées, six avaient déjà leur
+    // tâche ou n'avaient rien à purger ; la septième — « sessions expirées :
+    // 30 jours » — n'était tenue par PERSONNE. `staff.session_cleanup` ne voit que
+    // les sessions d'équipe, et le gestionnaire de suppression de compte ne vide
+    // `auth_sessions` que du membre supprimé : les sessions expirées de tous les
+    // autres s'accumulaient sans fin. Le détail ligne par ligne est dans le
+    // commentaire de la méthode, avec ce qu'elle ne purge pas et pourquoi.
+    //
+    // Posée à 2 h 55, dans la tranche des purges (2 h 45 comptes désactivés, 2 h 50
+    // sessions KYC) et AVANT les recalculs : elle efface, et un incident sur un
+    // effacement se lit mieux seul.
+    this.registry.register({
+      name: 'retention.purge',
+      module: 'transverse',
+      schedule: dailyAt(2, 55),
+      handle: (ctx) => this.account.purgeExpiredSessions(ctx.now),
+    });
+
+    // `bookmark.state_refresh` calcule l'état des contenus enregistrés (01 §2.9).
+    //
+    // UNE RÉSERVE, ET ELLE EST DANS LE RAPPORT : les quatre routes de §2.9 ne sont
+    // pas livrées, donc rien ne CRÉE de signet et personne ne LIT `bookmarks.state`.
+    // La tâche est enregistrée quand même — elle balaie une table vide en quelques
+    // millisecondes et sa ligne de journal le dira — parce que le calcul, lui, est
+    // entièrement déterminé par nos propres données : il n'invente rien. C'est ce
+    // qui la distingue d'`affiliate.reconcile`, laissée absente plus bas faute de
+    // partenaire à interroger. Le propriétaire tranche : livrer §2.9, ou retirer la
+    // ligne de §9.3.
+    //
+    // À la minute 55, la dernière de l'heure : elle lit l'état de douze tables que
+    // d'autres tâches horaires modifient (`event.mark_done` à 5, `sanctions.expire`
+    // à 15, `billing.expire_subscriptions` à 15…), et lire après elles donne un
+    // état stable plutôt qu'un instantané pris en pleine écriture.
+    this.registry.register({
+      name: 'bookmark.state_refresh',
+      module: 'transverse',
+      schedule: hourlyAt(55),
+      handle: (ctx) => this.bookmarks.refreshStates(ctx.now),
+    });
+
     // ── Pilotage (15 §10) ────────────────────────────────────────────────────
     //
     // LES QUATRE TÂCHES QUE `metric_snapshots` DÉBLOQUE. Elles étaient les seules
@@ -547,10 +695,16 @@ export class TaskRegistrationsService implements OnModuleInit {
     /**
      * ── CE QUI MANQUE ENCORE ─────────────────────────────────────────────────
      *
-     * Ce qui reste n'a AUCUNE méthode de service à appeler — sauf le module 03, qui
-     * est livré mais n'expose pas de point d'entrée. Rien n'est enregistré : un
-     * gestionnaire vide serait pire qu'une absence, puisque le journal de démarrage
-     * affirmerait que la tâche tourne.
+     * DEUX TÂCHES, et aucune des deux n'est un oubli.
+     *
+     * LE DÉCOMPTE, parce qu'il a déjà été faux deux fois. Les quatorze tableaux
+     * « Tâches » des modules, réunis à §9.3, nomment CINQUANTE-HUIT tâches
+     * distinctes — `event.waitlist_promote` mise à part, 09 §8 disant lui-même « à la
+     * désinscription (immédiat, pas planifié) », et elle est tenue par le service.
+     * De ces cinquante-huit : `outbox.relay` appartient à `OutboxRelayService` ;
+     * cinquante-cinq sont câblées ci-dessus sous CINQUANTE-SIX entrées (`listing.expire`
+     * en compte deux, une par module, pour la raison écrite plus haut) ; restent les
+     * deux qui suivent.
      *
      *   · `audit.retention` (quotidienne) — 15 §10, « 5 ans ». `audit_logs` est en
      *     AJOUT SEUL, et pas seulement par convention : la migration
@@ -560,31 +714,40 @@ export class TaskRegistrationsService implements OnModuleInit {
      *     une protection posée exprès contre §2.3 (« Aucune suppression
      *     possible »). §2.3 et §10 se contredisent — cinq ans de rétention
      *     supposent un effacement au bout de cinq ans — et l'arbitrage appartient
-     *     au propriétaire, pas à ce fichier ;
-     *   · `city.activation_suggest` (hebdomadaire) — 02 §7 : signale à l'équipe les
-     *     villes inactives à plus de 20 membres. Aucune méthode côté `CitiesService` ;
-     *   · `guide.view_count_flush` (horaire) — 05 §7 : aucun compteur de vues n'est
-     *     tenu en cache, donc rien à vider ;
-     *   · `housing.price_median_recompute` et `alerts.dispatch` (10 §9) — aucune
-     *     méthode côté `HousingService` ni de répartiteur d'alertes ;
-     *   · `bookmark.state_refresh` (horaire) et `retention.purge` (quotidienne) —
-     *     transverse. Noter que `notifications.purge` couvre la conservation de
-     *     90 jours du module 12, mais PAS la rétention transverse du §9.3, qui
-     *     porte sur d'autres tables.
+     *     au propriétaire, pas à ce fichier. RIEN n'a été retiré ni contourné ;
      *   · `affiliate.reconcile` (quotidienne) — module 14 : §10 la conditionne à un
-     *     partenaire qui expose une API, et aucun partenaire n'est configuré. Il n'y
-     *     a donc rien à interroger. L'import CSV, lui, est livré en route d'équipe.
+     *     partenaire qui expose une API (« import automatique SI le partenaire
+     *     expose une API »), et aucun partenaire n'est configuré. Il n'y a donc
+     *     AUCUNE API à interroger, et les deux événements qu'elle produirait
+     *     (`affiliate.clicked`, `affiliate.converted`) sont volontairement hors du
+     *     catalogue de `outbox.service.ts`, faute de consommateur. Une
+     *     réconciliation qui fabriquerait ses chiffres serait pire que son absence :
+     *     elle porterait sur de l'argent. L'import manuel de CSV, lui, est livré :
+     *     `POST /admin/billing/affiliate/import`.
      *
-     * `billing.expiry_reminders` et `notifications.weekly_digest` ne sont PLUS dans
-     * cette liste : les modules 14 et 12 les ont livrées. `export.purge` non plus,
-     * ni les quatre tâches de pilotage de 15 §10 — l'export RGPD et la table
-     * `metric_snapshots` sont livrés. Chaque ligne qui en sort est un trou comblé,
-     * et c'est le seul endroit où cela se lit.
+     * CE QUI EST SORTI DE CETTE LISTE, et c'est le seul endroit où cela se lit :
+     * les trois du module 03 (`journey.reminders`, `journey.inactivity_check`,
+     * `journey.progress_recompute`) — le module était livré, mais aucune n'avait de
+     * point d'entrée, si bien que l'écran de relance de §3.9 et ses quatre réponses
+     * n'étaient montrés à personne ; `city.activation_suggest` (02 §7) ;
+     * `guide.view_count_flush` (05 §7), avec la colonne `guides.view_count` et son
+     * compteur Redis, que §5 annonçait « Ajoutée » et qui ne l'était pas ;
+     * `housing.price_median_recompute` et `alerts.dispatch` (10 §9) ;
+     * `retention.purge` et `bookmark.state_refresh` (transverse).
      *
-     * Trois autres du module 03 attendent une méthode publique : le module est
-     * livré, mais `journey.reminders`, `journey.inactivity_check` et
-     * `journey.progress_recompute` n'ont pas de point d'entrée — seule la RÉPONSE
-     * à la relance (`POST /inactivity-response`) existe, pas son déclencheur.
+     * DEUX RÉSERVES SUR CE QUI VIENT D'ENTRER, à remonter plutôt qu'à taire :
+     *
+     *   · `guides.view_count` n'a AUCUN LECTEUR. La règle dure 00 §1.2 interdit de
+     *     l'exposer à qui que ce soit, et le tableau de bord de 15 §5.1 ne le liste
+     *     pas parmi les indicateurs « Guides » (publiés, votes, propositions
+     *     acceptées, à vérifier). C'est exactement la situation de
+     *     `housing_listings.view_count` et `pro_profiles.view_count`, incrémentés
+     *     depuis toujours et lus par personne. §5 du module 05 exige la colonne et
+     *     la tâche ; les lire est une décision qui n'est écrite nulle part ;
+     *   · `bookmarks.state` non plus, et pour une autre raison : les quatre routes
+     *     de 01 §2.9 (`GET`/`PUT`/`DELETE /me/bookmarks`,
+     *     `GET /me/bookmarks/states`) ne sont pas livrées, donc rien ne crée de
+     *     signet. La tâche calcule juste et ne balaie rien.
      *
      * Le jour où la méthode existe, une entrée de ce fichier suffit. Rien d'autre
      * ne change, ni dans le registre, ni dans le planificateur.

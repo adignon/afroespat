@@ -143,7 +143,33 @@ export class RateLimitGuard implements CanActivate {
      * refusée par la route échapperait au plafond global.
      */
     const buckets: { key: string; limit: number; scope: string; windowMs: number }[] = [];
-    if (routeRule !== undefined) {
+    /**
+     * Le seau DE ROUTE peut compter par IP là où la règle le déclare, quand le
+     * budget protège un secret et non un service. Voir `RateLimitIdentity`.
+     *
+     * Séparé de `identity` à dessein : les plafonds GLOBAUX (écritures, requêtes)
+     * continuent de compter par appelant. Les rabattre sur l'IP ferait qu'un
+     * réseau d'entreprise, une université ou un opérateur mobile partageraient un
+     * seul budget — on remplacerait un verrou trop lâche par un refus de service
+     * pour des gens qui n'ont rien demandé.
+     */
+    const routeIdentity =
+      routeRule?.by === 'ip'
+        ? (() => {
+            const ip = clientIp(request);
+            return ip === null ? null : `ip-${ip}`;
+          })()
+        : identity;
+
+    /**
+     * `by: 'ip'` sans IP déterminable : on NE RABAT PAS sur l'appelant.
+     *
+     * Ce serait rétablir en silence exactement ce que la déclaration écarte. Le
+     * seau de route est donc omis, et les plafonds globaux ci-dessous tiennent
+     * seuls — le même choix que celui déjà fait plus haut quand aucune identité
+     * n'est déterminable.
+     */
+    if (routeRule !== undefined && routeIdentity !== null) {
       const route = `${context.getClass().name}.${context.getHandler().name}`;
       const windowMs = windowMsOf(routeRule.period);
       /**
@@ -154,7 +180,7 @@ export class RateLimitGuard implements CanActivate {
        * identités qui n'ont rien appelé entre-temps.
        */
       buckets.push({
-        key: `rl-route-${route}-${routeRule.period}-${identity}`,
+        key: `rl-route-${route}-${routeRule.period}-${routeIdentity}`,
         limit: routeRule.count,
         scope: `route (${routeRule.count}/${routeRule.period === 'hour' ? 'h' : 'min'})`,
         windowMs,

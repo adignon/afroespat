@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { newId, type Prisma } from '@app/db';
 import {
+  CITY_ACTIVATION_SUGGEST_MEMBERS,
   CITY_COUNT_PRIVACY_THRESHOLD,
   CITY_DESKS_CACHE_MS,
   CITY_ERROR_CODES,
@@ -902,6 +903,64 @@ export class CitiesService {
       ) AS sub
       WHERE c.id = sub.id AND c.member_count <> sub.total
     `;
+  }
+
+  /**
+   * `city.activation_suggest` — hebdomadaire (02 §7) : « signale à l'équipe les
+   * villes inactives à plus de 20 membres ».
+   *
+   * ELLE NE FAIT QUE LIRE, et c'est la seule lecture correcte de §2.2 : « Elle passe
+   * active quand l'ÉQUIPE le décide, en général à 20 membres. » Activer une ville
+   * crée son réseau CITY et y inscrit tous ses membres — un effet qu'AUCUNE route ne
+   * défait. Une tâche qui activerait à vingt membres franchirait donc, chaque
+   * semaine et sans retour possible, la décision que §2.2 réserve nommément à un
+   * humain. « Signale » veut dire signale.
+   *
+   * C'est la forme de `moderation.sla_alert`, et pour la même raison : sa ligne de
+   * journal est aujourd'hui l'alerte que le runbook observe.
+   *
+   * OÙ CE SIGNAL DEVRAIT ARRIVER, et n'arrive pas encore : T5 D1 décrit en tête du
+   * tableau de bord d'équipe un bandeau « Alertes (SLA dépassé, justificatifs en
+   * attente, VILLES À ACTIVER) ». Les trois manquent — `GET /admin/dashboard` ne
+   * rend que les blocs d'indicateurs de 15 §5.1. Remonté plutôt que comblé ici :
+   * livrer un tiers d'un bandeau de module 15 depuis le module 02 serait un choix de
+   * produit, et la précédente de ce fichier (`moderation.sla_alert`, même bandeau,
+   * même manque) a tranché pour la ligne de journal. Elle rejoint la revue
+   * hebdomadaire « Villes à activer » de T4 §6, où l'équipe ouvre déjà
+   * `GET /v1/admin/ref/cities?active=false`, qui rend `memberCount` — c'est-à-dire
+   * que la tâche et l'écran lisent le MÊME chiffre, celui que
+   * `city.member_count_recompute` écrit chaque nuit. Le jour où l'équipe veut une
+   * notification plutôt qu'une ligne de journal, seul le gestionnaire change.
+   *
+   * IDEMPOTENTE PAR CONSTRUCTION : aucune écriture. Deux passages au même instant,
+   * ou à une heure d'écart, rendent la même liste et ne touchent rien.
+   *
+   * Les villes FUSIONNÉES sont écartées : leur compteur est censé tomber à zéro
+   * (§2.2 redirige leurs membres), mais si la redirection est incomplète, on ne veut
+   * surtout pas proposer d'activer une ville qui n'existe plus.
+   */
+  async suggestActivations(
+    threshold: number = CITY_ACTIVATION_SUGGEST_MEMBERS,
+  ): Promise<{ villes: { id: string; name: string; slug: string; memberCount: number }[] }> {
+    const villes = await this.prisma.city.findMany({
+      where: {
+        isActive: false,
+        mergedIntoCityId: null,
+        memberCount: { gte: threshold },
+      },
+      orderBy: [{ memberCount: 'desc' }, { name: 'asc' }],
+      select: { id: true, name: true, slug: true, memberCount: true },
+      take: 100,
+    });
+
+    if (villes.length > 0) {
+      this.logger.log(
+        `${villes.length} ville(s) à activer (≥ ${threshold} membres) : ` +
+          villes.map((v) => `${v.name} (${v.memberCount})`).join(', '),
+      );
+    }
+
+    return { villes };
   }
 }
 

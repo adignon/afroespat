@@ -35,3 +35,8 @@ export * from './validation/partners.js';
 export * from './constants/product.js';
 export * from './constants/launch.js';
 export * from './constants/post-types.js';
+// EN DERNIER : `catalogue.ts` fusionne les vingt tables de codes d'erreur des
+// modules ci-dessus. Il les importe lui-même, donc l'ordre de ce fichier ne
+// changerait rien à l'évaluation — mais il se lit comme ce qu'il est, une
+// dérivation de tout ce qui précède, et non une nouvelle source.
+export * from './errors/catalogue.js';

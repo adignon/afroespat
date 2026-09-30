@@ -40,6 +40,22 @@ enum BookmarkSubjectType {
   CITY
 }
 
+/// L'état du contenu enregistré, tel que l'écran « Enregistrés » l'affiche
+/// (01 §2.9, libellés T2 `bookmark.state.*`).
+///
+/// `AVAILABLE` n'a PAS de libellé : c'est l'absence de pastille, le cas normal.
+/// Il est la valeur par défaut pour qu'un signet fraîchement créé ne s'annonce
+/// jamais « retiré » avant le premier passage de `bookmark.state_refresh`.
+enum BookmarkState {
+  AVAILABLE
+  EXPIRED
+  RESOLVED
+  PAST
+  UNAVAILABLE
+  UPDATED
+  REMOVED
+}
+
 enum ReputationEventType {
   HELP_VALIDATED
   GUIDE_HELPFUL_VOTE
@@ -126,11 +142,21 @@ model Bookmark {
   subjectType BookmarkSubjectType @map("subject_type")
   subjectId   String              @map("subject_id") @db.Uuid
 
+  /// L'état du contenu enregistré (01 §2.9) — REMPLACÉ à chaque passage de la
+  /// tâche horaire `bookmark.state_refresh`, jamais accumulé.
+  state          BookmarkState @default(AVAILABLE)
+  /// Quand l'état a été CONSTATÉ pour la dernière fois. Sert au diagnostic (« la
+  /// tâche tourne-t-elle ? »), pas au calcul : l'état ne dépend que du sujet.
+  stateCheckedAt DateTime?     @map("state_checked_at") @db.Timestamptz
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, subjectType, subjectId])
   @@index([userId])
   @@index([subjectId])
+  /// La tâche balaie PAR TYPE : un index sur (subject_type, subject_id) évite un
+  /// parcours complet de la table pour chacun des douze types.
+  @@index([subjectType, subjectId])
   @@map("bookmarks")
 }
 

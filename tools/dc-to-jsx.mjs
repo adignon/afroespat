@@ -934,49 +934,70 @@ export function extractSection(html, id) {
  * l'ordinateur, celui de 390 px pour le mobile. La section contient aussi son
  * titre de planche et ses variantes, qui n'appartiennent pas à l'écran.
  */
-/**
- * Le cadre d'une largeur donnée dans une section.
- *
- * `occurrence` sert aux sections qui montrent DEUX cadres de même largeur —
- * O05 présente ainsi ses deux atterrissages en 700 px. Sans ce paramètre, les
- * deux variantes seraient transcodées à l'identique, et l'erreur passerait
- * inaperçue : le fichier produit compile parfaitement.
- */
-/** Un préfixe de style est une chaîne littérale : ses `.` et `(` ne sont pas du motif. */
+/** Un fragment de style est une chaîne littérale : ses `.` et `(` ne sont pas du motif. */
 const escapeForRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * `stylePrefix` — CE QUI PRÉCÈDE `width:` DANS LE STYLE DU CADRE.
+ * UNE PLANCHE EST DÉSIGNÉE PAR LA LARGEUR QU'ELLE DÉCLARE — jamais par la place de
+ * cette déclaration dans son style.
  *
- * Le motif est ANCRÉ sur le début du style, et ce n'est pas un détail : il ne
- * reconnaît qu'un cadre dont le style COMMENCE par `width:`. Les vingt-deux
- * sections déjà transcodées écrivent toutes leurs cadres ainsi, et l'ancrage est
- * ce qui empêche le motif d'attraper les dizaines de `<div>` internes dont la
- * largeur est écrite au milieu du style.
+ * Le motif était ANCRÉ sur le début du style : il ne reconnaissait qu'un `<div>`
+ * dont le style COMMENCE par `width:`. Deux conséquences, toutes deux mesurées :
  *
- * Les trois fenêtres de contribution de A12T font exception : elles écrivent
- * `position:relative;width:760px;…`, parce que leur voile et leur panneau sont
- * positionnés PAR RAPPORT À ELLES. Elles étaient donc INTROUVABLES — et, faute
- * d'erreur, silencieusement absentes de l'inventaire. C'est ce qui les a fait
- * manquer au premier décompte.
+ *   · les trois planches d'ordinateur de la fenêtre « Contribuer » de A12T écrivent
+ *     `position:relative;width:760px;…` — leur voile et leur panneau se calent sur
+ *     elles. Elles étaient INTROUVABLES, et sans erreur : silencieusement absentes
+ *     de l'inventaire. DEUX lots successifs les ont manquées ; un troisième les a
+ *     retrouvées en refaisant son audit sans ancrage. Un contournement les a
+ *     rendues joignables en déclarant le préfixe (`stylePrefix`), c'est-à-dire en
+ *     déclarant LA FORME de leur style — la planche restait désignée par la façon
+ *     dont elle est écrite, pas par ce qu'elle est ;
  *
- * Le préfixe est OPTIONNEL et vaut `''` par défaut : sans lui, l'expression est
- * exactement celle d'avant, caractère pour caractère, et les deux cent quarante
- * cadres déjà produits ne bougent pas d'un octet. Il est déclaré par le cadre qui
- * en a besoin, jamais deviné — relâcher l'ancrage pour tout le monde
- * renumériserait les `occurrence` de toutes les maquettes d'un coup.
+ *   · la largeur ne pouvait être qu'un NOMBRE DE PIXELS. La carte utile du composeur
+ *     de `03 Accueil` est un `<div style="width:100%…">` : aucune valeur de
+ *     `width` ne pouvait la désigner, donc elle était intranscodable.
+ *
+ * CE QUI IDENTIFIE UNE PLANCHE ICI, désormais :
+ *
+ *   · `width` — la largeur qu'elle DÉCLARE. Un nombre vaut des pixels (`760` →
+ *     `760px`) ; une chaîne est prise telle quelle, ce qui rend `'100%'` et toute
+ *     autre valeur CSS exprimables. La déclaration est reconnue où qu'elle soit
+ *     dans le style, mais elle doit bien être une DÉCLARATION : `width:` ouvre le
+ *     style ou suit un `;`. C'est ce qui empêche le motif d'attraper `min-width:` ou
+ *     `max-width:`, et c'est la seule part de l'ancrage qui servait vraiment à
+ *     quelque chose.
+ *
+ *   · `requires` — un fragment de style que la planche doit AUSSI porter. C'est le
+ *     discriminant, et il a le même rôle que celui d'un titre : distinguer la
+ *     planche d'un élément qui lui ressemble. Relâcher l'ancrage fait apparaître un
+ *     second candidat de 390 px dans J01M — une colonne de mise en page qui porte
+ *     l'étiquette de planche « MOBILE · FEUILLE “MES PARCOURS” » ET le téléphone,
+ *     et qui déclare sa largeur au milieu de son style. `height:844px` dit que c'est
+ *     le TÉLÉPHONE qu'on veut, ce qu'un `occurrence: 1` n'aurait pas dit — et ce
+ *     qu'une planche insérée avant n'invalidera pas.
+ *
+ * `occurrence` reste : une section peut montrer DEUX planches de même largeur, et
+ * O05 présente ainsi ses deux atterrissages en 700 px. Sans lui, les deux variantes
+ * seraient transcodées à l'identique, et l'erreur passerait inaperçue — le fichier
+ * produit compile parfaitement.
+ *
+ * LA RENUMÉROTATION A ÉTÉ MESURÉE, pas supposée : sur les 248 sélections déclarées,
+ * 247 désignent exactement la même planche qu'avant, et une seule — J01M en 390 px —
+ * voit un candidat apparaître devant elle. Elle porte donc son discriminant.
  */
-export function extractFrame(sectionHtml, width, occurrence = 0, stylePrefix = '') {
-  const re = new RegExp(`<div style="${escapeForRe(stylePrefix)}width:${width}px[^"]*"[^>]*>`, 'g');
+export function extractFrame(sectionHtml, width, occurrence = 0, requires = '') {
+  const value = typeof width === 'number' ? `${width}px` : width;
+  const re = new RegExp(`<div style="(?:[^"]*;)?width:${escapeForRe(value)}[^"]*"[^>]*>`, 'g');
   let m = null;
-  for (let i = 0; i <= occurrence; i += 1) {
+  for (let seen = -1; seen < occurrence; ) {
     m = re.exec(sectionHtml);
     if (m === null) {
       throw new Error(
-        `Cadre de ${width} px n° ${occurrence + 1} introuvable` +
-          (stylePrefix === '' ? '' : ` (style préfixé par « ${stylePrefix} »)`),
+        `Cadre de ${value} n° ${occurrence + 1} introuvable` +
+          (requires === '' ? '' : ` (style portant « ${requires} »)`),
       );
     }
+    if (requires === '' || m[0].includes(requires)) seen += 1;
   }
 
   const from = m.index + m[0].length;

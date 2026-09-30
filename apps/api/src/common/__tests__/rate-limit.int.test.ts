@@ -135,6 +135,58 @@ describe('limite de débit (§5.5)', () => {
     expect(statuses[10]).toBe(429);
   });
 
+  /**
+   * ═══ RÈGLE DURE ═══
+   *
+   * Le budget d'une route de CONNEXION ne se renouvelle pas en présentant un jeton.
+   *
+   * CE QUE CE TEST EXISTE POUR EMPÊCHER DE REVENIR, et c'était mesuré :
+   * `@PublicRead()` n'empêche pas `AuthGuard` de poser `request.auth` quand un
+   * jeton de membre valide accompagne la requête — il le pose, puis rend la main.
+   * `identityOf` préférait alors ce membre à l'IP, si bien que CHAQUE COMPTE MEMBRE
+   * APPORTAIT UN BUDGET NEUF sur `POST /admin/auth/login`. Relevé dans Redis :
+   * trois seaux pour la même route, deux par membre et un par IP. Avec deux comptes
+   * gratuits, 15 tentatives par minute depuis une seule adresse au lieu de 5.
+   *
+   * La route n'utilise aucune identité de membre pour décider quoi que ce soit —
+   * il n'y avait donc pas de passerelle entre les domaines. Mais le verrou
+   * anti-force-brute était affaibli d'un facteur égal au nombre de comptes que
+   * l'attaquant se crée, et rien ne le disait.
+   *
+   * On ÉPUISE le budget sans jeton, puis on revient AVEC un jeton de membre, puis
+   * avec celui d'un SECOND membre. Les deux doivent rester refusés : c'est l'IP qui
+   * porte le budget, et elle ne change pas.
+   *
+   * Les identifiants envoyés sont faux à dessein. Ce qu'on mesure est le REFUS DE
+   * DÉBIT (429), pas l'échec d'authentification (401) — et c'est précisément ce que
+   * l'assertion distingue.
+   */
+  it('[RÈGLE DURE] présenter un jeton ne rouvre pas le budget d’une route de connexion', async () => {
+    const login = () => request(server(loose)).post('/v1/admin/auth/login');
+    const faux = { email: 'inconnu@example.test', password: 'mauvais-mot-de-passe' };
+
+    // Cinq essais anonymes : le budget de route (5/min, par IP) est épuisé.
+    for (let i = 0; i < 5; i += 1) await login().send(faux);
+    const sixieme = await login().send(faux);
+    expect(sixieme.status, 'le sixième essai anonyme doit être refusé par le débit').toBe(429);
+
+    // Le même adversaire, muni d'un compte membre gratuit.
+    const premier = await member();
+    const avecJeton = await login().set('Authorization', `Bearer ${premier}`).send(faux);
+    expect(
+      avecJeton.status,
+      'un jeton de membre a rouvert le budget de la connexion d’équipe',
+    ).toBe(429);
+
+    // Et d'un second, parce que s'en créer un de plus ne coûte rien.
+    const second = await member();
+    const avecAutreJeton = await login().set('Authorization', `Bearer ${second}`).send(faux);
+    expect(
+      avecAutreJeton.status,
+      'un SECOND compte membre a rouvert le budget — le verrou se contourne en s’inscrivant',
+    ).toBe(429);
+  });
+
   it('le refus nomme le code du catalogue et porte `Retry-After`', async () => {
     for (let n = 0; n < 10; n += 1) {
       await request(server(loose))

@@ -93,6 +93,7 @@ model City {
   cityTips            CityTip[]
   events              Event[]
   housingListings     HousingListing[]
+  housingPriceMedians HousingPriceMedian[]
   jobListings         JobListing[]
   proProfileCities    ProProfileCity[]
   searchDocuments     SearchDocument[]

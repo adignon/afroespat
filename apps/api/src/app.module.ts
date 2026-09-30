@@ -53,7 +53,9 @@ import { EventsService } from './modules/events/events.service';
 import { CommunitiesController } from './modules/communities/communities.controller';
 import { CommunitiesService } from './modules/communities/communities.service';
 import { GuidesController } from './modules/guides/guides.controller';
-import { GuidesService } from './modules/guides/guides.service';
+import { BookmarksService } from './modules/bookmarks/bookmarks.service';
+import { GUIDE_VIEW_COUNTER, GuidesService } from './modules/guides/guides.service';
+import { RedisGuideViewCounter } from './modules/guides/guide-view-counter';
 import { JourneysController } from './modules/journeys/journeys.controller';
 import { JourneysService } from './modules/journeys/journeys.service';
 import { HelpController } from './modules/help/help.controller';
@@ -170,6 +172,10 @@ import {
     ConsentsService,
     HelpService,
     GuidesService,
+    // Transverse (01 §2.9) : l'état des contenus enregistrés, rafraîchi par la
+    // tâche horaire `bookmark.state_refresh`. Aucun contrôleur — §2.9 n'est pas
+    // livrée ; voir l'en-tête du service.
+    BookmarksService,
     CommunitiesService,
     EventsService,
     CitiesService,
@@ -246,6 +252,20 @@ import {
     SearchIndexConsumer,
     { provide: OUTBOUND_QUEUE, useClass: BullOutboundQueue },
     OutboundConsumer,
+
+    /**
+     * Le compteur de vues des guides (05 §5), dans Redis.
+     *
+     * Branché ICI et non dans le module `guides` parce que c'est un choix
+     * d'infrastructure, comme les deux files ci-dessus : le service, lui, ne connaît
+     * qu'un port facultatif — ses tests n'ont donc pas besoin de Redis pour éprouver
+     * la publication d'un guide.
+     *
+     * Ce compteur est le SEUL producteur de `guides.view_count`, et
+     * `guide.view_count_flush` son seul consommateur. Il n'est jamais lu par une
+     * route : la règle dure 00 §1.2 l'interdit, et un test de l'OpenAPI le tient.
+     */
+    { provide: GUIDE_VIEW_COUNTER, useClass: RedisGuideViewCounter },
 
     /**
      * L'adresse email d'un membre — AUCUNE, et c'est une dépendance non satisfaite.

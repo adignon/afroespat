@@ -102,6 +102,22 @@ export const screens = [
    * MÊME `renderVals()` : le fil de commentaires et les contacts de partage
    * cohabitent avec les stories et le fil. Les séparer donnerait deux sources
    * pour un seul écran.
+   *
+   * ── DEUX CARTES DE DOCUMENTATION, ATTEIGNABLES ET NON MONTÉES ──────────────
+   *
+   * Ces sections portent aussi, à côté de leurs deux planches, une COLONNE DE
+   * DOCUMENTATION qui dessine une carte utile :
+   *
+   *   · A01S, colonne de 760 px — « COMPOSEUR AVEC PIÈCES JOINTES — WEB », la carte
+   *     du composeur rempli. Voir la note de A01N, qui la décrit en détail ;
+   *   · A01G, colonne de 640 px — « COMPOSEUR APRÈS LIAISON — L'ICÔNE DEVIENT
+   *     “2 GUIDES LIÉS” », la même carte après liaison d'un guide.
+   *
+   * Les deux étaient DOUBLEMENT hors de portée de l'ancien sélecteur : leur largeur
+   * n'est pas en pixels (`width:100%`), et celle de A01G est déclarée EN DERNIER
+   * (`background:…;width:100%`), donc même un sélecteur acceptant les pourcentages
+   * l'aurait manquée tant qu'il restait ancré. Elles sont maintenant atteignables ;
+   * les MONTER est un autre lot, avec ses routes et ses données.
    */
   ...[
     { section: 'A01C', modalTitle: 'Commentaires' },
@@ -148,10 +164,15 @@ export const screens = [
    * vide. Le transcoder mettrait « COMPOSANTS » et « ÉTAT VIDE » dans l'application.
    *
    * La seule partie utile — la carte du composeur rempli — est un
-   * `<div style="width:100%…">` : `extractFrame` sélectionne par largeur EN PIXELS
-   * et ne peut pas la désigner. L'atteindre demanderait un mécanisme de sélection
-   * par autre chose que la largeur, qui n'a pas sa place dans ce lot ; il est laissé
-   * au lot qui unifiera les trois mécanismes de titre, où la question est déjà posée.
+   * `<div style="width:100%…">`. `extractFrame` ne savait sélectionner qu'une
+   * largeur EN PIXELS et ne pouvait donc pas la désigner. ELLE EST MAINTENANT
+   * ATTEIGNABLE : `frame.width` accepte toute valeur CSS, et
+   * `extractFrame(colonne760, '100%')` rend exactement cette carte — éprouvé par
+   * `node tools/generate-screens.mjs --self-test`, qui la transcode aussi.
+   *
+   * ELLE N'EST PAS MONTÉE POUR AUTANT, et c'est délibéré : la monter est un lot de
+   * transcodage, avec sa route, ses données et ses tests. Le lot qui a réparé la
+   * sélection s'est arrêté au recensement.
    *
    * Les trois règles que cette colonne énonce sont, elles, FIGÉES par
    * `apps/web/src/screens/accueil/composeur.test.ts`.
@@ -444,13 +465,18 @@ export const screens = [
   /**
    * A12C — « Contribuer à la fiche Lyon », la fenêtre de contribution de A12.
    *
-   * CETTE FENÊTRE A ÉTÉ MANQUÉE PAR LE LOT PRÉCÉDENT, et la raison mérite d'être
-   * écrite parce qu'elle peut se reproduire : `extractFrame` ancre son motif sur le
-   * DÉBUT du style (`<div style="width:760px…`), et les trois planches d'ordinateur
-   * de cette fenêtre écrivent `position:relative;width:760px…` — leur voile et leur
-   * panneau se calent sur elles. Elles étaient donc invisibles à l'inventaire, sans
-   * qu'aucune erreur ne le signale. D'où `stylePrefix`, déclaré ici et nulle part
-   * ailleurs. La feuille mobile, elle, est un cadre ordinaire de 390 px.
+   * CETTE FENÊTRE A ÉTÉ MANQUÉE PAR DEUX LOTS SUCCESSIFS, et la raison mérite d'être
+   * écrite parce qu'elle explique la forme actuelle de `extractFrame` : le motif
+   * était ANCRÉ sur le début du style (`<div style="width:760px…`), et les trois
+   * planches d'ordinateur de cette fenêtre écrivent `position:relative;width:760px…`
+   * — leur voile et leur panneau se calent sur elles. Elles étaient donc invisibles
+   * à l'inventaire, sans qu'aucune erreur ne le signale.
+   *
+   * Un premier correctif les a rendues joignables en déclarant le préfixe de leur
+   * style (`stylePrefix`) — c'est-à-dire en déclarant LA FORME de leur déclaration.
+   * `extractFrame` reconnaît maintenant la largeur où qu'elle soit déclarée dans le
+   * style, donc ces trois cadres se déclarent comme tous les autres, et le préfixe a
+   * disparu. La feuille mobile, elle, a toujours été un cadre ordinaire de 390 px.
    *
    * Les quatre planches sont UNE SEULE fenêtre, en deux étapes, et la maquette les
    * range sous la légende « CONTRIBUER — DEPUIS LE BOUTON DE LA BARRE D'ONGLETS OU
@@ -481,18 +507,9 @@ export const screens = [
       // La feuille du bas, avec son voile `rgba(22,33,29,.5)` DESSINÉ PAR LA
       // MAQUETTE — rien n'est emprunté ici, contrairement aux fenêtres de 08 Compte.
       { section: 'A12T', width: 390, name: 'Mobile', occurrence: 0, modalTitle: 'Contribuer à Lyon' },
-      {
-        section: 'A12T', width: 760, name: 'Desktop', occurrence: 0,
-        stylePrefix: 'position:relative;', modalTitle: 'Contribuer à la fiche Lyon',
-      },
-      {
-        section: 'A12T', width: 760, name: 'DesktopProduit', occurrence: 1,
-        stylePrefix: 'position:relative;', modalTitle: 'Produit du pays',
-      },
-      {
-        section: 'A12T', width: 760, name: 'DesktopBudget', occurrence: 2,
-        stylePrefix: 'position:relative;', modalTitle: 'Budget réel',
-      },
+      { section: 'A12T', width: 760, name: 'Desktop', occurrence: 0, modalTitle: 'Contribuer à la fiche Lyon' },
+      { section: 'A12T', width: 760, name: 'DesktopProduit', occurrence: 1, modalTitle: 'Produit du pays' },
+      { section: 'A12T', width: 760, name: 'DesktopBudget', occurrence: 2, modalTitle: 'Budget réel' },
     ],
   },
 

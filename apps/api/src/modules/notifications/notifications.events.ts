@@ -672,6 +672,168 @@ export class NotificationEventsService {
   }
 
   /**
+   * `alerts.dispatch` — horaire (10 §9) : « regroupe les correspondances ».
+   *
+   * ── CE QU'ELLE AJOUTE À `onListingPublished`, QUI EXISTAIT DÉJÀ ─────────────
+   *
+   * Le chemin par ÉVÉNEMENT notifie à la publication d'UNE annonce, et
+   * `last_notified_at` fait taire l'alerte pendant l'heure qui suit. Conséquence :
+   * de trois annonces publiées dans la même heure, le membre n'entend parler que de
+   * la PREMIÈRE — les deux autres sont perdues, pas différées. C'est ce que le mot
+   * « regroupe » de §9 corrige : cette tâche reprend, à chaque heure, TOUT ce qui a
+   * été publié depuis le dernier signalement de l'alerte, et l'annonce en une ligne.
+   *
+   * Les deux chemins ne se doublent pas : ils partagent `last_notified_at` et la
+   * fenêtre d'une heure de `deliver()` sur (membre, `services.alert_match`,
+   * `SAVED_ALERT`, id d'alerte). Ce qu'un chemin a signalé, l'autre trouve déjà
+   * signalé.
+   *
+   * ── IDEMPOTENCE : TROIS CHOSES, ET AUCUNE N'EST OPTIONNELLE ────────────────
+   *
+   * 1. La BORNE BASSE des annonces est `last_notified_at` — jamais l'heure courante.
+   *    Après un passage, `last_notified_at` vaut `now`, et le passage suivant AU MÊME
+   *    `now` ne trouve plus rien de « publié depuis ». C'est ce qui rend le second
+   *    passage muet.
+   * 2. `match_count` est INCRÉMENTÉ du nombre de correspondances réellement
+   *    signalées, et seulement si la notification a été créée. Il entre dans
+   *    l'empreinte du test d'idempotence de l'ordonnanceur (la colonne finit par
+   *    `count`) : l'incrémenter avant l'envoi, ou hors de la condition, est
+   *    exactement le défaut que ce test existe pour attraper.
+   * 3. Aucune borne ne lit `Date.now()`. `onListingPublished` le fait — il est
+   *    déclenché par un événement, donc son « maintenant » EST l'instant courant —
+   *    mais une tâche planifiée reçoit son instant du planificateur, et une tâche qui
+   *    lirait l'horloge murale ne serait plus éprouvable à un instant choisi.
+   *
+   * ── `match_count` N'A PAS DE LECTEUR, ET IL FAUT LE DIRE ───────────────────
+   *
+   * 10 §5 exige la colonne (« `saved_alerts.match_count` **Ajoutée** ») sans dire
+   * qui la lit, et l'écran que T5 S10 décrit ne l'affiche pas : « liste d'alertes
+   * (kind, critères résumés, actif, DERNIER ENVOI) ». `last_notified_at`, lui, a
+   * deux lecteurs réels — `HousingService.listAlerts` et le contrôle d'« usage
+   * significatif » du remboursement (14 §4.4). Le compteur est donc écrit
+   * correctement et lu par personne ; c'est remonté dans le rapport du lot plutôt
+   * que résolu en ajoutant un champ à une réponse d'API que la spec ne demande pas.
+   *
+   * ── LA BORNE BASSE D'UNE ALERTE JAMAIS SIGNALÉE ────────────────────────────
+   *
+   * `created_at` de l'alerte, et non l'origine des temps. Une alerte posée ce matin
+   * ne doit pas annoncer les six mois d'annonces qui la précèdent : le membre a
+   * demandé à être prévenu de ce qui ARRIVE.
+   */
+  async dispatchSavedAlerts(
+    now: Date = new Date(),
+  ): Promise<{ alertes: number; notifiees: number; correspondances: number }> {
+    const cutoff = new Date(now.getTime() - ALERT_DISPATCH_INTERVAL_MS);
+
+    const alerts = await this.prisma.savedAlert.findMany({
+      where: {
+        isActive: true,
+        // `lt` sur une colonne NULLABLE élimine les `NULL` : une alerte jamais
+        // signalée doit être servie, d'où le `OR` explicite. Le même piège que dans
+        // `onListingPublished`, et il mérite d'être écrit deux fois.
+        OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: cutoff } }],
+      },
+      select: { id: true, userId: true, kind: true, criteria: true, createdAt: true, lastNotifiedAt: true },
+      take: 500,
+    });
+
+    let notifiees = 0;
+    let correspondances = 0;
+
+    for (const alert of alerts) {
+      const since = alert.lastNotifiedAt ?? alert.createdAt;
+      const matches = await this.matchesSince(alert, since, now);
+      if (matches.length === 0) continue;
+
+      const result = await this.notifications.deliver({
+        userId: alert.userId,
+        category: 'SERVICES',
+        type: 'services.alert_match',
+        title: alertMatchTitle(alert.kind, matches.length),
+        refType: 'SAVED_ALERT',
+        refId: alert.id,
+        // Vers la LISTE et non vers une annonce : le titre annonce un nombre, et un
+        // lien vers l'une des trois serait un lien vers deux annonces manquantes.
+        url: alert.kind === 'HOUSING' ? '/services/logement' : '/services/emploi',
+      });
+
+      if (result.outcome !== 'CREATED' && result.outcome !== 'GROUPED') continue;
+
+      await this.prisma.savedAlert.update({
+        where: { id: alert.id },
+        data: { lastNotifiedAt: now, matchCount: { increment: matches.length } },
+      });
+      notifiees += 1;
+      correspondances += matches.length;
+    }
+
+    return { alertes: alerts.length, notifiees, correspondances };
+  }
+
+  /**
+   * Les annonces publiées entre `since` (exclu) et `now` (inclus) qui correspondent
+   * à l'alerte.
+   *
+   * `created_at` comme date de publication : `housing_listings` et `job_listings`
+   * n'ont pas de `published_at`, et une annonce est publiée à sa création — la
+   * modération, elle, se lit dans `moderation_status`, que le filtre écarte.
+   *
+   * L'AUTEUR DE L'ANNONCE EST EXCLU, et les séparations aussi : les mêmes deux
+   * règles que le chemin par événement, par les mêmes deux moyens. Un membre bloqué
+   * ne doit pas reparaître par la porte d'une alerte.
+   */
+  private async matchesSince(
+    alert: { userId: string; kind: 'HOUSING' | 'JOB'; criteria: unknown },
+    since: Date,
+    now: Date,
+  ): Promise<{ id: string; authorUserId: string }[]> {
+    // `gt` sur la borne basse et `lte` sur la haute : une annonce déjà signalée à
+    // l'instant exact de `last_notified_at` ne doit pas ressortir, et une annonce
+    // publiée pile à `now` doit entrer — sinon elle attendrait l'heure suivante,
+    // pour rien. Les deux bornes sont ce qui empêche `match_count` de compter deux
+    // fois la même correspondance.
+    //
+    // `take: 100` plus bas : une tâche est BORNÉE (`queue/scheduled-tasks.ts`). Une
+    // heure à plus de cent annonces nouvelles dans une seule ville annoncerait donc
+    // « 100 » au lieu de « 137 » — un chiffre approximatif dans un titre, contre un
+    // balayage non borné qui tiendrait son verrou. L'arbitrage est assumé.
+    const window = { gt: since, lte: now };
+    const rows =
+      alert.kind === 'HOUSING'
+        ? await this.prisma.housingListing.findMany({
+            where: {
+              status: 'ACTIVE',
+              deletedAt: null,
+              moderationStatus: { not: 'PENDING' },
+              authorUserId: { not: alert.userId },
+              createdAt: window,
+            },
+            select: { id: true, authorUserId: true, cityId: true },
+            take: 100,
+          })
+        : await this.prisma.jobListing.findMany({
+            where: {
+              status: 'ACTIVE',
+              deletedAt: null,
+              authorUserId: { not: alert.userId },
+              createdAt: window,
+            },
+            select: { id: true, authorUserId: true, cityId: true },
+            take: 100,
+          });
+
+    const matching = rows.filter((row) => this.alertMatches(alert.criteria, row.cityId));
+    if (matching.length === 0) return [];
+
+    // Une seule requête de blocages pour tout le lot, comme `withoutSeparated`.
+    const authors = [...new Set(matching.map((r) => r.authorUserId))];
+    const visibles = new Set(await this.withoutSeparated(authors, alert.userId));
+    return matching
+      .filter((row) => visibles.has(row.authorUserId))
+      .map((row) => ({ id: row.id, authorUserId: row.authorUserId }));
+  }
+
+  /**
    * Les critères d'une alerte, lus défensivement : `criteria` est du JSON libre.
    *
    * Seule la ville est confrontée ici. Le prix, le secteur et le type de contrat
@@ -1091,6 +1253,24 @@ export class NotificationEventsService {
     }
     return candidates.filter((id) => id !== other && !separated.has(id));
   }
+}
+
+/**
+ * Le titre d'un signalement d'alerte REGROUPÉ (10 §9).
+ *
+ * Il porte le NOMBRE, ce que le chemin par événement ne peut pas faire : lui ne
+ * connaît qu'une annonce. C'est la seule différence visible par le membre entre les
+ * deux chemins, et c'est celle que « regroupe les correspondances » demande.
+ */
+export function alertMatchTitle(kind: 'HOUSING' | 'JOB', count: number): string {
+  if (kind === 'HOUSING') {
+    return count === 1
+      ? 'Une nouvelle annonce correspond à votre alerte logement'
+      : `${count} nouvelles annonces correspondent à votre alerte logement`;
+  }
+  return count === 1
+    ? 'Une nouvelle offre correspond à votre alerte emploi'
+    : `${count} nouvelles offres correspondent à votre alerte emploi`;
 }
 
 /**

@@ -166,6 +166,38 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'stats.steps_recompute',
       'impact.quarterly_prepare',
       'export.purge',
+      // ── Les neuf dernières tâches exigées par les specs ──────────────────────
+      //
+      // Elles arrivent par le chemin que le commentaire ci-dessus impose : la liste
+      // est écrite en dur, donc une tâche qui apparaît fait rougir ce test et oblige
+      // à venir l'inscrire ici — donc à vérifier son nom contre la spec. Chacun de
+      // ces neuf noms a été relu dans le tableau « Tâches » de son module, et deux
+      // n'apparaissent PAS dans §9.3 :
+      //
+      //   · `journey.progress_recompute` — 03 §8 seulement ;
+      //   · `city.activation_suggest` — 02 §7 seulement ;
+      //   · `guide.view_count_flush` — 05 §7 seulement ;
+      //   · `housing.price_median_recompute` et `alerts.dispatch` — 10 §9 seulement.
+      //
+      // §9.3 n'est donc pas la liste complète, et la croire telle a déjà fait
+      // manquer des tâches. Les quatorze tableaux de module font foi avec elle.
+      //
+      // Module 03 (§8). Le module était livré, mais aucune des trois n'avait de
+      // point d'entrée : l'écran de relance de §3.9 n'était montré à personne.
+      'journey.reminders',
+      'journey.inactivity_check',
+      'journey.progress_recompute',
+      // 02 §7. Elle ne fait que LIRE : §2.2 réserve l'activation à l'équipe.
+      'city.activation_suggest',
+      // 05 §7, avec la colonne `guides.view_count` et son compteur Redis.
+      'guide.view_count_flush',
+      // 10 §9.
+      'housing.price_median_recompute',
+      'alerts.dispatch',
+      // Transverse (00 §8.4 et §9.3). `retention.purge` tient la seule des sept
+      // durées de §8.4 que personne ne tenait : les sessions de membres à 30 jours.
+      'retention.purge',
+      'bookmark.state_refresh',
     ];
 
     expect(registry.all().map((t) => t.name).sort()).toEqual([...attendues].sort());
@@ -223,7 +255,15 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
     // Diffé explicitement plutôt que par `toEqual` sur l'objet entier : sur cent
     // trente valeurs, le rapport d'échec de vitest est illisible, et ce qu'on veut
     // lire est « quelle table, et de combien ».
-    expect(differences(apresPremier, apresSecond)).toEqual([]);
+    //
+    // LA LISTE VA DANS LE MESSAGE, et pas seulement dans la valeur attendue. Sans
+    // cela, la promesse du paragraphe ci-dessus n'est pas tenue : vitest TRONQUE la
+    // valeur reçue et n'imprime que « expected [ …(4) ] to deeply equal [] ». Cet
+    // échec est arrivé une fois, en suite complète, et les quatre clés n'ont jamais
+    // été lisibles — ce qui a rendu la cause inintrouvable. Le message, lui, est
+    // toujours imprimé en entier.
+    const bouge = differences(apresPremier, apresSecond);
+    expect(bouge, `ce qui a bougé au SECOND passage :\n  ${bouge.join('\n  ')}`).toEqual([]);
   });
 
   /**
@@ -261,16 +301,19 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
      *     cette seconde borne, un `metrics.refresh` qui écrirait à chaque passage
      *     passerait ce test.
      */
+    const autres = bouge.filter((d) => !d.startsWith('lignes:metric_snapshots '));
     expect(
-      bouge.filter((d) => !d.startsWith('lignes:metric_snapshots ')),
-      'une table AUTRE que metric_snapshots a bougé quand l’horloge a avancé',
+      autres,
+      `une table AUTRE que metric_snapshots a bougé quand l’horloge a avancé :\n  ${autres.join('\n  ')}`,
     ).toEqual([]);
 
     const second = await registry.runAll(plusUneHeure);
     expect(second.failures, 'tâches en échec au second passage à l’heure avancée').toEqual([]);
+    const rejoue = differences(apres, await empreinte(prisma));
     expect(
-      differences(apres, await empreinte(prisma)),
-      'relancer au même `now` avancé a réécrit — une ligne par exécution, pas par période',
+      rejoue,
+      'relancer au même `now` avancé a réécrit — une ligne par exécution, pas par ' +
+        `période :\n  ${rejoue.join('\n  ')}`,
     ).toEqual([]);
   });
 });

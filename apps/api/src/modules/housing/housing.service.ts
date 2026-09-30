@@ -797,6 +797,106 @@ export class HousingService {
    * Ne pas retomber sur la spec signifierait « aucun score tant que l'admin n'a rien
    * réglé », c'est-à-dire aucune protection — or c'est LA protection du module.
    */
+  /**
+   * `housing.price_median_recompute` — quotidienne, « par ville et kind » (§9).
+   *
+   * Ce qu'elle nourrit : le drapeau `PRICE_FAR_BELOW_MEDIAN` du §2.2 (« prix
+   * inférieur de 40 % à la médiane des annonces actives du même kind dans la
+   * ville »), lu par `medianPrice` à chaque publication et chaque modification
+   * d'annonce. C'est son UNIQUE lecteur, et il est réel : sans lui, cette tâche
+   * écrirait dans une table que personne n'ouvre.
+   *
+   * ── CE QU'ELLE NE FAIT PAS, ET POURQUOI ─────────────────────────────────────
+   *
+   * Elle N'INSÈRE PAS une ligne par exécution. Une ligne par couple (ville, kind),
+   * remplacée sur place : c'est le défaut que le test d'idempotence de
+   * l'ordonnanceur traque nommément — « un balayage qui recalcule une valeur dérivée
+   * du temps écoulé et l'AJOUTE au lieu de la remplacer ». Une médiane est un état,
+   * pas un historique ; si l'équipe veut un jour la courbe, c'est
+   * `metric_snapshots` (15 §6) qui est en ajout seul, pas cette table.
+   *
+   * Elle N'ÉCRIT PAS si la valeur n'a pas changé. Deux raisons : la ligne
+   * `computed_at` bougerait chaque nuit sans qu'aucune médiane ait bougé, et
+   * surtout un test ne pourrait plus distinguer « la tâche a tourné et rien n'a
+   * changé » de « la tâche a réécrit ». Une nuit sans nouvelle annonce ne produit
+   * donc AUCUNE écriture.
+   *
+   * Elle SUPPRIME la ligne d'un couple qui n'a plus d'annonce active. Une médiane
+   * périmée est pire qu'une médiane absente : le repli de `medianPrice` recalcule
+   * sur place, alors qu'une ligne vieille de six mois serait servie comme une
+   * vérité.
+   *
+   * `now` sert à dater le calcul, et il vient du créneau. Une tâche qui écrirait
+   * `new Date()` ici serait indistinguable, pour un test, d'une tâche qui réécrit
+   * à chaque passage.
+   */
+  async recomputePriceMedians(
+    now: Date = new Date(),
+  ): Promise<{ couples: number; ecrits: number; supprimes: number }> {
+    // Les couples (ville, kind) qui ONT des annonces actives à prix connu. Le
+    // `groupBy` remplace un produit cartésien de 65 villes × 6 kinds, dont la quasi
+    // totalité serait vide.
+    const couples = await this.prisma.housingListing.groupBy({
+      by: ['cityId', 'kind'],
+      where: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        moderationStatus: { not: 'PENDING' },
+        priceCents: { not: null },
+      },
+      _count: { _all: true },
+    });
+
+    let ecrits = 0;
+    const vivants = new Set<string>();
+
+    for (const couple of couples) {
+      vivants.add(`${couple.cityId}|${couple.kind}`);
+      const median = await this.computeMedianPrice(couple.cityId, couple.kind, null);
+      if (median === null) continue;
+
+      // `Math.round` : la médiane d'un effectif PAIR est une moyenne de deux
+      // centimes, donc parfois un demi-centime. `median_cents` est un entier, comme
+      // `price_cents` — §4 : « jamais de flottant sur un montant ».
+      const medianCents = Math.round(median);
+      const sampleSize = couple._count._all;
+
+      const existing = await this.prisma.housingPriceMedian.findUnique({
+        where: { cityId_kind: { cityId: couple.cityId, kind: couple.kind } },
+        select: { medianCents: true, sampleSize: true },
+      });
+
+      if (existing !== null && existing.medianCents === medianCents && existing.sampleSize === sampleSize) {
+        continue;
+      }
+
+      await this.prisma.housingPriceMedian.upsert({
+        where: { cityId_kind: { cityId: couple.cityId, kind: couple.kind } },
+        create: { cityId: couple.cityId, kind: couple.kind, medianCents, sampleSize, computedAt: now },
+        update: { medianCents, sampleSize, computedAt: now },
+      });
+      ecrits += 1;
+    }
+
+    // Les couples devenus vides. Lus puis filtrés en mémoire : un `NOT IN` sur un
+    // couple de colonnes n'est pas exprimable en Prisma, et la table compte au plus
+    // une ligne par (ville, kind).
+    const stored = await this.prisma.housingPriceMedian.findMany({
+      select: { cityId: true, kind: true },
+    });
+    const orphelins = stored.filter((row) => !vivants.has(`${row.cityId}|${row.kind}`));
+
+    let supprimes = 0;
+    for (const row of orphelins) {
+      const { count } = await this.prisma.housingPriceMedian.deleteMany({
+        where: { cityId: row.cityId, kind: row.kind },
+      });
+      supprimes += count;
+    }
+
+    return { couples: couples.length, ecrits, supprimes };
+  }
+
   async assessRisk(input: {
     authorUserId: string;
     kind: HousingKind;
@@ -875,12 +975,51 @@ export class HousingService {
   /**
    * Médiane des annonces actives du même kind dans la ville.
    *
-   * Calculée en mémoire sur au plus 500 annonces : `percentile_cont` en SQL aurait
-   * demandé du SQL brut pour un gain nul à cette échelle, et la tâche quotidienne
-   * `housing.price_median_recompute` (§9) pourra la mettre en cache plus tard sans
-   * changer cette signature.
+   * DEUX CHEMINS, et l'ordre importe :
+   *
+   *   1. la ligne de `housing_price_medians`, écrite chaque nuit par
+   *      `housing.price_median_recompute` (§9). C'est le chemin normal : une lecture
+   *      de clé primaire, là où le calcul direct trie jusqu'à 500 annonces pour
+   *      CHAQUE publication ou modification d'annonce ;
+   *   2. à défaut — ville jamais calculée, tâche qui n'a pas encore tourné, ville
+   *      créée dans la journée — le CALCUL DIRECT, inchangé.
+   *
+   * Le repli n'est pas une précaution de confort : cette médiane décide de mettre
+   * une annonce en modération (§2.2, drapeau `PRICE_FAR_BELOW_MEDIAN`, poids 0,5).
+   * Une absence de ligne qui rendrait `null` ferait passer une annonce
+   * frauduleusement bon marché SANS drapeau, en silence — c'est-à-dire que la tâche
+   * planifiée deviendrait une dépendance de sécurité. Elle ACCÉLÈRE, elle ne
+   * conditionne pas.
+   *
+   * `excludeListingId` FORCE LE CALCUL DIRECT, et c'est le seul cas où la table est
+   * ignorée : la médiane stockée inclut l'annonce en cours de modification, et se
+   * comparer à une médiane dont on fait partie affaiblit le drapeau — d'autant plus
+   * que le couple (ville, kind) compte parfois deux ou trois annonces.
    */
   private async medianPrice(
+    cityId: string,
+    kind: HousingKind,
+    excludeListingId: string | null,
+  ): Promise<number | null> {
+    if (excludeListingId === null) {
+      const cached = await this.prisma.housingPriceMedian.findUnique({
+        where: { cityId_kind: { cityId, kind } },
+        select: { medianCents: true },
+      });
+      if (cached !== null) return cached.medianCents;
+    }
+    return this.computeMedianPrice(cityId, kind, excludeListingId);
+  }
+
+  /**
+   * Le calcul, en mémoire sur au plus 500 annonces.
+   *
+   * `percentile_cont` en SQL aurait demandé du SQL brut pour un gain nul à cette
+   * échelle, et la tâche quotidienne appelle la MÊME fonction que le repli — une
+   * médiane calculée de deux façons différentes finirait par ne plus être la même,
+   * et le drapeau de risque dépendrait de qui l'a calculée.
+   */
+  private async computeMedianPrice(
     cityId: string,
     kind: HousingKind,
     excludeListingId: string | null,

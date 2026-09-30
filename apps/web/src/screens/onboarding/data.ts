@@ -1,6 +1,11 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+// `import type` : les enums générés servent ici de TYPES et rien de plus. Une
+// importation de valeur depuis un module `'use client'` rapporterait une référence
+// client au lieu de l'objet — le piège déjà payé sur `resume.ts` (voir
+// docs/decisions.md). Un type, lui, est effacé à la compilation.
+import type { HelpType, OccupationStatus } from '@app/shared';
 
 /**
  * Données et état des écrans d'accès et d'onboarding.
@@ -181,13 +186,22 @@ export function finalHandle(input: string): string {
   return toHandle(input).replace(/[_-]+$/, '');
 }
 
-/** Le code à envoyer à l'API pour le statut choisi. */
-export function occupationCode(index: number): string {
+/**
+ * Le code à envoyer à l'API pour le statut choisi.
+ *
+ * Le type de retour est `OccupationStatus`, l'enum GÉNÉRÉ depuis le schéma Prisma
+ * — et non `string`. La différence n'est pas cosmétique : avec `string`, une faute
+ * de frappe dans `OCCUPATIONS` ci-dessus (`'EMPLOYE'` pour `'EMPLOYEE'`) partait
+ * jusqu'à l'API, qui répondait `400 VALIDATION_FAILED` sur un champ que le membre
+ * n'avait aucun moyen de corriger. Le compilateur compare maintenant la table à
+ * l'enum.
+ */
+export function occupationCode(index: number): OccupationStatus {
   return OCCUPATIONS[index]?.code ?? 'OTHER';
 }
 
 /** Les codes des types d'aide retenus, sans doublon. */
-export function helpTypeCodes(indexes: readonly number[]): string[] {
+export function helpTypeCodes(indexes: readonly number[]): HelpType[] {
   return [...new Set(indexes.map((i) => HELP_TYPES[i]?.code ?? 'OTHER'))];
 }
 

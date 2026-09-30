@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   ApiClientError,
   advanceOnboarding,
-  apiRequest,
+  fetchMe,
   listCities,
   listCountries,
   requestOtp,
@@ -232,7 +232,11 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         // Le pays d'origine n'est envoyé que s'il a CHANGÉ du défaut : §2.7 ne
         // permet qu'une modification, et la consommer pour confirmer une valeur
         // déjà posée priverait le membre de sa seule correction.
-        const current = await apiRequest<{ user: { originCountryId: string } }>('/me');
+        // `force: true` : on veut la valeur du SERVEUR, pas celle qu'on croit
+        // connaître. L'écran précédent a pu écrire, et décider de consommer l'unique
+        // modification du pays d'origine sur une copie périmée serait la pire façon
+        // de se tromper — elle est irréversible (§2.7).
+        const current = await fetchMe({ force: true });
         const chosen = countryOptions.find((c) => c.iso2 === state.originIso2);
         if (chosen !== undefined && chosen.id !== current.user.originCountryId) {
           patch['originCountryId'] = chosen.id;

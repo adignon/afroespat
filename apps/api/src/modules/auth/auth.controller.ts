@@ -44,7 +44,14 @@ export class AuthController {
   // Elle disait `@RateLimit(10)` sans période, donc 10 par MINUTE : soixante fois
   // la règle, alors que chaque appel coûte un SMS. L'écart ne se voyait pas tant
   // que le décorateur ne limitait rien.
-  @RateLimit(10, 'hour')
+  //
+  // `'ip'` est DÉCLARÉ, alors que le comportement était déjà le bon : une demande
+  // de code n'a pas de jeton, donc `identityOf` tombait sur l'IP de toute façon.
+  // Il y tombait PAR ACCIDENT. La spec écrit « par IP » ; le code le dit
+  // maintenant aussi, et un jeton présenté avec la requête — un membre déjà
+  // connecté qui demande un code pour un second numéro — ne lui ouvre plus un
+  // budget à lui.
+  @RateLimit(10, 'hour', 'ip')
   @ApiOperation({ summary: 'Envoie un code à 6 chiffres par SMS' })
   async requestOtp(
     @Body(zodPipe(otpRequestSchema)) body: z.infer<typeof otpRequestSchema>,

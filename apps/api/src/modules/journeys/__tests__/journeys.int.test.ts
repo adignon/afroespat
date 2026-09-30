@@ -12,13 +12,19 @@ import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { TokenService } from '../../../common/token.service';
 import { VisibilityService } from '../../../common/visibility.service';
-import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
+import {
+  FakeCaptchaProvider,
+  FakeEmailProvider,
+  FakePushProvider,
+  FakeSmsProvider,
+} from '../../../providers/providers';
 import { AuthService } from '../../auth/auth.service';
 import { ConnectionsService } from '../../connections/connections.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { FeedService } from '../../feed/feed.service';
 import { HelpService } from '../../help/help.service';
 import { MessagingService } from '../../messaging/messaging.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { JourneysService, type JourneyActor } from '../journeys.service';
 
 /**
@@ -247,6 +253,10 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
       help,
       feed,
       messaging,
+      // Les trois tâches du §8 notifient. Un vrai `NotificationsService` avec des
+      // fournisseurs FICTIFS : rien ne sort, et les lignes `notifications` sont
+      // bien écrites — c'est sur elles que porte l'assertion d'idempotence.
+      new NotificationsService(prisma, new FakeEmailProvider(), new FakePushProvider()),
     );
     auth = new AuthService(
       prisma,

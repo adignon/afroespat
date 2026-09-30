@@ -421,6 +421,62 @@ export class AccountService {
     return { purged: removed.count };
   }
 
+  /**
+   * `retention.purge` — quotidienne, TRANSVERSE (00-fondations.md §9.3 et §8.4).
+   *
+   * ── CE QU'ELLE PURGE, ET CE QUE D'AUTRES PURGENT DÉJÀ ───────────────────────
+   *
+   * §8.4 donne SEPT durées de conservation, et six ont déjà leur tâche ou n'ont
+   * rien à purger. Il ne reste qu'une ligne pour celle-ci, et c'est celle que
+   * personne ne tenait :
+   *
+   *   · « Défis OTP : 24 h » → `otp.purge`, horaire, juste au-dessus ;
+   *   · « **Sessions expirées : 30 jours** » → ICI. Aucune tâche ne les touchait :
+   *     `staff.session_cleanup` ne voit que `staff_sessions`, et le gestionnaire de
+   *     suppression de compte ne vide `auth_sessions` que du membre supprimé. Les
+   *     sessions expirées de tous les autres s'accumulaient donc sans fin ;
+   *   · « Signalements traités : 3 ans » → `moderation.purge_reports`, quotidienne ;
+   *   · « Journal d'audit : 5 ans » → `audit.retention`, ABSENTE : `audit_logs` est
+   *     en ajout seul, protégée par deux déclencheurs PostgreSQL, et §2.3 du module
+   *     15 dit « Aucune suppression possible ». La contradiction avec §10
+   *     appartient au propriétaire ; cette tâche ne l'arbitre pas et ne touche pas
+   *     la table ;
+   *   · « Journaux applicatifs : 90 jours » → ils ne sont pas en base (pino, sortie
+   *     standard). Rien à purger ici ;
+   *   · « Contenus d'un compte supprimé » → les gestionnaires de suppression de
+   *     §8.6, pas une rétention par durée ;
+   *   · « Données de paiement : 10 ans » → aucune facture n'a dix ans, et la
+   *     conservation est une OBLIGATION, pas une échéance de purge.
+   *
+   * Elle ne touche donc qu'UNE table, et le dire vaut mieux que de lui faire
+   * balayer six tables dont cinq sont déjà tenues : deux tâches qui purgent la même
+   * ligne se battent pour le même verrou et se cachent l'une l'autre.
+   *
+   * ── CE QU'ELLE NE PURGE PAS, ET QUE LA SPEC NE DIT PAS ─────────────────────
+   *
+   * `domain_events` publiés. La boîte d'envoi n'est jamais vidée : le relais marque
+   * `published_at` et la ligne reste pour toujours. C'est la table qui grossit le
+   * plus vite du produit, et §8.4 ne lui donne AUCUNE durée. On ne l'invente pas —
+   * un événement effacé est une piste d'audit effacée — mais c'est remonté.
+   *
+   * IDEMPOTENTE : un `deleteMany` borné par une date. Au second passage, au même
+   * instant, plus aucune ligne n'est dans la fenêtre.
+   *
+   * RÉVOQUÉE COMPTE COMME EXPIRÉE : §8.4 dit « sessions expirées », et une session
+   * révoquée depuis plus de trente jours est au moins aussi morte. Les deux bornes
+   * sont dans le même `OR` plutôt que dans deux balayages, parce que c'est une seule
+   * règle : « cette session ne peut plus servir depuis trente jours ».
+   */
+  async purgeExpiredSessions(now: Date = new Date()): Promise<{ sessions: number }> {
+    const cutoff = new Date(now.getTime() - ACCOUNT_LIMITS.sessionRetentionDays * 86_400_000);
+    const removed = await this.prisma.authSession.deleteMany({
+      where: {
+        OR: [{ expiresAt: { lt: cutoff } }, { revokedAt: { lt: cutoff } }],
+      },
+    });
+    return { sessions: removed.count };
+  }
+
   // ── Gestionnaire de suppression du module 01 (§9) ─────────────────────────
 
   /**

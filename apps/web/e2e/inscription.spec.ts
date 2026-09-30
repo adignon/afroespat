@@ -218,13 +218,31 @@ test.describe('O02 — pays d’origine et ville', () => {
     await signUp(page);
     await page.goto('/bienvenue/lieu');
 
-    const options = await page
-      .locator('main:visible select[aria-label="Pays d’origine"] option')
-      .allTextContents();
+    const optionsLocator = page.locator('main:visible select[aria-label="Pays d’origine"] option');
+
+    /**
+     * ON ATTEND QUE LA LISTE ARRIVE, et ce n'est pas une précaution de style.
+     *
+     * Ce test lisait `allTextContents()` juste après `goto`. Or cette méthode
+     * N'ATTEND PAS : elle rend ce qui existe à l'instant. Les pays viennent d'un
+     * `GET /places/countries` asynchrone, donc elle rendait `[]` — et les deux
+     * assertions passaient le mauvais examen : « aucune option ne contient France »
+     * est TRIVIALEMENT vrai sur une liste vide, et `length > 0` échouait.
+     *
+     * Mesuré au navigateur pour lever le doute : la requête répond `200` et les
+     * options arrivent bien (`Bénin`, `Togo`, sans la France), à peine plus tard.
+     * C'était donc la course du test, pas un défaut de l'application — mais le
+     * symptôme était exactement celui d'un sélecteur vide, le piège qui a déjà coûté
+     * une heure ici. D'où `expect.poll`, qui attend le fait au lieu de le supposer.
+     */
+    await expect.poll(async () => (await optionsLocator.allTextContents()).length, {
+      timeout: 15_000,
+    }).toBeGreaterThan(0);
+
+    const options = await optionsLocator.allTextContents();
     // La France est `DESTINATION` (02 §2.1) : l'API refuse de l'accepter comme
     // pays d'origine, donc la proposer serait offrir un choix qui échoue.
     expect(options.some((o) => o.includes('France'))).toBe(false);
-    expect(options.length).toBeGreaterThan(0);
   });
 });
 

@@ -113,7 +113,20 @@ export const screens = [
     // Le titre VISIBLE de la feuille, compteur compris — c'est lui qui donnera
     // son nom accessible à la boîte de dialogue.
     modalTitle: 'Mes parcours · 3',
-    frames: [f(390, 'Mobile')],
+    /**
+     * `requires` — LA PLANCHE, PAS LA COLONNE QUI LA PORTE.
+     *
+     * J01M range son téléphone dans une colonne de mise en page qui déclare la MÊME
+     * largeur (`display:flex;flex-direction:column;gap:10px;width:390px`) et qui
+     * contient l'étiquette de planche « MOBILE · FEUILLE “MES PARCOURS” » en plus du
+     * téléphone. C'est le seul endroit des dix maquettes où cela arrive — mesuré sur
+     * les 248 sélections déclarées.
+     *
+     * `height:844px` désigne le téléphone par CE QU'IL EST. Un `occurrence: 1`
+     * l'aurait désigné par son rang, ce qui ne dit rien et se décale dès qu'une
+     * planche est insérée avant.
+     */
+    frames: [{ ...f(390, 'Mobile'), requires: 'height:844px' }],
   }),
 
   // ── J01E · les deux états sans parcours actif ──────────────────────────────

@@ -76,6 +76,12 @@ model Guide {
   /// Affichée aussi visiblement que le titre (T1 §6).
   lastContentUpdateAt DateTime @map("last_content_update_at") @db.Timestamptz
 
+  /// Compteur de vues APPROXIMATIF (05 §5) : incrémenté dans Redis à la lecture,
+  /// vidé dans cette colonne par la tâche horaire `guide.view_count_flush`.
+  /// N'est JAMAIS exposé à personne, sur aucune route (règle dure 00 §1.2) : il ne
+  /// sert qu'au pilotage interne. Voir le rapport du lot pour son unique lecteur.
+  viewCount           Int       @default(0) @map("view_count")
+
   outdatedFlagCount   Int       @default(0) @map("outdated_flag_count")
   /// Fixée à 3 signalements ; dépublication si dépassée (tâche quotidienne).
   unpublishDeadlineAt DateTime? @map("unpublish_deadline_at") @db.Timestamptz

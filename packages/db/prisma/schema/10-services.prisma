@@ -328,9 +328,45 @@ model SavedAlert {
   isActive       Boolean   @map("is_active")
   /// Regroupement : une notification par heure et par alerte maximum.
   lastNotifiedAt DateTime? @map("last_notified_at") @db.Timestamptz
+  /// 10 §5 « Ajoutée » : le nombre de correspondances DÉJÀ signalées pour cette
+  /// alerte. Écrit par la tâche horaire `alerts.dispatch`, et seulement quand une
+  /// notification a réellement été créée — l'incrémenter avant l'envoi ferait
+  /// compter des correspondances que le membre n'a jamais vues.
+  matchCount     Int       @default(0) @map("match_count")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("saved_alerts")
+}
+
+/// Médiane de prix par ville et par kind — tâche quotidienne
+/// `housing.price_median_recompute` (10 §9).
+///
+/// POURQUOI UNE TABLE plutôt qu'un cache Redis : le seul lecteur est le calcul de
+/// risque d'une annonce (§2.2, « prix inférieur de 40 % à la médiane des annonces
+/// actives du même kind dans la ville »), qui décide de METTRE UNE ANNONCE EN
+/// MODÉRATION. Une valeur perdue au redémarrage de Redis ferait passer une annonce
+/// frauduleuse sans drapeau, en silence. `HousingService.medianPrice` lit cette
+/// table et retombe sur le calcul direct si la ligne manque — la tâche accélère,
+/// elle ne conditionne pas.
+///
+/// En AJOUT-MISE À JOUR sur (city_id, kind) : une ligne par couple, jamais une
+/// ligne par exécution.
+model HousingPriceMedian {
+  cityId String      @map("city_id") @db.Uuid
+  kind   HousingKind
+
+  /// Entier, en centimes, comme `housing_listings.price_cents`.
+  medianCents Int @map("median_cents")
+  /// Combien d'annonces ont servi la médiane. Zéro ne s'écrit jamais : le couple
+  /// sans annonce voit sa ligne SUPPRIMÉE, pour qu'une médiane périmée ne serve pas.
+  sampleSize  Int @map("sample_size")
+
+  computedAt DateTime @map("computed_at") @db.Timestamptz
+
+  city City @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  @@id([cityId, kind])
+  @@map("housing_price_medians")
 }

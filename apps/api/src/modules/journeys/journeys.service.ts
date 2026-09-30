@@ -41,6 +41,7 @@ import { ConsentsService } from '../consents/consents.service';
 import { FeedService } from '../feed/feed.service';
 import { HelpService } from '../help/help.service';
 import { MessagingService } from '../messaging/messaging.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 /**
  * Parcours — 03-parcours.md.
@@ -141,6 +142,7 @@ export class JourneysService {
     private readonly help: HelpService,
     private readonly feed: FeedService,
     private readonly messaging: MessagingService,
+    private readonly notifications: NotificationsService,
   ) {
     this.cursorSecret = loadEnv().CURSOR_SECRET;
   }
@@ -2078,6 +2080,216 @@ export class JourneysService {
    * Le parcours, s'il est à moi. `404` et non `403` : un identifiant de parcours
    * qui n'est pas le mien ne doit même pas révéler qu'il existe (T4 §3).
    */
+  // ══ Les trois tâches planifiées du §8 ═════════════════════════════════════
+  //
+  // Elles sont PUBLIQUES, prennent `now` en paramètre et ne connaissent pas
+  // l'ordonnanceur : c'est le contrat que `queue/scheduled-tasks.ts` impose, et
+  // c'est ce qui les rend éprouvables sans Redis ni BullMQ.
+  //
+  // POURQUOI ELLES APPELLENT `NotificationsService` EN DIRECT, alors que §3.3
+  // interdit l'appel direct pour les effets de bord : la règle vise un service qui
+  // MODIFIE L'ÉTAT et voudrait notifier dans la foulée — là, l'événement de domaine
+  // est le seul moyen de ne rien perdre si la transaction échoue. Ici, il n'y a
+  // aucun changement d'état à accompagner : §8 attribue la notification À LA TÂCHE
+  // elle-même (« Notifications J−14, J−7, J−1 »), et §7 ne déclare AUCUN événement
+  // pour une échéance. Émettre un type inventé, sans consommateur, est exactement ce
+  // que le catalogue de `outbox.service.ts` refuse ligne après ligne. C'est aussi la
+  // forme que `notifications.weekly_digest` et `notifications.quiet_hours_flush`
+  // emploient déjà : une tâche dont le travail EST l'envoi.
+
+  /**
+   * `journey.reminders` — horaire (§8) : « Notifications J−14, J−7, J−1 sur `due_date` ».
+   *
+   * L'IDEMPOTENCE NE VIENT PAS D'UNE COLONNE, et c'est un choix qu'il faut dire :
+   * elle vient de `NotificationsService.deliver()`, qui déduplique sur
+   * (membre, type, `ref_type`, `ref_id`) SANS fenêtre quand la catégorie n'a pas de
+   * règle de regroupement — ce qui est le cas de `JOURNEY_DEADLINE`. Le second
+   * passage rend `DUPLICATE`, n'écrit ni notification ni `outbound_message`, et ne
+   * met rien en file. Une colonne `reminder_sent_at` aurait fait la même chose en
+   * moins bien : elle aurait porté UNE date pour TROIS échéances, et il aurait fallu
+   * la remettre à zéro à chaque changement d'échéance.
+   *
+   * D'où le TYPE distinct par échéance (`journey.step_due_j14`, `_j7`, `_j1`) : c'est
+   * lui qui porte la distinction dans la clé de déduplication. Un type unique aurait
+   * fait taire J−7 et J−1 après l'envoi de J−14.
+   *
+   * `journey.step_due_j1` n'est pas un nom libre : c'est celui que la matrice du
+   * §2.1 de 12-notifications donne à la SEULE échéance qui part aussi par courriel
+   * (`CATEGORY_CHANNELS.JOURNEY_DEADLINE.email`). Le renommer couperait l'envoi
+   * sans rien casser d'autre — donc en silence.
+   *
+   * Le destinataire est le PROPRIÉTAIRE seul. L'équipe du parcours (§3.6) a sa
+   * propre catégorie, `JOURNEY_TEAM`, et une échéance de checklist n'est pas son
+   * affaire : la spec ne lui promet rien ici, et on ne lui invente pas d'envoi.
+   */
+  async sendDueReminders(now: Date = new Date()): Promise<{ notified: number; skipped: number }> {
+    let notified = 0;
+    let skipped = 0;
+
+    for (const days of JOURNEY_REMINDER_DAYS) {
+      // `due_date` est un `DATE` : la comparaison porte sur la JOURNÉE, pas sur
+      // l'instant. La borne est donc [minuit du jour visé, minuit du lendemain), et
+      // les vingt-quatre tirs horaires de la journée visent le même ensemble — ce
+      // qui est exactement ce qu'on veut, la déduplication faisant le reste.
+      const target = startOfUtcDay(new Date(now.getTime() + days * 86_400_000));
+      const nextDay = new Date(target.getTime() + 86_400_000);
+
+      const steps = await this.prisma.journeyStep.findMany({
+        where: {
+          dueDate: { gte: target, lt: nextDay },
+          // Une étape franchie n'a plus d'échéance qui vaille, et une étape en pause
+          // non plus : §3.2 en fait un état assumé, pas un retard à rappeler.
+          status: { in: ['TODO', 'IN_PROGRESS'] },
+          journey: { status: 'ACTIVE', deletedAt: null },
+        },
+        select: {
+          id: true,
+          title: true,
+          dueDate: true,
+          journeyId: true,
+          journey: { select: { ownerUserId: true, title: true } },
+        },
+        // Bornée (`scheduled-tasks.ts`) : un balayage sans `take` tiendrait son
+        // verrou pendant toute la table.
+        take: 500,
+      });
+
+      for (const step of steps) {
+        const result = await this.notifications.deliver({
+          userId: step.journey.ownerUserId,
+          category: 'JOURNEY_DEADLINE',
+          type: `journey.step_due_j${days}`,
+          title:
+            days === 1
+              ? `« ${step.title} » est à faire demain`
+              : `« ${step.title} » est à faire dans ${days} jours`,
+          body: formatDueDate(step.dueDate, now),
+          refType: 'JOURNEY_STEP',
+          refId: step.id,
+          url: `/parcours/${step.journeyId}`,
+        });
+        if (result.outcome === 'CREATED') notified += 1;
+        else skipped += 1;
+      }
+    }
+
+    return { notified, skipped };
+  }
+
+  /**
+   * `journey.inactivity_check` — quotidienne (§8) : « Relance unique à 60 jours
+   * sans activité ».
+   *
+   * « UNIQUE » est le mot qui porte tout, et il a déjà sa colonne :
+   * `journeys.inactivity_prompt_sent_at`. §3.9 : « une notification unique “Où en
+   * êtes-vous ?” […] Aucune relance ensuite. » Le filtre
+   * `inactivityPromptSentAt: null` la relit : un second passage ne trouve plus le
+   * parcours, quel que soit le `now`.
+   *
+   * ELLE NE TOUCHE PAS `last_activity_at`. C'est le piège de cette tâche : marquer
+   * l'envoi comme une activité remettrait le compteur des soixante jours à zéro, et
+   * la relance repartirait pour un tour dans deux mois — c'est-à-dire l'inverse
+   * exact de « aucune relance ensuite ». Seule la RÉPONSE du membre
+   * (`POST /inactivity-response`) est une activité.
+   *
+   * La réponse, elle, existait déjà ; c'est son DÉCLENCHEUR qui manquait. Sans lui,
+   * l'écran de relance n'était jamais montré à personne et les quatre réponses de
+   * §3.9 étaient injoignables.
+   */
+  async runInactivityCheck(now: Date = new Date()): Promise<{ prompted: number }> {
+    const cutoff = new Date(now.getTime() - JOURNEY_INACTIVITY_DAYS * 86_400_000);
+
+    const stale = await this.prisma.journey.findMany({
+      where: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        inactivityPromptSentAt: null,
+        lastActivityAt: { lt: cutoff },
+      },
+      select: { id: true, ownerUserId: true, title: true },
+      take: 500,
+    });
+
+    let prompted = 0;
+    for (const journey of stale) {
+      // Le MARQUAGE d'abord, l'envoi ensuite. Dans l'autre ordre, un échec entre les
+      // deux renverrait la relance au passage suivant — et « unique » ne tiendrait
+      // qu'aussi longtemps que la base et la file restent debout ensemble.
+      //
+      // La condition `null` est REPRISE dans le `where` de l'écriture : deux workers
+      // qui liraient le même lot n'écriraient qu'une fois, et seul celui dont
+      // `count` vaut 1 notifie.
+      const { count } = await this.prisma.journey.updateMany({
+        where: { id: journey.id, inactivityPromptSentAt: null },
+        data: { inactivityPromptSentAt: now },
+      });
+      if (count === 0) continue;
+
+      await this.notifications.deliver({
+        userId: journey.ownerUserId,
+        category: 'JOURNEY_DEADLINE',
+        type: 'journey.inactivity_prompt',
+        title: 'Où en êtes-vous ?',
+        body: `Votre parcours « ${journey.title} » n’a pas bougé depuis ${JOURNEY_INACTIVITY_DAYS} jours.`,
+        refType: 'JOURNEY',
+        refId: journey.id,
+        url: `/parcours/${journey.id}`,
+      });
+      prompted += 1;
+    }
+
+    return { prompted };
+  }
+
+  /**
+   * `journey.progress_recompute` — quotidienne (§8) : « Sécurité : recalcule
+   * `progress_pct` et `current_step_id` ».
+   *
+   * « SÉCURITÉ » dit ce qu'elle est : les deux colonnes sont déjà écrites par
+   * `recomputeState` à chaque action d'étape. Cette tâche existe pour le cas où une
+   * écriture a manqué — une transaction annulée après l'étape mais avant le
+   * recalcul, une donnée corrigée à la main, une migration.
+   *
+   * ELLE NE PEUT DONC PAS COMPTER : elle RECALCULE depuis les étapes, exactement
+   * comme `recomputeState`, et réécrit. C'est la propriété que le test d'idempotence
+   * de l'ordonnanceur traque — « un balayage qui recalcule une valeur dérivée du
+   * temps écoulé et l'AJOUTE au lieu de la remplacer ». Ici rien ne dérive du temps :
+   * `progress_pct` est un rapport d'étapes, et deux passages au même instant comme à
+   * un instant plus tard rendent la même valeur.
+   *
+   * `now` sert à UNE chose, et il faut la nommer : la date de complétion d'un
+   * parcours que le recalcul achève. `recomputeState` y mettait `new Date()`, ce qui
+   * est acceptable dans une requête HTTP et ne l'est pas dans une tâche — l'instant
+   * du créneau est celui que le planificateur passe, et une tâche qui lit l'horloge
+   * murale n'est plus éprouvable.
+   *
+   * Les parcours sont traités UN PAR UN, une transaction chacun : un `UPDATE` unique
+   * en SQL brut serait plus rapide et devrait répliquer la règle des étapes
+   * optionnelles, celle de l'étape en cours et l'émission de `journey.completed` —
+   * trois règles en double, dont la copie divergerait au premier ajustement.
+   */
+  async recomputeAllProgress(now: Date = new Date()): Promise<{ scanned: number; changed: number }> {
+    const journeys = await this.prisma.journey.findMany({
+      where: { deletedAt: null, status: { in: ['ACTIVE', 'COMPLETED', 'PAUSED'] } },
+      select: { id: true, progressPct: true, currentStepId: true },
+      orderBy: { createdAt: 'asc' },
+      take: 1_000,
+    });
+
+    let changed = 0;
+    for (const journey of journeys) {
+      const after = await this.recomputeState(journey.id, now);
+      if (
+        after.progressPct !== journey.progressPct ||
+        after.currentStepId !== journey.currentStepId
+      ) {
+        changed += 1;
+      }
+    }
+
+    return { scanned: journeys.length, changed };
+  }
+
   private async assertOwned(userId: string, journeyId: string) {
     const journey = await this.prisma.journey.findFirst({
       where: { id: journeyId, ownerUserId: userId, deletedAt: null },
@@ -2163,14 +2375,24 @@ export class JourneysService {
    * Recalculer plutôt qu'incrémenter est délibéré : un compteur dénormalisé
    * incrémenté hors de la transaction qui crée la ligne finit toujours par
    * compter deux fois (deux modules s'y sont pris).
+   *
+   * `now` EST UN PARAMÈTRE, avec l'heure système par défaut. Il ne sert qu'à une
+   * chose — dater la complétion d'un parcours que ce recalcul achève — mais cette
+   * chose est écrite en base, et une TÂCHE PLANIFIÉE doit pouvoir la dater à
+   * l'instant de son créneau. Un `new Date()` en dur ici faisait de
+   * `recomputeAllProgress` une tâche qui lit l'horloge murale, c'est-à-dire une
+   * tâche qu'aucun test ne peut mettre à l'épreuve à un instant choisi.
    */
-  private async recomputeState(journeyId: string): Promise<{ progressPct: number; doneCount: number }> {
+  private async recomputeState(
+    journeyId: string,
+    now: Date = new Date(),
+  ): Promise<{ progressPct: number; doneCount: number; currentStepId: string | null }> {
     return this.prisma.$transaction(async (tx) => {
       const journey = await tx.journey.findUnique({
         where: { id: journeyId },
         select: { status: true, completedAt: true },
       });
-      if (journey === null) return { progressPct: 0, doneCount: 0 };
+      if (journey === null) return { progressPct: 0, doneCount: 0, currentStepId: null };
 
       const steps = await tx.journeyStep.findMany({
         where: { journeyId },
@@ -2207,7 +2429,6 @@ export class JourneysService {
             ? ('ACTIVE' as const)
             : null;
 
-      const now = new Date();
       await tx.journey.update({
         where: { id: journeyId },
         data: {
@@ -2227,7 +2448,7 @@ export class JourneysService {
         });
       }
 
-      return { progressPct, doneCount: done.length };
+      return { progressPct, doneCount: done.length, currentStepId: current?.id ?? null };
     });
   }
 
@@ -2289,6 +2510,21 @@ function daysBetween(from: Date, to: Date): number {
 /** `target − days`, en date pure (la colonne est un `DATE`). */
 function minusDays(date: Date, days: number): Date {
   return new Date(date.getTime() - days * 86_400_000);
+}
+
+/**
+ * Minuit UTC du jour de cet instant.
+ *
+ * `journey_steps.due_date` est un `DATE` : PostgreSQL le rend à minuit UTC, et
+ * Prisma compare donc un instant à un instant. Sans cette troncature, la borne
+ * d'un « J−14 » serait « dans exactement 14 × 86 400 secondes », c'est-à-dire une
+ * borne qui GLISSE d'heure en heure — et `journey.reminders` tourne toutes les
+ * heures. Une étape échue le 14 mars serait alors rappelée à 9 h et plus à 10 h,
+ * selon l'heure du tir. Tronquer au jour rend les vingt-quatre tirs de la journée
+ * équivalents, ce qui est la seule lecture cohérente d'une échéance en jours.
+ */
+function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }
 
 /** `{echeance}` du gabarit : « dans 9 jours », « aujourd'hui », « sans échéance ». */

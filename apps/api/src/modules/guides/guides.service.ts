@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { newId, Prisma } from '@app/db';
 import {
   computeFreshnessScore,
@@ -81,10 +81,43 @@ const LIST_INCLUDE = {
 
 type GuideListRow = Prisma.GuideGetPayload<{ include: typeof LIST_INCLUDE }>;
 
+/**
+ * Le compteur de vues des guides — 05 §5 : « `guides.view_count` **Ajoutée**,
+ * compteur APPROXIMATIF (incrément Redis, flush horaire) ».
+ *
+ * UN PORT, et non un appel direct à Redis, pour deux raisons :
+ *
+ *   · les tests de guides construisent le service à la main, sans Redis. Sans port
+ *     facultatif, il faudrait une instance Redis pour éprouver la publication d'un
+ *     guide — c'est-à-dire échanger une dépendance d'infrastructure contre un
+ *     compteur qui, de son propre aveu, est approximatif ;
+ *   · le drain doit être ATOMIQUE, et c'est la seule propriété qui compte ici. La
+ *     mettre derrière une interface permet de l'éprouver, et de dire dans un seul
+ *     endroit pourquoi elle est indispensable (voir `RedisGuideViewCounter`).
+ *
+ * `null` (pas de compteur branché) est un cas NORMAL, pas une panne : la lecture
+ * d'un guide ne doit jamais échouer parce qu'un compteur interne est absent.
+ */
+export interface GuideViewCounterPort {
+  /** Une vue de plus, en attente de vidage. Ne doit JAMAIS lever. */
+  increment(guideId: string): Promise<void>;
+  /**
+   * PRÉLÈVE au plus `limit` compteurs et les REND. L'implémentation doit lire et
+   * effacer dans la même opération atomique — voir `guide.view_count_flush`.
+   */
+  drain(limit: number): Promise<ReadonlyMap<string, number>>;
+}
+
+export const GUIDE_VIEW_COUNTER = Symbol('GUIDE_VIEW_COUNTER');
+
+
 @Injectable()
 export class GuidesService {
   private readonly logger = new Logger(GuidesService.name);
   private readonly cursorSecret: string;
+
+  /** Guides vidés par passage de `guide.view_count_flush`. Voir la méthode. */
+  private static readonly VIEW_FLUSH_BATCH = 5_000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -92,6 +125,9 @@ export class GuidesService {
     private readonly audit: AuditService,
     private readonly visibility: VisibilityService,
     @Inject(AI_MODERATION_PROVIDER) private readonly moderation: AiModerationProvider,
+    @Optional()
+    @Inject(GUIDE_VIEW_COUNTER)
+    private readonly views: GuideViewCounterPort | null = null,
   ) {
     this.cursorSecret = loadEnv().CURSOR_SECRET;
   }
@@ -366,6 +402,17 @@ export class GuidesService {
             select: { id: true, comment: true },
           }),
     ]);
+
+    // La vue est comptée ICI et pas plus haut : après les trois refus (guide
+    // absent, non visible, auteur bloqué), donc seulement quand le guide a
+    // vraiment été RENDU. Compter avant ferait du compteur une mesure de
+    // tentatives, ce qui n'est pas ce que §5 annonce.
+    //
+    // ET ELLE N'EST JAMAIS RENVOYÉE (règle dure 00 §1.2 : « aucun compteur de vues
+    // n'est exposé à personne, sur aucun contenu »). Un test de l'OpenAPI le tient :
+    // `capability-coverage.int.test.ts` échoue si `viewCount` apparaît dans le
+    // contrat, et c'est le contrat que le front consomme.
+    await this.countView(guide.id);
 
     return {
       guide: {
@@ -1422,6 +1469,80 @@ export class GuidesService {
    * lui-même. Les bornes viennent de `GUIDE_FRESHNESS_BRACKETS` : la table du
    * §2.3 n'est écrite qu'une fois, dans `@app/shared`.
    */
+  /**
+   * Une vue de plus, dans le compteur en attente.
+   *
+   * N'ÉCHOUE JAMAIS : une panne Redis ne doit pas transformer la lecture d'un guide
+   * en erreur 500. Le compteur est approximatif par décision de §5 ; perdre une vue
+   * est sans conséquence, perdre la page ne l'est pas.
+   */
+  private async countView(guideId: string): Promise<void> {
+    if (this.views === null) return;
+    try {
+      await this.views.increment(guideId);
+    } catch (error) {
+      this.logger.warn(
+        `compteur de vues indisponible pour ${guideId} : ` +
+          (error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+
+  /**
+   * `guide.view_count_flush` — horaire (§7).
+   *
+   * L'ORDRE DES DEUX OPÉRATIONS EST TOUTE LA TÂCHE, et il est
+   * contre-intuitif : on PRÉLÈVE d'abord (lecture + effacement atomiques dans
+   * Redis), on ajoute ENSUITE en base.
+   *
+   * Dans cet ordre, une panne entre les deux PERD un lot de vues. Dans l'autre
+   * ordre — ajouter en base, puis effacer Redis — la même panne les COMPTE DEUX
+   * FOIS, et à chaque reprise de nouveau : `attempts` vaut 1 pour une tâche
+   * horaire, mais un travail « bloqué » redistribué par BullMQ, ou un
+   * redémarrage en pleine exécution, rejoue le créneau (c'est écrit dans
+   * `scheduled-tasks.ts`, et c'est pourquoi l'idempotence y est exigée). Un
+   * compteur qui double à chaque incident dérive sans retour possible ; un
+   * compteur qui perd un lot reste approximatif, ce que §5 annonce noir sur
+   * blanc. On choisit donc la perte.
+   *
+   * C'EST AUSSI CE QUI REND LA TÂCHE IDEMPOTENTE, et c'est ce que le test
+   * d'idempotence de l'ordonnanceur mesure : `guides.view_count` entre dans son
+   * empreinte (la colonne finit par `count`). Au second passage, le prélèvement
+   * rend une carte VIDE, et la somme ne bouge pas d'une unité.
+   *
+   * `increment` et non une écriture de la valeur absolue : plusieurs vues ont pu
+   * arriver depuis le début du prélèvement, et deux workers peuvent prélever des
+   * lots disjoints. Un `set` écraserait l'un avec l'autre.
+   *
+   * BORNÉE : au plus `VIEW_FLUSH_BATCH` guides par passage, comme toute tâche
+   * (`scheduled-tasks.ts`). Ce qui reste part au créneau suivant — dans une heure.
+   */
+  async flushViewCounts(): Promise<{ guides: number; vues: number }> {
+    if (this.views === null) return { guides: 0, vues: 0 };
+
+    const drained = await this.views.drain(GuidesService.VIEW_FLUSH_BATCH);
+    if (drained.size === 0) return { guides: 0, vues: 0 };
+
+    let guides = 0;
+    let vues = 0;
+    for (const [guideId, count] of drained) {
+      if (count <= 0) continue;
+      // `updateMany` et non `update` : un guide SUPPRIMÉ entre la vue et le vidage
+      // est le cas normal d'un compteur horaire, et `update` lèverait `P2025` —
+      // ce qui ferait échouer tout le lot pour une vue qui n'intéresse plus personne.
+      const { count: written } = await this.prisma.guide.updateMany({
+        where: { id: guideId },
+        data: { viewCount: { increment: count } },
+      });
+      if (written > 0) {
+        guides += 1;
+        vues += count;
+      }
+    }
+
+    return { guides, vues };
+  }
+
   async recomputeFreshness(now: Date = new Date()): Promise<{ updated: number }> {
     let updated = 0;
     for (const [index, bracket] of GUIDE_FRESHNESS_BRACKETS.entries()) {
