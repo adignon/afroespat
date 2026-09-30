@@ -73,6 +73,7 @@
 | 2026-09-27 | **Un retrait de consentement s'AJOUTE, il n'écrase pas** | `consents` n'a ni `updated_at` ni suppression : l'historique EST la preuve. L'état courant est la DERNIÈRE ligne par type, jamais le nombre de lignes accordées — qui donnerait un consentement encore valide après sa révocation | — |
 | 2026-09-27 | **La version annoncée par le client est VÉRIFIÉE, pas crue** | Un consentement enregistré sur une version qui n'a jamais existé a l'air valide. Le service renvoie `CONFLICT` avec la version attendue, pour que le front recharge | — |
 | 2026-09-27 | **Un consentement REFUSÉ n'est pas marqué périmé à chaque publication** | `outdated` ne concerne qu'un consentement accordé sur une version dépassée. Un refus reste à demander, mais pour la bonne raison — et le distinguer évite de traiter un refus comme un oubli | — |
+| 2026-09-29 | **D6 — La ville pilote est PARIS**, nommée une seule fois : `PILOT_CITY_SLUG` dans `@app/shared/constants/launch.ts` | Arbitrage du porteur. Les 22 fichiers de `docs/specs/` ne nommaient AUCUNE ville pilote, et cette absence bloquait l'amorçage : le seed refusait — à juste titre — de choisir à la place du porteur, et l'écran d'administration des villes n'avait aucun repère pour désigner celle à ouvrir le jour J. La décision est posée dans une CONSTANTE, pas dans une colonne ni dans une variable d'environnement : elle se change en une ligne, elle ne peut pas valoir pour deux villes à la fois, et elle ne dépend d'aucun déploiement. **Ce qu'elle ne touche pas** : le référentiel des villes (Cotonou reste une ville du Bénin, aucune entrée supprimée), l'état `cities.is_active` (la pilote reste FERMÉE tant que personne ne l'ouvre en back-office) et la dérivation du niveau L2 depuis `countries.kind`, qui est une autre règle | Une réponse antérieure disait **Cotonou** — ANNULÉE. Aucune trace n'en avait été posée dans le code : la seule occurrence de « Cotonou » y est la vraie ville du Bénin, plus des exemples de maquette (« Cotonou → Lyon ») |
 
 ---
 
@@ -763,17 +764,37 @@ pas ce qui ne se fait pas.
 
 ## Modules 03 (parcours) et 15 (équipe) — ce qui attend un arbitrage
 
-### Une dépendance à trancher : argon2id absent du verrou
+### Une dépendance tranchée : argon2id est entré au verrou
 
 `00` §8.3 et `15` §2.1 nomment **argon2id** pour les mots de passe d'équipe.
-Aucun paquet argon2 n'est dans le `pnpm-lock.yaml`, et l'environnement s'installe
-en `--frozen-lockfile` : l'ajouter n'était pas à la main de l'agent.
+Aucun paquet argon2 n'était dans le `pnpm-lock.yaml`, et l'environnement
+s'installe en `--frozen-lockfile` : l'ajouter n'était pas à la main de l'agent.
+Le repli livré fut **scrypt** (N=2¹⁷, r=8, p=1), la seule fonction à coût mémoire
+de `node:crypto`.
 
-Repli livré : **scrypt** (N=2¹⁷, r=8, p=1), la seule fonction à coût mémoire de
-`node:crypto`. Le condensé stocké porte son nom et ses paramètres
-(`scrypt$N$r$p$sel$condensé`) et `needsRehash()` fait la bascule à la connexion
-suivante — donc adopter argon2id plus tard n'invalidera **aucun** mot de passe.
-C'est le bon repli, mais c'est une décision de dépendance, pas un détail.
+**Le porteur a tranché : argon2id.** Le paquet retenu est **`@node-rs/argon2`**,
+et non le `argon2` natif — ce dernier ne publie **aucun binaire précompilé pour
+`darwin-x64`** (vérifié : son dossier `prebuilds/` contient darwin-arm64,
+freebsd-*, linux-*, win32-x64, pas darwin-x64), donc il déclenche une compilation
+node-gyp de 19 s qui exige une chaîne C++ dans l'image de CI comme en local.
+`@node-rs/argon2` livre treize binaires NAPI précompilés, tous inscrits au
+lockfile avec leur empreinte : rien à compiler, 712 Kio installés, aucune
+dépendance d'exécution.
+
+Paramètres : **m = 19 456 Kio, t = 2, p = 1**, sel de 16 octets, condensé de
+32 octets — réglage OWASP (« Password Storage Cheat Sheet », section Argon2id),
+écrit explicitement et jamais hérité d'un défaut de bibliothèque. Aucun fichier de
+`docs/specs/` ne fixait de paramètre ; c'est donc une décision, et elle est tracée
+en commentaire dans `staff-password.ts`.
+
+La migration est **transparente et sans reprise de données** : le format
+historique portait déjà son algorithme et ses paramètres, donc
+`verifyStaffPassword` le lit encore, et `needsRehash()` rend vrai sur tout condensé
+scrypt. À la connexion suivante — seul instant où le secret en clair existe — la
+ligne est réécrite en `$argon2id$v=19$m=19456,t=2,p=1$…`. Vérifié au curl sur un
+compte réel : `scrypt$16384$…` avant, `$argon2id$…` après, sans déconnexion ni
+réinitialisation. Coût mesuré : 39 ms par hachage en production (contre 861 ms
+pour le scrypt remplacé), 1 ms au profil de test.
 
 ### Le départ d'un modérateur n'a pas de solution technique
 
@@ -1084,10 +1105,16 @@ vide ferait affirmer au journal de démarrage qu'elles tournent.
 ## Un test qui passait selon la charge de la machine
 
 Deux tests de hachage de mot de passe d'équipe échouaient à 5 002 ms — un
-dépassement de délai, pas une assertion fausse. `hashStaffPassword` emploie scrypt
-à N=2¹⁷ : la fonction est **lente par dessein**, c'est exactement ce qu'on lui
-demande. Un hachage coûte près de deux secondes, et ces tests en enchaînent deux
-ou trois.
+dépassement de délai, pas une assertion fausse. `hashStaffPassword` employait
+alors scrypt à N=2¹⁷ : la fonction est **lente par dessein**, c'est exactement ce
+qu'on lui demande. Un hachage coûte près de deux secondes, et ces tests en
+enchaînent deux ou trois.
+
+*(Épilogue — voir « argon2id est entré au verrou » plus haut : `hashStaffPassword`
+emploie désormais argon2id à 39 ms, et la suite a en outre son propre profil de
+coût, `STAFF_PASSWORD_FAST_HASH=1`, inatteignable hors `NODE_ENV=test`. Le seul
+test qui paie encore le prix scrypt est celui qui éprouve un condensé d'époque, et
+il porte son délai explicite.)*
 
 Ils sont donc arrivés verts d'un worktree peu chargé et ont rougi ici sans qu'une
 ligne ait changé. Le délai est aligné sur le **coût des paramètres**, pas

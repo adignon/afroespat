@@ -30,7 +30,19 @@ export function ScreenFrames({
   direction = 'row',
 }: {
   readonly screen: string;
-  readonly desktop: ReactNode;
+  /**
+   * Absent quand la maquette ne dessine QUE le cadre mobile — A01N, « Nouvelle
+   * publication », est le premier. C'est le miroir exact du cas O05 ci-dessous, et
+   * il se traite pareil : un seul cadre, sans bascule au seuil de 1024 px.
+   *
+   * Ce n'est PAS « le cadre mobile élargi ». Le cadre unique garde la largeur que la
+   * maquette lui donne — 390 px — et se centre, exactement comme le cadre
+   * d'ordinateur se centre à 1440 px au-delà de sa borne. L'étirer sur toute la
+   * largeur d'un écran de bureau étalerait un dessin de téléphone sur 1440 px, ce
+   * que la maquette ne demande nulle part ; la borne, elle, est un nombre qu'elle
+   * écrit.
+   */
+  readonly desktop?: ReactNode;
   /** Absent quand la maquette ne donne pas de cadre mobile — O05 par exemple. */
   readonly mobile?: ReactNode;
   readonly background?: string;
@@ -46,6 +58,27 @@ export function ScreenFrames({
    */
   readonly direction?: 'row' | 'column';
 }) {
+  /**
+   * ÉCRAN MOBILE SEUL : un cadre, toujours visible, borné à sa largeur de maquette.
+   *
+   * Le repère reste `data-frame="mobile"` parce que c'est bien le cadre mobile qui
+   * est rendu — le renommer « desktop » parce qu'il s'affiche sur un grand écran
+   * mentirait aux tests, qui s'en servent pour désigner le dessin qu'ils mesurent.
+   */
+  if (desktop === undefined) {
+    return (
+      <div data-screen={screen} style={{ background, minHeight: '100vh' }}>
+        <div
+          data-frame="mobile"
+          className="mx-auto flex min-h-screen max-w-[390px] flex-col"
+          style={{ position: 'relative' }}
+        >
+          {mobile}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div data-screen={screen} style={{ background, minHeight: '100vh' }}>
       <div

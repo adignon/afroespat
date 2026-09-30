@@ -16,7 +16,9 @@ import { StaffAuthService } from '../modules/admin/staff-auth.service';
 import { BillingService } from '../modules/billing/billing.service';
 import { AccountService } from '../modules/users/account.service';
 import { KycService } from '../modules/kyc/kyc.service';
-import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, weeklyAt } from './scheduled-tasks';
+import { AnalyticsService } from '../modules/analytics/analytics.service';
+import { DataExportService } from '../modules/exports/data-export.service';
+import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, quarterlyAt, weeklyAt } from './scheduled-tasks';
 
 /**
  * Le câblage des tâches planifiées — 00-fondations.md §9.3.
@@ -72,6 +74,8 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly billing: BillingService,
     private readonly account: AccountService,
     private readonly kyc: KycService,
+    private readonly analytics: AnalyticsService,
+    private readonly dataExports: DataExportService,
   ) {}
 
   onModuleInit(): void {
@@ -474,6 +478,72 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: (ctx) => this.kyc.expireStaleSessions(ctx.now),
     });
 
+    // §8 : « Archives expirées ». Elle SORT de la liste « ce qui manque encore » :
+    // `POST /me/export` est livrée, donc `data_exports` se remplit et il y a
+    // désormais quelque chose à purger. Posée APRÈS la tranche des recalculs :
+    // elle supprime des octets dans le stockage objet, c'est-à-dire qu'elle fait
+    // des appels réseau sortants, et une tranche nocturne chargée les ferait
+    // expirer.
+    this.registry.register({
+      name: 'export.purge',
+      module: 'users',
+      schedule: dailyAt(5, 30),
+      handle: (ctx) => this.dataExports.purgeExpired(ctx.now),
+    });
+
+    // ── Pilotage (15 §10) ────────────────────────────────────────────────────
+    //
+    // LES QUATRE TÂCHES QUE `metric_snapshots` DÉBLOQUE. Elles étaient les seules
+    // de tout le dossier à n'avoir NI méthode NI table : §6 annonçait la table
+    // « Ajoutée », elle ne l'était pas, et `docs/decisions.md` le notait déjà —
+    // « `metric_snapshots` absente bloque les trois tableaux de bord du §5 ».
+    // La table existe maintenant ; voici les quatre déclencheurs.
+    //
+    // La cinquième de §10, `staff.session_cleanup`, est plus haut (module 15 déjà
+    // livré). La sixième, `audit.retention`, reste ABSENTE — voir la liste en fin
+    // de fichier : elle SUPPRIME des lignes d'`audit_logs`, table en ajout seul
+    // protégée par un déclencheur PostgreSQL (`audit_logs_append_only`), et aucune
+    // méthode ne peut donc l'écrire sans lever la protection. Ce n'est pas un
+    // oubli, c'est un arbitrage qui appartient au propriétaire.
+
+    // Horaire, à la minute 50 : la dernière de l'heure, pour lire un état stable
+    // plutôt que de compter pendant qu'une autre tâche écrit.
+    this.registry.register({
+      name: 'metrics.refresh',
+      module: '15',
+      schedule: hourlyAt(50),
+      handle: (ctx) => this.analytics.refreshMetrics(ctx.now),
+    });
+
+    // §10 : quotidienne — « présence à 90 jours par ville ». Posée après
+    // `event.mark_done` (horaire, minute 5) et loin de la tranche nocturne : elle
+    // fait une jointure sur `event_attendees`, que `event.mark_done` met à jour.
+    this.registry.register({
+      name: 'metrics.key_indicator',
+      module: '15',
+      schedule: dailyAt(5, 40),
+      handle: (ctx) => this.analytics.refreshKeyIndicator(ctx.now),
+    });
+
+    // §10 : hebdomadaire. Le dimanche, et non le lundi : §5.2 alimente les
+    // MODÈLES de parcours, que l'équipe révise en semaine — la statistique doit
+    // être fraîche quand elle arrive au bureau, pas en train de tourner.
+    this.registry.register({
+      name: 'stats.steps_recompute',
+      module: '15',
+      schedule: weeklyAt(0, 5, 50),
+      handle: (ctx) => this.analytics.recomputeStepStats(ctx.now),
+    });
+
+    // §10 : « 1er jour du trimestre ». La méthode prépare le trimestre ÉCOULÉ —
+    // voir son commentaire : au 1er janvier, le financeur attend octobre-décembre.
+    this.registry.register({
+      name: 'impact.quarterly_prepare',
+      module: '15',
+      schedule: quarterlyAt(6, 0),
+      handle: (ctx) => this.analytics.prepareQuarterlyImpact(ctx.now),
+    });
+
     /**
      * ── CE QUI MANQUE ENCORE ─────────────────────────────────────────────────
      *
@@ -482,8 +552,21 @@ export class TaskRegistrationsService implements OnModuleInit {
      * gestionnaire vide serait pire qu'une absence, puisque le journal de démarrage
      * affirmerait que la tâche tourne.
      *
-     *   · `export.purge` (quotidienne) — 01 §8 ; aucune route d'export RGPD n'est
-     *     livrée, donc `data_exports` reste vide et il n'y a rien à purger ;
+     *   · `audit.retention` (quotidienne) — 15 §10, « 5 ans ». `audit_logs` est en
+     *     AJOUT SEUL, et pas seulement par convention : la migration
+     *     `append_only_truncate_guard` y pose deux déclencheurs PostgreSQL
+     *     (`audit_logs_append_only`, `audit_logs_no_truncate`) qui font LEVER tout
+     *     UPDATE, DELETE ou TRUNCATE. Écrire la tâche demanderait donc de retirer
+     *     une protection posée exprès contre §2.3 (« Aucune suppression
+     *     possible »). §2.3 et §10 se contredisent — cinq ans de rétention
+     *     supposent un effacement au bout de cinq ans — et l'arbitrage appartient
+     *     au propriétaire, pas à ce fichier ;
+     *   · `city.activation_suggest` (hebdomadaire) — 02 §7 : signale à l'équipe les
+     *     villes inactives à plus de 20 membres. Aucune méthode côté `CitiesService` ;
+     *   · `guide.view_count_flush` (horaire) — 05 §7 : aucun compteur de vues n'est
+     *     tenu en cache, donc rien à vider ;
+     *   · `housing.price_median_recompute` et `alerts.dispatch` (10 §9) — aucune
+     *     méthode côté `HousingService` ni de répartiteur d'alertes ;
      *   · `bookmark.state_refresh` (horaire) et `retention.purge` (quotidienne) —
      *     transverse. Noter que `notifications.purge` couvre la conservation de
      *     90 jours du module 12, mais PAS la rétention transverse du §9.3, qui
@@ -493,8 +576,10 @@ export class TaskRegistrationsService implements OnModuleInit {
      *     a donc rien à interroger. L'import CSV, lui, est livré en route d'équipe.
      *
      * `billing.expiry_reminders` et `notifications.weekly_digest` ne sont PLUS dans
-     * cette liste : les modules 14 et 12 les ont livrées. Chaque ligne qui en sort
-     * est un trou comblé, et c'est le seul endroit où cela se lit.
+     * cette liste : les modules 14 et 12 les ont livrées. `export.purge` non plus,
+     * ni les quatre tâches de pilotage de 15 §10 — l'export RGPD et la table
+     * `metric_snapshots` sont livrés. Chaque ligne qui en sort est un trou comblé,
+     * et c'est le seul endroit où cela se lit.
      *
      * Trois autres du module 03 attendent une méthode publique : le module est
      * livré, mais `journey.reminders`, `journey.inactivity_check` et

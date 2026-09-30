@@ -330,6 +330,18 @@ export interface StorageProvider {
   /** URL signée pour un import direct : le fichier ne transite pas par l'API. */
   createUploadUrl(key: string, mime: string): Promise<{ url: string; fields?: Record<string, string> }>;
   createDownloadUrl(key: string, expiresInSeconds: number): Promise<string>;
+  /**
+   * Dépose un contenu produit par le SERVEUR.
+   *
+   * `createUploadUrl` ne peut pas servir ici : elle rend une URL destinée au
+   * NAVIGATEUR du membre, pour un fichier qu'il possède déjà. L'archive RGPD
+   * (01 §2.8) est l'inverse — elle naît dans le worker, et personne d'autre ne
+   * peut la téléverser. C'est la première écriture média côté serveur du projet ;
+   * sans cette méthode, le service d'export n'aurait eu d'autre issue que
+   * d'écrire hors du fournisseur de stockage, c'est-à-dire hors de la région UE
+   * qu'impose la règle dure §8.2.
+   */
+  put(key: string, body: Buffer, mime: string): Promise<void>;
   delete(key: string): Promise<void>;
 }
 
@@ -345,6 +357,31 @@ export class FakeStorageProvider implements StorageProvider {
 
   createDownloadUrl(key: string): Promise<string> {
     return Promise.resolve(`/dev/media/${encodeURIComponent(key)}`);
+  }
+
+  /**
+   * Écrit VRAIMENT sur le disque, sous `STORAGE_FAKE_DIR` (défaut : le répertoire
+   * temporaire du système).
+   *
+   * Un `put` fictif qui se contenterait de journaliser rendrait le service
+   * d'export vert en test sans qu'aucun octet n'existe — exactement le genre de
+   * doublure qui laisse passer une archive vide jusqu'en production. Ici, le
+   * fichier est relisible, donc un test peut affirmer ce qu'il contient.
+   */
+  async put(key: string, body: Buffer, mime: string): Promise<void> {
+    const path = await import('node:path');
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const root = process.env.STORAGE_FAKE_DIR ?? path.join(os.tmpdir(), 'afroespat-dev-storage');
+    // La clé contient des « / » : on les respecte pour retrouver l'arborescence,
+    // et `resolve` + vérification de préfixe interdit qu'un « .. » sorte du bac.
+    const target = path.resolve(root, key);
+    if (!target.startsWith(path.resolve(root) + path.sep)) {
+      throw new Error(`Clé de stockage hors du bac à sable : ${key}`);
+    }
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    await fs.writeFile(target, body);
+    this.logger.log(`Dépôt fictif : ${key} (${body.length} octets, ${mime}) → ${target}`);
   }
 
   delete(key: string): Promise<void> {

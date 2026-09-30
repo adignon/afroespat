@@ -198,6 +198,11 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
       // Le module 14, arrivé après ce test : il s'abonne à `journey.step_completed`
       // (l'essai Premium) et à `user.deleted`, pas à `user.blocked`. Inerte ici.
       inert(),
+      // L'export RGPD (01 §2.8) et le relais temps réel (08 §7.3), arrivés après ce
+      // test. Le premier ne s'abonne qu'à `user.export_requested`, le second à
+      // `message.sent` : ni l'un ni l'autre n'est sur le chemin d'un blocage.
+      inert(),
+      inert(),
     ).onModuleInit();
 
     const country = await prisma.country.findFirstOrThrow({

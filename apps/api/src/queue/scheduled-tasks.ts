@@ -139,6 +139,23 @@ export function weeklyAt(weekday: number, hour: number, minute: number): Schedul
   return { label: 'hebdomadaire', intervalMs: 7 * DAY, pattern: `${minute} ${hour} * * ${weekday}` };
 }
 
+/**
+ * Le premier jour du trimestre — 15 §10, `impact.quarterly_prepare`.
+ *
+ * `1,4,7,10` en champ MOIS, et le premier jour en champ jour : c'est la seule
+ * façon d'écrire « 1er jour du trimestre » en cron, qui ne connaît pas les
+ * trimestres.
+ *
+ * `intervalMs` vaut QUATRE-VINGT-DIX JOURS, ce qui est faux de un à deux jours
+ * selon le trimestre — et sans conséquence, parce que cette valeur ne sert qu'à
+ * dimensionner le bail du verrou et à choisir la politique de reprise, tous deux
+ * plafonnés (`MAX_LEASE_MS`, douze heures). La date de tir, elle, vient du patron
+ * cron, qui est exact.
+ */
+export function quarterlyAt(hour: number, minute: number): Schedule {
+  return { label: 'trimestrielle', intervalMs: 90 * DAY, pattern: `${minute} ${hour} 1 1,4,7,10 *` };
+}
+
 /** Borne haute d'un bail, quelle que soit la cadence. Voir `leaseMs`. */
 export const MAX_LEASE_MS = 12 * HOUR;
 /** Borne basse : un bail plus court qu'un balayage ne protégerait rien. */

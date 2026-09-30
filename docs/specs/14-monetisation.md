@@ -25,8 +25,8 @@ Premium membre (4 €/mois), fiches professionnelles Pro et Pro+, paiement carte
 |---|---|---|---|
 | `FREE` | Tous | 0 | Tout, avec limites : 1 parcours actif, 1 événement créé/mois, 3 contacts pro/mois, encarts partenaires affichés |
 | `PREMIUM` | Membre | 4 €/mois ou 40 €/an | Parcours illimités + export PDF + historique · événements illimités · contacts pro illimités · alertes logement/emploi · filtres de recherche avancés · profil mis en avant dans l'annuaire des membres · encarts partenaires masqués · offres d'emploi sponsorisées (5/mois) · badge soutien |
-| `PRO` | Fiche pro | ~25 €/mois | Fiche mise en avant dans sa ville, photos, statistiques de vues et contacts, badge Pro |
-| `PRO_PLUS` | Fiche pro | ~40 €/mois | Pro + plusieurs villes + mise en avant dans la recherche globale |
+| `PRO` | Fiche pro | 9 €/mois | Fiche mise en avant dans sa ville, photos, statistiques de vues et contacts, badge Pro |
+| `PRO_PLUS` | Fiche pro | 19 €/mois | Pro + plusieurs villes + mise en avant dans la recherche globale |
 
 `plans.limits` est la source unique des quotas ; les modules lisent les limites via `PlanService.limitsFor(userId)` (cache Redis 5 min, invalidé sur `subscription.changed`). Prix en `system_settings` pour pouvoir tester des variantes sans déploiement.
 

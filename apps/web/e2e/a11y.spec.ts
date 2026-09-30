@@ -18,6 +18,11 @@ const PAGES = [
   // écran ; les variantes d'état (`?onglet=`, `?vue=`) sont couvertes par celles qui
   // changent réellement de balisage, pas par les vingt combinaisons possibles.
   { path: '/publications/repas-partage', name: 'A02 Publication' },
+  // A01N — « Nouvelle publication », le composeur en plein écran. Écran MOBILE
+  // SEUL : la maquette ne lui dessine aucun cadre d'ordinateur, et il est donc
+  // rendu aux deux largeurs. Il faut le contrôler comme les autres — c'est un
+  // formulaire, donc l'endroit où un nom accessible manquant coûte le plus cher.
+  { path: '/publications/nouvelle', name: 'A01N Nouvelle publication' },
   { path: '/guides', name: 'A03 Guides — liste' },
   { path: '/guides/visale-sans-cdi', name: 'A04 Guide — lecture' },
   { path: '/guides/visale-sans-cdi?vue=auteur', name: 'A04 Guide — vue auteur' },
@@ -34,6 +39,13 @@ const PAGES = [
   { path: '/villes', name: 'A11 Villes et Membres' },
   { path: '/villes/lyon', name: 'A12 Fiche ville' },
   { path: '/villes/lyon?onglet=produits', name: 'A12T Ville — Produits du pays' },
+  // A12C — la fenêtre de contribution, ouverte dès l'arrivée par `?contribution=`.
+  // Les trois volets sont trois PLANCHES distinctes, donc trois balisages : les
+  // contrôler tous les trois, et pas seulement le premier, est ce qui a manqué au
+  // lot précédent — où la fenêtre entière était absente sans que rien ne le dise.
+  { path: '/villes/lyon?contribution=type', name: 'A12C Contribuer — étape 1' },
+  { path: '/villes/lyon?contribution=produit', name: 'A12C Contribuer — Produit du pays' },
+  { path: '/villes/lyon?contribution=budget', name: 'A12C Contribuer — Budget réel' },
   { path: '/stories/visale', name: 'A13 Story — lecture' },
   { path: '/stories/nouvelle', name: 'A14 Story — création' },
   // Entraide (05 Entraide.dc.html) — H01 à H10.
@@ -120,6 +132,26 @@ const PAGES = [
   { path: '/messages/1', name: 'M01 Messagerie — conversation' },
   { path: '/messages/1?feuille=signaler', name: 'X03 Signaler — feuille' },
   { path: '/messages/1?feuille=merci', name: 'X03 Signaler — confirmation' },
+  /**
+   * Le MENU DE LA CONVERSATION s'ouvre au « ··· » de l'en-tête ; il est servi ici
+   * par l'URL pour la même raison que les deux feuilles X03 — une boîte de dialogue
+   * vit dans un portail, donc axe-core ne la voit que si elle est ouverte.
+   *
+   * Deux points qu'il vaut la peine de savoir contrôlés ici : son nom accessible
+   * vient de l'étiquette de la carte (« MENU DE LA CONVERSATION », promue en
+   * `<h2 id="m01-titre">`), et le « ··· » qui l'ouvre est un bouton en ICÔNE SEULE
+   * — muet sans le `label` déclaré avec son déclencheur, ce qu'axe relève en
+   * `critical` (`button-name`).
+   */
+  { path: '/messages/1?feuille=menu', name: 'M01 Menu de la conversation' },
+  /**
+   * ⚠ LA CONVERSATION BLOQUÉE N'EST DESSINÉE PAR AUCUNE MAQUETTE : sa forme est
+   * empruntée et sa phrase vient du porteur (voir `CONVERSATION_BLOQUEE` dans
+   * `tools/screens/09-messages.mjs`). Raison de plus pour qu'axe la voie : c'est le
+   * seul écran de ce module dont le contenu n'a pas été transcodé mot pour mot, donc
+   * le seul où une faute de balisage ne serait couverte par aucune planche.
+   */
+  { path: '/messages/1?etat=bloque', name: 'M01 Conversation — membre bloqué' },
   { path: '/recherche', name: 'X01 Recherche' },
   { path: '/notifications', name: 'X02 Notifications — page complète' },
   { path: '/notifications?vue=panneau', name: 'X02 Notifications — panneau déroulant' },
@@ -147,6 +179,29 @@ const PAGES = [
   { path: '/compte/donnees', name: 'K08 Mes données' },
   { path: '/compte/sanctions', name: 'K09 Sanctions' },
   { path: '/compte/enregistres', name: 'K10 Enregistrés' },
+  /**
+   * Les dix écrans du module Services (`06 Services.dc.html`, 10 §7).
+   *
+   * `/services/emploi/nouveau` ne figure pas à part : la maquette dessine UNE
+   * planche pour `:id` et `/nouveau`, et la route dynamique la sert aux deux. La
+   * lister deux fois contrôlerait deux fois le même balisage.
+   *
+   * `?niveau=l0` non plus, pour la raison déjà écrite plus haut à propos de
+   * `?paiement=` : la fenêtre vit dans un portail, hors du document au rendu
+   * serveur, et axe-core ne la verrait pas. Ce qu'elle promet (`aria-modal`,
+   * `aria-labelledby`, le piège au clavier) est éprouvé par
+   * `e2e/services.spec.ts`, qui l'ouvre vraiment.
+   */
+  { path: '/services/logement', name: 'S01 Logement — liste' },
+  { path: '/services/logement/abc', name: 'S02 Annonce — détail' },
+  { path: '/services/logement/nouveau', name: 'S03 Publier une annonce' },
+  { path: '/services/emploi', name: 'S04 Emploi — liste' },
+  { path: '/services/emploi/42', name: 'S05 Offre — détail et publication' },
+  { path: '/services/annuaire', name: 'S06 Annuaire — liste' },
+  { path: '/services/annuaire/mariam-bah', name: 'S07 Fiche pro' },
+  { path: '/services/annuaire/ma-fiche', name: 'S08 Créer ma fiche pro' },
+  { path: '/services/mes-annonces', name: 'S09 Mes annonces' },
+  { path: '/services/alertes', name: 'S10 Mes alertes' },
 ] as const;
 
 for (const { path, name } of PAGES) {

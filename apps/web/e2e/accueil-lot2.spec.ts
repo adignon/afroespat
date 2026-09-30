@@ -437,3 +437,231 @@ test('A02 · voter « utile » sur un guide se voit', async ({ page }) => {
   expect(before, 'le fond de départ est le gris neutre de la maquette').toBe('rgb(242, 245, 244)');
   expect(after, 'voter passe le bouton au vert primaire').toBe('rgb(22, 120, 94)');
 });
+
+/**
+ * ─── A12C · LA FENÊTRE DE CONTRIBUTION ──────────────────────────────────────
+ *
+ * Elle avait été MANQUÉE par le lot précédent, et la cause tient en une ligne :
+ * `extractFrame` ancre son motif sur le début du style (`<div style="width:760px`),
+ * alors que les trois planches d'ordinateur de cette fenêtre écrivent
+ * `position:relative;width:760px…`. Elles étaient introuvables sans qu'aucune erreur
+ * ne le dise. D'où ces tests : ce qui a disparu une fois en silence doit être tenu
+ * par quelque chose qui crie.
+ *
+ * Ce qu'ils éprouvent n'est pas le dessin — il est transcodé — mais ce qu'une image
+ * ne contient pas : que le bouton ouvre, que le voile ferme, qu'Échap ferme ET rende
+ * le focus, et que l'URL choisisse le volet sans qu'un clic puisse y sauter.
+ */
+test.describe('A12C — « Contribuer à la fiche Lyon »', () => {
+  for (const width of [1440, 390]) {
+    test(`${width} px — « Contribuer » ouvre la fenêtre`, async ({ page }) => {
+      test.skip((page.viewportSize()?.width ?? 0) !== width, 'piloté par le projet');
+      await page.goto('/villes/lyon', { waitUntil: 'load' });
+
+      // Rien n'est ouvert tant qu'on n'a rien demandé.
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+
+      await frame(page).locator('[data-modal-open="A12C"]').first().click();
+
+      /**
+       * Le nom accessible vient du titre VISIBLE, par `aria-labelledby` : la planche
+       * d'ordinateur écrit « Contribuer à la fiche Lyon », la feuille mobile
+       * « Contribuer à Lyon ». Deux textes, parce que la maquette en dessine deux —
+       * et c'est précisément ce que `modalTitle` par cadre rend possible.
+       */
+      const attendu = width >= 1024 ? 'Contribuer à la fiche Lyon' : 'Contribuer à Lyon';
+      await expect(page.getByRole('dialog', { name: attendu })).toBeVisible();
+    });
+  }
+
+  /**
+   * LE VOILE FERME. Il est DESSINÉ PAR LA MAQUETTE ici — `rgba(22,33,29,.5)`, compté
+   * huit fois dans le fichier — et non emprunté comme celui des fenêtres de
+   * `08 Compte`. Sans lui, `Modal` ne verrait qu'un panneau et un clic à côté ne
+   * fermerait rien.
+   */
+  test('le voile ferme au clic hors du panneau', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, 'mesuré une fois, sur ordinateur');
+    await page.goto('/villes/lyon', { waitUntil: 'load' });
+    await page.locator('[data-frame="desktop"] [data-modal-open="A12C"]').first().click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('[data-modal-overlay]')).toHaveCount(1);
+
+    await dialog.locator('[data-modal-overlay]').click({ position: { x: 5, y: 5 } });
+    await expect(dialog).toBeHidden();
+  });
+
+  /**
+   * ÉCHAP FERME, ET LE FOCUS REVIENT AU BOUTON D'ORIGINE.
+   *
+   * Le retour est la moitié qu'on oublie : sans lui, un membre au clavier repart au
+   * début du document et doit re-parcourir toute la fiche pour retrouver le bouton
+   * qu'il venait d'actionner.
+   */
+  test('Échap ferme, et le focus revient sur le bouton d’origine', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, 'mesuré une fois, sur ordinateur');
+    await page.goto('/villes/lyon', { waitUntil: 'load' });
+
+    const bouton = page.locator('[data-frame="desktop"] [data-modal-open="A12C"]').first();
+    await bouton.click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(bouton).toBeFocused();
+  });
+
+  /**
+   * LE VOLET VIENT DE L'URL, et rien d'autre ne l'atteint.
+   *
+   * Même règle qu'en K06 : ce qui fait avancer une démarche est un envoi au serveur,
+   * et ce lot n'en branche aucun. Un clic sur « Contribuer » ouvre donc TOUJOURS
+   * l'étape 1 — sauter au formulaire d'un type que personne n'a choisi serait
+   * inventer un raccourci que la maquette ne dessine pas.
+   */
+  const VOLETS = [
+    { param: 'type', repere: 'Étape 1 sur 2' },
+    { param: 'produit', repere: 'Étape 2 sur 2' },
+    { param: 'budget', repere: 'Étape 2 sur 2' },
+  ] as const;
+
+  for (const { param, repere } of VOLETS) {
+    test(`?contribution=${param} ouvre le volet « ${repere} »`, async ({ page }) => {
+      test.skip((page.viewportSize()?.width ?? 0) < 1024, 'les volets sont dessinés sur ordinateur');
+      await page.goto(`/villes/lyon?contribution=${param}`, { waitUntil: 'load' });
+
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText(repere).first()).toBeVisible();
+    });
+  }
+
+  test('« Contribuer » ouvre l’ÉTAPE 1, jamais un formulaire', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, 'mesuré une fois, sur ordinateur');
+    await page.goto('/villes/lyon', { waitUntil: 'load' });
+    await page.locator('[data-frame="desktop"] [data-modal-open="A12C"]').first().click();
+
+    const dialog = page.getByRole('dialog', { name: 'Contribuer à la fiche Lyon' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText('Étape 1 sur 2')).toBeVisible();
+    await expect(dialog.getByText('Étape 2 sur 2')).toHaveCount(0);
+  });
+
+  /**
+   * LE BOUTON EXISTE SUR LES QUATRE ONGLETS, et pas seulement sur celui que A12
+   * dessine en cadre complet. Trois des quatre onglets sont des planches A12T
+   * séparées : un déclencheur posé sur la seule planche de A12 aurait laissé la
+   * fenêtre inatteignable depuis « Bons plans », « Produits » et « Témoignages » —
+   * et rien ne l'aurait dit, puisque chaque onglet s'affiche correctement.
+   */
+  for (const onglet of ['budgets', 'bons-plans', 'produits', 'temoignages']) {
+    test(`l’onglet « ${onglet} » porte le déclencheur de A12C`, async ({ page }) => {
+      await page.goto(`/villes/lyon?onglet=${onglet}`, { waitUntil: 'load' });
+      await expect(frame(page).locator('[data-modal-open="A12C"]')).toHaveCount(1);
+    });
+  }
+});
+
+/**
+ * ─── A01N · « NOUVELLE PUBLICATION », UN ÉCRAN MOBILE SEUL ───────────────────
+ *
+ * Second cadre de 390 px de A01S, manqué par les lots précédents : la déclaration
+ * des modales ne prenait que l'occurrence 0 (« Créer un sondage »), et rien ne
+ * disait qu'il y en avait une seconde. Un cadre non déclaré ne produit aucune
+ * erreur — il disparaît, simplement.
+ *
+ * Ce que ces tests tiennent :
+ *
+ *   · la route répond et porte le titre que la MAQUETTE écrit ;
+ *   · l'écran est rendu AUX DEUX LARGEURS, parce qu'il n'a qu'un cadre — c'est le
+ *     miroir de O05, et sans cela un visiteur sur ordinateur verrait une page vide ;
+ *   · le cadre unique garde ses 390 px et ne s'étire pas sur tout l'écran ;
+ *   · les trois règles du composeur sont respectées par ce qui est RÉELLEMENT
+ *     affiché — c'est la doublure au navigateur de `composeur.test.ts`, qui les lit
+ *     dans la maquette.
+ */
+test.describe('A01N — « Nouvelle publication »', () => {
+  test('la route répond et porte le titre de la maquette', async ({ page }) => {
+    const reponse = await page.goto('/publications/nouvelle', { waitUntil: 'load' });
+    expect(reponse?.status(), '/publications/nouvelle doit répondre').toBe(200);
+    await expect(page.getByRole('heading', { level: 1, name: 'Nouvelle publication' })).toBeVisible();
+  });
+
+  /**
+   * UN ÉCRAN SANS CADRE D'ORDINATEUR RESTE VISIBLE SUR ORDINATEUR.
+   *
+   * `ScreenFrames` masque normalement le cadre mobile au-delà de 1024 px. Si cette
+   * règle s'appliquait ici, la page serait VIDE sur un écran de bureau — et rien ne
+   * le dirait, puisque le HTML serait correctement servi. Ce test est la seule chose
+   * qui sépare « écran mobile seul » de « écran cassé sur ordinateur ».
+   */
+  test('le cadre unique est visible aux deux largeurs', async ({ page }) => {
+    await page.goto('/publications/nouvelle', { waitUntil: 'load' });
+    const cadre = page.locator('[data-screen="A01N"] [data-frame="mobile"]');
+    await expect(cadre).toBeVisible();
+    // Aucun cadre d'ordinateur n'est rendu : la maquette n'en dessine pas.
+    await expect(page.locator('[data-screen="A01N"] [data-frame="desktop"]')).toHaveCount(0);
+  });
+
+  test('le cadre garde les 390 px de la maquette, il ne s’étire pas', async ({ page }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, 'la borne ne se mesure qu’au large');
+    await page.goto('/publications/nouvelle', { waitUntil: 'load' });
+
+    const boite = await page.locator('[data-screen="A01N"] [data-frame="mobile"]').boundingBox();
+    expect(boite).not.toBeNull();
+    if (boite === null) return;
+    expect(Math.round(boite.width), 'la largeur que la maquette écrit').toBe(390);
+  });
+
+  /**
+   * LES TROIS RÈGLES DE LA PLANCHE « COMPOSANTS », SUR CE QUI EST AFFICHÉ.
+   *
+   * Le piège est ici, et il est nommé : le nombre d'images est dessiné TROIS fois —
+   * les miniatures, le compteur « 2 / 4 », la pastille « 2 images ». Deux de ces
+   * trois ne décident de rien. On compte donc les MINIATURES, par leur géométrie
+   * (92 × 92) et non par leur texte d'exemple (« Photo 1 »), qui pourrait changer.
+   */
+  test('ce qui est affiché respecte les trois règles du composeur', async ({ page }) => {
+    await page.goto('/publications/nouvelle', { waitUntil: 'load' });
+    const cadre = page.locator('[data-screen="A01N"] [data-frame="mobile"]');
+
+    const compte = await cadre.evaluate((racine) => {
+      const tous = [...racine.querySelectorAll<HTMLElement>('*')];
+      const miniatures = tous.filter((el) => {
+        const s = getComputedStyle(el);
+        return s.width === '92px' && s.height === '92px' && s.borderRadius === '14px';
+      }).length;
+      const etiquettes = tous.filter((el) => {
+        const s = getComputedStyle(el);
+        return (
+          s.backgroundColor === 'rgb(239, 247, 243)' &&
+          s.color === 'rgb(15, 92, 72)' &&
+          s.borderRadius === '999px' &&
+          s.paddingLeft === '12px'
+        );
+      }).length;
+      // L'aperçu compact du sondage se reconnaît à son seul « Modifier ».
+      const sondages = tous.filter((el) => el.children.length === 0 && el.textContent === 'Modifier').length;
+      return { miniatures, etiquettes, sondages };
+    });
+
+    /**
+     * CHAQUE COMPTE EST BORNÉ DES DEUX CÔTÉS, et la borne basse n'est pas
+     * décorative : sans elle, un sélecteur qui cesserait de reconnaître sa pièce
+     * renverrait zéro, et `0 <= 3` passerait — le test deviendrait creux sans que
+     * rien ne change de couleur. C'est la même faute que compter l'étiquette
+     * « 2 images » au lieu des miniatures, déplacée d'un cran.
+     */
+    // « Jusqu’à 4. Miniatures avec croix, case « + » pour en ajouter. »
+    expect(compte.miniatures, 'les miniatures doivent être reconnues').toBeGreaterThan(0);
+    expect(compte.miniatures, 'Images — jusqu’à 4').toBeLessThanOrEqual(4);
+    // « Jusqu’à 3. Étiquettes vertes avec croix. »
+    expect(compte.etiquettes, 'les étiquettes de guide doivent être reconnues').toBeGreaterThan(0);
+    expect(compte.etiquettes, 'Guides — jusqu’à 3').toBeLessThanOrEqual(3);
+    // « Un seul par publication. »
+    expect(compte.sondages, 'l’aperçu de sondage doit être reconnu').toBeGreaterThan(0);
+    expect(compte.sondages, 'Sondage — un seul par publication').toBeLessThanOrEqual(1);
+  });
+});

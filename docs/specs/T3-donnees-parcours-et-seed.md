@@ -156,6 +156,8 @@ Paris · Lyon · Marseille · Toulouse · Lille · Bordeaux · Nantes · Strasbo
 
 Chacune avec région, latitude, longitude du centre. Villeurbanne, Créteil, Nanterre, Saint-Denis, Cergy, Évry, Versailles restent des villes distinctes (rayon de 30 km pour « près de chez moi »). **La ville pilote est activée à la main le jour du lancement.**
 
+**La ville pilote est PARIS** (arbitrage du porteur). Elle n'est nommée qu'à un seul endroit du code — `PILOT_CITY_SLUG` dans `packages/shared/src/constants/launch.ts` — et le prochain arbitrage s'y joue en une ligne. Ce document ne la recopie que pour mémoire : la source est la constante. Le seed ne l'active toujours pas de lui-même ; l'ouverture réelle passe par `POST /v1/admin/ref/cities/:id/activate`, seul chemin qui crée le réseau CITY et y inscrit les membres déjà rattachés (02 §4.2 et §6).
+
 ## B.3 Langues
 
 Français · Anglais · Fon · Yoruba · Goun · Mina (Gen) · Bariba · Dendi · Éwé · Wolof · Bambara · Dioula · Baoulé · Lingala · Kikongo · Swahili · Peul (Fulfulde) · Haoussa · Arabe · Portugais · Espagnol · Allemand · Malgache · Kabyle.

@@ -153,6 +153,17 @@ export type DomainEventType =
   | 'user.deletion_requested'
   | 'user.deleted'
   /**
+   * 01 §2.8 : « génération ASYNCHRONE d'une archive ».
+   *
+   * C'est ce mot qui impose un événement plutôt qu'un appel. Rassembler les
+   * données d'un membre traverse une vingtaine de tables ; le faire dans la
+   * requête HTTP ferait expirer la demande d'un membre ancien, et §3.3 interdit
+   * de toute façon l'appel direct. Le producteur est `POST /me/export`, le
+   * consommateur est le module `users` dans le worker — les deux existent, ce
+   * que ce catalogue exige de tout type déclaré.
+   */
+  | 'user.export_requested'
+  /**
    * ── 02-referentiels.md §2.2 et §4.2 ──────────────────────────────────────
    *
    * L'activation d'une ville ou d'un pays. §2.2 : « À l'activation : création du

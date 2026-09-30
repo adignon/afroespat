@@ -1,0 +1,15 @@
+// GÉNÉRÉ depuis docs/template/09 Messages et transverse.dc.html, section M01, cadre 300 px.
+// Ne pas modifier à la main : relancer `node tools/generate-screens.mjs`.
+//
+// Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
+// extérieur, lui, est fluide : la maquette le fige à 300 px, ce qui ne
+// serait pas responsive.
+import type { MessagesData } from '../messages/data';
+
+export function M01Menu(_props: MessagesData) {
+  return (
+    <>
+<div style={{ position: "fixed", inset: "0", background: "rgba(22,33,29,.55)" }} data-modal-overlay=""></div><div style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: "300px", background: "#fff", border: "1px solid #DDE3E0", borderRadius: "28px", padding: "24px", display: "flex", flexDirection: "column", gap: "16px", flexShrink: "0" }} data-modal-panel=""><h2 id="m01-titre" style={{ margin: "0", fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>MENU DE LA CONVERSATION</h2><span style={{ height: "44px", display: "flex", alignItems: "center", gap: "12px", fontSize: "14px", fontWeight: "600" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0" /></svg>Voir le profil</span><span style={{ height: "44px", display: "flex", alignItems: "center", gap: "12px", fontSize: "14px", fontWeight: "600" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0" /></svg>Mettre en sourdine</span><span style={{ height: "44px", display: "flex", alignItems: "center", gap: "12px", fontSize: "14px", fontWeight: "600" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3" /></svg>Bloquer</span><span style={{ height: "44px", display: "flex", alignItems: "center", gap: "12px", fontSize: "14px", fontWeight: "600" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 21V4h12l-2 4 2 4H5" /></svg>Signaler</span></div>
+    </>
+  );
+}

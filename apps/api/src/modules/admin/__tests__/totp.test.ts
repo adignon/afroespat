@@ -9,10 +9,10 @@ import {
   totpUri,
   verifyTotp,
 } from '../totp';
-import { hashStaffPassword, needsRehash, verifyStaffPassword } from '../staff-password';
 
 /**
- * TOTP et mot de passe d'équipe — tests unitaires, sans base.
+ * TOTP — tests unitaires, sans base. Le mot de passe d'équipe a son propre
+ * fichier : `staff-password.test.ts`.
  *
  * Le TOTP est écrit à la main (voir `totp.ts`), donc il DOIT être confronté aux
  * vecteurs officiels : c'est la seule chose qui distingue « j'ai implémenté la RFC
@@ -105,63 +105,5 @@ describe('TOTP (RFC 6238)', () => {
     expect(uri).toContain('digits=6');
     expect(uri).toContain('period=30');
     expect(uri).toContain(`secret=${RFC_SECRET_BASE32}`);
-  });
-});
-
-/**
- * UN DÉLAI EXPLICITE, et la raison est le cœur du sujet.
- *
- * `hashStaffPassword` emploie scrypt à N=2¹⁷ : la fonction est LENTE PAR DESSEIN,
- * c'est exactement ce qu'on lui demande — un attaquant qui essaie des millions de
- * mots de passe paie ce coût à chaque essai. Un hachage prend ici près de deux
- * secondes, et plusieurs de ces tests en enchaînent deux ou trois.
- *
- * Avec le délai par défaut de cinq secondes, ils passaient sur une machine au
- * repos et échouaient sur une machine chargée — c'est ainsi qu'ils sont arrivés
- * verts et qu'ils ont rougi ensuite, sans qu'une ligne ait changé. Un test qui
- * dépend de la charge apprend à ignorer le rouge, ce qui coûte plus cher que le
- * test ne rapporte.
- *
- * Le délai est donc aligné sur le COÛT DES PARAMÈTRES, pas l'inverse : on
- * n'abaisse pas N pour faire passer un test, on dit au test combien coûte la
- * sécurité qu'on a choisie.
- */
-describe('mot de passe d’équipe', { timeout: 30_000 }, () => {
-  it('vérifie le mot de passe qu’il a haché, et refuse les autres', async () => {
-    const hash = await hashStaffPassword('un mot de passe de plus de douze');
-    expect(await verifyStaffPassword('un mot de passe de plus de douze', hash)).toBe(true);
-    expect(await verifyStaffPassword('un mot de passe de plus de douz', hash)).toBe(false);
-    expect(await verifyStaffPassword('', hash)).toBe(false);
-  });
-
-  it('produit un sel différent à chaque hachage', async () => {
-    const a = await hashStaffPassword('le meme mot de passe ici');
-    const b = await hashStaffPassword('le meme mot de passe ici');
-    expect(a).not.toBe(b);
-    expect(await verifyStaffPassword('le meme mot de passe ici', b)).toBe(true);
-  });
-
-  /**
-   * Un condensé illisible doit rendre FAUX, jamais lever et surtout jamais vrai.
-   * C'est le comportement qui décide de ce qui se passe le jour où une ligne est
-   * corrompue, ou écrite par un autre outil : on refuse la connexion.
-   */
-  it('refuse tout format inconnu au lieu de lever', async () => {
-    for (const stored of [
-      '',
-      'argon2id$v=19$m=65536,t=3,p=4$sel$condense',
-      'scrypt$abc$8$1$sel$condense',
-      'scrypt$1$8$1$sel$condense',
-      'pas-du-tout-un-condense',
-      '$$$$$',
-    ]) {
-      expect(await verifyStaffPassword('un mot de passe quelconque', stored)).toBe(false);
-    }
-  });
-
-  it('signale les formats à réhacher, et pas le format courant', async () => {
-    expect(needsRehash(await hashStaffPassword('un mot de passe de plus'))).toBe(false);
-    expect(needsRehash('argon2id$v=19$m=65536$sel$condense')).toBe(true);
-    expect(needsRehash('scrypt$16384$8$1$sel$condense')).toBe(true);
   });
 });

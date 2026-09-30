@@ -1,7 +1,13 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { ScreenFrames } from '@/screens/frames';
+import { Modal } from '@/components/modal';
+import { A12CMobile } from '@/screens/a12c/mobile.generated';
+import { A12CDesktop } from '@/screens/a12c/desktop.generated';
+import { A12CDesktopProduit } from '@/screens/a12c/desktopproduit.generated';
+import { A12CDesktopBudget } from '@/screens/a12c/desktopbudget.generated';
+import { VOLETS_CONTRIBUTION, type VoletContribution } from '@/screens/accueil/data';
 import { A12Desktop } from '@/screens/a12/desktop.generated';
 import { A12Mobile } from '@/screens/a12/mobile.generated';
 import { A12TBonsPlans } from '@/screens/a12t/bonsplans.generated';
@@ -65,8 +71,51 @@ const BOARD: React.CSSProperties = {
   width: '100%',
 };
 
-export function VilleScreen({ onglet }: { readonly onglet: string }) {
+/**
+ * LES TROIS PLANCHES D'ORDINATEUR DE LA FENÊTRE DE CONTRIBUTION.
+ *
+ * Elles sont indexées par le volet, et l'ordre est celui de `VOLETS_CONTRIBUTION`
+ * pour que `phase` — le cran d'avancement que `Modal` joue en animation — se déduise
+ * du même tableau plutôt que d'être écrit une seconde fois.
+ */
+const PLANCHES_DESKTOP: Record<VoletContribution, (d: AccueilData) => ReactNode> = {
+  type: (d) => <A12CDesktop {...d} />,
+  produit: (d) => <A12CDesktopProduit {...d} />,
+  budget: (d) => <A12CDesktopBudget {...d} />,
+};
+
+export function VilleScreen({
+  onglet,
+  contribution = null,
+}: {
+  readonly onglet: string;
+  readonly contribution?: VoletContribution | null;
+}) {
   const slug = onglet;
+
+  /**
+   * La fenêtre s'ouvre au CLIC sur « Contribuer », ou DÈS L'ARRIVÉE quand l'URL
+   * nomme un volet. Le clic ouvre toujours l'étape 1 : c'est ce que la maquette
+   * dessine derrière ce bouton, et faire sauter au formulaire d'un type que
+   * personne n'a choisi serait inventer un raccourci.
+   */
+  const [volet, setVolet] = useState<VoletContribution | null>(contribution);
+
+  /**
+   * L'ouverture est DÉLÉGUÉE, comme en A01 : le bouton « Contribuer » est enfoui
+   * dans la barre d'onglets transcodée, et le « + » flottant dans la planche
+   * mobile. Le générateur leur a posé `data-modal-open="A12C"` ; un seul écouteur
+   * suffit, et le JSX produit reste la maquette à l'identique.
+   */
+  const onOuvrir = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
+    const cible = event.target;
+    if (!(cible instanceof Element)) return;
+    const bouton = cible.closest('[data-modal-open]');
+    if (bouton?.getAttribute('data-modal-open') === 'A12C') setVolet('type');
+  }, []);
+
+  const onFermer = useCallback((): void => setVolet(null), []);
+
   const tab = TABS[slug] ?? TABS['budgets'];
   if (tab === undefined) return null;
 
@@ -75,10 +124,27 @@ export function VilleScreen({ onglet }: { readonly onglet: string }) {
   const plain = slug === 'budgets';
 
   return (
-    <ScreenFrames
-      screen={plain ? 'A12' : `A12T-${slug}`}
-      desktop={plain ? tab.desktop(data) : <div style={BOARD}>{tab.desktop(data)}</div>}
-      mobile={tab.mobile(data)}
-    />
+    <div onClick={onOuvrir}>
+      <ScreenFrames
+        screen={plain ? 'A12' : `A12T-${slug}`}
+        desktop={plain ? tab.desktop(data) : <div style={BOARD}>{tab.desktop(data)}</div>}
+        mobile={tab.mobile(data)}
+      />
+      <Modal
+        open={volet !== null}
+        onClose={onFermer}
+        titleId="a12c-titre"
+        name="A12C"
+        /**
+         * La maquette ne dessine qu'UNE feuille mobile, qui met le choix du type et
+         * les champs du bon plan sur la même vue. Les trois volets d'ordinateur n'ont
+         * pas d'équivalent mobile : sur téléphone, la feuille est la même quel que
+         * soit le volet. C'est la maquette qui en décide.
+         */
+        desktop={(PLANCHES_DESKTOP[volet ?? 'type'] ?? PLANCHES_DESKTOP.type)(data)}
+        mobile={<A12CMobile {...data} />}
+        phase={volet === null ? 0 : VOLETS_CONTRIBUTION.indexOf(volet)}
+      />
+    </div>
   );
 }

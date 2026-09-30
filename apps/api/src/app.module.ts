@@ -27,6 +27,12 @@ import {
 import { FeedService } from './modules/feed/feed.service';
 import { ConnectionsController } from './modules/connections/connections.controller';
 import { ConnectionsService } from './modules/connections/connections.service';
+import { AnalyticsService } from './modules/analytics/analytics.service';
+import { AnalyticsAdminController } from './modules/analytics/analytics-admin.controller';
+import { DataExportController } from './modules/exports/data-export.controller';
+import { DataExportService } from './modules/exports/data-export.service';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { RealtimeRelayService } from './modules/realtime/realtime.relay';
 import { MentorshipController } from './modules/mentorship/mentorship.controller';
 import { MentorshipService } from './modules/mentorship/mentorship.service';
 import { MessagingController } from './modules/messaging/messaging.controller';
@@ -119,7 +125,21 @@ import {
  * fichier change de forme.
  */
 @Module({
-  imports: [CommonModule, ProvidersModule, QueueModule],
+  imports: [
+    CommonModule,
+    ProvidersModule,
+    QueueModule,
+    /**
+     * La passerelle WebSocket UNIQUEMENT dans l'API.
+     *
+     * Une liste d'imports calculée est inhabituelle, et elle est ici obligatoire :
+     * la seule PRÉSENCE d'une classe `@WebSocketGateway()` dans l'arbre fait
+     * échouer le `createApplicationContext` du worker (§3.1), sur un message qui
+     * accuse `AuthGuard`. Voir `realtime.module.ts`. `loadEnv()` est mémoïsée et
+     * `APP_ROLE` est posé avant l'import, donc l'évaluation est sûre ici.
+     */
+    ...(loadEnv().APP_ROLE === 'api' ? [RealtimeModule] : []),
+  ],
   controllers: [HealthController, PlacesController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
     StaffAuthController, AdminController, AdminModerationController,
@@ -131,6 +151,12 @@ import {
     // Module 14 — les revenus. Le contrôleur membre porte aussi les deux webhooks
     // entrants (T4 §8), qui n'ont pas de membre et se déclarent `@SignedWebhook()`.
     BillingController, PartnersController, BillingAdminController,
+    // Module 01 §4.2 — l'export RGPD. Contrôleur séparé d'`AccountController` :
+    // c'est une obligation légale avec son propre cycle (demande, génération,
+    // péremption), pas un réglage de compte de plus.
+    DataExportController,
+    // Module 15 §7 — le pilotage. `/v1/admin/dashboard`, `/stats/*`, `/impact`.
+    AnalyticsAdminController,
   ],
   providers: [
     AuthService,
@@ -162,6 +188,20 @@ import {
     ConnectionsService,
     MessagingService,
     JourneysService,
+    // Module 15 §5 — les instantanés d'indicateurs et les quatre tâches de §10.
+    AnalyticsService,
+    // Module 01 §2.8 — l'export RGPD.
+    DataExportService,
+    /**
+     * Module 08 §7.3 — le côté PUBLICATION du temps réel.
+     *
+     * Enregistré pour LES DEUX rôles, et c'est le seul morceau du temps réel qui
+     * le soit : c'est le WORKER qui publie, puisque c'est lui qui consomme
+     * `message.sent`. L'abonnement et les sockets vivent dans `RealtimeModule`,
+     * importé plus haut pour l'API seule. Ce service ne dépend d'aucune classe de
+     * `@nestjs/websockets` — condition nécessaire pour que le worker démarre.
+     */
+    RealtimeRelayService,
     /**
      * Le port de file de la modération.
      *

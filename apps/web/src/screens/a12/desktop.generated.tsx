@@ -54,7 +54,7 @@ export function A12Desktop(props: AccueilData) {
       <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", overflow: "hidden" }}>
         <div style={{ display: "flex", gap: "4px", padding: "0 20px", borderBottom: "1px solid #EAEEEC" }}>{(cityTabs ?? []).map((t, tIndex) => (
 <Fragment key={tIndex}><span style={{ height: "52px", display: "flex", alignItems: "center", padding: "0 14px", fontSize: "13.5px", fontWeight: t.w, color: t.fg, borderBottom: `2.5px solid ${t.bd}` }}>{t.label}</span></Fragment>
-))}<span style={{ flex: "1" }}></span><span style={{ alignSelf: "center", height: "36px", padding: "0 14px", borderRadius: "999px", background: "#16785E", color: "#fff", fontSize: "12.5px", fontWeight: "700", display: "flex", alignItems: "center" }}>Contribuer</span></div>
+))}<span style={{ flex: "1" }}></span><button type="button" data-modal-open="A12C" style={{ alignSelf: "center", height: "36px", borderRadius: "999px", background: "#16785E", color: "#fff", fontSize: "12.5px", fontWeight: "700", display: "flex", alignItems: "center", border: "none", padding: "0", font: "inherit", cursor: "pointer" }}>Contribuer</button></div>
         <div style={{ padding: "20px" }}>
           <div style={{ background: "#EFF7F3", borderRadius: "18px", padding: "16px 18px", display: "flex", alignItems: "baseline", gap: "12px" }}><span style={{ fontSize: "30px", fontWeight: "800", letterSpacing: "-1px", color: "#0F5C48", fontVariantNumeric: "tabular-nums" }}>1 050 €</span><span style={{ fontSize: "13px", color: "#5D6B66" }}>budget mensuel médian d'un étudiant · 38 contributions</span></div>
           {(budgets ?? []).map((b, bIndex) => (

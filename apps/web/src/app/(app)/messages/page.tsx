@@ -1,4 +1,4 @@
-import { ScreenFrames } from '@/screens/frames';
+import { EcranMessages } from '@/screens/messages/ecran';
 import { M01Desktop } from '@/screens/m01/desktop.generated';
 import { M01Mobile } from '@/screens/m01/mobile.generated';
 
@@ -14,8 +14,14 @@ import { M01Mobile } from '@/screens/m01/mobile.generated';
  * pages séparées sur mobile »). Sur téléphone, les deux planches existent bien
  * séparément, et c'est celle de la LISTE qui sert ici.
  *
- * AUCUN ÉTAT : la maquette est statique (voir `@/screens/messages/data`). La page est
- * rendue sur le serveur, sans une ligne de JavaScript.
+ * CETTE PAGE PASSE PAR LA COQUILLE CLIENTE, alors qu'elle n'a aucun état d'URL, et
+ * ce n'est pas une inadvertance : le cadre d'ordinateur qu'elle rend est celui de la
+ * conversation, donc il porte le « ··· » qui ouvre le MENU DE LA CONVERSATION. Sans
+ * la coquille, ce bouton serait là et n'ouvrirait rien — un contrôle mort, ce qui
+ * est pire qu'un contrôle absent. Le cadre MOBILE de cette route (« MOBILE · LISTE »)
+ * n'en porte aucun : la maquette y dessine un crayon.
+ *
+ * AUCUNE DONNÉE : la maquette est statique (voir `@/screens/messages/data`).
  *
  * 08 §5.1 — « la messagerie n'est pas une entrée de navigation : icône en barre
  * haute ». Vérifié sur les trois cadres : ni le rail de gauche (Accueil, Parcours,
@@ -24,5 +30,5 @@ import { M01Mobile } from '@/screens/m01/mobile.generated';
  * bulle de la barre haute, comme la règle l'exige.
  */
 export default function MessagesPage() {
-  return <ScreenFrames screen="M01" desktop={<M01Desktop />} mobile={<M01Mobile />} />;
+  return <EcranMessages desktop={<M01Desktop />} mobile={<M01Mobile />} />;
 }

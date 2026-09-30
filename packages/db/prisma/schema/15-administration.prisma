@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Module 15 — Administration  ·  7 tables
+// Module 15 — Administration  ·  8 tables
 // Comptes équipe, audit, feature flags, pages statiques, annonces, paramètres.
 //
 // RÈGLE DURE : un compte équipe ne peut jamais se connecter à l'application
@@ -170,4 +170,52 @@ model SystemSetting {
   updatedByStaff StaffUser? @relation(fields: [updatedByStaffId], references: [id], onDelete: SetNull)
 
   @@map("system_settings")
+}
+
+/// Historique des indicateurs de pilotage — 15 §6 : « Table ajoutée (`append`) :
+/// `metric`, `dimension` (ville, type…), `value`, `period_start` — historique des
+/// indicateurs pour les courbes ». Socle `append` (§6.1) : `id` + `created_at`,
+/// pas d'`updated_at`, jamais de mise à jour d'une ligne posée.
+///
+/// §11 : « `metric_snapshots` : agrégats, non concernés » par la suppression d'un
+/// membre. AUCUNE clé étrangère vers `users` ni vers `cities`, et c'est délibéré :
+/// une ligne doit survivre à la suppression du membre ou à la fusion d'une ville
+/// qu'elle a comptés, sans quoi la courbe se réécrirait rétroactivement.
+///
+/// `metric` porte l'AXE (`members.by_city`, `key_indicator.event_presence_90d`) et
+/// `dimension` la TRANCHE (l'uuid de la ville, `PRE_DEPARTURE`, le type de
+/// parcours). La chaîne vide est la tranche globale — voir la note de `dimension`.
+model MetricSnapshot {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  /// Nom de l'indicateur, hiérarchique : `members.active_7d`, `journeys.completed`.
+  metric String
+
+  /// La tranche mesurée, ou chaîne vide pour l'indicateur global.
+  ///
+  /// NON NULLE, et c'est le seul écart de forme avec §6, qui écrit « `dimension`
+  /// (ville, type…) » sans dire si la colonne est nullable. La raison est l'unicité
+  /// ci-dessous : PostgreSQL considère deux NULL comme DISTINCTS, donc un index
+  /// unique sur une colonne nullable ne dédoublonnerait justement PAS les lignes
+  /// globales — celles qu'un balayage horaire écrit le plus souvent. `NULLS NOT
+  /// DISTINCT` existe depuis PG15 mais Prisma ne le modélise pas, et l'écrire à la
+  /// main en migration ferait dériver le schéma à la migration suivante.
+  dimension String @default("")
+
+  /// `Decimal` et non `Int` : la même table porte des effectifs (« inscrits »), des
+  /// pourcentages (l'indicateur clé de §5.1, objectif 30 %) et des montants en
+  /// centimes (MRR, §5.1 « Revenus »). Un entier tronquerait le premier des trois.
+  value Decimal @db.Decimal(18, 4)
+
+  /// Début de la période agrégée, tronqué à la maille de la tâche qui l'écrit.
+  periodStart DateTime @map("period_start") @db.Timestamptz
+
+  /// Ce qui rend les tâches de §10 IDEMPOTENTES au sens de `scheduled-tasks.ts` :
+  /// une reprise BullMQ, un travail redistribué ou un redémarrage rejouent le même
+  /// créneau, et l'insertion est alors sans effet au lieu de doubler le point de la
+  /// courbe. C'est l'unicité qui porte cette propriété, pas la prudence du service.
+  @@unique([metric, dimension, periodStart])
+  @@index([metric, periodStart])
+  @@map("metric_snapshots")
 }

@@ -51,6 +51,13 @@ export const ACCOUNT_ERROR_CODES = {
    * titulaire : lui dire que son compte est banni ne révèle rien qu'il ne sache.
    */
   ACCOUNT_BANNED: 403,
+  /**
+   * §2.8 : « une demande par 30 jours ». `429` comme les autres plafonds de ce
+   * fichier — la demande est légitime, elle est seulement trop rapprochée.
+   */
+  EXPORT_TOO_SOON: 429,
+  /** Aucune archive à remettre : le membre n'en a jamais demandé. */
+  EXPORT_NOT_FOUND: 404,
 } as const;
 
 export type AccountErrorCode = keyof typeof ACCOUNT_ERROR_CODES;
@@ -68,6 +75,8 @@ export const ACCOUNT_ERROR_MESSAGES: Record<AccountErrorCode, string> = {
   ALREADY_DEACTIVATED: 'Votre compte est déjà désactivé.',
   OTP_PURPOSE_MISMATCH: 'Ce code ne correspond pas à l’action demandée.',
   ACCOUNT_BANNED: 'Ce compte a été fermé définitivement.',
+  EXPORT_TOO_SOON: 'Vous avez déjà demandé vos données récemment. Une demande est possible tous les 30 jours.',
+  EXPORT_NOT_FOUND: 'Vous n’avez encore demandé aucune archive de vos données.',
 };
 
 // ── Bornes temporelles ──────────────────────────────────────────────────────
@@ -95,6 +104,20 @@ export const ACCOUNT_LIMITS = {
   settledAfterArrivalMonths: 6,
   /** §8.4 : les défis OTP sont purgés après 24 h. */
   otpRetentionHours: 24,
+  /**
+   * §2.8 : « une demande par 30 jours ».
+   *
+   * Un QUOTA MÉTIER, et non un `@RateLimit` : la doctrine de
+   * `capability.decorator.ts` réserve le décorateur aux fenêtres de la minute et
+   * de l'heure, tenues dans Redis. Trente jours tenus dans Redis seraient perdus
+   * au premier vidage du cache, et le membre pourrait redemander une archive
+   * complète de toutes ses données à volonté — un coût de calcul, mais surtout
+   * une surface d'exfiltration. Le quota se compte donc sur `data_exports`, qui
+   * est durable.
+   */
+  exportRequestIntervalDays: 30,
+  /** §2.8 : « lien valable 7 jours ». */
+  exportLinkValidityDays: 7,
 } as const;
 
 // ── Vérification d'identité (§4.3) ──────────────────────────────────────────

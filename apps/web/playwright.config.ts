@@ -109,7 +109,24 @@ export default defineConfig({
       command: `pnpm build && npx next start -p ${PORT}`,
       url: `${BASE_URL}/accueil`,
       reuseExistingServer: !process.env.CI,
-      timeout: 180_000,
+      /**
+       * VINGT MINUTES, et le chiffre est mesuré, pas choisi.
+       *
+       * `pnpm build` a pris 884 s (14 min 44 s) sur 124 écrans, machine chargée.
+       * Les 180 s d'origine avaient été posées quand la suite en comptait une
+       * trentaine ; la borne est devenue fausse par accumulation, pas par erreur.
+       *
+       * Son échec ne ressemblait à RIEN d'utile : « Timed out waiting 180000ms from
+       * config.webServer », sans un mot sur la construction en cours. On croit à un
+       * serveur qui refuse de démarrer, alors qu'il n'avait simplement pas fini.
+       *
+       * La marge est large exprès — le transcodage produit du JSX à styles en ligne,
+       * donc le temps de construction croît avec chaque maquette ajoutée. Une borne
+       * serrée redeviendrait fausse au lot suivant, et son message ne le dirait pas
+       * davantage. Si elle est atteinte un jour, c'est que quelque chose est vraiment
+       * bloqué.
+       */
+      timeout: 1_200_000,
     },
     {
       command: 'pnpm --filter @app/api dev',

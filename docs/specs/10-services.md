@@ -74,7 +74,7 @@ Filtres : kind, ville (+ 30 km), budget max, meublé, disponible à partir de, d
 
 - Capacité `pro.register` (**L2**) + **justificatif d'activité** (`proof_asset_id` : extrait SIRENE, attestation URSSAF, carte professionnelle — image ou PDF, accès équipe uniquement) + `siret` facultatif. `verification_status = PENDING` jusqu'à validation humaine (module 15) ; la fiche est invisible avant.
 - Une seule fiche par membre. Champs : métier (`professions`), nom commercial, description ≤ 1 500, tarifs indicatifs libres, méthode de contact (`PLATFORM_MESSAGE`, `EMAIL`, `PHONE_ON_REQUEST` — le téléphone n'est **jamais** stocké ici ni affiché ; « sur demande » signifie que le pro le communique lui-même en message), langues (du profil), villes couvertes (1 à 10).
-- `tier` : `FREE` (fiche simple), `PRO` (~25 €/mois), `PRO_PLUS` (~40 €/mois) — voir module 14. Un abonnement expiré rétrograde en `FREE` sans supprimer la fiche.
+- `tier` : `FREE` (fiche simple), `PRO` (9 €/mois), `PRO_PLUS` (19 €/mois) — voir module 14. Un abonnement expiré rétrograde en `FREE` sans supprimer la fiche.
 
 ### 4.2 Classement
 

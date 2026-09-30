@@ -831,3 +831,31 @@ export interface AccueilData {
 
 /** L'icône du livre, dont A03 se sert pour son en-tête de section. */
 export { I };
+
+/**
+ * LES VOLETS DE LA FENÊTRE DE CONTRIBUTION (A12C), et pourquoi ils viennent de l'URL.
+ *
+ * La maquette dessine la contribution en DEUX ÉTAPES — « Étape 1 sur 2 · Contribuer
+ * à la fiche Lyon », puis « Étape 2 sur 2 · Lyon » — mais elle ne dessine le second
+ * volet que pour DEUX des quatre types : « Produit du pays » et « Budget réel ».
+ * Le bon plan et le témoignage n'ont pas de planche d'étape 2 sur ordinateur.
+ *
+ * Le volet vient donc de l'URL, exactement comme `?paiement=` le fait pour le flux
+ * Mobile Money de K06, et pour la même raison : ce qui fait avancer une démarche est
+ * un envoi au serveur, et ce lot ne branche aucune route. Un `?contribution=budget`
+ * rend le volet atteignable et testable sans affirmer qu'une contribution a été
+ * enregistrée.
+ *
+ * Le volet hors bornes retombe sur `null` — donc fenêtre fermée. Jamais sur un
+ * volet d'étape 2, qui laisserait croire qu'un type a été choisi.
+ */
+export const VOLETS_CONTRIBUTION = ['type', 'produit', 'budget'] as const;
+
+export type VoletContribution = (typeof VOLETS_CONTRIBUTION)[number];
+
+export function voletContribution(
+  brut: string | readonly string[] | undefined,
+): VoletContribution | null {
+  if (typeof brut !== 'string') return null;
+  return VOLETS_CONTRIBUTION.find((v) => v === brut) ?? null;
+}

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { newId, Prisma } from '@app/db';
+import { isPilotCitySlug } from '@app/shared';
 import type {
   CitiesAdminQuery,
   CreateCity,
@@ -294,6 +295,21 @@ export class ReferentialsService {
         ...c,
         latitude: Number(c.latitude),
         longitude: Number(c.longitude),
+        /**
+         * LA VILLE PILOTE, DÉSIGNÉE DANS LA LISTE — `PILOT_CITY_SLUG` (@app/shared).
+         *
+         * Le premier geste du jour du lancement est d'ouvrir UNE ville parmi 43 +
+         * celles du Bénin et du Togo, toutes inactives et triées par nom. Sans
+         * repère, l'opérateur doit se souvenir de l'arbitrage — et un mauvais clic
+         * crée un réseau CITY et y inscrit des membres, ce qu'aucune route ne
+         * défait.
+         *
+         * C'est un CALCUL, pas une colonne : la pilote est une décision produit qui
+         * se change en une ligne de `@app/shared`, pas un état à écrire en base que
+         * deux villes pourraient porter à la fois. `isActive` reste seul à dire ce
+         * qui est ouvert : une pilote non ouverte est le cas normal avant le jour J.
+         */
+        isPilot: isPilotCitySlug(c.slug),
       })),
       nextCursor: null,
     };

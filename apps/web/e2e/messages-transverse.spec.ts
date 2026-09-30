@@ -365,20 +365,314 @@ test.describe('X03 — la feuille de signalement', () => {
   });
 
   /**
-   * LA CONFIRMATION N'A AUCUN CONTRÔLE — ni croix, ni poignée, ni bouton : la
-   * maquette n'en dessine pas. `aria-modal="true"` promet pourtant qu'on ne sort
-   * pas de la boîte ; sans un seul élément focalisable, la tabulation en sortait.
-   * C'est le défaut que cet écran a révélé dans `Modal`, et ce test le retient.
+   * ── LA CROIX DE LA CONFIRMATION EST UN EMPRUNT ─────────────────────────────
+   *
+   * La maquette ne dessine AUCUNE fermeture sur la planche de confirmation — ni
+   * croix ni poignée. Celle qui s'y trouve désormais est recopiée mot pour mot de
+   * la fenêtre « Signaler », MÊME maquette, MÊME section X03, qui en porte une.
+   * Voir `CROIX_DE_X03` dans `tools/screens/09-messages.mjs`, et le garde-fou de
+   * `applyBorrows` qui refuse de générer si ce motif disparaît de X03.
+   *
+   * CE QUE CE TEST MESURE, c'est que l'emprunt est le MÊME OBJET que l'original :
+   * même rôle, même nom accessible, même géométrie de 40 × 40 px. Une croix
+   * « inspirée de » se verrait ici — elle n'aurait pas exactement ces mesures.
    */
-  test('?feuille=merci — la confirmation retient la tabulation bien qu’elle n’ait aucun contrôle', async ({
+  test('?feuille=merci — la croix empruntée à « Signaler » ferme la confirmation', async ({
     page,
   }) => {
-    await visiter(page, '/messages/1?feuille=merci', 390);
+    await visiter(page, '/messages/1?feuille=merci', 1440);
     const boite = page.getByRole('dialog', { name: 'Merci.' });
     await expect(boite).toBeVisible();
     await expect(boite.getByText('Nous regardons sous 24 heures.')).toBeVisible();
-    // Aucun contrôle : c'est le manque de la maquette, figé pour qu'il se voie.
-    await expect(boite.locator('button, a[href], input, select, textarea')).toHaveCount(0);
+
+    const croix = boite.getByRole('button', { name: 'Fermer' });
+    await expect(croix).toHaveCount(1);
+    const ici = await croix.boundingBox();
+    expect(ici).not.toBeNull();
+
+    // La MÊME croix, dans la fenêtre d'où elle est empruntée : mêmes mesures.
+    await visiter(page, '/messages/1?feuille=signaler', 1440);
+    const origine = await page
+      .getByRole('dialog', { name: 'Signaler' })
+      .getByRole('button', { name: 'Fermer' })
+      .boundingBox();
+    expect(origine).not.toBeNull();
+    if (ici === null || origine === null) return;
+    expect(
+      { w: Math.round(ici.width), h: Math.round(ici.height) },
+      'la croix empruntée a la géométrie de son original',
+    ).toEqual({ w: Math.round(origine.width), h: Math.round(origine.height) });
+
+    await visiter(page, '/messages/1?feuille=merci', 1440);
+    await expect(boite.getByRole('button', { name: 'Fermer' })).toBeFocused();
+    await boite.getByRole('button', { name: 'Fermer' }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('?feuille=merci — Échap et le voile referment aussi', async ({ page }) => {
+    await visiter(page, '/messages/1?feuille=merci', 1440);
+    await expect(page.getByRole('dialog', { name: 'Merci.' })).toBeVisible();
+    // Le focus est entré dans la boîte (la croix) : Échap lui parvient.
+    await expect(page.getByRole('dialog').getByRole('button', { name: 'Fermer' })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+
+    await visiter(page, '/messages/1?feuille=merci', 1440);
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.locator('[data-modal-overlay]').click({ position: { x: 5, y: 5 } });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('une feuille inconnue n’ouvre rien', async ({ page }) => {
+    await visiter(page, '/messages/1?feuille=nimporte-quoi', 1440);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
+/**
+ * ── M01 · LA CONVERSATION AVEC UN MEMBRE BLOQUÉ ──────────────────────────────
+ *
+ * AUCUNE MAQUETTE NE DESSINE CET ÉTAT. Sa forme est EMPRUNTÉE — le bandeau de la
+ * carte « DEMANDE EN ATTENTE » (section M01) et le bouton « Débloquer » de la carte
+ * « BLOQUÉS » de K05 (`08 Compte`) — et sa PHRASE vient du porteur, pas d'une
+ * planche. Voir `CONVERSATION_BLOQUEE` dans `tools/screens/09-messages.mjs`.
+ *
+ * LA RÈGLE DURE QUE CES TESTS TIENNENT : dans cet état, LE COMPOSEUR N'EST PAS
+ * ATTEIGNABLE. Pas de zone de saisie, pas de bouton d'envoi, rien où écrire. C'est
+ * la seule chose qu'un écran peut trahir tout seul ici : un bandeau ajouté au-dessus
+ * d'un composeur toujours là aurait l'air juste et ne tiendrait rien.
+ */
+
+/**
+ * CE QUE « UN COMPOSEUR » VEUT DIRE, mesuré et non supposé.
+ *
+ * La maquette ne dessine AUCUN vrai champ : l'invite est un `<div>` et le rond
+ * d'envoi un `<span>`. Chercher `input, textarea` ne prouverait donc rien — le
+ * compte serait à zéro même avec le composeur bien en place, et le test serait creux.
+ *
+ * On mesure les trois choses qui FONT le composeur dans cette maquette :
+ *   · l'invite, à son texte exact (« Message… » / « Écrire un message… ») ;
+ *   · le rond d'envoi, à son fond `#16785E`, son rayon de 999 px ET le tracé de sa
+ *     flèche ;
+ *   · tout élément réellement saisissable, au cas où un lot en ajouterait un.
+ *
+ * LE TRACÉ DE LA FLÈCHE N'EST PAS UN LUXE. Sans lui, la sonde comptait DEUX ronds
+ * verts de plus dans le cadre d'ordinateur — le vert d'action sert aussi ailleurs
+ * dans cette planche — et le test échouait sur une conversation pourtant bien
+ * bloquée. C'est le même piège que le `</svg>` des déclencheurs : une couleur ne
+ * désigne pas un contrôle, un tracé si.
+ *
+ * La sonde est appliquée AUX DEUX ÉTATS dans le même test : zéro sur la conversation
+ * bloquée, non nul sur la conversation ordinaire. Un test qui ne vérifierait que le
+ * zéro passerait au vert si la sonde cessait de trouver quoi que ce soit.
+ */
+const FLECHE_ENVOI = 'M5 12h14m-6-6 6 6-6 6';
+
+async function composeur(page: Page, cadre: string): Promise<number> {
+  return page.evaluate(
+    ([selecteurCadre, fleche]) => {
+      const frame = document.querySelector(selecteurCadre as string);
+      if (frame === null) return -1;
+      let trouve = 0;
+      for (const el of Array.from(frame.querySelectorAll<HTMLElement>('*'))) {
+        const s = getComputedStyle(el);
+        if (s.display === 'none' || s.visibility === 'hidden') continue;
+        const texte = (el.textContent ?? '').trim();
+        if (el.children.length === 0 && (texte === 'Message…' || texte === 'Écrire un message…')) {
+          trouve += 1;
+          continue;
+        }
+        // Le rond d'envoi : le vert d'action, en pastille, AUTOUR de sa flèche.
+        if (
+          s.backgroundColor === 'rgb(22, 120, 94)' &&
+          s.borderRadius.startsWith('999px') &&
+          el.querySelector(`path[d="${fleche as string}"]`) !== null
+        ) {
+          trouve += 1;
+          continue;
+        }
+        const tag = el.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable) trouve += 1;
+      }
+      return trouve;
+    },
+    [cadre, FLECHE_ENVOI] as const,
+  );
+}
+
+test.describe('M01 — la conversation avec un membre bloqué', () => {
+  for (const [largeur, cadre] of [
+    [1440, ORDINATEUR],
+    [390, MOBILE],
+  ] as const) {
+    test(`${largeur} px — ?etat=bloque retire le composeur, et sans lui il est bien là`, async ({
+      page,
+    }) => {
+      await visiter(page, '/messages/1?etat=bloque', largeur);
+      const bloque = await composeur(page, cadre);
+      expect(bloque, 'aucune façon d’écrire à un membre bloqué').toBe(0);
+
+      // LA MÊME SONDE, sur la conversation ORDINAIRE. Sans cette moitié, le test
+      // passerait au vert le jour où la sonde cesserait de reconnaître le composeur.
+      await visiter(page, '/messages/1', largeur);
+      const ordinaire = await composeur(page, cadre);
+      expect(ordinaire, 'la sonde reconnaît bien un composeur quand il y en a un').toBeGreaterThan(
+        0,
+      );
+    });
+  }
+
+  test('le bandeau porte la phrase du porteur et le bouton « Débloquer » de K05', async ({
+    page,
+  }) => {
+    await visiter(page, '/messages/1?etat=bloque', 1440);
+    const cadre = page.locator(ORDINATEUR);
+    /**
+     * ⚠ CETTE PHRASE NE VIENT D'AUCUNE MAQUETTE : elle a été fournie par le porteur.
+     * C'est le seul texte de ce module qui ne soit pas transcodé, et c'est écrit ici
+     * pour que personne ne la cherche dans `09 Messages` — elle n'y est pas.
+     */
+    const bandeau = cadre.getByText(
+      'Vous avez bloqué ce membre. Débloquez-le pour reprendre la conversation.',
+      { exact: false },
+    );
+    await expect(bandeau).toBeVisible();
+
+    // Le bouton est celui de la carte « BLOQUÉS » de K05, transcodé tel quel : il est
+    // donc un vrai `<button>` dans la maquette, à la différence des contrôles de M01.
+    await expect(cadre.getByRole('button', { name: 'Débloquer' })).toHaveCount(1);
+  });
+
+  /**
+   * Le bandeau prend la place du composeur DANS SA BANDE : celle-ci est du dessin de
+   * M01 et reste, avec son filet supérieur. Sans elle, le bandeau flotterait au bas
+   * du fil — c'est le genre d'écart qu'une capture ne révèle pas et qu'une mesure, si.
+   */
+  test('le bandeau occupe la bande du bas, pas le fil', async ({ page }) => {
+    await visiter(page, '/messages/1?etat=bloque', 390);
+    const bandeau = page.locator(MOBILE).getByRole('button', { name: 'Débloquer' }).locator('..');
+    const boite = await bandeau.boundingBox();
+    const fenetre = page.viewportSize();
+    expect(boite).not.toBeNull();
+    if (boite === null || fenetre === null) return;
+    expect(boite.y + boite.height, 'le bandeau est posé en bas de l’écran').toBeGreaterThan(
+      fenetre.height - 120,
+    );
+  });
+
+  test('une valeur d’état inconnue rend la conversation ORDINAIRE', async ({ page }) => {
+    await visiter(page, '/messages/1?etat=nimporte-quoi', 1440);
+    expect(await composeur(page, ORDINATEUR)).toBeGreaterThan(0);
+    await expect(page.getByRole('button', { name: 'Débloquer' })).toHaveCount(0);
+  });
+});
+
+/**
+ * ── M01 · LE MENU DE LA CONVERSATION, ET SON VOILE EMPRUNTÉ ──────────────────
+ *
+ * La carte « MENU DE LA CONVERSATION » (300 px) est une CARTE NUE : la maquette ne
+ * lui dessine ni voile ni positionnement, et la section M01 n'écrit pas un seul
+ * `position:absolute;inset:0;background:rgba(…)` — compté, pas supposé. Le voile
+ * lui est donc emprunté à `03 Accueil v2.dc.html` par `adaptModalFrame`, comme aux
+ * trois fenêtres de `08 Compte`.
+ *
+ * CE N'EST PAS UN DÉTAIL DE DESSIN : le menu n'a ni croix ni poignée, parce que la
+ * maquette ne lui en dessine pas et qu'on ne lui en invente pas. Le voile est donc
+ * la SEULE fermeture à la souris. Sans lui, `Modal` ne verrait qu'un panneau, un
+ * clic à côté ne fermerait rien, et le membre serait enfermé dans un menu qui ne se
+ * quitte qu'à Échap.
+ */
+test.describe('M01 — le menu de la conversation', () => {
+  const DECLENCHEUR = '[data-modal-open="M01MENU"]';
+
+  test('le « ··· » de l’en-tête ouvre une boîte de dialogue nommée, aux deux largeurs', async ({
+    page,
+  }) => {
+    for (const [largeur, cadre] of [
+      [1440, ORDINATEUR],
+      [390, MOBILE],
+    ] as const) {
+      await visiter(page, '/messages/1', largeur);
+      const bouton = page.locator(`${cadre} ${DECLENCHEUR}`);
+      await expect(bouton, `un seul déclencheur à ${largeur} px`).toHaveCount(1);
+      // Le bouton n'a qu'une icône : son nom vient du déclencheur déclaré.
+      await expect(bouton).toHaveAccessibleName('Menu de la conversation');
+
+      await bouton.click();
+      const menu = page.getByRole('dialog', { name: 'MENU DE LA CONVERSATION' });
+      await expect(menu).toBeVisible();
+      // Les quatre entrées, dans l'ordre de la maquette.
+      for (const entree of ['Voir le profil', 'Mettre en sourdine', 'Bloquer', 'Signaler']) {
+        await expect(menu.getByText(entree, { exact: true })).toBeVisible();
+      }
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    }
+  });
+
+  /**
+   * LE CADRE « MOBILE · LISTE » NE PORTE PAS LE « ··· », et c'est la maquette qui
+   * le décide : son en-tête dessine un crayon. Le figer évite qu'un lot futur
+   * marque le mauvais tracé sans que rien ne le dise.
+   */
+  test('le cadre mobile de la LISTE ne porte aucun déclencheur', async ({ page }) => {
+    await visiter(page, '/messages', 390);
+    await expect(page.locator(`${MOBILE} ${DECLENCHEUR}`)).toHaveCount(0);
+    // Le cadre d'ordinateur, lui, en porte un : c'est celui de la conversation.
+    await expect(page.locator(`${ORDINATEUR} ${DECLENCHEUR}`)).toHaveCount(1);
+  });
+
+  test('LE VOILE EMPRUNTÉ ferme au clic hors du panneau — et un clic dedans ne ferme pas', async ({
+    page,
+  }) => {
+    await visiter(page, '/messages/1', 1440);
+    await page.locator(`${ORDINATEUR} ${DECLENCHEUR}`).click();
+    const menu = page.getByRole('dialog', { name: 'MENU DE LA CONVERSATION' });
+    await expect(menu).toBeVisible();
+
+    // Le voile existe, et il couvre la fenêtre : c'est lui l'emprunt.
+    const voile = page.locator('[data-modal-overlay]');
+    await expect(voile).toHaveCount(1);
+    const couverture = await voile.boundingBox();
+    expect(couverture?.width, 'le voile couvre la fenêtre').toBe(1440);
+
+    // Un clic DANS le panneau ne ferme pas : le membre lit son menu.
+    await menu.getByText('Mettre en sourdine', { exact: true }).click();
+    await expect(page.getByRole('dialog')).toHaveCount(1);
+
+    await voile.click({ position: { x: 5, y: 5 } });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('Échap ferme, et le focus revient sur le « ··· » d’origine', async ({ page }) => {
+    await visiter(page, '/messages/1', 1440);
+    const bouton = page.locator(`${ORDINATEUR} ${DECLENCHEUR}`);
+    await bouton.click();
+    await expect(page.getByRole('dialog', { name: 'MENU DE LA CONVERSATION' })).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    // Sans le retour de focus, refermer renvoie au début du document : un membre au
+    // clavier doit re-parcourir toute la conversation pour revenir où il était.
+    await expect(bouton).toBeFocused();
+  });
+
+  /**
+   * LE MENU N'A AUCUN CONTRÔLE — la maquette dessine ses quatre entrées en
+   * `<span>`, et on ne les promeut pas en boutons : aucune route ne les porte
+   * (module 13), et un bouton qui ne fait rien ment au membre.
+   *
+   * `aria-modal="true"` promet pourtant qu'on ne sort pas de la boîte. Sans un seul
+   * élément focalisable, la tabulation en sortait — c'est le défaut que la
+   * confirmation X03 avait révélé dans `Modal`, et que sa croix empruntée ne met
+   * plus en jeu. Le menu le met, lui, et ce test le retient.
+   */
+  test('aucun contrôle, et pourtant la tabulation ne sort pas de la boîte', async ({ page }) => {
+    await visiter(page, '/messages/1?feuille=menu', 390);
+    const menu = page.getByRole('dialog', { name: 'MENU DE LA CONVERSATION' });
+    await expect(menu).toBeVisible();
+    // Le manque de la maquette, figé pour qu'il se voie.
+    await expect(menu.locator('button, a[href], input, select, textarea')).toHaveCount(0);
 
     for (let i = 0; i < 4; i += 1) await page.keyboard.press('Tab');
     const dedans = await page.evaluate(() => {
@@ -386,11 +680,6 @@ test.describe('X03 — la feuille de signalement', () => {
       return d !== null && d.contains(document.activeElement);
     });
     expect(dedans, 'le focus est resté dans la boîte de dialogue').toBe(true);
-  });
-
-  test('une feuille inconnue n’ouvre rien', async ({ page }) => {
-    await visiter(page, '/messages/1?feuille=nimporte-quoi', 1440);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 });
 
@@ -426,6 +715,22 @@ const ECARTS_TACTILES: Readonly<Record<string, readonly string[]>> = {
    * trancher — voir `docs/decisions.md`.
    */
   '/messages/1?feuille=signaler': ['button « Fermer » 88×25 px', 'button « Fermer » 40×40 px'],
+  /**
+   * LA CROIX EMPRUNTÉE HÉRITE DE L'ÉCART DE SON ORIGINAL, et c'est la preuve que
+   * c'est bien le même objet : 40 × 40 px, ce que la maquette dessine. La porter à
+   * 44 déplacerait des pixels — et la porterait, elle, plus loin que celle dont
+   * elle est la copie.
+   */
+  '/messages/1?feuille=merci': ['button « Fermer » 40×40 px'],
+  /** Le menu n'a aucun contrôle : la maquette dessine ses quatre entrées en `<span>`. */
+  '/messages/1?feuille=menu': [],
+  /**
+   * « Débloquer » HÉRITE DE L'ÉCART DE SON ORIGINAL, comme la croix de X03 : la carte
+   * « BLOQUÉS » de K05 dessine ce bouton à 36 px de haut (`height:44px` suivi de
+   * `height:36px` dans le même style — la seconde gagne, et c'est le dessin). Le
+   * porter à 44 le rendrait différent de celui dont il est la copie.
+   */
+  '/messages/1?etat=bloque': ['button « Débloquer » 106×36 px'],
 };
 
 test.describe('cible tactile — les écarts connus, et AUCUN autre', () => {

@@ -561,7 +561,7 @@ lot 12 vient en dernier : il n'a de sens qu'avec des données réelles.
 |---|---|---|
 | **Maintenant** | Rien. Les lots 1 à 4 se construisent contre les doublures | — |
 | **Lot 5** | Compte **Didit** (sandbox suffit) | La vérification d'identité reste fictive |
-| **Lot 8** | La **ville pilote** à activer | Les 43 villes restent inactives |
+| **Lot 8** | ~~La **ville pilote** à activer~~ — **arbitré : PARIS** (`PILOT_CITY_SLUG`) | — |
 | **Lot 11** | **D4** (agrégateur Mobile Money) et compte **Stripe** | Pas de facturation réelle |
 | **Avant déploiement** | **D5** (hébergeur UE, gestionnaire de secrets) | Rien ne sort du local |
 | **Avant lancement** | **Contenu éditorial** : CGU, confidentialité, pages de ressources, premiers guides | Les étapes affichent « guide à venir » et une ville vide ne retient personne |

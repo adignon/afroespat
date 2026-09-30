@@ -122,6 +122,51 @@ export const screens = [
     ],
   })),
 
+  /**
+   * A01N — « Nouvelle publication », le composeur en plein écran. MOBILE SEUL.
+   *
+   * C'est le SECOND cadre de 390 px de A01S, et il avait été manqué : la
+   * déclaration des modales ne prend que l'occurrence 0 (la fenêtre « Créer un
+   * sondage »), et rien ne signalait qu'il y en avait une deuxième.
+   *
+   * CE CADRE N'A AUCUN PENDANT D'ORDINATEUR, et ce n'est pas un oubli de
+   * déclaration : la maquette ne dessine le composeur rempli, côté web, que dans une
+   * COLONNE DE DOCUMENTATION de 760 px. Voir la note ci-dessous — elle vaut pour le
+   * lot qui unifiera les mécanismes de sélection.
+   *
+   * La maquette fait loi : elle a décidé que cet écran est mobile, il est donc livré
+   * tel quel. C'est le miroir exact de O05, qui n'a pas de cadre mobile et dont le
+   * cadre unique sert aux deux largeurs (`docs/decisions.md`) — sauf qu'ici le cadre
+   * unique est celui du téléphone.
+   *
+   * ── CE QU'IL NE FAUT PAS TRANSCODER, ET POURQUOI ─────────────────────────────
+   *
+   * Le bloc de 760 px de la même section n'est PAS un écran. C'est une colonne de
+   * documentation à sept enfants : la légende « COMPOSEUR AVEC PIÈCES JOINTES —
+   * WEB », la carte du composeur rempli, la légende « COMPOSANTS », la grille des
+   * trois règles, la phrase sur l'icône, la légende « ÉTAT VIDE », puis le composeur
+   * vide. Le transcoder mettrait « COMPOSANTS » et « ÉTAT VIDE » dans l'application.
+   *
+   * La seule partie utile — la carte du composeur rempli — est un
+   * `<div style="width:100%…">` : `extractFrame` sélectionne par largeur EN PIXELS
+   * et ne peut pas la désigner. L'atteindre demanderait un mécanisme de sélection
+   * par autre chose que la largeur, qui n'a pas sa place dans ce lot ; il est laissé
+   * au lot qui unifiera les trois mécanismes de titre, où la question est déjà posée.
+   *
+   * Les trois règles que cette colonne énonce sont, elles, FIGÉES par
+   * `apps/web/src/screens/accueil/composeur.test.ts`.
+   */
+  {
+    section: 'A01N',
+    out: 'apps/web/src/screens/a01n',
+    // Ce cadre ne consomme AUCUNE donnée — la maquette l'écrit entièrement en dur,
+    // zéro `{{ }}`, compté. Il prend donc le type par défaut du fichier
+    // (`AccueilData`) plutôt que celui des modales voisines : c'est celui qui a déjà
+    // une fabrique (`accueilData()`), et le composant n'en lit rien de toute façon.
+    heading: 'Nouvelle publication',
+    frames: [{ section: 'A01S', width: 390, name: 'Mobile', occurrence: 1 }],
+  },
+
   // ══ Lot 2 · les dix-sept sections restantes ═════════════════════════════════
 
   /**
@@ -371,7 +416,84 @@ export const screens = [
   {
     section: 'A12',
     heading: 'Lyon',
+    // Le bouton « Contribuer » de la barre d'onglets ouvre A12C. La maquette le dit
+    // sous ses planches : « CONTRIBUER — DEPUIS LE BOUTON DE LA BARRE D'ONGLETS OU
+    // "AJOUTER MON BUDGET" ». Dans ce cadre il est dessiné en `<span>` sans icône,
+    // d'où un marqueur sur le texte seul ; les planches A12T, elles, le dessinent
+    // derrière un « + » et ont leur propre marqueur.
+    triggers: [
+      // Borné au cadre d'ordinateur : la planche mobile ne dessine pas ce bouton-là,
+      // et un avertissement permanent finit par ne plus être lu.
+      { marker: 'Contribuer</span>', modal: 'A12C', frames: ['Desktop'] },
+      /**
+       * LE MÊME BOUTON, EN ICÔNE SEULE, sur la planche mobile : le « + » flottant.
+       * La maquette ne lui écrit aucun texte, d'où `label` — et ce nom n'est PAS
+       * inventé, c'est celui que le MÊME écran donne à la même action dans sa barre
+       * d'onglets d'ordinateur (« Contribuer »).
+       *
+       * Le tracé `M12 5v14M5 12h14` est le « + » générique, donc un motif très
+       * large : il est borné au cadre mobile par `frames`, où il ne figure qu'une
+       * fois (compté). Sans cette borne il aurait aussi visé les « + » des autres
+       * planches.
+       */
+      { marker: 'M12 5v14M5 12h14', modal: 'A12C', frames: ['Mobile'], label: 'Contribuer' },
+    ],
     frames: [{ width: 1440, name: 'Desktop' }, fromMob(8)],
+  },
+
+  /**
+   * A12C — « Contribuer à la fiche Lyon », la fenêtre de contribution de A12.
+   *
+   * CETTE FENÊTRE A ÉTÉ MANQUÉE PAR LE LOT PRÉCÉDENT, et la raison mérite d'être
+   * écrite parce qu'elle peut se reproduire : `extractFrame` ancre son motif sur le
+   * DÉBUT du style (`<div style="width:760px…`), et les trois planches d'ordinateur
+   * de cette fenêtre écrivent `position:relative;width:760px…` — leur voile et leur
+   * panneau se calent sur elles. Elles étaient donc invisibles à l'inventaire, sans
+   * qu'aucune erreur ne le signale. D'où `stylePrefix`, déclaré ici et nulle part
+   * ailleurs. La feuille mobile, elle, est un cadre ordinaire de 390 px.
+   *
+   * Les quatre planches sont UNE SEULE fenêtre, en deux étapes, et la maquette les
+   * range sous la légende « CONTRIBUER — DEPUIS LE BOUTON DE LA BARRE D'ONGLETS OU
+   * « AJOUTER MON BUDGET » » :
+   *
+   *   · ordinateur, étape 1 — « Contribuer à la fiche Lyon », le choix du type
+   *     (Bon plan · Produit du pays · Budget réel · Témoignage) ;
+   *   · ordinateur, étape 2 — « Produit du pays », le formulaire du lieu ;
+   *   · ordinateur, étape 2 — « Budget réel », les lignes de dépenses ;
+   *   · mobile — « Contribuer à Lyon », une feuille unique qui met le choix du type
+   *     ET les champs du bon plan sur la même vue.
+   *
+   * CE QUE LA MAQUETTE NE DESSINE PAS, et qu'on n'invente donc pas : l'étape 2 du
+   * « Bon plan » et celle du « Témoignage » sur ordinateur. Deux des quatre types
+   * n'ont pas de second volet dessiné. Sur ordinateur, choisir l'un des deux laisse
+   * donc l'étape 1 affichée — c'est un manque de la MAQUETTE, pas du transcodage, et
+   * il est visible plutôt que masqué par un formulaire inventé.
+   *
+   * `modalTitle` est porté par CHAQUE CADRE : les quatre planches écrivent quatre
+   * titres différents. L'`id` reste celui de l'écran (`a12c-titre`) — une seule
+   * planche est rendue à la fois, donc `aria-labelledby` ne peut pas être ambigu.
+   */
+  {
+    section: 'A12C',
+    out: 'apps/web/src/screens/a12c',
+    modal: true,
+    frames: [
+      // La feuille du bas, avec son voile `rgba(22,33,29,.5)` DESSINÉ PAR LA
+      // MAQUETTE — rien n'est emprunté ici, contrairement aux fenêtres de 08 Compte.
+      { section: 'A12T', width: 390, name: 'Mobile', occurrence: 0, modalTitle: 'Contribuer à Lyon' },
+      {
+        section: 'A12T', width: 760, name: 'Desktop', occurrence: 0,
+        stylePrefix: 'position:relative;', modalTitle: 'Contribuer à la fiche Lyon',
+      },
+      {
+        section: 'A12T', width: 760, name: 'DesktopProduit', occurrence: 1,
+        stylePrefix: 'position:relative;', modalTitle: 'Produit du pays',
+      },
+      {
+        section: 'A12T', width: 760, name: 'DesktopBudget', occurrence: 2,
+        stylePrefix: 'position:relative;', modalTitle: 'Budget réel',
+      },
+    ],
   },
 
   /**
@@ -390,6 +512,19 @@ export const screens = [
     section: 'A12T',
     out: 'apps/web/src/screens/a12t',
     heading: 'Lyon',
+    // Le même déclencheur que A12, mais sur la forme que CES planches dessinent :
+    // un « + » suivi du texte. Le `</svg>` est indispensable — sans lui le marqueur
+    // attraperait aussi le « Contribuer » de la colonne de contexte.
+    triggers: [
+      { marker: '</svg>Contribuer', modal: 'A12C', frames: ['BonsPlans', 'Produits', 'Temoignages'] },
+      // Le « + » flottant des trois planches mobiles — voir la note de A12.
+      {
+        marker: 'M12 5v14M5 12h14',
+        modal: 'A12C',
+        frames: ['BonsPlansMobile', 'ProduitsMobile', 'TemoignagesMobile'],
+        label: 'Contribuer',
+      },
+    ],
     frames: [
       { width: 1036, name: 'BonsPlans', occurrence: 0 },
       { width: 1036, name: 'Produits', occurrence: 1 },

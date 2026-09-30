@@ -150,6 +150,22 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'user.phase_progression',
       'otp.purge',
       'kyc.expire_sessions',
+      // ── Module 15 : analytics (15 §10), et l'export RGPD (01 §8) ─────────────
+      //
+      // Les quatre premières attendaient `metric_snapshots`, absente du schéma :
+      // elles ne pouvaient pas être enregistrées avant que la table existe.
+      // `export.purge` attendait l'export lui-même — elle efface l'ARCHIVE, pas
+      // seulement son état, et sans producteur d'archive elle n'avait rien à
+      // effacer.
+      //
+      // Elles arrivent ici par le chemin que ce test impose : la fusion a fait
+      // rougir la liste, ce qui a obligé à venir les inscrire et à vérifier leur
+      // nom contre §9.3. C'est exactement ce que le commentaire ci-dessus annonce.
+      'metrics.refresh',
+      'metrics.key_indicator',
+      'stats.steps_recompute',
+      'impact.quarterly_prepare',
+      'export.purge',
     ];
 
     expect(registry.all().map((t) => t.name).sort()).toEqual([...attendues].sort());
@@ -220,10 +236,42 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
    */
   it('avancer l’horloge d’une heure ne rejoue pas le travail déjà fait', async () => {
     const avant = await empreinte(prisma);
-    const { failures } = await registry.runAll(new Date(creneau.getTime() + 3_600_000));
+    const plusUneHeure = new Date(creneau.getTime() + 3_600_000);
+    const { failures } = await registry.runAll(plusUneHeure);
     expect(failures).toEqual([]);
 
-    expect(differences(avant, await empreinte(prisma))).toEqual([]);
+    const apres = await empreinte(prisma);
+    const bouge = differences(avant, apres);
+
+    /**
+     * UNE SEULE table a le droit de bouger quand l'horloge avance, et c'est
+     * `metric_snapshots`.
+     *
+     * Elle est en AJOUT SEUL (15 §6 : « Table ajoutée (append) ») et son métier est
+     * exactement celui-là : une ligne par `period_start`. Une heure de plus est une
+     * nouvelle période, donc une nouvelle ligne — ce n'est pas le défaut que ce test
+     * traque. Le défaut visé, écrit plus haut, est un balayage qui « recalcule une
+     * valeur dérivée du temps écoulé et l'AJOUTE au lieu de la remplacer » : il se
+     * reconnaît à ce qu'il grossit une table qui devrait être corrigée sur place.
+     *
+     * On ne l'exempte pas pour autant. Deux bornes tiennent la règle :
+     *   · aucune AUTRE table ne bouge — la liste est vide de tout le reste ;
+     *   · relancer au MÊME `now` avancé n'ajoute plus rien. C'est là qu'est la vraie
+     *     idempotence : une ligne par période, pas une ligne par exécution. Sans
+     *     cette seconde borne, un `metrics.refresh` qui écrirait à chaque passage
+     *     passerait ce test.
+     */
+    expect(
+      bouge.filter((d) => !d.startsWith('lignes:metric_snapshots ')),
+      'une table AUTRE que metric_snapshots a bougé quand l’horloge a avancé',
+    ).toEqual([]);
+
+    const second = await registry.runAll(plusUneHeure);
+    expect(second.failures, 'tâches en échec au second passage à l’heure avancée').toEqual([]);
+    expect(
+      differences(apres, await empreinte(prisma)),
+      'relancer au même `now` avancé a réécrit — une ligne par exécution, pas par période',
+    ).toEqual([]);
   });
 });
 

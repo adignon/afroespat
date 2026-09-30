@@ -808,7 +808,10 @@ describe('administration (15)', () => {
       expect(row.totpSecretEncrypted.length).toBe(0);
       // Le mot de passe est haché, jamais stocké en clair.
       expect(row.passwordHash).not.toContain(PASSWORD);
-      expect(row.passwordHash.startsWith('scrypt$')).toBe(true);
+      // …et en argon2id (00 §8.3). L'assertion portait `scrypt$` tant que le
+      // paquet argon2 manquait au verrou ; elle tient désormais l'algorithme que
+      // la spec exige, et elle tombe si un chemin de création y revenait.
+      expect(row.passwordHash.startsWith('$argon2id$v=19$')).toBe(true);
 
       // La liste dit l'enrôlement par un booléen, et ne rend aucun secret.
       const list = await request(httpServer(app))

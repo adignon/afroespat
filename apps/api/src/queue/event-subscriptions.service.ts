@@ -15,6 +15,8 @@ import { NotificationEventsService } from '../modules/notifications/notification
 import { NotificationsService } from '../modules/notifications/notifications.service';
 import { SearchService } from '../modules/search/search.service';
 import { BillingService } from '../modules/billing/billing.service';
+import { DataExportService } from '../modules/exports/data-export.service';
+import { RealtimeRelayService } from '../modules/realtime/realtime.relay';
 import { EventHandlerRegistry } from './event-handlers';
 
 /**
@@ -57,6 +59,8 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly notificationEvents: NotificationEventsService,
     private readonly search: SearchService,
     private readonly billing: BillingService,
+    private readonly dataExports: DataExportService,
+    private readonly realtime: RealtimeRelayService,
   ) {}
 
   onModuleInit(): void {
@@ -83,6 +87,45 @@ export class EventSubscriptionsService implements OnModuleInit {
     // Chaque module nettoie SA part. Les deux gestionnaires sont indépendants :
     // l'échec de l'un ne doit pas empêcher l'autre d'anonymiser ses contenus, et
     // le registre les isole pour cette raison.
+    /**
+     * 01 §2.8 — la génération ASYNCHRONE de l'archive RGPD.
+     *
+     * Le seul consommateur de `user.export_requested`, et la raison pour laquelle
+     * la route `POST /me/export` rend `202` : c'est ici que l'archive naît, dans
+     * le worker, après le COMMIT de la demande. `generate` est idempotente — le
+     * relais garantit « au moins une fois » — et ne régénère rien si l'archive
+     * existe déjà.
+     */
+    this.registry.on('user.export_requested', 'users', async (job) => {
+      const payload = job.payload as { exportId?: unknown };
+      if (typeof payload?.exportId !== 'string') return;
+      await this.dataExports.generate(payload.exportId);
+    });
+
+    /**
+     * 08 §7.3 — la poussée temps réel d'un message.
+     *
+     * Le MÊME événement que les notifications consomment, et c'est voulu : §5.3
+     * veut le temps réel ET le repli, donc la poussée ne remplace pas la
+     * notification, elle la double pour les membres connectés. Deux
+     * enregistrements distincts, comme le registre le fait partout ailleurs :
+     * un échec de la poussée ne doit pas empêcher la notification de partir.
+     *
+     * AUCUN CORPS DE MESSAGE dans la charge (§8.1). `recipientUserIds` vient de
+     * l'émetteur, qui a déjà exclu l'expéditeur.
+     */
+    this.registry.on('message.sent', 'realtime', async (job) => {
+      const payload = job.payload as { conversationId?: unknown; messageId?: unknown; recipientUserIds?: unknown };
+      const recipients = Array.isArray(payload?.recipientUserIds) ? payload.recipientUserIds : [];
+      for (const userId of recipients) {
+        if (typeof userId !== 'string') continue;
+        await this.realtime.publish(userId, 'message.new', {
+          conversationId: payload.conversationId,
+          messageId: payload.messageId,
+        });
+      }
+    });
+
     this.registry.on('user.deleted', 'help', async (job) => {
       await this.help.handleUserDeleted(job.aggregateId);
     });

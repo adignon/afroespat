@@ -2,6 +2,7 @@ import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
+import { MAX_PAGE_LIMIT } from '@app/shared';
 import { AppModule } from '../../../app.module';
 import { PrismaService } from '../../../common/prisma.service';
 import type { StaffUser } from '../../../common/staff.guard';
@@ -302,6 +303,83 @@ describe('référentiels, administration (02 §4.2)', () => {
       // Une ville qu'on referme doit pouvoir rouvrir sans que ses membres aient
       // perdu leurs sujets et leurs annonces.
       expect(await prisma.community.count({ where: { kind: 'CITY', cityId: id } })).toBe(1);
+    });
+  });
+
+  /**
+   * LA VILLE PILOTE DÉSIGNÉE DANS LA LISTE — décision D6, `PILOT_CITY_SLUG`.
+   *
+   * Le premier geste du jour du lancement est d'ouvrir UNE ville parmi plus de
+   * cinquante, toutes fermées et triées par nom. Ces tests éprouvent que la liste
+   * d'administration porte le repère, et qu'elle le porte sur la bonne ligne.
+   *
+   * ILS NOMMENT « PARIS » EN DUR, ET C'EST VOULU. Une première version interrogeait
+   * la liste avec `q: PILOT_CITY_SLUG` puis vérifiait que la ligne marquée portait
+   * ce même slug : la mutation `paris → cotonou` passait au VERT, le test se
+   * comparant à lui-même. Le point unique de changement est une propriété du CODE
+   * DE PRODUCTION, pas des tests : c'est en écrivant la ville attendue à la main
+   * qu'on rend l'arbitrage éprouvable.
+   */
+  describe('la ville pilote dans la liste d’administration (D6)', () => {
+    /**
+     * `limit` est plafonné à `MAX_PAGE_LIMIT` par le schéma de la route : les
+     * appels ci-dessous restent dans ce que l'application admin peut demander,
+     * sinon le test éprouverait une page que personne n'obtient.
+     */
+    const page = { limit: MAX_PAGE_LIMIT } as const;
+
+    it('marque PARIS, et elle seule dans sa page', async () => {
+      const { items } = await ref.listCities({ ...page, q: 'Paris' });
+      const paris = items.find((c) => c.slug === 'paris');
+      expect(paris, 'Paris a disparu du référentiel des villes.').toBeDefined();
+      expect(paris?.isPilot).toBe(true);
+      // Dans un pays de DESTINATION : un réseau CITY s'ouvre là où les membres
+      // arrivent. Et avec ce que la France exige d'une ville.
+      expect(paris?.country.iso2).toBe('FR');
+      expect(paris?.region).toBeTruthy();
+      expect(paris?.latitude).toBeCloseTo(48.8566, 3);
+      expect(paris?.longitude).toBeCloseTo(2.3522, 3);
+
+      expect(items.filter((c) => c.isPilot)).toHaveLength(1);
+    });
+
+    /**
+     * LE REPÈRE N'EST PAS UN ÉTAT. Désigner la pilote ne l'ouvre pas : `isActive`
+     * reste seul à dire ce qui est ouvert, et `isPilot` survivrait à une
+     * fermeture. Les confondre ferait croire la ville ouverte avant le jour J.
+     */
+    it('ne dit RIEN de l’ouverture : `isPilot` et `isActive` sont indépendants', async () => {
+      const { items } = await ref.listCities({ ...page, q: 'Paris' });
+      const pilot = items.find((c) => c.isPilot);
+      const stored = await prisma.city.findUniqueOrThrow({
+        where: { slug: 'paris' },
+        select: { isActive: true },
+      });
+      expect(pilot?.isActive).toBe(stored.isActive);
+    });
+
+    it('ne marque AUCUNE des villes créées par cette suite', async () => {
+      await city();
+      await city({ active: true });
+      const { items } = await ref.listCities({ ...page, q: `Ville ${run}` });
+      expect(items.length).toBeGreaterThan(0);
+      expect(items.every((c) => c.isPilot === false)).toBe(true);
+    });
+
+    /**
+     * COTONOU EST AU RÉFÉRENTIEL, ET N'EST PAS LA PILOTE.
+     *
+     * Une première réponse l'avait donnée comme ville pilote ; elle a été annulée.
+     * Ce test garde les deux moitiés de l'arbitrage : la ville reste une entrée du
+     * référentiel — nommer la pilote n'en supprime aucune — et ne porte pas le
+     * repère.
+     */
+    it('Cotonou reste une ville du Bénin, et n’est pas la pilote', async () => {
+      const { items } = await ref.listCities({ ...page, q: 'Cotonou' });
+      const cotonou = items.find((c) => c.slug === 'cotonou');
+      expect(cotonou, 'Cotonou a disparu du référentiel des villes.').toBeDefined();
+      expect(cotonou?.country.iso2).toBe('BJ');
+      expect(cotonou?.isPilot).toBe(false);
     });
   });
 

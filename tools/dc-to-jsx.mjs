@@ -942,13 +942,40 @@ export function extractSection(html, id) {
  * deux variantes seraient transcodées à l'identique, et l'erreur passerait
  * inaperçue : le fichier produit compile parfaitement.
  */
-export function extractFrame(sectionHtml, width, occurrence = 0) {
-  const re = new RegExp(`<div style="width:${width}px[^"]*"[^>]*>`, 'g');
+/** Un préfixe de style est une chaîne littérale : ses `.` et `(` ne sont pas du motif. */
+const escapeForRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * `stylePrefix` — CE QUI PRÉCÈDE `width:` DANS LE STYLE DU CADRE.
+ *
+ * Le motif est ANCRÉ sur le début du style, et ce n'est pas un détail : il ne
+ * reconnaît qu'un cadre dont le style COMMENCE par `width:`. Les vingt-deux
+ * sections déjà transcodées écrivent toutes leurs cadres ainsi, et l'ancrage est
+ * ce qui empêche le motif d'attraper les dizaines de `<div>` internes dont la
+ * largeur est écrite au milieu du style.
+ *
+ * Les trois fenêtres de contribution de A12T font exception : elles écrivent
+ * `position:relative;width:760px;…`, parce que leur voile et leur panneau sont
+ * positionnés PAR RAPPORT À ELLES. Elles étaient donc INTROUVABLES — et, faute
+ * d'erreur, silencieusement absentes de l'inventaire. C'est ce qui les a fait
+ * manquer au premier décompte.
+ *
+ * Le préfixe est OPTIONNEL et vaut `''` par défaut : sans lui, l'expression est
+ * exactement celle d'avant, caractère pour caractère, et les deux cent quarante
+ * cadres déjà produits ne bougent pas d'un octet. Il est déclaré par le cadre qui
+ * en a besoin, jamais deviné — relâcher l'ancrage pour tout le monde
+ * renumériserait les `occurrence` de toutes les maquettes d'un coup.
+ */
+export function extractFrame(sectionHtml, width, occurrence = 0, stylePrefix = '') {
+  const re = new RegExp(`<div style="${escapeForRe(stylePrefix)}width:${width}px[^"]*"[^>]*>`, 'g');
   let m = null;
   for (let i = 0; i <= occurrence; i += 1) {
     m = re.exec(sectionHtml);
     if (m === null) {
-      throw new Error(`Cadre de ${width} px n° ${occurrence + 1} introuvable`);
+      throw new Error(
+        `Cadre de ${width} px n° ${occurrence + 1} introuvable` +
+          (stylePrefix === '' ? '' : ` (style préfixé par « ${stylePrefix} »)`),
+      );
     }
   }
 

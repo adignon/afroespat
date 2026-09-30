@@ -1,7 +1,6 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { AppModule, loadEnv } from '@app/api';
+import { createWorkerContext, loadEnv } from '@app/api';
 
 /**
  * Worker — 00-fondations.md §3.1.
@@ -11,7 +10,14 @@ import { AppModule, loadEnv } from '@app/api';
  * désactivé (variable APP_ROLE). »
  *
  * D'où `createApplicationContext` plutôt que `create` : même arbre de
- * dépendances, même configuration, même base — sans serveur HTTP.
+ * dépendances, même configuration, même base — sans serveur HTTP. Elle est
+ * appelée DEPUIS `@app/api` (`createWorkerContext`) et non ici, et ce n'est pas
+ * un détail d'organisation : le lockfile porte DEUX variantes de `@nestjs/core`,
+ * et selon l'installation `apps/api` et `apps/worker` peuvent ne pas recevoir la
+ * même. Importer `NestFactory` ici faisait alors échouer le démarrage sur un
+ * `Reflector` introuvable — donc ni relais de boîte d'envoi, ni tâches
+ * planifiées, ni files. Voir `worker-context.ts` ; la règle est gardée par
+ * `__tests__/no-nest-core-import.test.ts`.
  *
  * Partager le code, et non le dupliquer, garantit qu'une règle métier écrite
  * dans un service vaut aussi bien pour une requête que pour une tâche planifiée.
@@ -35,9 +41,7 @@ async function bootstrap(): Promise<void> {
     process.exit(1);
   }
 
-  const app = await NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn', 'log'],
-  });
+  const app = await createWorkerContext();
   app.enableShutdownHooks();
 
   logger.log(`${env.APP_NAME} — worker démarré (${env.NODE_ENV})`);

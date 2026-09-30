@@ -8,6 +8,12 @@
  * que SWC ne résout pas.
  */
 export { AppModule } from './app.module';
+/**
+ * Le worker démarre PAR ICI, et non par sa propre `NestFactory` : les deux
+ * paquets ne résolvent pas la même instance de `@nestjs/core`, et le worker ne
+ * démarrait pas du tout. Voir `worker-context.ts`.
+ */
+export { createWorkerContext } from './worker-context';
 export { loadEnv, type Env } from './config/env';
 export { PrismaService } from './common/prisma.service';
 export { OutboxService, type DomainEventType } from './common/outbox.service';

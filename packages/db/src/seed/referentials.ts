@@ -12,6 +12,11 @@
  *
  * Toutes les villes sont inactives : « la ville pilote est activée à la main le
  * jour du lancement » (T3 B.2). Une carte vide partout tue la confiance.
+ *
+ * LAQUELLE est la pilote ne se décide PAS ici. C'est `PILOT_CITY_SLUG`
+ * (@app/shared), et ce fichier n'est qu'un référentiel : il porte Paris comme il
+ * porte Lyon ou Cotonou, sans hiérarchie. Y inscrire la pilote en dur ferait de
+ * la donnée de départ le lieu d'un arbitrage produit.
  */
 
 export interface CountrySeed {

@@ -108,6 +108,32 @@ const FRAME_ADAPTATIONS = [
       style.includes('bottom: "108px"'),
     apply: (style) => style.replace('position: "absolute"', 'position: "fixed"'),
   },
+  /**
+   * `grid-rows` N'EST PAS UNE PROPRIÉTÉ CSS, et le navigateur l'ignore.
+   *
+   * `06 Services` l'écrit une fois, sur la grille de photos de l'annonce S02 :
+   * `display:grid;grid-rows:1fr 1fr;gap:8px`. Le nom correct est
+   * `grid-template-rows` ; tel quel, la déclaration est invalide et AUCUN
+   * navigateur ne l'applique — la grille tombe sur ses rangées automatiques, et
+   * comme les deux photos portent leur `height:156px` en dur, le rendu est
+   * exactement le même. C'est donc une faute de frappe sans effet visible.
+   *
+   * Transcodée, elle devient `gridRows` dans un objet de style, que `tsc` refuse
+   * (TS2561) : le cadre ne compilait pas. La RETIRER reproduit exactement ce que
+   * le navigateur fait de la maquette — la même logique que « une propriété
+   * écrite deux fois, la dernière gagne » dans `dc-to-jsx.mjs`. Ce n'est pas une
+   * décision de design, c'est la sémantique de CSS.
+   *
+   * La corriger en `gridTemplateRows` serait, elle, une réécriture : on
+   * appliquerait une déclaration que la maquette n'a jamais appliquée. Le jour
+   * où la maquette écrit le bon nom, cette entrée ne collera plus à rien et
+   * pourra partir.
+   */
+  {
+    why: '« grid-rows » n’est pas une propriété CSS : le navigateur l’ignore, le transcodage aussi.',
+    match: (style) => style.includes('gridRows:'),
+    apply: (style) => style.replace(/, gridRows: "[^"]*"|gridRows: "[^"]*", /, ''),
+  },
   {
     why: 'La colonne de gauche reste à l’écran pendant que le fil défile.',
     match: (style) =>
@@ -872,6 +898,32 @@ const ICON_BUTTON_NAMES = [
     source: 'Menu ··· : Bloquer · Signaler',
     why: 'Le bouton « ··· » ne contient qu’une icône : son nom est celui que la maquette lui donne en légende.',
   },
+  /**
+   * LE DRAPEAU D'ALERTE DE S05 — le seul bouton muet de `06 Services`.
+   *
+   * Le cadre d'ordinateur de l'offre d'emploi range trois boutons sur une ligne :
+   * « Postuler sur le site », « Recommander un membre », et un TROISIÈME qui n'a
+   * que le tracé d'un drapeau. La place manquait pour son libellé, et la maquette
+   * l'a laissé tomber — ce qui est sans conséquence sur une image, et `critical`
+   * dans une application (`button-name`).
+   *
+   * LE NOM N'EST PAS INVENTÉ : la maquette écrit elle-même « Signaler » à côté du
+   * MÊME tracé, deux fois — sur la fiche d'annonce (S02) et sur la fiche pro
+   * (S07). C'est son mot, pas le nôtre.
+   *
+   * BORNÉ À S05, comme tout le reste de cette table. Le tracé se trouve sur
+   * quatre cadres de cette maquette ; sur les trois autres il est dans un bouton
+   * qui porte déjà son texte, ou dans un `<span>` qui n'est pas un bouton —
+   * `applyIconButtonName` les laisse donc tranquilles de toute façon, mais s'en
+   * remettre à cela serait compter sur un hasard plutôt que sur une borne.
+   */
+  {
+    screens: ['S05'],
+    path: 'M5 21V4h12l-2 4 2 4H5',
+    label: 'Signaler',
+    source: 'Signaler',
+    why: 'Le bouton drapeau de S05 ne contient qu’une icône : son nom est celui que la maquette écrit à côté du même tracé.',
+  },
 ];
 
 function applyIconButtonName(jsx, spec, section) {
@@ -1032,6 +1084,137 @@ function promoteDeclaredHeading(jsx, title) {
 const ALL_ADAPTATIONS = [...FRAME_ADAPTATIONS, ...TOUCH_TARGET_ADAPTATIONS];
 
 /**
+ * ─── L'EMPRUNT : ce qu'une planche ne dessine pas, et qu'une AUTRE dessine ───
+ *
+ * Trois planches manquent à `09 Messages et transverse.dc.html`, et le porteur a
+ * été formel : ON NE RÉÉCRIT PAS LES MAQUETTES. La seule sortie honnête est celle
+ * que `MODAL_WINDOW_SOURCE` a déjà ouverte pour le voile — EMPRUNTER, mot pour
+ * mot, à une planche qui dessine déjà l'objet, et le DIRE.
+ *
+ * Un emprunt se déclare avec l'écran, dans `tools/screens/*.mjs`, et porte :
+ *
+ *   · `from`     — la maquette où le motif est DESSINÉ. C'est elle que le journal
+ *                  nommera. Le journal de ce dépôt a déjà menti une fois sur la
+ *                  provenance d'un voile ; cette clé existe pour que la provenance
+ *                  ne puisse plus être devinée.
+ *   · `patterns` — les fragments empruntés, VERBATIM. Le générateur refuse de
+ *                  produire si l'un d'eux a disparu de `from`. C'est le garde-fou,
+ *                  et c'est exactement celui du voile : « un emprunt silencieusement
+ *                  devenu vide est pire que pas d'emprunt ».
+ *                  Un fragment peut venir d'une AUTRE maquette que `from` : il
+ *                  s'écrit alors `{ from: '…', pattern: '…' }`, et c'est CETTE
+ *                  maquette-là que le journal nommera pour lui. Un emprunt qui
+ *                  assemble deux sources se lit donc comme tel, au lieu de passer
+ *                  pour un seul objet.
+ *   · `anchor`   — le fragment de la planche d'ACCUEIL que l'emprunt remplace. Il
+ *                  doit s'y trouver EXACTEMENT UNE FOIS, sinon on ne sait pas où
+ *                  l'emprunt atterrit.
+ *   · `into`     — le remplacement.
+ *   · `texte`    — LE TEXTE QUI NE VIENT D'AUCUNE MAQUETTE, déclaré comme tel.
+ *   · `why`      — la phrase du journal.
+ *
+ * ET LA RÈGLE QUI REND L'EMPRUNT VÉRIFIABLE : `into` moins `anchor`, moins les
+ * `patterns`, moins le `texte` déclaré doit être VIDE. Autrement dit, le
+ * remplacement n'est fait QUE de l'ancre, de ce qui a été emprunté et de ce qui a
+ * été DÉCLARÉ comme non emprunté — pas un pixel, pas un mot, pas un style de plus.
+ * Sans ce contrôle, « emprunter » redeviendrait « dessiner un peu », et le peu ne
+ * se relit jamais.
+ *
+ * POURQUOI `texte` EXISTE, et pourquoi ce n'est pas une porte dérobée.
+ *
+ * Une maquette peut manquer d'un ÉTAT sans manquer d'une FORME : la conversation
+ * avec un membre bloqué n'est dessinée nulle part, mais le bandeau qui remplace le
+ * composeur l'est (« DEMANDE EN ATTENTE », section M01) et le bouton « Débloquer »
+ * l'est aussi (`08 Compte`, carte « BLOQUÉS »). Il ne manquait que la PHRASE — et
+ * une phrase ne s'emprunte pas : celle de la demande en attente ne parle pas d'un
+ * blocage, et en écrire une autre serait inventer du texte.
+ *
+ * Le porteur l'a donc fournie. La faire passer pour un `pattern` serait un
+ * mensonge — le garde-fou la chercherait dans une maquette où elle n'est pas, et
+ * il faudrait l'y écrire pour que la génération passe. `texte` dit la vérité à sa
+ * place : ce fragment vient d'une personne, pas d'une planche, et le journal le
+ * signale à CHAQUE exécution, avec un ⚠. Ce qui n'y est pas déclaré reste refusé.
+ *
+ * SANS `anchor` NI `into`, l'emprunt est un TÉMOIN : il ne transforme rien, il
+ * vérifie seulement que le motif est toujours dessiné là où on l'a dit. C'est la
+ * forme que prend le garde-fou d'un emprunt fait ailleurs — le voile de repli, par
+ * exemple, que `adaptModalFrame` pose sans passer par ici.
+ */
+const SOURCES_EMPRUNTEES = new Map();
+const lireSourceEmpruntee = (file) => {
+  const deja = SOURCES_EMPRUNTEES.get(file);
+  if (deja !== undefined) return deja;
+  const lu = readFileSync(resolve(ROOT, file), 'utf8');
+  SOURCES_EMPRUNTEES.set(file, lu);
+  return lu;
+};
+
+function applyBorrows(inner, borrows, section) {
+  let out = inner;
+  const applied = [];
+
+  for (const borrow of borrows ?? []) {
+    /**
+     * Un motif dit d'où il vient quand ce n'est pas de `from` — même discipline que
+     * `frame.section`, qui dit d'où vient un cadre quand ce n'est pas de la section
+     * de son écran.
+     */
+    const motifs = borrow.patterns.map((p) =>
+      typeof p === 'string' ? { from: borrow.from, pattern: p } : p,
+    );
+
+    // LE GARDE-FOU, sur le modèle de celui du voile : le motif doit être encore
+    // dessiné dans la maquette d'où on le tire, sinon on refuse de produire.
+    for (const motif of motifs) {
+      if (lireSourceEmpruntee(motif.from).includes(motif.pattern)) continue;
+      throw new Error(
+        `${section} : le motif emprunté « ${motif.pattern.slice(0, 80)}… » ne figure plus dans ` +
+          `${motif.from}. Mettre l’emprunt à jour dans sa déclaration d’écran.`,
+      );
+    }
+
+    // Un témoin ne transforme rien : il a fait son travail en ne levant pas.
+    if (borrow.anchor === undefined) {
+      applied.push({ ...borrow, motifs, temoin: true });
+      continue;
+    }
+
+    const occurrences = out.split(borrow.anchor).length - 1;
+    if (occurrences !== 1) {
+      throw new Error(
+        `${section} : l’ancre de l’emprunt « ${borrow.anchor.slice(0, 80)}… » figure ` +
+          `${occurrences} fois dans le cadre ; il en faut exactement une.`,
+      );
+    }
+
+    /**
+     * RIEN D'INVENTÉ : ce qui reste de `into` quand on en retire l'ancre, chaque
+     * motif emprunté et chaque texte DÉCLARÉ non emprunté doit être la chaîne vide.
+     *
+     * Le texte déclaré est retiré EN DERNIER, exprès : s'il figurait par hasard
+     * dans un motif, c'est le motif qui compte, et la déclaration deviendrait
+     * inutile — le journal cesserait alors de la signaler, ce qui serait le pire
+     * des deux mondes.
+     */
+    let residu = borrow.into.replace(borrow.anchor, '');
+    for (const motif of motifs) residu = residu.replace(motif.pattern, '');
+    for (const phrase of borrow.texte ?? []) residu = residu.replace(phrase, '');
+    if (residu !== '') {
+      throw new Error(
+        `${section} : l’emprunt ajoute du dessin qui n’est emprunté à personne — ` +
+          `« ${residu.slice(0, 120)} ». Un emprunt est fait de l’ancre, des motifs et du texte ` +
+          'DÉCLARÉ (« texte »), et de rien d’autre.',
+      );
+    }
+
+    out = out.replace(borrow.anchor, borrow.into);
+    applied.push({ ...borrow, motifs, temoin: false });
+  }
+
+  return { html: out, applied };
+}
+
+/**
  * ADAPTATIONS D'UNE MODALE — elles REMPLACENT celle du contenu qui coule.
  *
  * L'adaptation « le contenu vertical était borné par ses 844 px : il doit
@@ -1181,13 +1364,27 @@ function promoteTextTo(jsx, { text, tag: as, id, requires }) {
   return { jsx, promoted: false, id: null };
 }
 
-function promoteModalTitle(jsx, section, title) {
+/**
+ * LE DISCRIMINANT DU TITRE D'UNE MODALE EST SURCHARGEABLE, et il l'a fallu.
+ *
+ * `fontWeight: "800"` est le bon défaut : les huit fenêtres du dépôt titrent
+ * toutes en 800. Le MENU DE LA CONVERSATION de M01, lui, n'a pas de titre en 800 —
+ * la maquette le nomme par l'étiquette de sa carte, « MENU DE LA CONVERSATION »,
+ * en 10,5 px / 700, exactement comme elle nomme « BLOQUÉS » ou « SUGGESTIONS »
+ * dans `08 Compte`. Sans cette surcharge, la boîte de dialogue n'avait AUCUN nom
+ * accessible, et `aria-labelledby` désignait un identifiant absent.
+ *
+ * La surcharge est déclarée par écran (`modalTitleRequires`), pas devinée : un
+ * repli automatique sur « n'importe quelle graisse » aurait attrapé le premier
+ * texte venu sur les huit autres fenêtres, en silence.
+ */
+function promoteModalTitle(jsx, section, title, requires = 'fontWeight: "800"') {
   if (title === undefined) return { jsx, promoted: false, id: null };
   return promoteTextTo(jsx, {
     text: title,
     tag: 'h2',
     id: `${section.toLowerCase()}-titre`,
-    requires: 'fontWeight: "800"',
+    requires,
   });
 }
 
@@ -1452,7 +1649,19 @@ for (const screen of SCREENS) {
 
   for (const frame of screen.frames) {
     const section = extractSection(html, frame.section ?? screen.section);
-    const raw = extractFrame(section, frame.width, frame.occurrence ?? 0);
+    // `stylePrefix` : voir `extractFrame`. Absent partout sauf sur les trois
+    // fenêtres de contribution de A12T, dont le style commence par `position:relative`.
+    const raw = extractFrame(section, frame.width, frame.occurrence ?? 0, frame.stylePrefix ?? '');
+    /**
+     * L'EMPRUNT PASSE AVANT TOUT LE RESTE, et il le doit : `adaptModalFrame`
+     * promeut les fermetures en boutons, et une croix empruntée qui arriverait
+     * après lui resterait un `<span>` mort. Voir `applyBorrows`.
+     */
+    const borrowsForFrame = (screen.borrows ?? []).filter(
+      (b) => b.frames === undefined || b.frames.includes(frame.name),
+    );
+    const borrowed = applyBorrows(raw.inner, borrowsForFrame, screen.section);
+    raw.inner = borrowed.html;
     /**
      * Une MODALE n'est pas un écran : elle se superpose à celui qui est déjà là.
      * Deux artifices de planche doivent donc tomber — le fond fantôme qui esquisse
@@ -1524,7 +1733,28 @@ for (const screen of SCREENS) {
     const isModal = screen.modal === true;
     const screenTitle = isModal ? { jsx, promoted: false } : promoteScreenTitle(jsx, frame.title);
     const titled = isModal
-      ? promoteModalTitle(jsx, screen.section, screen.modalTitle)
+      ? // LE TITRE PEUT ÊTRE CELUI DU CADRE, comme `heading` l'est déjà pour une page.
+        // Les quatre planches de la fenêtre de contribution portent quatre titres
+        // différents — « Contribuer à la fiche Lyon » sur l'étape 1 d'ordinateur,
+        // « Produit du pays » et « Budget réel » sur l'étape 2, « Contribuer à Lyon »
+        // sur la feuille mobile — alors qu'elles sont UNE SEULE fenêtre. L'`id`, lui,
+        // reste celui de l'écran : une seule planche est rendue à la fois, donc un
+        // seul `a12c-titre` existe dans le document, et `aria-labelledby` le désigne
+        // sans ambiguïté quel que soit le volet ouvert.
+        //
+        // `modalTitleRequires` est l'autre moitié, et elle répond à une question
+        // distincte : QUEL texte promouvoir, pas LEQUEL des titres. Le discriminant
+        // par défaut exige 800, mais « MENU DE LA CONVERSATION » est en 10,5 px / 700
+        // — comme « BLOQUÉS » ou « DEMANDES REÇUES » dans `08 Compte`. La surcharge
+        // est DÉCLARÉE par écran, jamais devinée : sans elle, promouvoir tout ce qui
+        // ressemble à une étiquette ferait remonter des intitulés de section en titre
+        // de fenêtre.
+        promoteModalTitle(
+          jsx,
+          screen.section,
+          frame.modalTitle ?? screen.modalTitle,
+          screen.modalTitleRequires,
+        )
       : { jsx: screenTitle.jsx, promoted: false, id: null };
     const hasLandmark = /<main[\s>]/.test(titled.jsx);
     const wrapped = isModal
@@ -1641,6 +1871,37 @@ ${shelled}
       if (roles.has(control.handler)) console.log(`      ${control.why}`);
     }
     for (const field of fields) console.log(`      ${field.why}`);
+    /**
+     * L'EMPRUNT SE LIT DANS LE JOURNAL, AVEC SA MAQUETTE SOURCE.
+     *
+     * Une liberté prise sur la maquette doit se lire — et se lire JUSTE. Le
+     * journal de ce dépôt a déjà affirmé qu'un voile venait « des planches mobiles
+     * de la section » alors qu'il venait d'une autre maquette ; la ligne ci-dessous
+     * nomme le fichier que le générateur a réellement lu, pas celui qu'on croyait.
+     */
+    for (const b of borrowed.applied) {
+      // TOUTES les maquettes d'où l'emprunt tire quelque chose, pas seulement la
+      // principale : un emprunt qui assemble deux sources doit se lire comme tel.
+      const sources = [...new Set(b.motifs.map((m) => m.from))].join(' + ');
+      console.log(
+        b.temoin === true
+          ? `      Témoin d’emprunt : le motif est toujours dessiné dans ${sources}. ${b.why}`
+          : `      Emprunt à ${sources} : ${b.why}`,
+      );
+      /**
+       * LE TEXTE QUI NE VIENT D'AUCUNE MAQUETTE EST DIT, à chaque exécution.
+       *
+       * C'est la seule chose d'un écran transcodé qui n'ait pas été dessinée. Un
+       * relecteur qui tombe dessus six mois plus tard doit pouvoir le savoir sans
+       * remonter à cette discussion — sinon il le prendra pour du transcodage, et
+       * cherchera dans la maquette une phrase qui n'y est pas.
+       */
+      for (const phrase of b.texte ?? []) {
+        console.log(
+          `      ⚠ texte fourni par le porteur, aucune maquette ne l’écrit : « ${phrase} »`,
+        );
+      }
+    }
     for (const b of buttons) console.log(`      Bouton « ${b.label} » branché.`);
     for (const why of missedFields) console.log(`      ⚠ adaptation attendue introuvable : ${why}`);
     if (modal !== null) {
@@ -1730,7 +1991,7 @@ ${shelled}
         console.log(`      Titre promu en <h2 id="${titled.id}"> : la boîte de dialogue le désignera par aria-labelledby.`);
       } else {
         console.log(
-          `      ⚠ titre « ${screen.modalTitle ?? '(non déclaré)'} » introuvable : la modale n’aura pas de nom accessible. Corriger « modalTitle » dans sa déclaration.`,
+          `      ⚠ titre « ${frame.modalTitle ?? screen.modalTitle ?? '(non déclaré)'} » introuvable : la modale n’aura pas de nom accessible. Corriger « modalTitle » dans sa déclaration.`,
         );
       }
     } else if (!hasLandmark) {
