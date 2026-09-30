@@ -1,7 +1,7 @@
 // GÉNÉRÉ depuis packages/db/prisma/schema/*.prisma — ne pas modifier à la main.
 // Régénérer : pnpm --filter @app/shared generate
 //
-// 95 enums, 16 fichiers de schéma.
+// 96 enums, 16 fichiers de schéma.
 
 /** Module 13-moderation. */
 export const AiVerdict = [
@@ -52,6 +52,18 @@ export const BlockerTarget = [
   'NONE',
 ] as const;
 export type BlockerTarget = (typeof BlockerTarget)[number];
+
+/** Module t-transverse. */
+export const BookmarkState = [
+  'AVAILABLE',
+  'EXPIRED',
+  'RESOLVED',
+  'PAST',
+  'UNAVAILABLE',
+  'UPDATED',
+  'REMOVED',
+] as const;
+export type BookmarkState = (typeof BookmarkState)[number];
 
 /** Module t-transverse. */
 export const BookmarkSubjectType = [
@@ -875,6 +887,7 @@ export const ALL_ENUMS = {
   AuditActorType,
   BlockerStatus,
   BlockerTarget,
+  BookmarkState,
   BookmarkSubjectType,
   CityTipKind,
   CommentSubjectType,

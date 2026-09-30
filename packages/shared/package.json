@@ -17,7 +17,8 @@
     "test": "vitest run",
     "lint": "eslint src",
     "generate": "node scripts/generate-enums.mjs",
-    "generate:check": "node scripts/generate-enums.mjs && git diff --exit-code -- src/enums/generated.ts"
+    "generate:check": "node scripts/generate-enums.mjs && git diff --exit-code -- src/enums/generated.ts",
+    "guardrails": "node scripts/generate-enums.mjs && git diff --exit-code -- src/enums/generated.ts"
   },
   "dependencies": {
     "zod": "^3.24.1"
