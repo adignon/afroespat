@@ -1,0 +1,134 @@
+{
+  "items": [
+    {
+      "id": "01a0f10d-dabf-7000-9515-19a4b2667cf8",
+      "type": "INFORMATION",
+      "typeLabel": "Information",
+      "body": "Le guichet unique est fermé vendredi après-midi cette semaine.",
+      "backgroundColor": "#1B4332",
+      "backgroundUrl": null,
+      "textStyle": "BOLD",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon"
+      },
+      "category": "DEMARCHES",
+      "categoryLabel": "Démarches",
+      "placeLabel": null,
+      "stepDefinition": null,
+      "audience": "ALL",
+      "allowMessages": true,
+      "createdAt": "2026-09-30T06:43:32.160Z",
+      "expiresAt": "2026-10-01T06:43:32.159Z",
+      "validUntil": null,
+      "seen": true,
+      "votes": {
+        "positive": 0,
+        "positiveLabel": "Je confirme",
+        "negative": 0,
+        "negativeLabel": "Ça a changé"
+      },
+      "author": {
+        "id": "01a0f10d-d686-7000-b3c9-1290b7242835",
+        "handle": "m01a0f10dd6867000b3c91290b7242",
+        "displayName": "Amina Diallo",
+        "avatarUrl": null,
+        "level": "L1",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      "status": "ACTIVE",
+      "expired": false,
+      "convertedTo": null
+    },
+    {
+      "id": "01a0f10d-daac-7000-9f11-c198e24132ce",
+      "type": "DECOUVERTE",
+      "typeLabel": "Découverte",
+      "body": "Une épicerie togolaise vient d’ouvrir vers la Guillotière, farine de manioc fraîche.",
+      "backgroundColor": "#1B4332",
+      "backgroundUrl": null,
+      "textStyle": "BOLD",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon"
+      },
+      "category": "LIEU",
+      "categoryLabel": "Lieu",
+      "placeLabel": "Guillotière",
+      "stepDefinition": null,
+      "audience": "ALL",
+      "allowMessages": true,
+      "createdAt": "2026-09-30T06:43:32.141Z",
+      "expiresAt": "2026-10-01T06:43:32.140Z",
+      "validUntil": null,
+      "seen": true,
+      "votes": {
+        "positive": 0,
+        "positiveLabel": "À voir",
+        "negative": 0,
+        "negativeLabel": "J’y suis allé·e"
+      },
+      "author": {
+        "id": "01a0f10d-d686-7000-b3c9-1290b7242835",
+        "handle": "m01a0f10dd6867000b3c91290b7242",
+        "displayName": "Amina Diallo",
+        "avatarUrl": null,
+        "level": "L1",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      "status": "ACTIVE",
+      "expired": false,
+      "convertedTo": null
+    },
+    {
+      "id": "01a0f10d-da8f-7000-a91a-a0c6efe0b1d3",
+      "type": "CONSEIL",
+      "typeLabel": "Conseil",
+      "body": "Prenez rendez-vous en ligne à 7 h pile : les créneaux tombent à cette heure-là.",
+      "backgroundColor": "#1B4332",
+      "backgroundUrl": null,
+      "textStyle": "BOLD",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon"
+      },
+      "category": "DEMARCHES",
+      "categoryLabel": "Démarches",
+      "placeLabel": null,
+      "stepDefinition": null,
+      "audience": "ALL",
+      "allowMessages": true,
+      "createdAt": "2026-09-30T06:43:32.113Z",
+      "expiresAt": "2026-10-01T06:43:32.111Z",
+      "validUntil": null,
+      "seen": true,
+      "votes": {
+        "positive": 1,
+        "positiveLabel": "Utile",
+        "negative": 0,
+        "negativeLabel": "Pas utile"
+      },
+      "author": {
+        "id": "01a0f10d-d686-7000-b3c9-1290b7242835",
+        "handle": "m01a0f10dd6867000b3c91290b7242",
+        "displayName": "Amina Diallo",
+        "avatarUrl": null,
+        "level": "L1",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      "status": "ACTIVE",
+      "expired": false,
+      "convertedTo": null
+    }
+  ],
+  "nextCursor": null
+}

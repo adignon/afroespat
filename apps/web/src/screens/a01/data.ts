@@ -90,12 +90,72 @@ export const shortcuts = [
  * (règle dure §1.2).
  */
 const ALL_STORIES = [
-  { i: 'SM', name: 'Sandra M.', bg: '#0F5C48', type: 'INFORMATION', k: 2, pillBg: '#0F5C48', caption: 'Guichet CAF', count: '2 confirment', seen: false },
-  { i: 'MK', name: 'Marc K.', bg: '#16785E', type: 'INFORMATION', k: 2, pillBg: '#0F5C48', caption: 'Préfecture fermée', count: '5 confirment', seen: true },
-  { i: 'AD', name: 'Aïcha D.', bg: '#B4581F', type: 'CONSEIL', k: 0, pillBg: '#16785E', caption: 'Visale rapide', count: '31 utile', seen: false },
-  { i: 'FN', name: 'Fatou N.', bg: '#2FA37D', type: 'LOGEMENT', k: 0, pillBg: '#16785E', caption: 'Dossier locatif', count: '12 utile', seen: false },
-  { i: 'KB', name: 'Kofi B.', bg: '#E0733A', type: 'DÉCOUVERTE', k: 1, pillBg: '#2FA37D', caption: 'Épicerie wax', count: '14 à voir', seen: false },
-  { i: 'YB', name: 'Yasmine B.', bg: '#0F5C48', type: 'DÉCOUVERTE', k: 1, pillBg: '#2FA37D', caption: 'Maquis Lyon 7', count: '9 à voir', seen: true },
+  {
+    i: 'SM',
+    name: 'Sandra M.',
+    bg: '#0F5C48',
+    type: 'INFORMATION',
+    k: 2,
+    pillBg: '#0F5C48',
+    caption: 'Guichet CAF',
+    count: '2 confirment',
+    seen: false,
+  },
+  {
+    i: 'MK',
+    name: 'Marc K.',
+    bg: '#16785E',
+    type: 'INFORMATION',
+    k: 2,
+    pillBg: '#0F5C48',
+    caption: 'Préfecture fermée',
+    count: '5 confirment',
+    seen: true,
+  },
+  {
+    i: 'AD',
+    name: 'Aïcha D.',
+    bg: '#B4581F',
+    type: 'CONSEIL',
+    k: 0,
+    pillBg: '#16785E',
+    caption: 'Visale rapide',
+    count: '31 utile',
+    seen: false,
+  },
+  {
+    i: 'FN',
+    name: 'Fatou N.',
+    bg: '#2FA37D',
+    type: 'LOGEMENT',
+    k: 0,
+    pillBg: '#16785E',
+    caption: 'Dossier locatif',
+    count: '12 utile',
+    seen: false,
+  },
+  {
+    i: 'KB',
+    name: 'Kofi B.',
+    bg: '#E0733A',
+    type: 'DÉCOUVERTE',
+    k: 1,
+    pillBg: '#2FA37D',
+    caption: 'Épicerie wax',
+    count: '14 à voir',
+    seen: false,
+  },
+  {
+    i: 'YB',
+    name: 'Yasmine B.',
+    bg: '#0F5C48',
+    type: 'DÉCOUVERTE',
+    k: 1,
+    pillBg: '#2FA37D',
+    caption: 'Maquis Lyon 7',
+    count: '9 à voir',
+    seen: true,
+  },
 ];
 
 /** Anneau épais vert = pas encore vue ; anneau fin gris = vue. Jamais de dégradé (T1 §4.2). */
@@ -107,18 +167,23 @@ export const storiesFor = (filter: number) =>
   }));
 
 export const storyFiltersFor = (filter: number, onPick: (k: number) => void) =>
-  ([['Tout', -1], ['Informations', 2], ['Conseils', 0], ['Découvertes', 1]] as const).map(
-    ([label, k]) => {
-      const on = filter === k;
-      return {
-        label,
-        bg: on ? '#16785E' : '#fff',
-        fg: on ? '#fff' : '#16211D',
-        bd: on ? '#16785E' : '#E6EBE9',
-        onPick: () => onPick(k),
-      };
-    },
-  );
+  (
+    [
+      ['Tout', -1],
+      ['Informations', 2],
+      ['Conseils', 0],
+      ['Découvertes', 1],
+    ] as const
+  ).map(([label, k]) => {
+    const on = filter === k;
+    return {
+      label,
+      bg: on ? '#16785E' : '#fff',
+      fg: on ? '#fff' : '#16211D',
+      bd: on ? '#16785E' : '#E6EBE9',
+      onPick: () => onPick(k),
+    };
+  });
 
 // ─── Composeur ───────────────────────────────────────────────────────────────
 
@@ -127,14 +192,22 @@ export const storyFiltersFor = (filter: number, onPick: (k: number) => void) =>
  * (décision T4).
  */
 export const postTypesFor = (active: number, onPick: (i: number) => void) =>
-  ([
-    ['Victoire', '#E3F0EB', '#0F5C48', '#16785E'],
-    ['Question', '#FBE3D4', '#B4581F', '#E0733A'],
-    ['Info', '#F2F5F4', '#5D6B66', '#8A958F'],
-    ['Discussion', '#E8EEEC', '#0F5C48', '#0F5C48'],
-  ] as const).map(([label, b, f, d], i) => {
+  (
+    [
+      ['Victoire', '#E3F0EB', '#0F5C48', '#16785E'],
+      ['Question', '#FBE3D4', '#B4581F', '#E0733A'],
+      ['Info', '#F2F5F4', '#5D6B66', '#8A958F'],
+      ['Discussion', '#E8EEEC', '#0F5C48', '#0F5C48'],
+    ] as const
+  ).map(([label, b, f, d], i) => {
     const on = active === i;
-    return { label, bg: on ? f : b, fg: on ? '#fff' : f, dot: on ? '#fff' : d, onPick: () => onPick(i) };
+    return {
+      label,
+      bg: on ? f : b,
+      fg: on ? '#fff' : f,
+      dot: on ? '#fff' : d,
+      onPick: () => onPick(i),
+    };
   });
 
 // ─── Fil ─────────────────────────────────────────────────────────────────────
@@ -149,88 +222,144 @@ export const postTypesFor = (active: number, onPick: (i: number) => void) =>
  * `ctx` n'expose que le NOM DU TYPE de parcours, jamais le titre personnel que
  * le membre lui a donné (règle dure 04 §2).
  */
-export const feedPosts = [
+export const feedPosts: readonly FeedPostView[] = [
   {
-    name: 'Aïcha Diop', i: 'AD', bg: '#16785E', type: 'Discussion',
-    tBg: '#E8EEEC', tFg: '#0F5C48', tDot: '#0F5C48',
+    name: 'Aïcha Diop',
+    i: 'AD',
+    bg: '#16785E',
+    type: 'Discussion',
+    tBg: '#E8EEEC',
+    tFg: '#0F5C48',
+    tDot: '#0F5C48',
     ctx: 'Installée · Lyon 7e · il y a 1 h',
     body: 'On organise un repas partagé pour les nouveaux arrivants. Quelle date vous arrange ?',
-    poll: ([
-      ['Samedi 22 mars', '58 %', true],
-      ['Dimanche 23 mars', '30 %', false],
-      ['Samedi 29 mars', '12 %', false],
-    ] as const).map(([t, p, on]) => ({
-      t, p, w: p.replace(' ', ''),
+    poll: (
+      [
+        ['Samedi 22 mars', '58 %', true],
+        ['Dimanche 23 mars', '30 %', false],
+        ['Samedi 29 mars', '12 %', false],
+      ] as const
+    ).map(([t, p, on]) => ({
+      t,
+      p,
+      w: p.replace(' ', ''),
       fill: on ? '#E3F0EB' : '#F2F5F4',
       bd: on ? '1.5px solid #16785E' : '1px solid #E6EBE9',
       fw: on ? 700 : 500,
     })),
     pollMeta: '86 votes · se termine dans 3 jours · vous avez voté',
-    n: 86, word: 'votes', meta: '12 commentaires',
-    action: 'Participer', actionIcon: 'M4 5h12v8H8l-4 3zM20 9v8l-3-2h-6',
-    reactBg: '#0F5C48', comment: 'Commenter', aBg: '#E8EEEC', aFg: '#0F5C48',
+    n: 86,
+    word: 'votes',
+    meta: '12 commentaires',
+    action: 'Participer',
+    actionIcon: 'M4 5h12v8H8l-4 3zM20 9v8l-3-2h-6',
+    reactBg: '#0F5C48',
+    comment: 'Commenter',
+    aBg: '#E8EEEC',
+    aFg: '#0F5C48',
   },
   {
-    name: 'Amina Diallo', i: 'AD', bg: '#B4581F', type: 'Victoire',
-    tBg: '#E3F0EB', tFg: '#0F5C48', tDot: '#16785E',
+    name: 'Amina Diallo',
+    i: 'AD',
+    bg: '#B4581F',
+    type: 'Victoire',
+    tBg: '#E3F0EB',
+    tFg: '#0F5C48',
+    tDot: '#16785E',
     ctx: 'Parcours Études · Lyon · il y a 2 h',
     body: 'Attestation de virement irrévocable validée ce matin. Merci à la communauté pour vos retours sur la banque partenaire.',
     step: 'Caution bancaire et AVI validée',
-    n: 42, word: 'félicitations', meta: '8 commentaires · 3 partages',
+    n: 42,
+    word: 'félicitations',
+    meta: '8 commentaires · 3 partages',
     action: 'Bravo',
     actionIcon: 'M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8',
-    reactBg: '#E0733A', comment: 'Commenter', aBg: '#E3F0EB', aFg: '#0F5C48',
+    reactBg: '#E0733A',
+    comment: 'Commenter',
+    aBg: '#E3F0EB',
+    aFg: '#0F5C48',
   },
   {
-    name: 'Marc Koudou', i: 'MK', bg: '#0F5C48', type: 'Info',
-    tBg: '#F2F5F4', tFg: '#5D6B66', tDot: '#8A958F',
+    name: 'Marc Koudou',
+    i: 'MK',
+    bg: '#0F5C48',
+    type: 'Info',
+    tBg: '#F2F5F4',
+    tFg: '#5D6B66',
+    tDot: '#8A958F',
     ctx: 'Parcours Travail · Paris · il y a 4 h',
     body: 'Pour un garant à Paris : regardez Visale (gratuit, Action Logement) ou Garantme avant de céder aux agences qui demandent 3 fois le loyer.',
     // « certificat » est un document officiel : la règle dure interdit
     // « certifié » dans les LIBELLÉS, pas dans le corps (05-guides.md §2).
     tip: 'Le VLS-TS est accepté d’office pour le certificat Visale dès votre arrivée.',
-    n: 19, word: 'mentions utiles', meta: '14 commentaires · 7 partages',
+    n: 19,
+    word: 'mentions utiles',
+    meta: '14 commentaires · 7 partages',
     action: 'Utile',
     actionIcon: 'M7 11v9M7 11l4-7c1.5 0 2.5 1 2.5 2.5V10h5a2 2 0 0 1 2 2l-1.5 6a2 2 0 0 1-2 2H7',
-    reactBg: '#16785E', comment: 'Commenter', aBg: '#E3F0EB', aFg: '#0F5C48',
+    reactBg: '#16785E',
+    comment: 'Commenter',
+    aBg: '#E3F0EB',
+    aFg: '#0F5C48',
   },
   {
-    name: 'Fatou Ndiaye', i: 'FN', bg: '#2FA37D', type: 'Question',
-    tBg: '#FBE3D4', tFg: '#B4581F', tDot: '#E0733A',
+    name: 'Fatou Ndiaye',
+    i: 'FN',
+    bg: '#2FA37D',
+    type: 'Question',
+    tBg: '#FBE3D4',
+    tFg: '#B4581F',
+    tDot: '#E0733A',
     ctx: 'Installée · Lyon 7e · il y a 6 h',
     body: 'Quelqu’un connaîtrait un médecin généraliste qui prend de nouveaux patients sur Lyon 7e ou 3e ? C’est pour déclarer mon médecin traitant.',
     tags: ['Santé', 'Lyon7', 'CPAM'],
-    n: 11, word: 'réponses', meta: '4 soutiens',
+    n: 11,
+    word: 'réponses',
+    meta: '4 soutiens',
     action: 'Soutenir',
     actionIcon: 'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z',
-    reactBg: '#E0733A', comment: 'Répondre', aBg: '#FBE3D4', aFg: '#B4581F',
+    reactBg: '#E0733A',
+    comment: 'Répondre',
+    aBg: '#FBE3D4',
+    aFg: '#B4581F',
   },
   {
-    name: 'Kofi Boateng', i: 'KB', bg: '#E0733A', type: 'Victoire',
-    tBg: '#E3F0EB', tFg: '#0F5C48', tDot: '#16785E',
+    name: 'Kofi Boateng',
+    i: 'KB',
+    bg: '#E0733A',
+    type: 'Victoire',
+    tBg: '#E3F0EB',
+    tFg: '#0F5C48',
+    tDot: '#16785E',
     ctx: 'Parcours Travail · Lyon 3e · il y a 9 h',
     body: 'Premier jour chez mon employeur ! Il y a six mois je cherchais encore un stage. Merci à Sandra pour la relecture de mon CV.',
-    photo: 'Photo de Kofi', photoH: '260px',
-    n: 67, word: 'félicitations', meta: '21 commentaires',
+    photo: 'Photo de Kofi',
+    photoH: '260px',
+    n: 67,
+    word: 'félicitations',
+    meta: '21 commentaires',
     action: 'Bravo',
     actionIcon: 'M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8',
-    reactBg: '#E0733A', comment: 'Commenter', aBg: '#E3F0EB', aFg: '#0F5C48',
+    reactBg: '#E0733A',
+    comment: 'Commenter',
+    aBg: '#E3F0EB',
+    aFg: '#0F5C48',
   },
 ];
 
 // ─── Colonne de contexte ─────────────────────────────────────────────────────
 
-export const events = [
+export const events: readonly EventView[] = [
   { d: '24', m: 'FÉV', t: 'Apéro Diaspora et Étudiants', s: 'Berges du Rhône · 19h00' },
   { d: '02', m: 'MAR', t: 'Atelier CV et stage', s: 'Maison des Assos · 14h30' },
 ];
 
-export const arrivals = [
+export const arrivals: readonly PersonView[] = [
   { name: 'Kofi Boateng', sub: 'Arrivé il y a 3 jours', i: 'KB', bg: '#E0733A' },
   { name: 'Sarah Traoré', sub: 'Arrivée cette semaine', i: 'ST', bg: '#16785E' },
 ];
 
-export const online = [
+export const online: readonly PersonView[] = [
   { name: 'Aïcha Diop (Parraine)', i: 'AD', bg: '#0F5C48' },
   { name: 'Ibrahim S.', i: 'IS', bg: '#B4581F' },
   { name: 'Yasmine Benali', i: 'YB', bg: '#E0733A' },
@@ -301,11 +430,76 @@ export const thread = (
     // contente de l'omettre. Une propriété absente donne cinq formes d'objet
     // différentes, et `c.author` devient inaccessible sur l'union — c'est ce que
     // `tsc` a signalé. `false` dit la même chose que l'absence, et le dit à tous.
-    { i: 'SM', bg: '#0F5C48', name: 'Sandra M.', phase: 'Installée · Lyon 3e', author: false, text: 'Bravo Amina ! Tu as pris quelle banque au final ? Je conseille souvent celle-là aux nouveaux.', time: 'il y a 1 h', likes: 6, indent: '0px', indentM: '0px', canReply: true, av: '38px' },
-    { i: 'AD', bg: '#B4581F', name: 'Amina Diallo', phase: 'Étudiante · Lyon', author: true, text: 'Merci ! La banque partenaire de mon école, virement reçu en 5 jours.', time: 'il y a 50 min', likes: 3, indent: '50px', indentM: '44px', canReply: false, av: '32px' },
-    { i: 'KB', bg: '#E0733A', name: 'Kofi Boateng', phase: 'Arrivé · Lyon 3e', author: false, text: 'Félicitations ! Prochaine étape le logement, courage pour Visale.', time: 'il y a 40 min', likes: 2, indent: '0px', indentM: '0px', canReply: true, av: '38px' },
-    { i: 'FN', bg: '#2FA37D', name: 'Fatou Ndiaye', phase: 'Installée · Lyon 7e', author: false, text: 'Super nouvelle. Garde bien l’attestation, la préfecture la redemande parfois.', time: 'il y a 20 min', likes: 4, indent: '0px', indentM: '0px', canReply: true, av: '38px' },
-    { i: 'MK', bg: '#16785E', name: 'Marc Koudou', phase: 'Installé · Paris', author: false, text: 'Bien vu Fatou, c’est arrivé à mon cousin l’an dernier.', time: 'il y a 10 min', likes: 1, indent: '50px', indentM: '44px', canReply: false, av: '32px' },
+    {
+      i: 'SM',
+      bg: '#0F5C48',
+      name: 'Sandra M.',
+      phase: 'Installée · Lyon 3e',
+      author: false,
+      text: 'Bravo Amina ! Tu as pris quelle banque au final ? Je conseille souvent celle-là aux nouveaux.',
+      time: 'il y a 1 h',
+      likes: 6,
+      indent: '0px',
+      indentM: '0px',
+      canReply: true,
+      av: '38px',
+    },
+    {
+      i: 'AD',
+      bg: '#B4581F',
+      name: 'Amina Diallo',
+      phase: 'Étudiante · Lyon',
+      author: true,
+      text: 'Merci ! La banque partenaire de mon école, virement reçu en 5 jours.',
+      time: 'il y a 50 min',
+      likes: 3,
+      indent: '50px',
+      indentM: '44px',
+      canReply: false,
+      av: '32px',
+    },
+    {
+      i: 'KB',
+      bg: '#E0733A',
+      name: 'Kofi Boateng',
+      phase: 'Arrivé · Lyon 3e',
+      author: false,
+      text: 'Félicitations ! Prochaine étape le logement, courage pour Visale.',
+      time: 'il y a 40 min',
+      likes: 2,
+      indent: '0px',
+      indentM: '0px',
+      canReply: true,
+      av: '38px',
+    },
+    {
+      i: 'FN',
+      bg: '#2FA37D',
+      name: 'Fatou Ndiaye',
+      phase: 'Installée · Lyon 7e',
+      author: false,
+      text: 'Super nouvelle. Garde bien l’attestation, la préfecture la redemande parfois.',
+      time: 'il y a 20 min',
+      likes: 4,
+      indent: '0px',
+      indentM: '0px',
+      canReply: true,
+      av: '38px',
+    },
+    {
+      i: 'MK',
+      bg: '#16785E',
+      name: 'Marc Koudou',
+      phase: 'Installé · Paris',
+      author: false,
+      text: 'Bien vu Fatou, c’est arrivé à mon cousin l’an dernier.',
+      time: 'il y a 10 min',
+      likes: 1,
+      indent: '50px',
+      indentM: '44px',
+      canReply: false,
+      av: '32px',
+    },
   ] as const
 ).map((c) => ({ ...c, likeFg: c.likes > 3 ? '#16785E' : '#8A958F' }));
 
@@ -349,7 +543,8 @@ export const shareContactsFor = (selected: readonly number[], onToggle: (index: 
  * c'est la bonne façon : le libellé porte l'état.
  */
 export const shareButtonFor = (count: number) => ({
-  shareBtn: count > 0 ? `Envoyer à ${count} contact${count > 1 ? 's' : ''}` : 'Choisissez un contact',
+  shareBtn:
+    count > 0 ? `Envoyer à ${count} contact${count > 1 ? 's' : ''}` : 'Choisissez un contact',
   shareBtnBg: count > 0 ? '#16785E' : '#CFE3DA',
   shareBtnFg: count > 0 ? '#fff' : '#5D8A79',
 });
@@ -360,29 +555,161 @@ export const shareNets = [
 ] as const;
 
 export const shareOut = [
-  { label: 'Copier le lien', icon: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1' },
-  { label: 'WhatsApp', icon: 'M3 21l1.6-5A8.5 8.5 0 1 1 8 19.4zM9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z' },
+  {
+    label: 'Copier le lien',
+    icon: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
+  },
+  {
+    label: 'WhatsApp',
+    icon: 'M3 21l1.6-5A8.5 8.5 0 1 1 8 19.4zM9 9.5c0 3 2.5 5.5 5.5 5.5l1-1.5-2-1-1 .8a4 4 0 0 1-1.8-1.8l.8-1-1-2z',
+  },
   { label: 'Email', icon: 'M3 6h18v12H3zM3 7l9 6 9-6' },
 ] as const;
+
+// ─── LES PRISES DU CADRE, DÉCLARÉES ─────────────────────────────────────────
+//
+// Ce bloc est le changement de fond du lot 3, et il vaut une explication.
+//
+// AVANT, `A01Data` décrivait ses données par `typeof feedPosts` : le CONTRAT du
+// cadre était donc déduit des cinq publications d'exemple. Cela paraissait
+// économique et c'était un piège à deux détentes :
+//
+//   1. le contrat portait les VALEURS de la maquette. `poll.t` n'était pas
+//      `string` mais `'Samedi 22 mars' | 'Dimanche 23 mars' | 'Samedi 29 mars'`,
+//      et `photoH` valait `never` sur les cartes qui n'en avaient pas. Aucune
+//      donnée venue de l'API ne pouvait satisfaire un tel type — pas parce
+//      qu'elle était mal formée, mais parce que le type décrivait un échantillon ;
+//   2. il donnait l'illusion d'être vérifié. Le cadre compilait, `A01Data` était
+//      « typé », et rien ne disait que ce type ne décrivait qu'un exemple.
+//
+// Les prises sont donc DÉCLARÉES ci-dessous : elles disent ce que le JSX
+// transcodé LIT, ni plus ni moins. Les constantes de la maquette les satisfont
+// — c'est vérifié par `satisfies`, donc le dessin reste la référence — et les
+// données de l'API les satisfont aussi. Le JSX, lui, n'a pas bougé d'une virgule.
+
+/**
+ * Une carte de publication, telle que le cadre la lit.
+ *
+ * Les quatre derniers champs sont FACULTATIFS parce que la maquette les dessine
+ * sur certaines cartes seulement. Les trois suivants — `poll`, `tags`, `tip` — le
+ * sont aussi, et pour une autre raison qu'il faut dire : l'API n'a AUCUN champ qui
+ * puisse les remplir. Ni `createPostSchema` (qui est `.strict()`), ni `model Post`,
+ * ni 04 §2.4 ne connaissent de sondage, de mots-clés ou d'encadré sur une
+ * publication. Ils restent déclarés pour que la maquette continue de se décrire
+ * elle-même, et ils arrivent vides depuis l'API. Remonté au rapport de lot.
+ */
+export interface FeedPostView {
+  readonly name: string;
+  readonly i: string;
+  readonly bg: string;
+  readonly type: string;
+  readonly tBg: string;
+  readonly tFg: string;
+  readonly tDot: string;
+  readonly ctx: string;
+  readonly body: string;
+  readonly n: number;
+  readonly word: string;
+  readonly meta: string;
+  readonly action: string;
+  readonly actionIcon: string;
+  readonly reactBg: string;
+  readonly comment: string;
+  readonly aBg: string;
+  readonly aFg: string;
+  readonly step?: string;
+  readonly photo?: string;
+  readonly photoH?: string;
+  readonly tip?: string;
+  readonly tags?: readonly string[];
+  readonly poll?: readonly {
+    readonly t: string;
+    readonly p: string;
+    readonly w: string;
+    readonly fill: string;
+    readonly bd: string;
+    readonly fw: number;
+  }[];
+  readonly pollMeta?: string;
+}
+
+/**
+ * Une bulle de story.
+ *
+ * `count` est une CHAÎNE parce que le cadre l'affiche telle quelle (« 31 utile »),
+ * et c'est un compteur de VOTES du type — jamais de vues (règle dure §2.6).
+ */
+export interface StoryView {
+  readonly i: string;
+  readonly name: string;
+  readonly bg: string;
+  readonly type: string;
+  readonly k: number;
+  readonly pillBg: string;
+  readonly caption: string;
+  readonly count: string;
+  readonly seen: boolean;
+  readonly ring: string;
+  readonly pad: string;
+}
+
+/** Un événement de la colonne droite : jour, mois, titre, lieu et heure. */
+export interface EventView {
+  readonly d: string;
+  readonly m: string;
+  readonly t: string;
+  readonly s: string;
+}
+
+/** Un nouvel arrivant, et un contact en ligne — la même forme à l'écran. */
+export interface PersonView {
+  readonly name: string;
+  readonly i: string;
+  readonly bg: string;
+  readonly sub?: string;
+}
+
+/**
+ * Un commentaire du fil A01C, avec son indentation.
+ *
+ * `likes` est FACULTATIF, et c'est un manque du back, pas un oubli : aucune
+ * réaction de commentaire n'existe, ni en base ni dans aucune réponse d'API. La
+ * maquette en dessine le compteur, donc la prise est là ; elle arrive vide.
+ */
+export interface CommentView {
+  readonly i: string;
+  readonly bg: string;
+  readonly name: string;
+  readonly phase: string;
+  readonly author: boolean;
+  readonly text: string;
+  readonly time: string;
+  readonly indent: string;
+  readonly indentM: string;
+  readonly canReply: boolean;
+  readonly av: string;
+  readonly likes?: number;
+  readonly likeFg?: string;
+}
 
 export interface A01Data {
   rail: typeof rail;
   panelFil: typeof panelFil;
   shortcuts: typeof shortcuts;
-  stories: ReturnType<typeof storiesFor>;
+  stories: readonly StoryView[];
   storyFilters: ReturnType<typeof storyFiltersFor>;
   postTypes: ReturnType<typeof postTypesFor>;
-  feedPosts: typeof feedPosts;
-  events: typeof events;
-  arrivals: typeof arrivals;
-  online: typeof online;
+  feedPosts: readonly FeedPostView[];
+  events: readonly EventView[];
+  arrivals: readonly PersonView[];
+  online: readonly PersonView[];
   mTabs: typeof mTabs;
   mBottom: typeof mBottom;
 
   // Les modales du fil. Elles partagent ce type parce qu'elles partagent l'écran :
   // le transcodeur les génère avec `A01Data` en signature, et une modale qui
   // n'emploie rien reçoit simplement `_props`.
-  thread: typeof thread;
+  thread: readonly CommentView[];
   shareContacts: ReturnType<typeof shareContactsFor>;
   shareNets: typeof shareNets;
   shareOut: typeof shareOut;

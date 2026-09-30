@@ -508,6 +508,120 @@ describe('réseaux (07 §2, §9)', () => {
     expect((await communities.detail(secret.id, invited.userId)).myStatus).toBe('ACTIVE');
   });
 
+  /**
+   * LE CONTENU D'UN RÉSEAU **PUBLIC** NE SORT PAS NON PLUS À UN NON-MEMBRE.
+   *
+   * ── POURQUOI CE TEST EXISTE, ALORS QUE CELUI DU DESSUS SEMBLE COUVRIR LE SUJET ──
+   *
+   * Il a été écrit après une MUTATION qui aurait dû rougir et ne l'a pas fait. Le
+   * service pose deux gardes successives, et elles ne gardent pas la même chose :
+   *
+   *   · `load()` refuse l'accès à un réseau `INVITE_ONLY` — par un 404, pour ne pas
+   *     même confirmer son existence ;
+   *   · `assertMember()` refuse le CONTENU d'un réseau auquel on n'appartient pas,
+   *     quelle que soit sa visibilité — par un 403 `NOT_A_MEMBER`.
+   *
+   * Le test du dessus n'emploie qu'un réseau `INVITE_ONLY`. La première garde y
+   * répond donc toujours la première, et la seconde n'est jamais atteinte : en
+   * neutralisant entièrement `assertMember()` (`if (false)`), ce test RESTE VERT.
+   * Autrement dit, la garde qui protège le contenu des réseaux publics — de loin
+   * les plus nombreux — n'était éprouvée par rien.
+   *
+   * Un réseau `PUBLIC` est DÉCOUVRABLE : son nom, sa description et son nombre de
+   * membres sont faits pour être vus, c'est ce qui permet d'afficher le bouton
+   * « Rejoindre ». Mais ses sujets, son fil, ses annonces, ses sondages, ses albums
+   * et sa LISTE DE MEMBRES ne le sont pas. La distinction est exactement ce que ce
+   * test fixe, et elle ne se lit dans aucune des deux gardes prise isolément.
+   *
+   * L'écart attendu est donc double, et les deux moitiés comptent :
+   *   · l'en-tête PASSE pour un non-membre (sinon on ne pourrait pas rejoindre) ;
+   *   · tout le contenu est REFUSÉ.
+   */
+  it('rule: le contenu d’un réseau PUBLIC n’est pas renvoyé à un non-membre, même si l’en-tête l’est', async () => {
+    const owner = await newMember();
+    const outsider = await newMember();
+    const ouvert = await createInterest(owner, { visibility: 'PUBLIC' });
+
+    const sujet = await communities.createTopic(ouvert.id, owner, {
+      title: 'Le sujet d’un réseau public',
+      body: 'Visible de ses membres, pas des passants.',
+    });
+
+    /**
+     * LE SUJET EST ÉPINGLÉ, ET C'EST INDISPENSABLE.
+     *
+     * Écrit d'abord sans cette ligne, l'assertion `pinned` plus bas était CREUSE :
+     * un sujet ordinaire porte `pinKind: 'NONE'`, `pinnedTopics()` ne le renvoie
+     * donc jamais, et `pinned` valait `[]` que la garde soit là ou non. Mesuré :
+     * en supprimant le masquage du service (`isMember ? … : []`), les 39 tests du
+     * fichier restaient VERTS. L'assertion décrivait une absence garantie par
+     * autre chose que la règle qu'elle prétendait garder.
+     *
+     * Épinglé, le sujet EST renvoyé par `pinnedTopics()` — avec son TITRE. Le
+     * masquage devient alors la seule chose qui empêche un passant de lire les
+     * titres des sujets épinglés d'un réseau qu'il n'a pas rejoint, et l'assertion
+     * garde enfin quelque chose.
+     */
+    await communities.updateTopic(sujet.id, owner, { pinKind: 'RULES' });
+
+    // ── L'EN-TÊTE PASSE, et c'est voulu : un réseau public se découvre. ──
+    const entete = await communities.detail(ouvert.id, outsider);
+    expect(entete.name).toBe(ouvert.name);
+    expect(entete.myRole).toBeNull();
+    expect(entete.canJoin).toBe(true);
+
+    /**
+     * … mais l'en-tête ne laisse fuir AUCUN contenu par ses compteurs. Un
+     * `counters.topics` à 1 dirait à un passant qu'il se dit quelque chose ici, et
+     * `pinned` porterait carrément des TITRES de sujets.
+     */
+    expect(entete.pinned).toEqual([]);
+    expect(entete.counters.topics).toBe(0);
+    expect(entete.counters.announcements).toBe(0);
+
+    // ── LE CONTENU EST REFUSÉ, route par route. 403, et non 404 : le réseau ──
+    // ── est public, donc son existence n'est pas un secret — seul son           ──
+    // ── contenu l'est. Le code de refus n'est pas cosmétique, un écran décide  ──
+    // ── dessus (§5.2).                                                          ──
+    for (const [nom, appel] of [
+      ['topics', () => communities.topics(ouvert.id, outsider, { limit: 20 })],
+      ['feed', () => communities.feed(ouvert.id, outsider, { limit: 20 })],
+      ['members', () => communities.members(ouvert.id, outsider, { limit: 20 })],
+      ['announcements', () => communities.announcements(ouvert.id, outsider, { limit: 20 })],
+      ['polls', () => communities.polls(ouvert.id, outsider, { limit: 20 })],
+      ['albums', () => communities.albums(ouvert.id, outsider)],
+      ['map', () => communities.map(ouvert.id, outsider)],
+    ] as const) {
+      await expect(appel(), `${nom} ne doit rien renvoyer à un non-membre`).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+      });
+    }
+
+    /**
+     * LA PORTE DE DERRIÈRE : le sujet par son identifiant propre, sans passer par
+     * le réseau. C'est le chemin qu'une fuite emprunte — il ne ressemble pas à une
+     * lecture de réseau, donc on oublie de le garder.
+     */
+    const topicId = (
+      await prisma.topic.findFirstOrThrow({
+        where: { communityId: ouvert.id },
+        select: { id: true },
+      })
+    ).id;
+    await expect(communities.topic(topicId, outsider)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+
+    /**
+     * NON-VACUITÉ. Sans ces trois lignes, un service qui refuserait tout à tout le
+     * monde passerait ce test en paraissant exemplaire — et le réseau serait
+     * illisible pour ses propres membres.
+     */
+    expect((await communities.topics(ouvert.id, owner, { limit: 20 })).items).toHaveLength(1);
+    expect((await communities.topic(topicId, owner)).title).toBe('Le sujet d’un réseau public');
+    expect((await communities.members(ouvert.id, owner, { limit: 20 })).items.length).toBeGreaterThan(0);
+  });
+
   // ══ Adhésion automatique — la chaîne de l'onboarding (§2.1, §6) ═══════════
 
   it('inscrit d’office un membre dans les réseaux de sa ville et de son pays', async () => {

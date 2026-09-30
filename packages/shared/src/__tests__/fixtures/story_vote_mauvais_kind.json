@@ -1,0 +1,17 @@
+{
+  "status": 422,
+  "json": {
+    "error": {
+      "code": "KIND_NOT_ALLOWED_FOR_TYPE",
+      "message": "Ce vote n’existe pas pour ce type de story.",
+      "details": {
+        "type": "CONSEIL",
+        "kind": "WANT_TO_GO",
+        "allowed": [
+          "USEFUL",
+          "NOT_USEFUL"
+        ]
+      }
+    }
+  }
+}

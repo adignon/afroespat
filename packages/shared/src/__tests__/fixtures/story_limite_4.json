@@ -1,0 +1,13 @@
+{
+  "status": 429,
+  "json": {
+    "error": {
+      "code": "STORY_LIMIT",
+      "message": "Vous avez publié 3 stories aujourd’hui. Revenez demain.",
+      "details": {
+        "max": 3,
+        "retryAfterSeconds": 3600
+      }
+    }
+  }
+}

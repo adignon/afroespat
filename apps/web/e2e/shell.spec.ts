@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 
 /**
@@ -25,8 +27,71 @@ async function computed(page: Page, selector: string, prop: string): Promise<str
     .evaluate((el, p) => getComputedStyle(el).getPropertyValue(p), prop);
 }
 
+/**
+ * LE FIL EST BRANCHÉ SUR L'API : ses trois lectures sont SERVIES DEPUIS DES
+ * CHARGES RÉELLES.
+ *
+ * Avant le lot 3, cet écran dessinait cinq publications d'exemple codées en dur, et
+ * ces tests s'appuyaient dessus — « repas partagé pour les nouveaux » servait à la
+ * fois de preuve que le fil existe et de matière à faire défiler la page. Ces deux
+ * usages ont disparu avec les données de maquette, et c'est voulu : elles étaient
+ * servies dans le HTML comme si elles étaient réelles.
+ *
+ * On les remplace par des INTERCEPTIONS, comme `e2e/inscription.spec.ts` le fait
+ * déjà. Les charges viennent de `packages/shared/src/__tests__/fixtures/`, relevées
+ * octet pour octet sur une API qui tournait — donc ce que le navigateur reçoit ici
+ * a exactement la forme que le serveur produit, y compris ses pièges (`meta`
+ * différent d'une route à l'autre, `greetingHint` absent, `nextCursor` nul).
+ *
+ * Pourquoi intercepter plutôt que lancer une vraie session : ces tests gardent le
+ * CADRE — les colonnes collantes, les largeurs, les jetons de couleur — et non le
+ * réseau. Les faire dépendre d'une base et d'un compte les rendrait lents et
+ * instables pour une question qu'ils ne posent pas. Le branchement lui-même est
+ * éprouvé ailleurs : `src/screens/accueil/from-api.test.ts` sur ces mêmes charges,
+ * et `packages/shared` sur le contrat de réponse.
+ */
+/**
+ * L'ancre d'attente : un extrait de la PREMIÈRE publication de la charge réelle.
+ * Recopié d'elle, donc il change avec elle — et s'il ne s'affichait plus, c'est le
+ * branchement qui serait cassé, ce que ces tests doivent voir.
+ */
+const PREMIERE_PUBLICATION = 'Comment vous organisez-vous pour envoyer de l’argent au pays';
+
+// `__dirname` et non `import.meta.dirname` : Playwright transpile ces fichiers en
+// CommonJS, où `import.meta` n'existe pas — l'échec dit « No tests found », ce qui
+// ne désigne pas la cause.
+const FIXTURES = resolve(__dirname, '../../../packages/shared/src/__tests__/fixtures');
+const charge = (nom: string): string => readFileSync(resolve(FIXTURES, `${nom}.json`), 'utf8');
+
 test.beforeEach(async ({ page }) => {
-  await page.goto('/accueil', { waitUntil: 'networkidle' });
+  // Le socle tente une reprise de session au chargement : sans réponse, il
+  // renoncerait, et les trois lectures ne partiraient jamais.
+  await page.route('**/v1/auth/refresh', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ accessToken: 'jeton-de-test', isNewUser: false }),
+    }),
+  );
+
+  const json = (body: string) => ({ status: 200, contentType: 'application/json', body });
+  // L'ordre compte : `**/v1/feed/sidebar` AVANT `**/v1/feed*`, sinon le second
+  // intercepte le premier et la colonne droite reçoit la charge du fil.
+  await page.route('**/v1/feed/sidebar', (route) => route.fulfill(json(charge('feed_sidebar'))));
+  await page.route('**/v1/feed*', (route) => route.fulfill(json(charge('feed'))));
+  await page.route('**/v1/stories*', (route) => route.fulfill(json(charge('stories_band'))));
+
+  /**
+   * `waitUntil: 'load'` et NON `'networkidle'`.
+   *
+   * Le fil émet désormais trois requêtes, et Next précharge en plus les liens
+   * visibles d'une page App Router : le réseau ne retombe pas au calme, et
+   * `networkidle` expire au bout de trente secondes sur un message qui ne nomme pas
+   * la cause. On attend `load`, puis la première publication — ce qui est la vraie
+   * condition à attendre.
+   */
+  await page.goto('/accueil', { waitUntil: 'load' });
+  await page.getByText(PREMIERE_PUBLICATION).first().waitFor({ state: 'attached' });
 });
 
 test.describe('jetons de design', () => {
@@ -54,7 +119,8 @@ test.describe('jetons de design', () => {
         const max = Math.max(rr, gg, bb);
         const d = max - Math.min(rr, gg, bb);
         if (d < 0.1) return false;
-        let h = max === rr ? ((gg - bb) / d) % 6 : max === gg ? (bb - rr) / d + 2 : (rr - gg) / d + 4;
+        let h =
+          max === rr ? ((gg - bb) / d) % 6 : max === gg ? (bb - rr) / d + 2 : (rr - gg) / d + 4;
         h *= 60;
         if (h < 0) h += 360;
         return h >= 345 || h <= 15;
@@ -124,7 +190,9 @@ test.describe('cadre ordinateur', () => {
     page,
   }) => {
     // Scopé au cadre ORDINATEUR : le cadre mobile porte aussi un `main`.
-    expect((await page.locator('[data-frame="desktop"] main').boundingBox())!.width).toBeLessThanOrEqual(660);
+    expect(
+      (await page.locator('[data-frame="desktop"] main').boundingBox())!.width,
+    ).toBeLessThanOrEqual(660);
     expect((await page.locator('[data-frame="desktop"] aside').boundingBox())!.width).toBe(300);
   });
 
@@ -136,12 +204,38 @@ test.describe('cadre ordinateur', () => {
    * survive à la prochaine régénération. Ce test la tient.
    */
   test('la barre haute et les deux colonnes restent à l’écran au défilement', async ({ page }) => {
-    await page.evaluate(() => window.scrollTo(0, 1200));
+    /**
+     * ON DÉFILE JUSQU'EN BAS, et non de 1 200 px fixes.
+     *
+     * Le chiffre de 1 200 px avait été calibré sur les cinq publications d'exemple
+     * que la maquette dessinait en dur, dont deux portaient une photo de 260 px. Le
+     * fil venant maintenant de l'API, sa hauteur suit la charge : avec quatre
+     * publications sans photo, la page ne peut défiler que de 431 px, et
+     * l'assertion `> 800` échouait sur une page dont les colonnes étaient
+     * parfaitement collantes. Le test mesurait la hauteur du contenu en croyant
+     * mesurer le collage.
+     *
+     * On défile donc AUTANT QUE LA PAGE LE PERMET, puis on exige deux choses
+     * distinctes : qu'il y ait bien eu un défilement RÉEL — sans quoi le reste ne
+     * prouverait rien, une page qui ne bouge pas gardant trivialement ses colonnes
+     * en place — et que les trois repères n'aient pas bougé d'un pixel.
+     */
+    const defilement = await page.evaluate(() => {
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      window.scrollTo(0, max);
+      return max;
+    });
     await page.waitForTimeout(250);
+
+    expect(
+      defilement,
+      'la page doit pouvoir défiler, sinon le collage n’est pas éprouvé',
+    ).toBeGreaterThan(200);
 
     const positions = await page.evaluate(() => {
       const frame = document.querySelector('[data-frame="desktop"]')!;
-      const top = (el: Element | null) => (el === null ? null : Math.round(el.getBoundingClientRect().top));
+      const top = (el: Element | null) =>
+        el === null ? null : Math.round(el.getBoundingClientRect().top);
 
       const bar = Array.from(frame.querySelectorAll('div')).find(
         (d) => getComputedStyle(d).position === 'sticky' && d.offsetHeight === 64,
@@ -157,9 +251,10 @@ test.describe('cadre ordinateur', () => {
       };
     });
 
-    expect(positions.defile, 'la page doit avoir défilé').toBeGreaterThan(800);
+    expect(positions.defile, 'la page doit avoir réellement défilé').toBeGreaterThan(200);
 
-    // Sans `sticky`, les trois seraient remontées de 1200 px hors de l'écran.
+    // Sans `sticky`, les trois seraient remontées hors de l'écran, de tout le
+    // défilement : leur `top` vaudrait un nombre négatif, pas 0 ni 76.
     expect(positions.barreHaute, 'la barre haute a suivi le défilement').toBe(0);
     expect(positions.colonneGauche, 'la colonne de gauche a suivi').toBe(0);
     // La colonne de contexte s'arrête SOUS la barre haute, pas dessous elle.
@@ -257,7 +352,7 @@ test.describe('cadre mobile', () => {
    */
   test('pas de colonne de contexte, mais le fil est bien là', async ({ page }) => {
     await expect(frame(page).locator('aside')).toHaveCount(0);
-    await expect(frame(page).getByText(/repas partagé pour les nouveaux/)).toBeVisible();
+    await expect(frame(page).getByText(PREMIERE_PUBLICATION).first()).toBeVisible();
   });
 });
 
@@ -309,5 +404,99 @@ test.describe('règles dures visibles à l’écran', () => {
       ),
     );
     expect(leaked, 'le titre personnel a fuité dans une publication').toBe(false);
+  });
+});
+
+/**
+ * LE FIL EST SERVI AVEC DES MOTS, ET PAS SEULEMENT AVEC DU SCRIPT.
+ *
+ * ── POURQUOI CE TEST EXISTE ─────────────────────────────────────────────────
+ *
+ * Ce dépôt a déjà servi CINQ pages vides sans que personne le voie : un
+ * `useSearchParams()` dans un composant client fait renoncer Next au pré-rendu de
+ * tout ce qu'il enveloppe, et la réponse du serveur ne contient alors plus un mot —
+ * seulement le script qui les fabriquera plus tard. `/villes` faisait 8 Ko de
+ * script et zéro mot.
+ *
+ * Le défaut est INVISIBLE au navigateur : la page s'affiche parfaitement, puisque
+ * le script tourne. Il ne se voit que dans la réponse brute — d'où `request` et non
+ * `page` ici. Aucun JavaScript n'est exécuté : on lit ce que le serveur a envoyé,
+ * exactement comme le feraient un moteur d'indexation, un aperçu de lien, ou un
+ * téléphone sur réseau lent avant que le script n'arrive.
+ *
+ * Le fil est la page la plus visitée du produit ; c'est celle qui peut le moins se
+ * permettre d'être vide.
+ *
+ * ── CE QUE CE TEST NE PRÉTEND PAS GARDER ────────────────────────────────────
+ *
+ * Il garde la COQUILLE, pas le contenu du fil. Les publications ne peuvent pas être
+ * pré-rendues aujourd'hui, et ce n'est pas un oubli : le jeton d'accès vit en
+ * mémoire du navigateur (`lib/api/session.ts`), et 04 §2.3 refuse toute lecture
+ * anonyme du fil parce que la visibilité y est relative au LECTEUR — le serveur de
+ * rendu n'a donc pas de lecteur à qui appliquer les règles. C'est remonté au lot
+ * comme une décision à prendre côté API, pas contourné ici.
+ */
+test.describe('rendu serveur', () => {
+  /** Ce que la coquille de l'accueil doit contenir, mot pour mot. */
+  const MOTS_DE_LA_COQUILLE = [
+    'STORIES DU JOUR',
+    'VOS RACCOURCIS',
+    'Rechercher dans la diaspora',
+    'Créer une story',
+    'COMMUNAUTÉ',
+  ] as const;
+
+  /** Le texte visible d'une réponse HTML, scripts et styles ÔTÉS. */
+  function motsVisibles(html: string): { readonly texte: string; readonly nombre: number } {
+    const sansScript = html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ');
+    const texte = sansScript
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&#x27;/g, '’')
+      .replace(/&[a-z#0-9]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return { texte, nombre: texte.split(' ').filter((m) => /[A-Za-zÀ-ÿ]{2,}/.test(m)).length };
+  }
+
+  test('le HTML de /accueil porte des mots, pas seulement du script', async ({ request }) => {
+    const res = await request.get('/accueil');
+    expect(res.status()).toBe(200);
+    const { texte, nombre } = motsVisibles(await res.text());
+
+    /**
+     * Le seuil est BAS exprès. Il ne décrit pas une richesse attendue : il sépare
+     * « une page servie » de « une page vide ». Une page vidée par un renoncement
+     * au pré-rendu tombe à ZÉRO, pas à quatre-vingts — mesuré à 130 mots sur cette
+     * route, et à 0 sur les cinq pages qui portaient le défaut.
+     */
+    expect(nombre, `la page ne porte que ${nombre} mot(s) hors script`).toBeGreaterThan(80);
+
+    // Et ce sont les BONS mots : un compte élevé rempli d'autre chose ne dirait rien.
+    for (const mot of MOTS_DE_LA_COQUILLE) {
+      expect(texte, `« ${mot} » manque au HTML servi`).toContain(mot);
+    }
+  });
+
+  /**
+   * NON-VACUITÉ DU DÉTECTEUR.
+   *
+   * Un détecteur qui cherche des mots et n'en trouve jamais ne dit rien tant qu'on
+   * n'a pas montré qu'il SAIT en trouver — et, surtout, qu'il sait ne PAS en
+   * trouver. On lui donne donc les trois cas qu'il doit distinguer, dont celui qui
+   * l'a motivé : beaucoup de script, aucun mot.
+   */
+  test('le détecteur distingue vraiment une page pleine d’une page vide', () => {
+    const vide = '<html><body><div id="__next"></div><script>var a=1;</script></body></html>';
+    expect(motsVisibles(vide).nombre).toBe(0);
+
+    const pleine = '<html><body><h1>Fil d’actualité</h1><script>var b=2;</script></body></html>';
+    expect(motsVisibles(pleine).nombre).toBeGreaterThan(0);
+    expect(motsVisibles(pleine).texte).toContain('Fil');
+
+    // Le script ne compte JAMAIS, même bavard — c'est tout le défaut d'origine.
+    const bavard = `<html><body><script>${'var motmotmot = 1;'.repeat(400)}</script></body></html>`;
+    expect(motsVisibles(bavard).nombre).toBe(0);
   });
 });

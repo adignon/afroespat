@@ -1,0 +1,12 @@
+{
+  "status": 422,
+  "json": {
+    "error": {
+      "code": "DEPTH_EXCEEDED",
+      "message": "On ne répond pas à une réponse. Répondez au commentaire d’origine.",
+      "details": {
+        "parentCommentId": "01a0f10d-da35-7000-9a82-959721f712d3"
+      }
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "status": 422,
+  "json": {
+    "error": {
+      "code": "CONTENT_BLOCKED",
+      "message": "Ce texte ne peut pas être publié en l’état.",
+      "details": {
+        "reason": "NO_LINK_PHONE_EMAIL"
+      }
+    }
+  }
+}

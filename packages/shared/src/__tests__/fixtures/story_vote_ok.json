@@ -1,0 +1,9 @@
+{
+  "positive": 1,
+  "positiveKind": "USEFUL",
+  "positiveLabel": "Utile",
+  "negative": 0,
+  "negativeKind": "NOT_USEFUL",
+  "negativeLabel": "Pas utile",
+  "score": 0
+}

@@ -1,0 +1,47 @@
+{
+  "cityEvents": [],
+  "newArrivals": {
+    "items": [
+      {
+        "id": "01a0f10d-d958-7000-b22b-128c056ea2f6",
+        "handle": "m01a0f10dd9587000b22b128c056ea",
+        "displayName": "Lina L0",
+        "avatarUrl": null,
+        "level": "L0",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      {
+        "id": "01a0f10d-d7f5-7000-9166-b7319356ab37",
+        "handle": "m01a0f10dd7f570009166b7319356a",
+        "displayName": "Kofi Mensah",
+        "avatarUrl": null,
+        "level": "L1",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      {
+        "id": "01a0f10c-fb77-7000-96cb-29786687f646",
+        "handle": "m01a0f10cfb77700096cb29786687f",
+        "displayName": "Amina Diallo",
+        "avatarUrl": null,
+        "level": "L1",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      }
+    ],
+    "canGreet": true,
+    "greetingHint": "Bienvenue ! Si vous avez une question sur la ville, écrivez-moi."
+  },
+  "scamAlert": null,
+  "onlineContacts": [],
+  "meta": {
+    "cachedForSeconds": 300
+  }
+}

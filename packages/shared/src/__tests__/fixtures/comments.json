@@ -1,0 +1,68 @@
+{
+  "items": [
+    {
+      "id": "01a0f10d-da15-7000-8b26-0eb69661884a",
+      "body": "Une quittance de loyer au nom du colocataire + une attestation d’hébergement.",
+      "createdAt": "2026-09-30T06:43:31.991Z",
+      "relativeTime": "à l’instant",
+      "parentCommentId": null,
+      "author": {
+        "id": "01a0f10d-d7f5-7000-9166-b7319356ab37",
+        "handle": "m01a0f10dd7f570009166b7319356a",
+        "displayName": "Kofi Mensah",
+        "avatarUrl": null,
+        "level": "L1",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      "isAuthor": false,
+      "canEdit": false,
+      "replies": [
+        {
+          "id": "01a0f10d-da35-7000-9a82-959721f712d3",
+          "body": "Merci, c’est exactement ce qu’ils m’ont demandé.",
+          "createdAt": "2026-09-30T06:43:32.022Z",
+          "relativeTime": "à l’instant",
+          "parentCommentId": "01a0f10d-da15-7000-8b26-0eb69661884a",
+          "author": {
+            "id": "01a0f10d-d686-7000-b3c9-1290b7242835",
+            "handle": "m01a0f10dd6867000b3c91290b7242",
+            "displayName": "Amina Diallo",
+            "avatarUrl": null,
+            "level": "L1",
+            "phase": "RECENT_ARRIVAL",
+            "cityName": "Lyon",
+            "countryIso2": "BJ",
+            "isMentor": false
+          },
+          "isAuthor": true,
+          "canEdit": true
+        }
+      ]
+    },
+    {
+      "id": "01a0f10d-da26-7000-94fa-5f29b1193890",
+      "body": "Je suis dans le même cas, merci pour la réponse.",
+      "createdAt": "2026-09-30T06:43:32.007Z",
+      "relativeTime": "à l’instant",
+      "parentCommentId": null,
+      "author": {
+        "id": "01a0f10d-d958-7000-b22b-128c056ea2f6",
+        "handle": "m01a0f10dd9587000b22b128c056ea",
+        "displayName": "Lina L0",
+        "avatarUrl": null,
+        "level": "L0",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      "isAuthor": false,
+      "canEdit": false,
+      "replies": []
+    }
+  ],
+  "nextCursor": null
+}

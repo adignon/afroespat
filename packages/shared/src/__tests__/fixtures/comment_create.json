@@ -1,0 +1,23 @@
+{
+  "comment": {
+    "id": "01a0f10d-da15-7000-8b26-0eb69661884a",
+    "body": "Une quittance de loyer au nom du colocataire + une attestation d’hébergement.",
+    "createdAt": "2026-09-30T06:43:31.991Z",
+    "relativeTime": "à l’instant",
+    "parentCommentId": null,
+    "author": {
+      "id": "01a0f10d-d7f5-7000-9166-b7319356ab37",
+      "handle": "m01a0f10dd7f570009166b7319356a",
+      "displayName": "Kofi Mensah",
+      "avatarUrl": null,
+      "level": "L1",
+      "phase": "RECENT_ARRIVAL",
+      "cityName": "Lyon",
+      "countryIso2": "BJ",
+      "isMentor": false
+    },
+    "isAuthor": true,
+    "canEdit": true,
+    "replies": []
+  }
+}

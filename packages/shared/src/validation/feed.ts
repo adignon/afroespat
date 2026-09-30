@@ -1,15 +1,20 @@
 import { z } from 'zod';
 import {
   CommentSubjectType,
+  EventType,
+  Phase,
   PostType,
+  ReactionKind,
+  ScamAlertSeverity,
   StoryAudience,
   StoryReactionKind,
+  StoryStatus,
   StoryTextStyle,
   StoryType,
-  type ReactionKind,
+  VerificationLevel,
 } from '../enums/generated.js';
 import { STORY_TYPE_VOCABULARY } from '../constants/post-types.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import { cursorQuerySchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Fil d'actualité — 04-fil.md §2 et §4.
@@ -208,7 +213,10 @@ export const STORY_ALLOWED_REACTIONS = {
     STORY_TYPE_VOCABULARY.INFORMATION.positive.kind,
     STORY_TYPE_VOCABULARY.INFORMATION.negative.kind,
   ],
-} as const satisfies Record<(typeof StoryType)[number], readonly (typeof StoryReactionKind)[number][]>;
+} as const satisfies Record<
+  (typeof StoryType)[number],
+  readonly (typeof StoryReactionKind)[number][]
+>;
 
 /** Vrai si ce vote appartient au type de la story (§2.6, `KIND_NOT_ALLOWED_FOR_TYPE`). */
 export function storyReactionAllowed(
@@ -287,11 +295,7 @@ export const FEED_ERROR_MESSAGES: Record<FeedErrorCode, string> = {
 
 // ── Schémas d'écriture — publications (§2.4, §4) ────────────────────────────
 
-const postBodySchema = z
-  .string()
-  .trim()
-  .min(FEED_LIMITS.postBodyMin)
-  .max(FEED_LIMITS.postBodyMax);
+const postBodySchema = z.string().trim().min(FEED_LIMITS.postBodyMin).max(FEED_LIMITS.postBodyMax);
 
 export const createPostSchema = z
   .object({
@@ -442,3 +446,443 @@ export type StoriesQuery = z.infer<typeof storiesQuerySchema>;
 export const myStoriesQuerySchema = cursorQuerySchema;
 
 export type MyStoriesQuery = z.infer<typeof myStoriesQuerySchema>;
+
+// ═══ Schémas de RÉPONSE (§4) ═════════════════════════════════════════════════
+//
+// Écrits ICI, à côté des schémas de requête du même module, parce que `00` §4
+// fait de `packages/shared` la source unique : un schéma de réponse recopié dans
+// le front serait une deuxième source, et elle divergerait.
+//
+// Ils ne sont pas devinés. Chaque champ a été relevé sur la charge RÉELLE d'une
+// API qui tournait — membre L1 ouvert par le vrai parcours OTP, contenu publié
+// par les vraies routes. Les pièges qui en sortent sont notés là où ils se
+// manifestent, parce qu'aucun ne se déduit de la spec :
+//
+//   · une carte de fil porte `excerpt` et PAS de `body` ; le détail porte les deux ;
+//   · `meta` change d'une route à l'autre — trois clés sur `GET /feed`, une seule
+//     sur `GET /posts/:id`, aucune sur `GET /comments` ;
+//   · `greetingHint` est ABSENT (et non `null`) quand le membre n'a pas de ville ;
+//   · le `votes` de `GET /me/stories` ÉCRASE celui de la bulle et perd ses deux
+//     `kind` : ce n'est pas le même objet, donc ce n'est pas le même schéma ;
+//   · `sortKey` est retiré des bulles du bandeau avant l'envoi — l'attendre échoue.
+//
+// Les dates sont des CHAÎNES ISO : rien ne sérialise les `Date` de Nest autrement
+// que `JSON.stringify`, donc `z.string().datetime()` et jamais `z.date()`.
+
+/**
+ * Le membre tel que le fil l'expose. Neuf champs, jamais un de plus.
+ *
+ * `.strict()` — et il faut dire pourquoi, parce qu'un schéma de réponse strict est
+ * un choix qui se paie : un champ AJOUTÉ par l'API casse le front au lieu d'être
+ * ignoré. C'est assumé ici et sur les quatre autres formes de contenu ci-dessous.
+ *
+ * La raison est une règle dure, pas un goût pour la rigueur : `01` §2.1 interdit
+ * que le numéro de téléphone sorte de l'API autrement que masqué, et `00` §49
+ * interdit tout compteur de vues sur tout contenu. Un objet permissif ACCEPTE
+ * silencieusement `phone` ou `viewCount` le jour où une requête mal écrite les
+ * ajoute — mesuré : sans `.strict()`, un `viewCount: 412` greffé sur une story
+ * passait la validation sans un mot. La frontière est le seul endroit où ces deux
+ * règles peuvent être tenues pour TOUS les écrans à la fois.
+ */
+export const memberSummarySchema = z
+  .object({
+    id: uuidSchema,
+    handle: z.string(),
+    displayName: z.string(),
+    /** Chemin RELATIF (`/media/…`), pas une URL absolue. */
+    avatarUrl: z.string().nullable(),
+    level: z.enum(VerificationLevel),
+    phase: z.enum(Phase),
+    cityName: z.string().nullable(),
+    countryIso2: z.string().length(2),
+    isMentor: z.boolean(),
+  })
+  .strict();
+
+export type MemberSummary = z.infer<typeof memberSummarySchema>;
+
+/** `{ id, name }` — la ville telle que le fil et les stories la portent. */
+const cityRefSchema = z.object({ id: uuidSchema, name: z.string() });
+
+/** La ligne de contexte est COMPOSÉE PAR LE SERVEUR (§2.2), prête à afficher. */
+const contextLineSchema = z.object({ text: z.string(), parts: z.array(z.string()) });
+
+/**
+ * L'encart « Étape franchie · N sur M » (§2.2).
+ *
+ * `stepName` peut valoir la CHAÎNE VIDE — le service retombe sur `?? ''` quand la
+ * définition d'étape manque. Un `.min(1)` refuserait une charge légitime.
+ */
+const stepBadgeSchema = z.object({
+  label: z.string(),
+  stepName: z.string(),
+  index: z.number().int(),
+  total: z.number().int(),
+});
+
+/**
+ * La carte de publication du fil. SEIZE champs, tous toujours présents.
+ *
+ * `excerpt` et pas `body` : le fil tronque à 400 caractères. Un écran qui a besoin
+ * du texte entier appelle `GET /posts/:id`. L'absence de `body` ici n'est pas un
+ * oubli — c'est ce qui empêche le fil de transporter 3 000 caractères par carte.
+ */
+export const postCardSchema = z
+  .object({
+    id: uuidSchema,
+    type: z.enum(PostType),
+    typeLabel: z.string(),
+    excerpt: z.string(),
+    createdAt: z.string().datetime(),
+    author: memberSummarySchema,
+    isAuthor: z.boolean(),
+    city: cityRefSchema.nullable(),
+    community: z.object({ id: uuidSchema, name: z.string(), slug: z.string() }).nullable(),
+    /** §2.4 : quatre images au plus, et c'est le SERVEUR qui le garantit. */
+    media: z
+      .array(z.object({ position: z.number().int(), url: z.string() }))
+      .max(FEED_LIMITS.postMediaMax),
+    context: contextLineSchema,
+    stepBadge: stepBadgeSchema.nullable(),
+    /** §2.1 : le compteur suit le VOCABULAIRE du type, pas un « like » générique. */
+    counter: z.object({
+      count: z.number().int(),
+      displayCount: z.number().int(),
+      word: z.string(),
+    }),
+    reaction: z.object({
+      kind: z.enum(ReactionKind),
+      actionLabel: z.string(),
+      /** La réaction du LECTEUR, ou `null`. Jamais déduite côté client. */
+      mine: z.enum(ReactionKind).nullable(),
+    }),
+    commentCount: z.number().int(),
+    commentLabel: z.string(),
+    linkRel: z.literal(POST_LINK_REL),
+  })
+  .strict();
+
+export type PostCard = z.infer<typeof postCardSchema>;
+
+/** `GET /feed` — `meta` porte TROIS clés, dont la consigne de rendu des liens. */
+export const feedResponseSchema = pageSchema(postCardSchema).extend({
+  meta: z.object({
+    linkRel: z.literal(POST_LINK_REL),
+    /** §2.4 : le composeur est ouvert ou grisé selon CE champ, pas selon un niveau lu. */
+    canPost: z.boolean(),
+    scopeKind: z.enum(['GLOBAL', 'COMMUNITY']),
+  }),
+});
+
+export type FeedResponse = z.infer<typeof feedResponseSchema>;
+
+/** Un commentaire. HUIT champs ; `replies` n'est ajouté que sur les racines. */
+const commentCardSchema = z
+  .object({
+    id: uuidSchema,
+    body: z.string(),
+    createdAt: z.string().datetime(),
+    /** Composé par le serveur : « il y a 2 h ». Le front ne recalcule pas. */
+    relativeTime: z.string(),
+    parentCommentId: uuidSchema.nullable(),
+    author: memberSummarySchema,
+    isAuthor: z.boolean(),
+    /** §2.5 : vrai pendant 15 minutes, et c'est le SERVEUR qui tranche. */
+    canEdit: z.boolean(),
+  })
+  /**
+   * `.strict()` PORTE ICI LA PROFONDEUR UNIQUE de §2.5.
+   *
+   * `commentThreadSchema` ajoute `replies` aux seules RACINES. Sans `.strict()`,
+   * une réponse pouvait porter à son tour un `replies` — mesuré : un troisième
+   * niveau passait la validation, alors que le service répond `DEPTH_EXCEEDED`.
+   * Le schéma disait donc possible ce que l'API refuse.
+   */
+  .strict();
+
+/**
+ * Une racine de commentaire, avec sa seule profondeur de réponses (§2.5).
+ *
+ * `replies` n'est PAS récursif, et ce n'est pas une simplification : un
+ * `parentCommentId` non nul interdit la réponse à une réponse, et le service
+ * répond `DEPTH_EXCEEDED` — mesuré, 422, sur l'API qui tournait. Un schéma
+ * récursif inviterait un écran à dessiner un troisième niveau qui ne peut pas
+ * exister.
+ */
+export const commentThreadSchema = commentCardSchema.extend({
+  replies: z.array(commentCardSchema),
+});
+
+export type CommentThread = z.infer<typeof commentThreadSchema>;
+
+/** `GET /comments` — PAS de `meta` sur cette route. */
+export const commentsResponseSchema = z.object({
+  items: z.array(commentThreadSchema),
+  nextCursor: z.string().nullable(),
+});
+
+export type CommentsResponse = z.infer<typeof commentsResponseSchema>;
+
+/** `GET /posts/:id` — la carte, le corps entier, et les 20 premiers commentaires. */
+export const postDetailResponseSchema = z.object({
+  post: postCardSchema.extend({
+    body: z.string(),
+    movedTo: z
+      .object({
+        topicId: uuidSchema,
+        community: z.object({ id: uuidSchema, name: z.string(), slug: z.string() }),
+        label: z.string(),
+      })
+      .nullable(),
+    /** §2.3 : le déplacement n'est JAMAIS automatique — le serveur dit s'il est offert. */
+    canMoveToTopic: z.boolean(),
+  }),
+  comments: commentsResponseSchema,
+  meta: z.object({ linkRel: z.literal(POST_LINK_REL) }),
+});
+
+export type PostDetailResponse = z.infer<typeof postDetailResponseSchema>;
+
+/** `PUT`/`DELETE /posts/:id/reaction` — objet PLAT, pas enveloppé. */
+export const postReactionStateSchema = z.object({
+  kind: z.enum(ReactionKind),
+  actionLabel: z.string(),
+  mine: z.enum(ReactionKind).nullable(),
+  reactionCount: z.number().int(),
+  displayCount: z.number().int(),
+  word: z.string(),
+});
+
+export type PostReactionState = z.infer<typeof postReactionStateSchema>;
+
+/** `POST /posts/:id/move-to-topic` (§2.3). */
+export const moveToTopicResponseSchema = z.object({
+  topicId: uuidSchema,
+  community: z.object({ id: uuidSchema, name: z.string(), slug: z.string() }),
+  post: z.object({ id: uuidSchema, movedToTopicId: uuidSchema, label: z.string() }),
+});
+
+export type MoveToTopicResponse = z.infer<typeof moveToTopicResponseSchema>;
+
+/** `POST`/`PATCH /comments` — enveloppé, et `replies` y vaut toujours `[]`. */
+export const commentMutationResponseSchema = z.object({ comment: commentThreadSchema });
+
+export type CommentMutationResponse = z.infer<typeof commentMutationResponseSchema>;
+
+// ── La colonne droite de l'accueil (§2.7) ───────────────────────────────────
+
+/**
+ * `GET /feed/sidebar` — les quatre blocs, tous CALCULÉS par le serveur.
+ *
+ * `newArrivals.greetingHint` est `.optional()` et NON `.nullable()` : quand le
+ * membre n'a pas de ville, le service rend `{ items: [], canGreet: false }` et la
+ * clé n'existe pas dans le JSON. `.nullable()` refuserait cette charge, et un
+ * membre sans ville verrait un incident de contrat là où il n'y a qu'une absence.
+ */
+export const feedSidebarResponseSchema = z.object({
+  cityEvents: z
+    .array(
+      z.object({
+        id: uuidSchema,
+        title: z.string(),
+        type: z.enum(EventType),
+        startsAt: z.string().datetime(),
+        venueName: z.string().nullable(),
+        attendeeCount: z.number().int(),
+      }),
+    )
+    .max(FEED_LIMITS.sidebarItems),
+  newArrivals: z.object({
+    items: z.array(memberSummarySchema).max(FEED_LIMITS.sidebarItems),
+    /** §2.7 : « bouton Saluer […] si L1 ». On TENTE quand même ; ceci n'est qu'un affichage. */
+    canGreet: z.boolean(),
+    greetingHint: z.string().optional(),
+  }),
+  scamAlert: z
+    .object({
+      id: uuidSchema,
+      title: z.string(),
+      body: z.string(),
+      severity: z.enum(ScamAlertSeverity),
+      publishedAt: z.string().datetime().nullable(),
+    })
+    .nullable(),
+  onlineContacts: z.array(memberSummarySchema),
+  meta: z.object({ cachedForSeconds: z.number().int() }),
+});
+
+export type FeedSidebarResponse = z.infer<typeof feedSidebarResponseSchema>;
+
+// ── Stories (§2.6) ──────────────────────────────────────────────────────────
+
+/**
+ * La bulle de story, partagée par le bandeau, le détail et l'historique.
+ *
+ * AUCUN COMPTEUR DE VUES, sur aucune route, pas même pour l'auteur : c'est la
+ * règle dure de §2.6 et de `00` §49. `seen` est un BOOLÉEN — l'anneau — et
+ * ajouter ici un `viewCount` casserait une règle que l'API respecte aujourd'hui.
+ *
+ * `backgroundUrl` vaut TOUJOURS `null` sur l'API d'aujourd'hui : le service ne
+ * résout jamais `backgroundAssetId` en URL. Le champ reste nullable plutôt que
+ * `z.null()` pour qu'un branchement futur ne casse pas le contrat, mais une story
+ * à fond image est aujourd'hui indessinable — remonté au rapport de lot.
+ */
+export const storyBubbleSchema = z
+  .object({
+    id: uuidSchema,
+    type: z.enum(StoryType),
+    typeLabel: z.string(),
+    body: z.string().max(FEED_LIMITS.storyBodyMax),
+    backgroundColor: z.string().nullable(),
+    backgroundUrl: z.string().nullable(),
+    textStyle: z.enum(StoryTextStyle),
+    city: cityRefSchema,
+    /**
+     * Colonne LIBRE en base, pas une énumération : `z.string()` et non
+     * `z.enum(STORY_SUBJECTS)`. Un `enum` ici refuserait une ligne écrite hors de
+     * ces chemins, et transformerait une donnée inattendue en écran blanc.
+     */
+    category: z.string().nullable(),
+    categoryLabel: z.string().nullable(),
+    placeLabel: z.string().nullable(),
+    stepDefinition: z.object({ id: uuidSchema, nameFr: z.string() }).nullable(),
+    audience: z.enum(StoryAudience),
+    allowMessages: z.boolean(),
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+    validUntil: z.string().datetime().nullable(),
+    /** L'ANNEAU (§2.6), pas un compteur. */
+    seen: z.boolean(),
+    votes: z.object({
+      positive: z.number().int(),
+      positiveKind: z.enum(StoryReactionKind),
+      positiveLabel: z.string(),
+      negative: z.number().int(),
+      negativeKind: z.enum(StoryReactionKind),
+      negativeLabel: z.string(),
+    }),
+    author: memberSummarySchema,
+  })
+  /**
+   * `.strict()` REND STRUCTURELLE LA RÈGLE « AUCUN COMPTEUR DE VUES ».
+   *
+   * §2.6 et `00` §49 l’interdisent sur tout contenu, et l’API le respecte : rien
+   * n’expose `viewCount`, pas même à l’auteur. Mais un objet permissif ACCEPTE un
+   * champ en trop, et c’est mesuré : `viewCount: 412` greffé sur une bulle passait
+   * la validation sans un mot. Un écran aurait pu l’afficher, et aucun test de
+   * schéma ne l’aurait vu. Ici, la charge est refusée à la frontière.
+   */
+  .strict();
+
+export type StoryBubble = z.infer<typeof storyBubbleSchema>;
+
+/**
+ * `GET /stories` — le bandeau, une bulle par AUTEUR.
+ *
+ * `nextCursor` vaut toujours `null` : §4 ne pagine pas le bandeau, et le paginer
+ * donnerait un anneau vu/non-vu incohérent d'une page à l'autre. `sortKey` est
+ * retiré par le service avant l'envoi — ne pas l'attendre.
+ */
+export const storyBandResponseSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        author: memberSummarySchema,
+        isMe: z.boolean(),
+        /** L'anneau vert : vrai tant qu'UNE story de l'auteur n'est pas vue. */
+        hasUnseen: z.boolean(),
+        stories: z.array(storyBubbleSchema),
+      }),
+    )
+    .max(FEED_LIMITS.storyBandMaxAuthors),
+  nextCursor: z.string().nullable(),
+  meta: z.object({
+    canCreate: z.boolean(),
+    typeOrder: z.array(z.enum(StoryType)),
+    reminder: z.literal(STORY_COMPOSER_REMINDER),
+  }),
+});
+
+export type StoryBandResponse = z.infer<typeof storyBandResponseSchema>;
+
+/** `GET /stories/:id` et `POST /stories` — la même forme. */
+export const storyDetailResponseSchema = z.object({
+  story: storyBubbleSchema.extend({
+    /** « 1er des conseils Logement aujourd'hui · 31 trouvent utile » — composé serveur. */
+    stateLine: z.string(),
+    rank: z.number().int().min(1),
+    peerCount: z.number().int().min(1),
+    myReaction: z.enum(StoryReactionKind).nullable(),
+    bookmarked: z.boolean(),
+    isAuthor: z.boolean(),
+    expired: z.boolean(),
+    canMessage: z.boolean(),
+    context: z.object({
+      text: z.string(),
+      parts: z.array(z.string()),
+      expiresIn: z.string(),
+    }),
+  }),
+  meta: z.object({ reminder: z.literal(STORY_COMPOSER_REMINDER) }),
+});
+
+export type StoryDetailResponse = z.infer<typeof storyDetailResponseSchema>;
+
+/**
+ * `GET /me/stories` — l'historique de 30 jours.
+ *
+ * ATTENTION : son `votes` n'est PAS celui de la bulle. Le service l'écrase après
+ * l'étalement, et la version d'ici PERD `positiveKind` et `negativeKind`.
+ * Réutiliser `storyBubbleSchema` tel quel ferait échouer la validation sur deux
+ * champs manquants — d'où le `.extend()` qui le remplace explicitement.
+ */
+export const myStoriesResponseSchema = z.object({
+  items: z.array(
+    storyBubbleSchema.extend({
+      status: z.enum(StoryStatus),
+      expired: z.boolean(),
+      convertedTo: z.object({ type: z.string().nullable(), id: uuidSchema }).nullable(),
+      /**
+       * QUATRE clés, et `.strict()` pour que ce soit vérifié.
+       *
+       * Sans lui, un `votes` à six clés — celui de la bulle, avec ses `kind` —
+       * passait ici : mesuré. Un écran d'historique aurait alors lu
+       * `votes.positiveKind` en développement contre une charge fabriquée, et
+       * `undefined` en production contre la vraie.
+       */
+      votes: z
+        .object({
+          positive: z.number().int(),
+          positiveLabel: z.string(),
+          negative: z.number().int(),
+          negativeLabel: z.string(),
+        })
+        .strict(),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
+
+export type MyStoriesResponse = z.infer<typeof myStoriesResponseSchema>;
+
+/** `PUT`/`DELETE /stories/:id/reaction` — le seul endroit où `score` sort. */
+export const storyVotesResponseSchema = z.object({
+  positive: z.number().int(),
+  positiveKind: z.enum(StoryReactionKind),
+  positiveLabel: z.string(),
+  negative: z.number().int(),
+  negativeKind: z.enum(StoryReactionKind),
+  negativeLabel: z.string(),
+  score: z.number(),
+});
+
+export type StoryVotesResponse = z.infer<typeof storyVotesResponseSchema>;
+
+/** `POST /stories/:id/convert` (§2.6). */
+export const convertStoryResponseSchema = z.object({
+  target: z.enum(['HELP_REQUEST', 'CITY_TIP']),
+  targetId: uuidSchema,
+  storyId: uuidSchema,
+});
+
+export type ConvertStoryResponse = z.infer<typeof convertStoryResponseSchema>;

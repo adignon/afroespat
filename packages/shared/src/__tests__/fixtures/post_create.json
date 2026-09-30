@@ -1,0 +1,58 @@
+{
+  "post": {
+    "id": "01a0f10d-d9a0-7000-8395-d2f0e11cb5e7",
+    "type": "VICTORY",
+    "typeLabel": "Victoire",
+    "excerpt": "Visale obtenue sans CDI ! Merci à celles et ceux qui m’ont guidée sur le dossier.",
+    "createdAt": "2026-09-30T06:43:31.874Z",
+    "author": {
+      "id": "01a0f10d-d686-7000-b3c9-1290b7242835",
+      "handle": "m01a0f10dd6867000b3c91290b7242",
+      "displayName": "Amina Diallo",
+      "avatarUrl": null,
+      "level": "L1",
+      "phase": "RECENT_ARRIVAL",
+      "cityName": "Lyon",
+      "countryIso2": "BJ",
+      "isMentor": false
+    },
+    "isAuthor": true,
+    "city": {
+      "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+      "name": "Lyon"
+    },
+    "community": null,
+    "media": [],
+    "context": {
+      "text": "Lyon · à l’instant",
+      "parts": [
+        "Lyon",
+        "à l’instant"
+      ]
+    },
+    "stepBadge": null,
+    "counter": {
+      "count": 0,
+      "displayCount": 0,
+      "word": "félicitation"
+    },
+    "reaction": {
+      "kind": "BRAVO",
+      "actionLabel": "Bravo",
+      "mine": null
+    },
+    "commentCount": 0,
+    "commentLabel": "Commenter",
+    "linkRel": "noopener nofollow ugc",
+    "body": "Visale obtenue sans CDI ! Merci à celles et ceux qui m’ont guidée sur le dossier.",
+    "movedTo": null,
+    "canMoveToTopic": false
+  },
+  "comments": {
+    "items": [],
+    "nextCursor": null
+  },
+  "meta": {
+    "linkRel": "noopener nofollow ugc"
+  }
+}
