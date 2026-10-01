@@ -384,20 +384,41 @@ test.describe('P01 — consentement (§5 et §2.10)', () => {
         (candidate) => candidate.getBoundingClientRect().height > 0,
       );
       if (el === undefined) throw new Error('case affichée introuvable');
-      const style = getComputedStyle(el);
       const box = el.getBoundingClientRect();
+      /**
+       * CE QUI EST PEINT SE MESURE SUR L'ÉLÉMENT QUI PORTE LE TRAIT, pas sur la
+       * largeur calculée du bouton.
+       *
+       * Ce test mesurait `getComputedStyle(el).width` et affirmait « la case garde
+       * ses 22 px dessinés ». IL ÉTAIT CREUX, et le propriétaire a vu à l'écran ce
+       * qu'il ne voyait pas : la case portait `padding: 11px` en `content-box`, donc
+       * `style.width` valait bien 22 — la boîte de CONTENU — alors que
+       * `backgroundClip: "content-box"` rogne le FOND et pas le TRAIT. Le `border`
+       * se dessinait au bord du remplissage : 44 × 44 px peints, le double de la
+       * maquette, sous un test vert.
+       *
+       * On mesure donc le rectangle RENDU de l'élément qui porte la bordure. La
+       * cible tactile et le carré peint sont maintenant deux éléments distincts, et
+       * ce test exige les deux séparément — ce qu'un seul élément ne pouvait pas
+       * donner.
+       */
+      const paintedEl = el.querySelector<HTMLElement>('[aria-hidden="true"]') ?? el;
+      const painted = paintedEl.getBoundingClientRect();
       return {
         target: Math.round(Math.min(box.width, box.height)),
-        painted: parseFloat(style.width),
-        clip: style.backgroundClip,
+        painted: Math.round(Math.max(painted.width, painted.height)),
       };
     });
 
-    expect(measured.target).toBeGreaterThanOrEqual(44);
+    expect(measured.target, 'la cible tactile doit faire au moins 44 px').toBeGreaterThanOrEqual(
+      44,
+    );
     // La case garde ses 22 px dessinés : une « correction » d'accessibilité qui
     // grossit le visuel serait un changement de design, pas un correctif.
-    expect(measured.painted).toBe(22);
-    expect(measured.clip).toBe('content-box');
+    expect(
+      measured.painted,
+      'le carré PEINT a changé de taille : c’est un changement de design, pas un correctif d’accessibilité',
+    ).toBe(22);
   });
 
   /**
@@ -417,9 +438,19 @@ test.describe('P01 — consentement (§5 et §2.10)', () => {
           (candidate) => candidate.getBoundingClientRect().height > 0,
         );
         if (box === undefined) throw new Error('case affichée introuvable');
-        const path = box.querySelector('svg path');
+        /**
+         * LE FOND SE LIT SUR L'ÉLÉMENT QUI LE PORTE, et ce n'est plus le bouton.
+         *
+         * La cible tactile et le carré peint ont été séparés : le bouton porte les
+         * 44 px cliquables sans fond ni trait, le `<span>` intérieur porte le dessin
+         * de la maquette à ses 22 px. Lire `backgroundColor` sur le bouton rendrait
+         * désormais `rgba(0, 0, 0, 0)` avant ET après — le test passerait pour la
+         * raison même qui le rendrait inutile.
+         */
+        const peint = box.querySelector<HTMLElement>('[aria-hidden="true"]') ?? box;
+        const path = peint.querySelector('svg path');
         return {
-          background: getComputedStyle(box).backgroundColor,
+          background: getComputedStyle(peint).backgroundColor,
           check: path === null ? null : getComputedStyle(path).stroke,
         };
       });

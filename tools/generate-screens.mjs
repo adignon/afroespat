@@ -571,24 +571,69 @@ const CONSENT_CHECKBOX = {
       .map((part) => part.trim())
       .filter((part) => part.length > 0);
 
-    const style = [
+    /**
+     * DEUX ÉLÉMENTS, et c'est une correction : la cible tactile et le carré peint
+     * ne sont plus le même objet.
+     *
+     * L'état précédent posait `padding: "11px"` en `content-box` sur le bouton
+     * lui-même, avec un commentaire affirmant « la cible passe à 44 px sans que la
+     * case peinte change de taille ». C'ÉTAIT FAUX, et le propriétaire l'a vu à
+     * l'écran : `backgroundClip: "content-box"` rogne le FOND, pas le TRAIT. Le
+     * `border` se dessine au bord de la boîte de remplissage, donc le carré visible
+     * faisait 44 × 44 px — exactement le double de ce que la maquette dessine.
+     *
+     * Le bouton ne porte plus que la zone cliquable : 44 px, aucun fond, aucun
+     * trait, aucun remplissage. Le `<span>` intérieur porte tout le dessin de la
+     * maquette, à ses 22 px d'origine. On obtient les deux choses au lieu d'une :
+     * la cible que l'accessibilité demande, et la case que la maquette dessine.
+     *
+     * `aria-hidden` sur le span : le nom accessible est sur le bouton, et un
+     * lecteur d'écran n'a rien à annoncer d'un carré décoratif.
+     */
+    /**
+     * `rest` porte déjà le style de la maquette, centrage compris. On n'ajoute
+     * donc une propriété de mise en page QUE SI elle manque — sinon l'objet JSX
+     * en porte deux fois la même, ce que TypeScript refuse (TS1117) et ce que le
+     * typecheck a bien dit ici.
+     */
+    const cles = new Set(rest.map((part) => part.split(':')[0].trim()));
+    const siAbsent = (decl) => (cles.has(decl.split(':')[0].trim()) ? [] : [decl]);
+
+    const peint = [
       'width: "22px"',
       'height: "22px"',
       'borderRadius: "7px"',
       'background: consentBg',
       'border: consentBorder',
       ...rest,
-      // La cible passe à 44 px sans que la case peinte change de taille.
-      'padding: "11px"',
-      'boxSizing: "content-box"',
-      'backgroundClip: "content-box"',
+      ...siAbsent('display: "flex"'),
+      ...siAbsent('alignItems: "center"'),
+      ...siAbsent('justifyContent: "center"'),
+      ...siAbsent('flexShrink: "0"'),
+    ].join(', ');
+
+    const cible = [
+      'width: "44px"',
+      'height: "44px"',
+      'padding: "0"',
+      'border: "none"',
+      'background: "none"',
+      'display: "flex"',
+      'alignItems: "center"',
+      'justifyContent: "center"',
+      'flexShrink: "0"',
+      // La cible dépasse la case de 11 px de chaque côté : on la ramène dans le
+      // flux pour que la ligne de consentement garde l'alignement de la maquette.
+      'margin: "-11px"',
       'cursor: "pointer"',
     ].join(', ');
 
     const box =
       '<button type="button" role="checkbox" aria-checked={consentAccepted} ' +
       'onClick={onToggleConsent} aria-label="J’accepte les conditions d’utilisation et la politique de confidentialité" ' +
-      `style={{ ${style} }}>${inner}</button>`;
+      `style={{ ${cible} }}>` +
+      `<span aria-hidden="true" style={{ ${peint} }}>${inner}</span>` +
+      '</button>';
 
     return { jsx: jsx.slice(0, m.index) + box + jsx.slice(m.index + m[0].length), applied: true };
   },
