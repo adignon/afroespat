@@ -1,9 +1,18 @@
 import { z } from 'zod';
-import { HelpType, HelpType2 } from '../enums/generated.js';
+import {
+  HelpKind,
+  HelpStatus,
+  HelpType,
+  HelpType2,
+  Phase,
+  VerificationLevel,
+} from '../enums/generated.js';
 import {
   cursorQuerySchema,
   DEFAULT_PAGE_LIMIT,
+  handleSchema,
   MAX_PAGE_LIMIT,
+  pageSchema,
   uuidSchema,
 } from './pagination.js';
 
@@ -251,3 +260,233 @@ export type HelpMineQuery = z.infer<typeof helpMineQuerySchema>;
 export const helpMyResponsesQuerySchema = cursorQuerySchema;
 
 export type HelpMyResponsesQuery = z.infer<typeof helpMyResponsesQuerySchema>;
+
+// ── Schémas de RÉPONSE (§5) ─────────────────────────────────────────────────
+//
+// ILS SONT ÉCRITS SUR LA CHARGE RÉELLE, pas sur la lecture du service.
+//
+// Chaque champ ci-dessous a été relevé en appelant l'API qui tourne, avec deux
+// membres réellement créés, une demande réellement publiée et une réponse
+// réellement écrite. La leçon vient de `connections.ts` et elle y est écrite : un
+// schéma lu sur le SERVICE décrit une liste nue que le CONTRÔLEUR enveloppe, et
+// c'est l'écran qui reste sur son état d'attente.
+//
+// Ici le contrôleur n'enveloppe rien — il rend `this.help.list(…)` tel quel — mais
+// DEUX formes auraient été fausses si on les avait devinées, et les deux ont été
+// MESURÉES :
+//
+//   · `POST /help` ne rend PAS `{ id }`. Il rend le DÉTAIL complet
+//     (`{ request, journeyContext, responses, meta }`), parce que `create()`
+//     termine par `return this.detail(…)`. Un client qui lirait `corps.id` aurait
+//     `undefined`, et l'écran suivant chargerait `/help/undefined` — ce qui est
+//     exactement arrivé au script de relève, en `400 VALIDATION_FAILED` sur un
+//     chemin, c'est-à-dire un message qui n'accuse pas la bonne chose ;
+//   · `dueDate` est une colonne `@db.Date`, et elle se sérialise malgré tout en
+//     HORODATAGE COMPLET — `"2026-10-09T00:00:00.000Z"`. Un `z.string().date()`,
+//     qui est le réflexe quand on lit `@db.Date` dans le schéma Prisma, REFUSE
+//     cette valeur. Relevé, pas supposé.
+
+/**
+ * Un membre tel que ce module le montre — `HelpService.summary()`, T4 §6.
+ *
+ * `.strict()` PARCE QUE C'EST DE L'IDENTITÉ. Sans lui, zod dépouille en silence :
+ * si l'API se mettait un jour à joindre un `phone`, un `email` ou une date de
+ * naissance à l'auteur d'une demande, la donnée AURAIT TRANSITÉ par le navigateur
+ * du membre, et personne ne le saurait — le champ serait simplement absent de
+ * l'objet validé. Avec `.strict()`, la réponse est refusée à la frontière et
+ * l'incident se voit. C'est la règle dure 01 §2.1 rendue exécutable à l'endroit où
+ * elle peut encore être tenue : la maquette `05 Entraide` n'écrit AUCUN numéro —
+ * compté, zéro occurrence sur ses vingt cadres — donc le dessin ne protège rien
+ * ici, et le rempart est ce schéma.
+ */
+export const helpMemberSchema = z
+  .object({
+    id: uuidSchema,
+    handle: handleSchema,
+    displayName: z.string(),
+    /** `/media/<clé>` composé par le service, ou `null` sans avatar. */
+    avatarUrl: z.string().nullable(),
+    /** AFFICHÉ, jamais employé pour autoriser (00 §7.3). */
+    level: z.enum(VerificationLevel),
+    phase: z.enum(Phase),
+    cityName: z.string().nullable(),
+    countryIso2: z.string().length(2),
+    isMentor: z.boolean(),
+  })
+  .strict();
+
+export type HelpMember = z.infer<typeof helpMemberSchema>;
+
+/**
+ * La carte de liste — `HelpService.card()`, §5.
+ *
+ * `.strict()` : c'est du CONTENU de membre. `excerpt` est le corps TRONQUÉ à 280
+ * caractères par le serveur ; le champ `body` entier n'existe que sur le détail, et
+ * laisser une clé greffée le faire apparaître en liste reviendrait à publier ce que
+ * §5 a décidé de tronquer.
+ */
+export const helpCardSchema = z
+  .object({
+    id: uuidSchema,
+    kind: z.enum(HelpKind),
+    type: z.enum(HelpType2),
+    title: z.string(),
+    excerpt: z.string(),
+    status: z.enum(HelpStatus),
+    city: z.object({ id: uuidSchema, name: z.string() }).strict(),
+    /** Horodatage complet, mesuré — voir l'en-tête de cette section. */
+    dueDate: z.string().datetime().nullable(),
+    responseCount: z.number().int().min(0),
+    createdAt: z.string().datetime(),
+    resolvedAt: z.string().datetime().nullable(),
+    resolvedByResponseId: uuidSchema.nullable(),
+    /** Pastille « Depuis un parcours » (§2.5) — sans rien dire du parcours. */
+    fromJourney: z.boolean(),
+    author: helpMemberSchema,
+    isAuthor: z.boolean(),
+  })
+  .strict();
+
+export type HelpCard = z.infer<typeof helpCardSchema>;
+
+/**
+ * Le `meta` que TOUTE réponse de ce module porte.
+ *
+ * `safetyBanner` est la règle dure de §2.7 — « chaque page de la section l'affiche
+ * en permanence » — et elle voyage avec la réponse plutôt qu'en dur dans un
+ * composant. Le schéma l'EXIGE donc : une API qui cesserait de l'envoyer verrait sa
+ * réponse refusée, au lieu de produire des écrans sans leur avertissement.
+ *
+ * `reason` n'apparaît que sur « Vous pouvez aider » sans critère (`NO_CRITERIA`) ;
+ * `open` et `resolvedThisMonth` ne sont comptés que par `GET /help`. Les trois sont
+ * donc facultatifs ici et resserrés là où ils sont attendus.
+ */
+export const helpMetaSchema = z
+  .object({
+    safetyBanner: z.string().min(1),
+    useServicesHint: z.string().min(1),
+    reason: z.literal('NO_CRITERIA').optional(),
+    open: z.number().int().min(0).optional(),
+    resolvedThisMonth: z.number().int().min(0).optional(),
+  })
+  .strict();
+
+/** `GET /help` (§4) — le fil, avec ses deux compteurs de ville. */
+export const helpListResponseSchema = pageSchema(helpCardSchema).extend({
+  meta: helpMetaSchema,
+});
+
+export type HelpListResponse = z.infer<typeof helpListResponseSchema>;
+
+/**
+ * `GET /help/can-help` (§2.6).
+ *
+ * `nextCursor` EST PRÉSENT ET TOUJOURS NUL : le service le rend explicitement
+ * (`nextCursor: null`), parce que c'est une suggestion calculée et non une archive
+ * à parcourir. On décrit ce que l'API envoie, pas ce qu'on aurait aimé.
+ */
+export const helpCanHelpResponseSchema = pageSchema(helpCardSchema).extend({
+  meta: helpMetaSchema,
+});
+
+export type HelpCanHelpResponse = z.infer<typeof helpCanHelpResponseSchema>;
+
+/** `GET /help/mine` (§4) — mes demandes, archivées comprises. */
+export const helpMineResponseSchema = pageSchema(helpCardSchema).extend({
+  meta: helpMetaSchema,
+});
+
+export type HelpMineResponse = z.infer<typeof helpMineResponseSchema>;
+
+/** `GET /help/my-responses` (§4) — ma réponse, et la demande qui la porte. */
+export const helpMyResponsesResponseSchema = pageSchema(
+  z
+    .object({
+      id: uuidSchema,
+      body: z.string(),
+      createdAt: z.string().datetime(),
+      markedHelpful: z.boolean(),
+      markedAt: z.string().datetime().nullable(),
+      request: helpCardSchema,
+    })
+    .strict(),
+).extend({ meta: helpMetaSchema });
+
+export type HelpMyResponsesResponse = z.infer<typeof helpMyResponsesResponseSchema>;
+
+/**
+ * La ligne de contexte de §2.5.
+ *
+ * RÈGLE DURE (§2.5 et 04 §2) : le TYPE de parcours, JAMAIS son titre personnel.
+ * `.strict()` est donc ici le garde-fou de cette règle précise : un `journeyTitle`
+ * greffé serait REFUSÉ au lieu d'être dépouillé en silence — et dépouillé en
+ * silence, il aurait quand même traversé le réseau.
+ *
+ * NON RELEVÉE SUR UNE CHARGE RÉELLE, et il faut le dire : produire un
+ * `journeyContext` non nul demande une demande issue d'une étape de parcours, que
+ * ce lot n'a pas construite. La forme est donc celle de `journeyContext()` dans le
+ * service. Les deux moitiés du contrôle ne sont pas tenues pour ce seul objet.
+ */
+export const helpJourneyContextSchema = z
+  .object({
+    stepName: z.string(),
+    journeyTypeName: z.string(),
+    dueDate: z.string().datetime().nullable(),
+    dueInDays: z.number().int().nullable(),
+  })
+  .strict();
+
+/**
+ * `GET /help/:id` (§4) — ET AUSSI la réponse de `POST /help` et de `PATCH /help/:id`.
+ *
+ * Les trois routes rendent la même forme, parce que `create()` et `update()`
+ * terminent par `return this.detail(…)`. C'est mesuré, et c'est le piège décrit en
+ * tête de section.
+ */
+export const helpDetailResponseSchema = z
+  .object({
+    request: helpCardSchema.extend({
+      /** Le corps ENTIER, que la carte tronque. */
+      body: z.string(),
+      updatedAt: z.string().datetime(),
+    }),
+    journeyContext: helpJourneyContextSchema.nullable(),
+    responses: z.array(
+      z
+        .object({
+          id: uuidSchema,
+          body: z.string(),
+          createdAt: z.string().datetime(),
+          markedHelpful: z.boolean(),
+          markedAt: z.string().datetime().nullable(),
+          author: helpMemberSchema,
+          /** §2.4 : l'auteur marque UNE réponse, et seulement tant qu'elle est ouverte. */
+          canMarkHelpful: z.boolean(),
+        })
+        .strict(),
+    ),
+    meta: helpMetaSchema,
+  })
+  .strict();
+
+export type HelpDetailResponse = z.infer<typeof helpDetailResponseSchema>;
+
+/** `POST /help/:id/responses` (§2.3) : l'identifiant de la réponse créée. */
+export const helpResponseCreatedSchema = z
+  .object({ id: uuidSchema, meta: helpMetaSchema })
+  .strict();
+
+export type HelpResponseCreated = z.infer<typeof helpResponseCreatedSchema>;
+
+/**
+ * `POST /help/:id/private-reply` (§2.3) : la conversation directe avec l'auteur.
+ *
+ * `created` distingue l'ouverture de la reprise. `.strict()` : c'est une MISE EN
+ * RELATION, et la règle dure du module veut qu'aucune n'échappe à un blocage — un
+ * champ greffé ici serait une fuite au sens le plus strict du terme.
+ */
+export const helpPrivateReplyResponseSchema = z
+  .object({ conversationId: uuidSchema, created: z.boolean() })
+  .strict();
+
+export type HelpPrivateReplyResponse = z.infer<typeof helpPrivateReplyResponseSchema>;

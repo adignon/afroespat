@@ -1,24 +1,44 @@
 /**
- * Données des écrans S01 à S10, reprises de `docs/template/06 Services.dc.html`.
+ * Données des écrans S01 à S10, et ce que la maquette `06 Services.dc.html` en dit.
  *
- * ET IL N'Y EN A AUCUNE — ce fichier existe pour le dire, pas pour combler un vide.
+ * ── CE FICHIER A CHANGÉ DE NATURE, ET IL FAUT SAVOIR POURQUOI ───────────────
  *
- * `06 Services` n'emploie pas le dialecte des maquettes `01` et `03` : son
- * `renderVals()` est littéralement `renderVals() { return {}; }`, le fichier ne
- * contient ni `{{ … }}` ni `<sc-for>` — zéro de chacun, compté — et tout le
- * contenu est écrit en clair dans le HTML. Voir l'en-tête de
- * `apps/web/src/screens/entraide/data.ts`, qui détaille la conséquence : recopier
- * un `renderVals()` vide, c'est n'écrire aucune donnée ; en écrire une serait
- * choisir une structure que la maquette n'a pas choisie.
+ * Il disait, et c'était exact : « ET IL N'Y EN A AUCUNE — ce fichier existe pour
+ * le dire, pas pour combler un vide ». `06 Services` n'emploie pas le dialecte des
+ * maquettes `01` et `03` : son `renderVals()` rend `{}`, zéro `{{ … }}`, zéro
+ * `<sc-for>`, comptés. Les vingt-cinq cadres recevaient donc `_props` — ils
+ * IGNORAIENT leurs données, faute d'avoir où les mettre.
  *
- * Le type reste, parce que le générateur en pose un en signature de chaque cadre,
- * et parce qu'il est le point d'accroche du lot suivant : quand ces écrans seront
- * branchés sur `apps/api/src/modules/{housing,jobs,pros,alerts}`, c'est ici que
- * les champs arriveront, et le JSX transcodé n'aura pas à bouger.
+ * Il annonçait aussi la suite : « quand ces écrans seront branchés sur
+ * `apps/api/src/modules/{housing,jobs,pros,alerts}`, c'est ici que les champs
+ * arriveront, et le JSX transcodé n'aura pas à bouger ». C'est exactement ce qui
+ * vient d'arriver, et le JSX n'a PAS bougé : la prise a été DÉCLARÉE dans
+ * `tools/screens/06-services.mjs`, sous la clé `donnees`, et le générateur a
+ * produit des cadres qui lisent leurs propriétés.
  *
- * AUCUN BOUTON DE CE MODULE N'EST BRANCHÉ hors ouverture de fenêtre, et c'est
- * délibéré. Quatre d'entre eux portent une conséquence pour un tiers ou pour le
- * membre lui-même :
+ * UNE RECTIFICATION À CET EN-TÊTE, parce qu'elle a coûté une recherche : il
+ * n'existe PAS de module `apps/api/src/modules/alerts`. `GET /me/alerts` et ses
+ * trois écritures vivent dans `housing.controller.ts` — §2.4 définit l'alerte avec
+ * la recherche de logement, et la même table sert les deux kinds. Lire le nom du
+ * dossier fait chercher une route qui n'existe pas ; c'est le CONTRÔLEUR qui dit
+ * la vérité.
+ *
+ * ── LA RÉPARTITION, QUI EST LA MOITIÉ DU CONTRAT ────────────────────────────
+ *
+ * La FORME est transcodée de la maquette ; la DONNÉE et le COMPORTEMENT vivent
+ * ici. Ce fichier ne porte plus que ce qui est COMMUN aux dix écrans — le bandeau
+ * d'identité et le quota du mois, que les dix planches d'ordinateur dessinent à
+ * l'identique. Le reste vit dans `screens/s01/data.ts` et ses nœufs voisins : UN
+ * TYPE PAR ÉCRAN, jamais un type partagé par tout le module. Un type partagé
+ * aurait obligé chaque écran à déclarer les champs des neuf autres, donc à les
+ * rendre facultatifs, donc à n'exiger rien de personne.
+ *
+ * Les appels sont dans `screens/services/appels.ts`, et eux seuls touchent l'API.
+ *
+ * ── AUCUN BOUTON DE CE MODULE N'EST BRANCHÉ hors ouverture de fenêtre ───────
+ *
+ * C'est délibéré, et inchangé par l'arrivée de l'API. Quatre d'entre eux portent
+ * une conséquence pour un tiers ou pour le membre lui-même :
  *
  *   · « Publier l'annonce » (S03) — 10 §2.1 : la publication passe par un score
  *     de risque calculé côté serveur, et une annonce à score ≥ 0,7 n'est jamais
@@ -31,15 +51,71 @@
  *   · « Recommander » (S05) — écrit un avis sur un autre membre (§3.3).
  *
  * C'est la même règle que « Publier » dans le module Parcours : un bouton inerte
- * est moins nuisible qu'un bouton qui ment.
+ * est moins nuisible qu'un bouton qui ment. Les puces d'action de S09
+ * (« Renouveler », « Pause », « Logement trouvé », « Supprimer ») sont dans le
+ * même cas : les routes existent (`POST /housing/:id/renew`, `/pause`, `/taken`,
+ * `DELETE`), et les brancher demande l'écran de confirmation que la maquette ne
+ * dessine pas.
+ *
+ * ── LE NIVEAU DE VÉRIFICATION NE SERT JAMAIS À AUTORISER ────────────────────
+ *
+ * Aucun `if (niveau >= 2)` n'existe dans ce module, et il n'en faut pas. On tente
+ * l'action ; le serveur répond `403 LEVEL_REQUIRED` avec `requiredLevel`,
+ * `currentLevel` et `labelFr` — de quoi afficher l'INVITATION que §7.3 exige, et
+ * non une simple erreur. La raison est dans `lib/api/session.ts`, et elle vaut
+ * d'être lue : un niveau lu une fois et gardé, c'est la faille de quinze minutes
+ * du projet rejouée dans le front.
  */
 
 /**
- * Aucun champ : les cadres générés reçoivent `_props`.
+ * LE BANDEAU D'IDENTITÉ, sur les dix cadres d'ordinateur.
+ *
+ * Deux champs seulement, parce que la maquette n'en dessine que deux : l'avatar de
+ * repli et le prénom de la barre haute. `08 Compte` en dessine cinq ; ce module
+ * n'affiche ni le nom complet, ni le pseudo, ni le niveau.
+ */
+export interface Moi {
+  /** Deux lettres au plus, dérivées du nom affiché de `GET /me`. */
+  readonly initiales: string;
+  /** Le premier mot du nom affiché. */
+  readonly prenom: string;
+}
+
+/**
+ * LE QUOTA DU MOIS — la carte verte « MES QUOTAS DU MOIS », dix fois dessinée.
+ *
+ * §4.4, RÈGLE DURE : « 3 contacts distincts par mois en gratuit », illimité en
+ * Premium. Les trois champs viennent de `GET /me/subscription` et AUCUN n'est
+ * recalculé ici : le serveur décide, le front affiche. Un front qui relirait
+ * `users.plan` afficherait « 2 sur 3 » à un Premium illimité.
+ *
+ * `barre` est une LARGEUR CSS (« 66% »), parce que la maquette dessine une barre
+ * de progression et que lier le seul texte laisserait une barre aux deux tiers
+ * au-dessus d'un « 0 contact pro sur 3 ».
+ *
+ * `plafondPro` est une CHAÎNE : le plafond vaut `null` pour « illimité », et la
+ * maquette écrit « sur 3 » en toutes lettres. « sur illimité » est la phrase que
+ * `mySubscriptionResponseSchema` annonce déjà — « l'écran affiche illimité, jamais
+ * 0 sur null ».
+ */
+export interface Quotas {
+  readonly contactsPro: number;
+  readonly plafondPro: string;
+  readonly barre: string;
+  /** « 1er octobre », de `usage.resetsAt` — jamais calculée par l'horloge locale. */
+  readonly reinitialise: string;
+}
+
+/**
+ * Les cadres qui ne consomment RIEN — les cinq planches de fenêtre.
  *
  * `Record<string, never>` plutôt qu'un alias de `{}` : `{}` accepte n'importe
  * quelle valeur non nulle en TypeScript, y compris un nombre ou une chaîne. Un
- * type qui n'interdit rien ne dirait pas que l'écran ne consomme rien.
+ * type qui n'interdit rien ne dirait pas que le cadre ne consomme rien.
+ *
+ * Les cinq sont « Présentez-vous » (deux planches), « Contacter Sarah », « Vous
+ * quittez la plateforme » et « Recommander un membre » : un formulaire vide et du
+ * texte de règle. Rien à lier.
  */
 export type ServicesData = Record<string, never>;
 
@@ -79,11 +155,13 @@ export type NomModale = keyof typeof MODALES;
  * le dit et propose de demander un parrain. » La maquette dessine les deux, et
  * les nomme elle-même : « MOBILE · L1+ » et « MOBILE · L0 ».
  *
- * CE QUI DÉCIDE, C'EST LE NIVEAU DU MEMBRE — et ce lot ne branche aucune route,
- * donc il ne le connaît pas. Le bouton « Contacter » ouvre la feuille L1+, qui
- * est le cas courant ; l'état L0 est atteignable par `?niveau=l0`, qui n'affirme
- * rien et se teste. C'est exactement ce que `?paiement=` fait dans le module
- * Compte et `?etat=` dans le module Parcours, pour la même raison.
+ * CE QUI DÉCIDE, C'EST LE NIVEAU DU MEMBRE — ET ON NE LE LIT PAS POUR DÉCIDER.
+ * La règle du socle est sans exception : on tente l'action, et le serveur répond
+ * `403 LEVEL_REQUIRED`. Or ce lot ne branche AUCUN bouton de contact, donc il n'y
+ * a pas d'action à tenter : le bouton « Contacter » ouvre la feuille L1+, qui est
+ * le cas courant, et l'état L0 reste atteignable par `?niveau=l0`, qui n'affirme
+ * rien et se teste. Lire le niveau de `GET /me` pour choisir la feuille aurait
+ * été précisément l'interdit — une décision d'autorisation prise dans le front.
  */
 export const NIVEAUX_CONTACT = ['l0'] as const;
 

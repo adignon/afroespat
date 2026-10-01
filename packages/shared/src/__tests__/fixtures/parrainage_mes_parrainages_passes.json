@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "id": "01a0f4df-c485-7000-a6d2-4082a7bab71b",
+      "role": "mentee",
+      "status": "ENDED",
+      "endReason": "COMPLETED",
+      "requestMessage": "Je cherche un parrain pour mes démarches et mon installation à Lyon, merci beaucoup pour votre aide.",
+      "journeyId": null,
+      "conversationId": "01a0f4df-c498-7000-a357-5800004ac135",
+      "acceptedAt": "2026-10-01T00:31:40.688Z",
+      "endsAt": "2026-12-30T00:31:40.688Z",
+      "endedAt": "2026-10-01T00:31:40.710Z",
+      "expiresAt": null,
+      "extended": false,
+      "canReview": false,
+      "myReview": {
+        "reviewerUserId": "01a0f4df-c435-7000-a823-997975ff67ea",
+        "rating": 5,
+        "comment": "Disponible et très claire sur la CAF.",
+        "createdAt": "2026-10-01T00:31:40.851Z"
+      },
+      "theirReview": {
+        "reviewerUserId": "01a0f4df-c30a-7000-92a6-7b362182a401",
+        "rating": 5,
+        "comment": "Filleule attentive, démarches menées au bout.",
+        "createdAt": "2026-10-01T00:31:40.864Z"
+      },
+      "other": {
+        "id": "01a0f4df-c30a-7000-92a6-7b362182a401",
+        "handle": "h-01a0f4dfc30a",
+        "displayName": "Aïcha Relevée"
+      }
+    }
+  ],
+  "meta": {
+    "moneyBanner": "Un parrainage est gratuit et bénévole. Aucun parrain ne doit vous demander d’argent, ni vous garantir un visa, un logement ou un emploi. Signalez immédiatement toute demande de ce type."
+  }
+}

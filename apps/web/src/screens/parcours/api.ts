@@ -46,16 +46,25 @@ import {
   blockerDraftResponseSchema,
   createJourneySchema,
   dismissShareResponseSchema,
+  journeyActivitiesResponseSchema,
   journeyDetailResponseSchema,
+  journeyFullResponseSchema,
   journeyTemplatesResponseSchema,
   journeysListResponseSchema,
+  publicJourneyDetailResponseSchema,
+  publicJourneysResponseSchema,
+  PUBLIC_JOURNEYS_PANEL_LIMIT,
   type BlockerCancelledResponse,
   type BlockerDraftResponse,
   type CreateJourney,
   type DismissShareResponse,
+  type JourneyActivitiesResponse,
   type JourneyDetailResponse,
+  type JourneyFullResponse,
   type JourneyTemplatesResponse,
   type JourneysListResponse,
+  type PublicJourneyDetailResponse,
+  type PublicJourneysResponse,
 } from '@app/shared';
 /**
  * `@/lib/api/index` ET NON `@/lib/api`.
@@ -145,5 +154,80 @@ export function dismissShare(journeyId: string, stepId: string): Promise<Dismiss
   return memberApi.post(
     `/journeys/${journeyId}/steps/${stepId}/dismiss-share`,
     dismissShareResponseSchema,
+  );
+}
+
+/**
+ * ─── LES QUATRE LECTURES QUE J01 ET J05 À J11 AJOUTENT ──────────────────────
+ *
+ * `getJourney` ci-dessus ne décrit QUE de quoi naviguer : l'identifiant, le titre,
+ * l'étape en cours. C'était suffisant pour J03 et J04, qui ne font que résoudre
+ * l'étape sur laquelle porte un geste. Les vingt-huit cadres de ce lot affichent
+ * autre chose — la liste des étapes, la checklist, l'équipe, le journal, les
+ * parcours publics d'autres membres.
+ *
+ * `readJourney` lit DONC LA MÊME ROUTE avec un schéma plus large, et ce n'est pas
+ * une seconde source : `journeyFullResponseSchema` ÉTEND
+ * `journeyDetailResponseSchema` dans `@app/shared`, les deux sont éprouvés sur la
+ * MÊME fixture relevée, et une clé qui disparaîtrait côté serveur ferait rougir
+ * les deux cas d'un coup. `getJourney` reste employé par les gestes de J02 à J04,
+ * qu'on ne rebranche pas.
+ */
+
+/** §5.1 — le parcours COMPLET : étapes, checklist (au propriétaire), équipe. */
+export function readJourney(journeyId: string): Promise<JourneyFullResponse> {
+  return memberApi.get(`/journeys/${journeyId}`, journeyFullResponseSchema);
+}
+
+/**
+ * §3.7 — les parcours publics d'AUTRES membres.
+ *
+ * `limit` par défaut à `PUBLIC_JOURNEYS_PANEL_LIMIT`, la constante de
+ * `@app/shared` que §3.7 fixe à cinq (« la liste du panneau en montre cinq »).
+ * L'écrire à la main ici l'aurait fait diverger de la borne du serveur.
+ *
+ * AUCUNE DE CES ROUTES N'EST `@PublicRead` : le contrôleur le dit, et §3.7 avec
+ * lui — « un parcours public n'est jamais visible hors connexion ni indexé ».
+ * « Public » veut dire « visible des MEMBRES CONNECTÉS ». Un appel parti sans
+ * jeton prend donc un `401`, le transport rafraîchit UNE fois et rejoue ; il ne
+ * reçoit pas, en silence, une vue de visiteur qui changerait d'avis au
+ * rechargement.
+ */
+export function listPublicJourneys(
+  limit: number = PUBLIC_JOURNEYS_PANEL_LIMIT,
+): Promise<PublicJourneysResponse> {
+  return memberApi.get(`/journeys/public?limit=${limit}`, publicJourneysResponseSchema);
+}
+
+/**
+ * §3.7 — la FICHE d'un parcours public, et elle n'a pas la forme de la liste.
+ *
+ * Elle porte `currentStep`, que la liste ne rend pas. Réutiliser le schéma de la
+ * liste ici lèverait sur toute fiche, et réutiliser celui de la fiche pour la
+ * liste lèverait sur toute liste NON VIDE — invisible, puisque `z.array` accepte
+ * `[]`. Les deux schémas existent dans `@app/shared` ; on ne les confond pas.
+ */
+export function getPublicJourney(journeyId: string): Promise<PublicJourneyDetailResponse> {
+  return memberApi.get(`/journeys/public/${journeyId}`, publicJourneyDetailResponseSchema);
+}
+
+/**
+ * §3.8 — le journal du parcours, paginé PAR CURSEUR.
+ *
+ * La seule liste de ce module qui porte `nextCursor`. Réservée au PROPRIÉTAIRE :
+ * un accompagnant prend un `404`, et NON le `403` qu'on attendrait. MESURÉ au
+ * navigateur sur un accompagnant ACTIF : `assertOwned` lève `notFound()`, donc le
+ * serveur ne confirme même pas que ce journal existe — ce qui est plus prudent
+ * qu'un refus qui, lui, avoue l'existence. C'est la règle de §3.4, et l'écran
+ * affiche le refus plutôt qu'un journal vide : la différence entre « pas pour
+ * vous » et « rien ».
+ */
+export function listJourneyActivities(
+  journeyId: string,
+  limit = 20,
+): Promise<JourneyActivitiesResponse> {
+  return memberApi.get(
+    `/journeys/${journeyId}/activities?limit=${limit}`,
+    journeyActivitiesResponseSchema,
   );
 }

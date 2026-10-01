@@ -4,9 +4,9 @@
 // Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
-import type { ParcoursData } from '../parcours/data';
+import type { J01Data } from '../parcours/data';
 
-export function J01MobileEdition(_props: ParcoursData) {
+export function J01MobileEdition(_props: J01Data) {
   return (
     <>
       <main style={{ display: "contents" }}>

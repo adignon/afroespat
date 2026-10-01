@@ -1,0 +1,191 @@
+{
+  "items": [
+    {
+      "id": "01a0f4e1-8246-7000-8ff9-b23e19a68428",
+      "type": "COOKING",
+      "title": "Repas partagé béninois",
+      "description": "Chacun apporte un plat du pays.",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "venueName": "Maison des Associations",
+      "addressText": "28 rue Denfert-Rochereau, Lyon 7e",
+      "startsAt": "2026-10-02T10:00:00.000Z",
+      "endsAt": "2026-10-02T14:00:00.000Z",
+      "timeZone": "Europe/Paris",
+      "localDate": "2026-10-02",
+      "capacity": 40,
+      "attendeeCount": 2,
+      "status": "SCHEDULED",
+      "communityId": null,
+      "organizer": {
+        "handle": "ag-bd4bc92a94",
+        "displayName": "Organisatrice Éprouvée",
+        "avatarUrl": null
+      },
+      "coverUrl": null,
+      "myStatus": null,
+      "myWaitlistPosition": null,
+      "myCheckedIn": false,
+      "isOrganizer": false
+    },
+    {
+      "id": "01a0f4e2-7239-7000-84b4-bc9b69eb5ddc",
+      "type": "COOKING",
+      "title": "Repas partagé béninois",
+      "description": "Chacun apporte un plat du pays.",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "venueName": "Maison des Associations",
+      "addressText": "28 rue Denfert-Rochereau, Lyon 7e",
+      "startsAt": "2026-10-02T10:00:00.000Z",
+      "endsAt": "2026-10-02T14:00:00.000Z",
+      "timeZone": "Europe/Paris",
+      "localDate": "2026-10-02",
+      "capacity": 40,
+      "attendeeCount": 2,
+      "status": "SCHEDULED",
+      "communityId": null,
+      "organizer": {
+        "handle": "ag-1f060a6ea1",
+        "displayName": "Organisatrice Éprouvée",
+        "avatarUrl": null
+      },
+      "coverUrl": null,
+      "myStatus": null,
+      "myWaitlistPosition": null,
+      "myCheckedIn": false,
+      "isOrganizer": false
+    },
+    {
+      "id": "01a0f4e3-80dc-7000-9814-215fdde8976e",
+      "type": "COOKING",
+      "title": "Repas partagé béninois",
+      "description": "Chacun apporte un plat du pays.",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "venueName": "Maison des Associations",
+      "addressText": "28 rue Denfert-Rochereau, Lyon 7e",
+      "startsAt": "2026-10-02T10:00:00.000Z",
+      "endsAt": "2026-10-02T14:00:00.000Z",
+      "timeZone": "Europe/Paris",
+      "localDate": "2026-10-02",
+      "capacity": 40,
+      "attendeeCount": 2,
+      "status": "SCHEDULED",
+      "communityId": null,
+      "organizer": {
+        "handle": "ag-922eccf39a",
+        "displayName": "Organisatrice Éprouvée",
+        "avatarUrl": null
+      },
+      "coverUrl": null,
+      "myStatus": null,
+      "myWaitlistPosition": null,
+      "myCheckedIn": false,
+      "isOrganizer": false
+    },
+    {
+      "id": "01a0f4e1-82a8-7000-8fa5-e4c0c84c10a6",
+      "type": "SPORT",
+      "title": "Foot entre membres",
+      "description": null,
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "venueName": null,
+      "addressText": "Parc de Gerland, Lyon 7e",
+      "startsAt": "2026-10-02T14:00:00.000Z",
+      "endsAt": null,
+      "timeZone": "Europe/Paris",
+      "localDate": "2026-10-02",
+      "capacity": null,
+      "attendeeCount": 1,
+      "status": "SCHEDULED",
+      "communityId": null,
+      "organizer": {
+        "handle": "ag-3d31912fa1",
+        "displayName": "Participant Éprouvé",
+        "avatarUrl": null
+      },
+      "coverUrl": null,
+      "myStatus": null,
+      "myWaitlistPosition": null,
+      "myCheckedIn": false,
+      "isOrganizer": false
+    },
+    {
+      "id": "01a0f4e2-7269-7000-9747-ea31fee69971",
+      "type": "SPORT",
+      "title": "Foot entre membres",
+      "description": null,
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "venueName": null,
+      "addressText": "Parc de Gerland, Lyon 7e",
+      "startsAt": "2026-10-02T14:00:00.000Z",
+      "endsAt": null,
+      "timeZone": "Europe/Paris",
+      "localDate": "2026-10-02",
+      "capacity": null,
+      "attendeeCount": 1,
+      "status": "SCHEDULED",
+      "communityId": null,
+      "organizer": {
+        "handle": "ag-00c1c7bb62",
+        "displayName": "Participant Éprouvé",
+        "avatarUrl": null
+      },
+      "coverUrl": null,
+      "myStatus": null,
+      "myWaitlistPosition": null,
+      "myCheckedIn": false,
+      "isOrganizer": false
+    },
+    {
+      "id": "01a0f4e3-810e-7000-b27e-d2e82d17b9a1",
+      "type": "SPORT",
+      "title": "Foot entre membres",
+      "description": null,
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "venueName": null,
+      "addressText": "Parc de Gerland, Lyon 7e",
+      "startsAt": "2026-10-02T14:00:00.000Z",
+      "endsAt": null,
+      "timeZone": "Europe/Paris",
+      "localDate": "2026-10-02",
+      "capacity": null,
+      "attendeeCount": 1,
+      "status": "SCHEDULED",
+      "communityId": null,
+      "organizer": {
+        "handle": "ag-3540d2dccd",
+        "displayName": "Participant Éprouvé",
+        "avatarUrl": null
+      },
+      "coverUrl": null,
+      "myStatus": null,
+      "myWaitlistPosition": null,
+      "myCheckedIn": false,
+      "isOrganizer": false
+    }
+  ],
+  "nextCursor": null
+}

@@ -1,0 +1,39 @@
+{
+  "id": "01a0f4dd-3078-7000-8e04-af2034edb042",
+  "handle": "s-01a0f4dd2f20",
+  "displayName": "Sarah Traoré",
+  "avatarUrl": null,
+  "profession": {
+    "id": "01a0e1b0-0503-7000-977f-f2bb1ff44a8a",
+    "nameFr": "Chauffagiste"
+  },
+  "businessName": "Cabinet Bah",
+  "description": "Titres de séjour, recours contre les OQTF, regroupement familial. Premier rendez-vous de trente minutes offert aux membres.",
+  "priceHint": "Consultation dès 80 €",
+  "contactMethod": "PLATFORM_MESSAGE",
+  "contactHint": null,
+  "siret": "12345678901234",
+  "cities": [
+    {
+      "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+      "name": "Lyon",
+      "slug": "lyon"
+    }
+  ],
+  "languages": [],
+  "recommendationCount": 0,
+  "tier": "PRO",
+  "isFeatured": true,
+  "featuredLabel": "Fiche mise en avant",
+  "isMine": false,
+  "createdAt": "2026-10-01T00:28:51.706Z",
+  "verificationStatus": "APPROVED",
+  "mutualConnectionCount": 0,
+  "recommendations": [],
+  "myRecommendation": null,
+  "canRecommend": false,
+  "contactQuota": {
+    "used": 0,
+    "max": 3
+  }
+}

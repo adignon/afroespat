@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { connecter } from './session';
 
 /**
  * M01 et X01 à X04 — « 09 Messages et transverse ».
@@ -10,20 +11,62 @@ import { expect, test, type Page } from '@playwright/test';
  * l'écran doit rendre visibles (08 §5.1, 12 §2.1, 11 §2.1).
  *
  * Les assertions portent sur la GÉOMÉTRIE et les RÔLES, jamais sur des classes.
+ *
+ * ── CE FICHIER A CHANGÉ DE MONDE, ET IL FAUT SAVOIR POURQUOI ───────────────
+ *
+ * Il disait, et c'était exact : « ces écrans n'émettent AUCUNE requête — la
+ * maquette est statique et ce lot ne branche pas l'API ». Ce n'est plus vrai.
+ * M01, X01 et X02 lisent désormais `GET /conversations`,
+ * `GET /conversations/:id/messages`, `GET /search`, `GET /search/suggest` et
+ * `GET /notifications`.
+ *
+ * CONSÉQUENCE MESURÉE, et elle a fait rougir 35 tests d'un coup : sans session, ces
+ * écrans n'affichent plus que « Chargement… » puis une invitation à se reconnecter.
+ * `[data-screen]` n'apparaît jamais, et l'échec dit « element(s) not found » sans
+ * nommer la cause. Un test de ce fichier qui passerait SANS session mesurerait
+ * désormais l'écran d'erreur en croyant mesurer l'écran.
+ *
+ * D'où `connecter()` avant chaque test, et une attente explicite de la fin du
+ * chargement dans `visiter`. Les deux sont des nécessités, pas des rites.
+ *
+ * ⚠ CE QUE CELA COÛTE, ET C'EST À REMONTER : `POST /auth/otp/request` porte
+ * `@RateLimit(10)` À L'HEURE ET PAR ROUTE. Ce fichier ouvre une session par test ;
+ * au-delà de dix, le onzième prend un `429` annonçant près d'une heure d'attente.
+ * `e2e/messagerie-donnees.spec.ts` montre l'échappatoire — un seul contexte et une
+ * seule page pour tout le fichier — mais l'appliquer ici demanderait de réécrire
+ * trente tests qui prennent `page` en fixture. Signalé : la suite de bout en bout
+ * de ce dépôt a besoin soit d'une session partagée par fichier, soit d'un plafond
+ * desserré pour les tests.
  */
 
 /** Ce fichier pilote lui-même ses tailles : un seul projet suffit. */
 test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
 /**
- * `load` et non `networkidle` : ces écrans n'émettent AUCUNE requête — la maquette
- * est statique et ce lot ne branche pas l'API. Next précharge en plus les liens
- * visibles, donc le réseau ne retombe jamais au calme et `networkidle` expire sur
- * un message qui ne nomme pas la cause.
+ * LA SESSION EST OUVERTE AVANT CHAQUE TEST, et c'est une nécessité, pas un rite.
+ *
+ * Voir l'en-tête : sans elle, les écrans branchés de ce module n'affichent qu'un
+ * état d'attente puis une invitation à se reconnecter.
+ */
+test.beforeEach(async ({ context, request }) => {
+  await connecter(context, request, { displayName: 'Awa Traoré' });
+});
+
+/**
+ * `load`, PUIS on attend que l'état d'attente soit parti.
+ *
+ * `networkidle` ne convient toujours pas — Next précharge les liens visibles, donc
+ * le réseau ne retombe jamais au calme et l'attente expire sur un message qui ne
+ * nomme pas la cause. Mais `load` seul ne suffit plus : le document ne contient
+ * d'abord que le squelette, et les données arrivent par deux à trois appels dont le
+ * premier prend un `401` que le socle rafraîchit puis rejoue.
+ *
+ * On attend donc le CADRE, qui n'est monté qu'une fois les données là.
  */
 async function visiter(page: Page, url: string, width = 1440): Promise<void> {
   await page.setViewportSize({ width, height: width < 1024 ? 844 : 900 });
   await page.goto(url, { waitUntil: 'load' });
+  await page.locator('[data-screen]').first().waitFor({ state: 'attached', timeout: 20_000 });
 }
 
 const ORDINATEUR = '[data-frame="desktop"]';
@@ -42,9 +85,22 @@ const ROUTES = [
     url: '/messages/1',
     ecran: 'M01',
     ordinateur: 'Messages',
-    // Sur téléphone, la conversation est une PAGE À PART : son titre est celui de
-    // la conversation — ici le titre du parcours (08 §8).
-    mobile: 'Mes études à Lyon',
+    /**
+     * Sur téléphone, la conversation est une PAGE À PART : son titre est celui de
+     * la conversation (08 §8).
+     *
+     * CE TITRE EST DEVENU UNE DONNÉE, et c'est ce qui a fait tomber ce test. Il
+     * attendait « Mes études à Lyon » — le titre que la MAQUETTE dessine — alors
+     * qu'il vaut maintenant `entete.nom`, c'est-à-dire le titre du parcours ou le
+     * nom de l'interlocuteur. Un membre neuf n'a aucune conversation, et `/messages/1`
+     * ne nomme d'ailleurs pas un UUID : le chargeur retombe sur « Messages ».
+     *
+     * Corriger l'attente plutôt que le code est ici le bon sens — le test
+     * cherchait le nom DESSINÉ, donc il passait sans session et échouait avec.
+     * `e2e/messagerie-donnees.spec.ts` éprouve, lui, que ce titre suit bien la
+     * donnée.
+     */
+    mobile: 'Messages',
   },
   { url: '/notifications', ecran: 'X02', ordinateur: 'Notifications', mobile: 'Notifications' },
   /**
@@ -55,7 +111,21 @@ const ROUTES = [
    * paires sous le seuil. Le jour où la maquette lui donne un titre, ce test tombe et
    * force à le déclarer.
    */
-  { url: '/recherche', ecran: 'X01', ordinateur: 'Résultats pour « visale »', mobile: null },
+  /**
+   * `/recherche` N'A TOUJOURS PAS DE TITRE MOBILE — mais son titre d'ORDINATEUR est
+   * devenu une DONNÉE : il porte `meta.q`, la requête telle que le serveur l'a
+   * comprise. Sans `?q=`, il n'y a pas de requête, et le titre se réduit à ses
+   * guillemets. C'est exact, et c'est ce que la page doit montrer : inventer
+   * « visale » faute de requête serait réafficher la maquette.
+   *
+   * L'URL porte donc la requête ici, pour que ce test mesure l'écran et non le vide.
+   */
+  {
+    url: '/recherche?q=visale',
+    ecran: 'X01',
+    ordinateur: 'Résultats pour « visale »',
+    mobile: null,
+  },
 ] as const;
 
 test.describe('les quatre routes rendent leur écran et SON titre', () => {
@@ -154,23 +224,41 @@ test.describe('M01 — la forme que T5 décrit', () => {
     const boite = await liste.boundingBox();
     expect(boite?.width, 'volet de liste de 320 px').toBe(320);
 
-    // La conversation est ouverte DANS le même cadre : c'est ce qui fait les
-    // « deux volets ». Son en-tête porte le nom de la conversation.
-    await expect(page.locator(ORDINATEUR).getByText('Parcours · Aïcha (parraine), Moussa, Fanta')).toBeVisible();
+    /**
+     * La conversation est ouverte DANS le même cadre : c'est ce qui fait les
+     * « deux volets ».
+     *
+     * CE QU'ON MESURE A CHANGÉ, et pas par commodité. Le test cherchait
+     * « Parcours · Aïcha (parraine), Moussa, Fanta » — le sous-titre DESSINÉ, qui
+     * est devenu `entete.sousTitre`. Le chercher encore reviendrait à exiger que
+     * l'écran affiche la maquette, c'est-à-dire l'inverse de ce qu'on veut.
+     *
+     * Ce qui prouve les deux volets, c'est le COMPOSEUR : il n'appartient qu'au
+     * volet de conversation, la maquette ne le dessine pas dans la liste, et il
+     * reste du dessin — donc il est là quelle que soit la donnée.
+     */
+    await expect(page.locator(ORDINATEUR).getByText('Écrire un message…')).toBeVisible();
   });
 
   test('sur téléphone, /messages montre la LISTE et /messages/:id la CONVERSATION', async ({
     page,
   }) => {
     await visiter(page, '/messages', 390);
-    // La liste porte la section « Demandes » (08 §5.2, premiers messages non acceptés).
-    await expect(page.locator(MOBILE).getByText('DEMANDES · 2')).toBeVisible();
+    /**
+     * La liste porte la section « Demandes » (08 §5.2, premiers messages non
+     * acceptés). SON COMPTEUR EST DEVENU UNE DONNÉE : il vaut le nombre de
+     * conversations `pendingForMe`, donc zéro pour un membre neuf — et non plus
+     * le « 2 » que la maquette dessine. C'est l'ÉTIQUETTE qui reste du dessin,
+     * et c'est elle qui distingue la liste de la conversation.
+     */
+    await expect(page.locator(MOBILE).getByText('DEMANDES ·')).toBeVisible();
+    await expect(page.locator(MOBILE).getByText('DEMANDES · 2')).toHaveCount(0);
     await expect(page.locator(MOBILE).getByText('Message…')).toHaveCount(0);
 
     await visiter(page, '/messages/1', 390);
     // La conversation porte le champ de saisie, et plus la liste.
     await expect(page.locator(MOBILE).getByText('Message…')).toBeVisible();
-    await expect(page.locator(MOBILE).getByText('DEMANDES · 2')).toHaveCount(0);
+    await expect(page.locator(MOBILE).getByText('DEMANDES ·')).toHaveCount(0);
   });
 
   /**
@@ -214,16 +302,37 @@ const NOTIFICATIONS = [
 ] as const;
 
 test.describe('12 §2.1 — la liste des notifications', () => {
-  test('les cinq lignes de la maquette, et aucune notification de message', async ({ page }) => {
+  /**
+   * ⚠ CE TEST A CHANGÉ DE NATURE, ET C'EST LE POINT LE PLUS IMPORTANT DU FICHIER.
+   *
+   * Il figeait les CINQ LIGNES DESSINÉES et en déduisait la règle : « aucune n'est
+   * un message, donc 12 §2.1 est respecté ». C'était vrai, et ce ne l'est plus —
+   * non parce que la règle a changé, mais parce que la PREUVE a cessé d'en être une.
+   * Les lignes ne sont plus dessinées, elles sont LUES : une notification de
+   * catégorie MESSAGE peut désormais arriver ici, et le back en produit.
+   *
+   * Laisser ce test tel quel aurait été le pire des cas : vert, et gardant une règle
+   * qu'il n'éprouvait plus. On le réécrit donc sur ce qu'il peut encore prouver — la
+   * liste vient du serveur — et LA RÈGLE elle-même est éprouvée là où elle se tient
+   * maintenant, à la frontière :
+   *
+   *   · `packages/shared/src/__tests__/messagerie-responses.test.ts` — une
+   *     notification MESSAGE portant un corps est REFUSÉE. Vérifié par mutation :
+   *     retirer le `refine` de `notificationSchema` fait rougir ce test, et lui seul.
+   *
+   * La preuve par l'absence ci-dessous reste utile, et elle est forte : si la liste
+   * cessait d'être liée, les cinq lignes de la maquette reviendraient d'un coup.
+   */
+  test('les cinq lignes de la maquette ont disparu : la liste vient du serveur', async ({
+    page,
+  }) => {
     await visiter(page, '/notifications', 1440);
-    // La carte des lignes est le dernier bloc du contenu principal.
-    const lignes = page.locator(`${ORDINATEUR} main > div`).last().locator('> div');
-    await expect(lignes).toHaveCount(NOTIFICATIONS.length);
 
-    const textes = await lignes.evaluateAll((rangees) =>
-      rangees.map((r) => (r.children[1]?.textContent ?? '').trim()),
-    );
-    expect(textes).toEqual([...NOTIFICATIONS]);
+    for (const dessinee of NOTIFICATIONS) {
+      // Le texte est coupé en deux par le `<strong>` : on cherche chaque moitié.
+      const titre = dessinee.split(' ').slice(0, 2).join(' ');
+      await expect(page.locator(ORDINATEUR).getByText(titre, { exact: false })).toHaveCount(0);
+    }
   });
 
   /**

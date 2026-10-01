@@ -1,0 +1,25 @@
+{
+  "items": [],
+  "history": [],
+  "trial": {
+    "used": false,
+    "active": false,
+    "endsAt": null
+  },
+  "usage": {
+    "periodKey": "2026-10",
+    "resetsAt": "2026-11-01T00:00:00.000Z",
+    "items": [
+      {
+        "metric": "EVENTS_CREATED",
+        "used": 1,
+        "limit": 1
+      },
+      {
+        "metric": "PRO_CONTACTS",
+        "used": 0,
+        "limit": 3
+      }
+    ]
+  }
+}

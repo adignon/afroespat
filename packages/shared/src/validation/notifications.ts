@@ -350,6 +350,92 @@ export const notificationListQuerySchema = cursorQuerySchema.extend({
 });
 
 /**
+ * ─── `GET /notifications` — ET LA RÈGLE DURE DU §2.4, RENDUE EXÉCUTABLE ───────
+ *
+ * « UN PUSH MESSAGE NE CONTIENT JAMAIS LE CORPS DU MESSAGE » (§2.4, et 08 §8.1).
+ *
+ * Le back la tient déjà, et bien : `onMessageSent` écrit `body: null` sur chaque
+ * notification de catégorie `MESSAGE`, en le commentant (« laisser la place vide
+ * est ce qui garantit qu'aucun extrait ne s'y glissera un jour ») ; l'événement de
+ * domaine `message.sent` ne porte que des identifiants ; et la passerelle temps
+ * réel publie `message.new` avec `conversationId` et `messageId`, rien d'autre.
+ * Vérifié aux trois étages, pas supposé.
+ *
+ * ALORS POURQUOI LE REDIRE ICI ? Parce qu'aucune de ces trois gardes n'est au
+ * CONTACT de l'écran. Il n'existe aucun intercepteur de validation de réponse
+ * côté API — compté : zéro `APP_INTERCEPTOR` dans `app.module.ts` — donc entre le
+ * `body: null` du service et le gabarit d'une ligne de notification, il n'y a
+ * aujourd'hui aucun contrôle. Le jour où un extrait de message s'y glisserait — un
+ * regroupement qui résume, un gabarit d'email réemployé, une jointure de trop — la
+ * page X02 l'AFFICHERAIT, et c'est précisément la fuite que le §2.4 interdit : le
+ * corps d'un message privé lisible sans ouvrir la conversation, donc sur un écran
+ * verrouillé si la ligne part aussi en push.
+ *
+ * `refine` fait donc de la règle un REFUS : une réponse qui porte un corps sur une
+ * notification `MESSAGE` est rejetée à la frontière, sur l'appel, avec le nom du
+ * champ. L'écran ne l'affiche pas, et personne n'a à s'en souvenir.
+ *
+ * `.strict()` tient l'autre moitié, et sans lui zod DÉPOUILLE EN SILENCE : un
+ * `preview`, un `excerpt` ou un `messageBody` greffé sur la ligne serait retiré de
+ * l'objet sans un mot — les octets auraient quitté le serveur, traversé le réseau,
+ * atteint le navigateur, et rien ne l'aurait dit. Un champ de trop sur une
+ * notification de message est une FUITE, jamais un enrichissement.
+ *
+ * ── CE QUE CETTE RÉPONSE NE PORTE PAS, ET QUI MANQUE À L'ÉCRAN ───────────────
+ *
+ * AUCUN `url`. Les gestionnaires d'événements en calculent un (`/messages/:id`) et
+ * le passent au push et à l'email, mais la table `notifications` n'a PAS de colonne
+ * `url` — vérifié sur le schéma Prisma. La ligne arrive donc au front avec
+ * `refType` et `refId` pour toute destination, et pour une notification de message
+ * `refType` vaut `CONVERSATION` tandis que `refId` porte l'identifiant du
+ * MESSAGE — pas celui de la conversation. Un front qui construirait
+ * `/messages/${refId}` ouvrirait une conversation qui n'existe pas. Écart remonté
+ * au porteur, pas contourné : les lignes de X02 ne sont donc pas cliquables.
+ */
+export const notificationSchema = z
+  .object({
+    id: uuidSchema,
+    createdAt: z.string().datetime(),
+    category: notificationCategorySchema,
+    /** Ex. `help.response_received`, `message.received`. Libre côté base. */
+    type: z.string(),
+    title: z.string(),
+    body: z.string().nullable(),
+    refType: z.string().nullable(),
+    refId: z.string().nullable(),
+    readAt: z.string().datetime().nullable(),
+    channelsSent: z.array(z.enum(NOTIFICATION_DELIVERY_CHANNELS)),
+  })
+  .strict()
+  .refine((n) => n.category !== 'MESSAGE' || n.body === null, {
+    path: ['body'],
+    message:
+      'Une notification de catégorie MESSAGE ne peut pas porter de corps (§2.4) : ' +
+      'un push de message ne contient jamais le corps du message.',
+  });
+
+export type Notification = z.infer<typeof notificationSchema>;
+
+/** `GET /notifications` — l'enveloppe, et le compteur de la cloche. */
+export const notificationsResponseSchema = z.object({
+  items: z.array(notificationSchema),
+  nextCursor: z.string().nullable(),
+  meta: z.object({ unread: z.number().int().nonnegative() }).strict(),
+});
+
+export type NotificationsResponse = z.infer<typeof notificationsResponseSchema>;
+
+/** `POST /notifications/read` — ce que le serveur rend après avoir marqué (§4). */
+export const notificationReadResponseSchema = z
+  .object({
+    updated: z.number().int().nonnegative(),
+    unread: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type NotificationReadResponse = z.infer<typeof notificationReadResponseSchema>;
+
+/**
  * `POST /notifications/read` : `ids[]` OU `all` (§4).
  *
  * Le `refine` refuse les deux à la fois et aucun des deux. Sans lui, un corps

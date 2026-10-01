@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ConversationKind } from '../enums/generated.js';
 import { cursorQuerySchema, handleSchema, uuidSchema } from './pagination.js';
 
 /**
@@ -116,3 +117,162 @@ export type MessagesQuery = z.infer<typeof messagesQuerySchema>;
 export const MESSAGE_KINDS = ['TEXT', 'IMAGE', 'SYSTEM'] as const;
 
 export type MessageKind = (typeof MESSAGE_KINDS)[number];
+
+// ── Lecture : les réponses, décrites là où vit déjà la requête ───────────────
+
+/**
+ * ─── CE QUE CES DEUX SCHÉMAS TIENNENT, ET POURQUOI ILS SONT `.strict()` ──────
+ *
+ * LA RÈGLE LA PLUS GRAVE DE CE MODULE : le corps des messages est chiffré. Mais il
+ * l'est AU REPOS, pas de bout en bout (00 §8.1) — l'en-tête de ce fichier le dit
+ * déjà, et la modération doit pouvoir lire une conversation signalée. Le service
+ * descelle donc avant de répondre, en UN SEUL endroit
+ * (`MessagingService.bodyOf`), et ce qui circule sur le fil est du TEXTE CLAIR :
+ *
+ *   · `GET /conversations` → `lastMessagePreview`, le corps déscellé puis coupé à
+ *     `CONVERSATION_PREVIEW_MAX` ; `null` quand la conversation est vide ou quand
+ *     l'auteur est séparé du lecteur (§4) ;
+ *   · `GET /conversations/:id/messages` → `body`, le corps déscellé ; `null` quand
+ *     il est masqué, ou l'un des deux substituts de suppression ci-dessus.
+ *
+ * VÉRIFIÉ SUR LE SERVICE, pas supposé : aucune route de ce dépôt ne rend de
+ * cryptogramme. Le `bytea` ne sort pas du serveur, et l'écran n'a donc RIEN à
+ * déchiffrer — lui en donner les moyens serait ajouter une clé au front.
+ *
+ * D'OÙ LE `.strict()`, qui est la part exécutable de la règle. Sans lui, zod
+ * DÉPOUILLE EN SILENCE : le jour où la réponse porterait un `bodyEncrypted`, un
+ * `bodyCipher` ou un `lastMessageBody` non coupé, les octets auraient déjà quitté
+ * le serveur, traversé le réseau et atteint le navigateur — et rien, nulle part,
+ * ne l'aurait dit. Avec lui, la réponse est REFUSÉE à la frontière, sur l'appel,
+ * en nommant le champ de trop. Un champ greffé sur une forme de messagerie est une
+ * FUITE, jamais un enrichissement : c'est ce que ce modificateur affirme.
+ *
+ * Il n'existe aucun intercepteur de validation de réponse côté API — compté :
+ * zéro `APP_INTERCEPTOR` dans `app.module.ts`. Ces schémas ne sont donc pas de la
+ * documentation : ils sont le SEUL endroit où la forme de la réponse est vérifiée,
+ * et cet endroit est la frontière du front.
+ */
+
+/**
+ * Un autre membre de la conversation, tel que `MEMBER_SELECT` le rend.
+ *
+ * `hidden` est l'effet de LECTURE du §4 : dans une conversation de groupe commune,
+ * un blocage laisse les deux membres en place et masque leurs contenus
+ * mutuellement. L'écran l'affiche ; il ne le recalcule pas — il n'a pas la liste
+ * des séparations, et il ne doit pas l'avoir.
+ */
+export const conversationMemberSchema = z
+  .object({
+    userId: uuidSchema,
+    handle: handleSchema,
+    displayName: z.string(),
+    /** La clé de stockage de l'avatar, ou `null` — jamais une URL signée. */
+    avatarUrl: z.string().nullable(),
+    hidden: z.boolean(),
+    /** Non nul quand ce membre a quitté la conversation. */
+    leftAt: z.string().datetime().nullable(),
+  })
+  .strict();
+
+/**
+ * Une conversation de `GET /conversations` (§7.3).
+ *
+ * `title` n'est renseigné que pour une conversation de PARCOURS (§8, « nommée par
+ * le titre du parcours ») : pour une conversation directe le serveur rend `null`,
+ * et c'est au front de la nommer par son interlocuteur — ce que la maquette M01
+ * dessine d'ailleurs (« Sandra M. », « Kofi Boateng »).
+ *
+ * `pendingForMe` et `awaitingReply` sont les DEUX FACES du §5.2 (« premier message
+ * = demande de conversation »), et le serveur les dérive tous les deux. L'écran ne
+ * les recalcule pas : il n'a ni l'auteur du premier message ni l'état d'acceptation.
+ */
+export const conversationSchema = z
+  .object({
+    id: uuidSchema,
+    kind: z.enum(ConversationKind),
+    title: z.string().nullable(),
+    /** Les AUTRES membres : le service retire déjà le lecteur de la liste. */
+    members: z.array(conversationMemberSchema),
+    lastMessageAt: z.string().datetime().nullable(),
+    /**
+     * La dernière ligne, EN CLAIR et coupée à `CONVERSATION_PREVIEW_MAX` par le
+     * serveur. `null` = rien à montrer ; ce n'est pas une panne, et l'écran doit
+     * laisser la place vide plutôt que d'y mettre un substitut de son invention.
+     */
+    lastMessagePreview: z.string().max(CONVERSATION_PREVIEW_MAX).nullable(),
+    unreadCount: z.number().int().nonnegative(),
+    pendingForMe: z.boolean(),
+    awaitingReply: z.boolean(),
+  })
+  .strict();
+
+export type Conversation = z.infer<typeof conversationSchema>;
+
+/**
+ * `GET /conversations` — l'enveloppe, `meta.unreadTotal` compris.
+ *
+ * `meta` est RESSERRÉ ici plutôt que laissé libre : c'est ce que l'en-tête de
+ * `pageSchema` demande au module qui en dépend. `unreadTotal` est la somme des
+ * non-lus de la page, et c'est elle que la cloche de la barre haute affiche.
+ */
+export const conversationsResponseSchema = z.object({
+  items: z.array(conversationSchema),
+  nextCursor: z.string().nullable(),
+  meta: z.object({ unreadTotal: z.number().int().nonnegative() }).strict(),
+});
+
+export type ConversationsResponse = z.infer<typeof conversationsResponseSchema>;
+
+/**
+ * Un message de `GET /conversations/:id/messages` (§7.3).
+ *
+ * `body` EST LE CORPS DÉSCELLÉ — voir le commentaire de bloc ci-dessus. Trois
+ * valeurs non textuelles sont possibles, et toutes trois viennent du serveur :
+ * `null` quand l'auteur est séparé du lecteur, `MESSAGE_DELETED_PLACEHOLDER`
+ * quand le message est supprimé logiquement, et `MESSAGE_DELETED_USER_PLACEHOLDER`
+ * quand c'est son auteur qui l'est (§11). L'écran les affiche tels quels : les
+ * deux substituts sont des textes de produit, déjà écrits en tête de ce fichier.
+ *
+ * `kind` est DÉDUIT par le serveur (`IMAGE` si `mediaAssetId`, `TEXT` sinon) : la
+ * colonne de §6 n'existe pas, et l'en-tête de `MESSAGE_KINDS` l'explique. `SYSTEM`
+ * n'est donc jamais rendu — ce qui est à retenir pour l'écran M01, dont la maquette
+ * dessine pourtant une ligne système (« Aïcha a rejoint le parcours »).
+ */
+export const messageSchema = z
+  .object({
+    id: uuidSchema,
+    senderUserId: uuidSchema,
+    senderHandle: handleSchema,
+    kind: z.enum(MESSAGE_KINDS),
+    body: z.string().nullable(),
+    mediaId: uuidSchema.nullable(),
+    sentAt: z.string().datetime(),
+    deletedAt: z.string().datetime().nullable(),
+    /** Vrai quand c'est MOI qui ai écrit : la bulle change de côté et de couleur. */
+    mine: z.boolean(),
+  })
+  .strict();
+
+export type Message = z.infer<typeof messageSchema>;
+
+/**
+ * `GET /conversations/:id/messages` — l'enveloppe et ses trois méta.
+ *
+ * LES MESSAGES ARRIVENT DU PLUS RÉCENT AU PLUS ANCIEN (`orderBy: { id: 'desc' }`,
+ * vérifié dans le service) : un fil qui les affiche dans cet ordre les montre à
+ * l'envers. C'est à l'appelant de les retourner, et c'est dit ici parce que
+ * l'enveloppe ne le laisse pas voir.
+ */
+export const messagesResponseSchema = z.object({
+  items: z.array(messageSchema),
+  nextCursor: z.string().nullable(),
+  meta: z
+    .object({
+      kind: z.enum(ConversationKind),
+      pendingForMe: z.boolean(),
+      awaitingReply: z.boolean(),
+    })
+    .strict(),
+});
+
+export type MessagesResponse = z.infer<typeof messagesResponseSchema>;

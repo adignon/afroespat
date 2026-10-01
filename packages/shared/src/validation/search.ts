@@ -185,6 +185,123 @@ export const SEARCH_ZERO_PROMPT_FR = 'Aucun résultat. Posez la question à la c
 /** §4 : le bouton de l'état vide, qui pré-remplit le composeur d'entraide. */
 export const SEARCH_ZERO_CTA_FR = 'Poser la question';
 
+// ── Les réponses de lecture (§3) ──────────────────────────────────────────────
+
+/**
+ * ─── `GET /search` REND DEUX FORMES, ET C'EST `type` QUI DÉCIDE ──────────────
+ *
+ * Lu sur le CONTRÔLEUR et son service, pas déduit de l'enveloppe :
+ *
+ *   · SANS `type` — la recherche est GROUPÉE. `items` n'est alors PAS une liste de
+ *     résultats : c'est une liste de GROUPES, chacun portant son type, son libellé
+ *     français, son compteur, son drapeau de troncature et jusqu'à
+ *     `SEARCH_GROUP_PREVIEW_SIZE` résultats. `nextCursor` vaut toujours `null` —
+ *     la forme groupée ne pagine pas.
+ *   · AVEC `type` — `items` est une liste de résultats PLATS, et `nextCursor`
+ *     pagine pour de vrai.
+ *
+ * Deux schémas, donc, et non un seul permissif : un `union` laisserait l'écran
+ * croire qu'il peut lire `items[].title` sur les deux, alors qu'en groupé ce
+ * chemin donne le titre d'un GROUPE — c'est-à-dire `undefined`, et un onglet vide
+ * sans que rien ne le dise. L'appelant choisit le schéma en même temps qu'il
+ * choisit d'envoyer `type` ou non.
+ *
+ * `count` EST CUEILLI, DONC BORNÉ, et `capped` le dit : le service le commente
+ * (« un COUNT(*) exact par type serait exact avant le filtre d'auteur, donc faux
+ * après — et il divulguerait l'existence de contenus d'un auteur qui m'a
+ * bloqué »). Un écran qui affiche ce compteur affiche donc un MINIMUM, et c'est
+ * `capped` qui dit lequel l'est.
+ */
+export const searchHitSchema = z
+  .object({
+    id: z.string(),
+    subjectType: searchSubjectTypeSchema,
+    subjectId: z.string(),
+    title: z.string(),
+    /** Les 220 premiers caractères du corps indexé, coupés par le serveur. */
+    excerpt: z.string(),
+    cityId: uuidSchema.nullable(),
+    countryId: uuidSchema.nullable(),
+    communityId: uuidSchema.nullable(),
+    rank: z.number(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type SearchHit = z.infer<typeof searchHitSchema>;
+
+export const searchGroupSchema = z
+  .object({
+    type: searchSubjectTypeSchema,
+    /** Le libellé français, de `SEARCH_TYPE_LABELS_FR` — décidé par le serveur. */
+    label: z.string(),
+    count: z.number().int().nonnegative(),
+    /** Vrai quand `count` est tronqué : l'écran affiche alors un minimum. */
+    capped: z.boolean(),
+    items: z.array(searchHitSchema),
+  })
+  .strict();
+
+export type SearchGroup = z.infer<typeof searchGroupSchema>;
+
+/**
+ * `meta`, commun aux deux formes.
+ *
+ * `zeroResult` n'est présent QUE sur une recherche sans résultat dont la requête
+ * porte des termes utiles (§2.4). Son texte vient de l'API et non du front —
+ * `SEARCH_ZERO_PROMPT_FR` est ici pour que les deux disent la même chose, et le
+ * recopier dans un composant en ferait une seconde source.
+ */
+export const searchMetaSchema = z
+  .object({
+    q: z.string(),
+    normalized: z.string(),
+    zeroResult: z
+      .object({ prompt: z.string(), cta: z.string(), helpTitle: z.string() })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+/** `GET /search` SANS `type` : des groupes, et aucune pagination. */
+export const groupedSearchResponseSchema = z.object({
+  items: z.array(searchGroupSchema),
+  /** Toujours `null` : la forme groupée ne pagine pas. */
+  nextCursor: z.null(),
+  meta: searchMetaSchema,
+});
+
+export type GroupedSearchResponse = z.infer<typeof groupedSearchResponseSchema>;
+
+/** `GET /search?type=…` : des résultats plats, paginés. */
+export const typedSearchResponseSchema = z.object({
+  items: z.array(searchHitSchema),
+  nextCursor: z.string().nullable(),
+  meta: searchMetaSchema,
+});
+
+export type TypedSearchResponse = z.infer<typeof typedSearchResponseSchema>;
+
+/**
+ * `GET /search/suggest` — et son enveloppe est À PART.
+ *
+ * Elle ne porte NI `nextCursor` NI `meta` : le contrôleur rend `{ items }` et rien
+ * d'autre. Lui appliquer `pageSchema` ferait échouer tous les appels, puisque
+ * `nextCursor` y est requis — c'est le genre d'écart qu'on ne voit qu'en lisant le
+ * contrôleur, et c'est pour cela qu'il est écrit ici.
+ *
+ * Une suggestion est un TITRE et un TYPE, rien de plus : pas d'identifiant, donc
+ * aucun moyen d'y poser un lien. Choisir une suggestion ne peut que relancer la
+ * recherche sur son texte. Écart remonté au porteur.
+ */
+export const suggestResponseSchema = z
+  .object({
+    items: z.array(z.object({ title: z.string(), subjectType: searchSubjectTypeSchema }).strict()),
+  })
+  .strict();
+
+export type SuggestResponse = z.infer<typeof suggestResponseSchema>;
+
 export const SEARCH_TYPE_LABELS_FR: Record<string, string> = {
   GUIDE: 'Guides',
   TOPIC: 'Sujets de réseau',

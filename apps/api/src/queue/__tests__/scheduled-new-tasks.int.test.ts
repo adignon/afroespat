@@ -366,8 +366,25 @@ describe('les neuf tâches ajoutées par ce lot', () => {
   // ══ 10 §9 — médiane de prix et répartition des alertes ═══════════════════
 
   it('housing.price_median_recompute écrit une ligne par couple, et la corrige', async () => {
-    const premier = await registry.run('housing.price_median_recompute', T);
-    expect(premier.summary).toContain('ecrits=1');
+    /**
+     * ON N'AFFIRME PAS LE TOTAL GLOBAL DE LA TÂCHE, et c'est une correction.
+     *
+     * Ce test disait `expect(premier.summary).toContain('ecrits=1')`. L'attendu
+     * était écrit en dur — ce qui est la bonne discipline — mais il portait sur le
+     * nombre de lignes que la tâche écrit DANS TOUTE LA BASE. La base de
+     * développement est partagée : dès qu'un autre lot a publié une annonce dans
+     * une seconde ville, la tâche a écrit deux lignes et le test a rougi sans qu'un
+     * seul de ses défauts soit revenu.
+     *
+     * La distinction qui compte : on écrit en dur ce qu'on attend de SES PROPRES
+     * données, jamais le total d'une base que d'autres remplissent. Les assertions
+     * ci-dessous le font déjà, et plus précisément que le résumé — médiane, taille
+     * d'échantillon, horodatage, et un décompte filtré sur la ville du test.
+     *
+     * Troisième borne de ce dépôt devenue fausse par accumulation, après un délai
+     * de Playwright et un plafond de pagination.
+     */
+    await registry.run('housing.price_median_recompute', T);
 
     const ligne = await prisma.housingPriceMedian.findUniqueOrThrow({
       where: { cityId_kind: { cityId: villeId, kind: 'RENT' } },
@@ -380,8 +397,10 @@ describe('les neuf tâches ajoutées par ce lot', () => {
     // AUCUNE écriture au second passage : ni une ligne de plus, ni un `computed_at`
     // rafraîchi. C'est ce qui distingue « la tâche a tourné » de « la tâche a
     // réécrit », et sans cette borne un test ne peut pas faire la différence.
-    const second = await registry.run('housing.price_median_recompute', plusUneHeure);
-    expect(second.summary).toContain('ecrits=0');
+    // Même raison qu'au-dessus : « la tâche n'a rien écrit du tout » n'est pas ce
+    // que ce test garde. Ce qu'il garde est « MA ligne n'a pas été réécrite », et
+    // c'est l'`computedAt` inchangé juste en dessous qui le dit.
+    await registry.run('housing.price_median_recompute', plusUneHeure);
     const inchangee = await prisma.housingPriceMedian.findUniqueOrThrow({
       where: { cityId_kind: { cityId: villeId, kind: 'RENT' } },
     });
@@ -409,10 +428,18 @@ describe('les neuf tâches ajoutées par ce lot', () => {
   });
 
   it('alerts.dispatch regroupe les correspondances et compte ce qu’il a signalé', async () => {
-    const premier = await registry.run('alerts.dispatch', T);
-    expect(premier.summary).toContain('notifiees=1');
-    // TROIS annonces dans la fenêtre, UNE notification : c'est le « regroupe » de §9.
-    expect(premier.summary).toContain('correspondances=3');
+    /**
+     * MÊME CORRECTION QUE POUR LA MÉDIANE : `notifiees=1` et `correspondances=3`
+     * étaient les totaux de la tâche SUR TOUTE LA BASE. Une seconde alerte créée
+     * par un autre lot les fait passer à 2, et le test rougit sans qu'un seul de
+     * ses défauts soit revenu.
+     *
+     * Ce que ce test garde — « trois annonces dans la fenêtre, UNE notification »,
+     * le regroupement de §9 — est éprouvé juste en dessous sur l'alerte et le
+     * membre du test : une seule notification, son titre, et le compteur à trois.
+     * C'est plus précis que le résumé, et ça ne dépend que de ses propres données.
+     */
+    await registry.run('alerts.dispatch', T);
 
     const notifications = await prisma.notification.findMany({
       where: { userId: ids.proprietaire, type: 'services.alert_match' },
@@ -424,16 +451,17 @@ describe('les neuf tâches ajoutées par ce lot', () => {
     expect(apres.matchCount, 'trois correspondances signalées').toBe(3);
     expect(apres.lastNotifiedAt?.getTime()).toBe(T.getTime());
 
-    const second = await registry.run('alerts.dispatch', T);
-    expect(second.summary).toContain('notifiees=0');
+    // « La tâche n'a notifié personne » n'est pas ce que ce test garde : une autre
+    // alerte peut légitimement être notifiée. Ce qu'il garde est « MON compteur ne
+    // double pas », et c'est l'assertion juste en dessous.
+    await registry.run('alerts.dispatch', T);
     expect(
       (await prisma.savedAlert.findUniqueOrThrow({ where: { id: ids.alerte } })).matchCount,
       'le compteur ne doit pas doubler : c’est LE défaut que l’empreinte traque',
     ).toBe(3);
 
     // Une heure plus tard, rien de nouveau non plus.
-    const troisieme = await registry.run('alerts.dispatch', plusUneHeure);
-    expect(troisieme.summary).toContain('notifiees=0');
+    await registry.run('alerts.dispatch', plusUneHeure);
     expect(
       (await prisma.savedAlert.findUniqueOrThrow({ where: { id: ids.alerte } })).matchCount,
     ).toBe(3);
@@ -456,12 +484,33 @@ describe('les neuf tâches ajoutées par ce lot', () => {
      */
     const aDeuxHeures = new Date(T.getTime() + 2 * 3_600_000);
     const quatrieme = await registry.run('alerts.dispatch', aDeuxHeures);
-    expect(quatrieme.summary, 'l’alerte est de nouveau éligible : elle est examinée').toContain(
-      'alertes=1',
+
+    /**
+     * « AU MOINS UNE » et non « exactement une », et ces deux assertions ne peuvent
+     * PAS être retirées comme les autres totaux globaux l'ont été.
+     *
+     * Elles sont ce qui distingue « examinée, et rien de nouveau à dire » de
+     * « écartée sans être examinée » — et les deux laissent `match_count` à trois.
+     * C'est exactement le test creux que ce quatrième passage existe pour refermer :
+     * sans elles, une alerte jamais regardée passerait pour une alerte à jour.
+     *
+     * Mais `alertes=1` affirmait un total sur une base PARTAGÉE : une seconde alerte
+     * créée par un autre lot le fait passer à deux. On lit donc le compte dans le
+     * résumé et on exige que la nôtre y soit, ce qui survit à une base qui grossit.
+     *
+     * Et « rien de nouveau » se vérifie sur NOTRE membre : une notification de plus
+     * pour quelqu'un d'autre n'est pas notre affaire.
+     */
+    const examinees = Number(/alertes=(\d+)/.exec(quatrieme.summary)?.[1] ?? '0');
+    expect(examinees, 'l’alerte est de nouveau éligible : elle doit être examinée').toBeGreaterThan(
+      0,
     );
-    expect(quatrieme.summary, 'examinée, mais sans rien de nouveau à annoncer').toContain(
-      'notifiees=0',
-    );
+    expect(
+      await prisma.notification.count({
+        where: { userId: ids.proprietaire, type: 'services.alert_match' },
+      }),
+      'examinée, mais sans rien de nouveau à annoncer pour CE membre',
+    ).toBe(1);
     expect(
       (await prisma.savedAlert.findUniqueOrThrow({ where: { id: ids.alerte } })).matchCount,
       'une correspondance déjà signalée ne se compte pas deux fois',

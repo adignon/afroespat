@@ -1,0 +1,131 @@
+{
+  "items": [
+    {
+      "id": "01a0f4dd-2fa1-7000-8ff4-3f50bbbb0f04",
+      "kind": "RENT",
+      "title": "Studio meublé Lyon 7e",
+      "description": "Studio au 3e étage avec ascenseur, cuisine équipée, à cinq minutes du métro Jean Macé. Idéal étudiant·e, visite sur place uniquement.",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "district": "7e · Jean Macé",
+      "priceCents": 62000,
+      "currency": "EUR",
+      "isFurnished": true,
+      "availableFrom": "2026-10-01T00:00:00.000Z",
+      "durationMonths": 12,
+      "status": "ACTIVE",
+      "createdAt": "2026-10-01T00:28:51.497Z",
+      "expiresAt": "2026-11-30T00:28:51.496Z",
+      "photos": [
+        {
+          "url": "/media/capture/services/01a0f4dd-2f20-7000-af70-f1c62bc21740-0.jpg",
+          "position": 0
+        },
+        {
+          "url": "/media/capture/services/01a0f4dd-2f20-7000-af70-f1c62bc21740-1.jpg",
+          "position": 1
+        }
+      ],
+      "author": {
+        "handle": "s-01a0f4dd2f20",
+        "displayName": "Sarah Traoré",
+        "avatarUrl": null,
+        "verificationLevel": "L2"
+      },
+      "cautionLevel": "STANDARD",
+      "isMine": false,
+      "reviewState": null,
+      "canRenew": null
+    },
+    {
+      "id": "01a0f4dd-0a2a-7000-8809-e88d37baa0b6",
+      "kind": "RENT",
+      "title": "Studio meublé Lyon 7e",
+      "description": "Studio au 3e étage avec ascenseur, cuisine équipée, à cinq minutes du métro Jean Macé. Idéal étudiant·e, visite sur place uniquement.",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "district": "7e · Jean Macé",
+      "priceCents": 62000,
+      "currency": "EUR",
+      "isFurnished": true,
+      "availableFrom": "2026-10-01T00:00:00.000Z",
+      "durationMonths": 12,
+      "status": "ACTIVE",
+      "createdAt": "2026-10-01T00:28:41.914Z",
+      "expiresAt": "2026-11-30T00:28:41.912Z",
+      "photos": [
+        {
+          "url": "/media/capture/services/01a0f4dd-0994-7000-929b-d42b0f3b5049-0.jpg",
+          "position": 0
+        },
+        {
+          "url": "/media/capture/services/01a0f4dd-0994-7000-929b-d42b0f3b5049-1.jpg",
+          "position": 1
+        }
+      ],
+      "author": {
+        "handle": "s-01a0f4dd0994",
+        "displayName": "Sarah Traoré",
+        "avatarUrl": null,
+        "verificationLevel": "L2"
+      },
+      "cautionLevel": "STANDARD",
+      "isMine": false,
+      "reviewState": null,
+      "canRenew": null
+    },
+    {
+      "id": "01a0f4dc-e4f1-7000-bd27-b3dcfd16a6eb",
+      "kind": "RENT",
+      "title": "Studio meublé Lyon 7e",
+      "description": "Studio au 3e étage avec ascenseur, cuisine équipée, à cinq minutes du métro Jean Macé. Idéal étudiant·e, visite sur place uniquement.",
+      "city": {
+        "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "name": "Lyon",
+        "slug": "lyon"
+      },
+      "district": "7e · Jean Macé",
+      "priceCents": 62000,
+      "currency": "EUR",
+      "isFurnished": true,
+      "availableFrom": "2026-10-01T00:00:00.000Z",
+      "durationMonths": 12,
+      "status": "ACTIVE",
+      "createdAt": "2026-10-01T00:28:32.386Z",
+      "expiresAt": "2026-11-30T00:28:32.384Z",
+      "photos": [
+        {
+          "url": "/media/capture/services/01a0f4dc-e458-7000-927d-31cff5c6d152-0.jpg",
+          "position": 0
+        },
+        {
+          "url": "/media/capture/services/01a0f4dc-e458-7000-927d-31cff5c6d152-1.jpg",
+          "position": 1
+        }
+      ],
+      "author": {
+        "handle": "s-01a0f4dce458",
+        "displayName": "Sarah Traoré",
+        "avatarUrl": null,
+        "verificationLevel": "L2"
+      },
+      "cautionLevel": "STANDARD",
+      "isMine": false,
+      "reviewState": null,
+      "canRenew": null
+    }
+  ],
+  "nextCursor": null,
+  "meta": {
+    "safetyBanner": "Aucun versement avant visite ou vérification. Si une annonce demande un acompte à distance, signalez-la.",
+    "total": 3,
+    "canPublish": false,
+    "publishRequirement": "Publier un logement demande un numéro français vérifié — c’est ce qui protège tout le monde des fausses annonces."
+  }
+}

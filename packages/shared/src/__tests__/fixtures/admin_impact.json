@@ -1,0 +1,89 @@
+{
+  "trimestre": "2026-T3",
+  "items": [
+    {
+      "metric": "impact.event_attendances",
+      "dimension": "",
+      "value": 0,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.guides_published",
+      "dimension": "",
+      "value": 0,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.help_resolved",
+      "dimension": "",
+      "value": 0,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.journeys_completed",
+      "dimension": "",
+      "value": 0,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_accompanied",
+      "dimension": "",
+      "value": 217,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_city",
+      "dimension": "01a0e1b0-0420-7000-b2af-53fb07c030c3",
+      "value": 2,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_city",
+      "dimension": "01a0e1b0-0422-7000-87d4-599ef6df4745",
+      "value": 2,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_city",
+      "dimension": "01a0e1b0-0437-7000-b731-61e89ff3abb2",
+      "value": 2,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_city",
+      "dimension": "01a0e1b0-0439-7000-85c8-9e42e47aa216",
+      "value": 2,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_city",
+      "dimension": "01a0e1b0-0447-7000-958a-956a9e9811b7",
+      "value": 1,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_city",
+      "dimension": "01a0e1b0-046d-7000-b219-8c697543c14f",
+      "value": 2,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_origin_country",
+      "dimension": "01a0e1b0-03a1-7000-8244-5a2df8ef5762",
+      "value": 4,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.members_by_origin_country",
+      "dimension": "01a0e1b0-03eb-7000-8568-a65c501769f6",
+      "value": 213,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    },
+    {
+      "metric": "impact.mentorships_completed",
+      "dimension": "",
+      "value": 0,
+      "periodStart": "2026-10-01T00:00:00.000Z"
+    }
+  ]
+}

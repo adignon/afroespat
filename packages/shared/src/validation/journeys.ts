@@ -2,12 +2,17 @@ import { z } from 'zod';
 import {
   BlockerStatus,
   BlockerTarget,
+  JourneyActivityType,
   JourneyMemberRole,
+  JourneyMemberStatus,
   JourneyStatus,
+  JourneyStepStatus,
   JourneyVisibility,
   Phase,
+  StepCategory,
+  VerificationLevel,
 } from '../enums/generated.js';
-import { cursorQuerySchema, handleSchema, uuidSchema } from './pagination.js';
+import { cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Parcours — 03-parcours.md et T3 partie A.
@@ -432,6 +437,18 @@ export const journeyMetaSchema = z.object({
 
 export type JourneyMeta = z.infer<typeof journeyMetaSchema>;
 
+/** Le type de parcours, tel que les réponses de parcours le nomment. */
+export const journeyTemplateRefSchema = z
+  .object({ code: z.string(), nameFr: z.string(), icon: z.string().nullable() })
+  .strict();
+
+/** La ville de destination, NOMMÉE — jamais un simple identifiant. */
+export const cityRefSchema = z.object({ id: uuidSchema, name: z.string() }).strict();
+
+export const countryRefSchema = z
+  .object({ id: uuidSchema, iso2: z.string(), nameFr: z.string() })
+  .strict();
+
 /** La version du modèle servie par `GET /journey-templates` (§2.1, §2.4). */
 export const journeyTemplateVersionSchema = z.object({
   id: uuidSchema,
@@ -541,10 +558,33 @@ export const journeyListItemSchema = z.object({
   visibility: z.enum(JourneyVisibility),
   progressPct: z.number(),
   /** `null` quand toutes les étapes sont franchies. */
-  currentStep: z.object({ id: uuidSchema, title: z.string() }).nullable(),
+  currentStep: z.object({ id: uuidSchema, title: z.string() }).strict().nullable(),
   doneCount: z.number().int(),
   stepCount: z.number().int(),
   memberCount: z.number().int(),
+
+  /**
+   * ── LES SIX CLÉS QUE CE LOT A AJOUTÉES, ET POURQUOI ELLES Y ÉTAIENT DÉJÀ ──
+   *
+   * `GET /journeys` les REND, et depuis toujours : la charge relevée
+   * (`journeys_liste`) les porte toutes les six. Elles n'étaient pas DÉCRITES,
+   * donc zod les dépouillait en silence — et J11 (« Mes parcours ») n'avait ni
+   * type de parcours, ni ville, ni date de dernière activité pour écrire ses
+   * cartes. Un champ rendu par l'API et absent du schéma est exactement aussi
+   * invisible qu'un champ que l'API ne rend pas.
+   *
+   * Elles sont REQUISES et non facultatives : la liste les rend toujours, et les
+   * accepter absentes ferait prendre une régression du serveur pour un cas normal.
+   */
+  template: journeyTemplateRefSchema,
+  destinationCity: cityRefSchema,
+  originCountry: countryRefSchema,
+  /** §3.1 — la date d'arrivée cible, `null` tant qu'elle n'est pas fixée. */
+  targetArrivalDate: z.string().nullable(),
+  /** La prochaine échéance non franchie, ou `null`. */
+  nextDueDate: z.string().nullable(),
+  /** §3.9 — c'est elle qui déclenche « Où en êtes-vous ? » après soixante jours. */
+  lastActivityAt: z.string(),
 });
 
 export type JourneyListItem = z.infer<typeof journeyListItemSchema>;
@@ -613,3 +653,353 @@ export type BlockerCancelledResponse = z.infer<typeof blockerCancelledResponseSc
 export const dismissShareResponseSchema = z.object({ dismissed: z.boolean() });
 
 export type DismissShareResponse = z.infer<typeof dismissShareResponseSchema>;
+
+// ── Réponses — le parcours COMPLET, l'équipe, les publics et le journal ──────
+
+/**
+ * ─── LE SECOND LOT DE SCHÉMAS DE RÉPONSE, ET CE QU'IL AJOUTE ────────────────
+ *
+ * Les schémas au-dessus décrivent ce qu'il faut pour NAVIGUER : l'identifiant, le
+ * titre, l'étape en cours. Les trente-deux cadres de J01 et J05 à J11 affichent
+ * autre chose — la liste des étapes, la checklist, l'équipe, les parcours publics
+ * d'autres membres, le journal. Ce sont ces charges-là qui manquaient.
+ *
+ * TOUS SONT FIGÉS SUR DES CHARGES RELEVÉES, écrites octet pour octet en fixture
+ * par de vraies routes d'une API qui tournait (membre ouvert par OTP, parcours
+ * créé, rendu public, étapes franchies, équipe invitée et acceptée) :
+ * `journey_equipe`, `journey_detail_avance`, `journeys_publics`,
+ * `journey_public_fiche`, `journey_journal`, `journey_plan_limite`.
+ *
+ * TROIS ÉCARTS MESURÉS, qui auraient cassé un écran en silence :
+ *
+ *   · `GET /journeys/public` NE REND PAS `currentStep`. La FICHE
+ *     (`GET /journeys/public/:id`) le rend, la LISTE non — c'est exactement le
+ *     piège déjà payé entre `GET /journeys` et `GET /journeys/:id`, une seconde
+ *     fois et sur d'autres clés. Deux schémas, donc, dont l'un étend l'autre :
+ *     ils ne peuvent plus diverger ;
+ *   · la vue publique n'a NI `title`, NI `lastActivityAt`, NI `visibility` : §3.7
+ *     en fait une liste FERMÉE, et le service la construit en un seul endroit
+ *     (`publicView`). D'où le `.strict()` — voir ci-dessous ;
+ *   · `GET /journeys/:id/activities` PORTE `nextCursor`, contrairement à
+ *     `GET /journeys` et `GET /journey-templates`. Le journal est paginé par
+ *     curseur, les deux autres rendent une liste bornée. `pageSchema` convient
+ *     ici, et nulle part ailleurs dans ce module.
+ */
+
+/** §3.3 — un libellé cochable, et AUCUN fichier : « les documents restent chez vous ». */
+export const journeyChecklistItemSchema = z
+  .object({
+    id: uuidSchema,
+    label: z.string(),
+    position: z.number().int(),
+    isChecked: z.boolean(),
+    checkedAt: z.string().nullable(),
+  })
+  /**
+   * `.strict()` — LA RÈGLE DURE DE §3.3 RENDUE EXÉCUTABLE.
+   *
+   * « Cochez ce que vous avez réuni. Les documents restent chez vous » : il n'y a
+   * aucun fichier en V1. Le jour où une refonte ajoute `fileKey` ou `uploadUrl` à
+   * cette ligne, zod le DÉPOUILLERAIT en silence — l'écran continuerait de passer,
+   * et la fuite ne se verrait qu'au premier dépôt de pièce d'identité. Ici elle
+   * lève, et le nom du champ est dans le message.
+   */
+  .strict();
+
+export type JourneyChecklistItem = z.infer<typeof journeyChecklistItemSchema>;
+
+/**
+ * UNE ÉTAPE, TELLE QUE `GET /journeys/:id` LA REND — et le rôle décide.
+ *
+ * RÈGLE DURE (§10, §3.4) : « les notes et la checklist ne sont jamais renvoyées à
+ * un observateur », et le service va plus loin — l'ACCOMPAGNANT non plus ne les
+ * voit pas. Le filtrage n'est pas fait après coup : `stepView` ne MET PAS ces
+ * champs dans l'objet quand le lecteur n'est pas le propriétaire. Les cinq clés
+ * concernées sont donc `.optional()` ici, et c'est la description exacte de ce que
+ * l'API fait : elles sont là pour le propriétaire, ABSENTES pour les autres.
+ *
+ * On ne les rend PAS `.nullable()` à la place : `notes: null` et « pas de notes
+ * renvoyées » sont deux choses différentes, et les confondre ferait croire qu'un
+ * observateur reçoit un champ vide là où il ne reçoit rien du tout.
+ */
+export const journeyStepSchema = z
+  .object({
+    id: uuidSchema,
+    title: z.string(),
+    description: z.string().nullable(),
+    position: z.number().int(),
+    status: z.enum(JourneyStepStatus),
+    startedAt: z.string().nullable(),
+    completedAt: z.string().nullable(),
+    pausedAt: z.string().nullable(),
+    /** Durée RÉELLE, écrite au franchissement. `null` tant que l'étape court. */
+    durationDays: z.number().int().nullable(),
+    isCustom: z.boolean(),
+    /** §3.2 — une étape facultative ne compte pas dans l'avancement. */
+    isOptional: z.boolean(),
+    stepDefinitionCode: z.string().nullable(),
+    category: z.enum(StepCategory).nullable(),
+    guideId: uuidSchema.nullable(),
+    blockerTarget: z.enum(BlockerTarget),
+    /** §3.6 — seule une étape majeure propose le partage de jalon. */
+    isMajorMilestone: z.boolean(),
+    isRisky: z.boolean(),
+    /** T3 A.1 — le message affiché AVANT de commencer une étape à risque. */
+    riskMessage: z.string().nullable(),
+    indicativeDurationDays: z.number().int().nullable(),
+
+    // ── Propriétaire seulement (§3.4, §10) ──────────────────────────────────
+    dueDate: z.string().nullable().optional(),
+    dueDateManual: z.boolean().optional(),
+    /** §3.6 — « Plus tard » posé une fois, le partage n'est plus reproposé. */
+    sharePromptDismissedAt: z.string().nullable().optional(),
+    /** §8.1 — chiffrées au repos, déchiffrées pour le propriétaire SEUL. */
+    notes: z.string().nullable().optional(),
+    checklist: z.array(journeyChecklistItemSchema).optional(),
+  })
+  /**
+   * `.strict()` — parce qu'un champ greffé sur une étape EST une fuite.
+   *
+   * C'est la forme où `notes` vit. Un champ ajouté par une refonte — `notesRaw`,
+   * `privateNote`, `blockerText` — serait dépouillé en silence par le défaut de
+   * zod, et personne ne saurait que le serveur l'envoie à un observateur. Le
+   * `.strict()` fait de cette question une erreur à l'appel, nommant le champ.
+   */
+  .strict();
+
+export type JourneyStep = z.infer<typeof journeyStepSchema>;
+
+/** Le membre tel que les routes de parcours le nomment (`MEMBER_USER_SELECT`). */
+export const journeyUserSchema = z
+  .object({
+    id: uuidSchema,
+    handle: z.string(),
+    /** Vide (`""`) sur un compte qui n'a pas encore rempli son profil. */
+    displayName: z.string().nullable(),
+    verificationLevel: z.enum(VerificationLevel),
+    avatarAsset: z.object({ storageKey: z.string() }).strict().nullable(),
+  })
+  /**
+   * `.strict()` — 01 §2.1, RÈGLE DURE : aucun numéro de téléphone en clair.
+   *
+   * Cette forme est celle qui voyage avec chaque membre d'une équipe de parcours.
+   * `phone`, `e164` ou `email` greffés dessus seraient dépouillés sans un mot ; le
+   * `.strict()` en fait un refus. Le rempart du module Compte est le même, et pour
+   * la même raison.
+   */
+  .strict();
+
+export type JourneyUser = z.infer<typeof journeyUserSchema>;
+
+/** §3.4 — un accompagnant ou un observateur du parcours. Dix au plus. */
+export const journeyTeamMemberSchema = z
+  .object({
+    userId: uuidSchema,
+    role: z.enum(JourneyMemberRole),
+    status: z.enum(JourneyMemberStatus),
+    /** `null` tant que l'invitation n'est pas acceptée (`status: 'INVITED'`). */
+    acceptedAt: z.string().nullable(),
+    user: journeyUserSchema,
+  })
+  .strict();
+
+export type JourneyTeamMember = z.infer<typeof journeyTeamMemberSchema>;
+
+/**
+ * LE PARCOURS COMPLET de `GET /journeys/:id`, et non sa projection de navigation.
+ *
+ * Il ÉTEND `journeySummarySchema` : les huit clés que la navigation emploie ne sont
+ * donc pas redécrites, et les deux schémas ne peuvent pas diverger sur `status`,
+ * `progressPct` ou `currentStepId`. C'était le défaut de la liste contre le détail,
+ * et on ne le rejoue pas en recopiant.
+ *
+ * `groupConversationId` vaut `null` pour un OBSERVATEUR : §3.4 n'offre la
+ * discussion qu'à ceux qui peuvent y écrire. Ce n'est pas « pas de discussion »,
+ * c'est « pas pour vous » — l'écran doit donc masquer l'entrée, pas afficher un
+ * fil vide.
+ */
+export const journeyDetailSchema = journeySummarySchema.extend({
+  /** §3.1 — la date d'arrivée cible, librement modifiable. */
+  targetArrivalDate: z.string().nullable(),
+  completedAt: z.string().nullable(),
+  owner: journeyUserSchema,
+  template: journeyTemplateRefSchema,
+  templateVersion: z.number().int(),
+  destinationCity: cityRefSchema,
+  originCountry: countryRefSchema,
+  groupConversationId: uuidSchema.nullable(),
+  /** La prochaine échéance non franchie, ou `null`. §3.9 en tire les relances. */
+  nextDueDate: z.string().nullable(),
+  inactivityPromptSentAt: z.string().nullable(),
+});
+
+export type JourneyDetail = z.infer<typeof journeyDetailSchema>;
+
+/**
+ * `GET /journeys/:id` et `POST /journeys` — LA CHARGE ENTIÈRE.
+ *
+ * Elle ÉTEND `journeyDetailResponseSchema`, donc la projection de navigation reste
+ * la seule définition de ses propres clés. Les deux sont éprouvées sur LA MÊME
+ * fixture (`journey_equipe`) : une divergence ferait rougir les deux cas à la fois,
+ * ce qui est exactement ce qu'on veut d'une source unique.
+ *
+ * `viewerRole` est une chaîne et non une énumération, parce que c'est ce que
+ * `journeyDetailResponseSchema` dit déjà de la même route et qu'on ne resserre pas
+ * une clé dans un schéma dérivé — deux règles pour une clé est le début de la
+ * divergence. Les trois valeurs émises sont `OWNER`, `SUPPORTER` et `OBSERVER`.
+ */
+export const journeyFullResponseSchema = journeyDetailResponseSchema.extend({
+  journey: journeyDetailSchema,
+  /** Triées par `position` par le serveur : l'ordre est celui du parcours. */
+  steps: z.array(journeyStepSchema),
+  /** §3.4 — `INVITED` et `ACTIVE`, jamais les membres retirés. */
+  members: z.array(journeyTeamMemberSchema),
+  meta: journeyMetaSchema,
+});
+
+export type JourneyFullResponse = z.infer<typeof journeyFullResponseSchema>;
+
+/**
+ * UNE ÉTAPE FRANCHIE, TELLE QUE LA VUE PUBLIQUE LA MONTRE (§3.7).
+ *
+ * Quatre clés, et la liste est FERMÉE : titre de l'étape, rang, durée réelle, date
+ * de franchissement. Le titre d'une ÉTAPE est celui du modèle, commun à tous ; le
+ * titre du PARCOURS, lui, est personnel et ne sort jamais — c'est la règle dure de
+ * §3.7, et c'est tout l'intérêt du `.strict()` ci-dessous.
+ */
+export const publicJourneyStepSchema = z
+  .object({
+    id: uuidSchema,
+    title: z.string(),
+    position: z.number().int(),
+    durationDays: z.number().int().nullable(),
+    completedAt: z.string().nullable(),
+  })
+  .strict();
+
+export type PublicJourneyStep = z.infer<typeof publicJourneyStepSchema>;
+
+/**
+ * LA VUE PUBLIQUE D'UN PARCOURS — `GET /journeys/public` (§3.7).
+ *
+ * ── POURQUOI `.strict()` ICI PLUS QU'AILLEURS ───────────────────────────────
+ *
+ * §3.7 énumère ce qu'un membre connecté voit d'un parcours public, et c'est une
+ * LISTE FERMÉE : handle, avatar, niveau, type, ville, pays, étape en cours, étapes
+ * franchies avec leur durée, progression. « Jamais le titre personnel, ni les
+ * notes, ni la checklist, ni l'équipe, ni la discussion, ni les dates cibles. »
+ *
+ * Le défaut de zod est de DÉPOUILLER ce qu'il ne nomme pas. Appliqué ici, il
+ * transformerait une fuite en non-événement : le serveur enverrait `title` à tous
+ * les membres connectés, le schéma le retirerait sans un mot, l'écran n'afficherait
+ * rien d'anormal — et la fuite serait DANS LA RÉPONSE HTTP, lisible dans n'importe
+ * quel onglet réseau, pendant des mois.
+ *
+ * `.strict()` fait de cette question un échec à l'appel qui NOMME le champ en
+ * trop. C'est le seul endroit de ce module où le front peut encore voir passer une
+ * régression du serveur sur une règle dure de confidentialité.
+ */
+export const publicJourneySchema = z
+  .object({
+    id: uuidSchema,
+    status: z.enum(JourneyStatus),
+    progressPct: z.number(),
+    /** Le membre, par son HANDLE — jamais son identifiant interne (§3.7). */
+    member: z
+      .object({
+        handle: z.string(),
+        displayName: z.string().nullable(),
+        verificationLevel: z.enum(VerificationLevel),
+        avatarKey: z.string().nullable(),
+      })
+      .strict(),
+    template: journeyTemplateRefSchema,
+    destinationCity: cityRefSchema,
+    originCountry: countryRefSchema,
+    completedSteps: z.array(publicJourneyStepSchema),
+  })
+  .strict();
+
+export type PublicJourney = z.infer<typeof publicJourneySchema>;
+
+/**
+ * `GET /journeys/public` (§3.7) — cinq parcours d'AUTRES membres.
+ *
+ * SANS `nextCursor`, comme `GET /journeys` : la réserve est bornée et classée en
+ * mémoire (l'ordre dépend de MON avancement, donc ce n'est pas un `ORDER BY`), et
+ * il n'y a pas de page suivante. Mesuré sur l'API.
+ */
+export const publicJourneysResponseSchema = z.object({
+  items: z.array(publicJourneySchema),
+  meta: journeyMetaSchema,
+});
+
+export type PublicJourneysResponse = z.infer<typeof publicJourneysResponseSchema>;
+
+/**
+ * `GET /journeys/public/:id` — LA FICHE, ET ELLE N'A PAS LA FORME DE LA LISTE.
+ *
+ * La fiche porte `currentStep` — `{ id, title, position }` — que la LISTE ne rend
+ * PAS. C'est le même écart que celui déjà payé entre `GET /journeys` et
+ * `GET /journeys/:id`, à un autre endroit du même module, et il se voit de la même
+ * façon : pas du tout, puisque `z.array(item)` accepte `[]`.
+ *
+ * Le schéma de la fiche ÉTEND celui de la liste au lieu de le recopier. Une clé
+ * retirée côté serveur fait donc rougir les deux, et une clé ajoutée à la liste
+ * arrive dans la fiche sans qu'on y pense.
+ */
+export const publicJourneyDetailResponseSchema = z.object({
+  journey: publicJourneySchema.extend({
+    currentStep: z
+      .object({ id: uuidSchema, title: z.string(), position: z.number().int() })
+      .strict()
+      .nullable(),
+  }),
+  meta: journeyMetaSchema,
+});
+
+export type PublicJourneyDetailResponse = z.infer<typeof publicJourneyDetailResponseSchema>;
+
+/**
+ * UNE ENTRÉE DU JOURNAL — `GET /journeys/:id/activities` (§3.8).
+ *
+ * Réservée au PROPRIÉTAIRE : §3.4 donne aux accompagnants les étapes et la
+ * progression, pas le journal — qui porte les blocages, les notes et les motifs.
+ *
+ * `payload` est laissé LIBRE et nullable, et c'est exact plutôt que paresseux : la
+ * forme dépend du type. `STEP_DONE` porte `{ durationDays }`, `STEP_STARTED` porte
+ * `null`. Le décrire par une union de huit formes figerait ici une liste que le
+ * serveur fait évoluer, et le front afficherait alors « une erreur est survenue »
+ * pour un type d'activité ajouté — alors qu'il n'a besoin que du libellé et de la
+ * date. Ce qu'il LIT est typé ; ce qu'il ne lit pas ne doit pas le faire tomber.
+ */
+export const journeyActivitySchema = z
+  .object({
+    id: uuidSchema,
+    type: z.enum(JourneyActivityType),
+    stepId: uuidSchema.nullable(),
+    /** Le titre de l'étape concernée, résolu par le serveur. */
+    stepTitle: z.string().nullable(),
+    refType: z.string().nullable(),
+    refId: uuidSchema.nullable(),
+    payload: z.unknown().nullable(),
+    actor: z.object({ handle: z.string(), displayName: z.string().nullable() }).strict(),
+    createdAt: z.string(),
+  })
+  .strict();
+
+export type JourneyActivity = z.infer<typeof journeyActivitySchema>;
+
+/**
+ * `GET /journeys/:id/activities` (§3.8) — paginé PAR CURSEUR.
+ *
+ * `pageSchema` convient ici et dans aucune autre route de ce module : le journal
+ * est la seule liste non bornée des parcours. `nextCursor` y est requis et
+ * nullable — l'accepter facultatif ferait prendre une pagination muette pour une
+ * fin de journal, et l'historique s'arrêterait sans raison visible.
+ */
+export const journeyActivitiesResponseSchema = pageSchema(journeyActivitySchema).extend({
+  meta: journeyMetaSchema,
+});
+
+export type JourneyActivitiesResponse = z.infer<typeof journeyActivitiesResponseSchema>;

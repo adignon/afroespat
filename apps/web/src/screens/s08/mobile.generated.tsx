@@ -4,9 +4,9 @@
 // Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
-import type { ServicesData } from '../services/data';
+import type { S08Data } from './data';
 
-export function S08Mobile(_props: ServicesData) {
+export function S08Mobile(_props: S08Data) {
   return (
     <>
       <main style={{ display: "contents" }}>

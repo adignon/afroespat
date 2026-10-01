@@ -1,6 +1,12 @@
 import { z } from 'zod';
-import { JobKind } from '../enums/generated.js';
-import { cursorQuerySchema, handleSchema, uuidSchema } from './pagination.js';
+import { JobKind, JobStatus } from '../enums/generated.js';
+import {
+  cursorQuerySchema,
+  handleSchema,
+  pageSchema,
+  slugSchema,
+  uuidSchema,
+} from './pagination.js';
 
 /**
  * Emploi — 10-services.md §3.
@@ -173,3 +179,148 @@ export const createMemberRecommendationSchema = z
   .strict();
 
 export type CreateMemberRecommendation = z.infer<typeof createMemberRecommendationSchema>;
+
+// ── Lecture : LES SCHÉMAS DE RÉPONSE (§6.2) ──────────────────────────────────
+
+/**
+ * Relevés sur l'API qui tourne (`src/__tests__/fixtures/services_job*.json`), et
+ * non déduits du service : voir l'en-tête du même bloc dans `housing.ts` pour la
+ * raison, qui a déjà coûté un écran bloqué au lot précédent.
+ *
+ * `.strict()` PARTOUT, et ici la fuite redoutée a un nom : une offre d'emploi est
+ * la deuxième surface d'arnaque du module (§3.1, « frais d'inscription, formation
+ * payante obligatoire »). Un champ de contact direct greffé sur une offre —
+ * téléphone, adresse d'un recruteur — contournerait la messagerie de la
+ * plateforme, et sans `.strict()` zod le dépouillerait en silence.
+ */
+const jobCityRefSchema = z.object({ id: uuidSchema, name: z.string(), slug: slugSchema }).strict();
+
+const jobAuthorSchema = z
+  .object({ handle: handleSchema, displayName: z.string(), avatarUrl: z.string().nullable() })
+  .strict();
+
+/**
+ * Une offre, telle que `GET /jobs` et `GET /jobs/:id` la rendent.
+ *
+ * `isSponsored` ET `sponsoredLabel` arrivent ENSEMBLE, et c'est la règle dure du
+ * §11 : « une offre sponsorisée porte TOUJOURS la pastille ». Le libellé vient du
+ * serveur — un front qui le posséderait pourrait l'« oublier », et la mise en avant
+ * cesserait d'être signalée sans que rien ne le dise.
+ *
+ * `city` est NULLABLE (§3.1 : « ville facultative = national/télétravail »), ce que
+ * la planche S04 écrit « Studio Kora · Télétravail ».
+ *
+ * Les trois dates sont des CHAÎNES ISO : le service tient des `Date`, JSON n'en
+ * garde que la forme textuelle. Un schéma déduit du code aurait écrit `z.date()` et
+ * refusé la vraie réponse.
+ */
+export const jobCardSchema = z
+  .object({
+    id: uuidSchema,
+    kind: z.enum(JobKind),
+    title: z.string(),
+    description: z.string(),
+    companyName: z.string().nullable(),
+    city: jobCityRefSchema.nullable(),
+    contractType: z.string().nullable(),
+    sector: z.string().nullable(),
+    educationLevel: z.string().nullable(),
+    externalUrl: z.string().nullable(),
+    status: z.enum(JobStatus),
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+    isSponsored: z.boolean(),
+    sponsoredLabel: z.string().nullable(),
+    sponsoredUntil: z.string().datetime().nullable(),
+    author: jobAuthorSchema,
+    /** §3.1 : « Partagée par Sandra M. » — composée par le SERVEUR, pas par l'écran. */
+    sharedBy: z.string(),
+    isMine: z.boolean(),
+    canRenew: z.boolean().nullable(),
+    recommendationCount: z.number().int(),
+  })
+  .strict();
+
+export type JobCardView = z.infer<typeof jobCardSchema>;
+
+/**
+ * `GET /jobs` — et sa TÊTE SPONSORISÉE est un champ À PART de `items`.
+ *
+ * C'est le fait que seule une charge relevée pouvait apprendre : le service rend
+ * `{ ...page, sponsored, meta }`, et `items` EXCLUT les offres de la tête. Un
+ * schéma qui n'aurait décrit que `items` aurait fait disparaître la tête de
+ * l'écran — donc la pastille « Sponsorisée », donc la règle dure du §11 — sans un
+ * mot.
+ *
+ * `meta.sponsoredHeadSlots` voyage avec la liste (T4 §4) : la borne de deux
+ * emplacements est une règle de produit, et un front qui la coderait en dur
+ * afficherait un jour trois emplacements sans le savoir.
+ *
+ * ÉCART SIGNALÉ AU PORTEUR : il n'y a AUCUN `total` dans ce `meta`, là où
+ * `GET /housing` en porte un. La planche S04 écrit « 8 offres à Lyon et en
+ * télétravail », et la barre latérale affiche « Bourses et emploi · 8 » sur les dix
+ * cadres d'ordinateur : ces deux nombres ne sont atteignables par aucune route.
+ */
+export const jobsListResponseSchema = pageSchema(jobCardSchema).extend({
+  sponsored: z.array(jobCardSchema),
+  meta: z.object({ sponsoredLabel: z.string(), sponsoredHeadSlots: z.number().int() }).strict(),
+});
+
+export type JobsListResponse = z.infer<typeof jobsListResponseSchema>;
+
+/** `GET /jobs/:id` — la MÊME carte, sans enveloppe : le contrôleur la rend nue. */
+export const jobDetailResponseSchema = jobCardSchema;
+
+export type JobDetailResponse = z.infer<typeof jobDetailResponseSchema>;
+
+/**
+ * Un profil de recherche publié (§3.2), tel que `GET /job-seekers` le rend.
+ *
+ * §3.2 : « Aucun CV stocké en V1 ». Le `.strict()` le rend exécutable à la
+ * frontière : un champ de CV qui apparaîtrait un jour dans la réponse ferait
+ * REFUSER la charge, au lieu d'être dépouillé en silence et de laisser la fonction
+ * naître côté serveur sans que le front l'apprenne.
+ */
+export const jobSeekerCardSchema = z
+  .object({
+    id: uuidSchema,
+    headline: z.string(),
+    sectors: z.array(z.string()),
+    contractTypes: z.array(z.string()),
+    updatedAt: z.string().datetime(),
+    member: z
+      .object({
+        handle: handleSchema,
+        displayName: z.string(),
+        avatarUrl: z.string().nullable(),
+        city: jobCityRefSchema.nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type JobSeekerCardView = z.infer<typeof jobSeekerCardSchema>;
+
+/**
+ * `GET /job-seekers`.
+ *
+ * AUCUN `meta` : relevé, pas supposé. `pageSchema` le laisse facultatif, donc la
+ * charge réelle passe — et un `meta` qui apparaîtrait un jour ne casserait rien.
+ */
+export const jobSeekersListResponseSchema = pageSchema(jobSeekerCardSchema);
+
+export type JobSeekersListResponse = z.infer<typeof jobSeekersListResponseSchema>;
+
+/** `GET /me/job-seeker-profile` — l'objet, ou `null` quand le membre n'en a pas. */
+export const myJobSeekerProfileResponseSchema = z
+  .object({
+    headline: z.string(),
+    sectors: z.array(z.string()),
+    contractTypes: z.array(z.string()),
+    isVisible: z.boolean(),
+    updatedAt: z.string().datetime(),
+  })
+  .strict()
+  .nullable();
+
+export type MyJobSeekerProfileResponse = z.infer<typeof myJobSeekerProfileResponseSchema>;

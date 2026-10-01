@@ -1,0 +1,44 @@
+{
+  "id": "01a0f4e3-80dc-7000-9814-215fdde8976e",
+  "type": "COOKING",
+  "title": "Repas partagé béninois",
+  "description": "Chacun apporte un plat du pays.",
+  "city": {
+    "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "name": "Lyon",
+    "slug": "lyon"
+  },
+  "venueName": "Maison des Associations",
+  "addressText": "28 rue Denfert-Rochereau, Lyon 7e",
+  "startsAt": "2026-10-02T10:00:00.000Z",
+  "endsAt": "2026-10-02T14:00:00.000Z",
+  "timeZone": "Europe/Paris",
+  "localDate": "2026-10-02",
+  "capacity": 40,
+  "attendeeCount": 2,
+  "status": "SCHEDULED",
+  "communityId": null,
+  "organizer": {
+    "handle": "ag-922eccf39a",
+    "displayName": "Organisatrice Éprouvée",
+    "avatarUrl": null
+  },
+  "coverUrl": null,
+  "myStatus": "GOING",
+  "myWaitlistPosition": null,
+  "myCheckedIn": false,
+  "isOrganizer": true,
+  "attendees": [
+    {
+      "handle": "ag-922eccf39a",
+      "displayName": "Organisatrice Éprouvée",
+      "avatarUrl": null
+    },
+    {
+      "handle": "ag-3540d2dccd",
+      "displayName": "Participant Éprouvé",
+      "avatarUrl": null
+    }
+  ],
+  "checkedInCount": 0
+}

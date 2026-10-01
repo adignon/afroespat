@@ -1,0 +1,31 @@
+{
+  "id": "01a0f4dd-3019-7000-87eb-62a6dd2eb6bf",
+  "kind": "JOB",
+  "title": "Comptable junior",
+  "description": "Cabinet de douze personnes. Tenue comptable, déclarations, relation clients. Diplôme bac+3, débutant accepté.",
+  "companyName": "Cabinet Arvel",
+  "city": {
+    "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "name": "Lyon",
+    "slug": "lyon"
+  },
+  "contractType": "CDI",
+  "sector": "Finance",
+  "educationLevel": "Bac+3",
+  "externalUrl": "https://arvel.fr/emploi",
+  "status": "ACTIVE",
+  "createdAt": "2026-10-01T00:28:51.611Z",
+  "expiresAt": "2026-11-15T00:28:51.609Z",
+  "isSponsored": true,
+  "sponsoredLabel": "Sponsorisée",
+  "sponsoredUntil": "2026-10-15T00:28:51.626Z",
+  "author": {
+    "handle": "s-01a0f4dd2f20",
+    "displayName": "Sarah Traoré",
+    "avatarUrl": null
+  },
+  "sharedBy": "Partagée par Sarah Traoré",
+  "isMine": false,
+  "canRenew": null,
+  "recommendationCount": 0
+}

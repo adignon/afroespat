@@ -4,9 +4,9 @@
 // Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
-import type { EntraideData } from '../entraide/data';
+import type { H05Data } from './data';
 
-export function H05Mobile(_props: EntraideData) {
+export function H05Mobile(_props: H05Data) {
   return (
     <>
       <main style={{ display: "contents" }}>

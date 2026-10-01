@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { AlertKind, HousingKind } from '../enums/generated.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import { AlertKind, HousingKind, HousingStatus, VerificationLevel } from '../enums/generated.js';
+import { cursorQuerySchema, handleSchema, pageSchema, slugSchema, uuidSchema } from './pagination.js';
 
 /**
  * Logement — 10-services.md §2.
@@ -315,3 +315,177 @@ export type UpdateAlert = z.infer<typeof updateAlertSchema>;
 
 /** §2.4 : « regroupement : au plus une notification par heure ». */
 export const ALERT_DISPATCH_INTERVAL_MS = 60 * 60 * 1000;
+
+// ── Lecture : LES SCHÉMAS DE RÉPONSE (§6.1, §6.4) ────────────────────────────
+
+/**
+ * ─── POURQUOI CES SCHÉMAS VIVENT ICI ET NON DANS LE FRONT ───────────────────
+ *
+ * 00 §4 fait de ce paquet la SOURCE UNIQUE de validation. Un schéma de réponse
+ * recopié dans `apps/web` est une deuxième source : elle divergera au premier
+ * champ ajouté, et c'est l'écran qui mentira — pas le serveur.
+ *
+ * Ils ont été écrits sur des charges RELEVÉES sur l'API qui tourne, et non sur la
+ * lecture du service. La différence n'est pas théorique : `HousingService.list()`
+ * rend `{ ...page, meta }`, mais c'est le contrôleur qui décide ce qui sort, et
+ * c'est en relevant la réponse qu'on apprend que `availableFrom` arrive en
+ * `string` ISO — le service manipule un `Date`, JSON n'en garde pas la trace.
+ * Les fixtures sont dans `src/__tests__/fixtures/services_*.json`.
+ *
+ * ─── `.strict()` : LA RÈGLE DURE 10 §7 DEVENUE EXÉCUTABLE ───────────────────
+ *
+ * « Aperçu du score de risque NON AFFICHÉ (interne). » Le service s'y tient : il
+ * ne renvoie qu'un `cautionLevel` à deux valeurs. Mais rien, jusqu'ici, n'empêchait
+ * un champ `riskScore` ou `riskFlags` d'apparaître un jour dans la réponse — et
+ * sans `.strict()`, zod le DÉPOUILLE EN SILENCE : l'écran ne l'afficherait pas, et
+ * personne n'apprendrait que le serveur a commencé à l'envoyer.
+ *
+ * Avec `.strict()`, cette réponse est REFUSÉE à la frontière du front. La règle
+ * cesse d'être une consigne et devient une barrière qu'un test peut muter.
+ */
+const housingCityRefSchema = z
+  .object({ id: uuidSchema, name: z.string(), slug: slugSchema })
+  .strict();
+
+/**
+ * L'auteur d'une annonce — identité publique, et rien de plus.
+ *
+ * `.strict()` sur une forme d'IDENTITÉ : un numéro de téléphone greffé ici serait
+ * exactement la fuite que 01 §2.1 interdit, et il traverserait sans un mot.
+ *
+ * ÉCART SIGNALÉ AU PORTEUR : la planche S02 écrit « Installée · Lyon 7e » sous le
+ * nom de l'auteur — sa phase et sa ville. Cette forme ne porte NI l'une NI l'autre ;
+ * `HOUSING_SELECT` s'arrête au pseudo, au nom, à l'avatar et au niveau. L'écran
+ * affiche donc ce qu'il a, et on ne compose pas une phase que personne n'a envoyée.
+ */
+const housingAuthorSchema = z
+  .object({
+    handle: handleSchema,
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+    /** §2.1 : un auteur de logement est toujours L2. Affiché, jamais employé pour autoriser. */
+    verificationLevel: z.enum(VerificationLevel),
+  })
+  .strict();
+
+/**
+ * Une annonce, telle que `GET /housing` et `GET /housing/:id` la rendent.
+ *
+ * `availableFrom`, `createdAt` et `expiresAt` sont des CHAÎNES : le service tient
+ * des `Date`, la réponse JSON n'en garde que l'ISO. Un schéma déduit du code aurait
+ * écrit `z.date()` et refusé la vraie réponse.
+ *
+ * `priceCents` est un ENTIER en centimes ou `null` (TEMPORARY gratuit, §2.1). Jamais
+ * un flottant : c'est la règle 00 §4, et `Intl` fait le reste à l'affichage.
+ */
+export const housingCardSchema = z
+  .object({
+    id: uuidSchema,
+    kind: z.enum(HousingKind),
+    title: z.string(),
+    description: z.string(),
+    city: housingCityRefSchema,
+    district: z.string().nullable(),
+    priceCents: z.number().int().nullable(),
+    currency: z.string(),
+    isFurnished: z.boolean().nullable(),
+    availableFrom: z.string().datetime().nullable(),
+    durationMonths: z.number().int().nullable(),
+    status: z.enum(HousingStatus),
+    createdAt: z.string().datetime(),
+    expiresAt: z.string().datetime(),
+    photos: z.array(z.object({ url: z.string(), position: z.number().int() }).strict()),
+    author: housingAuthorSchema,
+    /**
+     * RÈGLE DURE 10 §7 — LA TRANCHE, JAMAIS LE CHIFFRE.
+     *
+     * Deux valeurs seulement, et c'est tout ce que l'écran peut savoir du risque.
+     * Un `riskScore` numérique est refusé par le `.strict()` de cette forme.
+     */
+    cautionLevel: z.enum(HOUSING_CAUTION_LEVELS),
+    isMine: z.boolean(),
+    /** Réservé à l'auteur : `null` pour les autres lecteurs. */
+    reviewState: z.enum(['PUBLISHED', 'UNDER_REVIEW']).nullable(),
+    canRenew: z.boolean().nullable(),
+  })
+  .strict();
+
+export type HousingCardView = z.infer<typeof housingCardSchema>;
+
+/**
+ * `meta` de `GET /housing` — et le bandeau de §2.2 EN FAIT PARTIE.
+ *
+ * RÈGLE DURE : « renvoyé par l'API sur chaque liste et chaque annonce ». Le champ
+ * est donc REQUIS, pas facultatif : une réponse sans bandeau est une réponse cassée,
+ * et l'accepter laisserait l'écran se peindre sans l'avertissement.
+ *
+ * `canPublish` et `publishRequirement` sont la donnée du formulaire grisé de §2.1 —
+ * celle que la planche « ÉTATS · PUBLIER · SOUS L2 » de S01 décrit mot pour mot
+ * sans dire où elle s'insère. L'API la fournit ; c'est la maquette qui manque d'un
+ * emplacement. Signalé, pas comblé.
+ */
+export const housingListMetaSchema = z
+  .object({
+    safetyBanner: z.string(),
+    total: z.number().int(),
+    canPublish: z.boolean(),
+    publishRequirement: z.string(),
+  })
+  .strict();
+
+export const housingListResponseSchema = pageSchema(housingCardSchema).extend({
+  meta: housingListMetaSchema,
+});
+
+export type HousingListResponse = z.infer<typeof housingListResponseSchema>;
+
+/** `GET /housing/:id` — la carte, son bandeau et « Connecté·e à N de vos contacts ». */
+export const housingDetailResponseSchema = housingCardSchema
+  .extend({
+    /** RÈGLE DURE §2.2 : sur CHAQUE annonce, pas seulement sur les listes. */
+    safetyBanner: z.string(),
+    mutualConnectionCount: z.number().int(),
+  })
+  .strict();
+
+export type HousingDetailResponse = z.infer<typeof housingDetailResponseSchema>;
+
+/**
+ * Une alerte enregistrée, telle que `GET /me/alerts` la rend.
+ *
+ * `criteria` est relu par `alertCriteriaSchema` plutôt que laissé en `unknown` : il
+ * a été ÉCRIT par ce schéma à la création, et l'écran en affiche les critères. Un
+ * `z.record(z.unknown())` aurait accepté n'importe quoi et laissé l'écran lire des
+ * champs qui n'existent pas.
+ */
+export const savedAlertSchema = z
+  .object({
+    id: uuidSchema,
+    kind: z.enum(AlertKind),
+    criteria: alertCriteriaSchema,
+    isActive: z.boolean(),
+    createdAt: z.string().datetime(),
+    lastNotifiedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+
+export type SavedAlertView = z.infer<typeof savedAlertSchema>;
+
+/**
+ * `GET /me/alerts` (§2.4).
+ *
+ * `meta.isPremium` est la DÉCISION DU SERVEUR, et c'est elle que l'écran affiche —
+ * jamais `users.plan` relu dans le front. §2.4 fait des alertes une fonction
+ * payante ; le front qui en déciderait lui-même se tromperait le jour où un essai,
+ * une grâce Mobile Money ou un plan Pro change la réponse.
+ *
+ * `nextCursor` est présent et toujours `null` : le service ne pagine pas cette
+ * liste. Le schéma le DÉCRIT (via `pageSchema`) au lieu de le corriger poliment.
+ */
+export const myAlertsResponseSchema = pageSchema(savedAlertSchema).extend({
+  meta: z
+    .object({ isPremium: z.boolean(), dispatchIntervalMs: z.number().int() })
+    .strict(),
+});
+
+export type MyAlertsResponse = z.infer<typeof myAlertsResponseSchema>;

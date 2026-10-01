@@ -1,0 +1,60 @@
+{
+  "request": {
+    "id": "01a0f4db-6815-7000-9de9-191cf19de0bd",
+    "kind": "REQUEST",
+    "type": "MATERIAL",
+    "title": "Un lit et une table pour la relève",
+    "excerpt": "Charge réelle relevée pour écrire les schémas de réponse de ce module, et rien d’autre.",
+    "status": "OPEN",
+    "city": {
+      "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+      "name": "Lyon"
+    },
+    "dueDate": null,
+    "responseCount": 1,
+    "createdAt": "2026-10-01T00:26:54.871Z",
+    "resolvedAt": null,
+    "resolvedByResponseId": null,
+    "fromJourney": false,
+    "author": {
+      "id": "01a0f4db-673f-7000-aac4-a20178a3c88a",
+      "handle": "h-01a0f4db673f",
+      "displayName": "Auteure Relevée",
+      "avatarUrl": null,
+      "level": "L0",
+      "phase": "RECENT_ARRIVAL",
+      "cityName": "Lyon",
+      "countryIso2": "BJ",
+      "isMentor": false
+    },
+    "isAuthor": true,
+    "body": "Charge réelle relevée pour écrire les schémas de réponse de ce module, et rien d’autre.",
+    "updatedAt": "2026-10-01T00:26:54.903Z"
+  },
+  "journeyContext": null,
+  "responses": [
+    {
+      "id": "01a0f4db-6834-7000-aee7-f021388497c7",
+      "body": "Je peux prêter une table pliante, relevé réel.",
+      "createdAt": "2026-10-01T00:26:54.902Z",
+      "markedHelpful": false,
+      "markedAt": null,
+      "author": {
+        "id": "01a0f4db-67ca-7000-ae33-81e3d3f0ba85",
+        "handle": "h-01a0f4db67ca",
+        "displayName": "Aidant Relevé",
+        "avatarUrl": null,
+        "level": "L0",
+        "phase": "RECENT_ARRIVAL",
+        "cityName": "Lyon",
+        "countryIso2": "BJ",
+        "isMentor": false
+      },
+      "canMarkHelpful": true
+    }
+  ],
+  "meta": {
+    "safetyBanner": "Aucun versement entre membres pour une démarche administrative. Si on vous demande de l’argent, signalez.",
+    "useServicesHint": "Pour un logement ou un emploi, utilisez Services."
+  }
+}

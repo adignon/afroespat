@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "id": "01a0f4dd-0dfa-7000-92cb-8df33735cac8",
+      "role": "mentee",
+      "status": "ACTIVE",
+      "endReason": null,
+      "requestMessage": "Je suis étudiante à Lyon depuis septembre, je cherche de l’aide pour mon logement et la CAF, et je voudrais comprendre les démarches.",
+      "journeyId": null,
+      "conversationId": "01a0f4dd-0e20-7000-b944-8a6e5e03ed76",
+      "acceptedAt": "2026-10-01T00:28:42.904Z",
+      "endsAt": "2026-12-30T00:28:42.904Z",
+      "endedAt": null,
+      "expiresAt": null,
+      "extended": false,
+      "canReview": false,
+      "myReview": null,
+      "theirReview": null,
+      "other": {
+        "id": "01a0f4dd-0c7d-7000-afc9-f82ee4d07ff0",
+        "handle": "h-01a0f4dd0c7d",
+        "displayName": "Parraine Relevée"
+      }
+    }
+  ],
+  "meta": {
+    "moneyBanner": "Un parrainage est gratuit et bénévole. Aucun parrain ne doit vous demander d’argent, ni vous garantir un visa, un logement ou un emploi. Signalez immédiatement toute demande de ce type."
+  }
+}

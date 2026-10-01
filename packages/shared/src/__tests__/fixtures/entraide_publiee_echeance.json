@@ -1,0 +1,40 @@
+{
+  "request": {
+    "id": "01a0f4df-15e1-7000-a424-32e1d603b8c0",
+    "kind": "REQUEST",
+    "type": "PAPERWORK",
+    "title": "Dossier Visale refusé, que faire maintenant",
+    "excerpt": "On me demande un document que je n’ai pas, et l’échéance approche vite.",
+    "status": "OPEN",
+    "city": {
+      "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+      "name": "Lyon"
+    },
+    "dueDate": "2026-10-09T00:00:00.000Z",
+    "responseCount": 0,
+    "createdAt": "2026-10-01T00:30:55.971Z",
+    "resolvedAt": null,
+    "resolvedByResponseId": null,
+    "fromJourney": false,
+    "author": {
+      "id": "01a0f4df-1592-7000-8284-d93b8a313174",
+      "handle": "h-01a0f4df1592",
+      "displayName": "Échéancière Relevée",
+      "avatarUrl": null,
+      "level": "L0",
+      "phase": "RECENT_ARRIVAL",
+      "cityName": "Lyon",
+      "countryIso2": "BJ",
+      "isMentor": false
+    },
+    "isAuthor": true,
+    "body": "On me demande un document que je n’ai pas, et l’échéance approche vite.",
+    "updatedAt": "2026-10-01T00:30:55.971Z"
+  },
+  "journeyContext": null,
+  "responses": [],
+  "meta": {
+    "safetyBanner": "Aucun versement entre membres pour une démarche administrative. Si on vous demande de l’argent, signalez.",
+    "useServicesHint": "Pour un logement ou un emploi, utilisez Services."
+  }
+}

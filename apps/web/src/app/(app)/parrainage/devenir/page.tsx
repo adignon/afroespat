@@ -1,15 +1,36 @@
+'use client';
+
+import { EcranDonnees } from '@/screens/compte/ecran-donnees';
+import { chargerH08 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H08Desktop } from '@/screens/h08/desktop.generated';
 import { H08Mobile } from '@/screens/h08/mobile.generated';
 
 /**
- * H08 — Devenir parrain (`/parrainage/devenir`, module 08).
+ * H08 — Devenir parrain (`/parrainage/devenir`, 06 §5).
  *
- * Transcodé de `docs/template/05 Entraide.dc.html`.
+ * Transcodé de `docs/template/05 Entraide.dc.html`. Voir `/entraide/page.tsx` pour
+ * le procédé et la raison pour laquelle ces écrans sont des composants CLIENT.
  *
- * Les conditions et le formulaire sont ceux que la maquette dessine ; les champs
- * restent dessinés, pour la raison exposée sur H03.
+ * LES TROIS CONDITIONS SONT DU TEXTE DE RÈGLE (§2.1), vraies pour tout le monde,
+ * et elles ne sont pas liées : AUCUNE route ne dit LESQUELLES manquent au membre.
+ * `PUT /me/mentor-profile` répond `MENTOR_NOT_ELIGIBLE` sans détail — mesuré en
+ * appelant. Dessiner trois pastilles d'état demanderait d'inventer ce diagnostic.
+ * Écart remonté.
+ *
+ * « Activer mon profil de parrain » est INERTE : devenir parrain fait apparaître le
+ * membre dans une liste publique où d'autres lui écriront.
  */
 export default function BecomeMentorPage() {
-  return <ScreenFrames screen="H08" desktop={<H08Desktop />} mobile={<H08Mobile />} />;
+  return (
+    <EcranDonnees charger={chargerH08}>
+      {(donnees) => (
+        <ScreenFrames
+          screen="H08"
+          desktop={<H08Desktop {...donnees} />}
+          mobile={<H08Mobile {...donnees} />}
+        />
+      )}
+    </EcranDonnees>
+  );
 }

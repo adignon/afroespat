@@ -1,0 +1,47 @@
+{
+  "items": [
+    {
+      "id": "01a0f4dd-2fc0-7000-94a8-04aeb2e9dfaa",
+      "headline": "Assistante RH · alternance",
+      "sectors": [
+        "Ressources humaines"
+      ],
+      "contractTypes": [
+        "Alternance"
+      ],
+      "updatedAt": "2026-10-01T00:28:51.679Z",
+      "member": {
+        "handle": "a-01a0f4dd2fc0",
+        "displayName": "Amina Diallo",
+        "avatarUrl": null,
+        "city": {
+          "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+          "name": "Lyon",
+          "slug": "lyon"
+        }
+      }
+    },
+    {
+      "id": "01a0f4dd-0a53-7000-996b-8cc0da5cc4a1",
+      "headline": "Assistante RH · alternance",
+      "sectors": [
+        "Ressources humaines"
+      ],
+      "contractTypes": [
+        "Alternance"
+      ],
+      "updatedAt": "2026-10-01T00:28:42.111Z",
+      "member": {
+        "handle": "a-01a0f4dd0a53",
+        "displayName": "Amina Diallo",
+        "avatarUrl": null,
+        "city": {
+          "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+          "name": "Lyon",
+          "slug": "lyon"
+        }
+      }
+    }
+  ],
+  "nextCursor": null
+}

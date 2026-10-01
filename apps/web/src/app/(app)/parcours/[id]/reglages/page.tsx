@@ -1,6 +1,9 @@
 'use client';
 
-import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import { chargerJ08 } from '@/screens/parcours/appels';
+import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J08Desktop } from '@/screens/j08/desktop.generated';
@@ -10,35 +13,46 @@ import { J08MobileArret } from '@/screens/j08arret/mobilearret.generated';
 /**
  * J08 — les réglages du parcours. `/parcours/:id/reglages`.
  *
+ * BRANCHÉ EN LECTURE SUR `GET /journeys/:id` : le nom, la date cible, la version du
+ * modèle (§2.4) et le nombre d'étapes franchies que l'arrêt conserve.
+ *
+ * L'ÉCRITURE N'EST PAS CÂBLÉE, et ce n'est pas un oubli. `PATCH /journeys/:id` est
+ * la route qui change le titre, la date, la mise en pause et la VISIBILITÉ (§3.7,
+ * avec l'adresse IP comme preuve de consentement `JOURNEY_VISIBILITY`). Le
+ * générateur ne reconnaît ni « Mettre à jour », ni « Mettre en pause », ni
+ * « Arrêter », donc aucun `onClick` n'est posé sur ces boutons : aucune suite de
+ * clics ne change la visibilité d'un parcours ni ne l'arrête. « Arrêter » est
+ * irréversible (§3.9) et un bouton qui mentirait là serait pire que l'inertie.
+ * Signalé.
+ *
  * §3.7 : la visibilité en TROIS choix, avec « l'explication exacte de ce qui est
  * visible et invisible en public ». La maquette écrit cette phrase, et elle est
  * transcodée telle quelle : « Ils verront vos étapes franchies et leur durée.
  * Jamais vos notes, vos documents, votre équipe ni votre discussion. »
  *
- * §3.9 : l'arrêt se confirme « sans vocabulaire d'échec ». La confirmation est
- * une FEUILLE sur mobile et une carte DANS LA PAGE sur ordinateur — la planche
- * de 1440 px la dessine en ligne, avec ses boutons Garder et Arrêter. D'où
- * `mobileOnly` : on ne superpose pas une fenêtre à une carte qui dit déjà la
- * même chose.
+ * §3.9 : l'arrêt se confirme « sans vocabulaire d'échec ». La confirmation est une
+ * FEUILLE sur mobile et une carte DANS LA PAGE sur ordinateur — la planche de
+ * 1440 px la dessine en ligne, avec ses boutons Garder et Arrêter. D'où
+ * `mobileOnly` : on ne superpose pas une fenêtre à une carte qui dit déjà la même
+ * chose. Les deux nomment le parcours et comptent SES étapes franchies.
  */
 export default function Page() {
-  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(null, useContexteParcours());
+  const params = useParams<{ id?: string }>();
+  const journeyId = typeof params.id === 'string' ? params.id : '';
+  const contexte = useContexteParcours();
+  const charger = useCallback(() => chargerJ08(journeyId), [journeyId]);
 
   return (
-    <EcranParcours
+    <EcranParcoursDonnees
       screen="J08"
-      desktop={<J08Desktop {...data} />}
-      mobile={<J08Mobile {...data} />}
-      ouverte={ouverte}
-      onOuvrir={onOuvrir}
-      onFermer={onFermer}
-      modales={{
-        J03: plancheBlocage(volet, data),
-        J08A: { mobile: <J08MobileArret {...data} />, mobileOnly: true },
-      }}
-      erreur={erreur}
-      niveauRequis={niveauRequis}
-      oublierNiveauRequis={oublierNiveauRequis}
+      charger={charger}
+      contexte={contexte}
+      desktop={(d) => <J08Desktop {...d} />}
+      mobile={(d) => <J08Mobile {...d} />}
+      modales={(d, volet) => ({
+        J03: plancheBlocage(volet, d),
+        J08A: { mobile: <J08MobileArret {...d} />, mobileOnly: true },
+      })}
     />
   );
 }

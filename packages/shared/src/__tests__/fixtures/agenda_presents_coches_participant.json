@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "handle": "ag-922eccf39a",
+      "displayName": "Organisatrice Éprouvée",
+      "avatarUrl": null,
+      "status": "GOING"
+    },
+    {
+      "handle": "ag-3540d2dccd",
+      "displayName": "Participant Éprouvé",
+      "avatarUrl": null,
+      "status": "GOING"
+    }
+  ],
+  "nextCursor": null,
+  "meta": {
+    "going": 2
+  }
+}

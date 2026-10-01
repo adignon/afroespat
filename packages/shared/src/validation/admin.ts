@@ -535,3 +535,86 @@ export const SYSTEM_AUDIT_ACTIONS = {
  * métadonnées, sous `key`. Limite du schéma figé, contournée sans migration.
  */
 export const AUDIT_SETTING_TARGET_TYPE = 'system_setting';
+
+// ── Schémas de RÉPONSE des routes d'équipe (§5.1, §5.3) ────────────────────
+//
+// Ils vivent ICI, et non dans le front, parce que §4 fait de `packages/shared` la
+// source unique : un schéma de réponse recopié côté client est une deuxième
+// définition, qui divergera le jour où la route gagne un champ.
+//
+// Ils sont RELEVÉS SUR L'API QUI TOURNE, avec une vraie session d'équipe (mot de
+// passe argon2id puis TOTP), et non déduits des services. C'est la seule façon
+// honnête ici : AUCUN handler des six contrôleurs d'équipe ne déclare de DTO de
+// réponse ni de type de retour explicite — tout est inféré de l'appel au service.
+// Lire le service aurait donné sa forme interne, pas celle du JSON.
+
+/**
+ * Un point de mesure, tel que `AnalyticsService.latest` et `impact` le rendent.
+ *
+ * C'est la brique commune de `GET /admin/dashboard`, `/admin/impact`,
+ * `/admin/stats/*` — relevée identique sur les quatre.
+ *
+ * `dimension` est une CHAÎNE VIDE quand la mesure n'est pas ventilée, et porte
+ * sinon la clé de ventilation : un statut (`ACTIVE`), une phase, ou un UUID de
+ * ville ou de pays. Elle n'est donc pas `nullable` mais bien `''` — mesuré, et la
+ * nuance compte : un `?? 'tous'` sur `null` n'aurait jamais déclenché.
+ *
+ * `.strict()` : une colonne ajoutée à ce point doit ARRÊTER l'écran, pas
+ * disparaître en silence. C'est la leçon de `isPilot`, qui était servi et affiché
+ * par personne.
+ */
+export const metricPointSchema = z
+  .object({
+    metric: z.string().min(1),
+    dimension: z.string(),
+    value: z.number(),
+    periodStart: z.string().datetime(),
+  })
+  .strict();
+export type MetricPoint = z.infer<typeof metricPointSchema>;
+
+/**
+ * `GET /v1/admin/impact` — le rapport d'impact (§5.3).
+ *
+ * `{ trimestre, items }`, relevé : `trimestre` vaut « 2026-T3 » (année, tiret,
+ * `T` + numéro) et c'est le SERVEUR qui le décide. L'écran ne le déduit jamais de
+ * l'horloge du navigateur : un rapport trimestriel daté par la machine du lecteur
+ * changerait de titre selon qui l'ouvre.
+ *
+ * CE QUE CETTE ROUTE NE REND PAS, et qui manque à l'écran D16 : aucun témoignage.
+ * `guides.quotable` et `city_tips.quotable` n'existent pas au schéma, donc rien
+ * ici ne dit qu'un membre a donné son accord pour être cité. L'absence est le
+ * comportement correct — voir la déclaration d'écran de D16.
+ */
+export const adminImpactResponseSchema = z
+  .object({
+    /** « 2026-T3 ». Décidé par le serveur, jamais par le client. */
+    trimestre: z.string().min(1),
+    items: z.array(metricPointSchema),
+  })
+  .strict();
+export type AdminImpactResponse = z.infer<typeof adminImpactResponseSchema>;
+
+/**
+ * Les mesures du rapport d'impact que D16 affiche, nommées une fois.
+ *
+ * Les noms sont ceux que l'API RENVOIE, relevés sur elle. Les écrire ici plutôt
+ * qu'en chaînes dans le front leur donne un seul endroit où ils peuvent être faux
+ * — et un nom de mesure mal orthographié est exactement le genre de défaut
+ * silencieux que ce projet a déjà payé : la recherche ne trouve rien, la valeur
+ * reste à zéro, et l'écran affiche « 0 » sans que rien ne le signale.
+ *
+ * C'est aussi pourquoi le front REFUSE une mesure absente au lieu d'écrire zéro :
+ * voir `chargerD16`.
+ */
+export const IMPACT_METRICS = {
+  membresAccompagnes: 'impact.members_accompanied',
+  parcoursAboutis: 'impact.journeys_completed',
+  presences: 'impact.event_attendances',
+  entraidesResolues: 'impact.help_resolved',
+  parrainagesAboutis: 'impact.mentorships_completed',
+  /** Ventilée par UUID de pays d'origine — le graphique de la 2e planche. */
+  membresParPaysOrigine: 'impact.members_by_origin_country',
+  membresParVille: 'impact.members_by_city',
+  guidesPublies: 'impact.guides_published',
+} as const;

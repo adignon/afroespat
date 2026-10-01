@@ -1,0 +1,134 @@
+{
+  "items": [
+    {
+      "date": "2026-10-01",
+      "total": 1,
+      "attending": 0,
+      "firstTitle": "Repas sonde des schémas"
+    },
+    {
+      "date": "2026-10-02",
+      "total": 6,
+      "attending": 1,
+      "firstTitle": "Repas partagé béninois"
+    },
+    {
+      "date": "2026-10-03",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-04",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-05",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-06",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-07",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-08",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-09",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-10",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-11",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-12",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-13",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-14",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-15",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-16",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-17",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-18",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-19",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-20",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    },
+    {
+      "date": "2026-10-21",
+      "total": 0,
+      "attending": 0,
+      "firstTitle": null
+    }
+  ],
+  "meta": {
+    "timeZone": "Europe/Paris",
+    "cached": false
+  }
+}

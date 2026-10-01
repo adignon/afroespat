@@ -1,0 +1,36 @@
+{
+  "items": [
+    {
+      "userId": "01a0f4e3-7f57-7000-8cfd-8f922eccf39a",
+      "handle": "ag-922eccf39a",
+      "displayName": "Organisatrice Éprouvée",
+      "avatarUrl": null,
+      "status": "GOING",
+      "checkedIn": false
+    },
+    {
+      "userId": "01a0f4e3-7fe7-7000-bfed-973540d2dccd",
+      "handle": "ag-3540d2dccd",
+      "displayName": "Participant Éprouvé",
+      "avatarUrl": null,
+      "status": "GOING",
+      "checkedIn": true
+    },
+    {
+      "userId": "01a0f4e3-8064-7000-b425-7f6b72c5d6de",
+      "handle": "ag-6b72c5d6de",
+      "displayName": "Hésitant Éprouvé",
+      "avatarUrl": null,
+      "status": "MAYBE",
+      "checkedIn": false
+    }
+  ],
+  "nextCursor": null,
+  "meta": {
+    "going": 2,
+    "maybe": 1,
+    "waitlist": 0,
+    "declined": 0,
+    "checkedIn": 1
+  }
+}

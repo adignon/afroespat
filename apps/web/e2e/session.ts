@@ -184,3 +184,67 @@ export async function connecter(
     accessToken: session.accessToken,
   };
 }
+
+/**
+ * ─── UNE SEULE SESSION POUR TOUT UN FICHIER ─────────────────────────────────
+ *
+ * POURQUOI CECI EXISTE, et c'est un coût mesuré, pas une élégance.
+ *
+ * `connecter()` crée un membre NEUF, donc appelle `POST /auth/otp/request` à chaque
+ * fois. Cette route est limitée à DIX PAR HEURE ET PAR IP (01 §2), et chaque appel
+ * coûte un SMS en production. Un fichier de quarante tests qui s'inscrirait à chaque
+ * test est donc STRUCTURELLEMENT IMPOSSIBLE dès que la limite est active : le
+ * onzième test prend un `429`, et les trente suivants avec lui.
+ *
+ * `entraide-agenda.spec.ts` compte une quarantaine de tests. Il n'avait besoin
+ * d'aucune session tant que ses écrans lisaient la maquette ; depuis que H01 à H10
+ * lisent l'API, ils n'affichent plus que « Chargement… » puis une invitation à se
+ * reconnecter — c'est-à-dire que ce fichier mesurait l'écran d'erreur en croyant
+ * mesurer l'écran. Il a donc besoin d'une session, et il ne peut pas en payer
+ * quarante.
+ *
+ * ── CE QUE CELA PARTAGE, ET CE QUE CELA NE PARTAGE PAS ──────────────────────
+ *
+ * Le membre et son cookie sont créés UNE FOIS par processus de travail (la promesse
+ * est mémoïsée au niveau du module). Chaque test garde son propre `BrowserContext`
+ * — Playwright l'exige, et c'est bien : les tests ne se passent pas d'état de page
+ * entre eux. Seule l'IDENTITÉ est commune.
+ *
+ * À N'EMPLOYER QUE POUR LIRE. Un fichier dont les tests MODIFIENT le membre — qui
+ * publient, bloquent, révoquent — doit garder `connecter()` par test : sinon le
+ * second test hérite de ce que le premier a changé, et son échec désignera la
+ * mauvaise cause. `entraide-api.spec.ts` fait exactement cela, et c'est pourquoi il
+ * n'emploie pas cette fonction.
+ */
+let partagee: Promise<Membre> | null = null;
+
+export async function connecterPartage(
+  context: BrowserContext,
+  request: APIRequestContext,
+  profil: Parameters<typeof connecter>[2] = {},
+): Promise<Membre> {
+  /**
+   * LE PREMIER APPELANT PAIE L'INSCRIPTION ET POSE LE COOKIE ; les suivants
+   * réemploient le membre, mais doivent quand même installer le cookie dans LEUR
+   * contexte — un `BrowserContext` neuf n'hérite de rien.
+   */
+  if (partagee === null) {
+    partagee = connecter(context, request, profil);
+    return partagee;
+  }
+
+  const membre = await partagee;
+  const cookies = await request.storageState();
+  const refresh = cookies.cookies.find((c) => c.name === 'dp_refresh');
+  if (refresh === undefined) {
+    /**
+     * Le contexte de requêtes a perdu le cookie : plutôt que de servir une session
+     * muette qui ferait mesurer l'écran d'erreur, on repart d'une inscription. C'est
+     * un SMS de plus, et c'est moins cher qu'un test vert qui ne prouve rien.
+     */
+    partagee = connecter(context, request, profil);
+    return partagee;
+  }
+  await context.addCookies([refresh]);
+  return membre;
+}

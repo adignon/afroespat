@@ -261,12 +261,34 @@ const COMPOSEUR_TELEPHONE =
   'justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" ' +
   'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></span>';
 
-const screen = ({ section, out, frames, ...rest }) => ({
+/**
+ * UN `dataType` PAR ÉCRAN, ET SON MODULE À CÔTÉ DE SES CADRES.
+ *
+ * Les quinze cadres de cette maquette partageaient un seul `MessagesData`, qui
+ * était `Record<string, never>` : un type commun n'avait aucun coût tant qu'il
+ * ne portait RIEN. Il en aurait un dès la première donnée — un champ ajouté pour
+ * la recherche apparaîtrait dans la signature des cadres de la messagerie, et un
+ * cadre qui ne lit pas ce champ ne dirait plus lequel il lit.
+ *
+ * Chaque écran a donc son type, dans un `data.ts` posé À CÔTÉ de ses cadres
+ * (`screens/x02/data.ts` pour les trois cadres de X02). Les écrans qui ne lisent
+ * rien — le menu, les deux feuilles de signalement, les encarts de refus —
+ * gardent `MessagesData` de `../messages/data`, et c'est ce partage qui dit qu'ils
+ * ne lisent rien : voir la raison sous chacun.
+ */
+const screen = ({
+  section,
+  out,
+  frames,
+  dataType = 'MessagesData',
+  dataModule = '../messages/data',
+  ...rest
+}) => ({
   file: FILE,
   section,
   out: `apps/web/src/screens/${out}`,
-  dataModule: '../messages/data',
-  dataType: 'MessagesData',
+  dataModule,
+  dataType,
   frames,
   ...rest,
 });
@@ -274,8 +296,605 @@ const screen = ({ section, out, frames, ...rest }) => ({
 /** Un cadre : largeur, nom, rang parmi les planches de même largeur, titre de page. */
 const f = (width, name, occurrence = 0, title = undefined) => ({ width, name, occurrence, title });
 
+// ─── Les cartes que la maquette répète, écrites UNE fois ─────────────────────
+//
+// Même procédé que `08 Compte` : chaque fabrique reproduit une carte de la
+// maquette à l'identique, ses textes en paramètres, et sert DEUX FOIS — à écrire
+// le `noeud` (les cartes telles que la maquette les dessine, avec leurs textes
+// d'exemple) et le `devient` (la même carte, une fois, avec des interpolations).
+// `applyData` compare les deux à chaque exécution : si la maquette change d'un
+// octet, la génération s'arrête en nommant le fragment.
+
+/**
+ * ── X02 · UNE LIGNE DE NOTIFICATION ────────────────────────────────────────
+ *
+ * Les cinq lignes des trois planches sont RIGOUREUSEMENT régulières — compté sur
+ * les octets, pas supposé : même rangée, même pastille de 38 px, même corps de
+ * 13,5 px, même heure de 11,5 px. Elles ne diffèrent que par ce que cette fabrique
+ * prend en paramètres, et chacun de ces paramètres est une VARIANTE QUE LA
+ * MAQUETTE DESSINE :
+ *
+ *   · `fond` et `fondIcone` — `#E3F0EB` sur `#fff` pour une ligne non lue,
+ *     `#F6F8F7` sur `#F2F5F4` pour une ligne lue. Les deux paires sont dessinées,
+ *     et lier le seul point de non-lu laisserait un fond vert sur une ligne lue ;
+ *   · `icone` — le `<path>` de la catégorie, cinq fois dessiné (voir plus bas) ;
+ *   · `texte` — la maquette l'écrit en DEUX morceaux, `<strong>` puis le reste, et
+ *     c'est exactement le découpage `title` / `body` de `GET /notifications` ;
+ *   · `quand` — l'heure relative ;
+ *   · `point` — le rond vert de 8 px, dessiné sur les deux premières lignes
+ *     seulement. C'est la marque du non-lu.
+ */
+const LIGNE_X02 = (fond, fondIcone, icone, texte, quand, point) =>
+  '<div style="display:flex;gap:12px;align-items:center;padding:12px 14px;border-radius:14px;background:' +
+  fond +
+  '"><span style="width:38px;height:38px;border-radius:12px;background:' +
+  fondIcone +
+  ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' +
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  icone +
+  '</svg></span><div style="flex:1;min-width:0;font-size:13.5px;line-height:1.4">' +
+  texte +
+  '</div><span style="font-size:11.5px;color:#8A958F;white-space:nowrap">' +
+  quand +
+  '</span>' +
+  point +
+  '</div>';
+
+/** Le rond vert de 8 px : la marque du non-lu, dessinée sur deux des cinq lignes. */
+const POINT_NON_LU =
+  '<span style="width:8px;height:8px;border-radius:999px;background:#16785E"></span>';
+
+/** Un glyphe de catégorie, tel que la maquette l'écrit dans la pastille. */
+const GLYPHE = (d) => `<path d="${d}"/>`;
+
+/**
+ * LES CINQ LIGNES DE LA MAQUETTE, dans son ordre, textes compris.
+ *
+ * Elles servent de `noeud` aux trois planches — la page complète, le panneau
+ * déroulant et le cadre mobile les dessinent à l'identique, octet pour octet
+ * (vérifié : la seule différence entre les trois planches est ce qui les entoure).
+ */
+const LIGNES_X02 =
+  LIGNE_X02(
+    '#E3F0EB',
+    '#fff',
+    GLYPHE('M7 11v9M7 11l4-7c1.5 0 2.5 1 2.5 2.5V10h5a2 2 0 0 1 2 2l-1.5 6a2 2 0 0 1-2 2H7'),
+    '<strong>Sandra et 4 autres</strong> ont trouvé votre conseil utile',
+    '5 min',
+    POINT_NON_LU,
+  ) +
+  LIGNE_X02(
+    '#E3F0EB',
+    '#fff',
+    GLYPHE('M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z'),
+    '<strong>3 nouvelles réponses</strong> à votre demande « Un lit et une table »',
+    '1 h',
+    POINT_NON_LU,
+  ) +
+  LIGNE_X02(
+    '#F6F8F7',
+    '#F2F5F4',
+    GLYPHE('M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2'),
+    'Échéance <strong>Logement</strong> dans 9 jours',
+    '9 h',
+    '',
+  ) +
+  LIGNE_X02(
+    '#F6F8F7',
+    '#F2F5F4',
+    GLYPHE('M4 6h16v14H4zM4 10h16M8 3v4M16 3v4'),
+    '<strong>Repas partagé</strong> demain à 12 h',
+    'hier',
+    '',
+  ) +
+  LIGNE_X02(
+    '#F6F8F7',
+    '#F2F5F4',
+    GLYPHE('M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5'),
+    '<strong>Aïcha</strong> a accepté d’être votre parraine',
+    'lun.',
+    '',
+  );
+
+/**
+ * LA LIGNE LIÉE — une fois, pilotée par `GET /notifications`.
+ *
+ * ⚠ DEUX ÉCARTS SONT ASSUMÉS ICI, et il faut les lire avant de s'y fier.
+ *
+ * 1. L'EMPHASE SE DÉPLACE SUR UNE LIGNE SUR CINQ. La maquette écrit quatre lignes
+ *    en `<strong>titre</strong> reste` et une — l'échéance — en
+ *    `Échéance <strong>Logement</strong> dans 9 jours`, le gras AU MILIEU. L'API
+ *    ne rend que `title` et `body` : le gabarit ne peut mettre le gras qu'au
+ *    début. Une échéance s'affichera donc avec son titre entier en gras. C'est le
+ *    dessin de la maquette qui n'est pas reproductible depuis ces deux champs,
+ *    pas une donnée inventée — signalé au porteur.
+ *
+ * 2. LE GLYPHE EST UNE DONNÉE, SOUS CONDITION. La maquette dessine CINQ glyphes
+ *    pour cinq catégories (réactions, entraide, échéance, événement, parrainage) ;
+ *    `NOTIFICATION_CATEGORIES` en compte QUATORZE. Les neuf autres n'ont de glyphe
+ *    dans AUCUNE planche. Deux issues, et une seule est honnête :
+ *      · ne pas lier le glyphe : les quatorze catégories porteraient alors le
+ *        pouce de la première ligne, donc treize lignes sur quatorze mentiraient ;
+ *      · le lier et le laisser ABSENT là où la maquette n'en dessine aucun — le
+ *        `<sc-if>` ci-dessous. La pastille reste, vide, et le manque se VOIT.
+ *    La seconde est prise. Inventer neuf glyphes serait dessiner, ce que la
+ *    règle 1 interdit ; en recycler un serait décider qu'une modération ressemble
+ *    à un repas partagé. Les cinq valeurs liées sont RELEVÉES sur la maquette,
+ *    aucune n'est retouchée (voir `screens/x02/data.ts`).
+ */
+const LIGNE_X02_LIEE =
+  '<sc-for list="{{ lignes }}" as="n">' +
+  LIGNE_X02(
+    '{{ n.fond }}',
+    '{{ n.fondIcone }}',
+    '<sc-if value="{{ n.glyphe }}">' + GLYPHE('{{ n.glyphe }}') + '</sc-if>',
+    '<strong>{{ n.titre }}</strong>{{ n.corps }}',
+    '{{ n.quand }}',
+    '<sc-if value="{{ n.nonLu }}">' + POINT_NON_LU + '</sc-if>',
+  ) +
+  '</sc-for>';
+
+/** La donnée des trois planches de X02 : la même liste, au même endroit. */
+const LISTE_X02 = (frame) => ({
+  noeud: LIGNES_X02,
+  devient: LIGNE_X02_LIEE,
+  frames: [frame],
+  why: 'Les notifications du membre, de `GET /notifications` — titre, corps, heure, catégorie et non-lu.',
+});
+
+/**
+ * ── LA BARRE HAUTE, SUR LES QUATRE CADRES D'ORDINATEUR DE CETTE MAQUETTE ────
+ *
+ * M01, M01BLOQUE, X01 et X02 dessinent la même barre haute que `08 Compte` : la
+ * pastille d'initiales et le prénom du membre connecté. Les compter a montré
+ * qu'ils sont réguliers — une fois chacun, sur chacun des quatre cadres de 1440 px
+ * (X02 en a deux, la page et le panneau, et tous deux les portent).
+ *
+ * POURQUOI LES LIER PLUTÔT QUE DE LES LAISSER : c'est l'argument que `08 Compte`
+ * écrit sous K02, et il vaut ici. `ScreenFrames` rend les DEUX cadres et n'en
+ * masque qu'un : « Amina » laissé en dur reste écrit dans le document SERVI, donc
+ * dans ce que lit un test, un moteur de recherche ou un lecteur d'écran. La moitié
+ * de l'écran mentirait sur l'identité de qui le regarde.
+ *
+ * Les cadres MOBILES n'en portent pas : la maquette y met un en-tête de page et
+ * une barre d'onglets, sans identité. Compté sur les cinq cadres de 390 px.
+ */
+const BARRE_HAUTE = [
+  {
+    noeud: '>AD<',
+    devient: '>{{ moi.initiales }}<',
+    frames: ['Desktop'],
+    why: 'Les initiales de l’avatar de la barre haute, dérivées du nom affiché de `GET /me`.',
+  },
+  {
+    noeud: '>Amina<',
+    devient: '>{{ moi.prenom }}<',
+    frames: ['Desktop'],
+    why: 'Le prénom de la barre haute, premier mot du nom affiché de `GET /me`.',
+  },
+];
+
+/** La même barre, sur un cadre nommé autrement (M01BLOQUE, X02 panneau). */
+const barreHauteDe = (frame) => BARRE_HAUTE.map((lien) => ({ ...lien, frames: [frame] }));
+
+/**
+ * ── M01 · UNE RANGÉE DE LA LISTE DE CONVERSATIONS ──────────────────────────
+ *
+ * Les CINQ rangées des deux planches de liste — quatre conversations et la demande
+ * en attente — sont rigoureusement régulières, octets comptés. Chaque paramètre est
+ * une VARIANTE QUE LA MAQUETTE DESSINE, et aucun n'est un choix fait ici :
+ *
+ *   · `fond` — `#E3F0EB` sur la rangée ouverte, `transparent` sur les autres ;
+ *   · `fondAvatar` — `#E0733A`, `#0F5C48`, `#E0733A`, `#0F5C48` puis `#B4581F` :
+ *     trois teintes cyclées par rang, comme K05 cycle les siennes ;
+ *   · `encre` et `graisse` de l'aperçu — `#16211D` / `600` quand il reste des
+ *     non-lus, `#8A958F` / `400` quand tout est lu. Les DEUX paires sont
+ *     dessinées, et ne lier que la pastille laisserait un aperçu en gras sombre
+ *     sur une conversation entièrement lue ;
+ *   · `pastille` — le rond vert du compteur de non-lus, dessiné sur deux rangées
+ *     sur cinq.
+ */
+const RANGEE_M01 = (fond, fondAvatar, initiales, nom, quand, encre, graisse, apercu, pastille) =>
+  '<div style="display:flex;gap:12px;align-items:center;padding:12px;border-radius:16px;background:' +
+  fond +
+  '"><span style="width:44px;height:44px;border-radius:999px;background:' +
+  fondAvatar +
+  ';color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">' +
+  initiales +
+  '</span><div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between">' +
+  '<span style="font-size:14px;font-weight:700">' +
+  nom +
+  '</span><span style="font-size:11.5px;color:#8A958F">' +
+  quand +
+  '</span></div><div style="display:flex;align-items:center;gap:8px">' +
+  '<span style="flex:1;min-width:0;font-size:12.5px;color:' +
+  encre +
+  ';font-weight:' +
+  graisse +
+  ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+  apercu +
+  '</span>' +
+  pastille +
+  '</div></div></div>';
+
+/** Le compteur de non-lus d'une rangée : le rond vert de 20 px. */
+const PASTILLE_M01 = (n) =>
+  '<span style="background:#16785E;color:#fff;font-size:10.5px;font-weight:700;min-width:20px;' +
+  'height:20px;border-radius:999px;display:flex;align-items:center;justify-content:center">' +
+  n +
+  '</span>';
+
+/** Les deux jeux d'encre de l'aperçu, tels que la maquette les dessine. */
+const APERCU_NON_LU = ['#16211D', '600'];
+const APERCU_LU = ['#8A958F', '400'];
+
+/**
+ * Les conversations, dans l'ordre de la maquette.
+ *
+ * ⚠ LES DEUX CADRES N'EN DESSINENT PAS LE MÊME NOMBRE, et c'est le garde-fou de
+ * `fois` qui l'a dit : déclarée avec quatre rangées sur les deux cadres, la
+ * génération a refusé — « figure 0 fois dans ce cadre » sur M01 Mobile. Vérifié
+ * ensuite sur les octets : la planche d'ordinateur dessine QUATRE conversations
+ * (jusqu'à « Marc Koudou »), la planche mobile en dessine TROIS. La maquette
+ * raccourcit, comme elle raccourcit déjà « Yasmine Benali » en « Yasmine B. ».
+ *
+ * `avecQuatrieme` dit donc lequel des deux cadres on décrit. Sans ce paramètre, la
+ * liste mobile n'aurait pas été liée du tout — et c'est exactement le défaut que
+ * `fois` existe pour empêcher : une donnée qui disparaît en silence.
+ */
+const CONVERSATIONS_M01 = (
+  titrePremier,
+  apercuPremier,
+  nomDemande,
+  apercuDemande,
+  avecQuatrieme = true,
+  fondPremier = '#E3F0EB',
+) => ({
+  liste:
+    RANGEE_M01(
+      fondPremier,
+      '#E0733A',
+      'PE',
+      titrePremier,
+      '10:42',
+      ...APERCU_NON_LU,
+      apercuPremier,
+      PASTILLE_M01('4'),
+    ) +
+    RANGEE_M01(
+      'transparent',
+      '#0F5C48',
+      'SM',
+      'Sandra M.',
+      'hier',
+      ...APERCU_LU,
+      'Merci pour la table !',
+      '',
+    ) +
+    RANGEE_M01(
+      'transparent',
+      '#E0733A',
+      'KB',
+      'Kofi Boateng',
+      'lun.',
+      ...APERCU_NON_LU,
+      'Samedi ça marche',
+      PASTILLE_M01('1'),
+    ) +
+    (avecQuatrieme
+      ? RANGEE_M01(
+          'transparent',
+          '#0F5C48',
+          'MK',
+          'Marc Koudou',
+          '12 sept.',
+          ...APERCU_LU,
+          'Vous : parfait, merci',
+          '',
+        )
+      : ''),
+  /** La demande en attente (§5.2) : la maquette la range sous « DEMANDES · 2 ». */
+  demande: RANGEE_M01(
+    'transparent',
+    '#B4581F',
+    'YB',
+    nomDemande,
+    '2 h',
+    ...APERCU_LU,
+    apercuDemande,
+    '',
+  ),
+});
+
+/**
+ * LA RANGÉE LIÉE — une fois, pilotée par `GET /conversations`.
+ *
+ * ⚠ L'APERÇU EST LA DONNÉE LA PLUS SENSIBLE DE CE MODULE, et il faut savoir ce
+ * qu'il est. `lastMessagePreview` est le corps du dernier message DÉSCELLÉ par le
+ * serveur et coupé à `CONVERSATION_PREVIEW_MAX` : le chiffrement de 00 §8.1 est AU
+ * REPOS, pas de bout en bout, et aucune route de ce dépôt ne rend de cryptogramme
+ * — vérifié sur le service, pas supposé. L'écran n'a donc rien à déchiffrer, et
+ * c'est `conversationSchema` (dans `packages/shared`) qui tient la frontière :
+ * `.strict()`, pour qu'un `bodyEncrypted` greffé soit REFUSÉ au lieu d'être
+ * dépouillé en silence.
+ *
+ * LA MAQUETTE PRÉFIXE L'APERÇU PAR L'AUTEUR — « Aïcha : Tu veux que je relise ? »,
+ * « Vous : parfait, merci » — et l'API ne le fait PAS : `lastMessagePreview` est le
+ * corps nu. Le préfixe est donc composé côté front, à partir de l'auteur que
+ * `members[]` nomme ; c'est de la mise en forme, pas de la donnée inventée, et
+ * c'est dit dans `screens/m01/data.ts`.
+ */
+const RANGEE_M01_LIEE = (liste, as, pastille) =>
+  `<sc-for list="{{ ${liste} }}" as="${as}">` +
+  RANGEE_M01(
+    `{{ ${as}.fond }}`,
+    `{{ ${as}.fondAvatar }}`,
+    `{{ ${as}.initiales }}`,
+    `{{ ${as}.nom }}`,
+    `{{ ${as}.quand }}`,
+    `{{ ${as}.encre }}`,
+    `{{ ${as}.graisse }}`,
+    `{{ ${as}.apercu }}`,
+    pastille ? `<sc-if value="{{ ${as}.nonLus }}">${PASTILLE_M01(`{{ ${as}.nonLus }}`)}</sc-if>` : '',
+  ) +
+  '</sc-for>';
+
+/**
+ * LA RANGÉE D'UNE DEMANDE N'A PAS DE PASTILLE, ET C'EST LE CONTRÔLE QUI L'A DIT.
+ *
+ * Déclarée d'abord avec la même rangée liée que les conversations, la génération a
+ * REFUSÉ : « la donnée ajoute du dessin que la maquette n'écrit pas là », en
+ * nommant le rond de non-lus. C'est exact — la maquette ne dessine aucune pastille
+ * sur la rangée « DEMANDES », sur aucun des deux cadres de liste.
+ *
+ * Et c'est juste au-delà du dessin : §5.2 fait du premier message LA demande
+ * elle-même. Une demande en attente a donc toujours exactement un message non lu,
+ * et une pastille y afficherait « 1 » pour toutes, tout le temps — un compteur qui
+ * ne compte rien. Le garde-fou a attrapé un dessin de trop et, ce faisant, une
+ * donnée qui n'aurait rien dit.
+ */
+const RANGEE_DEMANDE_LIEE = RANGEE_M01_LIEE('demandes.liste', 'd', false);
+
+/**
+ * ── M01 · UNE BULLE DU FIL ──────────────────────────────────────────────────
+ *
+ * La maquette dessine DEUX bulles, et c'est pour cela que tout ce qui les distingue
+ * devient une donnée plutôt qu'une branche de JSX : la mienne (à droite, verte,
+ * sans auteur) et la sienne (à gauche, blanche, cernée, précédée de l'auteur en
+ * gras). Lier le seul corps donnerait des messages reçus affichés en vert à
+ * droite, c'est-à-dire un fil où l'on ne sait plus qui parle.
+ *
+ * Les cinq valeurs liées sont RELEVÉES sur les deux bulles, aucune n'est retouchée.
+ */
+const BULLE_M01 = (cote, rayon, fond, encre, trait, auteur, corps, mention) =>
+  '<div style="display:flex;flex-direction:column;align-items:' +
+  cote +
+  ';gap:4px"><div style="max-width:70%;padding:11px 14px;border-radius:' +
+  rayon +
+  ';background:' +
+  fond +
+  ';color:' +
+  encre +
+  ';border:' +
+  trait +
+  ';font-size:14px;line-height:1.5">' +
+  auteur +
+  corps +
+  '</div>' +
+  mention +
+  '</div>';
+
+/** Les valeurs des deux bulles, relevées sur la maquette. */
+const BULLE_MIENNE = ['flex-end', '18px 18px 6px 18px', '#16785E', '#fff', 'none'];
+const BULLE_SIENNE = ['flex-start', '18px 18px 18px 6px', '#fff', '#16211D', '1px solid #E6EBE9'];
+
+/** L'auteur en gras, tel que la maquette le pose sur la bulle reçue. */
+const AUTEUR_M01 = (nom) => `<strong>${nom}</strong><br>`;
+
+/** L'heure sous la bulle — ou « Vu », que la maquette écrit aussi. */
+const MENTION_M01 = (texte) => `<span style="font-size:11px;color:#8A958F">${texte}</span>`;
+
+/**
+ * LE FIL TEL QUE LA MAQUETTE LE DESSINE, et il porte DEUX objets de plus.
+ *
+ * `image` n'est dessiné que sur la planche d'ordinateur : le cadre mobile n'en a
+ * pas. D'où le paramètre, plutôt que deux copies de ce fil.
+ */
+const FIL_M01 = (premier, sienne, dernier, image) =>
+  '<div style="align-self:center;background:#EEF2F0;color:#5D6B66;font-size:12px;font-weight:600;' +
+  'padding:6px 12px;border-radius:999px">Aïcha a rejoint le parcours</div>' +
+  BULLE_M01(...BULLE_MIENNE, '', premier, '') +
+  BULLE_M01(...BULLE_SIENNE, AUTEUR_M01('Aïcha'), sienne, MENTION_M01('10:42')) +
+  image +
+  BULLE_M01(...BULLE_MIENNE, '', dernier, MENTION_M01('Vu'));
+
+/** La vignette rayée de la planche d'ordinateur : un message IMAGE. */
+const IMAGE_M01 =
+  '<div style="max-width:220px;height:140px;border-radius:18px;' +
+  'background:repeating-linear-gradient(135deg,#E3ECE8 0 12px,#DCE6E1 12px 24px);' +
+  'align-self:flex-end"></div>';
+
+/**
+ * LE FIL LIÉ — une bulle, pilotée par `GET /conversations/:id/messages`.
+ *
+ * ⚠ DEUX OBJETS DE LA MAQUETTE DISPARAISSENT, et c'est le contraire d'une perte :
+ *
+ * 1. LA LIGNE SYSTÈME « Aïcha a rejoint le parcours ». Elle ne peut PAS être liée,
+ *    et pas faute de place : `MESSAGE_KINDS` déclare `SYSTEM`, mais l'en-tête de
+ *    `packages/shared/src/validation/messaging.ts` dit que la colonne `kind`
+ *    N'EXISTE PAS en base et que le kind est déduit — `IMAGE` si `media_asset_id`,
+ *    `TEXT` sinon. AUCUNE route ne produit de `SYSTEM`. La laisser dessinée
+ *    afficherait « Aïcha a rejoint le parcours » en tête de CHAQUE conversation,
+ *    pour toujours et pour tout le monde : un mensonge permanent. La retirer dit
+ *    la vérité — le produit ne sait pas encore poser de message système.
+ *
+ * 2. LA VIGNETTE D'IMAGE. L'API rend bien `kind: 'IMAGE'` et `mediaId`, mais AUCUNE
+ *    route de ce lot ne résout un `mediaId` en URL affichable, et la vignette que
+ *    la maquette dessine porte `align-self:flex-end` — elle est toujours DU CÔTÉ
+ *    DE L'EXPÉDITEUR. La réemployer pour une image reçue la mettrait du mauvais
+ *    côté du fil, c'est-à-dire dessinerait un état faux. Un message image garde
+ *    donc sa bulle et son texte : `sendMessageSchema` exige un `body` de 1 à 4 000
+ *    caractères MÊME avec un `mediaId`, donc aucune image n'arrive sans légende et
+ *    aucun message ne disparaît du fil. L'image, elle, ne s'affiche pas.
+ *
+ * Les deux manques sont signalés au porteur. Ce qu'il faudrait : une planche avec
+ * une image REÇUE, et une route qui résolve un média.
+ */
+const FIL_M01_LIE =
+  '<sc-for list="{{ messages }}" as="m">' +
+  BULLE_M01(
+    '{{ m.cote }}',
+    '{{ m.rayon }}',
+    '{{ m.fond }}',
+    '{{ m.encre }}',
+    '{{ m.trait }}',
+    `<sc-if value="{{ m.auteur }}">${AUTEUR_M01('{{ m.auteur }}')}</sc-if>`,
+    '{{ m.corps }}',
+    `<sc-if value="{{ m.mention }}">${MENTION_M01('{{ m.mention }}')}</sc-if>`,
+  ) +
+  '</sc-for>';
+
+/** Le fil d'un cadre : son `noeud` dépend des textes et de la vignette. */
+const LIEN_FIL = (frame, premier, sienne, dernier, image) => ({
+  noeud: FIL_M01(premier, sienne, dernier, image),
+  devient: FIL_M01_LIE,
+  frames: [frame],
+  why: 'Les messages de la conversation, de `GET /conversations/:id/messages` — corps DÉSCELLÉ par le serveur, auteur, heure et côté de la bulle.',
+});
+
+/**
+ * ── X01 · UNE SUGGESTION ────────────────────────────────────────────────────
+ *
+ * Les trois suggestions sont régulières, et la maquette écrit chacune en DEUX
+ * morceaux : la part déjà saisie en gras, puis la suite. C'est le surlignage de la
+ * requête (11 §2.3, « suggestions dès 3 caractères »), et le découper ainsi est ce
+ * que la maquette dessine — pas une invention.
+ */
+const SUGGESTION_X01 = (prefixe, suite) =>
+  '<div style="height:42px;display:flex;align-items:center;gap:10px;padding:0 12px;' +
+  'border-radius:12px;font-size:13.5px">' +
+  '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A958F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 2-4-4"/></svg>' +
+  '<span><strong>' +
+  prefixe +
+  '</strong>' +
+  suite +
+  '</span></div>';
+
 /** Titre visible d'un cadre : le texte tel que la maquette l'écrit, et son corps. */
 const t = (text, size) => ({ text, size });
+
+/**
+ * ─── LES DONNÉES DE LA MESSAGERIE, DÉCLARÉES UNE FOIS POUR DEUX ÉCRANS ──────
+ *
+ * M01 et M01BLOQUE transcodent LES MÊMES PLANCHES : la conversation bloquée est
+ * la conversation, composeur en moins et bandeau en plus (voir
+ * `CONVERSATION_BLOQUEE`). Leurs cadres lisent donc exactement les mêmes données,
+ * et seuls leurs NOMS diffèrent — « BloqueDesktop » plutôt que « Desktop », pour
+ * que deux composants ne portent pas le même nom d'export.
+ *
+ * D'où cette fonction plutôt que deux copies : recopier dix liaisons laisserait
+ * les deux écrans diverger au premier ajustement, et c'est le cadre bloqué —
+ * celui qu'on regarde le moins — qui aurait silencieusement gardé l'ancienne
+ * version.
+ *
+ * `liste` est FACULTATIF : il nomme le cadre mobile de la LISTE, que M01 possède
+ * (« MOBILE · LISTE ») et que M01BLOQUE ne reprend pas — rien n'y change, puisque
+ * la rangée grise de K05 n'est pas reportée.
+ *
+ * ── L'ORDRE DE CES LIAISONS COMPTE, et ce n'est pas du style ────────────────
+ *
+ * `applyData` les applique l'une après l'autre sur le HTML qu'elle vient de
+ * réécrire, et « Mes études à Lyon » figure DEUX fois dans le cadre
+ * d'ordinateur : une fois dans la première rangée de la liste, une fois dans
+ * l'en-tête de la conversation. La liste est donc liée D'ABORD — elle consomme la
+ * première occurrence — et l'en-tête ensuite, avec `fois: 1`. Déclarées dans
+ * l'autre sens, les deux occurrences seraient remplacées d'un coup et le nom de
+ * l'en-tête vaudrait celui de la première conversation de la liste.
+ */
+const donneesMessagerie = ({ desktop, conversation, liste = null }) => [
+  ...barreHauteDe(desktop),
+  {
+    noeud: CONVERSATIONS_M01(
+      'Mes études à Lyon',
+      'Aïcha : Tu veux que je relise ?',
+      'Yasmine Benali',
+      'Bonjour, je vous écris pour…',
+    ).liste,
+    devient: RANGEE_M01_LIEE('conversations', 'c', true),
+    frames: [desktop],
+    why: 'Mes conversations, de `GET /conversations` — nom, dernière ligne DÉSCELLÉE par le serveur, heure et non-lus.',
+  },
+  {
+    noeud: CONVERSATIONS_M01('', '', 'Yasmine Benali', 'Bonjour, je vous écris pour…').demande,
+    devient: RANGEE_DEMANDE_LIEE,
+    frames: [desktop],
+    why: 'Les demandes de conversation en attente, de `GET /conversations` (`pendingForMe`) — §5.2, « l’autre accepte ou ignore ».',
+  },
+  ...(liste === null
+    ? []
+    : [
+        {
+          noeud: CONVERSATIONS_M01(
+            'Mes études à Lyon',
+            'Aïcha : Tu veux que je relise ?',
+            'Yasmine B.',
+            'Bonjour, je vous écris…',
+            false,
+            // ⚠ AUCUNE RANGÉE OUVERTE SUR MOBILE, et c'est encore `fois` qui l'a
+            // dit. La planche mobile de la liste donne `transparent` à ses TROIS
+            // rangées : sur téléphone la liste est une page à part, et aucune
+            // conversation n'y est ouverte — « MOBILE · CONVERSATION » est l'écran
+            // suivant. Le fond reste une donnée (les deux valeurs sont dessinées
+            // dans la section), mais le chargeur de ce cadre ne doit jamais rendre
+            // `#E3F0EB` : voir `screens/m01/data.ts`.
+            'transparent',
+          ).liste,
+          devient: RANGEE_M01_LIEE('conversations', 'c', true),
+          frames: [liste],
+          why: 'Les mêmes conversations, sur le cadre mobile — la maquette n’en dessine que trois et raccourcit les textes.',
+        },
+        {
+          noeud: CONVERSATIONS_M01('', '', 'Yasmine B.', 'Bonjour, je vous écris…').demande,
+          devient: RANGEE_DEMANDE_LIEE,
+          frames: [liste],
+          why: 'Les mêmes demandes, sur le cadre mobile.',
+        },
+      ]),
+  {
+    noeud: '>DEMANDES · 2<',
+    devient: '>DEMANDES · {{ demandes.total }}<',
+    frames: liste === null ? [desktop] : [desktop, liste],
+    why: 'Le nombre de demandes de conversation en attente (§5.2), compté sur `pendingForMe`.',
+  },
+  {
+    noeud: '>Mes études à Lyon<',
+    devient: '>{{ entete.nom }}<',
+    fois: 1,
+    frames: [desktop, conversation],
+    why: 'Le nom de la conversation ouverte — le titre du parcours (§8) ou l’interlocuteur pour une conversation directe.',
+  },
+  {
+    noeud: '>Parcours · Aïcha (parraine), Moussa, Fanta<',
+    devient: '>{{ entete.sousTitre }}<',
+    frames: [desktop],
+    why: 'Les membres de la conversation, de `members[].displayName` — le cadre mobile ne dessine pas cette ligne.',
+  },
+  LIEN_FIL(
+    desktop,
+    'J’ai visité le studio de la rue Garibaldi, ils demandent un garant.',
+    'Avec Visale ça passe. Tu veux que je relise ton dossier ce soir ?',
+    'Oui avec plaisir, je t’envoie tout.',
+    IMAGE_M01,
+  ),
+  LIEN_FIL(
+    conversation,
+    'Ils demandent un garant.',
+    'Avec Visale ça passe.',
+    'Je t’envoie tout.',
+    '',
+  ),
+];
 
 export const screens = [
   /**
@@ -386,6 +1005,8 @@ export const screens = [
         frames: ['Desktop', 'MobileConversation'],
       },
     ],
+    dataType: 'M01Data',
+    dataModule: './data',
     frames: [
       // « Messages » est le titre du volet de gauche, 18 px / 800. Il ne figure
       // qu'une fois dans ce cadre : ni le rail ni le panneau d'accueil ne le
@@ -398,6 +1019,22 @@ export const screens = [
       // parcours »). 16 px sur l'en-tête mobile.
       f(390, 'MobileConversation', 1, t('Mes études à Lyon', '16px')),
     ],
+    /**
+     * BRANCHÉ SUR \`GET /conversations\` (la liste, les non-lus, la dernière ligne) et
+     * \`GET /conversations/:id/messages\` (le fil). Les deux routes portent
+     * \`@RequiresCapability('content.read')\` et AUCUN \`@PublicRead\` — lu sur le
+     * CONTRÔLEUR, pas supposé. Un appel parti sans jeton prend donc un vrai \`401\`,
+     * que le socle rafraîchit et rejoue une fois ; cet écran ne peut pas « changer
+     * d'avis au rechargement » comme le ferait une route publique.
+     *
+     * Le détail des liaisons, et pourquoi leur ordre compte, est sur
+     * \`donneesMessagerie\` — M01BLOQUE lit exactement les mêmes.
+     */
+    donnees: donneesMessagerie({
+      desktop: 'Desktop',
+      conversation: 'MobileConversation',
+      liste: 'Mobile',
+    }),
   }),
 
   /**
@@ -436,10 +1073,28 @@ export const screens = [
         frames: ['BloqueMobileConversation'],
       },
     ],
+    dataType: 'M01BloqueData',
+    dataModule: './data',
     frames: [
       f(1440, 'BloqueDesktop', 0, t('Messages', '18px')),
       f(390, 'BloqueMobileConversation', 1, t('Mes études à Lyon', '16px')),
     ],
+    /**
+     * LES MÊMES DONNÉES QUE M01, et c'est le point : une conversation bloquée
+     * reste une conversation. On lit la liste, les demandes, l'en-tête et le fil
+     * exactement comme ailleurs — ce qui change, c'est qu'on ne peut plus écrire,
+     * et cela se joue dans le composeur, que l'EMPRUNT remplace.
+     *
+     * Le type est distinct (`M01BloqueData`) alors que sa forme est identique, et
+     * c'est volontaire : un écran, un type. Le jour où cet état portera une donnée
+     * de plus — la date du blocage, par exemple, que `GET /me/blocks` sait rendre
+     * et que la maquette ne dessine nulle part — elle n'apparaîtra pas dans la
+     * signature des cadres de M01.
+     */
+    donnees: donneesMessagerie({
+      desktop: 'BloqueDesktop',
+      conversation: 'BloqueMobileConversation',
+    }),
   }),
 
   /**
@@ -495,12 +1150,95 @@ export const screens = [
    * résultat. Posez la question à la communauté ? », 11 §2.4) dessiné en composant,
    * sans planche complète autour. Même traitement que les deux cartes de M01.
    */
+  /**
+   * ── CE QUE X01 LIT, ET LES TROIS CHOSES QU'IL NE PEUT PAS LIRE ─────────────
+   *
+   * BRANCHÉ SUR `GET /search` et `GET /search/suggest` (11 §3). Les deux portent
+   * `@RequiresCapability('content.read')` et AUCUN `@PublicRead` — lu sur le
+   * contrôleur.
+   *
+   * ⚠ `GET /search` REND DEUX FORMES, et c'est `type` qui décide : sans lui,
+   * `items` est une liste de GROUPES (type, libellé, compteur, aperçu) ; avec lui,
+   * une liste de résultats plats. La planche d'ordinateur dessine l'onglet
+   * « Tout » — donc la forme GROUPÉE. C'est écrit, et vérifié, sur
+   * `groupedSearchResponseSchema` dans `packages/shared`.
+   *
+   * ── CE QUI N'EST PAS LIÉ, ET POURQUOI ──────────────────────────────────────
+   *
+   * 1. LES DIX PASTILLES DE FACETTES — « Tout · 24 », « Guides · 5 », « Sujets ·
+   *    7 »… Les compteurs existent (`items[].count`) et le total aussi (leur
+   *    somme : 5+7+4+3+0+1+2+0+2 = 24, ce que la maquette écrit exactement). Mais
+   *    les LIBELLÉS divergent : la maquette écrit « Sujets » et « Pros » là où
+   *    `SEARCH_TYPE_LABELS_FR` — que le serveur emploie pour remplir `label` —
+   *    écrit « Sujets de réseau » et « Professionnels ». Lier la pastille
+   *    changerait donc le texte affiché, et la maquette dessine en plus « Villes »
+   *    SANS compteur, ce qu'un gabarit unique ne reproduit pas. Deux décisions de
+   *    produit, pas une liaison : signalées au porteur.
+   *
+   * 2. LES QUATRE CARTES DE RÉSULTAT. Leur titre et leur type viennent bien de
+   *    `SearchHit`, mais leur SOUS-LIGNE n'a aucune source : « Mis à jour le
+   *    12 mars · 84 utiles », « Béninois en France · 14 réponses », « Ouverte ·
+   *    Lyon 7e », « 620 € ». `SearchHit` porte `title`, `excerpt`, `cityId`,
+   *    `countryId`, `communityId`, `rank` et `updatedAt` — ni compteur d'utiles, ni
+   *    nombre de réponses, ni état, ni loyer, et ses trois identifiants sont des
+   *    UUID que `GET /search` ne résout pas en noms. Les quatre cartes sont de
+   *    surcroît DESSINÉES DIFFÉREMMENT l'une de l'autre (une par type), donc une
+   *    fabrique unique ne les reproduirait pas. Lier le seul titre laisserait
+   *    quatre sous-lignes figées sous des titres qui changent — pire que la
+   *    maquette figée. Signalé : il manque à `GET /search` les champs d'affichage
+   *    que la maquette dessine.
+   *
+   * 3. L'ÉTAT VIDE. `meta.zeroResult` porte sa phrase et son bouton, de l'API et
+   *    non du front (`SEARCH_ZERO_PROMPT_FR`) — mais la maquette ne dessine cet
+   *    état que dans une carte « ÉTATS » posée à côté des planches, sans cadre
+   *    autour. Il n'y a nulle part où le poser.
+   *
+   * CE QUI EST LIÉ l'est donc complètement : la requête, sur les deux cadres, et
+   * les trois suggestions dépliées de la planche d'ordinateur.
+   */
   screen({
     section: 'X01',
     out: 'x01',
+    dataType: 'X01Data',
+    dataModule: './data',
     frames: [
       f(1440, 'Desktop', 0, t('Résultats pour « visale »', '28px')),
       f(390, 'Mobile', 0),
+    ],
+    donnees: [
+      ...BARRE_HAUTE,
+      {
+        noeud: '>Résultats pour « visale »<',
+        devient: '>Résultats pour « {{ requete }} »<',
+        frames: ['Desktop'],
+        why: 'La requête, de `meta.q` — et le titre de la page, que `retitrerSurDonnees` reprend sur sa forme liée.',
+      },
+      {
+        /**
+         * ⚠ LE CADRE MOBILE N'A TOUJOURS PAS DE TITRE, et cette liaison n'en
+         * fabrique pas un. La maquette écrit la requête DANS LE CHAMP de
+         * recherche, en 14 px / 600 ; la lier remplace une valeur de champ par
+         * une autre valeur de champ. Promouvoir ce champ en `<h1>` resterait un
+         * titre inventé — c'est ce qui a coûté A01 — et le générateur continue de
+         * signaler l'absence à chaque exécution. Consigné, pas masqué.
+         */
+        noeud: '>visale<',
+        devient: '>{{ requete }}<',
+        frames: ['Mobile'],
+        why: 'La requête telle qu’elle est saisie, de `meta.q` — le cadre mobile l’écrit dans le champ.',
+      },
+      {
+        noeud:
+          SUGGESTION_X01('vis', 'ale étudiant') +
+          SUGGESTION_X01('vis', 'a long séjour') +
+          SUGGESTION_X01('vis', 'ite préfecture Lyon'),
+        devient:
+          '<sc-for list="{{ suggestions }}" as="s">' +
+          SUGGESTION_X01('{{ s.prefixe }}', '{{ s.suite }}') +
+          '</sc-for>',
+        frames: ['Desktop'],
+        why: 'Les suggestions de `GET /search/suggest` (11 §2.3, dès 3 caractères) — la part saisie en gras, puis la suite.',
+      },
     ],
   }),
 
@@ -521,13 +1259,45 @@ export const screens = [
    * atteignable et éprouvable — la maquette ne dessine aucune cloche cliquable dans
    * les cadres de ce lot.
    */
+  /**
+   * ── CE QUE X02 LIT, ET CE QU'IL NE PEUT PAS LIRE ───────────────────────────
+   *
+   * BRANCHÉ SUR `GET /notifications` (12 §4), ses CINQ lignes liées sur les TROIS
+   * planches. Voir `LIGNE_X02_LIEE` pour les deux écarts assumés — l'emphase de
+   * l'échéance et le glyphe des neuf catégories que la maquette ne dessine pas.
+   *
+   * `meta.unread` EST RENDU PAR L'API ET N'A NULLE PART OÙ ALLER. La réponse porte
+   * le compteur de non-lus, et 12 §2.7 le demande (« cloche en barre haute avec
+   * compteur de non-lus ») — mais AUCUNE des trois planches ne dessine ce
+   * compteur : la cloche de la barre haute est un `<span>` d'icône nu, sans
+   * pastille, et le panneau déroulant n'en met pas davantage. Compté sur les trois
+   * cadres. Lui faire une place serait dessiner la pastille manquante. Signalé au
+   * porteur ; la donnée est lue, validée, et volontairement non affichée.
+   *
+   * LES PASTILLES DE FILTRE NE SONT PAS LIÉES. La page écrit « Tout · Messages ·
+   * Compte » et le cadre mobile « Tout · Parcours · Entraide · Réseaux » : quatre
+   * libellés sur sept ne correspondent à aucune valeur de `CATEGORY_LABELS_FR`
+   * (qui écrit « Messages privés », « Mon compte », « Réactions et
+   * commentaires »…), et la maquette n'en dessine jamais les quatorze. Les lier
+   * demanderait de choisir lesquelles montrer, donc de redessiner la rangée.
+   * Signalé.
+   */
   screen({
     section: 'X02',
     out: 'x02',
+    dataType: 'X02Data',
+    dataModule: './data',
     frames: [
       f(1440, 'Desktop', 1, t('Notifications', '28px')),
       f(390, 'Mobile', 0, t('Notifications', '21px')),
       f(1440, 'DesktopPanneau', 0, t('Notifications', '17px')),
+    ],
+    donnees: [
+      ...BARRE_HAUTE,
+      ...barreHauteDe('DesktopPanneau'),
+      LISTE_X02('Desktop'),
+      LISTE_X02('Mobile'),
+      LISTE_X02('DesktopPanneau'),
     ],
   }),
 

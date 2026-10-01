@@ -1,0 +1,77 @@
+{
+  "items": [
+    {
+      "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+      "name": "Lyon",
+      "slug": "lyon",
+      "region": "Auvergne-Rhône-Alpes",
+      "latitude": 45.764,
+      "longitude": 4.8357,
+      "isActive": true,
+      "memberCount": 287,
+      "activatedAt": "2026-09-27T19:35:55.862Z",
+      "mergedIntoCityId": null,
+      "country": {
+        "id": "01a0e1b0-03a1-7000-8244-5a2df8ef5762",
+        "iso2": "FR",
+        "nameFr": "France"
+      },
+      "isPilot": false
+    },
+    {
+      "id": "01a0e1b0-040e-7000-b06f-bd1bdaace51b",
+      "name": "Paris",
+      "slug": "paris",
+      "region": "Île-de-France",
+      "latitude": 48.8566,
+      "longitude": 2.3522,
+      "isActive": true,
+      "memberCount": 0,
+      "activatedAt": "2026-09-30T07:25:42.049Z",
+      "mergedIntoCityId": null,
+      "country": {
+        "id": "01a0e1b0-03a1-7000-8244-5a2df8ef5762",
+        "iso2": "FR",
+        "nameFr": "France"
+      },
+      "isPilot": true
+    },
+    {
+      "id": "01a0e6a3-b988-7000-97ca-20326a442441",
+      "name": "Abomey",
+      "slug": "abomey",
+      "region": "Zou",
+      "latitude": 7.1826,
+      "longitude": 1.9912,
+      "isActive": false,
+      "memberCount": 0,
+      "activatedAt": null,
+      "mergedIntoCityId": null,
+      "country": {
+        "id": "01a0e1b0-03eb-7000-8568-a65c501769f6",
+        "iso2": "BJ",
+        "nameFr": "Bénin"
+      },
+      "isPilot": false
+    },
+    {
+      "id": "01a0e6a3-b979-7000-b1a3-7f4000ac6a31",
+      "name": "Abomey-Calavi",
+      "slug": "abomey-calavi",
+      "region": "Atlantique",
+      "latitude": 6.4485,
+      "longitude": 2.3556,
+      "isActive": false,
+      "memberCount": 0,
+      "activatedAt": null,
+      "mergedIntoCityId": null,
+      "country": {
+        "id": "01a0e1b0-03eb-7000-8568-a65c501769f6",
+        "iso2": "BJ",
+        "nameFr": "Bénin"
+      },
+      "isPilot": false
+    }
+  ],
+  "nextCursor": null
+}

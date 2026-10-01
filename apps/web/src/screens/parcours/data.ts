@@ -119,3 +119,344 @@ export const VOLETS_BLOCAGE = 3;
  * laissé croire à chaque page qu'elle accepte les valeurs de l'autre. Chacune
  * déclare les siennes, à côté du composant qui les rend.
  */
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ * LES PRISES DE J01 ET J05 À J11 — un type par écran, et ce qu'il contient.
+ *
+ * L'en-tête de ce fichier disait : « au lot 3, quand l'API alimentera réellement
+ * ces écrans, c'est la maquette qui devra d'abord gagner ses interpolations ». La
+ * seconde moitié de cette phrase s'est révélée fausse, et c'est `08-compte.mjs`
+ * qui l'a montré : la maquette NE GAGNE PAS d'interpolations — on ne la réécrit
+ * pas — c'est la DÉCLARATION D'ÉCRAN qui porte la prise, sous la clé `donnees` de
+ * `tools/screens/04-parcours.mjs`. Le reste de la phrase tient : le JSX transcodé
+ * n'a pas bougé d'une virgule, et c'est ici que les champs arrivent.
+ *
+ * ── CE QUI EST UNE DONNÉE ET CE QUI N'EN EST PAS ────────────────────────────
+ *
+ * Les COULEURS sont parfois des données, et elles viennent toujours de la
+ * maquette. C'est le précédent de K03 dans le module Compte : lier le seul libellé
+ * d'une pastille laisserait « En pause » sur le fond vert d'un parcours actif, ce
+ * qui serait pire que la maquette figée. Aucune teinte n'est assombrie.
+ *
+ * Les BOOLÉENS de variante (`coche` / `aFaire`, `actif` / `enPause`, `courant` /
+ * `autre`, `premiere` / `suivante`) existent parce que la maquette dessine
+ * PLUSIEURS variantes et qu'elles vont toutes sous `<sc-if>`. Ils sont exclusifs
+ * deux à deux, et `appels.ts` les calcule au même endroit pour qu'ils ne puissent
+ * pas se contredire.
+ *
+ * Le NIVEAU DE VÉRIFICATION n'autorise rien ici. Il n'apparaît que pour décider
+ * si la maquette dessine « Proposer comme parrain » (J09), et c'est le parrainage
+ * qui refusera une proposition qu'il n'accepte pas. La règle du socle est sans
+ * exception.
+ * ══════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * LE PANNEAU DE GAUCHE — les dix planches d'ordinateur dessinent la même carte.
+ *
+ * `type` est la forme COURTE et capitale que l'étiquette « PARCOURS … » attend ;
+ * `typeNom` est le nom tel que l'API l'écrit (`template.nameFr`), employé par J08
+ * (« Parcours Études · version 2026 ») et J10 (« parcours Études abouti »). Les
+ * deux viennent du même champ et ne peuvent donc pas se contredire.
+ */
+export interface PanneauParcours {
+  readonly titre: string;
+  readonly type: string;
+  readonly typeNom: string;
+  readonly avancement: number;
+  readonly rang: number;
+  readonly etape: string;
+  readonly echeance: string;
+  readonly equipe: number;
+}
+
+/** L'entête du parcours : ce que les planches écrivent autour de son avancement. */
+export interface EnteteParcours {
+  readonly visibilite: string;
+  readonly visibiliteTitre: string;
+  readonly origine: string;
+  readonly destination: string;
+  readonly depart: string;
+  /** `journey.doneCount` — hors étapes facultatives, comme `total` (§3.2). */
+  readonly franchies: number;
+  readonly total: number;
+  readonly duree: string;
+  readonly aboutiLe: string;
+  readonly version: number;
+}
+
+/** L'étape sur laquelle l'écran porte : celle de l'URL, ou celle du serveur. */
+export interface EtapeAffichee {
+  readonly rang: number;
+  readonly titre: string;
+  readonly etat: string;
+  readonly echeance: string;
+  readonly description: string;
+  /** §3.3 — documents cochés sur documents listés, au PROPRIÉTAIRE seul (§3.4). */
+  readonly cochees: number;
+  readonly actions: number;
+}
+
+/** Un membre de l'équipe du parcours (§3.4), prêt à poser dans la planche. */
+export interface MembreAffiche {
+  readonly fond: string;
+  readonly initiales: string;
+  readonly nom: string;
+  readonly depuis: string;
+  readonly badgeFond: string;
+  readonly badgeTexte: string;
+  readonly role: string;
+  /** J05 ordinateur : le menu « … » n'est dessiné que pour un accompagnant. */
+  readonly menu: boolean;
+  /** J05 ordinateur : on ne se retire pas de son propre parcours. */
+  readonly retirable: boolean;
+  /** J05 mobile : la maquette ne trace pas de filet au-dessus de la première ligne. */
+  readonly premiere: boolean;
+  readonly suivante: boolean;
+}
+
+/** Une étape franchie de la frise, avec sa durée RÉELLE (`durationDays`). */
+export interface EtapeFrise {
+  readonly titre: string;
+  readonly duree: string;
+}
+
+/** Un type de parcours proposé (§2.1). `etapes` vient de `version.stepCount`. */
+export interface ModeleAffiche {
+  readonly nom: string;
+  readonly etapes: number;
+  readonly phrase: string;
+}
+
+/** Une ligne du sélecteur « Mes parcours » (J01M). */
+export interface ChoixParcours {
+  readonly fond: string;
+  readonly titre: string;
+  readonly pastilleFond: string;
+  readonly pastilleTexte: string;
+  readonly etat: string;
+  readonly sousTitre: string;
+  readonly barre: string;
+  readonly teinte: string;
+  readonly pourcent: string;
+  readonly courant: boolean;
+  readonly autre: boolean;
+}
+
+/** Un document de la checklist (§3.3). AUCUN fichier : seulement un libellé. */
+export interface DocumentAffiche {
+  readonly libelle: string;
+  readonly coche: boolean;
+  readonly aFaire: boolean;
+}
+
+/** Une autre étape du parcours, sa checklist repliée (J06). */
+export interface GroupeEtape {
+  readonly titre: string;
+  readonly compte: string;
+  readonly compteCourt: string;
+  readonly teinteCompte: string;
+  readonly barre: string;
+  readonly teinteBarre: string;
+}
+
+/**
+ * Une entrée du journal (§3.8), avec SON icône.
+ *
+ * Les six drapeaux `ic…` sont exclusifs : exactement un est vrai. La maquette
+ * dessine CINQ icônes sur chaque cadre et `JourneyActivityType` compte HUIT
+ * valeurs — `appels.ts` range les trois sans icône propre sous la famille la plus
+ * proche, et le dit.
+ */
+export interface EntreeJournal {
+  readonly icEtape: boolean;
+  readonly icEntraide: boolean;
+  readonly icFranchie: boolean;
+  readonly icJalon: boolean;
+  readonly icEquipe: boolean;
+  readonly titre: string;
+  readonly detail: string;
+  readonly quand: string;
+  /** La maquette dessine « Voir » sur les entrées qui pointent un objet publié. */
+  readonly lien: boolean;
+  /** Le cadre mobile replie la date et le détail sur une seule ligne. */
+  readonly ligneMobile: string;
+}
+
+/** Un segment de la frise d'un parcours public (§3.7). */
+export interface SegmentPublic {
+  readonly teinte: string;
+  readonly teinteTitre: string;
+  readonly titre: string;
+  readonly duree: string;
+}
+
+/** Un parcours public d'un autre membre (§3.7) — jamais son titre personnel. */
+export interface ParcoursPublicAffiche {
+  readonly fond: string;
+  readonly initiales: string;
+  readonly nom: string;
+  readonly sousTitre: string;
+  readonly pourcent: string;
+  readonly enCours: string;
+  readonly segments: readonly SegmentPublic[];
+  /** La maquette dessine « Proposer comme parrain » sur une carte et pas l'autre. */
+  readonly parrainable: boolean;
+}
+
+/** La fiche d'un parcours public (J09 MobileFiche) — la liste FERMÉE de §3.7. */
+export interface FichePublique {
+  readonly prenom: string;
+  readonly nom: string;
+  readonly initiales: string;
+  readonly type: string;
+  readonly ville: string;
+  readonly pourcent: string;
+  readonly enCours: string;
+}
+
+/** Une carte de « Mes parcours » (J11). */
+export interface CarteParcours {
+  readonly type: string;
+  readonly actif: boolean;
+  readonly enPause: boolean;
+  readonly titre: string;
+  readonly sousTitre: string;
+  readonly sousTitreCourt: string;
+  readonly pourcent: string;
+  readonly barre: string;
+  readonly teinte: string;
+}
+
+/**
+ * LA LIMITE DU PLAN (§3.1), AFFICHÉE — et jamais appliquée ici.
+ *
+ * `limite` vient de `JOURNEY_FREE_ACTIVE_LIMIT` dans `@app/shared`, la MÊME
+ * constante que le serveur applique avant de répondre `422 PLAN_LIMIT_REACHED`.
+ * Une borne écrite à la main dans l'écran aurait divergé le jour où le plan
+ * change, et l'écran aurait annoncé une limite que le serveur n'applique plus.
+ *
+ * Le front N'EMPÊCHE RIEN sur cette base : il tente la création, et c'est le
+ * refus du serveur qui décide. L'afficher est de l'information, pas de
+ * l'autorisation.
+ */
+export interface PlanParcours {
+  readonly actifs: number;
+  readonly limite: number;
+}
+
+/** Les deux filtres actifs de « Parcours publics » (§3.7). */
+export interface FiltrePublics {
+  readonly type: string;
+  readonly ville: string;
+}
+
+// ── Un type par écran ───────────────────────────────────────────────────────
+
+/** J01 · `/parcours/:id` — `GET /journeys/:id`. */
+export interface J01Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly parcours: EnteteParcours;
+  readonly etape: EtapeAffichee;
+  readonly equipe: readonly MembreAffiche[];
+  readonly frise: readonly EtapeFrise[];
+}
+
+/** J01M · le sélecteur — `GET /journeys` ET `GET /journeys/:id`. */
+export interface J01MData extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly mesParcours: readonly ChoixParcours[];
+  readonly total: number;
+}
+
+/** J01E, état « aucun parcours » — `GET /journey-templates` (§2.1). */
+export interface J01EVideData extends ParcoursData {
+  readonly modeles: readonly ModeleAffiche[];
+}
+
+/** J01E, état « un parcours abouti » — `GET /journeys/:id`. */
+export interface J01EAboutiData extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly parcours: EnteteParcours;
+  readonly frise: readonly EtapeFrise[];
+}
+
+/** J01S · `/parcours/:id/etapes/:etape` — `GET /journeys/:id`. */
+export interface J01SData extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly parcours: EnteteParcours;
+  readonly etape: EtapeAffichee;
+}
+
+/**
+ * J01D · `/parcours/:id/discussion` — `GET /journeys/:id` POUR SON CADRE SEUL.
+ *
+ * Les messages appartiennent à la messagerie : `journey.groupConversationId` en
+ * donne l'identifiant (et vaut `null` pour un OBSERVATEUR, que §3.4 n'autorise pas
+ * à écrire), mais les lire demande les routes de `conversations`, hors de ce
+ * périmètre. Les bulles de la planche restent celles de la maquette.
+ */
+export interface J01DData extends ParcoursData {
+  readonly panneau: PanneauParcours;
+}
+
+/** J05 · `/parcours/:id/equipe` — `GET /journeys/:id` (§3.4). */
+export interface J05Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly equipe: readonly MembreAffiche[];
+}
+
+/** J06 · `/parcours/:id/documents` — `GET /journeys/:id` (§3.3). */
+export interface J06Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  /** `meta.checklistNotice` : la phrase appartient à l'API, pas à l'écran. */
+  readonly bandeau: string;
+  readonly etape: EtapeAffichee;
+  readonly documents: readonly DocumentAffiche[];
+  readonly autresEtapes: readonly GroupeEtape[];
+}
+
+/** J07 · `/parcours/:id/historique` — `GET /journeys/:id/activities` (§3.8). */
+export interface J07Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly journal: readonly EntreeJournal[];
+}
+
+/** J08 · `/parcours/:id/reglages` — `GET /journeys/:id`. */
+export interface J08Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly parcours: EnteteParcours;
+}
+
+/** J08, la feuille de confirmation d'arrêt (§3.9, sans vocabulaire d'échec). */
+export interface J08ArretData extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly parcours: EnteteParcours;
+}
+
+/** J09 · `/parcours/publics` — `GET /journeys/public` (§3.7). */
+export interface J09Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly publics: readonly ParcoursPublicAffiche[];
+  readonly compte: number;
+  readonly filtre: FiltrePublics;
+}
+
+/** J09 · `/parcours/publics/:id` — `GET /journeys/public/:id`, AUTRE forme. */
+export interface J09FicheData extends ParcoursData {
+  readonly membre: FichePublique;
+  readonly franchies: readonly EtapeFrise[];
+}
+
+/** J10 · `/parcours/:id/abouti` — `GET /journeys/:id`. */
+export interface J10Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly parcours: EnteteParcours;
+}
+
+/** J11 · `/parcours` — `GET /journeys` (§5.1), la forme de la LISTE. */
+export interface J11Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly actifs: readonly CarteParcours[];
+  readonly aboutis: readonly CarteParcours[];
+  readonly plan: PlanParcours;
+}

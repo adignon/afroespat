@@ -1,6 +1,9 @@
 'use client';
 
-import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import { chargerJ05 } from '@/screens/parcours/appels';
+import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J05Desktop } from '@/screens/j05/desktop.generated';
@@ -10,32 +13,44 @@ import { J05MobileInvitation } from '@/screens/j05invitation/mobileinvitation.ge
 /**
  * J05 — l'équipe du parcours. `/parcours/:id/equipe`.
  *
- * §3.4 : deux rôles seulement, `OBSERVER` et `SUPPORTER`, dix membres au plus,
- * et « le co-porteur n'existe pas en V1 ». La maquette s'y tient — elle nomme
- * « Observateur » et « Accompagnant », et explique ce que chacun peut faire.
+ * BRANCHÉ SUR `GET /journeys/:id` : la route rend `journey.owner` ET `members` en
+ * un seul appel, et c'est tout ce que cet écran affiche.
+ *
+ * §3.4 : deux rôles seulement, `OBSERVER` et `SUPPORTER`, dix membres au plus, et
+ * « le co-porteur n'existe pas en V1 ». LA MAQUETTE EN DESSINE QUATRE —
+ * Propriétaire, Parraine, Accompagnant, Observatrice. Le propriétaire n'est pas un
+ * membre (il n'est pas dans `members`, mesuré sur la charge relevée) et « parrain »
+ * est un rôle du PARRAINAGE : la pastille orange « Parraine » reste donc dessinée
+ * dans le cadre et n'est jamais choisie. Écart signalé au porteur.
  *
  * La feuille d'invitation n'a PAS de planche d'ordinateur : la maquette ne la
- * dessine qu'en mobile. Elle sert donc aux deux largeurs (voir `Modal`), et le
- * manque est consigné dans `docs/decisions.md`.
+ * dessine qu'en mobile. Elle sert donc aux deux largeurs (voir `Modal`), et elle NE
+ * LIT RIEN — ses deux suggestions sont des CONTACTS du membre
+ * (`GET /me/connections`, module Compte), pas des membres de parcours.
  */
 export default function Page() {
-  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } = useParcours(null, useContexteParcours());
+  const params = useParams<{ id?: string }>();
+  const journeyId = typeof params.id === 'string' ? params.id : '';
+  const contexte = useContexteParcours();
+  /**
+   * MÉMOÏSÉ SUR L'IDENTIFIANT, et il le faut : `useDonnees` a `charger` dans ses
+   * dépendances, donc une fonction anonyme rechargerait en boucle. C'est la même
+   * discipline que K02 dans le module Compte, et la boucle se voit tout de suite —
+   * un rechargement manqué ne se voit jamais.
+   */
+  const charger = useCallback(() => chargerJ05(journeyId), [journeyId]);
 
   return (
-    <EcranParcours
+    <EcranParcoursDonnees
       screen="J05"
-      desktop={<J05Desktop {...data} />}
-      mobile={<J05Mobile {...data} />}
-      ouverte={ouverte}
-      onOuvrir={onOuvrir}
-      onFermer={onFermer}
-      modales={{
-        J03: plancheBlocage(volet, data),
-        J05I: { mobile: <J05MobileInvitation {...data} /> },
-      }}
-      erreur={erreur}
-      niveauRequis={niveauRequis}
-      oublierNiveauRequis={oublierNiveauRequis}
+      charger={charger}
+      contexte={contexte}
+      desktop={(d) => <J05Desktop {...d} />}
+      mobile={(d) => <J05Mobile {...d} />}
+      modales={(d, volet) => ({
+        J03: plancheBlocage(volet, d),
+        J05I: { mobile: <J05MobileInvitation {...d} /> },
+      })}
     />
   );
 }

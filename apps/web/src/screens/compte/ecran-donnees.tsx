@@ -124,24 +124,54 @@ const CADRE: React.CSSProperties = {
 };
 
 /**
- * L'écran d'un module Compte, une fois ses données là.
+ * L'écran d'un module qui lit l'API, une fois ses données là.
  *
  * `children` reçoit les données : les cadres transcodés les lisent en propriétés,
  * et cette coquille ne connaît ni leur forme ni leur nombre.
+ *
+ * ── `attente` : POURQUOI CE COMPOSANT EST SORTI DU SEUL MODULE COMPTE ───────
+ *
+ * Il a été écrit pour les dix écrans de `08 Compte`, et son texte d'attente le
+ * disait : « Chargement de votre compte… ». Les dix écrans de `06 Services` le
+ * réemploient maintenant — ils ont les mêmes trois états obligatoires de T1, la
+ * même raison d'être clients (le jeton vit en mémoire) et la même décision sur
+ * `error.code`. Le RECOPIER aurait fait deux coquilles à corriger ensemble, et
+ * l'histoire de `charger` dans les dépendances de l'effet aurait dû être réécrite
+ * dans la seconde.
+ *
+ * Seul le texte d'attente n'était pas partageable : « Chargement de votre
+ * compte… » est faux sur une liste d'annonces. Il devient donc un paramètre, dont
+ * le DÉFAUT est celui du module Compte — ses dix pages n'ont pas bougé, et ce
+ * défaut est ce qui le garantit plutôt qu'une relecture.
  */
 export function EcranDonnees<T>({
   charger,
   children,
+  attente = 'Chargement de votre compte…',
 }: {
   readonly charger: () => Promise<T>;
   readonly children: (donnees: T) => ReactNode;
+  /**
+   * LA PHRASE D'ATTENTE, parce que cette coquille sert désormais DEUX modules.
+   *
+   * Elle est née pour les dix écrans du Compte et dit « Chargement de votre
+   * compte… » par défaut, ce qui reste exact pour eux et ne change rien à ce
+   * qu'ils affichent. La messagerie, la recherche et les notifications
+   * l'emploient aussi — le mécanisme est le même, et en écrire un second
+   * donnerait deux traitements d'erreur à tenir à jour, donc un des deux faux.
+   *
+   * Mais afficher « Chargement de votre compte… » sur `/messages` serait un
+   * texte d'interface faux, et un lecteur d'écran l'annoncerait tel quel. D'où ce
+   * paramètre : il est FACULTATIF, son défaut est l'ancienne phrase mot pour mot,
+   * et aucun appelant existant ne change de comportement.
+   */  readonly attente?: string;
 }) {
   const etat = useDonnees(charger);
 
   if (etat.phase === 'attente') {
     return (
       <div style={CADRE} role="status" aria-live="polite">
-        <span style={{ fontSize: '14px', color: '#5D6B66' }}>Chargement de votre compte…</span>
+        <span style={{ fontSize: '14px', color: '#5D6B66' }}>{attente}</span>
       </div>
     );
   }

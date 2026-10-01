@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { cursorQuerySchema, handleSchema, uuidSchema } from './pagination.js';
+import { MentorshipEndReason, MentorshipStatus } from '../enums/generated.js';
+import { cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Parrainage — 08-parrainage-messagerie.md §2.
@@ -163,3 +164,234 @@ export const myMentorshipsQuerySchema = z
   .strict();
 
 export type MyMentorshipsQuery = z.infer<typeof myMentorshipsQuerySchema>;
+
+// ── Schémas de RÉPONSE (§7.1) ───────────────────────────────────────────────
+//
+// RELEVÉS SUR LA CHARGE RÉELLE : un parrain réellement créé (L2 posé en base,
+// faute de KYC en local), un parrainage réellement demandé, accepté, terminé et
+// évalué des deux côtés. Trois choses se sont révélées en appelant, et aucune des
+// trois n'aurait été devinée en lisant le service :
+//
+//   1. `GET /me/mentorships` N'A PAS DE `nextCursor`. Le service rend
+//      `{ items, meta }` et borne à cent lignes — `pageSchema` ici aurait fait
+//      REFUSER la réponse réelle, exactement comme `myBlocksResponseSchema` l'a
+//      fait une fois dans `connections.ts`.
+//   2. `avatarUrl` de la fiche parrain est la CLÉ DE STOCKAGE BRUTE
+//      (`profile.user.avatarAsset?.storageKey`), alors que `helpMemberSchema`
+//      reçoit un chemin `/media/<clé>` composé par son service. Les deux modules
+//      ne rendent donc PAS la même chose sous le même nom. Écart remonté, pas
+//      masqué par un schéma complaisant.
+//   3. Les évaluations de la fiche parrain sont restées VIDES avec deux
+//      évaluations déposées — voir `mentorReviewSchema`.
+
+/**
+ * Une évaluation visible sur la fiche d'un parrain (§2.4).
+ *
+ * ÉCART MESURÉ, À REMONTER AU PORTEUR. §2.4 veut ces évaluations « visibles
+ * seulement une fois les deux évaluations déposées OU après 14 jours ». La
+ * PREMIÈRE branche ne se produit jamais : `visibleReviewsFor()` ne lit que les
+ * évaluations dont le membre est le SUJET (`revieweeUserId: userId`), puis compte
+ * combien il y en a par parrainage et exige `>= 2`. Comme un parrainage porte au
+ * plus deux évaluations, une par sens, il n'y en a jamais plus d'UNE sur le même
+ * sujet — le seuil est inatteignable.
+ *
+ * Relevé en appelant : deux évaluations déposées, `reviews: []` ; la même fiche
+ * avec `ended_at` reculé de vingt jours, l'évaluation paraît. La fiche d'un parrain
+ * reste donc muette pendant quatorze jours après chaque parrainage — un défaut
+ * d'affichage, pas une fuite, et il est signalé plutôt que contourné.
+ */
+export const mentorReviewSchema = z
+  .object({
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().nullable(),
+    createdAt: z.string().datetime(),
+    /** §11 : l'évaluation d'un membre supprimé est conservée, ANONYMISÉE (`null`). */
+    reviewer: z
+      .object({ handle: handleSchema, displayName: z.string() })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export type MentorReview = z.infer<typeof mentorReviewSchema>;
+
+/**
+ * La fiche d'un parrain — `MentorshipService.card()`, §2.1 et §2.2.
+ *
+ * `.strict()` : c'est de l'IDENTITÉ, et la règle dure du §3.2 dit « aucun compteur
+ * de contacts sur la fiche d'un parrain ». Sans `.strict()`, un `connectionCount`
+ * ajouté un jour côté serveur serait dépouillé EN SILENCE : la donnée aurait
+ * traversé le réseau, et la règle serait fausse sans que rien ne l'indique.
+ * Avec, la réponse est refusée et l'écart se voit.
+ */
+export const mentorCardSchema = z
+  .object({
+    userId: uuidSchema,
+    handle: handleSchema,
+    displayName: z.string(),
+    /** CLÉ DE STOCKAGE BRUTE, pas un chemin `/media/…` — écart mesuré, voir plus haut. */
+    avatarUrl: z.string().nullable(),
+    city: z
+      .object({ id: uuidSchema, name: z.string(), slug: z.string() })
+      .strict()
+      .nullable(),
+    bio: z.string().nullable(),
+    journeyTemplateIds: z.array(uuidSchema),
+    maxMentees: z.number().int().min(1).max(MENTOR_MAX_MAX_MENTEES),
+    activeMenteeCount: z.number().int().min(0),
+    completedCount: z.number().int().min(0),
+    /** `Decimal` en base, rendu en nombre par le service. */
+    avgRating: z.number().nullable(),
+    /** §2.1 : « Disponible » ou « Complet ». Un libellé, pas deux booléens. */
+    availability: z.enum(['AVAILABLE', 'FULL']),
+    isAvailable: z.boolean(),
+  })
+  .strict();
+
+export type MentorCard = z.infer<typeof mentorCardSchema>;
+
+/**
+ * Le `meta` que toute réponse du parrainage porte.
+ *
+ * `moneyBanner` est la règle dure de §2.4 — « le parrainage n'implique jamais
+ * d'argent » — et elle voyage avec la réponse. Le schéma l'exige : une API qui
+ * cesserait de l'envoyer serait refusée, au lieu de produire une liste de parrains
+ * sans son avertissement.
+ */
+export const mentorshipMetaSchema = z
+  .object({
+    moneyBanner: z.string().min(1),
+    /** `listMentors` seul le compte ; la branche « modèle inconnu » ne le rend pas. */
+    total: z.number().int().min(0).optional(),
+  })
+  .strict();
+
+/** `GET /mentors` (§7.1). */
+export const mentorsResponseSchema = pageSchema(mentorCardSchema).extend({
+  meta: mentorshipMetaSchema,
+});
+
+export type MentorsResponse = z.infer<typeof mentorsResponseSchema>;
+
+/** `GET /mentors/:handle` (§7.1) — la fiche, et ses évaluations visibles. */
+export const mentorCardResponseSchema = mentorCardSchema.extend({
+  reviews: z.array(mentorReviewSchema),
+  meta: mentorshipMetaSchema,
+});
+
+export type MentorCardResponse = z.infer<typeof mentorCardResponseSchema>;
+
+/**
+ * Mon évaluation, ou celle de l'autre, dans `GET /me/mentorships`.
+ *
+ * Elle ne porte PAS la même forme que `mentorReviewSchema` : ici le service
+ * sélectionne `reviewerUserId` et aucun nom. C'est ce qu'il envoie, et on le décrit
+ * tel quel plutôt que d'harmoniser les deux formes dans le schéma — ce serait
+ * décrire une API qui n'existe pas.
+ */
+export const mentorshipOwnReviewSchema = z
+  .object({
+    reviewerUserId: uuidSchema,
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().nullable(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+/**
+ * `GET /me/mentorships` (§7.1) — « comme parrain et comme filleul ».
+ *
+ * PAS DE `nextCursor`, mesuré : le service rend `{ items, meta }` et borne à cent
+ * lignes. `pageSchema` ferait refuser la réponse réelle.
+ *
+ * `other` est NULLABLE, et c'est la règle dure du module qui l'impose : le service
+ * le met à `null` dès qu'un blocage existe entre les deux. Un parrainage avec un
+ * membre bloqué reste donc listé — il a existé — mais SANS nom, SANS pseudo et
+ * SANS identifiant. L'écran doit savoir afficher cette ligne muette ; un schéma qui
+ * exigerait `other` ferait échouer la page entière au premier blocage.
+ *
+ * `requestMessage` n'est pas nullable : la colonne est `String` non nulle, et §2.2
+ * rend le message obligatoire. `.strict()` : c'est du CONTENU écrit par un membre à
+ * un autre.
+ */
+export const myMentorshipsResponseSchema = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          id: uuidSchema,
+          role: z.enum(['mentor', 'mentee']),
+          status: z.enum(MentorshipStatus),
+          endReason: z.enum(MentorshipEndReason).nullable(),
+          requestMessage: z.string(),
+          journeyId: uuidSchema.nullable(),
+          conversationId: uuidSchema.nullable(),
+          acceptedAt: z.string().datetime().nullable(),
+          endsAt: z.string().datetime().nullable(),
+          endedAt: z.string().datetime().nullable(),
+          /** §2.2 : calculé pour une demande en attente, `null` sinon. */
+          expiresAt: z.string().datetime().nullable(),
+          extended: z.boolean(),
+          canReview: z.boolean(),
+          myReview: mentorshipOwnReviewSchema.nullable(),
+          theirReview: mentorshipOwnReviewSchema.nullable(),
+          /** `null` dès qu'un blocage sépare les deux membres (§4). */
+          other: z
+            .object({ id: uuidSchema, handle: handleSchema, displayName: z.string() })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+    ),
+    meta: mentorshipMetaSchema,
+  })
+  .strict();
+
+export type MyMentorshipsResponse = z.infer<typeof myMentorshipsResponseSchema>;
+
+/** `PUT /me/mentor-profile` (§7.1) : la fiche telle qu'elle vient d'être posée. */
+export const mentorProfileResponseSchema = mentorCardSchema.extend({
+  meta: mentorshipMetaSchema,
+});
+
+export type MentorProfileResponse = z.infer<typeof mentorProfileResponseSchema>;
+
+/**
+ * `POST /mentorships` (§7.1) : la demande créée, en attente.
+ *
+ * TROIS CHAMPS, pas quatre. Ce schéma a d'abord été écrit avec un
+ * `conversationId: z.null()` — par symétrie avec l'acceptation, qui en porte un.
+ * La charge réelle n'en a AUCUN : la conversation naît à l'acceptation (§2.3), pas
+ * à la demande. `.strict()` aurait refusé la bonne réponse, ce qui est la bonne
+ * façon d'échouer, mais la leçon est qu'un schéma écrit par symétrie est un schéma
+ * deviné.
+ */
+export const mentorshipCreatedSchema = z
+  .object({
+    id: uuidSchema,
+    status: z.literal('REQUESTED'),
+    expiresAt: z.string().datetime(),
+    meta: mentorshipMetaSchema,
+  })
+  .strict();
+
+export type MentorshipCreated = z.infer<typeof mentorshipCreatedSchema>;
+
+/**
+ * `POST /mentorships/:id/accept` (§2.3) : le parrainage devient actif, et une
+ * conversation s'ouvre entre les deux membres.
+ *
+ * `.strict()` : c'est une MISE EN RELATION — la règle dure du module. Un champ
+ * greffé ici serait à lire comme une fuite, pas comme un extra.
+ */
+export const mentorshipAcceptedSchema = z
+  .object({
+    id: uuidSchema,
+    status: z.literal('ACTIVE'),
+    endsAt: z.string().datetime(),
+    conversationId: uuidSchema,
+    meta: mentorshipMetaSchema,
+  })
+  .strict();
+
+export type MentorshipAccepted = z.infer<typeof mentorshipAcceptedSchema>;

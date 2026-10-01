@@ -1,7 +1,13 @@
 import { z } from 'zod';
-import { ProContactMethod } from '../enums/generated.js';
+import { ProContactMethod, ProTier, ProVerificationStatus } from '../enums/generated.js';
 import { containsForbiddenWord } from '../constants/product.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import {
+  cursorQuerySchema,
+  handleSchema,
+  pageSchema,
+  slugSchema,
+  uuidSchema,
+} from './pagination.js';
 
 /**
  * Annuaire professionnel — 10-services.md §4.
@@ -171,3 +177,157 @@ export const prosQuerySchema = cursorQuerySchema
   .strict();
 
 export type ProsQuery = z.infer<typeof prosQuerySchema>;
+
+// ── Lecture : LES SCHÉMAS DE RÉPONSE (§6.3) ──────────────────────────────────
+
+/**
+ * ─── RÈGLE DURE 10 §4.1, DEVENUE EXÉCUTABLE À LA FRONTIÈRE DU FRONT ─────────
+ *
+ * « Le téléphone n'est JAMAIS stocké ici ni affiché ; "sur demande" signifie que le
+ * pro le communique lui-même en message. »
+ *
+ * Jusqu'ici cette règle tenait par le DESSIN : la maquette n'écrit aucun numéro sur
+ * une fiche pro, et le transcodage ne réécrit rien. Elle ne tient plus par le
+ * dessin dès que l'API arrive — un champ `phone` dans la réponse serait affiché par
+ * la première ligne de code qui le lirait.
+ *
+ * Le rempart est donc à DEUX étages, comme pour K04 :
+ *
+ *   · le schéma ne DÉCRIT aucun champ de numéro — il n'y a rien à lire ;
+ *   · et il est `.strict()`, donc une réponse qui en porterait un est REFUSÉE.
+ *     Sans `.strict()`, zod le DÉPOUILLE EN SILENCE : l'écran ne l'afficherait pas
+ *     aujourd'hui, et personne n'apprendrait que le serveur a commencé à l'envoyer
+ *     — jusqu'au jour où quelqu'un ajoute une ligne pour s'en servir.
+ *
+ * `contactHint` n'est PAS une exception : c'est `PRO_PHONE_ON_REQUEST_HINT`, une
+ * phrase de produit qui dit justement que la plateforme ne stocke pas le numéro.
+ * La charge relevée le confirme — `null` pour `PLATFORM_MESSAGE`.
+ *
+ * Relevés sur l'API qui tourne : `src/__tests__/fixtures/services_pro*.json`.
+ */
+const proCityRefSchema = z.object({ id: uuidSchema, name: z.string(), slug: slugSchema }).strict();
+
+/**
+ * Une fiche de l'annuaire, telle que `GET /pros` et `GET /pros/:id` la rendent.
+ *
+ * `isFeatured` ET `featuredLabel` arrivent ENSEMBLE — §4.2 : « un emplacement mis
+ * en avant CLAIREMENT SIGNALÉ ». Le libellé vient du serveur pour la même raison
+ * que la pastille « Sponsorisée » de l'emploi : un front qui le posséderait
+ * pourrait l'oublier, et la mise en avant cesserait d'être signalée.
+ *
+ * `siret` est la FORME seule, jamais une vérification : §4.1 refuse explicitement
+ * de « certifier » le professionnel, et aucun service tiers n'est interrogé.
+ *
+ * ÉCART SIGNALÉ AU PORTEUR : `GET /me/pro-profile` rend `tier: "FREE"` et
+ * `isFeatured: false` sur une fiche dont `GET /pros` dit `tier: "PRO"` et
+ * `isFeatured: true`. `ProsService.myProfile` appelle `toCard(rest, userId)` sans
+ * son troisième argument, qui porte la mise en avant. Relevé sur deux charges du
+ * MÊME objet, à une seconde d'intervalle. Le palier affiché sur « Ma fiche pro »
+ * est donc faux pour un pro payant.
+ */
+export const proCardSchema = z
+  .object({
+    id: uuidSchema,
+    handle: handleSchema,
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+    profession: z.object({ id: uuidSchema, nameFr: z.string() }).strict(),
+    businessName: z.string().nullable(),
+    description: z.string().nullable(),
+    priceHint: z.string().nullable(),
+    contactMethod: z.enum(ProContactMethod),
+    /** Présent seulement pour `PHONE_ON_REQUEST` : dit ce que « sur demande » signifie. */
+    contactHint: z.string().nullable(),
+    siret: z.string().nullable(),
+    cities: z.array(proCityRefSchema),
+    languages: z.array(
+      z.object({ id: uuidSchema, code: z.string(), nameFr: z.string() }).strict(),
+    ),
+    recommendationCount: z.number().int(),
+    tier: z.enum(ProTier),
+    isFeatured: z.boolean(),
+    featuredLabel: z.string().nullable(),
+    isMine: z.boolean(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+export type ProCardView = z.infer<typeof proCardSchema>;
+
+/**
+ * `GET /pros` — et sa TÊTE MISE EN AVANT est un champ À PART de `items`.
+ *
+ * Même forme que l'emploi, et même piège : `items` EXCLUT les fiches de la tête.
+ * Un schéma qui n'aurait décrit que `items` aurait fait disparaître les deux fiches
+ * signalées — donc la mention « Fiche mise en avant », donc la règle du §4.2.
+ *
+ * `meta.featuredSlots` voyage avec la liste (T4 §4) : la borne de deux emplacements
+ * est une règle de produit, pas un réglage d'affichage.
+ */
+export const prosListResponseSchema = pageSchema(proCardSchema).extend({
+  featured: z.array(proCardSchema),
+  meta: z.object({ featuredLabel: z.string(), featuredSlots: z.number().int() }).strict(),
+});
+
+export type ProsListResponse = z.infer<typeof prosListResponseSchema>;
+
+/**
+ * `GET /pros/:id` — la fiche, ses recommandations et le quota de contact.
+ *
+ * `contactQuota` est la DÉCISION DU SERVEUR (§4.4, « 3 contacts distincts par mois
+ * en gratuit »), et `max` vaut `null` pour « illimité ». Le recalculer dans le
+ * front demanderait de relire le plan du membre — exactement ce que le socle
+ * interdit, et ce qui afficherait « 3 sur 3 » à un Premium.
+ *
+ * `canRecommend` aussi : §4.3 exige un contact existant, et seul le serveur sait
+ * s'il y en a un.
+ */
+export const proDetailResponseSchema = proCardSchema
+  .extend({
+    verificationStatus: z.enum(ProVerificationStatus),
+    mutualConnectionCount: z.number().int(),
+    recommendations: z.array(
+      z
+        .object({
+          id: uuidSchema,
+          /** §4.3 : « Affichées avec le handle du recommandeur. » */
+          handle: handleSchema,
+          displayName: z.string(),
+          comment: z.string().nullable(),
+          createdAt: z.string().datetime(),
+        })
+        .strict(),
+    ),
+    myRecommendation: z
+      .object({ id: uuidSchema, comment: z.string().nullable() })
+      .strict()
+      .nullable(),
+    canRecommend: z.boolean(),
+    contactQuota: z
+      .object({ used: z.number().int(), max: z.number().int().nullable() })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+export type ProDetailResponse = z.infer<typeof proDetailResponseSchema>;
+
+/**
+ * `GET /me/pro-profile` — ma fiche, ou `null` quand je n'en ai pas.
+ *
+ * `hasProof` ET NON `proofAssetId`, et c'est §4.1 : le justificatif est réservé à
+ * l'équipe. `PRO_SELECT` ne le sélectionne même pas, et le contrôleur n'en rend
+ * qu'un booléen. Le `.strict()` interdit qu'un identifiant de justificatif
+ * réapparaisse un jour dans cette réponse — ce serait la pièce d'identité d'un
+ * professionnel servie à son propre navigateur, donc à son cache.
+ */
+export const myProProfileResponseSchema = proCardSchema
+  .extend({
+    verificationStatus: z.enum(ProVerificationStatus),
+    status: z.string(),
+    hasProof: z.boolean(),
+  })
+  .strict()
+  .nullable();
+
+export type MyProProfileResponse = z.infer<typeof myProProfileResponseSchema>;

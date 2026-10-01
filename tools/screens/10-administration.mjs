@@ -68,12 +68,12 @@
 
 const FILE = 'docs/template/10 Administration.dc.html';
 
-const screen = ({ section, frames, ...rest }) => ({
+const screen = ({ section, frames, dataType = 'AdministrationData', ...rest }) => ({
   file: FILE,
   section,
   out: `apps/web/src/screens/${section.toLowerCase()}`,
   dataModule: '../administration/data',
-  dataType: 'AdministrationData',
+  dataType,
   frames,
   ...rest,
 });
@@ -83,6 +83,106 @@ const titre = (text) => ({ text, size: '28px' });
 
 /** Le cadre unique d'un écran d'administration, avec son titre de page. */
 const pleinEcran = (title) => [{ width: 1440, name: 'Desktop', occurrence: 0, ...(title === undefined ? {} : { title }) }];
+
+// ─── Les cartes que la maquette répète, écrites UNE fois ─────────────────────
+//
+// Même discipline que `08-compte.mjs` : chaque fabrique reproduit un fragment de
+// la maquette à l'identique, ses textes en paramètres, et sert DEUX FOIS — à
+// écrire le `noeud` (les lignes telles que la maquette les dessine, avec leurs
+// textes d'exemple) et le `devient` (la même ligne, une fois, interpolée). Le
+// troisième contrôle du générateur compare les deux : si la maquette bouge d'un
+// caractère, la génération s'arrête au lieu de produire un écran faux.
+
+/** Le style de cellule du tableau des villes (D08), écrit cinq fois par ligne. */
+const CELLULE_D08 = 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+
+/**
+ * D08 — une ligne du tableau des villes.
+ *
+ * ─── LA ZÉBRURE N'EST PAS LIÉE, ET C'EST UNE LIMITE MESURÉE DU MÉCANISME ────
+ *
+ * La deuxième des trois lignes de la maquette porte `background:#FAFBFB`, les
+ * deux autres rien : une zébrure, donc une donnée de RANG. La lier était le
+ * premier réflexe, et elle a été liée — `…#F0F3F2;{{ v.fondLigne }}"` — puis
+ * MESURÉE dans le JSX produit : `grep fondLigne` rend 0, `grep FAFBFB` rend 0.
+ *
+ * La cause est dans le transcodeur, pas dans la déclaration : il parse
+ * l'attribut `style` en paires `clé:valeur`, et une interpolation posée à la
+ * place d'une DÉCLARATION ENTIÈRE n'est pas une paire — elle est jetée, en
+ * silence. Les quatre contrôles de `donnees` ne l'attrapent pas : le quatrième
+ * vérifie que `devient` PORTE une interpolation, aucun ne vérifie que le JSX
+ * PRODUIT la porte encore.
+ *
+ * La liaison est donc retirée plutôt que gardée : le journal annonçait une donnée
+ * que l'écran n'affichait pas, ce qui est précisément le mensonge que ce
+ * mécanisme existe pour empêcher. Conséquence assumée et dite : toutes les lignes
+ * se dessinent comme la PREMIÈRE de la maquette, sans zébrure. Le trou du
+ * mécanisme est remonté au porteur ; il ne se rebouche pas ici, parce qu'il est
+ * dans `tools/dc-to-jsx.mjs`, que ce lot ne touche pas.
+ *
+ * `fondLigne` SURVIT COMME PARAMÈTRE, pour le seul `noeud` : il doit rester
+ * VERBATIM, et la deuxième ligne de la maquette porte bel et bien son
+ * `background:#FAFBFB`. Le `devient`, lui, passe la chaîne vide — la forme de la
+ * première ligne. Rien n'est interpolé là, donc rien n'y est promis.
+ */
+const LIGNE_VILLE = (fondLigne, ville, region, membres, statut, action) =>
+  '<div style="display:grid;grid-template-columns:1.4fr 1.4fr 90px 100px 1.4fr;gap:12px;padding:12px 16px;align-items:center;font-size:13px;border-bottom:1px solid #F0F3F2;' +
+  fondLigne +
+  '"><span style="' +
+  CELLULE_D08 +
+  '">' +
+  ville +
+  '</span><span style="' +
+  CELLULE_D08 +
+  '">' +
+  region +
+  '</span><span style="' +
+  CELLULE_D08 +
+  '">' +
+  membres +
+  '</span><span style="' +
+  CELLULE_D08 +
+  '">' +
+  statut +
+  '</span><span style="' +
+  CELLULE_D08 +
+  '">' +
+  action +
+  '</span></div>';
+
+/**
+ * D08 — la pastille de statut d'une ville. TROIS variantes dessinées, et les
+ * trois couleurs sont des DONNÉES.
+ *
+ * Lier le seul libellé laisserait « Bientôt » sur le fond vert d'une ville
+ * active, ce qui serait pire que la maquette figée — c'est l'arbitrage déjà pris
+ * sur les pastilles de niveau de K03.
+ */
+const PASTILLE_VILLE = (fond, texte, libelle) =>
+  '<span style="background:' +
+  fond +
+  ';color:' +
+  texte +
+  ';font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">' +
+  libelle +
+  '</span>';
+
+/**
+ * D08 — le bouton « Activer » de la colonne d'action, tel que la maquette le
+ * dessine sur la ligne de Nantes.
+ *
+ * Déclaré en MOTIF dans la liaison, et il faut dire pourquoi : les trois lignes
+ * de la maquette n'ont pas la même colonne d'action — un texte nu
+ * (« Fusionner »), ce bouton, puis un `<span>` gras (« Fusionner avec Lyon »).
+ * Les réunir sous trois `<sc-if>` est un REMONTAGE, que le troisième contrôle du
+ * générateur refuse tant qu'il n'est pas déclaré. C'est exactement ce qu'on veut :
+ * le remontage se lit, au lieu de passer pour un simple collage.
+ */
+const BOUTON_ACTIVER_D08 =
+  '<span style="background:#16785E;color:#fff;font-size:12px;font-weight:700;padding:6px 12px;border-radius:10px">Activer</span>';
+
+/** D08 — l'amorce du `<span>` « Fusionner avec … ». Motif, même raison. */
+const AMORCE_FUSION_D08 = '<span style="font-weight:700">Fusionner avec ';
 
 export const screens = [
   /**
@@ -182,13 +282,121 @@ export const screens = [
   // trouverait rien, et le générateur le dirait.
   screen({ section: 'D07', frames: pleinEcran(titre('Bibliothèque d’étapes')) }),
 
-  // ── D08 · `/admin/referentiels` — 02 §4.2 ──────────────────────────────────
-  //
-  // La confirmation « Activer Nantes ? » est dessinée DANS la page, en carte de
-  // 440 px à côté du tableau — pas en fenêtre par-dessus. Elle n'est donc pas
-  // transcodée en modale : la maquette ne lui dessine ni voile ni panneau, et
-  // `Modal` en attend exactement un de chaque.
-  screen({ section: 'D08', frames: pleinEcran(titre('Référentiels')) }),
+  /**
+   * ── D08 · `/admin/referentiels` — 02 §4.2 ──────────────────────────────────
+   *
+   * La confirmation « Activer Nantes ? » est dessinée DANS la page, en carte de
+   * 440 px à côté du tableau — pas en fenêtre par-dessus. Elle n'est donc pas
+   * transcodée en modale : la maquette ne lui dessine ni voile ni panneau, et
+   * `Modal` en attend exactement un de chaque.
+   *
+   * BRANCHÉ SUR `GET /admin/ref/cities` (`staffApi.get('/ref/cities', …)`), relevé
+   * sur l'API qui tourne avec une vraie session d'équipe. La réponse porte tout ce
+   * que le tableau dessine : `name`, `region`, `memberCount`, `isActive`,
+   * `activatedAt`, `mergedIntoCityId` — et `isPilot`.
+   *
+   * ─── `isPilot` ÉTAIT RENDU PAR L'API ET AFFICHÉ PAR PERSONNE ───────────────
+   *
+   * C'est la mesure qui ouvrait ce lot, et elle était juste : la charge relevée
+   * sur `/admin/ref/cities` contient `"isPilot":true` sur Paris — `PILOT_CITY_SLUG`
+   * de `@app/shared` — et aucun écran ne le montrait. Il apparaît désormais dans la
+   * PASTILLE DE STATUT, dont le libellé et les deux couleurs sont déjà des données.
+   *
+   * Aucun pixel n'est inventé pour cela, et c'est la raison de ce choix plutôt
+   * qu'un badge de plus : la maquette ne dessine pas de pastille « pilote », et lui
+   * en ajouter une serait dessiner à la place du porteur. Le libellé de la pastille
+   * est une chaîne que la couche de données compose — comme « En contact depuis
+   * le … » sur K05 — donc la ville pilote porte son propre mot dans la case que la
+   * maquette a déjà prévue, avec les couleurs qu'elle a déjà choisies.
+   *
+   * ACTIVER OU FERMER UNE VILLE RESTE UNE DÉCISION PRODUIT. Aucun bouton de cet
+   * écran n'est branché : `POST /ref/cities/:id/activate` existe, et l'appeler
+   * depuis un `onClick` créerait le réseau de ville et y rattacherait les membres —
+   * ce que la carte annonce en toutes lettres. 15 §2.3 est une règle dure (toute
+   * écriture passe par `AuditService.record()`), et un bouton qui n'écrit rien est
+   * un mensonge tracé nulle part. Ils restent inertes, comme dans tout ce module.
+   */
+  screen({
+    section: 'D08',
+    dataType: 'D08Data',
+    frames: pleinEcran(titre('Référentiels')),
+    donnees: [
+      {
+        /**
+         * LES TROIS LIGNES DESSINÉES, liées en UNE boucle.
+         *
+         * Les trois colonnes d'action de la maquette sont les TROIS cas de 02 §4.2 —
+         * une ville active qu'on peut fusionner, une ville à activer, un doublon à
+         * rattacher — et aucune n'est jetée : chacune garde son dessin sous son
+         * `<sc-if>`. Ne garder que la première aurait donné une liste où aucune ville
+         * ne s'active jamais, et le défaut n'aurait sauté aux yeux de personne.
+         */
+        noeud:
+          LIGNE_VILLE(
+            '',
+            'Lyon',
+            'Auvergne-Rhône-Alpes',
+            '1 400',
+            PASTILLE_VILLE('#E3F0EB', '#0F5C48', 'Active'),
+            'Fusionner',
+          ) +
+          LIGNE_VILLE(
+            'background:#FAFBFB',
+            'Nantes',
+            'Pays de la Loire',
+            '190',
+            PASTILLE_VILLE('#FBE3D4', '#B4581F', 'Bientôt'),
+            BOUTON_ACTIVER_D08,
+          ) +
+          LIGNE_VILLE(
+            '',
+            'Lyon 07',
+            'Auvergne-Rhône-Alpes',
+            '4',
+            PASTILLE_VILLE('#F2F5F4', '#5D6B66', 'Doublon'),
+            AMORCE_FUSION_D08 + 'Lyon</span>',
+          ),
+        devient:
+          '<sc-for list="{{ villes }}" as="v">' +
+          LIGNE_VILLE(
+            '',
+            '{{ v.nom }}',
+            '{{ v.region }}',
+            '{{ v.membres }}',
+            PASTILLE_VILLE('{{ v.statutFond }}', '{{ v.statutTexte }}', '{{ v.statut }}'),
+            '<sc-if value="{{ v.fusionnable }}">Fusionner</sc-if>' +
+              '<sc-if value="{{ v.activable }}">' +
+              BOUTON_ACTIVER_D08 +
+              '</sc-if><sc-if value="{{ v.doublon }}">' +
+              AMORCE_FUSION_D08 +
+              '{{ v.fusionneAvec }}</span></sc-if>',
+          ) +
+          '</sc-for>',
+        /**
+         * Le remontage des trois colonnes d'action, DÉCLARÉ.
+         *
+         * Sans ces deux motifs, le troisième contrôle refuse — et il a raison de
+         * refuser : les trois cellules ne sont pas contiguës dans la maquette, donc
+         * les réunir est bien un remontage. Les deux fragments sont vérifiés présents
+         * DANS CE CADRE à chaque génération.
+         */
+        motifs: [BOUTON_ACTIVER_D08, AMORCE_FUSION_D08],
+        why: 'Le tableau des villes, de `GET /admin/ref/cities` — nom, région, nombre de membres, statut et les trois actions de 02 §4.2. La ville pilote (`isPilot`, Paris) porte son statut ici, où rien ne l’affichait.',
+      },
+      {
+        noeud: '>Activer Nantes ?<',
+        devient: '>Activer {{ activation.ville }} ?<',
+        why: 'La carte de confirmation porte le nom de la ville CANDIDATE — la première ville inactive de `GET /admin/ref/cities`, et non un nom figé.',
+      },
+      {
+        noeud:
+          'Un réseau de ville sera créé et les 190 membres y seront rattachés automatiquement.',
+        devient:
+          'Un réseau de ville sera créé et les {{ activation.membres }} membres y seront rattachés automatiquement.',
+        why: 'Le nombre de membres qui seront rattachés (`memberCount` de la ville candidate) : 02 §4.2 le promet, et un nombre figé en ferait une promesse fausse.',
+      },
+    ],
+  }),
 
   // ── D09 · `/admin/guides` — propositions escaladées et guides obsolètes ────
   screen({ section: 'D09', frames: pleinEcran(titre('Guides')) }),
@@ -221,13 +429,99 @@ export const screens = [
   /**
    * ── D16 · `/admin/impact` — le rapport d'impact (15 §5.3) ──────────────────
    *
-   * MÊME RÉSERVE QUE D02 : les chiffres viennent de `metric_snapshots`, table
-   * ajoutée par §6 et absente du schéma. Écran transcodé, rien de branché.
+   * LA RÉSERVE SUR `metric_snapshots` EST LEVÉE, et elle était fausse. Ce fichier
+   * disait « table ajoutée par §6 et absente du schéma » : `GET /v1/admin/impact`
+   * répond 200 sur l'API qui tourne, et rend `{ trimestre, items }` où chaque
+   * `item` est `{ metric, dimension, value, periodStart }`. Les cinq nombres de la
+   * première planche y sont, nommément — `impact.members_accompanied`,
+   * `impact.journeys_completed`, `impact.event_attendances`,
+   * `impact.help_resolved`, `impact.mentorships_completed`. Relevé, pas supposé.
    *
-   * « Toutes les données sont agrégées, jamais nominatives » — la maquette s'y
-   * tient, à une exception près qu'elle assume : les témoignages citables sont
-   * signés d'un prénom et d'une ville (« — Kofi, Lyon »), ce que §5.3 autorise
-   * explicitement (« extraits … avec accord de l'auteur »).
+   * ─── LE MUR DES TÉMOIGNAGES RESTE INTACT ───────────────────────────────────
+   *
+   * La troisième planche dessine « Témoignages citables », signés d'un prénom et
+   * d'une ville (« — Kofi, Lyon »). §5.3 l'autorise — « extraits … avec accord de
+   * l'auteur » — et c'est justement là que tout se joue : l'accord se lit dans
+   * `guides.quotable` et `city_tips.quotable`, DEUX COLONNES QUI N'EXISTENT PAS au
+   * schéma.
+   *
+   * Elles ne sont pas contournées, et il faut dire pourquoi plutôt que de le faire
+   * discrètement : citer un membre sans son accord est EXACTEMENT ce que ces
+   * colonnes existent pour empêcher. Les remplacer par n'importe quel autre
+   * critère — un avis bien noté, un témoignage « assez générique » — reviendrait à
+   * décider à la place du membre. Les deux citations restent donc DESSINÉES,
+   * c'est-à-dire visiblement fausses, ce qui est préférable à deux vraies
+   * citations publiées sans accord. Remonté au porteur, pour la troisième fois.
+   *
+   * ─── CE QUI N'EST PAS LIÉ NON PLUS, ET POURQUOI ────────────────────────────
+   *
+   * La « Répartition par pays » de la deuxième planche est un GRAPHIQUE : quatre
+   * noms de pays et leurs barres. `GET /admin/impact` rend bien
+   * `impact.members_by_origin_country`, mais sa `dimension` est un UUID de pays, et
+   * la hauteur des barres est dessinée en dur dans la maquette. Lier les noms sans
+   * les barres donnerait quatre libellés sur des hauteurs fausses — pire que le
+   * graphique figé, parce que ça aurait l'air juste. Signalé.
    */
-  screen({ section: 'D16', frames: pleinEcran(titre('Rapport d’impact')) }),
+  screen({
+    section: 'D16',
+    dataType: 'D16Data',
+    frames: pleinEcran(titre('Rapport d’impact')),
+    donnees: [
+      {
+        noeud: '>5 820 membres accompagnés<',
+        devient: '>{{ impact.membres }} membres accompagnés<',
+        why: 'Le titre de la première planche : `impact.members_accompanied` de `GET /admin/impact`.',
+      },
+      {
+        /**
+         * LE LIBELLÉ SERT DE DISCRIMINANT, et il n'est pas décoratif : les quatre
+         * tuiles sont dessinées à l'identique, et « 214 » seul ne dirait pas
+         * laquelle. C'est le cas que `fois` existe pour empêcher — lier la mauvaise
+         * tuile produirait un écran qui compile, s'affiche, et ment.
+         */
+        noeud: '>214</div><div style="font-size:10.5px;color:#5D6B66">parcours aboutis<',
+        devient:
+          '>{{ impact.parcours }}</div><div style="font-size:10.5px;color:#5D6B66">parcours aboutis<',
+        why: 'Les parcours aboutis : `impact.journeys_completed`.',
+      },
+      {
+        noeud: '>2 310</div><div style="font-size:10.5px;color:#5D6B66">présences<',
+        devient:
+          '>{{ impact.presences }}</div><div style="font-size:10.5px;color:#5D6B66">présences<',
+        why: 'Les présences aux événements : `impact.event_attendances`.',
+      },
+      {
+        noeud: '>1 780</div><div style="font-size:10.5px;color:#5D6B66">entraides<',
+        devient:
+          '>{{ impact.entraides }}</div><div style="font-size:10.5px;color:#5D6B66">entraides<',
+        why: 'Les entraides résolues : `impact.help_resolved`.',
+      },
+      {
+        noeud: '>148</div><div style="font-size:10.5px;color:#5D6B66">parrainages<',
+        devient:
+          '>{{ impact.parrainages }}</div><div style="font-size:10.5px;color:#5D6B66">parrainages<',
+        why: 'Les parrainages aboutis : `impact.mentorships_completed`.',
+      },
+      {
+        noeud: '>T3 2026 ▾<',
+        devient: '>{{ impact.trimestre }} ▾<',
+        why: 'Le trimestre du rapport, tel que `GET /admin/impact` le nomme (`trimestre`, « 2026-T3 ») — jamais déduit de l’horloge du navigateur.',
+      },
+      {
+        /**
+         * LE MÊME TRIMESTRE SUR LES TROIS PLANCHES, lié en une fois.
+         *
+         * `fois: 3` est COMPTÉ, pas estimé : la maquette écrit la légende sur ses
+         * trois planches (« · 1/4 », « · 2/4 », « · 3/4 »), et le fragment commun
+         * s'arrête avant le numéro. Si le designer en ajoute ou en retire une, la
+         * génération s'arrête en nommant le fragment au lieu de laisser deux
+         * planches sur trois afficher un trimestre figé.
+         */
+        noeud: "RAPPORT D'IMPACT · T3 2026 · ",
+        devient: "RAPPORT D'IMPACT · {{ impact.trimestre }} · ",
+        fois: 3,
+        why: 'La légende des trois planches porte le trimestre réel, et les trois sont liées ensemble.',
+      },
+    ],
+  }),
 ];

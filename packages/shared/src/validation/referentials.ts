@@ -219,3 +219,59 @@ export const placesCitySchema = z.object({
 export type PlacesCity = z.infer<typeof placesCitySchema>;
 
 export const placesCitiesResponseSchema = pageSchema(placesCitySchema);
+
+// ── La vue d'ÉQUIPE d'une ville — `GET /v1/admin/ref/cities` (D08) ──────────
+//
+// DISTINCTE de `placesCitySchema`, et il faut dire pourquoi plutôt que de
+// réutiliser l'autre : ce ne sont pas les mêmes colonnes. La route de membre rend
+// six champs, celle d'équipe en rend douze — le pays résolu, les coordonnées, la
+// date d'activation, la cible de fusion et `isPilot`. Les confondre ferait
+// dépouiller en silence la moitié de ce que l'écran D08 dessine.
+//
+// RELEVÉ SUR L'API QUI TOURNE, avec une vraie session d'équipe, et non déduit du
+// service : vingt villes, `region` toujours renseignée dans l'échantillon mais
+// `String?` au schéma Prisma (donc nullable ici — on suit le CONTRAT, pas
+// l'échantillon), `activatedAt` nul sur les villes jamais ouvertes,
+// `mergedIntoCityId` nul partout dans l'échantillon et nullable au schéma.
+
+/**
+ * Une ville vue par l'équipe.
+ *
+ * ─── `.strict()`, ET C'EST ICI QU'IL SE JUSTIFIE LE MIEUX ──────────────────
+ *
+ * Sans lui, zod DÉPOUILLE les champs inconnus en silence — et c'est exactement
+ * l'histoire de `isPilot` : l'API le rendait déjà, et rien ne l'affichait. Un
+ * schéma permissif aurait reproduit l'oubli une couche plus bas, sans un mot.
+ * Avec `.strict()`, la prochaine colonne ajoutée à cette route ARRÊTE l'écran au
+ * lieu de disparaître — ce qui est le comportement qu'on veut d'une frontière.
+ *
+ * `isPilot` est DÉRIVÉ par le serveur (`PILOT_CITY_SLUG` de `@app/shared`,
+ * « paris ») et non stocké. Il est donc lu, jamais recalculé côté écran :
+ * comparer un slug au constant dans le front ferait une deuxième source de
+ * vérité pour une décision de lancement.
+ */
+export const adminCitySchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    slug: z.string(),
+    region: z.string().nullable(),
+    latitude: z.number(),
+    longitude: z.number(),
+    isActive: z.boolean(),
+    memberCount: z.number().int().nonnegative(),
+    /** Nul tant que la ville n'a jamais été ouverte (02 §4.2). */
+    activatedAt: z.string().datetime().nullable(),
+    /** Non nul sur un DOUBLON déjà fusionné — la troisième ligne de D08. */
+    mergedIntoCityId: z.string().uuid().nullable(),
+    country: z
+      .object({ id: z.string().uuid(), iso2: z.string().length(2), nameFr: z.string() })
+      .strict(),
+    /** La ville pilote, dérivée par le serveur. Lue, jamais recalculée. */
+    isPilot: z.boolean(),
+  })
+  .strict();
+export type AdminCity = z.infer<typeof adminCitySchema>;
+
+export const adminCitiesResponseSchema = pageSchema(adminCitySchema);
+export type AdminCitiesResponse = z.infer<typeof adminCitiesResponseSchema>;

@@ -1,28 +1,28 @@
-import { ScreenFrames } from '@/screens/frames';
-import { S07Desktop } from '@/screens/s07/desktop.generated';
-import { S07Mobile } from '@/screens/s07/mobile.generated';
+import { FicheProEcran } from '@/screens/services/fiche-pro-ecran';
 
 /**
  * S07 — la fiche d'un professionnel (`/services/annuaire/:id`, 10 §4.3 et §4.4).
  *
  * Transcodé de `docs/template/06 Services.dc.html`. Voir `/services/logement/
- * page.tsx` pour le détail du procédé et la raison pour laquelle cette page n'a
- * pas d'état. L'identifiant de route n'est pas lu, comme sur S02.
+ * page.tsx` pour le détail du procédé.
  *
- * RÈGLE DURE (10 §4.1) : « le téléphone n'est JAMAIS stocké ici ni affiché ».
- * La maquette s'y tient sur les deux cadres — aucun numéro, et la méthode de
- * contact affichée sur S08 est « Messagerie de la plateforme ». Vérifié plutôt
- * que supposé, et figé par `e2e/services.spec.ts`.
+ * L'IDENTIFIANT EST MAINTENANT LU et part dans `GET /pros/:id`. Le commentaire
+ * précédent disait l'inverse, et c'était vrai de son lot : afficher la même fiche
+ * pour tous les identifiants était une promesse que l'écran ne tenait pas.
  *
- * §4.4 : le quota de trois contacts pro par mois est écrit à l'écran, deux fois —
- * « Utilise 1 de vos 3 contacts du mois » sous le bouton d'ordinateur, et
- * « Contacter · 1/3 » sur le bouton mobile. C'est le serveur qui l'applique ; la
- * maquette ne fait que le dire, ce qui est exactement son rôle.
+ * `404` EST LE BON CODE pour une fiche invisible, et c'est §4.1 : « la fiche est
+ * invisible avant » validation. T4 §3 veut qu'elle soit alors indiscernable d'une
+ * fiche qui n'existe pas — donc `404` et non `403`, et `displayMessageFor` dit
+ * « introuvable » dans les deux cas.
  *
- * « CONTACTER » EST INERTE : il consomme un des trois contacts du mois, et le
- * compteur vit côté serveur (§4.4). Aucune fenêtre n'est dessinée pour lui ici,
- * à la différence de S02.
+ * COMPOSANT SERVEUR : le paramètre de route arrive en propriété, et c'est l'écran
+ * (`@/screens/services/fiche-pro-ecran`) qui est client.
  */
-export default function FichePro() {
-  return <ScreenFrames screen="S07" desktop={<S07Desktop />} mobile={<S07Mobile />} />;
+export default async function FichePro({
+  params,
+}: {
+  readonly params: Promise<{ readonly id: string }>;
+}) {
+  const { id } = await params;
+  return <FicheProEcran id={id} />;
 }

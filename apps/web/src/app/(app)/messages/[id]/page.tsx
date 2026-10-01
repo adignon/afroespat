@@ -1,9 +1,5 @@
-import { EcranMessages } from '@/screens/messages/ecran';
+import { EcranMessagerie } from '@/screens/messages/ecran-donnees';
 import { feuilleDemandee } from '@/screens/messages/feuilles';
-import { M01Desktop } from '@/screens/m01/desktop.generated';
-import { M01MobileConversation } from '@/screens/m01/mobileconversation.generated';
-import { M01BloqueDesktop } from '@/screens/m01bloque/bloquedesktop.generated';
-import { M01BloqueMobileConversation } from '@/screens/m01bloque/bloquemobileconversation.generated';
 
 /**
  * M01 — une conversation (`/messages/:id`, 08 §5, T5 §10).
@@ -13,9 +9,19 @@ import { M01BloqueMobileConversation } from '@/screens/m01bloque/bloquemobilecon
  * `next build` sans frontière `Suspense` — le serveur de développement, lui,
  * l'accepte sans rien dire (voir `docs/decisions.md`).
  *
- * L'identifiant n'est pas encore lu : la maquette ne dessine qu'une conversation, et
- * en inventer d'autres serait inventer de la donnée. Il est néanmoins dans la route,
- * parce que c'est elle que T5 fixe.
+ * ET IL N'APPELLE AUCUNE FONCTION CLIENTE. `feuilleDemandee` vient de
+ * `./feuilles.ts`, qui n'est PAS un module `'use client'`, et c'est toute la raison
+ * de l'existence de ce fichier-là : déclarée dans `ecran.tsx`, cette fonction
+ * n'arrivait pas au serveur comme une fonction mais comme une RÉFÉRENCE client,
+ * l'appeler jetait, et la route répondait `500`. Le symptôme visible — « aucune
+ * boîte de dialogue » — ne nommait pas la cause. Le chargement des données suit la
+ * même règle : la page REND `EcranMessagerie`, elle ne l'appelle pas.
+ *
+ * L'IDENTIFIANT EST MAINTENANT LU, et il désigne la conversation à ouvrir.
+ * `chargerM01` le vérifie comme UUID avant de le mettre dans un chemin d'API — il
+ * vient de l'URL, donc du public — et un identifiant fantaisiste retombe sur la
+ * conversation par défaut plutôt que sur un appel malformé. L'URL est publique : une
+ * valeur inventée ne doit ni casser la page ni faire croire à autre chose.
  *
  * LE CADRE D'ORDINATEUR EST LE MÊME QUE CELUI DE `/messages` : la maquette n'en
  * dessine qu'un, avec ses deux volets. C'est le cadre MOBILE qui change — « MOBILE ·
@@ -25,44 +31,55 @@ import { M01BloqueMobileConversation } from '@/screens/m01bloque/bloquemobilecon
  * (`?feuille=menu`, qui s'ouvre aussi au « ··· » de l'en-tête), la feuille
  * « Signaler » (`?feuille=signaler`) et sa confirmation (`?feuille=merci`). Les deux
  * dernières n'ont aucun déclencheur dans un cadre : « Signaler » ne vit que DANS le
- * menu, où la maquette le dessine en `<span>`, et aucune route ne le porte encore
- * (module 13).
+ * menu, où la maquette le dessine en `<span>`, et `POST /reports` existe mais ce lot
+ * ne branche aucune écriture.
  *
  * `?etat=bloque` — LA CONVERSATION AVEC UN MEMBRE BLOQUÉ.
  *
  * L'état est une PLANCHE, comme tous les états de cette maquette (voir l'en-tête de
- * `tools/screens/09-messages.mjs`) : la page CHOISIT le cadre, elle n'alimente pas
- * un composant. Les deux cadres bloqués sont ceux de la conversation, composeur en
- * moins et bandeau en plus.
+ * `tools/screens/09-messages.mjs`) : la page CHOISIT le cadre. Les deux cadres
+ * bloqués sont ceux de la conversation, composeur en moins et bandeau en plus — et
+ * ils lisent EXACTEMENT les mêmes données, parce qu'une conversation bloquée reste
+ * une conversation.
  *
  * ⚠ CET ÉTAT N'EST DESSINÉ PAR AUCUNE MAQUETTE. Sa forme est empruntée — le bandeau
  * de « DEMANDE EN ATTENTE » (M01), le bouton « Débloquer » de K05 (`08 Compte`) — et
  * sa PHRASE vient du porteur, pas d'une planche. Le générateur le redit avec un ⚠ à
  * chaque exécution ; le détail est dans `CONVERSATION_BLOQUEE`.
  *
- * « Débloquer » est INERTE : débloquer quelqu'un est une écriture, et ce lot ne
- * branche aucune route (08 §5, module 13). Le rendre actif sans que rien ne parte
- * mentirait au membre — la même règle que pour « Envoyer le signalement ».
+ * ET IL N'EST PAS DÉDUIT DE L'API, délibérément : `members[].hidden` dit « séparé
+ * mutuellement » (§4), pas « c'est MOI qui ai bloqué », et seule la seconde chose
+ * justifie un bouton « Débloquer ». La distinction demanderait de croiser
+ * `GET /me/blocks` avec les membres de la conversation. Signalé au porteur.
+ *
+ * « Débloquer » est INERTE : `DELETE /v1/blocks/:userId` existe et répond `204`,
+ * mais débloquer est une ÉCRITURE et ce lot n'en branche aucune. Le rendre actif
+ * sans que rien ne parte mentirait au membre — la même règle que pour « Envoyer le
+ * signalement ».
  *
  * 08 §8 : « conversation de parcours nommée par le titre du parcours ». La maquette
  * s'y tient — l'en-tête porte « Mes études à Lyon » et le sous-titre « Parcours ·
- * Aïcha (parraine), Moussa, Fanta » — et c'est ce titre qui devient le `<h1>`.
+ * Aïcha (parraine), Moussa, Fanta » — et c'est ce titre qui devient le `<h1>`, sur
+ * sa forme LIÉE : le générateur le dit à chaque exécution (« Titre lié à une
+ * donnée : il sera promu sur {entete.nom} »).
  */
 export default async function ConversationPage({
+  params,
   searchParams,
 }: {
+  readonly params: Promise<{ readonly id: string }>;
   readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = await searchParams;
+  const [{ id }, recherche] = await Promise.all([params, searchParams]);
   // Une valeur inconnue rend la conversation ORDINAIRE : l'URL est publique, et une
   // valeur fantaisiste ne doit ni casser la page ni faire croire à un blocage.
-  const bloque = params['etat'] === 'bloque';
+  const bloque = recherche['etat'] === 'bloque';
 
   return (
-    <EcranMessages
-      desktop={bloque ? <M01BloqueDesktop /> : <M01Desktop />}
-      mobile={bloque ? <M01BloqueMobileConversation /> : <M01MobileConversation />}
-      ouverte={feuilleDemandee(params['feuille'])}
+    <EcranMessagerie
+      vue={bloque ? 'bloque' : 'conversation'}
+      conversationId={id}
+      ouverte={feuilleDemandee(recherche['feuille'])}
     />
   );
 }

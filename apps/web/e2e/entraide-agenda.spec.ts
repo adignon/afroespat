@@ -1,8 +1,22 @@
 import { expect, test, type Page } from '@playwright/test';
+import { connecter } from './session';
 
 /**
- * Les quatorze écrans transcodés de `docs/template/05 Entraide.dc.html` et
- * `docs/template/07 Agenda.dc.html`.
+ * Les dix écrans transcodés de `docs/template/05 Entraide.dc.html`.
+ *
+ * ── LES QUATRE ÉCRANS DE L'AGENDA ONT DÉMÉNAGÉ, ET IL FAUT SAVOIR POURQUOI ──
+ *
+ * E01 à E04 étaient éprouvés ici, SANS SESSION : ils affichaient la maquette, et
+ * ces tests mesuraient sa géométrie. Depuis qu'ils lisent `apps/api/.../events`,
+ * un écran sans session ne montre plus qu'une invitation à se reconnecter — et un
+ * test qui n'en ouvrirait pas mesurerait l'écran d'erreur en croyant mesurer
+ * l'écran. C'est le genre de succès qui ne prouve rien.
+ *
+ * Ils vivent donc dans `agenda.spec.ts`, qui crée un membre, le porte à L1 et
+ * crée son événement. AUCUNE des propriétés mesurées ici n'a été perdue : rail de
+ * 76 px, colonne de contexte de 300 px, borne de 660 px (et l'écart de E04 à
+ * 1 016 px), absence d'ombre, absence d'emoji et absence de débordement
+ * horizontal y sont reprises, avec une session.
  *
  * Ce que ces tests éprouvent n'est PAS le dessin : il est transcodé, donc il est
  * celui de la maquette par construction. Ils éprouvent ce qu'une image ne peut pas
@@ -25,7 +39,7 @@ import { expect, test, type Page } from '@playwright/test';
 test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
 /**
- * Les quatorze écrans, avec ce que la maquette dit d'eux.
+ * Les dix écrans de l'entraide, avec ce que la maquette dit d'eux.
  *
  * `titreMobile` diffère parfois de `titreDesktop`, et c'est la maquette qui le veut :
  * H09 titre « Mes demandes » sur ordinateur mais « Fil d'entraide » sur mobile, où
@@ -46,10 +60,6 @@ const ECRANS = [
   { nom: 'H06', route: '/parrainage/amina', titre: 'Aïcha Diop', titreMobile: null, module: 'entraide' },
   { nom: 'H07', route: '/parrainage/mes-parrainages', titre: 'Mes parrainages', titreMobile: 'Mes parrainages', module: 'entraide' },
   { nom: 'H08', route: '/parrainage/devenir', titre: 'Devenir parrain', titreMobile: 'Devenir parrain', module: 'entraide' },
-  { nom: 'E01', route: '/agenda', titre: 'Samedi 21 septembre', titreMobile: 'Agenda', module: 'agenda' },
-  { nom: 'E02', route: '/agenda/42', titre: 'Repas partagé béninois', titreMobile: 'Repas partagé béninois', module: 'agenda' },
-  { nom: 'E03', route: '/agenda/nouveau', titre: 'Créer un événement', titreMobile: 'Créer un événement', module: 'agenda' },
-  { nom: 'E04', route: '/agenda/42/presence', titre: 'Présence', titreMobile: 'Présence · 18 / 23', module: 'agenda' },
 ] as const;
 
 const ENTRAIDE = ECRANS.filter((e) => e.module === 'entraide');
@@ -257,7 +267,7 @@ test.describe('le défilement — mobile', () => {
       if (p.basBarre === null) {
         // Trois cadres mobiles de ces maquettes n'ont pas de barre d'onglets : ce
         // sont des écrans de formulaire ou de détail, avec une flèche de retour.
-        expect(['H02', 'H03', 'H08', 'E02', 'E03', 'E04']).toContain(ecran.nom);
+        expect(['H02', 'H03', 'H08']).toContain(ecran.nom);
         return;
       }
 
@@ -334,20 +344,24 @@ test.describe('les largeurs de la maquette', () => {
       if ((await aside.count()) > 0) {
         expect((await aside.boundingBox())?.width).toBe(300);
       } else {
-        // E04 est le seul écran sans colonne de contexte : la liste de présence
-        // occupe toute la largeur. Contradiction assumée avec §10.1, consignée.
-        expect(ecran.nom).toBe('E04');
+        /**
+         * LES DIX ÉCRANS DE L'ENTRAIDE EN ONT UNE. E04 était l'unique exception
+         * de ce fichier ; il est parti dans `agenda.spec.ts`, où la même
+         * propriété est mesurée avec un événement réel. Si cette branche est
+         * atteinte, c'est un écran qui a perdu sa colonne : on échoue en le
+         * nommant plutôt que de passer en silence.
+         */
+        expect(`${ecran.nom} n’a pas de colonne de contexte`).toBe('tous en ont une');
       }
     });
   }
 
   /**
-   * §10.1 borne le contenu à 660 px. TREIZE écrans sur quatorze l'écrivent dans leur
-   * `<main>` ; E04 ne le fait pas — sa liste de présence s'étire sur 1 016 px à
-   * 1 440. C'est la maquette qui en décide, et elle n'a pas été réécrite : l'écart
-   * est mesuré ici plutôt que corrigé en silence.
+   * §10.1 borne le contenu à 660 px, et les dix écrans de l'entraide l'écrivent
+   * dans leur `<main>`. L'écart de E04 — 1 016 px, décidé par la maquette — est
+   * mesuré dans `agenda.spec.ts`, où cet écran vit maintenant.
    */
-  test('le contenu est borné à 660 px, sauf E04 que la maquette étire', async ({ page }) => {
+  test('le contenu est borné à 660 px sur les dix écrans', async ({ page }) => {
     const larges: string[] = [];
     for (const ecran of ECRANS) {
       await visiter(page, ecran.route, 1440);
@@ -355,7 +369,7 @@ test.describe('les largeurs de la maquette', () => {
       expect(box, ecran.nom).not.toBeNull();
       if (box !== null && box.width > 660) larges.push(`${ecran.nom} ${Math.round(box.width)}px`);
     }
-    expect(larges).toEqual(['E04 1016px']);
+    expect(larges).toEqual([]);
   });
 });
 
@@ -407,14 +421,15 @@ test.describe('la coquille de navigation', () => {
  * tombait sur un écran parfaitement adapté. Ce qu'il fallait mesurer, c'est le creux
  * entre le haut du cadre et son premier contenu.
  *
- * E02 est hors de ce test, et c'est la maquette qui le décide : son cadre mobile
- * commence par une couverture pleine largeur, sans en-tête à remplissage — sa flèche
- * de retour est posée en absolu à 50 px, dans un parent positionné. Ce cas-là n'est
- * pas adapté, et c'est consigné dans le rapport plutôt que corrigé en silence.
+ * E02 était hors de ce test, et c'est la maquette qui le décidait : son cadre
+ * mobile commence par une couverture pleine largeur, sans en-tête à remplissage —
+ * sa flèche de retour est posée en absolu à 50 px, dans un parent positionné. Cet
+ * écart reste vrai, il est consigné, et l'écran vit maintenant dans
+ * `agenda.spec.ts`.
  */
 test.describe('l’en-tête mobile lit la zone sûre', () => {
   for (const ecran of ECRANS) {
-    if (ecran.titreMobile === null || ecran.nom === 'E02') continue;
+    if (ecran.titreMobile === null) continue;
     test(`${ecran.nom} — l’en-tête ne garde pas les 50 px d’encoche simulée`, async ({ page }) => {
       await visiter(page, ecran.route, 390);
       const creux = await page.evaluate(() => {
@@ -462,15 +477,28 @@ test.describe('règles dures', () => {
     }
   }
 
+  /**
+   * LA PREUVE DE NON-VACUITÉ A BESOIN D'UNE SESSION DEPUIS QUE E03 LIT L'API, et
+   * c'est tout l'intérêt de l'avoir gardée ici : sans session, l'écran de création
+   * d'événement n'affiche plus que « Chargement… » puis une invitation à se
+   * reconnecter, et le détecteur se tairait — exactement le faux négatif contre
+   * lequel ce test existe. Le quota est maintenant celui du MEMBRE (`usage.items`
+   * de `GET /me/subscription`), donc on cherche la FORME de la phrase, pas le « 1 »
+   * que la maquette dessinait.
+   */
   test('le même détecteur TROUVE le quota de l’agenda — il n’est donc pas aveugle', async ({
     page,
+    context,
+    request,
   }) => {
+    await connecter(context, request);
     await visiter(page, '/agenda/nouveau', 1440);
+    await expect(page.getByText('Chargement de votre compte…')).toHaveCount(0, { timeout: 30_000 });
     const texte = await page.locator('body').innerText();
     expect(texte).toMatch(MOTS_DE_PLAN);
     // 09 §3.1 : « 1 par mois en gratuit, illimité en Premium ». Légitime ICI, et
     // seulement ici — la règle dure de 14 §2 porte sur l'entraide.
-    expect(texte).toMatch(/1 événement sur 1 ce mois-ci/);
+    expect(texte).toMatch(/\d+ événement sur 1 ce mois-ci/);
   });
 
   /**
@@ -515,7 +543,7 @@ test.describe('règles dures', () => {
 
 test.describe('jetons de design', () => {
   /** T1 §2.3 — jamais d'ombre portée. */
-  test('aucune ombre portée sur les quatorze écrans', async ({ page }) => {
+  test('aucune ombre portée sur les dix écrans', async ({ page }) => {
     const fautifs: string[] = [];
     for (const ecran of ECRANS) {
       await visiter(page, ecran.route, 1440);

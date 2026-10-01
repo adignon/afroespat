@@ -1,7 +1,4 @@
-import { ScreenFrames } from '@/screens/frames';
-import { X02Desktop } from '@/screens/x02/desktop.generated';
-import { X02DesktopPanneau } from '@/screens/x02/desktoppanneau.generated';
-import { X02Mobile } from '@/screens/x02/mobile.generated';
+import { EcranNotifications } from '@/screens/messages/ecran-donnees';
 
 /**
  * X02 — Notifications (`/notifications`, 12 §2.7 et §5, T5 §10).
@@ -9,7 +6,12 @@ import { X02Mobile } from '@/screens/x02/mobile.generated';
  * Transcodé de `docs/template/09 Messages et transverse.dc.html`.
  *
  * Composant SERVEUR : il reçoit `searchParams` en propriété et n'emploie donc pas
- * `useSearchParams()`, qui forcerait un rendu client et servirait un HTML vide.
+ * `useSearchParams()`, qui forcerait un rendu client et servirait un HTML vide. Il
+ * REND la coquille cliente sans appeler aucune de ses fonctions, pour la raison
+ * écrite dans `screens/messages/feuilles.ts`.
+ *
+ * BRANCHÉ SUR `GET /notifications` (12 §4), ses cinq lignes liées sur les TROIS
+ * planches.
  *
  * DEUX PLANCHES D'ORDINATEUR, parce que 12 §2.7 décrit deux formes — « panneau
  * déroulant » et « page complète » — et que la maquette les dessine toutes les deux :
@@ -25,21 +27,38 @@ import { X02Mobile } from '@/screens/x02/mobile.generated';
  * serait la livrer morte. Même choix que pour le sélecteur de parcours de J01M.
  *
  * Le panneau n'a pas de forme mobile dessinée : sur téléphone, la maquette ne montre
- * que la page complète. Le cadre mobile ne change donc pas — même raisonnement que
- * l'état « Modifier les étapes » de J01, qui n'existe que sur téléphone.
+ * que la page complète. Le cadre mobile ne change donc pas.
  *
- * 12 §2.1 ET 12 §2.4 — AUCUNE NOTIFICATION DE MESSAGE N'EST DESSINÉE ICI, et c'est
- * une bonne nouvelle : les cinq lignes de la maquette portent une réaction groupée,
- * des réponses d'entraide, une échéance de parcours, un événement et une acceptation
- * de parrainage. Pas un corps de message, pas même un « Nouveau message de X ». La
- * règle « un push MESSAGE ne contient jamais le corps du message » n'est donc
- * contredite par aucun pixel — vérifié ligne à ligne, pas supposé. La pastille de
- * filtre « Messages » existe bien, mais elle ne filtre, dans cette planche, aucune
- * ligne dessinée.
+ * ── 12 §2.1 ET 12 §2.4 — LA RÈGLE DU CORPS DE MESSAGE, MAINTENANT EXÉCUTABLE ──
+ *
+ * « Un push MESSAGE ne contient jamais le corps du message. »
+ *
+ * Le constat de départ n'a pas changé, et il était bon : AUCUNE NOTIFICATION DE
+ * MESSAGE N'EST DESSINÉE ICI. Les cinq lignes de la maquette portent une réaction
+ * groupée, des réponses d'entraide, une échéance de parcours, un événement et une
+ * acceptation de parrainage — pas un corps de message, pas même un « Nouveau message
+ * de X ». Vérifié ligne à ligne. La pastille de filtre « Messages » existe, mais elle
+ * ne filtre aucune ligne dessinée.
+ *
+ * CE QUI A CHANGÉ : ces lignes ne sont plus dessinées, elles sont LUES. Une
+ * notification de catégorie `MESSAGE` peut donc arriver ici — le back en produit,
+ * avec `body: null` et le titre « Nouveau message de X » — et c'est désormais la
+ * garde de la FRONTIÈRE qui tient la règle, non plus l'absence de pixel :
+ * `notificationSchema` (dans `packages/shared`) REFUSE une réponse où une
+ * notification `MESSAGE` porte un corps, et il est `.strict()` pour qu'un `preview`
+ * ou un `excerpt` greffé soit rejeté au lieu d'être dépouillé en silence.
+ *
+ * La passerelle temps réel fait déjà bien sa part — `message.new` ne transporte que
+ * `conversationId` et `messageId` — et rien ici ne l'ajoute.
+ *
+ * ⚠ DEUX ÉCARTS CONSIGNÉS. `meta.unread` est lu et validé mais N'EST AFFICHÉ NULLE
+ * PART : aucune planche ne dessine le compteur de la cloche que §2.7 demande. Et les
+ * lignes NE SONT PAS CLIQUABLES : la table `notifications` n'a pas de colonne `url`,
+ * et pour une notification de message `refType` vaut `CONVERSATION` tandis que
+ * `refId` porte l'identifiant du MESSAGE — construire `/messages/${refId}` ouvrirait
+ * une conversation qui n'existe pas. Les deux sont signalés au porteur.
  */
 const VUES = { panneau: 'panneau' } as const;
-
-type VueNotifications = 'page' | (typeof VUES)[keyof typeof VUES];
 
 export default async function NotificationsPage({
   searchParams,
@@ -49,14 +68,8 @@ export default async function NotificationsPage({
   const params = await searchParams;
   const demande = params['vue'];
   // Une vue inconnue est IGNORÉE plutôt qu'affichée : l'URL est publique.
-  const vue: VueNotifications =
-    typeof demande === 'string' ? (VUES[demande as keyof typeof VUES] ?? 'page') : 'page';
+  const panneau =
+    typeof demande === 'string' && VUES[demande as keyof typeof VUES] === 'panneau';
 
-  return (
-    <ScreenFrames
-      screen="X02"
-      desktop={vue === 'panneau' ? <X02DesktopPanneau /> : <X02Desktop />}
-      mobile={<X02Mobile />}
-    />
-  );
+  return <EcranNotifications panneau={panneau} />;
 }

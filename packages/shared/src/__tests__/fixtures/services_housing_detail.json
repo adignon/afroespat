@@ -1,0 +1,42 @@
+{
+  "id": "01a0f4dd-2fa1-7000-8ff4-3f50bbbb0f04",
+  "kind": "RENT",
+  "title": "Studio meublé Lyon 7e",
+  "description": "Studio au 3e étage avec ascenseur, cuisine équipée, à cinq minutes du métro Jean Macé. Idéal étudiant·e, visite sur place uniquement.",
+  "city": {
+    "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "name": "Lyon",
+    "slug": "lyon"
+  },
+  "district": "7e · Jean Macé",
+  "priceCents": 62000,
+  "currency": "EUR",
+  "isFurnished": true,
+  "availableFrom": "2026-10-01T00:00:00.000Z",
+  "durationMonths": 12,
+  "status": "ACTIVE",
+  "createdAt": "2026-10-01T00:28:51.497Z",
+  "expiresAt": "2026-11-30T00:28:51.496Z",
+  "photos": [
+    {
+      "url": "/media/capture/services/01a0f4dd-2f20-7000-af70-f1c62bc21740-0.jpg",
+      "position": 0
+    },
+    {
+      "url": "/media/capture/services/01a0f4dd-2f20-7000-af70-f1c62bc21740-1.jpg",
+      "position": 1
+    }
+  ],
+  "author": {
+    "handle": "s-01a0f4dd2f20",
+    "displayName": "Sarah Traoré",
+    "avatarUrl": null,
+    "verificationLevel": "L2"
+  },
+  "cautionLevel": "STANDARD",
+  "isMine": false,
+  "reviewState": null,
+  "canRenew": null,
+  "safetyBanner": "Aucun versement avant visite ou vérification. Si une annonce demande un acompte à distance, signalez-la.",
+  "mutualConnectionCount": 0
+}

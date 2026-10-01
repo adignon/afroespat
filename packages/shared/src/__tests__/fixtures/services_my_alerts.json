@@ -1,0 +1,33 @@
+{
+  "items": [
+    {
+      "id": "01a0f4dd-30d0-7000-9e67-d97ffd5b539e",
+      "kind": "JOB",
+      "criteria": {
+        "sector": "Numérique",
+        "contractType": "Alternance"
+      },
+      "isActive": false,
+      "createdAt": "2026-10-01T00:28:51.792Z",
+      "lastNotifiedAt": null
+    },
+    {
+      "id": "01a0f4dd-30c8-7000-975c-212b622443f6",
+      "kind": "HOUSING",
+      "criteria": {
+        "kind": "FLATSHARE",
+        "cityId": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+        "isFurnished": true,
+        "maxPriceCents": 50000
+      },
+      "isActive": true,
+      "createdAt": "2026-10-01T00:28:51.785Z",
+      "lastNotifiedAt": null
+    }
+  ],
+  "nextCursor": null,
+  "meta": {
+    "isPremium": true,
+    "dispatchIntervalMs": 3600000
+  }
+}

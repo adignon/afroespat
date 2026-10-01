@@ -1,0 +1,23 @@
+{
+  "userId": "01a0f4dd-0c7d-7000-afc9-f82ee4d07ff0",
+  "handle": "h-01a0f4dd0c7d",
+  "displayName": "Parraine Relevée",
+  "avatarUrl": null,
+  "city": {
+    "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "name": "Lyon",
+    "slug": "lyon"
+  },
+  "bio": "Arrivée comme étudiante, aujourd’hui comptable. J’aide pour le logement et la CAF.",
+  "journeyTemplateIds": [],
+  "maxMentees": 2,
+  "activeMenteeCount": 0,
+  "completedCount": 0,
+  "avgRating": null,
+  "availability": "AVAILABLE",
+  "isAvailable": true,
+  "reviews": [],
+  "meta": {
+    "moneyBanner": "Un parrainage est gratuit et bénévole. Aucun parrain ne doit vous demander d’argent, ni vous garantir un visa, un logement ou un emploi. Signalez immédiatement toute demande de ce type."
+  }
+}

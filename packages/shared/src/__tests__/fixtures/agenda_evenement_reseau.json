@@ -1,0 +1,31 @@
+{
+  "id": "01a0f4e3-81ff-7000-9fc9-fac6cd01ff59",
+  "type": "NETWORKING",
+  "title": "Apéro du réseau",
+  "description": null,
+  "city": {
+    "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "name": "Lyon",
+    "slug": "lyon"
+  },
+  "venueName": null,
+  "addressText": "Place Bellecour, Lyon 2e",
+  "startsAt": "2026-10-02T17:00:00.000Z",
+  "endsAt": null,
+  "timeZone": "Europe/Paris",
+  "localDate": "2026-10-02",
+  "capacity": null,
+  "attendeeCount": 1,
+  "status": "SCHEDULED",
+  "communityId": "01a0f4e3-81a9-7000-8d47-89b731907acb",
+  "organizer": {
+    "handle": "ag-5901e9eb87",
+    "displayName": "Hôte du réseau",
+    "avatarUrl": null
+  },
+  "coverUrl": null,
+  "myStatus": "GOING",
+  "myWaitlistPosition": null,
+  "myCheckedIn": false,
+  "isOrganizer": true
+}

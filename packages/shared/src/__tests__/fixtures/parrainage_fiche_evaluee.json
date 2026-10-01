@@ -1,0 +1,33 @@
+{
+  "userId": "01a0f4df-c30a-7000-92a6-7b362182a401",
+  "handle": "h-01a0f4dfc30a",
+  "displayName": "Aïcha Relevée",
+  "avatarUrl": null,
+  "city": {
+    "id": "01a0e1b0-0413-7000-b5cf-0e03a8ff5e12",
+    "name": "Lyon",
+    "slug": "lyon"
+  },
+  "bio": "Arrivée comme étudiante, aujourd’hui comptable. J’aide surtout pour le logement et la CAF.",
+  "journeyTemplateIds": [],
+  "maxMentees": 2,
+  "activeMenteeCount": 0,
+  "completedCount": 0,
+  "avgRating": 5,
+  "availability": "AVAILABLE",
+  "isAvailable": true,
+  "reviews": [
+    {
+      "rating": 5,
+      "comment": "Disponible et très claire sur la CAF.",
+      "createdAt": "2026-10-01T00:31:40.851Z",
+      "reviewer": {
+        "handle": "h-01a0f4dfc435",
+        "displayName": "Fatou Relevée"
+      }
+    }
+  ],
+  "meta": {
+    "moneyBanner": "Un parrainage est gratuit et bénévole. Aucun parrain ne doit vous demander d’argent, ni vous garantir un visa, un logement ou un emploi. Signalez immédiatement toute demande de ce type."
+  }
+}

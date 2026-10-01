@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { EventType } from '../enums/generated.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import { AttendeeStatus, EventStatus, EventType } from '../enums/generated.js';
+import { cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Agenda — 09-villes-agenda.md §3 et §5.
@@ -225,14 +225,232 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000) + 1;
 }
 
-/** Un jour du calendrier vertical (§3.5, §5). */
-export interface CalendarDay {
-  /** Jour civil dans le fuseau de référence du membre. */
-  readonly date: string;
-  /** Événements visibles ce jour-là — près de moi et de mes réseaux. */
-  readonly total: number;
-  /** Mes participations : GOING ou WAITLIST (le point terre cuite). */
-  readonly attending: number;
-  /** Titre du premier événement du jour, ou null. */
-  readonly firstTitle: string | null;
-}
+/**
+ * Un jour du calendrier vertical (§3.5, §5).
+ *
+ * C'ÉTAIT UNE `interface` ÉCRITE À LA MAIN, et le type seul ne vérifiait rien à
+ * l'exécution : `apps/web` recevait `total: undefined` d'une API qui aurait changé
+ * de forme, et le calendrier aurait dessiné des jours vides sans qu'un seul
+ * message ne nomme la route. Le schéma refuse à l'endroit où la donnée entre, et
+ * le type en DÉCOULE — une seule définition, donc aucune dérive possible entre ce
+ * que le serveur promet et ce que le front valide.
+ */
+export const calendarDaySchema = z
+  .object({
+    /** Jour civil dans le fuseau de référence du membre. */
+    date: localDateSchema,
+    /** Événements visibles ce jour-là — près de moi et de mes réseaux. */
+    total: z.number().int(),
+    /** Mes participations : GOING ou WAITLIST (le point terre cuite). */
+    attending: z.number().int(),
+    /** Titre du premier événement du jour, ou null. */
+    firstTitle: z.string().nullable(),
+  })
+  .strict();
+
+export type CalendarDay = Readonly<z.infer<typeof calendarDaySchema>>;
+
+/**
+ * ─── CE QUE LES ROUTES DE LECTURE RENVOIENT ──────────────────────────────────
+ *
+ * Quatre schémas pour les quatre routes que les écrans E01 à E04 lisent. Ils sont
+ * ICI, à côté des schémas de requête du même module, et pas dans `apps/web` :
+ * 00 §4 fait de `packages/shared` la source unique, et un schéma de réponse
+ * recopié dans le front est une deuxième source qui divergera au premier
+ * ajustement.
+ *
+ * ── RELEVÉS SUR L'API QUI TOURNE, PAS DÉDUITS DU SERVICE ────────────────────
+ *
+ * Les charges sont dans `__tests__/fixtures/agenda_*.json`, prises avec quatre
+ * membres créés pour l'occasion, un événement, deux RSVP, un réseau et une
+ * présence cochée. Trois faits ne se lisent dans AUCUN service, et chacun aurait
+ * produit un schéma faux :
+ *
+ *   1. `GET /events/:id/attendees` OMET `userId` et `checkedIn` au lieu de les
+ *      mettre à `null` quand le lecteur n'est pas l'organisateur. Un
+ *      `.nullable()` aurait refusé la réponse réelle de tout non-organisateur ;
+ *   2. `waitlistPosition` n'apparaît QUE sur une ligne `WAITLIST` ;
+ *   3. `GET /events` n'a pas de `meta` du tout, alors que `attendees` en a un
+ *      dont les clés CHANGENT selon le lecteur (`going` seul, ou cinq compteurs).
+ *
+ * ── `.strict()` PARTOUT, ET CE N'EST PAS DU ZÈLE ────────────────────────────
+ *
+ * Sans lui, zod DÉPOUILLE en silence ce qu'il ne connaît pas : le jour où une de
+ * ces routes joindrait une latitude (§10 : « rien n'est géocodé »), un numéro de
+ * téléphone de participant ou un compteur de vues, la donnée aurait TRANSITÉ et
+ * tout le monde conclurait que la règle est tenue. Le contrat la refuse donc
+ * bruyamment — en `ApiShapeError`, qui est un incident et non une règle métier.
+ */
+
+/** La ville d'un événement, telle que `toCard` la projette — sans coordonnées. */
+const eventCitySchema = z
+  .object({ id: uuidSchema, name: z.string(), slug: z.string() })
+  .strict();
+
+/**
+ * L'organisateur, et le participant dont on ne montre que l'avatar.
+ *
+ * `handle` est NULLABLE : un membre qui n'a pas encore choisi son pseudo organise
+ * quand même. Le front affiche alors son nom, et ne fabrique pas de lien.
+ */
+const eventPersonSchema = z
+  .object({
+    handle: handleSchema.nullable(),
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+  })
+  .strict();
+
+/**
+ * Une fiche d'événement (§5) — le même objet dans la liste et dans le détail.
+ *
+ * AUCUNE LATITUDE, AUCUNE LONGITUDE : la règle dure §10 dit « adresse en texte
+ * libre, jamais géocodée », et `EVENT_SELECT` lit pourtant `city.latitude` pour
+ * calculer le rayon côté serveur. `.strict()` est donc ce qui garantit qu'elles
+ * ne SORTENT pas : si la projection se mettait à les joindre, l'écran refuserait
+ * la réponse au lieu de les recevoir et, un jour, de les dessiner sur une carte.
+ */
+export const eventCardSchema = z
+  .object({
+    id: uuidSchema,
+    type: z.enum(EventType),
+    title: z.string(),
+    description: z.string().nullable(),
+    city: eventCitySchema,
+    venueName: z.string().nullable(),
+    /** Texte libre. Jamais de coordonnées : voir ci-dessus. */
+    addressText: z.string().nullable(),
+    startsAt: z.string().datetime(),
+    endsAt: z.string().datetime().nullable(),
+    /** Fuseau de la VILLE de l'événement, et jour civil dans ce fuseau (§3.5). */
+    timeZone: z.string(),
+    localDate: localDateSchema,
+    capacity: z.number().int().nullable(),
+    /** Nombre de `GOING` : c'est ce nombre que `capacity` borne (§3.2). */
+    attendeeCount: z.number().int(),
+    status: z.enum(EventStatus),
+    communityId: uuidSchema.nullable(),
+    organizer: eventPersonSchema,
+    coverUrl: z.string().nullable(),
+    /** Mon RSVP, ou `null` — y compris pour un visiteur non connecté. */
+    myStatus: z.enum(AttendeeStatus).nullable(),
+    myWaitlistPosition: z.number().int().nullable(),
+    myCheckedIn: z.boolean(),
+    isOrganizer: z.boolean(),
+  })
+  .strict();
+
+export type EventCardResponse = z.infer<typeof eventCardSchema>;
+
+/**
+ * `GET /events` (§5) — la liste d'un jour ou d'un intervalle.
+ *
+ * `pageSchema` convient : la réponse relevée porte `{ items, nextCursor }` et PAS
+ * de `meta`, que `pageSchema` déclare facultatif. Un `meta` exigé aurait refusé
+ * la vraie réponse de la seule route que l'agenda pagine.
+ */
+export const eventsResponseSchema = pageSchema(eventCardSchema);
+
+export type EventsResponse = z.infer<typeof eventsResponseSchema>;
+
+/**
+ * `GET /events/:id` (§5) — la fiche, mon RSVP, les avatars des `GOING`.
+ *
+ * `checkedInCount` est `null` pour qui n'est NI l'organisateur NI en face d'un
+ * événement `DONE` : le compte des présents est la feuille de l'organisateur, pas
+ * une statistique publique. Il est bien là et vaut `null` — relevé, pas supposé —
+ * donc `.nullable()` et non `.optional()`.
+ */
+export const eventDetailResponseSchema = eventCardSchema
+  .extend({
+    attendees: z.array(eventPersonSchema),
+    checkedInCount: z.number().int().nullable(),
+  })
+  .strict();
+
+export type EventDetailResponse = z.infer<typeof eventDetailResponseSchema>;
+
+/**
+ * `GET /events/calendar` (§5) — un objet par jour, les jours vides compris.
+ *
+ * `meta.timeZone` n'est pas décoratif : c'est le fuseau dans lequel la grille a
+ * été construite, et le front ne doit pas en choisir un autre — un calendrier
+ * reconstruit dans le fuseau du navigateur rangerait un événement de 23 h un jour
+ * trop tôt.
+ */
+export const calendarResponseSchema = z
+  .object({
+    items: z.array(calendarDaySchema),
+    meta: z.object({ timeZone: z.string(), cached: z.boolean() }).strict(),
+  })
+  .strict();
+
+export type CalendarResponse = z.infer<typeof calendarResponseSchema>;
+
+/**
+ * ─── LA FEUILLE DE PRÉSENCE, EN DEUX SCHÉMAS ET NON EN UN ───────────────────
+ *
+ * §5 : « organisateur → liste complète ; autres → avatars des GOING ». Le service
+ * tient cette règle en OMETTANT `userId` et `checkedIn` aux autres, et en
+ * réduisant `meta` à son seul `going`.
+ *
+ * UN SEUL SCHÉMA À CHAMPS FACULTATIFS NE PROTÉGERAIT RIEN. `userId` y serait une
+ * clé connue, donc le jour où la route le joindrait à la vue publique — par une
+ * refonte du `select`, un `...row` de trop — la réponse passerait la validation
+ * SANS UN MOT, et l'identifiant d'un participant aurait transité vers n'importe
+ * quel membre qui ouvre la page. C'est exactement la fuite que §5 écarte.
+ *
+ * D'où deux formes, et un choix fait sur `isOrganizer` — que le SERVEUR décide, et
+ * que `GET /events/:id` renvoie. Le front ne s'autorise rien : il valide la
+ * réponse avec le contrat qui correspond à ce que le serveur a dit de lui.
+ */
+
+/** Une ligne de la vue PUBLIQUE : aucun identifiant, aucune présence. */
+const publicAttendeeSchema = z
+  .object({
+    handle: handleSchema.nullable(),
+    displayName: z.string(),
+    avatarUrl: z.string().nullable(),
+    status: z.enum(AttendeeStatus),
+    /** Présent UNIQUEMENT sur une ligne `WAITLIST` (relevé). */
+    waitlistPosition: z.number().int().optional(),
+  })
+  .strict();
+
+/** Une ligne de la feuille de l'ORGANISATEUR : elle seule porte de quoi cocher. */
+const organizerAttendeeSchema = publicAttendeeSchema.extend({
+  /** L'identifiant ne sort qu'à l'organisateur : lui seul coche les présents. */
+  userId: uuidSchema,
+  checkedIn: z.boolean(),
+});
+
+/** `GET /events/:id/attendees` vu par un membre qui n'organise pas. */
+export const publicAttendeesResponseSchema = z
+  .object({
+    items: z.array(publicAttendeeSchema),
+    nextCursor: z.string().nullable(),
+    meta: z.object({ going: z.number().int() }).strict(),
+  })
+  .strict();
+
+export type PublicAttendeesResponse = z.infer<typeof publicAttendeesResponseSchema>;
+
+/** `GET /events/:id/attendees` vu par l'ORGANISATEUR — la feuille de présence. */
+export const organizerAttendeesResponseSchema = z
+  .object({
+    items: z.array(organizerAttendeeSchema),
+    nextCursor: z.string().nullable(),
+    meta: z
+      .object({
+        going: z.number().int(),
+        maybe: z.number().int(),
+        waitlist: z.number().int(),
+        declined: z.number().int(),
+        /** Le nombre de présents cochés : l'indicateur clé de la plateforme (§3.3). */
+        checkedIn: z.number().int(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type OrganizerAttendeesResponse = z.infer<typeof organizerAttendeesResponseSchema>;
