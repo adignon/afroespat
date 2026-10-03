@@ -28,17 +28,59 @@ export const I = {
 
 // ─── Navigation ──────────────────────────────────────────────────────────────
 
-const RAIL_ITEMS: readonly (readonly [string, string])[] = [
-  ['Accueil', I.home],
-  ['Parcours', I.path],
-  ['Entraide', I.heart],
-  ['Services', I.serv],
-  ['Agenda', I.cal],
+/**
+ * ─── LA DESTINATION EST UN CHAMP DE L'ENTRÉE, COMME SON ICÔNE ───────────────
+ *
+ * Le rail de cette maquette est une BOUCLE : `<sc-for list="{{ rail }}" as="r">`
+ * n'écrit qu'UN `<a>` pour cinq entrées au rendu, et son libellé est
+ * `{{ r.label }}`. Aucun mécanisme indexé sur le texte ne peut donc lui donner
+ * cinq destinations — c'est exactement pourquoi aucun lien du rail ne marchait.
+ * L'adresse voyage avec la donnée, et le cadre la pose par `href={r.href}` (clé
+ * `liens` de `tools/screens/03-accueil.mjs`, table dans `tools/squelette-membre.mjs`).
+ *
+ * `/services/logement` ET NON `/services` : il n'existe aucune route `/services`,
+ * et la maquette ne dessine aucune planche « Services — accueil ». La première
+ * planche du module est S01, « Logement — liste ». C'est un arbitrage de produit,
+ * pris par défaut et REMONTÉ au porteur, pas une évidence.
+ */
+const RAIL_ITEMS: readonly (readonly [string, string, string])[] = [
+  ['Accueil', I.home, '/accueil'],
+  ['Parcours', I.path, '/parcours'],
+  ['Entraide', I.heart, '/entraide'],
+  ['Services', I.serv, '/services/logement'],
+  ['Agenda', I.cal, '/agenda'],
 ];
 
-export const rail = RAIL_ITEMS.map(([label, icon], i) => ({
+/**
+ * ─── POURQUOI « ACCUEIL » RESTE L'ENTRÉE ALLUMÉE, ET POURQUOI C'EST VRAI ────
+ *
+ * `i === 0` vient de la maquette, et à la relecture cela ressemble à un défaut :
+ * une page qui s'annoncerait sous le nom d'une autre. Vérifié écran par écran, ce
+ * n'en est pas un ICI, et il faut l'écrire pour que personne ne le « corrige » :
+ *
+ * les ONZE écrans qui consomment ce rail sont A01 (`/accueil`), A02
+ * (`/publications/:id`), A03/A04/A06 (`/guides…`), A07–A10 (`/reseaux…`) et
+ * A11/A12 (`/villes…`). Or `T5 §0` range Guides & Démarches, Réseaux,
+ * Parrainage, Villes & Membres et Événements dans le PANNEAU D'ACCUEIL : ces
+ * pages SONT atteintes par l'entrée « Accueil », et c'est le PANNEAU qui dit
+ * ensuite laquelle — `panelGuides`, `panelReseaux`, `panelVilles`. L'écran annonce
+ * donc « Accueil › Réseaux », ce qui est juste.
+ *
+ * Les 52 autres cadres membre n'emploient PAS cette donnée : leur rail est écrit
+ * en clair dans leur maquette, qui peint elle-même la bonne entrée — « Agenda »
+ * sur l'agenda, « Entraide » sur l'entraide, et AUCUNE sur Compte, Messages et
+ * Recherche, dont aucune des cinq entrées ne désigne la page. Mesuré sur les 52.
+ *
+ * Déduire l'entrée allumée du chemin courant demanderait une table « quelle page
+ * appartient à quel module » que ni la maquette ni les specs ne donnent — et la
+ * première version écrite ici n'allumait RIEN sur `/guides`, parce qu'aucun des
+ * cinq chemins ne préfixe `/guides`. Inventer cette table aurait éteint le rail
+ * sur neuf écrans sur onze. On garde donc le dessin de la maquette.
+ */
+export const rail = RAIL_ITEMS.map(([label, icon, href], i) => ({
   label,
   icon,
+  href,
   bg: i === 0 ? '#FFFFFF' : 'rgba(255,255,255,.08)',
   fg: i === 0 ? '#0F5C48' : '#CFE3DA',
 }));
@@ -50,21 +92,31 @@ export const rail = RAIL_ITEMS.map(([label, icon], i) => ({
  * RÈGLE (§10.1) : ici les compteurs sont des NOUVEAUTÉS depuis la dernière
  * visite ; dans les panneaux de section, ce sont des totaux.
  */
-const PANEL_ITEMS: readonly (readonly [string, string, number | null])[] = [
-  ["Fil d'actualité", I.feed, null],
-  ['Guides & Démarches', I.book, null],
-  ["Fil d'entraide", I.heart, 12],
-  ['Réseaux', I.net, null],
-  ['Parrainage', I.mentor, null],
-  ['Villes & Membres', I.city, null],
-  ['Événements', I.cal, 3],
+const PANEL_ITEMS: readonly (readonly [string, string, number | null, string])[] = [
+  ["Fil d'actualité", I.feed, null, '/accueil'],
+  ['Guides & Démarches', I.book, null, '/guides'],
+  ["Fil d'entraide", I.heart, 12, '/entraide'],
+  ['Réseaux', I.net, null, '/reseaux'],
+  ['Parrainage', I.mentor, null, '/parrainage'],
+  ['Villes & Membres', I.city, null, '/villes'],
+  ['Événements', I.cal, 3, '/agenda'],
 ];
 
+/**
+ * Les sept destinations sont des routes VÉRIFIÉES dans `app/(app)/`, et le cadre
+ * les pose par `href={m.href}` — même mécanisme que le rail, pour la même raison :
+ * la maquette n'écrit qu'UNE entrée dans `<sc-for as="m">`.
+ *
+ * « Fil d'actualité » mène à `/accueil` et « Événements » à `/agenda`, c'est-à-dire
+ * aux mêmes pages que deux entrées du rail. Ce n'est pas un doublon à corriger :
+ * `T5 §0` range bien ces deux-là dans le panneau d'accueil ET dans le rail.
+ */
 export const panel = (active: number) =>
-  PANEL_ITEMS.map(([label, icon, count], i) => ({
+  PANEL_ITEMS.map(([label, icon, count, href], i) => ({
     label,
     icon,
     count,
+    href,
     bg: i === active ? '#E3F0EB' : 'transparent',
     fg: i === active ? '#0F5C48' : '#16211D',
     w: i === active ? 700 : 500,
@@ -411,10 +463,17 @@ export const mBottom = M_BOTTOM.map(([label, icon], i) => ({
 // avec des fenêtres qui s'ouvrent par-dessus. Les séparer donnerait deux sources
 // pour un même état.
 //
-// A01G (« Lier un guide ») et A01S (« Créer un sondage ») ne consomment AUCUNE
-// donnée : leur balisage est entièrement statique dans la maquette. Rien à écrire
-// pour elles, et c'est le transcodeur qui le dit — il les génère avec zéro
-// propriété.
+// A01S (« Créer un sondage ») ne consomme AUCUNE donnée : son balisage est
+// entièrement statique dans la maquette, faute de route — `createPostSchema` est
+// `.strict()` et ne porte aucun champ de sondage. Rien à écrire pour elle, et
+// c'est le transcodeur qui le dit — il la génère avec zéro propriété.
+//
+// A01G (« Lier un guide ») ÉTAIT dans le même cas, et ne l'est PLUS : ses quatre
+// cartes de guide sont des DONNÉES (`GET /guides`), et son contrat vit dans
+// `screens/a01g/data.ts` (`A01GData`), sur le modèle de A01C et A01P. Ce
+// commentaire affirmait le contraire alors que le cadre lisait déjà
+// `guidesSuggeres` et `guidesTrouves` : c'est cette contradiction entre le code et
+// sa documentation qui avait laissé passer le défaut de compilation du lot.
 
 /**
  * A01C — le fil de commentaires.
@@ -739,7 +798,9 @@ export interface A01Data {
 //
 // La DONNÉE, elle, n'a pas bougé : `thread`, `shareContactsFor`, `shareNets` et
 // `shareOut` restent ci-dessus, là où le `renderVals()` unique de la maquette les
-// met. A01G et A01S gardent `A01Data` : elles ne consomment rien.
+// met. A01S garde `A01Data` : elle ne consomme rien. A01G, elle, a MAINTENANT son
+// propre contrat (`screens/a01g/data.ts`), et sa donnée — `guidesSuggeres`,
+// `guidesTrouves` — vit dans `screens/accueil/data.ts`, là où la maquette l'écrit.
 //
 // `shareContactsFor` et `SHARE_SELECTION_DEFAULT` ne servent plus à l'écran
 // branché — les contacts de partage viennent de l'API (`shareContactsDe`, dans

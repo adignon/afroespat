@@ -2,6 +2,7 @@
 
 import { chargerD16 } from '@/screens/administration/appels';
 import { EcranDonneesEquipe } from '@/screens/administration/ecran-donnees';
+import { SQUELETTE_D16 } from '@/screens/administration/data';
 import { ScreenFrames } from '@/screens/frames';
 import { D16Desktop } from '@/screens/d16/desktop.generated';
 
@@ -54,7 +55,7 @@ import { D16Desktop } from '@/screens/d16/desktop.generated';
  */
 export default function Page() {
   return (
-    <EcranDonneesEquipe charger={chargerD16}>
+    <EcranDonneesEquipe charger={chargerD16} squelette={SQUELETTE_D16}>
       {(donnees) => <ScreenFrames screen="D16" desktop={<D16Desktop {...donnees} />} />}
     </EcranDonneesEquipe>
   );

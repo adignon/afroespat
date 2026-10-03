@@ -34,6 +34,7 @@ describe('agenda (09 §3)', () => {
   const createdUsers: string[] = [];
   const createdCommunities: string[] = [];
   const createdEvents: string[] = [];
+  const createdMediaIds: string[] = [];
 
   let originCountryId: string;
   /** Deux villes proches (≤ 30 km) et une lointaine, pour le rayon du §2.2. */
@@ -198,6 +199,12 @@ describe('agenda (09 §3)', () => {
     }
     if (createdUsers.length > 0) {
       await prisma.event.deleteMany({ where: { organizerUserId: { in: createdUsers } } });
+      // APRÈS les événements, AVANT les membres : `events.cover_asset_id` référence
+      // le média, et `media_assets.owner_user_id` le membre. La base est PARTAGÉE,
+      // et un reste d'ici ferait échouer une autre suite sur une clé étrangère.
+      if (createdMediaIds.length > 0) {
+        await prisma.mediaAsset.deleteMany({ where: { id: { in: createdMediaIds } } });
+      }
       await prisma.user.deleteMany({ where: { id: { in: createdUsers } } });
     }
     if (createdCommunities.length > 0) {
@@ -995,6 +1002,129 @@ describe('agenda (09 §3)', () => {
       // l'organisateur, pas une information publique.
       expect(JSON.stringify(asGuest.items)).not.toMatch(/userId|checkedIn/);
       expect(asGuest.meta).not.toHaveProperty('checkedIn');
+    });
+  });
+
+  // ══ RÈGLE DURE · la couverture d'un événement ═════════════════════════════
+
+  describe('rule: la couverture est un média À SOI, de genre EVENT_COVER et prêt', () => {
+    /**
+     * [RÈGLE DURE] Les trois contrôles manquaient TOUS LES TROIS, aux DEUX points.
+     *
+     * `create` écrivait `coverAssetId: input.coverAssetId ?? null` tel quel, et
+     * `update` connectait par simple identifiant
+     * (`data.coverAsset = { connect: { id } }`).
+     *
+     * LE PLUS GRAVE N'EST PAS LE GENRE, C'EST LE PROPRIÉTAIRE, absent des deux.
+     * Les autres rattachements du dépôt vérifiaient au moins celui-là, si bien
+     * qu'on pouvait le croire acquis. Ici un organisateur pouvait donner pour
+     * couverture le média d'UN AUTRE MEMBRE : non pas un mésusage de son propre
+     * document, mais une référence croisée — le justificatif professionnel d'un
+     * tiers en bandeau d'un événement public, et `events.cover_asset_id` ne garde
+     * aucune trace de qui l'a posé.
+     *
+     * Le membre est PREMIUM pour que le quota de §10 (un événement par mois en
+     * gratuit) ne décide de rien ici : ce test parle de la couverture, et un
+     * `PLAN_LIMIT_REACHED` au milieu le rendrait illisible.
+     */
+    it('refuse une couverture qui n’est pas à soi, d’un autre genre, ou non prête', async () => {
+      const organizer = await member({ plan: 'PREMIUM' });
+      const stranger = await member({ plan: 'PREMIUM' });
+
+      const asset = async (
+        ownerUserId: string,
+        kind: 'EVENT_COVER' | 'PROOF',
+        status: 'READY' | 'PENDING' | 'REJECTED' = 'READY',
+      ) => {
+        const row = await prisma.mediaAsset.create({
+          data: {
+            id: newId(),
+            ownerUserId,
+            kind,
+            storageKey: `test/evt-couverture/${newId()}.jpg`,
+            mime: 'image/jpeg',
+            sizeBytes: BigInt(4096),
+            status,
+            exifStripped: true,
+          },
+        });
+        createdMediaIds.push(row.id);
+        return row.id;
+      };
+
+      // ── PRÉMISSE : sa propre couverture, du bon genre et prête, PASSE ─────
+      const mine = await asset(organizer, 'EVENT_COVER');
+      const created = await newEvent(organizer, { coverAssetId: mine });
+      const stored = await prisma.event.findUniqueOrThrow({
+        where: { id: created.id },
+        select: { coverAssetId: true },
+      });
+      expect(stored.coverAssetId).toBe(mine);
+
+      // ── À LA CRÉATION ────────────────────────────────────────────────────
+      //
+      // 404 pour le propriétaire et le genre : tous deux vivent dans le `where`,
+      // et un refus nommé ferait de l'identifiant un oracle d'existence.
+      const hers = await asset(stranger, 'EVENT_COVER');
+      await expect(newEvent(organizer, { coverAssetId: hers })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+
+      const myProof = await asset(organizer, 'PROOF');
+      await expect(newEvent(organizer, { coverAssetId: myProof })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+
+      // 400 pour le statut : l'organisateur vient d'envoyer ce fichier et sait
+      // qu'il existe. Un REJECTED est le cas qui compte — sa clé est réservée
+      // SANS OCTETS DESSOUS, donc la couverture serait un bandeau introuvable.
+      for (const status of ['PENDING', 'REJECTED'] as const) {
+        await expect(
+          newEvent(organizer, { coverAssetId: await asset(organizer, 'EVENT_COVER', status) }),
+        ).rejects.toMatchObject({
+          code: 'VALIDATION_FAILED',
+          details: { fields: [{ path: 'coverAssetId', code: 'MEDIA_NOT_READY' }] },
+        });
+      }
+
+      // ── À LA MISE À JOUR ─────────────────────────────────────────────────
+      //
+      // Le second point, et il se teste à part : `update` ne passe pas par le
+      // même code que `create`, et corriger l'un sans l'autre laisserait la
+      // porte ouverte à une requête de plus.
+      await expect(events.update(created.id, organizer, { coverAssetId: hers })).rejects.toMatchObject(
+        { code: 'NOT_FOUND' },
+      );
+      await expect(
+        events.update(created.id, organizer, { coverAssetId: myProof }),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      await expect(
+        events.update(created.id, organizer, {
+          coverAssetId: await asset(organizer, 'EVENT_COVER', 'REJECTED'),
+        }),
+      ).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { fields: [{ path: 'coverAssetId', code: 'MEDIA_NOT_READY' }] },
+      });
+
+      // La couverture d'origine est INTACTE : un refus ne doit pas avoir écrit à
+      // moitié. Sans cette vérification, un `update` qui aurait effacé la
+      // couverture avant de refuser passerait pour correct.
+      const after = await prisma.event.findUniqueOrThrow({
+        where: { id: created.id },
+        select: { coverAssetId: true },
+      });
+      expect(after.coverAssetId).toBe(mine);
+
+      // Et le remplacement LICITE fonctionne toujours — sans quoi tout ce qui
+      // précède serait obtenu en refusant simplement toute couverture.
+      const second = await asset(organizer, 'EVENT_COVER');
+      await events.update(created.id, organizer, { coverAssetId: second });
+      const replaced = await prisma.event.findUniqueOrThrow({
+        where: { id: created.id },
+        select: { coverAssetId: true },
+      });
+      expect(replaced.coverAssetId).toBe(second);
     });
   });
 });

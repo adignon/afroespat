@@ -18,6 +18,7 @@
  */
 export { CHAT, I, PIN, netTabsFor, panel, panelReseaux, rail, tab } from '../reseaux/chrome';
 import { netTabsFor, panel, panelReseaux, rail } from '../reseaux/chrome';
+import { enteteVide, type ReseauEnteteView } from '../a08t/data';
 
 /**
  * Une ligne de sujet.
@@ -91,6 +92,23 @@ export const ownerActions = ['Annonce', 'Épingler', 'Gérer'];
 export const topics: readonly TopicRowView[] = [];
 
 export interface A08Data {
+  /**
+   * L'EN-TÊTE DU RÉSEAU, ajouté au contrat après avoir REGARDÉ l'écran.
+   *
+   * A08 lisait déjà six prises — rail, panneau, onglets, actions, sujets — et
+   * n'était donc pas dans le lot des cadres sourds. Mais son en-tête restait
+   * écrit en dur, et cela donnait, sur `/reseaux/pays-bj?onglet=sujets` :
+   *
+   *     BN · Béninois en France · 890 membres · réseau de pays · vous êtes membre
+   *     Rejoignez ce réseau pour voir ses sujets et ses membres.
+   *
+   * Les deux phrases dans la même page. L'onglet par DÉFAUT du réseau nommait un
+   * autre réseau que celui de l'URL et déclarait membre un lecteur à qui le
+   * serveur venait de refuser le contenu, pendant que les cinq autres onglets
+   * affichaient « Bénin · 99 membres ». C'est le même type que celui des
+   * planches d'onglet (`a08t/data.ts`), rempli par le même convertisseur.
+   */
+  reseau: ReseauEnteteView;
   rail: typeof rail;
   shortcuts: readonly { name: string; sub: string; i: string; bg: string }[];
   panelReseaux: ReturnType<typeof panel>;
@@ -102,6 +120,7 @@ export interface A08Data {
 export const shortcuts: readonly { name: string; sub: string; i: string; bg: string }[] = [];
 
 export const a08Fallback: A08Data = {
+  reseau: enteteVide,
   rail,
   shortcuts,
   panelReseaux,

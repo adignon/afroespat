@@ -19,10 +19,45 @@ import type {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
+import { buildPage, type CursorPayload, decodeCursor } from '../../common/cursor';
+import { loadEnv } from '../../config/env';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import type { StaffUser } from '../../common/staff.guard';
 import { CommunitiesService } from '../communities/communities.service';
+
+/**
+ * Le tri des villes est COMPOSITE (`is_active` décroissant, puis le nom), et
+ * `CursorPayload.sort` ne porte qu'une valeur. Les deux clés y voyagent donc
+ * empaquetées, séparées par un octet nul : il ne peut pas apparaître dans un nom
+ * de ville, là où un `|` ou un `:` pourrait.
+ *
+ * Le paquet n'est JAMAIS lisible par un client : le curseur est signé et opaque
+ * (§5.3). Sa forme peut donc changer sans casser personne — c'est précisément ce
+ * que l'opacité achète.
+ */
+const CITY_SORT_SEPARATOR = '\u0000';
+
+function packCitySort(row: { isActive: boolean; name: string }): string {
+  return `${row.isActive ? '1' : '0'}${CITY_SORT_SEPARATOR}${row.name}`;
+}
+
+function unpackCitySort(
+  after: CursorPayload | null,
+): { isActive: boolean; name: string; id: string } | null {
+  if (after === null) return null;
+  const packed = typeof after.sort === 'string' ? after.sort : '';
+  const cut = packed.indexOf(CITY_SORT_SEPARATOR);
+  // Un curseur signé mais déformé est un défaut, pas une entrée hostile : on
+  // refuse plutôt que de reprendre au début en silence, ce qui répéterait la
+  // première page sans que personne ne s'en aperçoive.
+  if (cut === -1) throw ApiError.validation([{ path: 'cursor', code: 'MALFORMED' }]);
+  return {
+    isActive: packed.slice(0, cut) === '1',
+    name: packed.slice(cut + CITY_SORT_SEPARATOR.length),
+    id: after.id,
+  };
+}
 
 /**
  * Administration des référentiels — 02-referentiels.md §4.2.
@@ -49,6 +84,9 @@ export class ReferentialsService {
     private readonly outbox: OutboxService,
     private readonly communities: CommunitiesService,
   ) {}
+
+  /** Le secret de signature des curseurs (§5.3) : lu une fois, pas à chaque page. */
+  private readonly cursorSecret = loadEnv().CURSOR_SECRET;
 
   // ── Listes simples : langues, compétences, métiers ─────────────────────────
 
@@ -266,16 +304,67 @@ export class ReferentialsService {
 
   // ── Villes ─────────────────────────────────────────────────────────────────
 
+  /**
+   * `GET /admin/ref/cities` (§4.2).
+   *
+   * ELLE TRONQUAIT EN SILENCE. Un `take: query.limit` suivi d'un
+   * `nextCursor: null` ÉCRIT EN DUR : mesuré à 50 villes rendues sur 65 en base,
+   * avec une enveloppe qui affirmait la fin de liste. L'écran affichait « 50 »
+   * sans pouvoir savoir qu'il en manquait quinze, et une boucle de suivi de
+   * curseur côté client était défaite par la route elle-même — le curseur qu'elle
+   * attendait n'était jamais émis. C'est le défaut de famille du dépôt : une
+   * valeur écrite que personne ne relit.
+   *
+   * LE TRI EST COMPOSITE — `is_active` décroissant puis le nom — donc le curseur
+   * ne peut pas porter le seul identifiant : deux villes homonymes de pays
+   * différents existent, et le `name` seul ne départage pas. La clé de reprise est
+   * le TRIPLET (`is_active`, `name`, `id`), et `id` le rend total. Le `sort` du
+   * curseur transporte les deux premiers (voir `packCitySort`).
+   *
+   * `meta.total` est RENDU, et c'est la seconde moitié du défaut : l'écran
+   * d'administration doit pouvoir écrire « 50 sur 65 ». Un `count` par page coûte
+   * une requête supplémentaire sur une table de 65 lignes filtrée par index —
+   * assumé ici, sur une route d'équipe, et à ne pas reproduire sur un fil.
+   */
   async listCities(query: CitiesAdminQuery) {
     const where: Prisma.CityWhereInput = {
       ...(query.countryId === undefined ? {} : { countryId: query.countryId }),
       ...(query.active === undefined ? {} : { isActive: query.active === 'true' }),
       ...(query.q === undefined ? {} : { name: { contains: query.q, mode: 'insensitive' } }),
     };
-    const items = await this.prisma.city.findMany({
-      where,
-      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
-      take: query.limit,
+
+    const scope = `admin:cities:${query.countryId ?? ''}:${query.active ?? ''}:${query.q ?? ''}`;
+    const after =
+      query.cursor === undefined ? null : decodeCursor(query.cursor, this.cursorSecret, scope);
+    const resume = unpackCitySort(after);
+
+    const rows = await this.prisma.city.findMany({
+      where:
+        resume === null
+          ? where
+          : {
+              AND: [
+                where,
+                {
+                  OR: [
+                    // `is_active` décroissant : les villes actives d'abord. « Après »
+                    // une ville active comprend donc TOUT le bloc inactif.
+                    ...(resume.isActive ? [{ isActive: false }] : []),
+                    {
+                      isActive: resume.isActive,
+                      OR: [
+                        { name: { gt: resume.name } },
+                        { name: resume.name, id: { gt: resume.id } },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+      // `id` en dernière clé : sans lui le tri n'est pas total, et une page
+      // pourrait répéter ou sauter une ville homonyme.
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }, { id: 'asc' }],
+      take: query.limit + 1,
       select: {
         id: true,
         name: true,
@@ -290,8 +379,11 @@ export class ReferentialsService {
         country: { select: { id: true, iso2: true, nameFr: true } },
       },
     });
+    const page = buildPage(rows, query.limit, scope, this.cursorSecret, packCitySort);
+    const total = await this.prisma.city.count({ where });
+
     return {
-      items: items.map((c) => ({
+      items: page.items.map((c) => ({
         ...c,
         latitude: Number(c.latitude),
         longitude: Number(c.longitude),
@@ -311,7 +403,8 @@ export class ReferentialsService {
          */
         isPilot: isPilotCitySlug(c.slug),
       })),
-      nextCursor: null,
+      nextCursor: page.nextCursor,
+      meta: { total },
     };
   }
 

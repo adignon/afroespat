@@ -8,6 +8,7 @@ import {
   MENTORSHIP_MONEY_BANNER,
   MENTORSHIP_REQUEST_EXPIRY_MS,
   MENTORSHIP_REVIEW_WINDOW_MS,
+  MENTORSHIP_REVIEWS_BOTH_IN,
   MENTOR_MAX_MAX_MENTEES,
   MENTOR_SETTLED_MONTHS,
   type MentorProfileInput,
@@ -1044,22 +1045,39 @@ export class MentorshipService {
     });
   }
 
-  /** §2.4 : « visible seulement une fois les deux évaluations déposées ou après 14 jours ». */
+  /**
+   * §2.4 : « visible seulement une fois les deux évaluations déposées ou après 14 jours ».
+   *
+   * LA BRANCHE « LES DEUX DÉPOSÉES » ÉTAIT MORTE, ET LA FICHE RESTAIT MUETTE
+   * QUATORZE JOURS.
+   *
+   * La version précédente comptait les évaluations par parrainage DANS LA PAGE
+   * qu'elle venait de lire — une page filtrée sur `revieweeUserId: userId`, donc
+   * sur les évaluations dont ce membre est le SUJET. Or `mentorship_reviews` porte
+   * `@@unique([mentorshipId, reviewerUserId])` et un parrainage n'a que deux
+   * parties : le filleul évalue le parrain, le parrain évalue le filleul. Pour un
+   * sujet donné, il n'y a donc JAMAIS plus d'UNE évaluation par parrainage, et le
+   * test `>= 2` ne pouvait pas être vrai une seule fois. Seule la fenêtre de
+   * quatorze jours rendait une évaluation visible : deux évaluations déposées le
+   * jour même rendaient `reviews: []`, et la fiche d'un parrain se taisait pendant
+   * deux semaines après chaque parrainage — exactement l'inverse de ce que §2.4
+   * veut, puisque la fenêtre y est le REPLI et l'accord mutuel le cas normal.
+   *
+   * « Les deux évaluations » sont celles DU PARRAINAGE, dans les deux sens. C'est
+   * donc `mentorship._count.reviews` qui décide, lu en base et non recompté sur la
+   * page : un comptage fait sur la page serait de surcroît faux dès que le `take`
+   * coupe entre deux parrainages.
+   */
   private async visibleReviewsFor(userId: string) {
     const reviews = await this.prisma.mentorshipReview.findMany({
       where: { revieweeUserId: userId },
       orderBy: { id: 'desc' },
       take: 20,
       include: {
-        mentorship: { select: { id: true, endedAt: true } },
+        mentorship: { select: { id: true, endedAt: true, _count: { select: { reviews: true } } } },
         reviewer: { select: { handle: true, displayName: true, deletedAt: true } },
       },
     });
-
-    const perMentorship = new Map<string, number>();
-    for (const review of reviews) {
-      perMentorship.set(review.mentorshipId, (perMentorship.get(review.mentorshipId) ?? 0) + 1);
-    }
 
     const now = Date.now();
     return reviews
@@ -1067,7 +1085,7 @@ export class MentorshipService {
         const endedAt = review.mentorship.endedAt;
         const windowOver =
           endedAt !== null && now - endedAt.getTime() >= MENTORSHIP_REVIEW_WINDOW_MS;
-        return windowOver || (perMentorship.get(review.mentorshipId) ?? 0) >= 2;
+        return windowOver || review.mentorship._count.reviews >= MENTORSHIP_REVIEWS_BOTH_IN;
       })
       .map((review) => ({
         rating: review.rating,

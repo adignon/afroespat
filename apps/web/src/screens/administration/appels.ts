@@ -1,16 +1,33 @@
 'use client';
 
 import {
+  DASHBOARD_BLOCKS,
+  DASHBOARD_METRICS,
   IMPACT_METRICS,
   MAX_PAGE_LIMIT,
   adminCitiesResponseSchema,
+  adminDashboardResponseSchema,
   adminImpactResponseSchema,
+  adminModerationCaseDetailSchema,
+  adminModerationStatsResponseSchema,
+  adminProProfilesResponseSchema,
   type AdminCitiesResponse,
   type AdminCity,
+  type AdminDashboardResponse,
+  type AdminModerationCaseDetail,
+  type AdminModerationStatsResponse,
   type MetricPoint,
+  type ReportSubjectType,
 } from '@app/shared';
-import { staffApi } from '@/lib/api/index';
-import type { D08Data, D16Data, VilleD08 } from './data';
+/**
+ * Chemin RELATIF, et non l'alias `@/` : c'est ce qu'emploient tous les modules de
+ * ce dépôt qui portent un test unitaire (`screens/reseaux/from-api.ts`,
+ * `screens/accueil/…`). `apps/web/vitest.config.ts` ne déclare pas `resolve.alias`,
+ * donc un import en `@/` se résout sous Next mais PAS sous Vitest — et la dérivation
+ * de cet écran doit être éprouvable. Le relatif marche sous les deux.
+ */
+import { staffApi } from '../../lib/api/index';
+import type { D02Data, D04Data, D05Data, D08Data, D10Data, D16Data, VilleD08 } from './data';
 
 /**
  * LES APPELS DES ÉCRANS D01 À D16 — le domaine ÉQUIPE, et lui seul.
@@ -323,4 +340,427 @@ export async function chargerD16(): Promise<D16Data> {
       trimestre: trimestreFr(rapport.trimestre),
     },
   };
+}
+
+// ─── D02 · /admin — le tableau de bord ───────────────────────────────────────
+
+/**
+ * UN SEUL APPEL, et c'est une décision de SÉCURITÉ, pas d'économie.
+ *
+ * `GET /admin/dashboard` est ouvert aux QUATRE rôles (`STAFF_SCOPES.dashboard` :
+ * SUPER_ADMIN, CONTENT_ADMIN, MODERATOR, SUPPORT). Les nombres qui manquent aux
+ * cartes de D02 vivent dans des routes PLUS RESTREINTES —
+ * `GET /admin/moderation/stats` exclut `SUPPORT`, `GET /admin/ref/cities` exige
+ * `content` (SUPER_ADMIN ou CONTENT_ADMIN).
+ *
+ * Les appeler d'ici pour compléter une carte rendrait le tableau de bord 403 pour
+ * des rôles que §2.2 autorise à le voir. Un écran ne doit JAMAIS exiger plus de
+ * privilège que ce qu'il affiche : c'est la règle dure « aucune donnée personnelle
+ * au-delà de ce que le rôle permet » prise par l'autre bout — ici ce n'est pas une
+ * fuite, c'est un refus de service, et il serait invisible pour qui développe en
+ * SUPER_ADMIN.
+ *
+ * D'où la règle inscrite dans `data.ts` : une carte n'est liée que si CETTE route
+ * porte chacun de ses nombres. Les sept autres restent dessinées.
+ */
+
+/**
+ * Un bloc que l'écran ATTEND, et qui doit donc être là.
+ *
+ * `adminDashboardResponseSchema` valide la FORME (`z.record`, parce que le serveur
+ * décide des blocs et qu'un douzième ne doit pas arrêter le tableau de bord).
+ * Ici on exige le CONTENU dont l'écran dépend : un bloc attendu qui manque est un
+ * désaccord de contrat, et il lève avec la liste de ce que l'API a réellement
+ * envoyé.
+ *
+ * Pas de `?? []` : un bloc absent rendu comme un bloc vide donnerait « 0 inscrit »
+ * sur un tableau de bord d'apparence normale. C'est le raisonnement de `mesure()`
+ * ci-dessus, au niveau du bloc.
+ */
+function bloc(reponse: AdminDashboardResponse, nom: string): readonly MetricPoint[] {
+  const points = reponse.blocks[nom];
+  if (points === undefined) {
+    throw new Error(
+      `Le bloc « ${nom} » manque à la réponse de GET /admin/dashboard. Le tableau de ` +
+        `bord n’affiche pas zéro à sa place : zéro est un fait, pas une absence. ` +
+        `Blocs reçus : ${Object.keys(reponse.blocks).join(', ') || '(aucun)'}.`,
+    );
+  }
+  return points;
+}
+
+/**
+ * La mesure GLOBALE d'un bloc — celle dont la ventilation est vide.
+ *
+ * Même exigence que `mesure()` : une mesure absente LÈVE. `dimension: ''` est la
+ * tranche globale, et l'exiger empêche de rendre la première ventilation venue à
+ * la place du total.
+ */
+function globale(points: readonly MetricPoint[], nom: string): number {
+  const point = points.find((p) => p.metric === nom && p.dimension === '');
+  if (point === undefined) {
+    throw new Error(
+      `La mesure « ${nom} » manque au bloc lu de GET /admin/dashboard. Zéro est un ` +
+        `fait, pas une absence. Mesures reçues : ` +
+        `${points.map((p) => p.metric).join(', ') || '(aucune)'}.`,
+    );
+  }
+  return point.value;
+}
+
+/**
+ * UNE TRANCHE d'une mesure ventilée — et ici, l'absence VEUT DIRE ZÉRO.
+ *
+ * ── POURQUOI LA RÈGLE S'INVERSE, ET POURQUOI CE N'EST PAS UN RELÂCHEMENT ────
+ *
+ * `globale()` lève sur une mesure absente ; celle-ci rend 0 sur une TRANCHE
+ * absente. La différence n'est pas de rigueur, elle est de nature, et elle est
+ * mesurable sur la charge relevée : `journeys.by_status` arrive avec la SEULE
+ * dimension `ACTIVE`, parce que ces mesures sont des `GROUP BY` — un seau vide ne
+ * produit aucune ligne. `COMPLETED` absent veut donc dire « aucun parcours
+ * abouti », ce qui est un FAIT, et lever dessus arrêterait le tableau de bord
+ * d'une plateforme jeune où presque tous les seaux sont vides.
+ *
+ * Ce qui reste gardé est le NOM DE LA MESURE : si `journeys.by_status` n'apparaît
+ * sur AUCUNE ligne, c'est un désaccord de contrat — un nom mal orthographié, une
+ * mesure renommée — et là on lève. Un nom introuvable et un seau vide ne se
+ * confondent pas, et c'est exactement la distinction qu'un `?? 0` posé partout
+ * aurait effacée.
+ */
+function tranche(points: readonly MetricPoint[], nom: string, dimension: string): number {
+  if (!points.some((p) => p.metric === nom)) {
+    throw new Error(
+      `La mesure ventilée « ${nom} » ne figure sur AUCUNE ligne du bloc lu de ` +
+        `GET /admin/dashboard — ce n’est pas une tranche vide, c’est un nom que ` +
+        `l’API ne connaît pas. Mesures reçues : ` +
+        `${[...new Set(points.map((p) => p.metric))].join(', ') || '(aucune)'}.`,
+    );
+  }
+  return points.find((p) => p.metric === nom && p.dimension === dimension)?.value ?? 0;
+}
+
+/** La somme de toutes les tranches d'une mesure ventilée. */
+function sommeDesTranches(points: readonly MetricPoint[], nom: string): number {
+  if (!points.some((p) => p.metric === nom)) {
+    throw new Error(
+      `La mesure ventilée « ${nom} » ne figure sur aucune ligne du bloc lu de ` +
+        `GET /admin/dashboard. Mesures reçues : ` +
+        `${[...new Set(points.map((p) => p.metric))].join(', ') || '(aucune)'}.`,
+    );
+  }
+  return points.filter((p) => p.metric === nom).reduce((t, p) => t + p.value, 0);
+}
+
+/**
+ * Une part, dans les mots de la maquette : « 41 % ».
+ *
+ * ARRONDIE À L'ENTIER, comme la maquette l'écrit, et le dénominateur à zéro rend
+ * « 0 % » plutôt que « NaN % » — une plateforme sans aucun membre est un état
+ * normal le premier jour, pas une erreur.
+ */
+function part(numerateur: number, denominateur: number): string {
+  if (denominateur === 0) return '0 %';
+  return `${nombre(Math.round((numerateur / denominateur) * 100))} %`;
+}
+
+/**
+ * Un délai en minutes, dans les mots de la maquette : « 19 h ».
+ *
+ * La maquette écrit des heures ; l'API sert des MINUTES
+ * (`help.first_response_median_minutes`). Sous l'heure, on garde les minutes
+ * plutôt que d'écrire « 0 h » — qui dirait « immédiat » là où le vrai délai est de
+ * quarante minutes.
+ */
+function delai(minutes: number): string {
+  if (minutes < 60) return `${nombre(Math.round(minutes))} min`;
+  return `${nombre(Math.round(minutes / 60))} h`;
+}
+
+/**
+ * D02 — les cinq cartes dont CHAQUE nombre est servi, DÉRIVÉES SANS APPEL.
+ *
+ * ── POURQUOI LA DÉRIVATION EST SÉPARÉE DE L'APPEL ──────────────────────────
+ *
+ * `chargerD02` ne fait que deux choses : appeler, puis passer la réponse ici.
+ * Tout le jugement — quel bloc, quelle mesure, quelle tranche, quel arrondi —
+ * est dans cette fonction PURE, et c'est ce qui la rend éprouvable sur la charge
+ * RELEVÉE (`fixtures/admin_dashboard.json`, 7 905 octets pris sur l'API qui
+ * tourne) plutôt que sur un objet façonné à la mesure du test.
+ *
+ * C'est la discipline des autres modules de ce dépôt — voir
+ * `screens/reseaux/from-api.ts` et son test : charge réelle → schéma partagé →
+ * prises du cadre, la chaîne complète et non les convertisseurs seuls.
+ *
+ * Les sept autres cartes restent dessinées, et `data.ts` dit laquelle à cause de
+ * quel nombre manquant. Rien n'est recollé depuis une autre route : voir
+ * l'en-tête de cette section.
+ */
+export function vueD02(reponse: AdminDashboardResponse): D02Data {
+  const membres = bloc(reponse, DASHBOARD_BLOCKS.membres);
+  const parcours = bloc(reponse, DASHBOARD_BLOCKS.parcours);
+  const entraide = bloc(reponse, DASHBOARD_BLOCKS.entraide);
+  const guides = bloc(reponse, DASHBOARD_BLOCKS.guides);
+  const services = bloc(reponse, DASHBOARD_BLOCKS.services);
+
+  /**
+   * « Niveau 2 » est une PART, et son dénominateur est la somme des niveaux — pas
+   * `members.registered`. Les deux diffèrent : un membre supprimé sort du compte
+   * des inscrits sans forcément sortir de la ventilation par niveau, et rapporter
+   * L2 à un total pris ailleurs donnerait une part fausse sans que rien ne le
+   * dise. On rapporte la tranche à la somme des tranches de la MÊME mesure.
+   */
+  const niveaux = sommeDesTranches(membres, DASHBOARD_METRICS.membresParNiveau);
+
+  return {
+    membres: {
+      inscrits: nombre(globale(membres, DASHBOARD_METRICS.membresInscrits)),
+      actifs30j: nombre(globale(membres, DASHBOARD_METRICS.membresActifs30j)),
+      niveau2: part(tranche(membres, DASHBOARD_METRICS.membresParNiveau, 'L2'), niveaux),
+    },
+    parcours: {
+      crees: nombre(sommeDesTranches(parcours, DASHBOARD_METRICS.parcoursParStatut)),
+      actifs: nombre(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'ACTIVE')),
+      aboutis: nombre(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'COMPLETED')),
+      enPause: nombre(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'PAUSED')),
+    },
+    entraide: {
+      ouvertes: nombre(tranche(entraide, DASHBOARD_METRICS.entraideParStatut, 'OPEN')),
+      resolues: nombre(tranche(entraide, DASHBOARD_METRICS.entraideParStatut, 'RESOLVED')),
+      delaiMedian: delai(globale(entraide, DASHBOARD_METRICS.entraideDelaiMedianMinutes)),
+    },
+    guides: {
+      publies: nombre(tranche(guides, DASHBOARD_METRICS.guidesParStatut, 'PUBLISHED')),
+      aVerifier: nombre(tranche(guides, DASHBOARD_METRICS.guidesParStatut, 'FLAGGED')),
+    },
+    services: {
+      /**
+       * Les annonces EN LIGNE : logements actifs plus emplois actifs.
+       *
+       * La maquette écrit « Annonces » sans dire si les expirées comptent. Les deux
+       * mesures ventilent par statut et la charge relevée porte `EXPIRED` sur les
+       * deux ; prendre la somme de TOUTES les tranches aurait donné le nombre
+       * d'annonces jamais publiées, pas le nombre d'annonces. On prend les actives,
+       * qui est ce qu'un tableau de bord d'aujourd'hui montre, et la lecture est
+       * écrite ici pour que le porteur puisse la corriger d'une ligne.
+       */
+      annonces: nombre(
+        tranche(services, DASHBOARD_METRICS.logementsParStatut, 'ACTIVE') +
+          tranche(services, DASHBOARD_METRICS.emploisParStatut, 'ACTIVE'),
+      ),
+      fichesPro: nombre(tranche(services, DASHBOARD_METRICS.prosParVerification, 'APPROVED')),
+    },
+  };
+}
+
+/** D02 — l'appel, et rien d'autre : tout le jugement est dans `vueD02`. */
+export async function chargerD02(): Promise<D02Data> {
+  return vueD02(await staffApi.get('/dashboard', adminDashboardResponseSchema));
+}
+
+// ─── D04 · /admin/moderation ─────────────────────────────────────────────────
+
+/**
+ * D04 — le compte des dossiers DANS LA FILE.
+ *
+ * ─── POURQUOI `/moderation/stats` ET NON LA LONGUEUR DE LA LISTE ───────────
+ *
+ * Le réflexe est de compter `items.length` sur `GET /moderation/cases`. Il est
+ * faux, et mesurablement : cette route pagine à `MAX_PAGE_LIMIT`, donc la
+ * longueur plafonne à cinquante et afficherait « 50 dossiers ouverts » sur une
+ * file de mille huit cent quarante-sept. Un plafond qui ressemble à un total est
+ * exactement le défaut que ce dépôt a déjà payé.
+ *
+ * `openByPriority` est un `GROUP BY` sur toute la table, donc un vrai total, et
+ * sa somme est le nombre de dossiers de la file. Les deux routes exigent le MÊME
+ * jeu de rôles — MODERATOR, CONTENT_ADMIN, SUPER_ADMIN — donc l'appeler d'ici
+ * n'interdit l'écran à personne qui y aurait droit. C'est la vérification que D02
+ * a rendue obligatoire : on compare les rôles AVANT d'ajouter un appel.
+ *
+ * ── `OPEN` + `IN_REVIEW`, ET C'EST LE BON COMPTE POUR CET ÉCRAN ────────────
+ *
+ * `openByPriority` compte les statuts `OPEN` et `IN_REVIEW` (vérifié dans
+ * `ModerationService.stats`). Sa somme est donc à 1847 quand
+ * `moderation.cases_by_status/OPEN` du tableau de bord est à 1811 : 36 dossiers
+ * sont en cours d'examen. Les deux nombres sont justes ; celui-ci est celui de la
+ * FILE, et la file est ce que cet écran montre. Prendre l'autre aurait fait
+ * disparaître du compteur trente-six dossiers qui sont bien dans le tableau.
+ */
+export function vueD04(stats: AdminModerationStatsResponse): D04Data {
+  const ouverts = Object.values(stats.openByPriority).reduce((t, n) => t + n, 0);
+  return { file: { ouverts: nombre(ouverts) } };
+}
+
+export async function chargerD04(): Promise<D04Data> {
+  return vueD04(await staffApi.get('/moderation/stats', adminModerationStatsResponseSchema));
+}
+
+// ─── D05 · /admin/moderation/:id ─────────────────────────────────────────────
+
+/**
+ * Le type de contenu visé, dans les mots de la maquette.
+ *
+ * `ReportSubjectType` est une énumération FERMÉE de douze valeurs, et les douze
+ * sont nommées ici — pas onze. Un `?? subjectType` en repli aurait affiché
+ * `HELP_RESPONSE` en toutes lettres à un modérateur le jour où un dossier porte
+ * ce type, et le défaut ne se serait vu que ce jour-là. L'exhaustivité est tenue
+ * par le type : `Record<ReportSubjectType, string>` ne compile pas s'il en manque
+ * une, donc l'ajout d'un treizième type au schéma Prisma arrête la compilation
+ * ici plutôt que de produire une étiquette brute à l'écran.
+ *
+ * Les quatre mots que la maquette écrit elle-même — « Publication »,
+ * « Annonce », « Message », « Commentaire », « Story » — sont repris
+ * À L'IDENTIQUE. Les autres suivent le vocabulaire des maquettes de leur module.
+ */
+const SUJET_FR: Record<ReportSubjectType, string> = {
+  POST: 'Publication',
+  COMMENT: 'Commentaire',
+  TOPIC: 'Sujet',
+  GUIDE: 'Guide',
+  HELP_REQUEST: 'Demande d’entraide',
+  HELP_RESPONSE: 'Réponse d’entraide',
+  HOUSING: 'Annonce',
+  JOB: 'Offre d’emploi',
+  PRO: 'Fiche pro',
+  EVENT: 'Événement',
+  MESSAGE: 'Message',
+  USER: 'Membre',
+};
+
+/**
+ * L'état du SLA, dans les mots de la maquette.
+ *
+ * La maquette n'écrit que « dépassé », parce qu'elle ne dessine qu'un dossier en
+ * retard. Les deux autres états existent au serveur (`slaState` : `OK`,
+ * `WARNING`, `OVERDUE`) et il faut bien les écrire quelque part — les laisser
+ * tomber sur « dépassé » afficherait « SLA dépassé » sur un dossier dans les
+ * délais, ce qui ferait traiter en urgence ce qui n'en est pas une.
+ *
+ * Ces deux mots sont donc du TEXTE QUI NE VIENT PAS DE LA MAQUETTE, et c'est dit
+ * ici plutôt que glissé : ils sont inévitables dès lors que l'état est servi.
+ *
+ * L'ÉTAT EST CALCULÉ PAR LE SERVEUR et jamais ici : l'horloge du navigateur est
+ * réglable, et un modérateur dont la machine est en retard ne doit pas voir
+ * « respecté » sur un dossier hors délai. C'est écrit en toutes lettres au-dessus
+ * de `slaState` dans `@app/shared`, et cet écran s'y tient.
+ */
+const SLA_FR = {
+  OK: 'respecté',
+  WARNING: 'bientôt dépassé',
+  OVERDUE: 'dépassé',
+} as const;
+
+/**
+ * D05 — le sous-titre du dossier, et lui seul.
+ *
+ * Les trois valeurs sont servies ; tout le reste de la planche ne l'est pas, et
+ * `data.ts` dit quoi à cause de quel champ manquant. Le manque qui compte est le
+ * CONTENU VISÉ : aucune route d'équipe ne le joint au dossier, donc l'écran qui
+ * sert à décider d'une sanction ne peut pas montrer ce qu'il sanctionne.
+ */
+export function vueD05(dossier: AdminModerationCaseDetail): D05Data {
+  /**
+   * LES DEUX LIBELLÉS SONT EXIGÉS, PAS REPLIÉS.
+   *
+   * `Record<ReportSubjectType, string>` garantit l'exhaustivité à la COMPILATION :
+   * ajouter un treizième type de sujet au schéma Prisma arrête `tsc` ici. Mais
+   * `noUncheckedIndexedAccess` est actif dans ce dépôt, donc un accès indexé est
+   * typé `string | undefined` même sur un dictionnaire exhaustif.
+   *
+   * On ne le fait pas taire par un `?? dossier.subjectType`, qui afficherait
+   * `HELP_RESPONSE` en toutes lettres à un modérateur, ni par un `!`, qui
+   * mentirait au compilateur. On REFUSE, en nommant la valeur reçue : si le
+   * serveur se met à rendre un type que ce dictionnaire ne connaît pas, l'écran
+   * s'arrête au lieu d'afficher une constante d'énumération dans une phrase
+   * française.
+   */
+  const sujet = SUJET_FR[dossier.subjectType];
+  if (sujet === undefined) {
+    throw new Error(
+      `GET /admin/moderation/cases/:id rend le type de sujet « ${dossier.subjectType} », ` +
+        `que D05 ne sait pas écrire en français. Ajouter son libellé à SUJET_FR plutôt ` +
+        `que d’afficher la constante d’énumération à un modérateur.`,
+    );
+  }
+
+  const slaEtat = SLA_FR[dossier.sla];
+  if (slaEtat === undefined) {
+    throw new Error(
+      `GET /admin/moderation/cases/:id rend l’état de SLA « ${dossier.sla} », inconnu de ` +
+        `D05. Un état de SLA mal écrit ferait traiter en urgence un dossier dans les ` +
+        `délais, ou l’inverse.`,
+    );
+  }
+
+  return {
+    dossier: { sujet, priorite: String(dossier.priority), slaEtat },
+  };
+}
+
+export async function chargerD05(id: string): Promise<D05Data> {
+  /**
+   * Le chemin est CALCULÉ, donc `assertStaffPath` le contrôle à l'exécution :
+   * `id` vient de l'URL, et un segment `..` y ferait sortir l'appel de `/v1/admin`
+   * — le navigateur normalise avant d'émettre. Le type seul ne voit pas un chemin
+   * calculé ; c'est exactement le cas pour lequel le contrôle existe.
+   *
+   * `encodeURIComponent` en plus : un identifiant qui porterait un `?` couperait
+   * le chemin et interrogerait la liste au lieu du dossier.
+   */
+  return vueD05(
+    await staffApi.get(
+      `/moderation/cases/${encodeURIComponent(id)}`,
+      adminModerationCaseDetailSchema,
+    ),
+  );
+}
+
+// ─── D10 · /admin/services ───────────────────────────────────────────────────
+
+/**
+ * Le nombre de pages de fiches pro que l'on suit avant de REFUSER.
+ *
+ * Même raisonnement que `PAGES_VILLES_MAX`, et même refus d'une borne qui
+ * tronquerait en silence : on suit le curseur jusqu'au bout, et l'atteinte de la
+ * borne LÈVE en nommant ce qu'elle a lu. Vingt pages de cinquante font mille
+ * justificatifs en attente ; si la file les dépasse, ce n'est plus un compteur
+ * qu'il faut mais une file paginée à l'écran, que la maquette ne dessine pas.
+ */
+const PAGES_PRO_MAX = 20;
+
+/**
+ * D10 — les justificatifs pro en attente, COMPTÉS en entier.
+ *
+ * ─── CETTE ROUTE PAGINE HONNÊTEMENT, ET C'EST CE QUI REND LE COMPTE POSSIBLE ─
+ *
+ * `AdminService.listProProfiles` fait `take: query.limit + 1` puis `buildPage` :
+ * `nextCursor` est non nul tant qu'il reste des pages. Suivre le curseur donne
+ * donc un vrai total, en l'absence de `meta.count`.
+ *
+ * Ce n'est pas vrai de toutes les listes de ce module — voir la note au-dessus de
+ * `lireToutesLesVilles` — et c'est pourquoi la vérification a été faite AVANT
+ * d'écrire ce compteur plutôt qu'après. Un compteur bâti sur une route qui
+ * tronque en affirmant la fin aurait affiché « 50 » pour toujours.
+ */
+export async function chargerD10(): Promise<D10Data> {
+  let total = 0;
+  let cursor: string | null = null;
+
+  for (let page = 0; page < PAGES_PRO_MAX; page += 1) {
+    /** Les annotations coupent la boucle d'inférence — voir `lireToutesLesVilles`. */
+    const chemin: string =
+      cursor === null
+        ? `/pro-profiles?status=PENDING&limit=${MAX_PAGE_LIMIT}`
+        : `/pro-profiles?status=PENDING&limit=${MAX_PAGE_LIMIT}&cursor=${encodeURIComponent(cursor)}`;
+    const reponse = await staffApi.get(chemin, adminProProfilesResponseSchema);
+    total += reponse.items.length;
+    if (reponse.nextCursor === null) return { justificatifs: { enAttente: nombre(total) } };
+    cursor = reponse.nextCursor;
+  }
+
+  throw new Error(
+    `La file des justificatifs pro dépasse ${PAGES_PRO_MAX} pages de ${MAX_PAGE_LIMIT} ` +
+      `(${total} fiches lues et il en reste). D10 affiche un compteur, pas une file ` +
+      `paginée : à ce volume ce n’est plus la bonne forme. À trancher par le porteur — ` +
+      `on refuse plutôt que d’afficher un compte incomplet qui aurait l’air normal.`,
+  );
 }

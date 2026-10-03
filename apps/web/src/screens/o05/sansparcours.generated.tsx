@@ -5,9 +5,9 @@
 // extérieur, lui, est fluide : la maquette le fige à 700 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
-import type { OnboardingVals } from '../onboarding/data';
+import type { O05Data } from '../onboarding/data';
 
-export function O05SansParcours(props: OnboardingVals) {
+export function O05SansParcours(props: O05Data) {
   const { events } = props;
 
   return (

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 import { PRODUCT_NAME, PWA_THEME_COLOR } from '@app/shared';
+import { Notifications } from '@/components/notifications';
 import './globals.css';
 
 /** Plus Jakarta Sans, les graisses employées par le design (T1 §2.2). */
@@ -56,6 +57,16 @@ export default function RootLayout({ children }: { readonly children: React.Reac
          *     nulle part ailleurs ».
          */}
         {children}
+        {/**
+         * LE RÉCEPTACLE DES NOTIFICATIONS, LUI, EST BIEN À SA PLACE ICI.
+         *
+         * La note ci-dessus explique pourquoi `SessionBoot` a dû quitter ce layout :
+         * il ÉMETTAIT une requête, donc il contaminait les pages d'équipe. Celui-ci
+         * n'émet rien, ne lit aucune session, et ne rend aucun nœud tant qu'aucune
+         * notification n'existe. Il n'y a rien à cloisonner — et un réceptacle par
+         * zone donnerait trois files pour une seule.
+         */}
+        <Notifications />
       </body>
     </html>
   );

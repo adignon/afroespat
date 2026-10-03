@@ -31,6 +31,13 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
+import {
+  buildPage,
+  createdAtDescAfter,
+  createdAtDescSort,
+  decodeCreatedAtDesc,
+} from '../../common/cursor';
+import { loadEnv } from '../../config/env';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import {
@@ -118,6 +125,9 @@ export class BillingService {
     @Optional() @Inject(INVOICE_PDF) private readonly invoices: InvoicePdfPort = new NoInvoicePdfPort(),
   ) {}
 
+  /** Le secret de signature des curseurs (§5.3). */
+  private readonly cursorSecret = loadEnv().CURSOR_SECRET;
+
   private fail(code: BillingErrorCode, details?: Record<string, unknown>): never {
     throw new ApiError(code, BILLING_ERROR_MESSAGES[code], BILLING_ERROR_CODES[code], details);
   }
@@ -182,15 +192,28 @@ export class BillingService {
     };
   }
 
-  /** `GET /me/payments` : les factures du membre. */
+  /**
+   * `GET /me/payments` : les factures du membre.
+   *
+   * ELLE TRONQUAIT EN SILENCE : `take: query.limit` suivi d'un `nextCursor: null`
+   * écrit en dur. Sur le domaine MEMBRE, et sur des FACTURES — un membre qui a
+   * plus de vingt paiements ne pouvait pas atteindre les plus anciens, et l'écran
+   * lui affirmait qu'il n'y en avait pas d'autres. Un historique comptable qui
+   * mentit par omission est pire qu'un historique vide.
+   */
   async myPayments(userId: string, query: PaymentsQuery) {
+    const scope = `me:payments:${userId}:${query.status ?? ''}`;
+    const resume = decodeCreatedAtDesc(query.cursor, this.cursorSecret, scope);
+
     const rows = await this.prisma.payment.findMany({
       where: {
-        userId,
-        ...(query.status === undefined ? {} : { status: query.status }),
+        AND: [
+          { userId, ...(query.status === undefined ? {} : { status: query.status }) },
+          ...createdAtDescAfter(resume),
+        ],
       },
-      orderBy: { createdAt: 'desc' },
-      take: query.limit,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
       select: {
         id: true,
         amountCents: true,
@@ -204,8 +227,10 @@ export class BillingService {
       },
     });
 
+    const page = buildPage(rows, query.limit, scope, this.cursorSecret, createdAtDescSort);
+
     return {
-      items: rows.map((r) => ({
+      items: page.items.map((r) => ({
         id: r.id,
         amount: { amountCents: r.amountCents, currency: r.currency },
         provider: r.provider,
@@ -215,7 +240,7 @@ export class BillingService {
         paidAt: r.paidAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
       })),
-      nextCursor: null,
+      nextCursor: page.nextCursor,
     };
   }
 
@@ -969,6 +994,9 @@ export class BillingService {
         limits: p.limits,
         isActive: p.isActive,
       })),
+      // §5.3 : l'enveloppe de liste veut `nextCursor`, et il MANQUAIT. `null` est
+      // honnête — le catalogue est rendu en entier, sans `take`.
+      nextCursor: null,
     };
   }
 
@@ -1032,16 +1060,33 @@ export class BillingService {
       });
     }
 
+    /**
+     * ELLE TRONQUAIT EN SILENCE, comme quatre autres routes du dépôt : `take`
+     * posé, `nextCursor: null` écrit en dur. Le tableau des abonnements de
+     * l'équipe s'arrêtait à vingt lignes en affirmant la fin de liste.
+     */
+    const scope = `admin:subs:${query.status ?? ''}:${query.provider ?? ''}:${String(query.trialsOnly)}`;
+    const resume = decodeCreatedAtDesc(query.cursor, this.cursorSecret, scope);
+
     const rows = await this.prisma.subscription.findMany({
+      where: { AND: [...conditions, ...createdAtDescAfter(resume)] },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
+      // `createdAt` est SÉLECTIONNÉ bien qu'il ne paraisse pas dans la réponse :
+      // c'est la valeur de tri que le curseur transporte. Sans elle, `buildPage`
+      // signerait un curseur sur une date `undefined`.
+      select: { ...SUBSCRIPTION_SELECT, userId: true, createdAt: true },
+    });
+
+    const page = buildPage(rows, query.limit, scope, this.cursorSecret, createdAtDescSort);
+    const total = await this.prisma.subscription.count({
       where: conditions.length === 0 ? {} : { AND: conditions },
-      orderBy: { createdAt: 'desc' },
-      take: query.limit,
-      select: { ...SUBSCRIPTION_SELECT, userId: true },
     });
 
     return {
-      items: rows.map((r) => ({ ...this.toSubscriptionView(r), userId: r.userId })),
-      nextCursor: null,
+      items: page.items.map((r) => ({ ...this.toSubscriptionView(r), userId: r.userId })),
+      nextCursor: page.nextCursor,
+      meta: { total },
     };
   }
 
@@ -1174,7 +1219,21 @@ export class BillingService {
       row.conversions += 1;
     }
 
-    return { items: [...months.values()].sort((a, b) => a.month.localeCompare(b.month)) };
+    /**
+     * §5.3 : `nextCursor` MANQUAIT à l'enveloppe. `null` est honnête sur la liste
+     * rendue — tous les mois de la plage y sont, sans `take`.
+     *
+     * CE QUI RESTE TRONQUÉ, ET QUI EST REMONTÉ, N'EST PAS L'ENVELOPPE : les deux
+     * lectures sources ci-dessus portent `take: 20_000`. Au-delà, l'agrégat est
+     * incomplet SANS QUE RIEN NE LE DISE — ce n'est pas une page manquante mais un
+     * chiffre d'affaires faux. Un agrégat ne se pagine pas ; il se calcule en base
+     * (`GROUP BY` par mois) ou il s'assume borné. Décision à prendre par le
+     * propriétaire, pas ici.
+     */
+    return {
+      items: [...months.values()].sort((a, b) => a.month.localeCompare(b.month)),
+      nextCursor: null,
+    };
   }
 
   // ══════════════════════════════════════════════════════════════════════════

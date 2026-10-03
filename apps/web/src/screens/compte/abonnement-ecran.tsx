@@ -75,7 +75,15 @@ export function AbonnementEcran({ volet }: { readonly volet: VoletPaiement | nul
           onFermer={onFermer}
           modales={{
             K06M: {
-              mobile: <Planche />,
+              /**
+               * LES TROIS VOLETS REÇOIVENT `K06Data`, et un seul en lit quelque
+               * chose : « Payer 2 600 F » est le MONTANT de `GET /plans`, et le
+               * figer sur l'écran où le membre s'engage est exactement la faute
+               * que le bloc ci-dessus décrit. Les deux autres volets n'ont rien à
+               * lire — code USSD de l'opérateur qu'aucune route ne rend, compte à
+               * rebours qui est une horloge — et leur signature le dit : `_props`.
+               */
+              mobile: <Planche {...donnees} />,
               // `moments.panelAdvance` : « vous avancez dans une démarche, vous ne
               // sautez pas d'un écran à l'autre ». Le premier volet reste une ouverture.
               phase: index,

@@ -85,6 +85,31 @@ export interface BandeauEntraide {
   readonly moi: MoiEntraide;
   readonly reputation: Reputation;
   readonly compteurs: CompteursEntraide;
+  /**
+   * ─── LA RÈGLE DURE §2.7, ET POURQUOI ELLE EST UNE DONNÉE ──────────────────
+   *
+   * « Chaque page de la section affiche en permanence : *Aucun versement entre
+   * membres pour une démarche administrative. Si on vous demande de l'argent,
+   * signalez.* » L'API la renvoie dans le `meta` de CHAQUE réponse du module
+   * (`HELP_SAFETY_BANNER`, exigé par `helpMetaSchema` en `z.string().min(1)`), et
+   * le commentaire de ce schéma dit pourquoi : « une règle de sécurité qui vit
+   * dans un composant disparaît au premier écran qu'on oublie de brancher ».
+   *
+   * Elle vivait pourtant dans les composants : les DIX cadres d'ordinateur
+   * l'écrivaient en dur, et aucun ne la lisait. Elle est donc ici, dans la forme
+   * que les dix partagent, et c'est le seul champ de ce bandeau qui porte une
+   * règle plutôt qu'un compteur.
+   *
+   * ÉCART SIGNALÉ, ET IL EST DANS LA MAQUETTE : sur les dix planches mobiles,
+   * DEUX seulement dessinent le bandeau — H01 et H03 — et elles l'ABRÈGENT, chacune
+   * différemment (« … pour une démarche. » et « … entre membres. », sans la seconde
+   * phrase). Les huit autres planches mobiles ne le dessinent pas du tout. La règle
+   * dit « chaque page » ; lier le texte rétablit la phrase entière là où la planche
+   * laisse la place, mais il faudrait que la maquette dessine le bandeau sur les
+   * huit autres. Remonté au porteur : ce n'est pas un trou de transcodage, c'est un
+   * trou de maquette, et il ne se comble pas en ajoutant des pixels ici.
+   */
+  readonly avertissement: string;
 }
 
 /**

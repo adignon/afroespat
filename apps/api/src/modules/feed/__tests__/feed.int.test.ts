@@ -1451,6 +1451,82 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     });
   }, TEST_TIMEOUT_MS);
 
+  /**
+   * [RÈGLE DURE] Le GENRE du média est filtré — 00 §8.1.
+   *
+   * §8.1 range le justificatif d'activité pro en « Stocké, accès équipe
+   * uniquement, **jamais affiché** ». Le trou que ce test ferme n'était pas une
+   * fuite entre membres : `resolveMedia` vérifiait bien le propriétaire. C'est le
+   * PROPRIÉTAIRE LUI-MÊME qui pouvait publier son propre justificatif, parce
+   * qu'aucun genre n'était regardé — ni pour l'image d'une publication, ni pour
+   * le fond d'une story.
+   *
+   * LES DEUX CHEMINS SONT ÉPROUVÉS. `createPost` (`mediaIds`) et `createStory`
+   * (`backgroundAssetId`) appellent tous deux `resolveMedia`, et ne tester que
+   * le premier laisserait croire le second couvert.
+   *
+   * LA PRÉMISSE EST VÉRIFIÉE D'ABORD : le même membre, avec un média `POST`
+   * par ailleurs identique, publie. Sans cela le test passerait aussi si
+   * `createPost` refusait tout.
+   */
+  it('[RÈGLE DURE] refuse de publier un média d’un autre genre, PROOF compris (§8.1)', async () => {
+    const author = await newMember();
+
+    const asset = async (kind: 'POST' | 'PROOF' | 'MESSAGE' | 'HOUSING' | 'AVATAR') => {
+      const row = await prisma.mediaAsset.create({
+        data: {
+          id: newId(),
+          ownerUserId: author.userId,
+          kind,
+          storageKey: `test/feed-genre/${newId()}.jpg`,
+          mime: 'image/jpeg',
+          sizeBytes: BigInt(1024),
+          status: 'READY',
+          exifStripped: true,
+        },
+      });
+      createdMediaIds.push(row.id);
+      return row.id;
+    };
+
+    // ── PRÉMISSE : le genre POST, lui, passe ────────────────────────────────
+    const legitimate = await asset('POST');
+    const published = await feed.createPost(author, post({ mediaIds: [legitimate] }));
+    expect(published.post.media).toHaveLength(1);
+
+    // ── LA RÈGLE : tout autre genre est refusé, et du MÊME 404 ──────────────
+    //
+    // 404 et non 422 : le genre est une propriété cachée de la ligne, et un refus
+    // nommé apprendrait qu'un justificatif existe sous cet identifiant — le
+    // chemin `/media/proof/…` daterait même son dépôt.
+    for (const kind of ['PROOF', 'MESSAGE', 'HOUSING', 'AVATAR'] as const) {
+      const foreign = await asset(kind);
+
+      await expect(feed.createPost(author, post({ mediaIds: [foreign] }))).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+
+      // Le fond de story passe par le même `resolveMedia` : même refus.
+      //
+      // `backgroundColor: undefined` est EXPLICITE : le schéma impose la couleur
+      // OU l'image et jamais les deux (`createStorySchema`, refine), et le
+      // gabarit `story()` pose une couleur. Sans cette remise à zéro le corps
+      // serait un corps qu'aucune requête réelle ne peut former, et le test
+      // vérifierait un chemin que la validation ferme en amont.
+      await expect(
+        feed.createStory(author, story({ backgroundColor: undefined, backgroundAssetId: foreign })),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    }
+
+    // Et un genre interdit GLISSÉ dans un lot par ailleurs licite ne passe pas
+    // davantage : c'est la forme qu'aurait prise un contournement, le média
+    // valide servant de laissez-passer aux autres.
+    const smuggled = await asset('PROOF');
+    await expect(
+      feed.createPost(author, post({ mediaIds: [legitimate, smuggled] })),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  }, TEST_TIMEOUT_MS);
+
   // ══ §7 : les trois tâches planifiées ═════════════════════════════════════
 
   it('recalcule le score toutes les 15 minutes, et pas à chaque vote (§2.6, §7)', async () => {

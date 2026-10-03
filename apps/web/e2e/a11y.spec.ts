@@ -25,6 +25,20 @@ import { connecter } from './session';
  */
 
 const PAGES = [
+  /**
+   * LES DEUX ÉCRANS D'ACCÈS — ILS MANQUAIENT À CETTE LISTE.
+   *
+   * §10.6 demande le contrôle « sur chaque page principale », et les soixante
+   * entrées ci-dessous couvrent tout le produit SAUF les deux écrans par lesquels
+   * chaque membre entre. L'oubli n'avait rien de théorique : P02 portait un champ
+   * de 1 px opaque à zéro posé hors du cadre, un `<a href="#">` mort, un `<span>`
+   * « Renvoyer » et six `<div>` en guise de cases — et rien ne l'auditait.
+   *
+   * Les voici, en tête, parce que c'est par là qu'on commence.
+   */
+  { path: '/connexion', name: 'P01 Numéro de téléphone' },
+  { path: '/connexion/code', name: 'P02 Code OTP' },
+
   { path: '/accueil', name: 'A01 Fil d’actualité' },
 
   // Lot 2 — les dix-sept sections restantes de « 03 Accueil v2 ». Une route par

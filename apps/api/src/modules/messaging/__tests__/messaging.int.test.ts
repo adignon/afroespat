@@ -34,6 +34,7 @@ describe('messagerie (08 §5)', () => {
 
   const createdUsers: string[] = [];
   const createdHelp: string[] = [];
+  const createdMediaIds: string[] = [];
   let originCountryId: string;
   let cityId: string;
   let counter = 0;
@@ -100,6 +101,12 @@ describe('messagerie (08 §5)', () => {
   afterAll(async () => {
     if (createdHelp.length > 0) {
       await prisma.helpRequest.deleteMany({ where: { id: { in: createdHelp } } });
+    }
+    // AVANT les membres : `media_assets.owner_user_id` les référence, et la base
+    // est PARTAGÉE — un reste de ce fichier ferait échouer une autre suite sur
+    // une contrainte de clé étrangère qui n'a rien à voir avec elle.
+    if (createdMediaIds.length > 0) {
+      await prisma.mediaAsset.deleteMany({ where: { id: { in: createdMediaIds } } });
     }
     if (createdUsers.length > 0) {
       await prisma.user.deleteMany({ where: { id: { in: createdUsers } } });
@@ -565,5 +572,99 @@ describe('messagerie (08 §5)', () => {
 
     const page = await messaging.listMessages(other.id, opened.conversationId, { limit: 20 });
     expect(page.items[0]?.body).toBe(MESSAGE_DELETED_USER_PLACEHOLDER);
+  });
+
+  // ── §6 La pièce jointe d'un message ───────────────────────────────────────
+
+  /**
+   * [RÈGLE DURE] Une pièce jointe est de genre MESSAGE, **et en `READY`**.
+   *
+   * `assertOwnedMedia` vérifiait le propriétaire et le genre, mais pas le STATUT —
+   * il ne le SÉLECTIONNAIT même pas. Deux conséquences, et la seconde est la
+   * raison pour laquelle ce n'est pas cosmétique :
+   *
+   *   1. un média `REJECTED` (refusé par l'antivirus) était rattachable ;
+   *   2. sa clé de stockage est RÉSERVÉE SANS OCTETS DESSOUS — l'envoi écrit la
+   *      ligne `REJECTED` et ne dépose rien. Le destinataire recevait donc un
+   *      message portant une image que rien ne peut servir, et le défaut
+   *      n'apparaît qu'à la lecture, chez quelqu'un d'autre que l'expéditeur.
+   *
+   * PRÉMISSE VÉRIFIÉE D'ABORD : le même membre, avec un média `MESSAGE`/`READY`,
+   * envoie. Sans cela le test passerait aussi si `sendMessage` refusait tout.
+   */
+  it('[RÈGLE DURE] refuse une pièce jointe non READY, ou d’un autre genre (§6, 00 §8.3)', async () => {
+    const a = await member();
+    const b = await member();
+    await connect(a.id, b.id);
+    const opened = await messaging.openDirect(
+      { userId: a.id, level: 'L1' },
+      { toHandle: b.handle, firstMessage: 'Je vous envoie la photo du document.' },
+    );
+
+    const asset = async (
+      kind: 'MESSAGE' | 'PROOF',
+      status: 'READY' | 'PENDING' | 'SCANNING' | 'REJECTED',
+    ) => {
+      const row = await prisma.mediaAsset.create({
+        data: {
+          id: newId(),
+          ownerUserId: a.id,
+          kind,
+          storageKey: `test/msg-piece/${newId()}.jpg`,
+          mime: 'image/jpeg',
+          sizeBytes: BigInt(2048),
+          status,
+          exifStripped: true,
+        },
+      });
+      createdMediaIds.push(row.id);
+      return row.id;
+    };
+
+    const send = (mediaId: string) =>
+      messaging.sendMessage({ userId: a.id, level: 'L1' }, opened.conversationId, {
+        body: 'La voici.',
+        mediaId,
+      });
+
+    // ── PRÉMISSE : MESSAGE + READY passe ────────────────────────────────────
+    const good = await asset('MESSAGE', 'READY');
+    const sent = await send(good);
+    expect(sent.messageId).toBeTruthy();
+
+    // ── LA RÈGLE, moitié STATUT : 400, et non 404 ──────────────────────────
+    //
+    // L'expéditeur vient d'envoyer ce fichier et SAIT qu'il existe ; un 404
+    // l'enverrait chercher un identifiant perdu alors que son envoi est
+    // seulement en analyse, ou refusé par l'antivirus.
+    for (const status of ['PENDING', 'SCANNING', 'REJECTED'] as const) {
+      await expect(send(await asset('MESSAGE', status))).rejects.toMatchObject({
+        code: 'VALIDATION_FAILED',
+        details: { fields: [{ path: 'mediaId', code: 'MEDIA_NOT_READY' }] },
+      });
+    }
+
+    // ── LA RÈGLE, moitié GENRE : 404, parce que le genre ne doit pas être un
+    //    oracle d'existence — même prêt, un PROOF n'est pas une pièce jointe.
+    await expect(send(await asset('PROOF', 'READY'))).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+
+    // Et la pièce jointe d'un AUTRE membre reste un 404 : le propriétaire était
+    // déjà vérifié, et ce lot ne doit pas l'avoir perdu en chemin.
+    const hers = await prisma.mediaAsset.create({
+      data: {
+        id: newId(),
+        ownerUserId: b.id,
+        kind: 'MESSAGE',
+        storageKey: `test/msg-piece/${newId()}.jpg`,
+        mime: 'image/jpeg',
+        sizeBytes: BigInt(2048),
+        status: 'READY',
+        exifStripped: true,
+      },
+    });
+    createdMediaIds.push(hers.id);
+    await expect(send(hers.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
   });
 });

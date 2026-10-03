@@ -1929,7 +1929,16 @@ export class CommunitiesService {
     // pourrait afficher dans un album n'importe quelle image de la plateforme en
     // devinant son identifiant.
     const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id: input.mediaAssetId, ownerUserId: userId, deletedAt: null, kind: 'ALBUM' },
+      // `status: 'READY'` — §8.3, l'antivirus avant publication. Une ligne
+      // `REJECTED` désigne une clé sur laquelle rien n'a été déposé : l'album
+      // afficherait un trou.
+      where: {
+        id: input.mediaAssetId,
+        ownerUserId: userId,
+        deletedAt: null,
+        kind: 'ALBUM',
+        status: 'READY',
+      },
       select: { id: true },
     });
     if (asset === null) throw ApiError.notFound();

@@ -6,6 +6,7 @@ import { A04Mobile } from '@/screens/a04/mobile.generated';
 import { A04AuteurDesktop } from '@/screens/a04/auteurdesktop.generated';
 import { A04AuteurMobile } from '@/screens/a04/auteurmobile.generated';
 import {
+  guide as guideMaquette,
   guideActions,
   panelGuides,
   rail,
@@ -36,10 +37,14 @@ import { useGuide } from '@/screens/guides/use-guides';
  *
  * ── CE QUI VIENT DE L'API ───────────────────────────────────────────────────
  *
- * Les pastilles de contributeurs et l'historique des versions. Le CORPS du guide,
- * son titre et sa ligne « Mis à jour le … » sont du balisage statique dans la
- * maquette : le transcodeur les a écrits en dur, et un `*.generated.tsx` ne se
- * modifie pas à la main. Remonté au rapport de lot — c'est la limite de cet écran.
+ * L'en-tête du guide (titre, catégorie, portée, date de mise à jour, bandeau
+ * « Maintenu par la communauté » et les trois compteurs de la vue auteur), les
+ * pastilles de contributeurs et l'historique des versions.
+ *
+ * Le CORPS du guide reste dessiné, et c'est la limite de cet écran : la maquette
+ * l'écrit en HTML riche — sections, listes, passage surligné, légende d'image — là
+ * où l'API rend un seul `body` en Markdown restreint. Le lier demanderait d'écrire
+ * un composant de rendu, pas de déclarer une prise. Remonté au rapport de lot.
  *
  * SEUL ÉCRAN DE CETTE MAQUETTE à écrire son `<h1>` lui-même. Ses `<h2>` sont les
  * sections du guide, et le générateur ne les promeut pas.
@@ -51,12 +56,22 @@ export function GuideScreen({
   readonly slug: string;
   readonly auteur: boolean;
 }) {
-  const { contributors, versionRows, isAuthor, echec, chargement } = useGuide(slug);
+  const { contributors, versionRows, enTete, isAuthor, echec, chargement } = useGuide(slug);
 
   const data: A04Data = {
     rail,
     panelGuides,
     shortcuts,
+    /**
+     * L'EN-TÊTE DU GUIDE — titre, catégorie, portée, date, bandeau et compteurs.
+     *
+     * Elle vient de `GET /guides/:slug` dès qu'il a répondu, et c'est elle qui fait
+     * que cette page cesse d'afficher « Obtenir la garantie Visale sans CDI » pour
+     * tous les guides. Avant la réponse, on garde celle de la MAQUETTE plutôt qu'un
+     * titre vide : c'est le même choix que pour l'historique juste dessous, et le
+     * rendu serveur n'a alors rien d'autre à montrer.
+     */
+    guide: enTete ?? guideMaquette,
     contributors,
     guideActions,
     /**

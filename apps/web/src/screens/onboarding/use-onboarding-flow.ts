@@ -15,6 +15,7 @@ import {
   updateProfile,
   verifyOtp,
 } from '@/lib/api';
+import { notifyError, notifySuccess } from '@/components/notifications';
 import { createJourney, listJourneyTemplates } from '@/screens/parcours/api';
 import {
   type CityChoice,
@@ -45,6 +46,41 @@ import { REASON_EXPIRED } from './resume';
  */
 
 const CHALLENGE_KEY = 'dp_otp_challenge';
+
+/**
+ * ─── CE QUE P02 DOIT SAVOIR, ET QUE SEUL P01 CONNAISSAIT ─────────────────────
+ *
+ * « Renvoyer » doit refaire `POST /auth/otp/request`, donc il lui faut le NUMÉRO
+ * et son pays. Or P02 est une autre page : son état React naît vide, et le numéro
+ * tapé sur P01 n'existe plus nulle part côté client.
+ *
+ * Il voyage donc dans `sessionStorage`, à côté du défi, et pour la même raison
+ * déjà écrite plus haut : la durée de vie utile est celle de l'onglet. Ce n'est
+ * pas un secret — c'est le numéro que le membre vient de taper lui-même, sur
+ * l'écran d'avant, dans le même onglet — et il ne survit ni à la fermeture ni à un
+ * autre onglet.
+ *
+ * `dp_otp_resend_at` est l'ÉCHÉANCE, en millisecondes epoch, et non un nombre de
+ * secondes restantes. La différence est tout l'intérêt : une actualisation de la
+ * page ne remet pas le compteur à 45, alors qu'un compteur en mémoire aurait
+ * laissé un membre redemander un code à chaque rechargement — trois
+ * rechargements, et les trois envois par heure et par numéro sont épuisés.
+ */
+const PHONE_KEY = 'dp_otp_phone';
+const COUNTRY_KEY = 'dp_otp_country';
+const RESEND_AT_KEY = 'dp_otp_resend_at';
+
+/**
+ * 45 secondes — c'est la maquette qui le dit, « Nouveau code dans 0:45 ».
+ *
+ * Le serveur n'expose AUCUN délai de renvoi : `POST /auth/otp/request` répond
+ * `{ challengeId, expiresAt }`, et `expiresAt` est l'expiration du CODE (dix
+ * minutes, §2.1), pas une permission de redemander. Le délai est donc celui de la
+ * maquette, et il est volontairement plus court que la vraie limite — trois envois
+ * par heure et par numéro : l'attente rend le dépassement improbable au lieu de
+ * l'interdire, et le `429` reste traité pour les cas qui passent quand même.
+ */
+const RESEND_COOLDOWN_SECONDS = 45;
 
 /** L'écran suivant, par chemin. L'ordre est celui de §5. */
 const NEXT_PATH: Record<number, string> = {
@@ -116,7 +152,20 @@ function messagePourEchec(cause: unknown): string {
 export interface FlowResult {
   readonly vals: OnboardingVals;
   readonly state: OnboardingState;
-  /** Message d'erreur à afficher, ou `null`. Vient du serveur (§5.2). */
+  /**
+   * LE MOTIF DE REPRISE RENDU PAR LE SERVEUR, et lui seul.
+   *
+   * Tous les refus SURVENUS pendant le parcours passent maintenant par
+   * `react-hot-toast` — choix du porteur, voir `components/notifications.tsx`.
+   * Celui-ci ne peut pas : il arrive dans l'URL (`/connexion?reprise=…`), il est
+   * rendu par le composant SERVEUR, et il doit figurer dans le premier octet de
+   * HTML. Une notification est montée côté client, donc elle arriverait APRÈS —
+   * et un test l'exige explicitement dans la réponse HTTP (`inscription.spec.ts`,
+   * « affiche le motif de reprise rendu par le SERVEUR »).
+   *
+   * Il n'est donc JAMAIS réécrit après le premier rendu : la bannière porte la
+   * raison d'être revenu là, les notifications portent ce qui échoue ensuite.
+   */
   readonly error: string | null;
   /**
    * Les détails d'un `403 LEVEL_REQUIRED`, ou `null`.
@@ -137,7 +186,6 @@ export interface FlowResult {
 export function useOnboardingFlow(step: number, initialError: string | null = null): FlowResult {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(initialError);
   const [levelRequired, setLevelRequired] = useState<LevelRequiredDetailsParsed | null>(null);
 
   /**
@@ -235,7 +283,6 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
 
   const run = useCallback(async (work: () => Promise<void>) => {
     setBusy(true);
-    setError(null);
     setLevelRequired(null);
     try {
       await work();
@@ -261,22 +308,98 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
        */
       const invitation = cause instanceof ApiError ? cause.levelRequired : null;
       if (invitation !== null) {
-        // §7.3 : une invitation, pas une erreur. La bannière reste vide.
+        // §7.3 : une invitation, pas une erreur. Aucune notification.
         setLevelRequired(invitation);
       } else {
-        setError(messagePourEchec(cause));
+        notifyError(messagePourEchec(cause));
       }
     } finally {
       setBusy(false);
     }
   }, []);
 
+  /**
+   * ─── LE COMPTE À REBOURS DE RENVOI ─────────────────────────────────────────
+   *
+   * Il DÉCOMPTE, et c'était le défaut : la maquette écrit « 0:45 » et le cadre
+   * transcodé rendait ce texte figé. Un membre pouvait fixer un minuteur mort
+   * pendant une minute en attendant qu'il arrive à zéro.
+   *
+   * L'échéance vit dans `sessionStorage` (voir `RESEND_AT_KEY`) et le temps
+   * restant s'en DÉDUIT à chaque battement. Un compteur décrémenté en mémoire
+   * aurait deux défauts que celui-ci n'a pas : il repartirait de 45 à chaque
+   * rechargement, et il dériverait quand l'onglet passe en arrière-plan — les
+   * navigateurs y ralentissent les intervalles, parfois à un par minute.
+   */
+  const resteAAttendre = useCallback((): number => {
+    const raw = sessionStorage.getItem(RESEND_AT_KEY);
+    if (raw === null) return 0;
+    const echeance = Number(raw);
+    if (!Number.isFinite(echeance)) return 0;
+    return Math.max(0, Math.ceil((echeance - Date.now()) / 1000));
+  }, []);
+
+  const [resendIn, setResendIn] = useState(0);
+  /** Bougé par `armResend` : c'est ce qui RELANCE l'intervalle arrêté à zéro. */
+  const [resendTour, setResendTour] = useState(0);
+
+  useEffect(() => {
+    /**
+     * LU DANS UN EFFET, et jamais dans l'état initial.
+     *
+     * `sessionStorage` n'existe pas au rendu serveur. Un `useState(() =>
+     * resteAAttendre())` aurait rendu le serveur et le client différents, et
+     * React aurait signalé une divergence d'hydratation sur une page
+     * d'inscription — là où un écran qui clignote fait abandonner.
+     */
+    let battement = 0;
+    const lire = () => {
+      const reste = resteAAttendre();
+      setResendIn(reste);
+      // Arrivé à zéro, l'intervalle n'a plus rien à faire : on l'arrête plutôt
+      // que de laisser un battement par seconde sur chacun des six écrans
+      // d'inscription, pour toujours. `armResend` le relance.
+      if (reste === 0 && battement !== 0) {
+        window.clearInterval(battement);
+        battement = 0;
+      }
+    };
+
+    lire();
+    // Deux battements par seconde : avec un seul, l'affichage peut rester deux
+    // secondes sur le même chiffre selon le moment où l'échéance a été posée.
+    if (resteAAttendre() > 0) battement = window.setInterval(lire, 500);
+
+    return () => {
+      if (battement !== 0) window.clearInterval(battement);
+    };
+  }, [resteAAttendre, resendTour]);
+
+  /** Pose l'échéance et relance le battement. */
+  const armResend = useCallback((seconds: number) => {
+    sessionStorage.setItem(RESEND_AT_KEY, String(Date.now() + seconds * 1000));
+    setResendIn(seconds);
+    setResendTour((n) => n + 1);
+  }, []);
+
+  /**
+   * La vérification part au sixième chiffre, sans bouton : c'est ce que montre la
+   * maquette de P02, qui n'en dessine aucun. Le garde `fired` évite de la lancer
+   * deux fois — un rendu de plus la relancerait sur un défi déjà consommé, et le
+   * membre verrait « ce code n'est pas le bon » alors qu'il l'était.
+   *
+   * DÉCLARÉ ICI, au-dessus de `verify` et d'`onResend`, parce que les deux le
+   * REMETTENT À ZÉRO — voir leurs commentaires. Il vivait sous le corps du
+   * fichier, ce qui ne tenait que tant que personne n'avait besoin de l'oublier.
+   */
+  const fired = useRef<string | null>(null);
+
   /** P01 — envoi du code. */
   const onSubmit = useCallback(() => {
     void run(async () => {
       const phone = latest.current?.phone ?? '';
       if (phone.replace(/\D/g, '').length < 6) {
-        setError('Entrez votre numéro de téléphone.');
+        notifyError('Entrez votre numéro de téléphone.');
         return;
       }
 
@@ -284,13 +407,14 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       // refuser : le membre verrait sinon un message générique sans savoir quoi
       // corriger. L'API le vérifie aussi — un écran n'est pas une garantie.
       if (latest.current?.consentAccepted !== true) {
-        setError('Vous devez accepter les conditions et la politique de confidentialité.');
+        notifyError('Vous devez accepter les conditions et la politique de confidentialité.');
         return;
       }
 
+      const countryIso2 = latest.current?.countryIso2 ?? 'BJ';
       const challenge = await requestOtp({
         phone,
-        countryIso2: latest.current?.countryIso2 ?? 'BJ',
+        countryIso2,
         // Turnstile en production ; le fournisseur fictif accepte n'importe quoi
         // en développement, et `loadEnv` refuse le démarrage s'il reste fictif
         // en production.
@@ -300,9 +424,119 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       });
 
       sessionStorage.setItem(CHALLENGE_KEY, challenge.challengeId);
+      // Ce que P02 ne peut pas deviner : à qui renvoyer un code, et depuis quand
+      // attendre. Voir `PHONE_KEY`.
+      sessionStorage.setItem(PHONE_KEY, phone);
+      sessionStorage.setItem(COUNTRY_KEY, countryIso2);
+      armResend(RESEND_COOLDOWN_SECONDS);
       router.push('/connexion/code');
     });
-  }, [router, run]);
+  }, [armResend, router, run]);
+
+  /**
+   * P02 — « Renvoyer », le `<span>` qui n'était même pas un bouton.
+   *
+   * ── ON NE REJOUE JAMAIS UN `429`, ET L'ATTENTE PASSE AVANT L'APPEL ─────────
+   *
+   * `POST /auth/otp/request` est borné deux fois : `@RateLimit(10, 'hour', 'ip')`
+   * sur la route, et trois envois par heure et par NUMÉRO dans le service. Le
+   * dépassement répond `retryAfterSeconds: 3600` — une heure. Derrière un même
+   * NAT, c'est une heure pour tout le monde.
+   *
+   * D'où trois précautions, et aucune n'est en double :
+   *
+   *   · le bouton est `disabled` tant que le compte à rebours tourne ;
+   *   · ce gestionnaire REVÉRIFIE l'échéance avant d'appeler. Un clic programmé,
+   *     un double événement ou un test qui force le clic ne doivent pas passer ;
+   *   · un `429` ARME l'attente avec le délai du serveur au lieu d'être oublié :
+   *     le bouton reste refusé pendant toute l'heure annoncée. Sans cela, le
+   *     membre réessaierait en boucle et chaque essai prolongerait la fenêtre.
+   *
+   * ── LE MESSAGE N'EST PAS RÉÉCRIT ICI, ET UNE MUTATION M'A REPRIS ──────────
+   *
+   * Ce bloc composait sa propre phrase, avec ce raisonnement écrit noir sur
+   * blanc : « `ApiError.rateLimitMessage` ne remplace le message du serveur que
+   * si l'en-tête `Retry-After` est là ; le refus par NUMÉRO vient du service,
+   * donc il n'en a pas, donc le membre lirait “patientez un instant” pour une
+   * heure ». C'ÉTAIT FAUX, et la mutation l'a montré : remplacer ma phrase par
+   * `cause.displayMessage` laissait le test VERT.
+   *
+   * La raison est dans `lib/api/transport.ts`, qui construit l'erreur :
+   * `retryAfterSeconds` vient de l'en-tête OU, à défaut, de
+   * `details.retryAfterSeconds`. Le socle couvrait donc déjà exactement le cas
+   * que je croyais découvrir — et ma phrase était un second endroit où dire la
+   * même chose, c'est-à-dire un endroit où elle finirait par diverger.
+   *
+   * L'erreur remonte donc telle quelle à `run`, qui l'affiche par
+   * `displayMessageFor` : « Trop de tentatives. Réessayez dans une heure. » Le
+   * message du serveur, lui, n'est jamais montré — et `e2e/code-otp.spec.ts` le
+   * vérifie de bout en bout, sur l'écran.
+   */
+  const onResend = useCallback(() => {
+    if (resteAAttendre() > 0) return;
+
+    void run(async () => {
+      const phone = sessionStorage.getItem(PHONE_KEY);
+      if (phone === null || phone === '') {
+        // L'onglet a été rouvert : on ne connaît plus le numéro, donc on ne peut
+        // pas renvoyer. Le motif part dans l'URL, comme pour le défi perdu.
+        router.push(`/connexion?reprise=${REASON_EXPIRED}`);
+        return;
+      }
+
+      try {
+        const challenge = await requestOtp({
+          phone,
+          countryIso2: sessionStorage.getItem(COUNTRY_KEY) ?? 'BJ',
+          captchaToken: 'dev',
+          purpose: 'SIGNUP',
+          acceptTerms: true,
+        });
+        sessionStorage.setItem(CHALLENGE_KEY, challenge.challengeId);
+        /**
+         * LE GARDE DE DOUBLE VÉRIFICATION EST OUBLIÉ, et c'est nécessaire.
+         *
+         * Le défi d'avant est mort ; le code qui vient d'arriver peut être le
+         * MÊME. En développement il l'est toujours — `SMS_FAKE_FIXED_CODE` vaut
+         * `123456`. Sans cette ligne, retaper le nouveau code ne déclenchait
+         * rien du tout : ni vérification, ni message.
+         */
+        fired.current = null;
+        armResend(RESEND_COOLDOWN_SECONDS);
+        notifySuccess('Un nouveau code vient de partir par SMS.');
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.isRateLimited) {
+          /**
+           * `RESEND_COOLDOWN_SECONDS` en dernier recours, et pas 3 600.
+           *
+           * Un `429` sans aucun délai annonçable est le cas où l'on ne sait pas.
+           * Verrouiller une heure « au cas où » punirait le membre d'une
+           * incertitude qui est la nôtre ; 45 s le laisse réessayer une fois,
+           * et le prochain refus réarmera avec ce que le serveur dira alors.
+           */
+          armResend(cause.retryAfterSeconds ?? RESEND_COOLDOWN_SECONDS);
+        }
+        throw cause;
+      }
+    });
+  }, [armResend, resteAAttendre, router, run]);
+
+  /**
+   * P02 — « Changer de numéro », l'`<a href="#">` qui ne menait nulle part.
+   *
+   * Le défi en cours est EFFACÉ avant de revenir : le laisser derrière soi
+   * laisserait un défi valide pour un numéro que le membre vient d'abandonner, et
+   * c'est lui qu'une arrivée sur `/connexion/code` reprendrait.
+   *
+   * L'ÉCHÉANCE DE RENVOI, ELLE, SURVIT. Elle ne concerne pas un numéro mais une
+   * cadence, et l'effacer offrirait un contournement évident : aller-retour vers
+   * l'écran du numéro, et le compte à rebours repart de zéro. Elle sera de toute
+   * façon réarmée par le prochain envoi.
+   */
+  const onChangeNumber = useCallback(() => {
+    sessionStorage.removeItem(CHALLENGE_KEY);
+    router.push('/connexion');
+  }, [router]);
 
   /** P02 — vérification, dès le sixième chiffre. */
   const verify = useCallback(
@@ -318,9 +552,33 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
           return;
         }
 
-        const session = await verifyOtp({ challengeId, code });
+        let session;
+        try {
+          session = await verifyOtp({ challengeId, code });
+        } catch (cause) {
+          /**
+           * LE CODE REFUSÉ EST OUBLIÉ, et c'est la seconde moitié de « corriger
+           * son code est possible ».
+           *
+           * Le garde `fired` existe pour ne pas vérifier deux fois le même code
+           * sur un défi consommé. Mais après un REFUS, le défi n'est pas
+           * consommé — et laisser le code dans le garde rendait l'écran muet :
+           * le membre retapait exactement les mêmes six chiffres, et il ne se
+           * passait rien. Pas de vérification, pas de notification, rien.
+           *
+           * Les cinq tentatives de §4.1 restent comptées par le SERVEUR, qui est
+           * le seul endroit où elles signifient quelque chose.
+           */
+          fired.current = null;
+          throw cause;
+        }
+
         // Le défi est consommé : le garder invite à le rejouer.
         sessionStorage.removeItem(CHALLENGE_KEY);
+        // Le numéro et la cadence n'ont plus d'objet : la session est ouverte.
+        sessionStorage.removeItem(PHONE_KEY);
+        sessionStorage.removeItem(COUNTRY_KEY);
+        sessionStorage.removeItem(RESEND_AT_KEY);
 
         // On reprend là où le membre s'est arrêté, au lieu de le renvoyer
         // systématiquement à l'écran 2 : c'est toute la raison d'être de
@@ -437,20 +695,33 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
   }, [countryOptions, router, run, step, templates]);
 
   const actions: ScreenActions = useMemo(
-    () => ({ busy, onSubmit, onContinue, countryOptions, cityCatalogue, templates }),
-    [busy, onSubmit, onContinue, countryOptions, cityCatalogue, templates],
+    () => ({
+      busy,
+      onSubmit,
+      onContinue,
+      countryOptions,
+      cityCatalogue,
+      templates,
+      resendIn,
+      onResend,
+      onChangeNumber,
+    }),
+    [
+      busy,
+      onSubmit,
+      onContinue,
+      countryOptions,
+      cityCatalogue,
+      templates,
+      resendIn,
+      onResend,
+      onChangeNumber,
+    ],
   );
 
   const { state, vals } = useOnboarding(actions);
   latest.current = state;
 
-  /**
-   * La vérification part au sixième chiffre, sans bouton : c'est ce que montre la
-   * maquette de P02, qui n'en dessine aucun. Le garde `fired` évite de la lancer
-   * deux fois — un rendu de plus la relancerait sur un défi déjà consommé, et le
-   * membre verrait « ce code n'est pas le bon » alors qu'il l'était.
-   */
-  const fired = useRef<string | null>(null);
   const onCodeChange = useCallback(
     (event: { target: { value: string } }) => {
       vals.onCodeChange(event);
@@ -467,7 +738,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
 
   return {
     state,
-    error,
+    error: initialError,
     levelRequired,
     dismissLevelRequired,
     vals: { ...vals, onCodeChange },

@@ -56,6 +56,8 @@
  */
 
 /** Les deux cadres que chaque section dessine, ordinateur puis mobile. */
+import { railLitteral } from '../squelette-membre.mjs';
+
 const both = (desktop, mobile) => [
   { width: 1440, name: 'Desktop', title: desktop },
   { width: 390, name: 'Mobile', title: mobile },
@@ -207,9 +209,193 @@ const colonneReputation = ({ minis = true } = {}) => [
     : []),
 ];
 
+
+/**
+ * ─── H10 · UNE DE MES RÉPONSES, SUR LE CADRE MOBILE ─────────────────────────
+ *
+ * LA SEULE DES QUATRE LISTES DE CE MODULE DONT LA ROUTE PORTE TOUT CE QUE LA
+ * PLANCHE DESSINE, et c'est ce qui la distingue des trois autres.
+ *
+ * L'en-tête de `screens/entraide/data.ts` explique pourquoi le fil (H01), les
+ * suggestions (H04) et mes demandes (H09) ne sont pas liés : leurs cartes portent
+ * une ligne d'étape de parcours — « Étape 7 · Logement · parcours Études » — que
+ * `helpCardSchema` NE REND PAS. Il n'y a que `fromJourney: boolean` ; le
+ * `journeyContext` n'existe que sur `GET /help/:id`, une demande à la fois. Lier
+ * ces listes mettrait donc un littéral dans un `<sc-for>`, et chaque ligne issue
+ * d'un parcours jurerait être l'étape 7 d'un parcours Études. Cette raison tient,
+ * et ces trois listes restent REMONTÉES.
+ *
+ * H10 n'a pas ce défaut : `helpMyResponsesResponseSchema` porte `body`,
+ * `markedHelpful`, `createdAt` et la carte `request` ENTIÈRE — type, titre, auteur.
+ * Les deux planches qu'elle dessine sont les deux ÉTATS d'une réponse, et rien
+ * d'autre ne les distingue :
+ *
+ *   · MARQUÉE UTILE — pastille pleine `#16785E`, un bandeau de bilan vert, et
+ *     « Écrire à <prénom> » en second bouton ;
+ *   · EN ATTENTE — pastille grise `#F2F5F4`, pas de bandeau, et « Modifier ma
+ *     réponse ».
+ *
+ * LES DEUX SONT DESSINÉES EN ENTIER sous leur `<sc-if>`, et non recousues autour
+ * d'un tronc commun. Deux raisons, et la seconde est mesurée : n'en garder qu'une
+ * mentirait sur l'autre ligne ; et un tronc commun obligerait à DÉCLARER en
+ * `motifs` chaque fragment partagé, parce que le troisième contrôle du générateur
+ * suit un curseur qui n'avance que vers l'avant — le bandeau de bilan, qui n'existe
+ * que sur la première planche, serait cherché après la seconde et introuvable.
+ * Dessiner les deux variantes complètes fait avancer le curseur d'une planche à
+ * l'autre, dans l'ordre où la maquette les dessine.
+ *
+ * ÉCARTS SIGNALÉS, deux, et aucun n'est comblé en devinant :
+ *
+ *   · « Kofi vous a marquée » est GENRÉ au féminin par la maquette, et aucun champ
+ *     de l'API ne porte le genre — c'est le même écart que les phases de H01. Seul
+ *     le PRÉNOM est lié ; la phrase reste celle de la planche ;
+ *   · la maquette écrit « hier », là où `ageCourt` — le formateur que H02 emploie
+ *     déjà — rend « il y a 1 j ». On garde UN formateur pour le module plutôt que
+ *     deux échelles qui divergeraient.
+ */
+const BOUTON_REPONSE_M = (texte) =>
+  '<button style="height:44px;padding:0 18px;border-radius:14px;background:#F2F5F4;color:#16211D;border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:38px">' +
+  texte +
+  '</button>';
+
+const PASTILLE_RONDE = (fond, couleur, texte) =>
+  '<span style="background:' +
+  fond +
+  ';color:' +
+  couleur +
+  ';font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">' +
+  texte +
+  '</span>';
+
+/** Le bandeau de bilan d'une réponse marquée. Le prénom seul est une donnée. */
+const BILAN_MARQUEE = (prenom) =>
+  '<div style="margin-top:12px;background:#E3F0EB;border-radius:14px;padding:10px 12px;font-size:12.5px;color:#0F5C48;font-weight:600">' +
+  prenom +
+  ' vous a marquée « ça m’a aidé » · +1 entraide validée</div>';
+
+const CARTE_REPONSE_M = ({ categorie, etat, age, auteur, titre, corps, bilan = '', second }) =>
+  '<div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px;flex-shrink:0;">' +
+  '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+  PASTILLE_RONDE('#E3F0EB', '#0F5C48', categorie) +
+  etat +
+  '<span style="flex:1"></span><span style="font-size:12px;color:#8A958F">' +
+  age +
+  '</span></div><div style="font-size:16px;font-weight:700;margin-top:10px;">' +
+  auteur +
+  ' · ' +
+  titre +
+  '</div><div style="font-size:12.5px;color:#5D6B66;margin-top:4px">Votre réponse : « ' +
+  corps +
+  ' »</div>' +
+  bilan +
+  '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">' +
+  BOUTON_REPONSE_M('Voir la demande') +
+  BOUTON_REPONSE_M(second) +
+  '</div></div>';
+
+const MARQUEE = PASTILLE_RONDE('#16785E', '#fff', 'Marquée utile');
+const EN_ATTENTE = PASTILLE_RONDE('#F2F5F4', '#5D6B66', 'En attente');
+
 /** Le sous-titre d'un en-tête d'écran, dans la forme que les quatre partagent. */
 const SOUS_TITRE = (texte) =>
   '<div style="font-size:13.5px;color:#5D6B66;margin-top:4px">' + texte + '</div>';
+
+/**
+ * ─── LE BANDEAU DE SÉCURITÉ §2.7, ET POURQUOI IL DEVIENT UNE DONNÉE ─────────
+ *
+ * « Chaque page de la section affiche en permanence : *Aucun versement entre
+ * membres pour une démarche administrative. Si on vous demande de l'argent,
+ * signalez.* » L'API la renvoie dans le `meta` de CHAQUE réponse du module, et
+ * `helpMetaSchema` l'EXIGE en `z.string().min(1)` — une réponse qui cesserait de
+ * l'envoyer est refusée à la frontière. Le commentaire de ce schéma dit pourquoi
+ * la règle voyage avec la donnée : « une règle de sécurité qui vit dans un
+ * composant disparaît au premier écran qu'on oublie de brancher ».
+ *
+ * ELLE VIVAIT DANS LES COMPOSANTS, et c'est mesuré : les DIX cadres d'ordinateur
+ * de ce module écrivaient la phrase en dur, aucun ne la lisait. Deux planches
+ * mobiles seulement la dessinent — H01 et H03 — et chacune l'ABRÈGE à sa façon.
+ * L'ancre est donc le texte tel que CHAQUE planche l'écrit, et il y en a deux.
+ *
+ * CE QUE LA LIAISON CHANGE À L'ÉCRAN, dit franchement : la phrase affichée devient
+ * la phrase ENTIÈRE du serveur, seconde partie comprise, là où la planche n'en
+ * écrivait qu'un fragment. C'est la règle qui gagne contre l'abrègement, et c'est
+ * le sens de « en permanence » dans §2.7. Si le porteur préfère l'abrègement, c'est
+ * la constante partagée qu'il faut changer — à un seul endroit, pour l'API et pour
+ * les écrans à la fois.
+ *
+ * LES HUIT AUTRES PLANCHES MOBILES NE LE DESSINENT PAS DU TOUT, et aucune liaison
+ * ne peut y remédier : il n'y a pas d'ancre. C'est un trou de MAQUETTE, remonté au
+ * porteur, et on ne le comble pas en ajoutant des pixels dans le générateur.
+ */
+const bandeauSecurite = (texteDeLaPlanche) => ({
+  noeud: '>' + texteDeLaPlanche + '<',
+  devient: '>{{ avertissement }}<',
+  fois: 1,
+  frames: ['Mobile'],
+  why: 'Le bandeau de sécurité §2.7, tel que `meta.safetyBanner` l’écrit — la règle voyage avec la réponse au lieu de vivre dans le composant. La planche l’abrège ; la liaison rétablit la phrase entière.',
+});
+
+/**
+ * ─── LA RANGÉE DE FILTRES DU CADRE MOBILE, et ce qu'elle rend lisible ───────
+ *
+ * Les cadres mobiles n'ont PAS de rail : le bandeau de section ne leur est donc
+ * d'aucun secours, et c'est la raison que ce fichier donnait pour les laisser tous
+ * sur `_props` sauf H02. Elle est juste pour le rail, et elle est incomplète pour
+ * la planche : le mobile DÉPLACE deux des trois compteurs du rail dans sa rangée
+ * de filtres, où la maquette les écrit « Toutes · 41 » et « Vous pouvez aider · 4 ».
+ *
+ * Ce sont EXACTEMENT les deux nombres que `compteurs.ouvertes` et
+ * `compteurs.pouvezAider` portent déjà — `meta.open` de `GET /help` et le compte
+ * de `GET /help/can-help`. Rien de neuf n'est demandé au back, rien de neuf n'est
+ * ajouté au type : le même nombre, à l'autre largeur. Les laisser figés affichait
+ * « 41 demandes » à une ville qui en a trois, sur la moitié de l'écran que le
+ * téléphone sert — et l'ordinateur, lui, disait vrai.
+ *
+ * LES TROIS AUTRES PASTILLES DE LA RANGÉE RESTENT DESSINÉES, et c'est la maquette
+ * qui le décide : « Mes demandes », « Mes réponses » et « Parrainage » n'y portent
+ * AUCUN nombre. H09 et H10 en comptent bien un dans leur sous-titre d'ordinateur ;
+ * l'écrire ici demanderait d'ajouter du dessin que la planche ne fait pas.
+ *
+ * DEUX CADRES S'EN SERVENT — H01 et H04 — ET LA PASTILLE ACTIVE N'EST PAS LA MÊME :
+ * H01 teinte « Toutes », H04 teinte « Vous pouvez aider ». Le fond, la couleur et
+ * la bordure font partie de l'ancre, donc ce sont bien QUATRE ancres et non deux —
+ * et `fois` le prouve, puisqu'une ancre de H01 posée sur H04 ne s'y trouve pas et
+ * arrête la génération. L'argument dit laquelle des deux est teintée, et la
+ * fabrique écrit les deux états ; rien n'est deviné.
+ */
+const PASTILLE_FILTRE = (fond, couleur, bord, texte) =>
+  '<span style="height:36px;padding:0 13px;border-radius:999px;display:flex;align-items:center;font-size:12.5px;font-weight:700;white-space:nowrap;background:' +
+  fond +
+  ';color:' +
+  couleur +
+  ';border:1px solid ' +
+  bord +
+  '">' +
+  texte +
+  '</span>';
+
+const ACTIVE = ['#16785E', '#fff', '#16785E'];
+const INACTIVE = ['#fff', '#16211D', '#E6EBE9'];
+
+const filtresDuFil = (actif) => {
+  const etat = (nom) => (nom === actif ? ACTIVE : INACTIVE);
+  return [
+    {
+      noeud: PASTILLE_FILTRE(...etat('toutes'), 'Toutes · 41'),
+      devient: PASTILLE_FILTRE(...etat('toutes'), 'Toutes · {{ compteurs.ouvertes }}'),
+      fois: 1,
+      frames: ['Mobile'],
+      why: 'La pastille « Toutes » du cadre mobile porte le même `meta.open` de `GET /help` que la pastille du rail d’ordinateur.',
+    },
+    {
+      noeud: PASTILLE_FILTRE(...etat('aider'), 'Vous pouvez aider · 4'),
+      devient: PASTILLE_FILTRE(...etat('aider'), 'Vous pouvez aider · {{ compteurs.pouvezAider }}'),
+      fois: 1,
+      frames: ['Mobile'],
+      why: 'La pastille « Vous pouvez aider » du cadre mobile compte les suggestions de `GET /help/can-help` — le même nombre que le rail.',
+    },
+  ];
+};
 
 /**
  * ─── H02 · UNE RÉPONSE À UNE DEMANDE, ÉCRITE UNE FOIS ───────────────────────
@@ -300,6 +486,8 @@ export const screens = [
         frames: ['Desktop'],
         why: 'Les deux compteurs de ville du `meta` de `GET /help` (`open`, `resolvedThisMonth`) et le nom de la ville.',
       },
+      ...filtresDuFil('toutes'),
+      bandeauSecurite('Aucun versement entre membres pour une démarche.'),
     ],
   },
 
@@ -552,7 +740,21 @@ export const screens = [
   {
     section: 'H03',
     frames: both('Publier une demande', 'Publier une demande'),
-    donnees: [...bandeau()],
+    /**
+     * LE COMPOSEUR N'A QU'UNE DONNÉE, et c'est son bandeau de sécurité.
+     *
+     * Tout le reste de la planche mobile est du FORMULAIRE : les deux onglets
+     * « Demande » / « Offre », les quatre catégories, les libellés « Titre »,
+     * « Votre demande », « Échéance », et leurs exemples de saisie
+     * (« Accompagner un RDV préfecture », « Première convocation… », « Jeudi »).
+     * Un exemple de champ n'est pas une donnée du membre : le lier afficherait sa
+     * propre demande à la place de l'invite, sur l'écran où il la rédige.
+     *
+     * Son bandeau, lui, est la règle dure §2.7, et il l'ABRÈGE encore plus que
+     * H01 — « Aucun versement entre membres. », sans la démarche ni la seconde
+     * phrase. Deux planches, deux abrègements, une seule règle.
+     */
+    donnees: [...bandeau(), bandeauSecurite('Aucun versement entre membres.')],
   },
 
   /**
@@ -574,6 +776,7 @@ export const screens = [
         frames: ['Desktop'],
         why: 'Le nombre de demandes suggérées, compté sur `GET /help/can-help` (§2.6).',
       },
+      ...filtresDuFil('aider'),
     ],
   },
 
@@ -583,11 +786,30 @@ export const screens = [
    * La ville du filtre est la SEULE donnée scalaire de cet écran : les trois
    * autres sélecteurs (« Langue », « Type de parcours », « Pays ») n'affichent que
    * leur libellé, sans valeur choisie.
+   *
+   * ET ELLE EST MAINTENANT LIÉE — SUR LES DEUX CADRES. Ce commentaire l'annonçait
+   * comme une donnée et la laissait figée : « Lyon » était écrit en dur dans les
+   * deux planches. C'est la ville pilote, donc c'était juste par accident, et ça
+   * cessait de l'être au premier jour d'une seconde ville. Le fragment est le MÊME
+   * à 1440 et à 390 px — la pastille active du filtre, une occurrence dans chaque
+   * cadre, comptée — donc une seule déclaration sans clé `frames`, et c'est ce qui
+   * fait du cadre mobile de H05 un cadre qui lit ses données sans que sa planche
+   * dessine le moindre rail.
    */
   {
     section: 'H05',
     frames: both('Parrainage', 'Parrainage'),
-    donnees: [...bandeau()],
+    donnees: [
+      ...bandeau(),
+      {
+        noeud:
+          '<span style="padding:8px 13px;border-radius:999px;font-size:12.5px;font-weight:700;white-space:nowrap;background:#16785E;color:#fff;border:1px solid #16785E">Lyon</span>',
+        devient:
+          '<span style="padding:8px 13px;border-radius:999px;font-size:12.5px;font-weight:700;white-space:nowrap;background:#16785E;color:#fff;border:1px solid #16785E">{{ ville }}</span>',
+        fois: 1,
+        why: 'La ville du filtre de parrainage, résolue par `GET /users/{pseudo}` — `GET /me` ne rend que `cityId`, un UUID (même écart que K01).',
+      },
+    ],
   },
 
   /**
@@ -741,6 +963,33 @@ export const screens = [
     ],
   },
 
+  /**
+   * ── H07 · /parrainage/mes-parrainages ──────────────────────────────────────
+   *
+   * LE CADRE MOBILE N'A RIEN QU'IL PUISSE LIRE, et c'est une ligne de sa carte qui
+   * l'interdit — pas un manque de temps.
+   *
+   * Ses deux planches sont les deux ÉTATS d'un parrainage : un ACTIF (avatar de
+   * 44 px, pastille de rôle, « Fin dans 42 jours », trois boutons) et une DEMANDE
+   * REÇUE (avatar de 40 px, « Demande reçue », un bouton). Les deux viennent du
+   * même `items` de `GET /me/mentorships`, et presque tout y est : `other.displayName`,
+   * `role`, `status`, `endsAt`.
+   *
+   * PRESQUE. La carte active écrit « Mes études à Lyon » sous le nom — LE TITRE DU
+   * PARCOURS du filleul. `myMentorshipsResponseSchema` ne rend que `journeyId`, un
+   * UUID, et rien dans ce module ne le résout : lire le parcours d'un autre membre
+   * demande `GET /journeys/:id`, que §3.4 réserve à son équipe. Lier la carte
+   * laisserait donc ce littéral DANS une boucle, et chacun de mes filleuls
+   * jurerait suivre « Mes études à Lyon ». C'est exactement le défaut que les
+   * quatre listes de ce module évitent déjà (voir l'en-tête de
+   * `screens/entraide/data.ts`), et il ne devient pas acceptable parce que la
+   * liste est plus courte.
+   *
+   * Le reste de la planche est une barre d'onglets — « Filleul·e », « Parrain » —
+   * sans aucun nombre. Remonté au porteur : il faudrait que `GET /me/mentorships`
+   * nomme le parcours (son TYPE suffirait, et §2.5 n'autorise que le type), ou que
+   * la planche cesse de l'écrire.
+   */
   {
     section: 'H07',
     frames: both('Mes parrainages', 'Mes parrainages'),
@@ -767,6 +1016,30 @@ export const screens = [
   // H09 et H10 ne figurent pas dans T5 ; la maquette et l'API les portent
   // (`/help/mine`, `/help/my-responses`, §5 « Panneau Entraide »). Leurs routes
   // sont celles que la maquette écrit sous leur numéro de planche.
+  /**
+   * ── H09 · LE CADRE MOBILE NE LIT RIEN, ET TROIS LITTÉRAUX L'EXPLIQUENT ─────
+   *
+   * Sa rangée de filtres — « Toutes », « Ouvertes », « Résolues » — ne porte AUCUN
+   * nombre, contrairement à celle de H01 et H04 : il n'y a donc pas de compteur à
+   * lier. Reste la liste de MES demandes, et elle bute sur trois littéraux dont
+   * aucune réponse ne porte la source :
+   *
+   *   · « Étape 7 · Logement · échéance dans 9 jours » — `helpCardSchema` ne rend
+   *     que `fromJourney: boolean` ; le `journeyContext` n'existe que sur
+   *     `GET /help/:id`, une demande à la fois ;
+   *   · « 3 réponses · 2 nouvelles » — `responseCount` existe, « nouvelles » non.
+   *     Aucun champ ne dit « vue depuis », l'écart est déjà écrit dans
+   *     `screens/h09/data.ts` ;
+   *   · « visible jusqu'au 10 octobre » — aucune date d'expiration dans la carte.
+   *     `S09` a le même besoin et l'API le sert là-bas (`expiresAt` de
+   *     `housingCardSchema`) ; `help` n'en a pas.
+   *
+   * Lier la liste mettrait ces trois phrases DANS un `<sc-for>`, donc sur chacune
+   * de mes demandes. Trois mensonges par ligne valent moins qu'un cadre qui ne lit
+   * rien, et la raison de fond est celle qu'écrit l'en-tête de
+   * `screens/entraide/data.ts` : « ce n'est pas un travail qu'on fait à moitié ».
+   * Remonté au porteur, avec les trois champs qui manquent.
+   */
   {
     section: 'H09',
     frames: both('Mes demandes', 'Fil d’entraide'),
@@ -814,6 +1087,55 @@ export const screens = [
         frames: ['Desktop'],
         why: 'La légende de la carte de bilan : le même total que le sous-titre.',
       },
+      {
+        noeud:
+          CARTE_REPONSE_M({
+            categorie: 'Matériel',
+            etat: MARQUEE,
+            age: 'hier',
+            auteur: 'Kofi B.',
+            titre: 'Un lit et une table',
+            corps: 'J’ai une table pliante à donner, Lyon 7e.',
+            bilan: BILAN_MARQUEE('Kofi'),
+            second: 'Écrire à Kofi',
+          }) +
+          CARTE_REPONSE_M({
+            categorie: 'Démarches',
+            etat: EN_ATTENTE,
+            age: 'il y a 3 h',
+            auteur: 'Fatou N.',
+            titre: 'Accompagner un RDV préfecture',
+            corps: 'Je connais la procédure, je peux venir jeudi.',
+            second: 'Modifier ma réponse',
+          }),
+        devient:
+          '<sc-for list="{{ mesReponses.liste }}" as="r">' +
+          '<sc-if value="{{ r.marquee }}">' +
+          CARTE_REPONSE_M({
+            categorie: '{{ r.categorie }}',
+            etat: MARQUEE,
+            age: '{{ r.age }}',
+            auteur: '{{ r.auteur }}',
+            titre: '{{ r.titre }}',
+            corps: '{{ r.corps }}',
+            bilan: BILAN_MARQUEE('{{ r.prenom }}'),
+            second: 'Écrire à {{ r.prenom }}',
+          }) +
+          '</sc-if><sc-if value="{{ r.attente }}">' +
+          CARTE_REPONSE_M({
+            categorie: '{{ r.categorie }}',
+            etat: EN_ATTENTE,
+            age: '{{ r.age }}',
+            auteur: '{{ r.auteur }}',
+            titre: '{{ r.titre }}',
+            corps: '{{ r.corps }}',
+            second: 'Modifier ma réponse',
+          }) +
+          '</sc-if></sc-for>',
+        fois: 1,
+        frames: ['Mobile'],
+        why: 'Mes réponses, de `GET /help/my-responses` : la réponse, la demande qui la porte, son auteur et son état. LES DEUX VARIANTES de la maquette sont dessinées en entier sous `<sc-if>` — marquée utile avec son bandeau de bilan, en attente sans — parce qu’en garder une seule mentirait sur l’autre ligne.',
+      },
     ],
   },
 ].map((s) => ({
@@ -831,5 +1153,18 @@ export const screens = [
   dataModule: './data',
   dataType: `${s.section}Data`,
   frames: s.frames,
+  /**
+   * ─── LE SQUELETTE MEMBRE : LE RAIL, SUR LES DIX CADRES D'ORDINATEUR ───────
+   *
+   * Les dix planches d'ordinateur de ce module dessinent le rail en `<span>` —
+   * Accueil, Parcours, Entraide, Services, Agenda — donc cliquer n'y changeait
+   * pas l'URL. Les cinq destinations sont déclarées une fois pour les sept
+   * modules membre dans `tools/squelette-membre.mjs`.
+   *
+   * AUCUNE EXCEPTION ICI, et c'est vérifié : les dix écrans ont un cadre
+   * d'ordinateur, les dix le dessinent, et aucun cadre mobile ne le dessine.
+   * La surbrillance est déjà juste — la maquette peint « Entraide » sur les dix.
+   */
+  liens: railLitteral(s.frames.map((f) => f.name).filter((n) => n.includes('Desktop'))),
   ...(s.donnees === undefined ? {} : { donnees: s.donnees }),
 }));

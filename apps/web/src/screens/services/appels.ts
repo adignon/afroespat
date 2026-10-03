@@ -9,6 +9,7 @@ import {
   jobsListResponseSchema,
   myAlertsResponseSchema,
   mySubscriptionResponseSchema,
+  plansResponseSchema,
   prosListResponseSchema,
   proDetailResponseSchema,
   type AlertCriteria,
@@ -160,6 +161,42 @@ function initialesDe(nom: string): string {
 }
 
 const prenomDe = (nom: string): string => nom.trim().split(/\s+/)[0] ?? nom;
+
+/**
+ * « Sarah Traoré » → « Sarah T. » — le nom abrégé que la feuille de contact écrit.
+ *
+ * La maquette abrège le nom de famille à sa première lettre dans son suréacrit,
+ * et l'écrit en entier sur l'écran. C'est la MÊME donnée, mise en forme pour la
+ * place disponible, exactement comme `initialesDe`.
+ *
+ * UN SEUL MOT RESTE ENTIER, sans point : « Sarah. » n'abrège rien et se lit comme
+ * une faute. Un nom de famille de plusieurs mots garde la première lettre du
+ * dernier, qui est celle que la maquette montre.
+ */
+function nomAbrege(nom: string): string {
+  const mots = nom.trim().split(/\s+/).filter((m) => m !== '');
+  if (mots.length < 2) return nom.trim();
+  const famille = mots[mots.length - 1] ?? '';
+  return `${mots.slice(0, -1).join(' ')} ${[...famille][0] ?? ''}.`;
+}
+
+/**
+ * L'HÔTE d'une URL de candidature — « https://arvel.fr/emploi » → « arvel.fr ».
+ *
+ * `new URL` plutôt qu'une expression régulière : c'est l'analyseur du navigateur,
+ * donc exactement celui qui décidera où le bouton « Continuer » envoie. Les faire
+ * diverger est la seule façon pour cet interstitiel de mentir.
+ *
+ * Une URL qui ne s'analyse pas rend un tiret cadratin. `externalUrl` est nullable
+ * côté API et `lien` vaut alors déjà « — » : on ne fabrique pas un domaine.
+ */
+function domaineDe(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '—';
+  }
+}
 
 /** « Sarah Traoré » → « Sarah T. », la forme courte des listes de la maquette. */
 function nomCourt(nom: string): string {
@@ -410,6 +447,10 @@ export async function chargerS02(id: string): Promise<S02Data> {
       description: annonce.description,
       initiales: initialesDe(annonce.author.displayName),
       auteur: annonce.author.displayName,
+      /** Le suréacrit de la feuille « Présentez-vous » : « Sarah T. ». */
+      auteurCourt: nomAbrege(annonce.author.displayName),
+      /** « Contacter Sarah », et la phrase de pied de la feuille. */
+      prenomAuteur: prenomDe(annonce.author.displayName),
       /**
        * La maquette dessine DEUX emplacements de photo en grand et compte le reste
        * (« + 4 photos »). On soustrait donc deux, et jamais en dessous de zéro.
@@ -522,6 +563,8 @@ export async function chargerS05(id: string): Promise<S05Data> {
       quand: depuisQuand(offre.createdAt),
       description: offre.description,
       lien: offre.externalUrl ?? '—',
+      /** Le domaine que l'interstitiel nomme, dérivé du lien lui-même. */
+      domaine: offre.externalUrl === null ? '—' : domaineDe(offre.externalUrl),
     },
   };
 }
@@ -554,6 +597,7 @@ export async function chargerS05Nouveau(): Promise<S05Data> {
       quand: '—',
       description: '—',
       lien: '—',
+      domaine: '—',
     },
   };
 }
@@ -696,7 +740,36 @@ function recommandation(
  * route porte (voir `screens/s08/data.ts`).
  */
 export async function chargerS08(): Promise<S08Data> {
-  return moiEtQuotas();
+  const [commun, plans] = await Promise.all([
+    moiEtQuotas(),
+    memberApi.get('/plans', plansResponseSchema),
+  ]);
+
+  /**
+   * LE PLAN PRO, par son CODE et non par son rang dans la liste.
+   *
+   * `GET /plans` rend les quatre plans dans l'ordre de la table ; chercher
+   * `items[2]` casserait au premier plan ajouté. `PlanCode` est l'énumération
+   * partagée, donc `'PRO'` est vérifié par le compilateur et non épelé ici.
+   */
+  const pro = plans.items.find((p) => p.code === 'PRO');
+
+  return {
+    ...commun,
+    /**
+     * UN TIRET CADRATIN PLUTÔT QU'UN PRIX INVENTÉ si le plan manque.
+     *
+     * `find` peut rendre `undefined` — une table `plans` dont la ligne PRO serait
+     * désactivée, ce que `PATCH /admin/plans/:code` autorise (`isActive`). Écrire
+     * « 9 €/mois » en repli remettrait exactement le chiffre figé que cette
+     * liaison retire, et il serait faux au pire moment : celui où le porteur vient
+     * de changer l'offre.
+     */
+    offrePro: {
+      nom: pro?.nameFr ?? 'Pro',
+      prix: pro === undefined ? '—' : `${montant(pro.month.eur.amountCents, pro.month.eur.currency)}/mois`,
+    },
+  };
 }
 
 // ─── S09 · /services/mes-annonces ────────────────────────────────────────────

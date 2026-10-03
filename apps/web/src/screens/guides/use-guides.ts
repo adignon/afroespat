@@ -23,7 +23,13 @@ import {
   unvoteGuide,
   voteGuide,
 } from './api';
-import { contributorsFrom, guideCardsFrom, propositionFrom, versionsFrom } from './from-api';
+import {
+  contributorsFrom,
+  guideCardsFrom,
+  guideHeadFrom,
+  propositionFrom,
+  versionsFrom,
+} from './from-api';
 
 /**
  * L'ÉTAT DES ÉCRANS DE GUIDES — A03 et A04.
@@ -123,7 +129,7 @@ export interface ListeEtat {
  * 2 à vérifier), pas la valeur de l'API. La traduction est ici, en un seul
  * endroit, parce que le bandeau transcodé pose ces rangs et rien d'autre.
  */
-export function useGuides(tab: number) {
+export function useGuides(tab: number, actif: boolean = true) {
   const [etat, setEtat] = useState<ListeEtat>({
     pret: false,
     chargement: true,
@@ -167,12 +173,25 @@ export function useGuides(tab: number) {
     [onglet],
   );
 
+  /**
+   * `actif` — NE PAS APPELER UNE LISTE QU'AUCUN ÉCRAN NE MONTRE.
+   *
+   * A03 est une page : sa liste se charge à l'ouverture, et `actif` vaut `true`
+   * par défaut pour que rien ne change chez elle. A01G est une FENÊTRE : la
+   * charger au rendu de `/accueil` ferait un `GET /guides` à chaque affichage du
+   * fil pour un panneau que le membre n'ouvrira peut-être jamais.
+   *
+   * Le crochet reste monté et garde son état : c'est la REQUÊTE qui attend, pas le
+   * composant. Un `useGuides` appelé conditionnellement serait un appel de crochet
+   * conditionnel, que React refuse.
+   */
   useEffect(() => {
+    if (!actif) return;
     const ac = new AbortController();
     setEtat((p) => ({ ...p, chargement: true }));
     void charger(ac.signal);
     return () => ac.abort();
-  }, [charger]);
+  }, [charger, actif]);
 
   const donnees = useMemo(
     () => ({
@@ -351,6 +370,22 @@ export function useGuide(slug: string) {
   const donnees = useMemo(
     () => ({
       contributors: etat.detail === null ? [] : contributorsFrom(etat.detail),
+      /**
+       * L'en-tête du guide. `null` tant que le détail n'est pas là : la page
+       * garde alors celui de la maquette, comme elle le fait déjà pour
+       * l'historique, plutôt que d'afficher un titre vide le temps d'un aller-retour.
+       */
+      enTete:
+        etat.detail === null
+          ? null
+          : guideHeadFrom(
+              etat.detail,
+              etat.propositions === null
+                ? 0
+                : etat.propositions.items.filter(
+                    (p) => p.status === 'PENDING' || p.status === 'ESCALATED',
+                  ).length,
+            ),
       versionRows: etat.versions === null ? [] : versionsFrom(etat.versions),
       propositionsVues:
         etat.propositions === null ? [] : etat.propositions.items.map((p) => propositionFrom(p)),

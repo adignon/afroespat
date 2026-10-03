@@ -51,7 +51,13 @@ export default function PublierOffrePage() {
           onOuvrir={onOuvrir}
           onFermer={onFermer}
           modales={{
-            S05L: { mobile: <S05LienExterne /> },
+            /**
+             * `/nouveau` n'a pas d'offre à lire : `chargerS05Nouveau` met un tiret
+             * cadratin dans `domaine`, comme dans `lien`. L'interstitiel ne peut
+             * donc pas annoncer un domaine inventé — et il n'a de toute façon
+             * aucun bouton pour s'ouvrir sur cette route.
+             */
+            S05L: { mobile: <S05LienExterne {...donnees} /> },
             S05R: { mobile: <S05Recommander /> },
           }}
         />

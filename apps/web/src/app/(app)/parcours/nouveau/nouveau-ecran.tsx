@@ -1,6 +1,8 @@
 'use client';
 
-import { EcranParcours, useParcours } from '@/screens/parcours/ecran';
+import { useMemo } from 'react';
+import { chargerJ02 } from '@/screens/parcours/appels';
+import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { CODE_REGULARISER } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J02Desktop } from '@/screens/j02/desktop.generated';
@@ -27,6 +29,24 @@ import { J02MobilePlanAtteint } from '@/screens/j02/mobileplanatteint.generated'
  */
 export type EtapeCreation = 'type' | 'regulariser' | 'plan';
 
+/**
+ * ── CET ÉCRAN LIT MAINTENANT SES DONNÉES, et ce n'était pas le cas ──────────
+ *
+ * Il appelait `useParcours` seul, c'est-à-dire des GESTES sans lecture : ses
+ * quatre cadres recevaient `ParcoursData` — quatre fonctions — et écrivaient
+ * « Étudier · 12 étapes » en dur. Le commentaire de `journeyTemplateVersionSchema`
+ * mesure exactement ce que ça coûte : l'API répond 15 pour `STUDIES`, et
+ * « recopier le nombre de la maquette afficherait un engagement faux au moment
+ * précis où le membre choisit son parcours ».
+ *
+ * `EcranParcoursDonnees` fusionne les gestes et la donnée, comme pour les onze
+ * autres écrans du module : `chargerJ02` est une fonction de MODULE, donc une
+ * référence stable — `useDonnees` a `charger` dans ses dépendances, exprès, et une
+ * fonction anonyme y bouclerait.
+ *
+ * LE CONTEXTE DÉPEND DE L'ÉTAPE, et il doit rester le même objet d'un rendu à
+ * l'autre pour la même étape : `useMemo` plutôt qu'un littéral écrit en ligne.
+ */
 export function NouveauEcran({ etape }: { readonly etape: EtapeCreation }) {
   /**
    * « CONTINUER » DE LA VARIANTE RÉGULARISER CRÉE LE PARCOURS (§3.1, T5).
@@ -34,7 +54,9 @@ export function NouveauEcran({ etape }: { readonly etape: EtapeCreation }) {
    * C'est le seul bouton de J02 que le générateur branche : la maquette dessine
    * bien « Créer le parcours » sur la planche des types, mais ce libellé n'est pas
    * dans les actions que le transcodeur reconnaît, donc aucun `onClick` n'y est
-   * posé. Et les quatre cartes de type sont des `<div>`, pas des boutons.
+   * posé. Et les quatre cartes de type sont des `<div>`, pas des boutons — c'est
+   * aussi pourquoi `modeles[i].choisi` reproduit le choix que la maquette montre
+   * et ne suit aucun clic : il n'y en a pas à suivre.
    *
    * Le code du modèle n'est donné QUE sur cette variante. Sur la planche des
    * types, « Continuer » n'existe pas ; sur celle du plan atteint, créer serait
@@ -44,30 +66,27 @@ export function NouveauEcran({ etape }: { readonly etape: EtapeCreation }) {
    * identifiant est propre à une base. Coder l'identifiant en dur aurait marché en
    * développement et créé un parcours inexistant en production.
    */
-  const { ouverte, onOuvrir, onFermer, volet, data, erreur, niveauRequis, oublierNiveauRequis } =
-    useParcours(null, etape === 'regulariser' ? { creerCode: CODE_REGULARISER } : {});
-
-  const mobile =
-    etape === 'regulariser' ? (
-      <J02MobileRegulariser {...data} />
-    ) : etape === 'plan' ? (
-      <J02MobilePlanAtteint {...data} />
-    ) : (
-      <J02Mobile {...data} />
-    );
+  const contexte = useMemo(
+    () => (etape === 'regulariser' ? { creerCode: CODE_REGULARISER } : {}),
+    [etape],
+  );
 
   return (
-    <EcranParcours
+    <EcranParcoursDonnees
       screen="J02"
-      desktop={<J02Desktop {...data} />}
-      mobile={mobile}
-      ouverte={ouverte}
-      onOuvrir={onOuvrir}
-      onFermer={onFermer}
-      modales={{ J03: plancheBlocage(volet, data) }}
-      erreur={erreur}
-      niveauRequis={niveauRequis}
-      oublierNiveauRequis={oublierNiveauRequis}
+      charger={chargerJ02}
+      contexte={contexte}
+      desktop={(d) => <J02Desktop {...d} />}
+      mobile={(d) =>
+        etape === 'regulariser' ? (
+          <J02MobileRegulariser {...d} />
+        ) : etape === 'plan' ? (
+          <J02MobilePlanAtteint {...d} />
+        ) : (
+          <J02Mobile {...d} />
+        )
+      }
+      modales={(d, volet) => ({ J03: plancheBlocage(volet, d) })}
     />
   );
 }

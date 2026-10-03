@@ -9,6 +9,8 @@ import { A01CDesktop } from '@/screens/a01c/desktop.generated';
 import { A01CMobile } from '@/screens/a01c/mobile.generated';
 import { A01PDesktop } from '@/screens/a01p/desktop.generated';
 import { A01PMobile } from '@/screens/a01p/mobile.generated';
+import { A01GDesktop } from '@/screens/a01g/desktop.generated';
+import { A01GMobile } from '@/screens/a01g/mobile.generated';
 import {
   mBottom,
   mTabs,
@@ -19,6 +21,8 @@ import {
   rail,
 } from '@/screens/a01/data';
 import { shareContactsDe, shareButtonFor, shareNets, shareOut } from '@/screens/a01p/data';
+import { useGuides } from '@/screens/guides/use-guides';
+import { guidesLiablesDe } from '@/screens/guides/from-api';
 import { useFil } from '@/screens/accueil/use-fil';
 import { threadFrom } from '@/screens/accueil/from-api';
 import { usePublication } from '@/screens/publication/use-publication';
@@ -54,7 +58,7 @@ import { usePublication } from '@/screens/publication/use-publication';
  */
 
 /** Les fenêtres que ce fil sait ouvrir. Les déclencheurs sont marqués par le transcodeur. */
-type OpenModal = 'A01C' | 'A01P' | null;
+type OpenModal = 'A01C' | 'A01P' | 'A01G' | null;
 
 export default function FeedPage() {
   const [storyFilter, setStoryFilter] = useState(-1);
@@ -106,10 +110,31 @@ export default function FeedPage() {
   const onOpen = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const trigger = target.closest('[data-modal-open]');
+    /**
+     * DEUX FAÇONS D'ÊTRE UN DÉCLENCHEUR, et la seconde n'est pas un raccourci.
+     *
+     * `data-modal-open` est posé par le GÉNÉRATEUR (`markTriggers`) sur les
+     * déclencheurs déclarés — c'est le cas de « Commenter » et « Partager », qui
+     * vivent dans la boucle des publications.
+     *
+     * L'icône livre du composeur, elle, n'est PAS déclarée : la maquette la dessine
+     * en `<span title="Lier un guide">` avec `cursor:pointer`, et la déclarer
+     * demanderait au générateur de la promouvoir en `<button>` — donc de modifier
+     * les deux cadres de A01, ce qui sort du branchement de données et croise le lot
+     * de navigation en cours. On s'accroche donc à l'attribut que la MAQUETTE écrit
+     * déjà, sans toucher au JSX transcodé.
+     *
+     * LIMITE ASSUMÉE ET REMONTÉE : un `<span>` n'est pas atteignable au clavier. Ce
+     * déclencheur est à la souris et au doigt seulement, jusqu'à ce que le lot de
+     * navigation le promeuve en `<button>` — c'est là que ce travail appartient, et
+     * `markTriggers` sait déjà le faire (`label` donne le nom accessible).
+     */
+    const trigger = target.closest('[data-modal-open], [title="Lier un guide"]');
     if (trigger === null) return;
-    const which = trigger.getAttribute('data-modal-open');
-    if (which !== 'A01C' && which !== 'A01P') return;
+    const which =
+      trigger.getAttribute('data-modal-open') ??
+      (trigger.getAttribute('title') === 'Lier un guide' ? 'A01G' : null);
+    if (which !== 'A01C' && which !== 'A01P' && which !== 'A01G') return;
     /**
      * `getAttribute` rend `null` quand l'attribut manque — ce qui arrive pour un
      * déclencheur hors boucle, ou pour une carte sans identifiant. On ouvre alors
@@ -175,6 +200,31 @@ export default function FeedPage() {
     ...shareButtonFor(shareSel.length),
   };
 
+  /**
+   * LA FENÊTRE « LIER UN GUIDE ».
+   *
+   * Les RÉSULTATS sont de vrais guides — `GET /guides`, par `useGuides` — et la
+   * requête ne part QUE lorsque la fenêtre s'ouvre (`actif`), parce qu'un panneau
+   * que le membre n'ouvre pas n'a aucune raison de coûter un appel à chaque
+   * affichage du fil.
+   *
+   * Les SUGGÉRÉS arrivent VIDES, et c'est mesuré, pas oublié : aucune route ne rend
+   * des guides « suggérés pour cette publication ». Les remplir des mêmes cartes
+   * que les résultats afficherait chaque guide deux fois, dont une sous une pastille
+   * « Suggéré » que rien ne justifie. Une section vide sous son titre se voit ; une
+   * fausse suggestion, non. REMONTÉ au rapport de lot.
+   *
+   * Ce qui n'est PAS branché non plus, et ne peut pas l'être : L'ENVOI. La sélection
+   * ne va nulle part — `createPostSchema` est `.strict()` et n'a pas de `guideIds`,
+   * donc `POST /posts` refuserait un guide lié. Les cases à cocher et « Lier 2
+   * guides » restent du dessin.
+   */
+  const guides = useGuides(0, open === 'A01G');
+  const lierGuide = {
+    guidesSuggeres: [],
+    guidesTrouves: guides.page === null ? [] : guidesLiablesDe(guides.page),
+  };
+
   return (
     <div onClick={onOpen}>
       <ScreenFrames
@@ -197,6 +247,14 @@ export default function FeedPage() {
         name="A01P"
         desktop={<A01PDesktop {...partage} />}
         mobile={<A01PMobile {...partage} />}
+      />
+      <Modal
+        open={open === 'A01G'}
+        onClose={close}
+        titleId="a01g-titre"
+        name="A01G"
+        desktop={<A01GDesktop {...lierGuide} />}
+        mobile={<A01GMobile {...lierGuide} />}
       />
     </div>
   );

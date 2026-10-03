@@ -56,6 +56,11 @@ export function PageStatiqueScreen({ variante }: { readonly variante: PageStatiq
     countryOptions: [],
     cityCatalogue: [],
     templates: [],
+    // P03 ne dessine ni compte à rebours, ni « Renvoyer », ni retour : ces trois
+    // valeurs existent pour P02 seul, et cette page ne les rend nulle part.
+    resendIn: 0,
+    onResend: () => undefined,
+    onChangeNumber: () => undefined,
   });
 
   return (

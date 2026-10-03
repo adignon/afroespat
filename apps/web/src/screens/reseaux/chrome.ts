@@ -43,40 +43,28 @@ export const EYE =
 
 // ─── Navigation ─────────────────────────────────────────────────────────────
 
-const RAIL_ITEMS: readonly (readonly [string, string])[] = [
-  ['Accueil', I.home],
-  ['Parcours', I.path],
-  ['Entraide', I.heart],
-  ['Services', I.serv],
-  ['Agenda', I.cal],
-];
-
-export const rail = RAIL_ITEMS.map(([label, icon], i) => ({
-  label,
-  icon,
-  bg: i === 0 ? '#FFFFFF' : 'rgba(255,255,255,.08)',
-  fg: i === 0 ? '#0F5C48' : '#CFE3DA',
-}));
-
-const PANEL_ITEMS: readonly (readonly [string, string, number | null])[] = [
-  ["Fil d'actualité", I.feed, null],
-  ['Guides & Démarches', I.book, null],
-  ["Fil d'entraide", I.heart, 12],
-  ['Réseaux', I.net, null],
-  ['Parrainage', I.mentor, null],
-  ['Villes & Membres', I.city, null],
-  ['Événements', I.cal, 3],
-];
-
-export const panel = (active: number) =>
-  PANEL_ITEMS.map(([label, icon, count], i) => ({
-    label,
-    icon,
-    count,
-    bg: i === active ? '#E3F0EB' : 'transparent',
-    fg: i === active ? '#0F5C48' : '#16211D',
-    w: i === active ? 700 : 500,
-  }));
+/**
+ * ─── LE RAIL ET LE PANNEAU NE SONT PLUS RECOPIÉS ICI ────────────────────────
+ *
+ * Ils l'ÉTAIENT, et l'en-tête de ce fichier dit pourquoi : quatre agents
+ * travaillaient en parallèle sur le module, et recopier douze lignes coûtait
+ * moins que se percuter. La raison était bonne, et elle a cessé de l'être au
+ * moment où ces entrées ont reçu une DESTINATION.
+ *
+ * Une couleur recopiée qui dérive se voit à l'œil. Une ROUTE recopiée qui dérive
+ * ne se voit pas : le rail de `/reseaux` enverrait « Services » ailleurs que le
+ * rail de `/accueil`, les deux cliqueraient, les deux auraient l'air justes, et
+ * rien n'arrêterait la génération. Il n'y a donc plus qu'UNE table de
+ * destinations — celle de `screens/a01/data.ts`, déclarée en regard de la clé
+ * `liens` de `tools/screens/03-accueil.mjs`.
+ *
+ * `I` reste local : il sert aux icônes propres à ce module, et ce sont des tracés,
+ * pas des adresses.
+ */
+export { panel, rail } from '../a01/data';
+// Réexporter ne met rien dans la portée locale, et `panelReseaux` ci-dessous
+// APPELLE `panel` : il faut donc aussi l'importer.
+import { panel } from '../a01/data';
 
 /** « Réseaux » est la quatrième entrée : c'est elle qui s'allume sur A07–A10. */
 export const panelReseaux = panel(3);

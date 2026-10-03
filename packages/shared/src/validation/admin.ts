@@ -1,5 +1,23 @@
 import { z } from 'zod';
-import { Phase, StaffRole, UserStatus } from '../enums/generated.js';
+import {
+  AiVerdict,
+  AuditActorType,
+  ConsentType,
+  MediaStatus,
+  ModerationActionType,
+  ModerationCaseStatus,
+  ModerationSource,
+  Phase,
+  PlanCode,
+  PlanInterval,
+  ProContactMethod,
+  ProTier,
+  ProVerificationStatus,
+  ReportSubjectType,
+  StaffRole,
+  UserStatus,
+  VerificationLevel,
+} from '../enums/generated.js';
 import { COMMUNITY_CITY_THRESHOLD_DEFAULT, COMMUNITY_CITY_THRESHOLD_SETTING_KEY } from './communities.js';
 import {
   HOUSING_PRICE_BOUNDS_DEFAULT,
@@ -17,7 +35,7 @@ import {
   MODERATION_THRESHOLDS_SETTING_KEY,
   moderationThresholdsSchema,
 } from './moderation.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import { cursorQuerySchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Administration et authentification d'équipe — 15-administration.md.
@@ -618,3 +636,658 @@ export const IMPACT_METRICS = {
   membresParVille: 'impact.members_by_city',
   guidesPublies: 'impact.guides_published',
 } as const;
+
+// ── Schémas de réponse, suite : D02, D03, D04, D05, D10, D14, D15 ───────────
+//
+// Même règle que ci-dessus, et elle vaut d'être répétée parce que c'est la seule
+// défense qui reste ici : AUCUN handler des six contrôleurs d'équipe ne déclare
+// de DTO de réponse ni de type de retour. Chaque schéma ci-dessous a donc été
+// RELEVÉ sur l'API qui tourne, avec une vraie session d'équipe, et non déduit du
+// service — lire le service aurait donné sa forme INTERNE, pas celle du JSON.
+//
+// `.strict()` partout où un champ greffé serait une fuite, et c'est l'essentiel
+// de ce module : ces routes portent des données de membres. Sans `.strict()`, zod
+// dépouille EN SILENCE — c'est le mécanisme par lequel `isPilot` a pu être servi
+// et ignoré pendant des semaines, et, bien plus grave ici, celui par lequel un
+// `phoneEncrypted` greffé sur la fiche membre arriverait dans le navigateur sans
+// que rien ne l'annonce. Un champ inconnu ARRÊTE l'écran, et c'est voulu.
+
+/**
+ * `GET /v1/admin/dashboard` — les blocs d'indicateurs (§5.1).
+ *
+ * RELEVÉ : `{ blocks: { <nom>: MetricPoint[] } }`, onze blocs nommés —
+ * `membres`, `indicateur_cle`, `parcours`, `entraide`, `guides`, `parrainage`,
+ * `evenements`, `reseaux`, `services`, `moderation`, `revenus`.
+ *
+ * ─── CE QUE CETTE ROUTE NE REND PAS, ET QU'IL NE FAUT PAS LUI DEMANDER ─────
+ *
+ * ELLE NE REND AUCUNE ALERTE. Le bandeau « ALERTES » de la planche D02 — « SLA
+ * dépassé · 3 dossiers de modération », « Justificatifs pro · 5 en attente »,
+ * « Villes à activer · Nantes, Rennes » — n'a AUCUNE contrepartie ici : les blocs
+ * ne contiennent que des points de mesure, et aucun `metric` relevé ne s'en
+ * approche. Les trois morceaux vivraient dans trois routes différentes
+ * (`/moderation/stats`, `/pro-profiles`, `/ref/cities`) ; les recoller côté écran
+ * fabriquerait un bandeau d'alertes que l'API ne sert pas, et dont personne ne
+ * pourrait dire s'il est complet. Il reste DESSINÉ, et c'est remonté au porteur :
+ * entier ou rien.
+ *
+ * `blocks.revenus` est RELEVÉ VIDE (`[]`), et ce n'est pas un défaut de ce
+ * schéma : le MRR n'est pas posé, ni la répartition Mobile Money/carte, ni
+ * l'affiliation. « Un MRR faux est pire qu'un MRR absent » — le bloc REVENUS de
+ * D02 reste donc celui de la maquette.
+ *
+ * `z.record` et non une liste fermée de onze clés : le serveur décide des blocs,
+ * et un douzième ne doit pas arrêter le tableau de bord. L'écran, lui, REFUSE un
+ * bloc qu'il ATTEND et qui manque — c'est `bloc()` dans `appels.ts`, et c'est là
+ * que la distinction est juste : ici on valide la forme, là-bas on exige le
+ * contenu dont l'écran dépend.
+ */
+export const adminDashboardResponseSchema = z
+  .object({ blocks: z.record(z.array(metricPointSchema)) })
+  .strict();
+export type AdminDashboardResponse = z.infer<typeof adminDashboardResponseSchema>;
+
+/**
+ * Les mesures du tableau de bord que D02 affiche, nommées une fois.
+ *
+ * Mêmes raisons qu'`IMPACT_METRICS` : un nom de mesure mal orthographié ne lève
+ * rien, ne trouve rien, et laisse à l'écran un « 0 » parfaitement crédible.
+ *
+ * Les mesures VENTILÉES portent ici le nom de la mesure seule ; la clé de
+ * ventilation est passée à l'appel. `journeys.by_status` relevée avec la seule
+ * dimension `ACTIVE` est le cas NORMAL : une dimension absente veut dire « aucune
+ * ligne dans ce seau », donc zéro — tandis qu'une MESURE absente est un désaccord
+ * de contrat. Les deux ne se confondent pas, et `appels.ts` les traite
+ * séparément, pour la raison que `chargerD16` a déjà écrite : zéro est un fait,
+ * pas une absence.
+ */
+/**
+ * CINQ DE CES QUINZE NOMS NE SONT LUS PAR AUCUN ÉCRAN, et c'est mesuré, pas
+ * supposé : `dossiersParStatut`, `evenementsParStatut`, `evenementsPresences`,
+ * `parrainagesParStatut`, `reseauxParStatut`.
+ *
+ * Ce ne sont pas des restes. Ce sont les mesures des QUATRE CARTES DE D02 QUI
+ * RESTENT DESSINÉES — MODÉRATION, ÉVÉNEMENTS, PARRAINAGE, RÉSEAUX — parce qu'il
+ * manque à chacune un AUTRE nombre que la route ne sert pas (« SLA respecté »,
+ * « Ce mois », « Note », « Intérêt »). La moitié servie est donc nommée ici, et
+ * inutilisée là-bas, ce qui est exactement l'état des choses.
+ *
+ * Le fait a été VÉRIFIÉ par une mutation témoin : casser `dossiersParStatut`
+ * laisse les onze tests de D02 verts, ce qui prouve que la carte MODÉRATION n'est
+ * pas branchée — et le jour où elle le sera, le témoin cessera d'être vert.
+ */
+export const DASHBOARD_METRICS = {
+  membresInscrits: 'members.registered',
+  membresActifs30j: 'members.active_30d',
+  membresParNiveau: 'members.by_level',
+  parcoursParStatut: 'journeys.by_status',
+  entraideParStatut: 'help.by_status',
+  entraideDelaiMedianMinutes: 'help.first_response_median_minutes',
+  guidesParStatut: 'guides.by_status',
+  parrainagesParStatut: 'mentorships.by_status',
+  evenementsParStatut: 'events.by_status',
+  evenementsPresences: 'events.checked_in',
+  reseauxParStatut: 'communities.by_status',
+  logementsParStatut: 'housing.by_status',
+  emploisParStatut: 'jobs.by_status',
+  prosParVerification: 'pros.by_verification',
+  dossiersParStatut: 'moderation.cases_by_status',
+} as const;
+
+/** Les noms de blocs de `GET /admin/dashboard` que D02 lit, relevés sur la route. */
+export const DASHBOARD_BLOCKS = {
+  membres: 'membres',
+  parcours: 'parcours',
+  entraide: 'entraide',
+  guides: 'guides',
+  parrainage: 'parrainage',
+  evenements: 'evenements',
+  reseaux: 'reseaux',
+  services: 'services',
+  moderation: 'moderation',
+} as const;
+
+/**
+ * `GET /v1/admin/moderation/stats` — les compteurs de la file (13 §4.4).
+ *
+ * RELEVÉ : `openByPriority` est un objet dont les clés sont les priorités « 1 » à
+ * « 5 » EN CHAÎNES — c'est du JSON — d'où `z.record` et non cinq champs nommés.
+ *
+ * `slaComplianceRate` est une PROPORTION dans [0,1], pas un pourcentage : relevée
+ * à `1`. La borne `.max(1)` n'est pas décorative, elle fige la convention : le
+ * jour où le serveur se mettrait à rendre `93`, l'écran s'arrête au lieu
+ * d'afficher « 9 300 % ».
+ *
+ * ─── DEUX CHAMPS NULLABLES QUE L'ÉCHANTILLON NE MONTRAIT PAS ──────────────
+ *
+ * `slaComplianceRate` et `averageResolutionMs` sont RENDUS `null` quand aucun
+ * dossier n'est encore résolu — `resolved.length === 0 ? null : …` dans
+ * `ModerationService.stats`. La charge relevée sur la base de développement les
+ * portait tous deux non nuls, et un schéma écrit sur ce seul échantillon les
+ * aurait déclarés requis : l'écran se serait alors cassé le premier jour, sur une
+ * file neuve, c'est-à-dire exactement quand personne ne regarde.
+ *
+ * La nullabilité se lit donc dans le CODE QUI LA PRODUIT et jamais dans
+ * l'échantillon — même règle que `region` sur `adminCitySchema`, déclarée
+ * nullable alors que les vingt villes relevées en portaient une.
+ *
+ * ─── ET `slaComplianceRate` EST UN ÉCHANTILLON, PAS UN TAUX ───────────────
+ *
+ * Il est calculé sur les 500 DERNIERS dossiers résolus (`take: 500`), et
+ * `resolvedSampleSize` est là pour le dire. Ce n'est donc pas « le taux de
+ * respect du SLA » : c'est celui d'un échantillon récent, et il ne porte que sur
+ * des dossiers RÉSOLUS. Relevé `slaComplianceRate: 1` en même temps
+ * qu'`overdueCount: 1723` — cent pour cent de respect et mille sept cent
+ * vingt-trois dossiers hors délai, qui ne se contredisent qu'en apparence : les
+ * seconds sont OUVERTS, donc hors de l'échantillon.
+ *
+ * Afficher ce nombre comme le « SLA respecté · 93 % » de la maquette dirait au
+ * lecteur quelque chose de faux. C'est une des raisons pour lesquelles la carte
+ * MODÉRATION de D02 n'est pas liée, et la seconde est de rôle (§2.2).
+ */
+export const adminModerationStatsResponseSchema = z
+  .object({
+    /**
+     * La FILE, par priorité — statut `OPEN` **ou** `IN_REVIEW`.
+     *
+     * Mesuré : la somme vaut 1847 là où `moderation.cases_by_status/OPEN` du
+     * tableau de bord vaut 1811. Les deux nombres sont justes et ne comptent pas
+     * la même chose — 36 dossiers sont en cours d'examen. C'est celui-ci que
+     * l'écran de file affiche, parce que c'est ce qu'il y a dans la file.
+     */
+    openByPriority: z.record(z.number().int().nonnegative()),
+    overdueCount: z.number().int().nonnegative(),
+    /** Proportion dans [0,1] sur un échantillon — nulle si rien n'est résolu. */
+    slaComplianceRate: z.number().min(0).max(1).nullable(),
+    /** Nul si rien n'est résolu. */
+    averageResolutionMs: z.number().nonnegative().nullable(),
+    resolvedSampleSize: z.number().int().nonnegative(),
+  })
+  .strict();
+export type AdminModerationStatsResponse = z.infer<typeof adminModerationStatsResponseSchema>;
+
+/** L'indicateur de délai, tel que la route le rend — calculé par le SERVEUR (§9). */
+export const slaStateSchema = z.enum(['OK', 'WARNING', 'OVERDUE']);
+
+/**
+ * Une ligne de la file de modération — `GET /v1/admin/moderation/cases` (13 §4.1).
+ *
+ * ─── CE QUE CETTE ROUTE NE REND PAS, ET QUE D04 DESSINE ────────────────────
+ *
+ * ELLE NE REND AUCUN NOM D'AUTEUR. La planche D04 dessine une colonne
+ * « AUTEUR » — « Joël K. », « Paul A. », « M. Traoré », « Anonyme » — et la charge
+ * relevée ne porte que `subjectId` et `subjectType` : pas de nom, pas de handle,
+ * pas même l'identifiant de l'auteur du contenu visé. La colonne reste donc
+ * DESSINÉE, et c'est le bon choix plutôt qu'un identifiant tronqué dans une case
+ * qui annonce un nom.
+ *
+ * Et il y a plus qu'un manque de champ : résoudre ces noms demanderait un appel
+ * par ligne vers `/admin/users/:id`, c'est-à-dire sortir la fiche de quarante-six
+ * membres pour remplir une colonne de liste. Le rôle `MODERATOR` peut lire une
+ * fiche membre (§2.2 `memberRead`), mais la lire DOSSIER PAR DOSSIER quand il
+ * l'ouvre n'est pas la même chose que de la lire pour tous en vrac — c'est la
+ * règle dure « aucune donnée personnelle au-delà de ce que le rôle permet » prise
+ * au sérieux du côté de la quantité, pas seulement du droit. Remonté au porteur :
+ * s'il veut cette colonne, c'est à la route de la servir.
+ *
+ * `aiScore` est NULLABLE (relevé `null` sur les dossiers sans passage IA) et vaut
+ * sinon une confiance dans [0,1] — « 0,95 », pas « 95 ».
+ */
+export const adminModerationCaseRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    subjectType: z.enum(ReportSubjectType),
+    subjectId: z.string().uuid(),
+    source: z.enum(ModerationSource),
+    /** 1 (le plus urgent) à 5, tel que §4.1 trie la file. */
+    priority: z.number().int().min(1).max(5),
+    status: z.enum(ModerationCaseStatus),
+    assignedStaffId: z.string().uuid().nullable(),
+    slaDueAt: z.string().datetime(),
+    sla: slaStateSchema,
+    aiVerdict: z.enum(AiVerdict),
+    aiLabels: z.array(z.string()),
+    /** Confiance dans [0,1], nulle sans passage IA. Jamais un pourcentage. */
+    aiScore: z.number().min(0).max(1).nullable(),
+  })
+  .strict();
+export type AdminModerationCaseRow = z.infer<typeof adminModerationCaseRowSchema>;
+
+export const adminModerationCasesResponseSchema = pageSchema(adminModerationCaseRowSchema);
+export type AdminModerationCasesResponse = z.infer<typeof adminModerationCasesResponseSchema>;
+
+/** Une action portée au dossier (13 §4.2) — tracée, avec son motif. */
+export const adminModerationActionSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    /** Nul quand l'action est AUTOMATIQUE : « Masquage automatique … (§2.3) ». */
+    staffId: z.string().uuid().nullable(),
+    action: z.enum(ModerationActionType),
+    reason: z.string(),
+  })
+  .strict();
+
+/**
+ * Le dossier complet — `GET /v1/admin/moderation/cases/:id` (13 §4.2).
+ *
+ * RELEVÉ sur un dossier réel. Les cinq listes jointes (`reports`, `actions`,
+ * `sanctions`, `aiChecks`) et les deux objets facultatifs (`authorHistory`,
+ * `conversation`) arrivent toujours, vides ou nuls selon le cas.
+ *
+ * ─── `.passthrough()` SUR LES JOINTURES NON RELEVÉES, ET POURQUOI ──────────
+ *
+ * `reports`, `sanctions` et `aiChecks` ont été relevés VIDES sur tous les
+ * dossiers atteignables : la base de développement n'en porte aucun. Leur forme
+ * d'ÉLÉMENT est donc INCONNUE, et écrire un `.strict()` dessus serait inventer un
+ * contrat — le premier dossier qui en porterait un arrêterait l'écran sur un
+ * champ parfaitement légitime.
+ *
+ * Ils sont donc déclarés `z.array(z.unknown())` : on valide qu'une liste arrive,
+ * et on n'affirme RIEN de ses éléments, parce qu'on ne les a pas vus. L'écran ne
+ * lit que leur LONGUEUR — « Signalements · 5 », « 1 avertissement » — ce qui est
+ * exactement ce que cette connaissance permet. Le jour où la base en porte, on
+ * relève et on resserre ; d'ici là, le schéma dit la vérité sur ce qui a été
+ * mesuré.
+ *
+ * `authorHistory` et `conversation` sont relevés `null` et NULLABLES : la
+ * maquette dessine « Conversation jointe (4 messages) » et « Contestation :
+ * aucune », qui en dépendent. Leur contenu n'est pas lu pour la même raison.
+ */
+export const adminModerationCaseDetailSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    subjectType: z.enum(ReportSubjectType),
+    subjectId: z.string().uuid(),
+    /** Nul quand le contenu visé n'a pas d'auteur identifié. */
+    subjectAuthorUserId: z.string().uuid().nullable(),
+    source: z.enum(ModerationSource),
+    priority: z.number().int().min(1).max(5),
+    status: z.enum(ModerationCaseStatus),
+    assignedStaffId: z.string().uuid().nullable(),
+    slaDueAt: z.string().datetime(),
+    sla: slaStateSchema,
+    resolution: z.string().nullable(),
+    resolvedAt: z.string().datetime().nullable(),
+    aiVerdict: z.enum(AiVerdict),
+    aiLabels: z.array(z.string()),
+    aiScore: z.number().min(0).max(1).nullable(),
+    /** Relevées VIDES : forme d'élément inconnue, donc non affirmée. */
+    reports: z.array(z.unknown()),
+    actions: z.array(adminModerationActionSchema),
+    sanctions: z.array(z.unknown()),
+    aiChecks: z.array(z.unknown()),
+    authorHistory: z.unknown().nullable(),
+    conversation: z.unknown().nullable(),
+  })
+  .strict();
+export type AdminModerationCaseDetail = z.infer<typeof adminModerationCaseDetailSchema>;
+
+/**
+ * Une ligne de la recherche de membres — `GET /v1/admin/users?q=…` (§3.1).
+ *
+ * ─── CETTE ROUTE EST UNE RECHERCHE, PAS UNE LISTE ─────────────────────────
+ *
+ * `q` est OBLIGATOIRE et fait deux caractères au minimum
+ * (`memberSearchQuerySchema`) : mesuré, un appel sans `q` répond
+ * `400 VALIDATION_FAILED` sur le champ `q`. Il n'existe AUCUNE route qui liste
+ * les membres. La planche D03 dessine pourtant un tableau de trois membres
+ * au-dessus de son champ de recherche, comme s'il était rempli à l'ouverture.
+ * Il ne peut pas l'être, et D03 le dit à l'écran plutôt que d'inventer une
+ * requête — voir `chargerD03`.
+ *
+ * AUCUN NUMÉRO DE TÉLÉPHONE ICI, et c'est la règle dure §3.1 tenue par la route
+ * elle-même : la recherche par numéro passe par l'EMPREINTE HMAC (`looksLikePhone`
+ * détecte la forme, seule l'empreinte part en base) et la réponse n'en rend aucun,
+ * ni en clair ni masqué. `.strict()` est ce qui garde ce fait : un `phones` greffé
+ * sur cette ligne arrêterait l'écran au lieu d'arriver en silence.
+ */
+export const adminMemberRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    handle: z.string(),
+    displayName: z.string(),
+    phase: z.enum(Phase),
+    verificationLevel: z.enum(VerificationLevel),
+    plan: z.enum(PlanCode),
+    status: z.enum(UserStatus),
+    lastSeenAt: z.string().datetime().nullable(),
+    deletedAt: z.string().datetime().nullable(),
+    /** Nulle tant que le membre n'a pas choisi sa ville. */
+    city: z.object({ id: z.string().uuid(), name: z.string() }).strict().nullable(),
+    originCountry: z
+      .object({ id: z.string().uuid(), iso2: z.string().length(2), nameFr: z.string() })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export type AdminMemberRow = z.infer<typeof adminMemberRowSchema>;
+
+export const adminMembersResponseSchema = pageSchema(adminMemberRowSchema);
+export type AdminMembersResponse = z.infer<typeof adminMembersResponseSchema>;
+
+/**
+ * UN NUMÉRO DE MEMBRE TEL QUE L'ADMIN A LE DROIT DE LE VOIR — et pas autrement.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ RÈGLE DURE (15 §3.1) : « l'application admin n'affiche JAMAIS un numéro   │
+ * │ de téléphone en clair ».                                                 │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * La route la tient déjà : la charge relevée porte `masked` — « +229 •• •• •• 31 »
+ * — et NI `phoneEncrypted`, NI `phoneHmac`, NI `e164`. Ce schéma ne répète pas la
+ * règle, il la REND EXÉCUTABLE À LA FRONTIÈRE : `.strict()` fait qu'un champ de
+ * numéro ajouté à cette jointure — par une jointure Prisma élargie d'une ligne,
+ * ce qui est la façon dont cela arrivera — ARRÊTE l'écran D03 au lieu de traverser
+ * zod en silence et d'atterrir dans le navigateur d'un membre de l'équipe.
+ *
+ * C'est le seul endroit du front où cette règle peut être attrapée : le JSX
+ * n'affiche que ce qu'on lui passe, mais la RÉPONSE, elle, aurait déjà traversé le
+ * réseau. Un test de mutation le vérifie en greffant `phoneEncrypted` sur la
+ * charge et en exigeant que le schéma refuse.
+ */
+export const adminMemberPhoneSchema = z
+  .object({
+    id: z.string().uuid(),
+    /** La SEULE forme de numéro que cette application connaisse (§3.1). */
+    masked: z.string(),
+    countryIso2: z.string().length(2),
+    isPrimary: z.boolean(),
+    isDestination: z.boolean(),
+    verifiedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+
+/** Un consentement versionné (§4.1) — la ligne « CGU v3 · confidentialité v3 ». */
+export const adminMemberConsentSchema = z
+  .object({
+    id: z.string().uuid(),
+    type: z.enum(ConsentType),
+    version: z.string(),
+    granted: z.boolean(),
+    createdAt: z.string().datetime(),
+  })
+  .strict();
+
+/**
+ * La fiche membre complète — `GET /v1/admin/users/:id` (§3.1).
+ *
+ * Mêmes principes que le dossier de modération : ce qui a été relevé est décrit
+ * strictement, ce qui a été relevé VIDE n'est pas affirmé. `kycVerifications`,
+ * `sanctions`, `dataExports`, `deletionRequests`, `activeSessions` et
+ * `moderationCases` sont tous arrivés `[]` sur les fiches atteignables ; l'écran
+ * n'en lit que la LONGUEUR (« 1 avertissement », « 2 actives », « 3 dossiers »),
+ * donc c'est tout ce que ce schéma promet.
+ *
+ * `phones`, en revanche, est RELEVÉ NON VIDE et décrit strictement : c'est là que
+ * passe la règle dure, et c'est le seul endroit où une description lâche
+ * coûterait quelque chose.
+ */
+export const adminMemberDetailSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    deletedAt: z.string().datetime().nullable(),
+    handle: z.string(),
+    displayName: z.string(),
+    phase: z.enum(Phase),
+    verificationLevel: z.enum(VerificationLevel),
+    plan: z.enum(PlanCode),
+    status: z.enum(UserStatus),
+    timezone: z.string(),
+    lastSeenAt: z.string().datetime().nullable(),
+    deactivatedAt: z.string().datetime().nullable(),
+    arrivalDate: z.string().datetime().nullable(),
+    onboardingStep: z.number().int(),
+    city: z
+      .object({ id: z.string().uuid(), name: z.string(), slug: z.string() })
+      .strict()
+      .nullable(),
+    originCountry: z
+      .object({ id: z.string().uuid(), iso2: z.string().length(2), nameFr: z.string() })
+      .strict()
+      .nullable(),
+    /** La règle dure §3.1, décrite strictement. Voir `adminMemberPhoneSchema`. */
+    phones: z.array(adminMemberPhoneSchema),
+    consents: z.array(adminMemberConsentSchema),
+    /** Relevés VIDES : seule leur longueur est lue, donc seule elle est promise. */
+    kycVerifications: z.array(z.unknown()),
+    sanctions: z.array(z.unknown()),
+    dataExports: z.array(z.unknown()),
+    deletionRequests: z.array(z.unknown()),
+    activeSessions: z.array(z.unknown()),
+    moderationCases: z.array(z.unknown()),
+    stats: z.unknown(),
+  })
+  .strict();
+export type AdminMemberDetail = z.infer<typeof adminMemberDetailSchema>;
+
+/**
+ * Une fiche professionnelle en attente de justificatif — `GET /v1/admin/pro-profiles`
+ * (10 §4.1), `status=PENDING` par défaut.
+ *
+ * RELEVÉE sur une fiche réelle (via `status=APPROVED`, la file d'attente étant
+ * vide sur la base de développement : c'est la MÊME route et donc la même forme
+ * d'élément).
+ *
+ * `siret` et `description` sont des données d'ENTREPRISE, pas des données
+ * personnelles de contact : aucun téléphone, aucune adresse. `contactMethod` dit
+ * seulement par quel canal le membre accepte d'être joint — `PHONE_ON_REQUEST`
+ * est un CHOIX, pas un numéro, et la route n'en rend aucun.
+ */
+export const adminProProfileSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    userId: z.string().uuid(),
+    member: z
+      .object({
+        id: z.string().uuid(),
+        handle: z.string(),
+        displayName: z.string(),
+        verificationLevel: z.enum(VerificationLevel),
+        status: z.enum(UserStatus),
+      })
+      .strict(),
+    profession: z
+      .object({ id: z.string().uuid(), nameFr: z.string() })
+      .strict()
+      .nullable(),
+    businessName: z.string().nullable(),
+    description: z.string().nullable(),
+    priceHint: z.string().nullable(),
+    contactMethod: z.enum(ProContactMethod),
+    siret: z.string().nullable(),
+    verificationStatus: z.enum(ProVerificationStatus),
+    status: z.string(),
+    tier: z.enum(ProTier),
+    cities: z.array(
+      z.object({ id: z.string().uuid(), name: z.string(), slug: z.string() }).strict(),
+    ),
+    /**
+     * LE JUSTIFICATIF, et jamais son contenu.
+     *
+     * `storageKey` est une CLÉ de stockage, pas une URL signée : elle ne télécharge
+     * rien par elle-même. La maquette dessine « Avocate · carte professionnelle »,
+     * c'est-à-dire le TYPE du justificatif, pas le document. Nul quand la fiche
+     * n'en porte pas encore.
+     */
+    proof: z
+      .object({
+        id: z.string().uuid(),
+        mime: z.string(),
+        sizeBytes: z.number().int().nonnegative(),
+        status: z.enum(MediaStatus),
+        storageKey: z.string(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+export type AdminProProfile = z.infer<typeof adminProProfileSchema>;
+
+export const adminProProfilesResponseSchema = pageSchema(adminProProfileSchema);
+export type AdminProProfilesResponse = z.infer<typeof adminProProfilesResponseSchema>;
+
+/**
+ * Une ligne du journal d'audit — `GET /v1/admin/audit` (§2.3, §8.4).
+ *
+ * ─── CETTE ROUTE NE REND PAS LE NOM DE L'ACTEUR ───────────────────────────
+ *
+ * La planche D15 dessine « R. Adjovi », « N. Mensah », « K. Diop » dans sa
+ * colonne ACTEUR. La charge relevée ne porte que `actorId` (un UUID) et
+ * `actorType` (`STAFF`, `SYSTEM` ou `MEMBER`). Le nom se résout pour un acteur
+ * d'ÉQUIPE — `GET /admin/staff` rend `displayName` — et pas du tout pour un
+ * acteur MEMBRE sans un appel par ligne.
+ *
+ * D15 affiche donc le nom quand l'acteur est de l'équipe et que le compte figure
+ * encore dans la liste, et dit ce qu'il est sinon (« Système », « Membre »). Ce
+ * n'est pas un repli cosmétique : un journal d'audit qui attribuerait une action
+ * au mauvais acteur serait pire qu'un journal qui dit ne pas savoir — et §8.4 le
+ * conserve cinq ans.
+ *
+ * `metadata` est `unknown` et NON décrit : il porte le détail propre à chaque
+ * action, dont la forme varie par action, et l'écran ne l'affiche pas.
+ */
+export const adminAuditEntrySchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    actorType: z.enum(AuditActorType),
+    actorId: z.string(),
+    action: z.string(),
+    targetType: z.string(),
+    targetId: z.string(),
+    ip: z.string().nullable(),
+    metadata: z.unknown().nullable(),
+  })
+  .strict();
+export type AdminAuditEntry = z.infer<typeof adminAuditEntrySchema>;
+
+export const adminAuditResponseSchema = pageSchema(adminAuditEntrySchema);
+export type AdminAuditResponse = z.infer<typeof adminAuditResponseSchema>;
+
+/**
+ * Un compte d'équipe — `GET /v1/admin/staff` (§2.2), réservé à `SUPER_ADMIN`.
+ *
+ * `totpEnrolled` est un BOOLÉEN et le secret n'est jamais rendu : un test
+ * d'intégration du module vérifie déjà que la réponse ne contient pas la chaîne
+ * « totpSecret ». `.strict()` le tient à la frontière du front pour la même
+ * raison — un secret greffé sur cette ligne doit arrêter l'écran.
+ *
+ * C'est aussi la seule route qui donne un `displayName` d'équipe, et c'est ce qui
+ * rend la colonne ACTEUR de D15 possible. Voir `POST /admin/auth/session`, qui
+ * n'en rend pas pour le compte CONNECTÉ — manque remonté.
+ */
+export const adminStaffMemberSchema = z
+  .object({
+    id: z.string().uuid(),
+    createdAt: z.string().datetime(),
+    email: z.string(),
+    displayName: z.string(),
+    role: staffRoleSchema,
+    isActive: z.boolean(),
+    lastLoginAt: z.string().datetime().nullable(),
+    totpEnrolled: z.boolean(),
+  })
+  .strict();
+export type AdminStaffMember = z.infer<typeof adminStaffMemberSchema>;
+
+export const adminStaffResponseSchema = pageSchema(adminStaffMemberSchema);
+export type AdminStaffResponse = z.infer<typeof adminStaffResponseSchema>;
+
+/**
+ * La session d'équipe courante — `POST /v1/admin/auth/session`.
+ *
+ * ─── CE QU'ELLE NE REND PAS, ET CE QUE ÇA COÛTE À QUINZE CADRES ───────────
+ *
+ * RELEVÉ : `{ staffId, role, sessionId }` — et PAS de `displayName`, alors que
+ * `POST /admin/auth/totp` en rend un à la connexion. Les quinze planches D02 à
+ * D16 dessinent toutes le même avatar « RA » en haut à droite. Après un simple
+ * RECHARGEMENT de page, le front n'a plus que cette route, donc plus aucun nom :
+ * l'avatar ne peut pas être rempli, et il reste dessiné. Remonté au porteur.
+ *
+ * Ce qu'elle rend et qui MANQUAIT vraiment, c'est le `role` : le cookie `dp_staff`
+ * est `HttpOnly`, le front ne peut pas le lire, et il n'existe aucun équivalent
+ * d'`hasAccessToken()` côté équipe. La PRÉSENCE d'une session est déjà couverte
+ * par le 401 de chaque écran ; ce qui manquait était le rôle, pour conditionner
+ * l'affichage au tableau du §2.2. Il est ici, et il est lu — jamais deviné.
+ *
+ * `.strict()` : si cette route gagne un jour le `displayName` qui lui manque, on
+ * veut l'apprendre par un arrêt net, pas par un champ dépouillé en silence.
+ */
+export const adminStaffSessionResponseSchema = z
+  .object({
+    staffId: z.string().uuid(),
+    role: staffRoleSchema,
+    sessionId: z.string().uuid(),
+  })
+  .strict();
+export type AdminStaffSessionResponse = z.infer<typeof adminStaffSessionResponseSchema>;
+
+/**
+ * Un plan tarifaire — `GET /v1/admin/billing/plans` (14 §3).
+ *
+ * ─── UNE SEULE DEVISE EST RENDUE, ET D14 EN DESSINE DEUX ──────────────────
+ *
+ * RELEVÉ : `currency` vaut `'EUR'` sur les quatre plans, et il n'y a qu'un
+ * `priceCents` et un `yearPriceCents`. La planche D14 dessine un tableau à DEUX
+ * colonnes de prix, « EUR » et « XOF » (« 4 € | 2 600 F »). Le montant en francs
+ * CFA n'a AUCUNE source dans cette charge.
+ *
+ * Il n'est pas calculé à partir de l'euro, et c'est volontaire : la parité du
+ * franc CFA est fixe, mais l'inscrire dans le front en ferait une deuxième source
+ * de vérité pour un PRIX — c'est-à-dire un montant qu'un membre paie. Un prix
+ * affiché doit venir de celui qui l'encaisse. La colonne XOF reste donc dessinée
+ * et c'est remonté ; `currency` est néanmoins LU et vérifié, pour qu'un plan qui
+ * basculerait en XOF n'aille pas s'afficher dans la colonne des euros.
+ */
+export const adminPlanSchema = z
+  .object({
+    code: z.enum(PlanCode),
+    nameFr: z.string(),
+    interval: z.enum(PlanInterval),
+    currency: z.enum(['EUR', 'XOF']),
+    priceCents: z.number().int().nonnegative(),
+    yearPriceCents: z.number().int().nonnegative(),
+    isActive: z.boolean(),
+    /** Les quotas du plan (14 §2) : lus par les écrans membres, pas par D14. */
+    limits: z.unknown(),
+  })
+  .strict();
+export type AdminPlan = z.infer<typeof adminPlanSchema>;
+
+/**
+ * `GET /v1/admin/billing/plans` — et son ENVELOPPE N'EST PAS CELLE DU §5.3.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ MESURÉ : cette route rend `{ items }` SANS `nextCursor`. Trois routes de  │
+ * │ facturation font de même — `/billing/plans`, `/billing/revenue`,          │
+ * │ `/billing/affiliate` — là où les onze autres listes d'équipe rendent bien │
+ * │ `{ items, nextCursor }`.                                                 │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Ce n'est donc PAS `pageSchema` : l'employer ici faisait échouer la validation
+ * sur `nextCursor — Required`, ce qui est exactement ce que `pageSchema` promet de
+ * faire et a raison de faire. Le champ est requis et nullable par décision du
+ * §5.3 — « null en fin de liste » — précisément pour qu'une pagination MUETTE ne
+ * se confonde pas avec une fin de liste.
+ *
+ * Pour les plans, l'écart est sans conséquence : la liste est FERMÉE par
+ * `PlanCode`, quatre plans, et il n'y a rien à paginer. Le schéma décrit donc ce
+ * qui est servi plutôt que ce que la convention promet — décrire une enveloppe
+ * qu'on ne reçoit pas ferait échouer l'écran sur une route qui va bien.
+ *
+ * L'écart est REMONTÉ, et il n'est pas anodin sur les deux autres : `/revenue` et
+ * `/affiliate` sont des listes qui, elles, peuvent croître, et un client qui
+ * suivrait le curseur n'y trouverait rien à suivre.
+ */
+export const adminPlansResponseSchema = z
+  .object({ items: z.array(adminPlanSchema) })
+  .strict();
+export type AdminPlansResponse = z.infer<typeof adminPlansResponseSchema>;

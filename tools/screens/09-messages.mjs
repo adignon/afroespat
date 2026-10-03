@@ -30,6 +30,8 @@
 
 import { MODAL_WINDOW_SOURCE } from '../dc-to-jsx.mjs';
 
+import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+
 const FILE = 'docs/template/09 Messages et transverse.dc.html';
 
 /**
@@ -282,9 +284,37 @@ const screen = ({
   frames,
   dataType = 'MessagesData',
   dataModule = '../messages/data',
+  modal = false,
+  squelette = !modal,
   ...rest
 }) => ({
   file: FILE,
+  /**
+   * ─── LE SQUELETTE MEMBRE : LE RAIL ──────────────────────────────────────────
+   *
+   * La maquette dessine les cinq entrées — Accueil, Parcours, Entraide,
+   * Services, Agenda — en `<span>`. Ce ne sont pas des liens cassés : CE NE SONT
+   * PAS DES LIENS, et c'est la phrase du porteur (« Aucun sous lien aussi ne
+   * fonctionne »). Les cinq destinations sont déclarées UNE fois pour les sept
+   * modules membre dans `tools/squelette-membre.mjs`.
+   *
+   * `cadresDuRail` retient les cadres dont le nom porte « Desktop » ; les écrans
+   * d'ordinateur qui ne dessinent PAS de rail posent `squelette: false`, et un
+   * oubli ne passerait pas en silence — le `dans` de `markLinks` exige son
+   * conteneur une fois, donc un cadre sans rail ARRÊTE la génération.
+   *
+   *
+   * LE DÉFAUT SUIT `modal`, et ce n'est pas un raccourci : une planche de FENÊTRE
+   * ne dessine pas le squelette de l'application — elle se pose PAR-DESSUS. Les
+   * cadres de modale d'ordinateur sont donc hors rail par construction, et c'est
+   * mesuré sur chacun. Un écran plein cadre qui n'en dessine pas non plus doit
+   * poser `squelette: false` à la main, en disant pourquoi.
+   *
+   * LA SURBRILLANCE N'EST PAS TOUCHÉE : dans ces navs littéraux, la maquette
+   * peint déjà l'entrée qui désigne la page, planche par planche.
+   */
+  ...(modal ? { modal } : {}),
+  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule,
@@ -1130,6 +1160,22 @@ export const screens = [
     modalTitleRequires: 'fontWeight: "700"',
     borrows: [VOILE_DE_M01],
     frames: [f(300, 'Menu')],
+    /**
+     * CETTE CARTE N'A RIEN À LIRE, et il faut le dire : elle n'écrit que son titre
+     * et les QUATRE ACTIONS du menu — « Voir le profil », « Mettre en sourdine »,
+     * « Bloquer », « Signaler ». Ce sont des gestes, pas des données, et aucun ne
+     * porte le nom de l'autre membre : la maquette dessine « Bloquer » et non
+     * « Bloquer Fatou ». Il n'y a donc aucune ancre où mettre un nom, et en ajouter
+     * une serait redessiner la carte.
+     *
+     * ⚠ ÉCART SIGNALÉ, et il touche la règle dure de ce module : 08 §4 veut qu'un
+     * blocage soit RÉCIPROQUE et immédiat, et cette carte est le seul endroit de la
+     * maquette où un membre le déclenche. Aucun de ses cinq items n'est un bouton —
+     * la maquette les dessine en `<div>` — donc le transcodeur n'y pose aucun
+     * `onClick`, et « Bloquer » ne bloque rien. Ce n'est pas une liaison manquante,
+     * c'est un geste manquant, et il est consigné plutôt que branché à la hâte :
+     * un bouton « Bloquer » qui ne bloque pas est pire qu'un menu inerte.
+     */
   }),
 
   /**
@@ -1313,6 +1359,29 @@ export const screens = [
    * Les six motifs sont ceux de T5 et de 13 §… : Arnaque, Demande d'argent,
    * Harcèlement, Indésirable, Inapproprié, Autre. La note « La conversation sera
    * visible des modérateurs » est celle de 08 §5.2.
+   *
+   * ─── SES DEUX CADRES N'ONT RIEN À LIRE, ET C'EST UNE RÉPONSE ───────────────
+   *
+   * Compté sur ses octets, cette fenêtre n'écrit que quatre sortes de choses, et
+   * aucune n'est une donnée de membre :
+   *
+   *   · LES SIX MOTIFS sont l'énumération `ReportReason` dessinée EN ENTIER, côte
+   *     à côte, comme un choix à faire. C'est le cas de K03 (les quatre états KYC)
+   *     et de K02 (les quatre motifs de contact) : piloter une liste que la
+   *     maquette montre complète demanderait de décider lequel est sélectionné,
+   *     donc de redessiner la rangée ;
+   *   · L'EXEMPLE du champ « Détails (facultatif) » devient un `placeholder` au
+   *     transcodage — « Il me demande 150 € pour "accélérer" mon dossier. » est une
+   *     invite, pas le signalement de quelqu'un ;
+   *   · LA NOTE « La conversation sera visible des modérateurs. » est la règle de
+   *     08 §5.2, vraie de tout signalement et de tout membre ;
+   *   · le titre « Signaler » et le bouton d'envoi.
+   *
+   * CE QU'ELLE NE DESSINE PAS, et c'est l'écart à signaler : rien n'identifie CE
+   * QUI est signalé. Une fenêtre ouverte depuis une conversation, un profil ou une
+   * publication est la même planche, sans un mot sur la cible. C'est au porteur de
+   * dire si elle doit la nommer ; tant qu'elle ne la dessine pas, il n'y a pas
+   * d'ancre où lier `targetType` et `targetId`.
    */
   screen({
     section: 'X03',
@@ -1340,6 +1409,32 @@ export const screens = [
    *
    * Elle n'a pas de planche mobile propre : la même carte sert aux deux largeurs,
    * comme la feuille d'invitation de J05 (voir le type de `Modal`).
+   *
+   * ─── ELLE NE LIT RIEN, ET LA RAISON EST PIRE QU'UN CHAMP MANQUANT ─────────
+   *
+   * Elle n'écrit que deux textes : « Merci. » (son titre) et « Nous regardons sous
+   * 24 heures. »
+   *
+   * CETTE SECONDE PHRASE A UNE SOURCE, et il faut le dire exactement :
+   * `POST /reports` rend `{ id, caseId, message }`, et `message` est
+   * `REPORT_CONFIRMATION` de `@app/shared` — « Merci. Notre équipe examine votre
+   * signalement ; vous serez informé·e de sa clôture. » Ce n'est donc PAS un champ
+   * qui manque, et le « sous 24 heures » de la maquette est une promesse de délai
+   * que le serveur ne fait pas (son SLA de 24 h existe, mais dans la file
+   * d'ADMINISTRATION — `slaDueAt`, `slaState` — et jamais dans la réponse au
+   * membre qui signale).
+   *
+   * ⚠ CE QUI EMPÊCHE DE LA LIER EST AILLEURS, ET C'EST À REMONTER EN PRIORITÉ :
+   * RIEN N'APPELLE `POST /reports`. Vérifié — `screens/messages/appels.ts` ne
+   * contient pas le mot, et `screens/messages/ecran.tsx` ouvre cette carte sur un
+   * simple état (`courante === 'merci'`). La fenêtre « Signaler » recueille six
+   * motifs et un texte, le bouton n'envoie rien, et cette carte dit ensuite
+   * « Merci » pour un signalement qui n'existe pas. Lier `message` demanderait de
+   * fabriquer une réponse qu'aucun appel n'a reçue — ce qui serait le mensonge que
+   * `donnees` existe pour empêcher, à l'endroit le plus grave : un membre qui
+   * signale une arnaque et croit l'avoir fait.
+   *
+   * C'est un geste manquant, pas une liaison manquante. Consigné au rapport.
    */
   screen({
     section: 'X03',
@@ -1383,10 +1478,59 @@ export const screens = [
    * ELLES NE SONT PAS MONTÉES : le cadre mobile donne déjà les deux composants, au
    * dessin près la largeur, et les monter serait un lot de transcodage. Recensées
    * par le lot qui a réparé la sélection, laissées à celui qui les montera.
+   *
+   * ─── CE CADRE LIT MAINTENANT SON QUOTA, ET PAS SON NIVEAU ──────────────────
+   *
+   * La raison écrite jusqu'ici était « les encarts de refus n'ont aucune route »,
+   * et elle est juste pour UN des deux encarts seulement. Elle a été vérifiée des
+   * deux côtés :
+   *
+   *   · L'ENCART « NIVEAU » attend bien un REFUS. Ses deux phrases — « Cette
+   *     action demande une identité vérifiée », « Deux minutes avec votre pièce
+   *     d'identité. Elle n'est jamais conservée par la plateforme. » — sont le
+   *     `labelFr` et le texte de §7.3 que `403 LEVEL_REQUIRED` porte, et une
+   *     écriture refusée est la SEULE chose qui les produise. Aucune lecture ne
+   *     les rend, et ce lot ne tente aucune écriture. Il reste dessiné ;
+   *   · L'ENCART « PLAN », lui, est un COMPTEUR, et il se lit en tout temps.
+   *     « 1 événement sur 1 ce mois-ci » est la métrique `EVENTS_CREATED` de
+   *     `GET /me/subscription` (`usage.items`), et « Réinitialisé le 1er
+   *     octobre. » est son `usage.resetsAt`. Les deux champs existent, sont
+   *     validés, et le module Services lit DÉJÀ le second pour sa propre barre de
+   *     quota (`Quotas.reinitialise`). Il n'y avait donc rien à attendre.
+   *
+   * CE QUE LA DATE NE DOIT PAS ÊTRE : le premier du mois suivant calculé par
+   * l'horloge du NAVIGATEUR. `resetsAt` est l'instant que le serveur annonce
+   * (14 §4.5), et un navigateur décalé d'un fuseau afficherait « Réinitialisé le
+   * 30 septembre » à un membre dont le quota repart le 1er octobre.
+   *
+   * ⚠ ET CE CADRE N'EST MONTÉ PAR AUCUNE PAGE — vérifié : son composant est généré
+   * et importé par personne. Lier son quota ne le fait pas apparaître ; cela
+   * garantit qu'il ne mentira pas le jour où une page l'affichera. Consigné au
+   * rapport : T5 range ces encarts en « composants » sans leur donner de route.
    */
   screen({
     section: 'X04',
     out: 'x04',
+    dataType: 'X04Data',
+    dataModule: '../x04/data',
     frames: [f(390, 'Mobile', 0, t('Créer un événement', '16px'))],
+    donnees: [
+      {
+        noeud:
+          '<div style="font-size:15.5px;font-weight:700;color:#B4581F">1 événement sur 1 ce mois-ci</div>',
+        devient:
+          '<div style="font-size:15.5px;font-weight:700;color:#B4581F">{{ quota.utilises }} événement sur {{ quota.plafond }} ce mois-ci</div>',
+        fois: 1,
+        why: 'Le compteur d’événements du mois et son plafond, de `GET /me/subscription` (`usage.items`, métrique `EVENTS_CREATED`) — jamais la valeur de la maquette.',
+      },
+      {
+        noeud:
+          '<div style="font-size:13px;line-height:1.55;margin-top:4px">Réinitialisé le 1er octobre.</div>',
+        devient:
+          '<div style="font-size:13px;line-height:1.55;margin-top:4px">Réinitialisé le {{ quota.reinitialise }}.</div>',
+        fois: 1,
+        why: 'La date de réinitialisation du quota, de `usage.resetsAt` (14 §4.5) — annoncée par le serveur, jamais déduite de l’horloge du navigateur.',
+      },
+    ],
   }),
 ];

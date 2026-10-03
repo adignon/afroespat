@@ -22,7 +22,28 @@ import type { Moi, Quotas } from '../services/data';
  *     pro » serait donc faux pour un pro payant : une raison de plus de ne pas
  *     lier ces champs avant correction.
  */
+/**
+ * L'offre Pro telle que la planche la dessine, et telle que `GET /plans` la rend.
+ *
+ * Elle ne décrit PAS la fiche du membre — c'est le PLAN. Le raisonnement ci-dessus
+ * interdit de lier les champs du formulaire ; il n'interdit pas de lire le tarif
+ * qu'on propose au membre, et le figer serait le défaut inverse : la table `plans`
+ * se modifie depuis l'administration (`PATCH /admin/plans/:code` porte `priceCents`
+ * et `nameFr`), donc un « 9 €/mois » écrit en dur mentirait au premier changement.
+ *
+ * ÉCART SIGNALÉ : « Badge Pro, 10 villes » reste DESSINÉ. `planLimitsSchema` porte
+ * `multiCity` et `featuredInDirectory`, deux booléens, et aucun champ ne dit
+ * « dix ». Il faudrait un `maxCities` dans les limites du plan — ou retirer le
+ * nombre de la planche. Même chose pour « statistiques », que la planche
+ * d'ordinateur ajoute sans qu'aucun champ ne l'autorise.
+ */
+export interface OffrePro {
+  readonly nom: string;
+  readonly prix: string;
+}
+
 export interface S08Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  readonly offrePro: OffrePro;
 }

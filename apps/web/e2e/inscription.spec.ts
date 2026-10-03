@@ -73,7 +73,7 @@ async function signUp(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Recevoir le code' }).click();
   await page.waitForURL('**/connexion/code');
   await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
-  await page.locator('input[autocomplete="one-time-code"]').fill(codesSentTo(phone)[0] as string);
+  await page.locator('input[autocomplete="one-time-code"]:visible').fill(codesSentTo(phone)[0] as string);
   await page.waitForURL('**/bienvenue/phase', { timeout: 20_000 });
 }
 
@@ -110,8 +110,16 @@ test.describe('inscription complète', () => {
     await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
     const code = codesSentTo(phone)[0] as string;
 
-    // UN SEUL champ, masqué : les six cases ne font qu'afficher.
-    await page.locator('input[autocomplete="one-time-code"]').fill(code);
+    /**
+     * UN SEUL champ par cadre, POSÉ SUR les six cases : elles ne font qu'afficher.
+     *
+     * `:visible` est nécessaire depuis que le champ vit DANS le cadre. Il était
+     * monté à côté des deux cadres, en 1 px opaque à zéro — un champ pour toute
+     * la page, et plus rien de focalisable une fois le focus perdu. Il y en a
+     * maintenant un par cadre, comme `input[name="phone"]`, que ce fichier cible
+     * déjà avec `:visible` pour exactement la même raison.
+     */
+    await page.locator('input[autocomplete="one-time-code"]:visible').fill(code);
 
     // La vérification part au sixième chiffre, sans bouton — comme la maquette.
     await page.waitForURL('**/bienvenue/phase', { timeout: 20_000 });
@@ -157,7 +165,7 @@ test.describe('inscription complète', () => {
     await page.goto('/connexion/code');
     // Aucun défi en session : c'est le cas d'un onglet rouvert, ou d'un lien
     // suivi directement.
-    await page.locator('input[autocomplete="one-time-code"]').fill('123456');
+    await page.locator('input[autocomplete="one-time-code"]:visible').fill('123456');
 
     await page.waitForURL('**/connexion?reprise=**', { timeout: 20_000 });
     /**

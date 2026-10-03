@@ -1272,7 +1272,24 @@ export class HousingService {
       throw ApiError.validation([{ path: 'photoAssetIds', code: 'DUPLICATE' }]);
     }
     const count = await this.prisma.mediaAsset.count({
-      where: { id: { in: [...unique] }, ownerUserId: userId, kind: 'HOUSING', deletedAt: null },
+      where: {
+        id: { in: [...unique] },
+        ownerUserId: userId,
+        kind: 'HOUSING',
+        deletedAt: null,
+        /**
+         * `READY`, ET C'EST NOUVEAU.
+         *
+         * §8.3 met l'analyse antivirus « avant publication » et en fait l'objet de
+         * `media_assets.status`. Ce contrôle ne regardait que le propriétaire et le
+         * genre : tant qu'AUCUNE route d'envoi n'existait, aucun asset non `READY`
+         * ne pouvait naître et l'omission ne coûtait rien. L'envoi existe
+         * désormais, et un refus d'antivirus laisse une ligne `REJECTED` — avec une
+         * clé réservée sur laquelle rien n'est déposé. L'accepter afficherait dans
+         * une annonce une photo qui n'existe pas, ou une qui n'a pas été analysée.
+         */
+        status: 'READY',
+      },
     });
     if (count !== unique.size) {
       throw ApiError.validation([{ path: 'photoAssetIds', code: 'NOT_FOUND' }]);

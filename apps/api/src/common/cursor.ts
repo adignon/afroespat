@@ -90,3 +90,83 @@ export function buildPage<T extends { id: string }>(
 
   return { items, nextCursor: encodeCursor(payload, secret) };
 }
+
+
+/**
+ * LE CAS LE PLUS COURANT : « le plus récent d'abord », paginé honnêtement.
+ *
+ * POURQUOI CES TROIS FONCTIONS EXISTENT. Cinq routes du dépôt écrivaient
+ * `take: query.limit` puis `nextCursor: null` EN DUR — une troncature muette,
+ * mesurée à 50 villes rendues sur 65 avec une enveloppe qui affirmait la fin de
+ * liste. Les cinq trient par `created_at` décroissant, et les cinq avaient besoin
+ * du même prédicat de reprise. Écrit cinq fois, il aurait divergé cinq fois ;
+ * écrit une fois, il se relit.
+ *
+ * LA CLÉ EST UN COUPLE (`created_at`, `id`), et `id` n'est pas décoratif : deux
+ * lignes créées dans la même milliseconde — un import, une migration, un seed —
+ * ne sont pas départagées par `created_at` seul, et la page les répéterait ou en
+ * sauterait une. L'ordre doit être TOTAL pour qu'un curseur situe exactement la
+ * reprise.
+ *
+ * `created_at` VOYAGE EN ISO 8601, pas en millisecondes : la colonne est
+ * `timestamptz` et PostgreSQL y garde la microseconde, qu'un entier de
+ * millisecondes arrondirait. Arrondi vers le bas, le curseur ferait répéter une
+ * ligne ; arrondi vers le haut, il la ferait sauter.
+ */
+
+export interface CreatedAtDescResume {
+  readonly createdAt: Date;
+  readonly id: string;
+}
+
+/** Le `sort` du curseur, à passer en dernier argument de `buildPage`. */
+export function createdAtDescSort(row: { createdAt: Date }): string {
+  return row.createdAt.toISOString();
+}
+
+/**
+ * Décode un curseur de cette forme. Rend `null` quand il n'y a pas de curseur —
+ * première page — et REFUSE un curseur dont la date est illisible plutôt que de
+ * reprendre au début en silence.
+ */
+export function decodeCreatedAtDesc(
+  cursor: string | undefined,
+  secret: string,
+  scope: string,
+): CreatedAtDescResume | null {
+  if (cursor === undefined) return null;
+  const payload = decodeCursor(cursor, secret, scope);
+  const iso = typeof payload.sort === 'string' ? payload.sort : '';
+  const createdAt = new Date(iso);
+  if (iso === '' || Number.isNaN(createdAt.getTime())) {
+    throw ApiError.validation([{ path: 'cursor', code: 'MALFORMED' }]);
+  }
+  return { createdAt, id: payload.id };
+}
+
+/**
+ * Le prédicat « strictement après le curseur », dans l'ordre
+ * `[{ createdAt: 'desc' }, { id: 'desc' }]`.
+ *
+ * Rendu comme une liste à répandre dans un `AND` : vide sur la première page,
+ * d'un seul élément ensuite. Cela évite au point d'appel un `?:` sur toute la
+ * clause `where`, qui est exactement l'endroit où l'on se trompe.
+ *
+ * Le type de retour reste volontairement structurel : `where` est typé par Prisma
+ * modèle par modèle, et un type générique commun n'existe pas. Les quatre points
+ * d'appel le placent dans leur propre `Prisma.<Modèle>WhereInput[]`, où `tsc`
+ * vérifie la forme.
+ */
+export function createdAtDescAfter(resume: CreatedAtDescResume | null): {
+  OR: ({ createdAt: { lt: Date } } | { createdAt: Date; id: { lt: string } })[];
+}[] {
+  if (resume === null) return [];
+  return [
+    {
+      OR: [
+        { createdAt: { lt: resume.createdAt } },
+        { createdAt: resume.createdAt, id: { lt: resume.id } },
+      ],
+    },
+  ];
+}

@@ -39,6 +39,17 @@ export interface S02Data {
     readonly description: string;
     readonly initiales: string;
     readonly auteur: string;
+    /**
+     * « Sarah T. » — le nom ABRÉGÉ, pour le suréacrit de la feuille « Présentez-vous ».
+     *
+     * La maquette écrit le nom entier sur l'écran et l'abrège dans sa feuille ;
+     * c'est la même mise en forme de `author.displayName` que les initiales, pas
+     * un second champ de l'API. Un nom d'un seul mot reste entier — « Sarah. »
+     * serait une faute de ponctuation, pas une abréviation.
+     */
+    readonly auteurCourt: string;
+    /** « Sarah » — le prénom, pour « Contacter Sarah » et la phrase de pied. */
+    readonly prenomAuteur: string;
     /** `photos.length` moins les deux que la maquette dessine en grand. */
     readonly autresPhotos: number;
     /** `mutualConnectionCount` — calculé par le serveur (§7). */

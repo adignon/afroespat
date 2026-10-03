@@ -134,12 +134,28 @@ const SANCTIONS_FR: Record<SanctionType, string> = {
  * Les deux pastilles d'état de K03, avec LES COULEURS DE LA MAQUETTE.
  *
  * Relevées sur ses propres planches : `#E3F0EB` sur `#0F5C48` pour un niveau
- * acquis, `#F2F5F4` sur `#5D6B66` pour un niveau à faire. Aucune n'est modifiée —
+ * acquis, `#FBE3D4` sur `#B4581F` pour un niveau à faire. Aucune n'est modifiée —
  * les assombrir pour gagner du contraste est précisément ce que le porteur a
  * refusé.
+ *
+ * ── LE RESTE-À-FAIRE A ÉTÉ CORRIGÉ, ET IL FAUT DIRE D'OÙ VENAIT L'ERREUR ────
+ *
+ * Ces deux lignes portaient `#F2F5F4` sur `#5D6B66` pour « À faire », et le
+ * commentaire au-dessus l'affirmait « relevé sur ses propres planches ». C'ÉTAIT
+ * FAUX, et c'est vérifiable en une commande : `08 Compte.dc.html` ne dessine
+ * qu'UNE pastille « À faire », en `#FBE3D4` sur `#B4581F`, sur les deux planches
+ * de K03. La paire grise est celle de la pastille d'ORIGINE d'un contact
+ * (« Entraide », « Parrainage ») sur K05 — une autre pastille, un autre sens.
+ *
+ * La dérive était invisible par construction, et c'est ce qui la rend instructive :
+ * une couleur qui devient une DONNÉE sort du champ des quatre contrôles du
+ * générateur. Ceux-ci vérifient que `#FBE3D4` est toujours dessiné dans la
+ * maquette — ils ne peuvent pas vérifier ce que ce fichier décide de mettre à sa
+ * place à l'exécution. Le garde-fou s'arrête à la frontière de `donnees` ; au-delà,
+ * c'est la lecture de la maquette qui répond, et elle doit être faite.
  */
 const ACQUIS: PastilleNiveau = { etat: 'Acquis', fond: '#E3F0EB', texte: '#0F5C48' };
-const A_FAIRE: PastilleNiveau = { etat: 'À faire', fond: '#F2F5F4', texte: '#5D6B66' };
+const A_FAIRE: PastilleNiveau = { etat: 'À faire', fond: '#FBE3D4', texte: '#B4581F' };
 
 /** Les couleurs d'avatar de la maquette K05, dans son ordre. Cyclées par rang. */
 const FONDS_AVATAR = ['#0F5C48', '#16785E', '#E0733A'] as const;
@@ -360,6 +376,8 @@ export async function chargerK02(pseudo: string): Promise<K02Data> {
 function vueMembre(m: PublicProfileResponse): K02Data['membre'] {
   return {
     nom: m.displayName,
+    /** Le titre de la fenêtre d'ajout aux contacts : « Ajouter Fatou aux contacts ». */
+    prenom: prenomDe(m.displayName),
     initiales: initialesDe(m.displayName),
     pseudo: `@${m.handle}`,
     niveau: rangDeNiveau(m.verificationLevel),
@@ -433,6 +451,16 @@ export async function chargerK04(): Promise<K04Data> {
     telephones: me.phones.map((p) => ({
       masque: p.masked,
       role: p.isDestination ? 'destination' : 'principal',
+      /**
+       * LA MÊME CONDITION QUE LE SERVEUR, recopiée faute de champ — et c'est dit.
+       *
+       * `phones.service.ts` refuse `DELETE /me/phones/:id` avec `LAST_PHONE` quand
+       * `phones.length <= 1` (01 §2.5). `meResponseSchema` n'envoie pas ce verdict,
+       * donc l'écran le recalcule sur le même fait. Voir `LigneTelephone` : un
+       * `canRemove` dans la réponse fermerait l'écart, et il est demandé.
+       */
+      retirable: me.phones.length > 1,
+      dernier: me.phones.length <= 1,
     })),
     sessions: sessions.sessions.map((s) => ({
       appareil: s.deviceLabel,
@@ -541,6 +569,14 @@ export async function chargerK06(): Promise<K06Data> {
     premium: {
       prixMois: premium === undefined ? '—' : `${montant(premium.month.eur)}/mois`,
       prixXof: premium === undefined ? '—' : `${montant(premium.month.xof)}/mois`,
+      /**
+       * Le montant du bouton « Payer … » de la fenêtre Mobile Money, SANS période.
+       *
+       * Même source et même formatage que `prixXof` ; le suffixe est ce qui change,
+       * et il change parce que les deux écrans ne disent pas la même chose — K06
+       * annonce un tarif, le volet demande une somme.
+       */
+      montantXof: premium === undefined ? '—' : montant(premium.month.xof),
     },
     factures: {
       derniere: ligneFacture(paiements.items[0]),

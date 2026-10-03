@@ -33,6 +33,8 @@ import { DataExportController } from './modules/exports/data-export.controller';
 import { DataExportService } from './modules/exports/data-export.service';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { RealtimeRelayService } from './modules/realtime/realtime.relay';
+import { MediaController } from './modules/media/media.controller';
+import { MediaService } from './modules/media/media.service';
 import { MentorshipController } from './modules/mentorship/mentorship.controller';
 import { MentorshipService } from './modules/mentorship/mentorship.service';
 import { MessagingController } from './modules/messaging/messaging.controller';
@@ -159,6 +161,20 @@ import {
     DataExportController,
     // Module 15 §7 — le pilotage. `/v1/admin/dashboard`, `/stats/*`, `/impact`.
     AnalyticsAdminController,
+    /**
+     * TRANSVERSE (00 §8.1 à §8.3, 01 §4.2) — l'envoi de fichiers.
+     *
+     * IL N'EXISTAIT AUCUNE ROUTE D'ENVOI DANS TOUTE L'API, et trois écrans
+     * s'arrêtaient là : une annonce d'OFFRE de logement exige une photo
+     * (10 §2.1), une fiche pro exige un justificatif (10 §4.1), et
+     * `PUT /me/avatar` (01 §4.2) n'avait pas d'implémentation — personne
+     * n'écrivait `users.avatar_asset_id`, que cinq services lisent.
+     *
+     * Contrôleur TRANSVERSE et non rattaché à un module : le même média sert au
+     * fil, au logement, à l'annuaire pro, aux albums et à la messagerie. Le
+     * rattacher à l'un d'eux obligerait les quatre autres à en dépendre.
+     */
+    MediaController,
   ],
   providers: [
     AuthService,
@@ -198,6 +214,8 @@ import {
     AnalyticsService,
     // Module 01 §2.8 — l'export RGPD.
     DataExportService,
+    // Transverse — l'envoi de média (voir `MediaController` ci-dessus).
+    MediaService,
     /**
      * Module 08 §7.3 — le côté PUBLICATION du temps réel.
      *

@@ -101,25 +101,64 @@ export function useDonneesEquipe<T>(charger: () => Promise<T>): Etat<T> {
 }
 
 /**
- * Le cadre d'attente et d'échec.
+ * LE BANDEAU D'ATTENTE ET D'ÉCHEC — ET IL NE REMPLACE PLUS RIEN.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ CE QUI ÉTAIT ICI ÉTAIT LE DÉFAUT. Un `CADRE` en `minHeight: 60vh` était  │
+ * │ rendu À LA PLACE de l'écran entier, rail compris, dans les DEUX états    │
+ * │ non prêts. Mesuré sans exécuter de JavaScript : cinq des dix routes      │
+ * │ d'équipe — exactement les cinq qui lisent des données — servaient DEUX   │
+ * │ mots visibles et ZÉRO entrée de rail. Et la branche d'échec était la     │
+ * │ plus coûteuse des deux : un chargement raté laissait le membre de        │
+ * │ l'équipe SANS AUCUNE NAVIGATION, sans sortie hors du bouton retour.      │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ *
+ * Le cadre se rend donc maintenant TOUT DE SUITE, avec le dessin que la maquette
+ * calcule, et ces deux états ne sont plus qu'un bandeau POSÉ À CÔTÉ de lui. C'est
+ * le motif d'`app/(app)/accueil/page.tsx`, pas une invention : « ce qui reste
+ * importé de `data.ts` est le DESSIN que la maquette calcule […] et il n'a aucune
+ * raison de venir du serveur ».
  *
  * LIBERTÉ PRISE, ET ELLE EST DÉCLARÉE : `10 Administration` NE DESSINE NI ATTENTE
  * NI ÉCHEC — aucune de ses dix-huit planches ne montre un squelette, un sablier ou
  * un bandeau d'erreur. Ces deux états sont donc la seule chose de ces écrans qui ne
- * soit pas transcodée, et il faut le dire.
+ * soit pas transcodée, et la liberté est bornée à ce bandeau : le rail, l'en-tête
+ * de recherche et les colonnes sortent du cadre généré et rien ici ne les touche.
  *
- * Ils n'emploient QUE des jetons de la maquette : le fond `#F6F8F7` de
- * `ScreenFrames`, le gris de texte `#5D6B66` et le vert `#0F5C48` de ses liens.
- * Aucune couleur n'est assombrie — le garde-fou de contraste du dépôt tient à
- * 16/24, et un hexadécimal retouché arrête la génération.
+ * ── POURQUOI `fixed`, ET POURQUOI EN BAS ────────────────────────────────────
+ *
+ * `position: fixed` parce qu'un bandeau dans le flux DÉPLACERAIT la planche de sa
+ * hauteur, puis la remonterait quand la réponse arrive : un saut visible sur
+ * chaque chargement de chaque écran d'équipe.
+ *
+ * EN BAS parce que l'en-tête de recherche de la maquette est `position: sticky;
+ * top: 0`, avec `zIndex: 20` : un bandeau en haut le recouvrirait. Le `zIndex: 60`
+ * d'ici le place au-dessus du contenu sans avoir à toucher à celui de la maquette.
+ *
+ * Et il est posé en FRÈRE du cadre, dans un fragment — jamais en PARENT. Un
+ * conteneur intercalé portant un `transform` ou un `overflow` suffirait à casser le
+ * `sticky` de l'en-tête sans qu'aucun type ne s'en plaigne ; c'est la mise en garde
+ * déjà écrite dans `app/(app)/accueil/page.tsx`, et elle vaut ici.
+ *
+ * Il n'emploie QUE des jetons de la maquette : le blanc et la bordure `#E6EBE9` de
+ * ses cartes, leur rayon de 22 px, le gris de texte `#5D6B66` et le vert `#0F5C48`
+ * de ses liens. Aucune couleur n'est assombrie, et AUCUNE OMBRE PORTÉE n'est
+ * ajoutée — T1 §2.3 est une règle dure, et une carte flottante est précisément
+ * l'endroit où l'on serait tenté d'en mettre une.
  */
-const CADRE: React.CSSProperties = {
-  minHeight: '60vh',
-  background: '#F6F8F7',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '24px',
+const BANDEAU: React.CSSProperties = {
+  position: 'fixed',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  bottom: '16px',
+  zIndex: 60,
+  maxWidth: 'min(560px, calc(100vw - 32px))',
+  background: '#fff',
+  border: '1px solid #E6EBE9',
+  borderRadius: '22px',
+  padding: '10px 18px',
+  fontSize: '14px',
+  color: '#5D6B66',
   textAlign: 'center',
 };
 
@@ -156,25 +195,48 @@ function sessionFinie(erreur: unknown): boolean {
 
 export function EcranDonneesEquipe<T>({
   charger,
+  squelette,
   children,
 }: {
   readonly charger: () => Promise<T>;
+  /**
+   * LES PROPS D'ATTENTE DU CADRE — le DESSIN, jamais la donnée.
+   *
+   * Cette prop est OBLIGATOIRE, et c'est la moitié de la correction. Facultative,
+   * elle serait omise au prochain écran branché et la coquille vide reviendrait
+   * exactement là — sans que rien ne le dise, puisque la page répondrait toujours
+   * 200. En l'exigeant, `tsc` refuse l'oubli.
+   *
+   * Les six valeurs vivent dans `screens/administration/data.ts`, à côté des types
+   * qu'elles remplissent (`SQUELETTE_D02` … `SQUELETTE_D16`), parce que c'est le
+   * fichier du dessin — même place que `rail` et `panelFil` pour l'accueil.
+   */
+  readonly squelette: T;
   readonly children: (donnees: T) => ReactNode;
 }) {
   const etat = useDonneesEquipe(charger);
 
-  if (etat.phase === 'attente') {
-    return (
-      <div style={CADRE} role="status" aria-live="polite">
-        <span style={{ fontSize: '14px', color: '#5D6B66' }}>Chargement…</span>
-      </div>
-    );
-  }
+  /**
+   * LE CADRE EST RENDU DANS LES TROIS ÉTATS. Il n'y a plus de `return` précoce, et
+   * c'est tout le correctif : les deux états non prêts prennent les props
+   * d'attente, et ne retirent RIEN de l'écran.
+   *
+   * L'échec prend le squelette lui aussi, délibérément : garder à l'écran les
+   * données d'un chargement précédent ferait lire comme vrai un tableau que le
+   * serveur vient de refuser de confirmer.
+   */
+  const donnees = etat.phase === 'prêt' ? etat.donnees : squelette;
 
-  if (etat.phase === 'échec') {
-    return (
-      <div style={CADRE} role="alert">
-        <span style={{ fontSize: '14px', color: '#5D6B66' }}>
+  return (
+    <>
+      {children(donnees)}
+      {etat.phase === 'attente' ? (
+        <div style={BANDEAU} role="status" aria-live="polite">
+          Chargement…
+        </div>
+      ) : null}
+      {etat.phase === 'échec' ? (
+        <div style={BANDEAU} role="alert">
           {displayMessageFor(etat.erreur)}
           {sessionFinie(etat.erreur) ? (
             <>
@@ -184,10 +246,8 @@ export function EcranDonneesEquipe<T>({
               </a>
             </>
           ) : null}
-        </span>
-      </div>
-    );
-  }
-
-  return <>{children(etat.donnees)}</>;
+        </div>
+      ) : null}
+    </>
+  );
 }

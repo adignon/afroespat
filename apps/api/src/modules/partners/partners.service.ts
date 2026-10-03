@@ -20,6 +20,13 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
+import {
+  buildPage,
+  createdAtDescAfter,
+  createdAtDescSort,
+  decodeCreatedAtDesc,
+} from '../../common/cursor';
+import { loadEnv } from '../../config/env';
 import { PrismaService } from '../../common/prisma.service';
 import { PlanService } from '../billing/plan.service';
 
@@ -76,6 +83,9 @@ export class PartnersService {
     private readonly plans: PlanService,
     private readonly audit: AuditService,
   ) {}
+
+  /** Le secret de signature des curseurs (§5.3). */
+  private readonly cursorSecret = loadEnv().CURSOR_SECRET;
 
   private fail(code: PartnerErrorCode, details?: Record<string, unknown>): never {
     throw new ApiError(code, PARTNER_ERROR_MESSAGES[code], PARTNER_ERROR_CODES[code], details);
@@ -292,10 +302,18 @@ export class PartnersService {
     if (query.category !== undefined) conditions.push({ category: query.category });
     if (query.isActive !== undefined) conditions.push({ isActive: query.isActive });
 
+    /**
+     * ELLE TRONQUAIT EN SILENCE : `take` posé, `nextCursor: null` écrit en dur.
+     * Le `createdAt` SÉLECTIONNÉ ci-dessous ne paraît pas dans la réponse — c'est
+     * la valeur de tri que le curseur transporte.
+     */
+    const scope = `admin:partners:${query.category ?? ''}:${String(query.isActive)}`;
+    const resume = decodeCreatedAtDesc(query.cursor, this.cursorSecret, scope);
+
     const rows = await this.prisma.partner.findMany({
-      where: conditions.length === 0 ? {} : { AND: conditions },
-      orderBy: { createdAt: 'desc' },
-      take: query.limit,
+      where: { AND: [...conditions, ...createdAtDescAfter(resume)] },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
       select: {
         id: true,
         name: true,
@@ -305,12 +323,18 @@ export class PartnersService {
         contractStart: true,
         contractEnd: true,
         isActive: true,
+        createdAt: true,
         _count: { select: { placements: true } },
       },
     });
 
+    const page = buildPage(rows, query.limit, scope, this.cursorSecret, createdAtDescSort);
+    const total = await this.prisma.partner.count({
+      where: conditions.length === 0 ? {} : { AND: conditions },
+    });
+
     return {
-      items: rows.map((r) => ({
+      items: page.items.map((r) => ({
         id: r.id,
         name: r.name,
         category: r.category,
@@ -321,7 +345,8 @@ export class PartnersService {
         isActive: r.isActive,
         placements: r._count.placements,
       })),
-      nextCursor: null,
+      nextCursor: page.nextCursor,
+      meta: { total },
     };
   }
 
@@ -401,10 +426,14 @@ export class PartnersService {
       conditions.push({ stepDefinitionId: query.stepDefinitionId });
     }
 
+    /** Même troncature muette que `listPartners`, même correction. */
+    const scope = `admin:placements:${query.partnerId ?? ''}:${query.stepDefinitionId ?? ''}`;
+    const resume = decodeCreatedAtDesc(query.cursor, this.cursorSecret, scope);
+
     const rows = await this.prisma.partnerPlacement.findMany({
-      where: conditions.length === 0 ? {} : { AND: conditions },
-      orderBy: { createdAt: 'desc' },
-      take: query.limit,
+      where: { AND: [...conditions, ...createdAtDescAfter(resume)] },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: query.limit + 1,
       select: {
         id: true,
         headline: true,
@@ -414,14 +443,20 @@ export class PartnersService {
         endsAt: true,
         originCountryId: true,
         destinationCountryId: true,
+        createdAt: true,
         partner: { select: { id: true, name: true, isActive: true } },
         stepDefinition: { select: { id: true, code: true, nameFr: true } },
         _count: { select: { clicks: true } },
       },
     });
 
+    const page = buildPage(rows, query.limit, scope, this.cursorSecret, createdAtDescSort);
+    const total = await this.prisma.partnerPlacement.count({
+      where: conditions.length === 0 ? {} : { AND: conditions },
+    });
+
     return {
-      items: rows.map((r) => ({
+      items: page.items.map((r) => ({
         id: r.id,
         headline: r.headline,
         ctaLabel: r.ctaLabel,
@@ -434,7 +469,8 @@ export class PartnersService {
         step: r.stepDefinition,
         clicks: r._count.clicks,
       })),
-      nextCursor: null,
+      nextCursor: page.nextCursor,
+      meta: { total },
     };
   }
 
@@ -689,6 +725,16 @@ export class PartnersService {
           conversionRate: r.clicks === 0 ? 0 : Math.round((r.conversions / r.clicks) * 1000) / 1000,
         }))
         .sort((a, b) => b.clicks - a.clicks),
+      /**
+       * §5.3 : `nextCursor` MANQUAIT. `null` est honnête sur la liste rendue — un
+       * encart par placement, tous rendus.
+       *
+       * REMONTÉ, et distinct de l'enveloppe : la lecture source porte
+       * `take: 20_000` clics. Au-delà, les taux de conversion sont FAUX sans que
+       * rien ne le dise. Un agrégat se calcule en base ou s'assume borné ; le
+       * paginer n'a pas de sens.
+       */
+      nextCursor: null,
     };
   }
 

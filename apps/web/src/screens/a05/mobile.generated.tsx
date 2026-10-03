@@ -4,9 +4,12 @@
 // Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
 // extérieur, lui, est fluide : la maquette le fige à 390 px, ce qui ne
 // serait pas responsive.
+import { Fragment } from 'react';
 import type { A05Data } from './data';
 
-export function A05Mobile(_props: A05Data) {
+export function A05Mobile(props: A05Data) {
+  const { mdTools } = props;
+
   return (
     <>
       <main style={{ display: "contents" }}>
@@ -18,7 +21,9 @@ Comptez **3 mois**.
 - RDV chez TLS Cotonou
 - Préparer l'AVI
 
-![Capture](image-1.jpg)</div><div style={{ background: "#FBE3D4", color: "#B4581F", borderRadius: "14px", padding: "10px 12px", fontSize: "12px", fontWeight: "700", flexShrink: "0" }}>Pré-rempli depuis « Mes études à Lyon »</div></div><div style={{ flexShrink: "0", background: "#fff", borderTop: "1px solid #E6EBE9", padding: "8px 10px 28px", display: "flex", gap: "4px" }}><span style={{ height: "40px", minWidth: "40px", padding: "0 8px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: "#5D6B66", background: "#F6F8F7" }}>H</span><span style={{ height: "40px", minWidth: "40px", padding: "0 8px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: "#5D6B66", background: "#F6F8F7" }}>B</span><span style={{ height: "40px", minWidth: "40px", padding: "0 8px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: "#5D6B66", background: "#F6F8F7" }}>I</span><span style={{ height: "40px", minWidth: "40px", padding: "0 8px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: "#5D6B66", background: "#F6F8F7" }}>•</span><span style={{ height: "40px", minWidth: "40px", padding: "0 8px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: "#5D6B66", background: "#F6F8F7" }}>1.</span><span style={{ height: "40px", minWidth: "40px", padding: "0 8px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: "#5D6B66", background: "#F6F8F7" }}>Lien</span><span style={{ height: "40px", minWidth: "40px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", background: "#E3F0EB" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4h18v16H3zM8.5 11a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2zM21 16l-5-5-9 9" /></svg></span></div>
+![Capture](image-1.jpg)</div><div style={{ background: "#FBE3D4", color: "#B4581F", borderRadius: "14px", padding: "10px 12px", fontSize: "12px", fontWeight: "700", flexShrink: "0" }}>Pré-rempli depuis « Mes études à Lyon »</div></div><div style={{ flexShrink: "0", background: "#fff", borderTop: "1px solid #E6EBE9", padding: "8px 10px 28px", display: "flex", gap: "4px" }}>{(mdTools ?? []).map((m, mIndex) => (
+<Fragment key={mIndex}><span style={{ height: "40px", minWidth: "40px", padding: "0 8px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "800", color: "#5D6B66", background: "#F6F8F7" }}>{m}</span></Fragment>
+))}<span style={{ height: "40px", minWidth: "40px", borderRadius: "10px", display: "flex", alignItems: "center", justifyContent: "center", background: "#E3F0EB" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4h18v16H3zM8.5 11a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2zM21 16l-5-5-9 9" /></svg></span></div>
       </main>
     </>
   );

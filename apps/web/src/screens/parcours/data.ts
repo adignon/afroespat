@@ -227,6 +227,27 @@ export interface ModeleAffiche {
   readonly phrase: string;
 }
 
+/**
+ * Un type de parcours tel que J02 le PROPOSE — un modèle, plus l'état du choix.
+ *
+ * `choisi` et `autre` sont les DEUX variantes de carte que la maquette de J02
+ * dessine : la première ligne est teintée, bordée de 2 px et porte une coche ; les
+ * autres sont blanches et nues. Deux champs plutôt qu'un booléen et sa négation,
+ * comme `courant` / `autre` de `ChoixParcours` et `courante` / `revocable` d'une
+ * session de K04 : le cadre transcodé dessine les deux et n'en montre qu'une, et
+ * c'est le chargeur qui décide — jamais le JSX.
+ *
+ * CE N'EST PAS UNE DONNÉE DU SERVEUR, et `appels.ts` l'écrit sans détour : le
+ * choix est un état d'INTERACTION, et aucune carte de J02 n'est cliquable (la
+ * maquette les dessine en `<div>`, pas en `<button>`, donc le générateur n'y pose
+ * aucun `onClick`). Le chargeur reproduit donc ce que la maquette montre — la
+ * première proposition est présélectionnée — et rien de plus.
+ */
+export interface ModeleProposé extends ModeleAffiche {
+  readonly choisi: boolean;
+  readonly autre: boolean;
+}
+
 /** Une ligne du sélecteur « Mes parcours » (J01M). */
 export interface ChoixParcours {
   readonly fond: string;
@@ -366,6 +387,25 @@ export interface J01MData extends ParcoursData {
   readonly panneau: PanneauParcours;
   readonly mesParcours: readonly ChoixParcours[];
   readonly total: number;
+}
+
+/**
+ * J02 · `/parcours/nouveau` — « Créer un parcours ».
+ *
+ * `modeles` vient de `GET /journey-templates` (§2.1), et son `etapes` de
+ * `version.stepCount`. Le dossier est formel sur ce point, dans le commentaire de
+ * `journeyTemplateVersionSchema` : le « 12 étapes » de la maquette est une
+ * illustration, l'API répond 15 pour `STUDIES`, et « recopier le nombre de la
+ * maquette afficherait un engagement faux au moment précis où le membre choisit
+ * son parcours ».
+ *
+ * `panneau` est celui de MON parcours actif, pour le rail du cadre d'ordinateur.
+ * Sans parcours — le cas normal de cet écran — il est VIDE, et la carte reste
+ * dessinée avec ses valeurs absentes plutôt qu'avec celles de la maquette.
+ */
+export interface J02Data extends ParcoursData {
+  readonly panneau: PanneauParcours;
+  readonly modeles: readonly ModeleProposé[];
 }
 
 /** J01E, état « aucun parcours » — `GET /journey-templates` (§2.1). */

@@ -28,6 +28,7 @@ import {
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
+import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
@@ -162,6 +163,41 @@ export class EventsService {
     throw new ApiError(code, EVENT_ERROR_MESSAGES[code], EVENT_ERROR_CODES[code], details);
   }
 
+  /**
+   * La couverture d'un événement : propriétaire, genre, statut.
+   *
+   * [RÈGLE DURE] AUCUN DES TROIS N'ÉTAIT VÉRIFIÉ, ni à la création ni à la
+   * modification. `coverAssetId` était écrit tel quel (`coverAssetId: input.
+   * coverAssetId ?? null`) et, en modification, connecté par simple
+   * identifiant (`data.coverAsset = { connect: { id } }`).
+   *
+   * Le plus grave n'est pas le genre mais LE PROPRIÉTAIRE, qui ne figurait
+   * nulle part : un organisateur pouvait donner pour couverture l'identifiant
+   * du média d'UN AUTRE MEMBRE. Ce n'était donc pas un mésusage de son propre
+   * document, mais une référence croisée — le justificatif professionnel d'un
+   * tiers affiché en bandeau d'un événement public, et `events.cover_asset_id`
+   * ne garde aucune trace de qui l'a posé.
+   *
+   * Le patron est celui de `housing.assertOwnedPhotos` / `pros.assertOwnedProof`,
+   * et le fragment de `where` est partagé avec le fil et la messagerie pour que
+   * les quatre points de rattachement ne puissent plus diverger.
+   *
+   * 404 et non 403 : le genre et le propriétaire vivent dans le `where`, donc un
+   * identifiant qu'on n'a pas le droit de rattacher est indistinguable d'un
+   * identifiant qui n'existe pas. Le statut, lui, reste un 400 — l'organisateur
+   * vient d'envoyer ce fichier et sait qu'il existe.
+   */
+  private async assertOwnedCover(organizerUserId: string, coverAssetId: string): Promise<void> {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id: coverAssetId, ...ownedAttachableWhere('eventCover', organizerUserId) },
+      select: { status: true },
+    });
+    if (asset === null) throw ApiError.notFound();
+    if (asset.status !== REQUIRED_MEDIA_STATUS) {
+      throw ApiError.validation([{ path: 'coverAssetId', code: 'MEDIA_NOT_READY' }]);
+    }
+  }
+
   // ── Création (§3.1) ───────────────────────────────────────────────────────
 
   /**
@@ -192,6 +228,12 @@ export class EventsService {
 
     if (input.communityId !== undefined) {
       await this.assertCommunityMember(input.communityId, organizerUserId);
+    }
+
+    // AVANT le quota, comme les bornes de temps : une couverture refusée ne doit
+    // pas consommer l'unique événement mensuel d'un membre gratuit.
+    if (input.coverAssetId !== undefined) {
+      await this.assertOwnedCover(organizerUserId, input.coverAssetId);
     }
 
     const organizer = await this.prisma.user.findUniqueOrThrow({
@@ -340,6 +382,7 @@ export class EventsService {
     if (patch.type !== undefined) data.type = patch.type;
     if (patch.capacity !== undefined) data.capacity = patch.capacity;
     if (patch.coverAssetId !== undefined) {
+      await this.assertOwnedCover(organizerUserId, patch.coverAssetId);
       data.coverAsset = { connect: { id: patch.coverAssetId } };
     }
 

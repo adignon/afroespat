@@ -69,6 +69,20 @@ export const guideTabsFor = (active: number, onPick: (tab: GuideTabKey, index: n
     return {
       label,
       tab,
+      /**
+       * `on` EXISTE POUR LE CADRE MOBILE, et c'est le seul endroit où il sert.
+       *
+       * La planche d'ordinateur écrit les DEUX déclarations sur chaque onglet
+       * (`background:…;color:…`), donc `bg` et `fg` lui suffisent. La planche
+       * mobile, elle, dessine deux formes DIFFÉRENTES : l'onglet actif porte
+       * `background:#fff` et AUCUNE couleur de texte, l'inactif porte
+       * `color:#5D6B66` et aucun fond. Ce ne sont pas deux valeurs d'une même
+       * déclaration, ce sont deux déclarations différentes — et une interpolation
+       * posée là où va une déclaration entière est JETÉE EN SILENCE par le
+       * générateur (mesuré). Les deux formes vont donc sous `<sc-if>`, ce qui
+       * demande un booléen, pas une couleur.
+       */
+      on,
       bg: on ? '#fff' : 'transparent',
       fg: on ? '#16211D' : '#5D6B66',
       onPick: () => onPick(tab, i),

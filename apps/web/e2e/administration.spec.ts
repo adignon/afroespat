@@ -193,7 +193,20 @@ test('13 §4.2 — le dossier annonce le motif minimal et le rôle du bannisseme
 test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application membres', async ({
   page,
 }) => {
-  await visiter(page, '/admin/moderation');
+  /**
+   * ON MESURE LE RAIL SUR UNE PLANCHE STATIQUE, et c'est un choix, pas un hasard.
+   *
+   * Ce cas visitait `/admin/moderation`. D04 est devenu une page CLIENTE : sans
+   * session d'équipe ni charge servie, `EcranDonneesEquipe` affiche son refus — SANS
+   * RAIL — et le cas échouait dès `expect(rail).toBeVisible()`. Il parlait alors des
+   * DONNÉES tout en prétendant parler du rail, et ce fichier n'intercepte rien, par
+   * choix assumé (voir son en-tête).
+   *
+   * D15 (`/admin/reglages`) est transcodé sans aucun appel : son rail arrive dans le
+   * HTML. Et le rail est IDENTIQUE sur les quinze planches — à la surbrillance près —
+   * donc le mesurer là ne perd rien et ne peut plus échouer pour la mauvaise cause.
+   */
+  await visiter(page, '/admin/reglages');
 
   const rail = page.locator('[data-frame="desktop"] nav');
   await expect(rail).toBeVisible();
@@ -201,23 +214,65 @@ test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application 
   // Le rail vit dans une colonne de 240 px, moins ses 16 px de marge de chaque côté.
   expect(boite?.width).toBe(208);
 
+  /**
+   * LES QUATORZE ENTRÉES — neuf dessinées par la maquette, cinq AJOUTÉES.
+   *
+   * Cette liste en comptait NEUF, et le rail n'en offrait que neuf pour quinze
+   * pages : cinq pages existaient, répondaient, et AUCUNE entrée n'y menait. Le
+   * porteur a tranché — « Le rail d'équipe a 9 entrées pour 15 pages c'est à
+   * corriger » — et les cinq sont ajoutées par la clé `rail` de
+   * `tools/screens/10-administration.mjs`. Les libellés viennent du
+   * `data-screen-label` de leur planche, pas d'une invention.
+   *
+   * L'ordre est celui du rail : chaque enfant immédiatement après son parent.
+   */
   for (const entree of [
     'Tableau de bord',
+    'Rapport d’impact',
     'Membres',
     'Modération',
     'Parcours',
+    'Bibliothèque d’étapes',
     'Contenu',
+    'Guides',
+    'Alertes arnaques',
     'Référentiels',
     'Services',
     'Revenus',
+    'Partenaires',
     'Réglages',
   ]) {
     await expect(rail.getByText(entree, { exact: true })).toHaveCount(1);
   }
 
-  // Aucune barre d'onglets de membre, aucun lien vers leurs pages.
+  /**
+   * AUCUNE BARRE D'ONGLETS DE MEMBRE, ET AUCUN LIEN VERS LEURS PAGES.
+   *
+   * Cette assertion disait « zéro balise `<a>` dans le cadre », et elle était vraie
+   * pour la mauvaise raison : la maquette ne CÂBLE pas son rail — elle le dessine en
+   * neuf `<span>`. Le cadre ne contenait donc aucun lien du tout, ce qui satisfaisait
+   * la mesure tout en rendant l'application d'équipe entièrement innavigable. Les
+   * dix-huit cas de ce fichier passaient parce qu'ils tapent l'URL.
+   *
+   * Ce qui compte n'est pas qu'il n'y ait AUCUN lien, c'est qu'aucun lien ne sorte du
+   * domaine d'équipe. On le mesure donc à l'endroit : tous les liens du cadre, et il
+   * y en a, pointent sous `/admin/`.
+   */
   await expect(page.getByText('Compte', { exact: true })).toHaveCount(0);
-  await expect(page.locator('[data-frame="desktop"] a')).toHaveCount(0);
+  const liens = page.locator('[data-frame="desktop"] a');
+  const combien = await liens.count();
+  /**
+   * QUATORZE, et le chiffre n'est plus la propriété intéressante : ce qui compte est
+   * que les quatorze pointent SOUS `/admin/`. Le nombre reste mesuré pour qu'une
+   * entrée perdue en silence se voie — mais la règle « aucune page d'équipe n'est
+   * injoignable » est gelée par ENSEMBLES dans `e2e/navigation-rail.spec.ts`, qui
+   * compare les routes de `(admin)` aux destinations du rail. Un compte, lui,
+   * resterait vert si on retirait une entrée en ajoutant une autre.
+   */
+  expect(combien, 'le rail d’équipe doit être fait de vrais liens').toBe(14);
+  for (let i = 0; i < combien; i += 1) {
+    expect(await liens.nth(i).getAttribute('href')).toMatch(/^\/admin(\/|$)/);
+  }
   // Aucun cadre mobile : la maquette n'en dessine pas pour l'administration.
   await expect(page.locator('[data-frame="mobile"]')).toHaveCount(0);
 });

@@ -6,12 +6,14 @@
 // serait pas responsive.
 import type { A06Data } from './data';
 
-export function A06CorrigerMobile(_props: A06Data) {
+export function A06CorrigerMobile(props: A06Data) {
+  const { guide } = props;
+
   return (
     <>
       <main style={{ display: "contents" }}>
 
-      <div style={{ padding: "56px 18px 0", opacity: ".6" }}><h1 style={{ margin: "0", fontSize: "22px", fontWeight: "800" }}>Obtenir la garantie Visale sans CDI</h1><p style={{ fontSize: "14.5px", lineHeight: "1.7" }}>Les étudiants de 18 à 30 ans y ont droit, <span style={{ background: "#CFE3DA" }}>quel que soit leur pays d'origine…</span></p></div>
+      <div style={{ padding: "56px 18px 0", opacity: ".6" }}><h1 style={{ margin: "0", fontSize: "22px", fontWeight: "800" }}>{guide.title}</h1><p style={{ fontSize: "14.5px", lineHeight: "1.7" }}>Les étudiants de 18 à 30 ans y ont droit, <span style={{ background: "#CFE3DA" }}>quel que soit leur pays d'origine…</span></p></div>
       <div style={{ position: "absolute", inset: "0", background: "rgba(22,33,29,.5)" }}></div>
       <div style={{ position: "absolute", left: "0", right: "0", bottom: "0", height: "86%", background: "#fff", borderRadius: "28px 28px 0 0", padding: "10px 18px 26px", display: "flex", flexDirection: "column", gap: "16px" }}>
         <span style={{ alignSelf: "center", width: "40px", height: "5px", borderRadius: "999px", background: "#DDE3E0" }}></span>

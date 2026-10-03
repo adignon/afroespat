@@ -9,19 +9,33 @@
  * Relancer après une modification de maquette : `node tools/generate-screens.mjs`.
  * Les fichiers produits portent `.generated.tsx` et ne se modifient pas à la main.
  */
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   adaptModalFrame,
+  completerRail,
   extractFrame,
   extractSection,
+  markLinks,
   markTriggers,
   transcode,
   MODAL_WINDOW_SOURCE,
 } from './dc-to-jsx.mjs';
 
 const ROOT = resolve(import.meta.dirname, '..');
+
+/**
+ * OÙ LES CADRES SONT ÉCRITS — `ROOT` sauf quand on vérifie la génération.
+ *
+ * `--self-test` relance ce fichier dans un processus FILS pour vérifier que la
+ * génération tourne vraiment et produit ce qui est sur le disque. Le fils écrit
+ * donc ailleurs : sans cela, le contrôle détruirait ce qu'il vient de comparer.
+ * Voir `CHAINE_TESTS`.
+ */
+const OUT_ROOT = process.env['DC_OUT'] === undefined ? ROOT : resolve(process.env['DC_OUT']);
 
 /**
  * ADAPTATIONS DE CADRE.
@@ -640,6 +654,234 @@ const CONSENT_CHECKBOX = {
 };
 
 /**
+ * ─── P02, L'ÉCRAN DU CODE : QUATRE CONTRÔLES DESSINÉS QUI NE FAISAIENT RIEN ──
+ *
+ * Le porteur a ouvert cet écran et rapporté ses défauts d'un coup : « le bouton
+ * retour ne marche pas, ainsi que le timer », et « après la saisie du code OTP la
+ * corriger n'est pas possible ». Ils ont la MÊME cause de fond — la maquette
+ * dessine des contrôles, et un dessin n'est pas opérable :
+ *
+ *   · le retour est un `<a href="#">` sur l'ordinateur et un `<span>` sur le
+ *     téléphone ;
+ *   · « Renvoyer » est un `<span>` ;
+ *   · « 0:45 » est un texte figé ;
+ *   · les six cases sont des `<div>`, et le champ qui les alimentait vivait HORS
+ *     du cadre, en 1 px opaque à zéro, focalisé une seule fois au montage.
+ *
+ * Les trois adaptations ci-dessous sont BORNÉES À P02, comme tout le reste de ce
+ * fichier : le chevron « m15 18-6-6 6-6 » est le tracé de retour le plus répandu
+ * des dix maquettes, et une adaptation non bornée l'aurait promu partout.
+ */
+
+/**
+ * LE CHAMP DU CODE PASSE PAR-DESSUS LES SIX CASES.
+ *
+ * ── POURQUOI UN SEUL CHAMP, ET NON SIX ──────────────────────────────────────
+ *
+ * Six `<input>` paraissent plus fidèles à l'image, et ils cassent les deux seules
+ * choses dont un membre a besoin ici : COLLER le code, et le laisser remplir
+ * automatiquement depuis le SMS. `autoComplete="one-time-code"` est ce qui
+ * déclenche cette proposition sur iOS et Android, et il ne vaut que sur un champ
+ * qui porte le code ENTIER. Le choix d'origine était donc le bon ; c'est son
+ * PLACEMENT qui était faux.
+ *
+ * ── CE QUI RENDAIT LA CORRECTION IMPOSSIBLE ─────────────────────────────────
+ *
+ * Le champ vivait à côté du cadre, `width: 1px; opacity: 0`, et se focalisait une
+ * seule fois au montage. Deux conséquences mesurées :
+ *
+ *   · il portait `disabled={busy}`. Au sixième chiffre la vérification part,
+ *     `busy` passe à vrai, le navigateur DÉFOCALISE un champ qui devient
+ *     désactivé — et au retour de l'appel personne ne lui rend le focus ;
+ *   · les six cases étant des `<div>`, cliquer dessus ne focalisait RIEN. Le
+ *     membre voyait son code refusé, cliquait sur les cases, tapait, et il ne se
+ *     passait rien. C'est exactement ce que le porteur a vécu.
+ *
+ * Le champ est donc POSÉ SUR les six cases, à leur taille exacte, transparent :
+ * c'est le même geste qu'`applyDrawnSelect` fait pour le sélecteur d'indicatif —
+ * un contrôle natif invisible par-dessus un bloc dessiné. Cliquer n'importe où
+ * sur les cases focalise le champ, parce que le champ EST la surface cliquée.
+ *
+ * `disabled` A DISPARU, et c'est volontaire. Le garde `fired` du parcours empêche
+ * déjà la double vérification ; désactiver le champ pendant l'appel ne protégeait
+ * de rien et coûtait le focus.
+ *
+ * `autoFocus` : le curseur est dans le champ à l'arrivée, puisque c'est le seul
+ * geste attendu. Les DEUX cadres portent un champ, mais celui du cadre masqué est
+ * en `display: none` — un élément non rendu ne prend pas le focus, donc l'appel de
+ * React y est un non-événement et seul le champ visible le reçoit. C'est la même
+ * raison qui fait que les tests cherchent `:visible`.
+ */
+const OTP_FIELD = {
+  screens: ['P02'],
+  why: 'Le champ du code se pose SUR les six cases : cliquer dessus rend le focus.',
+  provides: ['codeValue', 'onCodeChange'],
+  apply(jsx) {
+    /**
+     * Le motif s'arrête sur le `))}` de la boucle puis sur le `</div>` qui suit.
+     *
+     * Ni `[^}]*` ni un `[\s\S]*?` jusqu'au premier `</div>` ne marcheraient : le
+     * premier s'arrête sur les accolades de la boucle, le second sur le `</div>`
+     * d'une CASE — et le champ se serait retrouvé dans la première case au lieu du
+     * conteneur. C'est le piège qu'`applyChipRow` a déjà documenté.
+     */
+    const pattern =
+      /<div (style=\{\{ display: "grid", gridTemplateColumns: "repeat\(6,1fr\)"[^}]*\}\})>([\s\S]*?\)\)\})(\s*)<\/div>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    const style = m[1].replace('style={{ ', 'style={{ position: "relative", ');
+    const champ =
+      '<input type="text" name="code" inputMode="numeric" autoComplete="one-time-code" ' +
+      'maxLength={6} autoFocus aria-label="Code à six chiffres reçu par SMS" ' +
+      'value={codeValue} onChange={onCodeChange} ' +
+      // `opacity: 0` et non `color: transparent` : c'est ce que fait déjà le
+      // sélecteur d'indicatif, et cela masque AUSSI le curseur, dont la position
+      // est portée par le liseré vert de la case courante.
+      'style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", ' +
+      'opacity: 0, font: "inherit", border: "none", background: "transparent", ' +
+      'padding: 0, margin: 0, cursor: "text" }} />';
+
+    return {
+      jsx: `${jsx.slice(0, m.index)}<div ${style}>${m[2]}${m[3]}${champ}</div>${jsx.slice(m.index + m[0].length)}`,
+      applied: true,
+    };
+  },
+};
+
+/**
+ * LE MINUTEUR DÉCOMPTE, ET « RENVOYER » DEVIENT UN BOUTON.
+ *
+ * Les deux vivent dans la MÊME ligne de la maquette et dans le même état : tant
+ * que le compte à rebours tourne, renvoyer est refusé. Les séparer en deux
+ * adaptations aurait permis qu'un bouton actif côtoie un compte à rebours en
+ * cours — l'incohérence que la maquette, elle, ne dessine pas.
+ *
+ * ── LE COMPTE À REBOURS NE DISPARAÎT PAS, IL SE CACHE ───────────────────────
+ *
+ * `visibility` et non un `sc-if` : la ligne est en `justify-content:
+ * space-between`, donc retirer le compte à rebours ferait SAUTER « Renvoyer » à
+ * gauche. `visibility: hidden` garde la boîte — donc la mise en page de la
+ * maquette — et retire le texte de l'arbre d'accessibilité, ce qui est exactement
+ * ce qu'on veut d'un compteur arrêté.
+ *
+ * ── LES DEUX COULEURS DE « RENVOYER » SONT CELLES DE LA MAQUETTE ────────────
+ *
+ * Elle dessine le contrôle en `#8A958F` À CÔTÉ d'un compte à rebours qui tourne :
+ * c'est l'état ATTENTE. Elle dessine l'autre état dans sa propre colonne
+ * « ÉTATS », panneau « CODE EXPIRÉ » : « Recevoir un nouveau code » y est un
+ * `<a>`, et la feuille de style du document écrit `a{color:#16785E}`. Les deux
+ * valeurs sont donc RELEVÉES, pas choisies — aucun hexadécimal n'est retouché, et
+ * les deux sont des jetons de `packages/config/tokens.js` (`text-subtle`,
+ * `primary`).
+ *
+ * `font: "inherit"` est posé AVANT `fontWeight`, et l'ordre compte : `font` est
+ * une propriété raccourcie qui remet la graisse à zéro. Placée après, elle
+ * effaçait le `fontWeight: "700"` de la maquette — le contrôle maigrissait en
+ * devenant un bouton.
+ */
+const OTP_RESEND_ROW = {
+  screens: ['P02'],
+  why: 'Le minuteur devient une valeur vivante et « Renvoyer » un vrai bouton.',
+  provides: ['resend'],
+  apply(jsx) {
+    const pattern =
+      /<span style=\{\{ color: "#5D6B66" \}\}>Nouveau code dans <strong (style=\{\{ [^}]*\}\})>0:45<\/strong><\/span><span style=\{\{ color: "#8A958F", fontWeight: "700" \}\}>Renvoyer<\/span>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    const compte =
+      '<span style={{ color: "#5D6B66", visibility: resend.countdown }}>Nouveau code dans ' +
+      `<strong ${m[1]}>{resend.label}</strong></span>`;
+    const bouton =
+      '<button type="button" onClick={resend.onPick} disabled={resend.blocked} ' +
+      'style={{ font: "inherit", color: resend.color, fontWeight: "700", border: "none", ' +
+      'background: "none", padding: 0, cursor: resend.cursor }}>Renvoyer</button>';
+
+    return {
+      jsx: jsx.slice(0, m.index) + compte + bouton + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * LE RETOUR RAMÈNE À LA SAISIE DU NUMÉRO.
+ *
+ * DEUX formes, parce que les deux cadres ne dessinent pas le même contrôle, et
+ * c'est la maquette qui en décide :
+ *
+ *   · l'ordinateur écrit un `<a href="#">` avec son libellé, « Changer de
+ *     numéro ». Il devient un `<button>` : ce contrôle ne mène pas à une adresse,
+ *     il DÉFAIT une étape — il efface le défi OTP en cours avant de revenir.
+ *     C'est une action, pas un lien, et un `<a href>` l'aurait annoncé à tort.
+ *
+ *     SA COULEUR : l'ancre de la maquette n'en porte aucune en ligne, donc elle
+ *     hérite d'`a{color:#16785E}` dans la feuille de style du document. Le JSX
+ *     produit, lui, n'a pas cette règle — le lien s'affichait en couleur de
+ *     texte. Reposer `#16785E` RÉTABLIT ce que la maquette montre ; ce n'est pas
+ *     une retouche.
+ *
+ *   · le téléphone ne dessine qu'un rond de 44 px contenant le chevron, sans un
+ *     mot. Le `<button>` créé reçoit donc `aria-label`, avec le libellé QUE LA
+ *     MAQUETTE DONNE au même contrôle dans l'autre cadre — jamais un nom inventé.
+ *     C'est la règle d'`ICON_BUTTON_NAMES`, appliquée ici.
+ *
+ * L'ancre de l'ordinateur est l'un des `href="#"` du produit, et un autre
+ * mécanisme — la promotion générale des liens — est en cours d'écriture. Les deux
+ * ne se disputent rien : après cette adaptation, P02 ne porte plus aucun
+ * `href="#"`, donc un mécanisme indexé sur ce motif n'y trouvera rien à promouvoir.
+ */
+const OTP_BACK = {
+  screens: ['P02'],
+  why: 'Le retour de P02 devient un vrai bouton, aux deux largeurs.',
+  provides: ['onChangeNumber'],
+  apply(jsx) {
+    // Le libellé de l'ordinateur, et le rond nu du téléphone.
+    const ancre = /<a href="#" style=\{\{ ([^}]*)\}\}>([\s\S]*?)Changer de numéro<\/a>/;
+    const rond =
+      /<span style=\{\{ (width: "44px", height: "44px", borderRadius: "999px", background: "#EEF2F0"[^}]*)\}\}>([\s\S]*?)<\/span>/;
+
+    /**
+     * Le style capturÉ finit sur un ESPACE, pas sur une virgule — `style={{ a: "b" }}`
+     * laisse `a: "b" `. Recoller les déclarations suivantes sans elle produisait
+     * `justifyContent: "center" border: "none"`, que `tsc` refuse (TS1005) ; le
+     * premier passage est tombé exactement là. On normalise donc la jointure ici
+     * plutôt qu'à chaque usage, où on l'oublierait une fois sur deux.
+     */
+    const puis = (style) => {
+      const net = style.trim();
+      return net.endsWith(',') ? `${net} ` : `${net}, `;
+    };
+
+    let out = jsx;
+    let applied = false;
+
+    const a = ancre.exec(out);
+    if (a !== null) {
+      const bouton =
+        '<button type="button" onClick={onChangeNumber} ' +
+        `style={{ font: "inherit", ${puis(a[1])}color: "#16785E", border: "none", ` +
+        `background: "none", padding: 0, cursor: "pointer" }}>${a[2]}Changer de numéro</button>`;
+      out = out.slice(0, a.index) + bouton + out.slice(a.index + a[0].length);
+      applied = true;
+    }
+
+    const r = rond.exec(out);
+    if (r !== null) {
+      const bouton =
+        '<button type="button" onClick={onChangeNumber} aria-label="Changer de numéro" ' +
+        `style={{ ${puis(r[1])}border: "none", padding: 0, font: "inherit", cursor: "pointer" }}>` +
+        `${r[2]}</button>`;
+      out = out.slice(0, r.index) + bouton + out.slice(r.index + r[0].length);
+      applied = true;
+    }
+
+    return { jsx: out, applied };
+  },
+};
+
+/**
  * LES PASTILLES DE CHOIX DEVIENNENT DES BOUTONS.
  *
  * La maquette les dessine en `<span>` — statut d'occupation, types d'aide — et
@@ -851,7 +1093,14 @@ function adaptFields(jsx, section) {
     applied.push(spec);
   }
 
-  for (const transform of [CITY_SEARCH, CITY_ROWS, CONSENT_CHECKBOX]) {
+  for (const transform of [
+    CITY_SEARCH,
+    CITY_ROWS,
+    CONSENT_CHECKBOX,
+    OTP_FIELD,
+    OTP_RESEND_ROW,
+    OTP_BACK,
+  ]) {
     if (!transform.screens.includes(section)) continue;
     const result = transform.apply(out);
     if (!result.applied) {
@@ -1782,6 +2031,47 @@ function adaptFrame(jsx, section, modal = false) {
  * entre 1024 et 1920 px.
  */
 /**
+ * ─── LE GARDE-FOU DE LA NAVIGATION : UN `href="#"` NON DÉCLARÉ ───────────────
+ *
+ * `href="#"` est une destination QUI N'EN EST PAS UNE : le navigateur reste sur la
+ * page et remonte en haut. Les 207 balises `<a>` des cadres produits en portaient
+ * TOUTES une, et aucun test ne l'a vu parce qu'aucun test ne cliquait.
+ *
+ * DEUX RÉGIMES, ET C'EST LE CŒUR DU GARDE-FOU.
+ *
+ *   · `navigationDeclaree: true` sur l'écran — le porteur du module affirme que SA
+ *     navigation est complète. Un `href="#"` qui subsiste ARRÊTE alors la
+ *     génération : le trou ne peut plus se réouvrir en silence sur un écran DÉJÀ
+ *     traité, ce qui est la seule façon de rendre le travail cumulatif.
+ *   · sans le drapeau — un `⚠` par cadre, et un RÉCAPITULATIF en fin de course qui
+ *     nomme les écrans traités ET ceux qui restent, avec leur compte. La génération
+ *     PASSE.
+ *
+ * LE SECOND RÉGIME N'EST PAS UNE FAIBLESSE, c'est la condition pour que le
+ * mécanisme serve. Quatre modules sont déclarés par d'autres mains, en parallèle.
+ * Un garde-fou dur d'emblée ferait échouer la génération de tout le dépôt sur des
+ * écrans que personne n'a encore déclarés — donc il serait désactivé le jour même,
+ * et on en reviendrait à rien. Le `⚠` et la liste du reste font le travail que le
+ * refus ne peut pas faire tant que la navigation n'est pas complète : rendre le
+ * trou COMPTÉ, donc visible.
+ *
+ * Rend le nombre de liens morts, pour que l'appelant l'inscrive dans le
+ * récapitulatif. Lève si l'écran se déclare complet et ne l'est pas.
+ */
+function garderNavigation(jsx, screen, frameName) {
+  const morts = jsx.split('href="#"').length - 1;
+  if (morts > 0 && screen.navigationDeclaree === true) {
+    throw new Error(
+      `${screen.section} ${frameName} : ${morts} lien(s) restent sur « href="#" » alors que ` +
+        'l’écran déclare « navigationDeclaree: true ». Déclarer leur destination dans « liens », ' +
+        'ou retirer le drapeau — un lien qui ne mène nulle part est pire qu’un lien absent, ' +
+        'parce qu’il a l’air de marcher.',
+    );
+  }
+  return morts;
+}
+
+/**
  * Les écrans à produire, LUS DANS `tools/screens/`, un fichier par maquette.
  *
  * Ils vivaient dans un tableau unique ici même. Les quatre-vingt-sept sections
@@ -2396,9 +2686,708 @@ const DATA_TESTS = [
   },
 ];
 
+/**
+ * ─── ÉPREUVE DU TROU DU MÉCANISME DE LIAISON ─────────────────────────────────
+ *
+ * `styleToJsx` découpait l'attribut `style` en déclarations et SAUTAIT en silence
+ * celles qui n'ont pas de deux-points. Pour du CSS mal formé c'est juste — le
+ * navigateur fait pareil, et la maquette en contient. Pour une INTERPOLATION
+ * posée à la place d'une déclaration entière, c'était faux : la liaison
+ * disparaissait, et le journal l'annonçait quand même.
+ *
+ * Les deux cas sont éprouvés ENSEMBLE, et c'est le point : un refus qui vaudrait
+ * aussi pour le CSS mal formé arrêterait la génération sur des maquettes qui
+ * marchent. Le second cas est donc la MUTATION TÉMOIN du premier — rendre le
+ * refus inconditionnel le fait tomber.
+ */
+const STYLE_TESTS = [
+  {
+    name: 'une interpolation en position de DÉCLARATION arrête la génération, en la nommant',
+    run: () => {
+      try {
+        transcode('<div style="display:flex;padding:10px 0;{{ m.bord }}">Lyon</div>');
+        return 'aucune erreur — la liaison disparaîtrait et le journal l’annoncerait quand même';
+      } catch (e) {
+        const nomme = e.message.includes('{{ m.bord }}');
+        const situe = e.message.includes('display:flex;padding:10px 0');
+        const dit = e.message.includes('DÉCLARATION ENTIÈRE');
+        return `refus:${nomme}:${situe}:${dit}`;
+      }
+    },
+    expect: 'refus:true:true:true',
+  },
+  {
+    /**
+     * MUTATION TÉMOIN du cas précédent. Le CSS mal formé reste SAUTÉ : rendre le
+     * refus inconditionnel ferait tomber ce cas-ci, et seulement celui-ci.
+     */
+    name: 'TÉMOIN — une déclaration mal formée SANS interpolation reste sautée, comme le navigateur le fait',
+    run: () => transcode('<div style="padding:10px 0;;zzz;color:#fff">x</div>'),
+    expect: '<div style={{ padding: "10px 0", color: "#fff" }}>x</div>',
+  },
+  {
+    /** Une interpolation en position de VALEUR est licite et doit passer. */
+    name: 'TÉMOIN — une interpolation en position de VALEUR passe, elle a son deux-points',
+    run: () => transcode('<div style="background:{{ v.fond }}">x</div>'),
+    expect: '<div style={{ background: v.fond }}>x</div>',
+  },
+];
+
+/**
+ * ─── ÉPREUVE DU MÉCANISME DE PROMOTION DE LIEN ───────────────────────────────
+ *
+ * Chaque règle dure de `markLinks` a son cas, et chacun est écrit pour TOMBER si
+ * la règle est retirée. Les cas de refus sont la moitié qui compte : un mécanisme
+ * de navigation qui promeut sans compter remplace une navigation morte par une
+ * navigation fausse, qui est pire parce qu'elle a l'air de marcher.
+ */
+const RAIL = (texte) =>
+  `<span style="height:42px;color:#CBD5D1"><svg><path d="M4 4h7"/></svg>${texte}</span>`;
+const NAV = '<nav style="background:#16211D">';
+
+const LINK_TESTS = [
+  {
+    name: 'un `<span>` DESSINÉ devient un lien, et le style de la maquette reste devant',
+    run: () =>
+      markLinks(`${NAV}${RAIL('Membres')}</nav>`, [
+        { dans: NAV, texte: 'Membres', vers: '/admin/membres', why: '' },
+      ]).html,
+    expect:
+      `${NAV}<a href="/admin/membres" style="color:inherit;text-decoration:none;cursor:pointer;height:42px;color:#CBD5D1">` +
+      '<svg><path d="M4 4h7"/></svg>Membres</a></nav>',
+  },
+  {
+    /**
+     * LE DESSIN NE BOUGE PAS. `color:inherit` est PRÉFIXÉ, donc la fusion par
+     * propriété de `styleToJsx` garde celui de la maquette : le rail reste
+     * `#CBD5D1`. Suffixer la neutralisation — ce que fait `markTriggers` — rendrait
+     * le rail gris hérité, et personne ne l'aurait vu dans un diff de JSX.
+     */
+    name: 'la couleur de la maquette GAGNE sur la neutralisation, après transcodage',
+    run: () => {
+      const out = markLinks(`${NAV}${RAIL('Membres')}</nav>`, [
+        { dans: NAV, texte: 'Membres', vers: '/x', why: '' },
+      ]).html;
+      const jsx = transcode(out);
+      return [
+        jsx.includes('color: "#CBD5D1"'),
+        jsx.includes('color: "inherit"'),
+        jsx.includes('textDecoration: "none"'),
+        jsx.includes('cursor: "pointer"'),
+      ].join(',');
+    },
+    expect: 'true,false,true,true',
+  },
+  {
+    /**
+     * LE GARDE-FOU. Un libellé qui désigne deux éléments, ou zéro, ARRÊTE la
+     * génération en le nommant — au lieu de promouvoir au hasard, ou rien.
+     */
+    name: 'un libellé qui désigne DEUX éléments là où on en déclare un fait échouer',
+    run: () => {
+      try {
+        markLinks(`${RAIL('Services')}<div>Services</div>`, [
+          { texte: 'Services', vers: '/admin/services', why: '' },
+        ], 'D10', 'Desktop');
+        return 'aucune erreur — un lien sur deux serait mort';
+      } catch (e) {
+        const nomme = e.message.includes('Services');
+        const compte = e.message.includes('désigne 2 élément(s)');
+        const situe = e.message.includes('D10') && e.message.includes('Desktop');
+        return `refus:${nomme}:${compte}:${situe}`;
+      }
+    },
+    expect: 'refus:true:true:true',
+  },
+  {
+    name: 'un libellé DISPARU de la maquette fait échouer, il ne passe pas inaperçu',
+    run: () => {
+      try {
+        markLinks(RAIL('Membres'), [{ texte: 'Adhérents', vers: '/x', why: '' }], 'D03', 'Desktop');
+        return 'aucune erreur';
+      } catch (e) {
+        return e.message.includes('désigne 0 élément(s)') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /**
+     * LE BORNAGE PAR CONTENEUR. « Référentiels » est écrit DEUX fois dans le cadre
+     * de D08 — dans le rail, et comme titre de page en 28 px. Sans `dans`, les deux
+     * seraient promus et le TITRE DE LA PAGE deviendrait un lien.
+     */
+    name: '`dans` borne la recherche au conteneur : le titre de page n’est pas promu',
+    run: () => {
+      const cadre = `${NAV}${RAIL('Référentiels')}</nav><h2 style="font-size:28px">Référentiels</h2>`;
+      const out = markLinks(cadre, [
+        { dans: NAV, texte: 'Référentiels', vers: '/admin/referentiels', why: '' },
+      ]).html;
+      return [
+        out.split('<a href="/admin/referentiels"').length - 1,
+        out.includes('<h2 style="font-size:28px">Référentiels</h2>'),
+      ].join(',');
+    },
+    expect: '1,true',
+  },
+  {
+    /**
+     * LA DESTINATION PEUT ÊTRE UNE EXPRESSION, évaluée DANS la boucle. C'est le
+     * `subject` de `markTriggers`, même raison : la maquette écrit UNE entrée pour
+     * toutes les lignes, et une destination littérale les enverrait toutes au même
+     * endroit.
+     */
+    name: 'une destination du DIALECTE s’évalue dans la boucle, une par ligne',
+    run: () => {
+      const cadre = '<sc-for list="{{ rail }}" as="r"><span>{{ r.label }}</span></sc-for>';
+      const out = markLinks(cadre, [
+        { marqueur: '{{ r.label }}', vers: '{{ r.href }}', why: '' },
+      ]).html;
+      return transcode(out).includes('href={r.href}') ? 'lié' : transcode(out);
+    },
+    expect: 'lié',
+  },
+  {
+    /**
+     * LE GARDE-FOU PROPRE AUX BOUCLES. La destination est écrite en dialecte, mais
+     * la boucle qui la lierait a été renommée : `{{ r.href }}` n'a plus de `r` à
+     * interroger. Le JSX produit compilerait mal — et, dans le cas imbriqué, il
+     * compilerait BIEN en menant ailleurs. On arrête donc, en nommant la racine.
+     */
+    name: 'une destination de BOUCLE dont la liaison a disparu ARRÊTE la génération',
+    run: () => {
+      const cadre = '<sc-for list="{{ rail }}" as="e"><span>{{ e.label }}</span></sc-for>';
+      try {
+        markLinks(cadre, [{ marqueur: '{{ e.label }}', vers: '{{ r.href }}', why: '' }], 'A01', 'Desktop');
+        return 'aucun refus';
+      } catch (err) {
+        return /interroge « r »/.test(err.message) && /aucune boucle/.test(err.message)
+          ? 'refus nommé'
+          : `refus non nommé : ${err.message}`;
+      }
+    },
+    expect: 'refus nommé',
+  },
+  {
+    /**
+     * LE CAS GRAVE, celui que `tsc` ne verrait PAS : le lien est dans une boucle
+     * SŒUR déjà refermée, qui employait bien la lettre `r`. Une remontée naïve en
+     * arrière y trouverait un `as="r"` et déclarerait la liaison présente ; la pile
+     * voit qu'elle est REFERMÉE. Sans ce cas, le mécanisme mènerait ailleurs en
+     * silence.
+     */
+    name: 'une liaison de boucle REFERMÉE ne compte pas comme englobante',
+    run: () => {
+      const cadre =
+        '<sc-for list="{{ rail }}" as="r"><span>{{ r.label }}</span></sc-for>' +
+        '<sc-for list="{{ menu }}" as="m"><span>{{ m.titre }}</span></sc-for>';
+      try {
+        markLinks(cadre, [{ marqueur: '{{ m.titre }}', vers: '{{ r.href }}', why: '' }], 'A01', 'Desktop');
+        return 'aucun refus';
+      } catch (err) {
+        return /liaisons ouvertes ici : « m »/.test(err.message)
+          ? 'refus, et il dit quelles liaisons sont ouvertes'
+          : `refus mal renseigné : ${err.message}`;
+      }
+    },
+    expect: 'refus, et il dit quelles liaisons sont ouvertes',
+  },
+  {
+    /**
+     * TÉMOIN — une boucle IMBRIQUÉE lie bien les deux noms, et la destination peut
+     * interroger l'un comme l'autre. Le garde-fou ne doit pas devenir un obstacle
+     * au cas légitime : si ce témoin rougissait, il refuserait du code juste.
+     */
+    name: 'TÉMOIN — dans une boucle imbriquée, les DEUX liaisons sont utilisables',
+    run: () => {
+      const cadre =
+        '<sc-for list="{{ posts }}" as="p"><sc-for list="{{ p.poll }}" as="o">' +
+        '<span>{{ o.t }}</span></sc-for></sc-for>';
+      const essai = (vers) =>
+        transcode(markLinks(cadre, [{ marqueur: '{{ o.t }}', vers, why: '' }]).html);
+      return essai('{{ p.href }}').includes('href={p.href}') &&
+        essai('{{ o.href }}').includes('href={o.href}')
+        ? 'les deux passent'
+        : 'une liaison légitime a été refusée';
+    },
+    expect: 'les deux passent',
+  },
+  {
+    /**
+     * TÉMOIN — une destination LITTÉRALE ne dépend d'aucune boucle, donc le
+     * garde-fou n'a rien à dire, y compris hors de toute boucle. C'est le cas des
+     * 52 rails littéraux, où les cinq entrées portent leur texte et leur adresse.
+     */
+    name: 'TÉMOIN — une destination littérale ne réclame aucune liaison de boucle',
+    run: () => {
+      const out = markLinks('<nav><span>Accueil</span></nav>', [
+        { texte: 'Accueil', vers: '/accueil', why: '' },
+      ]).html;
+      return out.includes('href="/accueil"') ? 'promu' : out;
+    },
+    expect: 'promu',
+  },
+  {
+    /**
+     * UN LIEN SANS NOM EST REFUSÉ, et pas seulement signalé. Un lecteur d'écran
+     * l'annonce par son URL. `markTriggers` se contente d'un `⚠` pour ses boutons
+     * muets, et c'est ainsi qu'axe les a trouvés en `critical` ; on ne refait pas
+     * cette économie.
+     */
+    name: 'un lien promu SANS aucun texte est REFUSÉ tant que « nom » n’est pas déclaré',
+    run: () => {
+      const icone = '<span style="width:40px"><svg><path d="M4 4h7"/></svg></span>';
+      let refus = '';
+      try {
+        markLinks(icone, [{ marqueur: 'M4 4h7', vers: '/compte', why: '' }], 'A01', 'Desktop');
+        refus = 'aucune erreur';
+      } catch (e) {
+        refus = e.message.includes('muet') ? 'refus' : `autre : ${e.message}`;
+      }
+      const nomme = markLinks(icone, [
+        { marqueur: 'M4 4h7', vers: '/compte', nom: 'Réglages', why: '' },
+      ]).html;
+      return `${refus}:${nomme.includes('aria-label="Réglages"')}`;
+    },
+    expect: 'refus:true',
+  },
+  {
+    /** Une interpolation COMPTE comme un nom : `{{ r.label }}` est un libellé calculé. */
+    name: 'TÉMOIN — une interpolation de texte suffit comme nom, sans « nom » déclaré',
+    run: () =>
+      markLinks(
+        // La boucle est là parce que le produit ne produit JAMAIS `{{ r.href }}`
+        // ailleurs : depuis que la destination d'une boucle doit être liée par sa
+        // boucle, un extrait sans `<sc-for>` ne serait plus un cas réaliste.
+        '<sc-for list="{{ rail }}" as="r"><span><svg><path d="M4 4h7"/></svg>{{ r.label }}</span></sc-for>',
+        [{ marqueur: 'M4 4h7', vers: '{{ r.href }}', why: '' }],
+      ).html.includes('aria-label')
+        ? 'un aria-label a été posé par-dessus un libellé existant'
+        : 'nommé par son texte',
+    expect: 'nommé par son texte',
+  },
+  {
+    /**
+     * LE DEUXIÈME BESOIN : un `<a href="#">` que la maquette a balisé mais pas
+     * adressé. Il n'est pas re-balisé — seul son `href` change — et son
+     * `aria-label` de maquette est gardé.
+     */
+    name: 'un `<a href="#">` reçoit sa destination déclarée, et garde tout le reste',
+    run: () =>
+      markLinks('<a href="#" style="height:48px" aria-label="Réglages"><svg/></a>', [
+        { aria: 'Réglages', vers: '/compte', why: '' },
+      ]).html,
+    expect: '<a href="/compte" style="height:48px" aria-label="Réglages"><svg/></a>',
+  },
+  {
+    /** Un `<a>` qui a DÉJÀ une destination n'est pas écrasé : on refuse. */
+    name: 'un `<a>` déjà adressé n’est pas réécrit en silence',
+    run: () => {
+      try {
+        markLinks('<a href="/deja">Voir tout</a>', [{ texte: 'Voir tout', vers: '/autre', why: '' }]);
+        return 'aucune erreur — une destination serait écrasée sans que rien ne le dise';
+      } catch (e) {
+        return e.message.includes('href="#"') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /**
+     * LE TROISIÈME BESOIN : un `<span>` promu en BOUTON avec une action.
+     * « Renvoyer » de l'écran du code en est un — la maquette le dessine en
+     * `<span>`, et il n'ouvre aucune fenêtre, donc `markTriggers` ne le voit pas.
+     */
+    name: 'un `<span>` devient un BOUTON avec son action, et son dessin est neutralisé',
+    run: () => {
+      const out = markLinks('<span style="font-weight:700">Renvoyer</span>', [
+        { texte: 'Renvoyer', action: 'onResend', why: '' },
+      ]).html;
+      const jsx = transcode(out);
+      return [
+        out.includes('<button type="button" onClick="{{ onResend }}"'),
+        jsx.includes('onClick={onResend}'),
+        jsx.includes('fontWeight: "700"'),
+        jsx.includes('border: "none"'),
+      ].join(',');
+    },
+    expect: 'true,true,true,true',
+  },
+  {
+    /** Une déclaration doit porter UN discriminant, et UNE intention. */
+    name: 'deux discriminants, ou deux intentions, dans une déclaration font échouer',
+    run: () => {
+      const refus = (lien) => {
+        try {
+          markLinks(RAIL('Membres'), [lien], 'D03', 'Desktop');
+          return 'passe';
+        } catch {
+          return 'refus';
+        }
+      };
+      return [
+        refus({ texte: 'Membres', aria: 'Membres', vers: '/x', why: '' }),
+        refus({ vers: '/x', why: '' }),
+        refus({ texte: 'Membres', vers: '/x', action: 'f', why: '' }),
+        refus({ texte: 'Membres', why: '' }),
+      ].join(',');
+    },
+    expect: 'refus,refus,refus,refus',
+  },
+  {
+    /**
+     * UN ATTRIBUT DÉJÀ POSÉ SURVIT À LA PROMOTION. `markTriggers` tourne AVANT :
+     * si la promotion perdait son `data-modal-open`, la fenêtre deviendrait
+     * inatteignable et rien ne le dirait.
+     */
+    name: 'TÉMOIN — les attributs déjà posés survivent à la promotion',
+    run: () =>
+      markLinks('<span data-modal-open="A05" style="gap:4px">Commenter</span>', [
+        { texte: 'Commenter', vers: '/publications/1', why: '' },
+      ]).html,
+    expect:
+      '<a href="/publications/1" style="color:inherit;text-decoration:none;cursor:pointer;gap:4px"' +
+      ' data-modal-open="A05">Commenter</a>',
+  },
+];
+
+/**
+ * ─── ÉPREUVE DE L'INJECTION D'ENTRÉES DE RAIL ────────────────────────────────
+ *
+ * `completerRail` est le seul mécanisme du dépôt qui AJOUTE au dessin au lieu de
+ * le transcoder. C'est donc celui qui doit être le plus serré : une entrée ajoutée
+ * dont la géométrie dériverait d'un pixel, et « on n'assombrit pas » serait violé
+ * en silence ; une surbrillance posée au mauvais endroit, et une page s'annoncerait
+ * sous le nom d'une autre — le défaut d'origine, revenu par l'outil censé le
+ * corriger.
+ *
+ * Les cas de REFUS sont la moitié qui compte, pour la même raison que chez
+ * `markLinks` : un rail complété sans compter est pire qu'un rail incomplet,
+ * parce qu'il a l'air de marcher.
+ */
+const R_REPOS = 'height:42px;padding:0 12px;font-weight:500;background:transparent;color:#CBD5D1';
+const R_ACTIF = 'height:42px;padding:0 12px;font-weight:700;background:#fff;color:#16211D';
+const R_NAV = '<nav style="background:#16211D">';
+/** Une entrée telle que la maquette l'écrit : style, icône, puis texte. */
+const R_ENTREE = (style, texte, icone = 'M4 4h7') =>
+  `<span style="${style}"><svg><path d="${icone}"/></svg>${texte}</span>`;
+/** Un rail de trois entrées, la deuxième en surbrillance — la forme de la maquette. */
+const R_RAIL = (actif = 'Parcours') =>
+  R_NAV +
+  R_ENTREE(actif === 'Tableau de bord' ? R_ACTIF : R_REPOS, 'Tableau de bord', 'M1 1h2') +
+  R_ENTREE(actif === 'Parcours' ? R_ACTIF : R_REPOS, 'Parcours', 'M5 5h6') +
+  R_ENTREE(actif === 'Contenu' ? R_ACTIF : R_REPOS, 'Contenu', 'M9 9h1') +
+  '</nav>';
+const R_AJOUT = { apres: 'Parcours', libelle: 'Bibliothèque d’étapes', pourquoi: '' };
+
+const RAIL_TESTS = [
+  {
+    /**
+     * LE CŒUR DE LA RÈGLE « ON NE RÉÉCRIT PAS » : une entrée ajoutée est le CLONE
+     * de son parent. Le cas écrit la sortie ATTENDUE en entier — géométrie, tracé,
+     * hexadécimaux — pour qu'un pixel inventé la fasse tomber.
+     */
+    name: 'une entrée AJOUTÉE est le clone VERBATIM de son parent : seul le libellé change',
+    run: () =>
+      completerRail(R_RAIL('Parcours'), {
+        dans: R_NAV,
+        ajoutees: [R_AJOUT],
+        actif: 'Parcours',
+      }).html,
+    expect:
+      R_NAV +
+      R_ENTREE(R_REPOS, 'Tableau de bord', 'M1 1h2') +
+      `<span style="${R_ACTIF}" aria-current="page"><svg><path d="M5 5h6"/></svg>Parcours</span>` +
+      R_ENTREE(R_REPOS, 'Bibliothèque d’étapes', 'M5 5h6') +
+      R_ENTREE(R_REPOS, 'Contenu', 'M9 9h1') +
+      '</nav>',
+  },
+  {
+    /**
+     * L'ENTRÉE AJOUTÉE SE POSE IMMÉDIATEMENT APRÈS SON PARENT, et pas en fin de
+     * rail : c'est l'ORDRE qui porte la hiérarchie, puisqu'on n'invente ni retrait
+     * ni groupement. Le cas lit les libellés dans l'ordre produit.
+     */
+    name: 'l’entrée ajoutée se pose APRÈS son parent, et l’ordre d’origine est intact',
+    run: () => {
+      const out = completerRail(R_RAIL('Contenu'), {
+        dans: R_NAV,
+        ajoutees: [R_AJOUT, { apres: 'Contenu', libelle: 'Guides', pourquoi: '' }],
+        actif: 'Guides',
+      }).html;
+      return [...out.matchAll(/<\/svg>([^<]+)</g)].map((m) => m[1]).join(' | ');
+    },
+    expect: 'Tableau de bord | Parcours | Bibliothèque d’étapes | Contenu | Guides',
+  },
+  {
+    /**
+     * LE DÉFAUT D'ORIGINE, GELÉ. D16 peignait « Tableau de bord » : une page sous le
+     * nom d'une autre. La surbrillance suit maintenant la DÉCLARATION, et une seule
+     * entrée la porte.
+     */
+    name: 'la surbrillance se DÉPLACE sur l’entrée déclarée, et une seule la porte',
+    run: () => {
+      const out = completerRail(R_RAIL('Tableau de bord'), {
+        dans: R_NAV,
+        ajoutees: [{ apres: 'Tableau de bord', libelle: 'Rapport d’impact', pourquoi: '' }],
+        actif: 'Rapport d’impact',
+      }).html;
+      const actifs = [...out.matchAll(/<span style="([^"]*)"([^>]*)><svg><path d="[^"]*"\/><\/svg>([^<]+)</g)]
+        .filter(([, style]) => style === R_ACTIF)
+        .map(([, , attrs, texte]) => `${texte}${attrs.includes('aria-current="page"') ? '+aria' : ''}`);
+      return `${actifs.length}:${actifs.join(',')}`;
+    },
+    expect: '1:Rapport d’impact+aria',
+  },
+  {
+    /**
+     * TÉMOIN — LE DESSIN DES ENTRÉES D'ORIGINE NE BOUGE PAS. C'est la règle
+     * « on n'assombrit pas » appliquée au rail : les hexadécimaux du repos et de
+     * l'actif sont LUS dans le nav, jamais écrits, donc les entrées que la maquette
+     * dessine ressortent à l'octet près — seule celle qui change d'état change.
+     */
+    name: 'TÉMOIN — les hexadécimaux et la géométrie du rail d’origine ne bougent pas',
+    run: () => {
+      const out = completerRail(R_RAIL('Parcours'), {
+        dans: R_NAV,
+        ajoutees: [R_AJOUT],
+        actif: 'Parcours',
+      }).html;
+      const styles = new Set([...out.matchAll(/<span style="([^"]*)"/g)].map((m) => m[1]));
+      return [...styles].sort().join(' || ');
+    },
+    expect: [R_ACTIF, R_REPOS].sort().join(' || '),
+  },
+  {
+    /** Un `actif` qui ne désigne rien laisserait la planche SANS page courante. */
+    name: 'un « actif » qui ne désigne aucune entrée ARRÊTE la génération',
+    run: () => {
+      try {
+        completerRail(R_RAIL(), { dans: R_NAV, ajoutees: [], actif: 'Réglages' }, 'D15', 'Desktop');
+        return 'aucune erreur — la planche n’aurait aucune page courante';
+      } catch (e) {
+        const nomme = e.message.includes('Réglages');
+        const compte = e.message.includes('désigne 0 entrée(s)');
+        const situe = e.message.includes('D15') && e.message.includes('Desktop');
+        return `refus:${nomme}:${compte}:${situe}`;
+      }
+    },
+    expect: 'refus:true:true:true',
+  },
+  {
+    /**
+     * LE JOUR OÙ LE DESIGNER DESSINERA L'ENTRÉE, l'ajout doit DISPARAÎTRE, pas la
+     * doubler. Sans ce refus, le rail porterait deux « Guides » et `markLinks`
+     * tomberait plus loin, sur un message qui n'expliquerait pas la cause.
+     */
+    name: 'un ajout dont la maquette dessine DÉJÀ le libellé est REFUSÉ',
+    run: () => {
+      try {
+        completerRail(
+          R_RAIL(),
+          { dans: R_NAV, ajoutees: [{ apres: 'Tableau de bord', libelle: 'Contenu' }], actif: 'Parcours' },
+          'D09',
+          'Desktop',
+        );
+        return 'aucune erreur — le rail porterait deux « Contenu »';
+      } catch (e) {
+        return e.message.includes('dessine DÉJÀ une entrée « Contenu »') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /**
+     * LES DEUX STYLES SONT LUS, PAS ÉCRITS — donc le mécanisme doit refuser quand la
+     * maquette cesse d'en porter exactement deux. Sans ce refus, il peindrait au
+     * hasard, ce qui est précisément « assombrir sans le dire ».
+     */
+    name: 'un rail qui ne porte pas EXACTEMENT deux styles ARRÊTE la génération',
+    run: () => {
+      const trois = `${R_NAV}${R_ENTREE(R_ACTIF, 'A')}${R_ENTREE(R_REPOS, 'B')}${R_ENTREE('height:42px;color:#000', 'C')}</nav>`;
+      try {
+        completerRail(trois, { dans: R_NAV, ajoutees: [], actif: 'A' }, 'D02', 'Desktop');
+        return 'aucune erreur — la surbrillance se poserait au hasard';
+      } catch (e) {
+        return e.message.includes('3 style(s) distinct(s)') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+  {
+    /**
+     * TÉMOIN — SANS CLÉ `rail`, LE HTML RESSORT OCTET POUR OCTET. C'est ce qui
+     * garantit que les 235 autres cadres du dépôt ne peuvent pas dériver : le
+     * mécanisme ne fait RIEN là où il n'est pas déclaré.
+     */
+    name: 'TÉMOIN — sans clé « rail », le html ressort octet pour octet',
+    run: () => {
+      const entree = R_RAIL('Contenu');
+      const out = completerRail(entree, undefined, 'A04', 'Desktop');
+      return `${out.html === entree}:${out.ajoutees.length}:${out.actif}`;
+    },
+    expect: 'true:0:null',
+  },
+  {
+    /**
+     * L'ENTRÉE PARENTE DOIT ÊTRE « ICÔNE PUIS TEXTE ». Si la maquette change cet
+     * ordre, le clone collerait le libellé au mauvais endroit — et cela COMPILERAIT.
+     */
+    name: 'un parent qui n’est pas « icône puis texte » ARRÊTE la génération',
+    run: () => {
+      const inverse = `${R_NAV}<span style="${R_ACTIF}">Parcours<svg><path d="M5 5h6"/></svg></span>${R_ENTREE(R_REPOS, 'Contenu')}</nav>`;
+      try {
+        completerRail(inverse, { dans: R_NAV, ajoutees: [R_AJOUT], actif: 'Parcours' }, 'D07', 'Desktop');
+        return 'aucune erreur — le libellé serait collé au mauvais endroit';
+      } catch (e) {
+        return e.message.includes('n’est pas « icône puis texte »') ? 'refus' : `autre : ${e.message}`;
+      }
+    },
+    expect: 'refus',
+  },
+];
+
+/**
+ * ─── ÉPREUVE DU GARDE-FOU, DANS SES DEUX RÉGIMES ─────────────────────────────
+ *
+ * Les deux cas vont PAR PAIRE, et le second est la mutation témoin du premier :
+ * un garde-fou qui refuserait partout ferait échouer la génération de tout le
+ * dépôt sur les 58 écrans que personne n'a encore déclarés. Il serait désactivé le
+ * jour même. Le témoin existe pour que ce régime-là ne puisse pas être durci par
+ * inadvertance — et pour qu'un relecteur sache que c'est voulu.
+ */
+const GARDE_TESTS = [
+  {
+    name: 'un `href="#"` sur un écran à navigation DÉCLARÉE arrête la génération, en le comptant',
+    run: () => {
+      try {
+        garderNavigation(
+          '<a href="#">Voir tout</a><a href="#">Modifier</a>',
+          { section: 'D08', navigationDeclaree: true },
+          'Desktop',
+        );
+        return 'aucune erreur — le trou se réouvrirait sur un écran déjà traité';
+      } catch (e) {
+        const compte = e.message.includes('2 lien(s)');
+        const situe = e.message.includes('D08') && e.message.includes('Desktop');
+        return `refus:${compte}:${situe}`;
+      }
+    },
+    expect: 'refus:true:true',
+  },
+  {
+    /**
+     * MUTATION TÉMOIN. Un écran que personne n'a encore déclaré PASSE, et rend son
+     * compte : c'est ce qui permet aux quatre autres modules d'être déclarés en
+     * parallèle sans que ce garde-fou fasse échouer leur génération.
+     */
+    name: 'TÉMOIN — un écran NON déclaré passe, et rend son compte pour le récapitulatif',
+    run: () =>
+      String(
+        garderNavigation('<a href="#">x</a><a href="#">y</a><a href="#">z</a>', { section: 'A04' }, 'Desktop'),
+      ),
+    expect: '3',
+  },
+  {
+    /** Zéro lien mort : le drapeau ne refuse rien, c'est tout l'intérêt. */
+    name: 'TÉMOIN — un écran déclaré SANS lien mort passe, et rend zéro',
+    run: () =>
+      String(garderNavigation('<a href="/admin">x</a>', { section: 'D02', navigationDeclaree: true }, 'Desktop')),
+    expect: '0',
+  },
+];
+
+/**
+ * ─── LA GÉNÉRATION A-T-ELLE VRAIMENT TOURNÉ ? ────────────────────────────────
+ *
+ * CE CAS EXISTE À CAUSE D'UN FAUX VERT MESURÉ, et il faut dire lequel.
+ *
+ * Un harnais de mutation a rendu VERT parce que la génération avait ÉCHOUÉ : le
+ * harnais ne relisait pas le code de retour, donc les 250 cadres n'avaient pas
+ * bougé, et les tests lisaient les fichiers d'AVANT la mutation. Le vert disait
+ * « le générateur a tenu », pas « le test garde ». C'est la pire forme de
+ * résultat : un test qui ne tourne pas n'est ni vert ni rouge.
+ *
+ * LE CONTRÔLE RELIT LE CODE DE RETOUR, explicitement, et c'est le seul endroit du
+ * dépôt qui le fasse. Il relance ce fichier dans un processus FILS, vers un
+ * dossier temporaire (`DC_OUT`), puis compare les cadres produits à ceux du
+ * disque, OCTET POUR OCTET.
+ *
+ * Ce qu'il attrape, et qu'aucun autre cas n'attrape :
+ *   · une mutation qui casse la génération → le fils sort non-zéro, et ce cas
+ *     devient ROUGE en citant la première ligne de son erreur. Le faux vert est
+ *     structurellement impossible ;
+ *   · des `*.generated.tsx` PÉRIMÉS sur le disque — régénération oubliée, ou
+ *     retouche à la main d'un fichier qui porte « Ne pas modifier à la main » —
+ *     → des écarts, nommés fichier par fichier ;
+ *   · un cadre qui DISPARAÎT : le compte est dans le verdict.
+ *
+ * Le coût est mesuré : la génération complète prend moins d'une seconde.
+ */
+const CHAINE_TESTS = [
+  {
+    name: 'la génération TOURNE (code de retour relu) et produit OCTET POUR OCTET ce qui est sur le disque',
+    run: () => {
+      const tmp = mkdtempSync(join(tmpdir(), 'dc-cadres-'));
+      try {
+        const fils = spawnSync(process.execPath, [import.meta.filename], {
+          env: { ...process.env, DC_OUT: tmp },
+          encoding: 'utf8',
+          // Seul `stderr` est lu : le journal de la génération fait deux mille
+          // lignes, et le mettre en tampon ferait échouer l'appel sur sa taille.
+          stdio: ['ignore', 'ignore', 'pipe'],
+        });
+        if (fils.status !== 0) {
+          const premiere = (fils.stderr ?? '').trim().split('\n').find((l) => l.trim() !== '');
+          return `la génération a ÉCHOUÉ (code de retour ${fils.status}) : ${premiere ?? '(rien sur stderr)'}`;
+        }
+        const ecarts = [];
+        let cadres = 0;
+        for (const s of SCREENS) {
+          for (const f of s.frames) {
+            const rel = `${s.out}/${f.name.toLowerCase()}.generated.tsx`;
+            cadres += 1;
+            let neuf;
+            try {
+              neuf = readFileSync(resolve(tmp, rel));
+            } catch {
+              ecarts.push(`${rel} : non produit`);
+              continue;
+            }
+            let disque;
+            try {
+              disque = readFileSync(resolve(ROOT, rel));
+            } catch {
+              ecarts.push(`${rel} : absent du disque`);
+              continue;
+            }
+            if (!neuf.equals(disque)) ecarts.push(`${rel} : périmé sur le disque`);
+          }
+        }
+        return ecarts.length === 0
+          ? `${cadres} cadres, 0 écart`
+          : `${cadres} cadres, ${ecarts.length} écart(s) : ${ecarts.slice(0, 3).join(' · ')}`;
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+    expect: '250 cadres, 0 écart',
+  },
+];
+
 if (process.argv.includes('--self-test')) {
   let failed = 0;
-  for (const t of [...TITLE_TESTS, ...FRAME_TESTS, ...DATA_TESTS]) {
+  const CAS = [
+    ...TITLE_TESTS,
+    ...FRAME_TESTS,
+    ...DATA_TESTS,
+    ...STYLE_TESTS,
+    ...LINK_TESTS,
+    ...RAIL_TESTS,
+    ...GARDE_TESTS,
+    ...CHAINE_TESTS,
+  ];
+  for (const t of CAS) {
     let got;
     try {
       got = t.run();
@@ -2410,15 +3399,21 @@ if (process.argv.includes('--self-test')) {
     console.log(`  ${ok ? '✓' : '✗'} ${t.name}`);
     if (!ok) console.log(`      attendu « ${t.expect} », obtenu « ${got} »`);
   }
-  const total = TITLE_TESTS.length + FRAME_TESTS.length + DATA_TESTS.length;
+  const total = CAS.length;
   if (failed > 0) {
     console.error(`\n${failed} cas sur ${total} ne se comporte(nt) pas comme documenté.\n`);
     process.exit(1);
   }
   console.log(
     `\n  ${total} cas : LEQUEL des titres et QUEL texte promouvoir restent deux questions,\n` +
-      '  une planche est désignée par ce qu’elle est, et une donnée liée à un fragment\n' +
-      '  disparu de la maquette ARRÊTE la génération au lieu de s’effacer en silence.\n',
+      '  une planche est désignée par ce qu’elle est, une donnée liée à un fragment\n' +
+      '  disparu de la maquette ARRÊTE la génération au lieu de s’effacer en silence,\n' +
+      '  une interpolation posée en position de DÉCLARATION l’arrête aussi plutôt que\n' +
+      '  d’être sautée, une navigation déclarée promeut ce qu’elle a COMPTÉ, une\n' +
+      '  entrée de rail AJOUTÉE est le clone verbatim de son parent et chaque\n' +
+      '  planche surligne SA page — et le dernier cas relit le CODE DE RETOUR de la\n' +
+      '  génération, pour qu’un harnais ne puisse plus rendre vert en lisant des\n' +
+      '  cadres qui n’ont pas bougé.\n',
   );
   process.exit(0);
 }
@@ -2443,6 +3438,26 @@ if (process.argv.includes('--self-test')) {
  * section de son écran. C'est une ligne dans la déclaration, et elle rend le lien
  * LISIBLE là où la maquette l'écrit en prose sous ses planches.
  */
+/**
+ * LA LISTE DES ÉCRANS DONT LA NAVIGATION EST DÉCLARÉE, ET CELLE DU RESTE.
+ *
+ * Les deux sont imprimées EN FIN DE COURSE, ensemble. Une seule des deux ne
+ * servirait à rien : la liste des écrans traités sans celle du reste fait croire au
+ * travail fini, et le reste sans les traités ne dit pas où en reprendre. C'est ce
+ * couple qui empêche le trou de se réouvrir en silence — et c'est le seul endroit du
+ * dépôt où l'état de la navigation se lit d'un coup d'œil.
+ */
+/**
+ * CE QUE CHAQUE ÉCRAN MET EN SURBRILLANCE, pour le récapitulatif.
+ *
+ * Le défaut que ce registre rend visible est le plus trompeur du lot : une page qui
+ * s'annonce sous le nom d'une AUTRE. D16 peignait « Tableau de bord ». Un compte
+ * ne l'aurait pas vu — il faut lire le libellé, écran par écran.
+ */
+const RAIL_SURBRILLANCE = [];
+const NAVIGATION_DECLAREE = new Set();
+const NAVIGATION_RESTANTE = [];
+
 for (const screen of SCREENS) {
   const html = readFileSync(resolve(ROOT, screen.file), 'utf8');
 
@@ -2489,6 +3504,48 @@ for (const screen of SCREENS) {
     );
     const triggered = markTriggers(modal === null ? raw.inner : modal.inner, triggersForFrame);
     /**
+     * LA NAVIGATION SE POSE ENTRE LE DÉCLENCHEUR ET LA DONNÉE, et les deux bornes
+     * se justifient.
+     *
+     * APRÈS `markTriggers` : un même `<span>` peut être visé par les deux — le
+     * déclencheur le promeut en `<button>`, et `markLinks` refuserait alors de le
+     * promouvoir en `<a>` puisqu'il ne cherche pas cette balise. L'ordre inverse
+     * donnerait un `<a>` que `markTriggers` envelopperait d'un `<button>` : un
+     * bouton dans un lien, que ni le clavier ni un lecteur d'écran ne sait annoncer.
+     * Les attributs déjà posés par le déclencheur SURVIVENT à la promotion — voir
+     * `autres` dans `markLinks`.
+     *
+     * AVANT `applyData` : les discriminants de `liens` sont des TEXTES DE LA
+     * MAQUETTE (« Tableau de bord », « Voir tout »), exactement comme les marqueurs
+     * d'un déclencheur. Une liaison posée avant eux leur ferait chercher un texte
+     * devenu `{{ … }}`, et le lien mourrait — avec pour seul indice un refus à
+     * l'autre bout du journal. Dans l'autre sens, un `noeud` de `donnees` qui
+     * contiendrait la balise d'un lien promu verrait son compte tomber faux et
+     * ARRÊTERAIT la génération en le nommant, ce qui est le comportement voulu.
+     *
+     * `frames` borne un lien à un cadre, pour la même raison que pour un
+     * déclencheur : la maquette ne dessine pas le même contrôle aux deux largeurs.
+     */
+    /**
+     * LE RAIL SE COMPLÈTE AVANT `markLinks`, et c'est tout l'intérêt de l'ordre.
+     *
+     * `completerRail` AJOUTE au `<nav>` les entrées que la maquette ne dessine pas,
+     * sous la forme exacte de celles qu'elle dessine — des `<span>`. Quand
+     * `markLinks` passe ensuite, il ne voit aucune différence entre les neuf entrées
+     * du designer et les cinq ajoutées : il promeut les QUATORZE par le même chemin,
+     * déjà éprouvé, et son garde-fou `fois: 1` devient du même coup le contrôle de
+     * l'injection — une entrée doublée ou manquante ARRÊTE la génération en nommant
+     * son libellé.
+     *
+     * L'ordre inverse aurait demandé une seconde mécanique de lien pour les cinq
+     * ajoutées. Il n'y en a qu'une.
+     */
+    const complete = completerRail(triggered.html, screen.rail, screen.section, frame.name);
+    const liensForFrame = (screen.liens ?? []).filter(
+      (l) => l.frames === undefined || l.frames.includes(frame.name),
+    );
+    const linked = markLinks(complete.html, liensForFrame, screen.section, frame.name);
+    /**
      * LA LIAISON DES DONNÉES PASSE EN DERNIER SUR LE HTML, et l'ordre se justifie
      * aux deux bouts.
      *
@@ -2505,7 +3562,7 @@ for (const screen of SCREENS) {
     const donneesForFrame = (screen.donnees ?? []).filter(
       (d) => d.frames === undefined || d.frames.includes(frame.name),
     );
-    const bound = applyData(triggered.html, donneesForFrame, screen.section, frame.name);
+    const bound = applyData(linked.html, donneesForFrame, screen.section, frame.name);
     const inner = bound.html;
     const {
       adapted: jsx, counts, promotedHeading, headingAlreadyThere,
@@ -2659,13 +3716,13 @@ ${shelled}
   );
 }
 `;
-    mkdirSync(resolve(ROOT, screen.out), { recursive: true });
-    const path = resolve(ROOT, screen.out, `${frame.name.toLowerCase()}.generated.tsx`);
+    mkdirSync(resolve(OUT_ROOT, screen.out), { recursive: true });
+    const path = resolve(OUT_ROOT, screen.out, `${frame.name.toLowerCase()}.generated.tsx`);
     writeFileSync(path, body, 'utf8');
     // La section d'origine est dite quand ce n'est pas celle de l'écran : les cadres
     // mobiles de huit écrans vivent dans les planches MOB et MOB2.
     const origin = frame.section === undefined ? '' : ` [section ${frame.section} n° ${(frame.occurrence ?? 0) + 1}]`;
-    console.log(`  ${screen.section} ${frame.width} px${origin} → ${path.replace(ROOT + '/', '')} (${jsx.length} caractères, ${used.length} données)`);
+    console.log(`  ${screen.section} ${frame.width} px${origin} → ${path.replace(OUT_ROOT + '/', '')} (${jsx.length} caractères, ${used.length} données)`);
     if (asCard) {
       console.log(
         shell === null
@@ -2826,6 +3883,55 @@ ${shelled}
       );
     }
     /**
+     * CHAQUE LIEN PROMU SE LIT, avec sa destination : une navigation déclarée est
+     * une décision produit, et une décision se relit. Le journal nomme le
+     * discriminant ET la destination — « Voir tout » ne va pas deux fois au même
+     * endroit, donc savoir QU'un lien est branché ne suffit pas.
+     */
+    /**
+     * CE QUI A ÉTÉ AJOUTÉ AU RAIL SE LIT AUSSI. Une entrée de menu est une décision
+     * de structure : la poser en silence serait exactement le défaut que le reste de
+     * ce journal existe pour empêcher.
+     */
+    if (complete.actif !== null) {
+      const plus =
+        complete.ajoutees.length === 0
+          ? ''
+          : ` dont ${complete.ajoutees.length} AJOUTÉE(S) — ` +
+            complete.ajoutees.map((a) => `« ${a.libelle} » après « ${a.apres} »`).join(', ');
+      console.log(
+        `      Rail → ${complete.entrees} entrée(s)${plus} ; surbrillance DÉCLARÉE sur ` +
+          `« ${complete.actif} » (+ aria-current="page").`,
+      );
+      RAIL_SURBRILLANCE.push({
+        section: screen.section,
+        actif: complete.actif,
+        entrees: complete.entrees,
+        ajoutees: complete.ajoutees,
+      });
+    }
+    for (const l of linked.applied) {
+      const combien = l.count === 1 ? '' : ` (${l.count} éléments)`;
+      const promus = [...new Set(l.promus)].join(', ');
+      console.log(
+        l.action === undefined
+          ? `      Lien → ${l.vers} sur ${l.quoi}${combien} [${promus} → a] : ${l.why}`
+          : `      Bouton → ${l.action}() sur ${l.quoi}${combien} [${promus} → button] : ${l.why}`,
+      );
+    }
+    // LE GARDE-FOU DE LA NAVIGATION : voir `garderNavigation`, où les deux régimes
+    // sont expliqués. Il lève pour un écran qui se déclare complet et ne l'est pas.
+    const morts = garderNavigation(jsx, screen, frame.name);
+    if (morts > 0) {
+      NAVIGATION_RESTANTE.push({ section: screen.section, frame: frame.name, morts });
+      console.log(
+        `      ⚠ ${morts} lien(s) « href="#" » sans destination déclarée : cliquer ne change pas ` +
+          'l’URL. Déclarer « liens » dans la déclaration d’écran.',
+      );
+    } else if (screen.navigationDeclaree === true) {
+      NAVIGATION_DECLAREE.add(screen.section);
+    }
+    /**
      * UNE SEULE CHAÎNE DE JUGEMENT, et non trois journaux côte à côte.
      *
      * Les mécanismes réunis plus haut avertissaient chacun pour les cadres que
@@ -2861,4 +3967,70 @@ ${shelled}
       }
     }
   }
+}
+
+/**
+ * ─── L'ÉTAT DE LA NAVIGATION, DIT À CHAQUE GÉNÉRATION ────────────────────────
+ *
+ * Le défaut que ce récapitulatif existe pour empêcher n'est pas « il reste des
+ * liens morts » — c'est « PERSONNE NE SAIT COMBIEN IL EN RESTE ». Quinze rapports
+ * verts ont manqué une navigation entièrement morte ; la raison n'est pas qu'ils
+ * mentaient, c'est que RIEN ne la comptait.
+ *
+ * Les deux listes sont imprimées ENSEMBLE, et les écrans restants sont nommés un
+ * par un avec leur compte : c'est ce qui rend la suite du travail distribuable sans
+ * qu'un module soit oublié, et c'est ce qui fait qu'un écran retiré de la liste des
+ * traités se verrait.
+ */
+const navDeclaree = [...NAVIGATION_DECLAREE].sort();
+const navMorts = NAVIGATION_RESTANTE.reduce((n, r) => n + r.morts, 0);
+console.log('\n  ── NAVIGATION ──');
+console.log(
+  navDeclaree.length === 0
+    ? '  Aucun écran ne déclare « navigationDeclaree » : le garde-fou dur ne s’applique nulle part.'
+    : `  ${navDeclaree.length} écran(s) à navigation DÉCLARÉE et vérifiée, zéro « href="#" » : ${navDeclaree.join(', ')}.`,
+);
+if (RAIL_SURBRILLANCE.length > 0) {
+  const tailles = new Set(RAIL_SURBRILLANCE.map((r) => r.entrees));
+  console.log(
+    `  Rail d’équipe : ${RAIL_SURBRILLANCE.length} écran(s), ` +
+      `${[...tailles].sort((a, b) => a - b).join('/')} entrée(s) chacun — ` +
+      'chaque écran surligne SA page :',
+  );
+  console.log(
+    `    ${RAIL_SURBRILLANCE.map((r) => `${r.section}→${r.actif}`).join(' · ')}`,
+  );
+  /**
+   * LE POURQUOI DE CHAQUE ENTRÉE AJOUTÉE, une fois. Identique sur les quinze
+   * planches, donc imprimé ici plutôt que quinze fois : une décision de structure
+   * se relit, mais la répéter noie le reste du journal.
+   */
+  const vus = new Map();
+  for (const r of RAIL_SURBRILLANCE) {
+    for (const a of r.ajoutees) vus.set(a.libelle, a);
+  }
+  if (vus.size > 0) {
+    console.log(`  ${vus.size} entrée(s) AJOUTÉE(S) au rail — la maquette ne les dessinait pas :`);
+    for (const a of vus.values()) {
+      console.log(`    + « ${a.libelle} » après « ${a.apres} » : ${a.pourquoi}`);
+    }
+  }
+}
+if (navMorts === 0) {
+  console.log('  Aucun « href="#" » ne subsiste dans les cadres produits.');
+} else {
+  const parEcran = new Map();
+  for (const r of NAVIGATION_RESTANTE) {
+    parEcran.set(r.section, (parEcran.get(r.section) ?? 0) + r.morts);
+  }
+  const reste = [...parEcran.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  console.log(
+    `  ⚠ ${navMorts} lien(s) « href="#" » sans destination déclarée, sur ${parEcran.size} écran(s) : ` +
+      'cliquer n’y change pas l’URL. RESTE À DÉCLARER —',
+  );
+  console.log(`    ${reste.map(([s, n]) => `${s}×${n}`).join(' · ')}`);
+  console.log(
+    '  Déclarer la clé « liens » avec l’écran (`tools/screens/*.mjs`), puis poser\n' +
+      '  « navigationDeclaree: true » pour que le garde-fou devienne DUR sur cet écran.',
+  );
 }

@@ -427,6 +427,19 @@ test.describe('règles dures visibles à l’écran', () => {
  * Le fil est la page la plus visitée du produit ; c'est celle qui peut le moins se
  * permettre d'être vide.
  *
+ * ── CE BLOC NE GARDAIT QU'UNE ROUTE, ET C'ÉTAIT UN TROU ─────────────────────
+ *
+ * Il ne visitait que `/accueil` — précisément la seule route du produit qui le
+ * faisait bien. Un test qui garde le seul cas qui marche est la famille de défauts
+ * la plus coûteuse de ce dépôt : pendant qu'il était vert, CINQ des dix routes du
+ * domaine d'équipe servaient deux mots et zéro entrée de rail.
+ *
+ * La règle est posée pour tout le domaine d'équipe dans
+ * `e2e/squelette-equipe.spec.ts`, avec la même mesure et le même détecteur. Elle
+ * n'est pas recopiée ici : ce fichier a un `beforeEach` qui charge `/accueil` et
+ * ses trois interceptions, dont une page d'équipe n'a que faire. Le domaine MEMBRE,
+ * lui, est gardé par `e2e/squelette-membre.spec.ts`.
+ *
  * ── CE QUE CE TEST NE PRÉTEND PAS GARDER ────────────────────────────────────
  *
  * Il garde la COQUILLE, pas le contenu du fil. Les publications ne peuvent pas être

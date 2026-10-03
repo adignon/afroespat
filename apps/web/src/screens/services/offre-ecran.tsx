@@ -55,7 +55,13 @@ export function OffreEcran({ id }: { readonly id: string }) {
           onOuvrir={onOuvrir}
           onFermer={onFermer}
           modales={{
-            S05L: { mobile: <S05LienExterne /> },
+            /**
+             * L'INTERSTITIEL NOMME LE DOMAINE OÙ IL ENVOIE, donc il lit l'offre :
+             * « vous allez sur arvel.fr » doit être l'hôte de `externalUrl` et pas
+             * celui de la maquette, sans quoi la seule fenêtre de mise en garde du
+             * module est aussi la seule à mentir.
+             */
+            S05L: { mobile: <S05LienExterne {...donnees} /> },
             S05R: { mobile: <S05Recommander /> },
           }}
         />

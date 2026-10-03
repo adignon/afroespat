@@ -934,7 +934,16 @@ export class ProsService {
 
   private async assertOwnedProof(userId: string, proofAssetId: string): Promise<void> {
     const asset = await this.prisma.mediaAsset.findFirst({
-      where: { id: proofAssetId, ownerUserId: userId, kind: 'PROOF', deletedAt: null },
+      // `status: 'READY'` — §8.3 : l'analyse antivirus précède la publication, et
+      // un justificatif refusé laisse une ligne `REJECTED` sans octets derrière
+      // elle. L'équipe qui ouvrirait la fiche ne trouverait rien à lire.
+      where: {
+        id: proofAssetId,
+        ownerUserId: userId,
+        kind: 'PROOF',
+        deletedAt: null,
+        status: 'READY',
+      },
       select: { id: true },
     });
     // 404 sur un média d'autrui, jamais 403 : répondre « ce fichier n'est pas à vous »

@@ -70,6 +70,67 @@ export interface VersionRowView {
   readonly dot: string;
 }
 
+/**
+ * L'EN-TÊTE DU GUIDE, et pourquoi cette prise n'existait pas.
+ *
+ * L'en-tête de ce fichier disait, jusqu'à ce lot : « le CORPS du guide, son titre,
+ * sa catégorie et sa ligne “Mis à jour le …” sont du BALISAGE STATIQUE dans la
+ * maquette. Le transcodeur les a donc écrits en dur ». C'était vrai, et ce n'est
+ * plus une fatalité : la clé `donnees` de `tools/screens/03-accueil.mjs` DÉCLARE la
+ * prise avec l'écran, là où vivent déjà l'emprunt et le titre, sans toucher ni à la
+ * maquette ni aux fichiers générés.
+ *
+ * Les quatre cadres de A04 affichaient donc « Obtenir la garantie Visale sans CDI »
+ * quel que soit le guide demandé. Ce n'est pas un défaut de dessin : c'est l'écran
+ * qui mentait sur ce qu'il montre.
+ *
+ * ── CE QUI RESTE HORS DE PORTÉE, ET POURQUOI ───────────────────────────────
+ *
+ * Le CORPS du guide reste dessiné. La maquette l'écrit en HTML riche — titres de
+ * section, listes, passage surligné, légende d'image, infobulle « Proposer une
+ * correction sur ce passage » — alors que l'API rend un seul `body` en Markdown
+ * restreint (`currentVersion.body`). Le lier demanderait de RENDRE ce Markdown,
+ * c'est-à-dire d'écrire un composant, pas de déclarer une prise. Remonté au
+ * porteur : c'est le prochain lot de cet écran, et il est de transcodage.
+ *
+ * `community` est `maintainedByCommunity`, et il passe sous `<sc-if>` : à faux, le
+ * bandeau DISPARAÎT au lieu d'affirmer un entretien communautaire qui n'existe pas.
+ *
+ * `useful` est `helpfulCount` — un compteur de VOTES d'utilité. Jamais de vues :
+ * `guides.view_count` existe en base et la règle dure 00 §49 interdit qu'il sorte ;
+ * le schéma `.strict()` de `@app/shared` le refuse à la frontière.
+ */
+export interface GuideHeadView {
+  readonly title: string;
+  readonly cat: string;
+  readonly scope: string;
+  readonly updated: string;
+  readonly community: boolean;
+  readonly useful: number;
+  /**
+   * Le NOMBRE de contributeurs, et non `contributors.length` : la rangée de
+   * pastilles est TRONQUÉE par le dessin (la maquette en montre quatre sur
+   * l'ordinateur et trois sur le mobile) alors que ce compteur est celui que la
+   * planche écrit sous « VOUS ÊTES L'AUTEUR ». Les déduire l'un de l'autre ferait
+   * afficher « 3 contributeurs » à un guide qui en a douze.
+   */
+  readonly contributorCount: number;
+  /** Les propositions de correction EN ATTENTE (§2.4) — la pastille orange. */
+  readonly proposals: number;
+}
+
+/** L'en-tête telle que la maquette la dessine, jusqu'à ce que l'API réponde. */
+export const guide: GuideHeadView = {
+  title: 'Obtenir la garantie Visale sans CDI',
+  cat: 'Logement',
+  scope: 'Universel',
+  updated: 'Mis à jour le 12 mars 2026',
+  community: true,
+  useful: 84,
+  contributorCount: 3,
+  proposals: 2,
+};
+
 export const contributors: readonly ContributorView[] = [
   { i: 'MK', bg: '#0F5C48' },
   { i: 'AD', bg: '#16785E' },
@@ -94,6 +155,7 @@ export interface A04Data {
   rail: typeof rail;
   panelGuides: typeof panelGuides;
   shortcuts: typeof shortcuts;
+  guide: GuideHeadView;
   contributors: readonly ContributorView[];
   guideActions: readonly GuideActionView[];
   versions: readonly VersionRowView[];

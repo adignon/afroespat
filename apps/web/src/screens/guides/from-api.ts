@@ -32,7 +32,9 @@ import type {
   GuideVersionsResponse,
 } from '@app/shared';
 import type { GuideCardView } from '../a03/data';
-import type { ContributorView, VersionRowView } from '../a04/data';
+import type { ContributorView, GuideHeadView, VersionRowView } from '../a04/data';
+import type { PropositionEnTeteView, PropositionsCompteView } from '../a06/data';
+import type { GuideLiableView } from '../a01g/data';
 
 /**
  * Les prises du cadre, PLUS ce dont la page a besoin pour agir.
@@ -228,6 +230,37 @@ export function guideCardsFrom(
  * Les pastilles de contributeurs. L'API les rend triés par nombre de
  * contributions acceptées ; on garde cet ordre, qui est celui du mérite.
  */
+/**
+ * L'EN-TÊTE DU GUIDE : titre, catégorie, portée, date, bandeau et trois compteurs.
+ *
+ * `propositionsEnAttente` est passé À PART et non lu du détail, parce que le détail
+ * ne le porte pas : les propositions viennent de `GET /guides/:id/proposals`, une
+ * SECONDE requête que `useGuide` lance après le détail (elle prend l'identifiant,
+ * que seule la première donne). Le compter ici à partir de rien aurait produit un
+ * zéro qui ressemble à une donnée.
+ *
+ * `updated` passe par `updatedLabel`, le MÊME convertisseur que les cartes de A03 :
+ * deux formats de date pour la même donnée finiraient par se contredire, et cette
+ * date est une RÈGLE DURE (§9, T1 §6) — « aussi visible que le titre ».
+ */
+export function guideHeadFrom(
+  detail: GuideDetailResponse,
+  propositionsEnAttente: number,
+  now: Date = new Date(),
+): GuideHeadView {
+  const g = detail.guide;
+  return {
+    title: g.title,
+    cat: CATEGORY_LABEL[g.category] ?? g.category,
+    scope: scopeLabel(g),
+    updated: updatedLabel(g.lastContentUpdateAt, now),
+    community: g.maintainedByCommunity,
+    useful: g.helpfulCount,
+    contributorCount: detail.contributors.length,
+    proposals: propositionsEnAttente,
+  };
+}
+
 export function contributorsFrom(detail: GuideDetailResponse): readonly ContributeurPastille[] {
   return detail.contributors.map((c) => ({
     i: initials(c.user.displayName),
@@ -281,10 +314,15 @@ function abrege(displayName: string): string {
  * Une proposition prête à afficher : l'avant/après de §2.4 et le délai restant
  * avant escalade.
  *
- * Le cadre transcodé de A06 ne lit AUCUNE de ces valeurs — sa planche avant/après
- * est du balisage statique dans la maquette. Cette fonction existe quand même, et
- * elle est éprouvée : le jour où le cadre expose ses prises, le calcul du délai
- * est le seul endroit où l'on pouvait se tromper, et il est déjà figé par un test.
+ * `PropositionVue` porte la proposition ENTIÈRE. Le cadre MOBILE de A06, lui, n'en
+ * lit que l'EN-TÊTE — avatar, nom, délai, motif — servi par `propositionEnTeteDe`
+ * plus bas. Ce commentaire affirmait qu'AUCUN cadre ne lisait ces valeurs : c'était
+ * vrai avant que la planche mobile expose ses prises, et faux depuis.
+ *
+ * Ce qui reste sans preneur, et c'est dit là où ça se décide : `avant`, `apres` et
+ * `source`. La maquette dessine un DIFF (mot barré, mots surlignés) là où l'API rend
+ * deux chaînes nues — les lier ferait disparaître la différence, c'est-à-dire la
+ * seule chose que ces blocs montrent. Il faut un composant de différence.
  */
 export interface PropositionVue {
   readonly proposalId: string;
@@ -336,4 +374,132 @@ export function propositionFrom(
     /** Seules `PENDING` et `ESCALATED` attendent encore une décision (§2.4). */
     enAttente: p.status === 'PENDING' || p.status === 'ESCALATED',
   };
+}
+
+// ─── A06 · l'en-tête d'une proposition, et les compteurs d'onglets ──────────
+//
+// `PropositionVue` ci-dessus porte la proposition ENTIÈRE — avant, après, motif,
+// source. Les deux cartes de la planche mobile de A06, elles, ne lisent que son
+// EN-TÊTE : l'avatar, le nom, le délai et le motif. D'où une seconde forme, et
+// non un élargissement de la première : ce que le cadre lit est ce qu'on lui
+// déclare.
+//
+// ── POURQUOI UN DÉLAI COURT, ET PAS CELUI DE `delaiAvantEscalade` ──────────
+//
+// La maquette écrit « 11 j » dans une pastille de quelques pixels, là où
+// `delaiAvantEscalade` rend « 11 jours restants » pour la carte dépliée de la
+// planche d'ordinateur. Ce sont DEUX dessins de la même donnée, et le nombre de
+// jours est calculé UNE FOIS, par la fonction ci-dessous, que les deux appellent :
+// deux arrondis indépendants finiraient par se contredire d'un jour.
+
+/**
+ * Le nombre de jours avant escalade, arrondi au jour SUPÉRIEUR (§2.4 :
+ * `escalate_at = created_at + 14 jours`), ou `0` quand le délai est dépassé.
+ *
+ * L'arrondi vers le haut est la même décision que `delaiAvantEscalade` documente :
+ * vers le bas, la pastille afficherait « 0 j » pendant les vingt-trois dernières
+ * heures, c'est-à-dire un délai dépassé qui ne l'est pas.
+ */
+export function joursAvantEscalade(escalateAt: string, now: Date = new Date()): number {
+  const restant = new Date(escalateAt).getTime() - now.getTime();
+  if (restant <= 0) return 0;
+  return Math.ceil(restant / 86_400_000);
+}
+
+/**
+ * L'en-tête d'une proposition, dans la forme que les deux cartes de A06 lisent.
+ *
+ * « Dépassé » plutôt que « 0 j » quand l'escalade est due : la pastille dit alors
+ * ce qui s'est passé, et non un nombre qui se lirait comme un délai restant.
+ */
+export function propositionEnTeteDe(
+  p: GuideProposalView,
+  now: Date = new Date(),
+): PropositionEnTeteView {
+  const jours = joursAvantEscalade(p.escalateAt, now);
+  return {
+    i: initials(p.proposer.displayName),
+    bg: avatarColor(p.proposer.handle),
+    proposant: p.proposer.displayName,
+    delai: jours === 0 ? 'Dépassé' : `${jours} j`,
+    motif: p.reason,
+  };
+}
+
+/**
+ * Les compteurs des deux onglets chiffrés.
+ *
+ * Ils sont DÉRIVÉS de la liste par statut : `guideProposalsResponseSchema` ne
+ * porte aucun `meta` de comptage — vérifié. « Refusées » n'a pas de compteur dans
+ * la maquette, et on ne lui en invente pas un.
+ *
+ * ÉCART REMONTÉ : la liste est PAGINÉE (`nextCursor`). Ces deux nombres comptent
+ * donc la PAGE reçue, pas le total — exactement le piège d'un compteur qui a l'air
+ * global. Tant qu'aucun `meta` ne vient du serveur, c'est le seul compte honnête
+ * que le front puisse faire, et il faut le savoir.
+ */
+export function propositionsCompteDe(
+  items: readonly GuideProposalView[],
+): PropositionsCompteView {
+  return {
+    attente: items.filter((p) => p.status === 'PENDING' || p.status === 'ESCALATED').length,
+    acceptees: items.filter((p) => p.status === 'ACCEPTED' || p.status === 'AMENDED').length,
+  };
+}
+
+// ─── A01G · les cartes de la fenêtre « Lier un guide » ──────────────────────
+//
+// La fenêtre dessine deux sections nommées : « SUGGÉRÉS POUR VOTRE PUBLICATION »
+// et « RÉSULTATS ». UNE SEULE des deux a une source, et c'est la raison d'être du
+// commentaire qui suit.
+//
+// ── « RÉSULTATS » : DE VRAIS GUIDES, SANS LA RECHERCHE ─────────────────────
+//
+// `GET /guides` rend les guides publiés, et ce sont eux que cette liste porte. Ce
+// qui n'existe PAS, c'est la RECHERCHE TEXTE : `guideListQuerySchema` accepte
+// `tab`, `category`, `countryId`, `cityId` et `cursor` — pas de `q`. Le champ
+// « médecin » que la maquette dessine n'a donc aucune route à appeler, et il reste
+// dessiné. Les résultats sont la liste non filtrée, dans l'ordre que l'API donne.
+//
+// ── « SUGGÉRÉS » : AUCUNE SOURCE, DONC AUCUNE CARTE ────────────────────────
+//
+// Rien dans 05 §4 ne rend des guides « suggérés pour cette publication ». La
+// section arrive donc VIDE, et c'est un choix contre celui du lot repris, qui
+// prévoyait de la remplir des mêmes cartes que « RÉSULTATS ». Servir deux fois la
+// même liste afficherait chaque guide deux fois, dont une sous une pastille
+// « Suggéré » que rien ne justifie — une donnée fabriquée a l'air branchée et ne
+// l'est pas. Une section vide sous son titre se voit ; une fausse suggestion, non.
+// REMONTÉ : il manque une route de suggestion.
+//
+// Le jour où elle existe, le `meta` d'une carte suggérée est celui que la maquette
+// dessine — « Santé · mis à jour le 2 février », soit la catégorie puis
+// `updatedLabel` en minuscule initiale — et non celui des résultats.
+
+/** « 57 utiles », « 1 utile ». Un compteur de VOTES d'utilité, jamais de vues. */
+function utilesLabel(n: number): string {
+  return `${n} utile${n > 1 ? 's' : ''}`;
+}
+
+/**
+ * Une carte de « RÉSULTATS » : son titre, et sa ligne de contexte.
+ *
+ * `meta` est « Santé · Lyon · 57 utiles », exactement ce que la maquette écrit : la
+ * catégorie, la PORTÉE, puis le compteur d'utilité.
+ *
+ * La portée préfère la VILLE quand le guide en nomme une — la maquette met « Lyon »
+ * sur son premier résultat et « Universel » sur le second, donc les deux formes
+ * sont de la maquette et non un choix d'ici. `GuideScope` ne vaut que `UNIVERSAL`
+ * ou `COUNTRY` ; la ville est un champ à part (`city`), et c'est lui qui porte
+ * « Lyon ».
+ */
+export function guideLiableDe(g: GuideListItemView): GuideLiableView {
+  const portee = g.city?.name ?? scopeLabel(g);
+  return {
+    titre: g.title,
+    meta: `${CATEGORY_LABEL[g.category] ?? g.category} · ${portee} · ${utilesLabel(g.helpfulCount)}`,
+  };
+}
+
+export function guidesLiablesDe(page: GuideListResponse): readonly GuideLiableView[] {
+  return page.items.map((g) => guideLiableDe(g));
 }

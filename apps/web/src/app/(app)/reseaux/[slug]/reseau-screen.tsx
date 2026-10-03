@@ -29,9 +29,8 @@ import { A08TAdminEvenementsMobile } from '@/screens/a08t/adminevenementsmobile.
 import { A08TAdminAlbumMobile } from '@/screens/a08t/adminalbummobile.generated';
 import { A08TAdminAProposEditionMobile } from '@/screens/a08t/adminaproposeditionmobile.generated';
 import { A08TAdminAnnonceMobile } from '@/screens/a08t/adminannoncemobile.generated';
-import { accueilData, type AccueilState } from '@/screens/accueil/props';
-import type { AccueilData } from '@/screens/accueil/data';
 import { a08Fallback } from '@/screens/a08/data';
+import type { A08TData } from '@/screens/a08t/data';
 import { useReseau } from '@/screens/reseaux/use-reseau';
 
 /**
@@ -67,8 +66,8 @@ import { useReseau } from '@/screens/reseaux/use-reseau';
 const SLUGS = ['fil', 'sujets', 'evenements', 'membres', 'album', 'a-propos'] as const;
 
 type Tab = {
-  readonly desktop: (d: AccueilData) => ReactNode;
-  readonly mobile: (d: AccueilData) => ReactNode;
+  readonly desktop: (d: A08TData) => ReactNode;
+  readonly mobile: (d: A08TData) => ReactNode;
 };
 
 /**
@@ -149,16 +148,27 @@ const BOARD: React.CSSProperties = {
 };
 
 /**
- * ── POURQUOI SEUL « SUJETS » EST BRANCHÉ ────────────────────────────────────
+ * ── CE QUE LES VINGT-CINQ PLANCHES LISENT MAINTENANT ───────────────────────
  *
- * Les douze autres planches A08T ne consomment AUCUNE donnée : le générateur
- * leur écrit `_props`, parce que la maquette les dessine entièrement en dur —
- * noms, compteurs, photos, tout. Les brancher demanderait de les REDESSINER en
- * cadres à prises, ce qui est interdit ici et n'est pas un travail de branchement.
+ * Leur EN-TÊTE — le nom du réseau, ses initiales, son nombre de membres, son
+ * genre, sa visibilité, sa description, et pour un propriétaire ses modérateurs
+ * et ses demandes d'adhésion. Vingt-et-une des vingt-cinq le portent ; les
+ * quatre autres (le formulaire d'annonce et deux formulaires mobiles) n'en
+ * dessinent aucun, et c'est la maquette qui en décide.
  *
- * `sujets` est le seul onglet dont la maquette fait un cadre à prises : c'est
- * A08 lui-même. Il reçoit donc `A08Data`, rempli par l'API ; les autres reçoivent
- * `AccueilData` tel que la maquette le dessine, inchangé. L'écart est remonté.
+ * Elles écrivaient tout cela EN DUR. Un membre de « Sénégalais à Paris » ouvrait
+ * son onglet « Membres » et lisait « Béninois en France · 890 membres ». Le
+ * défaut se voyait à l'œil et aucun test ne le voyait, puisque le JSX compile.
+ *
+ * ── CE QUI RESTE DESSINÉ, ET IL FAUT LE DIRE ──────────────────────────────
+ *
+ * Le CONTENU de chaque onglet : les photos de l'album, les événements, les
+ * publications du fil, les lignes de membres. Chacun a sa route
+ * (`GET /communities/:id/{albums,events,feed,members}`) et demande son propre
+ * état — un hook par onglet, avec sa pagination et son refus `403`. Ce n'est pas
+ * du branchement de cadre, et `useReseau` n'en appelle aujourd'hui que quatre.
+ * REMONTÉ au rapport de lot ; d'ici là l'en-tête dit la vérité et le corps est
+ * l'esquisse de la maquette.
  */
 export function ReseauScreen({
   onglet,
@@ -172,7 +182,10 @@ export function ReseauScreen({
   const slug = onglet;
   const rang = Math.max(0, SLUGS.indexOf(slug as (typeof SLUGS)[number]));
 
-  const { data, pret, echec, membre, contenuFerme, reseau } = useReseau(reseauSlug, rang);
+  const { data, onglet: enteteOnglet, pret, echec, membre, contenuFerme, reseau } = useReseau(
+    reseauSlug,
+    rang,
+  );
 
   const table = owner ? PROPRIETAIRE : MEMBRE;
   // Un onglet inconnu — ou réservé au propriétaire quand on ne l'est pas — retombe
@@ -184,6 +197,35 @@ export function ReseauScreen({
   const plain = (slug === 'sujets' || tab === undefined) && !owner;
 
   const a08 = pret && echec === null ? data : a08Fallback;
+
+  /**
+   * ── NI A08 NI SES ONGLETS NE SE PEIGNENT AVANT D'ÊTRE SUS ────────────────
+   *
+   * La garde est ici, AVANT la branche `plain`, et non dans la seule branche des
+   * onglets où elle avait d'abord été posée. Le test de navigateur l'a montré :
+   * `/reseaux/ville-lyon?onglet=sujets` — l'onglet PAR DÉFAUT, donc l'écran que
+   * tout le monde voit en arrivant — peignait « · » dans la pastille du réseau,
+   * aucun nom, et la ligne de résumé vide, parce que `a08Fallback` porte
+   * désormais `enteteVide`.
+   *
+   * C'est le MÊME défaut que sur les planches d'onglet, à un détail près qui
+   * explique pourquoi il avait survécu au premier correctif : cette branche
+   * dessine aussi le rail et le panneau, qui eux sont du DESSIN et s'affichaient
+   * parfaitement. L'écran avait donc l'air complet et chargé — seul l'en-tête
+   * était vide, au milieu d'une page qui ne demandait rien.
+   *
+   * Pourquoi ne pas simplement garder le nom de la maquette pendant le
+   * chargement : c'est exactement le défaut que ce lot corrige. Afficher
+   * « Béninois en France » une demi-seconde sur la fiche de Lyon est pire qu'un
+   * blanc, parce que c'est faux ET invisible aux tests, qui mesurent après.
+   */
+  if (!pret) {
+    return (
+      <p role="status" style={{ padding: '24px', color: '#5D6B66', fontSize: '14px' }}>
+        Chargement du réseau…
+      </p>
+    );
+  }
 
   if (plain) {
     return (
@@ -231,17 +273,37 @@ export function ReseauScreen({
   if (tab === undefined) return null;
 
   /**
-   * Les douze autres onglets restent sur les données de la maquette : leurs
-   * planches ne lisent rien, donc leur passer l'API ne changerait pas un pixel.
+   * ── ON NE PEINT PAS L'EN-TÊTE AVANT DE LE CONNAÎTRE ───────────────────────
+   *
+   * TROUVÉ EN REGARDANT, pas en lisant le code ni un journal de test. Sur un
+   * chargement lent — un paquet `_next` qui n'arrive pas, et c'est arrivé une
+   * fois sur dix ouvertures — l'onglet « À propos » s'affichait ainsi :
+   *
+   *     [pastille orange contenant « · »]   (aucun nom)   ·  ·
+   *
+   * c'est-à-dire l'en-tête de REPLI rendu tel quel. `enteteVide` ne porte que des
+   * chaînes vides — à dessein : un repli qui écrirait « Béninois en France »
+   * referait le défaut que ce lot corrige, de façon intermittente donc invisible
+   * aux tests. Mais les SÉPARATEURS, eux, sont du DESSIN : la maquette écrit
+   * « {membres} · {genre} · {monAppartenance} », et les deux « · » sont dans le
+   * JSX transcodé, pas dans la donnée. Avec trois valeurs vides il reste donc
+   * deux points médians orphelins et une pastille qui contient un point.
+   *
+   * On ne peut pas les faire disparaître depuis la donnée — ils ne lui
+   * appartiennent pas — et les retirer du cadre voudrait dire REDESSINER la
+   * maquette. La bonne réponse est donc de ne rien peindre : tant que l'appel
+   * n'est pas revenu, l'écran dit qu'il charge, comme le font déjà les écrans de
+   * Services (`EcranDonnees`) et de Guides.
+   *
+   * `pret` et non `reseau !== null` : `useReseau` pose `pret` dans son `finally`,
+   * donc il couvre aussi l'échec — et un en-tête à moitié peint sur une erreur
+   * est exactement le même défaut.
    */
-  const state: AccueilState = { netTab: rang };
-  const statique = accueilData(state);
-
   return (
     <ScreenFrames
       screen={`A08T-${slug}`}
-      desktop={<div style={BOARD}>{tab.desktop(statique)}</div>}
-      mobile={tab.mobile(statique)}
+      desktop={<div style={BOARD}>{tab.desktop(enteteOnglet)}</div>}
+      mobile={tab.mobile(enteteOnglet)}
     />
   );
 }

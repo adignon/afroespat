@@ -67,8 +67,18 @@ export function AnnonceEcran({
           onOuvrir={onOuvrir}
           onFermer={onFermer}
           modales={{
-            S02C: { desktop: <S02DesktopContact />, mobile: <S02MobileContact /> },
-            S02V: { mobile: <S02MobileVerification />, mobileOnly: true },
+            /**
+             * LES TROIS FEUILLES REÇOIVENT LA CHARGE DE L'ÉCRAN, et il le faut :
+             * elles nomment l'annonce et son auteur (« Studio meublé Lyon 7e ·
+             * Sarah T. », « Contacter Sarah »). Figés, ces textes disaient Sarah
+             * par-dessus l'annonce de quelqu'un d'autre — la fenêtre aurait menti
+             * pendant que l'écran derrière elle disait vrai.
+             */
+            S02C: {
+              desktop: <S02DesktopContact {...donnees} />,
+              mobile: <S02MobileContact {...donnees} />,
+            },
+            S02V: { mobile: <S02MobileVerification {...donnees} />, mobileOnly: true },
           }}
         />
       )}

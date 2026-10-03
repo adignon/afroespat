@@ -3,6 +3,20 @@
 /**
  * Le message d'erreur du parcours d'inscription.
  *
+ * ── CE QU'ELLE N'AFFICHE PLUS ───────────────────────────────────────────────
+ *
+ * Tous les refus SURVENUS pendant le parcours passent désormais par
+ * `react-hot-toast` — décision du porteur, voir `components/notifications.tsx`,
+ * qui explique aussi pourquoi le dessin reste le nôtre. Il lui reste UN SEUL
+ * emploi, et il ne peut pas être une notification : le motif de reprise rendu par
+ * le SERVEUR (`/connexion?reprise=…`). Une notification est montée côté client,
+ * donc elle arriverait APRÈS le premier octet de HTML — et un test de bout en
+ * bout exige ce texte dans la réponse HTTP elle-même.
+ *
+ * La bannière porte donc la raison d'être revenu là ; les notifications portent ce
+ * qui échoue ensuite. Les deux gardent `data-flow-error`, pour que les tests ne
+ * dépendent pas de laquelle des deux a parlé.
+ *
  * La maquette dessine bien des états d'erreur — le panneau « PAYS NON COUVERT »
  * et « CODE INVALIDE » de 340 px — mais dans son cadre de documentation, pas
  * dans les écrans. Cette bannière est donc écrite, et non transcodée : elle

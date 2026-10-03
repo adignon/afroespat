@@ -2,6 +2,7 @@
 
 import { chargerD08 } from '@/screens/administration/appels';
 import { EcranDonneesEquipe } from '@/screens/administration/ecran-donnees';
+import { SQUELETTE_D08 } from '@/screens/administration/data';
 import { ScreenFrames } from '@/screens/frames';
 import { D08Desktop } from '@/screens/d08/desktop.generated';
 
@@ -56,7 +57,7 @@ import { D08Desktop } from '@/screens/d08/desktop.generated';
  */
 export default function Page() {
   return (
-    <EcranDonneesEquipe charger={chargerD08}>
+    <EcranDonneesEquipe charger={chargerD08} squelette={SQUELETTE_D08}>
       {(donnees) => <ScreenFrames screen="D08" desktop={<D08Desktop {...donnees} />} />}
     </EcranDonneesEquipe>
   );

@@ -129,7 +129,7 @@ async function signUp(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Recevoir le code' }).click();
   await page.waitForURL('**/connexion/code', { timeout: 20_000 });
   await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
-  await page.locator('input[autocomplete="one-time-code"]').fill(codesSentTo(phone)[0] as string);
+  await page.locator('input[autocomplete="one-time-code"]:visible').fill(codesSentTo(phone)[0] as string);
   await page.waitForURL('**/bienvenue/phase', { timeout: 20_000 });
 }
 

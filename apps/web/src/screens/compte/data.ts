@@ -100,6 +100,15 @@ export interface K02Data {
   readonly moi: Bandeau;
   readonly membre: {
     readonly nom: string;
+    /**
+     * Le PRÉNOM, pour la fenêtre « Ajouter Fatou aux contacts ».
+     *
+     * Premier mot du nom affiché, comme `Bandeau.prenom` l'est du mien : aucune
+     * route ne sépare prénom et nom (`displayName` est un seul champ), et c'est
+     * exactement la découpe que la maquette fait — elle écrit « Amina » dans sa
+     * barre haute et « Fatou » dans ce titre.
+     */
+    readonly prenom: string;
     readonly initiales: string;
     readonly pseudo: string;
     readonly niveau: number;
@@ -143,9 +152,39 @@ export interface K03Data {
  * apparaîtrait un jour dans la réponse serait dépouillé à la validation, avant
  * d'atteindre cet écran.
  */
+export interface LigneTelephone {
+  readonly masque: string;
+  readonly role: string;
+  /**
+   * LES DEUX VARIANTES QUE LE CADRE MOBILE DESSINE, et pourquoi il en faut DEUX
+   * champs plutôt qu'un booléen et sa négation.
+   *
+   * La planche de 390 px écrit « Dernier numéro, non retirable » sur la première
+   * ligne et un bouton « Retirer » sur la seconde. Le cadre porte les deux sous
+   * `<sc-if>`, et chacune a sa condition — exactement comme la pastille
+   * « Actuelle » et le bouton « Révoquer » d'une session. Une seule variante liée
+   * mentirait sur l'autre ligne.
+   *
+   * ÉCART SIGNALÉ : `meResponseSchema` ne porte AUCUN champ qui dise « ce numéro
+   * se retire ». Ses `phones[]` s'arrêtent à `{ id, masked, isDestination }`. La
+   * condition est donc calculée dans `appels.ts`, et elle recopie MOT POUR MOT
+   * celle du serveur — `phones.length <= 1` refuse la suppression avec
+   * `LAST_PHONE` (`phones.service.ts`, 01 §2.5 : sans numéro, plus aucune
+   * connexion possible, il n'y a pas de mot de passe). Recopier une règle est un
+   * risque de dérive, et c'est pour ça qu'on le DIT : le jour où le serveur ajoute
+   * une seconde raison de refuser, l'écran proposera un bouton que l'API refusera.
+   * Un `canRemove` dans la réponse de `/me` fermerait l'écart — demandé.
+   *
+   * Les deux ne sont jamais vrais ensemble ; la planche ne dessine pas les deux
+   * côte à côte.
+   */
+  readonly retirable: boolean;
+  readonly dernier: boolean;
+}
+
 export interface K04Data {
   readonly moi: Bandeau;
-  readonly telephones: readonly { readonly masque: string; readonly role: string }[];
+  readonly telephones: readonly LigneTelephone[];
   readonly sessions: readonly {
     readonly appareil: string;
     readonly vu: string;
@@ -179,7 +218,23 @@ export interface K06Data {
     readonly essai: number;
     readonly contactsPro: string;
   };
-  readonly premium: { readonly prixMois: string; readonly prixXof: string };
+  /**
+   * Les prix de Premium, et pourquoi il en faut TROIS formes et non deux.
+   *
+   * `prixMois` et `prixXof` portent la période (« 4 €/mois », « 2 600 F/mois ») :
+   * c'est ce que la planche K06 écrit, dans une phrase. `montantXof` est le même
+   * franc SANS période — « Payer 2 600 F », le libellé du bouton de la fenêtre
+   * Mobile Money, qui nomme une somme à payer maintenant et non un tarif.
+   *
+   * Trois champs plutôt qu'un découpage fait dans le JSX : retirer « /mois » d'une
+   * chaîne déjà formatée est le genre de manipulation qui casse à la première
+   * devise sans suffixe. Les trois viennent du même `GET /plans`.
+   */
+  readonly premium: {
+    readonly prixMois: string;
+    readonly prixXof: string;
+    readonly montantXof: string;
+  };
   readonly factures: { readonly derniere: string; readonly precedente: string };
 }
 

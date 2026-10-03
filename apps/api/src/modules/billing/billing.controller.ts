@@ -52,7 +52,20 @@ export class BillingController {
   @PublicRead()
   @ApiOperation({ summary: 'Les formules, leurs prix en EUR et en XOF, leurs limites' })
   async plansList() {
-    return { items: await this.plans.publicPlans() };
+    /**
+     * §5.3 : « Chaque liste renvoie `items` et `nextCursor` (null en fin) ».
+     *
+     * CETTE ROUTE N'EN RENVOYAIT PAS DU TOUT — découvert parce qu'un `pageSchema()`
+     * du front a REFUSÉ la charge : `nextCursor` y est requis et nullable, pas
+     * facultatif, et un client qui prend une enveloppe sans le champ pour une fin de
+     * liste s'arrête sans raison visible.
+     *
+     * `null` est HONNÊTE ici, et c'est toute la différence avec les cinq routes qui
+     * tronquaient : celles-là posaient un `take` puis affirmaient la fin. Celle-ci
+     * rend l'ENSEMBLE COMPLET — aucune limite sur la liste rendue — donc « il n'y a
+     * pas de suite » est un fait, pas une affirmation en l'air.
+     */
+    return { items: await this.plans.publicPlans(), nextCursor: null };
   }
 
   // ── Mon abonnement ────────────────────────────────────────────────────────

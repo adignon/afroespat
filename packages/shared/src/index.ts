@@ -10,6 +10,7 @@ export * from './enums/generated.js';
 export * from './capabilities/capabilities.js';
 export * from './errors/errors.js';
 export * from './validation/pagination.js';
+export * from './validation/media.js';
 export * from './validation/auth.js';
 export * from './validation/account.js';
 export * from './validation/help.js';

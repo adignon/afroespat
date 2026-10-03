@@ -63,6 +63,7 @@ import type {
   J01Data,
   J01EAboutiData,
   J01EVideData,
+  J02Data,
   J01MData,
   J01SData,
   J05Data,
@@ -642,6 +643,51 @@ export async function chargerJ01EVide(): Promise<Omit<J01EVideData, keyof Parcou
     phrase: m.description ?? '',
   }));
   return { modeles };
+}
+
+/**
+ * J02 · `/parcours/nouveau` — les types proposés, et mon parcours actif.
+ *
+ * DEUX APPELS, et chacun sert un cadre différent : `GET /journey-templates` pour
+ * les trois planches qui proposent les types, `GET /journeys` + `GET /journeys/:id`
+ * pour le panneau du cadre d'ordinateur, qui a besoin du RANG de l'étape en cours
+ * que la liste ne porte pas. C'est le même couple d'appels que `chargerJ09` et
+ * `chargerJ11` font déjà, et pour la même raison.
+ *
+ * `etapes` vient de `version.stepCount`, jamais de la maquette — voir
+ * `chargerJ01EVide` juste au-dessus, et le commentaire de
+ * `journeyTemplateVersionSchema` dans `@app/shared`, qui mesure l'écart : 12 dans
+ * la maquette, 15 dans l'API.
+ *
+ * ── `choisi` EST L'ÉTAT DE LA MAQUETTE, ET RIEN DE PLUS ────────────────────
+ *
+ * La planche de 390 px teinte sa PREMIÈRE carte, lui met une bordure de 2 px et
+ * une coche. Ce n'est pas une donnée du serveur : c'est le choix en cours, et
+ * aucune carte de J02 n'est cliquable — la maquette les dessine en `<div>`, donc
+ * le générateur n'y pose aucun `onClick`, et ce lot n'ajoute pas l'interaction.
+ *
+ * On reproduit donc EXACTEMENT ce que la planche montre — la première proposition
+ * présélectionnée — sans rien affirmer de plus. Ce que la liaison change, dit
+ * franchement : c'est désormais le premier modèle QUE L'API ENVOIE qui est
+ * présélectionné, et son ordre est celui que `GET /journey-templates` décide pour
+ * le pays du membre (§2.1). Le jour où une carte devient cliquable, c'est ce champ
+ * qui suivra le clic, et aucun pixel du cadre n'aura à bouger.
+ */
+export async function chargerJ02(): Promise<Omit<J02Data, keyof ParcoursData>> {
+  const [{ items }, liste] = await Promise.all([listJourneyTemplates(), listJourneys()]);
+  const mien = liste.items.find((i) => i.isOwner && i.status === 'ACTIVE') ?? liste.items[0];
+  const parcours = mien === undefined ? null : await readJourney(mien.id);
+
+  return {
+    panneau: parcours === null ? PANNEAU_VIDE : panneauDe(parcours),
+    modeles: items.map((m, rang) => ({
+      nom: m.nameFr,
+      etapes: m.version.stepCount,
+      phrase: m.description ?? '',
+      choisi: rang === 0,
+      autre: rang !== 0,
+    })),
+  };
 }
 
 /**

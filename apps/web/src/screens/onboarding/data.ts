@@ -279,11 +279,71 @@ export interface CountryChoice {
   readonly dialCode: string;
 }
 
+/**
+ * Le compte à rebours de renvoi et le bouton qui l'attend — P02.
+ *
+ * UN SEUL objet pour les deux, parce que c'est un seul état : la maquette dessine
+ * « Nouveau code dans 0:45 » À CÔTÉ d'un « Renvoyer » grisé, et les deux moitiés
+ * de cette ligne disent la même chose. Les séparer en six propriétés plates aurait
+ * permis qu'un bouton actif côtoie un compteur qui tourne.
+ */
+export interface ResendVals {
+  /** Le temps restant, au format de la maquette : `0:45`. */
+  readonly label: string;
+  /**
+   * `visible` ou `hidden`.
+   *
+   * On CACHE au lieu de retirer : la ligne est en `justify-content:
+   * space-between`, donc retirer le compteur ferait sauter « Renvoyer » à gauche.
+   * `visibility: hidden` garde la boîte de la maquette et retire le texte de
+   * l'arbre d'accessibilité — ce qu'on veut d'un compteur arrêté.
+   */
+  readonly countdown: 'visible' | 'hidden';
+  /**
+   * La couleur du contrôle, relevée dans la maquette et jamais choisie :
+   * `#8A958F` est celle qu'elle lui donne pendant l'attente, `#16785E` celle de
+   * son « Recevoir un nouveau code » du panneau « CODE EXPIRÉ ».
+   */
+  readonly color: string;
+  readonly cursor: 'default' | 'pointer';
+  /** L'attente n'est pas finie : le bouton refuse le clic. */
+  readonly blocked: boolean;
+  readonly onPick: () => void;
+}
+
+/**
+ * Le temps restant au format de la maquette — `0:45`.
+ *
+ * `m:ss` SANS BORNE SUPÉRIEURE, et c'est un choix. Un `429` sur
+ * `POST /auth/otp/request` répond `Retry-After: 3600`, donc le compteur affiche
+ * « 59:58 » puis descend. Passer à `h:mm:ss` au-delà de l'heure inventerait un
+ * format que la maquette n'écrit nulle part ; prolonger le sien est la seule
+ * extension qui ne décide rien à la place du porteur.
+ */
+export function resendLabel(seconds: number): string {
+  const total = Math.max(0, Math.ceil(seconds));
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${String(total % 60).padStart(2, '0')}`;
+}
+
 export interface ScreenActions {
   /** Un appel est en cours : les boutons se désactivent. */
   readonly busy: boolean;
   /** P01 — envoyer le code. */
   readonly onSubmit: () => void;
+  /**
+   * P02 — les secondes qui restent avant de pouvoir redemander un code.
+   *
+   * `0` quand l'attente est finie. La valeur vient du parcours, qui la tient dans
+   * `sessionStorage` : une actualisation de la page ne doit PAS remettre le
+   * compteur à zéro, sans quoi le membre pourrait épuiser les trois envois par
+   * heure et par numéro en trois rechargements.
+   */
+  readonly resendIn: number;
+  /** P02 — redemander un code. Refusé tant que `resendIn` n'est pas nul. */
+  readonly onResend: () => void;
+  /** P02 — « Changer de numéro » : revenir à la saisie du numéro. */
+  readonly onChangeNumber: () => void;
   /** O01 à O04 — enregistrer et passer à l'écran suivant. */
   readonly onContinue: () => void;
   /**
@@ -364,6 +424,8 @@ export interface OnboardingVals extends ScreenActions {
   }[];
   readonly reassure: readonly { readonly text: string; readonly icon: string }[];
   readonly otp: readonly { readonly v: string; readonly bg: string; readonly bd: string }[];
+  /** P02 — le compte à rebours et le bouton « Renvoyer ». */
+  readonly resend: ResendVals;
   readonly otpBad: readonly string[];
   readonly toc: readonly {
     readonly label: string;
@@ -411,6 +473,25 @@ export interface OnboardingVals extends ScreenActions {
   readonly createBg: string;
   readonly createBd: string;
   readonly createHelp: string;
+  /**
+   * O05 « AVEC PARCOURS » — le nombre d'étapes du parcours créé.
+   *
+   * « ÉTAPE 1 SUR 12 » est un ENGAGEMENT : la planche s'intitule « Votre parcours
+   * est prêt ». Le 12 de la maquette est une illustration, et il est faux depuis
+   * que `STUDIES` est en version 3 — l'API répond 15, et
+   * `journeyTemplateVersionSchema` le dit en toutes lettres. O03 l'avait déjà
+   * corrigé pour sa phrase d'annonce (`createHelp`) ; les deux écrans se
+   * contredisaient à une page d'intervalle.
+   *
+   * MÊME SOURCE QUE `createHelp`, exactement : le PREMIER modèle servi, qui est
+   * celui que `use-onboarding-flow.ts` envoie à `POST /journeys` (`templates[0]`).
+   * Deux dérivations du même champ ne peuvent donc pas se contredire.
+   *
+   * UNE CHAÎNE ET NON UN NOMBRE : tant que `GET /journey-templates` n'a pas
+   * répondu, il n'y a aucun nombre à montrer, et `0` serait un mensonge pire que
+   * le `12` de la maquette. Le tiret cadratin dit « pas encore », ce qui est vrai.
+   */
+  readonly journeyStepCount: string;
   readonly help: boolean;
   readonly toggleHelp: () => void;
   readonly helpTrack: string;
@@ -531,6 +612,21 @@ export function onboardingVals(
     }),
     otpBad: ['4', '8', '2', '9', '1', '7'],
 
+    /**
+     * Le compte à rebours de renvoi.
+     *
+     * La maquette écrit « 0:45 » : c'est elle qui fixe le délai, et le parcours s'y
+     * tient. Les deux couleurs sont les SIENNES — voir `ResendVals`.
+     */
+    resend: {
+      label: resendLabel(actions.resendIn),
+      countdown: actions.resendIn > 0 ? 'visible' : 'hidden',
+      color: actions.resendIn > 0 ? '#8A958F' : '#16785E',
+      cursor: actions.resendIn > 0 ? 'default' : 'pointer',
+      blocked: actions.resendIn > 0,
+      onPick: actions.onResend,
+    },
+
     toc: [
       { label: 'Ce que nous collectons', w: 700, bg: '#E3F0EB', fg: '#0F5C48' },
       { label: 'Où sont vos données', w: 500, bg: 'transparent', fg: '#16211D' },
@@ -637,6 +733,16 @@ export function onboardingVals(
       ? 'Aucun parcours ne sera créé. Vous pourrez en créer un plus tard depuis Parcours.'
       : createAnnounce(actions.templates),
 
+    /**
+     * Le même `templates[0]` que `createHelp` et que la création elle-même.
+     *
+     * Pas de nombre tant que la liste n'est pas arrivée : « ÉTAPE 1 SUR — » dit
+     * qu'on ne sait pas encore, là où « ÉTAPE 1 SUR 0 » affirmerait un parcours
+     * sans étape.
+     */
+    journeyStepCount:
+      actions.templates[0] === undefined ? '—' : String(actions.templates[0].stepCount),
+
     help: state.help,
     toggleHelp: () => patch({ help: !state.help }),
     helpTrack: state.help ? '#16785E' : '#CBD5D1',
@@ -660,6 +766,57 @@ export function onboardingVals(
       { d: '09', m: 'MAR', t: 'Permanence titre de séjour', s: 'Lyon 3e · 10h00' },
     ],
   };
+}
+
+/**
+ * ─── O05 « AVEC PARCOURS » — LE PARCOURS QUI VIENT D'ÊTRE CRÉÉ ──────────────
+ *
+ * Le dernier écran de l'inscription s'intitule « Votre parcours est prêt » et
+ * nommait le parcours de l'EXEMPLE de la maquette : « Mes études à Lyon », « ÉTAPE
+ * 1 SUR 12 », « Obtenir votre admission ». Quatre affirmations sur l'objet que le
+ * membre vient de créer, et trois d'entre elles ne le concernaient pas.
+ *
+ * TOUT VIENT D'UN APPEL QUE L'ÉCRAN FAISAIT DÉJÀ. `FinScreen` lit `GET /journeys`
+ * pour choisir entre ses deux planches, et `journeyListItemSchema` porte `title`,
+ * `doneCount`, `stepCount` et `currentStep: { id, title }`. Rien n'est demandé de
+ * plus au serveur ; ce qui change, c'est qu'on ne jette plus la réponse.
+ *
+ * `rang` EST `doneCount + 1`, ET C'EST UNE DÉRIVATION ASSUMÉE : la liste ne porte
+ * pas le rang de l'étape en cours, elle porte le nombre d'étapes franchies. Sur un
+ * parcours frais, `doneCount` vaut zéro et le rang vaut un — ce que la maquette
+ * dessine. Le serveur ne contredit pas ce calcul : `currentStep` est, par
+ * construction du service, la première étape non franchie.
+ *
+ * `description` RESTE VIDE, et c'est l'écart remonté : elle vit dans
+ * `journeyStepSchema` et ne sort que de `GET /journeys/:id`. La planche garde donc
+ * la phrase de la maquette — le seul littéral de ce cadre qui n'ait pas de source.
+ *
+ * ── CE QU'ON MONTRE PENDANT QUE L'APPEL VOYAGE ──────────────────────────────
+ *
+ * `PARCOURS_INCONNU` porte des chaînes vides et des zéros. Ce n'est pas un défaut
+ * déguisé : `FinScreen` choisit sa planche sur la même réponse, et il part de la
+ * valeur de l'URL — raison écrite dans ce fichier-là. Le court instant où la
+ * planche « avec parcours » s'affiche sans son contenu est un CHARGEMENT ; afficher
+ * « Mes études à Lyon » en attendant serait un mensonge, et c'est précisément ce
+ * qu'on retire. Les valeurs de la maquette ne reviennent jamais en repli.
+ */
+export interface ParcoursPret {
+  readonly titre: string;
+  readonly rang: number;
+  readonly total: number;
+  readonly etape: string;
+}
+
+export const PARCOURS_INCONNU: ParcoursPret = { titre: '', rang: 0, total: 0, etape: '' };
+
+/**
+ * O05 — les deux atterrissages de §5, écran 6.
+ *
+ * Il ÉTEND `OnboardingVals` : `FinScreen` répand les mêmes valeurs dans ses deux
+ * planches, et les quinze autres cadres de la maquette gardent leur signature.
+ */
+export interface O05Data extends OnboardingVals {
+  readonly parcours: ParcoursPret;
 }
 
 /** L'état et les valeurs, pour un composant client. */

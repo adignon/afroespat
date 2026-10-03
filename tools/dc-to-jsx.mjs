@@ -189,7 +189,57 @@ function styleToJsx(value) {
     const trimmed = declaration.trim();
     if (trimmed === '') continue;
     const colon = trimmed.indexOf(':');
-    if (colon < 0) continue;
+    if (colon < 0) {
+      /**
+       * ─── UNE DÉCLARATION SANS DEUX-POINTS : DEUX CAS, ET UN SEUL EST LICITE ───
+       *
+       * Ce `continue` était INCONDITIONNEL, et c'est le trou que trois agents ont
+       * trouvé séparément — l'un sur une zébrure de tableau (D08, `v.fondLigne`),
+       * l'autre sur un filet entre deux lignes.
+       *
+       * POUR DU CSS MAL FORMÉ, LE SAUT EST JUSTE. La maquette en contient — un `;`
+       * de trop, un mot resté seul — et le navigateur l'ignore exactement de la
+       * même façon. Transcrire fidèlement, c'est ignorer aussi.
+       *
+       * POUR UNE INTERPOLATION, LE SAUT EST FAUX, et il est faux de la pire
+       * manière. Une déclaration de maquette peut être posée EN ENTIER par une
+       * donnée :
+       *
+       *     style="…;padding:10px 0;{{ m.bord }}"
+       *
+       * Ce fragment n'est pas une paire `clé:valeur` — il n'a pas de deux-points —
+       * donc il tombait ici et DISPARAISSAIT. Les quatre contrôles de `donnees`
+       * (`tools/generate-screens.mjs`) le laissent tous passer : le premier compte
+       * le littéral dans la maquette, le deuxième vérifie les motifs, le troisième
+       * que rien n'est inventé, le quatrième que `devient` PORTE bien une
+       * interpolation. Aucun ne vérifie que le JSX PRODUIT la porte encore. Le
+       * journal annonçait donc « Donnée « m.bord » ← … » et le cadre ne la portait
+       * pas : `grep` rendait 0 des deux côtés.
+       *
+       * UN JOURNAL QUI ANNONCE UNE LIAISON QUE LE JSX NE PORTE PAS EST PIRE QU'UN
+       * MÉCANISME ABSENT : on croit l'écran branché, donc on ne le rebranche pas.
+       *
+       * On ARRÊTE donc la génération en nommant le fragment. Le refus est le bon
+       * comportement plutôt qu'un repli : il n'existe aucune façon honnête de
+       * rendre ce cas en JSX. `style={{ … }}` est un objet, et une interpolation en
+       * position de déclaration vaudrait une PAIRE entière — ce que seul un
+       * `...(expr)` exprimerait, c'est-à-dire une forme que `styleToJsx` n'émet pas
+       * et dont `check-duplicate-spread-keys.mjs` existe précisément pour traquer
+       * les dérives. La déclaration doit donc être réécrite en paire :
+       * `background:{{ m.fond }}` plutôt que `{{ m.bord }}`.
+       */
+      if (trimmed.includes('{{')) {
+        throw new Error(
+          `une interpolation est posée à la place d’une DÉCLARATION ENTIÈRE dans un attribut ` +
+            `style — « ${trimmed} » — et le JSX ne peut pas la porter : un objet de style ` +
+            'se compose de paires `clé: valeur`. Elle serait SAUTÉE en silence, et le journal ' +
+            'annoncerait une liaison que l’écran n’affiche pas. Réécrire la donnée en paire ' +
+            '(`propriété:{{ expr }}`) dans sa déclaration d’écran.\n' +
+            `  style complet : « ${value.length > 300 ? `${value.slice(0, 300)}…` : value} »`,
+        );
+      }
+      continue;
+    }
 
     const property = trimmed.slice(0, colon).trim();
     const raw = trimmed.slice(colon + 1).trim();
@@ -655,6 +705,788 @@ export function markTriggers(html, triggers) {
   }
 
   return { html: out, applied, missed };
+}
+
+/**
+ * ─── `liens` : LA NAVIGATION, QUE LA MAQUETTE DESSINE SANS LA CÂBLER ─────────
+ *
+ * LE DÉFAUT QUE CETTE CLÉ CORRIGE, mesuré sur les cadres produits et non supposé :
+ *
+ *   · les cinq entrées du rail membre — Accueil, Parcours, Entraide, Services,
+ *     Agenda — sont des `<span>`. Ce ne sont pas des liens cassés : CE NE SONT PAS
+ *     DES LIENS ;
+ *   · 207 balises `<a>` dans les 250 cadres, et les 207 pointent vers `href="#"` ;
+ *   · sur les quinze cadres d'équipe, ZÉRO balise de lien : neuf `<span>` sans
+ *     `cursor: pointer`, et cliquer « Tableau de bord » ne change pas l'URL ;
+ *   · sur les parcours, 132 entrées de panneau en `<span>` contre UNE en `<a>`.
+ *
+ * C'est la maquette qui est ainsi — elle DESSINE une barre de navigation, elle ne
+ * la CÂBLE pas — et le transcodeur la recopie verbatim, comme le porteur l'a
+ * demandé. Le générateur avait une table d'adaptation pour les boutons
+ * (`BUTTON_ACTIONS`), une pour les déclencheurs de fenêtre (`markTriggers`), une
+ * pour les noms accessibles (`ICON_BUTTON_NAMES`), une pour la donnée
+ * (`applyData`). RIEN pour les liens.
+ *
+ * Personne ne l'avait signalé parce que TOUS les tests du dépôt visitent les
+ * écrans en TAPANT L'URL, jamais en cliquant.
+ *
+ * ── UN SEUL APPAREIL POUR TROIS BESOINS ─────────────────────────────────────
+ *
+ * Aucun second mécanisme n'est inventé : c'est `markTriggers`, dont il reprend la
+ * forme à la lettre — un MARQUEUR verbatim de la maquette, la remontée jusqu'à la
+ * balise ouvrante qui le contient, la promotion de cette balise, et une
+ * destination posée EN DIALECTE pour qu'elle puisse s'évaluer dans une boucle.
+ *
+ *   1. promouvoir un `<span>` DESSINÉ en LIEN — le rail, les onglets, les entrées
+ *      de panneau ;
+ *   2. donner une DESTINATION DÉCLARÉE à un `<a href="#">` que la maquette a bien
+ *      balisé mais n'a pas adressé ;
+ *   3. promouvoir un `<span>` en BOUTON avec une action — « Renvoyer » de l'écran
+ *      du code en est un : la maquette le dessine en `<span>`, et il ne déclenche
+ *      aucune fenêtre, donc `markTriggers` ne le voit pas.
+ *
+ * ── LA DESTINATION EST DÉCLARÉE, JAMAIS DEVINÉE DU LIBELLÉ ──────────────────
+ *
+ * C'est l'exigence dure de cette table, et elle n'est pas de principe : « Voir
+ * tout » est écrit sur une dizaine d'écrans et ne mène pas deux fois au même
+ * endroit ; « Accueil » est écrit dans le rail, dans un fil d'Ariane ET dans un
+ * menu mobile. Une table indexée sur le seul libellé enverrait les trois au même
+ * endroit, le journal dirait « lien branché », et la dérive serait invisible —
+ * c'est exactement la leçon que `BUTTON_ACTIONS` a déjà payée avec le
+ * « Continuer » d'A14, et que `ICON_BUTTON_NAMES` répète : « un tracé SVG est un
+ * motif très large, et trois points alignés sert ailleurs de poignée de
+ * réordonnancement ».
+ *
+ * D'où le BORNAGE PAR ÉCRAN (`screens` côté déclaration, un fichier par maquette),
+ * PAR CADRE quand les deux largeurs ne dessinent pas le même contrôle (`frames`),
+ * et par CONTENEUR quand un même mot est écrit deux fois dans un cadre (`dans`).
+ *
+ * ── LES TROIS DISCRIMINANTS, PARCE QUE LA MAQUETTE N'EN OFFRE PAS UN SEUL ───
+ *
+ * Mesuré sur A01 : sur ses huit `<a href="#">`, quatre portent un texte visible
+ * (« Voir mon profil public », « Continuer », « Modifier », « Voir tout »), UN
+ * porte un `aria-label` que la maquette écrit elle-même (« Réglages ») et TROIS
+ * n'ont NI l'un NI l'autre — leur libellé est une interpolation (`{{ r.label }}`)
+ * parce qu'ils sont dans une boucle. Un mécanisme qui n'offrirait que le texte
+ * visible laisserait donc trois liens sur huit hors de portée. D'où :
+ *
+ *   · `texte`    — le texte visible, tel que la maquette l'écrit. L'apostrophe est
+ *                  la COURBE : voir l'échappement de `BUTTON_ACTIONS`.
+ *   · `aria`     — l'`aria-label` que la maquette écrit déjà.
+ *   · `marqueur` — un fragment VERBATIM du balisage, pour un lien qui n'a ni
+ *                  texte ni `aria-label`. C'est le `marker` de `markTriggers`,
+ *                  même mot, même sens.
+ *
+ * UN SEUL des trois par déclaration : deux discriminants pour une cible, c'est
+ * deux intentions, et on ne sait plus laquelle a servi.
+ *
+ * ── LE GARDE-FOU EST LE COMPTE, comme pour `donnees` ────────────────────────
+ *
+ * `fois` (défaut 1) dit combien d'éléments le discriminant doit désigner DANS CE
+ * CADRE. Si le compte ne tombe pas juste, la génération S'ARRÊTE en nommant le
+ * discriminant. Une retouche du designer qui dédouble une entrée de rail ne
+ * produit donc pas un écran où un lien sur deux est mort : elle produit un arrêt
+ * qui le nomme. C'est le même garde-fou que `applyData.fois`, et pour la même
+ * raison — un JSX faux compile parfaitement.
+ *
+ * ── CE QUI EST AJOUTÉ AU DESSIN, ET POURQUOI C'EST PRÉFIXÉ ──────────────────
+ *
+ * Un `<a>` arrive avec trois valeurs de navigateur qu'un `<span>` n'avait pas :
+ * `color: -webkit-link`, `text-decoration: underline`, `cursor: pointer`. Sans
+ * les neutraliser, promouvoir la balise CHANGERAIT LE DESSIN — du bleu souligné
+ * dans un rail vert foncé.
+ *
+ * Elles sont donc PRÉFIXÉES au style de la maquette, et non suffixées comme le
+ * fait `markTriggers`. La différence n'est pas cosmétique : `styleToJsx` fusionne
+ * par propriété en gardant la DERNIÈRE, donc
+ *
+ *   · préfixé  → ce sont des DÉFAUTS, et toute déclaration de la maquette gagne.
+ *                Le rail d'équipe garde son `color:#CBD5D1`, son `font-weight`,
+ *                son `background` ;
+ *   · suffixé  → ce sont des SURCHARGES, et c'est la maquette qui perd.
+ *
+ * Pour un `<a>` on veut des défauts : on remplace les valeurs du NAVIGATEUR, pas
+ * celles du designer. (Le suffixe de `markTriggers` est un risque mesuré, signalé
+ * au porteur : son `padding:0` écrase le `padding:0 12px` d'un `<span>` promu en
+ * bouton. Il n'est pas touché ici — le modifier déplacerait des cadres qui ne
+ * relèvent pas de la navigation.)
+ *
+ * ── NAVIGABLE AU CLAVIER, ET NOMMÉ ──────────────────────────────────────────
+ *
+ * `<a href="…">` est focalisable nativement : aucun `tabIndex` n'est posé, et
+ * c'est bien — un `tabIndex` sur un lien réel est du bruit. Le NOM, lui, est
+ * EXIGÉ : si l'élément promu n'a ni texte, ni interpolation de texte, ni
+ * `aria-label`, la génération REFUSE. Un lien sans nom est annoncé par son URL au
+ * lecteur d'écran, ce qui est pire qu'un bouton muet — et `markTriggers` se
+ * contente ici d'un `⚠`, ce qui a laissé passer des boutons muets jusqu'à ce
+ * qu'axe les trouve en `critical`. On ne refait pas cette économie.
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CONSIGNE — DÉCLARER LA NAVIGATION D'UN MODULE                              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Un seul module est déclaré à ce jour : le rail d'équipe, dans
+ * `tools/screens/10-administration.mjs`. C'est le MODÈLE À COPIER — il montre les
+ * quatre clés dans leur emploi normal. Les 58 écrans qui restent se lisent dans le
+ * récapitulatif « ── NAVIGATION ── » que la génération imprime en fin de course,
+ * avec le compte de liens morts de chacun.
+ *
+ * LA RECETTE, dans cet ordre :
+ *
+ *  1. RELANCER LA GÉNÉRATION et lire le récapitulatif. Il nomme l'écran et combien
+ *     de liens y sont morts. C'est la seule liste à jour : ne pas la recopier
+ *     ailleurs, la relire.
+ *
+ *  2. REGARDER LE CADRE AVANT DE CHOISIR LE DISCRIMINANT. Sur les huit liens d'A01,
+ *     quatre ont un texte, un a un `aria-label` écrit par la maquette, et TROIS
+ *     n'ont ni l'un ni l'autre. Ouvrir le `*.generated.tsx` et lire les `<a>` un
+ *     par un prend deux minutes et évite trois allers-retours.
+ *       · du texte visible      → `texte: 'Voir tout'`
+ *       · un `aria-label`       → `aria: 'Réglages'`
+ *       · ni l'un ni l'autre    → `marqueur: '<un fragment VERBATIM>'`
+ *
+ *  3. ÉCRIRE LA DESTINATION, JAMAIS LA DEVINER. Elle vient de `T5 §11` ou de
+ *     `apps/web/src/app/`, et elle est propre à CE lien sur CET écran : « Voir
+ *     tout » est écrit sur une dizaine d'écrans et ne mène pas deux fois au même
+ *     endroit. Dans une boucle, la destination est une DONNÉE :
+ *     `vers: '{{ r.href }}'` — et c'est alors au `data.ts` du module de la fournir,
+ *     comme n'importe quel autre champ.
+ *
+ *  4. BORNER. `dans: '<nav …>'` quand le même mot est écrit deux fois dans le
+ *     cadre (un rail et un titre de page, par exemple). `frames: ['Desktop']`
+ *     quand les deux largeurs ne dessinent pas le même contrôle. `fois: 2` quand
+ *     la maquette dessine volontairement le lien deux fois — et seulement alors :
+ *     le défaut de 1 est ce qui attrape un dédoublement involontaire.
+ *
+ *  5. NOMMER CE QUI N'A PAS DE NOM. `nom: 'Réglages'` sur un lien en icône seule.
+ *     LE NOM SE RECOPIE DE LA MAQUETTE, jamais ne s'invente : elle écrit souvent
+ *     le mot ailleurs, en légende ou à côté du même tracé. C'est la discipline que
+ *     `ICON_BUTTON_NAMES` a déjà écrite, avec sa clé `source`.
+ *
+ *  6. POSER `navigationDeclaree: true` SUR L'ÉCRAN quand il ne reste plus un seul
+ *     `href="#"` dessus. C'est ce qui fait passer le garde-fou de « ⚠ » à « refus »
+ *     pour cet écran : le trou ne pourra plus s'y réouvrir. NE PAS le poser avant —
+ *     la génération échouerait, et pas seulement pour vous.
+ *
+ *  7. CLIQUER DANS UN TEST. `apps/web/e2e/navigation-rail.spec.ts` est le modèle :
+ *     partir d'un écran, CLIQUER, et vérifier que l'URL a changé. Une assertion sur
+ *     le `href` ne prouve rien — c'est précisément parce que tous les tests du dépôt
+ *     tapaient l'URL que 207 liens morts ont tenu quinze rapports verts.
+ *
+ * CE QUE LA TABLE NE FERA PAS POUR VOUS, et qu'il faut remonter plutôt que combler :
+ * une entrée de menu que la maquette ne dessine pas. Le rail d'équipe a NEUF
+ * entrées pour QUINZE pages ; six pages ne sont atteignables par aucune. En
+ * dessiner cinq de plus serait décider de la structure du menu à la place du
+ * porteur. On le DIT — c'est fait dans l'en-tête de `10-administration.mjs`.
+ */
+
+/** Les balises qu'une déclaration de lien peut promouvoir, ou ré-adresser. */
+const PROMOTABLE = /^<(a|button|span|div)[\s>]/;
+
+/** Ce que le journal et les refus appellent la cible, pour qu'on la retrouve. */
+const nommerLien = (lien) =>
+  lien.texte !== undefined
+    ? `texte « ${lien.texte} »`
+    : lien.aria !== undefined
+      ? `aria-label « ${lien.aria}»`
+      : `marqueur « ${lien.marqueur} »`;
+
+/**
+ * Le nom accessible qu'aura l'élément promu : son texte, interpolations comprises.
+ *
+ * Les `<svg>` sont retirés d'abord — un tracé n'est pas un nom, et c'est la même
+ * lecture que `markTriggers` fait de son contenu. Une interpolation COMPTE comme
+ * un nom : `{{ r.label }}` est bien un libellé, simplement calculé.
+ */
+const nomAccessible = (contenu) =>
+  contenu
+    .replace(/<svg[\s\S]*?<\/svg>/g, '')
+    .replace(/<[^>]+>/g, '')
+    .trim();
+
+/**
+ * ─── LES LIAISONS DE BOUCLE QUI ENGLOBENT UNE POSITION ──────────────────────
+ *
+ * Rend les noms que les `<sc-for as="…">` encore OUVERTS à `at` mettent à la
+ * disposition du balisage — `['r']` pour un élément dans la boucle du rail,
+ * `['p', 'o']` pour un élément dans le sondage d'une publication.
+ *
+ * On empile à l'ouverture, on dépile à la fermeture, et on s'arrête à `at` : ce
+ * qui reste sur la pile est exactement ce qui englobe la position. Compter les
+ * `<sc-for>` DEPUIS LE DÉBUT plutôt que remonter depuis `at` est ce qui rend les
+ * boucles imbriquées justes — une remontée naïve prendrait le premier `as=` vu en
+ * arrière, qui peut être celui d'une boucle SŒUR déjà refermée.
+ */
+const liaisonsEnglobantes = (html, at) => {
+  const pile = [];
+  const motifs = /<sc-for\b[^>]*>|<\/sc-for\s*>/g;
+  for (let m = motifs.exec(html); m !== null && m.index < at; m = motifs.exec(html)) {
+    if (m[0].startsWith('</')) {
+      pile.pop();
+      continue;
+    }
+    const as = /\bas="([^"]*)"/.exec(m[0]);
+    pile.push(as === null ? null : as[1]);
+  }
+  return pile.filter((x) => x !== null && x !== '');
+};
+
+/**
+ * ─── CE QUE `vers` INTERROGE, QUAND IL EST ÉCRIT EN DIALECTE ────────────────
+ *
+ * `'{{ r.href }}'` → `'r'`. `'/accueil'` → `null`, et il n'y a alors rien à
+ * vérifier : une destination littérale ne dépend d'aucune boucle.
+ */
+const racineInterpolee = (vers) => {
+  const m = /\{\{\s*([A-Za-z_$][\w$]*)/.exec(vers ?? '');
+  return m === null ? null : m[1];
+};
+
+export function markLinks(html, liens, section = '', frameName = '') {
+  let out = html;
+  const applied = [];
+  const ou = `${section} ${frameName}`.trim();
+
+  for (const lien of liens ?? []) {
+    const attendu = lien.fois ?? 1;
+    const quoi = nommerLien(lien);
+
+    const discriminants = ['texte', 'aria', 'marqueur'].filter((k) => lien[k] !== undefined);
+    if (discriminants.length !== 1) {
+      throw new Error(
+        `${ou} : une déclaration de lien porte ${discriminants.length} discriminant(s) ` +
+          `(${discriminants.join(', ') || 'aucun'}) ; il en faut exactement un parmi ` +
+          '« texte », « aria » et « marqueur ».',
+      );
+    }
+    if ((lien.vers === undefined) === (lien.action === undefined)) {
+      throw new Error(
+        `${ou} : le lien ${quoi} doit déclarer « vers » (une destination) OU « action » ` +
+          '(un gestionnaire), et exactement l’un des deux.',
+      );
+    }
+
+    /**
+     * LA RÉGION OÙ CHERCHER — `dans`, et c'est ce qui rend un libellé répété
+     * utilisable. « Référentiels » est écrit DEUX fois dans le cadre de D08 : dans
+     * le rail, en 13 px, et comme TITRE DE PAGE, en 28 px. C'est le même mot ; seul
+     * le conteneur les distingue. Même raison que la taille déclarée avec le titre
+     * dans `tools/screens/10-administration.mjs`.
+     *
+     * `dans` doit figurer EXACTEMENT UNE FOIS, comme l'`anchor` d'un emprunt :
+     * sinon on ne sait pas dans quelle région le lien atterrit.
+     */
+    let debut = 0;
+    let fin = out.length;
+    if (lien.dans !== undefined) {
+      const fois = out.split(lien.dans).length - 1;
+      if (fois !== 1) {
+        throw new Error(
+          `${ou} : le conteneur « ${lien.dans.slice(0, 80)}… » du lien ${quoi} figure ${fois} ` +
+            'fois dans ce cadre ; il en faut exactement une.',
+        );
+      }
+      const balise = /^<([a-zA-Z][\w-]*)/.exec(lien.dans);
+      if (balise === null) {
+        throw new Error(`${ou} : « dans » doit commencer par une balise ouvrante. Reçu « ${lien.dans.slice(0, 40)} ».`);
+      }
+      const at = out.indexOf(lien.dans);
+      debut = at;
+      fin = findMatchingClose(out, at + lien.dans.length, balise[1]).start;
+    }
+
+    const marqueur =
+      lien.texte ?? (lien.aria !== undefined ? `aria-label="${lien.aria}"` : lien.marqueur);
+
+    /**
+     * TOUTES LES CIBLES D'ABORD, LES REMPLACEMENTS ENSUITE — et de la dernière à
+     * la première.
+     *
+     * `markTriggers` fait glisser un curseur et recalcule les décalages à chaque
+     * insertion ; ce calcul lui a déjà coûté une boucle infinie, documentée dans
+     * son corps. Compter avant de toucher évite la question, et c'est AUSSI ce qui
+     * rend le garde-fou possible : on ne peut pas vérifier un compte qu'on
+     * découvre en modifiant.
+     */
+    const cibles = [];
+    let from = debut;
+    for (;;) {
+      const at = out.indexOf(marqueur, from);
+      if (at < 0 || at >= fin) break;
+      from = at + marqueur.length;
+
+      let openIdx = at;
+      let tag = null;
+      while (openIdx > 0) {
+        openIdx = out.lastIndexOf('<', openIdx - 1);
+        if (openIdx < 0) break;
+        const m = PROMOTABLE.exec(out.slice(openIdx, openIdx + 10));
+        if (m !== null) {
+          tag = m[1];
+          break;
+        }
+      }
+      if (tag === null || openIdx < 0) continue;
+      // Deux marqueurs peuvent remonter au MÊME élément : on ne le promeut qu'une
+      // fois. Même garde que le `data-modal-open=` déjà posé de `markTriggers`.
+      if (cibles.some((c) => c.openIdx === openIdx)) continue;
+      cibles.push({ openIdx, tag });
+    }
+
+    if (cibles.length !== attendu) {
+      throw new Error(
+        `${ou} : le lien ${quoi} désigne ${cibles.length} élément(s) promouvable(s) dans ce ` +
+          `cadre, et la déclaration en attend ${attendu}. Si la maquette a changé, mettre ` +
+          '« liens » à jour dans sa déclaration d’écran ; ne jamais laisser un lien mourir en ' +
+          'silence. (Préciser « dans » pour borner la recherche à un conteneur, ou « fois ».)',
+      );
+    }
+
+    for (const cible of [...cibles].sort((a, b) => b.openIdx - a.openIdx)) {
+      const { openIdx, tag } = cible;
+      const openEnd = findTagEnd(out, openIdx) + 1;
+      const openTag = out.slice(openIdx, openEnd);
+
+      /**
+       * `vers` passe EN DIALECTE, comme le `subject` d'un déclencheur : `markLinks`
+       * tourne AVANT `transcode`, donc `href="{{ r.href }}"` devient
+       * `href={r.href}` et s'évalue DANS la boucle, une destination par carte.
+       * Écrire `{r.href}` ici donnerait la chaîne littérale.
+       */
+      const destination =
+        lien.vers === undefined ? null : ` href="${lien.vers}"`;
+      const gestionnaire =
+        lien.action === undefined ? null : ` onClick="{{ ${lien.action} }}"`;
+
+      /**
+       * ╔══════════════════════════════════════════════════════════════════════╗
+       * ║ LA DESTINATION D'UNE BOUCLE DOIT ÊTRE LIÉE PAR CETTE BOUCLE-LÀ       ║
+       * ╚══════════════════════════════════════════════════════════════════════╝
+       *
+       * C'est le garde-fou PROPRE AUX BOUCLES, et il n'existait pas : les trois
+       * discriminants (`texte`, `aria`, `marqueur`) distinguent un élément dans le
+       * BALISAGE, et `fois` compte les cibles — mais rien ne vérifiait que
+       * `vers: '{{ r.href }}'` ait un `r` à interroger À CET ENDROIT.
+       *
+       * LES DEUX FAÇONS DONT ÇA CASSE, et seule la première est rattrapée ailleurs :
+       *
+       *   · LA LIAISON N'EXISTE PAS — le designer renomme `as="r"` en `as="e"`, ou
+       *     sort le lien de la boucle. Le JSX produit référence un `r` qui n'est
+       *     déclaré nulle part ; `tsc` le voit (« Cannot find name 'r' »), donc le
+       *     mal est borné — mais il est signalé à des centaines de lignes de la
+       *     DÉCLARATION qui l'a causé, dans un fichier qu'on n'a pas le droit de
+       *     corriger à la main.
+       *
+       *   · LA LIAISON EXISTE, MAIS CE N'EST PAS LA BONNE — et c'est le cas GRAVE,
+       *     celui que rien n'attrape. Si le lien se retrouve dans une boucle
+       *     IMBRIQUÉE dont la boucle extérieure s'appelle aussi `r`, ou si deux
+       *     boucles sœurs emploient la même lettre, `{{ r.href }}` compile
+       *     parfaitement et mène AILLEURS. Un lien qui marche et qui va au mauvais
+       *     endroit est pire qu'un lien mort : le lien mort se voit.
+       *
+       * On exige donc que la racine de l'interpolation figure parmi les liaisons
+       * ENCORE OUVERTES à l'endroit promu. C'est la même discipline que `donnees` :
+       * une destination déclarée pour une entrée qui n'existe plus ARRÊTE la
+       * génération en se nommant, au lieu de s'effacer en silence.
+       */
+      const racine = racineInterpolee(lien.vers);
+      if (racine !== null) {
+        const liees = liaisonsEnglobantes(out, openIdx);
+        if (!liees.includes(racine)) {
+          throw new Error(
+            `${ou} : la destination « ${lien.vers} » du lien ${quoi} interroge « ${racine} », ` +
+              `mais aucune boucle <sc-for as="${racine}"> n’englobe l’élément promu ` +
+              `(liaisons ouvertes ici : ${liees.length === 0 ? 'aucune' : liees.map((l) => `« ${l} »`).join(', ')}). ` +
+              'Soit la maquette a renommé son « as », soit le lien n’est plus dans la boucle. ' +
+              'Mettre « vers » à jour dans sa déclaration d’écran — une destination qui ne ' +
+              's’évalue pas mène AILLEURS, ce qui est pire qu’un lien mort.',
+          );
+        }
+      }
+
+      if (tag === 'a') {
+        if (gestionnaire !== null) {
+          throw new Error(
+            `${ou} : le lien ${quoi} est DÉJÀ une balise <a> ; « action » n’a pas de sens ` +
+              'dessus. Déclarer « vers ».',
+          );
+        }
+        if (!openTag.includes('href="#"')) {
+          throw new Error(
+            `${ou} : le lien ${quoi} vise une balise <a> qui ne porte pas « href="#" » — ` +
+              `« ${openTag.slice(0, 120)} ». Soit elle a déjà une destination, soit le ` +
+              'discriminant désigne autre chose.',
+          );
+        }
+        const close = findMatchingClose(out, openEnd, 'a');
+        const nom = nomAccessible(out.slice(openEnd, close.start));
+        const nomme = openTag.includes('aria-label=') || nom !== '';
+        if (!nomme && lien.nom === undefined) {
+          throw new Error(
+            `${ou} : le lien ${quoi} n’a AUCUN nom accessible — ni texte, ni interpolation, ni ` +
+              '`aria-label`. Un lecteur d’écran l’annoncerait par son URL. Déclarer « nom ».',
+          );
+        }
+        const labelAttr = nomme || lien.nom === undefined ? '' : ` aria-label="${lien.nom}"`;
+        // Le nom va DANS la balise ouvrante, avant son `>` : `openTag` le porte.
+        const reAdresse =
+          openTag.slice(0, -1).replace('href="#"', destination.trim()) + labelAttr + '>';
+        out = out.slice(0, openIdx) + reAdresse + out.slice(openEnd);
+        continue;
+      }
+
+      const close = findMatchingClose(out, openEnd, tag);
+      const contenu = out.slice(openEnd, close.start);
+      const nom = nomAccessible(contenu);
+      const nomme = openTag.includes('aria-label=') || nom !== '';
+      if (!nomme && lien.nom === undefined) {
+        throw new Error(
+          `${ou} : le ${gestionnaire === null ? 'lien' : 'bouton'} ${quoi} ne contient aucun ` +
+            'texte : il serait muet au lecteur d’écran. Déclarer « nom ».',
+        );
+      }
+      const labelAttr = nomme || lien.nom === undefined ? '' : ` aria-label="${lien.nom}"`;
+
+      /**
+       * Les valeurs du NAVIGATEUR que la promotion doit remplacer, PRÉFIXÉES au
+       * style de la maquette : voir l'en-tête. Un `<button>` apporte en plus une
+       * bordure et un remplissage, un `<a>` non.
+       */
+      const neutralise =
+        gestionnaire === null
+          ? 'color:inherit;text-decoration:none;cursor:pointer'
+          : 'border:none;background:none;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:inherit';
+      const style = /style="([^"]*)"/.exec(openTag);
+      const styleAttr =
+        style === null ? ` style="${neutralise}"` : ` style="${neutralise};${style[1]}"`;
+      /**
+       * Les autres attributs de la maquette sont gardés MOT POUR MOT : seuls le nom
+       * de balise et le style changent. Un `data-modal-open` déjà posé par
+       * `markTriggers` survit donc à la promotion, au lieu de disparaître en
+       * silence — ce qui serait une fenêtre devenue inatteignable.
+       */
+      const autres = openTag
+        .slice(1 + tag.length, openTag.endsWith('/>') ? -2 : -1)
+        .replace(/\s*style="[^"]*"/, '')
+        .replace(/\s+$/, '');
+
+      const ouvrante =
+        gestionnaire === null
+          ? `<a${destination}${labelAttr}${styleAttr}${autres}>`
+          : `<button type="button"${gestionnaire}${labelAttr}${styleAttr}${autres}>`;
+      const fermante = gestionnaire === null ? '</a>' : '</button>';
+
+      out =
+        out.slice(0, openIdx) + ouvrante + contenu + fermante + out.slice(close.end);
+    }
+
+    applied.push({ ...lien, quoi, count: cibles.length, promus: cibles.map((c) => c.tag) });
+  }
+
+  return { html: out, applied };
+}
+
+/**
+ * ─── `rail` : LES ENTRÉES DE MENU QUE LA MAQUETTE N'A PAS DESSINÉES ───────────
+ *
+ * `markLinks` PROMEUT ce que la maquette dessine : il transforme un `<span>` en
+ * `<a>`, il adresse un `href="#"`, il ne sait RIEN AJOUTER. C'est volontaire, et
+ * son en-tête le dit : « une entrée de menu que la maquette ne dessine pas […] en
+ * dessiner cinq de plus serait décider de la structure du menu à la place du
+ * porteur ».
+ *
+ * LE PORTEUR A TRANCHÉ. Verbatim : « Le rail d'équipe a 9 entrées pour 15 pages
+ * c'est à corriger et pour toutes les autres ». Il veut ces pages joignables.
+ * Cette clé est l'appareil de cet arbitrage — et PAS un deuxième `liens` : elle
+ * n'adresse rien, elle AJOUTE des entrées, puis `markLinks` les promeut avec les
+ * autres, par le chemin déjà éprouvé. Une seule mécanique de lien, toujours.
+ *
+ * ── CE QUE LE RELEVÉ DIT, ET IL A ÉTÉ FAIT TROIS FOIS ───────────────────────
+ *
+ * La surbrillance (`background:#fff` dans le `<nav>`) dit quelle rubrique la
+ * maquette considère comme courante. Relevée indépendamment trois fois, avec le
+ * même résultat :
+ *
+ *   D02 → Tableau de bord   D03 → Membres          D04 → Modération
+ *   D05 → Modération        D06 → Parcours         D07 → Parcours      ← orpheline
+ *   D08 → Référentiels      D09 → Contenu ← orph.  D10 → Services
+ *   D11 → Contenu ← orph.   D12 → Contenu          D13 → Revenus ← orph.
+ *   D14 → Revenus           D15 → Réglages         D16 → Tabl. bord ← orph.
+ *
+ * Cinq pages n'ont AUCUNE entrée : D07, D09, D11, D13, D16. Et pour D16 le défaut
+ * est le plus trompeur du lot — le rapport d'impact s'annonce « Tableau de bord »,
+ * c'est-à-dire sous le nom d'une autre page.
+ *
+ * AUCUN CHEMIN N'EST DESSINÉ VERS ELLES, et c'est mesuré, pas supposé : ZÉRO
+ * balise `<a>` et ZÉRO `cursor:pointer` dans toute la maquette d'administration ;
+ * aucun « Voir… / Ouvrir… / Gérer… / Accéder… » dans D02, D06, D12, D14. Les trois
+ * occurrences lexicales sont des faux amis, ouvertes une par une : « GUIDES » dans
+ * D02 est une LÉGENDE de tuile d'indicateur (10,5 px, `letter-spacing:1px`,
+ * `color:#8A958F`, au-dessus de « Publiés 386 / À vérifier 22 ») ; « Arnaque (1) »
+ * dans D05 est une ventilation de motifs de signalement ; « GUIDE LIÉ » dans D07
+ * est une étiquette de champ. Il n'y a donc RIEN à promouvoir : il faut ajouter.
+ *
+ * ── CE QUI EST RECOPIÉ, ET CE QUI EST DÉDUIT ────────────────────────────────
+ *
+ * RECOPIÉ — tout le dessin. Une entrée ajoutée est le CLONE VERBATIM de son
+ * parent, celui que le designer a lui-même désigné par la surbrillance : même
+ * balise, même `height:42px`, même `padding:0 12px`, même `border-radius:12px`,
+ * même `font-size:13px`, mêmes hexadécimaux. AUCUNE valeur n'est écrite ici — pas
+ * un pixel, pas un `#`. Si la maquette change sa géométrie de rail, les entrées
+ * ajoutées changent avec elle, sans qu'on y revienne.
+ *
+ * RECOPIÉ — le libellé, pris dans le `data-screen-label` de la planche :
+ * « Bibliothèque d'étapes », « Guides », « Alertes arnaques », « Partenaires »,
+ * « Rapport d'impact ». Aucun mot inventé.
+ *
+ * DÉDUIT, et il faut le dire — L'ICÔNE. Aucun tracé de cette maquette ne
+ * représente ces cinq rubriques : hors rail, les cinq planches orphelines ne
+ * dessinent que le logo, une loupe « Rechercher », un `+` (« Nouvelle étape »,
+ * « Nouvelle alerte ») et une flèche de téléchargement — des icônes d'ACTION.
+ * Reprendre le `+` pour « Bibliothèque d'étapes » ferait dire « ajouter » à une
+ * entrée de menu. Le clone reprend donc le tracé DU PARENT, et deux entrées
+ * partagent alors une icône. C'est une DÉDUCTION, pas un relevé : elle est
+ * remontée au porteur plutôt que maquillée.
+ *
+ * ── PAS DE RETRAIT, PAS DE GROUPEMENT : L'ORDRE PORTE LA HIÉRARCHIE ─────────
+ *
+ * Un rail PLAT de quatorze entrées, chaque enfant immédiatement APRÈS son parent.
+ * L'ordre relatif des neuf entrées d'origine est préservé ; on n'insère que cinq.
+ * Un retrait aurait exigé d'INVENTER une valeur — `padding:0 12px` est le seul
+ * remplissage que la maquette donne au rail — et un groupement aurait exigé un
+ * titre de section, donc un texte d'interface que la maquette n'écrit pas.
+ *
+ * ── LES DEUX STYLES SONT LUS DANS LE NAV, PAS ÉCRITS ICI ────────────────────
+ *
+ * Déplacer la surbrillance demande de connaître le style « au repos » et le style
+ * « actif ». Les écrire ici serait recopier six hexadécimaux à la main, donc les
+ * laisser dériver. Ils sont DÉDUITS DE LA STRUCTURE : le `<nav>` d'une planche
+ * porte EXACTEMENT DEUX styles distincts, et celui que porte UNE SEULE entrée est
+ * l'actif. Vérifié sur les quinze planches — un style de repos, un style d'actif,
+ * à l'octet près. Si la maquette cesse d'être ainsi, la génération S'ARRÊTE au
+ * lieu de peindre au hasard.
+ *
+ * ── `aria-current="page"`, ET POURQUOI IL DEVIENT LÉGITIME ──────────────────
+ *
+ * L'en-tête de `10-administration.mjs` refusait de le poser, et avait raison : le
+ * déduire du style aurait été « un SECOND mécanisme, qui lirait du dessin pour en
+ * tirer un état ». Ce n'est plus le cas — la page courante est maintenant
+ * DÉCLARÉE (`actif`), planche par planche, et c'est cette déclaration qui peint.
+ * Poser l'attribut ne lit donc plus le dessin : il écrit la même déclaration dans
+ * l'arbre d'accessibilité. Il survit à la promotion de `markLinks`, qui garde les
+ * attributs de la maquette mot pour mot.
+ *
+ * C'est aussi ce qui rend la preuve TESTABLE sans toucher au style : un test qui
+ * lirait `background:#fff` testerait le dessin ; `[aria-current="page"]` teste
+ * l'état annoncé.
+ *
+ * ── CE QUE CETTE CLÉ NE FAIT PAS ────────────────────────────────────────────
+ *
+ * Elle n'adresse AUCUN lien : les quatorze destinations restent déclarées dans
+ * `liens`, et c'est `markLinks` qui promeut les quatorze `<span>` — les neuf
+ * dessinés et les cinq ajoutés — par le même chemin. Son garde-fou `fois: 1` est
+ * donc AUSSI le contrôle de cette clé : si une injection échouait, ou doublait une
+ * entrée, `markLinks` arrêterait la génération en nommant le libellé.
+ */
+
+/** Le libellé visible d'une entrée de rail : son texte, icône retirée. */
+const libelleEntree = (entree) => nomAccessible(entree.contenu);
+
+/** Le style en ligne d'une entrée, tel que la maquette l'écrit. */
+const styleEntree = (entree) => {
+  const m = /style="([^"]*)"/.exec(entree.ouvrante);
+  return m === null ? null : m[1];
+};
+
+/**
+ * Les entrées de premier rang d'un conteneur, découpées STRUCTURELLEMENT.
+ *
+ * `dans` doit figurer exactement une fois, même exigence et même raison que pour
+ * `markLinks` : sinon on ne sait pas dans quelle région on écrit.
+ */
+function lireEntrees(html, dans, ou) {
+  const fois = html.split(dans).length - 1;
+  if (fois !== 1) {
+    throw new Error(
+      `${ou} : le conteneur de rail « ${dans.slice(0, 80)}… » figure ${fois} fois dans ce ` +
+        'cadre ; il en faut exactement une.',
+    );
+  }
+  const balise = /^<([a-zA-Z][\w-]*)/.exec(dans);
+  if (balise === null) {
+    throw new Error(
+      `${ou} : « dans » doit commencer par une balise ouvrante. Reçu « ${dans.slice(0, 40)} ».`,
+    );
+  }
+  const at = html.indexOf(dans);
+  const debut = at + dans.length;
+  const fin = findMatchingClose(html, debut, balise[1]).start;
+
+  const entrees = [];
+  let i = debut;
+  while (i < fin) {
+    if (html[i] !== '<') {
+      // Du texte nu entre deux entrées : la maquette n'en écrit pas, et s'y mettre
+      // changerait ce découpage. On refuse plutôt que de l'ignorer.
+      const reste = html.slice(i, fin).trim();
+      if (reste === '') break;
+      throw new Error(
+        `${ou} : le rail contient du texte hors entrée — « ${reste.slice(0, 40)} ». ` +
+          'Le découpage des entrées ne vaut plus ; relire la maquette.',
+      );
+    }
+    const tag = /^<([a-zA-Z][\w-]*)/.exec(html.slice(i, i + 20));
+    if (tag === null) {
+      throw new Error(`${ou} : balise illisible dans le rail — « ${html.slice(i, i + 40)} ».`);
+    }
+    const openEnd = findTagEnd(html, i) + 1;
+    const close = findMatchingClose(html, openEnd, tag[1]);
+    entrees.push({
+      openIdx: i,
+      openEnd,
+      closeStart: close.start,
+      closeEnd: close.end,
+      tag: tag[1],
+      ouvrante: html.slice(i, openEnd),
+      contenu: html.slice(openEnd, close.start),
+      fermante: html.slice(close.start, close.end),
+    });
+    i = close.end;
+  }
+  return { debut, fin, entrees };
+}
+
+/**
+ * Ajoute au rail les entrées que la maquette ne dessine pas, et déplace la
+ * surbrillance sur celle de la page courante.
+ *
+ * Rend le compte de ce qui a été fait, pour que l'appelant l'inscrive dans le
+ * journal — un ajout silencieux serait exactement ce qu'on cherche à éviter.
+ */
+export function completerRail(html, rail, section = '', frameName = '') {
+  if (rail === undefined || rail === null) {
+    return { html, ajoutees: [], actif: null, entrees: 0 };
+  }
+  const ou = `${section} ${frameName}`.trim();
+
+  if (rail.dans === undefined || rail.actif === undefined) {
+    throw new Error(
+      `${ou} : « rail » doit déclarer « dans » (le conteneur) ET « actif » (la page courante).`,
+    );
+  }
+
+  /**
+   * LES DEUX STYLES, LUS AVANT TOUTE MODIFICATION. Après injection il y aurait
+   * deux entrées au style actif — celle de la maquette et le clone de son parent —
+   * et « l'actif est celui que porte une seule entrée » ne tiendrait plus.
+   */
+  const avant = lireEntrees(html, rail.dans, ou);
+  const parStyle = new Map();
+  for (const e of avant.entrees) {
+    const s = styleEntree(e);
+    if (s === null) {
+      throw new Error(
+        `${ou} : une entrée de rail n’a pas de style en ligne — « ${e.ouvrante.slice(0, 60)} ».`,
+      );
+    }
+    parStyle.set(s, (parStyle.get(s) ?? 0) + 1);
+  }
+  if (parStyle.size !== 2) {
+    throw new Error(
+      `${ou} : le rail porte ${parStyle.size} style(s) distinct(s) ; il en faut exactement deux — ` +
+        'le repos et la surbrillance. La maquette a changé : relire son <nav> avant de régénérer.',
+    );
+  }
+  const actifTrouve = [...parStyle].find(([, n]) => n === 1);
+  if (actifTrouve === undefined) {
+    throw new Error(
+      `${ou} : aucun des deux styles du rail n’est porté par UNE SEULE entrée ; on ne sait pas ` +
+        'laquelle la maquette met en surbrillance.',
+    );
+  }
+  const styleActif = actifTrouve[0];
+  const styleRepos = [...parStyle].find(([s]) => s !== styleActif)[0];
+
+  // ── 1. L'INJECTION, une entrée à la fois, le rail relu à chaque tour ───────
+  let out = html;
+  const ajoutees = [];
+  for (const ajout of rail.ajoutees ?? []) {
+    if (ajout.apres === undefined || ajout.libelle === undefined) {
+      throw new Error(
+        `${ou} : un ajout de rail doit déclarer « apres » (l’entrée parente) ET « libelle ».`,
+      );
+    }
+    const { entrees } = lireEntrees(out, rail.dans, ou);
+
+    const deja = entrees.filter((e) => libelleEntree(e) === ajout.libelle);
+    if (deja.length !== 0) {
+      throw new Error(
+        `${ou} : le rail dessine DÉJÀ une entrée « ${ajout.libelle} » (${deja.length}). ` +
+          'La maquette a comblé le manque : retirer cet ajout et la déclarer dans « liens ».',
+      );
+    }
+    const parents = entrees.filter((e) => libelleEntree(e) === ajout.apres);
+    if (parents.length !== 1) {
+      throw new Error(
+        `${ou} : l’entrée parente « ${ajout.apres} » de l’ajout « ${ajout.libelle} » figure ` +
+          `${parents.length} fois dans le rail ; il en faut exactement une.`,
+      );
+    }
+    const parent = parents[0];
+
+    /**
+     * LE CLONE : la balise du parent, son icône, et le libellé de la page ajoutée.
+     * Le parent est « icône puis texte » — on l'EXIGE plutôt que de le supposer,
+     * sinon un changement de maquette produirait une entrée au libellé collé à
+     * autre chose, ce qui compile parfaitement.
+     */
+    const coupe = parent.contenu.lastIndexOf('</svg>');
+    if (coupe < 0) {
+      throw new Error(
+        `${ou} : l’entrée parente « ${ajout.apres} » ne dessine aucune icône ; le clone ne ` +
+          'saurait pas où s’arrête le tracé et où commence le libellé.',
+      );
+    }
+    const apresIcone = parent.contenu.slice(coupe + '</svg>'.length);
+    if (apresIcone !== ajout.apres) {
+      throw new Error(
+        `${ou} : l’entrée parente « ${ajout.apres} » n’est pas « icône puis texte » — après son ` +
+          `</svg> vient « ${apresIcone.slice(0, 40)} ». Relire la maquette.`,
+      );
+    }
+
+    const clone =
+      parent.ouvrante.replace(/style="[^"]*"/, `style="${styleRepos}"`) +
+      parent.contenu.slice(0, coupe + '</svg>'.length) +
+      ajout.libelle +
+      parent.fermante;
+
+    out = out.slice(0, parent.closeEnd) + clone + out.slice(parent.closeEnd);
+    ajoutees.push({ libelle: ajout.libelle, apres: ajout.apres, pourquoi: ajout.pourquoi });
+  }
+
+  // ── 2. LA SURBRILLANCE, DÉCLARÉE et non plus seulement peinte ──────────────
+  const apres = lireEntrees(out, rail.dans, ou);
+  const vises = apres.entrees.filter((e) => libelleEntree(e) === rail.actif);
+  if (vises.length !== 1) {
+    throw new Error(
+      `${ou} : la page courante déclarée « ${rail.actif} » désigne ${vises.length} entrée(s) du ` +
+        'rail ; il en faut exactement une. Vérifier le libellé, ou l’ajout qui devait la créer.',
+    );
+  }
+
+  // De la DERNIÈRE à la PREMIÈRE : les décalages des précédentes restent justes.
+  for (const e of [...apres.entrees].sort((a, b) => b.openIdx - a.openIdx)) {
+    const estActive = libelleEntree(e) === rail.actif;
+    const style = estActive ? styleActif : styleRepos;
+    let ouvrante = e.ouvrante.replace(/style="[^"]*"/, `style="${style}"`);
+    // L'état courant est DÉCLARÉ : l'annoncer n'est plus lire le dessin.
+    ouvrante = ouvrante.replace(/\s*aria-current="[^"]*"/, '');
+    if (estActive) ouvrante = `${ouvrante.slice(0, -1)} aria-current="page">`;
+    out = out.slice(0, e.openIdx) + ouvrante + out.slice(e.openEnd);
+  }
+
+  return { html: out, ajoutees, actif: rail.actif, entrees: apres.entrees.length };
 }
 
 /**

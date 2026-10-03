@@ -98,6 +98,13 @@ import type { DiscoverView, MyNetView } from '../a07/data';
 import { topicRowTint, type TopicRowView } from '../a08/data';
 import type { CommentRowView } from '../a09/data';
 import type { InviteeView } from '../a10/data';
+import {
+  APPARTENANCE,
+  GENRE,
+  ROLE,
+  VISIBILITE,
+  type ReseauEnteteView,
+} from '../a08t/data';
 
 // ═══ Ce que la garde impose à l'écran ══════════════════════════════════════
 
@@ -378,9 +385,16 @@ export function inviteeFrom(m: CommunityMember, invited: boolean): InviteeView {
  * Ces trois convertisseurs existent et ne sont branchés sur AUCUN cadre.
  *
  * Les douze planches A08T — Fil, Événements, Membres, Album, À propos et leurs
- * variantes propriétaire — ne consomment AUCUNE donnée : le générateur leur
- * écrit `_props`, parce que la maquette les dessine entièrement en dur. Les
- * brancher demanderait de REDESSINER ces planches, ce qui est interdit.
+ * variantes propriétaire — lisent MAINTENANT une prise, et une seule : `reseau`,
+ * l'en-tête du réseau que les vingt-et-une planches répètent. Ce commentaire
+ * affirmait qu'elles ne consommaient RIEN et que le générateur leur écrivait
+ * `_props` ; c'était vrai avant le branchement, et les cadres destructurent
+ * aujourd'hui `const { reseau }`.
+ *
+ * Ce qui reste vrai, et c'est ce qui compte ici : le CORPS de ces planches — les
+ * publications du fil, les cartes d'événement, la grille de l'album — est dessiné
+ * en dur. Les brancher demanderait de REDESSINER ces planches, ce qui est
+ * interdit.
  *
  * Ils sont donc écrits, éprouvés par les charges relevées, et laissés prêts pour
  * le lot qui transcodera ces planches en cadres à prises. Les supprimer
@@ -449,4 +463,106 @@ export function pollFrom(p: Poll) {
 /** Le nom d'un réseau, en pastille — employé par l'en-tête de A08. */
 export function communityBadge(c: CommunityPublic): { readonly i: string; readonly bg: string } {
   return { i: initials(c.name), bg: tint(c.slug) };
+}
+
+// ═══ A08T · l'en-tête que les vingt-cinq planches d'onglet lisent ══════════
+
+/**
+ * L'en-tête du réseau, pour les vingt-cinq planches d'onglet de A08T.
+ *
+ * ── `memberCount` ET NON `counters.members` ────────────────────────────────
+ *
+ * C'est la seule décision de cette fonction, et c'est la règle la plus grave du
+ * module. `counters` arrive MASQUÉ à qui n'est pas membre ACTIF — relevé sur le
+ * même réseau PUBLIC à la même seconde : `counters.topics` vaut 1 pour un membre
+ * et 0 pour un passant. `memberCount`, lui, est dans `communityPublicSchema` :
+ * il est rendu à tout le monde et il est vrai. Lire `counters.members`
+ * afficherait « 0 membre » sur un réseau de 890 personnes dès qu'on le regarde
+ * de l'extérieur — un zéro masqué présenté comme un compte.
+ *
+ * ── LES DEUX COMPTEURS QUE LE BACK NE TOTALISE PAS ────────────────────────
+ *
+ * `moderateurs` et `demandes` arrivent en argument, et non d'un champ de `c` :
+ * `communityDetailResponseSchema` ne les porte pas, et la route des membres est
+ * un `pageSchema` SANS `meta` — aucun total. L'appelant les compte sur la
+ * première page et ne les passe que si elle est ENTIÈRE (`nextCursor === null`).
+ * Zéro veut donc dire « aucun, ou inconnu », et c'est ce que le dialecte attend :
+ * la pastille disparaît plutôt que d'afficher un nombre faux. REMONTÉ.
+ */
+/**
+ * LA LIGNE DE RÉSUMÉ DE A08, séparateurs compris.
+ *
+ * Elle ne joint que les morceaux PRÉSENTS, et c'est tout l'intérêt d'en faire
+ * une seule prise. A08 est le seul écran du module qu'un passant peut ouvrir :
+ * `myRole` y est nul, donc l'appartenance est inconnue. Avec trois
+ * interpolations — la forme employée sur les planches A08T, où l'on n'arrive
+ * qu'en étant membre — l'écran d'un passant aurait montré
+ * « 99 membres · réseau de pays · » avec un séparateur en l'air.
+ *
+ * Les « · » sont du DESSIN dans le cadre transcodé ; la seule façon de les faire
+ * dépendre de la donnée est de leur faire traverser la donnée. C'est ce que fait
+ * cette fonction, et c'est un défaut vu À L'ÉCRAN, pas déduit du code.
+ */
+function resumeReseau(c: CommunityDetailResponse): string {
+  const role = c.myRole;
+  return [membersLabel(c.memberCount), GENRE[c.kind], role === null ? null : APPARTENANCE[role]]
+    .filter((m): m is string => m !== null && m !== '')
+    .join(' · ');
+}
+
+/**
+ * La même ligne, en vue PROPRIÉTAIRE.
+ *
+ * `moderateurs` à zéro veut dire « aucun, OU inconnu » — la route des membres est
+ * un `pageSchema` SANS `meta`, donc on ne compte que lorsque la première page est
+ * entière. Les deux cas se lisent pareil dans une phrase, et « vous gérez ce
+ * réseau avec 0 modérateurs » est alors une affirmation fausse. On n'écrit donc
+ * la clause que lorsqu'elle est connue, et on s'arrête avant sinon.
+ *
+ * Mesuré à l'écran, pas déduit : `/reseaux/pays-bj?onglet=gerer` l'affichait.
+ */
+function resumeProprietaireReseau(c: CommunityDetailResponse, moderateurs: number): string {
+  const base = `${membersLabel(c.memberCount)} · ${GENRE[c.kind]}`;
+  if (moderateurs <= 0) return base;
+  const mot = moderateurs === 1 ? 'modérateur' : 'modérateurs';
+  return `${base} · vous gérez ce réseau avec ${moderateurs} ${mot}`;
+}
+
+export function enteteReseauFrom(
+  c: CommunityDetailResponse,
+  compteurs: { readonly moderateurs: number; readonly demandes: number } = {
+    moderateurs: 0,
+    demandes: 0,
+  },
+): ReseauEnteteView {
+  const role = c.myRole;
+  return {
+    nom: c.name,
+    initiales: initials(c.name),
+    membres: membersLabel(c.memberCount),
+    membresNombre: c.memberCount.toLocaleString('fr-FR'),
+    genre: GENRE[c.kind],
+    genreCourt: KIND_LABEL[c.kind],
+    /**
+     * L'ANNÉE VIENT DE LA CHAÎNE ISO DU SERVEUR, jamais d'un `new Date()`.
+     *
+     * `createdAt` est `z.string().datetime()` — « 2023-04-12T09:31:00.000Z » — et
+     * ses quatre premiers caractères SONT l'année en UTC. La passer par `Date`
+     * la rendrait dans le fuseau du navigateur, ce qui décale d'un an toute
+     * création faite le 31 décembre en soirée. C'est le même principe que
+     * `active` et `appealable` sur K09 : on affiche ce que le serveur dit.
+     */
+    creeEn: c.createdAt.slice(0, 4),
+    resume: resumeReseau(c),
+    resumeProprietaire: resumeProprietaireReseau(c, compteurs.moderateurs),
+    monAppartenance: role === null ? '' : APPARTENANCE[role],
+    monRole: role === null ? '' : ROLE[role],
+    visibilite: VISIBILITE[c.visibility],
+    /** NULLABLE côté serveur : les réseaux automatiques de ville et de pays n'en ont pas. */
+    description: c.description ?? '',
+    /** Compté sur le texte même : `Array.from` pour ne pas couper un caractère combiné en deux. */
+    descriptionLongueur: Array.from(c.description ?? '').length,
+    moderateurs: compteurs.moderateurs,
+    demandes: compteurs.demandes,
+  };
 }

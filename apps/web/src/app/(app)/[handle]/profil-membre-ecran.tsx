@@ -51,7 +51,13 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
           ouverte={ouverte}
           onOuvrir={onOuvrir}
           onFermer={onFermer}
-          modales={{ K02C: { mobile: <K02Ajout /> } }}
+          /**
+           * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut : son
+           * titre nomme le membre visité (« Ajouter Fatou aux contacts »). Figé,
+           * il disait « Fatou » sur le profil de Kofi — la fenêtre aurait menti
+           * par-dessus un écran qui, lui, disait vrai.
+           */
+          modales={{ K02C: { mobile: <K02Ajout {...donnees} /> } }}
         />
       )}
     </EcranDonnees>

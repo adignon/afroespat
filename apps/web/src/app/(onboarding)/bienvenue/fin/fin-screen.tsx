@@ -8,6 +8,7 @@ import { ScreenFrames } from '@/screens/frames';
 import { FlowError } from '@/screens/onboarding/flow-error';
 import { LevelInvitation } from '@/components/level-invitation';
 import { listJourneys } from '@/screens/parcours/api';
+import { PARCOURS_INCONNU, type ParcoursPret } from '@/screens/onboarding/data';
 
 /**
  * Les deux atterrissages de §5, écran 6.
@@ -51,11 +52,41 @@ export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
 
   const [hasJourney, setHasJourney] = useState(withJourney);
 
+  /**
+   * ── LA MÊME RÉPONSE SERT MAINTENANT DEUX FOIS ─────────────────────────────
+   *
+   * Cet appel ne décidait que la VARIANTE, et jetait le reste. La planche « avec
+   * parcours » écrivait donc « Mes études à Lyon · ÉTAPE 1 SUR 12 · Obtenir votre
+   * admission » — le parcours de l'EXEMPLE de la maquette — au membre qui venait
+   * de créer le sien, sur l'écran intitulé « Votre parcours est prêt ».
+   *
+   * `journeyListItemSchema` portait déjà tout : `title`, `doneCount`, `stepCount`
+   * et `currentStep.title`. Rien de plus n'est demandé au serveur.
+   *
+   * LE PREMIER ÉLÉMENT, et non une recherche : `GET /journeys` rend MES parcours,
+   * et à cet écran-ci il vient d'en être créé un seul. Choisir « le plus récent »
+   * demanderait un tri sur un champ que la liste ne promet pas d'ordonner ; le
+   * membre qui revient sur cette URL avec plusieurs parcours verra le premier que
+   * l'API nomme, ce qui est ce que `hasJourney` suppose déjà depuis toujours.
+   */
+  const [parcours, setParcours] = useState<ParcoursPret>(PARCOURS_INCONNU);
+
   useEffect(() => {
     let alive = true;
     void listJourneys()
       .then(({ items }) => {
-        if (alive) setHasJourney(items.length > 0);
+        if (!alive) return;
+        setHasJourney(items.length > 0);
+        const premier = items[0];
+        if (premier === undefined) return;
+        setParcours({
+          titre: premier.title,
+          /** La liste porte les étapes FRANCHIES ; le rang en cours est la suivante. */
+          rang: premier.doneCount + 1,
+          total: premier.stepCount,
+          /** `null` quand toutes les étapes sont franchies — la planche montre alors un titre vide plutôt qu’une étape inventée. */
+          etape: premier.currentStep?.title ?? '',
+        });
       })
       // Un échec laisse la valeur de départ. Ne pas savoir n'est pas une raison de
       // montrer l'autre planche : ce serait deviner. Mais l'échec n'est plus
@@ -70,7 +101,13 @@ export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
     <>
       <ScreenFrames
         screen="O05"
-        desktop={hasJourney ? <O05AvecParcours {...vals} /> : <O05SansParcours {...vals} />}
+        desktop={
+          hasJourney ? (
+            <O05AvecParcours {...vals} parcours={parcours} />
+          ) : (
+            <O05SansParcours {...vals} parcours={parcours} />
+          )
+        }
       />
       <FlowError message={error} />
       <LevelInvitation details={levelRequired} onClose={dismissLevelRequired} />

@@ -3,12 +3,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommunityDetailResponse, TopicsResponse } from '@app/shared';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
-import { fetchCommunity, fetchTopics, joinCommunity, leaveCommunity } from './api';
-import { communityIsOpen, pinnedRowsFrom, topicRowsFrom, withoutPinned } from './from-api';
+import {
+  fetchCommunity,
+  fetchMembers,
+  fetchPendingMembers,
+  fetchTopics,
+  joinCommunity,
+  leaveCommunity,
+} from './api';
+import {
+  communityIsOpen,
+  enteteReseauFrom,
+  pinnedRowsFrom,
+  topicRowsFrom,
+  withoutPinned,
+} from './from-api';
 import { echecDe, type ReseauEchec } from './echec';
 import { netTabsFor, panelReseaux, rail } from './chrome';
 import type { A08Data, TopicRowView } from '../a08/data';
 import { ownerActions, shortcuts } from '../a08/data';
+import { a08tFallback, type A08TData } from '../a08t/data';
 
 /**
  * L'ÉTAT DE A08 — un réseau et son onglet Sujets.
@@ -54,6 +68,18 @@ export interface ReseauEtat {
   readonly reseau: CommunityDetailResponse | null;
   readonly sujets: TopicsResponse | null;
   readonly data: A08Data;
+  /**
+   * L'EN-TÊTE QUE LES VINGT-CINQ PLANCHES D'ONGLET LISENT.
+   *
+   * Distinct de `data` parce que les planches A08T ne sont pas A08 : elles ne
+   * lisent ni le rail, ni le panneau, ni les sujets — seulement l'en-tête du
+   * réseau. Leur passer `A08Data` les obligerait à déclarer six prises qu'elles
+   * ne touchent pas, ce qui est exactement le piège que `A08TData` évite.
+   *
+   * Tant que l'appel n'est pas revenu, c'est l'en-tête VIDE — jamais un nom de
+   * réseau emprunté à la maquette.
+   */
+  readonly onglet: A08TData;
   /** Le lecteur est membre ACTIF : `INVITED` et `PENDING` ne comptent pas. */
   readonly membre: boolean;
   /**
@@ -149,6 +175,62 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
   const membre = reseau !== null && communityIsOpen(reseau);
 
   /**
+   * LES DEUX COMPTEURS DE LA VUE PROPRIÉTAIRE, et pourquoi ils sont à part.
+   *
+   * La maquette écrit « vous gérez ce réseau avec 2 modérateurs » et pose une
+   * pastille de demandes d'adhésion sur l'onglet « Membres ». Aucun des deux
+   * nombres n'est dans `GET /communities/:slug` : il faut
+   * `GET /communities/:id/members?role=MODERATOR` et `?pending=true`.
+   *
+   * TROIS GARDES, et chacune a une raison mesurée :
+   *
+   *   1. ON N'APPELLE QUE SI ON EST MODÉRATEUR OU PROPRIÉTAIRE. Ce n'est pas
+   *      remplacer la garde du serveur par celle du front — `?pending=true`
+   *      répond `403 MODERATOR_REQUIRED` de toute façon — c'est éviter deux
+   *      appels refusés sur CHAQUE visite de membre ordinaire.
+   *
+   *   2. LE NOMBRE N'EST RETENU QUE SI LA PAGE EST ENTIÈRE. La route est un
+   *      `pageSchema` SANS `meta` : il n'y a aucun total, et `items.length` sur
+   *      une page tronquée serait un compte FAUX affiché comme un compte. Quand
+   *      `nextCursor` n'est pas nul, on garde zéro — la pastille disparaît, ce
+   *      qui est moins grave qu'un chiffre inventé. REMONTÉ : il faudrait un
+   *      `meta.count` sur cette route.
+   *
+   *   3. UN ÉCHEC NE CASSE PAS LA PAGE. Ces deux nombres sont une décoration de
+   *      l'en-tête ; les perdre ne justifie pas de faire disparaître l'onglet.
+   */
+  const [compteurs, setCompteurs] = useState({ moderateurs: 0, demandes: 0 });
+
+  useEffect(() => {
+    const role = reseau?.myRole;
+    if (reseau === null || (role !== 'OWNER' && role !== 'MODERATOR')) {
+      setCompteurs({ moderateurs: 0, demandes: 0 });
+      return;
+    }
+    const ac = new AbortController();
+    let vivant = true;
+    void (async () => {
+      const [mods, attente] = await Promise.allSettled([
+        fetchMembers(slug, { role: 'MODERATOR' }, ac.signal),
+        fetchPendingMembers(slug, undefined, ac.signal),
+      ]);
+      if (!vivant) return;
+      const exact = (r: PromiseSettledResult<{ items: readonly unknown[]; nextCursor: string | null }>) =>
+        r.status === 'fulfilled' && r.value.nextCursor === null ? r.value.items.length : 0;
+      setCompteurs({ moderateurs: exact(mods), demandes: exact(attente) });
+    })();
+    return () => {
+      vivant = false;
+      ac.abort();
+    };
+  }, [slug, reseau]);
+
+  const onglet: A08TData = useMemo(
+    () => (reseau === null ? a08tFallback : { reseau: enteteReseauFrom(reseau, compteurs) }),
+    [reseau, compteurs],
+  );
+
+  /**
    * Les lignes de sujets : les ÉPINGLÉS en tête, puis les autres.
    *
    * `withoutPinned` est indispensable — mesuré, un sujet épinglé figure DANS
@@ -164,6 +246,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
 
   const data: A08Data = useMemo(
     () => ({
+      reseau: onglet.reseau,
       rail,
       shortcuts,
       panelReseaux,
@@ -171,7 +254,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       ownerActions,
       topics,
     }),
-    [topics, ongletActif],
+    [topics, ongletActif, onglet],
   );
 
   const rejoindre = useCallback(async () => {
@@ -203,6 +286,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
     reseau,
     sujets,
     data,
+    onglet,
     membre,
     contenuFerme,
     compteursFiables: membre,

@@ -11,24 +11,36 @@
  * Les états que la maquette calcule dans `this.state` deviennent ici des paramètres.
  * Ceux qu'une page n'anime pas gardent la valeur que la maquette dessine.
  */
+import { FEED_LIMITS } from '@app/shared';
 import {
   arrivals,
   attachSteps,
   attachTopics,
   audienceFor,
+  brouillon,
   budgets,
+  cityPillsFor,
+  cityPlaceFilters,
+  cityPlaces,
+  cityStories,
+  cityStoryFilters,
   cityTabsFor,
+  cityTipFilters,
+  cityTips,
   comments,
   contributors,
   countryBars,
   dirFilters,
   directory,
   discover,
+  draftTypesFor,
   events,
   guideActions,
   guideFilters,
   guideTabs,
   guides,
+  guidesSuggeres,
+  guidesTrouves,
   invitees,
   mdTools,
   missing,
@@ -53,6 +65,7 @@ import {
   storyViewFor,
   topics,
   versions,
+  ville,
   visibility,
   webFrameFor,
   webKindFor,
@@ -147,6 +160,33 @@ export function accueilData(state: AccueilState = {}): AccueilData {
 
     countryBars,
     cityTabs: cityTabsFor(state.cityTab ?? 2),
+    /**
+     * La MÊME bascule, en pastilles : c'est la forme que la planche mobile
+     * dessine. Un seul rang les décide toutes les deux, donc elles ne peuvent pas
+     * se contredire.
+     */
+    cityPills: cityPillsFor(state.cityTab ?? 2),
+    ville,
+    cityTipFilters,
+    cityPlaceFilters,
+    cityStoryFilters,
+    cityTips,
+    cityPlaces,
+    cityStories,
+    /**
+     * Le composeur mobile. La maquette le dessine sur « Discussion » — le QUATRIÈME
+     * type — et le rang vient donc de son dessin, pas d'un défaut choisi ici.
+     */
+    draftTypes: draftTypesFor(3),
+    brouillon,
+    /**
+     * RÈGLE DURE 04 §2.4 — « jusqu'à 4 images ». La borne est lue de `@app/shared`,
+     * jamais recopiée : `createPostSchema` en fait la MÊME borne côté serveur, et
+     * deux copies d'une limite finissent toujours par se contredire.
+     */
+    photosMax: FEED_LIMITS.postMediaMax,
+    guidesSuggeres,
+    guidesTrouves,
     budgets,
     arrivals,
     events,

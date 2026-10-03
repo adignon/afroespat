@@ -371,22 +371,56 @@ export class FakeStorageProvider implements StorageProvider {
   async put(key: string, body: Buffer, mime: string): Promise<void> {
     const path = await import('node:path');
     const fs = await import('node:fs/promises');
-    const os = await import('node:os');
-    const root = process.env.STORAGE_FAKE_DIR ?? path.join(os.tmpdir(), 'afroespat-dev-storage');
-    // La clé contient des « / » : on les respecte pour retrouver l'arborescence,
-    // et `resolve` + vérification de préfixe interdit qu'un « .. » sorte du bac.
-    const target = path.resolve(root, key);
-    if (!target.startsWith(path.resolve(root) + path.sep)) {
-      throw new Error(`Clé de stockage hors du bac à sable : ${key}`);
-    }
+    const target = await this.pathFor(key);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, body);
     this.logger.log(`Dépôt fictif : ${key} (${body.length} octets, ${mime}) → ${target}`);
   }
 
-  delete(key: string): Promise<void> {
-    this.logger.log(`Suppression fictive : ${key}`);
-    return Promise.resolve();
+  /**
+   * SUPPRIME VRAIMENT, pour la même raison que `put` écrit vraiment.
+   *
+   * Elle se contentait de journaliser, et c'était un trou dans la doublure :
+   * `data-export.service.ts` fait de la suppression des octets LA tâche de
+   * `export.purge` — « passer la ligne à EXPIRED en laissant le fichier dans le
+   * stockage garderait indéfiniment une copie complète des données d'un membre »
+   * — et `media.service.ts` retire l'ancien portrait au remplacement. Avec un
+   * `delete` muet, les deux étaient verts sans qu'aucun octet ne disparaisse.
+   * Mesuré sur `PUT /me/avatar` appelé deux fois : la ligne passait bien à
+   * `deleted_at`, et le fichier restait sur le disque.
+   *
+   * Une clé absente n'est PAS une erreur : la suppression doit être idempotente
+   * (un second passage de `export.purge`, une reprise de tâche), et échouer sur
+   * « déjà parti » ferait boucler le balayage sur un travail déjà fait.
+   */
+  async delete(key: string): Promise<void> {
+    const fs = await import('node:fs/promises');
+    const target = await this.pathFor(key);
+    try {
+      await fs.unlink(target);
+      this.logger.log(`Suppression fictive : ${key} → ${target}`);
+    } catch (error) {
+      if ((error as { code?: string }).code === 'ENOENT') {
+        this.logger.log(`Suppression fictive : ${key} — déjà absent`);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * La clé contient des « / » : on les respecte pour retrouver l'arborescence,
+   * et `resolve` + vérification de préfixe interdit qu'un « .. » sorte du bac.
+   */
+  private async pathFor(key: string): Promise<string> {
+    const path = await import('node:path');
+    const os = await import('node:os');
+    const root = process.env.STORAGE_FAKE_DIR ?? path.join(os.tmpdir(), 'afroespat-dev-storage');
+    const target = path.resolve(root, key);
+    if (!target.startsWith(path.resolve(root) + path.sep)) {
+      throw new Error(`Clé de stockage hors du bac à sable : ${key}`);
+    }
+    return target;
   }
 }
 

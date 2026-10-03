@@ -41,6 +41,7 @@ import {
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor, encodeCursor } from '../../common/cursor';
+import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { assertRedacted, redactForModeration } from '../../common/redact';
@@ -2362,17 +2363,32 @@ export class FeedService {
     if (mediaIds.length === 0) return [];
     const unique = [...new Set(mediaIds)];
 
+    /**
+     * [RÈGLE DURE] LE GENRE EST FILTRÉ, et son absence ici était une fuite.
+     *
+     * `ownedAttachableWhere` apporte les trois contrôles de la ligne :
+     * propriétaire, non supprimé, et **genre recevable** — ce dernier manquait.
+     * Sans lui, un membre pouvait passer l'identifiant de son propre justificatif
+     * professionnel (`kind = 'PROOF'`) comme image de publication ou comme fond de
+     * story, et le publier : 00 §8.1 range ce document en « accès équipe
+     * uniquement, jamais affiché », et c'était contourné par son propriétaire même.
+     *
+     * Le genre vit dans le `where` et non dans la boucle : un refus explicite
+     * apprendrait qu'un média de genre protégé existe sous cet identifiant. Un
+     * genre non recevable sort donc du lot et tombe dans le `length !==`
+     * ci-dessous, c'est-à-dire sur le MÊME 404 qu'un identifiant inconnu.
+     */
     const assets = await this.prisma.mediaAsset.findMany({
-      where: { id: { in: unique }, ownerUserId: userId, deletedAt: null },
+      where: { id: { in: unique }, ...ownedAttachableWhere('feed', userId) },
       select: { id: true, status: true, exifStripped: true },
     });
     if (assets.length !== unique.length) throw ApiError.notFound();
 
     for (const asset of assets) {
-      if (asset.status !== 'READY' || !asset.exifStripped) {
+      if (asset.status !== REQUIRED_MEDIA_STATUS || !asset.exifStripped) {
         this.fail('INVALID_ATTACHMENT', {
           mediaAssetId: asset.id,
-          reason: asset.status !== 'READY' ? 'MEDIA_NOT_READY' : 'EXIF_NOT_STRIPPED',
+          reason: asset.status !== REQUIRED_MEDIA_STATUS ? 'MEDIA_NOT_READY' : 'EXIF_NOT_STRIPPED',
         });
       }
     }

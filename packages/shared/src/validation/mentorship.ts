@@ -51,6 +51,19 @@ export const MENTOR_SETTLED_MONTHS = 12;
 export const MENTORSHIP_REVIEW_WINDOW_DAYS = 14;
 export const MENTORSHIP_REVIEW_WINDOW_MS = MENTORSHIP_REVIEW_WINDOW_DAYS * 86_400_000;
 
+/**
+ * §2.4 : « LES DEUX évaluations déposées » — un parrainage a exactement deux
+ * parties, donc deux évaluations au plus (`mentorship_reviews` porte
+ * `@@unique(mentorship_id, reviewer_user_id)`).
+ *
+ * Nombre NOMMÉ parce qu'un `>= 2` nu s'est déjà trompé de population : il
+ * comptait les évaluations dont un membre est le SUJET — au plus une par
+ * parrainage — au lieu de celles DU PARRAINAGE, et la condition ne pouvait donc
+ * jamais être vraie. Le nom dit sur quoi on compte, et le front s'en sert pour
+ * afficher « en attente de l'évaluation de l'autre » plutôt qu'une liste vide.
+ */
+export const MENTORSHIP_REVIEWS_BOTH_IN = 2;
+
 /** §2.2 : message de demande 50 à 1 000 caractères. */
 export const MENTORSHIP_MESSAGE_MIN = 50;
 export const MENTORSHIP_MESSAGE_MAX = 1000;

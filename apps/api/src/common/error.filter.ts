@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { transverseError } from '@app/shared';
+import { MEDIA_ERROR_MESSAGES, apiError, transverseError } from '@app/shared';
 
 /**
  * Filtre d'erreurs : garantit que TOUTE réponse d'erreur a la forme
@@ -46,6 +46,25 @@ export class ApiErrorFilter implements ExceptionFilter {
       // appelant une route inexistante, pas en relisant le filtre.
       if (isApiErrorBody(body)) {
         res.status(status).json(body);
+        return;
+      }
+
+      /**
+       * 413 — LE PLAFOND DUR DU MULTIPART, et il mérite son propre code.
+       *
+       * Multer arrête la lecture du corps au-delà de `limits.fileSize` et Nest en
+       * fait une `PayloadTooLargeException`. Sans cette branche, la réponse
+       * sortait en `INTERNAL_ERROR` à 413 — « une erreur est survenue de notre
+       * côté » pour un fichier trop lourd, c'est-à-dire la seule phrase qui
+       * n'aide pas le membre et qui envoie chercher la panne au mauvais endroit.
+       *
+       * Le code est celui du module média, `MEDIA_TOO_LARGE`, exactement comme
+       * celui que le service lève pour le même fait : le front choisit son
+       * affichage sur le `code` (§5.2), et deux codes pour un seul fait lui en
+       * feraient apprendre deux.
+       */
+      if (status === 413) {
+        res.status(413).json(apiError('MEDIA_TOO_LARGE', MEDIA_ERROR_MESSAGES.MEDIA_TOO_LARGE));
         return;
       }
 

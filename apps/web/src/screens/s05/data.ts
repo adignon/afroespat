@@ -34,5 +34,15 @@ export interface S05Data {
     readonly description: string;
     /** `externalUrl` — le lien que l'interstitiel « Vous quittez la plateforme » annonce. */
     readonly lien: string;
+    /**
+     * L'HÔTE de `externalUrl` — « arvel.fr » — que l'interstitiel nomme.
+     *
+     * Dérivé de `lien` par `new URL(...).hostname`, et JAMAIS écrit à part : deux
+     * champs indépendants finiraient par désigner deux sites différents, et une
+     * fenêtre qui annonce « vous allez sur arvel.fr » en envoyant ailleurs est
+     * pire que pas de fenêtre du tout. Une URL qui ne s'analyse pas rend un tiret
+     * cadratin plutôt qu'un domaine inventé.
+     */
+    readonly domaine: string;
   };
 }

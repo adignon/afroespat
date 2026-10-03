@@ -89,10 +89,30 @@
  * remonté : il manque le nom du réseau dans la projection de l'événement.
  */
 
+import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+
 const FILE = 'docs/template/07 Agenda.dc.html';
 
-const screen = ({ section, out, frames, dataType, ...rest }) => ({
+/**
+ * ─── LE SQUELETTE MEMBRE : LE RAIL, SUR LES QUATRE CADRES D'ORDINATEUR ──────
+ *
+ * Les cinq entrées du rail — Accueil, Parcours, Entraide, Services, Agenda —
+ * sont dessinées en `<span>` par cette maquette : ce ne sont PAS des liens, et
+ * cliquer « Accueil » depuis l'agenda ne faisait rien. Le rail et sa table de
+ * destinations sont déclarés une fois dans `tools/squelette-membre.mjs`, pour les
+ * sept modules membre.
+ *
+ * `cadresDuRail` prend les cadres dont le NOM porte « Desktop », parce que le
+ * rail n'est que là — mesuré : les quatre planches d'ordinateur de ce module le
+ * dessinent, aucune planche mobile ne le fait. Et si la liste tombait fausse, la
+ * génération S'ARRÊTERAIT en nommant l'écran : le `dans` de `markLinks` exige son
+ * conteneur EXACTEMENT UNE FOIS, donc un cadre sans rail le compte à zéro et
+ * refuse. Le défaut ne peut pas être silencieusement faux.
+ */
+
+const screen = ({ section, out, frames, dataType, squelette = true, ...rest }) => ({
   file: FILE,
+  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule: '../agenda/data',

@@ -60,10 +60,39 @@
  * (zéro `background:rgba(…)` en `inset:0` dans tout le fichier).
  */
 
+import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+
 const FILE = 'docs/template/08 Compte.dc.html';
 
-const screen = ({ section, out, frames, dataType = 'CompteData', ...rest }) => ({
+const screen = ({ section, out, frames, dataType = 'CompteData', modal = false,
+  squelette = !modal, ...rest }) => ({
   file: FILE,
+  /**
+   * ─── LE SQUELETTE MEMBRE : LE RAIL ──────────────────────────────────────────
+   *
+   * La maquette dessine les cinq entrées — Accueil, Parcours, Entraide,
+   * Services, Agenda — en `<span>`. Ce ne sont pas des liens cassés : CE NE SONT
+   * PAS DES LIENS, et c'est la phrase du porteur (« Aucun sous lien aussi ne
+   * fonctionne »). Les cinq destinations sont déclarées UNE fois pour les sept
+   * modules membre dans `tools/squelette-membre.mjs`.
+   *
+   * `cadresDuRail` retient les cadres dont le nom porte « Desktop » ; les écrans
+   * d'ordinateur qui ne dessinent PAS de rail posent `squelette: false`, et un
+   * oubli ne passerait pas en silence — le `dans` de `markLinks` exige son
+   * conteneur une fois, donc un cadre sans rail ARRÊTE la génération.
+   *
+   *
+   * LE DÉFAUT SUIT `modal`, et ce n'est pas un raccourci : une planche de FENÊTRE
+   * ne dessine pas le squelette de l'application — elle se pose PAR-DESSUS. Les
+   * cadres de modale d'ordinateur sont donc hors rail par construction, et c'est
+   * mesuré sur chacun. Un écran plein cadre qui n'en dessine pas non plus doit
+   * poser `squelette: false` à la main, en disant pourquoi.
+   *
+   * LA SURBRILLANCE N'EST PAS TOUCHÉE : dans ces navs littéraux, la maquette
+   * peint déjà l'entrée qui désigne la page, planche par planche.
+   */
+  ...(modal ? { modal } : {}),
+  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule: '../compte/data',
@@ -164,8 +193,27 @@ const bandeau = ({ nom = 1, initiales = 2 } = {}) => [
 // s'arrête. C'est ce qui rend ces longues chaînes sûres plutôt que fragiles : rien
 // ici ne peut dériver sans être dit.
 
-/** K04 — une ligne de téléphone. Les deux planches de la maquette sont identiques. */
-const CARTE_TELEPHONE = (masque, role) =>
+/**
+ * K04 — le bouton « Retirer » d'une ligne de téléphone, et la mention qui le
+ * REMPLACE sur la première ligne du cadre mobile.
+ *
+ * L'écart est celui que l'en-tête de K04 signale déjà : le cadre mobile écrit
+ * « Dernier numéro, non retirable » là où le cadre d'ordinateur laisse un bouton
+ * sur les deux lignes. Ce sont donc les DEUX variantes que la maquette dessine, et
+ * le cadre mobile les porte toutes les deux sous `<sc-if>` — en lier une seule
+ * mentirait sur l'autre ligne, exactement comme pour les sessions.
+ */
+const BOUTON_RETIRER =
+  '<button style="height:44px;padding:0 18px;border-radius:14px;background:#F2F5F4;color:#16211D;border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:36px">Retirer</button>';
+
+const MENTION_DERNIER =
+  '<span style="font-size:12px;color:#8A958F">Dernier numéro, non retirable</span>';
+
+/**
+ * K04 — une ligne de téléphone. `fin` est le bouton « Retirer » (le défaut, et ce
+ * que les DEUX lignes d'ordinateur dessinent) ou la mention du cadre mobile.
+ */
+const CARTE_TELEPHONE = (masque, role, fin = BOUTON_RETIRER) =>
   '<div style="display:flex;align-items:center;gap:12px;padding:14px 0;border-bottom:1px solid #F0F3F2">' +
   '<span style="width:38px;height:38px;border-radius:12px;background:#E3F0EB;display:flex;align-items:center;justify-content:center">' +
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
@@ -174,7 +222,9 @@ const CARTE_TELEPHONE = (masque, role) =>
   masque +
   '</div><div style="font-size:12px;color:#8A958F">' +
   role +
-  '</div></div><button style="height:44px;padding:0 18px;border-radius:14px;background:#F2F5F4;color:#16211D;border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:36px">Retirer</button></div>';
+  '</div></div>' +
+  fin +
+  '</div>';
 
 /** K04 — une ligne de session. `fin` est la pastille « Actuelle » ou le bouton. */
 const CARTE_SESSION = (appareil, vu, fin) =>
@@ -192,6 +242,45 @@ const CARTE_SESSION = (appareil, vu, fin) =>
 
 const PASTILLE_ACTUELLE =
   '<span style="background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Actuelle</span>';
+
+/**
+ * K03 — la pastille d'état d'un niveau, et le libellé qui la précède.
+ *
+ * Le libellé entre dans l'ancre et n'en sort jamais : « Acquis » est écrit DEUX
+ * FOIS sur la planche d'ordinateur (N0 et N1) et le rond de « À faire » est
+ * dessiné à l'identique dans d'autres cartes. Sans le libellé, `fois` ne pourrait
+ * pas distinguer le niveau dont on parle — et c'est précisément le défaut que
+ * `fois` existe pour empêcher.
+ *
+ * LES DEUX COULEURS SONT DES DONNÉES, pas seulement le mot : lier le seul libellé
+ * laisserait « Acquis » sur le fond orange d'un niveau à faire, ce qui serait pire
+ * que la maquette figée. Les deux paires viennent de la maquette — `#E3F0EB` sur
+ * `#0F5C48` pour un acquis, `#FBE3D4` sur `#B4581F` pour un reste-à-faire — et
+ * aucune n'est retouchée : le troisième contrôle du générateur arrêterait la
+ * génération si elle l'était.
+ */
+const PASTILLE_NIVEAU = (libelle, fond, texte, etat) =>
+  '>' +
+  libelle +
+  '</div></div><span style="background:' +
+  fond +
+  ';color:' +
+  texte +
+  ';font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">' +
+  etat +
+  '</span>';
+
+/** Le niveau `n`, dans le dialecte : les trois champs de `PastilleNiveau`. */
+const PASTILLE_NIVEAU_LIEE = (libelle, n) =>
+  PASTILLE_NIVEAU(
+    libelle,
+    `{{ niveaux.${n}.fond }}`,
+    `{{ niveaux.${n}.texte }}`,
+    `{{ niveaux.${n}.etat }}`,
+  );
+
+const ACQUIS = ['#E3F0EB', '#0F5C48', 'Acquis'];
+const A_FAIRE = ['#FBE3D4', '#B4581F', 'À faire'];
 
 const BOUTON_REVOQUER =
   '<button style="height:44px;padding:0 18px;border-radius:14px;background:#F2F5F4;color:#16211D;border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:36px">Révoquer</button>';
@@ -422,13 +511,35 @@ export const screens = [
    *
    * T5 K02 : « Ajouter aux contacts (avec motif) ». Le motif est le choix
    * Entraide · Parrainage · Rencontre · Réseau que la planche dessine.
+   *
+   * SON TITRE EST UNE DONNÉE, et c'est la SEULE de cette planche : « Ajouter
+   * Fatou aux contacts » nomme le membre qu'on visite. Figé, il disait « Fatou »
+   * sur le profil de Kofi — la fenêtre d'un écran déjà lié aurait menti pendant
+   * que l'écran derrière elle disait vrai.
+   *
+   * C'est le second cas de `retitrerSurDonnees` (le premier est le `<h1>` de K02) :
+   * la liaison fait disparaître le texte que la promotion cherche, et le générateur
+   * reprend le titre sur sa forme LIÉE. Le `<h2 id="k02-titre">` reste donc en
+   * place, et `aria-labelledby` continue de le désigner.
+   *
+   * LES QUATRE MOTIFS RESTENT DESSINÉS : la planche les montre tous les quatre
+   * côte à côte, comme un choix à faire, pas comme un état du membre. Les piloter
+   * demanderait de décider lequel est sélectionné, donc de redessiner la ligne.
    */
   screen({
     section: 'K02',
     out: 'k02contact',
     modal: true,
+    dataType: 'K02Data',
     modalTitle: 'Ajouter Fatou aux contacts',
     frames: [f(420, 'Ajout')],
+    donnees: [
+      {
+        noeud: '>Ajouter Fatou aux contacts<',
+        devient: '>Ajouter {{ membre.prenom }} aux contacts<',
+        why: 'Le prénom du membre visité, premier mot de son nom affiché (`GET /users/{pseudo}`) — et le titre de la fenêtre.',
+      },
+    ],
   }),
 
   /**
@@ -458,26 +569,47 @@ export const screens = [
     donnees: [
       ...bandeau(),
       {
-        noeud:
-          '>Compte créé</div></div><span style="background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Acquis</span>',
-        devient:
-          '>Compte créé</div></div><span style="background:{{ niveaux.n0.fond }};color:{{ niveaux.n0.texte }};font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">{{ niveaux.n0.etat }}</span>',
+        noeud: PASTILLE_NIVEAU('Compte créé', ...ACQUIS),
+        devient: PASTILLE_NIVEAU_LIEE('Compte créé', 'n0'),
         frames: ['Desktop'],
         why: 'La pastille du niveau N0 : acquise dès la création du compte.',
       },
       {
-        noeud:
-          '>Identité vérifiée</div></div><span style="background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Acquis</span>',
-        devient:
-          '>Identité vérifiée</div></div><span style="background:{{ niveaux.n1.fond }};color:{{ niveaux.n1.texte }};font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">{{ niveaux.n1.etat }}</span>',
+        noeud: PASTILLE_NIVEAU('Identité vérifiée', ...ACQUIS),
+        devient: PASTILLE_NIVEAU_LIEE('Identité vérifiée', 'n1'),
         frames: ['Desktop'],
         why: 'La pastille du niveau N1, selon `verificationLevel` de `GET /me`.',
       },
+      /**
+       * LE N2 D'ORDINATEUR PORTE MAINTENANT SES DEUX COULEURS, et c'est un défaut
+       * corrigé, pas un embellissement : seul le mot « À faire » était lié, donc
+       * un membre AYANT acquis le N2 voyait « Acquis » écrit sur le fond orange du
+       * reste-à-faire. Le commentaire de cet écran décrit exactement ce défaut
+       * trois lignes plus haut — il manquait de s'appliquer à son dernier niveau.
+       */
       {
-        noeud: '>À faire<',
-        devient: '>{{ niveaux.n2.etat }}<',
+        noeud: PASTILLE_NIVEAU('Présence en France vérifiée', ...A_FAIRE),
+        devient: PASTILLE_NIVEAU_LIEE('Présence en France vérifiée', 'n2'),
         frames: ['Desktop'],
         why: 'La pastille du niveau N2 — présence en France vérifiée (01 §3).',
+      },
+      /**
+       * LE CADRE MOBILE NE DESSINE QUE DEUX CARTES — N1 et N2, pas N0 : la planche
+       * de 390 px laisse tomber « Compte créé », que l'ordinateur montre. On lie
+       * donc ce qu'elle dessine, et le libellé du N2 n'y est pas le même
+       * (« Présence en France », sans « vérifiée ») : deux ancres, pas une.
+       */
+      {
+        noeud: PASTILLE_NIVEAU('Identité vérifiée', ...ACQUIS),
+        devient: PASTILLE_NIVEAU_LIEE('Identité vérifiée', 'n1'),
+        frames: ['Mobile'],
+        why: 'La pastille du niveau N1, sur le cadre mobile.',
+      },
+      {
+        noeud: PASTILLE_NIVEAU('Présence en France', ...A_FAIRE),
+        devient: PASTILLE_NIVEAU_LIEE('Présence en France', 'n2'),
+        frames: ['Mobile'],
+        why: 'La pastille du niveau N2, sur le cadre mobile.',
       },
     ],
   }),
@@ -545,6 +677,59 @@ export const screens = [
           '</sc-for>',
         frames: ['Desktop'],
         why: 'Les sessions actives, de `GET /auth/sessions` : la pastille « Actuelle » et le bouton « Révoquer » sont les DEUX variantes que la maquette dessine, chacune sous sa condition.',
+      },
+      /**
+       * ── LE CADRE MOBILE, et il ne dit pas la même chose ────────────────────
+       *
+       * Trois écarts, tous dessinés par la maquette et aucun inventé ici :
+       *
+       *   · les masques sont PLUS COURTS (« +229 •• 42 » contre
+       *     « +229 •• •• •• 42 ») : la place manque à 390 px. Ce sont donc deux
+       *     ancres distinctes, pas la même écrite deux fois ;
+       *   · la PREMIÈRE ligne porte « Dernier numéro, non retirable » au lieu du
+       *     bouton — les deux variantes sont donc dessinées sous `<sc-if>`, comme
+       *     la pastille « Actuelle » des sessions. Une seule variante gardée
+       *     mentirait sur l'autre ligne ;
+       *   · le cadre mobile ne dessine que DEUX sessions, et la courante y est
+       *     l'iPhone, non le MacBook. L'ordre vient du serveur dans les deux cas.
+       */
+      {
+        noeud:
+          CARTE_TELEPHONE('+229 •• 42', 'Bénin · principal', MENTION_DERNIER) +
+          CARTE_TELEPHONE('+33 •• 18', 'France · destination'),
+        devient:
+          '<sc-for list="{{ telephones }}" as="t">' +
+          CARTE_TELEPHONE(
+            '{{ t.masque }}',
+            '{{ t.role }}',
+            '<sc-if value="{{ t.dernier }}">' +
+              MENTION_DERNIER +
+              '</sc-if><sc-if value="{{ t.retirable }}">' +
+              BOUTON_RETIRER +
+              '</sc-if>',
+          ) +
+          '</sc-for>',
+        frames: ['Mobile'],
+        why: 'Les numéros du membre sur le cadre mobile, MASQUÉS par le serveur — et « Dernier numéro, non retirable » est la variante que la maquette dessine pour le seul numéro restant (01 §2.1).',
+      },
+      {
+        noeud:
+          CARTE_SESSION('iPhone · cet appareil', 'Lyon · maintenant', PASTILLE_ACTUELLE) +
+          CARTE_SESSION('MacBook', 'Lyon · 2 h', BOUTON_REVOQUER),
+        devient:
+          '<sc-for list="{{ sessions }}" as="s">' +
+          CARTE_SESSION(
+            '{{ s.appareil }}',
+            '{{ s.vu }}',
+            '<sc-if value="{{ s.courante }}">' +
+              PASTILLE_ACTUELLE +
+              '</sc-if><sc-if value="{{ s.revocable }}">' +
+              BOUTON_REVOQUER +
+              '</sc-if>',
+          ) +
+          '</sc-for>',
+        frames: ['Mobile'],
+        why: 'Les sessions actives sur le cadre mobile, de `GET /auth/sessions` — mêmes deux variantes, sous les mêmes conditions.',
       },
     ],
   }),
@@ -696,13 +881,49 @@ export const screens = [
    * 14 §4.1, RÈGLE DURE : « aucune donnée de carte ne transite par le serveur ».
    * Ces trois planches ne dessinent aucun champ de carte — seulement un numéro
    * Mobile Money et le choix de l'opérateur. Vérifié, pas supposé.
+   *
+   * ─── CE QUE CES TROIS VOLETS ONT À LIRE, ET CE QU'ILS N'ONT PAS ────────────
+   *
+   * UN SEUL des trois lit une donnée, et il faut le dire plutôt que d'en inventer
+   * deux :
+   *
+   *   · « Numéro » porte LE MONTANT — « Payer 2 600 F ». C'est le prix de Premium
+   *     en francs, celui que `GET /plans` calcule (`month.xof`), et c'est le
+   *     montant sur lequel le membre S'ENGAGE. Le figer dans le front est la faute
+   *     que l'en-tête d'`abonnement-ecran.tsx` décrit déjà : la table `plans` est
+   *     modifiable depuis l'administration, et un prix figé afficherait 2 600 F le
+   *     jour où le porteur passe à 3 000. C'est le seul littéral de la planche qui
+   *     soit une donnée du serveur ;
+   *   · « Attente » écrit « Composez *880# et confirmez. Temps restant : 4:12 ».
+   *     Le code USSD est celui de l'OPÉRATEUR et aucune route du dépôt ne le rend
+   *     (`grep` sur `*880`, `ussd`, `shortCode` : rien hors de cette maquette) ; le
+   *     compte à rebours est une horloge, pas une donnée — 14 §4.2 fixe le délai à
+   *     cinq minutes, et personne ne l'ENVOIE. Ce volet n'a rien à lire ;
+   *   · « Succès » écrit « Premium activé » et « Merci ! Votre reçu est dans
+   *     Factures. » — une confirmation, vraie pour tout le monde. Rien à lire.
+   *
+   * LE NUMÉRO DE LA PLANCHE RESTE CE QU'IL EST, et c'est une non-décision assumée :
+   * « +229 97 12 34 42 » est l'EXEMPLE du champ de saisie. Le lier demanderait
+   * d'afficher le numéro Mobile Money du membre en clair, ce que 01 §2.1 interdit
+   * et qu'aucune route ne rend de toute façon (`phones[].masked` est le seul champ
+   * de numéro du contrat). Écart signalé : le transcodeur ne fait pas de ce champ
+   * un `<input>`, donc l'exemple reste du TEXTE dans le document servi.
    */
   screen({
     section: 'K06',
     out: 'k06momo',
     modal: true,
+    dataType: 'K06Data',
     modalTitle: 'Payer avec Mobile Money',
     frames: [f(380, 'Numero', 0), f(380, 'Attente', 1), f(380, 'Succes', 2)],
+    donnees: [
+      {
+        noeud: '>Payer 2 600 F<',
+        devient: '>Payer {{ premium.montantXof }}<',
+        frames: ['Numero'],
+        why: 'Le montant du paiement Mobile Money, en francs, calculé par le serveur (`GET /plans`, `month.xof`) — jamais figé dans le front, sur l’écran où le membre s’engage.',
+      },
+    ],
   }),
 
   /**
@@ -745,6 +966,23 @@ export const screens = [
         devient: '>{{ prefs.resume }}<',
         frames: ['Desktop'],
         why: 'L’état du résumé hebdomadaire (`weeklyDigest`).',
+      },
+      /**
+       * LE CADRE MOBILE N'ÉCRIT QUE LES HEURES CALMES, et la maquette les écrit
+       * autrement : « 22 h – 7 h », un tiret demi-cadratin, là où l'ordinateur
+       * écrit la phrase « Aucune notification push de 22 h à 7 h ». Deux ancres,
+       * les mêmes deux bornes.
+       *
+       * NI L'EMAIL NI LE RÉSUMÉ ne sont dessinés sur cette planche : elle s'arrête
+       * à la grille d'interrupteurs et aux heures calmes. On ne lie donc que ce
+       * qu'elle montre — et ses interrupteurs restent dessinés pour la raison
+       * écrite plus haut, qui vaut aux deux largeurs.
+       */
+      {
+        noeud: '>22 h – 7 h<',
+        devient: '>{{ prefs.calmeDebut }} – {{ prefs.calmeFin }}<',
+        frames: ['Mobile'],
+        why: 'Les heures calmes du membre sur le cadre mobile (12 §2) — mêmes bornes réelles.',
       },
     ],
   }),

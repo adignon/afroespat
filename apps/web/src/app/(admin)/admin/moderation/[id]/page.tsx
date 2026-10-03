@@ -1,3 +1,10 @@
+'use client';
+
+import { useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import { chargerD05 } from '@/screens/administration/appels';
+import { EcranDonneesEquipe } from '@/screens/administration/ecran-donnees';
+import { SQUELETTE_D05 } from '@/screens/administration/data';
 import { ScreenFrames } from '@/screens/frames';
 import { D05Desktop } from '@/screens/d05/desktop.generated';
 
@@ -21,12 +28,45 @@ import { D05Desktop } from '@/screens/d05/desktop.generated';
  * LA CONVERSATION JOINTE est l'unique exception à la règle dure de 15 §3.1 (« ni
  * ne permet de lire une conversation privée hors d'un dossier de modération qui la
  * joint »). La maquette la dessine ici, et nulle part ailleurs — « Conversation
- * jointe (4 messages) ». C'est cohérent avec 13 §3 : « le signalement d'un message
- * privé joint la conversation au dossier ».
+ * jointe (4 messages) ». C'est cohérent avec 13 §3.
  *
- * Le paramètre d'URL n'est pas lu : la maquette dessine UN dossier, « #4812 », et
- * c'est lui le titre de la page. Rien n'est chargé, donc rien ne dépend de l'`id`.
+ * ─── L'`id` DE L'URL EST DÉSORMAIS LU ────────────────────────────────────────
+ *
+ * Ce fichier disait « Le paramètre d'URL n'est pas lu : la maquette dessine UN
+ * dossier, "#4812" ». Il l'est maintenant, pour le SOUS-TITRE, qui est la seule
+ * ligne de cette planche dont `GET /admin/moderation/cases/:id` serve les trois
+ * valeurs — `subjectType`, `priority`, `sla`.
+ *
+ * `useCallback` n'est pas du confort : `useDonneesEquipe` garde `charger` dans ses
+ * dépendances, et une fonction anonyme écrite ici rechargerait sans fin. Mémoïsée
+ * sur `id`, elle est stable tant que l'URL ne change pas — et elle change bien
+ * quand on passe d'un dossier à l'autre, ce qui est précisément le comportement
+ * voulu.
+ *
+ * ─── CE QUI RESTE DESSINÉ, ET LE MANQUE QUI COMPTE ───────────────────────────
+ *
+ * Le titre « Dossier #4812 » n'est pas lié : la route ne rend qu'un `id` UUID, et
+ * il manque une référence courte de dossier au back.
+ *
+ * Surtout : AUCUNE ROUTE D'ÉQUIPE NE JOINT LE CONTENU VISÉ. La route rend
+ * `subjectId` et `subjectType`, jamais le texte. L'écran qui sert à décider d'une
+ * sanction ne peut donc pas montrer ce qu'il sanctionne — le modérateur lit
+ * « Publication · priorité 1 · SLA dépassé » et devrait trancher à l'aveugle. Le
+ * contenu, l'auteur, les signalements et le verdict IA restent ceux de la maquette,
+ * et le détail est dans `screens/administration/data.ts`.
+ *
+ * Aucun bouton n'écrit : 15 §2.3 veut que toute écriture passe par
+ * `AuditService.record()`, et une sanction appliquée sans trace serait exactement
+ * ce que cette règle interdit.
  */
 export default function Page() {
-  return <ScreenFrames screen="D05" desktop={<D05Desktop />} />;
+  const params = useParams<{ id: string }>();
+  const id = params.id;
+  const charger = useCallback(() => chargerD05(id), [id]);
+
+  return (
+    <EcranDonneesEquipe charger={charger} squelette={SQUELETTE_D05}>
+      {(donnees) => <ScreenFrames screen="D05" desktop={<D05Desktop {...donnees} />} />}
+    </EcranDonneesEquipe>
+  );
 }

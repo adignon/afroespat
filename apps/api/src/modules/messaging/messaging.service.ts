@@ -22,6 +22,7 @@ import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
 import { CryptoService } from '../../common/crypto.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
+import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
@@ -844,16 +845,40 @@ export class MessagingService {
     return { conversation, member };
   }
 
+  /**
+   * La pièce jointe d'un message : propriétaire, genre, ET STATUT.
+   *
+   * [RÈGLE DURE] LE STATUT MANQUAIT, et c'est la correction de ce lot.
+   *
+   * Le propriétaire et le genre étaient bien vérifiés ; `status` ne l'était pas,
+   * et il n'était même pas SÉLECTIONNÉ. Une pièce jointe refusée par l'antivirus
+   * (`status = 'REJECTED'`) était donc rattachable à un message — et sa clé de
+   * stockage est RÉSERVÉE SANS OCTETS DESSOUS : le destinataire aurait reçu un
+   * message portant une image que rien ne peut servir. Un média encore en analyse
+   * (`PENDING`/`SCANNING`) passait tout autant.
+   *
+   * Les deux refus ne sont pas du même ordre, et c'est l'arbitrage du fil
+   * (`feed.resolveMedia`) qu'on reprend ici pour que les deux points de
+   * rattachement se refusent de la même façon :
+   *
+   *   - **propriétaire, suppression, genre → 404.** Ils vivent dans le `where`.
+   *     Un refus nommé apprendrait qu'un média de genre protégé existe sous cet
+   *     identifiant ; le genre ne doit pas devenir un oracle.
+   *   - **statut → 400.** Le membre vient d'envoyer ce fichier et sait qu'il
+   *     existe ; un 404 l'enverrait chercher un identifiant perdu alors que son
+   *     envoi est seulement en cours d'analyse, ou refusé.
+   *
+   * Ceci REMPLACE un `WRONG_MEDIA_KIND` (400) qui n'était référencé nulle part
+   * ailleurs dans le dépôt et qu'aucun test ne figeait.
+   */
   private async assertOwnedMedia(userId: string, mediaId: string): Promise<void> {
-    const asset = await this.prisma.mediaAsset.findUnique({
-      where: { id: mediaId },
-      select: { ownerUserId: true, kind: true, deletedAt: true },
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id: mediaId, ...ownedAttachableWhere('message', userId) },
+      select: { status: true },
     });
-    if (asset === null || asset.deletedAt !== null || asset.ownerUserId !== userId) {
-      throw ApiError.notFound();
-    }
-    if (asset.kind !== 'MESSAGE') {
-      throw ApiError.validation([{ path: 'mediaId', code: 'WRONG_MEDIA_KIND' }]);
+    if (asset === null) throw ApiError.notFound();
+    if (asset.status !== REQUIRED_MEDIA_STATUS) {
+      throw ApiError.validation([{ path: 'mediaId', code: 'MEDIA_NOT_READY' }]);
     }
   }
 

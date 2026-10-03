@@ -117,6 +117,8 @@
  *     demande de H06.
  */
 
+import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+
 const FILE = 'docs/template/06 Services.dc.html';
 
 /**
@@ -134,9 +136,37 @@ const screen = ({
   frames,
   dataType = 'ServicesData',
   dataModule = '../services/data',
+  modal = false,
+  squelette = !modal,
   ...rest
 }) => ({
   file: FILE,
+  /**
+   * ─── LE SQUELETTE MEMBRE : LE RAIL ──────────────────────────────────────────
+   *
+   * La maquette dessine les cinq entrées — Accueil, Parcours, Entraide,
+   * Services, Agenda — en `<span>`. Ce ne sont pas des liens cassés : CE NE SONT
+   * PAS DES LIENS, et c'est la phrase du porteur (« Aucun sous lien aussi ne
+   * fonctionne »). Les cinq destinations sont déclarées UNE fois pour les sept
+   * modules membre dans `tools/squelette-membre.mjs`.
+   *
+   * `cadresDuRail` retient les cadres dont le nom porte « Desktop » ; les écrans
+   * d'ordinateur qui ne dessinent PAS de rail posent `squelette: false`, et un
+   * oubli ne passerait pas en silence — le `dans` de `markLinks` exige son
+   * conteneur une fois, donc un cadre sans rail ARRÊTE la génération.
+   *
+   *
+   * LE DÉFAUT SUIT `modal`, et ce n'est pas un raccourci : une planche de FENÊTRE
+   * ne dessine pas le squelette de l'application — elle se pose PAR-DESSUS. Les
+   * cadres de modale d'ordinateur sont donc hors rail par construction, et c'est
+   * mesuré sur chacun. Un écran plein cadre qui n'en dessine pas non plus doit
+   * poser `squelette: false` à la main, en disant pourquoi.
+   *
+   * LA SURBRILLANCE N'EST PAS TOUCHÉE : dans ces navs littéraux, la maquette
+   * peint déjà l'entrée qui désigne la page, planche par planche.
+   */
+  ...(modal ? { modal } : {}),
+  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule,
@@ -1018,26 +1048,98 @@ export const screens = [
    * l'ordinateur et une feuille mobile posée sur un voile. Les deux sont
    * transcodées, `Modal` choisit selon la largeur.
    */
+  /**
+   * ─── CE QUE CES DEUX PLANCHES LISENT, ET CE QU'ELLES NE PEUVENT PAS LIRE ───
+   *
+   * Elles parlent de L'ANNONCE QU'ON VIENT DE QUITTER, donc elles reçoivent
+   * `S02Data` : la même charge que l'écran, par le même appel, sans un
+   * aller-retour de plus. Trois littéraux en sortent :
+   *
+   *   · le suréacrit « Studio meublé Lyon 7e · Sarah T. » — le titre de l'annonce
+   *     et le nom ABRÉGÉ de son auteur, que la maquette écrit « Sarah T. » là où
+   *     l'écran écrit « Sarah Traoré ». C'est une mise en forme du même
+   *     `author.displayName`, de la même famille que les initiales « ST » que cet
+   *     écran dérive déjà ;
+   *   · la phrase de pied, « Ce message ouvre votre conversation avec Sarah. » —
+   *     le PRÉNOM de l'auteur ;
+   *   · le titre de la feuille L0, « Contacter Sarah » — le même prénom, et c'est
+   *     donc `retitrerSurDonnees` qui reprend la promotion sur la forme liée.
+   *
+   * CE QUI RESTE DESSINÉ, et aucune de ces raisons n'est de la fatigue :
+   *
+   *   · les quatre tuiles de pré-remplissage — « Emménagement · 1er octobre »,
+   *     « Durée · 12 mois », « Budget · jusqu'à 650 € CC », « Situation ·
+   *     Étudiante · Lyon 3 · Visale » — et la ligne « Pré-rempli depuis votre
+   *     parcours « Mes études à Lyon » ». AUCUNE route ne les rend : `grep` sur
+   *     `prefill` dans `apps/api` et `packages/shared` ne trouve rien, et
+   *     `docs/specs/10-services.md` ne décrit nulle part ce pré-remplissage.
+   *     Composer un budget et une date d'emménagement à partir d'un parcours que
+   *     personne n'envoie serait inventer la donnée la plus engageante de l'écran.
+   *     Remonté au porteur : la maquette promet un pré-remplissage que l'API ne
+   *     sait pas faire ;
+   *   · l'exemple du champ « Votre message », qui devient un `placeholder`.
+   *
+   * RÈGLE DURE 10 §7 ET 01 §2.1 SUR CES DEUX PLANCHES : ni score de risque ni
+   * téléphone. Compté sur leurs octets — zéro chiffre de risque, zéro numéro, et
+   * le seul chemin de contact que la maquette dessine est un MESSAGE, pas un
+   * numéro à appeler.
+   */
   screen({
     section: 'S02',
     out: 's02contact',
     modal: true,
+    dataType: 'S02Data',
+    dataModule: '../s02/data',
     modalTitle: 'Présentez-vous',
     // Le nom du cadre porte la VARIANTE, pas seulement la largeur : sans cela ce
     // composant s'appellerait `S02Mobile`, comme celui de la page.
     frames: [f(480, 'DesktopContact'), f(390, 'MobileContact', 1)],
+    donnees: [
+      {
+        noeud:
+          '<div style="font-size:12px;font-weight:700;color:#8A958F">Studio meublé Lyon 7e · Sarah T.</div>',
+        devient:
+          '<div style="font-size:12px;font-weight:700;color:#8A958F">{{ annonce.titre }} · {{ annonce.auteurCourt }}</div>',
+        fois: 1,
+        why: 'Le suréacrit de la feuille : le titre de l’annonce et le nom abrégé de son auteur, de `GET /housing/:id`.',
+      },
+      {
+        noeud:
+          '<div style="font-size:11.5px;color:#8A958F;text-align:center">Ce message ouvre votre conversation avec Sarah.</div>',
+        devient:
+          '<div style="font-size:11.5px;color:#8A958F;text-align:center">Ce message ouvre votre conversation avec {{ annonce.prenomAuteur }}.</div>',
+        fois: 1,
+        why: 'La phrase de pied nomme l’auteur de l’annonce par son prénom (08 §5 : écrire ouvre une conversation).',
+      },
+    ],
   }),
   /**
    * La feuille de l'état L0 n'a qu'UNE planche, mobile. On ne lui en invente pas
    * une pour l'ordinateur : la maquette y dessine cet état dans la colonne de
    * contexte de l'écran lui-même.
+   *
+   * SON TITRE EST UNE DONNÉE — « Contacter Sarah » nomme l'auteur de l'annonce.
+   * Les trois phrases qui suivent sont du TEXTE DE RÈGLE (10 §2.3 : « L1 minimum
+   * pour écrire […] l'interface le dit et propose de demander un parrain »), vrai
+   * pour tout le monde et pour toute annonce : elles restent dessinées.
    */
   screen({
     section: 'S02',
     out: 's02verification',
     modal: true,
+    dataType: 'S02Data',
+    dataModule: '../s02/data',
     modalTitle: 'Contacter Sarah',
     frames: [f(390, 'MobileVerification', 2)],
+    donnees: [
+      {
+        noeud: '<div style="font-size:18px;font-weight:800">Contacter Sarah</div>',
+        devient:
+          '<div style="font-size:18px;font-weight:800">Contacter {{ annonce.prenomAuteur }}</div>',
+        fois: 1,
+        why: 'Le prénom de l’auteur de l’annonce — et le titre de la feuille, repris sur sa forme liée.',
+      },
+    ],
   }),
 
   /**
@@ -1059,6 +1161,17 @@ export const screens = [
    * avec un membre L0). La planche « ÉTATS » de S01 en porte le texte mot pour
    * mot, mais ce n'est pas un cadre d'écran et rien ne dit où il s'insère. Remonté
    * au porteur ; il n'est pas ajouté ici, ce serait réécrire la maquette.
+   *
+   * LE CADRE MOBILE NE LIT RIEN DU TOUT, et la raison est pire que la précédente :
+   * la planche de 390 px ne dessine PAS le bandeau de sécurité. Le cadre
+   * d'ordinateur l'écrit — « Aucun versement avant visite ou vérification. Ne payez
+   * jamais une réservation à distance. » — et il est lié à `meta.safetyBanner`
+   * trois lignes plus bas. Le mobile s'arrête aux champs du formulaire.
+   *
+   * §2.2 ne fait pas d'exception de largeur, et la liaison ne peut rien y faire :
+   * sans ancre, il n'y a rien à lier. C'est un trou de MAQUETTE sur l'écran où le
+   * membre publie, donc sur celui où la mise en garde compte le plus. Remonté au
+   * porteur, et non comblé en ajoutant un bandeau que la planche ne dessine pas.
    *
    * Le corps du titre mobile est 16 px, pas 21 : cet écran n'a pas l'en-tête de
    * section mais une barre à croix de fermeture, plus basse.
@@ -1274,15 +1387,46 @@ export const screens = [
    * « Vous quittez la plateforme » — l'interstitiel du lien externe. Une seule
    * planche de 440 px : la même fenêtre sert aux deux largeurs, ce que `Modal`
    * prévoit dans son type.
+   *
+   * ELLE NOMME LE DOMAINE OÙ L'ON PART, et c'est la seule donnée de la planche —
+   * mais c'en est une qui compte : une fenêtre qui dit « vous allez sur arvel.fr »
+   * en envoyant ailleurs est pire que pas de fenêtre du tout. Le domaine est
+   * l'hôte de `externalUrl`, que l'écran lit déjà sous `offre.lien` (§3.1).
+   *
+   * LA PHRASE DE PRUDENCE RESTE DESSINÉE : « Ne communiquez jamais de coordonnées
+   * bancaires pour une candidature » est vraie pour toute offre et pour tout
+   * membre — c'est la mise en garde de §3.1, pas un fait de cette offre-ci.
    */
   screen({
     section: 'S05',
     out: 's05lien',
     modal: true,
+    dataType: 'S05Data',
+    dataModule: '../s05/data',
     modalTitle: 'Vous quittez la plateforme',
     frames: [f(440, 'LienExterne', 0)],
+    donnees: [
+      {
+        noeud: '<strong style="color:#16211D">arvel.fr</strong>',
+        devient: '<strong style="color:#16211D">{{ offre.domaine }}</strong>',
+        fois: 1,
+        why: 'Le DOMAINE de `externalUrl` — l’hôte réel où le bouton envoie, pas un domaine recopié de la maquette.',
+      },
+    ],
   }),
-  /** « Recommander un membre » (10 §3.3). Une seule planche, de 440 px aussi. */
+  /**
+   * « Recommander un membre » (10 §3.3). Une seule planche, de 440 px aussi.
+   *
+   * CETTE PLANCHE N'A RIEN À LIRE, et il faut le dire plutôt que d'inventer une
+   * liaison. C'est un SÉLECTEUR : un champ « Rechercher un membre », UN résultat
+   * d'exemple (« Fatou Ndiaye · Assistante RH · Lyon 7e ») et un commentaire. Le
+   * membre affiché n'est pas une donnée de l'offre ni du membre connecté — c'est
+   * ce que la recherche RENDRA quand on tapera, et `GET /search` n'est appelée par
+   * personne au chargement de cette fenêtre. Lier cette ligne à un membre choisi
+   * d'avance afficherait quelqu'un que personne n'a cherché.
+   *
+   * L'exemple du champ « Commentaire » devient un `placeholder` au transcodage.
+   */
   screen({
     section: 'S05',
     out: 's05recommander',
@@ -1550,7 +1694,46 @@ export const screens = [
       f(1440, 'Desktop', 0, t('Créer ma fiche pro', '28px')),
       f(390, 'Mobile', 0, t('Ma fiche pro', '16px')),
     ],
-    donnees: [...bandeau()],
+    donnees: [
+      ...bandeau(),
+      /**
+       * ─── LA CARTE D'OFFRE PRO, ET POURQUOI ELLE SE LIE QUAND LE FORMULAIRE NON ──
+       *
+       * Le raisonnement ci-dessus porte sur les CHAMPS DE LA FICHE, et il tient :
+       * les lier viderait l'écran pour qui vient le remplir. Il ne porte PAS sur la
+       * carte d'offre que la planche mobile dessine en bas — « Pro · 9 €/mois ·
+       * Badge Pro, 10 villes ». Celle-là ne décrit pas la fiche du membre, elle
+       * décrit LE PLAN, et le plan vient de `GET /plans` (§7.1), la route que K06
+       * lit déjà.
+       *
+       * UN PRIX FIGÉ DANS LE FRONT EST LE DÉFAUT QUE `donnees` EXISTE POUR TUER :
+       * la table `plans` se modifie depuis l'administration (`PATCH /admin/plans/:code`
+       * porte `priceCents` et `nameFr`), et cet écran afficherait 9 € le jour où le
+       * porteur passe à 12 €. C'est exactement l'argument écrit pour « 4 €/mois »
+       * sur K06, et il ne vaut pas moins ici parce que l'écran s'appelle « Ma fiche ».
+       *
+       * « BADGE PRO, 10 VILLES » RESTE DESSINÉ, et c'est mesuré : `planLimitsSchema`
+       * porte `multiCity` et `featuredInDirectory` — des BOOLÉENS — et AUCUN champ
+       * ne dit « dix ». Le nombre de villes de la maquette n'a pas de source ; le
+       * composer à partir d'un booléen serait inventer la limite. Remonté au
+       * porteur : il faudrait un `maxCities` dans les limites du plan, ou retirer le
+       * nombre de la planche. La planche d'ordinateur écrit en plus
+       * « statistiques », qui n'a pas davantage de champ.
+       */
+      {
+        noeud:
+          '<div style="padding:16px;border-radius:18px;background:#EFF7F3;border:2px solid #16785E">' +
+          '<div style="font-size:15px;font-weight:700">Pro</div>' +
+          '<div style="font-size:20px;font-weight:800;margin-top:6px">9 €/mois</div>',
+        devient:
+          '<div style="padding:16px;border-radius:18px;background:#EFF7F3;border:2px solid #16785E">' +
+          '<div style="font-size:15px;font-weight:700">{{ offrePro.nom }}</div>' +
+          '<div style="font-size:20px;font-weight:800;margin-top:6px">{{ offrePro.prix }}</div>',
+        fois: 1,
+        frames: ['Mobile'],
+        why: 'Le plan Pro et son prix mensuel, de `GET /plans` (`nameFr`, `month.eur`) — jamais figés dans le front, puisque l’administration les modifie.',
+      },
+    ],
   }),
 
   /**

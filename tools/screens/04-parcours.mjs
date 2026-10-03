@@ -71,10 +71,39 @@
  */
 
 /** Les quinze sections ; `docs/specs/T5-pages-et-prompts.md` §5 donne les routes. */
+import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+
 const FILE = 'docs/template/04 Parcours.dc.html';
 
-const screen = ({ section, out, frames, dataType = 'ParcoursData', ...rest }) => ({
+const screen = ({ section, out, frames, dataType = 'ParcoursData', modal = false,
+  squelette = !modal, ...rest }) => ({
   file: FILE,
+  /**
+   * ─── LE SQUELETTE MEMBRE : LE RAIL ──────────────────────────────────────────
+   *
+   * La maquette dessine les cinq entrées — Accueil, Parcours, Entraide,
+   * Services, Agenda — en `<span>`. Ce ne sont pas des liens cassés : CE NE SONT
+   * PAS DES LIENS, et c'est la phrase du porteur (« Aucun sous lien aussi ne
+   * fonctionne »). Les cinq destinations sont déclarées UNE fois pour les sept
+   * modules membre dans `tools/squelette-membre.mjs`.
+   *
+   * `cadresDuRail` retient les cadres dont le nom porte « Desktop » ; les écrans
+   * d'ordinateur qui ne dessinent PAS de rail posent `squelette: false`, et un
+   * oubli ne passerait pas en silence — le `dans` de `markLinks` exige son
+   * conteneur une fois, donc un cadre sans rail ARRÊTE la génération.
+   *
+   *
+   * LE DÉFAUT SUIT `modal`, et ce n'est pas un raccourci : une planche de FENÊTRE
+   * ne dessine pas le squelette de l'application — elle se pose PAR-DESSUS. Les
+   * cadres de modale d'ordinateur sont donc hors rail par construction, et c'est
+   * mesuré sur chacun. Un écran plein cadre qui n'en dessine pas non plus doit
+   * poser `squelette: false` à la main, en disant pourquoi.
+   *
+   * LA SURBRILLANCE N'EST PAS TOUCHÉE : dans ces navs littéraux, la maquette
+   * peint déjà l'entrée qui désigne la page, planche par planche.
+   */
+  ...(modal ? { modal } : {}),
+  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule: '../parcours/data',
@@ -125,7 +154,7 @@ const t = (text, size) => ({ text, size });
  * propres occurrences — `applyData` applique les liaisons dans l'ordre, sur le HTML
  * déjà réécrit.
  */
-const panneau = ({ titre = 1, type = 1, pourcent = 1 } = {}) => [
+const panneau = ({ titre = 1, type = 1, pourcent = 1, equipe = true } = {}) => [
   {
     noeud: '>Mes études à Lyon<',
     devient: '>{{ panneau.titre }}<',
@@ -154,12 +183,27 @@ const panneau = ({ titre = 1, type = 1, pourcent = 1 } = {}) => [
     frames: ['Desktop'],
     why: 'L’étape EN COURS que le serveur déclare (`journey.currentStepId`), son rang, et `journey.nextDueDate`.',
   },
-  {
-    noeud: '>3<',
-    devient: '>{{ panneau.equipe }}<',
-    frames: ['Desktop'],
-    why: 'Le nombre de membres de l’équipe, de `members` (§3.4) — le plafond est `meta.maxMembers`.',
-  },
+  /**
+   * `equipe: false` SUR J02, ET C'EST UN COMPTE QUI L'A DÉCIDÉ, pas un goût.
+   *
+   * Le compteur « Équipe » est le littéral `>3<`, et il est UNIQUE sur les dix
+   * planches qui dessinent ce panneau — sauf sur celle de J02, où l'« APERÇU DES
+   * ÉTAPES » numérote ses lignes et écrit `>3<` une SECONDE fois. `fois: 1` y
+   * tombait faux, et la génération s'arrêtait en nommant le fragment : c'est
+   * exactement le travail que ce garde-fou existe pour faire. Lier la mauvaise
+   * occurrence aurait mis le nombre de membres de l'équipe dans la frise des
+   * étapes, et rien ne l'aurait signalé — le texte affiché est le même.
+   */
+  ...(equipe
+    ? [
+        {
+          noeud: '>3<',
+          devient: '>{{ panneau.equipe }}<',
+          frames: ['Desktop'],
+          why: 'Le nombre de membres de l’équipe, de `members` (§3.4) — le plafond est `meta.maxMembers`.',
+        },
+      ]
+    : []),
 ];
 
 // ─── LES CARTES QUE LA MAQUETTE RÉPÈTE, ÉCRITES UNE FOIS ─────────────────────
@@ -537,6 +581,70 @@ const CARTE_MODELE_M = (nom, etapes) =>
   '</span><span style="font-size:12px;font-weight:700;color:#16785E">' +
   etapes +
   '</span></div>';
+
+/**
+ * ─── J02 — LES CARTES DE TYPE DE PARCOURS, SUR SES DEUX PLANCHES MOBILES ────
+ *
+ * Même donnée que J01E — `GET /journey-templates` — et trois dessins différents,
+ * parce que la maquette en dessine trois. Les deux planches mobiles sont
+ * BOUCLABLES et celle d'ordinateur ne l'est PAS, et c'est l'icône qui tranche :
+ *
+ *   · à 390 px, les quatre cartes portent LA MÊME icône (le tracé
+ *     `M5 5h6a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h10`, compté quatre fois). Elle entre
+ *     donc dans la fabrique comme le reste du dessin ;
+ *   · à 1440 px, CHAQUE carte a SON icône — toque, mallette, deux personnes,
+ *     document. Ce sont quatre tracés différents, et `GET /journey-templates` ne
+ *     rend qu'un `icon` NOMMÉ (`z.string().nullable()`), pas un tracé. Boucler
+ *     demanderait une table nom → tracé que la maquette ne dessine pas, et un
+ *     cinquième modèle n'aurait aucune icône. Les quatre cartes d'ordinateur
+ *     restent donc dessinées, et l'écart est REMONTÉ : il faudrait soit que la
+ *     maquette dessine une icône neutre, soit que le dossier fixe la table.
+ *
+ * LA PREMIÈRE CARTE EST SÉLECTIONNÉE, et c'est un état d'INTERACTION que la
+ * maquette montre sur sa première ligne : fond `#EFF7F3`, bordure de 2 px, fond
+ * d'icône blanc et une coche en fin de ligne. Les DEUX variantes sont dessinées
+ * sous `<sc-if>` — en garder une seule mentirait sur les trois autres lignes,
+ * c'est le précédent des sessions de K04. Ce qui décide est `choisi`, et
+ * `parcours/appels.ts` dit exactement ce qu'il vaut et pourquoi.
+ */
+const COCHE_CHOIX =
+  '<span style="width:22px;height:22px;border-radius:999px;background:#16785E;display:flex;align-items:center;justify-content:center">' +
+  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="m5 12 4.5 4.5L19 7"/></svg></span>';
+
+const CARTE_TYPE_M = (carte, fondIcone, nom, etapes, fin) =>
+  '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:16px;' +
+  carte +
+  ';flex-shrink:0"><span style="width:38px;height:38px;border-radius:12px;background:' +
+  fondIcone +
+  ';display:flex;align-items:center;justify-content:center">' +
+  '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M5 5h6a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h10"/></svg></span>' +
+  '<span style="flex:1"><span style="display:block;font-size:14.5px;font-weight:700">' +
+  nom +
+  '</span><span style="display:block;font-size:12px;color:#16785E;font-weight:700">' +
+  etapes +
+  '</span></span>' +
+  fin +
+  '</div>';
+
+/** La carte CHOISIE et la carte simple, telles que la maquette les dessine. */
+const CARTE_TYPE_M_CHOISIE = (nom, etapes) =>
+  CARTE_TYPE_M('background:#EFF7F3;border:2px solid #16785E', '#fff', nom, etapes, COCHE_CHOIX);
+const CARTE_TYPE_M_SIMPLE = (nom, etapes) =>
+  CARTE_TYPE_M('background:#fff;border:1px solid #E6EBE9', '#E3F0EB', nom, etapes, '');
+
+/**
+ * J02 « plan atteint » — une ligne de type, grisée.
+ *
+ * `opacity:.7` est dans le DESSIN et non dans la donnée : §3.1 veut que la limite
+ * du plan « ne bloque pas la lecture », et c'est ce que l'estompe dit. Les lignes
+ * restent lisibles, et leur nombre d'étapes reste celui du serveur.
+ */
+const LIGNE_TYPE_PLAN = (texte) =>
+  '<div style="background:#fff;border:1px solid #E6EBE9;border-radius:16px;padding:14px;font-size:14px;font-weight:700;opacity:.7">' +
+  texte +
+  '</div>';
 
 /**
  * J07 — une entrée du journal. Les SIX icônes sont celles de la maquette.
@@ -1402,11 +1510,30 @@ export const screens = [
   // (§3.1 et T5 — trois sous-situations), et l'état « plan atteint » que §3.1
   // impose (`PLAN_LIMIT_REACHED`) sans bloquer la lecture.
   //
-  // DÉJÀ BRANCHÉ (ses `onClick`), et laissé tel quel : `dataType` reste
-  // `ParcoursData`.
+  // BRANCHÉ SUR `GET /journey-templates` ET SUR MON PARCOURS ACTIF.
+  //
+  // Ce commentaire disait « déjà branché (ses `onClick`), et laissé tel quel ».
+  // C'était vrai des GESTES et faux de la LECTURE : les quatre cadres recevaient
+  // `ParcoursData`, c'est-à-dire des fonctions et pas une donnée, et les trois qui
+  // affichent des types de parcours écrivaient « 12 étapes » en dur.
+  //
+  // Or `journeyTemplateVersionSchema` porte précisément là-dessus l'avertissement
+  // le plus net du dossier : « La maquette de O03 écrit "12 étapes" sous
+  // "Étudier" : c'est une ILLUSTRATION. L'API répond 15 pour `STUDIES`, parce que
+  // le modèle a été rechargé en version 3. Recopier le nombre de la maquette
+  // afficherait un engagement faux au moment précis où le membre choisit son
+  // parcours. » J01E lisait déjà ces modèles ; J02, l'écran qui s'appelle « Créer
+  // un parcours », ne les lisait pas.
+  //
+  // LE PANNEAU DU CADRE D'ORDINATEUR EST LIÉ AUSSI, et sans son compteur d'équipe :
+  // voir `panneau({ equipe: false })` et la raison comptée qui s'y trouve. Sur un
+  // membre sans parcours, il se remplit de vide — ce qui est le cas NORMAL de cet
+  // écran, et honnête : la carte reste dessinée, ses valeurs sont absentes, et
+  // elle n'annonce plus un « Mes études à Lyon · 58% » que personne n'a créé.
   screen({
     section: 'J02',
     out: 'j02',
+    dataType: 'J02Data',
     /**
      * « Je suis bloqué·e » est dessiné DEUX FOIS dans le cadre d'ordinateur —
      * carte du panneau et carte de l'étape en cours — d'où `all`. Le cadre
@@ -1422,6 +1549,39 @@ export const screens = [
       f(390, 'Mobile', 0, t('Créer un parcours', '16px')),
       f(390, 'MobileRegulariser', 1, t('Régulariser ma situation', '16px')),
       f(390, 'MobilePlanAtteint', 2, t('Créer un parcours', '16px')),
+    ],
+    donnees: [
+      ...panneau({ titre: 2, equipe: false }),
+      {
+        noeud:
+          CARTE_TYPE_M_CHOISIE('Étudier', '12 étapes') +
+          CARTE_TYPE_M_SIMPLE('Travailler', '10 étapes') +
+          CARTE_TYPE_M_SIMPLE('Rejoindre ma famille', '9 étapes') +
+          CARTE_TYPE_M_SIMPLE('Régulariser ma situation', '8 étapes'),
+        devient:
+          '<sc-for list="{{ modeles }}" as="m">' +
+          '<sc-if value="{{ m.choisi }}">' +
+          CARTE_TYPE_M_CHOISIE('{{ m.nom }}', '{{ m.etapes }} étapes') +
+          '</sc-if><sc-if value="{{ m.autre }}">' +
+          CARTE_TYPE_M_SIMPLE('{{ m.nom }}', '{{ m.etapes }} étapes') +
+          '</sc-if></sc-for>',
+        fois: 1,
+        frames: ['Mobile'],
+        why: 'Les types de parcours proposés pour MON pays, de `GET /journey-templates` (§2.1) — `version.stepCount` et jamais le nombre de la maquette, qui est une illustration. Les DEUX variantes de carte sont dessinées, chacune sous sa condition.',
+      },
+      {
+        noeud:
+          LIGNE_TYPE_PLAN('Étudier · 12 étapes') +
+          LIGNE_TYPE_PLAN('Travailler · 10 étapes') +
+          LIGNE_TYPE_PLAN('Rejoindre ma famille · 9 étapes'),
+        devient:
+          '<sc-for list="{{ modeles }}" as="m">' +
+          LIGNE_TYPE_PLAN('{{ m.nom }} · {{ m.etapes }} étapes') +
+          '</sc-for>',
+        fois: 1,
+        frames: ['MobilePlanAtteint'],
+        why: 'Les mêmes types, sur la planche « plan atteint » — §3.1 veut que la limite du plan NE BLOQUE PAS LA LECTURE, donc leurs nombres d’étapes doivent être vrais eux aussi.',
+      },
     ],
   }),
 
@@ -2216,6 +2376,14 @@ export const screens = [
     section: 'J10',
     out: 'j10',
     dataType: 'J10Data',
+    /**
+     * PAS DE RAIL SUR J10, et ce n'est pas une modale : c'est la planche « Vous y
+     * êtes arrivé·e ! », que la maquette dessine en PLEIN CADRE, sans rail ni
+     * panneau — un parcours abouti se fête sans menu autour. Compté sur le cadre :
+     * zéro `<nav>` de 76 px. Sans cette exception, la génération s'arrêterait en
+     * nommant J10, ce qui est le bon comportement mais pas la bonne réponse.
+     */
+    squelette: false,
     frames: [
       f(1440, 'Desktop', 0, t('Vous y êtes arrivé·e !', '38px')),
       f(390, 'Mobile', 0, t('Vous y êtes arrivé·e !', '28px')),

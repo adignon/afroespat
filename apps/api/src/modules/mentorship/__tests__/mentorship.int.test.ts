@@ -527,6 +527,100 @@ describe('parrainage (08 §2)', () => {
     expect(Number(profile.avgRating)).toBe(5);
   });
 
+  /**
+   * LA FICHE DU PARRAIN RESTAIT MUETTE QUATORZE JOURS, et aucun test ne le voyait.
+   *
+   * §2.4 : « visible seulement une fois les deux évaluations déposées OU après
+   * 14 jours ». Le test ci-dessus éprouve `myMentorships`, qui comptait juste — il
+   * lit les deux évaluations de LA LIGNE du parrainage. `mentorCard`, lui, passe
+   * par `visibleReviewsFor`, qui comptait les évaluations dont le membre est le
+   * SUJET : au plus UNE par parrainage, puisque `mentorship_reviews` porte
+   * `@@unique(mentorship_id, reviewer_user_id)` et qu'un parrainage n'a que deux
+   * parties. Son test `>= 2` ne pouvait donc JAMAIS être vrai, et seule la fenêtre
+   * de quatorze jours rendait une évaluation visible.
+   *
+   * CE TEST SE TIENT DANS LA FENÊTRE EXPRÈS : le parrainage vient de se terminer,
+   * donc `windowOver` est faux et la première branche est la SEULE qui puisse
+   * rendre l'évaluation visible. C'est ce qui le fait rougir sur le code d'avant.
+   *
+   * MUTATION TÉMOIN — remettre `visibleReviewsFor` à sa forme d'origine, c'est-à-dire
+   * remplacer `review.mentorship._count.reviews >= MENTORSHIP_REVIEWS_BOTH_IN` par
+   * un comptage par parrainage des lignes de la page, fait échouer l'attente
+   * « 1 évaluation » ci-dessous avec `reviews: []`.
+   */
+  it('[§2.4] la fiche du parrain montre l’évaluation dès que les DEUX sont déposées, sans attendre 14 jours', async () => {
+    const m = await mentor();
+    const mentee = await member({ phase: 'PRE_DEPARTURE', level: 'L0' });
+    const request = await mentorship.request(mentee.id, {
+      mentorHandle: m.handle,
+      message: LONG_MESSAGE,
+    });
+    await mentorship.accept(request.id, m.id);
+    await prisma.mentorship.update({
+      where: { id: request.id },
+      data: { endsAt: new Date(Date.now() - 1000) },
+    });
+    await mentorship.endDueMentorships();
+
+    // La fenêtre de 14 jours est GRANDE OUVERTE : `ended_at` est à l'instant.
+    const ended = await prisma.mentorship.findUniqueOrThrow({
+      where: { id: request.id },
+      select: { endedAt: true },
+    });
+    const endedAt = ended.endedAt;
+    expect(endedAt).not.toBeNull();
+    expect(Date.now() - (endedAt as Date).getTime()).toBeLessThan(MENTORSHIP_REVIEW_WINDOW_MS);
+
+    // Aucune évaluation : la fiche est muette, et c'est juste.
+    expect((await mentorship.mentorCard(m.handle, m.id)).reviews).toEqual([]);
+
+    // UNE SEULE déposée : elle doit rester muette (ni les deux, ni 14 jours).
+    await mentorship.review(request.id, mentee.id, { rating: 5, comment: 'Très aidant.' });
+    expect((await mentorship.mentorCard(m.handle, m.id)).reviews).toEqual([]);
+
+    // LES DEUX déposées : l'évaluation du parrain paraît IMMÉDIATEMENT.
+    await mentorship.review(request.id, m.id, { rating: 4 });
+    const card = await mentorship.mentorCard(m.handle, m.id);
+    expect(card.reviews).toHaveLength(1);
+    expect(card.reviews[0]?.rating).toBe(5);
+    expect(card.reviews[0]?.reviewer?.handle).toBe(mentee.handle);
+  });
+
+  /**
+   * L'AUTRE MOITIÉ de §2.4 : « ou après 14 jours ».
+   *
+   * Sans ce test, la correction précédente pourrait se réduire à « visible dès
+   * qu'il y a deux évaluations », et la fenêtre — qui protège le cas où l'autre
+   * partie ne répond jamais — redeviendrait du code mort, dans l'autre sens.
+   */
+  it('[§2.4] passé 14 jours, une évaluation SEULE paraît quand même', async () => {
+    const m = await mentor();
+    const mentee = await member({ phase: 'PRE_DEPARTURE', level: 'L0' });
+    const request = await mentorship.request(mentee.id, {
+      mentorHandle: m.handle,
+      message: LONG_MESSAGE,
+    });
+    await mentorship.accept(request.id, m.id);
+    await prisma.mentorship.update({
+      where: { id: request.id },
+      data: { endsAt: new Date(Date.now() - 1000) },
+    });
+    await mentorship.endDueMentorships();
+    await mentorship.review(request.id, mentee.id, { rating: 3, comment: 'Correct.' });
+
+    // Dans la fenêtre, une seule déposée : muette.
+    expect((await mentorship.mentorCard(m.handle, m.id)).reviews).toEqual([]);
+
+    // La fenêtre passe. La seconde évaluation n'est jamais venue.
+    await prisma.mentorship.update({
+      where: { id: request.id },
+      data: { endedAt: new Date(Date.now() - MENTORSHIP_REVIEW_WINDOW_MS - 1000) },
+    });
+    const card = await mentorship.mentorCard(m.handle, m.id);
+    expect(card.reviews).toHaveLength(1);
+    expect(card.reviews[0]?.rating).toBe(3);
+  });
+
   it('refuse REVIEW_WINDOW_CLOSED hors des 14 jours et sur une fin non COMPLETED', async () => {
     const m = await mentor();
     const mentee = await member({ phase: 'PRE_DEPARTURE', level: 'L0' });

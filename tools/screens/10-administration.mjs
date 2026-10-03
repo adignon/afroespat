@@ -68,13 +68,232 @@
 
 const FILE = 'docs/template/10 Administration.dc.html';
 
-const screen = ({ section, frames, dataType = 'AdministrationData', ...rest }) => ({
+/**
+ * ─── LE RAIL D'ÉQUIPE ÉTAIT ENTIÈREMENT MORT, ET C'EST MESURÉ ────────────────
+ *
+ * Sur les quinze cadres de ce module, le rail que la maquette dessine à gauche —
+ * neuf entrées, « Tableau de bord » à « Réglages » — était fait de NEUF `<span>`.
+ * Pas de liens cassés : AUCUN LIEN. Zéro balise `<a>` sur tout le module, zéro
+ * `cursor: pointer`, et cliquer « Membres » ne changeait pas l'URL.
+ *
+ * La maquette est ainsi : elle DESSINE la navigation, elle ne la CÂBLE pas. Et
+ * personne ne l'avait signalé parce que `e2e/administration.spec.ts` visite ses
+ * seize routes en TAPANT L'URL — ses dix-huit cas passaient, sur une application
+ * dont aucune page n'était atteignable depuis une autre.
+ *
+ * ── CE QUE CETTE TABLE DÉCLARE, ET CE QU'ELLE NE DEVINE PAS ─────────────────
+ *
+ * Les destinations sont celles de T5 §11, les mêmes que `ROUTES` dans
+ * `e2e/administration.spec.ts`. Elles sont DÉCLARÉES ici, jamais déduites du
+ * libellé : « Services » est écrit dans le rail ET comme titre de la page D10, et
+ * les deux ne vont pas au même endroit — l'un navigue, l'autre est un titre. C'est
+ * `dans` qui les distingue : le rail est le seul `<nav>` du cadre, et le titre de
+ * page est dehors.
+ *
+ * ── LE RAIL A NEUF ENTRÉES POUR QUINZE PAGES : SIX N'ONT AUCUNE ENTRÉE ──────
+ *
+ * Relevé en lisant les quinze `<nav>` de la maquette, un par un. L'entrée ACTIVE
+ * (fond blanc, graisse 700) dit ce que la maquette considère comme la rubrique
+ * courante :
+ *
+ *   D02 → Tableau de bord   D03 → Membres        D04 → Modération
+ *   D05 → Modération        D06 → Parcours       D07 → Parcours
+ *   D08 → Référentiels      D09 → Contenu        D10 → Services
+ *   D11 → Contenu           D12 → Contenu        D13 → Revenus
+ *   D14 → Revenus           D15 → Réglages       D16 → Tableau de bord
+ *
+ * Donc SIX pages n'étaient accessibles par AUCUNE entrée du rail : D07
+ * (Bibliothèque d'étapes), D09 (Guides), D11 (Alertes arnaques), D13
+ * (Partenaires), D16 (Rapport d'impact) — et D05, qui est le détail d'un dossier,
+ * donc atteint depuis la file. Pour D16 c'était particulièrement net : le rapport
+ * d'impact mettait « Tableau de bord » en surbrillance, c'est-à-dire qu'il
+ * s'annonçait comme une page qu'il n'est pas.
+ *
+ * ── LE PORTEUR A TRANCHÉ : LES CINQ ENTRÉES SONT AJOUTÉES ───────────────────
+ *
+ * Le manque avait été REMONTÉ plutôt que comblé, et c'était la bonne décision :
+ * « dessiner cinq lignes de rail que la maquette ne dessine pas serait décider à
+ * la place du porteur de la structure de son menu d'administration ». Il a
+ * tranché. Verbatim : « Le rail d'équipe a 9 entrées pour 15 pages c'est à
+ * corriger et pour toutes les autres ».
+ *
+ * Les cinq entrées sont donc ajoutées — par la clé `rail`, dont le mécanisme et
+ * ses garde-fous sont documentés dans `completerRail` (`tools/dc-to-jsx.mjs`). Ce
+ * qui est RECOPIÉ et ce qui est DÉDUIT y est dit ligne par ligne ; le seul point
+ * déduit est L'ICÔNE, qui est celle du parent, faute d'un tracé dessiné pour ces
+ * cinq rubriques. Le rail compte maintenant QUATORZE entrées pour quinze pages :
+ * la quinzième est D05, le dossier, atteint depuis la file de modération.
+ *
+ * ── ET LA SURBRILLANCE SUIT MAINTENANT LA PAGE ──────────────────────────────
+ *
+ * `PAGE_COURANTE` déclare, écran par écran, l'entrée que la page met en
+ * surbrillance. C'est ce qui corrige le défaut de D16 — et ce qui rend légitime
+ * l'`aria-current="page"` que l'en-tête refusait jusqu'ici de poser : l'état
+ * courant n'est plus DÉDUIT du dessin, il est DÉCLARÉ, et c'est la déclaration qui
+ * peint. Voir `completerRail`.
+ *
+ * ── `aria-current` : POSÉ, PARCE QU'IL EST MAINTENANT DÉCLARÉ ──────────────
+ *
+ * Il ne l'était pas, et pour une bonne raison : « le déduire du style serait un
+ * SECOND mécanisme, qui lirait du dessin pour en tirer un état ». La page courante
+ * est désormais DÉCLARÉE dans `PAGE_COURANTE`, écran par écran ; l'attribut recopie
+ * donc cette déclaration au lieu de lire le dessin, et le rail annonce enfin la
+ * page où l'on se trouve.
+ */
+const NAV_EQUIPE =
+  '<nav style="background:#16211D;border-radius:22px;padding:10px;display:flex;flex-direction:column;gap:2px;margin-top:8px">';
+
+/**
+ * ─── LES CINQ ENTRÉES AJOUTÉES, ET OÙ CHACUNE SE POSE ────────────────────────
+ *
+ * Un rail PLAT de quatorze entrées, chaque enfant immédiatement APRÈS son parent —
+ * le parent étant celui que le designer a lui-même désigné par la surbrillance.
+ * L'ordre relatif des neuf entrées d'origine est intact ; on n'insère que cinq.
+ *
+ * NI RETRAIT NI GROUPEMENT : un retrait aurait exigé d'inventer une valeur de
+ * remplissage — `padding:0 12px` est le seul que la maquette donne au rail — et un
+ * groupement aurait exigé un titre de section, donc un texte d'interface qu'elle
+ * n'écrit pas. L'ordre porte la hiérarchie sans inventer ni couleur ni forme.
+ *
+ * LES LIBELLÉS VIENNENT DU `data-screen-label` DE LA PLANCHE, mot pour mot :
+ * « D07 Bibliothèque d'étapes », « D09 Guides », « D11 Alertes arnaques »,
+ * « D13 Partenaires », « D16 Rapport d'impact ». Aucun mot inventé.
+ *
+ * « ALERTES ARNAQUES » SE POSE APRÈS « GUIDES », et il faut le dire : Contenu a
+ * DEUX enfants, et les poser tous deux « après Contenu » les mettrait dans l'ordre
+ * inverse du relevé. Elle suit donc l'autre enfant. Son tracé reste celui de
+ * Contenu — Guides en est déjà le clone — exactement comme si elle l'avait cloné
+ * directement.
+ */
+const RAIL_AJOUTS = [
+  ['Tableau de bord', 'Rapport d’impact', 'D16'],
+  ['Parcours', 'Bibliothèque d’étapes', 'D07'],
+  ['Contenu', 'Guides', 'D09'],
+  ['Guides', 'Alertes arnaques', 'D11'],
+  ['Revenus', 'Partenaires', 'D13'],
+].map(([apres, libelle, planche]) => ({
+  apres,
+  libelle,
+  pourquoi:
+    `${planche} n’avait AUCUNE entrée de rail — sa route répondait, rien n’y menait. ` +
+    `Entrée clonée de « ${apres} », la rubrique que la maquette désigne elle-même par ` +
+    'la surbrillance de cette planche ; libellé pris dans son `data-screen-label`. ' +
+    'Le tracé de l’icône est celui du parent : la maquette n’en dessine aucun pour ' +
+    'cette rubrique (DÉDUCTION, remontée au porteur).',
+}));
+
+/**
+ * CE QUE CHAQUE ÉCRAN MET EN SURBRILLANCE — une entrée du rail, et la SIENNE.
+ *
+ * Avant cette table, cinq planches surlignaient l'entrée d'une AUTRE page, faute
+ * d'en avoir une : D16 s'annonçait « Tableau de bord », D07 « Parcours », D09 et
+ * D11 « Contenu », D13 « Revenus ». Les cinq ont maintenant la leur.
+ *
+ * D05 EST LA SEULE EXCEPTION, et elle est voulue : c'est le DOSSIER d'un
+ * signalement, atteint depuis la file, pas une rubrique du menu. Il surligne donc
+ * « Modération », sa rubrique — exactement ce que la maquette peignait déjà, et ce
+ * que `/admin/moderation/[id]` dit de sa place dans l'arborescence.
+ */
+const PAGE_COURANTE = {
+  D02: 'Tableau de bord',
+  D03: 'Membres',
+  D04: 'Modération',
+  D05: 'Modération',
+  D06: 'Parcours',
+  D07: 'Bibliothèque d’étapes',
+  D08: 'Référentiels',
+  D09: 'Guides',
+  D10: 'Services',
+  D11: 'Alertes arnaques',
+  D12: 'Contenu',
+  D13: 'Partenaires',
+  D14: 'Revenus',
+  D15: 'Réglages',
+  D16: 'Rapport d’impact',
+};
+
+/**
+ * Les QUATORZE entrées, avec LEUR destination — les neuf que la maquette dessine
+ * et les cinq que `RAIL_AJOUTS` ajoute. L'ordre est celui du rail produit.
+ *
+ * Le discriminant est le TEXTE VISIBLE : les quatorze en portent un, donc ni
+ * `aria` ni `marqueur` n'est nécessaire ici. `fois` reste à son défaut de 1 — et
+ * c'est ce qui fait de `markLinks` le CONTRÔLE de l'injection : une entrée ajoutée
+ * qui manquerait, ou qui serait posée deux fois, arrête la génération en nommant
+ * son libellé, au lieu de laisser un lien mort.
+ */
+const RAIL_EQUIPE = [
+  ['Tableau de bord', '/admin'],
+  ['Rapport d’impact', '/admin/impact'],
+  ['Membres', '/admin/membres'],
+  ['Modération', '/admin/moderation'],
+  ['Parcours', '/admin/parcours'],
+  ['Bibliothèque d’étapes', '/admin/etapes'],
+  ['Contenu', '/admin/contenu'],
+  ['Guides', '/admin/guides'],
+  ['Alertes arnaques', '/admin/alertes'],
+  ['Référentiels', '/admin/referentiels'],
+  ['Services', '/admin/services'],
+  ['Revenus', '/admin/revenus'],
+  ['Partenaires', '/admin/partenaires'],
+  ['Réglages', '/admin/reglages'],
+].map(([texte, vers]) => ({
+  dans: NAV_EQUIPE,
+  texte,
+  vers,
+  why: `L’entrée « ${texte} » du rail d’équipe mène à ${vers} (T5 §11). La maquette la dessine en <span> : elle n’était pas un lien.`,
+}));
+
+const screen = ({ section, frames, dataType = 'AdministrationData', rail = true, ...rest }) => ({
   file: FILE,
   section,
   out: `apps/web/src/screens/${section.toLowerCase()}`,
   dataModule: '../administration/data',
   dataType,
   frames,
+  /**
+   * LE RAIL EST DANS LES QUINZE CADRES PLEIN ÉCRAN, ET DANS AUCUN AUTRE.
+   *
+   * `rail: false` est donc une exception NOMMÉE, et D01 est la seule : ses trois
+   * planches sont des cartes de connexion de 420 px, et la maquette ne leur dessine
+   * aucun menu — on ne navigue pas dans une console avant de s'y être authentifié.
+   * Le déclarer par défaut plutôt que quinze fois à la main évite l'oubli qui ferait
+   * repartir un cadre avec un rail mort, sans que rien ne le dise.
+   *
+   * `navigationDeclaree` suit le rail : il rend le garde-fou de `href="#"` DUR sur
+   * ces écrans. Il n'y a aujourd'hui aucun `<a>` dans cette maquette — zéro,
+   * compté — donc le drapeau ne refuse rien ; c'est précisément ce qu'on veut qu'il
+   * garde. Le jour où une planche d'administration dessinera un lien sans
+   * destination, la génération s'arrêtera au lieu de produire un lien qui a l'air de
+   * marcher.
+   */
+  ...(rail
+    ? {
+        liens: RAIL_EQUIPE,
+        navigationDeclaree: true,
+        /**
+         * LA CLÉ `rail` EST POSÉE ICI, avec `liens`, et pour la même raison : un
+         * écran qui porte le rail le porte ENTIER. `actif` est le seul morceau qui
+         * varie d'une planche à l'autre, et il est cherché dans `PAGE_COURANTE` —
+         * dont l'absence ARRÊTE la génération plutôt que de laisser une planche
+         * surligner l'entrée d'une autre page, qui est le défaut d'origine.
+         */
+        rail: {
+          dans: NAV_EQUIPE,
+          ajoutees: RAIL_AJOUTS,
+          actif: (() => {
+            const actif = PAGE_COURANTE[section];
+            if (actif === undefined) {
+              throw new Error(
+                `${section} porte le rail d’équipe mais n’est pas dans PAGE_COURANTE : on ne sait ` +
+                  'pas quelle entrée cette page doit surligner. La déclarer.',
+              );
+            }
+            return actif;
+          })(),
+        },
+      }
+    : {}),
   ...rest,
 });
 
@@ -205,6 +424,8 @@ export const screens = [
    */
   screen({
     section: 'D01',
+    // Aucun rail : on ne navigue pas dans la console avant de s'y authentifier.
+    rail: false,
     frameIsCard: true,
     frames: [
       { width: 420, name: 'Identifiants', occurrence: 0, title: 'Administration' },
@@ -221,14 +442,143 @@ export const screens = [
   /**
    * ── D02 · `/admin` — le tableau de bord ────────────────────────────────────
    *
-   * 15 §5.1 et T5 D02. LE BACK-END NE LE SERT PAS ENCORE : §6 ajoute la table
-   * `metric_snapshots` (« historique des indicateurs pour les courbes ») et elle
-   * manque au schéma. Cet écran est donc transcodé et NON branché — ce qu'il
-   * affiche est ce que la maquette dessine, pas une mesure.
+   * 15 §5.1 et T5 D02.
+   *
+   * ─── LA RÉSERVE SUR `metric_snapshots` ÉTAIT FAUSSE, POUR LA DEUXIÈME FOIS ──
+   *
+   * Ce bloc disait « LE BACK-END NE LE SERT PAS ENCORE : §6 ajoute la table
+   * `metric_snapshots` et elle manque au schéma ». C'est la MÊME réserve que le lot
+   * précédent a déjà levée sur D16, et elle était fausse ici aussi :
+   * `GET /v1/admin/dashboard` répond 200 sur l'API qui tourne et rend onze blocs
+   * de points de mesure. Relevé avec une vraie session d'équipe — mot de passe
+   * argon2id puis TOTP — et non déduit du service.
+   *
+   * ─── CINQ CARTES SUR DOUZE, ET LE CRITÈRE EST UNE SEULE RÈGLE ──────────────
+   *
+   *   UNE CARTE N'EST LIÉE QUE SI CHAQUE NOMBRE QU'ELLE PORTE EST SERVI.
+   *
+   * Ces cartes ne sont pas des listes : chaque nombre a son libellé propre à côté
+   * de lui. Lier « File » sur une carte MODÉRATION dont « SLA respecté » resterait
+   * figé à « 93 % » ne donnerait pas une carte à moitié vraie — ça donnerait une
+   * carte dont le premier nombre bouge, ce qui fait croire que le second aussi. Un
+   * nombre figé à côté d'un nombre vivant est PIRE qu'une carte entièrement figée,
+   * parce que la carte figée se reconnaît et l'autre non.
+   *
+   * Liées : MEMBRES (3 nombres), PARCOURS (4), ENTRAIDE (3), GUIDES (2),
+   * SERVICES (2). Le détail de ce qui manque aux sept autres est dans
+   * `apps/web/src/screens/administration/data.ts`, carte par carte et avec le nom
+   * du nombre absent.
+   *
+   * ─── LE BANDEAU D'ALERTES N'EST PAS ENTAMÉ ─────────────────────────────────
+   *
+   * « SLA dépassé · 3 dossiers de modération », « Justificatifs pro · 5 en
+   * attente », « Villes à activer · Nantes, Rennes ». `GET /admin/dashboard` ne
+   * rend AUCUNE alerte. Les trois morceaux vivraient dans trois routes distinctes
+   * (`/moderation/stats`, `/pro-profiles`, `/ref/cities`) ; les recoller ici
+   * fabriquerait un bandeau d'alertes que l'API ne sert pas, et dont personne ne
+   * pourrait dire s'il est complet. Il reste DESSINÉ, entier. Remonté au porteur.
+   *
+   * ─── ET LE TABLEAU DE BORD N'APPELLE QU'UNE ROUTE, PAR SÉCURITÉ ────────────
+   *
+   * `GET /admin/dashboard` est ouvert aux QUATRE rôles. Les nombres manquants
+   * vivent dans des routes plus restreintes — `/moderation/stats` exclut
+   * `SUPPORT`. Les appeler d'ici rendrait le tableau de bord 403 pour un rôle que
+   * §2.2 autorise explicitement à le voir, et le défaut serait invisible pour qui
+   * développe en SUPER_ADMIN.
    *
    * Sans titre : voir l'en-tête de ce fichier.
    */
-  screen({ section: 'D02', frames: pleinEcran() }),
+  screen({
+    section: 'D02',
+    dataType: 'D02Data',
+    frames: pleinEcran(),
+    donnees: [
+      // ── MEMBRES ────────────────────────────────────────────────────────────
+      //
+      // LE LIBELLÉ EST LE DISCRIMINANT, et il n'est pas décoratif : les douze
+      // cartes de D02 dessinent leurs lignes à l'identique, et « 5 820 » seul ne
+      // dirait pas laquelle. C'est ce que `fois` existe pour empêcher — les
+      // quatorze fragments ci-dessous ont été COMPTÉS dans ce cadre, un chacun.
+      {
+        noeud: '>Inscrits</span><strong>5 820</strong>',
+        devient: '>Inscrits</span><strong>{{ membres.inscrits }}</strong>',
+        why: 'Les membres inscrits : `members.registered` du bloc `membres` de `GET /admin/dashboard`.',
+      },
+      {
+        noeud: '>Actifs 30 j</span><strong>3 140</strong>',
+        devient: '>Actifs 30 j</span><strong>{{ membres.actifs30j }}</strong>',
+        why: 'Les membres actifs sur 30 jours : `members.active_30d`.',
+      },
+      {
+        noeud: '>Niveau 2</span><strong>41 %</strong>',
+        devient: '>Niveau 2</span><strong>{{ membres.niveau2 }}</strong>',
+        why: 'La part des membres au niveau L2, calculée sur `members.by_level` — rapportée à la somme des niveaux, et non à `members.registered` qui ne compte pas la même population.',
+      },
+
+      // ── PARCOURS — les quatre statuts de `JourneyStatus` ───────────────────
+      {
+        noeud: '>Créés</span><strong>1 212</strong>',
+        devient: '>Créés</span><strong>{{ parcours.crees }}</strong>',
+        why: 'Les parcours créés : la somme de toutes les tranches de `journeys.by_status` — un parcours créé porte toujours un statut.',
+      },
+      {
+        noeud: '>Actifs</span><strong>860</strong>',
+        devient: '>Actifs</span><strong>{{ parcours.actifs }}</strong>',
+        why: 'Les parcours actifs : `journeys.by_status`, tranche `ACTIVE`.',
+      },
+      {
+        noeud: '>Aboutis</span><strong>214</strong>',
+        devient: '>Aboutis</span><strong>{{ parcours.aboutis }}</strong>',
+        why: 'Les parcours aboutis : `journeys.by_status`, tranche `COMPLETED`. Une tranche absente vaut zéro — c’est un `GROUP BY`, un seau vide ne produit aucune ligne.',
+      },
+      {
+        noeud: '>En pause</span><strong>138</strong>',
+        devient: '>En pause</span><strong>{{ parcours.enPause }}</strong>',
+        why: 'Les parcours en pause : `journeys.by_status`, tranche `PAUSED`.',
+      },
+
+      // ── ENTRAIDE — les deux statuts utiles de `HelpStatus`, plus le délai ──
+      {
+        noeud: '>Ouvertes</span><strong>412</strong>',
+        devient: '>Ouvertes</span><strong>{{ entraide.ouvertes }}</strong>',
+        why: 'Les entraides ouvertes : `help.by_status`, tranche `OPEN`.',
+      },
+      {
+        noeud: '>Résolues</span><strong>1 780</strong>',
+        devient: '>Résolues</span><strong>{{ entraide.resolues }}</strong>',
+        why: 'Les entraides résolues : `help.by_status`, tranche `RESOLVED`.',
+      },
+      {
+        noeud: '>Délai médian</span><strong>19 h</strong>',
+        devient: '>Délai médian</span><strong>{{ entraide.delaiMedian }}</strong>',
+        why: 'Le délai médian de première réponse : `help.first_response_median_minutes`, servi EN MINUTES et rendu en heures comme la maquette l’écrit.',
+      },
+
+      // ── GUIDES — deux statuts de `GuideStatus` ────────────────────────────
+      {
+        noeud: '>Publiés</span><strong>386</strong>',
+        devient: '>Publiés</span><strong>{{ guides.publies }}</strong>',
+        why: 'Les guides publiés : `guides.by_status`, tranche `PUBLISHED`.',
+      },
+      {
+        noeud: '>À vérifier</span><strong>22</strong>',
+        devient: '>À vérifier</span><strong>{{ guides.aVerifier }}</strong>',
+        why: 'Les guides à vérifier : `guides.by_status`, tranche `FLAGGED` — un guide signalé est un guide à vérifier.',
+      },
+
+      // ── SERVICES ──────────────────────────────────────────────────────────
+      {
+        noeud: '>Annonces</span><strong>244</strong>',
+        devient: '>Annonces</span><strong>{{ services.annonces }}</strong>',
+        why: 'Les annonces en ligne : `housing.by_status` plus `jobs.by_status`, tranches `ACTIVE`. La maquette ne dit pas si les expirées comptent ; la lecture retenue est écrite dans `appels.ts`.',
+      },
+      {
+        noeud: '>Fiches pro</span><strong>58</strong>',
+        devient: '>Fiches pro</span><strong>{{ services.fichesPro }}</strong>',
+        why: 'Les fiches professionnelles approuvées : `pros.by_verification`, tranche `APPROVED`.',
+      },
+    ],
+  }),
 
   /**
    * ── D03 · `/admin/membres` — la fiche membre ───────────────────────────────
@@ -250,11 +600,46 @@ export const screens = [
    */
   screen({ section: 'D03', frames: pleinEcran() }),
 
-  // ── D04 · `/admin/moderation` — la file (13 §4.1) ───────────────────────────
-  //
-  // « Une file unique, triée par priorité puis `sla_due_at` », et la maquette la
-  // dessine ainsi, colonne SLA comprise (« dépassé », « 2 h », « 3 h »…).
-  screen({ section: 'D04', frames: pleinEcran(titre('Modération')) }),
+  /**
+   * ── D04 · `/admin/moderation` — la file (13 §4.1) ──────────────────────────
+   *
+   * « Une file unique, triée par priorité puis `sla_due_at` », et la maquette la
+   * dessine ainsi, colonne SLA comprise (« dépassé », « 2 h », « 3 h »…).
+   *
+   * UN SEUL NOMBRE EST LIÉ — « 46 dossiers ouverts » — ET LA FILE RESTE DESSINÉE.
+   *
+   * Ce n'est pas un demi-travail, c'est le même critère que partout dans ce lot :
+   * une LIGNE de tableau n'est liée que si la route sert CHACUNE de ses cellules.
+   * `GET /admin/moderation/cases` en sert TROIS sur sept, et les quatre qui
+   * manquent sont celles qui nomment des gens et des choses :
+   *
+   *   · SUJET — le type est servi (`subjectType`), l'EXTRAIT (« Vends attestation
+   *     d’hébergement ») non : la route rend `subjectId`, pas le contenu ;
+   *   · AUTEUR — `subjectAuthorUserId` est un UUID, relevé `null`. Aucun nom ;
+   *   · SIGN. — le nombre de signalements n'est pas dans la ligne de liste (il
+   *     faudrait `reports` du DÉTAIL, donc un appel par ligne) ;
+   *   · ASSIGNÉ — `assignedStaffId` est un UUID. Aucun nom.
+   *
+   * Lier les trois colonnes servies dans un `<sc-for>` ferait répéter les quatre
+   * littéraux de la PREMIÈRE ligne sur toutes les lignes : chaque dossier de la
+   * file s'afficherait comme « Joël K. · Vends attestation d’hébergement · 5
+   * signalements », à côté d'une priorité et d'un SLA bien réels. Un tableau dont
+   * trois colonnes vivent et quatre mentent est pire que le tableau figé, parce que
+   * le figé se reconnaît. Remonté au porteur : il manque les NOMS et l'EXTRAIT à
+   * la ligne de file.
+   */
+  screen({
+    section: 'D04',
+    dataType: 'D04Data',
+    frames: pleinEcran(titre('Modération')),
+    donnees: [
+      {
+        noeud: '>46 dossiers ouverts<',
+        devient: '>{{ file.ouverts }} dossiers ouverts<',
+        why: 'Les dossiers dans la file : somme de `openByPriority` de `GET /admin/moderation/stats` — qui compte `OPEN` ET `IN_REVIEW`, soit 1 847 là où la mesure du tableau de bord en voit 1 811. Les deux sont justes et ne comptent pas la même chose.',
+      },
+    ],
+  }),
 
   /**
    * ── D05 · `/admin/moderation/:id` — le dossier (13 §4.2) ───────────────────
@@ -268,7 +653,38 @@ export const screens = [
    * minimum » et un compteur « 48 / 20 » à côté du bouton « Appliquer ».
    * « Bannir · super-admin » porte son rôle dans son libellé (13 §4.2).
    */
-  screen({ section: 'D05', frames: pleinEcran(titre('Dossier #4812')) }),
+  /**
+   * ── CE QUI EST LIÉ ICI : LE SOUS-TITRE, ET RIEN D'AUTRE ────────────────────
+   *
+   * « Publication · priorité 1 · SLA dépassé ». Les trois valeurs sont servies par
+   * `GET /admin/moderation/cases/:id` — `subjectType`, `priority`, `sla` — et c'est
+   * le SEUL endroit de cette planche où la route sert tout ce qui est écrit.
+   *
+   * LE TITRE N'EST PAS LIÉ, et il faut dire pourquoi : la maquette écrit
+   * « Dossier #4812 », un numéro court et lisible. La route ne rend qu'un `id`
+   * UUID. Afficher « Dossier #01a0e4a8-50ff-7000-aec3-d2eb62ce6b17 » serait exact
+   * et illisible, et laisserait croire que #4812 existe ailleurs. Il manque une
+   * RÉFÉRENCE COURTE de dossier au back ; remonté au porteur.
+   *
+   * CE QUI MANQUE AU RESTE est écrit champ par champ dans
+   * `screens/administration/data.ts`. Le manque qui compte, et qui dépasse ce lot :
+   * AUCUNE ROUTE D'ÉQUIPE NE JOINT LE CONTENU VISÉ AU DOSSIER. L'écran qui sert à
+   * décider d'une sanction ne peut pas montrer ce qu'il sanctionne — le modérateur
+   * voit « Publication · priorité 1 · SLA dépassé » et doit trancher à l'aveugle.
+   * C'est le défaut le plus lourd relevé par ce lot.
+   */
+  screen({
+    section: 'D05',
+    dataType: 'D05Data',
+    frames: pleinEcran(titre('Dossier #4812')),
+    donnees: [
+      {
+        noeud: '>Publication · priorité 1 · SLA dépassé<',
+        devient: '>{{ dossier.sujet }} · priorité {{ dossier.priorite }} · SLA {{ dossier.slaEtat }}<',
+        why: 'Le sous-titre du dossier : `subjectType`, `priority` et `sla` de `GET /admin/moderation/cases/:id`. L’état du SLA est calculé par le SERVEUR — l’horloge du navigateur est réglable, et un modérateur en retard d’une heure ne doit pas lire « respecté » sur un dossier hors délai.',
+      },
+    ],
+  }),
 
   // ── D06 · `/admin/parcours` — modèles et versions (T5 D06) ─────────────────
   //
@@ -401,8 +817,57 @@ export const screens = [
   // ── D09 · `/admin/guides` — propositions escaladées et guides obsolètes ────
   screen({ section: 'D09', frames: pleinEcran(titre('Guides')) }),
 
-  // ── D10 · `/admin/services` — justificatifs pro et annonces à risque ───────
-  screen({ section: 'D10', frames: pleinEcran(titre('Services')) }),
+  /**
+   * ── D10 · `/admin/services` — justificatifs pro et annonces à risque ───────
+   *
+   * UN SEUL NOMBRE LIÉ : le compte des justificatifs pro en attente.
+   *
+   * Il est compté EN SUIVANT LE CURSEUR jusqu'au bout, et c'est possible ici parce
+   * que `GET /admin/pro-profiles` pagine HONNÊTEMENT — `take: limit + 1` puis
+   * `buildPage`, donc un `nextCursor` non nul quand il reste des pages. Cinq
+   * routes d'équipe ne le font pas (voir `lireToutesLesVilles` dans `appels.ts`) ;
+   * celle-ci, oui, et c'est vérifié.
+   *
+   * ─── LA LIGNE DE JUSTIFICATIF N'EST PAS LIÉE, POUR UN SEUL MOT ─────────────
+   *
+   * La maquette écrit « MB · Me Mariam Bah · Avocate · carte professionnelle ».
+   * Trois des quatre valeurs sont servies, et richement : `member.displayName`
+   * (« Sarah Traoré », un vrai nom), `profession.nameFr` (« Chauffagiste »), les
+   * initiales s'en dérivent. Mais LE TYPE DU JUSTIFICATIF ne l'est pas : `proof`
+   * porte `mime` (« application/pdf »), `sizeBytes`, `status` et `storageKey` —
+   * jamais « carte professionnelle ».
+   *
+   * Et ce mot-là n'est pas décoratif : il AFFIRME de quel document il s'agit. Lié
+   * aux trois autres dans une boucle, il écrirait « carte professionnelle » sous le
+   * nom d'un chauffagiste dont le justificatif est peut-être un SIRET ou un
+   * diplôme. Une fausse affirmation sur la pièce d'identité professionnelle d'une
+   * personne réelle est pire qu'une ligne entièrement dessinée. Il manque un TYPE
+   * DE JUSTIFICATIF au back ; remonté.
+   *
+   * ─── LES DEUX AUTRES BLOCS N'ONT AUCUNE ROUTE ──────────────────────────────
+   *
+   *   · ANNONCES LOGEMENT À RISQUE — aucune route d'équipe ne sert de file de
+   *     risque logement. Les scores (82, 61) et les indices (« prix bas · compte
+   *     récent · photos réutilisées ») n'existent que comme PONDÉRATIONS dans le
+   *     réglage `housing.risk_weights`, pas comme liste d'annonces scorées.
+   *   · BORNES DE PRIX PAR VILLE — `housing.price_bounds` est UNE SEULE paire
+   *     GLOBALE, relevée `{ minCents: 15000, maxCents: 800000 }`. La maquette
+   *     dessine un tableau par VILLE et par TYPE (chambre, studio, T2), soit six
+   *     valeurs pour deux villes. Cette granularité n'existe pas au réglage ; poser
+   *     la paire globale dans six cases serait inventer six bornes de prix.
+   */
+  screen({
+    section: 'D10',
+    dataType: 'D10Data',
+    frames: pleinEcran(titre('Services')),
+    donnees: [
+      {
+        noeud: '>JUSTIFICATIFS PRO · 5<',
+        devient: '>JUSTIFICATIFS PRO · {{ justificatifs.enAttente }}<',
+        why: 'Les fiches pro en attente de validation, comptées en suivant le curseur de `GET /admin/pro-profiles?status=PENDING` jusqu’au bout — cette route pagine honnêtement, donc le compte est complet.',
+      },
+    ],
+  }),
 
   // ── D11 · `/admin/alertes` — alertes arnaques (13 §5) ──────────────────────
   screen({ section: 'D11', frames: pleinEcran(titre('Alertes arnaques')) }),

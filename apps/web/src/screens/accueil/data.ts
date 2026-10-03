@@ -459,6 +459,25 @@ export const cityTabsFor = (active: number) => CITY_TABS.map((l, i) => tab(l, i 
 
 export const cityTabs = cityTabsFor(2);
 
+/**
+ * LES MÊMES QUATRE ONGLETS, EN PASTILLES — la forme que la planche MOBILE dessine.
+ *
+ * Ce n'est pas un doublon décoratif, et il faut dire pourquoi il existe. La
+ * planche d'ordinateur de A12 dessine ses onglets SOULIGNÉS : graisse, couleur de
+ * texte et trait du bas, ce que `tab()` calcule. La planche mobile les dessine en
+ * PASTILLES : fond, couleur de texte et bordure, ce que `chip()` calcule — et
+ * aucune des trois valeurs n'est la même (`#16785E` de fond contre `#0F5C48` de
+ * texte, `#fff` de texte contre `#5D6B66`).
+ *
+ * Réemployer `cityTabs` sur le cadre mobile aurait donc demandé de RECOLORER une
+ * valeur à la main dans la déclaration liée, c'est-à-dire de redessiner. Les deux
+ * formes sont deux vues du MÊME état — le rang de l'onglet courant est l'unique
+ * argument — donc rien ne peut divergir entre elles.
+ */
+export const cityPillsFor = (active: number) => CITY_TABS.map((l, i) => chip(l, i === active));
+
+export const cityPills = cityPillsFor(2);
+
 /** `u` est le nombre de membres qui ont contribué à la médiane. */
 export const budgets = [
   { l: 'Chambre en coloc', v: '480 €', u: 24 },
@@ -466,6 +485,357 @@ export const budgets = [
   { l: 'Courses mensuelles', v: '220 €', u: 31 },
   { l: 'Abonnement TCL (-26 ans)', v: '25 €', u: 12 },
 ];
+
+// ═══ A01N · LE COMPOSEUR EN PLEIN ÉCRAN, ET CE QUE LE BACK N'A PAS ═════════
+//
+// A01N est le composeur mobile. Il dessinait tout en dur : le texte du brouillon,
+// deux miniatures d'image, un aperçu de sondage, une étiquette de guide lié, trois
+// compteurs et « Visible par Béninois en France ».
+//
+// ── CE QUI EST LIÉ, ET POURQUOI SEULEMENT CELA ─────────────────────────────
+//
+// `createPostSchema` (`@app/shared`, `validation/feed.ts`) est `.strict()` et porte
+// CINQ champs : `type`, `body`, `mediaIds` (≤ `FEED_LIMITS.postMediaMax`),
+// `communityId`, `journeyId`/`journeyStepId`. Il n'a NI `guideIds`, NI sondage.
+//
+// Conséquence lue, pas supposée : `POST /posts` REFUSERAIT un sondage ou un guide
+// lié — `.strict()` rejette le champ inconnu. Les deux fenêtres que la maquette
+// ouvre depuis ce composeur, « Lier un guide » (A01G) et « Créer un sondage »
+// (A01S), n'ont donc AUCUNE route où envoyer leur résultat, et la grille de
+// sondages n'existe que sur les RÉSEAUX (`createPollSchema`, 2 à 8 options), pas
+// sur le fil.
+//
+// On lie donc le type, le corps, les images et le réseau cible — ce que la route
+// accepte — et on LAISSE DESSINÉS l'aperçu de sondage et l'étiquette de guide.
+// Fabriquer un contrat pour eux serait inventer une API. REMONTÉ AU PORTEUR :
+// c'est un manque du BACK, et il est le premier à combler sur cet écran.
+//
+// ── LA RÈGLE DURE DES IMAGES SE TIENT ICI, ET UNE SEULE FOIS ───────────────
+//
+// « Jusqu'à 4 images » (04 §2.4) : la borne est `FEED_LIMITS.postMediaMax`, lue de
+// `@app/shared` et non recopiée. Le compteur affiché est `photos.length`, donc il
+// ne peut pas se désynchroniser des miniatures — c'est exactement le défaut que
+// `composeur.test.ts` décrit : la pastille « 2 images » ne bougeait pas quand on
+// dessinait une cinquième miniature.
+
+/** Un onglet de type dans le composeur MOBILE : fond, texte et bordure, les trois. */
+const typeChip = (label: string, on: boolean) => ({
+  label,
+  bg: on ? '#0F5C48' : '#fff',
+  fg: on ? '#fff' : '#5D6B66',
+  bd: on ? '#0F5C48' : '#E6EBE9',
+});
+
+/**
+ * Les quatre types de publication, dans la forme que A01N dessine.
+ *
+ * Ce n'est pas `postTypesFor` : celui-là porte la palette PAR TYPE de la planche
+ * d'ordinateur de A01 (vert pour Victoire, orange pour Question…), là où le
+ * composeur mobile dessine un seul vert pour l'actif et du blanc pour les autres.
+ * Deux dessins, un seul état — le rang actif est l'unique argument des deux.
+ */
+export const draftTypesFor = (active: number) =>
+  ['Victoire', 'Question', 'Info', 'Discussion'].map((l, i) => typeChip(l, i === active));
+
+export const draftTypes = draftTypesFor(3);
+
+/**
+ * LE BROUILLON EN COURS.
+ *
+ * `photos` porte les LIBELLÉS des miniatures (« Photo 1 »), pas des URL : le cadre
+ * ne dessine qu'un rectangle hachuré avec un nom, et le pipeline média de §2.4
+ * rend des identifiants que cet écran n'a pas à résoudre.
+ *
+ * `cible` est le réseau où l'on publie — `communityId` de `createPostSchema`. Vide,
+ * la publication va au fil public, et la maquette n'en dessine pas la forme : c'est
+ * la seule raison pour laquelle ce champ n'est pas nullable ici.
+ */
+export interface BrouillonView {
+  readonly texte: string;
+  readonly photos: readonly string[];
+  readonly cible: string;
+}
+
+export const brouillon: BrouillonView = {
+  texte: 'On organise un repas partagé pour les nouveaux arrivants. Votez pour la date !',
+  photos: ['Photo 1', 'Photo 2'],
+  cible: 'Visible par Béninois en France',
+};
+
+// ═══ A01G · « Lier un guide » — les deux listes de la fenêtre ══════════════
+//
+// Les cartes de cette fenêtre SONT des données : titre, catégorie, portée ou ville,
+// date de mise à jour et compteur d'utilité, tous présents sur `guideListItemSchema`
+// (`GET /guides`). Elles étaient écrites en dur dans les deux cadres.
+//
+// DEUX LISTES ET NON UNE, parce que la maquette dessine deux SECTIONS NOMMÉES —
+// « SUGGÉRÉS POUR VOTRE PUBLICATION » et « RÉSULTATS » — et deux cartes
+// différentes : la suggérée est sur fond vert, cochée, avec une pastille
+// « Suggéré » ; le résultat est sur fond blanc avec une case vide. Les fondre en
+// une seule liste demanderait de choisir laquelle des deux cartes garder, donc de
+// mentir sur l'autre moitié.
+//
+// ── DEUX MANQUES DU BACK, REMONTÉS ET NON CONTOURNÉS ──────────────────────
+//
+//   · LA RECHERCHE TEXTE N'EXISTE PAS sur les guides : `guideListQuerySchema`
+//     accepte `tab`, `category`, `countryId`, `cityId` et `cursor` — pas de `q`.
+//     Le champ « médecin » que la maquette dessine n'a donc aucune route à
+//     appeler, et il reste dessiné ;
+//   · LA SUGGESTION n'existe pas davantage : rien dans 05 §4 ne rend des guides
+//     « suggérés pour cette publication ». La liste est donc remplie des mêmes
+//     cartes réelles, et l'ordre est celui que l'API donne.
+
+/** Une carte de la fenêtre « Lier un guide » : son titre et sa ligne de contexte. */
+export interface GuideLiableView {
+  readonly titre: string;
+  /** « Santé · mis à jour le 2 février », ou « Santé · Lyon · 57 utiles ». */
+  readonly meta: string;
+}
+
+export const guidesSuggeres = [
+  { titre: 'Déclarer son médecin traitant', meta: 'Santé · mis à jour le 2 février' },
+  { titre: 'Carte Vitale : premiers pas', meta: 'Santé · mis à jour le 18 janvier' },
+] satisfies readonly GuideLiableView[];
+
+export const guidesTrouves = [
+  {
+    titre: 'Trouver un médecin qui accepte de nouveaux patients',
+    meta: 'Santé · Lyon · 57 utiles',
+  },
+  { titre: 'Complémentaire santé solidaire', meta: 'Santé · Universel · 34 utiles' },
+] satisfies readonly GuideLiableView[];
+
+// ═══ A12T · LES ONGLETS DE LA FICHE VILLE ══════════════════════════════════
+//
+// Les six planches d'onglet — trois d'ordinateur en 1036 px, trois mobiles dans
+// MOB2 — étaient ENTIÈREMENT littérales : « Lyon », « Wax et Saveurs »,
+// « Utile · 48 » écrits en dur dans six composants. Elles recevaient `AccueilData`
+// et l'ignoraient (`_props`). Les prises ci-dessous sont ce que ces six cadres
+// LISENT, déclarées plutôt que déduites d'un exemple.
+//
+// ── AUCUNE ROUTE NE LES REMPLIT ENCORE, ET IL FAUT LE DIRE ─────────────────
+//
+// `apps/api/src/modules/cities/` porte bien les routes — `GET /cities/:slug`,
+// `GET /cities/:slug/tips`, `GET /cities/:slug/desks`, `GET /cities/map`, toutes
+// `@PublicRead()` — mais `packages/shared/src/validation/cities.ts` NE CONTIENT
+// AUCUN SCHÉMA DE RÉPONSE : seulement les schémas de requête et d'écriture
+// (`cityTipsQuerySchema`, `createCityTipSchema`, …). Il n'existe donc pas de
+// frontière validée par où ces charges pourraient entrer, et il n'y a pas non
+// plus de module front (`screens/villes/`) comme il y en a pour les guides et
+// les réseaux.
+//
+// Les valeurs restent donc celles de la MAQUETTE, exactement comme
+// `a07/data.ts` garde les siennes en attendant `use-reseaux.ts`. Ce qui change,
+// et c'est tout l'objet de ce lot : le JSX ne les porte plus. Le jour où les
+// schémas de réponse sont écrits, un `villesData()` les remplace et aucun cadre
+// ne bouge. REMONTÉ AU PORTEUR — c'est un manque du BACK, pas du transcodage.
+//
+// ── LE SEUIL DE CONFIDENTIALITÉ NE SE TIENT PAS ICI ────────────────────────
+//
+// `CITY_COUNT_PRIVACY_THRESHOLD` vaut 3 (`validation/cities.ts`), et c'est le
+// SERVEUR qui l'applique : un compteur sous le seuil ne sort pas. Le front
+// affiche ce qu'on lui envoie et ne recalcule rien — deux implémentations de la
+// même règle divergent toujours, et celle-ci protège des personnes.
+
+/** L'en-tête de la fiche ville, découpé en ses cinq textes réels. */
+export interface CityHeadView {
+  readonly nom: string;
+  readonly region: string;
+  readonly membres: string;
+  /**
+   * « 212 contributions ». Les planches A12T l'écrivent, le cadre complet de A12
+   * ne l'écrit PAS : c'est la maquette qui en décide, et les deux lignes sont
+   * donc composées séparément à partir des mêmes trois champs.
+   */
+  readonly contributions: string;
+  readonly reseau: string;
+}
+
+export const ville: CityHeadView = {
+  nom: 'Lyon',
+  region: 'Auvergne-Rhône-Alpes',
+  membres: '1 400 membres',
+  contributions: '212 contributions',
+  reseau: 'Réseau Lyon et Rhône',
+};
+
+/**
+ * Le pied d'une contribution — auteur, compteur d'utilité, enregistrer, signaler.
+ *
+ * `utileBg` et `utileFg` voyagent ENSEMBLE et disent si LE LECTEUR a déjà voté :
+ * vert plein quand oui, gris quand non. Ce n'est pas décoratif — c'est le seul
+ * endroit où l'écran dit que le geste est déjà fait.
+ *
+ * `utiles` est un compteur de VOTES D'UTILITÉ. Jamais de vues : la règle dure
+ * 00 §49 l'interdit, et aucune des quatre listes de cette fiche n'en porte.
+ */
+interface ContributionPied {
+  readonly i: string;
+  readonly bg: string;
+  readonly auteur: string;
+  readonly sous: string;
+  readonly utileBg: string;
+  readonly utileFg: string;
+  readonly utiles: number;
+}
+
+/** Un bon plan de la ville (onglet « Bons plans »). */
+export interface CityTipView extends ContributionPied {
+  readonly cat: string;
+  readonly titre: string;
+  readonly texte: string;
+}
+
+/** Un lieu du pays (onglet « Produits du pays »). */
+export interface CityPlaceView extends ContributionPied {
+  readonly nom: string;
+  readonly adresse: string;
+  /**
+   * Les étiquettes du lieu — type, puis pays. Leur NOMBRE varie : la maquette en
+   * dessine trois sur « Wax et Saveurs » et deux sur « Chez Mama Adjo », et deux
+   * seulement sur la planche mobile. C'est donc une liste, pas trois champs.
+   */
+  readonly tags: readonly string[];
+  /** « Vous y êtes allé·e » quand le lecteur l'a marqué, « J'y suis allé·e » sinon. */
+  readonly been: string;
+  readonly beenBg: string;
+  readonly beenBd: string;
+  readonly texte: string;
+}
+
+/** Un témoignage (onglet « Témoignages »). */
+export interface CityStoryView extends ContributionPied {
+  readonly texte: string;
+  /** « Parcours Études · 7 étapes franchies » — le parcours que le témoignage rattache. */
+  readonly parcours: string;
+}
+
+export const cityTipFiltersFor = (active: number) =>
+  ['Tout', 'Transport', 'Administration', 'Sorties', 'Économies'].map((l, i) =>
+    chip(l, i === active),
+  );
+
+export const cityPlaceFiltersFor = (active: number) =>
+  ['Tout', 'Épiceries', 'Restaurants', 'Tissus', 'Coiffure'].map((l, i) => chip(l, i === active));
+
+export const cityStoryFiltersFor = (active: number) =>
+  ['Tout', 'Études', 'Travail', 'Famille'].map((l, i) => chip(l, i === active));
+
+export const cityTipFilters = cityTipFiltersFor(0);
+export const cityPlaceFilters = cityPlaceFiltersFor(0);
+export const cityStoryFilters = cityStoryFiltersFor(0);
+
+/**
+ * Les trois bons plans de la maquette.
+ *
+ * `satisfies` et non `as const` : le tableau garde le type DÉCLARÉ — donc
+ * `cat: string` et non l'union des trois catégories écrites — tout en étant
+ * vérifié contre la prise. Si un cadre se mettait à lire un champ de plus, la
+ * ligne rougirait ici, à la source du dessin.
+ */
+export const cityTips = [
+  {
+    cat: 'Transport',
+    titre: 'Abonnement TCL à 25 € pour les moins de 26 ans',
+    texte:
+      'Demandez-le en agence avec votre carte étudiante, il n’est pas proposé en ligne pour les étudiants étrangers.',
+    i: 'SM',
+    bg: '#0F5C48',
+    auteur: 'Sandra M.',
+    sous: 'Installée · Lyon 3e',
+    utileBg: '#16785E',
+    utileFg: '#fff',
+    utiles: 48,
+  },
+  {
+    cat: 'Administration',
+    titre: 'Préfecture : arriver avant 8 h le mardi',
+    texte:
+      'Les files sont plus courtes le mardi matin pour les retraits de titre. Pensez à la photocopie du récépissé.',
+    i: 'MK',
+    bg: '#0F5C48',
+    auteur: 'Marc K.',
+    sous: 'Installé',
+    utileBg: '#F2F5F4',
+    utileFg: '#16211D',
+    utiles: 31,
+  },
+  {
+    cat: 'Économies',
+    titre: 'Too Good To Go autour de la Guillotière',
+    texte:
+      'Les boulangeries de la place Gabriel-Péri mettent leurs paniers en ligne vers 19 h.',
+    i: 'FN',
+    bg: '#2FA37D',
+    auteur: 'Fatou N.',
+    sous: 'Installée · Lyon 7e',
+    utileBg: '#F2F5F4',
+    utileFg: '#16211D',
+    utiles: 22,
+  },
+] satisfies readonly CityTipView[];
+
+export const cityPlaces = [
+  {
+    nom: 'Wax et Saveurs',
+    adresse: '12 rue Paul-Bert, Lyon 3e',
+    tags: ['Épicerie', 'Bénin', 'Sénégal'],
+    been: 'Vous y êtes allé·e',
+    beenBg: '#E3F0EB',
+    beenBd: '#E3F0EB',
+    texte: 'Attiéké frais le samedi matin, gari, piment. Paiement carte.',
+    i: 'KB',
+    bg: '#E0733A',
+    auteur: 'Kofi B.',
+    sous: 'Arrivé · Lyon 3e',
+    utileBg: '#F2F5F4',
+    utileFg: '#16211D',
+    utiles: 36,
+  },
+  {
+    nom: 'Chez Mama Adjo',
+    adresse: '5 cours Gambetta, Lyon 7e',
+    tags: ['Restaurant', 'Bénin'],
+    been: 'J’y suis allé·e',
+    beenBg: '#fff',
+    beenBd: '#E6EBE9',
+    texte: 'Amiwo et sauce feuille le vendredi. Petites portions à 8 €.',
+    i: 'AD',
+    bg: '#16785E',
+    auteur: 'Aïcha D.',
+    sous: 'Installée · Lyon 7e',
+    utileBg: '#F2F5F4',
+    utileFg: '#16211D',
+    utiles: 27,
+  },
+] satisfies readonly CityPlaceView[];
+
+export const cityStories = [
+  {
+    texte:
+      '« J’ai trouvé ma coloc en deux semaines grâce au réseau. Le plus dur a été le garant, Visale m’a sauvé. Venez tôt aux événements du jeudi, c’est là que tout se passe. »',
+    parcours: 'Parcours Études · 7 étapes franchies',
+    i: 'AD',
+    bg: '#B4581F',
+    auteur: 'Amina D.',
+    sous: 'Étudiante · Lyon',
+    utileBg: '#16785E',
+    utileFg: '#fff',
+    utiles: 54,
+  },
+  {
+    texte:
+      '« Arrivé en plein hiver sans connaître personne. Trois mois après, j’ai un CDI et des amis. Le parrainage change tout. »',
+    parcours: 'Parcours Travail · abouti',
+    i: 'KB',
+    bg: '#E0733A',
+    auteur: 'Kofi B.',
+    sous: 'Arrivé · Lyon 3e',
+    utileBg: '#F2F5F4',
+    utileFg: '#16211D',
+    utiles: 41,
+  },
+] satisfies readonly CityStoryView[];
 
 // ═══ A02 · une publication ═══════════════════════════════════════════════════
 
@@ -796,6 +1166,21 @@ export interface AccueilData {
 
   countryBars: typeof countryBars;
   cityTabs: ReturnType<typeof cityTabsFor>;
+  cityPills: ReturnType<typeof cityPillsFor>;
+  ville: CityHeadView;
+  cityTipFilters: ReturnType<typeof cityTipFiltersFor>;
+  cityPlaceFilters: ReturnType<typeof cityPlaceFiltersFor>;
+  cityStoryFilters: ReturnType<typeof cityStoryFiltersFor>;
+  cityTips: readonly CityTipView[];
+  cityPlaces: readonly CityPlaceView[];
+  cityStories: readonly CityStoryView[];
+
+  draftTypes: ReturnType<typeof draftTypesFor>;
+  brouillon: BrouillonView;
+  /** La borne de 04 §2.4, lue de `@app/shared` et non recopiée dans le front. */
+  photosMax: number;
+  guidesSuggeres: readonly GuideLiableView[];
+  guidesTrouves: readonly GuideLiableView[];
   budgets: typeof budgets;
   arrivals: typeof arrivals;
   events: typeof events;

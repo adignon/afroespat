@@ -3,6 +3,8 @@
 import {
   CATEGORY_LABELS_FR,
   conversationsResponseSchema,
+  FREE_EVENTS_PER_MONTH,
+  mySubscriptionResponseSchema,
   groupedSearchResponseSchema,
   messagesResponseSchema,
   notificationsResponseSchema,
@@ -24,6 +26,7 @@ import type {
 import type { M01BloqueData } from '../m01bloque/data';
 import type { SuggestionRecherche, X01Data } from '../x01/data';
 import { GLYPHES_X02, type LigneNotification, type X02Data } from '../x02/data';
+import type { X04Data } from '../x04/data';
 
 /**
  * LES APPELS DES ÉCRANS M01, X01 ET X02 — un chargeur par écran, et rien d'autre.
@@ -508,6 +511,48 @@ export async function chargerX02(): Promise<X02Data> {
     moi: barreHauteDe(me),
     lignes: page.items.map(ligneDe),
     nonLusTotal: page.meta.unread,
+  };
+}
+
+/** « 1er octobre » — le `1er` que `Intl` écrit « 1 », corrigé comme la maquette l'écrit. */
+const jourMoisLong = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' });
+
+function jourMoisEcrit(iso: string): string {
+  const d = new Date(iso);
+  const brut = jourMoisLong.format(d);
+  return d.getDate() === 1 ? brut.replace(/^1 /, '1er ') : brut;
+}
+
+/**
+ * X04 — le quota d'événements de l'encart « PLAN » (14 §4.5).
+ *
+ * LA MÉTRIQUE PEUT ÊTRE ABSENTE, et c'est le cas d'un membre qui n'a encore créé
+ * aucun événement ce mois-ci : `usage.items` ne porte alors pas `EVENTS_CREATED`.
+ * On affiche zéro sur le plafond GRATUIT de `FREE_EVENTS_PER_MONTH` — la constante
+ * que le serveur applique — plutôt qu'un tiret qui laisserait croire à une panne.
+ * C'est exactement ce que `quotasDe` fait dans le module Services pour
+ * `PRO_CONTACTS`, et la raison est la même.
+ *
+ * `limit: null` VEUT DIRE ILLIMITÉ, jamais zéro : §4.4 est explicite — « l'écran
+ * affiche illimité, jamais 0 sur null ». Un Premium verrait « 3 événements sur 0 »
+ * si on confondait les deux.
+ *
+ * ⚠ CE CHARGEUR N'A PAS ENCORE DE PAGE, et c'est dit plutôt que caché : aucune
+ * page ne monte `X04Mobile` (T5 range ces encarts en « composants » sans route).
+ * Il existe pour que le cadre lise un quota VRAI le jour où une page l'affichera,
+ * au lieu du « 1 événement sur 1 » de la maquette.
+ */
+export async function chargerX04(): Promise<X04Data> {
+  const abonnement = await memberApi.get('/me/subscription', mySubscriptionResponseSchema);
+  const compteur = abonnement.usage.items.find((u) => u.metric === 'EVENTS_CREATED');
+  const plafond = compteur === undefined ? FREE_EVENTS_PER_MONTH : compteur.limit;
+
+  return {
+    quota: {
+      utilises: compteur?.used ?? 0,
+      plafond: plafond === null ? 'illimité' : String(plafond),
+      reinitialise: jourMoisEcrit(abonnement.usage.resetsAt),
+    },
   };
 }
 

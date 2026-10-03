@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  HELP_SAFETY_BANNER,
   helpCanHelpResponseSchema,
   helpDetailResponseSchema,
   helpListResponseSchema,
@@ -10,6 +11,7 @@ import {
   myMentorshipsResponseSchema,
   publicProfileResponseSchema,
   type HelpCard,
+  type HelpType2,
   type HelpMember,
   type MeResponse,
   type Phase,
@@ -88,6 +90,25 @@ import type { H10Data } from '../h10/data';
  * employées partout. Décider autrement reviendrait à deviner le genre d'un membre
  * à partir de son prénom.
  */
+/**
+ * Les cinq types de `HelpType2`, dans les mots que la maquette écrit.
+ *
+ * Relevés sur ses rangées de filtres — « Démarches », « Service », « Trajet »,
+ * « Matériel » — et sur `T2 §help.type.*`, qui nomme cette énumération-ci et non
+ * celle du module Identité (voir l'écart déjà signalé dans `compte/appels.ts`).
+ *
+ * ÉCART SIGNALÉ : `OTHER` n'est écrit sur AUCUNE planche de `05 Entraide` — ses
+ * rangées de filtres s'arrêtent à quatre types sur cinq. « Autre » est donc le seul
+ * mot de cette carte qui n'ait pas de source dessinée ; à faire valider.
+ */
+const CATEGORIES_FR: Record<HelpType2, string> = {
+  PAPERWORK: 'Démarches',
+  SERVICE: 'Service',
+  RIDE: 'Trajet',
+  MATERIAL: 'Matériel',
+  OTHER: 'Autre',
+};
+
 const PHASES_FR: Record<Phase, string> = {
   PRE_DEPARTURE: 'En préparation',
   RECENT_ARRIVAL: 'Arrivé·e',
@@ -202,7 +223,7 @@ async function decoratif(appel: Promise<number>): Promise<number> {
  */
 async function chargerBandeau(): Promise<BandeauEntraide & { readonly profil: PublicProfileResponse }> {
   const me = await fetchMe();
-  const [profil, compteurs] = await Promise.all([
+  const [profil, { compteurs, avertissement }] = await Promise.all([
     memberApi.get(`/users/${encodeURIComponent(me.user.handle)}`, publicProfileResponseSchema),
     chargerCompteurs(me),
   ]);
@@ -217,6 +238,7 @@ async function chargerBandeau(): Promise<BandeauEntraide & { readonly profil: Pu
       evenements: stats?.eventsOrganized ?? 0,
     },
     compteurs,
+    avertissement,
     profil,
   };
 }
@@ -229,7 +251,9 @@ async function chargerBandeau(): Promise<BandeauEntraide & { readonly profil: Pu
  * deux cents — c'est la même règle que `meta.count` de K05, et elle vaut ici pour
  * la même raison.
  */
-async function chargerCompteurs(me: MeResponse): Promise<CompteursEntraide> {
+async function chargerCompteurs(
+  me: MeResponse,
+): Promise<{ readonly compteurs: CompteursEntraide; readonly avertissement: string }> {
   const ville = me.user.cityId;
   const fil = ville === null ? '/help?limit=1' : `/help?limit=1&cityId=${encodeURIComponent(ville)}`;
 
@@ -243,8 +267,29 @@ async function chargerCompteurs(me: MeResponse): Promise<CompteursEntraide> {
   const [metaFil, pouvezAider, parrainages] = await Promise.all([
     memberApi
       .get(fil, helpListResponseSchema)
-      .then((r) => ({ ouvertes: r.meta.open ?? 0, resoluesCeMois: r.meta.resolvedThisMonth ?? 0 }))
-      .catch(() => ({ ouvertes: 0, resoluesCeMois: 0 })),
+      .then((r) => ({
+        ouvertes: r.meta.open ?? 0,
+        resoluesCeMois: r.meta.resolvedThisMonth ?? 0,
+        /**
+         * LA RÈGLE DURE §2.7 TELLE QUE LE SERVEUR L'ÉCRIT, et non telle qu'un
+         * composant la recopierait. `helpMetaSchema` l'exige en `min(1)` : une
+         * réponse sans bandeau est REFUSÉE à la frontière, donc ce champ n'est
+         * jamais vide quand l'appel aboutit.
+         */
+        avertissement: r.meta.safetyBanner,
+      }))
+      /**
+       * LE REPLI N'EST PAS UNE SECONDE DÉFINITION, et c'est la distinction qui
+       * compte : `HELP_SAFETY_BANNER` est LA constante de `@app/shared` dont le
+       * serveur remplit son propre `meta`. Un fil injoignable ne doit pas faire
+       * disparaître un avertissement de sécurité de l'écran — mais il ne doit pas
+       * non plus en faire apparaître une variante écrite ici.
+       */
+      .catch(() => ({
+        ouvertes: 0,
+        resoluesCeMois: 0,
+        avertissement: HELP_SAFETY_BANNER,
+      })),
     decoratif(
       memberApi.get('/help/can-help?limit=20', helpCanHelpResponseSchema).then((r) => r.items.length),
     ),
@@ -255,13 +300,14 @@ async function chargerCompteurs(me: MeResponse): Promise<CompteursEntraide> {
     ),
   ]);
 
-  return { ...metaFil, pouvezAider, parrainages };
+  const { avertissement, ...villeEtMois } = metaFil;
+  return { compteurs: { ...villeEtMois, pouvezAider, parrainages }, avertissement };
 }
 
 /** Le bandeau seul, pour les six écrans qui ne lisent que lui. */
 const bandeauSeul = async (): Promise<BandeauEntraide> => {
-  const { moi, reputation, compteurs } = await chargerBandeau();
-  return { moi, reputation, compteurs };
+  const { moi, reputation, compteurs, avertissement } = await chargerBandeau();
+  return { moi, reputation, compteurs, avertissement };
 };
 
 // ─── Un membre, tel que la maquette le dessine ──────────────────────────────
@@ -295,8 +341,8 @@ function membreDessine(membre: HelpMember, rang: number): MembreDessine {
  * aller-retour de plus.
  */
 export async function chargerH01(): Promise<H01Data> {
-  const { moi, reputation, compteurs, profil } = await chargerBandeau();
-  return { moi, reputation, compteurs, ville: profil.city?.name ?? '—' };
+  const { moi, reputation, compteurs, avertissement, profil } = await chargerBandeau();
+  return { moi, reputation, compteurs, avertissement, ville: profil.city?.name ?? '—' };
 }
 
 // ─── H02 · /entraide/:id ────────────────────────────────────────────────────
@@ -401,7 +447,14 @@ export async function chargerH02(id: string): Promise<H02Data> {
  *     `MENTOR_NOT_ELIGIBLE` sans détail. Écart signalé.
  */
 export const chargerH03 = (): Promise<H03Data> => bandeauSeul();
-export const chargerH05 = (): Promise<H05Data> => bandeauSeul();
+/**
+ * H05 porte la ville de son filtre, et par le même chemin que H01 : le bandeau
+ * charge déjà le profil public pour la réputation, donc le nom est là.
+ */
+export async function chargerH05(): Promise<H05Data> {
+  const { moi, reputation, compteurs, avertissement, profil } = await chargerBandeau();
+  return { moi, reputation, compteurs, avertissement, ville: profil.city?.name ?? '—' };
+}
 export const chargerH07 = (): Promise<H07Data> => bandeauSeul();
 export const chargerH08 = (): Promise<H08Data> => bandeauSeul();
 
@@ -495,6 +548,28 @@ export async function chargerH10(): Promise<H10Data> {
     mesReponses: {
       total: mes.items.length,
       utiles: mes.items.filter((r) => r.markedHelpful).length,
+      /**
+       * LA LISTE DE LA PLANCHE MOBILE, et ses deux états.
+       *
+       * `markedHelpful` est le SEUL discriminant, et il vient du serveur :
+       * `marquee` et `attente` sont les deux variantes que la maquette dessine, pas
+       * un calcul fait ici. Rien n'est dérivé d'une horloge — `ageCourt` formate un
+       * horodatage, il ne décide d'aucun état.
+       *
+       * ÉCART SIGNALÉ : la planche écrit « hier » et `ageCourt` rend « il y a 1 j ».
+       * Un seul formateur sert tout le module (H02 l'emploie déjà) ; deux échelles
+       * divergeraient au premier changement.
+       */
+      liste: mes.items.map((r) => ({
+        categorie: CATEGORIES_FR[r.request.type],
+        age: ageCourt(r.createdAt),
+        auteur: r.request.author.displayName,
+        titre: r.request.title,
+        corps: r.body,
+        prenom: prenomDe(r.request.author.displayName),
+        marquee: r.markedHelpful,
+        attente: !r.markedHelpful,
+      })),
     },
   };
 }
