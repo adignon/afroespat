@@ -15,6 +15,7 @@ import {
 } from '../enums/generated.js';
 import { STORY_TYPE_VOCABULARY } from '../constants/post-types.js';
 import { cursorQuerySchema, pageSchema, uuidSchema } from './pagination.js';
+import { createPollSchema, postPollSchema } from './communities.js';
 
 /**
  * Fil d'actualité — 04-fil.md §2 et §4.
@@ -80,6 +81,15 @@ export const FEED_LIMITS = {
   postBodyMax: 3_000,
   /** §2.4 : jusqu'à 4 images. */
   postMediaMax: 4,
+  /**
+   * « Jusqu'à 3. Étiquettes vertes avec croix. » — la carte « Guides » de la
+   * planche « COMPOSANTS » de la maquette du fil, mot pour mot.
+   * `screens/accueil/composeur.test.ts` lisait déjà cette borne DANS la maquette,
+   * faute d'un endroit où elle existe vraiment. C'est maintenant ici.
+   */
+  postGuidesMax: 3,
+  /** « Un seul par publication. » — la carte « Sondage » de la même planche. */
+  postPollMax: 1,
   /** §2.4 : 10 publications par heure, 30 par jour. */
   postsPerHour: 10,
   postsPerDay: 30,
@@ -270,12 +280,20 @@ export const FEED_ERROR_CODES = {
   INVALID_CONVERSION_TARGET: 422,
   /** L'auteur seul modifie, supprime ou convertit son contenu. */
   NOT_AUTHOR: 403,
+  /**
+   * §2.4 : un sondage qui a reçu un vote ne se modifie plus, et ne se retire
+   * plus. Changer un libellé réécrirait ce que des membres ont choisi ; le
+   * retirer effacerait leur voix.
+   */
+  POLL_HAS_VOTES: 409,
 } as const;
 
 export type FeedErrorCode = keyof typeof FEED_ERROR_CODES;
 
 export const FEED_ERROR_MESSAGES: Record<FeedErrorCode, string> = {
   EDIT_WINDOW_CLOSED: 'Le délai de modification de 15 minutes est dépassé.',
+  POLL_HAS_VOTES:
+    'Ce sondage a déjà reçu des votes : il ne peut plus être modifié ni retiré.',
   // Motif GÉNÉRIQUE (13 §2) : détailler la règle déclenchée apprendrait à la
   // contourner à qui cherche justement à la contourner.
   CONTENT_BLOCKED: 'Ce texte ne peut pas être publié en l’état.',
@@ -292,6 +310,74 @@ export const FEED_ERROR_MESSAGES: Record<FeedErrorCode, string> = {
   INVALID_CONVERSION_TARGET: 'Ce type de story ne se garde pas sous cette forme.',
   NOT_AUTHOR: 'Seule la personne qui a publié ce contenu peut faire cela.',
 };
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « QU'EST-CE QUI MANQUE ? » — LE REFUS LE SAIT, IL NE LE DISAIT PAS        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, devant le message catalogué : « Ceci est lié à quoi "Ce type de
+ * story demande un rattachement que vous n'avez pas indiqué" ? Qu'est-ce qui
+ * manque ? » La question est la preuve du défaut : la phrase nomme un problème
+ * sans nommer le champ, et personne ne peut y répondre depuis l'écran.
+ *
+ * Le serveur, lui, SAIT : il met le motif dans `details.reason`
+ * (`DECOUVERTE_NEEDS_PLACE`, `CONSEIL_NEEDS_STEP_OR_SUBJECT`…). Il n'y avait rien
+ * à mesurer de plus — seulement une phrase à écrire pour chacun.
+ *
+ * ── POURQUOI ICI, ET NON DANS L'ÉCRAN ──────────────────────────────────────
+ *
+ * C'est la règle que ce dépôt tient depuis le premier catalogue : le front décide
+ * sur le CODE, il n'écrit pas les phrases. Un message rédigé dans un composant
+ * n'existerait que pour cet écran, et le prochain qui publiera une story
+ * réinventerait le sien.
+ *
+ * La phrase générique reste le DERNIER RECOURS : un motif que le serveur
+ * ajouterait sans qu'on l'ait traduit ne doit pas produire un message vide.
+ */
+export const STORY_ATTACHMENT_MESSAGES: Record<string, string> = {
+  CONSEIL_NEEDS_STEP_OR_SUBJECT:
+    'Un conseil a besoin d’un sujet ou d’une étape de parcours. Choisissez-en un à l’étape 2.',
+  CONSEIL_CATEGORY_MUST_BE_SUBJECT:
+    'Ce sujet n’existe que pour une découverte. Choisissez un sujet de conseil, ou changez le type.',
+  DECOUVERTE_NEEDS_CATEGORY:
+    'Une découverte a besoin d’une catégorie : un lieu, un produit ou une sortie.',
+  DECOUVERTE_NEEDS_PLACE:
+    'Une découverte a besoin du lieu dont elle parle. Indiquez-le à l’étape 2.',
+  DECOUVERTE_HAS_NO_STEP:
+    'Une découverte ne se rattache pas à une étape de parcours. Retirez l’étape choisie.',
+  INFORMATION_NEEDS_SUBJECT: 'Une information a besoin d’un sujet. Choisissez-en un à l’étape 2.',
+  INFORMATION_HAS_NO_STEP:
+    'Une information ne se rattache pas à une étape de parcours. Retirez l’étape choisie.',
+  VALID_UNTIL_INFORMATION_ONLY: 'Seule une information peut porter une date de fin de validité.',
+  VALID_UNTIL_IN_PAST: 'La date de fin de validité est déjà passée.',
+  /**
+   * ⚠ CETTE PHRASE N'ENVOIE NULLE PART, ET C'EST VOULU — voir l'écart ci-dessous.
+   *
+   * Elle disait d'abord « Choisissez votre ville dans votre profil ». VÉRIFIÉ :
+   * `/compte/profil` AFFICHE la ville et n'offre AUCUN moyen de la changer — le
+   * seul écran qui l'écrit est celui de l'inscription (`/bienvenue/lieu`,
+   * `PATCH /me`). La phrase envoyait donc le membre vers une page où il ne pouvait
+   * rien faire, ce qui est pire que de ne rien dire.
+   *
+   * Elle dit maintenant CE QUI MANQUE, sans promettre un chemin qui n'existe pas.
+   * LE MANQUE EST REMONTÉ AU PORTEUR : il faut un contrôle pour changer de ville
+   * après l'inscription — un déménagement est le cas le plus ordinaire qui soit.
+   */
+  CITY_REQUIRED: 'Votre compte n’est rattaché à aucune ville, et une story en demande une.',
+  MEDIA_NOT_READY: 'Votre photo n’est pas encore prête. Réessayez dans un instant.',
+  EXIF_NOT_STRIPPED: 'Votre photo n’a pas pu être nettoyée de ses métadonnées. Réessayez.',
+};
+
+/**
+ * La phrase à montrer pour un refus de rattachement : la précise si le motif est
+ * connu, la générique du catalogue sinon.
+ */
+export function messageDeRattachement(reason: unknown): string {
+  return typeof reason === 'string' && reason in STORY_ATTACHMENT_MESSAGES
+    ? (STORY_ATTACHMENT_MESSAGES[reason] as string)
+    : FEED_ERROR_MESSAGES.INVALID_ATTACHMENT;
+}
 
 // ── Schémas d'écriture — publications (§2.4, §4) ────────────────────────────
 
@@ -315,13 +401,61 @@ export const createPostSchema = z
      * sans ce champ, l'encart ne serait alimenté par aucune route.
      */
     journeyStepId: uuidSchema.optional(),
+    /**
+     * ── LE SONDAGE, CRÉÉ AVEC LA PUBLICATION ───────────────────────────────
+     *
+     * En UN appel et non deux, et ce n'est pas du confort : une publication créée
+     * puis un sondage qui échoue laisserait une publication dont la maquette
+     * promet un sondage et qui n'en a pas. Les deux naissent dans la même
+     * transaction, ou aucun des deux.
+     *
+     * Les bornes sont celles du module 07 — question de 5 à 200 caractères, 2 à 8
+     * options — et elles sont REPRISES, pas recopiées : `createPollSchema` est
+     * importé. Deux tables de bornes divergeraient au premier ajustement.
+     */
+    poll: createPollSchema.optional(),
+    /** « Jusqu'à 3 » — la borne de la maquette, tenue à la frontière. */
+    guideIds: z.array(uuidSchema).max(FEED_LIMITS.postGuidesMax).optional(),
   })
   .strict();
 
 export type CreatePost = z.infer<typeof createPostSchema>;
 
 /** §2.4 : « Modification : 15 minutes après publication ». Le type, jamais. */
-export const updatePostSchema = z.object({ body: postBodySchema }).strict();
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ MODIFIER UNE PUBLICATION — AVEC CE QU'ELLE PORTE, PAS SEULEMENT SON TEXTE  ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur veut une fenêtre de modification « avec tous ces artifacts (images,
+ * guides, sondages) ». Le schéma n'acceptait QUE `body` : un auteur pouvait
+ * corriger sa phrase et jamais retirer une photo qu'il n'aurait pas voulu mettre.
+ *
+ * ── TROIS CHAMPS FACULTATIFS, ET L'ABSENCE VEUT DIRE « NE TOUCHE PAS » ────
+ *
+ * Absent ≠ vide. `mediaIds: []` RETIRE les images ; `mediaIds` absent les laisse.
+ * Sans cette distinction, une fenêtre qui n'enverrait que le texte effacerait les
+ * photos en silence — et c'est exactement le genre de perte qu'on ne remarque
+ * qu'après.
+ *
+ * ── LE SONDAGE NE SE MODIFIE QUE TANT QUE PERSONNE N'A VOTÉ ───────────────
+ *
+ * `poll: null` le retire, un objet le remplace. LE SERVEUR REFUSE les deux dès
+ * qu'un vote existe (`POLL_HAS_VOTES`), et ce n'est pas une prudence : changer le
+ * libellé d'une option après coup RÉÉCRIRAIT ce que des membres ont choisi. Un
+ * sondage voté est un engagement pris envers ses votants.
+ */
+export const updatePostSchema = z
+  .object({
+    body: postBodySchema,
+    /** Absent = on ne touche pas aux images ; `[]` = on les retire toutes. */
+    mediaIds: z.array(uuidSchema).max(FEED_LIMITS.postMediaMax).optional(),
+    /** Absent = on ne touche pas aux guides liés ; `[]` = on les délie tous. */
+    guideIds: z.array(uuidSchema).max(FEED_LIMITS.postGuidesMax).optional(),
+    /** Absent = on n'y touche pas ; `null` = on retire ; un objet = on remplace. */
+    poll: createPollSchema.nullable().optional(),
+  })
+  .strict();
 
 export type UpdatePost = z.infer<typeof updatePostSchema>;
 
@@ -375,6 +509,19 @@ export const createStorySchema = z
     stepDefinitionId: uuidSchema.optional(),
     /** Sujet (conseil, information) ou catégorie de découverte. */
     category: z.union([z.enum(STORY_SUBJECTS), z.enum(STORY_DISCOVERY_CATEGORIES)]).optional(),
+    /**
+     * LE SUJET ÉCRIT À LA MAIN, et il n'a de sens qu'avec « Autre ».
+     *
+     * Le porteur : « au niveau du sujet, Autre doit permettre de saisir dans un
+     * champ ». Le texte ne REMPLACE pas `category` — il la complète. `AUTRE`
+     * reste la valeur de référentiel qui classe la story ; ce champ dit ce que
+     * « autre » voulait dire pour son auteur.
+     *
+     * 60 caractères : c'est un sujet, pas une phrase. Les libellés dessinés par
+     * la maquette (« Vie quotidienne », le plus long) en font 15 ; la borne laisse
+     * quatre fois cette place sans ouvrir un second corps de story.
+     */
+    categoryOther: z.string().trim().min(1).max(60).optional(),
     placeLabel: z.string().trim().min(1).max(120).optional(),
     /** Information : fin de validité, si plus courte que 24 h. */
     validUntil: z.string().datetime().optional(),
@@ -385,6 +532,17 @@ export const createStorySchema = z
   .refine((v) => (v.backgroundColor === undefined) !== (v.backgroundAssetId === undefined), {
     message: 'Indiquez une couleur de fond OU une image de fond, pas les deux.',
     path: ['backgroundColor'],
+  })
+  /**
+   * UN SUJET LIBRE SANS « AUTRE » SERAIT UN SUJET QUE PERSONNE NE LIT.
+   *
+   * L'écran n'ouvre ce champ que lorsque « Autre » est retenu ; une charge qui le
+   * porterait avec « Logement » viendrait d'ailleurs, et son texte ne serait
+   * affiché nulle part. Le refuser ici vaut mieux que l'enregistrer en silence.
+   */
+  .refine((v) => v.categoryOther === undefined || v.category === 'AUTRE', {
+    message: 'Un sujet écrit à la main n’accompagne que le sujet « Autre ».',
+    path: ['categoryOther'],
   });
 
 export type CreateStory = z.infer<typeof createStorySchema>;
@@ -423,9 +581,35 @@ export const feedQuerySchema = cursorQuerySchema.extend({
 
 export type FeedQuery = z.infer<typeof feedQuerySchema>;
 
+/**
+ * ╔═══════════════════════════════════════════════════════════════════════════╗
+ * ║ « PERTINENTS » / « RÉCENTS » — LA MAQUETTE LES DESSINE, §2.5 NE LES DÉFINIT PAS ║
+ * ╚═══════════════════════════════════════════════════════════════════════════╝
+ *
+ * Les deux onglets sont dessinés sur la planche A01C depuis le début et n'avaient
+ * aucun effet : la route rendait TOUJOURS l'ordre de la discussion. Le porteur
+ * demande de les finaliser.
+ *
+ * CE QUE LE SERVEUR PEUT HONNÊTEMENT CLASSER : il n'existe AUCUNE réaction de
+ * commentaire — ni table, ni colonne, ni route — donc pas de « plus aimé ». Le
+ * seul signal présent en base est le NOMBRE DE RÉPONSES qu'une racine a suscitées.
+ * C'est ce que « Pertinents » trie, et c'est ÉCRIT ICI pour que la définition soit
+ * lisible d'un écran — elle est remontée au porteur, §2.5 ne tranchant pas.
+ *
+ * `RELEVANT` EST LE DÉFAUT, et c'est délibéré : la maquette dessine « Pertinents »
+ * comme l'onglet actif. À égalité de réponses, l'ordre reste celui de la
+ * discussion — §2.5 : « une discussion se lit dans l'ordre où elle s'est tenue ».
+ */
+export const COMMENT_SORTS = ['RELEVANT', 'RECENT'] as const;
+
+export const commentSortSchema = z.enum(COMMENT_SORTS);
+
+export type CommentSort = z.infer<typeof commentSortSchema>;
+
 export const commentsQuerySchema = cursorQuerySchema.extend({
   subjectType: z.enum(CommentSubjectType),
   subjectId: uuidSchema,
+  sort: commentSortSchema.default('RELEVANT'),
 });
 
 export type CommentsQuery = z.infer<typeof commentsQuerySchema>;
@@ -540,7 +724,19 @@ export const postCardSchema = z
     community: z.object({ id: uuidSchema, name: z.string(), slug: z.string() }).nullable(),
     /** §2.4 : quatre images au plus, et c'est le SERVEUR qui le garantit. */
     media: z
-      .array(z.object({ position: z.number().int(), url: z.string() }))
+      .array(
+        z.object({
+          /**
+           * L'identifiant de l'actif média — celui que `PATCH /posts/:id` attend.
+           * L'adresse, elle, porte une clé de STOCKAGE : elle ne nomme pas la
+           * ligne, et la fenêtre de modification n'avait donc aucun moyen de dire
+           * « retire celle-ci ».
+           */
+          id: uuidSchema,
+          position: z.number().int(),
+          url: z.string(),
+        }),
+      )
       .max(FEED_LIMITS.postMediaMax),
     context: contextLineSchema,
     stepBadge: stepBadgeSchema.nullable(),
@@ -557,7 +753,42 @@ export const postCardSchema = z
       mine: z.enum(ReactionKind).nullable(),
     }),
     commentCount: z.number().int(),
+    /**
+     * « Enregistrer » (le signet dessiné en haut à droite de la carte).
+     *
+     * `BookmarkSubjectType` énumère `POST` depuis le début ; seules les STORIES
+     * avaient des routes, et la carte ne savait donc pas dire si elle était
+     * enregistrée. Le bouton était dessiné, sans geste et sans état.
+     */
+    bookmarked: z.boolean(),
     commentLabel: z.string(),
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LE SONDAGE DE LA PUBLICATION — LA MAQUETTE LE DESSINE DEPUIS LE DÉBUT║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « la création de sondage […] ne marche pas ». La carte de
+     * publication a son bloc de sondage dans la planche, et `FeedPostView` porte
+     * `poll` : seule la BASE ne savait pas le rattacher à une publication —
+     * `polls.community_id` était obligatoire.
+     *
+     * LE MODÈLE EST CELUI DU MODULE 07, repris tel quel. Un second schéma aurait
+     * dupliqué les options, les votes, le compte par option, le masquage des
+     * résultats avant vote et la clôture. `postPollSchema` est donc `pollSchema`
+     * SANS `communityId` — un sondage de publication n'en a pas, et le rendre
+     * nullable dans un schéma partagé par les deux aurait rendu le champ
+     * optionnel là où il est garanti.
+     */
+    poll: postPollSchema.nullable(),
+    /**
+     * LES GUIDES LIÉS — « Jusqu'à 3. Étiquettes vertes avec croix. »
+     *
+     * `slug` et non seulement `id` : une étiquette mène au guide, et un guide
+     * s'ouvre par son SLUG (`/guides/:slug`). Le front n'a donc rien à résoudre.
+     */
+    guides: z
+      .array(z.object({ id: uuidSchema, slug: z.string(), title: z.string() }).strict())
+      .max(FEED_LIMITS.postGuidesMax),
     linkRel: z.literal(POST_LINK_REL),
   })
   .strict();
@@ -744,6 +975,12 @@ export const storyBubbleSchema = z
      */
     category: z.string().nullable(),
     categoryLabel: z.string().nullable(),
+    /**
+     * Le sujet écrit à la main, quand `category` vaut `AUTRE`. `categoryLabel`,
+     * lui, reste le libellé DÉRIVÉ de l'énumération : les deux ne disent pas la
+     * même chose et ne peuvent pas se confondre.
+     */
+    categoryOther: z.string().nullable(),
     placeLabel: z.string().nullable(),
     stepDefinition: z.object({ id: uuidSchema, nameFr: z.string() }).nullable(),
     audience: z.enum(StoryAudience),

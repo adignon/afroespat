@@ -1,7 +1,7 @@
 'use client';
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH07 } from '@/screens/entraide/appels';
+import { SQUELETTE_H07, chargerH07 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H07Desktop } from '@/screens/h07/desktop.generated';
 import { H07Mobile } from '@/screens/h07/mobile.generated';
@@ -27,7 +27,16 @@ import { H07Mobile } from '@/screens/h07/mobile.generated';
  */
 export default function MyMentorshipsPage() {
   return (
-    <EcranDonnees charger={chargerH07}>
+    <EcranDonnees
+      charger={chargerH07}
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre
+       * compte… » — et aucune entrée de rail dans le HTML servi. Voir
+       * `screens/compte/ecran-donnees.tsx` pour le raisonnement complet.
+       */
+      squelette={SQUELETTE_H07}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="H07"

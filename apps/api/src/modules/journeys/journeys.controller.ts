@@ -62,6 +62,38 @@ export class JourneysController {
     return this.journeys.templates(auth.userId);
   }
 
+  /**
+   * LES ÉTAPES D'UN TYPE, AVANT TOUTE OUVERTURE DE PARCOURS.
+   *
+   * `journey-templates` au-dessus rend `version.stepCount` — un nombre, pas des
+   * noms. Jusqu'ici les étapes n'existaient pour un membre qu'APRÈS l'ouverture
+   * d'un parcours, qui les copie dans `journey_steps`.
+   *
+   * Le composeur de story en a besoin avant : `POST /stories` accepte un
+   * `stepDefinitionId`, et c'est ce qui « rend un conseil réutilisable » (§2.6).
+   * Sans cette route l'écran ne pouvait proposer qu'une liste écrite en dur —
+   * donc sans identifiant, donc inenvoyable.
+   *
+   * ── L'ORDRE DES ROUTES COMPTE ─────────────────────────────────────────────
+   *
+   * Elle est déclarée AVANT `journeys/:id` et consorts, et son chemin commence par
+   * le segment littéral `journey-templates` : Nest résout dans l'ordre de
+   * déclaration, et un segment variable placé avant avalerait celui-ci sans que
+   * rien ne le signale.
+   *
+   * `content.read` comme sa voisine : lire les étapes proposées ne demande pas
+   * plus que lire les types.
+   */
+  @Get('journey-templates/:id/steps')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Étapes d’un type de parcours, résolues pour mon pays (§2.1)' })
+  async templateSteps(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+  ) {
+    return this.journeys.templateSteps(auth.userId, id);
+  }
+
   @Get('journeys')
   @RequiresCapability('content.read')
   @ApiOperation({ summary: 'Mes parcours et ceux où je suis accompagnant (§5.1)' })

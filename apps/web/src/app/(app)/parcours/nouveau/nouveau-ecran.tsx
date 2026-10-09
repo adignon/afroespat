@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import { chargerJ02 } from '@/screens/parcours/appels';
+import { VUE_NEUTRE, chargerJ02 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { CODE_REGULARISER } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage } from '@/screens/parcours/modales';
@@ -73,6 +73,20 @@ export function NouveauEcran({ etape }: { readonly etape: EtapeCreation }) {
 
   return (
     <EcranParcoursDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE. `VUE_NEUTRE` est le DESSIN sans la
+       * donnee, et il existait deja pour les planches d'illustration : rien n'est
+       * invente ici. Sans lui, cette route repond 200 en servant « DisaporyPlus
+       * Chargement de votre parcours... » et RIEN d'autre — ni rail, ni panneau,
+       * ni barre basse. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      /*
+       * J02 ATTEND UN TYPE PLUS RICHE, et `tsc` l'a dit : ses modeles sont des
+       * `ModeleProposé` (avec `choisi` et `autre`), pas les `ModeleAffiche` de
+       * `VUE_NEUTRE`. La liste vide suffit — un ecran qui n'a pas encore ses
+       * modeles n'en propose aucun — et le type redevient juste.
+       */
+      squelette={{ ...VUE_NEUTRE, modeles: [] }}
       screen="J02"
       charger={chargerJ02}
       contexte={contexte}

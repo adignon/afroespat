@@ -38,6 +38,23 @@ export default function Page() {
     <>
       <ScreenFrames
         screen="P02"
+      /**
+       * `direction="column"` : LA MAQUETTE ÉCRIT `flex-direction: column` SUR CE
+       * CADRE, et le générateur retire ce conteneur parce qu’il portait aussi la
+       * taille fixe de la planche. L’enveloppe repose alors sur son défaut — une
+       * RANGÉE, qui est juste pour les écrans à rail de gauche et faux pour
+       * ceux-ci.
+       *
+       * MESURÉ AU NAVIGATEUR, et c’est le porteur qui l’a vu : « La page
+       * d’onboarding a une pagination à gauche ? » Non — la maquette dessine une
+       * BARRE DE PROGRESSION EN HAUT (bouton retour, six segments sur toute la
+       * largeur, compteur à droite). En rangée, cette barre devenait une colonne
+       * de 216 px de large sur toute la hauteur, ses six segments écrasés à 30 px,
+       * et le bouton avec le compteur flottaient au milieu à gauche. Les HUIT
+       * cadres d’ordinateur de cette maquette sont des colonnes : toutes les
+       * pages de ce groupe portent donc cette prise.
+       */
+      direction="column"
         desktop={<P02Desktop {...vals} />}
         mobile={<P02Mobile {...vals} />}
       />

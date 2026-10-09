@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/modal';
 import { ScreenFrames } from '@/screens/frames';
 import { M01Menu } from '@/screens/m01menu/menu.generated';
 import { TITRES_DE_FEUILLE, type FeuilleMessages } from '@/screens/messages/feuilles';
+import type { MenuConversation, SignalementVue } from './data';
 import { X03Desktop } from '@/screens/x03/desktop.generated';
 import { X03Mobile } from '@/screens/x03/mobile.generated';
 import { X03MobileConfirmation } from '@/screens/x03confirmation/mobileconfirmation.generated';
@@ -53,13 +54,56 @@ export function EcranMessages({
   desktop,
   mobile,
   ouverte = null,
+  menu,
+  signalement,
 }: {
   readonly desktop: ReactNode;
   readonly mobile: ReactNode;
   /** La fenêtre que l'URL demande, s'il y en a une. */
   readonly ouverte?: FeuilleMessages | null;
+  /**
+   * LES GESTES DU MENU DE CONVERSATION — profil, sourdine, blocage.
+   *
+   * Le menu est monté ICI, pas dans le cadre : c'est `Modal` qui le rend, et il
+   * ne recevait aucune prise. Ses quatre entrées étaient des `<span>` inertes.
+   */
+  readonly menu?: MenuConversation;
+  /**
+   * LES GESTES DE LA FEUILLE « SIGNALER ».
+   *
+   * Même raison que `menu` : la feuille est montée ICI, par `Modal`, et ne
+   * recevait aucune prise. Ses six motifs étaient des `<div>`, son champ de
+   * détails était la phrase d'exemple de la planche, et son bouton n'avait pas de
+   * geste.
+   */
+  readonly signalement?: SignalementVue;
 }) {
   const [courante, setCourante] = useState<FeuilleMessages | null>(ouverte);
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ L'URL CHANGEAIT, LA FENÊTRE NE S'OUVRAIT PAS                            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le signalement quand on clique sur signaler n'affiche pas
+   * automatiquement le modal. L'URL change mais le modal ne vient pas. »
+   *
+   * MESURÉ : `useState(ouverte)` ne lit sa valeur QU'AU MONTAGE. L'entrée
+   * « Signaler » du menu est un lien vers `?feuille=signaler` ; Next rerend la
+   * page avec la nouvelle prise, mais le composant n'est pas remonté — donc
+   * `courante` gardait `null`, et la fenêtre restait fermée. Seule une arrivée
+   * DIRECTE sur l'URL l'ouvrait, ce qui est exactement le cas que les épreuves
+   * exerçaient.
+   *
+   * ON SUIT DONC LA PRISE. Et on ne remplace pas l'état par elle : `fermer()`
+   * doit pouvoir refermer la fenêtre sans toucher à l'URL — la croix et le voile
+   * ferment, le paramètre reste, et rouvrir par le menu doit remarcher. C'est
+   * pourquoi l'état existe en plus de la prise, et pourquoi il la suit au lieu de
+   * s'y substituer.
+   */
+  useEffect(() => {
+    setCourante(ouverte);
+  }, [ouverte]);
   const fermer = useCallback((): void => setCourante(null), []);
 
   /**
@@ -97,15 +141,15 @@ export function EcranMessages({
         onClose={fermer}
         titleId={TITRES_DE_FEUILLE.menu}
         name="M01MENU"
-        mobile={<M01Menu />}
+        mobile={<M01Menu menu={menu} />}
       />
       <Modal
         open={courante === 'signaler'}
         onClose={fermer}
         titleId={TITRES_DE_FEUILLE.signaler}
         name="X03"
-        desktop={<X03Desktop />}
-        mobile={<X03Mobile />}
+        desktop={<X03Desktop signalement={signalement} />}
+        mobile={<X03Mobile signalement={signalement} />}
       />
       {/*
         La confirmation n'a qu'une seule planche — une carte nue de 360 px — et la

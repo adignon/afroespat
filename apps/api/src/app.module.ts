@@ -55,6 +55,7 @@ import { EventsService } from './modules/events/events.service';
 import { CommunitiesController } from './modules/communities/communities.controller';
 import { CommunitiesService } from './modules/communities/communities.service';
 import { GuidesController } from './modules/guides/guides.controller';
+import { BookmarksController } from './modules/bookmarks/bookmarks.controller';
 import { BookmarksService } from './modules/bookmarks/bookmarks.service';
 import { GUIDE_VIEW_COUNTER, GuidesService } from './modules/guides/guides.service';
 import { RedisGuideViewCounter } from './modules/guides/guide-view-counter';
@@ -144,7 +145,7 @@ import {
      */
     ...(loadEnv().APP_ROLE === 'api' ? [RealtimeModule] : []),
   ],
-  controllers: [HealthController, PlacesController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
+  controllers: [HealthController, PlacesController, BookmarksController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
     StaffAuthController, AdminController, AdminModerationController,
     // Module 02 — les référentiels, tenus par CONTENT_ADMIN (§4.2).

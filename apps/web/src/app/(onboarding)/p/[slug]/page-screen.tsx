@@ -53,8 +53,12 @@ export function PageStatiqueScreen({ variante }: { readonly variante: PageStatiq
     busy: false,
     onSubmit: () => undefined,
     onContinue: () => undefined,
+    // P03 ne dessine aucun bouton retour : l'action est inerte, comme ses voisines.
+    onBack: () => undefined,
     countryOptions: [],
     cityCatalogue: [],
+    skillCatalogue: [],
+    languageCatalogue: [],
     templates: [],
     // P03 ne dessine ni compte à rebours, ni « Renvoyer », ni retour : ces trois
     // valeurs existent pour P02 seul, et cette page ne les rend nulle part.
@@ -66,6 +70,15 @@ export function PageStatiqueScreen({ variante }: { readonly variante: PageStatiq
   return (
     <ScreenFrames
       screen={variante === 'ressources' ? 'P03-ressources' : 'P03'}
+      /**
+       * `direction="column"` : la maquette écrit `flex-direction: column` sur ce
+       * cadre, et le générateur retire ce conteneur parce qu'il portait aussi la
+       * taille fixe de la planche. L'enveloppe repose alors sur son défaut — une
+       * RANGÉE, juste pour les écrans à rail de gauche, faux pour ceux-ci. Les HUIT
+       * cadres d'ordinateur de cette maquette sont des colonnes. Voir le détail dans
+       * `(onboarding)/bienvenue/phase/page.tsx`.
+       */
+      direction="column"
       // La maquette ne dessine PAS de cadre mobile pour P03 : la planche du
       // document fait 1440 px, celle des ressources 560 px. Un seul cadre donc,
       // comme pour O05 — et non un cadre mobile inventé.

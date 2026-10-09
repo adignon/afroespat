@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
 import { type Page, expect, test } from '@playwright/test';
+import { numeroNational } from './session';
+import { codesDepuis, marqueDuJournal } from './sms';
 
 /**
  * L'inscription, de bout en bout, dans un vrai navigateur — 01-identite.md §5.
@@ -47,33 +48,23 @@ async function apiUp(): Promise<boolean> {
  * qui le font passer pour du binaire. Un `grep` ordinaire s'y tait complètement —
  * le premier outil d'inspection que j'ai écrit est tombé exactement là.
  */
-function codesSentTo(phone: string): string[] {
-  if (API_LOG === '') return [];
-  const tail = phone.slice(-4);
-  try {
-    const text = readFileSync(API_LOG, 'latin1');
-    const pattern = new RegExp(`SMS fictif vers [^:]*${tail} : Votre code de connexion : (\\d{6})`, 'g');
-    return [...text.matchAll(pattern)].map((m) => m[1] as string);
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Inscrit un membre et le laisse connecté, pour éprouver un écran plus loin dans
  * le parcours sans refaire le chemin à chaque test.
  */
 async function signUp(page: Page): Promise<void> {
-  const phone = `97${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 100)}`;
+  const phone = numeroNational();
   await page.goto('/connexion');
   await page.locator('input[name="phone"]:visible').fill(phone);
   // §5 : la case est obligatoire, et l'API la vérifie aussi. Sans ce clic, tout
   // le parcours s'arrête au premier écran — c'est le but.
   await page.locator('main:visible [role="checkbox"]').click();
+  const marque = marqueDuJournal();
   await page.getByRole('button', { name: 'Recevoir le code' }).click();
   await page.waitForURL('**/connexion/code');
-  await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
-  await page.locator('input[autocomplete="one-time-code"]:visible').fill(codesSentTo(phone)[0] as string);
+  await expect.poll(() => codesDepuis(phone, marque).length, { timeout: 15_000 }).toBe(1);
+  await page.locator('input[autocomplete="one-time-code"]:visible').fill(codesDepuis(phone, marque)[0] as string);
   await page.waitForURL('**/bienvenue/phase', { timeout: 20_000 });
 }
 
@@ -93,7 +84,7 @@ test.describe('inscription complète', () => {
      * par numéro. Le test échouait alors sur un vrai refus du serveur, ce qui
      * ressemblait à un bogue de l'application.
      */
-    const phone = `97${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 100)}`;
+    const phone = numeroNational();
 
     await page.goto('/connexion');
 
@@ -103,12 +94,13 @@ test.describe('inscription complète', () => {
     await expect(field).toHaveValue(phone);
 
     await page.locator('main:visible [role="checkbox"]').click();
-    await page.getByRole('button', { name: 'Recevoir le code' }).click();
+    const marque = marqueDuJournal();
+  await page.getByRole('button', { name: 'Recevoir le code' }).click();
     await page.waitForURL('**/connexion/code');
 
     // Le SMS fictif est parti, VERS CE NUMÉRO.
-    await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
-    const code = codesSentTo(phone)[0] as string;
+    await expect.poll(() => codesDepuis(phone, marque).length, { timeout: 15_000 }).toBe(1);
+    const code = codesDepuis(phone, marque)[0] as string;
 
     /**
      * UN SEUL champ par cadre, POSÉ SUR les six cases : elles ne font qu'afficher.
@@ -136,6 +128,20 @@ test.describe('inscription complète', () => {
     await expect(page.locator(BANNER)).toHaveCount(0);
   });
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE REFUS NE PASSE PLUS PAR UNE BANNIÈRE : LE BOUTON EST GRISÉ           ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Ce cas cliquait « Recevoir le code » sur un champ vide et attendait la
+   * bannière « Entrez votre numéro ». Depuis la validation par pays (le porteur :
+   * « il faut la validation du numéro selon le pays »), le bouton est DÉSACTIVÉ
+   * tant que le numéro n'est pas valide : le clic n'aboutit jamais et le cas
+   * expirait, sur un écran qui se comporte pourtant mieux qu'avant.
+   *
+   * Ce qu'il mesurait tient, et plus fermement : un numéro vide n'atteint pas
+   * l'API. On le mesure donc à l'endroit où la règle vit maintenant.
+   */
   test('refuse un numéro vide sans appeler l’API', async ({ page }) => {
     let called = false;
     await page.route('**/auth/otp/request', (route) => {
@@ -144,9 +150,12 @@ test.describe('inscription complète', () => {
     });
 
     await page.goto('/connexion');
-    await page.getByRole('button', { name: 'Recevoir le code' }).click();
+    const bouton = page.getByRole('button', { name: 'Recevoir le code' });
+    await expect(bouton, 'un champ vide doit griser le bouton').toBeDisabled();
 
-    await expect(page.locator(BANNER)).toContainText('Entrez votre numéro');
+    // Et un numéro INCOMPLET ne l'ouvre pas davantage : c'est la même règle.
+    await page.locator('input[name="phone"]:visible').fill('019');
+    await expect(bouton).toBeDisabled();
     // Un SMS coûte : la vérification locale doit précéder l'appel.
     expect(called).toBe(false);
   });
@@ -197,25 +206,49 @@ test.describe('inscription complète', () => {
 test.describe('O02 — pays d’origine et ville', () => {
   test.skip(async () => !(await apiUp()) || API_LOG === '', 'API ou journal absents');
 
+  /**
+   * LA VILLE SE CHOISIT DANS UN PANNEAU (demande du porteur : « La sélection de
+   * ville : utilise le panneau aussi »). Ces deux cas visaient le champ posé dans
+   * la page, qui n'existe plus : la recherche vit DANS le panneau, et le bouton
+   * porte le choix. Ce qu'ils mesurent n'a pas changé.
+   */
+  const panneauDeVille = (page: Page) => {
+    const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
+    return { cadre, panneau: cadre.locator('[data-panneau-section="ville"]') };
+  };
+
   test('la recherche de ville ignore accents et casse', async ({ page }) => {
     await signUp(page);
     await page.goto('/bienvenue/lieu');
 
-    const field = page.locator('input[aria-label="Votre ville"]:visible');
-    await field.fill('LYO');
+    const { cadre, panneau } = panneauDeVille(page);
+    await cadre.locator('button[aria-label="Votre ville"]').click();
+    await panneau.getByLabel('Votre ville').fill('LYO');
     // Comparer sans normaliser fait échouer « segou » sur « Ségou » — un échec
     // que le membre lit comme « ma ville n'existe pas ».
-    await expect(page.locator('main:visible button', { hasText: 'Lyon' })).toHaveCount(1);
+    await expect(panneau.locator('button[aria-pressed]', { hasText: 'Lyon' })).toHaveCount(1);
   });
 
-  test('retenir une ville remplit le champ et l’enregistre', async ({ page }) => {
+  test('retenir une ville la porte sur la ligne, et l’enregistre', async ({ page }) => {
     await signUp(page);
     await page.goto('/bienvenue/lieu');
 
-    const field = page.locator('input[aria-label="Votre ville"]:visible');
-    await field.fill('lyo');
-    await page.locator('main:visible button', { hasText: 'Lyon' }).first().click();
-    await expect(field).toHaveValue('Lyon');
+    const { cadre, panneau } = panneauDeVille(page);
+    await cadre.locator('button[aria-label="Votre ville"]').click();
+    await panneau.getByLabel('Votre ville').fill('lyo');
+    await panneau.locator('button[aria-pressed]', { hasText: 'Lyon' }).first().click();
+    // Le panneau se referme SUR le choix, et la ligne le dit.
+    await expect(panneau).toHaveCount(0);
+  /**
+   * ON LIT LA LIGNE, PAS LE BOUTON. Le déclencheur est une surface TRANSPARENTE
+   * (`opacity:0`) posée sur toute la ligne : c'est la maquette qui dessine la
+   * ligne, et le bouton ne fait que la rendre cliquable sans la redessiner. La
+   * ville retenue est donc le texte de la LIGNE — viser le bouton lit une chaîne
+   * vide et fait conclure, à tort, que le choix ne s'affiche pas.
+   */
+    await expect(cadre.locator('div:has(> button[aria-label="Votre ville"])')).toContainText(
+      'Lyon',
+    );
 
     await page.getByRole('button', { name: 'Continuer' }).click();
     await page.waitForURL('**/bienvenue/objectif', { timeout: 20_000 });
@@ -226,7 +259,15 @@ test.describe('O02 — pays d’origine et ville', () => {
     await signUp(page);
     await page.goto('/bienvenue/lieu');
 
-    const optionsLocator = page.locator('main:visible select[aria-label="Pays d’origine"] option');
+    /**
+     * LE PAYS AUSSI EST UN PANNEAU depuis que le porteur l'a demandé : le
+     * `<select>` et ses `<option>` n'existent plus. On ouvre donc le panneau et
+     * on lit ses lignes — ce que le cas mesure est inchangé : la France n'y est
+     * pas, parce qu'elle est `DESTINATION` (02 §2.1).
+     */
+    const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
+    await cadre.locator('button[aria-label="Pays d’origine"]').click();
+    const optionsLocator = cadre.locator('[data-panneau-section="pays"] button[aria-pressed]');
 
     /**
      * ON ATTEND QUE LA LISTE ARRIVE, et ce n'est pas une précaution de style.
@@ -255,34 +296,58 @@ test.describe('O02 — pays d’origine et ville', () => {
 });
 
 test.describe('P01 — sélecteur d’indicatif', () => {
-  test('l’indicatif suit le choix, et le drapeau disparaît', async ({ page }) => {
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ L'INDICATIF S'OUVRE DANS UN PANNEAU, PLUS DANS UN MENU NATIF            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Utilise le modal de sélection du pays ici aussi. » C'est le
+   * panneau glissant construit pour O02, monté une seconde fois ici — et la même
+   * raison qu'en O02 : un `<option>` ne rend QUE du texte, donc aucun menu natif
+   * ne pouvait porter de drapeau.
+   *
+   * Ce cas remplace celui qui vérifiait le `<select>`. Il garde ce qu'il
+   * mesurait — l'indicatif suit le choix — et vérifie en plus ce que le menu
+   * natif ne pouvait pas faire : chaque pays montre SON drapeau.
+   */
+  test('l’indicatif s’ouvre dans le panneau, et suit le choix', async ({ page }) => {
     await page.goto('/connexion');
-    const select = page.locator('main:visible select[aria-label="Indicatif du pays"]');
-    await expect(select).toHaveCount(1);
+    const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
 
-    const dialCode = () =>
-      page.evaluate(() => {
-        const box = document.querySelector('main:not([hidden]) select')?.parentElement;
-        return (box?.textContent ?? '').match(/\+\d+/)?.[0] ?? '';
-      });
+    // Le menu natif a disparu : c'est le cœur du changement.
+    await expect(cadre.locator('select')).toHaveCount(0);
 
-    await expect.poll(dialCode).toBe('+229');
-    await select.selectOption('FR');
-    await expect.poll(dialCode).toBe('+33');
+    const bouton = cadre.locator('button[aria-haspopup="dialog"]');
+    await expect(bouton).toHaveCount(1);
+
+    const indicatif = () =>
+      cadre.locator('div:has(> button[aria-haspopup="dialog"])').innerText();
+    await expect.poll(indicatif).toContain('+229');
+
+    await bouton.click();
+    const panneau = cadre.locator('[data-panneau-section="pays"]');
+    await expect(panneau).toHaveCount(1);
+    await expect(panneau).toHaveAttribute('role', 'dialog');
 
     /**
-     * Le drapeau se cache dès que le pays choisi n'est plus celui que la maquette
-     * a dessiné. Un drapeau béninois à côté d'un « +33 » serait un défaut que
-     * n'importe qui remarque ; en inventer d'autres serait dessiner à la place du
-     * porteur.
+     * LA FRANCE EST PROPOSÉE ICI, et c'est la différence avec O02 : on choisit un
+     * INDICATIF, pas un pays d'origine. La plupart des membres déjà arrivés
+     * emploieront le +33.
      */
-    const flagDisplay = await page.evaluate(() => {
-      const flag = document.querySelector<HTMLElement>(
-        'main:not([hidden]) select',
-      )?.parentElement?.querySelector('span');
-      return flag === null || flag === undefined ? 'absent' : getComputedStyle(flag).display;
-    });
-    expect(['none', 'absent']).toContain(flagDisplay);
+    const france = panneau.getByRole('button', { name: /France/ });
+    await expect(france).toHaveCount(1);
+
+    // Chaque ligne porte SON drapeau, et deux lignes n'ont pas le même.
+    const lignes = panneau.locator('button[aria-pressed]');
+    const drapeaux = await lignes
+      .locator('span[aria-hidden="true"]')
+      .evaluateAll((els) => els.map((e) => (e.textContent ?? '').trim()));
+    expect(drapeaux.length).toBeGreaterThan(1);
+    expect(new Set(drapeaux).size).toBe(drapeaux.length);
+
+    await france.click();
+    await expect(panneau).toHaveCount(0);
+    await expect.poll(indicatif).toContain('+33');
   });
 });
 
@@ -373,7 +438,9 @@ test.describe('P01 — consentement (§5 et §2.10)', () => {
     });
 
     await page.goto('/connexion');
-    await page.locator('input[name="phone"]:visible').fill('971234567');
+    // Un numéro VALIDE : sans cela le bouton est grisé pour une autre raison que
+    // le consentement, et le test ne mesurerait plus ce qu'il annonce.
+    await page.locator('input[name="phone"]:visible').fill('0195123456');
     await page.getByRole('button', { name: 'Recevoir le code' }).click();
 
     await expect(page.locator(BANNER)).toContainText('accepter les conditions');

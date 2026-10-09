@@ -524,6 +524,17 @@ export const AUDIT_ACTIONS = {
   userCityForced: 'user.city_forced',
   /** §3.2 : « Rétrograder le niveau » — marque le KYC `DECLINED` avec motif. */
   userKycDowngraded: 'user.kyc_downgraded',
+  /**
+   * 11 §4 : « Admin : `/v1/admin/search/reindex` (type) ».
+   *
+   * UNE RECONSTRUCTION D'INDEX EST UNE ÉCRITURE, et elle se trace comme les
+   * autres. Elle réécrit `search_documents` ET en RETIRE les lignes dont la source
+   * n'est plus éligible : c'est une opération qui peut faire disparaître du contenu
+   * de la recherche du produit entier. « Qui a reconstruit l'index, quand, et sur
+   * quels types » est exactement la question qu'on posera le jour où la recherche
+   * ne rend plus rien.
+   */
+  searchReindexed: 'search.reindexed',
 } as const;
 
 /**
@@ -543,6 +554,19 @@ export const SYSTEM_AUDIT_ACTIONS = {
   accountDeletionRequested: 'account.deletion_requested',
   /** 01 §2.8 : le membre a désactivé son compte lui-même. */
   accountDeactivatedBySelf: 'account.deactivated_by_self',
+  /**
+   * Le PREMIER compte d'équipe, créé par l'amorçage hors ligne.
+   *
+   * DISTINCTE de `staff.created` (§2.2, création en back-office), et il faut
+   * qu'elle le reste : « ce `SUPER_ADMIN` est-il né d'un amorçage ou d'une
+   * création par un pair ? » est exactement la question qu'un audit de sécurité
+   * posera, et les confondre la rendrait sans réponse. L'acteur est `SYSTEM`
+   * parce qu'`audit_logs.actor_id` veut l'UUID d'un compte d'équipe et qu'il n'en
+   * existait aucun — c'est tout l'objet de l'amorçage.
+   *
+   * Voir `apps/api/src/modules/admin/staff-bootstrap.ts`.
+   */
+  staffBootstrapped: 'staff.bootstrapped',
 } as const;
 
 /**

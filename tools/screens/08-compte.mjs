@@ -60,12 +60,21 @@
  * (zéro `background:rgba(…)` en `inset:0` dans tout le fichier).
  */
 
-import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+import { barreBasse, cadresDeLaBarre, cadresDuRail, railLitteral } from '../squelette-membre.mjs';
 
 const FILE = 'docs/template/08 Compte.dc.html';
 
 const screen = ({ section, out, frames, dataType = 'CompteData', modal = false,
-  squelette = !modal, ...rest }) => ({
+  squelette = !modal,
+  /**
+   * LES LIENS PROPRES À L'ÉCRAN S'AJOUTENT AU SQUELETTE, ILS NE LE REMPLACENT PAS.
+   *
+   * `liens` était ramassé par `...rest`, répandu APRÈS le squelette : un écran qui
+   * aurait déclaré ses propres liens aurait EFFACÉ les cinq entrées de son rail,
+   * en silence et sans qu'aucun compte ne bouge. La clé est donc nommée et
+   * CONCATÉNÉE.
+   */
+  liens = [], ...rest }) => ({
   file: FILE,
   /**
    * ─── LE SQUELETTE MEMBRE : LE RAIL ──────────────────────────────────────────
@@ -92,7 +101,7 @@ const screen = ({ section, out, frames, dataType = 'CompteData', modal = false,
    * peint déjà l'entrée qui désigne la page, planche par planche.
    */
   ...(modal ? { modal } : {}),
-  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
+  liens: [...(squelette ? railLitteral(cadresDuRail(frames)) : []), ...liens],
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule: '../compte/data',
@@ -100,6 +109,141 @@ const screen = ({ section, out, frames, dataType = 'CompteData', modal = false,
   frames,
   ...rest,
 });
+
+/**
+ * ╔═════════════════════════════════════════════════════════════════════════╗
+ * ║ LE PANNEAU « MON COMPTE » — NEUF ENTRÉES, NEUF ROUTES, ZÉRO LIEN            ║
+ * ╚═════════════════════════════════════════════════════════════════════════╝
+ *
+ * CE N'EST PAS LE PANNEAU DÉJÀ BRANCHÉ, et c'est la confusion à lever d'abord.
+ * `squelette-membre.mjs` déclare `panneauBoucle` : les SEPT entrées du panneau
+ * « COMMUNAUTÉ », qui vivent dans un `<sc-for as="m">` des treize cadres de
+ * `03 Accueil v2`. Le panneau « MON COMPTE » de CETTE maquette est un AUTRE
+ * panneau : neuf entrées LITTÉRALES, écrites en clair, dans un `<span>` chacune.
+ *
+ * Il n'était donc branché nulle part, et il ne comptait dans aucun `href="#"` —
+ * le récapitulatif de la génération ne l'a jamais vu. C'est pourtant le menu du
+ * module Compte : neuf affordances mortes sur chacun des dix cadres d'ordinateur.
+ *
+ * ── LES NEUF ROUTES VIENNENT DE T5 §11, UNE PAR UNE ───────────────────────
+ *
+ * Et la correspondance est EXACTE — neuf entrées, neuf lignes K01…K10 de la table,
+ * aucun trou et aucun arbitrage à prendre, ce qui n'arrive jamais :
+ *
+ *   Profil → K01 `/compte/profil`          Enregistrés   → K10 `/compte/enregistres`
+ *   Vérification → K03 `/compte/verification`  Abonnement → K06 `/compte/abonnement`
+ *   Sécurité → K04 `/compte/securite`      Notifications → K07 `/compte/notifications`
+ *   Contacts → K05 `/compte/contacts`       Mes données   → K08 `/compte/donnees`
+ *                                           Sanctions     → K09 `/compte/sanctions`
+ *
+ * Les neuf existent dans `app/(app)/compte/` — vérifié dossier par dossier. Le seul
+ * chemin de ce module qui N'EXISTE PAS est `/compte` lui-même, et c'est pour cela
+ * que l'onglet « Compte » de la barre basse reste mort (voir `squelette-membre.mjs`).
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE DISCRIMINANT EST L'ICÔNE, PAS LE LIBELLÉ — ET C'EST UNE ZONE CLIQUABLE   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `markLinks` remonte du marqueur jusqu'à la PREMIÈRE balise promouvable qui le
+ * contient. Or chaque libellé est enfermé dans un `<span style="flex:1">` : avec
+ * `texte: 'Profil'`, la remontée s'arrêterait sur CE span et promouvrait LE
+ * LIBELLÉ au lieu de la rangée. La zone cliquable passerait de 44 px de haut sur
+ * toute la largeur du panneau à la seule largeur du mot — un déplacement de
+ * dessin silencieux, et le reste de la rangée redeviendrait mort.
+ *
+ * C'est exactement le piège que `squelette-membre.mjs` a déjà payé sur le panneau
+ * COMMUNAUTÉ, et la parade est la même : le marqueur est le TRACÉ de l'icône,
+ * posé dans un `<path>` sous un `<svg>` — deux balises non promouvables — donc la
+ * remontée atteint la rangée. Les neuf tracés sont RECOPIÉS VERBATIM de la
+ * maquette, et `fois: 1` les recompte à chaque génération.
+ *
+ * ── POURQUOI `dans` EST INDISPENSABLE ICI ─────────────────────────────────
+ *
+ * Le tracé de la cloche « Notifications » figure DEUX FOIS dans le cadre : dans
+ * le panneau, et dans la cloche de la barre haute. Mesuré. Sans bornage, la
+ * déclaration désignerait deux éléments et la génération s'arrêterait — ce qui est
+ * le bon comportement, et pas celui qu'on veut tous les jours. Le conteneur est la
+ * carte du panneau, en-tête « MON COMPTE » comprise : c'est ce qui le rend unique.
+ *
+ * ── CE QUE CE LOT N'A PAS FAIT, ET C'EST UNE DÉCISION DE PÉRIMÈTRE ─────────
+ *
+ * LE PANNEAU EST SUR LES DIX CADRES D'ORDINATEUR DE CETTE MAQUETTE (K01 à K10).
+ * Il n'a longtemps été branché que sur UN — K04, le seul écran confié au lot qui
+ * l'avait écrit — et les neuf autres gardaient leurs `<span>` morts. C'était une
+ * décision de périmètre, assumée et REMONTÉE, pas un oubli.
+ *
+ * LE PORTEUR L'A TRANCHÉE : « les liens vérifications et autres ne marchent
+ * toujours pas ». MESURÉ : `<a href="/compte/…">` ne figurait que dans K04 ; sur
+ * les sept autres écrans où le panneau est dessiné, cliquer ne faisait rien. La
+ * table avait été écrite pour que ça coûte UNE LIGNE par écran — c'est ce que
+ * cela a coûté.
+ *
+ * ── ET LA SURBRILLANCE N'EST PAS TOUCHÉE ──────────────────────────────────
+ *
+ * La maquette peint déjà l'entrée de SA page sur chaque planche — sur K04 c'est
+ * « Sécurité », en `background:#E3F0EB;color:#0F5C48;font-weight:700`. `markLinks`
+ * PRÉFIXE sa neutralisation, donc ces trois déclarations gagnent. Mesuré sur le
+ * cadre produit.
+ */
+const PANNEAU_MON_COMPTE =
+  '<div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:14px">' +
+  '<div style="padding:0 6px 8px">' +
+  '<div style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F">' +
+  'MON COMPTE</div></div>';
+
+/**
+ * Les neuf entrées : le tracé de leur icône (VERBATIM de la maquette), leur
+ * libellé (pour que la table se relise), et leur route (T5 §11).
+ *
+ * Le libellé ne sert PAS de discriminant — voir ci-dessus — mais il est écrit :
+ * sans lui, cette table serait neuf tracés SVG illisibles, et la prochaine
+ * personne qui la relit ne pourrait pas vérifier une seule destination.
+ */
+const ENTREES_MON_COMPTE = [
+  ['M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0', 'Profil', '/compte/profil'],
+  ['M12 3 4 6v6c0 4.5 3.5 8 8 9 4.5-1 8-4.5 8-9V6z', 'Vérification', '/compte/verification'],
+  [
+    'M15 7a4 4 0 1 1-3.9 4.9L4 19v2h3l1-1v-2h2v-2h2l.1-.1A4 4 0 0 1 15 7z',
+    'Sécurité',
+    '/compte/securite',
+  ],
+  [
+    'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5',
+    'Contacts',
+    '/compte/contacts',
+  ],
+  [
+    'M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
+    'Enregistrés',
+    '/compte/enregistres',
+  ],
+  [
+    'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
+    'Abonnement',
+    '/compte/abonnement',
+  ],
+  [
+    'M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20a2 2 0 0 0 4 0',
+    'Notifications',
+    '/compte/notifications',
+  ],
+  ['M12 4v11M7 10l5 5 5-5M5 20h14', 'Mes données', '/compte/donnees'],
+  ['M5 21V4h12l-2 4 2 4H5', 'Sanctions', '/compte/sanctions'],
+];
+
+/** Le panneau « MON COMPTE » : neuf `<span>` promus en neuf `<a>`. */
+const panneauMonCompte = (frames) =>
+  ENTREES_MON_COMPTE.map(([trace, libelle, vers]) => ({
+    dans: PANNEAU_MON_COMPTE,
+    marqueur: `<path d="${trace}"/>`,
+    vers,
+    frames,
+    why:
+      `L’entrée « ${libelle} » du panneau MON COMPTE mène à ${vers} (T5 §11). La maquette la ` +
+      'dessine en <span> : ce n’était pas un lien cassé, ce n’était pas un lien. Le ' +
+      'discriminant est le TRACÉ de son icône et non son libellé : le libellé est enfermé ' +
+      'dans un <span style="flex:1"> et la promotion y déplacerait la zone cliquable.',
+  }));
 
 /** Un cadre : largeur, nom, rang de la planche parmi celles de même largeur, titre. */
 const f = (width, name, occurrence = 0, title = undefined) => ({ width, name, occurrence, title });
@@ -286,6 +430,47 @@ const BOUTON_REVOQUER =
   '<button style="height:44px;padding:0 18px;border-radius:14px;background:#F2F5F4;color:#16211D;border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:36px">Révoquer</button>';
 
 /** K05 — une ligne de contact. Les trois planches ne diffèrent que par leurs textes. */
+/**
+ * UNE LIGNE DE CONTACT — demande, suggestion ou blocage.
+ *
+ * Les trois sections de K05 dessinent EXACTEMENT la même ligne : un rond de
+ * 40 px, le nom suivi de la pastille de vérification, une seconde ligne grise, et
+ * à droite un ou deux boutons. Une fabrique plutôt que trois copies : la première
+ * retouche les ferait diverger.
+ *
+ * LES BOUTONS SONT UN ARGUMENT, ET LA LIGNE SE REFERME ICI. Une première version
+ * s'arrêtait avant eux : le `<sc-for>` enveloppait une ligne OUVERTE, et le JSX
+ * produit ne compilait plus — « Expected corresponding JSX closing tag for
+ * 'div' ». Une boucle doit contenir des éléments entiers.
+ */
+const BOUTON_K05 = (fond, encre, texte) =>
+  `<button style="height:44px;padding:0 18px;border-radius:14px;background:${fond};color:${encre};border:none;font:inherit;font-size:13.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;flex-shrink:0;height:36px">${texte}</button>`;
+
+const LIGNE_CONTACT = (fond, initiales, nom, sous, boutons) =>
+  `<div style="padding:12px 0;border-bottom:1px solid #F0F3F2"><div style="display:flex;align-items:center;gap:12px"><span style="width:40px;height:40px;border-radius:999px;background:${fond};color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${initiales}</span><span style="flex:1;min-width:0"><span style="display:flex;align-items:center;gap:5px;font-size:14px;font-weight:700">${nom}<svg width="13" height="13" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6" stroke="#fff" stroke-width="2.2" fill="none"/></svg></span><span style="display:block;font-size:12px;color:#8A958F">${sous}</span></span><span style="display:flex;gap:8px;align-items:center">${boutons}</span></div></div>`;
+
+/**
+ * ── LA MATRICE DE NOTIFICATIONS ÉTAIT SIX RANGS DESSINÉS ───────────────────
+ *
+ * Le porteur : « Les configurations des notifications ? »
+ *
+ * La planche dessine SIX catégories en dur — « Sécurité et compte », « Mon
+ * parcours », « Entraide »… — avec leurs dix-huit interrupteurs. C'est un
+ * exemple, pas une liste : `GET /me/notification-preferences` rend les catégories
+ * que le serveur décide, avec leur libellé français composé par lui
+ * (`CATEGORY_LABELS_FR`), et aucun de ces interrupteurs ne répondait.
+ *
+ * L'INTERRUPTEUR GARDE SES TROIS ÉTATS DESSINÉS : allumé (`#16785E`, bouton à
+ * droite), éteint (`#CBD5D1`, bouton à gauche), et verrouillé (allumé à
+ * `opacity: .5` — ce que la planche met sur « Non désactivable »). Les trois
+ * valeurs voyagent en données plutôt que d'être recalculées dans le cadre.
+ */
+const INTERRUPTEUR_K07 = (fond, gauche, opacite) =>
+  `<span style="width:40px;height:24px;border-radius:999px;background:${fond};position:relative;display:inline-block;opacity:${opacite}"><span style="position:absolute;top:3px;left:${gauche};width:18px;height:18px;border-radius:999px;background:#fff"></span></span>`;
+
+const RANG_K07 = (titre, sous, appli, push, email) =>
+  `<div style="display:grid;grid-template-columns:1fr 80px 80px 80px;align-items:center;padding:12px 0;border-bottom:1px solid #F0F3F2"><div><div style="font-size:13.5px;font-weight:700">${titre}</div><div style="font-size:11.5px;color:#8A958F">${sous}</div></div><div style="text-align:center">${appli}</div><div style="text-align:center">${push}</div><div style="text-align:center">${email}</div></div>`;
+
 const CARTE_CONTACT = (fond, initiales, nom, sousTitre, origine) =>
   '<div style="padding:12px 0;border-bottom:1px solid #F0F3F2"><div style="display:flex;align-items:center;gap:12px">' +
   '<span style="width:40px;height:40px;border-radius:999px;background:' +
@@ -303,6 +488,181 @@ const CARTE_CONTACT = (fond, initiales, nom, sousTitre, origine) =>
   origine +
   '</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M4 5h16v11H9l-5 4z"/></svg></span></div></div>';
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ K10 · LES ENREGISTRÉS — LE DESSIN DEVIENT UNE LISTE                       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Finalise les routes bookmarks et branche-les. »
+ *
+ * Les quatre routes de §2.9 existent maintenant (`apps/api/src/modules/bookmarks/
+ * bookmarks.controller.ts`), et elles répondent — mesuré, pas supposé :
+ *
+ *     PUT    /me/bookmarks            → { id, state: "AVAILABLE" }   ×4
+ *     GET    /me/bookmarks            → 4 items, meta.parType { GUIDE: 2, … }
+ *     GET    /me/bookmarks/states     → { items: [{ subjectId, state }] }
+ *     DELETE /me/bookmarks/GUIDE/:id  → 204, puis meta.total 4 → 3
+ *
+ * L'en-tête de ce fichier et celui de la page portaient tous deux le constat
+ * inverse — « AUCUNE ROUTE N'EXISTE POUR CET ÉCRAN » — et il était juste au jour
+ * où il a été écrit. Il ne l'est plus, et les six lignes de la planche cessent
+ * d'attendre.
+ *
+ * ── L'ICÔNE EST UNE DONNÉE, PARCE QUE LA MAQUETTE EN DESSINE SIX ─────────────
+ *
+ * Les six lignes ne portent pas le même tracé : un livre pour le guide, une
+ * étoile pour la story, un cœur pour l'entraide, un calendrier pour l'événement,
+ * un toit pour l'annonce, une bulle pour la publication. Ce n'est pas de la
+ * décoration — c'est le TYPE du contenu, et c'est la seule chose qui le dise une
+ * fois la pastille d'état posée. Le tracé voyage donc dans la ligne
+ * (`{{ l.icone }}`), et le dictionnaire type → tracé est transcrit de ces six
+ * dessins, pas inventé.
+ *
+ * ── LA PASTILLE D'ÉTAT DISPARAÎT QUAND L'ÉTAT EST `AVAILABLE` ───────────────
+ *
+ * `BookmarkState` le dit dans sa propre documentation de schéma : « `AVAILABLE`
+ * n'a PAS de libellé : c'est l'absence de pastille, le cas normal ». Les six
+ * lignes dessinées portent toutes un état — la maquette ne dessine donc JAMAIS le
+ * cas normal, qui sera pourtant le plus fréquent. `sc-if` sur le libellé, et la
+ * ligne se referme sur « enregistré hier ». Le type reste lisible : c'est l'icône
+ * qui le porte.
+ *
+ * ── LE VIDE EST DESSINÉ, et il est dessiné À CÔTÉ ───────────────────────────
+ *
+ * La planche de 320 px « ÉTATS · VIDE » n'est pas un cadre d'écran — c'est une
+ * note de documentation — mais elle dessine le bloc vide AU MOT PRÈS : « Vous
+ * n'avez rien enregistré » / « Touchez le signet sur un contenu pour le retrouver
+ * ici. » Un compte neuf n'a aucun signet, donc c'est le PREMIER état que le
+ * porteur verra. Il est emprunté à la note par `motifs` + `from`, ce qui garde le
+ * contrôle : le jour où le designer réécrit la note, la génération s'arrête.
+ */
+const SIGNET_RETIRER =
+  '<span title="Retirer"><svg width="18" height="18" viewBox="0 0 24 24" fill="#16785E" ' +
+  'stroke="#16785E" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg></span>';
+
+/** Une ligne d'enregistré, telle que la maquette la dessine six fois. */
+const LIGNE_ENREGISTREE = (opacite, icone, titre, etatFond, etatTexte, etat, depuis) =>
+  '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:18px;' +
+  `background:#fff;border:1px solid #E6EBE9;${opacite}">` +
+  '<span style="width:44px;height:44px;border-radius:12px;background:#E3F0EB;display:flex;' +
+  'align-items:center;justify-content:center;flex-shrink:0">' +
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" ' +
+  `stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="${icone}"/></svg></span>` +
+  '<div style="flex:1;min-width:0">' +
+  '<div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;' +
+  `text-overflow:ellipsis">${titre}</div>` +
+  '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">' +
+  `<span style="background:${etatFond};color:${etatTexte};font-size:11px;font-weight:700;` +
+  `padding:4px 10px;border-radius:999px;white-space:nowrap">${etat}</span>` +
+  `<span style="font-size:11.5px;color:#8A958F">${depuis}</span>` +
+  '</div></div>' +
+  SIGNET_RETIRER +
+  '</div>';
+
+/** La ligne bouclée : tout ce qui change vient de `l`. */
+const LIGNE_BOUCLEE =
+  '<sc-for list="{{ lignes }}" as="l">' +
+  LIGNE_ENREGISTREE(
+    'opacity:{{ l.opacite }}',
+    '{{ l.icone }}',
+    '{{ l.titre }}',
+    '{{ l.etatFond }}',
+    '{{ l.etatTexte }}',
+    '{{ l.etat }}',
+    '{{ l.depuis }}',
+  )
+    // La pastille ne s'affiche que si l'état porte un libellé — voir l'en-tête.
+    .replace(
+      '<span style="background:{{ l.etatFond }}',
+      '<sc-if value="{{ l.etat }}"><span style="background:{{ l.etatFond }}',
+    )
+    .replace('{{ l.etat }}</span>', '{{ l.etat }}</span></sc-if>') +
+  '</sc-for>';
+
+/** Le bloc vide, emprunté à la planche de documentation « ÉTATS · VIDE ». */
+const BLOC_VIDE =
+  '<div style="text-align:center"><div style="font-size:14px;font-weight:700">' +
+  'Vous n’avez rien enregistré</div><div style="font-size:12.5px;color:#5D6B66;' +
+  'margin-top:4px">Touchez le signet sur un contenu pour le retrouver ici.</div></div>';
+
+const VIDE_SI_RIEN = `<sc-if value="{{ vide }}">${BLOC_VIDE}</sc-if>`;
+
+/** Une pastille d'onglet, telle que la maquette la dessine dix fois (quatre à 390 px). */
+const ONGLET_ENREGISTRES = (fond, texte, bord, libelle) =>
+  '<span style="padding:8px 13px;border-radius:999px;font-size:12.5px;font-weight:700;' +
+  `white-space:nowrap;background:${fond};color:${texte};border:1px solid ${bord}">${libelle}</span>`;
+
+const ONGLET_ACTIF = (libelle) => ONGLET_ENREGISTRES('#16785E', '#fff', '#16785E', libelle);
+const ONGLET_INACTIF = (libelle) => ONGLET_ENREGISTRES('#fff', '#16211D', '#E6EBE9', libelle);
+
+const ONGLETS_BOUCLES =
+  '<sc-for list="{{ onglets }}" as="o">' +
+  ONGLET_ENREGISTRES('{{ o.fond }}', '{{ o.texte }}', '{{ o.bord }}', '{{ o.libelle }}') +
+  '</sc-for>';
+
+/** Les dix onglets d'ordinateur, et les quatre que le téléphone dessine. */
+const ONGLETS_ORDINATEUR =
+  ONGLET_ACTIF('Tout') +
+  ['Stories', 'Guides', 'Entraide', 'Événements', 'Annonces', 'Parrains', 'Membres', 'Réseaux', 'Villes']
+    .map(ONGLET_INACTIF)
+    .join('');
+
+const ONGLETS_MOBILE =
+  ONGLET_ACTIF('Tout') + ['Stories', 'Guides', 'Entraide'].map(ONGLET_INACTIF).join('');
+
+/** Le fichier d'où le bloc vide est emprunté — la note posée à côté des deux cadres. */
+const MAQUETTE_COMPTE = 'docs/template/08 Compte.dc.html';
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ K02 · « GUIDES PUBLIÉS » DEVIENT « CE QUE CE MEMBRE A PUBLIÉ »            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, en deux temps : « la liste des guides aussi ? », puis « je propose
+ * qu'il y ait des tabs (guides, fil d'actualités, stories, entraides, services,
+ * évènements, parcours publics) qui montrent ce que l'utilisateur a publié ».
+ *
+ * MESURÉ : la carte dessine DEUX lignes écrites en dur — « Déclarer son médecin
+ * traitant », « Monter son dossier CAF » — affichées sur le profil de tout le
+ * monde, y compris d'un membre qui n'a jamais écrit un guide. Et pour cause :
+ * aucune route ne savait filtrer par auteur. `GET /users/:handle/content` le
+ * sait maintenant, pour les SEPT espèces.
+ *
+ * ── LE TITRE DE LA CARTE SUIT L'ONGLET ──────────────────────────────────────
+ *
+ * « GUIDES PUBLIÉS » devient `{{ contenuTitre }}` : sous l'onglet « Stories » la
+ * carte doit dire « STORIES », sinon elle annonce des guides et montre autre
+ * chose. C'est le même raisonnement que le compte des enregistrés.
+ *
+ * ── LA LIGNE EST UN LIEN, ET LE CHEVRON LE PROMETTAIT DÉJÀ ─────────────────
+ *
+ * La maquette dessine un chevron au bout de chaque ligne : elle promet
+ * d'ouvrir. `href` est composée par le serveur, qui seul sait qu'un guide
+ * s'ouvre par son `slug` et une publication par son identifiant.
+ */
+const LIGNE_CONTENU = (titre) =>
+  '<div style="display:flex;justify-content:space-between;padding:12px 0;' +
+  `border-bottom:1px solid #F0F3F2;font-size:13.5px;font-weight:600">${titre}` +
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A958F" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>';
+
+const CONTENUS_K02 = [
+  {
+    noeud: '>GUIDES PUBLIÉS<',
+    devient: '>{{ contenuTitre }}<',
+    frames: ['Desktop'],
+    why: 'Le titre de la carte suit l’onglet choisi : « GUIDES PUBLIÉS » annonçait des guides quelle que soit l’espèce affichée.',
+  },
+  {
+    noeud: LIGNE_CONTENU('Déclarer son médecin traitant') + LIGNE_CONTENU('Monter son dossier CAF'),
+    devient:
+      '<sc-for list="{{ contenus }}" as="ct">' + LIGNE_CONTENU('{{ ct.titre }}') + '</sc-for>',
+    frames: ['Desktop'],
+    why: 'Ce que ce membre a publié, de `GET /users/:handle/content` — les deux titres étaient ceux de la maquette, servis à tout le monde.',
+  },
+];
 
 export const screens = [
   /**
@@ -326,6 +686,21 @@ export const screens = [
   screen({
     section: 'K01',
     out: 'k01',
+    /**
+     * ─── LA BARRE D'ONGLETS BASSE, SUR LES HUIT CADRES MOBILES DE CE MODULE ───
+     *
+     * Quatre `<div>` promus en quatre `<a>` — la seule navigation d'un téléphone, et
+     * elle ne comptait dans aucun `href="#"`. Mesuré : HUIT des cadres mobiles de
+     * cette maquette la dessinent (K01, K03, K04, K05, K07, K08, K09, K10) ; les
+     * mobiles de K02 et de K06 n'en ont pas, et les planches de fenêtre non plus.
+     *
+     * ⚠ ET LA CINQUIÈME ENTRÉE, « COMPTE », DÉSIGNE CE MODULE-CI et reste pourtant
+     * morte : il n'existe aucune route `/compte`, seulement les neuf sous-pages que
+     * le panneau « MON COMPTE » de K04 adresse désormais une par une. Le trou est
+     * donc ici plus visible qu'ailleurs, et il est REMONTÉ plutôt que comblé : voir
+     * `tools/squelette-membre.mjs`.
+     */
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     dataType: 'K01Data',
     frames: page('Mon profil', 'Compte'),
     donnees: [
@@ -439,6 +814,13 @@ export const screens = [
       f(1440, 'Desktop', 0, t('Fatou Ndiaye', '24px')),
       f(390, 'Mobile', 0, t('Fatou Ndiaye', '20px')),
     ],
+    /**
+     * LE PANNEAU « MON COMPTE » EST DESSINÉ ICI AUSSI, et c'est le panneau DU
+     * LECTEUR — pas du membre visité. Il mène donc aux mêmes dix routes que
+     * partout ailleurs : K02 est l'écran d'un AUTRE membre, mais la colonne de
+     * gauche reste la sienne.
+     */
+    liens: panneauMonCompte(['Desktop']),
     donnees: [
       ...bandeau(),
       {
@@ -472,10 +854,62 @@ export const screens = [
         frames: ['Desktop'],
         why: 'Les types d’aide du membre visité (`helpTypes`).',
       },
+      ...CONTENUS_K02,
       {
         noeud: '>18<',
         devient: '>{{ membre.entraides }}<',
         why: 'Le compteur d’entraides validées, de `stats.helpValidatedCount`.',
+      },
+      /**
+       * ╔══════════════════════════════════════════════════════════════════════╗
+       * ║ LES TROIS AUTRES CHIFFRES AVAIENT UNE SOURCE, ET PERSONNE NE LA LISAIT║
+       * ╚══════════════════════════════════════════════════════════════════════╝
+       *
+       * Le porteur : « la page desktop marche ? » MESURÉ : sur les quatre cartes
+       * de chiffres, UNE SEULE était liée. « 3 guides utiles », « 2 parrainages »
+       * et « 9 événements » étaient les nombres de la maquette, servis pour tout
+       * le monde — un membre inscrit du jour affichait neuf événements organisés.
+       *
+       * `publicProfileResponseSchema.stats` les porte TOUS LES QUATRE depuis le
+       * début : `guideHelpfulVotes`, `mentorshipsCompleted`, `eventsOrganized`.
+       * Il n'y avait rien à écrire côté serveur.
+       *
+       * LE DISCRIMINANT EST LE LIBELLÉ QUI SUIT, pas le nombre : « 3 » et « 2 »
+       * figurent ailleurs dans ce cadre (niveau, compteurs du panneau), et un
+       * `noeud` de `>3<` seul en attraperait un autre. On lie donc la PAIRE.
+       */
+      {
+        noeud: '>3</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">guides utiles<',
+        devient:
+          '>{{ membre.guides }}</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">guides utiles<',
+        frames: ['Desktop'],
+        why: 'Le compteur de guides utiles, de `stats.guideHelpfulVotes` — il affichait 3 pour tout le monde.',
+      },
+      {
+        noeud: '>2</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">parrainages<',
+        devient:
+          '>{{ membre.parrainages }}</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">parrainages<',
+        frames: ['Desktop'],
+        why: 'Le compteur de parrainages menés à terme, de `stats.mentorshipsCompleted` — il affichait 2 pour tout le monde.',
+      },
+      {
+        noeud: '>9</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">événements<',
+        devient:
+          '>{{ membre.evenements }}</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">événements<',
+        frames: ['Desktop'],
+        why: 'Le compteur d’événements organisés, de `stats.eventsOrganized` — il affichait 9 pour tout le monde.',
+      },
+      /**
+       * LE CADRE MOBILE DESSINE LA MÊME CARTE « guides », et elle était figée à 3
+       * elle aussi. Le porteur : « veille toujours à ce que toutes les
+       * corrections soient aussi faites sur mobile ».
+       */
+      {
+        noeud: '>3</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">guides<',
+        devient:
+          '>{{ membre.guides }}</div><div style="font-size:12px;color:#5D6B66;margin-top:2px">guides<',
+        frames: ['Mobile'],
+        why: 'Le compteur de guides du cadre mobile, de `stats.guideHelpfulVotes` — figé à 3.',
       },
       /**
        * LE CADRE MOBILE AUSSI, et pas par symétrie décorative : `ScreenFrames` rend
@@ -564,6 +998,9 @@ export const screens = [
   screen({
     section: 'K03',
     out: 'k03',
+    // La barre basse du cadre mobile — voir K01 pour le pourquoi et le refus de
+    // « Compte ».
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     dataType: 'K03Data',
     frames: page('Vérification et niveaux', 'Compte'),
     donnees: [
@@ -640,6 +1077,34 @@ export const screens = [
     section: 'K04',
     out: 'k04',
     dataType: 'K04Data',
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LA NAVIGATION DE K04 — UN REFUS, QUATRE PROMOTIONS INVISIBLES AU COMPTEUR║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * L'UNIQUE `href="#"` DE CET ÉCRAN N'EST PAS UNE DESTINATION. La maquette écrit
+     * « Révoquer toutes les autres » en `<a href="#">`, en tête du bloc « SESSIONS
+     * ACTIVES ». C'est une ÉCRITURE DESTRUCTRICE — elle ferme toutes les sessions
+     * sauf celle-ci — et il n'existe aucune page où elle mènerait.
+     *
+     * Il faudrait donc `action`, que `markLinks` refuse par conception sur une
+     * balise `<a>` (« “action” n’a pas de sens dessus. Déclarer “vers” »), et
+     * `BUTTON_ACTIONS` ne regarde que les `<button>`. Le lien reste donc mort, et
+     * c'est le refus le moins coûteux des trois possibles : lui donner un `vers`
+     * serait transformer une révocation de sessions en navigation.
+     *
+     * ⚠ ET LE BOUTON « RÉVOQUER » DES LIGNES INDIVIDUELLES EST DANS LE MÊME CAS —
+     * il est déjà un `<button>` dessiné sans `onClick`, donc il ne compte dans
+     * aucun `href="#"` non plus. Les deux sont REMONTÉS ENSEMBLE au porteur : cet
+     * écran montre les sessions (`GET /auth/sessions` est lu, voir `donnees`) mais
+     * n'en révoque aucune.
+     *
+     * CE QUE LE COMPTEUR NE VOYAIT PAS, ET QUI EST BRANCHÉ : les QUATRE onglets de
+     * la barre basse du cadre mobile, dessinés en `<div>`. Le cinquième, « Compte »,
+     * n'a pas de route — et il désigne précisément CE module, ce qui rend le trou
+     * d'autant plus visible. Voir `tools/squelette-membre.mjs`.
+     */
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     frames: page('Téléphones et sessions', 'Compte'),
     donnees: [
       ...bandeau(),
@@ -751,6 +1216,9 @@ export const screens = [
   screen({
     section: 'K05',
     out: 'k05',
+    // La barre basse du cadre mobile — voir K01 pour le pourquoi et le refus de
+    // « Compte ».
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     dataType: 'K05Data',
     frames: page('Contacts', 'Contacts'),
     donnees: [
@@ -784,17 +1252,82 @@ export const screens = [
         frames: ['Desktop'],
         why: 'Mes contacts, de `GET /me/connections` — nom, initiales, couleur d’avatar et origine de la mise en relation.',
       },
+      /**
+       * ── LES TROIS SECTIONS ÉTAIENT DES LIGNES UNIQUES ────────────────────
+       *
+       * Le porteur : « La page des contacts est faite ? Les demandes,
+       * suggestions et bloqués ? »
+       *
+       * La maquette dessine UNE ligne par section — « Yasmine Benali », « Théo
+       * Adjovi », « Paul A. ». C'est un exemple, pas une liste : un membre avec
+       * trois demandes n'en voyait qu'une, et toujours la même.
+       *
+       * Les trois deviennent des boucles sur ce que les routes rendent déjà :
+       * `GET /me/connection-requests`, `GET /me/connection-suggestions`,
+       * `GET /me/blocks`.
+       */
       {
-        noeud: '>Paul A.<',
-        devient: '>{{ bloque.nom }}<',
+        noeud: LIGNE_CONTACT(
+          '#B4581F',
+          'YB',
+          'Yasmine Benali',
+          '« On s’est croisées à l’atelier CV »',
+          BOUTON_K05('#16785E', '#fff', 'Accepter') + BOUTON_K05('#F2F5F4', '#5D6B66', 'Refuser'),
+        ),
+        devient:
+          '<sc-for list="{{ demandesRecues }}" as="d">' +
+          LIGNE_CONTACT(
+            '{{ d.fond }}',
+            '{{ d.initiales }}',
+            '{{ d.nom }}',
+            '{{ d.message }}',
+            BOUTON_K05('#16785E', '#fff', 'Accepter') + BOUTON_K05('#F2F5F4', '#5D6B66', 'Refuser'),
+          ) +
+          '</sc-for>',
         frames: ['Desktop'],
-        why: 'Le membre bloqué, de `GET /me/blocks` (08 §4).',
+        why: 'Les demandes de contact reçues, de `GET /me/connection-requests` (08 §3.1).',
       },
       {
-        noeud: '>Bloqué le 3 mars<',
-        devient: '>Bloqué le {{ bloque.date }}<',
+        noeud: LIGNE_CONTACT(
+          '#0F5C48',
+          'TA',
+          'Théo Adjovi',
+          'Vous étiez à la même rencontre',
+          BOUTON_K05('#F2F5F4', '#16211D', 'Ajouter'),
+        ),
+        devient:
+          '<sc-for list="{{ suggestions }}" as="g">' +
+          LIGNE_CONTACT(
+            '{{ g.fond }}',
+            '{{ g.initiales }}',
+            '{{ g.nom }}',
+            '{{ g.raison }}',
+            BOUTON_K05('#F2F5F4', '#16211D', 'Ajouter'),
+          ) +
+          '</sc-for>',
         frames: ['Desktop'],
-        why: 'La date du blocage, de `GET /me/blocks`.',
+        why: 'Les suggestions de mise en relation, de `GET /me/connection-suggestions` (08 §3.3).',
+      },
+      {
+        noeud: LIGNE_CONTACT(
+          '#8A958F',
+          'PA',
+          'Paul A.',
+          'Bloqué le 3 mars',
+          BOUTON_K05('#F2F5F4', '#16211D', 'Débloquer'),
+        ),
+        devient:
+          '<sc-for list="{{ bloques }}" as="b">' +
+          LIGNE_CONTACT(
+            '{{ b.fond }}',
+            '{{ b.initiales }}',
+            '{{ b.nom }}',
+            '{{ b.date }}',
+            BOUTON_K05('#F2F5F4', '#16211D', 'Débloquer'),
+          ) +
+          '</sc-for>',
+        frames: ['Desktop'],
+        why: 'Les membres bloqués, de `GET /me/blocks` (08 §4).',
       },
     ],
   }),
@@ -822,6 +1355,13 @@ export const screens = [
     dataType: 'K06Data',
     triggers: [{ marker: 'Passer à Premium</button>', modal: 'K06M', all: true }],
     frames: page('Abonnement et Premium', 'Premium'),
+    /**
+     * K06 N'AVAIT AUCUNE CLÉ `liens`, et c'est le seul écran du module dans ce cas :
+     * les sept autres déclaraient déjà la barre basse du téléphone. Son panneau
+     * « MON COMPTE » est pourtant dessiné comme partout ailleurs — vérifié sur le
+     * cadre produit — et ses neuf entrées étaient donc mortes.
+     */
+    liens: panneauMonCompte(['Desktop']),
     donnees: [
       ...bandeau(),
       {
@@ -945,10 +1485,37 @@ export const screens = [
   screen({
     section: 'K07',
     out: 'k07',
+    // La barre basse du cadre mobile — voir K01 pour le pourquoi et le refus de
+    // « Compte ».
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     dataType: 'K07Data',
     frames: page('Notifications', 'Notifications'),
     donnees: [
       ...bandeau(),
+      {
+        noeud:
+          '<div style="display:grid;grid-template-columns:1fr 80px 80px 80px;align-items:center;padding:12px 0;border-bottom:1px solid #F0F3F2"><div><div style="font-size:13.5px;font-weight:700">Sécurité et compte</div><div style="font-size:11.5px;color:#8A958F">Non désactivable</div></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;opacity:.5"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;opacity:.5"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;opacity:.5"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div></div><div style="display:grid;grid-template-columns:1fr 80px 80px 80px;align-items:center;padding:12px 0;border-bottom:1px solid #F0F3F2"><div><div style="font-size:13.5px;font-weight:700">Mon parcours</div><div style="font-size:11.5px;color:#8A958F">Échéances, étapes</div></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#CBD5D1;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div></div><div style="display:grid;grid-template-columns:1fr 80px 80px 80px;align-items:center;padding:12px 0;border-bottom:1px solid #F0F3F2"><div><div style="font-size:13.5px;font-weight:700">Entraide</div><div style="font-size:11.5px;color:#8A958F">Réponses, demandes pour vous</div></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#CBD5D1;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div></div><div style="display:grid;grid-template-columns:1fr 80px 80px 80px;align-items:center;padding:12px 0;border-bottom:1px solid #F0F3F2"><div><div style="font-size:13.5px;font-weight:700">Messages</div></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#CBD5D1;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div></div><div style="display:grid;grid-template-columns:1fr 80px 80px 80px;align-items:center;padding:12px 0;border-bottom:1px solid #F0F3F2"><div><div style="font-size:13.5px;font-weight:700">Réseaux</div><div style="font-size:11.5px;color:#8A958F">Annonces, sujets</div></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#CBD5D1;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#CBD5D1;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div></div><div style="display:grid;grid-template-columns:1fr 80px 80px 80px;align-items:center;padding:12px 0;border-bottom:1px solid #F0F3F2"><div><div style="font-size:13.5px;font-weight:700">Événements</div><div style="font-size:11.5px;color:#8A958F">Rappels, nouveautés</div></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div><div style="text-align:center"><span style="width:40px;height:24px;border-radius:999px;background:#16785E;position:relative;display:inline-block;"><span style="position:absolute;top:3px;left:19px;width:18px;height:18px;border-radius:999px;background:#fff"></span></span></div></div></div>',
+        devient:
+          '<sc-for list="{{ categories }}" as="c">' +
+          RANG_K07(
+            '{{ c.titre }}',
+            '{{ c.sous }}',
+            INTERRUPTEUR_K07('{{ c.appliFond }}', '{{ c.appliGauche }}', '{{ c.appliOpacite }}'),
+            INTERRUPTEUR_K07('{{ c.pushFond }}', '{{ c.pushGauche }}', '{{ c.pushOpacite }}'),
+            INTERRUPTEUR_K07('{{ c.emailFond }}', '{{ c.emailGauche }}', '{{ c.emailOpacite }}'),
+          ) +
+          /**
+           * UNE FERMETURE EST RENDUE EN PLUS. Le nœud capturé va jusqu'à
+           * `</div></div></div>` : les deux premières ferment le dernier rang —
+           * sa cellule « email » puis sa grille — et la TROISIÈME ferme la carte
+           * qui les porte. La fabrique n'émet que le rang, donc il manquait
+           * celle-là. Deux en rendait une de trop, et le compilateur a dit les
+           * deux fois ce qu'il manquait ou ce qui dépassait.
+           */
+          '</sc-for></div>',
+        frames: ['Desktop'],
+        why: 'Les catégories de notification, de `GET /me/notification-preferences` — six rangs dessinés en dur devenaient la liste de tout le monde.',
+      },
       {
         noeud: '<strong>Email</strong> · amina.d@mail.com ',
         devient: '<strong>Email</strong> · {{ prefs.email }} ',
@@ -1007,6 +1574,9 @@ export const screens = [
   screen({
     section: 'K08',
     out: 'k08',
+    // La barre basse du cadre mobile — voir K01 pour le pourquoi et le refus de
+    // « Compte ».
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     dataType: 'K08Data',
     triggers: [{ marker: 'Supprimer</button>', modal: 'K08S', frames: ['Desktop'] }],
     frames: page('Mes données', 'Mes données'),
@@ -1040,6 +1610,9 @@ export const screens = [
   screen({
     section: 'K09',
     out: 'k09',
+    // La barre basse du cadre mobile — voir K01 pour le pourquoi et le refus de
+    // « Compte ».
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     dataType: 'K09Data',
     frames: page('Sanctions', 'Sanctions'),
     donnees: [
@@ -1064,6 +1637,8 @@ export const screens = [
     ],
   }),
 
+
+
   /**
    * ── K10 · /compte/enregistres ──────────────────────────────────────────────
    *
@@ -1083,8 +1658,134 @@ export const screens = [
   screen({
     section: 'K10',
     out: 'k10',
+    // La barre basse du cadre mobile — voir K01 pour le pourquoi et le refus de
+    // « Compte ».
+    liens: [...barreBasse(['Mobile']), ...panneauMonCompte(['Desktop'])],
     dataType: 'K10Data',
     frames: page('Enregistrés', 'Enregistrés'),
-    donnees: [...bandeau()],
+    donnees: [
+      ...bandeau(),
+      {
+        noeud: '>14 enregistrés<',
+        devient: '>{{ compte }}<',
+        frames: ['Desktop'],
+        why: 'Le nombre d’enregistrés, de `meta.total` — la maquette en écrit quatorze, le membre en a ce qu’il en a.',
+      },
+      {
+        noeud: ONGLETS_ORDINATEUR,
+        devient: ONGLETS_BOUCLES,
+        frames: ['Desktop'],
+        why: 'Les dix onglets, bouclés sur `meta.parType` : le fond, la couleur et la bordure disent LEQUEL est choisi, et la maquette dessine les deux variantes.',
+      },
+      {
+        noeud: LIGNE_ENREGISTREE(
+          '',
+          'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+          'Obtenir la garantie Visale sans CDI',
+          '#E3F0EB',
+          '#0F5C48',
+          'Mis à jour le 12 mars',
+          'enregistré hier',
+        ) +
+          LIGNE_ENREGISTREE(
+            '',
+            'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
+            'Story de Aïcha · Visale en 48 h',
+            '#F2F5F4',
+            '#5D6B66',
+            'Expiré, gardé pour vous',
+            'enregistré il y a 3 j',
+          ) +
+          LIGNE_ENREGISTREE(
+            '',
+            'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z',
+            'Accompagner un RDV préfecture',
+            '#F2F5F4',
+            '#5D6B66',
+            'Résolue',
+            'enregistré il y a 1 sem.',
+          ) +
+          LIGNE_ENREGISTREE(
+            '',
+            'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+            'Repas partagé béninois',
+            '#F2F5F4',
+            '#5D6B66',
+            'Passé',
+            'enregistré il y a 2 sem.',
+          ) +
+          LIGNE_ENREGISTREE(
+            '',
+            'M4 11 12 4l8 7v9H4z',
+            'Studio meublé Lyon 7e',
+            '#F2F5F4',
+            '#5D6B66',
+            'Plus disponible',
+            'enregistré il y a 3 sem.',
+          ) +
+          LIGNE_ENREGISTREE(
+            'opacity:.55',
+            'M4 5h16v11H9l-5 4z',
+            'Publication retirée',
+            '#F2F5F4',
+            '#8A958F',
+            'Contenu retiré',
+            'enregistré il y a 1 mois',
+          ),
+        devient: LIGNE_BOUCLEE + VIDE_SI_RIEN,
+        motifs: [{ from: MAQUETTE_COMPTE, pattern: BLOC_VIDE }],
+        frames: ['Desktop'],
+        why: 'Les six lignes dessinées deviennent `GET /me/bookmarks` — icône, titre, état et date viennent de la ligne, et le bloc vide de la planche « ÉTATS » prend la place quand il n’y a rien.',
+      },
+      {
+        noeud: ONGLETS_MOBILE,
+        devient: ONGLETS_BOUCLES,
+        frames: ['Mobile'],
+        why: 'Les onglets du cadre mobile — le téléphone n’en dessine que quatre faute de place, la boucle les porte tous et la rangée les enroule (`flex-wrap`).',
+      },
+      {
+        noeud: LIGNE_ENREGISTREE(
+          '',
+          'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+          'Garantie Visale sans CDI',
+          '#E3F0EB',
+          '#0F5C48',
+          'Mis à jour',
+          'enregistré hier',
+        ) +
+          LIGNE_ENREGISTREE(
+            '',
+            'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z',
+            'Story · Visale 48 h',
+            '#F2F5F4',
+            '#5D6B66',
+            'Expiré, gardé',
+            'enregistré 3 j',
+          ) +
+          LIGNE_ENREGISTREE(
+            '',
+            'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+            'Repas partagé',
+            '#F2F5F4',
+            '#5D6B66',
+            'Passé',
+            'enregistré 2 sem.',
+          ),
+        devient: LIGNE_BOUCLEE + VIDE_SI_RIEN,
+        /**
+         * L'ATTÉNUATION EST EMPRUNTÉE À LA PLANCHE D'ORDINATEUR, qui la dessine
+         * sur « Publication retirée ». Le cadre de 390 px ne dessine aucune ligne
+         * retirée — ses trois exemples sont tous vivants — mais la même liste y
+         * est servie, et le porteur veut chaque correction sur les deux planches :
+         * une ligne dont le contenu a disparu doit s'y atténuer comme ailleurs.
+         */
+        motifs: [
+          { from: MAQUETTE_COMPTE, pattern: BLOC_VIDE },
+          { from: MAQUETTE_COMPTE, pattern: 'background:#fff;border:1px solid #E6EBE9;opacity:' },
+        ],
+        frames: ['Mobile'],
+        why: 'Les trois lignes du cadre mobile, même source et même boucle — le porteur veut chaque correction sur les deux planches.',
+      },
+    ],
   }),
 ];

@@ -57,11 +57,72 @@
 
 /** Les deux cadres que chaque section dessine, ordinateur puis mobile. */
 import { railLitteral } from '../squelette-membre.mjs';
+import { barreBasse } from '../squelette-membre.mjs';
 
 const both = (desktop, mobile) => [
   { width: 1440, name: 'Desktop', title: desktop },
   { width: 390, name: 'Mobile', title: mobile },
 ];
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES SEPT ENTRÉES DU PANNEAU — « LES SOUS LIENS », ET LE COMPTEUR NE LES     ║
+ * ║ VOYAIT PAS                                                                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le récapitulatif « ── NAVIGATION ── » compte les `href="#"`. Ces sept entrées
+ * n'en ont aucun : la maquette les dessine en `<span>`, exactement comme elle
+ * dessinait les cinq entrées du rail. Ce ne sont donc pas des liens cassés, CE NE
+ * SONT PAS DES LIENS — invisibles au compteur, et pourtant c'est précisément ce
+ * sur quoi le porteur a cliqué (« Aucun sous lien aussi ne fonctionne »). Les
+ * promouvoir ne fera pas bouger le chiffre d'une unité ; le gain est compté à
+ * part dans le rapport.
+ *
+ * ── LE MARQUEUR N'EST PAS LE LIBELLÉ SEUL, ET C'EST MESURÉ ──────────────────
+ *
+ * `markLinks` remonte du marqueur jusqu'à la PREMIÈRE balise promouvable qui le
+ * contient. Or la maquette enferme chaque libellé dans un
+ * `<span style="flex:1">` À L'INTÉRIEUR de la ligne : un discriminant `texte`
+ * s'arrêterait sur CE span, et promouvrait le libellé au lieu de la ligne. La
+ * zone cliquable aurait alors fait la largeur du mot au lieu des 44 px de la
+ * ligne, sans que rien ne le signale — c'est le défaut que
+ * `tools/squelette-membre.mjs` a déjà payé sur le panneau en boucle.
+ *
+ * Le marqueur commence donc au `</svg>` qui précède : la remontée traverse
+ * `<path>` et `<svg>`, qui ne sont pas promouvables, et atteint la LIGNE. Il
+ * inclut le libellé, ce qui le rend unique dans le cadre — les tracés d'icône, eux,
+ * ne le sont pas (« Toutes les demandes » et « Mes annonces » partagent le tracé
+ * de la liste, et `M4 5h16v11H9l-5 4z` figure deux fois par cadre). `fois: 1`
+ * recompte à chaque génération.
+ *
+ * ── LES SEPT DESTINATIONS SONT RECOPIÉES, PAS DÉDUITES ─────────────────────
+ *
+ * Chacune est la route que `T5 §5` donne à la planche correspondante, et que
+ * `apps/web/src/app/(app)/` sert : les sept entrées du panneau sont exactement les
+ * sept sections H de cette maquette. La correspondance n'est pas une
+ * interprétation du libellé — c'est le `out:` de chaque écran de ce fichier.
+ */
+const ENTREES_PANNEAU_ENTRAIDE = [
+  ['Toutes les demandes', '/entraide', 'H01'],
+  ['Vous pouvez aider', '/entraide/aider', 'H04'],
+  ['Mes demandes', '/entraide/mes-demandes', 'H09'],
+  ['Mes réponses', '/entraide/mes-reponses', 'H10'],
+  ['Trouver un parrain', '/parrainage', 'H05'],
+  ['Mes parrainages', '/parrainage/mes-parrainages', 'H07'],
+  ['Devenir parrain', '/parrainage/devenir', 'H08'],
+];
+
+/** Les sept entrées, bornées aux cadres d'ordinateur : le mobile ne les dessine pas. */
+const panneauEntraide = (frames) =>
+  ENTREES_PANNEAU_ENTRAIDE.map(([libelle, vers, planche]) => ({
+    marqueur: `</svg><span style="flex:1">${libelle}</span>`,
+    vers,
+    frames,
+    why:
+      `L’entrée « ${libelle} » du panneau de section mène à ${vers} — la route que T5 §5 ` +
+      `donne à ${planche}, et que cette maquette dessine sous ce numéro. La maquette ` +
+      'l’écrit en <span> : ce n’était pas un lien cassé, ce n’était pas un lien.',
+  }));
 
 /**
  * ─── LE BANDEAU DE SECTION, LIÉ SUR LES DIX CADRES D'ORDINATEUR ─────────────
@@ -461,6 +522,9 @@ const EVALUATION = (commentaire, auteur) =>
 /** La pastille d'une réponse QU'ON PEUT marquer : détourée, sans coche. */
 const PASTILLE_A_MARQUER =
   '<span style="display:inline-flex;margin-top:8px;align-items:center;gap:6px;border:1.5px solid #CFE3DA;color:#0F5C48;font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px">Ça m’a aidé</span>';
+
+/** Les six sections dont le cadre mobile dessine la barre d'onglets basse. */
+const BARRE_BASSE_ENTRAIDE = new Set(['H01', 'H04', 'H05', 'H07', 'H09', 'H10']);
 
 export const screens = [
   /**
@@ -1165,6 +1229,27 @@ export const screens = [
    * d'ordinateur, les dix le dessinent, et aucun cadre mobile ne le dessine.
    * La surbrillance est déjà juste — la maquette peint « Entraide » sur les dix.
    */
-  liens: railLitteral(s.frames.map((f) => f.name).filter((n) => n.includes('Desktop'))),
+  /**
+   * LE RAIL *ET* LE PANNEAU DE SECTION. Les deux sont dessinés en `<span>` sur les
+   * dix cadres d'ordinateur, et les deux sont des « sous liens » au sens du
+   * porteur. Le rail est déclaré une fois pour les sept modules membre
+   * (`tools/squelette-membre.mjs`) ; le panneau est propre à cette maquette, donc
+   * il est déclaré ici.
+   */
+  liens: [
+    ...railLitteral(s.frames.map((f) => f.name).filter((n) => n.includes('Desktop'))),
+    ...panneauEntraide(s.frames.map((f) => f.name).filter((n) => n.includes('Desktop'))),
+    /**
+     * LA BARRE BASSE N'EST QUE SUR SIX DES DIX CADRES MOBILES, et c'est MESURÉ,
+     * pas déduit d'un nom : H01, H04, H05, H07, H09 et H10 la dessinent ; H02,
+     * H03, H06 et H08 ne la dessinent pas — H06 n'a même pas de cadre mobile. Une
+     * règle sur le nom « Mobile » l'aurait appliquée aux quatre autres, et le
+     * compte serait tombé à zéro : la génération aurait refusé en les nommant,
+     * donc le défaut n'aurait pas été silencieux. La liste est écrite quand même,
+     * parce qu'un refus coûte un aller-retour et qu'une liste comptée n'en coûte
+     * aucun.
+     */
+    ...(BARRE_BASSE_ENTRAIDE.has(s.section) ? barreBasse(['Mobile']) : []),
+  ],
   ...(s.donnees === undefined ? {} : { donnees: s.donnees }),
 }));

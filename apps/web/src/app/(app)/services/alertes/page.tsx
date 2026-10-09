@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS10 } from '@/screens/services/appels';
+import { SQUELETTE_S10, chargerS10 } from '@/screens/services/appels';
 import { S10Desktop } from '@/screens/s10/desktop.generated';
 import { S10Mobile } from '@/screens/s10/mobile.generated';
 
@@ -41,7 +41,19 @@ import { S10Mobile } from '@/screens/s10/mobile.generated';
  */
 export default function AlertesPage() {
   return (
-    <EcranDonnees charger={chargerS10} attente="Chargement de vos alertes…">
+    <EcranDonnees
+      charger={chargerS10}
+      attente="Chargement
+      de
+      vos
+      alertes…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots et aucune entrée de rail dans le HTML
+       * servi. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S10}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="S10"

@@ -1,6 +1,6 @@
 'use client';
 
-import { chargerJ09 } from '@/screens/parcours/appels';
+import { VUE_NEUTRE, chargerJ09 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J09Desktop } from '@/screens/j09/desktop.generated';
@@ -49,6 +49,14 @@ import { J09Mobile } from '@/screens/j09/mobile.generated';
 export default function Page() {
   return (
     <EcranParcoursDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE. `VUE_NEUTRE` est le DESSIN sans la
+       * donnee, et il existait deja pour les planches d'illustration : rien n'est
+       * invente ici. Sans lui, cette route repond 200 en servant « DisaporyPlus
+       * Chargement de votre parcours... » et RIEN d'autre — ni rail, ni panneau,
+       * ni barre basse. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={VUE_NEUTRE}
       screen="J09"
       charger={chargerJ09}
       desktop={(d) => <J09Desktop {...d} />}

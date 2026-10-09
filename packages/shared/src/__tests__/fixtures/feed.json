@@ -44,7 +44,10 @@
       },
       "commentCount": 0,
       "commentLabel": "Commenter",
-      "linkRel": "noopener nofollow ugc"
+      "bookmarked": false,
+      "linkRel": "noopener nofollow ugc",
+      "poll": null,
+      "guides": []
     },
     {
       "id": "01a0f10d-d9ea-7000-afe1-77e47343fb43",
@@ -90,7 +93,10 @@
       },
       "commentCount": 0,
       "commentLabel": "Commenter",
-      "linkRel": "noopener nofollow ugc"
+      "bookmarked": false,
+      "linkRel": "noopener nofollow ugc",
+      "poll": null,
+      "guides": []
     },
     {
       "id": "01a0f10d-d9ca-7000-92cb-fbd0a15a9e06",
@@ -136,7 +142,10 @@
       },
       "commentCount": 3,
       "commentLabel": "Répondre",
-      "linkRel": "noopener nofollow ugc"
+      "bookmarked": false,
+      "linkRel": "noopener nofollow ugc",
+      "poll": null,
+      "guides": []
     },
     {
       "id": "01a0f10d-d9a0-7000-8395-d2f0e11cb5e7",
@@ -182,7 +191,10 @@
       },
       "commentCount": 0,
       "commentLabel": "Commenter",
-      "linkRel": "noopener nofollow ugc"
+      "bookmarked": false,
+      "linkRel": "noopener nofollow ugc",
+      "poll": null,
+      "guides": []
     }
   ],
   "nextCursor": null,

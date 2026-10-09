@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import { motsVisibles } from './mots-visibles';
 
 /**
  * Les règles dures, mesurées sur l'écran rendu.
@@ -454,24 +455,42 @@ test.describe('rendu serveur', () => {
   const MOTS_DE_LA_COQUILLE = [
     'STORIES DU JOUR',
     'VOS RACCOURCIS',
-    'Rechercher dans la diaspora',
-    'Créer une story',
+    /**
+     * « Partager un jalon » ET PLUS « Créer une story ».
+     *
+     * Le porteur : « change la section de stories comme sur la page ci »
+     * (`Fil d'actualité v2`). La tuile ronde « Créer une story » est devenue la
+     * carte d'appel « Partager un jalon », et c'est le mot que la nouvelle
+     * planche écrit. Ce que ce cas tient n'a pas bougé : le HTML servi porte des
+     * MOTS, pas seulement du script.
+     */
+    'Partager un jalon',
     'COMMUNAUTÉ',
   ] as const;
 
-  /** Le texte visible d'une réponse HTML, scripts et styles ÔTÉS. */
-  function motsVisibles(html: string): { readonly texte: string; readonly nombre: number } {
-    const sansScript = html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ');
-    const texte = sansScript
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&#x27;/g, '’')
-      .replace(/&[a-z#0-9]+;/gi, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return { texte, nombre: texte.split(' ').filter((m) => /[A-Za-zÀ-ÿ]{2,}/.test(m)).length };
-  }
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « RECHERCHER DANS LA DIASPORA » A CHANGÉ DE NATURE, PAS DE PRÉSENCE      ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Il figurait dans la liste ci-dessus parce que la maquette l'écrivait en TEXTE,
+   * dans un `<div>` qui ne faisait rien. Il est désormais l'INVITE d'un vrai champ
+   * de recherche — le porteur : « la top bar n'est pas du tout fonctionnelle » —
+   * et une invite vit dans un attribut, pas dans un nœud de texte.
+   *
+   * Le détecteur de mots visibles ne lit que les textes : il ne le voit donc plus,
+   * et c'est juste. On vérifie sa présence là où elle est maintenant — ce qui
+   * prouve en outre que le champ est SERVI PAR LE SERVEUR, et non monté après
+   * hydratation, ce que ce fichier éprouve de bout en bout.
+   */
+  const INVITE_DE_RECHERCHE = 'placeholder="Rechercher dans la diaspora"';
+
+  /**
+   * Le détecteur a DÉMÉNAGÉ dans `e2e/mots-visibles.ts`, et ce n'est pas du
+   * rangement : `coquille-vide.spec.ts` l'emploie aussi, sur toutes les routes du
+   * produit. Deux copies d'un détecteur, c'est deux calibrages qui divergent, et
+   * la divergence se lirait comme un changement du produit.
+   */
 
   test('le HTML de /accueil porte des mots, pas seulement du script', async ({ request }) => {
     const res = await request.get('/accueil');
@@ -490,6 +509,11 @@ test.describe('rendu serveur', () => {
     for (const mot of MOTS_DE_LA_COQUILLE) {
       expect(texte, `« ${mot} » manque au HTML servi`).toContain(mot);
     }
+
+    // Le champ de recherche, servi par le serveur — voir `INVITE_DE_RECHERCHE`.
+    expect(await res.text(), 'le champ de recherche n’est pas dans le HTML servi').toContain(
+      INVITE_DE_RECHERCHE,
+    );
   });
 
   /**
@@ -512,4 +536,157 @@ test.describe('rendu serveur', () => {
     const bavard = `<html><body><script>${'var motmotmot = 1;'.repeat(400)}</script></body></html>`;
     expect(motsVisibles(bavard).nombre).toBe(0);
   });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE TROU DE COUVERTURE QUE CE BLOC AVAIT, ET QUI A LAISSÉ VIVRE LE DÉFAUT  ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Ce bloc ne visitait QU'UNE SEULE ROUTE : `/accueil` — précisément la seule du
+   * produit qui rende son cadre tout de suite. Les quatre autres entrées du rail
+   * servaient une COQUILLE, et personne ne les avait regardées. C'est la famille de
+   * défauts la plus coûteuse de ce dépôt : un test qui garde le seul cas qui marche.
+   *
+   * Relevé au HTML servi, avant correction :
+   *
+   *     /accueil            200  rail servi
+   *     /parcours           200  rail : AUCUN — « DisaporyPlus · Chargement… »
+   *     /entraide           200  rail : AUCUN
+   *     /services/logement  200  rail : AUCUN
+   *     /agenda             200  rail : AUCUN
+   *
+   * ── CE QUE CES TESTS AFFIRMENT, ET POURQUOI PAS UN COMPTE ──────────────────
+   *
+   * Deux choses, et aucune n'est un seuil qui redeviendra faux :
+   *
+   *   1. LES CINQ DESTINATIONS DU RAIL SONT DANS LE HTML SERVI. C'est la propriété
+   *      qui compte — sur un téléphone comme sur un écran, c'est la seule sortie de
+   *      la page — et elle ne dépend d'aucune donnée ;
+   *   2. UN REPÈRE QUE LA MAQUETTE DESSINE SANS DONNÉE est présent : l'étiquette du
+   *      panneau de section. Elle est écrite en clair dans la maquette, donc elle
+   *      est là que l'API réponde ou non. Un compte de mots élevé rempli d'autre
+   *      chose ne dirait rien ; cette étiquette-là dit que le CADRE est rendu.
+   *
+   * ── MESURÉ SANS EXÉCUTER LE JAVASCRIPT ────────────────────────────────────
+   *
+   * `request.get` lit le HTML servi, sans navigateur et sans script — c'est
+   * exactement la bonne mesure pour cette règle, et celle que les deux tests
+   * au-dessus emploient déjà. Une mesure au navigateur passerait même sur une
+   * coquille, puisque le client finit par rendre le cadre.
+   *
+   * ── UN CADRE SANS DONNÉE ET UN LIEN QUI NE MÈNE NULLE PART SONT DEUX DÉFAUTS ─
+   *
+   * Ces tests gardent le PREMIER. Le second — « le lien clique et l'URL change » —
+   * est gardé par `e2e/sous-liens.spec.ts`, au navigateur. Les confondre coûte une
+   * heure : ici la page répond 200, le `<a href>` existe bel et bien dans le cadre
+   * généré, et c'est le cadre qui n'était pas rendu.
+   */
+  const RAIL_SERVI = [
+    '/accueil',
+    '/parcours',
+    '/entraide',
+    '/services/logement',
+    '/agenda',
+  ] as const;
+
+  /**
+   * ── LES VINGT-DEUX ROUTES, ET LE REPÈRE QUE CHACUNE DOIT SERVIR ───────────
+   *
+   * Le repère est une étiquette que LA MAQUETTE écrit EN CLAIR : elle est dans le
+   * HTML que l'API réponde ou non, donc elle dit « le cadre est rendu » et rien
+   * d'autre. Un compte de mots élevé rempli d'autre chose ne dirait rien.
+   *
+   * `/accueil`, `/guides`, `/reseaux` et `/villes` n'y sont pas : ces écrans
+   * rendaient déjà leur cadre, et `/accueil` a son propre cas plus haut. Ce qui
+   * est listé ici est l'ensemble de ce qui servait une COQUILLE — dix-huit routes
+   * mesurées à quatre ou cinq mots.
+   */
+  const ROUTES_SERVIES = [
+    // ── Parcours, Entraide, Services, Agenda — le périmètre de ce lot ──
+    ['/parcours', 'MON PARCOURS'],
+    ['/entraide', 'MA RÉPUTATION'],
+    ['/entraide/aider', 'VOUS POUVEZ AIDER'],
+    ['/entraide/mes-demandes', 'MA RÉPUTATION'],
+    ['/entraide/mes-reponses', 'MA RÉPUTATION'],
+    ['/entraide/nouveau', 'MA RÉPUTATION'],
+    ['/parrainage', 'DEVENIR PARRAIN'],
+    ['/parrainage/mes-parrainages', 'PARRAINAGE'],
+    ['/parrainage/devenir', 'GUIDE DU PARRAIN'],
+    ['/services/logement', 'MES QUOTAS DU MOIS'],
+    ['/services/emploi', 'PROFILS DISPONIBLES'],
+    ['/services/annuaire', 'MON ESPACE'],
+    ['/services/annuaire/ma-fiche', 'MES QUOTAS DU MOIS'],
+    ['/services/mes-annonces', 'MON ESPACE'],
+    ['/services/alertes', 'NOUVELLE ALERTE'],
+    ['/agenda', 'CALENDRIER'],
+    /**
+     * ── ET LES SIX ROUTES QUI NE SONT PAS DE CE PÉRIMÈTRE ───────────────────
+     *
+     * Elles partagent la coquille de chargement corrigée
+     * (`screens/compte/ecran-donnees.tsx`), donc la même correction les répare.
+     * Les laisser hors du test aurait rendu la correction réversible sans que
+     * rien ne le dise — et c'est du code écrit à la main, pas une déclaration
+     * d'écran : elle n'entre en conflit avec le lot de personne.
+     *
+     * `/premium` m'avait été donné comme L'EXCEPTION, la route qui servirait cinq
+     * mots SANS passer par cette coquille. C'est faux : `premium/page.tsx` rend
+     * `AbonnementEcran`, qui appelle `EcranDonnees`. Ce sont les dix sur dix.
+     */
+    ['/messages', 'DEMANDES'],
+    /**
+     * `Résultats pour` et non plus `Rechercher dans la diaspora` : cette dernière
+     * était l'INVITE du champ, et une invite vit dans un attribut depuis que la
+     * barre haute est branchée. Le détecteur ne lit que les nœuds de texte, et
+     * c'est juste — on prend donc un repère qui appartient VRAIMENT à cette page,
+     * ce que l'invite d'une barre présente partout n'était pas.
+     */
+    ['/recherche', 'Résultats pour'],
+    ['/notifications', 'Tout marquer lu'],
+    ['/premium', 'MON COMPTE'],
+    ['/compte/profil', 'TEL QUE LES AUTRES VOUS VOIENT'],
+  ] as const;
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ D'OÙ VIENT CE PLANCHER, ET POURQUOI IL EST BAS                           ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * DEUX PÔLES MESURÉS avec `motsVisibles` — celui-là même, pas un autre
+   * détecteur :
+   *
+   *   ·  4 mots : une coquille vide. `/recherche` servait « DisaporyPlus
+   *      Recherche en cours… » et RIEN d'autre, rail compris ;
+   *   · 41 mots : le cadre le plus pauvre une fois rendu — `/messages`, dont le
+   *      squelette n'a ni conversation ni message. `/agenda` en sert 49, les dix-
+   *      neuf autres de 55 à 278.
+   *
+   * DIX sépare les deux, et il est volontairement près du pôle cassé : un
+   * plancher haut RECALE DES PAGES SAINES, et trois bornes de ce dépôt sont déjà
+   * devenues fausses par accumulation. Les deux chiffres sont écrits ici pour que
+   * le prochain sache d'où vient la borne au lieu de la relever au hasard.
+   *
+   * CE PLANCHER NE DÉCRIT PAS UNE RICHESSE ATTENDUE. Ce qui décrit le contenu,
+   * c'est le repère de la maquette, juste au-dessus.
+   */
+  const PLANCHER_DE_MOTS = 10;
+
+  for (const [route, repere] of ROUTES_SERVIES) {
+    test(`le HTML de ${route} sert le rail et le cadre, pas une coquille`, async ({ request }) => {
+      const res = await request.get(route);
+      expect(res.status()).toBe(200);
+      const html = await res.text();
+
+      for (const destination of RAIL_SERVI) {
+        expect(html, `« href="${destination}" » manque au HTML servi de ${route}`).toContain(
+          `href="${destination}"`,
+        );
+      }
+
+      const { texte, nombre } = motsVisibles(html);
+      expect(texte, `« ${repere} » manque : le cadre n’est pas rendu`).toContain(repere);
+      expect(nombre, `${route} ne porte que ${nombre} mot(s) hors script`).toBeGreaterThan(
+        PLANCHER_DE_MOTS,
+      );
+    });
+  }
 });

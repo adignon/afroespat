@@ -60,11 +60,36 @@ enum OccupationStatus {
   OTHER
 }
 
+/// Ce qu'un membre sait faire (profil) ET ce qu'une demande d'entraide réclame.
+///
+/// ── IL Y EN AVAIT DEUX, ET C'ÉTAIT UN DÉFAUT ──────────────────────────────
+///
+/// `HelpType` (profil) et `HelpType2` (demande, module 06) coexistaient avec
+/// TROIS MEMBRES SUR CINQ DIFFÉRENTS : `HOUSING | JOB | WELCOME` d'un côté,
+/// `SERVICE | RIDE | MATERIAL` de l'autre. Conséquence mesurée sur O04 : les
+/// libellés « Trajet », « Traduction » et « Matériel » que l'écran propose
+/// n'avaient aucun code propre et retombaient TOUS LES TROIS sur `OTHER`. Un
+/// membre qui se déclarait disponible pour un trajet était donc indistinguable
+/// d'un autre disponible pour du matériel — et aucun rapprochement avec une
+/// demande `RIDE` n'était possible.
+///
+/// Le porteur a tranché : « il ne faut en garder qu'un seul. »
+///
+/// ── LA FUSION NE PERD RIEN ────────────────────────────────────────────────
+///
+/// L'union des deux, et chaque valeur de `HelpType2` a ici un HOMONYME : la
+/// conversion se fait donc par nom, sans table de correspondance et sans
+/// arbitrage. Mesuré avant migration : 83 lignes de `help_requests`, réparties
+/// sur `PAPERWORK` (65), `RIDE` (1) et `MATERIAL` (17) — les trois existent
+/// ci-dessous.
 enum HelpType {
   PAPERWORK
   HOUSING
   JOB
   WELCOME
+  SERVICE
+  RIDE
+  MATERIAL
   OTHER
 }
 

@@ -28,6 +28,7 @@ export function ScreenFrames({
   mobile,
   background = '#F6F8F7',
   direction = 'row',
+  pleineLargeur = false,
 }: {
   readonly screen: string;
   /**
@@ -57,6 +58,25 @@ export function ScreenFrames({
    * pas de téléphone en rangée.
    */
   readonly direction?: 'row' | 'column';
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ DEUX ÉCRANS COUVRENT TOUT, LES AUTRES SE CENTRENT                       ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le create story doit couvrir tout l'écran […] pareil pour le
+   * display. »
+   *
+   * MESURÉ sur une fenêtre de 1700 px : le cadre fait 1440 px à x+130, donc deux
+   * bandes de 130 px laissent voir la page derrière — ce que la capture du porteur
+   * montre en vert.
+   *
+   * LA BORNE RESTE LA RÈGLE pour les 250 autres cadres, et la note d'en-tête dit
+   * pourquoi : au-delà de 1440 px on centre plutôt que d'étirer un dessin. Mais
+   * A13 et A14 ne sont pas des pages parmi d'autres : ce sont des SURFACES, posées
+   * par-dessus le reste. Une surface qui laisse voir deux bandes du dessous n'est
+   * pas une surface.
+   */
+  readonly pleineLargeur?: boolean;
 }) {
   /**
    * ÉCRAN MOBILE SEUL : un cadre, toujours visible, borné à sa largeur de maquette.
@@ -70,7 +90,22 @@ export function ScreenFrames({
       <div data-screen={screen} style={{ background, minHeight: '100vh' }}>
         <div
           data-frame="mobile"
-          className="mx-auto flex min-h-screen max-w-[390px] flex-col"
+          /**
+           * ── 390 px SEULEMENT AU-DELÀ DU SEUIL D'ORDINATEUR ──────────────
+           *
+           * Le porteur, capture à l'appui : « la page a un padding gauche
+           * droite à corriger ». Ce n'était pas un retrait : c'était la BORNE.
+           * `max-w-[390px]` s'appliquait à toutes les largeurs, donc sur un
+           * téléphone de 430 px le cadre se centrait en laissant vingt pixels
+           * de gris de chaque côté — ce qu'aucune autre page ne fait, puisque
+           * les cadres mobiles ordinaires remplissent l'écran.
+           *
+           * La borne garde sa raison d'être — ne pas étaler un dessin de
+           * téléphone sur 1 440 px — mais elle ne vaut qu'À PARTIR du seuil de
+           * §10.1, celui-là même où les autres écrans basculent sur leur cadre
+           * d'ordinateur. En dessous, le cadre remplit, comme partout ailleurs.
+           */
+          className="mx-auto flex min-h-screen w-full flex-col lg:max-w-[390px]"
           style={{ position: 'relative' }}
         >
           {mobile}
@@ -84,9 +119,13 @@ export function ScreenFrames({
       <div
         data-frame="desktop"
         className={
-          mobile === undefined
-            ? 'mx-auto flex min-h-screen max-w-[1440px]'
-            : 'mx-auto hidden min-h-screen max-w-[1440px] lg:flex'
+          [
+            'mx-auto min-h-screen',
+            pleineLargeur === true ? '' : 'max-w-[1440px]',
+            mobile === undefined ? 'flex' : 'hidden lg:flex',
+          ]
+            .filter((c) => c !== '')
+            .join(' ')
         }
         style={{ position: 'relative', flexDirection: direction }}
       >

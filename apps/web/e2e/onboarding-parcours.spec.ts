@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { type Page, expect, test } from '@playwright/test';
+import { connecter, numeroNational } from './session';
+import { monterEnL1 } from './niveau';
+import { codesDepuis, marqueDuJournal } from './sms';
 
 /**
  * L'ONBOARDING BRANCHÉ SUR L'API, ET LE PARCOURS QU'IL CRÉE — 01 §5, 03 §3.1.
@@ -63,23 +65,15 @@ async function apiUp(): Promise<boolean> {
  * ordinaire s'y tait. Les deux pièges sont documentés dans `inscription.spec.ts`,
  * et la fonction est la même — délibérément.
  */
-function codesSentTo(phone: string): string[] {
-  if (API_LOG === '') return [];
-  const tail = phone.slice(-4);
-  try {
-    const text = readFileSync(API_LOG, 'latin1');
-    const pattern = new RegExp(
-      `SMS fictif vers [^:]*${tail} : Votre code de connexion : (\\d{6})`,
-      'g',
-    );
-    return [...text.matchAll(pattern)].map((m) => m[1] as string);
-  } catch {
-    return [];
-  }
-}
 
 /** Un numéro vraiment unique : la limite est de 3 envois par numéro et par heure. */
-const unique = (): string => `97${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 100)}`;
+/**
+ * Un numéro que l'écran ACCEPTE. Il commençait par `97` — l'ancien format du
+ * Bénin, celui que la planche dessine — et depuis la validation par pays,
+ * « Recevoir le code » restait grisé : ce fichier expirait sur un clic
+ * impossible, trois cas de suite.
+ */
+const unique = (): string => numeroNational();
 
 /**
  * LIRE L'API EN TANT QUE CE MEMBRE, depuis le test.
@@ -126,19 +120,41 @@ async function signUp(page: Page): Promise<void> {
   await page.goto('/connexion');
   await page.locator('input[name="phone"]:visible').fill(phone);
   await page.locator('main:visible [role="checkbox"]').click();
+  const marque = marqueDuJournal();
   await page.getByRole('button', { name: 'Recevoir le code' }).click();
   await page.waitForURL('**/connexion/code', { timeout: 20_000 });
-  await expect.poll(() => codesSentTo(phone).length, { timeout: 15_000 }).toBe(1);
-  await page.locator('input[autocomplete="one-time-code"]:visible').fill(codesSentTo(phone)[0] as string);
+  await expect.poll(() => codesDepuis(phone, marque).length, { timeout: 15_000 }).toBe(1);
+  await page.locator('input[autocomplete="one-time-code"]:visible').fill(codesDepuis(phone, marque)[0] as string);
   await page.waitForURL('**/bienvenue/phase', { timeout: 20_000 });
 }
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA VILLE SE CHOISIT DANS UN PANNEAU, PLUS DANS UN CHAMP                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « La sélection de ville : utilise le panneau aussi. » Le champ
+ * `input[aria-label="Votre ville"]` que ces cas remplissaient n'existe plus dans
+ * la page : c'est un BOUTON qui ouvre un panneau, et la recherche vit DEDANS.
+ */
 /** Retenir Lyon à l'écran du lieu, puis avancer. */
 async function choisirLyon(page: Page): Promise<void> {
-  const ville = page.locator('input[aria-label="Votre ville"]:visible');
-  await ville.fill('lyo');
-  await page.locator('main:visible button', { hasText: 'Lyon' }).first().click();
-  await expect(ville).toHaveValue('Lyon');
+  const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
+  await cadre.locator('button[aria-label="Votre ville"]').click();
+
+  const panneau = cadre.locator('[data-panneau-section="ville"]');
+  await expect(panneau).toHaveCount(1);
+  await panneau.getByLabel('Votre ville').fill('lyo');
+  await panneau.locator('button[aria-pressed]', { hasText: 'Lyon' }).first().click();
+
+  /**
+ * ON LIT LA LIGNE, PAS LE BOUTON. Le déclencheur est une surface TRANSPARENTE
+ * (`opacity:0`) posée sur toute la ligne : c'est la maquette qui dessine la
+ * ligne, et le bouton ne fait que la rendre cliquable sans la redessiner. La
+ * ville retenue est donc le texte de la LIGNE — viser le bouton lit une chaîne
+ * vide et fait conclure, à tort, que le choix ne s'affiche pas.
+ */
+  await expect(cadre.locator('div:has(> button[aria-label="Votre ville"])')).toContainText('Lyon');
   await page.getByRole('button', { name: 'Continuer' }).click();
   await page.waitForURL('**/bienvenue/objectif', { timeout: 20_000 });
 }
@@ -173,7 +189,14 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
   });
 
   test.afterAll(async () => {
-    await page.close();
+  /**
+   * `page` est VIDE quand le `describe` s'est sauté : `beforeAll` ne tourne pas,
+   * mais `afterAll` SI. MESURÉ : trois cas comptés « échoués » — `TypeError:
+   * Cannot read properties of undefined (reading 'close')` — là où ils étaient
+   * simplement sautés faute de `API_LOG`. Un saut ne doit pas se lire comme une
+   * panne : c'est ce qui fait chercher un défaut là où il n'y en a pas.
+   */
+    await page?.close();
   });
 
   test('numéro, code, phase, lieu', async () => {
@@ -281,11 +304,22 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
      * non celle de la LISTE, ce qui ne se voit pas sur une liste vide. Le test
      * mesurait la valeur par défaut ; il mesure maintenant le branchement.
      */
+    /**
+     * ── ON RECONNAÎT LA PLANCHE À SON CONTENU, PLUS À SON NOM ──────────────
+     *
+     * Ce cas distinguait les deux variantes par les libellés « SANS PARCOURS » et
+     * « AVEC PARCOURS ». C'étaient les noms que la MAQUETTE donne à ses propres
+     * planches, imprimés en tête de l'écran : ils ont été retirés, parce qu'un
+     * membre n'a pas à lire le nom d'une planche. Les deux atterrissages se
+     * reconnaissent donc à ce qu'ils DISENT — le réseau de la ville d'un côté,
+     * la première étape du parcours de l'autre.
+     */
     await page.goto('/bienvenue/fin?parcours=non');
-    await expect(page.locator('main:visible')).toContainText('SANS PARCOURS');
+    await expect(page.locator('main:visible')).toContainText('PROCHAINS ÉVÉNEMENTS');
     await expect
       .poll(
-        async () => (await page.locator('main:visible').innerText()).includes('AVEC PARCOURS'),
+        async () =>
+          (await page.locator('main:visible').innerText()).includes('Votre parcours est prêt'),
         { timeout: 15_000 },
       )
       .toBe(true);
@@ -379,7 +413,14 @@ test.describe.serial('un membre refuse le parcours, et rien n’est créé', () 
   });
 
   test.afterAll(async () => {
-    await page.close();
+  /**
+   * `page` est VIDE quand le `describe` s'est sauté : `beforeAll` ne tourne pas,
+   * mais `afterAll` SI. MESURÉ : trois cas comptés « échoués » — `TypeError:
+   * Cannot read properties of undefined (reading 'close')` — là où ils étaient
+   * simplement sautés faute de `API_LOG`. Un saut ne doit pas se lire comme une
+   * panne : c'est ce qui fait chercher un défaut là où il n'y en a pas.
+   */
+    await page?.close();
   });
 
   test('décocher la case ne crée rien, et l’inscription continue', async () => {
@@ -405,17 +446,123 @@ test.describe.serial('un membre refuse le parcours, et rien n’est créé', () 
     await page.goto('/bienvenue/fin');
     await expect
       .poll(
-        async () => (await page.locator('main:visible').innerText()).includes('SANS PARCOURS'),
+        // Le réseau de la ville : ce que montre l'atterrissage SANS parcours.
+        async () => (await page.locator('main:visible').innerText()).includes('PROCHAINS ÉVÉNEMENTS'),
         { timeout: 15_000 },
       )
       .toBe(true);
   });
 });
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ O05 DIT LE PARCOURS RÉEL, PAS CELUI DE LA MAQUETTE                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : « Il faut que cette page prenne en compte le
+ * parcours réel créé au cours de l'onboarding, et non juste une valeur dummies. »
+ *
+ * Ce qu'il voyait : « Rejoindre ma famille », « ÉTAPE 1 SUR 9 » et « Déposer le
+ * dossier de regroupement familial » — tout cela VRAI — surmontant « Campus
+ * France, choix des formations, lettre de motivation », qui est la phrase de la
+ * maquette et parle d'un parcours d'ÉTUDES.
+ *
+ * Ce cas ouvre un parcours de FAMILLE expressément : c'est ce qui rend l'erreur
+ * visible. Sur un parcours d'études, la phrase dessinée aurait l'air juste.
+ */
+test.describe('O05 — l’atterrissage lit le parcours créé', () => {
+  test('le titre, le rang, l’étape et sa description viennent du serveur', async ({
+    page,
+    request,
+  }) => {
+    test.slow();
+    const membre = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    const { accessToken } = await monterEnL1(page.context(), request, membre.accessToken);
+    const entete = { authorization: `Bearer ${accessToken}` };
+
+    const modeles = (await (
+      await request.get(`${API}/journey-templates`, { headers: entete })
+    ).json()) as { items: readonly { id: string; code: string }[] };
+    const famille = modeles.items.find((t) => t.code === 'FAMILY') ?? modeles.items[0];
+    expect(famille, 'aucun modèle de parcours servi').toBeDefined();
+    const creation = await request.post(`${API}/journeys`, {
+      headers: entete,
+      data: { templateId: famille?.id },
+    });
+    expect(creation.ok(), `POST /journeys : ${creation.status()}`).toBe(true);
+
+    /** La liste, c'est-à-dire EXACTEMENT ce que l'écran lit. */
+    const liste = (await (await request.get(`${API}/journeys`, { headers: entete })).json()) as {
+      items: readonly {
+        title: string;
+        doneCount: number;
+        stepCount: number;
+        currentStep: { title: string; description: string | null } | null;
+      }[];
+    };
+    const parcours = liste.items[0];
+    expect(parcours, 'le parcours créé n’est pas dans la liste').toBeDefined();
+    if (parcours === undefined) return;
+
+    await page.goto('/bienvenue/fin');
+    const ecran = page.locator('main:visible');
+    await expect(ecran).toContainText('Votre parcours est prêt');
+    await expect.poll(async () => (await ecran.innerText()).includes(parcours.title), {
+      timeout: 15_000,
+    }).toBe(true);
+
+    const texte = (await ecran.innerText()).replace(/\s+/g, ' ');
+    // Le rang et le total DU PARCOURS — pas le `stepCount` du modèle, qui est une
+    // seconde source et diverge dès la première étape franchie.
+    expect(texte).toContain(
+      `ÉTAPE ${String(parcours.doneCount + 1)} SUR ${String(parcours.stepCount)}`,
+    );
+    expect(texte).toContain(parcours.currentStep?.title ?? '');
+
+    /**
+     * LA DESCRIPTION : celle du serveur, ou RIEN.
+     *
+     * `currentStep.description` est `null` pour tout le référentiel actuel — T3
+     * ne donne aucune description, les procédures vivent dans les guides. La
+     * ligne ne doit donc pas être dessinée du tout ; et le jour où le back-office
+     * la remplit, c'est ELLE qui doit s'afficher.
+     */
+    const decrite = parcours.currentStep?.description;
+    if (decrite === null || decrite === undefined || decrite === '') {
+      expect(texte, 'une phrase s’affiche là où le serveur n’en donne aucune').not.toContain(
+        'Campus France',
+      );
+    } else {
+      expect(texte).toContain(decrite);
+    }
+
+    // Et aucun littéral de la planche, qui parlent tous d'un parcours d'ÉTUDES.
+    for (const dessine of [
+      'Mes études à Lyon',
+      'ÉTAPE 1 SUR 12',
+      'Obtenir votre admission',
+      'Campus France, choix des formations, lettre de motivation.',
+    ]) {
+      expect(texte, `« ${dessine} » est encore dessiné`).not.toContain(dessine);
+    }
+  });
+});
+
 test.describe('J03 sur une planche d’illustration : aucun appel ne part', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
-  test('« 1 » n’est pas un parcours, et aucune requête n’est émise', async ({ page }) => {
+  test('« 1 » n’est pas un parcours, et aucune requête n’est émise', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * UNE SESSION, PARCE QUE LA PAGE EN EXIGE UNE DÉSORMAIS. Ce cas ouvrait
+     * `/parcours/1/etapes/7` sans se connecter ; mesuré, il atterrissait sur
+     * `/connexion` — « Votre numéro de téléphone » — et le clic sur l'ouvreur de
+     * la fenêtre expirait. La cause n'est pas dans ce cas : la garde de session
+     * de ce groupe de routes a été posée depuis, et ce test ne l'avait pas suivie.
+     */
+    await connecter(page.context(), request);
     /**
      * `/parcours/1/etapes/7` est l'URL des tests de planche : la maquette ne dessine
      * qu'un parcours, et « 1 » n'est pas un identifiant. Prendre ce segment pour un

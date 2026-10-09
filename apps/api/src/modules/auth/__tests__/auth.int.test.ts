@@ -6,6 +6,18 @@ import { type AccessClaims, TokenService } from '../../../common/token.service';
 import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
 import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../auth.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
+import { enFormatInternational } from '@app/shared';
+
+/**
+ * LE FORMAT INTERNATIONAL VIENT DE LA BIBLIOTHÈQUE, PAS D'UN COLLAGE.
+ *
+ * Ces bancs écrivaient `+229` suivi du numéro privé de ses zéros de tête. C'est
+ * la règle FRANÇAISE : le « 0 » y est un préfixe interurbain, et il tombe. Au
+ * BÉNIN il fait PARTIE du numéro — `+229 01 9…` — et libphonenumber le garde.
+ * MESURÉ : l'attendu disait `+229196833223` là où le serveur stocke
+ * `+2290196833223`, et le banc accusait le serveur.
+ */
 
 /**
  * Authentification — les règles dures de 01-identite.md §2.1.
@@ -33,7 +45,7 @@ describe('authentification (01 §2.1)', () => {
 
   /** Un numéro distinct par test : les limites de débit sont par numéro. */
   let counter = 0;
-  const nextPhone = () => `06${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   async function signIn(phone: string, iso2 = 'BJ') {
     const { challengeId } = await auth.requestOtp({
@@ -111,7 +123,9 @@ describe('authentification (01 §2.1)', () => {
     expect(stored.phoneEncrypted.length).toBeGreaterThan(16);
     // Le chiffrement ne sert à rien si on ne peut plus lire : c'est ce qui
     // permet de masquer le numéro à son propriétaire (§2.1).
-    expect(crypto.decryptPhone(stored.phoneEncrypted)).toBe(`+229${phone.replace(/^0+/, '')}`);
+    expect(crypto.decryptPhone(stored.phoneEncrypted)).toBe(
+      enFormatInternational(phone, 'BJ'),
+    );
     expect(Buffer.from(stored.phoneEncrypted).toString('utf8')).not.toContain(
       phone.replace(/^0+/, ''),
     );

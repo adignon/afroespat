@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   handleSchema,
   onboardingAdvanceSchema,
   updateMeSchema,
   updateProfileSchema,
+  memberContentQuerySchema,
 } from '@app/shared';
 import { z } from 'zod';
 import { Auth, type AuthContext, MaybeAuth } from '../../common/auth.guard';
@@ -89,6 +90,34 @@ export class UsersController {
    * un profil marqué public est lisible hors connexion. Le service applique la
    * visibilité — jeton ou pas, un membre bloqué ne voit rien.
    */
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LES SEPT ONGLETS DU PROFIL PUBLIC — §4.4                              ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Je propose qu'il y ait des tabs (guides, fil d'actualités,
+   * stories, entraides, services, évènements, parcours publics) qui montrent ce
+   * que l'utilisateur a publié dans ces choses. »
+   *
+   * `@PublicRead()` COMME LE PROFIL QU'ELLE COMPLÈTE : un profil marqué public
+   * se lit hors connexion, et ce qu'il a publié avec lui. Le service applique la
+   * même visibilité — supprimé, désactivé, non public sans jeton, bloqué : 404.
+   *
+   * ⚠ ELLE EST DÉCLARÉE AVANT `users/:handle` pour la raison écrite sur les
+   * enregistrés : Nest apparie dans l'ordre, et un segment dynamique placé plus
+   * haut mangerait le sous-chemin.
+   */
+  @Get('users/:handle/content')
+  @PublicRead()
+  @ApiOperation({ summary: 'Ce qu’un membre a publié — guides, fil, stories, entraide, services, événements, parcours publics' })
+  async publishedContent(
+    @Param('handle', zodPipe(handleSchema)) handle: string,
+    @Query(zodPipe(memberContentQuerySchema)) query: z.infer<typeof memberContentQuerySchema>,
+    @MaybeAuth() viewer: AuthContext | null,
+  ) {
+    return this.users.publishedContent(handle, viewer?.userId ?? null, query);
+  }
+
   @Get('users/:handle')
   @PublicRead()
   @ApiOperation({ summary: 'Profil public d’un membre' })

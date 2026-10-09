@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { O05AvecParcours } from '@/screens/o05/avecparcours.generated';
 import { O05SansParcours } from '@/screens/o05/sansparcours.generated';
 import { useOnboardingFlow } from '@/screens/onboarding/use-onboarding-flow';
@@ -50,6 +51,7 @@ export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
   // Écran 6 : le dernier. `onContinue` y marque l'onboarding terminé.
   const { vals, error, levelRequired, dismissLevelRequired } = useOnboardingFlow(6);
 
+  const router = useRouter();
   const [hasJourney, setHasJourney] = useState(withJourney);
 
   /**
@@ -80,12 +82,15 @@ export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
         const premier = items[0];
         if (premier === undefined) return;
         setParcours({
+          id: premier.id,
           titre: premier.title,
           /** La liste porte les étapes FRANCHIES ; le rang en cours est la suivante. */
           rang: premier.doneCount + 1,
           total: premier.stepCount,
           /** `null` quand toutes les étapes sont franchies — la planche montre alors un titre vide plutôt qu’une étape inventée. */
           etape: premier.currentStep?.title ?? '',
+          /** La phrase sous le titre. Dessinée jusqu'ici, et donc fausse dès que le parcours n'était pas celui de la maquette. */
+          description: premier.currentStep?.description ?? '',
         });
       })
       // Un échec laisse la valeur de départ. Ne pas savoir n'est pas une raison de
@@ -97,15 +102,47 @@ export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
     };
   }, []);
 
+  /**
+   * « COMMENCER » OUVRE LE PARCOURS CRÉÉ.
+   *
+   * Le porteur : « Le bouton commencer ne marche pas sur cet écran. » Il n'avait
+   * aucun `onClick` — mesuré dans le JSX produit.
+   *
+   * Tant que `GET /journeys` n'a pas répondu, `parcours.id` est `null` et le
+   * bouton NE FAIT RIEN : pousser `/parcours/null` mènerait à un écran d'erreur,
+   * ce qui est pire qu'un bouton qui attend une demi-seconde.
+   */
+  const onCommencer = useCallback((): void => {
+    if (parcours.id === null) return;
+    router.push(`/parcours/${parcours.id}`);
+  }, [parcours.id, router]);
+
   return (
     <>
       <ScreenFrames
         screen="O05"
+      /**
+       * `direction="column"` : LA MAQUETTE ÉCRIT `flex-direction: column` SUR CE
+       * CADRE, et le générateur retire ce conteneur parce qu’il portait aussi la
+       * taille fixe de la planche. L’enveloppe repose alors sur son défaut — une
+       * RANGÉE, qui est juste pour les écrans à rail de gauche et faux pour
+       * ceux-ci.
+       *
+       * MESURÉ AU NAVIGATEUR, et c’est le porteur qui l’a vu : « La page
+       * d’onboarding a une pagination à gauche ? » Non — la maquette dessine une
+       * BARRE DE PROGRESSION EN HAUT (bouton retour, six segments sur toute la
+       * largeur, compteur à droite). En rangée, cette barre devenait une colonne
+       * de 216 px de large sur toute la hauteur, ses six segments écrasés à 30 px,
+       * et le bouton avec le compteur flottaient au milieu à gauche. Les HUIT
+       * cadres d’ordinateur de cette maquette sont des colonnes : toutes les
+       * pages de ce groupe portent donc cette prise.
+       */
+      direction="column"
         desktop={
           hasJourney ? (
-            <O05AvecParcours {...vals} parcours={parcours} />
+            <O05AvecParcours {...vals} parcours={parcours} onCommencer={onCommencer} />
           ) : (
-            <O05SansParcours {...vals} parcours={parcours} />
+            <O05SansParcours {...vals} parcours={parcours} onCommencer={onCommencer} />
           )
         }
       />

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { chargerMesParcours } from '@/screens/parcours/appels';
+import { chargerMesParcours, VUE_NEUTRE } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { plancheBlocage } from '@/screens/parcours/modales';
 import { J11Desktop } from '@/screens/j11/desktop.generated';
@@ -61,6 +61,15 @@ export function MesParcoursEcran({ vide }: { readonly vide: boolean }) {
     <EcranParcoursDonnees
       screen="J11"
       charger={charger}
+      /**
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : sans cela,
+       * `/parcours` répondait 200 avec « DisaporyPlus · Chargement de votre
+       * parcours… » pour tout contenu — pas de rail, pas de panneau, pas de barre
+       * basse, donc aucune sortie dans le HTML servi. `VUE_NEUTRE` est le DESSIN
+       * sans la donnée, et il existait déjà dans `appels.ts` pour les planches
+       * d'illustration : rien n'est inventé ici.
+       */
+      squelette={VUE_NEUTRE}
       desktop={(d) => (vide ? <J01EDesktopVide {...d} /> : <J11Desktop {...d} />)}
       mobile={(d) => (vide ? <J11MobileVide {...d} /> : <J11Mobile {...d} />)}
       modales={(d, volet) => ({ J03: plancheBlocage(volet, d) })}

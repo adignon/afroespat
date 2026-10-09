@@ -186,6 +186,25 @@ async function visiter(page: Page, url: string, width = 1440): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
   await page.goto(url, { waitUntil: 'load' });
   await page.locator('[data-screen]').first().waitFor({ state: 'attached', timeout: 25_000 });
+
+  /**
+   * ET LA DONNÉE, PAS SEULEMENT LE CADRE. `EcranDonnees` rend le SQUELETTE tant que
+   * la réponse n'est pas là : `[data-screen]` existe dès le premier rendu, et
+   * l'attendre ne prouve que son existence.
+   *
+   * MESURÉ : trois cas de ce fichier ont rougi d'un coup en ne trouvant « Awa »
+   * nulle part — la barre haute était là, vide, parce que `moi.prenom` vaut la
+   * chaîne vide dans le squelette. Même cause et même correction que
+   * `e2e/services.spec.ts`, `e2e/compte.spec.ts` et `e2e/parcours.spec.ts`.
+   */
+  await page
+    .locator('[role="status"]')
+    .filter({ hasText: /Chargement/ })
+    .first()
+    .waitFor({ state: 'detached', timeout: 25_000 })
+    .catch(() => {
+      /** Tous les écrans n'ont pas de bande : son absence n'est pas un échec. */
+    });
 }
 
 /**

@@ -12,6 +12,7 @@ import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/provide
 import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../../auth/auth.service';
 import { HelpService, type HelpActor } from '../help.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Fil d'entraide — 06-entraide.md §9.
@@ -47,8 +48,7 @@ describe('fil d’entraide (06 §2, §4, §9)', () => {
   } = {};
 
   let counter = 0;
-  const nextPhone = (): string =>
-    `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   /** Un membre neuf. Le NIVEAU est porté par l'acteur, comme le jeton le porte. */
   async function newMember(level: 'L0' | 'L1' | 'L2' = 'L1'): Promise<HelpActor> {
@@ -959,7 +959,7 @@ describe('fil d’entraide (06 §2, §4, §9)', () => {
         userId: volunteer.userId,
         occupationStatus: 'OTHER',
         availableToHelp: true,
-        // `HelpType` (module 01) et non `HelpType2` : les deux énumérations
+        // `HelpType` (module 01) et non `HelpType` : les deux énumérations
         // diffèrent, et la correspondance vit dans `HELP_TYPES_FROM_PROFILE`.
         helpTypes: ['PAPERWORK'],
         isPublic: false,

@@ -133,6 +133,41 @@ describe('villes et membres (09 §2)', () => {
 
   // ══ RÈGLE DURE §10 · le seuil de 3 ════════════════════════════════════════
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CE QUI COMPTE COMME UNE FUITE, ET CE QUI N'EN EST PAS UNE               ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Ce contrôle cherchait `/:\s*[12]\b/` dans la ligne sérialisée. L'intention
+   * était bonne — un compteur brut glissé dans un champ voisin contournerait le
+   * seuil — mais la mesure l'était trop large : elle a fini par désigner la
+   * LONGITUDE DE LOMÉ, `1.2228`, où « : 1 » est un point sur la carte.
+   *
+   * On nomme donc ce qu'on cherche : une valeur qui VAUT un ou deux, à n'importe
+   * quelle profondeur, hors des deux champs géographiques. Un compteur de un
+   * membre est le nombre 1 ou la chaîne « 1 » ; il n'est jamais 1.2228.
+   */
+  const CHAMPS_DE_CARTE = new Set(['latitude', 'longitude']);
+
+  function compteursSousLeSeuil(valeur: unknown, chemin = ''): string[] {
+    const cle = chemin.split('.').pop() ?? '';
+    if (CHAMPS_DE_CARTE.has(cle)) return [];
+    if (typeof valeur === 'number' || typeof valeur === 'string') {
+      return valeur === 1 || valeur === 2 || valeur === '1' || valeur === '2'
+        ? [`${chemin} = ${String(valeur)}`]
+        : [];
+    }
+    if (Array.isArray(valeur)) {
+      return valeur.flatMap((v, i) => compteursSousLeSeuil(v, `${chemin}[${String(i)}]`));
+    }
+    if (typeof valeur === 'object' && valeur !== null) {
+      return Object.entries(valeur).flatMap(([k, v]) =>
+        compteursSousLeSeuil(v, chemin === '' ? k : `${chemin}.${k}`),
+      );
+    }
+    return [];
+  }
+
   describe('rule: la carte ne renvoie jamais un compteur inférieur à 3 pour un filtre pays', () => {
     it('renvoie « moins de 3 » pour 1 et 2 membres, le compte à partir de 3', async () => {
       const seen: { count: number | null; belowThreshold: boolean }[] = [];
@@ -160,7 +195,7 @@ describe('villes et membres (09 §2)', () => {
       for (const item of map.items) {
         if (item.belowThreshold) {
           expect(item.count).toBeNull();
-          expect(JSON.stringify(item)).not.toMatch(/:\s*[12]\b/);
+          expect(compteursSousLeSeuil(item), 'un compteur sous le seuil a fui').toEqual([]);
         }
       }
     });
@@ -178,7 +213,7 @@ describe('villes et membres (09 §2)', () => {
       // Strictement « moins de 3 » : jamais « 1 ».
       expect(row?.count).toBeNull();
       expect(row?.belowThreshold).toBe(true);
-      expect(JSON.stringify(row)).not.toMatch(/:\s*1\b/);
+      expect(compteursSousLeSeuil(row), 'un compteur de 1 a fui dans la répartition').toEqual([]);
       // Le pays reste LISTÉ : le faire disparaître dirait « personne », ce qui est
       // faux et se recoupe avec le total de la ville.
       expect(profile.city.byCountry.some((c) => c.countryId === lonelyCountryId)).toBe(true);

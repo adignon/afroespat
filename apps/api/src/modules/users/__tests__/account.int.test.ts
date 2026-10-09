@@ -14,6 +14,18 @@ import { FakeSmsProvider, SMS_PROVIDER } from '../../../providers/providers';
 import { AuthService } from '../../auth/auth.service';
 import { AccountService } from '../account.service';
 import { VerificationLevelService } from '../verification-level.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
+import { enFormatInternational } from '@app/shared';
+
+/**
+ * LE FORMAT INTERNATIONAL VIENT DE LA BIBLIOTHÈQUE, PAS D'UN COLLAGE.
+ *
+ * Ces bancs écrivaient `+229` suivi du numéro privé de ses zéros de tête. C'est
+ * la règle FRANÇAISE : le « 0 » y est un préfixe interurbain, et il tombe. Au
+ * BÉNIN il fait PARTIE du numéro — `+229 01 9…` — et libphonenumber le garde.
+ * MESURÉ : l'attendu disait `+229196833223` là où le serveur stocke
+ * `+2290196833223`, et le banc accusait le serveur.
+ */
 
 /**
  * Cycle de vie du compte — 01 §2.5, §2.8, §8 et §9.
@@ -53,7 +65,7 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
 
   const nextPhone = (): string => {
     counter += 1;
-    return `9${String(Date.now()).slice(-6)}${String(counter).padStart(2, '0')}`;
+    return numeroDEpreuve(counter);
   };
 
   async function signIn(
@@ -912,7 +924,7 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
   it('[RÈGLE DURE] aucun numéro en clair en base, ni dans phone_numbers ni dans otp_challenges', async () => {
     const phone = nextPhone();
     const me = await signIn(phone);
-    const e164 = `+229${phone.replace(/^0+/, '')}`;
+    const e164 = enFormatInternational(phone, 'BJ') ?? '';
 
     const rows = await prisma.$queryRaw<{ found: bigint }[]>`
       SELECT (
@@ -930,7 +942,7 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
   it('purge les défis OTP expirés depuis plus de 24 h', async () => {
     const phone = nextPhone();
     await otpFor(phone, 'LOGIN');
-    const hmac = crypto.phoneFingerprint(`+229${phone.replace(/^0+/, '')}`);
+    const hmac = crypto.phoneFingerprint(enFormatInternational(phone, 'BJ') ?? '');
     expect(await prisma.otpChallenge.count({ where: { phoneHmac: hmac } })).toBe(1);
 
     // Le défi vit dix minutes : vingt-cinq heures plus tard il est expiré depuis

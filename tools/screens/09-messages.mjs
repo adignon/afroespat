@@ -30,7 +30,7 @@
 
 import { MODAL_WINDOW_SOURCE } from '../dc-to-jsx.mjs';
 
-import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+import { barreBasse, cadresDeLaBarre, cadresDuRail, railLitteral } from '../squelette-membre.mjs';
 
 const FILE = 'docs/template/09 Messages et transverse.dc.html';
 
@@ -286,6 +286,16 @@ const screen = ({
   dataModule = '../messages/data',
   modal = false,
   squelette = !modal,
+  /**
+   * LES LIENS PROPRES À L'ÉCRAN S'AJOUTENT AU SQUELETTE, ILS NE LE REMPLACENT PAS.
+   *
+   * `liens` était ramassé par `...rest`, et `rest` est répandu APRÈS le squelette :
+   * un écran qui aurait déclaré ses propres liens aurait donc EFFACÉ les cinq
+   * entrées de son rail, en silence et sans qu'aucun compte ne bouge — le rail
+   * serait simplement redevenu cinq `<span>`. La clé est donc nommée ici et
+   * CONCATÉNÉE.
+   */
+  liens = [],
   ...rest
 }) => ({
   file: FILE,
@@ -314,7 +324,7 @@ const screen = ({
    * peint déjà l'entrée qui désigne la page, planche par planche.
    */
   ...(modal ? { modal } : {}),
-  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
+  liens: [...(squelette ? railLitteral(cadresDuRail(frames)) : []), ...liens],
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule,
@@ -696,7 +706,7 @@ const RANGEE_DEMANDE_LIEE = RANGEE_M01_LIEE('demandes.liste', 'd', false);
  *
  * Les cinq valeurs liées sont RELEVÉES sur les deux bulles, aucune n'est retouchée.
  */
-const BULLE_M01 = (cote, rayon, fond, encre, trait, auteur, corps, mention) =>
+const BULLE_M01 = (cote, rayon, fond, encre, trait, auteur, corps, mention, image = '') =>
   '<div style="display:flex;flex-direction:column;align-items:' +
   cote +
   ';gap:4px"><div style="max-width:70%;padding:11px 14px;border-radius:' +
@@ -711,6 +721,7 @@ const BULLE_M01 = (cote, rayon, fond, encre, trait, auteur, corps, mention) =>
   auteur +
   corps +
   '</div>' +
+  image +
   mention +
   '</div>';
 
@@ -745,6 +756,69 @@ const IMAGE_M01 =
   'align-self:flex-end"></div>';
 
 /**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA VIGNETTE, LIÉE — ET SANS SON `align-self`                              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « quand on envoie un message dans le contexte d'une story, il
+ * faudrait que la story soit capturée comme une image et ajoutée au message JUSTE
+ * UN PEU SOUS LE MESSAGE ».
+ *
+ * Elle est donc posée DANS la colonne de la bulle, après le corps : « sous le
+ * message », et du même côté que lui. C'est aussi ce qui répond à la seconde
+ * objection consignée plus bas — la vignette dessinée porte `align-self:flex-end`,
+ * donc elle était figée du côté de l'EXPÉDITEUR, et une image reçue se serait
+ * affichée à droite. Retirer cette déclaration suffit : la colonne aligne déjà sur
+ * `m.cote`, qui dit de quel côté la bulle va.
+ *
+ * LA GÉOMÉTRIE EST CELLE DE LA PLANCHE — 220 de large au plus, 140 de haut, rayon
+ * 18. Seul le fond change de nature : le hachurage « ici il y a une image » devient
+ * l'image. C'est le même mécanisme que `photoFond` sur la story, et c'est
+ * délibérément le même.
+ *
+ * `cursor:zoom-in` ET RIEN D'AUTRE : la vignette n'ouvre pas de visionneuse, parce
+ * qu'il n'en existe aucune dans ce produit et qu'en dessiner une ici serait
+ * inventer un écran. Le curseur annonce ce que le clic droit permet déjà — ouvrir
+ * l'image. Remonté.
+ */
+const IMAGE_M01_LIEE =
+  '<sc-if value="{{ m.image }}">' +
+  '<div style="max-width:220px;height:140px;border-radius:18px;' +
+  'background:{{ m.image }};align-self:{{ m.cote }}"></div>' +
+  '</sc-if>';
+
+/**
+ * ─── LA PROVENANCE DE LA VIGNETTE, RENDUE VÉRIFIABLE ────────────────────────
+ *
+ * Trois morceaux, et chacun doit figurer DANS LA MAQUETTE : le générateur refuse
+ * qu'une donnée « ajoute du dessin que la maquette n'écrit pas là », et il a eu
+ * raison de refuser la première version — qui inventait un `width:220px` et un
+ * `cursor:zoom-in` que la planche n'écrit nulle part.
+ *
+ * Déclarés en MOTIFS plutôt qu'attendus dans le cadre, pour une raison mesurée :
+ * la vignette n'est dessinée QUE sur la planche d'ordinateur. Les trois cadres
+ * mobiles de la messagerie n'en ont pas, et la vérification « ce fragment est dans
+ * ce cadre » y échouerait — alors que le dessin vient bien de cette maquette, d'une
+ * autre de ses planches. C'est exactement l'emploi des motifs `from` : ils prouvent
+ * la provenance contre le FICHIER, et arrêtent la génération le jour où le designer
+ * retire la vignette.
+ *
+ * `align-self` CHANGE DE VALEUR, et c'est le seul écart : la planche écrit
+ * `flex-end`, donc la vignette était figée du côté de l'EXPÉDITEUR. Une image
+ * reçue s'afficherait à droite d'un fil dont la bulle est à gauche. `{{ m.cote }}`
+ * est la valeur que la colonne emploie déjà pour la bulle — on ne choisit rien, on
+ * reprend.
+ */
+const MOTIFS_IMAGE_M01 = [
+  {
+    from: 'docs/template/09 Messages et transverse.dc.html',
+    pattern: '<div style="max-width:220px;height:140px;border-radius:18px;background:',
+  },
+  { from: 'docs/template/09 Messages et transverse.dc.html', pattern: ';align-self:' },
+  { from: 'docs/template/09 Messages et transverse.dc.html', pattern: '"></div>' },
+];
+
+/**
  * LE FIL LIÉ — une bulle, pilotée par `GET /conversations/:id/messages`.
  *
  * ⚠ DEUX OBJETS DE LA MAQUETTE DISPARAISSENT, et c'est le contraire d'une perte :
@@ -758,17 +832,26 @@ const IMAGE_M01 =
  *    pour toujours et pour tout le monde : un mensonge permanent. La retirer dit
  *    la vérité — le produit ne sait pas encore poser de message système.
  *
- * 2. LA VIGNETTE D'IMAGE. L'API rend bien `kind: 'IMAGE'` et `mediaId`, mais AUCUNE
- *    route de ce lot ne résout un `mediaId` en URL affichable, et la vignette que
- *    la maquette dessine porte `align-self:flex-end` — elle est toujours DU CÔTÉ
- *    DE L'EXPÉDITEUR. La réemployer pour une image reçue la mettrait du mauvais
- *    côté du fil, c'est-à-dire dessinerait un état faux. Un message image garde
- *    donc sa bulle et son texte : `sendMessageSchema` exige un `body` de 1 à 4 000
- *    caractères MÊME avec un `mediaId`, donc aucune image n'arrive sans légende et
- *    aucun message ne disparaît du fil. L'image, elle, ne s'affiche pas.
+ * 2. ✅ LA VIGNETTE D'IMAGE EST REVENUE — voir `IMAGE_M01_LIEE`.
  *
- * Les deux manques sont signalés au porteur. Ce qu'il faudrait : une planche avec
- * une image REÇUE, et une route qui résolve un média.
+ *    Elle était retirée pour deux raisons, et LES DEUX sont levées :
+ *
+ *      · « aucune route de ce lot ne résout un `mediaId` en URL affichable ».
+ *        `GET /conversations/:id/messages` rend maintenant `mediaUrl`, composée par
+ *        le serveur comme le fil et les annonces le font déjà. Il le fallait de
+ *        toute façon : le module ACCEPTAIT `mediaId` à l'écriture depuis le début,
+ *        donc une image envoyée partait en base et n'était jamais montrée ;
+ *      · « la vignette dessinée porte `align-self:flex-end`, elle est toujours du
+ *        côté de l'expéditeur ». La déclaration est retirée et la vignette posée
+ *        DANS la colonne de la bulle, qui aligne déjà sur `m.cote`. Une image reçue
+ *        va donc à gauche, et une image envoyée à droite.
+ *
+ *    `sendMessageSchema` exige par ailleurs un `body` de 1 à 4 000 caractères MÊME
+ *    avec un `mediaId` : aucune image n'arrive sans légende, et aucune bulle ne
+ *    disparaît du fil.
+ *
+ * Le manque restant — la ligne SYSTÈME — est signalé au porteur. Ce qu'il
+ * faudrait : la colonne `messages.kind` de §6, et une route qui en produise.
  */
 const FIL_M01_LIE =
   '<sc-for list="{{ messages }}" as="m">' +
@@ -781,6 +864,7 @@ const FIL_M01_LIE =
     `<sc-if value="{{ m.auteur }}">${AUTEUR_M01('{{ m.auteur }}')}</sc-if>`,
     '{{ m.corps }}',
     `<sc-if value="{{ m.mention }}">${MENTION_M01('{{ m.mention }}')}</sc-if>`,
+    IMAGE_M01_LIEE,
   ) +
   '</sc-for>';
 
@@ -788,6 +872,7 @@ const FIL_M01_LIE =
 const LIEN_FIL = (frame, premier, sienne, dernier, image) => ({
   noeud: FIL_M01(premier, sienne, dernier, image),
   devient: FIL_M01_LIE,
+  motifs: MOTIFS_IMAGE_M01,
   frames: [frame],
   why: 'Les messages de la conversation, de `GET /conversations/:id/messages` — corps DÉSCELLÉ par le serveur, auteur, heure et côté de la bulle.',
 });
@@ -926,6 +1011,56 @@ const donneesMessagerie = ({ desktop, conversation, liste = null }) => [
   ),
 ];
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ X02 · LES FILTRES DE NOTIFICATION ÉTAIENT SEPT DESSINS                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Les filtres sur la page notification marchent ? »
+ *
+ * MESURÉ : zéro `onClick` dans les TROIS cadres de X02. Les sept pastilles de la
+ * page complète et les quatre du téléphone sont des `<span>`. Le chargeur le
+ * disait lui-même — « AUCUN FILTRE N'EST ENVOYÉ […] aucune n'est un bouton ».
+ *
+ * ── LES DEUX RANGÉES N'ONT PAS LA MÊME BOÎTE ────────────────────────────────
+ *
+ * L'ordinateur dessine `padding:8px 13px` sans hauteur ; le téléphone
+ * `height:36px;padding:0 13px;display:flex;align-items:center`, parce que sa
+ * rangée défile horizontalement. Deux gabarits, donc — et c'est exactement le
+ * genre d'écart qu'un motif unique aurait écrasé.
+ */
+const PASTILLE_FILTRE_ORDINATEUR = (fond, texte, bord, libelle) =>
+  '<span style="padding:8px 13px;border-radius:999px;font-size:12.5px;font-weight:700;' +
+  `white-space:nowrap;background:${fond};color:${texte};border:1px solid ${bord}">${libelle}</span>`;
+
+const PASTILLE_FILTRE_MOBILE = (fond, texte, bord, libelle) =>
+  '<span style="height:36px;padding:0 13px;border-radius:999px;display:flex;align-items:center;' +
+  'font-size:12.5px;font-weight:700;white-space:nowrap;' +
+  `background:${fond};color:${texte};border:1px solid ${bord}">${libelle}</span>`;
+
+const FILTRES_DESSINES = ['Parcours', 'Entraide', 'Réseaux', 'Événements', 'Messages', 'Compte'];
+
+/** La rangée bouclée — le même `devient` pour les deux cadres, chacun son gabarit. */
+const FILTRES_BOUCLES = (pastille) =>
+  '<sc-for list="{{ filtres }}" as="ft">' +
+  pastille('{{ ft.fond }}', '{{ ft.texte }}', '{{ ft.bord }}', '{{ ft.libelle }}') +
+  '</sc-for>';
+
+const FILTRES_X02 = (cadre) => {
+  const pastille = cadre === 'Mobile' ? PASTILLE_FILTRE_MOBILE : PASTILLE_FILTRE_ORDINATEUR;
+  const dessines = cadre === 'Mobile' ? FILTRES_DESSINES.slice(0, 3) : FILTRES_DESSINES;
+  return {
+    noeud:
+      pastille('#16785E', '#fff', '#16785E', 'Tout') +
+      dessines.map((l) => pastille('#fff', '#16211D', '#E6EBE9', l)).join(''),
+    devient: FILTRES_BOUCLES(pastille),
+    frames: [cadre],
+    why:
+      'Les pastilles de filtre deviennent une liste : la maquette dessine les deux variantes, ' +
+      'choisie et non choisie, et chacune mène à `/notifications?type=…` (§5, « filtres par catégorie »).',
+  };
+};
+
 export const screens = [
   /**
    * ── M01 · /messages et /messages/:id ───────────────────────────────────────
@@ -1014,6 +1149,25 @@ export const screens = [
   screen({
     section: 'M01',
     out: 'm01',
+    /**
+     * ─── LA BARRE D'ONGLETS BASSE DU CADRE MOBILE ───────────────────────
+     *
+     * Quatre `<div>` promus en quatre `<a>`. C'est LA SEULE navigation d'un
+     * téléphone — il n'y a pas de rail à 390 px — et elle ne comptait dans AUCUN
+     * `href="#"`, donc le récapitulatif de la génération ne l'a jamais vue.
+     *
+     * ⚠ LA BARRE N'EST PAS SUR TOUS LES CADRES MOBILES DE CETTE MAQUETTE, et c'est
+     * mesuré cadre par cadre plutôt que supposé : sur ses SEPT cadres de 390 px,
+     * QUATRE la dessinent (M01 Mobile, X01 Mobile, X02 Mobile, X04 Mobile) et TROIS
+     * non — `MobileConversation`, `BloqueMobileConversation` et la feuille de X03 se
+     * posent par-dessus l'écran. D'où la déclaration écran par écran : un défaut sur
+     * « tout cadre Mobile » aurait fait échouer la génération sur les trois autres
+     * (le marqueur y compte zéro, et `markLinks` REFUSE).
+     *
+     * « Compte », la cinquième entrée, reste inerte : aucune route `/compte`
+     * n'existe. Voir `tools/squelette-membre.mjs`.
+     */
+    liens: barreBasse(['Mobile']),
     /**
      * Le marqueur est le TRACÉ du « ··· », pas son libellé : la maquette n'en
      * écrit aucun. Il figure deux fois dans la section — une fois par en-tête de
@@ -1245,6 +1399,25 @@ export const screens = [
   screen({
     section: 'X01',
     out: 'x01',
+    /**
+     * ─── LA BARRE D'ONGLETS BASSE DU CADRE MOBILE ───────────────────────
+     *
+     * Quatre `<div>` promus en quatre `<a>`. C'est LA SEULE navigation d'un
+     * téléphone — il n'y a pas de rail à 390 px — et elle ne comptait dans AUCUN
+     * `href="#"`, donc le récapitulatif de la génération ne l'a jamais vue.
+     *
+     * ⚠ LA BARRE N'EST PAS SUR TOUS LES CADRES MOBILES DE CETTE MAQUETTE, et c'est
+     * mesuré cadre par cadre plutôt que supposé : sur ses SEPT cadres de 390 px,
+     * QUATRE la dessinent (M01 Mobile, X01 Mobile, X02 Mobile, X04 Mobile) et TROIS
+     * non — `MobileConversation`, `BloqueMobileConversation` et la feuille de X03 se
+     * posent par-dessus l'écran. D'où la déclaration écran par écran : un défaut sur
+     * « tout cadre Mobile » aurait fait échouer la génération sur les trois autres
+     * (le marqueur y compte zéro, et `markLinks` REFUSE).
+     *
+     * « Compte », la cinquième entrée, reste inerte : aucune route `/compte`
+     * n'existe. Voir `tools/squelette-membre.mjs`.
+     */
+    liens: barreBasse(['Mobile']),
     dataType: 'X01Data',
     dataModule: './data',
     frames: [
@@ -1333,6 +1506,62 @@ export const screens = [
     out: 'x02',
     dataType: 'X02Data',
     dataModule: './data',
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LA NAVIGATION DE X02 — UN LIEN DÉCLARÉ, DEUX REFUSÉS, QUATRE INVISIBLES  ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * CE QUI EST DÉCLARÉ. « Voir tout », au pied du PANNEAU DÉROULANT, mène à la
+     * page complète des notifications — `/notifications` (T5 §11, X02). C'est la
+     * seule des trois `href="#"` de cet écran qui soit une DESTINATION ; et c'est
+     * aussi le seul endroit du dépôt où la planche du panneau renvoie à sa page.
+     *
+     * CE QUI N'EST PAS DÉCLARÉ, ET POURQUOI — « TOUT MARQUER LU », DEUX FOIS.
+     *
+     * La maquette l'écrit en `<a href="#">`, sur le panneau ET sur la page
+     * complète. Ce n'est PAS une destination : c'est une ÉCRITURE, et la route
+     * existe — `POST /notifications/read` accepte `{ all: true }`
+     * (`notifications.service.ts`, §4). Il faudrait donc `action`, pas `vers`.
+     *
+     * Or `markLinks` REFUSE `action` sur une balise `<a>`, explicitement et par
+     * conception : « le lien est DÉJÀ une balise <a> ; “action” n’a pas de sens
+     * dessus. Déclarer “vers” ». Et `BUTTON_ACTIONS` ne regarde que les
+     * `<button>` — son motif est `<button((?:(?!onClick)[^>])*?)>`.
+     *
+     * Les deux liens restent donc morts, et c'est un REFUS, pas un oubli :
+     * écrire `vers: '/notifications'` sur « Tout marquer lu » ferait d'un bouton
+     * d'écriture un lien de navigation, ce qui est un mensonge sur ce que le
+     * contrôle fait. Combler le trou demande de desserrer ce garde-fou dans
+     * `tools/dc-to-jsx.mjs` — un fichier qu'un autre lot a en main en ce moment.
+     * REMONTÉ AU PORTEUR avec la route exacte, plutôt que maquillé.
+     *
+     * CE QUE LE COMPTEUR NE VOYAIT PAS, ET QUI EST MAINTENANT BRANCHÉ : les
+     * QUATRE onglets de la barre basse du cadre mobile, dessinés en `<div>`. Voir
+     * `tools/squelette-membre.mjs`. Le cinquième, « Compte », n'a pas de route et
+     * reste délibérément mort — même refus que le bouton « Réglages » du rail.
+     *
+     * CE QUI NE PEUT PAS L'ÊTRE, ET C'EST L'ÉCART LE PLUS GÊNANT DE CET ÉCRAN :
+     * LES LIGNES DE NOTIFICATION ELLES-MÊMES. C'est exactement la forme que le
+     * porteur a cliquée — une liste dont chaque ligne devrait mener quelque part —
+     * et elles sont bien dessinées en `<div>`. Mais la destination N'EXISTE PAS :
+     * la table `notifications` n'a pas de colonne `url`, et pour une notification
+     * de message `refType` vaut `CONVERSATION` tandis que `refId` porte
+     * l'identifiant du MESSAGE — `/messages/${refId}` ouvrirait une conversation
+     * qui n'existe pas. L'écart était DÉJÀ consigné dans l'en-tête de
+     * `app/(app)/notifications/page.tsx` ; il est confirmé, pas comblé.
+     */
+    liens: [
+      {
+        texte: 'Voir tout',
+        vers: '/notifications',
+        frames: ['DesktopPanneau'],
+        why:
+          '« Voir tout », au pied du panneau déroulant, mène à la page complète des ' +
+          'notifications : `/notifications` (T5 §11, ligne X02). Le panneau et la page sont ' +
+          'les deux formes que 12 §2.7 décrit.',
+      },
+      ...barreBasse(['Mobile']),
+    ],
     frames: [
       f(1440, 'Desktop', 1, t('Notifications', '28px')),
       f(390, 'Mobile', 0, t('Notifications', '21px')),
@@ -1344,6 +1573,14 @@ export const screens = [
       LISTE_X02('Desktop'),
       LISTE_X02('Mobile'),
       LISTE_X02('DesktopPanneau'),
+      /**
+       * LE PANNEAU DÉROULANT NE DESSINE AUCUN FILTRE — vérifié : sa planche n'a
+       * pas de rangée de pastilles. C'est cohérent avec 12 §2.7, qui range les
+       * « filtres par catégorie » du côté de la PAGE complète. On ne lui en
+       * ajoute donc pas.
+       */
+      FILTRES_X02('Desktop'),
+      FILTRES_X02('Mobile'),
     ],
   }),
 
@@ -1513,6 +1750,52 @@ export const screens = [
     out: 'x04',
     dataType: 'X04Data',
     dataModule: '../x04/data',
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LA NAVIGATION DE X04 — ET LE FAIT QU'ELLE N'EST PAS ÉPROUVABLE AU CLIC   ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * CE CADRE N'EST MONTÉ PAR AUCUNE PAGE : le commentaire au-dessus le dit déjà
+     * de sa DONNÉE (« son composant est généré et importé par personne »), et c'est
+     * vrai de sa NAVIGATION pour la même raison. Il n'existe donc aucune URL où
+     * ouvrir l'écran et cliquer : les liens ci-dessous sont déclarés et VÉRIFIÉS
+     * DANS LE JSX PRODUIT, pas au navigateur. C'est le seul écran de ce lot dans ce
+     * cas, et c'est dit plutôt que compté comme un succès.
+     *
+     * CE QUI EST DÉCLARÉ. « Voir les niveaux » mène à `/compte/verification` :
+     * c'est la ligne K03 de la table T5 §11 (« Vérification et niveaux →
+     * `/compte/verification` »), et c'est AUSSI la destination que
+     * `components/level-invitation.tsx` emploie déjà pour la même invitation de
+     * niveau. La destination est RECOPIÉE de ces deux sources, pas déduite du mot
+     * « niveaux ».
+     *
+     * CE QUI N'EST PAS DÉCLARÉ — « FERMER ». La maquette l'écrit en `<a href="#">`
+     * et c'est un CONTRÔLE DE FERMETURE, pas une destination : rien, nulle part, ne
+     * dit où « Fermer » mènerait. Comme pour « Tout marquer lu » de X02, il
+     * faudrait `action`, que `markLinks` refuse sur un `<a>`. Reste mort, remonté.
+     *
+     * CE QUE LE COMPTEUR NE VOYAIT PAS : les quatre onglets de la barre basse
+     * (`<div>`), branchés ici comme sur les deux autres cadres mobiles de ce lot.
+     *
+     * CE QUI N'EST PAS TOUCHÉ : les deux `<button>` « Vérifier mon identité » et
+     * « Découvrir Premium ». `markLinks` SAURAIT les promouvoir — `PROMOTABLE`
+     * accepte `button` — mais transformer un `<button>` dessiné par le designer en
+     * `<a>` change la sémantique du contrôle sans qu'on l'ait demandé, et ces deux
+     * encarts sont DÉJÀ rendus en vrai, avec de vrais `next/link`, par
+     * `components/level-invitation.tsx`. Promouvoir la planche de démonstration
+     * n'aurait rien branché et aurait risqué un déplacement de dessin.
+     */
+    liens: [
+      {
+        texte: 'Voir les niveaux',
+        vers: '/compte/verification',
+        why:
+          '« Voir les niveaux » mène à K03, « Vérification et niveaux » : `/compte/verification` ' +
+          '(T5 §11). Même destination que celle déjà employée par ' +
+          '`components/level-invitation.tsx` pour cette invitation de niveau.',
+      },
+      ...barreBasse(['Mobile']),
+    ],
     frames: [f(390, 'Mobile', 0, t('Créer un événement', '16px'))],
     donnees: [
       {

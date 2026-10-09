@@ -194,6 +194,7 @@ export class JourneysService {
         description: true,
         targetPhase: true,
         icon: true,
+        createsJourney: true,
         versions: {
           where: {
             status: 'PUBLISHED',
@@ -226,6 +227,7 @@ export class JourneysService {
         description: template.description,
         targetPhase: template.targetPhase,
         icon: template.icon,
+        createsJourney: template.createsJourney,
         version: {
           id: resolved.id,
           version: resolved.version,
@@ -236,6 +238,128 @@ export class JourneysService {
       });
     }
     return { items, meta: this.meta() };
+  }
+
+  /**
+   * `GET /journey-templates/:id/steps` — les étapes d'un type, résolues pour le
+   * pays du membre.
+   *
+   * ── POURQUOI ELLE EXISTE ───────────────────────────────────────────────────
+   *
+   * `templates()` au-dessus rend `stepCount` et rien de plus : de quoi écrire
+   * « 15 étapes », pas de quoi en nommer une. Jusqu'ici les étapes n'existaient
+   * pour un membre QU'APRÈS l'ouverture d'un parcours, parce que `start()` les
+   * COPIE dans `journey_steps`.
+   *
+   * Or `POST /stories` accepte un `stepDefinitionId` — c'est ce qui, dit §2.6,
+   * « rend un conseil réutilisable ». Un membre doit donc pouvoir désigner une
+   * étape AVANT d'avoir ouvert quoi que ce soit, et sans cette route l'écran ne
+   * peut proposer qu'une liste écrite en dur : sans identifiant, donc
+   * inenvoyable.
+   *
+   * ── LA RÉSOLUTION EST CELLE DE `templates()`, PAS UNE SECONDE ─────────────
+   *
+   * Même `where` sur les versions publiées, même `pickVersion`, même piège des
+   * colonnes NULLABLES évité par le `OR` explicite. Deux résolutions
+   * indépendantes finiraient par diverger, et le membre lirait les étapes d'une
+   * version que son parcours n'emploierait pas.
+   *
+   * ── LE NOM ET LA DESCRIPTION SUIVENT LES SURCHARGES ──────────────────────
+   *
+   * `readOverrides` est celui de `start()`, à la lettre. §2.1 : la version
+   * « assemble et ordonne des définitions » et peut les surcharger localement.
+   * Servir ici la définition brute ferait lire un intitulé que le parcours
+   * n'emploiera pas — la déclinaison Bénin de T3 A.3 est faite pour qu'ils
+   * diffèrent.
+   *
+   * ── CE QU'ELLE NE FAIT PAS ───────────────────────────────────────────────
+   *
+   * Elle ne pagine pas : une version publiée compte quinze étapes, et les couper
+   * ferait de l'ordre une illusion. Elle n'expose pas l'identifiant de
+   * `template_steps` : c'est `stepDefinitionId` qui part dans une story, parce
+   * que deux versions d'un même type réutilisent la même définition et qu'un
+   * rattachement à la ligne de version deviendrait caduc à la publication
+   * suivante.
+   */
+  async templateSteps(userId: string, templateId: string) {
+    const me = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { originCountryId: true },
+    });
+
+    const template = await this.prisma.journeyTemplate.findFirst({
+      where: { id: templateId, isActive: true },
+      select: {
+        versions: {
+          where: {
+            status: 'PUBLISHED',
+            // Le piège des colonnes NULLABLES, comme dans `templates()` : un
+            // `in: [...]` n'attrape jamais la ligne à NULL, qui est précisément
+            // la version générique.
+            OR: [{ originCountryId: null }, { originCountryId: me.originCountryId }],
+          },
+          select: {
+            id: true,
+            version: true,
+            originCountryId: true,
+            changelog: true,
+            _count: { select: { steps: true } },
+          },
+        },
+      },
+    });
+
+    /**
+     * UN TYPE INCONNU, INACTIF OU SANS VERSION PUBLIÉE REND LE MÊME REFUS.
+     *
+     * `TEMPLATE_UNAVAILABLE` (422) existe déjà dans `JOURNEY_ERROR_CODES`, et son
+     * commentaire est la phrase même de §2.1 : « Un type sans version publiée
+     * n'est pas proposé. » Un type qui n'est pas proposé n'est pas davantage
+     * consultable — et réutiliser ce code plutôt qu'en inventer un évite au front
+     * d'avoir deux refus à distinguer pour la même cause.
+     *
+     * Les trois cas rendent le MÊME refus, à dessein : les séparer dirait à qui
+     * tâtonne lesquels existent.
+     */
+    const resolved =
+      template === null ? null : this.pickVersion(template.versions, me.originCountryId);
+    if (resolved === null) this.fail('TEMPLATE_UNAVAILABLE');
+
+    const steps = await this.prisma.templateStep.findMany({
+      where: { templateVersionId: resolved.id },
+      orderBy: { position: 'asc' },
+      select: {
+        position: true,
+        isOptional: true,
+        overrides: true,
+        stepDefinition: {
+          select: { id: true, code: true, nameFr: true, description: true, category: true },
+        },
+      },
+    });
+
+    return {
+      items: steps.map((step) => {
+        const overrides = readOverrides(step.overrides);
+        return {
+          stepDefinitionId: step.stepDefinition.id,
+          code: step.stepDefinition.code,
+          nameFr: overrides.name ?? step.stepDefinition.nameFr,
+          description: overrides.description ?? step.stepDefinition.description,
+          category: step.stepDefinition.category,
+          position: step.position,
+          isOptional: step.isOptional,
+        };
+      }),
+      version: {
+        id: resolved.id,
+        version: resolved.version,
+        stepCount: resolved._count.steps,
+        isCountrySpecific: resolved.originCountryId !== null,
+        changelog: resolved.changelog,
+      },
+      meta: this.meta(),
+    };
   }
 
   /**
@@ -497,7 +621,18 @@ export class JourneysService {
         },
         destinationCity: { select: { id: true, name: true } },
         originCountry: { select: { id: true, iso2: true, nameFr: true } },
-        steps: { select: { id: true, title: true, status: true, position: true, dueDate: true } },
+        steps: {
+          select: {
+            id: true,
+            title: true,
+            // La description de l'étape EN COURS : O05 l'affiche sous son titre, et
+            // elle est sur la ligne déjà lue — pas un aller-retour de plus.
+            description: true,
+            status: true,
+            position: true,
+            dueDate: true,
+          },
+        },
         _count: { select: { members: true } },
       },
     });
@@ -521,7 +656,10 @@ export class JourneysService {
           destinationCity: journey.destinationCity,
           originCountry: journey.originCountry,
           targetArrivalDate: journey.targetArrivalDate,
-          currentStep: current === null ? null : { id: current.id, title: current.title },
+          currentStep:
+            current === null
+              ? null
+              : { id: current.id, title: current.title, description: current.description },
           nextDueDate: nextDue?.dueDate ?? null,
           memberCount: journey._count.members,
           stepCount: journey.steps.length,

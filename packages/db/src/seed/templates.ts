@@ -333,6 +333,9 @@ export async function seedJourneyTemplates(prisma: PrismaClient): Promise<Templa
       update: {
         nameFr: template.nameFr,
         targetPhase: template.targetPhase,
+        // L'icône est SEMÉE, et donc servie par l'API : voir `JourneyTemplateSeed.icon`.
+        icon: template.icon,
+        createsJourney: template.createsJourney ?? true,
         sortOrder: template.sortOrder,
       },
       create: {
@@ -340,6 +343,8 @@ export async function seedJourneyTemplates(prisma: PrismaClient): Promise<Templa
         code: template.code,
         nameFr: template.nameFr,
         targetPhase: template.targetPhase,
+        icon: template.icon,
+        createsJourney: template.createsJourney ?? true,
         isActive: true,
         sortOrder: template.sortOrder,
       },

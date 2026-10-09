@@ -44,7 +44,10 @@
       },
       "commentCount": 3,
       "commentLabel": "Répondre",
-      "linkRel": "noopener nofollow ugc"
+      "bookmarked": false,
+      "linkRel": "noopener nofollow ugc",
+      "poll": null,
+      "guides": []
     }
   ],
   "nextCursor": null,

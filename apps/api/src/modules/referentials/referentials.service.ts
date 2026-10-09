@@ -200,8 +200,21 @@ export class ReferentialsService {
         ...(input.category === undefined ? {} : { category: input.category }),
         ...(input.isActive === undefined ? {} : { isActive: input.isActive }),
       };
-      if (list === 'skills') await tx.skill.update({ where: { id }, data });
-      else await tx.profession.update({ where: { id }, data });
+      if (list === 'skills') {
+        /**
+         * GLOBALISER : effacer l'auteur. Une compétence sans auteur est celle de
+         * tout le monde — c'est l'état des soixante compétences semées, et c'est
+         * ce que `GET /places/skills` lit pour décider qui peut la choisir.
+         *
+         * `createdByUserId` ne figure pas dans `data` ci-dessus : seules les
+         * compétences ont un auteur, les métiers n'en ont pas, et poser la clé
+         * dans l'objet commun ferait échouer la mise à jour d'un métier.
+         */
+        await tx.skill.update({
+          where: { id },
+          data: input.global === true ? { ...data, createdByUserId: null } : data,
+        });
+      } else await tx.profession.update({ where: { id }, data });
     });
     return { id, ...before, ...input };
   }

@@ -172,6 +172,7 @@ describe('01 §2.1 — le numéro en clair n’atteint pas l’écran', () => {
       status: 'ACTIVE',
       originCountryId: '01a0e1b0-03eb-7000-8568-a65c501769f6',
       cityId: null,
+      arrivalDate: null,
       originCountryLocked: false,
     },
     profile: null,

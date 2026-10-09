@@ -82,6 +82,21 @@ export interface JourneyTemplateChoice {
   readonly nameFr: string;
   /** Le nombre d'étapes de la VERSION servie, jamais celui de la maquette. */
   readonly stepCount: number;
+  /**
+   * Le tracé de l'icône, SERVI PAR L'API (`journey_templates.icon`).
+   *
+   * `null` tant qu'un type n'en a pas : `goalCards` retombe alors sur la table
+   * locale, qui tient les quatre de la maquette.
+   */
+  readonly icon: string | null;
+  /**
+   * CE TYPE OUVRE-T-IL UN PARCOURS ?
+   *
+   * Faux pour les deux objectifs de la section « sans créer de parcours ». Ils se
+   * choisissent comme les autres — T5 §O03 : « les deux groupes ont le même rang
+   * visuel de choix » — mais rien n'est créé à la fin de l'inscription.
+   */
+  readonly createsJourney: boolean;
 }
 
 /** Une carte d'objectif, telle que le cadre transcodé de O03 la consomme. */
@@ -107,6 +122,9 @@ export function toTemplateChoices(
     code: t.code,
     nameFr: t.nameFr,
     stepCount: t.version.stepCount,
+    // L'icône que le SERVEUR porte. Voir `goalCards` pour le repli.
+    icon: t.icon,
+    createsJourney: t.createsJourney,
   }));
 }
 
@@ -122,20 +140,49 @@ function etapes(n: number): string {
  * c'est le seul état qu'elle porte, puisqu'elle ne rend PAS ces cartes cliquables :
  * ni le cadre de 1440 px ni celui de 390 px ne les dessine en bouton.
  */
-export function goalCards(templates: readonly JourneyTemplateChoice[]): readonly GoalCard[] {
+export function goalCards(
+  templates: readonly JourneyTemplateChoice[],
+  /**
+   * LE RANG CHOISI, et non plus toujours le premier.
+   *
+   * `on: i === 0` était figé, et la conséquence était remontée dans
+   * `data.ts` : « le parcours créé est celui du PREMIER modèle servi ». Le
+   * porteur a tranché — « Au niveau de l'étape des objectifs, ils ne sont pas
+   * cliquables. c'est pas câblé ? » — et la maquette lui donnait déjà raison :
+   * elle dessine un état CHOISI (`bd: '2px solid #16785E'`) et une phrase qui
+   * NOMME le parcours retenu. Une phrase qui nomme un choix suppose qu'on
+   * puisse en changer.
+   *
+   * Le défaut reste 0 : c'est ce que la maquette met en avant, et un membre qui
+   * ne touche à rien obtient ce qu'il voyait.
+   */
+  choisi = 0,
+): readonly GoalCard[] {
   if (templates.length === 0) {
     return CARTES_DESSINEES.map((carte, i) => ({
       title: carte.title,
       steps: '',
       icon: GOAL_ICONS[carte.code] ?? GOAL_ICON_FALLBACK,
-      on: i === 0,
+      on: i === choisi,
     }));
   }
   return templates.map((t, i) => ({
     title: t.nameFr,
     steps: etapes(t.stepCount),
-    icon: GOAL_ICONS[t.code] ?? GOAL_ICON_FALLBACK,
-    on: i === 0,
+    /**
+     * L'ICÔNE DU SERVEUR D'ABORD, la table locale ensuite.
+     *
+     * Le porteur : « les différents parcours disponibles du coup viennent du
+     * backend avec leur icon et tout. » `journey_templates.icon` est désormais
+     * semée (voir `packages/db/src/seed/journeys.ts`), donc l'API la sert.
+     *
+     * LA TABLE LOCALE RESTE, et ce n'est pas un doublon : elle est le repli d'un
+     * type dont la colonne serait vide — un type créé en back-office, une base
+     * semée avant ce lot. Sans elle, une carte arriverait sans icône du tout, ce
+     * qui est pire qu'une icône générique.
+     */
+    icon: t.icon ?? GOAL_ICONS[t.code] ?? GOAL_ICON_FALLBACK,
+    on: i === choisi,
   }));
 }
 
@@ -149,8 +196,12 @@ export function goalCards(templates: readonly JourneyTemplateChoice[]): readonly
  * Tant que la liste n'est pas arrivée, on annonce le parcours SANS le chiffrer :
  * promettre un nombre qu'on ne connaît pas est exactement la faute qu'on corrige.
  */
-export function createAnnounce(templates: readonly JourneyTemplateChoice[]): string {
-  const premier = templates[0];
-  if (premier === undefined) return 'Un parcours sera créé à la fin de l’inscription.';
-  return `Le parcours « ${premier.nameFr} » (${etapes(premier.stepCount)}) sera créé à la fin de l’inscription.`;
+export function createAnnounce(
+  templates: readonly JourneyTemplateChoice[],
+  /** Le rang choisi sur les cartes — voir `goalCards`. La phrase NOMME ce choix. */
+  choisi = 0,
+): string {
+  const retenu = templates[choisi] ?? templates[0];
+  if (retenu === undefined) return 'Un parcours sera créé à la fin de l’inscription.';
+  return `Le parcours « ${retenu.nameFr} » (${etapes(retenu.stepCount)}) sera créé à la fin de l’inscription.`;
 }

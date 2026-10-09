@@ -1,0 +1,11 @@
+-- Le sujet « Autre », écrit à la main.
+--
+-- Le porteur : « Au niveau du sujet, Autre doit permettre de saisir dans un champ. »
+-- `category` reste l'ÉNUMÉRATION (c'est elle qui classe le fil et qui décide des
+-- conversions) ; le texte libre vit à côté, et seulement quand `category = 'AUTRE'`.
+--
+-- STRICTEMENT ADDITIVE : une colonne qui n'existait pas, qui accepte NULL, sans
+-- valeur par défaut à écrire. Aucune ligne n'est lue, réécrite ni supprimée, et
+-- les 'stories' existantes la portent à NULL — ce qu'elles sont : des stories
+-- dont le sujet n'a pas été écrit à la main.
+ALTER TABLE "stories" ADD COLUMN "category_other" TEXT;

@@ -4,6 +4,7 @@ import { ScreenFrames } from '@/screens/frames';
 import { A05Desktop } from '@/screens/a05/desktop.generated';
 import { A05Mobile } from '@/screens/a05/mobile.generated';
 import { mdTools, rules, type A05Data } from '@/screens/a05/data';
+import { GardeNiveau } from '@/components/garde-niveau';
 
 /**
  * A05 — l'éditeur de guide. `/guides/nouveau`
@@ -17,11 +18,14 @@ import { mdTools, rules, type A05Data } from '@/screens/a05/data';
 export default function NouveauGuidePage() {
   const data: A05Data = { mdTools, rules };
   return (
+    <>
     <ScreenFrames
       screen="A05"
       direction="column"
       desktop={<A05Desktop {...data} />}
       mobile={<A05Mobile {...data} />}
     />
+      <GardeNiveau capacite="guide.write" />
+    </>
   );
 }

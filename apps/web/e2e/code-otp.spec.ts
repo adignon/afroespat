@@ -1,4 +1,5 @@
 import { type Page, expect, test } from '@playwright/test';
+import { numeroNational } from './session';
 
 /**
  * P02 — L'ÉCRAN DU CODE, LES QUATRE DÉFAUTS QUE LE PORTEUR A TROUVÉS EN L'UTILISANT.
@@ -134,7 +135,16 @@ const ATTENTE_LONGUE = 600;
 
 /** P01 → P02, pour de vrai. Rend le numéro employé. */
 async function demanderUnCode(page: Page): Promise<string> {
-  const phone = `97${String(Date.now()).slice(-6)}${Math.floor(Math.random() * 90 + 10)}`;
+  /**
+   * UN NUMÉRO BÉNINOIS VALIDE SELON `libphonenumber` : `019` + sept chiffres.
+   *
+   * Il commençait par `97`, c'est-à-dire l'ancien format — celui que la planche
+   * dessine encore. Depuis que la validation par pays est en service (le porteur :
+   * « utilise les librairies de validation de lib number de Google »), ce format
+   * est refusé et « Recevoir le code » reste GRISÉ : le test expirait sur un clic
+   * qui ne pouvait pas aboutir.
+   */
+  const phone = numeroNational();
   await page.goto('/connexion');
   await page.locator('input[name="phone"]:visible').fill(phone);
   await page.locator('main:visible [role="checkbox"]').click();
@@ -142,6 +152,51 @@ async function demanderUnCode(page: Page): Promise<string> {
   await page.waitForURL('**/connexion/code', { timeout: 30_000 });
   return phone;
 }
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « ENVOYÉ AU … » NE DISAIT RIEN                                            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « La page d'onboarding "Entrez le code reçu" ne montre pas le
+ * numéro, même anonymisé un peu. »
+ *
+ * MESURÉ : « Envoyé au » suivi de RIEN — et pas seulement après un rechargement,
+ * dès l'arrivée sur l'écran. `/connexion` et `/connexion/code` sont DEUX PAGES :
+ * chacune monte son propre flux, donc son propre état, et le numéro tapé sur la
+ * première n'existait pas dans la seconde.
+ */
+test.describe('P02 — le numéro auquel le code est parti', () => {
+  test('l’écran dit le numéro, masqué, et le garde après rechargement', async ({ page }) => {
+    const phone = await demanderUnCode(page);
+    const deux = phone.slice(-2);
+
+    const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
+    /**
+     * CE QU'ON ATTEND EXACTEMENT : l'indicatif, des points à la place du corps du
+     * numéro, et les DEUX DERNIERS chiffres. Assez pour reconnaître son numéro,
+     * pas assez pour le lire par-dessus l'épaule — c'est ce que fait
+     * `masqueNumero`, et c'est la seule chose que cet écran a le droit d'afficher.
+     */
+    await expect(cadre.getByText(/Envoyé au/)).toBeVisible();
+    await expect.poll(async () => cadre.innerText(), { timeout: 10_000 }).toContain(`+229`);
+    const texte = await cadre.innerText();
+    expect(texte, 'le numéro masqué n’apparaît pas').toMatch(new RegExp(`••.*${deux}`));
+    // Et JAMAIS le numéro en clair : ce serait l'inverse du masque.
+    expect(texte).not.toContain(phone);
+
+    /**
+     * ET IL SURVIT AU RECHARGEMENT. C'est la moitié qui manquait : le numéro est
+     * conservé dans `sessionStorage` pour que « Renvoyer » fonctionne, et c'est de
+     * là qu'il est relu — pas de l'adresse, où un numéro de téléphone n'a rien à
+     * faire (historique, journaux, copier-coller).
+     */
+    await page.reload();
+    await expect.poll(async () => cadre.innerText(), { timeout: 10_000 }).toMatch(
+      new RegExp(`••.*${deux}`),
+    );
+  });
+});
 
 test.describe('P02 — le minuteur', () => {
   test('DÉCOMPTE au lieu d’afficher le « 0:45 » figé de la maquette', async ({ page }) => {

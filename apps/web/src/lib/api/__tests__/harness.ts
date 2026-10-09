@@ -130,6 +130,7 @@ export function meBody(overrides: { level?: string; status?: string } = {}): unk
       status: overrides.status ?? 'ACTIVE',
       originCountryId: '01a0e1b0-03eb-7000-8568-a65c501769f6',
       cityId: null,
+      arrivalDate: null,
       originCountryLocked: false,
     },
     profile: null,

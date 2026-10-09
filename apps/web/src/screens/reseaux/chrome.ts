@@ -86,7 +86,27 @@ export const tab = (label: string, on: boolean) => ({
 /** Les six onglets du réseau. Le deuxième — « Sujets » — est celui que A08 montre. */
 export const NET_TABS = ['Fil', 'Sujets', 'Événements', 'Membres', 'Album', 'À propos'] as const;
 
-export const netTabsFor = (active: number) => NET_TABS.map((l, i) => tab(l, i === active));
+/**
+ * ─── LE NOM DE CHAQUE ONGLET DANS L'URL, DANS L'ORDRE DE `NET_TABS` ─────────
+ *
+ * Ce sont les six valeurs que `app/(app)/reseaux/[slug]/page.tsx` lit dans
+ * `?onglet=` et que `reseau-screen.tsx` range dans son `SLUGS` : rien n'est
+ * inventé ici, la table est recopiée de là, et l'ordre est celui de la barre.
+ *
+ * LA DESTINATION EST RELATIVE, ET C'EST UN CHOIX MESURÉ : le slug du réseau n'est
+ * dessiné dans aucune de ces planches, et leur prise ne le porte pas. Une requête
+ * seule se résout contre l'URL courante en gardant son chemin — depuis
+ * `/reseaux/pays-bj`, `?onglet=membres` donne `/reseaux/pays-bj?onglet=membres`.
+ * Composer une adresse absolue demanderait d'inventer le réseau.
+ *
+ * La barre de A08 n'est rendue qu'en VUE MEMBRE (`reseau-screen.tsx` ne monte le
+ * cadre complet que dans sa branche `plain`, qui exige `!owner`) : aucun
+ * `&vue=proprietaire` n'a donc à voyager ici.
+ */
+const NET_TAB_SLUGS = ['fil', 'sujets', 'evenements', 'membres', 'album', 'a-propos'] as const;
+
+export const netTabsFor = (active: number) =>
+  NET_TABS.map((l, i) => ({ ...tab(l, i === active), href: `?onglet=${NET_TAB_SLUGS[i]}` }));
 
 // ─── Identité visuelle d'une personne et d'un réseau ────────────────────────
 

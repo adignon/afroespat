@@ -194,10 +194,60 @@ describe('A08T — les vingt-cinq cadres lisent leur réseau', () => {
    * de fuite. Un repli qui porterait « Béninois en France » referait exactement
    * le défaut que ce lot corrige, mais seulement pendant le chargement — donc de
    * façon intermittente, c'est-à-dire invisible aux tests et visible à l'œil.
+   *
+   * ── CE CAS AFFIRMAIT UN LITTÉRAL, ET CE LITTÉRAL ÉTAIT UN DÉFAUT ──────────
+   *
+   * Il exigeait `nom === ''`. La PROPRIÉTÉ qu'il nomme — « ne nomme aucun
+   * réseau » — était bonne ; le littéral choisi pour la tenir ne l'était pas.
+   * Les vingt-quatre planches posent `{reseau.nom}` dans le TITRE de la page :
+   * la chaîne vide servait donc un `<h1></h1>`, mesuré tel quel au navigateur
+   * (six cas rouges sur A08 et A08T, « locator resolved to <h1></h1> »), ce qui
+   * est une violation `empty-heading` d'axe-core.
+   *
+   * Le cas affirme désormais les DEUX bornes, parce qu'une seule laisse passer
+   * un défaut :
+   *
+   *   · le nom n'est PAS vide — sinon le titre est muet ;
+   *   · le nom n'est PAS un nom plausible — il ne contient aucune lettre, donc
+   *     aucun repli ne pourra jamais ressembler à « Béninois en France » sans
+   *     faire rougir ce cas. C'est plus fort que l'ancien `not.toContain`, qui
+   *     ne refusait qu'UN nom, celui de la maquette, et aurait laissé passer
+   *     n'importe quel autre.
    */
-  it('l’en-tête de repli est vide, et ne nomme aucun réseau', () => {
-    expect(enteteVide.nom).toBe('');
-    expect(enteteVide.membres).toBe('');
+  it('l’en-tête de repli ne nomme aucun réseau, et ne laisse ni titre muet ni séparateur orphelin', () => {
+    /**
+     * LES CINQ CHAMPS QUE LA MAQUETTE N'ENTOURE PAS DE RIEN.
+     *
+     * `nom` est le TITRE de la page. Les quatre autres sont assis entre des
+     * points médians ÉCRITS EN DUR dans le JSX transcodé — il n'existe que deux
+     * motifs sur les cadres produits, `{reseau.membres} · {reseau.genre}` suivi
+     * de `· {reseau.monAppartenance}`, et `{reseau.membres} · {reseau.monRole}`.
+     *
+     * La chaîne vide y produisait soit un `<h1></h1>`, soit des points médians
+     * orphelins (« · · »), et c'est pour ne pas les montrer que
+     * `reseau-screen.tsx` avait cessé de peindre le cadre — ce qui faisait servir
+     * QUATRE MOTS par le serveur. Les deux bornes ci-dessous tiennent les deux
+     * défauts à la fois.
+     */
+    for (const [champ, valeur] of [
+      ['nom', enteteVide.nom],
+      ['membres', enteteVide.membres],
+      ['genre', enteteVide.genre],
+      ['monAppartenance', enteteVide.monAppartenance],
+      ['monRole', enteteVide.monRole],
+    ] as const) {
+      expect(valeur, `${champ} vide laisse un trou dans le dessin de la maquette`).not.toBe('');
+      expect(valeur, `${champ} porte une lettre, donc un nom inventé`).not.toMatch(/[A-Za-zÀ-ÿ]/);
+    }
+
+    /**
+     * ET LES AUTRES RESTENT VIDES : ils se rendent SEULS, sans séparateur voisin,
+     * donc une marque d'attente y serait du dessin ajouté. Ce cas empêche
+     * d'étendre le tiret « pour faire propre » à des champs qui n'en ont pas
+     * besoin.
+     */
+    expect(enteteVide.resume).toBe('');
+    expect(enteteVide.description).toBe('');
     expect(enteteVide.demandes).toBe(0);
     expect(JSON.stringify(enteteVide)).not.toContain('Béninois');
   });

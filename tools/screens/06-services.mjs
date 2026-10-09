@@ -118,6 +118,7 @@
  */
 
 import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+import { barreBasse } from '../squelette-membre.mjs';
 
 const FILE = 'docs/template/06 Services.dc.html';
 
@@ -130,6 +131,81 @@ const FILE = 'docs/template/06 Services.dc.html';
  * le module aurait obligé chaque écran à déclarer les champs des neuf autres, donc
  * à les rendre facultatifs, donc à n'exiger rien de personne.
  */
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES SIX ENTRÉES DU PANNEAU — INVISIBLES AU COMPTEUR, ET POURTANT MORTES     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * « SERVICES » et « MON ESPACE » : deux cartes, six entrées, toutes en `<span>`.
+ * Elles ne portent aucun `href="#"`, donc le récapitulatif « ── NAVIGATION ── »
+ * ne les compte pas — et c'est pourtant la sous-navigation du module, celle sur
+ * laquelle le porteur a cliqué.
+ *
+ * LE MARQUEUR COMMENCE AU `</svg>`, pour la même raison que dans
+ * `05-entraide.mjs` : la maquette enferme le libellé dans un
+ * `<span style="flex:1">`, et un discriminant `texte` promouvrait CE span — la
+ * zone cliquable ferait la largeur du mot au lieu des 44 px de la ligne. Il
+ * inclut le libellé, donc il est unique dans le cadre là où les tracés d'icône ne
+ * le sont pas : « Mes annonces » partage son tracé avec le panneau d'Entraide.
+ *
+ * LES SIX DESTINATIONS SONT CELLES DE `T5 §5`, et elles sont exactement les
+ * `out:` des sections S de ce fichier — pas une lecture du libellé.
+ */
+const ENTREES_PANNEAU_SERVICES = [
+  ['Annonces logement', '/services/logement', 'S01'],
+  ['Bourses et emploi', '/services/emploi', 'S04'],
+  ['Annuaire professionnel', '/services/annuaire', 'S06'],
+  ['Mes annonces', '/services/mes-annonces', 'S09'],
+  ['Mes alertes', '/services/alertes', 'S10'],
+  ['Ma fiche pro', '/services/annuaire/ma-fiche', 'S08'],
+];
+
+/**
+ * ─── « PREMIUM », DANS LA CARTE DES QUOTAS, SUR LES DIX CADRES ──────────────
+ *
+ * Celui-là porte bien un `<a href="#"` : il COMPTE dans le récapitulatif
+ * « ── NAVIGATION ── », à raison d'un par écran sur les dix. La maquette l'écrit
+ * au pied de la carte « MES QUOTAS DU MOIS », en face de « Réinitialisé le 1er
+ * octobre » : c'est l'offre Premium, et `T5 §5` donne `/premium` à K06 (avec
+ * `/compte/abonnement`, qui est la page de MON abonnement — pas l'offre).
+ *
+ * LE DISCRIMINANT EST LE BALISAGE, PAS LE TEXTE : « Premium » est écrit ailleurs
+ * dans ces cadres (« Export réservé à Premium », les pastilles d'offre), et un
+ * `texte` y promouvrait un `<span>` de légende en lien. Le marqueur commence DANS
+ * la balise ouvrante pour que la remontée de `markLinks` trouve ce `<a>`-là.
+ */
+const quotaPremium = (frames) => [
+  {
+    marqueur: 'style="color:#fff;font-weight:700">Premium',
+    vers: '/premium',
+    frames,
+    why:
+      'Le « Premium » du pied de la carte des quotas mène à l’offre — `/premium` (T5 §5, ' +
+      'K06). La maquette le balise en <a> sans l’adresser.',
+  },
+];
+
+/** Les six entrées, bornées aux cadres d'ordinateur : le mobile ne les dessine pas. */
+const panneauServices = (frames) =>
+  ENTREES_PANNEAU_SERVICES.map(([libelle, vers, planche]) => ({
+    marqueur: `</svg><span style="flex:1">${libelle}</span>`,
+    vers,
+    frames,
+    why:
+      `L’entrée « ${libelle} » du panneau de section mène à ${vers} — la route que T5 §5 ` +
+      `donne à ${planche}. La maquette l’écrit en <span> : ce n’était pas un lien cassé, ce ` +
+      'n’était pas un lien.',
+  }));
+
+/**
+ * Les cinq sections dont le cadre mobile dessine la barre d'onglets basse — les
+ * LISTES. Compté : S01, S04, S06, S09 et S10. Les planches de DÉTAIL et de
+ * PUBLICATION (S02, S03, S05, S07, S08) ne la dessinent pas, et c'est cohérent —
+ * on y entre depuis une liste et on en ressort par le retour de l'en-tête.
+ */
+const BARRE_BASSE_SERVICES = new Set(['S01', 'S04', 'S06', 'S09', 'S10']);
+
 const screen = ({
   section,
   out,
@@ -166,7 +242,21 @@ const screen = ({
    * peint déjà l'entrée qui désigne la page, planche par planche.
    */
   ...(modal ? { modal } : {}),
-  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
+  /**
+   * LE RAIL *ET* LES SIX ENTRÉES DU PANNEAU DE SECTION : voir
+   * `panneauServices` juste en dessous. Les deux sont dessinés en `<span>` sur les
+   * dix cadres d'ordinateur, et le porteur a cliqué sur les deux.
+   */
+  ...(squelette
+    ? {
+        liens: [
+          ...railLitteral(cadresDuRail(frames)),
+          ...panneauServices(cadresDuRail(frames)),
+          ...quotaPremium(cadresDuRail(frames)),
+          ...(BARRE_BASSE_SERVICES.has(section) ? barreBasse(['Mobile']) : []),
+        ],
+      }
+    : {}),
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule,
@@ -1133,9 +1223,29 @@ export const screens = [
     frames: [f(390, 'MobileVerification', 2)],
     donnees: [
       {
-        noeud: '<div style="font-size:18px;font-weight:800">Contacter Sarah</div>',
-        devient:
-          '<div style="font-size:18px;font-weight:800">Contacter {{ annonce.prenomAuteur }}</div>',
+        /**
+         * ╔════════════════════════════════════════════════════════════════╗
+         * ║ LA FORME DÉLIMITÉE, ET C'EST LE NOM DE LA BOÎTE DE DIALOGUE QUI EN   ║
+         * ║ DÉPENDAIT                                                           ║
+         * ╚════════════════════════════════════════════════════════════════╝
+         *
+         * Cette liaison était écrite en ÉLÉMENT ENTIER — `<div style=…>Contacter
+         * Sarah</div>`. Elle liait bien, mais `retitrerSurDonnees` ne reconnaît que
+         * la forme délimitée : il compare `nu(noeud)` au titre déclaré, et `nu` ne
+         * retire qu'un `>` de tête et un `<` de queue. La comparaison échouait, le
+         * titre attendu restait « Contacter Sarah », ce texte n'existait plus après
+         * liaison, et `promoteTitle` ne trouvait RIEN à promouvoir.
+         *
+         * CONSÉQUENCE MESURÉE : ce cadre sortait sans `<h2 id="s02-titre">`, tandis
+         * que `MODALES.S02V` déclare `titleId: 's02-titre'`. L'`aria-labelledby` de
+         * la feuille L0 désignait donc un identifiant ABSENT du document, et la
+         * boîte de dialogue n'avait aucun nom accessible (`aria-dialog-name`). Le
+         * défaut ne se voyait pas : il ne se lit qu'au lecteur d'écran, et le cas
+         * d'e2e qui aurait dû l'attraper mesurait le squelette, où c'est la planche
+         * CONTACT qui est montée — celle qui a son `<h2>`.
+         */
+        noeud: '>Contacter Sarah<',
+        devient: '>Contacter {{ annonce.prenomAuteur }}<',
         fois: 1,
         why: 'Le prénom de l’auteur de l’annonce — et le titre de la feuille, repris sur sa forme liée.',
       },

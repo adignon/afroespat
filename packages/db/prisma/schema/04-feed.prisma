@@ -123,6 +123,10 @@ model Post {
   media          PostMedia[]
   reactions      PostReaction[]
   topicsFromPost Topic[]        @relation("TopicOriginPost")
+  /// Le sondage de la publication (04 §2.4). Un seul — voir `Poll.postId`.
+  poll           Poll?
+  /// Les guides liés (jusqu'à trois). Voir `PostGuide`.
+  guides         PostGuide[]
 
   @@index([authorUserId])
   @@index([type])
@@ -132,6 +136,29 @@ model Post {
   @@index([status])
   @@index([createdAt])
   @@map("posts")
+}
+
+/// Un guide lié à une publication — « Lier un guide », et la règle que la
+/// maquette énonce : « Jusqu'à 3. Étiquettes vertes avec croix. »
+///
+/// LA BORNE N'EST PAS DANS LE SCHÉMA, et elle ne peut pas l'être : aucun SGBD
+/// n'exprime « au plus trois lignes par clé » sans déclencheur. Elle est tenue
+/// par `createPostSchema` à la frontière ET revérifiée dans le service — le
+/// schéma refuse une requête, le service refuse un état.
+///
+/// `position` ordonne les étiquettes comme l'auteur les a choisies : sans elle,
+/// l'ordre serait celui de l'index, donc celui des identifiants.
+model PostGuide {
+  postId   String @map("post_id") @db.Uuid
+  guideId  String @map("guide_id") @db.Uuid
+  position Int
+
+  post  Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  guide Guide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+
+  @@id([postId, guideId])
+  @@index([guideId])
+  @@map("post_guides")
 }
 
 model PostMedia {
@@ -221,6 +248,11 @@ model Story {
   category   String?
   /// Découverte : lieu · Information : guichet ou lieu concerné.
   placeLabel String? @map("place_label")
+  /// Le sujet écrit à la main quand `category = 'AUTRE'`. Le porteur : « au niveau
+  /// du sujet, Autre doit permettre de saisir dans un champ ». Distinct de
+  /// `category`, qui reste l'ÉNUMÉRATION : mélanger les deux ferait d'un sujet
+  /// libre une valeur de référentiel, et le classement du fil s'y perdrait.
+  categoryOther String? @map("category_other")
 
   /// Information : fin de validité si plus courte que 24 h.
   validUntil DateTime? @map("valid_until") @db.Timestamptz
@@ -260,6 +292,9 @@ model Story {
   @@index([score])
   @@index([status])
   @@map("stories")
+
+  /// Les messages partis DE cette story (voir `Message.storyId`).
+  messages Message[]
 }
 
 model StoryReaction {

@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="./image-slot.js"></script>
+<style>
+body{margin:0;background:#F6F8F7;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#16211D;-webkit-font-smoothing:antialiased}
+a{color:#16785E;text-decoration:none}a:hover{color:#0F5C48}
+*{box-sizing:border-box}
+</style>
+</helmet>
+<div style="width:1440px;margin:0 auto;padding:0 24px 32px;font-size:14px">
+
+<header style="height:64px;display:flex;align-items:center;justify-content:space-between;gap:24px">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="width:38px;height:38px;border-radius:12px;background:#0F5C48;display:flex;align-items:center;justify-content:center"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none"/></svg></div>
+    <span style="font-size:21px;font-weight:800;color:#0F5C48;letter-spacing:-0.5px">Diaspora</span>
+  </div>
+  <div style="flex:1;max-width:420px;height:44px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;gap:10px;padding:0 18px;color:#8A958F;font-size:13.5px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Rechercher dans la diaspora</span></div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <button style="width:44px;height:44px;border-radius:999px;background:#EEF2F0;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.7" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button style="position:relative;width:44px;height:44px;border-radius:999px;background:#EEF2F0;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.7" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg><span style="position:absolute;top:2px;right:3px;width:9px;height:9px;border-radius:999px;background:#E0733A;border:2px solid #F6F8F7"></span></button>
+    <button style="position:relative;width:44px;height:44px;border-radius:999px;background:#EEF2F0;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span style="position:absolute;top:-2px;right:-2px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:#E0733A;color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #F6F8F7">3</span></button>
+    <div style="height:44px;padding:3px 16px 3px 3px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;gap:9px;cursor:pointer;margin-left:4px"><span style="width:38px;height:38px;border-radius:999px;background:#B4581F;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center">AD</span><span style="font-size:13.5px;font-weight:600">Amina</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg></div>
+  </div>
+</header>
+
+<div style="display:grid;grid-template-columns:352px minmax(0,1fr) 316px;gap:24px;align-items:start;padding-top:12px">
+
+  <aside style="position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;display:flex;gap:12px">
+    <nav style="width:76px;background:#0F5C48;border-radius:22px;padding:12px 8px;display:flex;flex-direction:column;gap:4px;flex-shrink:0">
+      <sc-for list="{{ rail }}" as="r" hint-placeholder-count="5">
+        <a href="#" style="height:58px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;font-size:9.5px;font-weight:700;background:{{ r.bg }};color:{{ r.fg }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ r.icon }}"/></svg>{{ r.label }}</a>
+      </sc-for>
+      <div style="flex:1;min-height:12px"></div>
+      <a href="#" style="height:48px;border-radius:16px;display:flex;align-items:center;justify-content:center;color:#CFE3DA"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7h8M17 7h3M4 17h3M12 17h8"/><circle cx="15" cy="7" r="2.2"/><circle cx="9.5" cy="17" r="2.2"/></svg></a>
+    </nav>
+
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:16px">
+        <div style="display:flex;align-items:center;gap:11px">
+          <div style="width:44px;height:44px;border-radius:999px;background:#B4581F;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">AD</div>
+          <div style="min-width:0"><div style="font-weight:700;font-size:14px;letter-spacing:-0.2px">Amina Diallo</div><div style="font-size:12px;color:#8A958F">Voir mon profil public</div></div>
+        </div>
+      </div>
+
+      <div style="background:#0F5C48;border-radius:22px;padding:18px;color:#fff">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="min-width:0"><div style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#A9CDBF">MON PARCOURS</div><div style="font-size:14.5px;font-weight:700;margin-top:5px;letter-spacing:-0.2px">Études en France · Lyon</div></div>
+          <span style="font-size:22px;font-weight:800;letter-spacing:-0.8px;font-variant-numeric:tabular-nums">58%</span>
+        </div>
+        <div style="height:8px;border-radius:999px;background:rgba(255,255,255,.18);margin-top:14px;overflow:hidden"><div style="width:58%;height:100%;background:#E0733A;border-radius:999px"></div></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:8px">
+          <span style="font-size:12.5px;color:#F0C3A4;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Étape 7 : Logement</span>
+          <a href="#" style="background:#fff;color:#0F5C48;font-weight:700;font-size:12.5px;padding:7px 14px;border-radius:999px;white-space:nowrap">Continuer</a>
+        </div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:14px">
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F;padding:0 6px 8px">COMMUNAUTÉ</div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ panel }}" as="m" hint-placeholder-count="6">
+            <a href="#" style="height:44px;display:flex;align-items:center;gap:11px;padding:0 12px;border-radius:14px;background:{{ m.bg }};color:{{ m.fg }};font-weight:{{ m.weight }};font-size:13.5px">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ m.icon }}"/></svg>
+              <span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.label }}</span>
+              <sc-if value="{{ m.count }}" hint-placeholder-val="{{ false }}"><span style="background:#E0733A;color:#fff;font-size:11px;font-weight:700;min-width:22px;height:22px;padding:0 7px;border-radius:999px;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums">{{ m.count }}</span></sc-if>
+            </a>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:0 6px 8px">
+          <span style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F">VOS RACCOURCIS</span>
+          <a href="#" style="font-size:12px;font-weight:700">Modifier</a>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <sc-for list="{{ shortcuts }}" as="s" hint-placeholder-count="3">
+            <a href="#" style="height:52px;display:flex;align-items:center;gap:11px;padding:0 8px;border-radius:14px;color:#16211D">
+              <span style="width:34px;height:34px;border-radius:12px;background:{{ s.bg }};color:#fff;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ s.initials }}</span>
+              <span style="min-width:0"><span style="display:block;font-size:12.5px;font-weight:700;letter-spacing:-0.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span><span style="display:block;font-size:11px;color:#8A958F">{{ s.sub }}</span></span>
+            </a>
+          </sc-for>
+        </div>
+      </div>
+
+      <div style="font-size:11.5px;color:#8A958F;line-height:1.6;padding:0 8px 8px">Confidentialité · Conditions · Cookies<br>© 2025 Diaspora France</div>
+    </div>
+  </aside>
+
+  <main style="display:flex;flex-direction:column;gap:16px;min-width:0">
+    <div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;height:198px">
+      <div style="border:1.5px dashed #CBD5D1;border-radius:20px;background:#fff;display:flex;flex-direction:column;overflow:hidden">
+        <div style="flex:1;min-height:0;padding:10px 10px 0"><div style="height:100%;border-radius:14px;overflow:hidden"><image-slot id="v2-jalon-cta" shape="rect" placeholder="Votre photo"></image-slot></div></div>
+        <div style="height:62px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+          <span style="width:30px;height:30px;border-radius:999px;background:#16785E;display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+          <span style="font-size:11.5px;font-weight:700;white-space:nowrap">Partager un jalon</span>
+        </div>
+      </div>
+      <sc-for list="{{ jalons }}" as="j" hint-placeholder-count="4">
+        <div style="position:relative;border-radius:20px;overflow:hidden">
+          <image-slot id="{{ j.id }}" shape="rect" placeholder="{{ j.ph }}"></image-slot>
+          <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.25) 0%,transparent 38%,rgba(0,0,0,.72) 100%);pointer-events:none"></div>
+          <span style="position:absolute;top:10px;left:10px;width:32px;height:32px;border-radius:999px;background:{{ j.avatarBg }};border:2px solid rgba(255,255,255,.9);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;pointer-events:none">{{ j.initials }}</span>
+          <div style="position:absolute;left:10px;right:10px;bottom:10px;color:#fff;pointer-events:none">
+            <span style="display:inline-block;background:rgba(255,255,255,.22);font-size:9.5px;font-weight:700;padding:4px 9px;border-radius:999px">{{ j.tag }}</span>
+            <div style="font-size:12.5px;font-weight:700;margin-top:6px;line-height:1.3;letter-spacing:-0.1px">{{ j.title }}</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:16px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:44px;height:44px;border-radius:999px;background:#B4581F;color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">AD</div>
+        <input value="{{ draft }}" onChange="{{ onDraft }}" placeholder="Que voulez-vous partager avec la diaspora ?" style="flex:1;min-width:0;height:46px;border-radius:999px;border:none;background:#F2F5F4;padding:0 20px;font:inherit;font-size:14px;color:#16211D;outline:none">
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px">
+        <sc-for list="{{ composer }}" as="c" hint-placeholder-count="4">
+          <button style="height:44px;border-radius:14px;background:{{ c.bg }};color:{{ c.fg }};border:none;font:inherit;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ c.icon }}"/></svg>{{ c.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <sc-for list="{{ posts }}" as="p" hint-placeholder-count="3">
+    <article style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:22px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:46px;height:46px;border-radius:999px;background:{{ p.avatarBg }};color:#fff;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ p.initials }}</div>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+            <span style="font-weight:700;font-size:15.5px;letter-spacing:-0.3px">{{ p.author }}</span>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10"/><path d="m8 12 3 3 5-6" stroke="#fff" stroke-width="2.2" fill="none"/></svg>
+            <span style="display:inline-flex;align-items:center;gap:6px;background:{{ p.typeBg }};color:{{ p.typeFg }};font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px"><span style="width:6px;height:6px;border-radius:999px;background:{{ p.typeDot }}"></span>{{ p.type }}</span>
+          </div>
+          <div style="font-size:12.5px;color:#8A958F;margin-top:3px">{{ p.context }}</div>
+        </div>
+        <button style="width:36px;height:36px;border-radius:999px;border:none;background:#F2F5F4;cursor:pointer;color:#5D6B66;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+      </div>
+      <p style="margin:16px 0 0;font-size:15px;line-height:1.62;text-wrap:pretty">{{ p.body }}</p>
+
+      <sc-if value="{{ p.step }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:16px;border-radius:18px;padding:16px;display:flex;gap:14px;align-items:center;background:#EFF7F3">
+          <div style="width:50px;height:50px;border-radius:16px;background:#16785E;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4.5 4.5L19 7"/></svg></div>
+          <div style="min-width:0">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#16785E">ÉTAPE FRANCHIE</span><span style="font-size:11.5px;color:#5D6B66;background:#fff;border-radius:999px;padding:3px 9px;font-weight:600">4 sur 8</span></div>
+            <div style="font-weight:700;font-size:15.5px;margin-top:5px;letter-spacing:-0.3px">{{ p.stepTitle }}</div>
+            <div style="font-size:12.5px;color:#5D6B66;margin-top:2px">{{ p.stepSub }}</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ p.tip }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:16px;display:flex;gap:12px;background:#F3F7F5;border-radius:18px;padding:14px 16px">
+          <span style="width:3px;border-radius:999px;background:#16785E;flex-shrink:0"></span>
+          <div><div style="font-size:12.5px;font-weight:700;color:#0F5C48">Bon à savoir</div><div style="font-size:13.5px;line-height:1.6;margin-top:3px">{{ p.tip }}</div></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ p.tags }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap"><sc-for list="{{ p.tags }}" as="t" hint-placeholder-count="3"><span style="background:#F2F5F4;color:#5D6B66;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:999px">#{{ t }}</span></sc-for></div>
+      </sc-if>
+
+      <div style="display:flex;align-items:center;gap:12px;margin-top:16px;font-size:12.5px;color:#5D6B66">
+        <span style="display:flex;align-items:center;gap:7px"><span style="width:24px;height:24px;border-radius:999px;background:{{ p.reactBg }};display:flex;align-items:center;justify-content:center"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="{{ p.actionIcon }}"/></svg></span><span style="font-weight:700;color:#16211D">{{ p.reactCount }}</span> {{ p.reactWord }}</span>
+        <span style="width:4px;height:4px;border-radius:999px;background:#C9D2CE"></span>
+        <span>{{ p.meta }}</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px">
+        <button style="height:44px;border-radius:14px;background:#F2F5F4;border:none;font:inherit;font-size:13.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="{{ p.actionIcon }}"/></svg>{{ p.action }}</button>
+        <button style="height:44px;border-radius:14px;background:#F2F5F4;border:none;font:inherit;font-size:13.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>{{ p.comment }}</button>
+        <button style="height:44px;border-radius:14px;background:#F2F5F4;border:none;font:inherit;font-size:13.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.6M8.2 13.2l7.6 4.6"/></svg>{{ p.share }}</button>
+      </div>
+    </article>
+    </sc-for>
+  </main>
+
+  <aside style="position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;display:flex;flex-direction:column;gap:12px">
+    <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F">ÉVÉNEMENTS À LYON</span>
+        <a href="#" style="font-size:12px;font-weight:700;white-space:nowrap">Voir tout</a>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:16px;align-items:center">
+        <div style="width:52px;height:52px;border-radius:16px;background:#E3F0EB;color:#0F5C48;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:17px;font-weight:800;line-height:1;letter-spacing:-0.5px">24</span><span style="font-size:9px;font-weight:700;letter-spacing:.5px;margin-top:2px">FÉV</span></div>
+        <div style="min-width:0"><div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Apéro Diaspora &amp; Étudiants</div><div style="font-size:11.5px;color:#8A958F;margin-top:1px">Berges du Rhône · 19h00</div><div style="font-size:11.5px;font-weight:700;color:#16785E;margin-top:1px">34 participants</div></div>
+      </div>
+      <div style="display:flex;gap:12px;margin-top:14px;align-items:center">
+        <div style="width:52px;height:52px;border-radius:16px;background:#FBE3D4;color:#B4581F;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><span style="font-size:17px;font-weight:800;line-height:1;letter-spacing:-0.5px">02</span><span style="font-size:9px;font-weight:700;letter-spacing:.5px;margin-top:2px">MAR</span></div>
+        <div style="min-width:0"><div style="font-size:13px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Atelier CV &amp; Trouver son stage</div><div style="font-size:11.5px;color:#8A958F;margin-top:1px">Maison des Assos · 14h30</div><div style="font-size:11.5px;font-weight:700;color:#B4581F;margin-top:1px">18 places restantes</div></div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F">NOUVEAUX ARRIVANTS</span>
+        <span style="font-size:11.5px;color:#8A958F;background:#F2F5F4;border-radius:999px;padding:3px 10px;font-weight:600">Lyon</span>
+      </div>
+      <sc-for list="{{ arrivals }}" as="a" hint-placeholder-count="2">
+        <div style="display:flex;align-items:center;gap:11px;margin-top:14px">
+          <span style="width:40px;height:40px;border-radius:999px;background:{{ a.bg }};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ a.initials }}</span>
+          <span style="flex:1;min-width:0"><span style="display:block;font-size:13px;font-weight:700;letter-spacing:-0.2px">{{ a.name }}</span><span style="display:block;font-size:11.5px;color:#8A958F">{{ a.sub }}</span></span>
+          <button style="height:34px;padding:0 15px;border-radius:999px;background:#0F5C48;color:#fff;border:none;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer">Saluer</button>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="background:#FDF0E7;border-radius:22px;padding:18px">
+      <div style="display:flex;gap:12px">
+        <span style="width:36px;height:36px;border-radius:12px;background:#fff;color:#B4581F;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.5 8 8 9 4.5-1 8-4.5 8-9V6z"/><path d="M12 9v4M12 16h.01"/></svg></span>
+        <div style="min-width:0"><div style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#B4581F">ALERTE VIGILANCE</div><p style="margin:6px 0 0;font-size:13px;line-height:1.6">Attention aux fausses offres de logement exigeant un virement avant toute visite ou bail signé.</p></div>
+      </div>
+      <a href="#" style="display:flex;align-items:center;justify-content:center;gap:7px;margin-top:14px;height:40px;border-radius:999px;background:#E0733A;color:#fff;font-size:12.5px;font-weight:700">Lire les consignes<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></a>
+    </div>
+
+    <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <span style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F">PARRAINS &amp; CONTACTS</span>
+        <span style="display:flex;gap:10px;color:#8A958F"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;margin-top:10px">
+        <sc-for list="{{ contacts }}" as="c" hint-placeholder-count="4">
+          <a href="#" style="height:52px;display:flex;align-items:center;gap:11px;padding:0 6px;border-radius:14px;color:#16211D">
+            <span style="position:relative;width:38px;height:38px;border-radius:999px;background:{{ c.bg }};color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ c.initials }}<span style="position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:999px;background:#2FA37D;border:2px solid #fff"></span></span>
+            <span style="min-width:0"><span style="display:block;font-size:13px;font-weight:700;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span><span style="display:block;font-size:11.5px;color:#8A958F">En ligne</span></span>
+          </a>
+        </sc-for>
+      </div>
+    </div>
+  </aside>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1560},&quot;afficherConseil&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Fil&quot;},&quot;densite&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;normale&quot;,&quot;compacte&quot;],&quot;default&quot;:&quot;normale&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Fil&quot;}}">
+class Component extends DCLogic {
+  state = { draft: '' };
+  renderVals() {
+    const posts = [
+      { author:'Amina Diallo', initials:'AD', avatarBg:'#B4581F', context:'Parcours Études · Lyon 3e · il y a 2 h',
+        type:'Victoire', typeBg:'#E3F0EB', typeFg:'#0F5C48', typeDot:'#16785E',
+        body:"Attestation de virement irrévocable (AVI) validée ce matin ! Merci infiniment à toute la communauté pour vos précieux retours sur le choix de la banque partenaire. Une charge mentale en moins.",
+        step:true, stepTitle:'Caution bancaire & AVI validée', stepSub:'Dossier préfectoral complet pour la rentrée universitaire',
+        reactBg:'#E0733A', reactCount:'42', reactWord:'félicitations', meta:'8 commentaires · 3 partages',
+        action:'Bravo', actionIcon:'M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8', comment:'Commenter', share:'Partager' },
+      { author:'Marc Koudou', initials:'MK', avatarBg:'#0F5C48', context:'Parcours Travail · Paris · il y a 4 h',
+        type:'Conseil', typeBg:'#E9F3EE', typeFg:'#16785E', typeDot:'#2FA37D',
+        body:"Pour tous ceux qui galèrent avec un garant pour un logement à Paris : regardez du côté de Visale (100% gratuit, Action Logement) ou Garantme avant de céder aux agences qui demandent 3× le loyer en CDI français. Ça m'a sauvé mon bail le mois dernier.",
+        tip:"Le visa long séjour valant titre de séjour (VLS-TS) est accepté d'office pour le certificat Visale dès votre arrivée.",
+        reactBg:'#16785E', reactCount:'19', reactWord:'mentions utiles', meta:'14 commentaires · 7 partages',
+        action:'Utile', actionIcon:'M7 11v9M7 11l4-7c1.5 0 2.5 1 2.5 2.5V10h5a2 2 0 0 1 2 2l-1.5 6a2 2 0 0 1-2 2H7', comment:'Commenter', share:'Partager' },
+      { author:'Fatou Ndiaye', initials:'FN', avatarBg:'#2FA37D', context:'Parcours Santé · Lyon 7e · il y a 6 h',
+        type:'Question', typeBg:'#FBE3D4', typeFg:'#B4581F', typeDot:'#E0733A',
+        body:"Bonjour la communauté ! Quelqu'un connaîtrait un médecin généraliste bienveillant, à l'écoute et qui prend de nouveaux patients sur Lyon 7e (Guillotière / Jean Macé) ou 3e ? C'est pour déclarer mon médecin traitant CPAM. Merci d'avance.",
+        tags:['Santé','Lyon7','CPAM'],
+        reactBg:'#E0733A', reactCount:'11', reactWord:'personnes ont répondu', meta:'11 réponses',
+        action:'Soutenir', actionIcon:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z', comment:'Répondre', share:'Transmettre' },
+    ];
+    if (this.props.afficherConseil === false) posts.splice(1,1);
+    return {
+      draft: this.state.draft,
+      onDraft: e => this.setState({ draft: e.target.value }),
+      posts: this.props.densite === 'compacte' ? posts.slice(0,2) : posts,
+      rail: [
+        { label:'Accueil', bg:'#FFFFFF', fg:'#0F5C48', icon:'M4 11 12 4l8 7v9H4z' },
+        { label:'Parcours', bg:'rgba(255,255,255,.08)', fg:'#CFE3DA', icon:'M5 5h6a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h10' },
+        { label:'Entraide', bg:'rgba(255,255,255,.08)', fg:'#CFE3DA', icon:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z' },
+        { label:'Services', bg:'rgba(255,255,255,.08)', fg:'#CFE3DA', icon:'M4 20V8l8-4 8 4v12' },
+        { label:'Agenda', bg:'rgba(255,255,255,.08)', fg:'#CFE3DA', icon:'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4' },
+      ],
+      panel: [
+        { label:"Fil d'actualité", bg:'#E3F0EB', fg:'#0F5C48', weight:700, icon:'M15 18h-5M18 14h-8M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2M10 6h8v4h-8z', count:null },
+        { label:'Guides & Démarches', bg:'transparent', fg:'#16211D', weight:500, icon:'M12 7v14M16 12h2M16 8h2M6 12h2M6 8h2M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z', count:null },
+        { label:"Fil d'entraide", bg:'transparent', fg:'#16211D', weight:500, icon:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z', count:12 },
+        { label:'Réseaux', bg:'transparent', fg:'#16211D', weight:500, icon:'M12 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM5 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM12 8v4M12 12l-5 4M12 12l5 4', count:null },
+        { label:"Parrainage d'accueil", bg:'transparent', fg:'#16211D', weight:500, icon:'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 14s1.5 2 4 2 4-2 4-2', count:null },
+        { label:'Villes & Membres', bg:'transparent', fg:'#16211D', weight:500, icon:'M4 20V8l8-4 8 4v12M9 20v-5h6v5', count:null },
+        { label:'Événements', bg:'transparent', fg:'#16211D', weight:500, icon:'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4', count:3 },
+      ],
+      shortcuts: [
+        { name:'Lyon & Rhône', sub:'1.4k membres · 12 actus', initials:'LY', bg:'#16785E' },
+        { name:'Béninois en France', sub:'890 membres', initials:'BN', bg:'#E0733A' },
+        { name:'Recherche Colocation', sub:'Groupe direct', initials:'RC', bg:'#0F5C48' },
+      ],
+      composer: [
+        { label:'Victoire', bg:'#E3F0EB', fg:'#0F5C48', icon:'M8 4h8v5a4 4 0 0 1-8 0zM8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8' },
+        { label:'Conseil', bg:'#E9F3EE', fg:'#16785E', icon:'M9 18h6M10 21h4M12 3a6 6 0 0 1 3 11.2V16H9v-1.8A6 6 0 0 1 12 3z' },
+        { label:'Entraide', bg:'#FBE3D4', fg:'#B4581F', icon:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z' },
+        { label:'Photo / Doc', bg:'#F2F5F4', fg:'#5D6B66', icon:'M4 6h16v13H4zM4 15l5-5 3 3 2-2 6 6' },
+      ],
+      jalons: [
+        { id:'v2-jalon-1', ph:'Photo Amina', tag:'Victoire', title:'Amina : Visa validé', initials:'AD', avatarBg:'#B4581F' },
+        { id:'v2-jalon-2', ph:'Photo Kofi', tag:'Arrivée', title:'Kofi à Lyon 3e', initials:'KB', avatarBg:'#E0733A' },
+        { id:'v2-jalon-3', ph:'Photo Moussa', tag:'Logement', title:'Moussa : clés en main', initials:'MS', avatarBg:'#0F5C48' },
+        { id:'v2-jalon-4', ph:'Photo Fatou', tag:'Emploi', title:'Fatou : stage à Lyon', initials:'FN', avatarBg:'#2FA37D' },
+      ],
+      arrivals: [
+        { name:'Kofi Boateng', sub:'Arrivé il y a 3 jours', initials:'KB', bg:'#E0733A' },
+        { name:'Sarah Traoré', sub:'Arrivée cette semaine', initials:'ST', bg:'#16785E' },
+      ],
+      contacts: [
+        { name:'Aïcha Diop (Parraine)', initials:'AD', bg:'#0F5C48' },
+        { name:'Ibrahim S. (Bordeaux)', initials:'IS', bg:'#B4581F' },
+        { name:'Marc Koudou', initials:'MK', bg:'#16785E' },
+        { name:'Yasmine Benali (Paris)', initials:'YB', bg:'#E0733A' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

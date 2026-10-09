@@ -147,6 +147,30 @@ export interface GuideCardView {
   readonly useful: number;
   readonly verify: boolean;
   readonly excerpt: string;
+  /**
+   * ─── LA DESTINATION DU « LIRE LE GUIDE » DE LA CARTE ────────────────────────
+   *
+   * `/guides/:slug`, la route que `app/(app)/guides/[slug]/` sert. Elle est posée
+   * par `guideCardFrom` à partir du `slug` que l'API rend, et le cadre la lit par
+   * `href={g.href}` (clé `liens` de `tools/screens/03-accueil.mjs`).
+   *
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ FACULTATIVE, ET C'EST UN REFUS D'INVENTER, PAS UNE NÉGLIGENCE            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Les TROIS cartes ci-dessous sont celles de la maquette, et LA MAQUETTE
+   * N'ÉCRIT AUCUN SLUG : elle dessine un titre, une catégorie, une date. Leur
+   * donner une adresse demanderait d'en fabriquer une à partir du titre, ce qui
+   * est exactement la déduction que ce dépôt refuse. Elles restent donc sans
+   * `href`, et React n'écrit alors aucun attribut : la carte d'exemple n'est pas
+   * un lien, comme avant.
+   *
+   * LE CONVERTISSEUR, LUI, EST VÉRIFIÉ : `GuideCarte` (`screens/guides/from-api.ts`)
+   * déclare `href` OBLIGATOIRE, donc `tsc` refuse un convertisseur qui cesserait
+   * de le poser. C'est la discipline que le commentaire de `GuideCarte` décrit
+   * déjà pour `updated`.
+   */
+  readonly href?: string;
 }
 
 /** Une recherche restée sans réponse : la requête et son nombre d'occurrences. */

@@ -1,6 +1,8 @@
 'use client';
 
-import { chargerK07 } from '@/screens/compte/appels';
+import { useCallback, useState } from 'react';
+import { NotificationsVivantes } from '@/screens/compte/notifications-vivantes';
+import { SQUELETTE_K07, chargerK07 } from '@/screens/compte/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { K07Desktop } from '@/screens/k07/desktop.generated';
@@ -32,14 +34,34 @@ import { K07Mobile } from '@/screens/k07/mobile.generated';
  * adresse vérifiée existe ; l'écran écrit donc ce qui est vrai, et rien de plus.
  */
 export default function NotificationsPage() {
+  /** Recharger après une bascule : voir la page Sécurité pour le pourquoi. */
+  const [recharge, setRecharge] = useState(0);
+  const charger = useCallback(() => {
+    void recharge;
+    return chargerK07();
+  }, [recharge]);
+  const recharger = useCallback(() => {
+    setRecharge((n) => n + 1);
+  }, []);
+
   return (
-    <EcranDonnees charger={chargerK07}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_K07} charger={charger}>
       {(donnees) => (
-        <ScreenFrames
+        <NotificationsVivantes donnees={donnees} onRecharger={recharger}>
+          {(vivantes) => (
+            <ScreenFrames
           screen="K07"
-          desktop={<K07Desktop {...donnees} />}
-          mobile={<K07Mobile {...donnees} />}
+          desktop={<K07Desktop {...vivantes} />}
+          mobile={<K07Mobile {...vivantes} />}
         />
+          )}
+        </NotificationsVivantes>
       )}
     </EcranDonnees>
   );

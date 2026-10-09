@@ -76,6 +76,28 @@ export interface X02Data {
   readonly moi: BarreHaute;
   readonly lignes: readonly LigneNotification[];
   readonly nonLusTotal: number;
+  /**
+   * LES PASTILLES DE FILTRE — sept sur la page, quatre sur le téléphone.
+   *
+   * Le porteur : « Les filtres sur la page notification marchent ? » Ils ne
+   * marchaient pas : c'étaient des `<span>`, zéro `onClick` mesuré dans les
+   * trois cadres. Elles portent maintenant une adresse, et le filtre voyage
+   * par `?type=` — la page est un composant SERVEUR, et c'est déjà ainsi que
+   * `?vue=panneau` fonctionne.
+   */
+  readonly filtres: readonly FiltreNotification[];
+}
+
+/** Une pastille de filtre. Les deux variantes de couleur sont dessinées. */
+export interface FiltreNotification {
+  /** `'*'` pour « Tout », sinon le mot que porte `?type=`. */
+  readonly cle: string;
+  readonly libelle: string;
+  readonly href: string;
+  readonly fond: string;
+  readonly texte: string;
+  readonly bord: string;
+  readonly actif: boolean;
 }
 
 /**

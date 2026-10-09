@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { chargerJ10 } from '@/screens/parcours/appels';
+import { VUE_NEUTRE, chargerJ10 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { J10Desktop } from '@/screens/j10/desktop.generated';
 import { J10Mobile } from '@/screens/j10/mobile.generated';
@@ -38,6 +38,14 @@ export default function Page() {
 
   return (
     <EcranParcoursDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE. `VUE_NEUTRE` est le DESSIN sans la
+       * donnee, et il existait deja pour les planches d'illustration : rien n'est
+       * invente ici. Sans lui, cette route repond 200 en servant « DisaporyPlus
+       * Chargement de votre parcours... » et RIEN d'autre — ni rail, ni panneau,
+       * ni barre basse. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={VUE_NEUTRE}
       screen="J10"
       charger={charger}
       desktop={(d) => <J10Desktop {...d} />}

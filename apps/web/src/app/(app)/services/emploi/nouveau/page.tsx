@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranServices, useServices } from '@/screens/services/ecran';
-import { chargerS05Nouveau } from '@/screens/services/appels';
+import { chargerS05Nouveau, SQUELETTE_S05 } from '@/screens/services/appels';
 import { S05Desktop } from '@/screens/s05/desktop.generated';
 import { S05Mobile } from '@/screens/s05/mobile.generated';
 import { S05LienExterne } from '@/screens/s05lien/lienexterne.generated';
@@ -41,7 +41,16 @@ export default function PublierOffrePage() {
   const { ouverte, onOuvrir, onFermer } = useServices();
 
   return (
-    <EcranDonnees charger={chargerS05Nouveau} attente="Chargement du formulaire…">
+    <EcranDonnees
+      charger={chargerS05Nouveau}
+      attente="Chargement du formulaire…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S05}
+    >
       {(donnees) => (
         <EcranServices
           screen="S05"

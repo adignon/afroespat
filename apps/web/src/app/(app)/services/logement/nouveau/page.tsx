@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS03 } from '@/screens/services/appels';
+import { SQUELETTE_S03, chargerS03 } from '@/screens/services/appels';
 import { S03Desktop } from '@/screens/s03/desktop.generated';
 import { S03Mobile } from '@/screens/s03/mobile.generated';
 
@@ -42,7 +42,13 @@ import { S03Mobile } from '@/screens/s03/mobile.generated';
  */
 export default function PublierLogementPage() {
   return (
-    <EcranDonnees charger={chargerS03} attente="Chargement du formulaire…">
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S03} charger={chargerS03} attente="Chargement du formulaire…">
       {(donnees) => (
         <ScreenFrames
           screen="S03"

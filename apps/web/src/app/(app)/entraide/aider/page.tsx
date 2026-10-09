@@ -1,7 +1,7 @@
 'use client';
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH04 } from '@/screens/entraide/appels';
+import { SQUELETTE_H04, chargerH04 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H04Desktop } from '@/screens/h04/desktop.generated';
 import { H04Mobile } from '@/screens/h04/mobile.generated';
@@ -24,7 +24,16 @@ import { H04Mobile } from '@/screens/h04/mobile.generated';
  */
 export default function HelpCanHelpPage() {
   return (
-    <EcranDonnees charger={chargerH04}>
+    <EcranDonnees
+      charger={chargerH04}
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre
+       * compte… » — et aucune entrée de rail dans le HTML servi. Voir
+       * `screens/compte/ecran-donnees.tsx` pour le raisonnement complet.
+       */
+      squelette={SQUELETTE_H04}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="H04"

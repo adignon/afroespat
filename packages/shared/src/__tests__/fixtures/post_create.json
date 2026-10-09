@@ -43,10 +43,13 @@
     },
     "commentCount": 0,
     "commentLabel": "Commenter",
+    "bookmarked": false,
     "linkRel": "noopener nofollow ugc",
     "body": "Visale obtenue sans CDI ! Merci à celles et ceux qui m’ont guidée sur le dossier.",
     "movedTo": null,
-    "canMoveToTopic": false
+    "canMoveToTopic": false,
+    "poll": null,
+    "guides": []
   },
   "comments": {
     "items": [],

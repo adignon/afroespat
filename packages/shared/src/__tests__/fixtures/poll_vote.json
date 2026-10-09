@@ -20,14 +20,18 @@
       "id": "01a0f3b8-c967-7000-af81-f11c9e6d0991",
       "label": "La premiere",
       "position": 0,
-      "voteCount": 1
+      "voteCount": 1,
+      "voters": []
     },
     {
       "id": "01a0f3b8-c967-7001-833c-652cbf4eaf22",
       "label": "La seconde",
       "position": 1,
-      "voteCount": 0
+      "voteCount": 0,
+      "voters": []
     }
   ],
-  "communityId": "01a0f3b8-c8e9-7000-ba9a-4d00a53fdc38"
+  "communityId": "01a0f3b8-c8e9-7000-ba9a-4d00a53fdc38",
+  "resultsAfterVote": true,
+  "isAnonymous": true
 }

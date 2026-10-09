@@ -6,6 +6,7 @@
     "dev": "node --watch -r @swc-node/register src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
+    "staff:bootstrap": "node -r @swc-node/register src/modules/admin/staff-bootstrap.cli.ts",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",

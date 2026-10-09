@@ -19,6 +19,8 @@ export * from './validation/guides.js';
 export * from './validation/communities.js';
 export * from './validation/cities.js';
 export * from './validation/feed.js';
+export * from './validation/bookmarks.js';
+export * from './validation/member-content.js';
 export * from './validation/messaging.js';
 export * from './validation/connections.js';
 export * from './validation/mentorship.js';

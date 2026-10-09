@@ -199,33 +199,47 @@ export function ReseauScreen({
   const a08 = pret && echec === null ? data : a08Fallback;
 
   /**
-   * ── NI A08 NI SES ONGLETS NE SE PEIGNENT AVANT D'ÊTRE SUS ────────────────
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LE CADRE EST PEINT TOUT DE SUITE, ET L'ATTENTE EST UN FRÈRE — ELLE        ║
+   * ║ REMPLAÇAIT TOUT L'ÉCRAN                                                   ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
    *
-   * La garde est ici, AVANT la branche `plain`, et non dans la seule branche des
-   * onglets où elle avait d'abord été posée. Le test de navigateur l'a montré :
-   * `/reseaux/ville-lyon?onglet=sujets` — l'onglet PAR DÉFAUT, donc l'écran que
-   * tout le monde voit en arrivant — peignait « · » dans la pastille du réseau,
-   * aucun nom, et la ligne de résumé vide, parce que `a08Fallback` porte
-   * désormais `enteteVide`.
+   * Un `if (!pret) return <p>Chargement du réseau…</p>` vivait ici. Sa raison
+   * était bonne et elle est conservée plus bas : `enteteVide` ne portait que des
+   * chaînes vides, et la maquette écrit ses séparateurs EN DUR
+   * (`{reseau.membres} · {reseau.genre} · {reseau.monAppartenance}`), donc un
+   * en-tête de repli laissait deux points médians orphelins. Ne pas les montrer
+   * était juste.
    *
-   * C'est le MÊME défaut que sur les planches d'onglet, à un détail près qui
-   * explique pourquoi il avait survécu au premier correctif : cette branche
-   * dessine aussi le rail et le panneau, qui eux sont du DESSIN et s'affichaient
-   * parfaitement. L'écran avait donc l'air complet et chargé — seul l'en-tête
-   * était vide, au milieu d'une page qui ne demandait rien.
+   * MAIS LE REMÈDE COÛTAIT PLUS CHER QUE LE MAL, et le prix ne se voyait pas à
+   * l'œil parce qu'il n'était pas dans le navigateur : le SERVEUR n'a jamais la
+   * donnée du réseau — elle arrive par un appel CLIENT — donc cette branche était
+   * la seule chose qu'il rendait. Mesuré au `curl` sur
+   * `/reseaux/beninois-en-france?onglet=fil` : QUATRE MOTS SERVIS,
+   * « DisaporyPlus Chargement du réseau… ». Rail absent, panneau absent, onglets
+   * absents. C'est la COQUILLE VIDE que ce dépôt a déjà corrigée sur seize routes
+   * membre et six routes d'équipe, et un test la tenait déjà
+   * (`e2e/accueil-lot2.spec.ts`, « le serveur rend le contenu, pas une coquille »)
+   * — il était rouge, et il avait raison.
    *
-   * Pourquoi ne pas simplement garder le nom de la maquette pendant le
-   * chargement : c'est exactement le défaut que ce lot corrige. Afficher
-   * « Béninois en France » une demi-seconde sur la fiche de Lyon est pire qu'un
-   * blanc, parce que c'est faux ET invisible aux tests, qui mesurent après.
+   * La cause est traitée là où elle est : `enteteVide` porte désormais la marque
+   * d'attente (un tiret cadratin) sur les quatre champs que la maquette encadre
+   * de points médians. La ligne lit « — · — · — », aucun nom n'est emprunté, et
+   * le cadre peut donc être peint immédiatement.
+   *
+   * ET L'ATTENTE EST UN FRÈRE DANS UN FRAGMENT, JAMAIS UN PARENT. Un conteneur
+   * interposé casse le `position: sticky` de la barre haute et du rail — c'est la
+   * leçon déjà payée sur `screens/compte/ecran-donnees.tsx` et sa jumelle
+   * d'administration, et c'est la raison pour laquelle le porteur a demandé que
+   * le panneau de gauche, la colonne de droite et l'en-tête de recherche restent
+   * à l'écran pendant que le fil défile.
    */
-  if (!pret) {
-    return (
-      <p role="status" style={{ padding: '24px', color: '#5D6B66', fontSize: '14px' }}>
+  const attente =
+    !pret ? (
+      <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
         Chargement du réseau…
       </p>
-    );
-  }
+    ) : null;
 
   if (plain) {
     return (
@@ -266,6 +280,7 @@ export function ReseauScreen({
             {echec.message}
           </p>
         )}
+        {attente}
       </>
     );
   }
@@ -300,10 +315,13 @@ export function ReseauScreen({
    * est exactement le même défaut.
    */
   return (
-    <ScreenFrames
-      screen={`A08T-${slug}`}
-      desktop={<div style={BOARD}>{tab.desktop(enteteOnglet)}</div>}
-      mobile={tab.mobile(enteteOnglet)}
-    />
+    <>
+      <ScreenFrames
+        screen={`A08T-${slug}`}
+        desktop={<div style={BOARD}>{tab.desktop(enteteOnglet)}</div>}
+        mobile={tab.mobile(enteteOnglet)}
+      />
+      {attente}
+    </>
   );
 }

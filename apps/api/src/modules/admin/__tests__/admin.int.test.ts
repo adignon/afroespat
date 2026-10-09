@@ -1199,6 +1199,101 @@ describe('administration (15)', () => {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  // 11 §4 — Reconstruire l'index de recherche
+  // ══════════════════════════════════════════════════════════════════════════
+
+  describe('POST /admin/search/reindex (11 §4)', () => {
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ CETTE ROUTE N'EXISTAIT PAS, ET ELLE A MANQUÉ LE JOUR OÙ IL L'A FALLU ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * 11 §4 la nomme : « Admin : `/v1/admin/search/reindex` (type) ». `reindexType`
+     * existait depuis le début et AUCUNE route ne l'appelait — le contrôleur de
+     * recherche l'écrivait en commentaire : « attendent le module 15 ».
+     *
+     * MESURÉ le jour où le porteur a dit « il faut que la recherche touche à tous
+     * les types de contenus » : `search_documents` était VIDE et 7 711 événements
+     * attendaient dans la boîte d'envoi — le relais ne tourne que si
+     * `APP_ROLE=worker`, et ce processus ne tournait pas. Une fois démarré, les
+     * contenus NOUVEAUX s'indexent ; les anciens, dont les événements sont passés,
+     * restent dehors. Relire la source est la seule façon juste de les rattraper.
+     *
+     * ── CE QUE LE CAS MESURE ──────────────────────────────────────────────
+     *
+     * Les comptes rendus ET la trace. Une reconstruction réécrit des lignes et en
+     * RETIRE : elle peut faire disparaître du contenu de la recherche du produit
+     * entier, donc « qui, quand, sur quels types » doit être dans le journal.
+     *
+     * ── MUTATIONS APPLIQUÉES ──────────────────────────────────────────────
+     *
+     *   · `record` retiré de `reindexSearch` → le cas de la trace tombe, ET le
+     *     garde-fou de couverture ci-dessous rougit aussi ;
+     *   · `items.push` déplacé avant l'appel → les comptes deviennent `undefined` ;
+     *   · `STAFF_SCOPES.content` remplacé par `staffAdmin` → le cas du rôle tombe.
+     */
+    it('reconstruit les types demandés, rend leurs comptes et trace la décision', async () => {
+      const staff = await as('CONTENT_ADMIN');
+
+      const res = await request(httpServer(app))
+        .post('/v1/admin/search/reindex')
+        .set('cookie', staff.cookie)
+        .send({ types: ['CITY'] })
+        .expect(201);
+
+      expect(res.body).toMatchObject({ items: [{ type: 'CITY' }] });
+      const item = (res.body as { items: { indexed: number; removed: number }[] }).items[0];
+      expect(typeof item?.indexed).toBe('number');
+      expect(typeof item?.removed).toBe('number');
+
+      const trace = await prisma.auditLog.findMany({
+        where: { action: AUDIT_ACTIONS.searchReindexed, actorId: staff.staffId },
+        orderBy: { id: 'desc' },
+        take: 1,
+      });
+      expect(trace).toHaveLength(1);
+      expect(trace[0]?.targetType).toBe('search_index');
+      /**
+       * LA TRACE PORTE LES COMPTES RÉELS, et pas seulement l'intention. C'est ce
+       * qui distingue « on a demandé une reconstruction » de « on a réécrit N
+       * documents et retiré M » — la seule des deux qui réponde à la question
+       * qu'on posera.
+       */
+      expect(trace[0]?.metadata).toMatchObject({ items: [{ type: 'CITY' }] });
+    });
+
+    it('refuse un rôle qui n’a pas la portée « contenu »', async () => {
+      const staff = await as('SUPPORT');
+      await request(httpServer(app))
+        .post('/v1/admin/search/reindex')
+        .set('cookie', staff.cookie)
+        .send({ types: ['CITY'] })
+        .expect(403);
+    });
+
+    /**
+     * `400` ET NON `422`, et c'est le dépôt qui le dit : `zodPipe` refuse un corps
+     * malformé en `400`. Mesuré en écrivant ce cas — j'attendais `422`, qui est le
+     * code des erreurs de VALIDATION MÉTIER de ce dépôt. La distinction tient : un
+     * type qui n'existe pas dans l'énumération est une requête mal formée, pas une
+     * règle métier violée.
+     */
+    it('refuse une liste vide et un type inconnu', async () => {
+      const staff = await as('CONTENT_ADMIN');
+      await request(httpServer(app))
+        .post('/v1/admin/search/reindex')
+        .set('cookie', staff.cookie)
+        .send({ types: [] })
+        .expect(400);
+      await request(httpServer(app))
+        .post('/v1/admin/search/reindex')
+        .set('cookie', staff.cookie)
+        .send({ types: ['PUBLICATION'] })
+        .expect(400);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
   // §12 — « toute route admin non-GET écrit une ligne d'audit »
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -1229,6 +1324,7 @@ describe('administration (15)', () => {
       'POST /v1/admin/users/{id}/reactivate',
       'POST /v1/admin/users/{id}/phase',
       'POST /v1/admin/users/{id}/city',
+      'POST /v1/admin/search/reindex',
     ]);
     /** Vérifiées ailleurs, ou n'écrivant rien. */
     const elsewhere = new Set([

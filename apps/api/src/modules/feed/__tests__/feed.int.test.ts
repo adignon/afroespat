@@ -20,7 +20,10 @@ import { VisibilityService } from '../../../common/visibility.service';
 import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
 import { AuthService } from '../../auth/auth.service';
 import { ConsentsService } from '../../consents/consents.service';
+import { createPollSchema } from '@app/shared';
+import { CommunitiesService } from '../../communities/communities.service';
 import { FeedService, type FeedActor } from '../feed.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Fil d'actualité — 04-fil.md §9.
@@ -66,6 +69,15 @@ const TEST_TIMEOUT_MS = 120_000;
 describe('fil d’actualité (04 §2, §4, §9)', () => {
   let prisma: PrismaService;
   let feed: FeedService;
+  /**
+   * LE SERVICE DU MODULE 07, pour voter sur le sondage d'une publication.
+   *
+   * On ne monte pas un second mécanisme de vote : `polls` est le même modèle des
+   * deux côtés, et `POST /polls/:id/vote` est la route qui existe. Le cas emploie
+   * donc le service qui la sert, ce qui vérifie AUSSI que son garde d'accès sait
+   * traiter un sondage sans réseau.
+   */
+  let communities: CommunitiesService;
   let auth: AuthService;
   const sms = new FakeSmsProvider();
 
@@ -77,6 +89,12 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
   const createdStepDefinitionIds: string[] = [];
   const createdScamAlertIds: string[] = [];
   const createdStaffIds: string[] = [];
+  /**
+   * NETTOYÉS APRÈS LES PUBLICATIONS : `post_guides` les référence, et la base est
+   * PARTAGÉE entre fichiers de test — un reste ferait échouer une autre suite sur
+   * une contrainte de clé étrangère qui n'a rien à voir avec elle.
+   */
+  const createdGuides: string[] = [];
 
   /** Lyon. */
   let cityA: { id: string; name: string };
@@ -86,8 +104,7 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
   let cityFar: { id: string; name: string };
 
   let counter = 0;
-  const nextPhone = (): string =>
-    `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   /**
    * Un membre neuf. Le NIVEAU est porté par l'acteur, comme le jeton le porte —
@@ -190,12 +207,46 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     return definition.id;
   }
 
+  /**
+   * UN GUIDE, dans l'état demandé.
+   *
+   * `PUBLISHED` est le seul état qu'une publication peut lier : un brouillon ou
+   * un guide supprimé poserait une étiquette qui mène à une page introuvable.
+   * `draftGuide` existe pour éprouver précisément ce refus.
+   */
+  async function guideAvecStatut(status: 'PUBLISHED' | 'DRAFT'): Promise<string> {
+    const id = newId();
+    const marque = id.slice(-8);
+    await prisma.guide.create({
+      data: {
+        id,
+        title: `Guide ${marque}`,
+        slug: `guide-${marque}`,
+        category: 'HOUSING',
+        scope: 'UNIVERSAL',
+        status,
+        lastContentUpdateAt: new Date(),
+      },
+    });
+    createdGuides.push(id);
+    return id;
+  }
+
+  const publishedGuide = () => guideAvecStatut('PUBLISHED');
+  const draftGuide = () => guideAvecStatut('DRAFT');
+
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
 
     const outbox = new OutboxService(prisma);
     feed = new FeedService(prisma, outbox, new AuditService(prisma), new VisibilityService(prisma));
+    communities = new CommunitiesService(
+      prisma,
+      outbox,
+      new AuditService(prisma),
+      new VisibilityService(prisma),
+    );
     auth = new AuthService(
       prisma,
       new CryptoService(),
@@ -221,6 +272,10 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
   });
 
   afterAll(async () => {
+    if (createdGuides.length > 0) {
+      await prisma.postGuide.deleteMany({ where: { guideId: { in: createdGuides } } });
+      await prisma.guide.deleteMany({ where: { id: { in: createdGuides } } });
+    }
     // L'ordre compte : `scam_alerts.created_by_staff_id` est en `Restrict`, et
     // `city_tips.author_user_id` en `SetNull` — un conseil de ville survivrait
     // donc à son auteur et resterait dans la base des tests suivants.
@@ -405,29 +460,42 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
 
   // ══ RÈGLE DURE : un L0 commente et réagit, mais ne publie pas (§2.4) ══════
 
-  it('rule: un L0 ne peut pas publier mais peut commenter et réagir', async () => {
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CE CAS DISAIT L'INVERSE — ÉCART ASSUMÉ AVEC §2.4                        ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Il gelait « un L0 ne peut pas publier », qui est §2.4 mot pour mot : « Capacité
+   * `post.create` (L1). Un L0 voit le composeur grisé avec l'invitation à monter de
+   * niveau. »
+   *
+   * Le porteur : « Autorise pour tout le monde la possibilité de publier des
+   * stories avec tout ce qui va avec. » La décision, ce qu'elle ouvre et ce qu'elle
+   * coûte sont écrits sur `post.create` dans `capabilities.ts`.
+   *
+   * Il gèle maintenant que le composeur est OUVERT — `canPost` compris, parce que
+   * c'est lui qui grise le bouton à l'écran — et il garde intacte l'autre moitié,
+   * celle qui n'a jamais dépendu du niveau : commenter et réagir.
+   */
+  it('rule: un L0 publie, commente et réagit (écart §2.4 assumé)', async () => {
     const pre = await newMember('L0');
     const settled = await newMember('L1');
     // La prémisse : le membre est bien L0, sinon le test ne prouve rien.
     expect(pre.level).toBe('L0');
 
-    await expect(feed.createPost(pre, post())).rejects.toMatchObject({
-      code: 'LEVEL_REQUIRED',
-      details: { capability: 'post.create', requiredLevel: 'L1', currentLevel: 'L0' },
-    });
-    // Le composeur est grisé, et l'API le DIT : §2.4 veut « l'invitation à monter
-    // de niveau », pas une erreur sèche.
+    const publie = await feed.createPost(pre, post());
+    expect(publie.post.id).toBeDefined();
+
+    // Et l'API le DIT à l'écran : `canPost` est ce qui grise le composeur.
     const list = await feed.feed(pre, feedQuerySchema.parse({}));
-    expect(list.meta.canPost).toBe(false);
+    expect(list.meta.canPost).toBe(true);
 
-    // Une story non plus : §2.6 exige `post.create` pour les deux.
-    await expect(feed.createStory(pre, story())).rejects.toMatchObject({
-      code: 'LEVEL_REQUIRED',
-      details: { capability: 'post.create' },
-    });
+    // Une story non plus n'est plus refusée : §2.6 emploie la MÊME capacité.
+    const racontee = await feed.createStory(pre, story());
+    expect(racontee.story.id).toBeDefined();
 
-    // Mais il COMMENTE et RÉAGIT — c'est l'autre moitié de la règle, et c'est
-    // celle qu'on casse en ajoutant une vérification de niveau « par symétrie ».
+    // Et il COMMENTE et RÉAGIT — l'autre moitié de la règle, qui n'a jamais
+    // dépendu du niveau et que l'on casse en ajoutant un contrôle « par symétrie ».
     const published = await feed.createPost(settled, post({ type: 'QUESTION' }));
     const comment = await feed.createComment(pre, {
       subjectType: 'POST',
@@ -615,6 +683,7 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
         subjectType: 'POST',
         subjectId: control.post.id,
         limit: 20,
+      sort: 'RELEVANT',
       })).items.map((c) => (c as { id: string }).id),
     ).toContain(comment.comment.id);
 
@@ -663,7 +732,7 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
       }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' });
     expect(
-      (await feed.comments(reader, { subjectType: 'POST', subjectId: control.post.id, limit: 20 }))
+      (await feed.comments(reader, { subjectType: 'POST', subjectId: control.post.id, limit: 20, sort: 'RELEVANT' }))
         .items.map((c) => (c as { id: string }).id),
     ).not.toContain(comment.comment.id);
 
@@ -978,6 +1047,79 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     expect(freshBubble?.hasUnseen).toBe(true);
   }, TEST_TIMEOUT_MS);
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LIRE UNE STORY NE LA FAIT PAS SORTIR DU RUBAN                           ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le marquage de lecture a un comportement bizarre. Quand tu
+   * cliques sur plusieurs stories, l'une est lue et l'autre non. Parfois rien
+   * n'est marqué lu. »
+   *
+   * MESURÉ au navigateur : après lecture, la story n'était plus dans le ruban DU
+   * TOUT — ni grise, ni verte : absente. Donc jamais « marquée lue », puisqu'il
+   * n'y avait plus rien à marquer.
+   *
+   * LA CAUSE : on triait « non-vu d'abord » PUIS on coupait aux trente auteurs. À
+   * rang égal — et pour un conseil le rang est `-score`, qui vaut zéro tant que
+   * personne n'a voté — le vu/non-vu devenait le tri PRINCIPAL, et la bulle lue
+   * tombait au-delà de la coupe. Soixante-dix-huit auteurs pour trente places, sur
+   * la base de développement.
+   *
+   * CE CAS LE REPRODUIT EN PETIT : plus d'auteurs que de places, le lecteur lit la
+   * story de tête, et elle doit RESTER — grise. Il tombe si l'on remet la coupe
+   * après le départage.
+   */
+  it('une story lue RESTE dans le ruban, et y passe en « vue » (§2.6)', async () => {
+    const lecteur = await newMember();
+
+    /**
+     * On déborde la coupe : `storyBandMaxAuthors` auteurs, plus un. Chacun a UNE
+     * story, pour que lire la sienne vide son groupe de tout non-vu — c'est
+     * exactement la condition qui la faisait tomber.
+     */
+    const dessus = FEED_LIMITS.storyBandMaxAuthors + 1;
+    const ids: string[] = [];
+    for (let i = 0; i < dessus; i += 1) {
+      /**
+       * UNE AUTRE VILLE, ET C'EST POUR NE PAS DÉRANGER LES VOISINS. La colonne
+       * droite liste les NOUVEAUX ARRIVANTS de la ville du lecteur, trois au plus.
+       * Créer ici trente-et-un membres dans la ville commune du fichier évinçait
+       * celui qu'un autre cas vérifie — et ce cas-là tombait pour une raison qui
+       * n'avait rien à voir avec lui.
+       *
+       * Les stories restent VISIBLES : elles sont d'audience `ALL`, donc le ruban
+       * les rend quelle que soit la ville du lecteur. C'est ce que ce cas mesure,
+       * et la ville n'y entre pas.
+       */
+      const auteur = await newMember('L1', { cityId: cityFar.id, phase: 'SETTLED' });
+      const { story } = await feed.createStory(auteur, {
+        type: 'CONSEIL',
+        body: `Conseil numéro ${String(i)} pour éprouver le ruban.`,
+        backgroundColor: '#1B4332',
+        textStyle: 'BOLD',
+        category: 'LOGEMENT',
+        audience: 'ALL',
+        allowMessages: true,
+      });
+      ids.push(story.id);
+    }
+
+    const avant = await feed.storyBand(lecteur, { type: 'CONSEIL' });
+    const premier = avant.items[0]?.stories[0]?.id;
+    expect(premier, 'le ruban est vide : le cas ne mesure rien').toBeDefined();
+    if (premier === undefined) return;
+    expect(ids).toContain(premier);
+
+    // On la LIT — c'est `GET /stories/:id` qui enregistre la vue.
+    await feed.storyDetail(lecteur, premier);
+
+    const apres = await feed.storyBand(lecteur, { type: 'CONSEIL' });
+    const toujours = apres.items.flatMap((b) => b.stories).find((s) => s.id === premier);
+    expect(toujours, 'la story lue a disparu du ruban au lieu de griser').toBeDefined();
+    expect(toujours?.seen, 'la story lue n’est pas marquée vue').toBe(true);
+  }, TEST_TIMEOUT_MS);
+
   // ══ RÈGLE DURE : ni lien, ni numéro, ni email dans une story (§2.6) ═══════
 
   it('rule: une story contenant un lien ou un numéro est refusée', async () => {
@@ -1238,9 +1380,23 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     ).rejects.toMatchObject({ code: 'NOT_AUTHOR' });
   }, TEST_TIMEOUT_MS);
 
-  // ══ §2.4 et §2.5 : fenêtre de modification de 15 minutes ══════════════════
+  // ══ §2.5 : fenêtre de modification de 15 minutes — SUR LE COMMENTAIRE SEUL ══
 
-  it('ferme la modification après 15 minutes, et jamais avant (§2.4, §2.5)', async () => {
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA PUBLICATION N'A PLUS DE DÉLAI — arbitrage du porteur contre §2.4      ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * « On peut modifier quand on veut. » Ce cas affirmait l'inverse ; il affirme
+   * maintenant les deux moitiés de la décision, et c'est ce qui compte :
+   *
+   *   · une publication SE MODIFIE encore seize minutes plus tard ;
+   *   · un COMMENTAIRE, lui, reste fermé à quinze minutes (§2.5).
+   *
+   * Vérifier seulement la première laisserait passer la suppression du délai SUR
+   * LES DEUX, qui n'est pas ce qui a été demandé.
+   */
+  it('ne ferme plus la modification d’une publication, mais toujours celle d’un commentaire', async () => {
     const author = await newMember();
     const created = await feed.createPost(author, post());
 
@@ -1254,11 +1410,21 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
       (await prisma.post.findUniqueOrThrow({ where: { id: created.post.id } })).moderationStatus,
     ).toBe('PENDING');
 
-    // Seize minutes en arrière : la fenêtre est fermée.
+    // Seize minutes en arrière : la publication se modifie QUAND MÊME.
     await prisma.$executeRaw`UPDATE posts SET created_at = created_at - interval '16 minutes' WHERE id = ${created.post.id}::uuid`;
-    await expect(
-      feed.updatePost(author, created.post.id, { body: 'Une correction trop tardive.' }),
-    ).rejects.toMatchObject({ code: 'EDIT_WINDOW_CLOSED' });
+    const tardif = await feed.updatePost(author, created.post.id, {
+      body: 'Une correction bien après la publication.',
+    });
+    expect(tardif.post.body).toBe('Une correction bien après la publication.');
+    /**
+     * ET ELLE REPASSE EN MODÉRATION. C'est ce qui rend l'ouverture tenable : sans
+     * délai, un contenu ancien et déjà validé peut être réécrit, donc il doit être
+     * revu comme s'il était neuf. Sans ce relevé, retirer le `PENDING` passerait
+     * inaperçu — et c'est précisément le garde-fou qui remplace le délai.
+     */
+    expect(
+      (await prisma.post.findUniqueOrThrow({ where: { id: created.post.id } })).moderationStatus,
+    ).toBe('PENDING');
 
     // Un autre membre ne modifie jamais, même dans la fenêtre.
     const fresh = await feed.createPost(author, post());
@@ -1329,6 +1495,7 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
       subjectType: 'POST',
       subjectId: published.post.id,
       limit: 20,
+      sort: 'RELEVANT',
     });
     expect(listed.items).toHaveLength(1);
     expect((listed.items[0] as { replies: unknown[] }).replies).toHaveLength(1);
@@ -1342,7 +1509,7 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     const emptied = await prisma.post.findUniqueOrThrow({ where: { id: published.post.id } });
     expect(emptied.commentCount).toBe(0);
     expect(
-      (await feed.comments(author, { subjectType: 'POST', subjectId: published.post.id, limit: 20 }))
+      (await feed.comments(author, { subjectType: 'POST', subjectId: published.post.id, limit: 20, sort: 'RELEVANT' }))
         .items,
     ).toHaveLength(0);
   }, TEST_TIMEOUT_MS);
@@ -1785,7 +1952,19 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
         type: 'PICNIC',
         title: 'Pique-nique du dimanche',
         cityId: cityA.id,
-        startsAt: new Date(Date.now() + 3 * 86_400_000),
+        /**
+         * DANS UNE MINUTE, ET NON DANS TROIS JOURS.
+         *
+         * §2.7 ne montre que les TROIS PROCHAINS événements de la ville. Sur une
+         * base de développement partagée, les événements s'accumulent : celui de ce
+         * cas, posé à trois jours, est passé quatrième et le cas tombait — sur
+         * l'encombrement de la base, pas sur un défaut de la colonne.
+         *
+         * Le plus proche dans le temps est forcément dans les trois premiers. Une
+         * minute suffit : il reste à VENIR, ce que le bloc exige, et aucun autre
+         * cas ne pose d'événement dans cette fenêtre.
+         */
+        startsAt: new Date(Date.now() + 60_000),
         status: 'SCHEDULED',
       },
     });
@@ -1859,12 +2038,31 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     expect(afterBlock.newArrivals.items.map((m) => m.id)).not.toContain(blockedNewcomer.userId);
     expect(afterBlock.newArrivals.items.map((m) => m.id)).toContain(newcomer.userId);
 
-    // Un L0 ne peut pas saluer : « Saluer » est un message privé (L1).
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ UN L0 PEUT SALUER — ÉCART ASSUMÉ AVEC §2.7 ET 08 §5.2                   ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Ce cas gelait l'inverse : « Saluer » est un message privé, donc L1, donc le
+     * bouton n'apparaissait pas à un compte non vérifié.
+     *
+     * Le porteur a demandé d'ouvrir la messagerie aux non-vérifiés ; la décision et
+     * ce qu'elle coûte sont écrites sur `message.send` dans `capabilities.ts`.
+     * `canGreet` en découle MÉCANIQUEMENT — il lit cette capacité — et c'est bien
+     * ainsi : une seule source, pas une seconde règle à maintenir à côté.
+     *
+     * ⚠ CE QUE CET ÉCART A DE PARTICULIER, et c'est pourquoi il est écrit ici
+     * plutôt que seulement dans la table : « Saluer » vise les NOUVEAUX ARRIVANTS,
+     * et `permissionFor` rend `GREET` pour eux — ce qui veut dire que la
+     * conversation ne part PAS en attente d'acceptation. Un compte non vérifié
+     * peut donc écrire directement à la population la plus exposée, sans le filtre
+     * de la demande. Remonté au porteur.
+     */
     const pre = await newMember('L0', { cityId: cityA.id });
     feed.resetSidebarCache();
     expect(
       ((await feed.sidebar(pre)) as { newArrivals: { canGreet: boolean } }).newArrivals.canGreet,
-    ).toBe(false);
+    ).toBe(true);
   }, TEST_TIMEOUT_MS);
 
   // ══ §2.6 : l'ordre du bandeau et la ligne d'état ═════════════════════════
@@ -1960,4 +2158,494 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
       code: 'RATE_LIMITED',
     });
   }, TEST_TIMEOUT_MS);
+  // ── Le sondage et les guides d'une publication (§2.4) ──────────────────────
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE SONDAGE ET LES GUIDES — DESSINÉS DEPUIS LE DÉBUT, STOCKÉS DEPUIS PEU  ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « la création de sondage, les guides […] ne marchent pas ».
+   *
+   * Ils étaient dessinés dans la maquette — « Créer un sondage », « Lier un
+   * guide », et la carte de publication a son bloc de sondage — et la base ne
+   * savait pas les porter : `polls.community_id` était OBLIGATOIRE, donc un
+   * sondage ne pouvait appartenir qu'à un réseau, et `posts` n'avait aucune
+   * relation vers un guide.
+   *
+   * ── CE QUE CE CAS MESURE ──────────────────────────────────────────────────
+   *
+   *   · la publication, le sondage et les guides naissent ENSEMBLE ;
+   *   · les résultats sont MASQUÉS avant d'avoir voté — `voteCount` à `null`, et
+   *     non à zéro : un zéro dirait « personne n'a voté » à qui n'a pas le droit
+   *     de savoir ;
+   *   · voter les RÉVÈLE, et le vote est modifiable ;
+   *   · la borne de trois guides tient, et un guide non publié est ÉCARTÉ plutôt
+   *     que de faire échouer la publication.
+   *
+   * ── MUTATIONS APPLIQUÉES ──────────────────────────────────────────────────
+   *
+   *   · `resultsVisible` posé à `true` en dur → le cas du masquage tombe ;
+   *   · `assertPollAccess` rendant toujours sans vérifier → le vote d'un tiers sur
+   *     un sondage de réseau fermé passerait (gardé par le module 07) ;
+   *   · `resolveGuides` sans son filtre `status: 'PUBLISHED'` → le cas du guide
+   *     non publié tombe ;
+   *   · `.slice(0, postGuidesMax)` retiré → la borne tombe.
+   */
+  it('publie avec un sondage et des guides, masque les résultats, puis les révèle au vote', async () => {
+    const auteur = await newMember('L1');
+    const lecteur = await newMember('L1');
+
+    const guideA = await publishedGuide();
+    const guideB = await publishedGuide();
+
+    const cree = await feed.createPost(
+      auteur,
+      {
+        type: 'DISCUSSION',
+        body: 'Quel jour vous arrange pour la permanence ?',
+        poll: { question: 'Quel jour vous arrange ?', options: ['Samedi', 'Dimanche'], isMultiple: false, resultsAfterVote: true, isAnonymous: true },
+        guideIds: [guideA, guideB],
+      },
+    );
+    const postId = cree.post.id;
+
+    // ── LA PUBLICATION PORTE LES DEUX ───────────────────────────────────────
+    const vuAuteur = await feed.postDetail(auteur, postId);
+    expect(vuAuteur.post.poll?.question).toBe('Quel jour vous arrange ?');
+    expect(vuAuteur.post.poll?.options.map((o) => o.label)).toEqual(['Samedi', 'Dimanche']);
+    expect(vuAuteur.post.guides.map((g) => g.id)).toEqual([guideA, guideB]);
+
+    // ── LES RÉSULTATS SONT MASQUÉS TANT QU'ON N'A PAS VOTÉ ─────────────────
+    //
+    // `null` et NON zéro : la différence est toute la règle. Un `0` affirme un
+    // fait — personne n'a voté — à quelqu'un qui n'a pas le droit de le savoir.
+    const vuLecteur = await feed.postDetail(lecteur, postId);
+    expect(vuLecteur.post.poll?.resultsVisible).toBe(false);
+    expect(vuLecteur.post.poll?.totalVotes).toBeNull();
+    expect(vuLecteur.post.poll?.options.map((o) => o.voteCount)).toEqual([null, null]);
+    expect(vuLecteur.post.poll?.myOptionIds).toEqual([]);
+
+    // ── VOTER LES RÉVÈLE ───────────────────────────────────────────────────
+    const pollId = vuLecteur.post.poll?.id ?? '';
+    const samedi = vuLecteur.post.poll?.options[0]?.id ?? '';
+    const dimanche = vuLecteur.post.poll?.options[1]?.id ?? '';
+    await communities.vote(pollId, lecteur.userId, [samedi]);
+
+    const apresVote = await feed.postDetail(lecteur, postId);
+    expect(apresVote.post.poll?.resultsVisible).toBe(true);
+    expect(apresVote.post.poll?.totalVotes).toBe(1);
+    expect(apresVote.post.poll?.myOptionIds).toEqual([samedi]);
+    expect(apresVote.post.poll?.options.map((o) => o.voteCount)).toEqual([1, 0]);
+
+    // ── ET LE VOTE EST MODIFIABLE (§2.3 du module 07) ──────────────────────
+    await communities.vote(pollId, lecteur.userId, [dimanche]);
+    const apresChangement = await feed.postDetail(lecteur, postId);
+    expect(apresChangement.post.poll?.myOptionIds).toEqual([dimanche]);
+    expect(apresChangement.post.poll?.options.map((o) => o.voteCount)).toEqual([0, 1]);
+    expect(apresChangement.post.poll?.totalVotes).toBe(1);
+  });
+
+  it('écarte un guide non publié, et ne lie jamais plus de trois guides', async () => {
+    const auteur = await newMember('L1');
+    const publies = [await publishedGuide(), await publishedGuide(), await publishedGuide()];
+    const brouillon = await draftGuide();
+
+    /**
+     * LE GUIDE NON PUBLIÉ EST ÉCARTÉ, PAS REFUSÉ, et la différence est un choix :
+     * refuser ferait échouer toute la publication parce qu'un guide a été dépublié
+     * entre le moment où le membre l'a choisi et celui où il appuie sur
+     * « Publier » — un délai qui se compte en minutes dans un composeur.
+     */
+    const cree = await feed.createPost(
+      auteur,
+      { type: 'INFO', body: 'Trois guides utiles sur le logement.', guideIds: [publies[0]!, brouillon, publies[1]!] },
+    );
+    const vu = await feed.postDetail(auteur, cree.post.id);
+    expect(vu.post.guides.map((g) => g.id)).toEqual([publies[0], publies[1]]);
+
+    /**
+     * LA BORNE EST TENUE DEUX FOIS — par `createPostSchema` à la frontière et par
+     * le service. Ce cas éprouve LE SERVICE : il lui passe quatre identifiants
+     * directement, ce que le schéma aurait refusé.
+     */
+    const quatre = await feed.createPost(
+      auteur,
+      {
+        type: 'INFO',
+        body: 'Quatre guides, dont un de trop.',
+        guideIds: [publies[0]!, publies[1]!, publies[2]!, publies[0]!],
+      },
+    );
+    const vuQuatre = await feed.postDetail(auteur, quatre.post.id);
+    expect(vuQuatre.post.guides.length).toBeLessThanOrEqual(FEED_LIMITS.postGuidesMax);
+  });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES DEUX INTERRUPTEURS SONT DEVENUS DE VRAIS RÉGLAGES                   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « non, fais de ça un réglage ». La maquette dessinait trois
+   * interrupteurs ; un seul était porté par la base, et j'avais rendu les deux
+   * autres inertes en expliquant que le produit imposait leurs règles. Il a
+   * tranché autrement, et chacun est maintenant une colonne.
+   *
+   * ── CE QUE CE CAS GARDE, ET POURQUOI CHAQUE MOITIÉ COMPTE ────────────────
+   *
+   *   · `resultsAfterVote: false` révèle les comptes SANS avoir voté. Sans cette
+   *     moitié, un réglage ignoré passerait au vert ;
+   *   · `isAnonymous: false` NOMME les votants — et seulement quand les résultats
+   *     sont visibles. Les deux conditions, pas l'une ou l'autre : sinon le
+   *     réglage d'anonymat contournerait celui des résultats, et on saurait QUI a
+   *     voté QUOI avant d'avoir le droit de savoir COMBIEN ;
+   *   · les DÉFAUTS ne changent rien — c'est la moitié qui garantit qu'ajouter un
+   *     réglage n'a pas changé le sens des sondages existants.
+   *
+   * ── MUTATIONS APPLIQUÉES ──────────────────────────────────────────────────
+   *
+   *   · `!poll.resultsAfterVote ||` retiré → le cas des résultats immédiats tombe ;
+   *   · `nomme` calculé sur `!isAnonymous` seul → le cas « non anonyme mais
+   *     résultats masqués » tombe, et LUI SEUL : c'est ce qui prouve que les deux
+   *     conditions sont bien exigées ensemble ;
+   *   · les défauts de la migration passés à `false` → le cas des défauts tombe.
+   */
+  it('les deux réglages du sondage décident de ce qui sort, et leurs défauts ne changent rien', async () => {
+    const auteur = await newMember('L1');
+    const lecteur = await newMember('L1');
+
+    // ── 1. RÉSULTATS IMMÉDIATS, ET PAS DE NOMS ────────────────────────────
+    const ouvert = await feed.createPost(auteur, {
+      type: 'DISCUSSION',
+      body: 'Résultats visibles tout de suite.',
+      poll: {
+        question: 'Quel jour vous arrange ?',
+        options: ['Samedi', 'Dimanche'],
+        isMultiple: false,
+        resultsAfterVote: false,
+        isAnonymous: true,
+      },
+    });
+    const vuSansVote = await feed.postDetail(lecteur, ouvert.post.id);
+    expect(vuSansVote.post.poll?.resultsVisible, 'les résultats devaient être visibles sans vote').toBe(true);
+    expect(vuSansVote.post.poll?.totalVotes).toBe(0);
+    expect(vuSansVote.post.poll?.options.every((o) => o.voteCount === 0)).toBe(true);
+    /** Anonyme : personne n'est nommé, même avec les résultats sous les yeux. */
+    expect(vuSansVote.post.poll?.options.every((o) => o.voters.length === 0)).toBe(true);
+
+    // ── 2. NON ANONYME : LES VOTANTS SONT NOMMÉS, APRÈS LE VOTE ───────────
+    const nomme = await feed.createPost(auteur, {
+      type: 'DISCUSSION',
+      body: 'Qui vient ?',
+      poll: {
+        question: 'Vous venez ?',
+        options: ['Oui', 'Non'],
+        isMultiple: false,
+        resultsAfterVote: true,
+        isAnonymous: false,
+      },
+    });
+    const avantVote = await feed.postDetail(lecteur, nomme.post.id);
+    /**
+     * NON ANONYME, MAIS RÉSULTATS ENCORE MASQUÉS : aucun nom. C'est la moitié
+     * qui prouve que les deux conditions sont exigées ENSEMBLE.
+     */
+    expect(avantVote.post.poll?.resultsVisible).toBe(false);
+    expect(avantVote.post.poll?.options.every((o) => o.voters.length === 0)).toBe(true);
+
+    const oui = avantVote.post.poll?.options[0]?.id ?? '';
+    await communities.vote(avantVote.post.poll?.id ?? '', lecteur.userId, [oui]);
+
+    const apresVote = await feed.postDetail(lecteur, nomme.post.id);
+    expect(apresVote.post.poll?.resultsVisible).toBe(true);
+    const votants = apresVote.post.poll?.options[0]?.voters ?? [];
+    expect(votants.map((v) => v.id)).toEqual([lecteur.userId]);
+    expect(apresVote.post.poll?.options[1]?.voters).toEqual([]);
+
+    // ── 3. LES DÉFAUTS SONT L'ANCIEN COMPORTEMENT ─────────────────────────
+    //
+    // `createPollSchema` les pose à `true` ; on passe donc par le SCHÉMA, et non
+    // par un objet écrit à la main — c'est le défaut du schéma qu'on éprouve.
+    const parDefaut = createPollSchema.parse({
+      question: 'Et sans rien préciser ?',
+      options: ['A', 'B'],
+    });
+    expect(parDefaut.resultsAfterVote).toBe(true);
+    expect(parDefaut.isAnonymous).toBe(true);
+
+    const muet = await feed.createPost(auteur, {
+      type: 'DISCUSSION',
+      body: 'Sondage sans réglage.',
+      poll: parDefaut,
+    });
+    const vuMuet = await feed.postDetail(lecteur, muet.post.id);
+    expect(vuMuet.post.poll?.resultsVisible, 'le défaut doit masquer les résultats').toBe(false);
+    expect(vuMuet.post.poll?.totalVotes).toBeNull();
+    expect(vuMuet.post.poll?.options.every((o) => o.voters.length === 0)).toBe(true);
+  });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « PERTINENTS » / « RÉCENTS » — LES DEUX ONGLETS NE TRIAIENT RIEN         ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La planche A01C les dessine depuis le début ; la route rendait TOUJOURS
+   * l'ordre de la discussion. Le porteur : « pertinent/récents » à finaliser.
+   *
+   * CE CAS MESURE LES DEUX ORDRES SUR LE MÊME JEU, et c'est ce qui le rend
+   * concluant : un seul ordre vérifié passerait au vert même si le paramètre était
+   * ignoré, puisque l'un des deux EST l'ancien comportement.
+   *
+   * § 2.5 NE DÉFINIT AUCUNE PERTINENCE, et il n'existe aucune réaction de
+   * commentaire. Le seul signal en base est le nombre de réponses : c'est lui que
+   * « Pertinents » trie, et le cas le fixe pour que la définition ne dérive pas en
+   * silence.
+   */
+  it('« Pertinents » remonte le fil le plus répondu, « Récents » le plus neuf', async () => {
+    const auteur = await newMember('L1');
+    const lecteur = await newMember('L1');
+
+    const publication = await feed.createPost(auteur, post({ body: 'Trois fils, un seul répondu.' }));
+    const sujet = { subjectType: 'POST' as const, subjectId: publication.post.id };
+
+    const premier = await feed.createComment(lecteur, { ...sujet, body: 'Le premier commentaire.' });
+    await feed.createComment(lecteur, { ...sujet, body: 'Le deuxième commentaire.' });
+    const dernier = await feed.createComment(lecteur, { ...sujet, body: 'Le troisième commentaire.' });
+
+    // Le PREMIER est celui qui a suscité des réponses — et c'est le plus ancien,
+    // donc les deux ordres ne peuvent pas coïncider par hasard.
+    await feed.createComment(auteur, {
+      ...sujet,
+      body: 'Une réponse au premier.',
+      parentCommentId: premier.comment.id,
+    });
+    await feed.createComment(lecteur, {
+      ...sujet,
+      body: 'Une deuxième réponse au premier.',
+      parentCommentId: premier.comment.id,
+    });
+
+    const pertinents = await feed.comments(lecteur, { ...sujet, limit: 20, sort: 'RELEVANT' });
+    expect(
+      pertinents.items[0]?.id,
+      'le fil le plus répondu doit venir en tête de « Pertinents »',
+    ).toBe(premier.comment.id);
+
+    const recents = await feed.comments(lecteur, { ...sujet, limit: 20, sort: 'RECENT' });
+    expect(recents.items[0]?.id, '« Récents » doit commencer par le plus neuf').toBe(
+      dernier.comment.id,
+    );
+    expect(recents.items.at(-1)?.id, 'et finir par le plus ancien').toBe(premier.comment.id);
+
+    // LES RÉPONSES RESTENT SOUS LEUR RACINE dans les deux ordres : §2.5 ne connaît
+    // qu'une profondeur, et paginer un mélange couperait un fil en deux.
+    expect(pertinents.items[0]?.replies).toHaveLength(2);
+    expect(recents.items.at(-1)?.replies).toHaveLength(2);
+
+    // ── LE CURSEUR EST LIÉ À SON TRI ────────────────────────────────────────
+    //
+    // Une page de « Pertinents » rejouée sur « Récents » rendrait une liste
+    // cohérente EN APPARENCE et fausse en fait. La portée du curseur l'interdit,
+    // et ce relevé le prouve plutôt que de le supposer.
+    const page1 = await feed.comments(lecteur, { ...sujet, limit: 1, sort: 'RELEVANT' });
+    expect(page1.nextCursor).not.toBeNull();
+    await expect(
+      feed.comments(lecteur, {
+        ...sujet,
+        limit: 1,
+        sort: 'RECENT',
+        cursor: page1.nextCursor as string,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+
+    // ── ET IL PAGINE VRAIMENT ───────────────────────────────────────────────
+    const page2 = await feed.comments(lecteur, {
+      ...sujet,
+      limit: 1,
+      sort: 'RELEVANT',
+      cursor: page1.nextCursor as string,
+    });
+    expect(page2.items[0]?.id, 'la deuxième page ne doit pas répéter la première').not.toBe(
+      page1.items[0]?.id,
+    );
+  });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ ENREGISTRER UNE PUBLICATION — le bouton était dessiné, la route manquait ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le bouton bookmark des publications marche ? » Il ne marchait
+   * pas : seules les STORIES avaient des routes, alors que `BookmarkSubjectType`
+   * énumère `POST` depuis le début.
+   *
+   * CE CAS MESURE AUSSI QUE LE SIGNET EST PERSONNEL. Un `bookmarked` calculé sur
+   * la table entière plutôt que sur le lecteur allumerait le signet de tout le
+   * monde dès qu'un seul membre enregistre — et ce serait invisible tant qu'un
+   * seul membre teste.
+   */
+  it('enregistre une publication, et le signet n’appartient qu’à son poseur', async () => {
+    const auteur = await newMember('L1');
+    const lecteur = await newMember('L1');
+    const publication = await feed.createPost(auteur, post({ body: 'À garder sous le coude.' }));
+
+    const vuAvant = await feed.postDetail(lecteur, publication.post.id);
+    expect(vuAvant.post.bookmarked, 'personne n’a encore enregistré').toBe(false);
+
+    expect(await feed.bookmarkPost(lecteur, publication.post.id)).toEqual({ bookmarked: true });
+    // IDEMPOTENT : l'écran peut rejouer — double clic, réseau lent.
+    expect(await feed.bookmarkPost(lecteur, publication.post.id)).toEqual({ bookmarked: true });
+
+    expect((await feed.postDetail(lecteur, publication.post.id)).post.bookmarked).toBe(true);
+    expect(
+      (await feed.postDetail(auteur, publication.post.id)).post.bookmarked,
+      'le signet du lecteur ne doit pas allumer celui de l’auteur',
+    ).toBe(false);
+
+    expect(await feed.unbookmarkPost(lecteur, publication.post.id)).toEqual({ bookmarked: false });
+    expect((await feed.postDetail(lecteur, publication.post.id)).post.bookmarked).toBe(false);
+    // Retirer deux fois ne lève pas : c'est un geste sans effet, pas une erreur.
+    expect(await feed.unbookmarkPost(lecteur, publication.post.id)).toEqual({ bookmarked: false });
+  });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ MODIFIER UNE PUBLICATION AVEC CE QU'ELLE PORTE                           ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur veut une fenêtre de modification « avec tous ces artifacts
+   * (images, guides, sondages) ». `updatePostSchema` n'acceptait QUE `body`.
+   *
+   * CE CAS MESURE LA DISTINCTION QUI COMPTE : absent ≠ vide. Un `mediaIds` absent
+   * laisse les images ; `mediaIds: []` les retire. Sans elle, une fenêtre qui
+   * n'enverrait que le texte effacerait les photos en silence.
+   */
+  it('modifie les images, les guides et le sondage — et « absent » ne touche à rien', async () => {
+    const auteur = await newMember('L1');
+
+    const image = async () => {
+      const row = await prisma.mediaAsset.create({
+        data: {
+          id: newId(),
+          ownerUserId: auteur.userId,
+          kind: 'POST',
+          storageKey: `test/feed/${newId()}.jpg`,
+          mime: 'image/jpeg',
+          sizeBytes: BigInt(1024),
+          status: 'READY',
+          exifStripped: true,
+        },
+      });
+      createdMediaIds.push(row.id);
+      return row.id;
+    };
+
+    const [a, b] = [await image(), await image()];
+    const guide = await publishedGuide();
+    const publie = await feed.createPost(auteur, {
+      ...post({ body: 'Deux images, un guide, un sondage.' }),
+      mediaIds: [a, b],
+      guideIds: [guide],
+      poll: {
+        question: 'Quel jour ?',
+        options: ['Samedi', 'Dimanche'],
+        isMultiple: false,
+        resultsAfterVote: true,
+        isAnonymous: true,
+      },
+    });
+    expect(publie.post.media).toHaveLength(2);
+    expect(publie.post.guides).toHaveLength(1);
+    expect(publie.post.poll).not.toBeNull();
+
+    // ── ABSENT NE TOUCHE À RIEN ────────────────────────────────────────────
+    const texteSeul = await feed.updatePost(auteur, publie.post.id, { body: 'Texte corrigé.' });
+    expect(texteSeul.post.body).toBe('Texte corrigé.');
+    expect(texteSeul.post.media, 'les images devaient survivre').toHaveLength(2);
+    expect(texteSeul.post.guides, 'le guide devait survivre').toHaveLength(1);
+    expect(texteSeul.post.poll, 'le sondage devait survivre').not.toBeNull();
+
+    // ── UNE IMAGE EN MOINS, LE GUIDE DÉLIÉ, LE SONDAGE RETIRÉ ──────────────
+    const ampute = await feed.updatePost(auteur, publie.post.id, {
+      body: 'Texte corrigé.',
+      mediaIds: [b],
+      guideIds: [],
+      poll: null,
+    });
+    expect(ampute.post.media).toHaveLength(1);
+    expect(ampute.post.media[0]?.id, 'c’est la seconde image qui reste').toBe(b);
+    expect(ampute.post.guides).toHaveLength(0);
+    expect(ampute.post.poll).toBeNull();
+  });
+
+  /**
+   * UN SONDAGE VOTÉ EST UN ENGAGEMENT PRIS ENVERS SES VOTANTS.
+   *
+   * Changer le libellé d'une option après coup RÉÉCRIRAIT ce que des membres ont
+   * choisi ; le retirer effacerait leur voix. C'est la seule règle de ce lot qui
+   * refuse un geste à l'auteur sur sa propre publication, et elle mérite donc
+   * d'être fixée plutôt que laissée à la vigilance.
+   */
+  it('refuse de modifier ou de retirer un sondage qui a reçu un vote', async () => {
+    const auteur = await newMember('L1');
+    const votant = await newMember('L1');
+
+    const publie = await feed.createPost(auteur, {
+      ...post({ body: 'Un sondage que l’on va voter.' }),
+      poll: {
+        question: 'Quel jour ?',
+        options: ['Samedi', 'Dimanche'],
+        isMultiple: false,
+        resultsAfterVote: true,
+        isAnonymous: true,
+      },
+    });
+    const sondage = publie.post.poll;
+    expect(sondage).not.toBeNull();
+    if (sondage === null) return;
+
+    // TANT QUE PERSONNE N'A VOTÉ, le retrait passe — on le mesure d'abord, sinon
+    // le refus d'après ne prouverait pas qu'il vient du VOTE.
+    await expect(
+      feed.updatePost(auteur, publie.post.id, { body: 'Un sondage.', poll: null }),
+    ).resolves.toBeDefined();
+
+    const avecSondage = await feed.updatePost(auteur, publie.post.id, {
+      body: 'Un sondage.',
+      poll: {
+        question: 'Quel jour ?',
+        options: ['Samedi', 'Dimanche'],
+        isMultiple: false,
+        resultsAfterVote: true,
+        isAnonymous: true,
+      },
+    });
+    const neuf = avecSondage.post.poll;
+    expect(neuf).not.toBeNull();
+    if (neuf === null) return;
+
+    await communities.vote(neuf.id, votant.userId, [neuf.options[0]?.id ?? '']);
+
+    await expect(
+      feed.updatePost(auteur, publie.post.id, { body: 'Un sondage.', poll: null }),
+    ).rejects.toMatchObject({ code: 'POLL_HAS_VOTES' });
+    await expect(
+      feed.updatePost(auteur, publie.post.id, {
+        body: 'Un sondage.',
+        poll: {
+          question: 'Un autre jour ?',
+          options: ['Lundi', 'Mardi'],
+          isMultiple: false,
+          resultsAfterVote: true,
+          isAnonymous: true,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'POLL_HAS_VOTES' });
+
+    // ET LE SONDAGE EST INTACT : un refus qui aurait déjà supprimé serait pire
+    // qu'une acceptation.
+    const apres = await feed.postDetail(auteur, publie.post.id);
+    expect(apres.post.poll?.question).toBe('Quel jour ?');
+  });
+
 });

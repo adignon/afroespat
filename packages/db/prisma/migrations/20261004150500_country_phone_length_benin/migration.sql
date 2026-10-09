@@ -1,0 +1,13 @@
+-- Le Bénin repasse à 8 chiffres, et il faut dire pourquoi.
+--
+-- La migration précédente posait 10, d'après la renumérotation béninoise de 2023
+-- (un « 01 » en tête). C'EST PEUT-ÊTRE JUSTE DANS LE MONDE RÉEL, et c'est FAUX
+-- ici : la maquette du porteur dessine « 97 12 34 42 » et « +229 •• •• •• 42 »,
+-- soit HUIT chiffres, et tout le jeu de données semé suit cette forme. Poser 10
+-- aurait rendu invalide le numéro que ses propres planches montrent en exemple.
+--
+-- Entre un fait du monde et la référence du porteur, on suit la référence du
+-- porteur et on lui remonte le point : s'il confirme les dix chiffres, la valeur
+-- se corrige en back-office, sans déploiement — c'est exactement pour ça que la
+-- règle vit dans le référentiel.
+UPDATE "countries" SET "phone_national_length" = 8 WHERE "iso2" = 'BJ';

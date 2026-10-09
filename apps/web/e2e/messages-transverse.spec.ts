@@ -168,7 +168,29 @@ test.describe('08 §5.1 — la messagerie n’est pas une entrée de navigation'
     await expect(rail).toBeVisible();
     expect((await rail.boundingBox())?.width, 'rail vertical de 76 px (T5 §0)').toBe(76);
 
-    const entrees = await rail.locator('> span').allInnerTexts();
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA SONDE LISAIT DES `<span>` QUI SONT DEVENUS DES LIENS             ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Elle cherchait `> span`, parce que la maquette dessine les cinq entrées du
+     * rail en `<span>` — « ce ne sont pas des liens cassés : CE NE SONT PAS DES
+     * LIENS », dit `tools/squelette-membre.mjs`. Le lot de navigation les a
+     * promues en `<a>` pour qu'elles mènent quelque part. La sonde rendait donc un
+     * tableau VIDE, et ce cas rougissait en disant « Messages est dans le rail »
+     * alors qu'il n'y est pas.
+     *
+     * UN CAS QUI ROUGIT POUR UNE FAUSSE RAISON EST PIRE QU'UN CAS ABSENT : il
+     * garde une règle dure de §5.1 — « la messagerie n'est pas une entrée de
+     * navigation » — et personne ne le croit plus.
+     *
+     * Il lit maintenant les ENFANTS DIRECTS, quelle que soit leur balise : c'est
+     * la question posée (« qu'y a-t-il dans ce rail ? »), et elle ne dépend plus
+     * de la façon dont chaque entrée est balisée. Les enfants sans texte — le
+     * ressort du bas, le bouton de réglages qui n'a qu'une icône — sont écartés
+     * par le filtre qui existait déjà.
+     */
+    const entrees = await rail.locator('> *').allInnerTexts();
     expect(entrees.filter((t) => t.trim() !== '')).toEqual([
       'Accueil',
       'Parcours',
@@ -193,7 +215,16 @@ test.describe('08 §5.1 — la messagerie n’est pas une entrée de navigation'
      */
     const onglets = page.locator(`${MOBILE} main > div`).last();
     await expect(onglets).toBeVisible();
-    expect(await onglets.locator('> div').allInnerTexts()).toEqual([
+    /**
+     * MÊME CORRECTION QU'AU-DESSUS, et la même cause : quatre des cinq lignes de
+     * la barre basse ont été promues en `<a>` par le lot de navigation, et la
+     * cinquième — « Compte » — est restée un `<div>` parce qu'aucune route
+     * `/compte` n'existe (refus motivé dans `tools/squelette-membre.mjs`). La
+     * sonde ne voyait donc QUE « Compte », c'est-à-dire la seule entrée morte.
+     */
+    expect(
+      (await onglets.locator('> *').allInnerTexts()).filter((t) => t.trim() !== ''),
+    ).toEqual([
       'Accueil',
       'Parcours',
       'Entraide',
@@ -234,10 +265,16 @@ test.describe('M01 — la forme que T5 décrit', () => {
      * l'écran affiche la maquette, c'est-à-dire l'inverse de ce qu'on veut.
      *
      * Ce qui prouve les deux volets, c'est le COMPOSEUR : il n'appartient qu'au
-     * volet de conversation, la maquette ne le dessine pas dans la liste, et il
-     * reste du dessin — donc il est là quelle que soit la donnée.
+     * volet de conversation, et la maquette ne le dessine pas dans la liste.
+     *
+     * `getByPlaceholder` ET PLUS `getByText` : ce n'est plus du dessin. Le
+     * porteur : « L'envoi de message aussi ne marche pas ainsi que les images
+     * dans une conversation » — l'invite « Écrire un message… » était le TEXTE
+     * d'un `<div>` ; elle est devenue le `placeholder` d'un vrai champ. Le mot
+     * est le même, il a changé de place, et ce cas suit la correction au lieu de
+     * se mettre au rouge dessus.
      */
-    await expect(page.locator(ORDINATEUR).getByText('Écrire un message…')).toBeVisible();
+    await expect(page.locator(ORDINATEUR).getByPlaceholder('Écrire un message…')).toBeVisible();
   });
 
   test('sur téléphone, /messages montre la LISTE et /messages/:id la CONVERSATION', async ({
@@ -253,11 +290,12 @@ test.describe('M01 — la forme que T5 décrit', () => {
      */
     await expect(page.locator(MOBILE).getByText('DEMANDES ·')).toBeVisible();
     await expect(page.locator(MOBILE).getByText('DEMANDES · 2')).toHaveCount(0);
-    await expect(page.locator(MOBILE).getByText('Message…')).toHaveCount(0);
+    /** Même raison que sur l'ordinateur : l'invite est un `placeholder`, pas du texte. */
+    await expect(page.locator(MOBILE).getByPlaceholder('Message…')).toHaveCount(0);
 
     await visiter(page, '/messages/1', 390);
     // La conversation porte le champ de saisie, et plus la liste.
-    await expect(page.locator(MOBILE).getByText('Message…')).toBeVisible();
+    await expect(page.locator(MOBILE).getByPlaceholder('Message…')).toBeVisible();
     await expect(page.locator(MOBILE).getByText('DEMANDES ·')).toHaveCount(0);
   });
 
@@ -586,6 +624,22 @@ async function composeur(page: Page, cadre: string): Promise<number> {
       for (const el of Array.from(frame.querySelectorAll<HTMLElement>('*'))) {
         const s = getComputedStyle(el);
         if (s.display === 'none' || s.visibility === 'hidden') continue;
+        /**
+         * ╔══════════════════════════════════════════════════════════════════╗
+         * ║ LA RECHERCHE DE LA BARRE HAUTE N'EST PAS UNE FAÇON D'ÉCRIRE     ║
+         * ╚══════════════════════════════════════════════════════════════════╝
+         *
+         * Cette sonde compte TOUT `<input>` du cadre comme « une façon d'écrire au
+         * membre bloqué ». C'était exact tant que le cadre n'en contenait qu'un
+         * seul : celui du composeur. La barre haute en a reçu un — son champ de
+         * recherche était un `<div>` de texte en dur — et la sonde l'a compté,
+         * donc ce cas annonçait qu'on pouvait écrire à un membre bloqué alors que
+         * le composeur est bien retiré.
+         *
+         * `form[role="search"]` est le conteneur que `ChampRecherche` rend, et il
+         * dit ce qu'il est : une zone de recherche, pas un composeur de message.
+         */
+        if (el.closest('form[role="search"]') !== null) continue;
         const texte = (el.textContent ?? '').trim();
         if (el.children.length === 0 && (texte === 'Message…' || texte === 'Écrire un message…')) {
           trouve += 1;
@@ -767,21 +821,46 @@ test.describe('M01 — le menu de la conversation', () => {
   });
 
   /**
-   * LE MENU N'A AUCUN CONTRÔLE — la maquette dessine ses quatre entrées en
-   * `<span>`, et on ne les promeut pas en boutons : aucune route ne les porte
-   * (module 13), et un bouton qui ne fait rien ment au membre.
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE MENU A MAINTENANT SES QUATRE CONTRÔLES                               ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * `aria-modal="true"` promet pourtant qu'on ne sort pas de la boîte. Sans un seul
-   * élément focalisable, la tabulation en sortait — c'est le défaut que la
-   * confirmation X03 avait révélé dans `Modal`, et que sa croix empruntée ne met
-   * plus en jeu. Le menu le met, lui, et ce test le retient.
+   * CE QUE CE CAS DISAIT AVANT : « le menu n'a aucun contrôle — la maquette
+   * dessine ses quatre entrées en `<span>`, et on ne les promeut pas en boutons :
+   * aucune route ne les porte, et un bouton qui ne fait rien ment au membre ». Le
+   * manque était figé pour qu'il se voie.
+   *
+   * IL S'EST VU. Le porteur : « les options voir le profil, mettre en sourdine,
+   * bloquer et signaler ne marchent pas. Intègre tout ça. » Les quatre sont
+   * branchées — deux liens (le profil public, `?feuille=signaler`) et deux
+   * boutons (`PATCH /conversations/:id/mute`, `POST /blocks`).
+   *
+   * CE QUE LE CAS GARDE, ET C'EST SA VRAIE RAISON D'ÊTRE : `aria-modal="true"`
+   * promet qu'on ne sort pas de la boîte. Sans AUCUN élément focalisable, la
+   * tabulation en sortait — c'est le défaut que la confirmation X03 avait révélé
+   * dans `Modal`. Le menu n'est plus dans ce cas, et le piège de tabulation doit
+   * tenir quand même : c'est ce qui est mesuré ci-dessous, et c'est la seule
+   * chose qui n'a pas changé de nature.
    */
-  test('aucun contrôle, et pourtant la tabulation ne sort pas de la boîte', async ({ page }) => {
+  test('la tabulation ne sort pas de la boîte, menu branché compris', async ({ page }) => {
     await visiter(page, '/messages/1?feuille=menu', 390);
     const menu = page.getByRole('dialog', { name: 'MENU DE LA CONVERSATION' });
     await expect(menu).toBeVisible();
-    // Le manque de la maquette, figé pour qu'il se voie.
-    await expect(menu.locator('button, a[href], input, select, textarea')).toHaveCount(0);
+    /**
+     * TROIS CONTRÔLES ICI, ET QUATRE AVEC UNE VRAIE CONVERSATION.
+     *
+     * Cette route est `/messages/1` — un identifiant qui n'est pas un UUID, donc
+     * aucune conversation ouverte (le chargeur le dit lui-même : « une valeur
+     * fantaisiste retombe sur la conversation par défaut », et il n'y en a pas
+     * ici). « Voir le profil » n'a alors pas d'adresse où mener et reste un
+     * libellé, plutôt qu'un `href="#"` — un lien mort, que le garde-fou de
+     * navigation compte et refuse.
+     *
+     * C'est exactement ce que la règle doit produire, et ce cas le fige. La
+     * quatrième entrée est vérifiée par `conversation-menu.spec.ts`, qui ouvre
+     * une vraie conversation. Ici, seul le piège de tabulation est en jeu.
+     */
+    await expect(menu.locator('button, a[href]')).toHaveCount(3);
 
     for (let i = 0; i < 4; i += 1) await page.keyboard.press('Tab');
     const dedans = await page.evaluate(() => {

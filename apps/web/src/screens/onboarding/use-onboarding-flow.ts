@@ -2,14 +2,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import type { LevelRequiredDetailsParsed } from '@app/shared';
+import { handleSchema, type LevelRequiredDetailsParsed } from '@app/shared';
 import {
   ApiError,
   displayMessageFor,
   advanceOnboarding,
   fetchMe,
+  creerCompetence,
   listCities,
   listCountries,
+  listLanguages,
+  listSkills,
+  pseudoEstPris,
   requestOtp,
   updateMe,
   updateProfile,
@@ -26,8 +30,10 @@ import {
   type OnboardingState,
   type OnboardingVals,
   type ScreenActions,
+  etatPseudo,
   useOnboarding,
 } from './data';
+import type { ChoixItem } from './choix-referentiel';
 import { toTemplateChoices, type JourneyTemplateChoice } from './from-api';
 import { REASON_EXPIRED } from './resume';
 
@@ -221,6 +227,42 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
    * paraîtrait cassé.
    */
   const [cityCatalogue, setCityCatalogue] = useState<readonly CityChoice[]>([]);
+
+  /**
+   * LES COMPÉTENCES ET LES LANGUES — `GET /places/skills`, `GET /places/languages`.
+   *
+   * Le porteur : « L'ajout de compétences et langue ». Les deux routes
+   * répondaient depuis toujours et personne ne les appelait : l'écran affichait
+   * cinq noms écrits dans la maquette.
+   *
+   * Chargés une seule fois, à l'arrivée sur l'écran du profil (`step === 5`) :
+   * ce sont les seuls écrans qui s'en servent, et les faire payer dès la première
+   * page de l'inscription serait deux allers-retours pour rien.
+   */
+  const [skillCatalogue, setSkillCatalogue] = useState<readonly ChoixItem[]>([]);
+  const [languageCatalogue, setLanguageCatalogue] = useState<readonly ChoixItem[]>([]);
+  const referentielsCharges = useRef(false);
+
+  useEffect(() => {
+    if (step !== 5 || referentielsCharges.current) return;
+    referentielsCharges.current = true;
+    void Promise.all([listSkills(), listLanguages()])
+      .then(([competences, langues]) => {
+        setSkillCatalogue(
+          competences.items.map((c) => ({ id: c.id, nom: c.nameFr, detail: c.category })),
+        );
+        setLanguageCatalogue(langues.items.map((l) => ({ id: l.id, nom: l.nameFr })));
+      })
+      .catch(() => {
+        /**
+         * Un catalogue qui n'arrive pas laisse les deux champs VIDES, et le champ
+         * dit « Aucun résultat. » : le membre voit que rien n'est proposé, et il
+         * peut continuer — compétences et langues sont facultatives. Crier ici
+         * ferait passer pour cassé un écran qui s'enregistre très bien sans elles.
+         */
+        referentielsCharges.current = false;
+      });
+  }, [step]);
 
   useEffect(() => {
     let alive = true;
@@ -593,6 +635,36 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
   );
 
   /** O01 à O04 — enregistrer, puis avancer. */
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE RETOUR — IL N'EXISTAIT PAS, ET LE BOUTON ÉTAIT DESSINÉ SUR QUATRE     ║
+   * ║ ÉCRANS                                                                   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « le bouton back ne marche pas dans l'onboarding. » Un lot
+   * précédent l'avait refusé en le remontant — « `onBack` n'existe nulle part
+   * dans `use-onboarding-flow.ts` » — et c'était la bonne conduite : il manquait
+   * la décision, pas le code.
+   *
+   * `step` est l'étape vers laquelle l'écran AVANCE (O01 appelle
+   * `useOnboardingFlow(2)`). L'écran précédent est donc `NEXT_PATH[step - 2]`.
+   *
+   * SUR O01 IL N'Y EN A PAS, et l'écran d'avant est le code SMS — sur une session
+   * DÉJÀ OUVERTE. Y renvoyer redemanderait une vérification déjà faite. On emploie
+   * alors l'historique du navigateur, ce qu'un chevron gauche signifie
+   * littéralement : le membre revient d'où il vient, et rien ne se passe s'il est
+   * arrivé par une URL directe — soit exactement le comportement d'aujourd'hui,
+   * donc aucune régression possible dans ce cas.
+   *
+   * `router.push` et non `replace` : revenir en arrière est une navigation que le
+   * membre a demandée, et elle doit pouvoir s'annuler par le retour du navigateur.
+   */
+  const onBack = useCallback(() => {
+    const precedent = NEXT_PATH[step - 2];
+    if (precedent === undefined) router.back();
+    else router.push(precedent);
+  }, [router, step]);
+
   const onContinue = useCallback(() => {
     void run(async () => {
       const state = latest.current;
@@ -648,7 +720,30 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
        * — la pire façon de perdre un membre, pour un parcours qu'il a déjà.
        */
       if (step === STEP_OBJECTIF && state !== null && state.create) {
-        const chosen = templates[0];
+        /**
+         * LE TYPE CHOISI, et non plus toujours le premier.
+         *
+         * C'était `templates[0]` — avec la conséquence écrite dans `data.ts` :
+         * « le parcours créé est celui du PREMIER modèle servi ». Les cartes sont
+         * désormais sélectionnables (le porteur l'a demandé, et la maquette le
+         * dessinait déjà : état choisi, et une phrase qui NOMME le parcours
+         * retenu). Créer autre chose que ce que cette phrase annonce serait le
+         * pire des deux mondes.
+         *
+         * Le repli sur `templates[0]` demeure : un rang hors liste — une liste
+         * rechargée entre-temps — ne doit pas annuler la création.
+         */
+        const chosen = templates[state.goal] ?? templates[0];
+        /**
+         * UN OBJECTIF QUI N'OUVRE PAS DE PARCOURS N'EN OUVRE PAS.
+         *
+         * « M'intégrer, rencontrer du monde » et « Aider les autres » sont des
+         * objectifs de même rang (T5 §O03) mais `creates_journey` est faux : ils
+         * ont une version publiée à zéro étape, et créer dessus donnerait un
+         * parcours vide. La règle dure de §5 — « le parcours n'est jamais
+         * imposé » — se tient ici, à l'endroit où la création part.
+         */
+        if (chosen !== undefined && !chosen.createsJourney) return;
         if (chosen !== undefined) {
           try {
             await createJourney({ templateId: chosen.id });
@@ -683,6 +778,17 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
           // Les types d'aide ne valent que si la disponibilité est active : les
           // envoyer sinon enregistrerait une intention que l'écran ne montre plus.
           helpTypes: state.help ? helpTypeCodes(state.helpChoices) : [],
+          /**
+           * LES COMPÉTENCES ET LES LANGUES PARTENT ENFIN. `updateProfileSchema`
+           * les acceptait depuis le début (`skillIds`, `languageIds`, dix au
+           * plus) ; l'écran n'en envoyait aucune parce que rien ne s'y cochait.
+           *
+           * Les deux clés sont envoyées MÊME VIDES : c'est ainsi qu'un membre
+           * retire sa dernière compétence. Les omettre voudrait dire « ne touche
+           * à rien », et la ligne retirée reviendrait au rechargement.
+           */
+          skillIds: [...state.skillIds],
+          languageIds: [...state.languageIds],
         });
       }
 
@@ -699,8 +805,11 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       busy,
       onSubmit,
       onContinue,
+      onBack,
       countryOptions,
       cityCatalogue,
+      skillCatalogue,
+      languageCatalogue,
       templates,
       resendIn,
       onResend,
@@ -710,8 +819,27 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       busy,
       onSubmit,
       onContinue,
+      onBack,
       countryOptions,
       cityCatalogue,
+      /**
+       * CES DEUX-LÀ MANQUAIENT, et c'est un défaut mesuré : `actions` est un
+       * `useMemo`, donc il rend le MÊME objet tant que ses dépendances ne bougent
+       * pas. Les deux catalogues arrivent APRÈS le premier rendu ; sans eux dans
+       * cette liste, `actions` gardait les tableaux vides.
+       *
+       * Le symptôme a été trompeur : les suggestions s'affichaient quand même,
+       * parce qu'une AUTRE dépendance changeait au même instant et forçait le
+       * recalcul. Ça tenait par accident. Ce qui ne tenait pas : une compétence
+       * créée à la main n'apparaissait jamais en pastille — le catalogue qui
+       * sert à la nommer était celui d'avant.
+       *
+       * C'est la seconde fois dans ce lot qu'une dépendance omise coûte un
+       * défaut silencieux. `react-hooks/exhaustive-deps` n'est pas configuré
+       * dans ce dépôt ; REMONTÉ.
+       */
+      skillCatalogue,
+      languageCatalogue,
       templates,
       resendIn,
       onResend,
@@ -719,8 +847,120 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     ],
   );
 
-  const { state, vals } = useOnboarding(actions);
+  const { state, patch, vals } = useOnboarding(actions);
   latest.current = state;
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « ENVOYÉ AU … » NE DISAIT RIEN DU TOUT                                   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La page d'onboarding "Entrez le code reçu" ne montre pas le
+   * numéro, même anonymisé un peu. »
+   *
+   * MESURÉ au navigateur, après avoir demandé un code pour `0196377474` :
+   * « Envoyé au » suivi de RIEN — et pas seulement après un rechargement, dès
+   * l'arrivée sur l'écran.
+   *
+   * LA CAUSE : `/connexion` et `/connexion/code` sont DEUX PAGES. Chacune monte
+   * son propre flux, donc son propre état, et le numéro tapé sur la première
+   * n'existe pas dans la seconde. `phoneMasque` masquait une chaîne vide, ce que
+   * `masqueNumero` rend comme chaîne vide — correctement, mais il n'avait rien à
+   * masquer.
+   *
+   * Le numéro est pourtant DÉJÀ CONSERVÉ : `onPhoneSubmit` l'écrit dans
+   * `sessionStorage` pour que « Renvoyer » puisse s'en servir. Il n'y avait donc
+   * rien à stocker de plus — seulement à le relire au montage.
+   *
+   * ── POURQUOI `sessionStorage` ET NON L'URL ────────────────────────────────
+   *
+   * Un numéro de téléphone n'a rien à faire dans une adresse : elle s'écrit dans
+   * l'historique, dans les journaux du serveur et dans ce qu'on recopie à
+   * quelqu'un. `sessionStorage` meurt avec l'onglet, et c'est la durée de vie
+   * d'un code OTP.
+   */
+  useEffect(() => {
+    if (state.phone !== '') return;
+    const garde = sessionStorage.getItem(PHONE_KEY);
+    if (garde === null || garde === '') return;
+    patch({ phone: garde, countryIso2: sessionStorage.getItem(COUNTRY_KEY) ?? state.countryIso2 });
+    // `state.phone` suffit : on ne relit qu'une fois, quand il est vide.
+  }, [state.phone, state.countryIso2, patch]);
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE PSEUDO EST VÉRIFIÉ — IL NE L'ÉTAIT PAS                                ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le pseudo est vérifié ? » Non : la coche verte et le mot
+   * « Disponible » de la maquette s'affichaient quoi qu'on tape. Le refus
+   * n'arrivait qu'au `PATCH /me`, sur un écran que le membre avait quitté.
+   *
+   * ── TROIS PRÉCAUTIONS, ET CHACUNE ÉVITE UN DÉFAUT PRÉCIS ─────────────────
+   *
+   *   · 400 ms D'ATTENTE. Sans elles, chaque frappe part en requête : un pseudo
+   *     de dix lettres ferait dix appels, et `GET /users/:handle` est borné comme
+   *     le reste. On interroge quand la frappe s'arrête, pas pendant ;
+   *   · `AbortController`. Deux pseudos tapés coup sur coup peuvent revenir dans
+   *     le désordre, et la réponse du PREMIER déciderait de l'état du SECOND. Le
+   *     signal coupe l'ancienne demande, exactement comme pour les étapes d'un
+   *     parcours ;
+   *   · LE PSEUDO DU MEMBRE LUI-MÊME. L'inscription lui en attribue un ; le
+   *     retaper rendrait `200`, donc « déjà pris », sur son propre compte. On
+   *     compare donc au pseudo courant avant d'appeler — et ce pseudo, c'est le
+   *     flux qui le connaît, pas `pseudoEstPris`.
+   */
+  const [pseudoPris, setPseudoPris] = useState<boolean | null>(null);
+  const [pseudoEnCours, setPseudoEnCours] = useState(false);
+  const pseudoActuel = useRef<string | null>(null);
+
+  useEffect(() => {
+    const handle = state.handle;
+    if (handle === '' || !handleSchema.safeParse(handle).success) {
+      setPseudoPris(null);
+      setPseudoEnCours(false);
+      return undefined;
+    }
+    /** Son propre pseudo n'est pas « pris » : il est déjà à lui. */
+    if (handle === pseudoActuel.current) {
+      setPseudoPris(false);
+      setPseudoEnCours(false);
+      return undefined;
+    }
+
+    const stop = new AbortController();
+    setPseudoEnCours(true);
+    const minuteur = setTimeout(() => {
+      void (async () => {
+        const reponse = await pseudoEstPris(handle, stop.signal);
+        if (stop.signal.aborted) return;
+        setPseudoPris(reponse);
+        setPseudoEnCours(false);
+      })();
+    }, 400);
+
+    return () => {
+      clearTimeout(minuteur);
+      stop.abort();
+    };
+  }, [state.handle]);
+
+  /**
+   * Le pseudo que le membre a DÉJÀ. Lu une fois, à l'arrivée sur l'écran du
+   * profil : `fetchMe` est mis en cache par le socle, donc cet appel ne coûte
+   * rien s'il a déjà eu lieu.
+   */
+  useEffect(() => {
+    if (step !== 5 || pseudoActuel.current !== null) return;
+    void fetchMe()
+      .then((me) => {
+        pseudoActuel.current = me.user.handle;
+      })
+      .catch(() => {
+        // Sans lui, retaper son propre pseudo s'affiche « déjà pris ». C'est
+        // gênant, pas bloquant : on n'en fait pas une erreur à l'écran.
+      });
+  }, [step]);
 
   const onCodeChange = useCallback(
     (event: { target: { value: string } }) => {
@@ -734,6 +974,46 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     [vals, verify],
   );
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CRÉER UNE COMPÉTENCE À SOI, ET LA RETENIR AUSSITÔT                      ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Les compétences doivent aussi supporter le free typing qui crée
+   * de nouvelles compétences que les administrateurs peuvent globaliser. »
+   *
+   * TROIS GESTES EN UN, et l'ordre compte : le serveur crée (ou rend la ligne qui
+   * portait déjà ce nom), on l'AJOUTE AU CATALOGUE — sans quoi `resoudre` ne
+   * saurait pas la nommer et la pastille sortirait vide —, puis on la retient.
+   *
+   * `patch` plutôt que la prise `onAjouterCompetence` : celle-ci lit l'état du
+   * rendu courant, qui ne connaît pas encore la nouvelle ligne. On écrit donc
+   * directement, en relisant l'état le plus frais par `latest`.
+   */
+  const onCreerCompetence = useCallback(
+    async (nom: string): Promise<void> => {
+      try {
+        const creee = await creerCompetence(nom);
+        setSkillCatalogue((avant) =>
+          avant.some((c) => c.id === creee.id)
+            ? avant
+            : [...avant, { id: creee.id, nom: creee.nameFr, detail: creee.category }],
+        );
+        const deja = latest.current?.skillIds ?? [];
+        if (!deja.includes(creee.id) && deja.length < 10) {
+          patch({ skillIds: [...deja, creee.id] });
+        }
+      } catch (cause) {
+        notifyError(
+          cause instanceof ApiError
+            ? cause.displayMessage
+            : 'Cette compétence n’a pas pu être créée.',
+        );
+      }
+    },
+    [patch],
+  );
+
   const dismissLevelRequired = useCallback(() => setLevelRequired(null), []);
 
   return {
@@ -741,6 +1021,16 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     error: initialError,
     levelRequired,
     dismissLevelRequired,
-    vals: { ...vals, onCodeChange },
+    vals: {
+      ...vals,
+      onCodeChange,
+      /**
+       * CE QUE LE SERVEUR A RÉPONDU RECOUVRE L'ÉTAT PAR DÉFAUT. `onboardingVals`
+       * est une fonction PURE : elle ne connaît que la forme du pseudo. La
+       * disponibilité, elle, ne se sait qu'ici.
+       */
+      ...etatPseudo(state.handle, pseudoPris, pseudoEnCours),
+      onCreerCompetence,
+    },
   };
 }

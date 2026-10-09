@@ -307,7 +307,28 @@ function panneauDe(parcours: JourneyFullResponse): PanneauParcours {
  * emprunté à quelqu'un d'autre. Signalé.
  */
 const PANNEAU_VIDE: PanneauParcours = {
-  titre: '',
+  /**
+   * ─── LE TIRET CADRATIN, ET CE QUE LA CHAÎNE VIDE COÛTAIT ──────────────────
+   *
+   * `titre: ''` a été mesuré FAUTIF par axe-core, en `serious` : sur J01S la
+   * maquette dessine le fil d'Ariane en `<a href="#">{panneau.titre}</a>`, donc un
+   * titre vide fait UN LIEN SANS AUCUN NOM ACCESSIBLE (`link-name` — « Links must
+   * have discernible text »). Un lecteur d'écran l'annonce par son URL, ici « # ».
+   *
+   * Le défaut est ANCIEN, et il était INVISIBLE : `e2e/a11y.spec.ts` auditait
+   * `/parcours/1/etapes/7` sans attendre le cadre, donc axe mesurait l'état
+   * d'attente — « Chargement de votre parcours… » — et annonçait zéro violation en
+   * ne regardant rien. Le verdict vert dépendait d'une course, pas de la page.
+   * Rendre le cadre tout de suite a mis la violation sous les yeux.
+   *
+   * Le tiret cadratin donne un nom au lien sans inventer de titre de parcours — et
+   * surtout sans en emprunter un à quelqu'un d'autre, ce que l'en-tête ci-dessus
+   * refusait déjà. CE QU'IL NE RÉPARE PAS, et qui est remonté : ce fil d'Ariane
+   * reste un `href="#"`, c'est-à-dire un lien mort. Sa destination est
+   * `/parcours/:id`, elle dépend du segment de route, et `markLinks` refuse
+   * explicitement une « action » sur une balise `<a>` déjà écrite par la maquette.
+   */
+  titre: '—',
   type: '',
   typeNom: '',
   avancement: 0,
@@ -505,8 +526,21 @@ const MEMBRE_VIDE: FichePublique = {
  * serveur sert dans `meta.checklistNotice`. La règle dure de §3.3 reste donc
  * affichée même sur une planche d'illustration, ce qui est le cas où l'oublier
  * serait le plus facile.
+ *
+ * ─── ELLE EST EXPORTÉE, ET C'EST CE QUI RÈGLE LE RENDU SERVEUR ──────────────
+ *
+ * Mesuré au HTML servi, sans JavaScript : `/parcours` rendait « DisaporyPlus ·
+ * Chargement de votre parcours… » et RIEN d'autre — pas de rail, pas de panneau,
+ * pas de barre basse. Le cadre n'atteignait jamais le navigateur parce que la
+ * branche d'attente le remplaçait.
+ *
+ * Cet objet est exactement ce qu'il fallait : le DESSIN sans la donnée. Il servait
+ * déjà aux planches d'illustration (`/parcours/1`, où le segment n'est pas un
+ * UUID) ; il sert maintenant de `squelette` à la coquille, qui rend donc le cadre
+ * TOUT DE SUITE et ne pose qu'une bande pendant l'attente. Rien n'a été inventé
+ * pour cela — c'est le même neutre, déjà écrit, déjà relu.
  */
-const VUE_NEUTRE = {
+export const VUE_NEUTRE = {
   panneau: PANNEAU_VIDE,
   parcours: ENTETE_VIDE,
   etape: ETAPE_VIDE,

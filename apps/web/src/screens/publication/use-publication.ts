@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
-import type { PostDetailResponse } from '@app/shared';
+import type { CommentSort, PostDetailResponse } from '@app/shared';
 import { createComment, fetchComments, fetchPost } from '../accueil/api';
 import { commentairesA02From } from './from-api';
 import { echecDe, type FilEchec } from './echec';
@@ -45,6 +45,17 @@ export interface PublicationEtat {
 }
 
 export function usePublication(postId: string | null, avecPublication: boolean) {
+  /**
+   * LE TRI DES DEUX ONGLETS — « Pertinents » / « Récents » de la planche A01C.
+   *
+   * Il est DANS le crochet et non dans la page parce qu'il change ce qui est
+   * chargé : `charger` en dépend, donc un changement d'onglet recharge le fil
+   * depuis le serveur. Le tenir dans la page obligerait à le redescendre, et
+   * l'oubli d'une dépendance donnerait un onglet qui s'allume sans rien trier —
+   * exactement le défaut que ce lot vient de corriger sur le composeur de story.
+   */
+  const [tri, setTri] = useState<CommentSort>('RELEVANT');
+  const [suiteEnCours, setSuiteEnCours] = useState(false);
   const [etat, setEtat] = useState<PublicationEtat>({
     pret: false,
     chargement: true,
@@ -87,7 +98,7 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
           return;
         }
 
-        const comments = await fetchComments('POST', postId, undefined, signal);
+        const comments = await fetchComments('POST', postId, undefined, signal, tri);
         if (signal.aborted) return;
         setEtat({ pret: true, chargement: false, echec: null, post: null });
         setFil(comments);
@@ -97,7 +108,7 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
         setEtat({ pret: true, chargement: false, echec: echecDe(error), post: null });
       }
     },
-    [postId, avecPublication],
+    [postId, avecPublication, tri],
   );
 
   useEffect(() => {
@@ -130,11 +141,33 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
           body,
           ...(parentCommentId === undefined ? {} : { parentCommentId }),
         });
-        setFil((courant) =>
-          courant === null
-            ? { items: [comment], nextCursor: null }
-            : { ...courant, items: [...courant.items, comment] },
-        );
+        /**
+         * ╔══════════════════════════════════════════════════════════════════╗
+         * ║ UNE RÉPONSE SE RANGE SOUS SON PARENT, PAS EN FIN DE LISTE        ║
+         * ╚══════════════════════════════════════════════════════════════════╝
+         *
+         * L'insertion était la même pour les deux : un commentaire envoyé en
+         * réponse à quelqu'un apparaissait comme une RACINE, sans retrait, à la
+         * fin du fil — puis se replaçait au rechargement. L'écran montrait donc
+         * autre chose que ce que le serveur avait enregistré.
+         *
+         * `parentCommentId` est celui que le SERVEUR rend, pas celui qu'on a
+         * envoyé : c'est lui qui fait foi, et c'est la même règle que pour
+         * `relativeTime` et `canEdit` juste au-dessus.
+         */
+        setFil((courant) => {
+          if (courant === null) return { items: [comment], nextCursor: null };
+          const parent = comment.parentCommentId;
+          if (parent === null) return { ...courant, items: [...courant.items, comment] };
+          return {
+            ...courant,
+            items: courant.items.map((racine) =>
+              racine.id === parent
+                ? { ...racine, replies: [...racine.replies, comment] }
+                : racine,
+            ),
+          };
+        });
         return null;
       } catch (error) {
         return echecDe(error);
@@ -143,10 +176,41 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
     [postId],
   );
 
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ « VOIR N AUTRES COMMENTAIRES » — LE LIEN N'ALLAIT NULLE PART            ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * La planche l'écrit en `<a href="#">`, et `nextCursor` existait depuis le
+   * début sans que rien ne le lise : la fenêtre montrait les vingt premiers et
+   * taisait le reste.
+   *
+   * ON AJOUTE À LA SUITE, on ne remplace pas : le membre a lu le haut du fil, et
+   * le remplacer le renverrait au début. `nextCursor` de la nouvelle page devient
+   * celui du fil — c'est lui qui dit s'il reste quelque chose après.
+   */
+  const chargerSuite = useCallback(async (): Promise<FilEchec | null> => {
+    if (postId === null || fil === null || fil.nextCursor === null || suiteEnCours) return null;
+    setSuiteEnCours(true);
+    try {
+      const suite = await fetchComments('POST', postId, fil.nextCursor, undefined, tri);
+      setFil((courant) =>
+        courant === null
+          ? suite
+          : { items: [...courant.items, ...suite.items], nextCursor: suite.nextCursor },
+      );
+      return null;
+    } catch (error) {
+      return echecDe(error);
+    } finally {
+      setSuiteEnCours(false);
+    }
+  }, [fil, postId, suiteEnCours, tri]);
+
   const commentaires = useMemo(
     () => (fil === null ? [] : commentairesA02From(fil.items)),
     [fil],
   );
 
-  return { ...etat, fil, commentaires, commenter };
+  return { ...etat, fil, commentaires, commenter, tri, setTri, chargerSuite, suiteEnCours };
 }

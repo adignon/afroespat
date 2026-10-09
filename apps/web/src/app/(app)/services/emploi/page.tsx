@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS04 } from '@/screens/services/appels';
+import { SQUELETTE_S04, chargerS04 } from '@/screens/services/appels';
 import { S04Desktop } from '@/screens/s04/desktop.generated';
 import { S04Mobile } from '@/screens/s04/mobile.generated';
 
@@ -31,7 +31,18 @@ import { S04Mobile } from '@/screens/s04/mobile.generated';
  */
 export default function EmploiListePage() {
   return (
-    <EcranDonnees charger={chargerS04} attente="Chargement des offres…">
+    <EcranDonnees
+      charger={chargerS04}
+      attente="Chargement
+      des
+      offres…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots et aucune entrée de rail dans le HTML
+       * servi. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S04}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="S04"

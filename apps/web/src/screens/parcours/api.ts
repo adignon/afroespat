@@ -49,6 +49,7 @@ import {
   journeyActivitiesResponseSchema,
   journeyDetailResponseSchema,
   journeyFullResponseSchema,
+  journeyTemplateStepsResponseSchema,
   journeyTemplatesResponseSchema,
   journeysListResponseSchema,
   publicJourneyDetailResponseSchema,
@@ -61,6 +62,7 @@ import {
   type JourneyActivitiesResponse,
   type JourneyDetailResponse,
   type JourneyFullResponse,
+  type JourneyTemplateStepsResponse,
   type JourneyTemplatesResponse,
   type JourneysListResponse,
   type PublicJourneyDetailResponse,
@@ -79,6 +81,35 @@ import { memberApi } from '@/lib/api/index';
 /** §2.1 — les types de parcours proposés, résolus pour mon pays d'origine. */
 export function listJourneyTemplates(): Promise<JourneyTemplatesResponse> {
   return memberApi.get('/journey-templates', journeyTemplatesResponseSchema);
+}
+
+/**
+ * `GET /journey-templates/:id/steps` — LES ÉTAPES D'UN TYPE DE PARCOURS (§2.1).
+ *
+ * Elle existe pour le composeur de story, et c'est son seul appelant aujourd'hui.
+ * `GET /journey-templates` rend le NOMBRE d'étapes (`version.stepCount`) et rien
+ * d'autre : de quoi écrire « 15 étapes » sous un type, pas de quoi en nommer une
+ * seule. Or `createStorySchema.stepDefinitionId` attend un UUID — donc sans cette
+ * route, l'étape 2 de A14 ne pouvait proposer qu'une liste écrite en dur, sans
+ * identifiant, donc impossible à envoyer. C'est exactement ce qu'elle faisait.
+ *
+ * `stepDefinitionId` est la clé qui part dans `POST /stories` : l'identifiant de la
+ * DÉFINITION, pas celui de la ligne de version. La route résout elle-même la version
+ * publiée pour le pays du membre et applique ses surcharges d'intitulé, de sorte que
+ * le nom proposé ici est celui que le parcours du membre emploiera vraiment.
+ *
+ * Pas de curseur : une version publiée compte une quinzaine d'étapes, et les
+ * paginer ferait de l'ordre une illusion.
+ */
+export function listJourneyTemplateSteps(
+  templateId: string,
+  signal?: AbortSignal,
+): Promise<JourneyTemplateStepsResponse> {
+  return memberApi.get(
+    `/journey-templates/${templateId}/steps`,
+    journeyTemplateStepsResponseSchema,
+    signal === undefined ? {} : { signal },
+  );
 }
 
 /** §5.1 — mes parcours. Liste bornée : un seul en gratuit (§3.1). */

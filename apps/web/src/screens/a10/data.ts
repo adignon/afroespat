@@ -46,6 +46,20 @@ import { panel, panelReseaux, rail } from '../reseaux/chrome';
  * décide de rien.
  */
 export interface InviteeView {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur à partir des
+   * publications (quand on clique sur son nom […]) partout où le nom est
+   * affiché ». Les trente-sept noms dessinés dans les cadres étaient des `<span>`
+   * et aucun ne menait au profil.
+   *
+   * FACULTATIVE, ET C'EST LA GARDE : tous les noms ne sont pas des membres — un
+   * réseau, une ville, un partenaire en portent un aussi — et le cadre ne pose le
+   * lien que si la ligne porte une adresse. Sans elle, le nom reste nu, c'est-à-
+   * dire exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly i: string;
   readonly name: string;
   readonly sub: string;

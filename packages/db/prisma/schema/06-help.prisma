@@ -18,13 +18,12 @@ enum HelpKind {
   OFFER
 }
 
-enum HelpType2 {
-  PAPERWORK
-  SERVICE
-  RIDE
-  MATERIAL
-  OTHER
-}
+/// `HelpType` A DISPARU — voir `HelpType` dans `01-identity.prisma`.
+///
+/// Les deux enums coexistaient avec trois membres sur cinq différents, et une
+/// demande ne pouvait donc pas être rapprochée d'un profil disponible. Le porteur
+/// a tranché : un seul. L'union porte les huit valeurs, chaque membre de
+/// `HelpType` y ayant son homonyme — la conversion s'est faite par nom.
 
 enum HelpStatus {
   OPEN
@@ -41,7 +40,7 @@ model HelpRequest {
 
   authorUserId String     @map("author_user_id") @db.Uuid
   kind         HelpKind
-  type         HelpType2
+  type         HelpType
   title        String
   body         String
   cityId       String     @map("city_id") @db.Uuid

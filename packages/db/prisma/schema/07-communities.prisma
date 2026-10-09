@@ -176,22 +176,61 @@ model CommunityAnnouncement {
   @@map("community_announcements")
 }
 
+/// Sondage — d'un RÉSEAU (07 §2.3) ou d'une PUBLICATION du fil (04 §2.4).
+///
+/// ── POURQUOI LES DEUX RATTACHEMENTS VIVENT DANS LE MÊME MODÈLE ─────────────
+///
+/// Le porteur voulait le sondage du composeur du fil, que la maquette dessine
+/// depuis le début (« Créer un sondage », et la carte de publication a son bloc
+/// `poll`). Le mécanisme existait ENTIER — création à 2–8 options, vote
+/// modifiable, résultats masqués avant vote, clôture — mais `community_id` était
+/// obligatoire : un sondage ne pouvait appartenir qu'à un réseau.
+///
+/// Un second modèle `PostPoll` aurait dupliqué les options, les votes, le compte
+/// par option et les quatre règles de visibilité. On rend donc le rattachement
+/// FACULTATIF des deux côtés, et EXCLUSIF : la contrainte `polls_rattachement`
+/// (migration) exige exactement l'un des deux. C'est ce qui empêche un sondage
+/// orphelin — invisible et invotable — ou un sondage à deux maîtres.
 model Poll {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
-  communityId  String    @map("community_id") @db.Uuid
+  /// Null quand le sondage est celui d'une publication.
+  communityId String? @map("community_id") @db.Uuid
+  /// Null quand le sondage est celui d'un réseau. `@unique` : « un seul par
+  /// publication », règle que la maquette énonce en toutes lettres.
+  postId       String?   @unique @map("post_id") @db.Uuid
   authorUserId String    @map("author_user_id") @db.Uuid
   question     String
   isMultiple   Boolean   @map("is_multiple")
   closesAt     DateTime? @map("closes_at") @db.Timestamptz
 
-  community Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  /// ── LES DEUX RÉGLAGES QUE LA MAQUETTE DESSINE ───────────────────────────
+  ///
+  /// Ils étaient DEUX INTERRUPTEURS INERTES, et c'était défendable : le produit
+  /// imposait les deux règles à tout le monde. Le porteur a tranché autrement —
+  /// « non, fais de ça un réglage » — et chacun devient donc une colonne.
+  ///
+  /// `resultsAfterVote` : vrai (le défaut) = les comptes restent masqués tant que
+  /// le lecteur n'a pas voté et que le sondage n'est pas clos. C'est l'ancien
+  /// comportement, donc les sondages déjà créés ne changent pas d'un pouce. Faux =
+  /// les résultats sont visibles tout de suite.
+  ///
+  /// `isAnonymous` : vrai (le défaut) = seuls les totaux sortent de l'API. Faux =
+  /// la réponse nomme les votants de chaque option. C'est une décision de
+  /// CONFIDENTIALITÉ, et c'est pour cela que le défaut est le silence : un sondage
+  /// créé sans rien dire ne nomme personne.
+  resultsAfterVote Boolean @default(true) @map("results_after_vote")
+  isAnonymous      Boolean @default(true) @map("is_anonymous")
+
+  community Community?   @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  post      Post?        @relation(fields: [postId], references: [id], onDelete: Cascade)
   author    User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
   options   PollOption[]
 
   @@index([communityId])
+  @@index([postId])
   @@map("polls")
 }
 

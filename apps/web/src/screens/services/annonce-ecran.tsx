@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranServices, useServices } from '@/screens/services/ecran';
-import { chargerS02 } from '@/screens/services/appels';
+import { SQUELETTE_S02, chargerS02 } from '@/screens/services/appels';
 import type { NiveauContact } from '@/screens/services/data';
 import { S02Desktop } from '@/screens/s02/desktop.generated';
 import { S02Mobile } from '@/screens/s02/mobile.generated';
@@ -57,7 +57,13 @@ export function AnnonceEcran({
   const charger = useCallback(() => chargerS02(id), [id]);
 
   return (
-    <EcranDonnees charger={charger} attente="Chargement de l’annonce…">
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S02} charger={charger} attente="Chargement de l’annonce…">
       {(donnees) => (
         <EcranServices
           screen="S02"

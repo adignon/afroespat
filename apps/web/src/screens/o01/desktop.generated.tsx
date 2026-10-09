@@ -8,14 +8,14 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O01Desktop(props: OnboardingVals) {
-  const { busy, onContinue, phases, seg1 } = props;
+  const { busy, onBack, onContinue, phases, seg1 } = props;
 
   return (
     <>
       <main style={{ display: "contents" }}>
 
       <div style={{ padding: "24px 40px 0", display: "flex", alignItems: "center", gap: "20px" }}>
-        <span style={{ width: "44px", height: "44px", borderRadius: "999px", background: "#EEF2F0", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg></span>
+        <button type="button" onClick={onBack} aria-label="Retour" style={{ border: "none", padding: "0", font: "inherit", color: "inherit", cursor: "pointer", textAlign: "inherit", width: "44px", height: "44px", borderRadius: "999px", background: "#EEF2F0", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg></button>
         <div style={{ flex: "1", display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: "6px" }}>{(seg1 ?? []).map((s, sIndex) => (
 <Fragment key={sIndex}><span style={{ height: "6px", borderRadius: "999px", background: s }}></span></Fragment>
 ))}</div>
@@ -35,7 +35,7 @@ export function O01Desktop(props: OnboardingVals) {
 ))}
           </div>
           <button style={{ width: "100%", height: "52px", marginTop: "32px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700", cursor: "pointer" }} onClick={onContinue} disabled={busy}>Continuer</button>
-          <div style={{ textAlign: "center", marginTop: "14px" }}><a href="#" style={{ fontSize: "13px", fontWeight: "700", color: "#5D6B66" }}>Passer cette étape</a></div>
+          <div style={{ textAlign: "center", marginTop: "14px" }}><a href="/bienvenue/lieu" style={{ fontSize: "13px", fontWeight: "700", color: "#5D6B66" }}>Passer cette étape</a></div>
         </div>
       </div>
     

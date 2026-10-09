@@ -13,6 +13,7 @@
     },
     "category": "DEMARCHES",
     "categoryLabel": "Démarches",
+    "categoryOther": null,
     "placeLabel": null,
     "stepDefinition": null,
     "audience": "ALL",

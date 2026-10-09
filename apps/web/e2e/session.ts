@@ -54,17 +54,80 @@ export interface Membre {
 const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
 
 /**
+ * UNE MARQUE DE PROCESSUS, tirée une seule fois.
+ *
+ * Le compteur ci-dessous est PAR PROCESSUS, et Playwright lance un processus par
+ * ouvrier. Deux ouvriers qui démarrent ensemble ont donc le même compteur à 1 et,
+ * dans la même milliseconde, le même numéro. Mesuré : `POST /auth/otp/verify` a
+ * rendu `500` sur `Unique constraint failed on the fields: (phone_hmac)` en
+ * lançant les projets « ordinateur » et « mobile » côte à côte.
+ *
+ * Le symptôme n'accuse pas sa cause — on lit une erreur serveur, et on cherche
+ * un défaut d'API qui n'existe pas.
+ */
+const MARQUE_PROCESSUS = Math.floor(Math.random() * 100);
+
+/**
  * Un numéro béninois neuf, à huit chiffres.
  *
- * L'horodatage ET un compteur : deux tests du même fichier partent dans la même
- * milliseconde, et deux membres sur le même numéro feraient basculer le second en
- * connexion sur le compte du premier — un test qui passe en mesurant le mauvais
- * membre.
+ * L'horodatage, un compteur ET une marque de processus : deux tests du même
+ * fichier partent dans la même milliseconde, et deux membres sur le même numéro
+ * feraient basculer le second en connexion sur le compte du premier — un test qui
+ * passe en mesurant le mauvais membre.
+ *
+ * Le découpage des huit chiffres : SIX pour l'horodatage (la milliseconde modulo
+ * un million) et DEUX pour la marque. Il y avait un seul chiffre de marque
+ * auparavant, soit dix places par milliseconde et une collision entre deux
+ * ouvriers une fois sur dix ; il y en a cent. Le facteur 7 est premier avec 100,
+ * donc le compteur parcourt les cent places avant de repasser sur l'une d'elles.
  */
 function numeroNeuf(): string {
+  /**
+   * UN NUMÉRO BÉNINOIS VALIDE SELON `libphonenumber` : `019` suivi de sept
+   * chiffres, soit dix en tout. Le Bénin a renuméroté en 2023 — ses mobiles
+   * s'écrivent `01` + huit chiffres — et c'est la bibliothèque de Google qui le
+   * dit, pas une table écrite ici. Son propre exemple officiel est `0195123456`.
+   *
+   * Les planches, elles, dessinent encore « 97 12 34 42 », l'ancien format. Le
+   * harnais suit le MONDE RÉEL, pas la planche : un test qui créerait des membres
+   * sur des numéros que le serveur refuse ne mesurerait plus rien.
+   */
+  return `+229${numeroNational()}`;
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE MÊME NUMÉRO, SANS INDICATIF — POUR LE CHAMP DE L'ÉCRAN                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `numeroNeuf` sert l'API, qui veut la forme internationale. Les tests qui
+ * passent par L'ÉCRAN remplissent `input[name="phone"]`, où l'indicatif vient du
+ * sélecteur de pays : ils ont besoin de la forme NATIONALE.
+ *
+ * Trois fichiers l'écrivaient à la main, et deux portaient encore `97…` —
+ * l'ancien format, celui que la planche dessine. Depuis la validation par pays,
+ * « Recevoir le code » reste GRISÉ sur un tel numéro, et le test expire sur un
+ * clic qui ne pouvait pas aboutir. Il a été corrigé une fois dans
+ * `code-otp.spec.ts` ; les deux autres sont tombés plus tard, pour la même
+ * raison. D'où ce point unique.
+ *
+ * ── LA MARQUE VIENT DU PROCESSUS, PAS D'UN TIRAGE ──────────────────────────
+ *
+ * La première version de cette fonction tirait ses deux derniers chiffres au
+ * hasard à chaque appel. MESURÉ : `codesSentTo(numéro)` a rendu TROIS codes pour
+ * un numéro censé être neuf, en lançant « ordinateur » et « mobile » côte à côte
+ * — deux appels étaient tombés sur le même tirage dans la même milliseconde, et
+ * le test lisait les SMS d'un autre membre.
+ *
+ * Elle reprend donc le mécanisme que `numeroNeuf` avait déjà : une marque tirée
+ * UNE FOIS par processus, et un compteur qui avance de 7 — premier avec 100,
+ * donc les cent places sont parcourues avant d'en réemployer une.
+ */
+export function numeroNational(): string {
   compteur += 1;
-  const suffixe = String((Date.now() % 1_000_000) * 10 + (compteur % 10)).padStart(8, '0');
-  return `+229${suffixe.slice(-8)}`;
+  const marque = String((MARQUE_PROCESSUS + compteur * 7) % 100).padStart(2, '0');
+  const horodatage = String(Date.now() % 100_000).padStart(5, '0');
+  return `019${horodatage}${marque}`;
 }
 
 /**
@@ -121,10 +184,20 @@ export async function connecter(
   const premiereVille = ((await villes.json()) as { items: { id: string }[] }).items[0];
 
   const nom = profil.displayName ?? 'Membre Éprouvé';
-  // Le pseudo dérive de l'identifiant : unique, et il respecte `handleSchema`
-  // (minuscules, chiffres, tiret — PAS de point, contrairement à ce que la
-  // maquette écrit : voir le rapport de lot).
-  const pseudo = profil.handle ?? `m-${session.user.id.replace(/-/g, '').slice(0, 12)}`;
+  /**
+   * Le pseudo dérive de l'identifiant, et il respecte `handleSchema` (minuscules,
+   * chiffres, tiret — PAS de point, contrairement à ce que la maquette écrit :
+   * voir le rapport de lot).
+   *
+   * ON PREND LA FIN DE L'IDENTIFIANT, PAS SON DÉBUT. Il est en UUIDv7 : ses
+   * premiers octets sont l'HORODATAGE, et douze caractères de tête sont donc
+   * identiques pour deux comptes créés dans la même seconde. MESURÉ : deux
+   * ouvriers Playwright se marchaient dessus, `PATCH /me` répondait 500, et des
+   * cas tombaient au hasard pour une raison qui n'avait rien à voir avec eux.
+   * C'est la même famille de collision que les numéros de téléphone du banc.
+   */
+  const brut = session.user.id.replace(/-/g, '');
+  const pseudo = profil.handle ?? `m-${brut.slice(-12)}`;
 
   const patchMe = await request.patch(`${API}/me`, {
     headers: auth,

@@ -6,16 +6,35 @@ import {
   FREE_EVENTS_PER_MONTH,
   mySubscriptionResponseSchema,
   groupedSearchResponseSchema,
+  typedSearchResponseSchema,
+  searchSubjectTypeSchema,
   messagesResponseSchema,
   notificationsResponseSchema,
   suggestResponseSchema,
+  SEARCH_MIN_QUERY_LENGTH,
   SUGGEST_MIN_QUERY_LENGTH,
+  mediaAssetSchema,
+  uuidSchema,
   type Conversation,
+  type MediaAssetView,
   type MeResponse,
   type Message,
   type Notification,
+  type SearchSubjectType,
+  type SuggestResponse,
+  type NotificationCategory,
 } from '@app/shared';
+import { z } from 'zod';
 import { fetchMe, memberApi } from '@/lib/api/index';
+import { urlMedia } from '@/lib/api/base';
+import { photoFondFor } from '../a14/data';
+import {
+  cartesGroupees,
+  cartesPlates,
+  filtresDe,
+  suggestionsDe,
+  videDe,
+} from '../x01/from-api';
 import type { BarreHaute } from './data';
 import type {
   BulleMessage,
@@ -24,9 +43,16 @@ import type {
   RangeeConversation,
 } from '../m01/data';
 import type { M01BloqueData } from '../m01bloque/data';
-import type { SuggestionRecherche, X01Data } from '../x01/data';
-import { GLYPHES_X02, type LigneNotification, type X02Data } from '../x02/data';
+import type { X01Data } from '../x01/data';
+import {
+  GLYPHES_X02,
+  type FiltreNotification,
+  type LigneNotification,
+  type X02Data,
+} from '../x02/data';
 import type { X04Data } from '../x04/data';
+import { fondAvatar } from '@/lib/avatar';
+import { avatarColor } from '../accueil/from-api';
 
 /**
  * LES APPELS DES ÉCRANS M01, X01 ET X02 — un chargeur par écran, et rien d'autre.
@@ -143,6 +169,7 @@ function heureRelative(iso: string, depuis: 'minutes' | 'heure-du-jour'): string
 function barreHauteDe(me: MeResponse): BarreHaute {
   return {
     initiales: initialesDe(me.user.displayName),
+    photo: fondAvatar(me.user.avatarUrl),
     prenom: prenomDe(me.user.displayName),
   };
 }
@@ -194,11 +221,34 @@ function nomDeConversation(c: Conversation): string {
  * deviner serait pire que se taire. L'aperçu reste NU, et c'est consigné au rapport
  * — il manque à cette route un `lastMessageSenderUserId`.
  */
-function rangeeDe(c: Conversation, rang: number, fondPremier: string): RangeeConversation {
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE SURLIGNAGE SUIVAIT LE RANG, PAS LA CONVERSATION OUVERTE                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « la conversation active n'est pas highlighted. Ça reste sur le
+ * premier. »
+ *
+ * MESURÉ : `fond: rang === 0 ? …` — la première ligne de la liste était peinte,
+ * toujours, quelle que soit la conversation ouverte. C'est ce que la MAQUETTE
+ * dessine : sa planche montre la première ligne sélectionnée, parce qu'il faut
+ * bien en dessiner une. Le transcodage l'avait pris pour une règle.
+ *
+ * On compare donc à l'identifiant de la conversation RÉELLEMENT ouverte. Les
+ * demandes, elles, n'en ouvrent aucune : `ouverteId` y vaut `null` et aucune
+ * ligne n'est peinte — ce qui est juste, une demande en attente n'est pas la
+ * conversation affichée.
+ */
+function rangeeDe(
+  c: Conversation,
+  rang: number,
+  fondOuverte: string,
+  ouverteId: string | null,
+): RangeeConversation {
   const nom = nomDeConversation(c);
   const apercu = c.unreadCount > 0 ? APERCU_NON_LU : APERCU_LU;
   return {
-    fond: rang === 0 ? fondPremier : RANGEE_FERMEE,
+    fond: c.id === ouverteId ? fondOuverte : RANGEE_FERMEE,
     fondAvatar: FONDS_AVATAR[rang % FONDS_AVATAR.length] ?? FONDS_AVATAR[0],
     initiales: initialesDe(nom),
     nom,
@@ -207,6 +257,8 @@ function rangeeDe(c: Conversation, rang: number, fondPremier: string): RangeeCon
     graisse: apercu.graisse,
     apercu: c.lastMessagePreview ?? '',
     nonLus: c.unreadCount,
+    /** La ligne devient un lien : voir `RangeeConversation.href`. */
+    href: `/messages/${c.id}`,
   };
 }
 
@@ -242,7 +294,24 @@ const BULLE_SIENNE = {
  * Inventer un « Vu » dirait au membre que son message a été lu, ce que personne ne
  * sait ici. Signalé au porteur.
  */
-function bulleDe(m: Message, nomsParHandle: ReadonlyMap<string, string>): BulleMessage {
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA BULLE PORTE LA STORY, MAIS PAS ENCORE LE GESTE                         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le chargement est une fonction PURE : elle ne sait ni router, ni annoncer. Les
+ * deux valeurs du serveur descendent donc telles quelles, et c'est
+ * `ConversationVivante` — un composant, qui a le routeur et les annonces — qui
+ * pose `onImage`. Mettre la navigation ici obligerait le chargeur à connaître
+ * `next/navigation`, et il est appelé depuis des épreuves qui n'ont pas de
+ * routeur.
+ */
+export interface BulleAvecStory extends BulleMessage {
+  readonly storyId: string | null;
+  readonly storyVivante: boolean;
+}
+
+function bulleDe(m: Message, nomsParHandle: ReadonlyMap<string, string>): BulleAvecStory {
   const style = m.mine ? BULLE_MIENNE : BULLE_SIENNE;
   return {
     cote: style.cote,
@@ -253,6 +322,26 @@ function bulleDe(m: Message, nomsParHandle: ReadonlyMap<string, string>): BulleM
     auteur: m.mine ? '' : (nomsParHandle.get(m.senderHandle) ?? m.senderHandle),
     corps: m.body ?? '',
     mention: heureRelative(m.sentAt, 'heure-du-jour'),
+    /**
+     * L'IMAGE JOINTE — `photoFondFor` et non une recette de plus.
+     *
+     * C'est la fonction que le composeur de story et l'écran de lecture emploient
+     * tous deux pour le même emplacement. La première version d'un fond d'image
+     * dans ce dépôt écrivait `url("…")` tout nu : sans `center/cover no-repeat`, le
+     * navigateur pose l'image à sa TAILLE NATURELLE et la répète — une photo de
+     * téléphone remplissait la carte d'un coin agrandi, une petite image s'y
+     * répétait en damier. On ne refait pas la recette.
+     *
+     * `recadre: false` — « couvrir » : la vignette d'un fil n'a pas de bouton de
+     * recadrage, comme la carte de lecture n'en a pas.
+     *
+     * `mediaUrl` PEUT ÊTRE NULLE alors que `mediaId` ne l'est pas : le média a été
+     * supprimé en douceur. La bulle garde alors son texte et ne montre aucun
+     * rectangle — ce qui est vrai — au lieu d'une vignette vide.
+     */
+    image: m.mediaUrl === null ? '' : photoFondFor(urlMedia(m.mediaUrl), false),
+    storyId: m.storyId,
+    storyVivante: m.storyAlive,
   };
 }
 
@@ -315,12 +404,14 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
 
   return {
     moi: barreHauteDe(me),
-    conversations: conversations.map((c, rang) => rangeeDe(c, rang, RANGEE_OUVERTE)),
+    conversations: conversations.map((c, rang) =>
+      rangeeDe(c, rang, RANGEE_OUVERTE, ouverte?.id ?? null),
+    ),
     demandes: {
       total: demandes.length,
-      liste: demandes.map((c, rang) => rangeeDe(c, rang, RANGEE_FERMEE)),
+      liste: demandes.map((c, rang) => rangeeDe(c, rang, RANGEE_FERMEE, null)),
     },
-    entete: enteteDe(ouverte),
+    entete: enteteDe(ouverte, me.user.id),
     /**
      * LE FIL ARRIVE À L'ENVERS, et il faut le retourner.
      *
@@ -332,6 +423,28 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
      * phrases trahirait l'inversion.
      */
     messages: fil === null ? [] : [...fil.items].reverse().map((m) => bulleDe(m, nomsParHandle)),
+    /**
+     * CELLE QU'ON A RÉELLEMENT OUVERTE, et pas celle que l'URL demandait.
+     *
+     * `/messages` n'en demande aucune : `ouverte` est alors la conversation de
+     * repli, et c'est la sienne que le composeur doit écrire. Voir
+     * `M01Data.conversationOuverte`.
+     */
+    conversationOuverte: ouverte?.id ?? null,
+    conversationSourdine: ouverte?.muted ?? false,
+    /**
+     * LE HANDLE DE L'INTERLOCUTEUR, pour `POST /blocks` — qui prend un handle et
+     * non un identifiant (08 §7.2). `null` sur une conversation de parcours : on
+     * n'y bloque personne en particulier, et l'entrée du menu reste alors muette.
+     */
+    conversationHandle:
+      ouverte === null || ouverte.title !== null
+        ? null
+        : (ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.handle ?? null),
+    conversationUserId:
+      ouverte === null || ouverte.title !== null
+        ? null
+        : (ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.userId ?? null),
   };
 }
 
@@ -353,14 +466,59 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
  * français de ces trois valeurs. En inventer trois serait écrire du texte
  * d'interface — signalé au porteur plutôt que deviné.
  */
-function enteteDe(ouverte: Conversation | null): EnteteConversation {
-  if (ouverte === null) return { nom: 'Messages', sousTitre: '' };
+function enteteDe(ouverte: Conversation | null, moiId: string): EnteteConversation {
+  const vide = {
+    estParcours: false,
+    photo: null,
+    initiales: '',
+    fond: FONDS_AVATAR[0],
+    profil: null,
+  } as const;
+  if (ouverte === null) return { nom: 'Messages', sousTitre: '', ...vide };
 
   const autres = ouverte.members.filter((m) => !m.hidden).map((m) => m.displayName);
+  const estParcours = ouverte.title !== null;
+
+  /**
+   * ── L'INTERLOCUTEUR EST CELUI QUI N'EST PAS MOI ──────────────────────────
+   *
+   * `GET /conversations` rend `members[]` SANS le lecteur — c'est écrit dans le
+   * service (`others`). On filtre quand même sur `moiId` : la route pourrait
+   * changer, et un en-tête qui afficherait MA propre photo au-dessus de la
+   * conversation serait un défaut silencieux, de ceux qu'on ne remarque qu'après
+   * avoir changé d'avatar.
+   *
+   * `hidden` est exclu (§4) : un membre séparé du lecteur ne doit pas être
+   * identifiable par son avatar alors que ses contenus sont masqués.
+   */
+  const lui = ouverte.members.find((m) => m.userId !== moiId && !m.hidden) ?? null;
+  const nom = nomDeConversation(ouverte);
 
   return {
-    nom: nomDeConversation(ouverte),
-    sousTitre: ouverte.title === null ? '' : autres.join(', '),
+    nom,
+    sousTitre: estParcours ? autres.join(', ') : '',
+    estParcours,
+    /**
+     * UNE CONVERSATION DE PARCOURS GARDE SON GLYPHE. La maquette dessine à cet
+     * endroit l'icône d'un parcours, et « Mes études à Lyon » n'est pas une
+     * personne : y mettre un avatar effacerait ce que l'écran dit.
+     */
+    photo: estParcours || lui === null ? null : fondAvatar(lui.avatarUrl),
+    initiales: estParcours ? '' : initialesDe(nom),
+    fond: avatarColor(lui?.handle ?? nom),
+    /**
+     * `/@<handle>` ET NON `/<handle>`.
+     *
+     * Le porteur : « La page voir le profil ne s'affiche pas. »
+     *
+     * MESURÉ : la route `(app)/[handle]` EXIGE l'arobase — son segment commence
+     * par `@`, et `pseudo()` rend `null` sans elle, donc `notFound()`. L'adresse
+     * sans arobase répondait 404, en silence. C'est la même règle que partout
+     * ailleurs dans le dépôt, et c'est consigné dans l'en-tête de
+     * `components/barre-haute/membre.tsx` : « L'arobase n'est pas une décoration
+     * — sans elle, le lien rend 404 ».
+     */
+    profil: estParcours || lui === null ? null : `/@${lui.handle}`,
   };
 }
 
@@ -398,58 +556,92 @@ export async function chargerM01Bloque(conversationId: string | null): Promise<M
  * affiche alors ce que le membre a saisi, et c'est tout ce qu'il peut faire
  * honnêtement.
  */
-export async function chargerX01(requete: string): Promise<X01Data> {
+export async function chargerX01(requete: string, type: string | null = null): Promise<X01Data> {
   const q = requete.trim();
-  const assezLongue = q.length >= SUGGEST_MIN_QUERY_LENGTH;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ DEUX SEUILS, ET LES CONFONDRE JETAIT DES RECHERCHES VALIDES              ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La recherche n'affiche rien avec "s" ? »
+   *
+   * MESURÉ : ce chargeur attendait `SUGGEST_MIN_QUERY_LENGTH` — TROIS caractères —
+   * avant d'appeler `GET /search`. C'est le seuil des SUGGESTIONS (§2.3,
+   * « suggestions dès 3 caractères »). La RECHERCHE, elle, en demande DEUX :
+   * `searchQuerySchema` borne `q` à `SEARCH_MIN_QUERY_LENGTH`. Une requête de deux
+   * lettres — « RH », « CV », « L1 » — était donc jetée par le front alors que le
+   * serveur l'aurait servie.
+   *
+   * Les deux bornes viennent de `@app/shared`, là où les schémas de requête les
+   * lisent : un `2` et un `3` écrits ici deviendraient faux au premier ajustement,
+   * et le symptôme serait exactement celui-ci — une recherche qui ne part pas.
+   */
+  const assezPourChercher = q.length >= SEARCH_MIN_QUERY_LENGTH;
+  const assezPourSuggerer = q.length >= SUGGEST_MIN_QUERY_LENGTH;
+
+  /**
+   * LE TYPE VIENT DE L'URL, DONC IL EST VALIDÉ ICI.
+   *
+   * `/recherche?type=nimportequoi` est une adresse que n'importe qui peut forger.
+   * L'envoyer tel quel ferait répondre `400` au serveur, et l'écran afficherait une
+   * panne pour une faute de frappe. Le schéma de `@app/shared` — celui-là même qui
+   * borne le paramètre côté serveur — tranche : un type inconnu est traité comme
+   * « Tout », ce qui est la lecture la plus charitable d'une URL cassée.
+   */
+  const filtre = searchSubjectTypeSchema.safeParse(type);
+  const typeRetenu: SearchSubjectType | null = filtre.success ? filtre.data : null;
 
   const [me, suggestions] = await Promise.all([
     fetchMe(),
-    assezLongue
+    assezPourSuggerer
       ? memberApi.get(
           `/search/suggest?q=${encodeURIComponent(q)}`,
           suggestResponseSchema,
         )
-      : Promise.resolve({ items: [] as readonly { title: string }[] }),
+      : Promise.resolve({ items: [] as SuggestResponse['items'] }),
   ]);
 
   /**
-   * LES RÉSULTATS GROUPÉS SONT LUS ET VALIDÉS, et rien n'en est affiché.
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ DEUX APPELS QUAND UN FILTRE EST POSÉ, ET CE N'EST PAS UN GASPILLAGE      ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * Ce n'est pas un oubli : les compteurs de facettes et les cartes de résultat ne
-   * sont PAS liés, pour les raisons écrites dans `screens/x01/data.ts` — les
-   * libellés du serveur diffèrent de ceux de la maquette, et les sous-lignes des
-   * cartes n'ont aucune source. L'appel est néanmoins fait, parce que `meta.q` est
-   * la seule source honnête de la requête telle que le SERVEUR l'a comprise, et
-   * parce qu'une réponse qui changerait de forme doit être refusée tout de suite
-   * plutôt qu'au moment où quelqu'un branchera les cartes.
+   * La forme GROUPÉE (`GET /search?q=`) porte LES COMPTES DE TOUS LES TYPES, et
+   * c'est la seule chose qui les porte : c'est elle qui remplit la colonne de
+   * filtres. Mais elle ne rend que TROIS résultats par groupe — un plafond du
+   * module, pas une pagination.
+   *
+   * La forme PLATE (`GET /search?q=&type=`) rend la liste complète d'UN type, et
+   * aucun compte des autres.
+   *
+   * Un filtre posé a donc besoin des deux : les comptes pour que la colonne
+   * continue de dire « Guides · 5 · Sujets · 3 » pendant qu'on regarde les guides,
+   * et la liste plate pour montrer plus que trois guides. Ne demander que la plate
+   * viderait la colonne dès le premier clic — le filtre se détruirait lui-même.
+   * Les deux partent EN PARALLÈLE, donc le coût est une requête, pas deux attentes.
    */
-  const groupes = assezLongue
-    ? await memberApi.get(`/search?q=${encodeURIComponent(q)}`, groupedSearchResponseSchema)
-    : null;
+  const [groupes, plats] = assezPourChercher
+    ? await Promise.all([
+        memberApi.get(`/search?q=${encodeURIComponent(q)}`, groupedSearchResponseSchema),
+        typeRetenu === null
+          ? Promise.resolve(null)
+          : memberApi.get(
+              `/search?q=${encodeURIComponent(q)}&type=${typeRetenu}`,
+              typedSearchResponseSchema,
+            ),
+      ])
+    : [null, null];
+
+  const resultats = plats === null ? cartesGroupees(groupes) : cartesPlates(plats, typeRetenu);
 
   return {
     moi: barreHauteDe(me),
     requete: groupes?.meta.q ?? q,
-    suggestions: suggestions.items.map((s) => decouperSuggestion(s.title, q)),
+    suggestions: suggestionsDe(suggestions.items, q),
+    filtres: filtresDe(groupes, q, typeRetenu),
+    resultats,
+    vide: videDe(groupes, q, resultats),
   };
-}
-
-/**
- * LE SURLIGNAGE D'UNE SUGGESTION, découpé comme la maquette le dessine.
- *
- * La maquette écrit `<strong>vis</strong>ale étudiant` : la part SAISIE en gras,
- * puis la suite. Le découpage se fait sur la longueur de la requête, et seulement
- * quand la suggestion COMMENCE vraiment par elle — comparaison insensible à la
- * casse, parce que le serveur normalise la requête et pas le titre. Une suggestion
- * qui ne commence pas par la requête (le serveur cherche aussi au milieu des mots)
- * n'a pas de préfixe à mettre en gras, et lui en inventer un surlignerait les mauvais
- * caractères.
- */
-function decouperSuggestion(titre: string, requete: string): SuggestionRecherche {
-  if (!titre.toLocaleLowerCase('fr').startsWith(requete.toLocaleLowerCase('fr'))) {
-    return { prefixe: '', suite: titre };
-  }
-  return { prefixe: titre.slice(0, requete.length), suite: titre.slice(requete.length) };
 }
 
 // ─── X02 · les notifications ─────────────────────────────────────────────────
@@ -495,22 +687,82 @@ function ligneDe(n: Notification): LigneNotification {
  * planches ne dessine le compteur que 12 §2.7 demande. La raison complète est dans
  * `screens/x02/data.ts` ; elle est signalée au porteur plutôt que contournée.
  *
- * AUCUN FILTRE N'EST ENVOYÉ. `notificationListQuerySchema` accepte `unread` et
- * `category`, et la maquette dessine bien une rangée de pastilles de filtre — mais
- * ses libellés ne correspondent pas aux catégories (voir la déclaration d'écran), et
- * aucune n'est un bouton. Envoyer un filtre que rien ne permet de changer afficherait
- * une liste partielle sans le dire.
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES FILTRES ENVOIENT MAINTENANT — ET UN LIBELLÉ VAUT PARFOIS DEUX          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Les filtres sur la page notification marchent ? » Ils ne
+ * marchaient pas, et ce commentaire disait pourquoi : « aucune n'est un bouton ».
+ * Elles sont maintenant des liens, et ce chargeur reçoit ce qu'elles portent.
+ *
+ * LE LIBELLÉ DESSINÉ N'EST PAS UNE CATÉGORIE, et c'est le point délicat.
+ * `NOTIFICATION_CATEGORIES` en compte quatorze, la maquette dessine sept
+ * pastilles : « Parcours » couvre à lui seul `JOURNEY_DEADLINE` ET
+ * `JOURNEY_TEAM`. La correspondance est donc une TABLE, et elle est écrite ici
+ * plutôt que devinée à l'écran.
+ *
+ * ── UNE CATÉGORIE : LE SERVEUR FILTRE. PLUSIEURS : ON TRIE ICI ──────────────
+ *
+ * `notificationListQuerySchema.category` prend UNE catégorie. Pour « Parcours »,
+ * demander deux pages et les recoudre donnerait un ordre faux au premier
+ * `nextCursor` ; on demande donc la page SANS filtre et on garde les lignes des
+ * deux catégories. C'est le même arbitrage que l'onglet « Annonces » des
+ * enregistrés, et il porte la même limite : au-delà d'une page, une catégorie
+ * rare peut tomber hors de la fenêtre lue. Signalé plutôt que caché — la vraie
+ * correction serait un `category` répétable côté serveur.
  */
-export async function chargerX02(): Promise<X02Data> {
+const CATEGORIES_DU_FILTRE: Readonly<Record<string, readonly NotificationCategory[]>> = {
+  Parcours: ['JOURNEY_DEADLINE', 'JOURNEY_TEAM'],
+  Entraide: ['HELP'],
+  Réseaux: ['COMMUNITY'],
+  Événements: ['EVENT'],
+  Messages: ['MESSAGE'],
+  Compte: ['ACCOUNT'],
+};
+
+/** L'ordre des pastilles est celui de la maquette ; « Tout » d'abord. */
+const FILTRES_NOTIFICATIONS: readonly string[] = [
+  'Tout',
+  ...Object.keys(CATEGORIES_DU_FILTRE),
+];
+
+export function filtresNotifications(choisi: string): readonly FiltreNotification[] {
+  return FILTRES_NOTIFICATIONS.map((libelle) => {
+    const cle = libelle === 'Tout' ? '*' : libelle;
+    const actif = cle === choisi;
+    return {
+      cle,
+      libelle,
+      href: cle === '*' ? '/notifications' : `/notifications?type=${encodeURIComponent(cle)}`,
+      fond: actif ? '#16785E' : '#fff',
+      texte: actif ? '#fff' : '#16211D',
+      bord: actif ? '#16785E' : '#E6EBE9',
+      actif,
+    };
+  });
+}
+
+export async function chargerX02(filtre: string = '*'): Promise<X02Data> {
+  const categories = CATEGORIES_DU_FILTRE[filtre] ?? [];
+  const requete =
+    categories.length === 1 ? `?category=${categories[0] ?? ''}&limit=50` : '?limit=50';
+
   const [me, page] = await Promise.all([
     fetchMe(),
-    memberApi.get('/notifications', notificationsResponseSchema),
+    memberApi.get(`/notifications${requete}`, notificationsResponseSchema),
   ]);
+
+  const retenues =
+    categories.length > 1
+      ? page.items.filter((n) => categories.includes(n.category))
+      : page.items;
 
   return {
     moi: barreHauteDe(me),
-    lignes: page.items.map(ligneDe),
+    lignes: retenues.map(ligneDe),
     nonLusTotal: page.meta.unread,
+    filtres: filtresNotifications(categories.length === 0 ? '*' : filtre),
   };
 }
 
@@ -566,3 +818,165 @@ export async function chargerX04(): Promise<X04Data> {
  * partagée au lieu d'en écrire une seconde.
  */
 export { CATEGORY_LABELS_FR };
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ ÉCRIRE DANS UNE CONVERSATION — LES DEUX ÉCRITURES QUI MANQUAIENT          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « L'envoi de message aussi ne marche pas ainsi que les images dans
+ * une conversation. »
+ *
+ * MESURÉ sur le cadre produit : la barre basse était faite de trois éléments
+ * MORTS — un `<span>` pour le trombone, un `<div>` portant le texte dessiné
+ * « Écrire un message… », un `<span>` vert pour la flèche. Le module avait été
+ * livré en lecture seule, et son en-tête le disait.
+ *
+ * Les deux routes existaient depuis le début (`POST /conversations/:id/messages`
+ * et `POST /media`) : il n'y avait rien à ajouter côté serveur, seulement à
+ * brancher.
+ *
+ * `kind: 'MESSAGE'` sur le dépôt, comme la capture de story : c'est le genre que
+ * `assertOwnedMedia` exige d'une pièce jointe de message, et déposer en `POST`
+ * refuserait le rattachement ensuite.
+ */
+export function deposerImageDeMessage(
+  fichier: File,
+  signal?: AbortSignal,
+): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', fichier);
+  corps.append('kind', 'MESSAGE');
+  return memberApi.post('/media', mediaAssetSchema, {
+    body: corps,
+    ...(signal === undefined ? {} : { signal }),
+  });
+}
+
+/**
+ * LA FORME DE LA RÉPONSE EST DÉCLARÉE ICI, parce que `packages/shared` ne la
+ * publie pas : la route rend `{ messageId, conversationId, sentAt }` et aucun
+ * schéma de sortie ne la décrit. On la décrit donc au point d'appel, comme
+ * `ecrireAAuteur` le fait déjà pour `POST /conversations/direct` — et avec
+ * `.strict()`, pour que la frontière reste aussi serrée que partout ailleurs.
+ */
+const reponseEnvoiSchema = z
+  .object({
+    messageId: uuidSchema,
+    conversationId: uuidSchema,
+    sentAt: z.string(),
+  })
+  .strict();
+
+/**
+ * `body` N'EST ENVOYÉ QUE S'IL Y EN A UN.
+ *
+ * `sendMessageSchema` accepte maintenant un message sans corps quand il porte une
+ * image — il le fallait pour envoyer plusieurs photos sans écrire autant de
+ * phrases. Mais le schéma est `.strict()` ET le champ est `.optional()` : envoyer
+ * `body: ''` serait refusé pour chaîne vide, alors que l'OMETTRE passe. La
+ * différence entre « vide » et « absent » compte ici.
+ */
+export function envoyerMessage(
+  conversationId: string,
+  texte: string,
+  mediaId?: string,
+): Promise<{ readonly messageId: string }> {
+  return memberApi.post(`/conversations/${conversationId}/messages`, reponseEnvoiSchema, {
+    body: {
+      ...(texte === '' ? {} : { body: texte }),
+      ...(mediaId === undefined ? {} : { mediaId }),
+    },
+  });
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES DEUX ÉCRITURES DU MENU DE CONVERSATION                                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Les options voir le profil, mettre en sourdine, bloquer et
+ * signaler ne marchent pas. Intègre tout ça. »
+ *
+ * Deux des quatre sont des NAVIGATIONS — le profil public et la feuille de
+ * signalement — et le cadre les porte en liens. Les deux autres écrivent, et les
+ * voici.
+ *
+ * `PATCH /conversations/:id/mute` est NEUF : la colonne
+ * `conversation_members.is_muted` existait dans le schéma figé depuis le début et
+ * aucune route ne l'écrivait. Aucune migration, donc.
+ *
+ * `POST /blocks` existait déjà, et prend un HANDLE — pas un identifiant. C'est
+ * `08 §7.2`, et c'est cohérent avec le reste du module : on bloque quelqu'un
+ * qu'on voit, et ce qu'on voit c'est son arobase.
+ */
+export function mettreEnSourdine(
+  conversationId: string,
+  muted: boolean,
+): Promise<{ readonly muted: boolean }> {
+  return memberApi.patch(
+    `/conversations/${conversationId}/mute`,
+    z.object({ muted: z.boolean() }).strict(),
+    { body: { muted } },
+  );
+}
+
+export function bloquerMembre(handle: string): Promise<unknown> {
+  /**
+   * LA RÉPONSE N'EST PAS LUE, et le schéma le dit : `POST /blocks` rend la ligne
+   * de blocage créée, dont l'écran n'a besoin d'aucun champ. `z.unknown()` plutôt
+   * qu'une forme recopiée : une forme qu'on n'utilise pas finirait par diverger
+   * du serveur sans que personne ne s'en aperçoive, et ferait alors échouer un
+   * blocage parfaitement réussi.
+   */
+  return memberApi.post('/blocks', z.unknown(), { body: { handle } });
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ SIGNALER — LA ROUTE EXISTAIT, RIEN N'Y MENAIT                             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « le modal n'est pas du tout dynamique (pas d'input, les choix ne
+ * marchent pas ainsi que la soumission) ».
+ *
+ * `POST /reports` répond depuis le début ; l'en-tête de la page de messagerie le
+ * disait en toutes lettres — « "Envoyer le signalement" est inerte : `POST
+ * /reports` existe mais ce lot ne branche aucune écriture ». Il ne manquait que
+ * le branchement.
+ *
+ * `subjectType: 'USER'` ET `subjectId` = L'INTERLOCUTEUR. On signale la PERSONNE,
+ * pas un message précis : le menu s'ouvre depuis l'en-tête de la conversation, pas
+ * depuis une bulle, et la planche écrit « La conversation sera visible des
+ * modérateurs » — ce qui est la règle attachée au signalement d'un membre avec
+ * qui on converse. Signaler un message demanderait un déclencheur par bulle, que
+ * la maquette ne dessine pas.
+ *
+ * `details` N'EST ENVOYÉ QUE S'IL Y EN A : `createReportSchema.details` est
+ * `.optional()` avec un `min(1)`. Une chaîne vide serait refusée, alors que
+ * l'omettre passe — la même distinction que sur le corps d'un message.
+ */
+export function signaler(
+  /**
+   * LE GENRE DU SUJET EST UN PARAMÈTRE, et plus `'USER'` en dur.
+   *
+   * Le porteur : « sur les publications le signalement des commentaires ne
+   * marche pas non plus. » La même fenêtre sert donc à deux sujets —
+   * `USER` depuis le menu d'une conversation, `COMMENT` depuis un commentaire —
+   * et `ReportSubjectType` en nomme douze. Figer le genre ici aurait obligé à
+   * écrire une seconde fonction par sujet branché.
+   */
+  subjectType: string,
+  subjectId: string,
+  reason: string,
+  details: string,
+): Promise<unknown> {
+  return memberApi.post('/reports', z.unknown(), {
+    body: {
+      subjectType,
+      subjectId,
+      reason,
+      ...(details.trim() === '' ? {} : { details: details.trim() }),
+    },
+  });
+}

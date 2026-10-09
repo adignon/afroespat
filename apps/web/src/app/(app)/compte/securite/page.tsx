@@ -1,6 +1,9 @@
 'use client';
 
-import { chargerK04 } from '@/screens/compte/appels';
+import { SQUELETTE_K04, chargerK04 } from '@/screens/compte/appels';
+import { useCallback, useState } from 'react';
+import { fetchMe } from '@/lib/api/index';
+import { SecuriteVivante } from '@/screens/compte/securite-vivante';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { K04Desktop } from '@/screens/k04/desktop.generated';
@@ -49,14 +52,46 @@ import { K04Mobile } from '@/screens/k04/mobile.generated';
  * ceux de la maquette. Signalé aussi.
  */
 export default function SecuritePage() {
+  /**
+   * ── RECHARGER APRÈS UN GESTE ─────────────────────────────────────────────
+   *
+   * `useDonnees` n'expose aucun rappel : il relance son effet quand `charger`
+   * CHANGE D'IDENTITÉ, et son en-tête le dit (« `charger` doit être stable »).
+   * On fait donc dépendre le `useCallback` d'un compteur. C'est la même recette
+   * que la messagerie, et le seul mécanisme que ce crochet offre.
+   *
+   * `fetchMe({ force: true })` EST INDISPENSABLE : la réponse de `/me` est mise
+   * en cache, et sans forçage un numéro ajouté ou retiré ne se verrait qu'au
+   * rechargement complet de la page.
+   */
+  const [recharge, setRecharge] = useState(0);
+  const charger = useCallback(async () => {
+    await fetchMe({ force: true });
+    return chargerK04();
+    /** `recharge` n'est lu par personne : il est là POUR changer l'identité. */
+  }, [recharge]);
+  const recharger = useCallback(() => {
+    setRecharge((n) => n + 1);
+  }, []);
+
   return (
-    <EcranDonnees charger={chargerK04}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_K04} charger={charger}>
       {(donnees) => (
-        <ScreenFrames
-          screen="K04"
-          desktop={<K04Desktop {...donnees} />}
-          mobile={<K04Mobile {...donnees} />}
-        />
+        <SecuriteVivante donnees={donnees} onRecharger={recharger}>
+          {(vivantes) => (
+            <ScreenFrames
+              screen="K04"
+              desktop={<K04Desktop {...vivantes} />}
+              mobile={<K04Mobile {...vivantes} />}
+            />
+          )}
+        </SecuriteVivante>
       )}
     </EcranDonnees>
   );

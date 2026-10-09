@@ -36,7 +36,7 @@
  * Il ne reste donc que dix-sept ÉCRANS pour vingt-deux sections, et c'est cohérent :
  * la maquette regroupe ses cadres par forme, pas par page.
  */
-import { cadresDuRail, squeletteBoucle } from '../squelette-membre.mjs';
+import { barreBasse, barreBasseBoucle, cadresDuRail, squeletteBoucle } from '../squelette-membre.mjs';
 
 const FILE = 'docs/template/03 Accueil v2.dc.html';
 
@@ -648,9 +648,43 @@ const A07_MOBILE = [
 
 // ─── A08 · un réseau, onglet Sujets, cadre mobile ───────────────────────────
 
-/** Un onglet du réseau sur mobile : les trois déclarations sont des VALEURS, sur les deux formes. */
-const ONGLET_RESEAU_MOBILE = (graisse, couleur, bord, label) =>
-  '<span style="height:44px;display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:' +
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CET ONGLET EST PROMU PAR `markLinks` ET RÉÉCRIT PAR `donnees` : LE `noeud` ║
+ * ║ EST DONC LA FORME DÉJÀ PROMUE, ET IL FAUT DIRE POURQUOI                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La barre d'onglets du cadre MOBILE de A08 est le seul endroit du module où les
+ * deux mécanismes se croisent, et l'ordre de la génération tranche :
+ *
+ *   `markLinks` → `applyData`, et l'en-tête de `generate-screens.mjs` le motive :
+ *   les discriminants de `liens` sont des TEXTES DE LA MAQUETTE, donc ils doivent
+ *   passer avant que la liaison ne les change en `{{ … }}`.
+ *
+ * Or cette barre est écrite EN CLAIR dans la maquette, et c'est `donnees` qui en
+ * fait une boucle sur `netTabs`. Donc :
+ *
+ *   · `markLinks` voit cinq `<span>` littéraux et les promeut en cinq `<a>`, un
+ *     par onglet, avec leur destination déclarée (`liens` de A08, cadre Mobile) ;
+ *   · `applyData` passe ENSUITE et doit retrouver son littéral. Celui-ci n'est
+ *     donc plus le `<span>` de la maquette mais le `<a>` promu — d'où la forme
+ *     ci-dessous, qui recopie EXACTEMENT ce que `markLinks` écrit, neutralisation
+ *     du soulignement comprise et dans le même ordre.
+ *
+ * CE QUE ÇA COÛTE, et c'est la raison de ce pavé : ce `noeud` est désormais couplé
+ * au format de sortie de `markLinks`. Si ce format change, la génération S'ARRÊTE
+ * en nommant le fragment introuvable — bruyamment, jamais en silence — et c'est ce
+ * qui rend le couplage tenable. Essayer l'inverse a été mesuré : poser le lien dans
+ * `devient` est REFUSÉ par le troisième contrôle d'`applyData` (« la donnée ajoute
+ * du dessin que la maquette n'écrit pas là — <a href=" »), et c'est juste : une
+ * donnée n'a pas à inventer du balisage.
+ *
+ * @param vers la destination : littérale pour `noeud` (ce que `markLinks` a posé),
+ *             en dialecte pour `devient` (`{{ t.href }}`, une par onglet au rendu).
+ */
+const ONGLET_RESEAU_MOBILE = (graisse, couleur, bord, label, vers) =>
+  `<a href="${vers}" style="color:inherit;text-decoration:none;cursor:pointer;` +
+  'height:44px;display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:' +
   graisse +
   ';color:' +
   couleur +
@@ -658,7 +692,7 @@ const ONGLET_RESEAU_MOBILE = (graisse, couleur, bord, label) =>
   bord +
   ';white-space:nowrap">' +
   label +
-  '</span>';
+  '</a>';
 
 /** Une ligne de sujet sur mobile. `fond`, `fondIcone`, `traitIcone` marquent l'épinglage. */
 const LIGNE_SUJET_MOBILE = (fond, fondIcone, traitIcone, trace, titre, fondEtat, texteEtat, etat, resume) =>
@@ -692,17 +726,17 @@ const TRACE_BULLE = 'M4 5h16v11H9l-5 4z';
 const A08_MOBILE = [
   {
     noeud:
-      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Fil') +
-      ONGLET_RESEAU_MOBILE('700', '#0F5C48', '#16785E', 'Sujets') +
-      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Événements') +
-      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Membres') +
-      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Album'),
+      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Fil', '?onglet=fil') +
+      ONGLET_RESEAU_MOBILE('700', '#0F5C48', '#16785E', 'Sujets', '?onglet=sujets') +
+      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Événements', '?onglet=evenements') +
+      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Membres', '?onglet=membres') +
+      ONGLET_RESEAU_MOBILE('500', '#5D6B66', 'transparent', 'Album', '?onglet=album'),
     devient:
       '<sc-for list="{{ netTabs }}" as="t">' +
-      ONGLET_RESEAU_MOBILE('{{ t.w }}', '{{ t.fg }}', '{{ t.bd }}', '{{ t.label }}') +
+      ONGLET_RESEAU_MOBILE('{{ t.w }}', '{{ t.fg }}', '{{ t.bd }}', '{{ t.label }}', '{{ t.href }}') +
       '</sc-for>',
     frames: ['Mobile'],
-    why: 'Les onglets du réseau, mêmes prises que la planche d’ordinateur. ÉCART DE MAQUETTE remonté : la planche mobile n’en dessine que CINQ et oublie « À propos », que la planche d’ordinateur dessine — la liste liée en rend donc six, ce qui est l’onglet réel et non un onglet inventé.',
+    why: 'Les onglets du réseau, mêmes prises que la planche d’ordinateur, ET LEUR DESTINATION (`t.href` = `?onglet=…`, posée par `netTabsFor`) : la maquette les dessine en <span> sur ce cadre, ce n’étaient pas des liens. ÉCART DE MAQUETTE remonté : la planche mobile n’en dessine que CINQ et oublie « À propos », que la planche d’ordinateur dessine — la liste liée en rend donc six, ce qui est l’onglet réel et non un onglet inventé.',
   },
   {
     noeud:
@@ -909,8 +943,9 @@ const BARRE_PAYS_MOBILE = (pays, largeur, n) =>
   '</span></div>';
 
 /** Un onglet de la fiche ville sur mobile : une PASTILLE, pas un onglet souligné. */
-const PASTILLE_VILLE_MOBILE = (fond, texte, bord, label) =>
-  '<span style="padding:8px 12px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;background:' +
+const PASTILLE_VILLE_MOBILE = (fond, texte, bord, label, vers) =>
+  `<a href="${vers}" style="color:inherit;text-decoration:none;cursor:pointer;` +
+  'padding:8px 12px;border-radius:999px;font-size:12px;font-weight:700;white-space:nowrap;background:' +
   fond +
   ';color:' +
   texte +
@@ -918,7 +953,7 @@ const PASTILLE_VILLE_MOBILE = (fond, texte, bord, label) =>
   bord +
   '">' +
   label +
-  '</span>';
+  '</a>';
 
 /** Une ligne de budget sur mobile. La PREMIÈRE n'a pas de filet : c'est la variante du rang 0. */
 const LIGNE_BUDGET_MOBILE = (filet, poste, valeur, utiles) =>
@@ -949,16 +984,16 @@ const A12_MOBILE = [
   },
   {
     noeud:
-      PASTILLE_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', 'Bons plans') +
-      PASTILLE_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', 'Produits du pays') +
-      PASTILLE_VILLE_MOBILE('#16785E', '#fff', '#16785E', 'Budgets réels') +
-      PASTILLE_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', 'Témoignages'),
+      PASTILLE_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', 'Bons plans', '?onglet=bons-plans') +
+      PASTILLE_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', 'Produits du pays', '?onglet=produits') +
+      PASTILLE_VILLE_MOBILE('#16785E', '#fff', '#16785E', 'Budgets réels', '?onglet=budgets') +
+      PASTILLE_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', 'Témoignages', '?onglet=temoignages'),
     devient:
       '<sc-for list="{{ cityPills }}" as="c">' +
-      PASTILLE_VILLE_MOBILE('{{ c.bg }}', '{{ c.fg }}', '{{ c.bd }}', '{{ c.label }}') +
+      PASTILLE_VILLE_MOBILE('{{ c.bg }}', '{{ c.fg }}', '{{ c.bd }}', '{{ c.label }}', '{{ c.href }}') +
       '</sc-for>',
     frames: ['Mobile'],
-    why: 'Les quatre onglets de la fiche ville. La planche mobile les dessine en PASTILLES — fond, couleur et bordure, comme `chip()` — et non en onglets soulignés comme la planche d’ordinateur : d’où `cityPills` à côté de `cityTabs`, et non un onglet recoloré à la main.',
+    why: 'Les quatre onglets de la fiche ville, AVEC leur destination (`c.href` = `?onglet=…`). La planche mobile les dessine en PASTILLES — fond, couleur et bordure, comme `chip()` — et non en onglets soulignés comme la planche d’ordinateur : d’où `cityPills` à côté de `cityTabs`, et non un onglet recoloré à la main. Le `noeud` est la forme DÉJÀ PROMUE par `markLinks` : voir l’en-tête de `ONGLET_RESEAU_MOBILE`, qui dit pourquoi les deux mécanismes se croisent ici.',
   },
   {
     noeud:
@@ -1012,9 +1047,15 @@ const RESEAU_DE_LA_VILLE = {
   why: 'Le réseau automatique de la ville (08 §2) — son nom vient de la fiche, jamais composé à partir de celui de la ville.',
 };
 
-/** Un onglet de la fiche ville sur ordinateur : souligné, trois valeurs. */
-const ONGLET_VILLE_WEB = (graisse, couleur, bord, label) =>
-  '<span style="height:52px;display:flex;align-items:center;padding:0 12px;font-size:13.5px;font-weight:' +
+/**
+ * Un onglet de la fiche ville sur ordinateur : souligné, trois valeurs, et sa
+ * DESTINATION. Comme `ONGLET_RESEAU_MOBILE`, le `noeud` est la forme déjà promue
+ * par `markLinks` — les deux mécanismes se croisent sur ces barres, et c'est
+ * l'ordre de la génération qui l'impose.
+ */
+const ONGLET_VILLE_WEB = (graisse, couleur, bord, label, vers) =>
+  `<a href="${vers}" style="color:inherit;text-decoration:none;cursor:pointer;` +
+  'height:52px;display:flex;align-items:center;padding:0 12px;font-size:13.5px;font-weight:' +
   graisse +
   ';color:' +
   couleur +
@@ -1022,11 +1063,12 @@ const ONGLET_VILLE_WEB = (graisse, couleur, bord, label) =>
   bord +
   '">' +
   label +
-  '</span>';
+  '</a>';
 
-/** Un onglet de la fiche ville sur mobile : une pastille, trois valeurs. */
-const ONGLET_VILLE_MOBILE = (fond, texte, bord, label) =>
-  '<span style="height:36px;padding:0 13px;border-radius:999px;display:flex;align-items:center;font-size:12.5px;font-weight:700;white-space:nowrap;background:' +
+/** Un onglet de la fiche ville sur mobile : une pastille, trois valeurs, sa destination. */
+const ONGLET_VILLE_MOBILE = (fond, texte, bord, label, vers) =>
+  `<a href="${vers}" style="color:inherit;text-decoration:none;cursor:pointer;` +
+  'height:36px;padding:0 13px;border-radius:999px;display:flex;align-items:center;font-size:12.5px;font-weight:700;white-space:nowrap;background:' +
   fond +
   ';color:' +
   texte +
@@ -1034,38 +1076,46 @@ const ONGLET_VILLE_MOBILE = (fond, texte, bord, label) =>
   bord +
   '">' +
   label +
-  '</span>';
+  '</a>';
+
+/**
+ * Les quatre onglets de la fiche ville et leur nom dans l'URL, dans l'ordre que
+ * la planche dessine. Recopiés de `SLUGS` dans
+ * `app/(app)/villes/[slug]/ville-screen.tsx`, qui est ce que la page lit.
+ */
+const ONGLETS_VILLE = [
+  ['Bons plans', 'bons-plans'],
+  ['Produits du pays', 'produits'],
+  ['Budgets réels', 'budgets'],
+  ['Témoignages', 'temoignages'],
+];
 
 const ongletsVilleWeb = (actif) => ({
-  noeud: ['Bons plans', 'Produits du pays', 'Budgets réels', 'Témoignages']
-    .map((l, i) =>
-      i === actif
-        ? ONGLET_VILLE_WEB('700', '#0F5C48', '#16785E', l)
-        : ONGLET_VILLE_WEB('500', '#5D6B66', 'transparent', l),
-    )
-    .join(''),
+  noeud: ONGLETS_VILLE.map(([l, onglet], i) =>
+    i === actif
+      ? ONGLET_VILLE_WEB('700', '#0F5C48', '#16785E', l, `?onglet=${onglet}`)
+      : ONGLET_VILLE_WEB('500', '#5D6B66', 'transparent', l, `?onglet=${onglet}`),
+  ).join(''),
   devient:
     '<sc-for list="{{ cityTabs }}" as="t">' +
-    ONGLET_VILLE_WEB('{{ t.w }}', '{{ t.fg }}', '{{ t.bd }}', '{{ t.label }}') +
+    ONGLET_VILLE_WEB('{{ t.w }}', '{{ t.fg }}', '{{ t.bd }}', '{{ t.label }}', '{{ t.href }}') +
     '</sc-for>',
   fois: 1,
-  why: 'Les quatre onglets de la fiche ville. Les deux apparences écrivent LES TROIS mêmes déclarations — graisse, couleur, trait — donc trois valeurs suffisent, et l’onglet allumé vient du rang que la page tient de `?onglet=`.',
+  why: 'Les quatre onglets de la fiche ville, AVEC leur destination (`t.href` = `?onglet=…`). Les deux apparences écrivent LES TROIS mêmes déclarations — graisse, couleur, trait — donc trois valeurs suffisent, et l’onglet allumé vient du rang que la page tient de `?onglet=`.',
 });
 
 const ongletsVilleMobile = (actif) => ({
-  noeud: ['Bons plans', 'Produits du pays', 'Budgets réels', 'Témoignages']
-    .map((l, i) =>
-      i === actif
-        ? ONGLET_VILLE_MOBILE('#16785E', '#fff', '#16785E', l)
-        : ONGLET_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', l),
-    )
-    .join(''),
+  noeud: ONGLETS_VILLE.map(([l, onglet], i) =>
+    i === actif
+      ? ONGLET_VILLE_MOBILE('#16785E', '#fff', '#16785E', l, `?onglet=${onglet}`)
+      : ONGLET_VILLE_MOBILE('#fff', '#16211D', '#E6EBE9', l, `?onglet=${onglet}`),
+  ).join(''),
   devient:
     '<sc-for list="{{ cityPills }}" as="c">' +
-    ONGLET_VILLE_MOBILE('{{ c.bg }}', '{{ c.fg }}', '{{ c.bd }}', '{{ c.label }}') +
+    ONGLET_VILLE_MOBILE('{{ c.bg }}', '{{ c.fg }}', '{{ c.bd }}', '{{ c.label }}', '{{ c.href }}') +
     '</sc-for>',
   fois: 1,
-  why: 'Les mêmes quatre onglets, en PASTILLES : la planche mobile les dessine avec un fond et une bordure, pas un soulignement — d’où `cityPills`, calculé du même rang que `cityTabs`.',
+  why: 'Les mêmes quatre onglets, en PASTILLES et AVEC leur destination (`c.href`) : la planche mobile les dessine avec un fond et une bordure, pas un soulignement — d’où `cityPills`, calculé du même rang que `cityTabs`.',
 });
 
 /** Un filtre de contenu de la fiche ville, sur ordinateur. */
@@ -1873,6 +1923,21 @@ const MINIATURE_BROUILLON = (nom) =>
   '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M18 6 6 18M6 6l12 12"/></svg></span></div>';
 
+/** Une option de sondage, telle que le cadre de 390 px la dessine trois fois. */
+const OPTION_BROUILLON = (texte) =>
+  '<span style="padding:6px 10px;border-radius:10px;background:#F2F5F4;font-size:12px;' +
+  `font-weight:600">${texte}</span>`;
+
+/** La pastille d'un guide lié, telle que le cadre de 390 px la dessine une fois. */
+const PASTILLE_GUIDE_BROUILLON = (titre) =>
+  '<span style="display:flex;align-items:center;gap:6px;background:#EFF7F3;color:#0F5C48;' +
+  'font-size:12px;font-weight:700;padding:6px 8px 6px 12px;border-radius:999px">' +
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="2" ' +
+  'stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>' +
+  `${titre}` +
+  '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" stroke-width="2.6" ' +
+  'stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span>';
+
 const A01N_DONNEES = [
   {
     noeud:
@@ -1915,6 +1980,81 @@ const A01N_DONNEES = [
     devient: '>{{ brouillon.cible }}<',
     fois: 1,
     why: 'Le réseau où l’on publie — `communityId` de `createPostSchema` (04 §2.3 : renseigné, la publication est visible de ses membres SEULS). C’est la portée de la publication, et elle était écrite en dur.',
+  },
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA CARTE DE SONDAGE ÉTAIT L'EXEMPLE DE LA MAQUETTE, SERVI À TOUT LE MONDE║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La page pour la publication d'une actualité sur mobile n'est
+   * pas dynamique, pas d'input, l'ajout de sondage ne marche pas. »
+   *
+   * « Quelle date pour le repas partagé ? », « Samedi 22 mars », « 3 jours ·
+   * résultats après le vote · anonyme » : trois textes de la planche, affichés à
+   * qui n'a créé aucun sondage. Le cadre d'ordinateur, lui, lit déjà
+   * `composeurSondage` — c'est la MÊME donnée, et elle existait.
+   *
+   * LA CARTE ENTIÈRE DISPARAÎT SANS SONDAGE (`sc-if`) : une carte vide au milieu
+   * du brouillon dirait qu'il y a un sondage sans question.
+   */
+  {
+    noeud: '>Quelle date pour le repas partagé ?<',
+    devient: '>{{ composeurSondage.question }}<',
+    fois: 1,
+    why: 'La question du sondage en cours de composition — `composeurSondage.question`, la même donnée que le cadre d’ordinateur lit déjà.',
+  },
+  {
+    noeud:
+      OPTION_BROUILLON('Samedi 22 mars') +
+      OPTION_BROUILLON('Dimanche 23 mars') +
+      OPTION_BROUILLON('Samedi 29 mars'),
+    devient:
+      '<sc-for list="{{ composeurSondage.options }}" as="op">' +
+      OPTION_BROUILLON('{{ op }}') +
+      '</sc-for>',
+    fois: 1,
+    why: 'Les options du sondage : la LISTE, jamais trois dates écrites à côté d’elle. RÈGLE DURE 04 §2.2 — « 2 à 5 options ».',
+  },
+  {
+    noeud: '>3 jours · résultats après le vote · anonyme<',
+    devient: '>{{ composeurSondage.meta }}<',
+    fois: 1,
+    why: 'La ligne de réglages du sondage — durée, moment des résultats, anonymat — composée là où l’ordinateur la compose.',
+  },
+  /**
+   * LE GUIDE LIÉ — même histoire. « Repas pas cher à Lyon » était écrit en dur,
+   * et la fenêtre « Lier un guide » existe déjà sur les deux largeurs.
+   */
+  /**
+   * LES DEUX COMPTEURS DU PIED ÉTAIENT DES « 1 » ÉCRITS À LA MAIN.
+   *
+   * Celui des images lit déjà `brouillon.photos.length` ; ceux du sondage et des
+   * guides affichaient « 1 » à qui n'avait ni l'un ni l'autre — mesuré à l'écran
+   * sur un brouillon vide : « 0 1 1 ». Ils lisent maintenant la même source que
+   * les blocs qu'ils comptent.
+   */
+  {
+    noeud: 'M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>1</span>',
+    devient: 'M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>{{ composeurSondageCompte }}</span>',
+    fois: 1,
+    why: 'Le compteur de sondage du pied : 1 quand un sondage est composé, 0 sinon — il affichait 1 pour tout le monde.',
+  },
+  {
+    noeud:
+      'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>1</span>',
+    devient:
+      'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>{{ composeurGuidesCompte }}</span>',
+    fois: 1,
+    why: 'Le compteur de guides liés du pied : la longueur de `composeurGuides`, dérivée là où la liste est tenue — jamais un nombre écrit à côté d’elle.',
+  },
+  {
+    noeud: PASTILLE_GUIDE_BROUILLON('Repas pas cher à Lyon'),
+    devient:
+      '<sc-for list="{{ composeurGuides }}" as="g">' +
+      PASTILLE_GUIDE_BROUILLON('{{ g.titre }}') +
+      '</sc-for>',
+    fois: 1,
+    why: 'Les guides liés au brouillon — `composeurGuides`, que la fenêtre A01G remplit et que le cadre d’ordinateur lit déjà. UNE BOUCLE et non un titre : 04 §2.5 en autorise trois, et la planche n’en dessine qu’un.',
   },
 ];
 
@@ -2128,6 +2268,502 @@ const A06_DONNEES = [
 ];
 
 /**
+ * ════════════════════════════════════════════════════════════════════════════
+ * `liens` — LA MOITIÉ DE LA NAVIGATION QUE LE COMPTEUR NE VOIT PAS
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * Le récapitulatif « ── NAVIGATION ── » compte les `href="#"`. Il en comptait
+ * QUATRE-VINGT-CINQ sur ce module. C'est la moitié du problème, et pas la plus
+ * grosse : sur les dix-sept cadres MOBILES de cette maquette, le compteur
+ * annonçait ZÉRO lien mort — parce que ces cadres ne portent pas UNE SEULE balise
+ * `<a>`. Compté : `grep -c '<a ' a01/mobile.generated.tsx` → 0.
+ *
+ * Or c'est là que vit toute la navigation du téléphone :
+ *
+ *   · LA BARRE D'ONGLETS BASSE — Accueil · Parcours · Entraide · Services ·
+ *     Compte — dessinée en `<div>`, DIX-SEPT FOIS dans cette maquette (une par
+ *     cadre mobile qui la porte), soit 85 affordances. Le porteur a cliqué là.
+ *   · LA BARRE D'ONGLETS DE SECTION du fil — sept pastilles en `<span>`.
+ *   · LES BARRES D'ONGLETS DU RÉSEAU ET DE LA FICHE VILLE — vingt-et-une barres,
+ *     toutes en `<span>`, sur l'ordinateur comme sur le téléphone.
+ *
+ * Ce ne sont pas des liens cassés : CE NE SONT PAS DES LIENS. Le compteur ne
+ * bougera donc pas d'une unité pour la plupart de ce qui suit, et c'est le signe
+ * que la mesure du compteur était la mauvaise.
+ */
+
+/**
+ * ─── LA BARRE D'ONGLETS BASSE, ET POURQUOI SA TABLE N'EST PAS ICI ───────────
+ *
+ * `barreBasse` et `barreBasseBoucle` viennent de `tools/squelette-membre.mjs` :
+ * la barre est RIGOUREUSEMENT la même sur les 54 cadres mobiles des sept modules
+ * membre, et une table par module aurait donné sept endroits où corriger une
+ * route. Le lot de Parcours, Entraide, Services et Agenda l'avait posée dans un
+ * `tools/barre-basse.mjs` à part pour ne pas collisionner avec ce lot-ci, en
+ * écrivant lui-même qu'elle appartenait au squelette ; la fusion est faite, et le
+ * fichier intermédiaire a disparu.
+ *
+ * CETTE MAQUETTE EST LA SEULE À L'ÉCRIRE DE DEUX FAÇONS, et c'est pour cela que le
+ * squelette exporte deux fonctions :
+ *
+ *   · le cadre mobile de A01 la construit en BOUCLE (`<sc-for list="{{ mBottom }}"
+ *     as="b">`) : une entrée de maquette, cinq lignes au rendu, donc AUCUN libellé
+ *     à distinguer. La destination voyage avec la donnée (`b.href`), comme pour le
+ *     rail en boucle de cette même maquette → `barreBasseBoucle` ;
+ *   · les seize autres cadres mobiles de ce module l'écrivent EN CLAIR, comme les
+ *     53 autres cadres du dépôt → `barreBasse`, dont le marqueur est
+ *     `</svg>Libellé</div>`.
+ *
+ * Compté sur la maquette : 18 barres, 1 en boucle et 17 littérales, dont 16 dans
+ * des cadres que ce module déclare.
+ */
+
+/**
+ * ─── LA BARRE D'ONGLETS DE SECTION DU FIL (mobile de A01) ───────────────────
+ *
+ * Sept pastilles en `<span>`, en boucle (`<sc-for list="{{ mTabs }}" as="t">`).
+ * Ce sont les SEPT MÊMES PAGES que le panneau « COMMUNAUTÉ » de l'ordinateur ;
+ * les routes sont dans `screens/a01/data.ts`, reprises de `PANEL_ITEMS`.
+ *
+ * Le marqueur est le LIBELLÉ et non l'icône, parce que ces pastilles n'ont pas
+ * d'icône : la maquette n'y dessine qu'un texte et un compteur. `{{ t.label }}`
+ * est enfermé directement dans le `<span>` de la pastille, donc la remontée s'y
+ * arrête — ce qui est exactement la cible voulue. Vérifié UNE SEULE occurrence
+ * dans ce cadre (`postTypes`, l'autre boucle en `as="t"` de cette section, n'est
+ * que sur le cadre d'ordinateur, et ses contrôles sont déjà des `<button>`).
+ */
+const ONGLETS_SECTION_MOBILE = [
+  {
+    marqueur: '{{ t.label }}',
+    vers: '{{ t.href }}',
+    frames: ['Mobile'],
+    why:
+      'Les sept onglets de section du téléphone sont UNE entrée de maquette dans ' +
+      '`<sc-for as="t">`. Même raison que le rail : la destination est une donnée ' +
+      '(`t.href`), et ce sont les sept routes du panneau COMMUNAUTÉ.',
+  },
+];
+
+/**
+ * ─── LES ONGLETS DU RÉSEAU : UNE DESTINATION RELATIVE, ET POURQUOI ──────────
+ *
+ * `/reseaux/:slug` choisit son onglet par `?onglet=` — c'est la page qui le lit
+ * (`app/(app)/reseaux/[slug]/page.tsx`), et `SLUGS` dans `reseau-screen.tsx`
+ * donne les six noms : `fil`, `sujets`, `evenements`, `membres`, `album`,
+ * `a-propos`. Les six libellés de la barre sont dans le même ordre
+ * (`NET_TABS`, `screens/reseaux/chrome.ts`).
+ *
+ * LA DESTINATION EST ÉCRITE RELATIVE — `?onglet=fil` — et ce n'est pas une
+ * commodité : le SLUG DU RÉSEAU n'est dessiné nulle part dans ces planches, et il
+ * n'est pas dans leur prise (`A08TData` ne porte que l'en-tête). Une destination
+ * absolue demanderait donc de l'INVENTER. Une requête seule se résout contre
+ * l'URL courante en gardant son chemin : depuis `/reseaux/pays-bj?onglet=fil`,
+ * `?onglet=membres` donne `/reseaux/pays-bj?onglet=membres`. C'est la destination
+ * que la maquette dessine, sans rien ajouter.
+ *
+ * ── « SUJETS » NE PORTE PAS `&vue=proprietaire`, ET C'EST MESURÉ ────────────
+ *
+ * `PROPRIETAIRE` (dans `reseau-screen.tsx`) n'a AUCUNE entrée `sujets` : la
+ * maquette ne dessine pas de planche « Sujets — propriétaire ». Avec
+ * `?onglet=sujets&vue=proprietaire`, `tab` vaut `undefined`, `plain` est faux
+ * parce qu'on est propriétaire, et l'écran rend `null` — une page BLANCHE. Le lien
+ * mène donc à `?onglet=sujets` tout court, qui est la seule vue « Sujets » que la
+ * maquette dessine (A08 lui-même). Le passage en vue membre est le prix de ce
+ * manque de maquette, et il est REMONTÉ plutôt que caché.
+ */
+const ONGLETS_RESEAU = [
+  ['Fil', 'fil'],
+  ['Sujets', 'sujets'],
+  ['Événements', 'evenements'],
+  ['Membres', 'membres'],
+  ['Album', 'album'],
+  ['À propos', 'a-propos'],
+];
+
+/** La barre d'onglets du réseau sur les planches d'ordinateur de A08T. */
+const BARRE_ONGLETS_RESEAU_WEB =
+  '<div style="display:flex;gap:2px;padding:0 16px;border-top:1px solid #EAEEEC">';
+
+/** La même barre sur les planches mobiles de MOB2. */
+const BARRE_ONGLETS_RESEAU_MOBILE =
+  '<div style="display:flex;gap:2px;padding:0 10px;margin-top:10px;' +
+  'border-bottom:1px solid #E6EBE9;overflow:hidden;flex-shrink:0">';
+
+/**
+ * @param dans   le conteneur de la barre, pour borner la recherche du libellé
+ * @param frames les cadres concernés
+ * @param vue    'proprietaire' quand la planche est une vue propriétaire
+ */
+const ongletsReseau = (dans, frames, vue = null) =>
+  ONGLETS_RESEAU.map(([texte, onglet]) => {
+    // Voir l'en-tête : « Sujets » n'existe pas en vue propriétaire, et un lien qui
+    // mène à une page blanche est pire qu'un lien mort.
+    const garderLaVue = vue !== null && onglet !== 'sujets';
+    const vers = garderLaVue ? `?onglet=${onglet}&vue=${vue}` : `?onglet=${onglet}`;
+    return {
+      dans,
+      texte,
+      vers,
+      frames,
+      why:
+        `L’onglet « ${texte} » du réseau mène à ${vers} — la page lit la requête et choisit ` +
+        'la planche (`reseau-screen.tsx`). Destination RELATIVE : le slug du réseau n’est ni ' +
+        'dessiné ni dans la prise de ces planches, et l’inventer serait décider du réseau. ' +
+        'La maquette dessine ces onglets en <span> : ce n’étaient pas des liens.',
+    };
+  });
+
+/**
+ * ─── LES ONGLETS DU RÉSEAU EN BOUCLE (A08, les deux largeurs) ───────────────
+ *
+ * A08 est le seul écran du module à construire cette barre par une boucle
+ * (`<sc-for list="{{ netTabs }}" as="t">`) : la destination voyage donc avec la
+ * donnée (`t.href`, posé par `netTabsFor` dans `screens/reseaux/chrome.ts`), comme
+ * pour le rail. Les deux conteneurs diffèrent — la planche d'ordinateur écrit
+ * `gap:4px;padding:0 20px`, la mobile `gap:4px;padding:0 12px` — donc un `dans`
+ * par cadre.
+ *
+ * `topics`, l'autre boucle en `as="t"` de ces cadres, emploie `{{ t.title }}` et
+ * non `{{ t.label }}` : le marqueur reste univoque, et le `dans` le borne de toute
+ * façon.
+ */
+const ONGLETS_RESEAU_BOUCLE = [
+  {
+    dans: '<div style="display:flex;gap:4px;padding:0 20px;border-top:1px solid #EAEEEC">',
+    marqueur: '{{ t.label }}',
+    vers: '{{ t.href }}',
+    frames: ['Desktop'],
+    why:
+      'Les six onglets du réseau sont UNE entrée de maquette dans `<sc-for as="t">` sur A08 : ' +
+      'la destination est une donnée (`t.href` = `?onglet=…`, posée par `netTabsFor`).',
+  },
+  /**
+   * LE CADRE MOBILE DE A08 ÉCRIT SA BARRE EN CLAIR, et seulement CINQ onglets :
+   * « À propos » y manque, écart de maquette déjà relevé avec le bloc `donnees`
+   * de A08. Les cinq libellés sont donc promus un par un ICI, et c'est leur forme
+   * PROMUE que le `noeud` de ce bloc retrouve ensuite — voir l'en-tête de
+   * `ONGLET_RESEAU_MOBILE`.
+   */
+  ...ONGLETS_RESEAU.filter(([, onglet]) => onglet !== 'a-propos').map(([texte, onglet]) => ({
+    dans:
+      '<div style="display:flex;gap:4px;padding:0 12px;margin-top:12px;' +
+      'border-bottom:1px solid #E6EBE9;overflow:hidden;flex-shrink:0">',
+    texte,
+    vers: `?onglet=${onglet}`,
+    frames: ['Mobile'],
+    why:
+      `L’onglet « ${texte} » du réseau sur le cadre mobile de A08, écrit EN CLAIR par la ` +
+      'maquette : destination relative, pour la raison dite plus haut — le slug du réseau ' +
+      'n’est pas dessiné.',
+  })),
+];
+
+/**
+ * ─── LES ONGLETS DE LA FICHE VILLE ──────────────────────────────────────────
+ *
+ * Quatre onglets, et la page lit `?onglet=` exactement comme celle du réseau
+ * (`app/(app)/villes/[slug]/page.tsx`). Trois formes de dessin, donc trois
+ * conteneurs, et c'est la maquette qui en décide :
+ *
+ *   · A12 Desktop — une BOUCLE native (`<sc-for list="{{ cityTabs }}" as="t">`) :
+ *     la destination voyage avec la donnée, comme le rail ;
+ *   · A12 Mobile — quatre PASTILLES écrites en clair ;
+ *   · les trois planches A12T — quatre onglets soulignés sur l'ordinateur, quatre
+ *     pastilles sur le téléphone, tous écrits en clair.
+ *
+ * Les formes écrites en clair sont promues ICI, et c'est leur forme PROMUE que les
+ * blocs `donnees` retrouvent ensuite : voir l'en-tête de `ONGLET_RESEAU_MOBILE`.
+ */
+const ongletsVille = (dans, frames) =>
+  ONGLETS_VILLE.map(([texte, onglet]) => ({
+    dans,
+    texte,
+    vers: `?onglet=${onglet}`,
+    frames,
+    why:
+      `L’onglet « ${texte} » de la fiche ville mène à ?onglet=${onglet} — la page lit la ` +
+      'requête et choisit la planche (`ville-screen.tsx`). Destination RELATIVE : le slug de ' +
+      'la ville n’est pas dessiné sur ces planches. La maquette les dessine en <span> : ce ' +
+      'n’étaient pas des liens.',
+  }));
+
+/** Le conteneur des quatre onglets soulignés, sur les planches A12T d'ordinateur. */
+const BARRE_ONGLETS_VILLE_WEB =
+  '<div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;' +
+  'display:flex;align-items:center;gap:4px;padding:0 12px 0 20px">';
+
+/** Le conteneur des quatre pastilles, sur les planches A12T mobiles. */
+const BARRE_ONGLETS_VILLE_MOBILE =
+  '<div style="display:flex;gap:6px;padding:10px 16px;overflow:hidden;flex-shrink:0">';
+
+/** Celui du cadre mobile de A12 : la maquette ne lui met aucun remplissage. */
+const BARRE_ONGLETS_VILLE_A12_MOBILE =
+  '<div style="display:flex;gap:6px;overflow:hidden;flex-shrink:0">';
+
+/** Les cinq planches d'onglet du réseau en VUE MEMBRE, sur l'ordinateur. */
+const A08T_MEMBRE_WEB = ['Fil', 'Evenements', 'Membres', 'Album', 'APropos'];
+
+/** Les sept planches en VUE PROPRIÉTAIRE qui portent la barre d'onglets. */
+const A08T_PROPRIETAIRE_WEB = [
+  'AdminFil',
+  'AdminMembres',
+  'AdminEvenements',
+  'AdminAlbum',
+  'AdminAPropos',
+  'AdminAProposEdition',
+  'AdminGerer',
+];
+
+/** Les planches mobiles qui portent la barre d'onglets, par vue. */
+const A08T_MEMBRE_MOBILE = [
+  'FilMobile',
+  'EvenementsMobile',
+  'MembresMobile',
+  'AlbumMobile',
+  'AProposMobile',
+];
+const A08T_PROPRIETAIRE_MOBILE = [
+  'AdminFilMobile',
+  'AdminMembresMobile',
+  'AdminEvenementsMobile',
+  'AdminAlbumMobile',
+];
+
+/**
+ * Les planches mobiles de A08T qui portent la BARRE BASSE. Ce n'est pas la même
+ * liste que celles qui portent la barre d'onglets : « Membres — propriétaire » a
+ * la barre d'onglets et pas la barre basse, et c'est la maquette qui en décide.
+ * Mesuré planche par planche ; le `dans` de `markLinks` recompte à chaque
+ * génération et arrêterait tout si la liste tombait fausse.
+ */
+const A08T_BARRE_BASSE = [
+  'FilMobile',
+  'EvenementsMobile',
+  'MembresMobile',
+  'AlbumMobile',
+  'AProposMobile',
+  'AdminFilMobile',
+  'AdminEvenementsMobile',
+  'AdminAlbumMobile',
+];
+
+/**
+ * ─── CE QUE CHAQUE ÉCRAN AJOUTE AU SQUELETTE ────────────────────────────────
+ *
+ * Les clés sont les sections, et chaque entrée est la navigation PROPRE à cet
+ * écran : sa barre basse, ses onglets, et ses liens nommés un par un.
+ *
+ * CE QUI N'Y EST PAS, ET QU'IL FAUT LIRE COMME UN MANQUE REMONTÉ :
+ *
+ *   · « Réglages » (bas du rail), « Compte » (barre basse) — aucune route
+ *     `/compte` n'existe. Déjà remonté par le lot du squelette ;
+ *   · « Voir mon profil public » — la route est `/@:handle` et la maquette
+ *     n'écrit AUCUN handle sur cette carte ; le cadre n'en a pas de prise ;
+ *   · « Continuer » de la carte MON PARCOURS — `/parcours/:id` demande un
+ *     identifiant que la maquette ne dessine pas (elle écrit « Mes études à
+ *     Lyon », un nom, pas une adresse) ;
+ *   · « Modifier » de VOS RACCOURCIS et les trois raccourcis eux-mêmes — T5 §0
+ *     dit « mes réseaux », donc `/reseaux/:slug`, mais aucun slug n'est dessiné
+ *     ni porté par la donnée (`shortcuts` n'a que `name`, `sub`, `i`, `bg`) ;
+ *   · « Répondre », « Signaler », « Voir 3 autres commentaires » (A01C, A02) —
+ *     ce sont des ACTIONS dans la page, pas des destinations, et aucune route ne
+ *     leur correspond ;
+ *   · « Lire le guide » (A03), « Voir le guide » (A06), « Propositions reçues »
+ *     et « Signalements » (A04), le fil d'Ariane de A06 et de A09, « Réseau Lyon
+ *     et Rhône » (A12) — la destination EST dessinée (`/guides/:slug`,
+ *     `/reseaux/:slug`…) mais le SLUG n'est ni dessiné ni porté par la prise du
+ *     cadre. Deux de ces liens sont branchés ci-dessous, ceux dont la donnée
+ *     porte déjà l'identifiant ; les autres sont REMONTÉS.
+ */
+const LIENS_PAR_ECRAN = {
+  A01: [
+    ...barreBasseBoucle(['Mobile']),
+    ...ONGLETS_SECTION_MOBILE,
+    {
+      texte: 'Voir tout',
+      vers: '/agenda',
+      frames: ['Desktop'],
+      why:
+        'Le « Voir tout » de la carte « ÉVÉNEMENTS À LYON » mène à /agenda : c’est la page des ' +
+        'événements, celle-là même que l’entrée « Événements » du panneau COMMUNAUTÉ adresse ' +
+        'déjà (T5 §0). Écrit une seule fois dans ce cadre, vérifié.',
+    },
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ « CRÉER UNE STORY » — LE LIEN QUE LE COMPTEUR NE VOYAIT PAS              ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * C'est la demande du porteur, capture en main : « Sur la création du stories
+     * et ça envoie vers la section A14 ». La destination est `/stories/nouvelle`,
+     * la route qui sert A14 (`app/(app)/stories/nouvelle/page.tsx`).
+     *
+     * IL N'A JAMAIS FIGURÉ DANS LES 129 LIENS MORTS, et c'est la raison pour
+     * laquelle il avait survécu à tous les lots de navigation : la maquette ne le
+     * dessine pas en `<a href="#">` mais en `<span>`. Ce n'est donc pas un lien
+     * cassé — CE N'EST PAS UN LIEN. Le compteur de `href="#"` est aveugle à ces
+     * cas, exactement comme il l'était aux cinq `<span>` du rail littéral.
+     *
+     * ── DEUX LIENS PAR CADRE, ET NON UN : C'EST LA REMONTÉE QUI L'IMPOSE ──────
+     *
+     * La tuile dessinée contient DEUX éléments frères : le rond pointillé qui porte
+     * le « + », et le libellé en dessous. `markLinks` remonte du marqueur jusqu'au
+     * PREMIER élément promouvable qui le contient — donc il atteint l'un ou l'autre
+     * de ces deux `<span>`, jamais le `<div>` de la tuile qui les englobe : les
+     * spans interceptent la remontée. Le `<div>` est pourtant promouvable ; il est
+     * simplement INATTEIGNABLE par ce mécanisme.
+     *
+     * Ne promouvoir que le libellé laisserait le ROND inerte — or le rond est
+     * l'affordance principale, c'est lui que le porteur a montré dans sa capture et
+     * c'est lui qu'on clique. Les deux sont donc déclarés, et la tuile entière
+     * répond.
+     *
+     * CE QUE ÇA COÛTE, et qui est assumé : un lecteur d'écran annonce DEUX liens
+     * vers la même adresse là où un seul suffirait. Ce n'est aucune violation (axe
+     * n'a pas de règle là-dessus) et c'est le prix d'une tuile dont la maquette
+     * sépare l'icône du texte. L'alternative — un seul lien sur le libellé, et un
+     * rond mort — est ce que le porteur vient précisément de signaler.
+     *
+     * LE MARQUEUR DU ROND EST SON POINTILLÉ, et c'est mesuré : le tracé « + »
+     * (`M12 5v14M5 12h14`) figure DEUX fois dans le cadre d'ordinateur, et la tuile
+     * de 92 px aussi — les stories de la bande sont dessinées avec la même
+     * géométrie, dans une boucle. `border:1.5px dashed #9FB3AB` ne figure qu'UNE
+     * fois par cadre : il n'y a qu'un rond à créer, les autres portent des photos.
+     * Le marqueur tombe dans le style du `<span>` lui-même, donc la remontée
+     * s'arrête sur ce span — le rond.
+     */
+    {
+      marqueur: 'border:1.5px dashed #9FB3AB',
+      vers: '/stories/nouvelle',
+      nom: 'Créer une story',
+      frames: ['Desktop'],
+      why:
+        'Le rond « + » de la bande STORIES DU JOUR mène au composeur, /stories/nouvelle. Il ne ' +
+        'contient qu’un tracé SVG : son nom accessible est DÉCLARÉ, et il est recopié du libellé ' +
+        'que la maquette écrit juste dessous (« Créer une story »), jamais inventé.',
+    },
+    /**
+     * LE DISCRIMINANT EST CHEVRONNÉ, ET C'EST LE GARDE-FOU QUI L'A EXIGÉ.
+     *
+     * Déclaré `texte: 'Créer une story'`, ce lien a fait REFUSER la génération :
+     * « désigne 2 élément(s) promouvable(s) […] et la déclaration en attend 1 ».
+     * La cause est le lien du rond, juste au-dessus : il pose
+     * `aria-label="Créer une story"`, et cette chaîne contient donc le texte
+     * cherché. Le second lien remontait alors aussi bien depuis le libellé que
+     * depuis l'attribut du premier.
+     *
+     * `>Créer une story<` borne le discriminant au NŒUD DE TEXTE. C'est la même
+     * précaution que `>Créer<` sur le cadre mobile, et elle vaut d'être notée : un
+     * mécanisme qui pose des noms accessibles crée des cibles pour celui qui
+     * cherche des textes. Le garde-fou de comptage l'a vu tout seul — c'est
+     * exactement ce pour quoi il existe.
+     */
+    {
+      texte: '>Créer une story<',
+      vers: '/stories/nouvelle',
+      frames: ['Desktop'],
+      why:
+        'Le libellé de la même tuile, promu lui aussi pour que toute la tuile réponde et pas ' +
+        'seulement le rond. Écrit une seule fois dans ce cadre, vérifié.',
+    },
+
+    /**
+     * LE MÊME GESTE SUR LE CADRE MOBILE, et il avait été manqué par mon diagnostic
+     * comme par le compteur.
+     *
+     * Le cadre de 390 px dessine la MÊME tuile de création dans sa bande de
+     * stories — rond pointillé de 60 px et libellé — mais son libellé est
+     * « Créer » et non « Créer une story » : la maquette le raccourcit à cette
+     * largeur, comme elle raccourcit « politique de confidentialité » en
+     * « confidentialité » sur P01. Un lot qui n'aurait regardé que le texte long
+     * aurait laissé le mobile inerte.
+     *
+     * Le discriminant est `>Créer<` et non `Créer` : le mot seul figure TROIS fois
+     * dans ce cadre (il est contenu dans d'autres libellés), les chevrons le
+     * bornent au nœud de texte complet, et il n'y figure alors qu'une fois.
+     */
+    {
+      marqueur: 'border:1.5px dashed #9FB3AB',
+      vers: '/stories/nouvelle',
+      nom: 'Créer une story',
+      frames: ['Mobile'],
+      why:
+        'Le rond « + » de la bande de stories du cadre mobile, même destination. Le nom ' +
+        'accessible reprend le libellé long de la planche d’ordinateur : « Créer » seul ne dirait ' +
+        'pas créer QUOI, et c’est un texte que la maquette écrit bien, ailleurs, pour ce geste.',
+    },
+    {
+      texte: '>Créer<',
+      vers: '/stories/nouvelle',
+      frames: ['Mobile'],
+      why:
+        'Le libellé raccourci de la tuile de création, à 390 px. Les chevrons bornent le ' +
+        'discriminant au nœud de texte : « Créer » seul figure trois fois dans ce cadre.',
+    },
+  ],
+  A02: [
+    {
+      texte: "Fil d'actualité",
+      vers: '/accueil',
+      frames: ['Desktop'],
+      why:
+        'Le fil d’Ariane de la publication remonte au fil d’actualité, /accueil — la même page ' +
+        'que l’entrée homonyme du panneau COMMUNAUTÉ. Écrit une seule fois en clair dans ce ' +
+        'cadre : le panneau, lui, écrit `{{ m.label }}`.',
+    },
+  ],
+  A03: [
+    ...barreBasse(['Mobile']),
+    {
+      texte: 'Lire le guide',
+      vers: '{{ g.href }}',
+      frames: ['Desktop'],
+      why:
+        'Le « Lire le guide » d’une carte mène à /guides/:slug. Le slug n’est pas DESSINÉ — la ' +
+        'maquette écrit un titre, pas une adresse — mais il est RENDU par `GET /guides`, donc ' +
+        'la destination voyage avec la donnée (`g.href`, posée par `guideCardFrom`). Écrit une ' +
+        'seule fois : il est DANS la boucle des cartes, et la maquette ne l’écrit qu’une fois. ' +
+        'LE CADRE MOBILE N’EST PAS CONCERNÉ : il ne dessine aucun libellé, la carte ENTIÈRE est ' +
+        'l’affordance, et `markLinks` ne sait pas promouvoir un conteneur — sa remontée s’arrête ' +
+        'au premier élément promouvable, qui est le titre. REMONTÉ.',
+    },
+  ],
+  A07: barreBasse(['Mobile']),
+  A08: [...barreBasse(['Mobile']), ...ONGLETS_RESEAU_BOUCLE],
+  A11: barreBasse(['MobileCarte']),
+  A12: [
+    ...barreBasse(['Mobile']),
+    {
+      dans: '<div style="display:flex;gap:4px;padding:0 20px;border-bottom:1px solid #EAEEEC">',
+      marqueur: '{{ t.label }}',
+      vers: '{{ t.href }}',
+      frames: ['Desktop'],
+      why:
+        'Les quatre onglets de la fiche ville sont UNE entrée de maquette dans ' +
+        '`<sc-for as="t">` sur la planche d’ordinateur de A12 : la destination est une donnée ' +
+        '(`t.href` = `?onglet=…`, posée par `cityTabsFor`).',
+    },
+    ...ongletsVille(BARRE_ONGLETS_VILLE_A12_MOBILE, ['Mobile']),
+  ],
+  A08T: [
+    ...barreBasse(A08T_BARRE_BASSE),
+    ...ongletsReseau(BARRE_ONGLETS_RESEAU_WEB, A08T_MEMBRE_WEB),
+    ...ongletsReseau(BARRE_ONGLETS_RESEAU_WEB, A08T_PROPRIETAIRE_WEB, 'proprietaire'),
+    ...ongletsReseau(BARRE_ONGLETS_RESEAU_MOBILE, A08T_MEMBRE_MOBILE),
+    ...ongletsReseau(BARRE_ONGLETS_RESEAU_MOBILE, A08T_PROPRIETAIRE_MOBILE, 'proprietaire'),
+  ],
+  A12T: [
+    ...barreBasse(['BonsPlansMobile', 'ProduitsMobile', 'TemoignagesMobile']),
+    ...ongletsVille(BARRE_ONGLETS_VILLE_WEB, ['BonsPlans', 'Produits', 'Temoignages']),
+    ...ongletsVille(BARRE_ONGLETS_VILLE_MOBILE, [
+      'BonsPlansMobile',
+      'ProduitsMobile',
+      'TemoignagesMobile',
+    ]),
+  ],
+};
+
+/**
  * ─── LES ONZE ÉCRANS QUI DESSINENT LE SQUELETTE EN BOUCLE ───────────────────
  *
  * CETTE MAQUETTE EST LA SEULE DES SEPT À CONSTRUIRE SON RAIL PAR UNE BOUCLE, et
@@ -2160,6 +2796,412 @@ const SQUELETTE_EN_BOUCLE = new Set([
   'A12', // /villes/:slug
 ]);
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A14 — CE QUE LE COMPOSEUR DE STORY AFFICHAIT EN DUR                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le corps de la story est dessiné CINQ fois dans cette section, et seulement
+ * DEUX de ces cinq fois sont des champs de saisie (le téléphone de l'étape 1 et la
+ * boîte « Texte » du panneau d'ordinateur ; plus deux fois le calque de la variante
+ * photo). Les trois autres sont des RÉCAPITULATIFS, et c'est ici qu'elles sont
+ * liées :
+ *
+ *   · l'étape 2 le rappelle en grisé, TRONQUÉ par la maquette elle-même
+ *     (« …sa validation… ») ;
+ *   · l'étape 3 le montre dans sa carte d'aperçu de 132 px ;
+ *   · le cadre d'ordinateur le montre dans son téléphone sombre.
+ *
+ * POURQUOI ICI ET NON DANS LE TRANSCODEUR : `donnees` tourne AVANT `transcode`, sur
+ * le dialecte. Les récapitulatifs cessent donc de porter le littéral avant que les
+ * transformations de saisie ne cherchent leurs cibles — c'est ce qui permet à
+ * celles-ci de se borner par un style sans risquer d'attraper un récapitulatif.
+ *
+ * ── « UN RÉCAPITULATIF QUI MENT EST PIRE QU'UN RÉCAPITULATIF ABSENT » ───────
+ *
+ * C'est le dernier écran avant publication. La carte d'aperçu peignait son fond en
+ * `#16785E` en dur et annonçait « CONSEIL » quel que soit le type choisi : un
+ * membre qui composait une DÉCOUVERTE sur fond violet voyait un conseil vert juste
+ * avant d'appuyer sur « Publier ». Les trois prises de cette carte — fond, type,
+ * corps — sont celles que l'écran envoie vraiment.
+ */
+const A14_DONNEES = [
+  // ── Le corps, là où il est RAPPELÉ et non saisi ────────────────────────────
+  {
+    frames: ['MobileRattacher'],
+    noeud:
+      '<div style="padding:70px 30px 0;color:rgba(255,255,255,.4);font-size:22px;font-weight:800;' +
+      'line-height:1.2">Pour Visale, déposez votre VLS-TS dès sa validation…</div>',
+    devient:
+      '<div style="padding:70px 30px 0;color:rgba(255,255,255,.4);font-size:22px;font-weight:800;' +
+      'line-height:1.2">{{ storyBodyRecap }}</div>',
+    why:
+      'Le rappel du texte à l’étape 2. La maquette le TRONQUE elle-même (« …sa validation… », ' +
+      'suivi de points de suspension) : la prise reprend ce parti et coupe le corps saisi, ' +
+      'au lieu de laisser 280 caractères déborder d’une zone dessinée pour une ligne et demie.',
+  },
+  {
+    frames: ['MobilePublier'],
+    noeud:
+      '<span style="font-size:13px;font-weight:800;line-height:1.2">Pour Visale, déposez votre ' +
+      "VLS-TS dès sa validation sur l'ANEF. Réponse en 48 h.</span>",
+    devient:
+      '<span style="font-size:13px;font-weight:800;line-height:1.2">{{ storyBody }}</span>',
+    why: 'Le corps dans la carte d’aperçu de l’étape 3 — ce qui va réellement partir.',
+  },
+  {
+    frames: ['Desktop'],
+    noeud:
+      '<div style="font-size:30px;font-weight:800;line-height:1.2;letter-spacing:-0.6px;' +
+      "margin-top:14px\">Pour Visale, déposez votre VLS-TS dès sa validation sur l'ANEF. Réponse en 48 h.",
+    devient:
+      '<div style="font-size:30px;font-weight:800;line-height:1.2;letter-spacing:-0.6px;' +
+      'margin-top:14px">{{ storyBody }}',
+    why:
+      'Le corps dans le téléphone sombre du cadre d’ordinateur. C’est un APERÇU et non un champ : ' +
+      'la saisie d’ordinateur est la boîte « Texte » du panneau de droite, que la maquette ' +
+      'étiquette et dote de son propre compteur. Le `margin-top:14px` est ce qui distingue cette ' +
+      'occurrence de celle du cadre mobile, qui est bien un champ.',
+  },
+
+  // ── Le compteur de caractères, dessiné trois fois et mort trois fois ───────
+  /**
+   * LES TROIS COMPTEURS DEVIENNENT VIVANTS.
+   *
+   * La maquette écrit « 118 / 280 » en dur, et le nombre de gauche ne compte RIEN :
+   * le littéral qu'il accompagne fait 80 caractères, pas 118. C'est donc une valeur
+   * d'exemple — ce qui est en soi la preuve que la zone au-dessus est un champ.
+   *
+   * Le plafond ne figure pas dans ces déclarations : `{{ bodyCount }}` porte les
+   * deux nombres, et l'écran les calcule depuis `FEED_LIMITS.storyBodyMax`. Écrire
+   * 280 ici en ferait une seconde source, et le jour où la borne du serveur
+   * changerait, l'écran afficherait l'ancienne.
+   */
+  {
+    frames: ['Mobile'],
+    noeud:
+      '<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,.7)">118 / 280</div>',
+    devient:
+      '<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,.7)">{{ bodyCount }}</div>',
+    why: 'Le compteur de caractères du cadre mobile, calculé sur ce qui est tapé.',
+  },
+  {
+    frames: ['Desktop'],
+    noeud:
+      '<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,.7);margin-top:12px">118 / 280</div>',
+    devient:
+      '<div style="font-size:12.5px;font-weight:700;color:rgba(255,255,255,.7);margin-top:12px">{{ bodyCount }}</div>',
+    why: 'Le compteur sous le téléphone sombre du cadre d’ordinateur.',
+  },
+  {
+    frames: ['Desktop'],
+    noeud: '<span style="font-weight:700">118 / 280</span>',
+    devient: '<span style="font-weight:700">{{ bodyCount }}</span>',
+    why: 'Le compteur du champ « Texte » du panneau d’ordinateur.',
+  },
+
+  // ── La carte d'aperçu de l'étape 3 : fond et type ──────────────────────────
+  {
+    frames: ['MobilePublier'],
+    noeud:
+      '<div style="width:132px;height:234px;flex-shrink:0;border-radius:18px;background:#16785E;' +
+      'color:#fff;padding:12px;display:flex;flex-direction:column;justify-content:center;gap:6px">' +
+      '<span style="font-size:7.5px;font-weight:800;letter-spacing:1px;opacity:.75">CONSEIL</span>',
+    devient:
+      '<div style="width:132px;height:234px;flex-shrink:0;border-radius:18px;background:{{ writeBg }};' +
+      'color:#fff;padding:12px;display:flex;flex-direction:column;justify-content:center;gap:6px">' +
+      '<span style="font-size:7.5px;font-weight:800;letter-spacing:1px;opacity:.75">{{ webKind }}</span>',
+    why:
+      'La carte d’aperçu peignait son fond en #16785E et annonçait « CONSEIL » en dur, quel que ' +
+      'soit le type et la couleur choisis aux étapes précédentes. `writeBg` est la couleur de la ' +
+      'palette qui est VRAIMENT sélectionnée — la même prise qui peint déjà le cadre de l’étape 1 ' +
+      '— et `webKind` le type en capitales, la même prise que la pastille du cadre d’ordinateur. ' +
+      'Aucune couleur n’est inventée ni assombrie : ce sont les sept teintes de la palette dessinée.',
+  },
+
+  // ══ CE QUE LE PORTEUR A TROUVÉ MORT DANS SON NAVIGATEUR ══════════════════════
+  //
+  // « Les actions sur la texte et photo ne marche pas. Centré, gras, Changer,
+  // Recadrer, Assombrir le bas. Sur l'écran 3, la recherche, les étapes et sujet. »
+  //
+  // Les transformations qui rendent ces contrôles actionnables vivent dans le
+  // transcodeur (`A14_ALIGNEMENT`, `A14_STYLE_TEXTE`, `A14_OUTILS_PHOTO`,
+  // `A14_RECHERCHE`, `A14_ETAPES`, `A14_SUJETS`). Ce qu'elles ne peuvent pas faire,
+  // c'est transformer un LITTÉRAL en donnée : c'est le travail de cette table, et
+  // c'est elle qui tient le garde-fou du compte.
+
+  /**
+   * LE LIBELLÉ DU STYLE DE TEXTE DEVIENT UNE DONNÉE.
+   *
+   * La maquette écrit « Aa · Gras », et le gras EST ce qu'elle dessine
+   * (`font-weight:800` sur les quatre zones). Mais `StoryTextStyle` en compte TROIS
+   * — `BOLD | SERIF | MONO` — et `createStorySchema.textStyle` les exige : le bouton
+   * tourne donc sur les trois, et son libellé doit suivre. Un bouton qui afficherait
+   * « Gras » en servant du monospace serait pire qu'un bouton inerte.
+   *
+   * Les deux autres mots sont les valeurs du SERVEUR mises en capitale initiale
+   * (`Serif`, `Mono`), pas des mots d'interface inventés : voir `STORY_TEXT_STYLES`
+   * dans `screens/a14/data.ts`, qui le dit et le borne. REMONTÉ : le jour où
+   * `T2 textes-interface` nomme ces deux styles, c'est là que ça se corrige.
+   */
+  {
+    frames: ['Desktop'],
+    noeud:
+      '<span style="height:40px;padding:0 14px;border-radius:12px;background:#F2F5F4;' +
+      'display:flex;align-items:center;font-size:13px;font-weight:800">Aa · Gras</span>',
+    devient:
+      '<span style="height:40px;padding:0 14px;border-radius:12px;background:#F2F5F4;' +
+      'display:flex;align-items:center;font-size:13px;font-weight:800">{{ textStyleLabel }}</span>',
+    why:
+      'Le bouton de style de texte annonce le style COURANT. Il était un <span> inerte affichant ' +
+      '« Gras » en dur, alors que le champ `textStyle` du serveur accepte trois valeurs.',
+  },
+
+  /**
+   * LES TROIS OUTILS PHOTO DEVIENNENT DES OBJETS, et non plus des mots.
+   *
+   * `photoTools` était `['Changer', 'Recadrer', 'Assombrir le bas']` : trois chaînes,
+   * donc trois pastilles sans gestionnaire possible. Elles portent maintenant leur
+   * action et leur état (`t.onPick`, `t.on`), ce que `A14_OUTILS_PHOTO` branche.
+   *
+   * DEUX ENTRÉES, parce que la maquette dessine cette rangée DEUX fois et pas
+   * pareil : en `#fff` bordé dans le panneau d'ordinateur, en `rgba(0,0,0,.35)` posée
+   * sur la photo du téléphone. Une seule déclaration aurait raté l'un des deux cadres
+   * en silence — c'est exactement ce que `fois` existe pour empêcher.
+   */
+  {
+    frames: ['Desktop'],
+    noeud:
+      '<span style="height:36px;padding:0 13px;border-radius:999px;background:#fff;' +
+      'border:1px solid #E6EBE9;display:flex;align-items:center;font-size:12.5px;' +
+      'font-weight:700">{{ t }}</span>',
+    devient:
+      '<span style="height:36px;padding:0 13px;border-radius:999px;background:#fff;' +
+      'border:1px solid #E6EBE9;display:flex;align-items:center;font-size:12.5px;' +
+      'font-weight:700">{{ t.label }}</span>',
+    why: 'Les outils photo du panneau d’ordinateur portent leur libellé en donnée, pour porter aussi leur action.',
+  },
+  {
+    frames: ['MobilePhoto'],
+    noeud:
+      '<span style="height:38px;padding:0 14px;border-radius:999px;background:rgba(0,0,0,.35);' +
+      'display:flex;align-items:center;font-size:12.5px;font-weight:700">{{ t }}</span>',
+    devient:
+      '<span style="height:38px;padding:0 14px;border-radius:999px;background:rgba(0,0,0,.35);' +
+      'display:flex;align-items:center;font-size:12.5px;font-weight:700">{{ t.label }}</span>',
+    why: 'Les outils photo posés sur la photo du téléphone portent leur libellé en donnée, pour porter aussi leur action.',
+  },
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LA PHOTO DU MEMBRE REMPLACE LE HACHURAGE DE LA MAQUETTE                    ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * `repeating-linear-gradient(135deg,#46564F 0 14px,#3E4D47 14px 28px)` est le
+   * hachurage que cette maquette emploie partout pour dire « ici il y a une image »
+   * — elle le réemploie à l'identique sur la story de A13. Ce n'est donc pas une
+   * couleur de produit : c'est un EMPLACEMENT D'IMAGE, et le lier est la seule façon
+   * d'y faire entrer la photo que le membre choisit.
+   *
+   * `coque: true` sur le cadre mobile : la variante photo peint son hachurage dans
+   * la BALISE OUVRANTE du cadre, pas dans son contenu. Sans cette clé la donnée
+   * serait hors de portée d'`applyData` — voir son bloc dans `generate-screens.mjs`.
+   *
+   * TANT QU'AUCUNE PHOTO N'EST CHOISIE, `photoFond` REND LE HACHURAGE, mot pour mot.
+   * L'écran ne dessine donc rien de neuf : il rend ce que la maquette dessine, et le
+   * remplace par l'image quand il y en a une.
+   */
+  {
+    frames: ['MobilePhoto'],
+    coque: true,
+    noeud: 'background:repeating-linear-gradient(135deg,#46564F 0 14px,#3E4D47 14px 28px)',
+    devient: 'background:{{ photoFond }}',
+    why:
+      'La variante photo du téléphone affiche la PHOTO CHOISIE. Le hachurage de la maquette est ' +
+      'son emplacement d’image, et il reste la valeur servie tant que rien n’est choisi.',
+  },
+  {
+    frames: ['Desktop'],
+    noeud:
+      '<div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,' +
+      '#46564F 0 14px,#3E4D47 14px 28px)"></div>',
+    devient:
+      '<div style="position:absolute;inset:0;background:{{ photoFond }}"></div>',
+    why:
+      'Le téléphone sombre du cadre d’ordinateur montre la MÊME photo choisie — sans cela, ' +
+      'l’aperçu d’ordinateur mentirait sur ce qui va partir.',
+  },
+
+  /**
+   * « ASSOMBRIR LE BAS » A DÉJÀ SON DESSIN, ET C'EST CE VOILE-LÀ.
+   *
+   * La maquette dessine en tête de la variante photo un
+   * `linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.72))` sur 60 % de la hauteur :
+   * c'est LITTÉRALEMENT « le bas assombri ». Le bouton n'avait donc rien à inventer
+   * — il lui manquait seulement de pouvoir l'éteindre.
+   *
+   * `<sc-if>` et non une opacité liée : l'état est binaire, et c'est la balise du
+   * dialecte que `transcode` sait déjà rendre. Rien n'est ajouté à l'émetteur.
+   * Le voile est ALLUMÉ par défaut, parce que c'est l'état que la maquette dessine.
+   */
+  {
+    frames: ['MobilePhoto'],
+    noeud:
+      '<div style="position:absolute;left:0;right:0;bottom:0;height:60%;' +
+      'background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.72))"></div>',
+    devient:
+      '<sc-if value="{{ assombri }}"><div style="position:absolute;left:0;right:0;bottom:0;' +
+      'height:60%;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.72))"></div></sc-if>',
+    why:
+      'Le bouton « Assombrir le bas » éteint et rallume le voile que la maquette dessine déjà. ' +
+      'Aucun champ en base ne le conserve : c’est de la composition, et c’est REMONTÉ.',
+  },
+
+  /**
+   * LE MÊME VOILE, SUR LE CADRE D'ORDINATEUR — et il ne s'écrit pas pareil.
+   *
+   * La fenêtre sombre dessine son voile en `rgba(0,0,0,.75)` là où le téléphone
+   * l'écrit en `.72`. Deux littéraux, donc DEUX déclarations : une seule aurait
+   * laissé l'aperçu d'ordinateur sourd au bouton, en silence — ce que le compte de
+   * `fois` n'aurait pas vu, puisqu'il ne cherche que ce qu'on lui a nommé.
+   *
+   * Aucune des deux valeurs n'est touchée. C'est le point : « assombrir » ne change
+   * pas l'intensité de l'assombrissement, il l'allume ou l'éteint.
+   */
+  {
+    frames: ['Desktop'],
+    noeud:
+      '<div style="position:absolute;left:0;right:0;bottom:0;height:60%;' +
+      'background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.75))"></div>',
+    devient:
+      '<sc-if value="{{ assombri }}"><div style="position:absolute;left:0;right:0;bottom:0;' +
+      'height:60%;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.75))"></div></sc-if>',
+    why:
+      'Le voile de l’aperçu d’ordinateur suit le même bouton « Assombrir le bas » que celui du ' +
+      'téléphone — sans quoi les deux largeurs montreraient deux états différents.',
+  },
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LE SÉLECTEUR DE PARCOURS, QUE LE PORTEUR A DEMANDÉ NOMMÉMENT                ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * « Aussi normalement les étapes viennent du backend notamment les étapes des
+   * parcours. Avant les étapes des parcours, il faut ajouter une en haut des étapes,
+   * les différents type de parcours. En fait il faut un bouton sélectionner un
+   * parcours (avec un chevron right à la fin qui affiche un modal dans la page avec
+   * les parcours et leur description et on peut sélectionner) qui va afficher la
+   * liste des parcours disponible et il sélectionne un, ainsi les étapes par rapport
+   * à ce parcours s'affiche dans la liste des étapes. »
+   *
+   * LA MAQUETTE NE DESSINE NI CE BOUTON NI CETTE FENÊTRE. Ils sont donc une PRISE —
+   * `{{ parcoursSelecteur }}`, un nœud React — et le dessin vit dans
+   * `screens/a14/selecteur-parcours.tsx`, où CHAQUE valeur porte en commentaire la
+   * ligne de maquette d'où elle est recopiée. Les mettre ici serait écrire du dessin
+   * dans une déclaration de donnée, ce que le troisième contrôle d'`applyData`
+   * refuse — à raison.
+   *
+   * ET « MON PARCOURS · ÉTUDES » DEVIENT UNE DONNÉE. C'est le titre de la liste
+   * d'étapes, et il annonçait « ÉTUDES » quel que soit le parcours : choisir
+   * « Travailler » aurait rempli la liste des étapes du travail sous un titre qui dit
+   * « études ». Le parcours choisi le nomme maintenant.
+   */
+  {
+    frames: ['Desktop', 'MobileRattacher'],
+    noeud:
+      '<div style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F">' +
+      'MON PARCOURS · ÉTUDES</div>',
+    devient:
+      '{{ parcoursSelecteur }}' +
+      '<div style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#8A958F">' +
+      '{{ parcoursLabel }}</div>',
+    why:
+      'Le sélecteur de parcours que le porteur a demandé se pose AU-DESSUS de la liste d’étapes, ' +
+      'et le titre de cette liste nomme le parcours choisi au lieu d’annoncer « ÉTUDES » en dur.',
+  },
+
+  /**
+   * LES SUJETS DEVIENNENT DES OBJETS SÉLECTIONNABLES.
+   *
+   * `attachTopics` était cinq chaînes (« Visale · Garant · CAF · Colocation ·
+   * Banque »), donc cinq pastilles sans gestionnaire possible. Elles portent
+   * maintenant leur libellé, leur état et leur action.
+   *
+   * LES DEUX VALEURS DE L'ÉTAT SONT CELLES DE LA MAQUETTE, et c'est mesurable : son
+   * propre `renderVals()` écrit, pour la ligne d'étape juste au-dessus,
+   * `bg: a.on?'#E3F0EB':'#fff'` et `bd: a.on?'1.5px solid #16785E':'1px solid #E6EBE9'`.
+   * C'est SON vocabulaire de sélection, dans CE panneau, et il est réemployé tel quel
+   * — déclaré en `motifs`, donc vérifié : si la maquette cessait de l'écrire, la
+   * génération s'arrêterait au lieu de laisser une couleur orpheline.
+   */
+  {
+    frames: ['Desktop', 'MobileRattacher'],
+    noeud:
+      '<span style="padding:8px 13px;border-radius:999px;background:#fff;' +
+      'border:1px solid #E6EBE9;font-size:12.5px;font-weight:600">{{ t }}</span>',
+    devient:
+      '<span style="padding:8px 13px;border-radius:999px;background:{{ t.bg }};' +
+      'border:{{ t.bd }};font-size:12.5px;font-weight:600">{{ t.label }}</span>',
+    /**
+     * TÉMOINS, et non fragments réemployés : ces deux motifs ne figurent pas dans
+     * `devient` — ils vivent dans le `renderVals()` de la maquette, pas dans son
+     * balisage. Les déclarer ici ne change rien au JSX produit ; cela rend
+     * VÉRIFIABLE l'affirmation « ces deux valeurs sont celles de la maquette », et
+     * ARRÊTE la génération le jour où elle cesse de les écrire.
+     */
+    motifs: [
+      { from: 'docs/template/03 Accueil v2.dc.html', pattern: "bg: a.on?'#E3F0EB':'#fff'" },
+      {
+        from: 'docs/template/03 Accueil v2.dc.html',
+        pattern: "bd: a.on?'1.5px solid #16785E':'1px solid #E6EBE9'",
+      },
+    ],
+    why:
+      'Les sujets deviennent sélectionnables et renseignent `category`. Leur apparence « choisi » ' +
+      'est celle que la maquette donne déjà à la ligne d’étape du même panneau.',
+  },
+];
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A13 — L'EMPLACEMENT PHOTO REÇOIT LA PHOTO, AU LIEU DU HACHURAGE           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * TROUVÉ EN TRAVERSANT LA CHAÎNE ENTIÈRE DANS UN SEUL NAVIGATEUR, et trouvé
+ * seulement comme ça : deux moitiés vertes mesurées séparément ne font pas une
+ * chaîne verte. Le composeur envoyait bien la photo, le serveur la stockait et la
+ * servait — et l'écran de LECTURE peignait un rectangle rayé. La story était
+ * composée, publiée, servie, et jamais vue.
+ *
+ * `repeating-linear-gradient(135deg,#46564F …)` est le motif que cette maquette
+ * emploie partout pour dire « ici il y a une image ». A13 le réemploie à
+ * l'identique — ce n'est donc pas une couleur de produit, c'est un EMPLACEMENT
+ * D'IMAGE, et le lier est la seule façon d'y faire entrer la photo du membre.
+ * C'est exactement le raisonnement déjà tenu pour la variante photo du composeur,
+ * et c'est délibérément le même : deux façons de peindre le même emplacement
+ * finiraient par diverger.
+ *
+ * SANS PHOTO, `photoFond` REND LE HACHURAGE MOT POUR MOT (`HACHURAGE_PHOTO`,
+ * importé de `a14/data.ts` et non recopié). L'écran ne dessine donc rien de neuf.
+ *
+ * SEUL LE CADRE MOBILE est lié, parce que seul lui dessine cet emplacement : le
+ * cadre d'ordinateur d'A13 n'en dessine AUCUN — compté, zéro occurrence. Une story
+ * à fond photo n'a donc pas d'aperçu photo sur ordinateur, et ce n'est pas un
+ * oubli de ce lot : la maquette ne le dessine pas. REMONTÉ au porteur.
+ */
+const A13_DONNEES = [
+  {
+    frames: ['Mobile'],
+    noeud:
+      '<div style="position:absolute;inset:0;background:repeating-linear-gradient(135deg,' +
+      '#46564F 0 14px,#3E4D47 14px 28px)">',
+    devient: '<div style="position:absolute;inset:0;background:{{ st.photoFond }}">',
+    why:
+      'L’écran de lecture peint la PHOTO de la story. Le hachurage de la maquette est son ' +
+      'emplacement d’image, et il reste la valeur servie tant qu’il n’y a pas de photo.',
+  },
+];
+
 export const screens = [
   {
     file: 'docs/template/03 Accueil v2.dc.html',
@@ -2188,9 +3230,48 @@ export const screens = [
      * valeur par publication. C'est la seule chose qui manquait : `threadFrom` est
      * écrit et éprouvé depuis le lot précédent.
      */
+    /**
+     * ── LES DEUX ICÔNES DU COMPOSEUR, ET LA DETTE QU'ELLES PAIENT ─────────────
+     *
+     * « Lier un guide » et « Créer un sondage » ouvrent A01G et A01S. Le lot
+     * précédent avait branché la PREMIÈRE sans passer par ici, en s'accrochant
+     * dans l'écouteur de la page à l'attribut `title` que la maquette écrit — et
+     * il a dit pourquoi, et ce que ça coûtait : « LIMITE ASSUMÉE ET REMONTÉE : un
+     * `<span>` n'est pas atteignable au clavier. Ce déclencheur est à la souris et
+     * au doigt seulement, jusqu'à ce que le lot de navigation le promeuve en
+     * `<button>` — c'est là que ce travail appartient, et `markTriggers` sait déjà
+     * le faire (`label` donne le nom accessible). »
+     *
+     * C'est fait ici. Les deux icônes deviennent de vrais `<button>`, donc
+     * tabulables et actionnables à Entrée et à Espace, et l'écouteur de la page ne
+     * regarde plus que `data-modal-open`.
+     *
+     * LE MARQUEUR EST L'ATTRIBUT `title`, et c'est la maquette qui l'écrit : il
+     * n'y a rien à deviner, et c'est le seul discriminant disponible — ces
+     * contrôles ne contiennent qu'un `<svg>`, sans texte. Compté UNE SEULE fois
+     * dans chacun des deux cadres de A01 (les trois autres occurrences du fichier
+     * sont dans les colonnes de documentation de A01G, A01N et A01S, qui ne sont
+     * pas ces cadres).
+     *
+     * `label` RECOPIE ce `title` — même mot, même source. C'est la discipline de
+     * `ICON_BUTTON_NAMES` : le nom se recopie de la maquette, jamais ne s'invente.
+     *
+     * ── CE QUI RESTE DESSINÉ, ET POURQUOI ────────────────────────────────────
+     *
+     * `title="Ajouter une image"` est la TROISIÈME icône du composeur, et elle
+     * n'est PAS déclarée : la maquette ne dessine AUCUNE fenêtre pour elle. Ses
+     * quatre sections de modale sont A01C, A01P, A01G et A01S, et la seule qui
+     * parle de pièces jointes est A01S — dont les deux cadres sont le formulaire
+     * de SONDAGE (`data-screen-label="A01 Sondage et pièces jointes"`, mais la
+     * planche écrit « Créer un sondage » et ne dessine aucun choisisseur de
+     * fichier). Lui ouvrir A01S serait décider que « Ajouter une image » et
+     * « Créer un sondage » sont le même geste. REMONTÉ, pas comblé.
+     */
     triggers: [
       { marker: '</svg>{{ p.comment }}', modal: 'A01C', subject: 'p.postId' },
       { marker: '</svg>Partager', modal: 'A01P', subject: 'p.postId' },
+      { marker: 'title="Lier un guide"', modal: 'A01G', label: 'Lier un guide' },
+      { marker: 'title="Créer un sondage"', modal: 'A01S', label: 'Créer un sondage' },
     ],
     frames: [
       { width: 1440, name: 'Desktop' },
@@ -2281,7 +3362,21 @@ export const screens = [
      * choisir lequel des deux a raison, ce qui n'est pas une décision de
      * transcodage. Les deux écarts sont REMONTÉS AU PORTEUR.
      */
-    { section: 'A01S', modalTitle: 'Créer un sondage' },
+    /**
+     * `A01SData` ET NON `A01Data` — un TYPE PLUS ÉTROIT, et c'est ce qui rend
+     * cette fenêtre réutilisable.
+     *
+     * Elle ne lit QUE le sondage : question, options, durées, trois
+     * interrupteurs, validation. Lui demander `A01Data` entier obligeait tout
+     * appelant à fournir le fil, les stories, les raccourcis et vingt autres
+     * prises qu'elle n'ouvre jamais — c'est exactement ce qui a empêché
+     * `/publications/nouvelle` de la monter, alors que le porteur l'attendait :
+     * « Sondage et guides liés : sur mobile ça ne marche pas aussi. »
+     *
+     * `A01Data` ÉTEND `A01SData`, donc la page du fil continue de la nourrir en
+     * s'étalant comme avant, sans une ligne de changement.
+     */
+    { section: 'A01S', modalTitle: 'Créer un sondage', type: 'A01SData' },
   ].map((m) => ({
     file: 'docs/template/03 Accueil v2.dc.html',
     section: m.section,
@@ -2386,7 +3481,44 @@ export const screens = [
    * « un composant, trois types · AUCUN COMPTEUR DE VUES », écrit la maquette sous
    * sa planche. Elle tient la règle dure §1.2 d'elle-même : rien à signaler.
    */
-  { section: 'A13', dataModule: './data', dataType: 'A13Data', frames: desktopAndMobile },
+  {
+    section: 'A13',
+    dataModule: './data',
+    dataType: 'A13Data',
+    frames: desktopAndMobile,
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA PLANCHE DE A13 CENTRE SES TROIS COLONNES — ON LES JETAIT          ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « La page d'un story ne s'affiche pas du tout bien et n'est
+     * pas bien aligné. »
+     *
+     * Sa planche écrit `position:relative;display:flex;align-items:center;
+     * justify-content:center;gap:40px`. L'écran pose SIX enfants à plat — le
+     * logo, le voisin de gauche, un chevron, la story de 430 px, un chevron, le
+     * voisin de droite — et SANS ce style ils retombaient en colonne, collés en
+     * haut à gauche. C'est exactement ce que la capture montre.
+     *
+     * `position: relative` compte autant que le reste : le logo est posé en
+     * `position: absolute; top: 24px; left: 28px`, et sans ancêtre positionné il
+     * se calait sur la page entière.
+     */
+    keepFrameStyle: true,
+    coqueRemplitLaHauteur: ['Desktop', 'Mobile'],
+    /**
+     * LE FOND DE LA COQUE DEVIENT UNE DONNÉE — « Le background n'est pas
+     * transparent […] il doit couvrir toute la page et être transparent pour voir
+     * le contenu derrière. »
+     *
+     * `#101A17` est juste pour une PAGE entière, et faux pour une FENÊTRE : posé
+     * par-dessus le fil, cet aplat recouvre le voile et donc la page. L'écran
+     * décide — `story-ecran.tsx`, prise `fondEcran`.
+     */
+    coqueRemplace: ['background: "#101A17"', 'background: fondEcran'],
+    donnees: A13_DONNEES,
+  },
+
 
   /**
    * A14 — création d'une story, en trois étapes. `/stories/nouvelle`
@@ -2406,6 +3538,126 @@ export const screens = [
     dataModule: './data',
     dataType: 'A14Data',
     keepFrameStyle: true,
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LES QUATRE CADRES DE TÉLÉPHONE REMPLISSENT L'ÉCRAN                       ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * « ça ne s'affiche pas bien », a écrit le porteur en ouvrant cet écran — avant
+     * même de parler des contrôles morts. MESURÉ AU NAVIGATEUR : la feuille du bas de
+     * l'étape 2 faisait 55 px de haut dans une fenêtre de 844 px, soit 6 % au lieu des
+     * 78 % que la maquette dessine. Tout le dessin de l'étape 2 était tassé.
+     *
+     * La raison est expliquée là où la clé agit (`generate-screens.mjs`, bloc « LA
+     * COQUE REMPLIT LA HAUTEUR ») : `keepFrameStyle` garde le style de la planche mais
+     * en retire la hauteur fixe — à raison — et les hauteurs en POURCENTAGE dessinées
+     * à l'intérieur n'ont alors plus rien contre quoi se résoudre.
+     *
+     * LES QUATRE, et pas seulement celui de l'étape 2 : `MobileRattacher` porte la
+     * feuille à 78 %, `MobilePhoto` le voile à 60 %, et les deux autres sont les mêmes
+     * téléphones pleine hauteur — leur donner une hauteur différente ferait sauter le
+     * fond coloré d'un état à l'autre.
+     *
+     * LE CADRE D'ORDINATEUR N'Y EST PAS : ses pourcentages se résolvent contre le
+     * téléphone sombre qu'il dessine lui-même, qui a sa propre hauteur. Il n'en a pas
+     * besoin, et l'ajouter changerait une géométrie que personne n'a demandé de
+     * changer.
+     */
+    /**
+     * ── « DESKTOP » S'AJOUTE, ET IL REMPLIT LA LARGEUR ──────────────────────
+     *
+     * Le porteur : « La page de création se plaque toujours à gauche sur une
+     * partie de la page. »
+     *
+     * MESURÉ : la surface sombre de A14 fait 908 px dans un cadre de 1384 — elle
+     * est un ÉLÉMENT FLEX du cadre, donc dimensionnée sur son contenu, et le vert
+     * de l'écran se voit sur les 476 px restants. C'est exactement ce que la
+     * capture montre.
+     *
+     * Le trio `flexGrow/Shrink/Basis` joue sur l'AXE PRINCIPAL, quel qu'il soit :
+     * en colonne il remplit la hauteur — d'où le nom de la clé — et en RANGÉE,
+     * ce qu'est le cadre d'ordinateur, il remplit la largeur. Un seul mécanisme,
+     * deux effets, et c'est celui que la planche décrit : sa surface sombre fait
+     * toute la largeur de l'image.
+     */
+    coqueRemplitLaHauteur: [
+      'Desktop',
+      'Mobile',
+      'MobilePhoto',
+      'MobileRattacher',
+      'MobilePublier',
+    ],
+    donnees: A14_DONNEES,
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LA FLÈCHE DE L'ÉTAPE 1 SUR MOBILE — LE FLUX MOBILE ÉTAIT UN CUL-DE-SAC   ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ AU NAVIGATEUR, et c'est ce qui l'a fait apparaître : la suite de tests
+     * ne pouvait pas quitter l'étape 1 sur mobile. La maquette y dessine son seul
+     * contrôle d'avancement en `<span>` — un rond blanc de 58 px portant une flèche
+     * — donc ce n'est NI un bouton NI un lien. `BUTTON_ACTIONS` ne peut rien pour
+     * lui : il ne branche que des `<button>` existants. Et le compteur de liens
+     * morts ne le voyait pas davantage que le « Créer une story » de A01, pour la
+     * même raison — un `<span>` n'est pas un `href="#"`.
+     *
+     * Conséquence avant ce lot : sur un téléphone, on écrivait sa story et on ne
+     * pouvait plus avancer. Les étapes 2 et 3 n'étaient atteignables que par l'URL.
+     *
+     * `action` plutôt que `vers` : avancer d'une étape n'est pas une destination,
+     * c'est un geste dans la page. `markLinks` en fait alors un
+     * `<button type="button" onClick={onContinue}>` — le MÊME gestionnaire que le
+     * « Continuer » de l'étape 2, donc il n'y a qu'une façon d'avancer.
+     *
+     * LE MARQUEUR EST LE TRACÉ DE LA FLÈCHE, et la remontée est vérifiée : le
+     * `<path>` et le `<svg>` ne sont pas promouvables, donc elle atteint le `<span>`
+     * du rond — la cible dessinée, pas l'icône.
+     *
+     * LE NOM EST RECOPIÉ, jamais inventé : le rond ne contient qu'un tracé, donc il
+     * serait muet au lecteur d'écran et `markLinks` refuse de générer sans `nom`.
+     * « Suivant » est le mot que la maquette écrit elle-même pour CE geste, sur le
+     * bouton équivalent de son cadre d'ordinateur à la même étape (`webFrameFor` :
+     * `next = ['Suivant', 'Continuer', 'Publier'][step]`).
+     */
+    liens: [
+      {
+        marqueur: 'M5 12h14m-6-6 6 6-6 6',
+        action: 'onContinue',
+        nom: 'Suivant',
+        frames: ['Mobile', 'MobilePhoto'],
+        why:
+          'Le rond fléché de l’étape 1 mobile fait passer à l’étape 2. La maquette le dessine en ' +
+          '<span> : ce n’était ni un bouton ni un lien, et le flux mobile s’arrêtait là. Même ' +
+          'gestionnaire que le « Continuer » de l’étape 2.',
+      },
+      /**
+       * LA PASTILLE « PHOTO » DE L'ÉTAPE 1 MOBILE — mesurée inerte, elle aussi.
+       *
+       * Le cadre d'ORDINATEUR dessine ce contrôle en `<button>`, et il est branché
+       * depuis un lot précédent (`w.onPhoto`). Le cadre MOBILE le dessine en
+       * `<span>` : même geste, autre balise, et donc rien ne répondait. C'est ce
+       * qui rendait la VARIANTE PHOTO — le calque de texte déplaçable que le
+       * porteur a photographié — INATTEIGNABLE sur téléphone, alors que c'est
+       * précisément la largeur où il a dit « comme avec whatsapp ».
+       *
+       * LE MARQUEUR EST `</svg>Photo`, et il faut le dire : le mot « Photo » seul
+       * figure dix fois dans cette maquette (le composeur du fil, les pièces
+       * jointes, la fiche ville…). Collé à la fermeture du `<svg>` de son icône, il
+       * ne désigne que cette pastille — et la remontée traverse le `<path>` et le
+       * `<svg>`, qui ne sont pas promouvables, pour atteindre le `<span>` de la
+       * pastille elle-même.
+       */
+      {
+        marqueur: '</svg>Photo',
+        action: 'onPhoto',
+        frames: ['Mobile'],
+        why:
+          'La pastille « Photo » de l’étape 1 mobile bascule vers la variante photo — le calque ' +
+          'de texte déplaçable. La maquette la dessine en <span> alors que le cadre ' +
+          'd’ordinateur en fait un <button> déjà branché : le même geste n’existait que sur une ' +
+          'des deux largeurs.',
+      },
+    ],
     frames: [
       { width: 1440, name: 'Desktop' },
       // Les deux premières étapes mobiles n'écrivent AUCUN titre : l'écran est le
@@ -3154,13 +4406,35 @@ export const screens = [
       fromMob(15, 'MOB2', 'TemoignagesMobile'),
     ],
   },
-].map((s) => ({
-  // Les déclarations du lot 1 portent déjà leur fichier, leur sortie et leur module
-  // de données ; celles du lot 2 les prennent par défaut, pour que la déclaration
-  // ne dise que ce qui la distingue.
-  file: FILE,
-  ...DATA,
-  out: `apps/web/src/screens/${s.section.toLowerCase()}`,
-  ...(SQUELETTE_EN_BOUCLE.has(s.section) ? { liens: squeletteBoucle(cadresDuRail(s.frames)) } : {}),
-  ...s,
-}));
+].map((s) => {
+  /**
+   * LA NAVIGATION SE COMPOSE, elle ne se remplace pas.
+   *
+   * Trois sources, et chacune a sa raison d'exister séparément :
+   *
+   *   · le SQUELETTE — rail et panneau de section — commun aux onze écrans qui le
+   *     dessinent, déclaré une fois dans `tools/squelette-membre.mjs` ;
+   *   · ce que l'ÉCRAN ajoute — sa barre basse, ses onglets, ses liens nommés
+   *     (`LIENS_PAR_ECRAN`) ;
+   *   · ce que la déclaration porte elle-même (`s.liens`), pour un cas isolé.
+   *
+   * L'ancienne forme écrivait `liens` AVANT `...s` : une déclaration qui aurait
+   * posé son propre `liens` aurait donc EFFACÉ le squelette en silence, et le rail
+   * serait redevenu mort sur cet écran sans qu'aucun compte ne bouge. On concatène.
+   */
+  const liens = [
+    ...(SQUELETTE_EN_BOUCLE.has(s.section) ? squeletteBoucle(cadresDuRail(s.frames)) : []),
+    ...(LIENS_PAR_ECRAN[s.section] ?? []),
+    ...(s.liens ?? []),
+  ];
+  return {
+    // Les déclarations du lot 1 portent déjà leur fichier, leur sortie et leur module
+    // de données ; celles du lot 2 les prennent par défaut, pour que la déclaration
+    // ne dise que ce qui la distingue.
+    file: FILE,
+    ...DATA,
+    out: `apps/web/src/screens/${s.section.toLowerCase()}`,
+    ...s,
+    ...(liens.length === 0 ? {} : { liens }),
+  };
+});

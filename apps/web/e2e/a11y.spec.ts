@@ -260,15 +260,39 @@ for (const entree of PAGES) {
         })()
       : (path as string);
 
-    await page.goto(adresse, { waitUntil: 'networkidle' });
-
     /**
-     * Sur une page qui charge ses données, on attend le CADRE avant d'auditer.
-     * `networkidle` ne suffit pas : Next précharge les liens visibles, donc il
-     * retombe parfois au calme avant que les appels de l'écran n'aient répondu.
+     * ╔═════════════════════════════════════════════════════════════════════════╗
+     * ║ `networkidle` NE RETOMBE JAMAIS SUR CES PAGES                            ║
+     * ╚═════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ : `/accueil` et `/entraide` expirent sur `goto`, même avec deux minutes
+     * de budget. Next précharge les liens visibles d'une page App Router, et le
+     * réseau ne retombe donc jamais au calme — c'est la même cause que
+     * `e2e/services.spec.ts` et `e2e/entraide-agenda.spec.ts` ont déjà corrigée.
+     *
+     * CE QUE ÇA COÛTAIT : ces audits étaient comptés « échoués » sans jamais avoir
+     * été EXÉCUTÉS. Deux écrans n'avaient donc aucune couverture d'accessibilité,
+     * et l'échec ressemblait assez à une violation pour qu'on ne le regarde pas.
+     *
+     * ON ATTEND DONC `load`, PUIS LA DONNÉE — la bande `role="status"` que
+     * `EcranDonnees` retire à la bascule. Auditer le squelette ne dirait rien : il
+     * ne porte ni les champs, ni les boutons, ni les fenêtres.
      */
+    await page.goto(adresse, { waitUntil: 'load' });
+
     if (besoinSession) {
       await page.locator('[data-screen]').first().waitFor({ state: 'attached', timeout: 20_000 });
+      const bande = page.locator('[role="status"]').filter({ hasText: /Chargement/ });
+      await bande
+        .first()
+        .waitFor({ state: 'detached', timeout: 20_000 })
+        .catch(() => {
+          /**
+           * TOUS LES ÉCRANS N'ONT PAS DE BANDE : certains ne chargent rien, d'autres
+           * l'ont déjà retirée avant qu'on regarde. L'absence n'est donc pas un
+           * échec — l'attente du CADRE au-dessus reste la garantie dure.
+           */
+        });
     }
 
     const results = await new AxeBuilder({ page })

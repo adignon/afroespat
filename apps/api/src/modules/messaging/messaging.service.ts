@@ -133,7 +133,14 @@ export class MessagingService {
       orderBy: { id: 'desc' },
       take: query.limit + 1,
       include: {
-        members: { select: { userId: true, leftAt: true, user: { select: MEMBER_SELECT } } },
+        /**
+         * `isMuted` VIENT AVEC LES MEMBRES, dans la même requête. Ma ligne de
+         * membre est déjà chargée pour `leftAt` ; y ajouter une colonne ne coûte
+         * rien, là où une requête par conversation en coûterait vingt par page.
+         */
+        members: {
+          select: { userId: true, leftAt: true, isMuted: true, user: { select: MEMBER_SELECT } },
+        },
         journey: { select: { title: true } },
       },
     });
@@ -146,6 +153,7 @@ export class MessagingService {
     for (const conversation of page.items) {
       const lastReadAt = lastReadBy.get(conversation.id) ?? null;
       const others = conversation.members.filter((m) => m.userId !== userId);
+      const mienne = conversation.members.find((m) => m.userId === userId) ?? null;
 
       const unread = await this.prisma.message.count({
         where: {
@@ -176,7 +184,21 @@ export class MessagingService {
           userId: m.userId,
           handle: m.user.handle,
           displayName: m.user.displayName,
-          avatarUrl: m.user.avatarAsset?.storageKey ?? null,
+          /**
+           * `/media/<clé>` ET PLUS LA CLÉ NUE.
+           *
+           * Le porteur : « l'avatar de la personne n'est pas affichée en haut de
+           * la conversation. » Ce champ rendait la CLÉ DE STOCKAGE seule, alors
+           * que les six autres routes du dépôt — fil, stories, logement, profils
+           * — rendent toutes `/media/<clé>` (`urlDuMedia`, juste au-dessous).
+           * Composée côté front, la clé nue donnait `/v1/<clé>`, une adresse qui
+           * ne sert rien ; et personne ne l'avait vu parce que personne ne la
+           * lisait encore.
+           */
+          avatarUrl:
+            m.user.avatarAsset === null || m.user.avatarAsset === undefined
+              ? null
+              : `/media/${m.user.avatarAsset.storageKey}`,
           // §4, effet de LECTURE : dans une conversation de groupe commune, les
           // deux restent membres mais leurs contenus sont masqués mutuellement.
           hidden: separated.has(m.userId),
@@ -186,6 +208,16 @@ export class MessagingService {
         lastMessagePreview:
           last === null ? null : this.preview(last, separated.has(last.senderUserId)),
         unreadCount: unread,
+        /**
+         * LA SOURDINE ÉTAIT STOCKÉE ET JAMAIS RENDUE.
+         *
+         * `conversation_members.is_muted` existe dans le schéma figé depuis le
+         * début ; aucune route ne la lisait ni ne l'écrivait. L'entrée « Mettre
+         * en sourdine » du menu de conversation était donc un `<span>` inerte, et
+         * le porteur l'a relevé : « les options voir le profil, mettre en
+         * sourdine, bloquer et signaler ne marchent pas ».
+         */
+        muted: mienne?.isMuted ?? false,
         /** §5.2 : une demande que je dois accepter ou ignorer. */
         pendingForMe: pending.pending && pending.initiatorUserId !== userId,
         /** Mon premier message attend une réponse : pas de second (§5.2). */
@@ -220,7 +252,39 @@ export class MessagingService {
             },
       orderBy: { id: 'desc' },
       take: query.limit + 1,
-      include: { sender: { select: MEMBER_SELECT } },
+      /**
+       * LA CLÉ DE STOCKAGE VIENT AVEC LE MESSAGE, dans la même requête.
+       *
+       * `mediaId` était rendu depuis le début et ne menait nulle part : aucune
+       * route ne résolvait un média en adresse, et la vignette que la maquette
+       * dessine n'avait donc rien à afficher. Un aller-retour par message pour
+       * chercher la clé serait vingt requêtes par page ; une jointure en coûte
+       * zéro de plus.
+       *
+       * `deletedAt: null` N'EST PAS FILTRÉ ICI, et c'est volontaire : la relation
+       * est `onDelete: SetNull`, donc un média réellement supprimé fait tomber
+       * `mediaAssetId` avec lui. Filtrer sur un média marqué supprimé rendrait
+       * `mediaUrl: null` avec un `mediaId` non nul — ce qui est exactement l'état
+       * que l'écran doit savoir distinguer, et `urlDuMedia` s'en charge.
+       */
+      include: {
+        sender: { select: MEMBER_SELECT },
+        mediaAsset: { select: { storageKey: true, deletedAt: true } },
+        /**
+         * LA STORY D'OÙ LE MESSAGE EST PARTI, dans la même requête.
+         *
+         * Le porteur : « Il faut qu'on puisse cliquer sur [la vignette] et aller
+         * vers la story si toujours en ligne. Sinon ça affirme que la story a
+         * expiré. » L'écran a donc besoin de savoir si elle vit ENCORE, et c'est
+         * le serveur qui en juge : une story vit vingt-quatre heures, et
+         * l'horloge d'un navigateur peut être fausse de plusieurs heures.
+         *
+         * Deux colonnes suffisent — `status` et `expiresAt` — et c'est la règle
+         * exacte de `feed.service.ts`. Une seconde requête par message en
+         * coûterait vingt par page ; cette jointure n'en coûte aucune.
+         */
+        story: { select: { id: true, status: true, expiresAt: true, deletedAt: true } },
+      },
     });
 
     const page = buildPage(rows, query.limit, scope, this.cursorSecret);
@@ -249,6 +313,20 @@ export class MessagingService {
         // contenus d'un membre séparé sont MASQUÉS, les deux restant membres.
         body: this.bodyOf(message, separated.has(message.senderUserId)),
         mediaId: message.mediaAssetId,
+        mediaUrl: this.urlDuMedia(message.mediaAsset),
+        storyId: message.story === null || message.story.deletedAt !== null ? null : message.story.id,
+        /**
+         * « ENCORE EN LIGNE » — LA MÊME DÉFINITION QUE LE FIL, mot pour mot :
+         * `status === 'EXPIRED' || expiresAt <= maintenant` (`feed.service.ts`).
+         * Une story supprimée est traitée comme absente plus haut, donc elle rend
+         * `storyId: null` : la vignette redevient une image muette plutôt que de
+         * promettre une page qui répondrait 404.
+         */
+        storyAlive:
+          message.story !== null &&
+          message.story.deletedAt === null &&
+          message.story.status !== 'EXPIRED' &&
+          message.story.expiresAt.getTime() > Date.now(),
         sentAt: message.sentAt,
         deletedAt: message.deletedAt,
         mine: message.senderUserId === userId,
@@ -271,6 +349,42 @@ export class MessagingService {
    * dans l'existante, en repassant par `sendMessage` — c'est là que vit la règle
    * du second message (§5.2), et la dupliquer ici la ferait diverger.
    */
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ METTRE UNE CONVERSATION EN SOURDINE — §7.3                                ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « les options voir le profil, mettre en sourdine, bloquer et
+   * signaler ne marchent pas. Intègre tout ça. »
+   *
+   * La colonne `conversation_members.is_muted` EXISTE dans le schéma figé depuis
+   * le début, et aucune route ne l'écrivait. Rien à migrer, donc : seulement à
+   * brancher.
+   *
+   * `memberOf` d'abord, et c'est ce qui tient la règle : il rend 404 — jamais 403
+   * (T4 §3) — pour une conversation dont je ne suis pas membre. Mettre en
+   * sourdine une conversation qu'on ne peut pas lire n'a aucun sens, et répondre
+   * « interdit » dirait qu'elle existe.
+   *
+   * CE QUE LA SOURDINE FAIT, ET CE QU'ELLE NE FAIT PAS : elle coupe les
+   * NOTIFICATIONS, pas la conversation. Les messages arrivent, le compteur de non
+   * lus continue — c'est la définition du §7.3, et c'est ce que le membre attend
+   * d'un « mettre en sourdine » plutôt que d'un « archiver ».
+   *
+   * ⚠ REMONTÉ : aucun émetteur de notification ne LIT encore `is_muted`. Le choix
+   * est stocké, rendu, et respecté par l'écran ; le jour où les notifications de
+   * message partent vraiment, c'est `notifications.events.ts` qui devra le lire.
+   * Le dire ici vaut mieux que de laisser croire que la boucle est fermée.
+   */
+  async setMuted(userId: string, conversationId: string, muted: boolean) {
+    await this.memberOf(conversationId, userId);
+    await this.prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId, userId } },
+      data: { isMuted: muted },
+    });
+    return { muted };
+  }
+
   async openDirect(actor: MessagingActor, input: CreateDirectConversation) {
     // §5.2 : un L0 ne peut ouvrir AUCUNE conversation directe. Le garde le refuse
     // déjà (`message.send` est L1) ; on le redit ici parce que la règle dure du
@@ -293,7 +407,18 @@ export class MessagingService {
 
     const existing = await this.findDirectBetween(actor.userId, target.id);
     if (existing !== null) {
-      const sent = await this.sendMessage(actor, existing, { body: input.firstMessage });
+      const sent = await this.sendMessage(actor, existing, {
+        body: input.firstMessage,
+        ...(input.mediaId === undefined ? {} : { mediaId: input.mediaId }),
+        /**
+         * LA STORY PASSE AUSSI PAR CETTE BRANCHE, et c'est celle qu'on emprunte le
+         * plus : dès qu'on a déjà écrit une fois à quelqu'un, écrire depuis sa
+         * story RÉUTILISE la conversation. L'oublier ici aurait donné une vignette
+         * cliquable au tout premier message et muette à tous les suivants — un
+         * défaut qui ne se voit qu'à la deuxième story.
+         */
+        ...(input.storyId === undefined ? {} : { storyId: input.storyId }),
+      });
       const pending = await this.pendingState(existing, actor.userId);
       return {
         conversationId: existing,
@@ -301,6 +426,18 @@ export class MessagingService {
         pending: pending.pending && pending.initiatorUserId === actor.userId,
       };
     }
+
+    /**
+     * L'IMAGE EST VÉRIFIÉE AVANT D'OUVRIR QUOI QUE CE SOIT.
+     *
+     * `sendMessage` fait ce contrôle sur la branche « conversation existante »,
+     * puisqu'elle y passe. La branche qui CRÉE n'y passe pas : sans cette ligne,
+     * un `mediaId` qui ne m'appartient pas — ou qui n'est pas prêt — créerait la
+     * conversation, le message et l'événement, pour échouer ensuite ou, pire, pour
+     * attacher le média d'un autre. Le quota, lui, se vérifie après : refuser pour
+     * quota une demande dont l'image est déjà invalide dirait la mauvaise raison.
+     */
+    if (input.mediaId !== undefined) await this.assertOwnedMedia(actor.userId, input.mediaId);
 
     await this.assertConversationQuota(actor.userId);
 
@@ -325,6 +462,8 @@ export class MessagingService {
           conversationId,
           senderUserId: actor.userId,
           bodyEncrypted: sealed,
+          mediaAssetId: input.mediaId ?? null,
+          storyId: input.storyId ?? null,
           sentAt: now,
         },
       });
@@ -418,7 +557,7 @@ export class MessagingService {
 
     const messageId = newId();
     const now = new Date();
-    const sealed = this.crypto.encryptContent(input.body);
+    const sealed = this.crypto.encryptContent(input.body ?? '');
 
     await this.prisma.$transaction(async (tx) => {
       await tx.message.create({
@@ -428,6 +567,7 @@ export class MessagingService {
           senderUserId: actor.userId,
           bodyEncrypted: sealed,
           mediaAssetId: input.mediaId ?? null,
+          storyId: input.storyId ?? null,
           sentAt: now,
         },
       });
@@ -775,9 +915,29 @@ export class MessagingService {
     return 'COLD';
   }
 
-  /** §5.2 : le L0 n'ouvre aucune DIRECT et n'y écrit pas. */
-  private assertCanSendDirect(actor: MessagingActor): void {
-    if (actor.level === 'L0') throw ApiError.levelRequired('message.send', actor.level);
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE NIVEAU NE FERME PLUS LA MESSAGERIE — ARBITRAGE DU PORTEUR            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Ce garde refusait toute conversation DIRECT à un L0, en écho au tableau §5.2
+   * (« L0 → Personne »). Le porteur l'a rencontré en lisant une story et a demandé
+   * de l'ouvrir ; la décision et ce qu'elle coûte sont écrites une seule fois, sur
+   * `message.send` dans `capabilities.ts`.
+   *
+   * La fonction reste, VIDE DE SON TEST DE NIVEAU, et c'est délibéré : elle est
+   * appelée aux DEUX endroits où une DIRECT naît ou reçoit un message
+   * (`openDirect`, `sendMessage`), et c'est là que se poseront les prochaines
+   * conditions d'envoi. La retirer disperserait la question le jour où il faudra y
+   * répondre de nouveau — et c'est aussi le seul point à rouvrir pour revenir en
+   * arrière.
+   *
+   * CE QUI RETIENT ENCORE : le premier message à un inconnu ouvre une conversation
+   * EN ATTENTE (`pendingState`), et sans réponse il n'y a pas de second message ;
+   * vingt nouvelles conversations par jour ; soixante messages par minute.
+   */
+  private assertCanSendDirect(_actor: MessagingActor): void {
+    /* Aucune condition de niveau : voir l'en-tête. */
   }
 
   /** §5.3 : « 60 messages/minute ». */
@@ -871,6 +1031,28 @@ export class MessagingService {
    * Ceci REMPLACE un `WRONG_MEDIA_KIND` (400) qui n'était référencé nulle part
    * ailleurs dans le dépôt et qu'aucun test ne figeait.
    */
+  /**
+   * L'adresse publique d'un média joint, ou `null`.
+   *
+   * `/media/<clé>` : le même composé que `feed.service.ts`, `housing.service.ts`
+   * et `users.service.ts`. Il n'est pas factorisé entre les cinq modules, et c'est
+   * un écart REMONTÉ plutôt que corrigé ici — `media.service.ts` l'écrit lui-même :
+   * « `users.service.ts`, `housing.service.ts`, `feed.service.ts` et
+   * `communities.service.ts` construisent tous `/media/<clé>` à partir d'elle ».
+   * Un cinquième endroit n'aggrave pas le problème, mais le déplacer est un lot à
+   * part : cinq modules à retoucher pour une concaténation.
+   *
+   * UN MÉDIA SUPPRIMÉ REND `null`. La relation est `onDelete: SetNull`, donc une
+   * suppression dure fait disparaître `mediaId` aussi ; une suppression DOUCE, en
+   * revanche, laisse `mediaId` renseigné et son objet retiré du seau. L'écran voit
+   * alors « il y avait une image, elle n'est plus là » — ce qui est vrai — au lieu
+   * d'une vignette cassée.
+   */
+  private urlDuMedia(asset: { storageKey: string; deletedAt: Date | null } | null): string | null {
+    if (asset === null || asset.deletedAt !== null) return null;
+    return `/media/${asset.storageKey}`;
+  }
+
   private async assertOwnedMedia(userId: string, mediaId: string): Promise<void> {
     const asset = await this.prisma.mediaAsset.findFirst({
       where: { id: mediaId, ...ownedAttachableWhere('message', userId) },
@@ -907,12 +1089,26 @@ export class MessagingService {
     message: {
       bodyEncrypted: Uint8Array;
       deletedAt: Date | null;
+      mediaAssetId: string | null;
       sender: { deletedAt: Date | null };
     },
     hidden: boolean,
   ): string | null {
     const body = this.bodyOf(message, hidden);
     if (body === null) return null;
+    /**
+     * UNE IMAGE SEULE SE DIT, elle ne se tait pas.
+     *
+     * Depuis que `sendMessageSchema` accepte un message SANS corps — il le
+     * fallait pour envoyer plusieurs photos sans écrire autant de phrases — la
+     * ligne de la liste serait restée VIDE : le membre aurait vu un nom, une
+     * heure, et rien. « Photo » est ce que Messenger, WhatsApp et Signal écrivent
+     * tous les trois à cet endroit.
+     *
+     * Ce n'est PAS un substitut inventé à un corps manquant : il n'y a pas de
+     * corps, et c'est une image. On dit ce qui est.
+     */
+    if (body === '' && message.mediaAssetId !== null) return 'Photo';
     return body.length > CONVERSATION_PREVIEW_MAX
       ? `${body.slice(0, CONVERSATION_PREVIEW_MAX - 1)}…`
       : body;

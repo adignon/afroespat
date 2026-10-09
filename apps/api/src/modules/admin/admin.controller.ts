@@ -16,12 +16,14 @@ import {
   staffListQuerySchema,
   staffUpdateSchema,
   uuidSchema,
+  adminReindexSchema,
 } from '@app/shared';
 import type { z } from 'zod';
 import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { Staff, type StaffUser } from '../../common/staff.guard';
 import { zodPipe } from '../../common/zod.pipe';
 import { KycService } from '../kyc/kyc.service';
+import { SearchService } from '../search/search.service';
 import { AdminService } from './admin.service';
 
 /**
@@ -42,6 +44,7 @@ export class AdminController {
   constructor(
     private readonly admin: AdminService,
     private readonly kyc: KycService,
+    private readonly search: SearchService,
   ) {}
 
   // ── §2.2 — Comptes équipe ─────────────────────────────────────────────────
@@ -302,5 +305,54 @@ export class AdminController {
     @Body(zodPipe(kycDowngradeSchema)) body: z.infer<typeof kycDowngradeSchema>,
   ) {
     return this.kyc.downgrade({ staffId: staff.staffId, ip: staff.ip }, id, body.reason);
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ RECONSTRUIRE L'INDEX DE RECHERCHE — 11 §4, ET ELLE MANQUAIT             ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La spec la nomme : « Admin : `/v1/admin/search/reindex` (type) ». Le service
+   * porte `reindexType` depuis le début et personne ne l'appelait — le contrôleur
+   * de recherche l'écrit noir sur blanc : « attendent le module 15 ». Le module 15
+   * existe ; la route, non.
+   *
+   * ── POURQUOI ELLE A MANQUÉ, ET QUAND ──────────────────────────────────────
+   *
+   * Le porteur : « il faut que la recherche touche à tous les types de contenus ».
+   * MESURÉ : `search_documents` était VIDE, et 7 711 événements attendaient dans
+   * la boîte d'envoi — le relais ne tourne que si `APP_ROLE=worker`, et ce
+   * processus-là ne tournait pas. Une fois démarré, les contenus NOUVEAUX
+   * s'indexent ; les anciens, dont les événements sont passés, restent dehors.
+   *
+   * Rejouer de vieux événements serait faux — ils décrivent un état révolu. Relire
+   * la SOURCE est la seule façon juste de rattraper, et c'est ce que `reindexType`
+   * fait : il réécrit ce qui est éligible et retire ce qui ne l'est plus.
+   *
+   * `STAFF_SCOPES.content` : c'est une opération sur le contenu, pas sur des
+   * comptes ni sur des sanctions. Elle ne touche à aucune donnée de membre — elle
+   * recopie dans l'index ce que les tables disent déjà.
+   *
+   * ── ELLE EST TRACÉE, ET LE DÉPÔT ME L'A FAIT REMARQUER ────────────────────
+   *
+   * `admin.int.test.ts` porte un cas qui lit le document OpenAPI et exige que
+   * TOUTE route d'écriture de l'administration ait un test d'audit. Il a rougi dès
+   * que cette route a existé, et il avait raison : une reconstruction réécrit
+   * `search_documents` et en RETIRE les lignes dont la source n'est plus éligible
+   * — elle peut faire disparaître du contenu de la recherche du produit entier.
+   *
+   * La boucle est donc passée au service, qui écrit la trace. Le contrôleur lui
+   * passe la fonction de réindexation plutôt que le service de recherche : c'est le
+   * module 11 qui sait réindexer, et `AdminService` n'a pas à en dépendre pour
+   * poser une ligne de journal.
+   */
+  @Post('search/reindex')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Reconstruit l’index de recherche, type par type (11 §2.5)' })
+  async reindexSearch(
+    @Staff() staff: StaffUser,
+    @Body(zodPipe(adminReindexSchema)) body: z.infer<typeof adminReindexSchema>,
+  ) {
+    return this.admin.reindexSearch(staff, body.types, (type) => this.search.reindexType(type));
   }
 }

@@ -1,5 +1,17 @@
-import { Body, Controller, HttpCode, Post, Put, UploadedFile, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  Param,
+  Post,
+  Put,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { StreamableFile } from '@nestjs/common';
 import { ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   MEDIA_MAX_DOCUMENT_BYTES,
@@ -7,8 +19,8 @@ import {
   mediaUploadBodySchema,
   type MediaKind,
 } from '@app/shared';
-import { Auth, type AuthContext } from '../../common/auth.guard';
-import { RateLimit, RequiresCapability } from '../../common/capability.decorator';
+import { Auth, MaybeAuth, type AuthContext } from '../../common/auth.guard';
+import { PublicRead, RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { zodPipe } from '../../common/zod.pipe';
 import { MediaService, type UploadedFile as MediaFile } from './media.service';
 
@@ -65,6 +77,82 @@ import { MediaService, type UploadedFile as MediaFile } from './media.service';
 @Controller()
 export class MediaController {
   constructor(private readonly media: MediaService) {}
+
+  /**
+   * LES OCTETS D'UN MÉDIA. Aucune route ne les servait — voir `MediaService.bytes`.
+   *
+   * ── LE CHEMIN PORTE DES « / », ET C'EST POURQUOI IL EST JOKER ─────────────
+   *
+   * Une clé vaut `post/2026/01/<uuid>-<16 octets>.webp` : quatre segments. Un
+   * `:key` ordinaire s'arrêterait au premier « / » et ne trouverait jamais rien.
+   * Le joker les rassemble, et le service refuse tout ce qui n'est pas une ligne
+   * connue, prête et autorisée — donc un « .. » glissé ici ne désigne aucune
+   * ligne et sort en 404 avant d'atteindre le disque. Le fournisseur de stockage
+   * pose la MÊME garde une seconde fois, par `pathFor`.
+   *
+   * `'media/*'` ET `@Param('0')`, ET NON `'media/*key'` : ce dépôt est sur
+   * EXPRESS 4 (4.22.1, avec Nest 10). Le joker NOMMÉ est de la syntaxe Express 5 ;
+   * en 4, il s'écrit `*` et le segment capturé s'appelle `0`. Écrit à la mode
+   * Express 5, le chemin ne correspond À RIEN — mesuré : la route valide rendait
+   * 404, et un appel SANS JETON rendait 404 au lieu de 401, ce qui est le signe
+   * que la requête n'atteignait jamais la route. Un 404 sur un contrôle d'accès
+   * est précisément le genre de symptôme qu'on lit de travers.
+   *
+   * ── `@PublicRead()`, PARCE QU'UN NAVIGATEUR NE SAIT PAS PORTER DE JETON ───
+   *
+   * J'ai posé cette route DEUX FOIS de travers avant de comprendre, et les deux
+   * erreurs valent d'être écrites.
+   *
+   * D'ABORD sans capacité du tout, en raisonnant qu'une image déjà reçue dans une
+   * réponse n'en demande pas une de plus. Le serveur a répondu
+   * `403 FORBIDDEN { reason: "route sans capacité déclarée" }` sur TOUTES les
+   * requêtes, jeton ou non. Ce dépôt refuse par défaut toute route qui n'en
+   * déclare pas — bonne conception : l'oubli ferme la porte au lieu de l'ouvrir.
+   *
+   * ENSUITE avec `@RequiresCapability('content.read')`, ce qui marchait au `curl`
+   * et NE PEUT PAS MARCHER DANS UN NAVIGATEUR. Mesuré : la page peignait bien
+   * `background-image: url(…/media/…)`, et le navigateur ne demandait JAMAIS
+   * l'image. La raison est structurelle — UN `<img>` ET UN `background-image`
+   * N'ENVOIENT AUCUN EN-TÊTE `Authorization`. Seuls les cookies voyagent tout
+   * seuls. Une route de média protégée par jeton porteur est donc lisible par
+   * `curl` et invisible à l'écran, ce qui est le pire des deux mondes : verte aux
+   * tests d'API, noire pour le membre.
+   *
+   * `@PublicRead()` est la déclaration que ce dépôt a prévue pour cela, et elle ne
+   * rend pas la route ouverte à tout : `AuthGuard` écrit lui-même qu'« un jeton
+   * présent est toujours lu, même sur une route publique ». L'identité arrive donc
+   * quand elle existe, et le service s'en sert — les genres privés
+   * (`PROOF`, `EXPORT`, `INVOICE`) restent fermés à qui n'est pas leur
+   * propriétaire, y compris et surtout à un appelant anonyme.
+   *
+   * CE QUI PROTÈGE LE RESTE, ce sont les SEIZE OCTETS D'ALÉA de la clé (voir
+   * `keyFor`) : l'adresse est indevinable, et c'est la posséder qui vaut
+   * autorisation. C'est le choix que ce dépôt avait déjà fait en mettant ce secret
+   * dans le chemin ; la route ne fait que s'y conformer.
+   *
+   * ET `@MaybeAuth()`, PAS `@Auth()`. Troisième faux pas sur la même route, et le
+   * même enseignement que les deux autres : l'outil existait déjà. `@Auth()` LÈVE
+   * `UNAUTHENTICATED` quand il n'y a pas de jeton — il annulait donc tout l'effet
+   * de `@PublicRead()`, et la route rendait 401 alors que le garde l'avait
+   * laissée passer. `@MaybeAuth()` rend « le contexte s'il existe, pour une
+   * lecture publique personnalisée » : c'est sa phrase, et c'est ce cas.
+   *
+   * ── LE CACHE EST PRIVÉ, ET IMMUABLE ───────────────────────────────────────
+   *
+   * `private` : un média peut être réservé à son propriétaire, et un cache
+   * partagé le servirait au suivant. `immutable` : la clé porte seize octets
+   * d'aléa, donc une adresse donnée désigne un contenu qui ne changera jamais —
+   * un remplacement de portrait crée une NOUVELLE clé. Sans cela chaque avatar
+   * de chaque liste repartirait au serveur à chaque affichage.
+   */
+  @Get('media/*')
+  @PublicRead()
+  @Header('Cache-Control', 'private, max-age=31536000, immutable')
+  @ApiOperation({ summary: 'Les octets d’un média, selon son genre et son propriétaire' })
+  async bytes(@MaybeAuth() auth: AuthContext | null, @Param('0') key: string) {
+    const { body, mime } = await this.media.bytes(auth?.userId ?? null, key);
+    return new StreamableFile(body, { type: mime });
+  }
 
   @Post('media')
   @HttpCode(201)

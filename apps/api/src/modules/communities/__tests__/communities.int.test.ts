@@ -17,6 +17,7 @@ import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../../auth/auth.service';
 import { UsersService } from '../../users/users.service';
 import { CommunitiesService } from '../communities.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Réseaux — 07-reseaux.md §9 (règles dures) et §2.
@@ -43,7 +44,7 @@ describe('réseaux (07 §2, §9)', () => {
   let originCountryId = '';
 
   let counter = 0;
-  const nextPhone = () => `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   /** Un membre inscrit par la vraie chaîne OTP, comme le fait le front. */
   async function newMember(options: { city?: string | null } = {}): Promise<string> {
@@ -1122,6 +1123,8 @@ describe('réseaux (07 §2, §9)', () => {
       question: 'Quel jour pour le prochain repas ?',
       options: ['Samedi', 'Dimanche'],
       isMultiple: false,
+      resultsAfterVote: true,
+      isAnonymous: true,
     });
 
     const before = await communities.poll(poll.id, abstainer);
@@ -1153,6 +1156,8 @@ describe('réseaux (07 §2, §9)', () => {
       question: 'Quelle soirée preferez-vous ?',
       options: ['Samedi', 'Dimanche', 'Vendredi'],
       isMultiple: false,
+      resultsAfterVote: true,
+      isAnonymous: true,
     });
     const [first, second] = poll.options;
 
@@ -1183,6 +1188,8 @@ describe('réseaux (07 §2, §9)', () => {
       question: 'Quels ateliers vous interessent ?',
       options: ['Cuisine', 'Couture', 'Code'],
       isMultiple: true,
+      resultsAfterVote: true,
+      isAnonymous: true,
     });
 
     const voted = await communities.vote(poll.id, owner, [

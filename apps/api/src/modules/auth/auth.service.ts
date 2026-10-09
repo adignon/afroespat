@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@app/db';
 import {
+  enFormatInternational,
   ACCOUNT_ERROR_CODES,
   ACCOUNT_ERROR_MESSAGES,
   AUTH_ERROR_MESSAGES,
@@ -139,11 +140,46 @@ export class AuthService {
     // 1. Le pays est-il ouvert ? Refusé AVANT tout envoi (§2.1).
     const country = await this.prisma.country.findUnique({
       where: { iso2: input.countryIso2 },
-      select: { id: true, dialCode: true, isActive: true },
+      select: { id: true, dialCode: true, isActive: true, phoneNationalLength: true },
     });
     if (country === null || !country.isActive) this.fail('COUNTRY_NOT_SUPPORTED');
 
-    const e164 = this.toE164(input.phone, country.dialCode);
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LE NUMÉRO EST-IL BIEN FORMÉ POUR CE PAYS ? — RIEN NE LE REGARDAIT   ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « il faut la validation du numéro selon le pays. Backend et
+     * frontend aussi pour valider le format. »
+     *
+     * MESURÉ AVANT : `{"phone":"12345678901234567","countryIso2":"BJ"}` était
+     * ACCEPTÉ, et un SMS partait. Le schéma ne bornait que la longueur brute de
+     * la chaîne (4 à 24), ce qui ne dit rien d'un plan de numérotation.
+     *
+     * La règle vient du RÉFÉRENTIEL (`countries.phone_national_length`), et c'est
+     * la MÊME fonction que l'écran emploie pour griser son bouton. Deux
+     * implémentations divergeraient, et le membre paierait l'écart : un bouton
+     * actif suivi d'un refus.
+     *
+     * Le refus arrive AVANT le captcha et avant tout envoi : un numéro mal formé
+     * ne doit coûter ni vérification ni SMS.
+     */
+    const international = enFormatInternational(input.phone, input.countryIso2);
+    if (international === null) {
+      this.fail('PHONE_INVALID', { dialCode: country.dialCode });
+    }
+
+    /**
+     * ── LE NUMÉRO ENREGISTRÉ EST CELUI DE LA BIBLIOTHÈQUE ──────────────────
+     *
+     * Le porteur : « il faut que ce soit le format international qu'il faut
+     * enregistrer ». `toE164` le faisait déjà à la main — concaténer l'indicatif
+     * au numéro débarrassé de son zéro — et c'était juste pour les cas simples.
+     * `libphonenumber` connaît les exceptions : préfixes de service, longueurs
+     * par type de ligne, plans renumérotés. On enregistre donc CE qu'elle rend,
+     * et plus ce qu'on déduisait.
+     */
+    const e164 = international;
     const fingerprint = this.crypto.phoneFingerprint(e164);
 
     // 2. Captcha obligatoire (§2.1). Turnstile en production, fictif en local.

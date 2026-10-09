@@ -32,6 +32,7 @@
  * ni en base ni dans aucune réponse. Remonté ; la prise de A01C reste vide.
  */
 import type { CommentThread } from '@app/shared';
+import { rondDe } from '@/lib/avatar';
 import { avatarColor, initials } from '../accueil/from-api';
 import type { CommentA02View, RelGuideView } from '../a02/data';
 
@@ -55,8 +56,7 @@ export interface CommentaireA02 extends CommentA02View {
 export function commentairesA02From(items: readonly CommentThread[]): readonly CommentaireA02[] {
   return items.flatMap((racine) => [
     {
-      i: initials(racine.author.displayName),
-      bg: avatarColor(racine.author.handle),
+      ...rondDe(racine.author, initials, avatarColor),
       name: racine.author.displayName,
       text: racine.body,
       /** « il y a 2 h » — COMPOSÉ PAR LE SERVEUR. Le front ne recalcule pas. */
@@ -69,8 +69,7 @@ export function commentairesA02From(items: readonly CommentThread[]): readonly C
       canEdit: racine.canEdit,
     },
     ...racine.replies.map((r) => ({
-      i: initials(r.author.displayName),
-      bg: avatarColor(r.author.handle),
+      ...rondDe(r.author, initials, avatarColor),
       name: r.author.displayName,
       text: r.body,
       time: r.relativeTime,
@@ -85,15 +84,41 @@ export function commentairesA02From(items: readonly CommentThread[]): readonly C
 }
 
 /**
- * LES GUIDES RATTACHÉS À UNE PUBLICATION : AUCUNE SOURCE, DONC RIEN.
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES GUIDES RATTACHÉS — ILS ONT UNE SOURCE DEPUIS CE LOT                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
  *
- * Vérifié route par route et schéma par schéma : `postCardSchema` et
- * `postDetailResponseSchema` n'ont aucun champ de guides liés, et le module
- * `guides` n'expose pas de route « guides d'une publication ». Le vote
- * « utile / pas utile » que la maquette dessine n'a donc rien à enregistrer.
+ * Ce module rendait une liste VIDE, et le disait : « vérifié route par route et
+ * schéma par schéma, `postCardSchema` n'a aucun champ de guides liés ». C'était
+ * exact — et le porteur a demandé que cela cesse. `posts` a maintenant sa table
+ * `post_guides`, `createPostSchema` accepte `guideIds`, et la carte rend `guides`.
  *
- * On rend une liste VIDE plutôt que les trois guides d'exemple de la maquette : un
- * rattachement affiché est une affirmation sur cette publication, et voter dessus
- * n'irait nulle part. Remonté au rapport de lot pour que le back le tranche.
+ * ── CE QUI RESTE SANS SOURCE, ET QUI EST DIFFÉRENT ────────────────────────
+ *
+ * Le VOTE « utile / pas utile » que la maquette dessine SUR CHAQUE RATTACHEMENT.
+ * Il n'existe aucune route pour ça : `guide_votes` porte un vote sur LE GUIDE, pas
+ * sur son rattachement à une publication, et aucune réponse ne rend « ce
+ * rattachement a été jugé utile N fois ». Les deux boutons restent donc inertes et
+ * non retenus, avec les couleurs du repos — et c'est REMONTÉ. Afficher un vote qui
+ * ne part pas serait pire que de ne pas l'offrir.
+ *
+ * `auto: false` : la maquette distingue un rattachement SUGGÉRÉ automatiquement
+ * d'un rattachement choisi par l'auteur. Ceux-ci sont tous choisis — c'est
+ * l'auteur qui les a cochés dans la fenêtre — donc aucun n'est « auto ».
  */
-export const GUIDES_RATTACHES_SANS_SOURCE: readonly RelGuideView[] = [];
+export function relGuidesDe(
+  guides: readonly { readonly title: string; readonly slug: string }[],
+): readonly RelGuideView[] {
+  return guides.map((g) => ({
+    t: g.title,
+    s: 'Lié par l’auteur',
+    auto: false,
+    upBg: '#F2F5F4',
+    upFg: '#5D6B66',
+    downBg: '#F2F5F4',
+    downFg: '#5D6B66',
+    voted: false,
+    onUp: () => undefined,
+    onDown: () => undefined,
+  }));
+}

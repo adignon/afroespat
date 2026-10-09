@@ -62,6 +62,17 @@ export interface CarteOffre {
  * un champ de CV qui apparaîtrait dans la réponse ferait refuser la charge.
  */
 export interface CarteProfil {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur […] partout
+   * où le nom est affiché ». Les noms dessinés dans les cadres étaient des
+   * `<span>` et aucun ne menait au profil.
+   *
+   * FACULTATIVE : le cadre ne pose le lien que si la ligne porte une adresse.
+   * Sans elle, le nom reste nu — exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly fond: string;
   readonly initiales: string;
   readonly nom: string;

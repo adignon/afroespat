@@ -2,6 +2,7 @@
 
 import {
   FREE_PRO_CONTACTS_PER_MONTH,
+  HOUSING_SAFETY_BANNER,
   housingDetailResponseSchema,
   housingListResponseSchema,
   jobDetailResponseSchema,
@@ -36,6 +37,7 @@ import type { S08Data } from '@/screens/s08/data';
 import type { LigneAnnonce, S09Data } from '@/screens/s09/data';
 import type { LigneAlerte, S10Data } from '@/screens/s10/data';
 import type { Moi, Quotas } from './data';
+import { fondAvatar } from '@/lib/avatar';
 
 /**
  * LES APPELS DES ÉCRANS S01 À S10 — un chargeur par écran, et rien d'autre.
@@ -312,6 +314,7 @@ async function moiEtQuotas(): Promise<{ moi: Moi; quotas: Quotas }> {
 function moiDe(me: MeResponse): Moi {
   return {
     initiales: initialesDe(me.user.displayName),
+    photo: fondAvatar(me.user.avatarUrl),
     prenom: prenomDe(me.user.displayName),
   };
 }
@@ -921,3 +924,171 @@ function criteresAlerte(c: AlertCriteria): string {
   if (c.isFurnished === false) morceaux.push('non meublé');
   return morceaux.length === 0 ? 'Tous les résultats' : morceaux.join(' · ');
 }
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE DESSIN SANS LA DONNÉE — POUR QUE LE CADRE SOIT SERVI TOUT DE SUITE      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Mesuré au HTML servi, sans exécuter le JavaScript : `/services/logement`
+ * répondait 200 avec une coquille — aucun rail, aucun panneau « SERVICES », aucune
+ * barre basse. La branche d'attente de `EcranDonnees` remplaçait le cadre entier,
+ * donc les quinze destinations déclarées sur ce cadre n'atteignaient jamais le
+ * navigateur. Ce n'était pas un lien mort, c'était un cadre non rendu.
+ *
+ * Le motif est celui de `/accueil`, et celui de `VUE_NEUTRE` dans le module
+ * Parcours : le dessin tout de suite, la donnée ensuite. Les nombres sont à zéro
+ * et les chaînes vides — un écran qui n'a pas encore ses annonces n'en annonce
+ * aucune.
+ *
+ * `bandeau` EST L'EXCEPTION, ET C'EST LA RÈGLE DURE 10 §2.2 : le bandeau de
+ * non-paiement est « renvoyé par l'API sur chaque liste » et affiché en
+ * permanence. `HOUSING_SAFETY_BANNER` est la MÊME constante que le serveur sert
+ * dans `meta.safetyBanner` : la phrase reste donc à l'écran pendant le chargement,
+ * au lieu d'y manquer précisément le temps que la page se remplisse.
+ *
+ * `plafondPro` et `barre` sont des CHAÎNES dans ce type (`plafondPro` est le
+ * dénominateur affiché, `barre` une largeur CSS) : le plafond vient de
+ * `FREE_PRO_CONTACTS_PER_MONTH`, la même constante que le serveur applique, et la
+ * barre est à `0%` parce que rien n'est encore consommé à l'affichage.
+ */
+export const SQUELETTE_S01: S01Data = {
+  moi: { initiales: '', prenom: '' },
+  quotas: {
+    contactsPro: 0,
+    plafondPro: String(FREE_PRO_CONTACTS_PER_MONTH),
+    barre: '0%',
+    reinitialise: '',
+  },
+  liste: { total: 0, ville: '', bandeau: HOUSING_SAFETY_BANNER, annonces: [] },
+};
+
+/**
+ * LES CINQ AUTRES ÉCRANS DE LISTE DU MODULE, pour la même raison que S01.
+ *
+ * Ce sont les destinations que le panneau de section vient de gagner — « Bourses
+ * et emploi », « Annuaire professionnel », « Mes annonces », « Mes alertes »,
+ * « Ma fiche pro ». Mesuré au HTML servi avant correction : chacune répondait 200
+ * avec CINQ MOTS et zéro entrée de rail. Un sous-lien qui atterrit sur une
+ * coquille vide est, pour le porteur, un sous-lien qui ne marche pas.
+ *
+ * `plafondPro` vient de `FREE_PRO_CONTACTS_PER_MONTH`, la même constante que le
+ * serveur applique ; `barre` est à `0%` parce que rien n'est encore consommé à
+ * l'affichage. Les listes sont vides, et les compteurs à zéro : un écran qui n'a
+ * pas encore ses annonces n'en annonce aucune.
+ *
+ * `sansPremium: false` sur S10, et c'est le choix PRUDENT : `true` afficherait le
+ * verrou Premium à un membre qui l'a peut-être, le temps de l'appel — donc une
+ * restriction annoncée à tort. `false` ne promet rien : c'est l'écran sans
+ * encart, et l'encart apparaît quand le serveur le dit.
+ */
+const SOCLE_SERVICES = {
+  moi: { initiales: '', prenom: '' },
+  quotas: {
+    contactsPro: 0,
+    plafondPro: String(FREE_PRO_CONTACTS_PER_MONTH),
+    barre: '0%',
+    reinitialise: '',
+  },
+} as const;
+
+export const SQUELETTE_S04: S04Data = {
+  ...SOCLE_SERVICES,
+  offres: { liste: [] },
+  profils: { liste: [] },
+};
+
+export const SQUELETTE_S06: S06Data = { ...SOCLE_SERVICES, annuaire: { fiches: [] } };
+
+export const SQUELETTE_S08: S08Data = { ...SOCLE_SERVICES, offrePro: { nom: '', prix: '' } };
+
+export const SQUELETTE_S09: S09Data = {
+  ...SOCLE_SERVICES,
+  mesAnnonces: { logement: 0, emploi: 0, liste: [] },
+};
+
+export const SQUELETTE_S10: S10Data = {
+  ...SOCLE_SERVICES,
+  alertes: { liste: [], sansPremium: false },
+};
+
+/**
+ * LES QUATRE ÉCRANS DE DÉTAIL ET DE PUBLICATION DU MODULE.
+ *
+ * Même cause, même remède : `/services/logement/:id`, `/services/logement/nouveau`,
+ * `/services/emploi/:id` et `/services/annuaire/:id` répondaient 200 en servant
+ * cinq mots.
+ *
+ * `titre`, `nom` et `entreprise` portent un TIRET CADRATIN plutôt que la chaîne
+ * vide : ces trois-là sont promus en `<h1>` par le générateur, et un `<h1>` vide
+ * est un en-tête sans contenu — axe-core l'a déjà relevé en `serious` ailleurs
+ * dans ce lot (`link-name` sur un `<a>` dont le nom venait d'un titre vide).
+ *
+ * `bandeau` de S03 est la RÈGLE DURE 10 §2.2, et il vient du serveur sur chaque
+ * liste. `HOUSING_SAFETY_BANNER` est la même constante : la phrase de sécurité
+ * reste donc affichée pendant le chargement, au lieu d'y manquer précisément le
+ * temps que la page se remplisse.
+ *
+ * `prudenceRenforcee: false` est le choix PRUDENT dans l'autre sens que son nom
+ * ne le suggère : `true` afficherait un avertissement renforcé sur une annonce
+ * dont le serveur n'a rien dit. On n'invente pas d'alerte.
+ */
+export const SQUELETTE_S02: S02Data = {
+  ...SOCLE_SERVICES,
+  annonce: {
+    titre: '—',
+    prix: '',
+    genre: '',
+    quartier: '',
+    disponible: '',
+    duree: '',
+    description: '',
+    initiales: '',
+    auteur: '',
+    auteurCourt: '',
+    prenomAuteur: '',
+    autresPhotos: 0,
+    contactsCommuns: 0,
+    prudenceRenforcee: false,
+  },
+};
+
+export const SQUELETTE_S03: S03Data = {
+  ...SOCLE_SERVICES,
+  publication: { bandeau: HOUSING_SAFETY_BANNER },
+};
+
+export const SQUELETTE_S05: S05Data = {
+  ...SOCLE_SERVICES,
+  offre: {
+    titre: '—',
+    genre: '',
+    contrat: '',
+    secteur: '',
+    entreprise: '—',
+    ville: '',
+    quand: '',
+    description: '',
+    lien: '',
+    domaine: '',
+  },
+};
+
+export const SQUELETTE_S07: S07Data = {
+  ...SOCLE_SERVICES,
+  pro: {
+    initiales: '',
+    nom: '—',
+    palier: '',
+    metier: '',
+    villes: '',
+    description: '',
+    tarif: '',
+    langues: '',
+    recos: 0,
+    contactsCommuns: 0,
+    contactsRestants: '',
+    quotaCourt: '',
+    recommandations: [],
+  },
+};

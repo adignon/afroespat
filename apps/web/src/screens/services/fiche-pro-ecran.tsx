@@ -3,7 +3,7 @@
 import { useCallback } from 'react';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS07 } from '@/screens/services/appels';
+import { SQUELETTE_S07, chargerS07 } from '@/screens/services/appels';
 import { S07Desktop } from '@/screens/s07/desktop.generated';
 import { S07Mobile } from '@/screens/s07/mobile.generated';
 
@@ -40,7 +40,13 @@ export function FicheProEcran({ id }: { readonly id: string }) {
   const charger = useCallback(() => chargerS07(id), [id]);
 
   return (
-    <EcranDonnees charger={charger} attente="Chargement de la fiche…">
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S07} charger={charger} attente="Chargement de la fiche…">
       {(donnees) => (
         <ScreenFrames
           screen="S07"

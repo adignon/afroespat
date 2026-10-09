@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { newId } from '@app/db';
 import type { BookmarkState, BookmarkSubjectType } from '@app/db';
 import { PrismaService } from '../../common/prisma.service';
 
@@ -91,6 +92,291 @@ export class BookmarksService {
   private static readonly BATCH = 2_000;
 
   constructor(private readonly prisma: PrismaService) {}
+
+
+  // ─── §2.9 · LES QUATRE ROUTES, ENFIN LIVRÉES ──────────────────────────────
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « FINALISE LES ROUTES BOOKMARKS ET BRANCHE-LES »                        ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur, après avoir demandé si « la page des choses enregistrées » était
+   * faite. Elle ne pouvait pas l'être : l'en-tête de ce fichier le disait
+   * lui-même — « §2.9 annonce quatre routes […] AUCUNE n'est livrée », et
+   * `task-registrations.service.ts` ajoutait que « rien ne crée de signet ».
+   * La tâche horaire rafraîchissait donc les états d'une table que personne ne
+   * pouvait remplir.
+   *
+   * ── LE TITRE ET LE SOUS-TITRE SONT COMPOSÉS ICI ─────────────────────────
+   *
+   * Un signet ne porte qu'un type et un identifiant. Pour écrire « Obtenir la
+   * garantie Visale sans CDI · Mis à jour le 12 mars », il faut lire la table du
+   * sujet — et il y en a douze. Le faire à l'écran demanderait douze appels par
+   * page ; le faire ici en demande UN PAR TYPE PRÉSENT, comme le balayage de la
+   * tâche.
+   *
+   * ── `href` EST `null` QUAND IL N'Y A PLUS RIEN À OUVRIR ────────────────
+   *
+   * C'est tout le sens de cette page : on garde ce qui disparaît. Une story
+   * expirée reste dans la liste — « expirée, gardée pour vous » — mais elle ne
+   * s'ouvre plus. Un lien mort dirait le contraire de ce que l'état annonce.
+   */
+  async list(
+    userId: string,
+    /**
+     * `| undefined` EXPLICITE sur les deux prises facultatives :
+     * `exactOptionalPropertyTypes` est actif, et il interdit alors de PASSER
+     * `undefined` — seulement de l'omettre. Or Zod rend bien la clé, à
+     * `undefined`, quand le paramètre d'URL manque.
+     */
+    query: {
+      readonly subjectType?: BookmarkSubjectType | undefined;
+      readonly limit: number;
+      readonly cursor?: string | undefined;
+    },
+  ) {
+    const ou = {
+      userId,
+      ...(query.subjectType === undefined ? {} : { subjectType: query.subjectType }),
+    };
+
+    const [lignes, total, groupes] = await Promise.all([
+      this.prisma.bookmark.findMany({
+        where: ou,
+        orderBy: { createdAt: 'desc' },
+        take: query.limit,
+        select: {
+          id: true,
+          subjectType: true,
+          subjectId: true,
+          state: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.bookmark.count({ where: { userId } }),
+      this.prisma.bookmark.groupBy({
+        by: ['subjectType'],
+        where: { userId },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const apercus = await this.apercus(lignes);
+    const parType: Record<string, number> = {};
+    for (const g of groupes) parType[g.subjectType] = g._count._all;
+
+    return {
+      items: lignes.map((b) => {
+        const vu = apercus.get(`${b.subjectType}:${b.subjectId}`);
+        return {
+          id: b.id,
+          subjectType: b.subjectType,
+          subjectId: b.subjectId,
+          state: b.state,
+          createdAt: b.createdAt.toISOString(),
+          /**
+           * LE REPLI DIT CE QUI EST, et n'invente pas de titre : un sujet
+           * introuvable a été supprimé, et l'état `REMOVED` le dit déjà.
+           */
+          title: vu?.titre ?? 'Contenu retiré',
+          subtitle: vu?.sous ?? '',
+          href: vu?.lien ?? null,
+        };
+      }),
+      nextCursor: null,
+      meta: { total, parType },
+    };
+  }
+
+  /**
+   * `PUT /me/bookmarks` — idempotent, et la table le garantit
+   * (`@@unique([userId, subjectType, subjectId])`). Enregistrer deux fois le
+   * même contenu ne crée pas deux lignes et ne vaut pas une erreur : le membre
+   * voulait qu'il soit enregistré, il l'est.
+   *
+   * L'ÉTAT N'EST PAS CALCULÉ ICI. `AVAILABLE` par défaut, puis la tâche horaire
+   * le corrige. Le calculer à l'écriture demanderait de lire la table du sujet
+   * pour un geste qui doit être instantané — et un contenu qu'on vient
+   * d'enregistrer est, par construction, celui qu'on vient de voir.
+   */
+  async put(userId: string, input: { subjectType: BookmarkSubjectType; subjectId: string }) {
+    const ligne = await this.prisma.bookmark.upsert({
+      where: {
+        userId_subjectType_subjectId: {
+          userId,
+          subjectType: input.subjectType,
+          subjectId: input.subjectId,
+        },
+      },
+      update: {},
+      create: { id: newId(), userId, ...input },
+      select: { id: true, state: true },
+    });
+    return { id: ligne.id, state: ligne.state };
+  }
+
+  /**
+   * `DELETE /me/bookmarks/:type/:id` — `deleteMany` et non `delete`.
+   *
+   * Retirer un signet qu'on n'a pas vaut succès : c'est l'état voulu. `delete`
+   * jetterait sur une ligne absente, et l'écran afficherait une erreur pour un
+   * geste qui a abouti — typiquement, deux clics rapides sur le même signet.
+   */
+  async remove(userId: string, subjectType: BookmarkSubjectType, subjectId: string) {
+    await this.prisma.bookmark.deleteMany({ where: { userId, subjectType, subjectId } });
+  }
+
+  /**
+   * `GET /me/bookmarks/states` — « états en LOT » (§2.9).
+   *
+   * Elle répond à une question d'écran : « parmi ces vingt publications
+   * affichées, lesquelles ai-je enregistrées ? ». Une requête par carte serait
+   * vingt allers-retours pour dessiner vingt signets.
+   *
+   * LES ABSENTS NE SONT PAS RENDUS. Un identifiant sans ligne n'est pas
+   * enregistré ; l'écran le déduit de son absence, et rendre un état « pas
+   * enregistré » demanderait une huitième valeur à `BookmarkState` pour dire le
+   * contraire de ce que la table dit déjà.
+   */
+  async states(userId: string, subjectType: BookmarkSubjectType, ids: readonly string[]) {
+    if (ids.length === 0) return { items: [] };
+    const lignes = await this.prisma.bookmark.findMany({
+      where: { userId, subjectType, subjectId: { in: [...ids] } },
+      select: { subjectId: true, state: true },
+    });
+    return { items: lignes };
+  }
+
+  /**
+   * Le titre, le sous-titre et l'adresse de chaque sujet — UNE REQUÊTE PAR TYPE.
+   *
+   * Les douze branches lisent la même table que `resolversOf` juste au-dessous,
+   * et c'est voulu : les deux répondent à des questions différentes sur le même
+   * sujet — « dans quel état est-il ? » et « comment l'écrire ? » — et les
+   * fusionner ferait une méthode qui fait deux choses.
+   */
+  private async apercus(
+    lignes: readonly { subjectType: BookmarkSubjectType; subjectId: string }[],
+  ): Promise<Map<string, { titre: string; sous: string; lien: string | null }>> {
+    const out = new Map<string, { titre: string; sous: string; lien: string | null }>();
+    const parType = new Map<BookmarkSubjectType, string[]>();
+    for (const l of lignes) {
+      const lot = parType.get(l.subjectType);
+      if (lot === undefined) parType.set(l.subjectType, [l.subjectId]);
+      else lot.push(l.subjectId);
+    }
+
+    for (const [type, ids] of parType) {
+      const where = { id: { in: ids } };
+      const poser = (id: string, titre: string, sous: string, lien: string | null): void => {
+        out.set(`${type}:${id}`, { titre, sous, lien });
+      };
+
+      switch (type) {
+        case 'STORY': {
+          const rows = await this.prisma.story.findMany({
+            where,
+            select: { id: true, body: true },
+          });
+          for (const r of rows) poser(r.id, r.body.slice(0, 80), 'Story', `/stories/${r.id}`);
+          break;
+        }
+        case 'GUIDE': {
+          const rows = await this.prisma.guide.findMany({
+            where,
+            select: { id: true, title: true, slug: true },
+          });
+          for (const r of rows) poser(r.id, r.title, 'Guide', `/guides/${r.slug}`);
+          break;
+        }
+        case 'POST': {
+          const rows = await this.prisma.post.findMany({
+            where,
+            select: { id: true, body: true },
+          });
+          for (const r of rows) poser(r.id, r.body.slice(0, 80), 'Publication', `/publications/${r.id}`);
+          break;
+        }
+        case 'HELP_REQUEST': {
+          const rows = await this.prisma.helpRequest.findMany({
+            where,
+            select: { id: true, title: true },
+          });
+          for (const r of rows) poser(r.id, r.title, 'Entraide', `/entraide/${r.id}`);
+          break;
+        }
+        case 'EVENT': {
+          const rows = await this.prisma.event.findMany({
+            where,
+            select: { id: true, title: true },
+          });
+          for (const r of rows) poser(r.id, r.title, 'Événement', `/agenda/${r.id}`);
+          break;
+        }
+        case 'HOUSING': {
+          const rows = await this.prisma.housingListing.findMany({
+            where,
+            select: { id: true, title: true },
+          });
+          for (const r of rows) poser(r.id, r.title, 'Logement', `/services/logement/${r.id}`);
+          break;
+        }
+        case 'JOB': {
+          const rows = await this.prisma.jobListing.findMany({
+            where,
+            select: { id: true, title: true },
+          });
+          for (const r of rows) poser(r.id, r.title, 'Emploi', `/services/emploi/${r.id}`);
+          break;
+        }
+        case 'PRO': {
+          /**
+           * `businessName` ET NON `displayName` : une fiche pro porte le nom de
+           * l'ENTREPRISE, et il est NULLABLE — une fiche peut n'avoir que la
+           * profession. On écrit alors « Fiche professionnelle » plutôt qu'une
+           * chaîne vide, qui se lirait comme un chargement raté.
+           */
+          const rows = await this.prisma.proProfile.findMany({
+            where,
+            select: { id: true, businessName: true },
+          });
+          for (const r of rows) {
+            poser(r.id, r.businessName ?? 'Fiche professionnelle', 'Professionnel', `/services/pros/${r.id}`);
+          }
+          break;
+        }
+        case 'MENTOR':
+        case 'USER': {
+          const rows = await this.prisma.user.findMany({
+            where,
+            select: { id: true, displayName: true, handle: true },
+          });
+          const sous = type === 'MENTOR' ? 'Parrain' : 'Membre';
+          for (const r of rows) poser(r.id, r.displayName, sous, `/@${r.handle}`);
+          break;
+        }
+        case 'TOPIC': {
+          const rows = await this.prisma.topic.findMany({
+            where,
+            select: { id: true, title: true },
+          });
+          for (const r of rows) poser(r.id, r.title, 'Sujet', `/sujets/${r.id}`);
+          break;
+        }
+        case 'CITY': {
+          const rows = await this.prisma.city.findMany({
+            where,
+            select: { id: true, name: true, slug: true },
+          });
+          for (const r of rows) poser(r.id, r.name, 'Ville', `/villes/${r.slug}`);
+          break;
+        }
+      }
+    }
+
+    return out;
+  }
 
   /**
    * `bookmark.state_refresh` — horaire (§9.3).

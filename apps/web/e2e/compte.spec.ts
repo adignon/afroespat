@@ -65,6 +65,33 @@ async function visiter(page: Page, url: string, width = 1440): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
   await page.goto(url, { waitUntil: 'load' });
   await page.locator('[data-screen]').first().waitFor({ state: 'attached', timeout: 20_000 });
+
+  /**
+   * ╔═════════════════════════════════════════════════════════════════════════╗
+   * ║ `[data-screen]` NE DIT PAS QUE LA DONNÉE EST LÀ                            ║
+   * ╚═════════════════════════════════════════════════════════════════════════╝
+   *
+   * `EcranDonnees` rend le SQUELETTE tant que la réponse n'est pas là : le cadre,
+   * donc `[data-screen]`, existe dès le premier rendu. L'attendre ne prouve que son
+   * existence — exactement le défaut déjà corrigé dans `e2e/services.spec.ts`.
+   *
+   * MESURÉ : quatre cas de ce fichier ont rougi d'un coup en relevant « · niveau 0 »
+   * et « · · » là où le nom du membre devait être — le squelette, mot pour mot.
+   * Rien ne manquait à l'écran : la page avait simplement été lue trop tôt, et elle
+   * est devenue un souffle plus lente depuis que K01 charge AUSSI son formulaire.
+   *
+   * ON ATTEND DONC LA DISPARITION DE LA BANDE D'ATTENTE, seul signal que
+   * `EcranDonnees` émette à la bascule.
+   */
+  const bande = page.locator('[role="status"]').filter({ hasText: /Chargement/ });
+  try {
+    await bande.first().waitFor({ state: 'detached', timeout: 20_000 });
+  } catch {
+    throw new Error(
+      `${url} a monté son cadre mais la bande d’attente ne part pas en 20 s : la réponse ` +
+        'de l’API n’arrive pas. Ce qui suit aurait été mesuré SUR LE SQUELETTE.',
+    );
+  }
 }
 
 /** Le cadre visible à cette largeur — les deux sont dans le document. */
@@ -225,7 +252,18 @@ test.describe('les valeurs affichées viennent du serveur', () => {
     // La session courante porte la pastille de la maquette, l'autre variante non :
     // un membre neuf n'a qu'une session, donc aucun bouton « Révoquer ».
     await expect(bureau).toContainText('Actuelle');
-    await expect(bureau.getByRole('button', { name: 'Révoquer' })).toHaveCount(0);
+    /**
+     * `exact: true`, ET C'EST DEVENU NÉCESSAIRE.
+     *
+     * Le porteur : « la révocation de SESSIONS ? » — elle ne marchait pas.
+     * « Révoquer toutes les autres » était un `<a href="#">` ; c'est maintenant
+     * un BOUTON, et son nom accessible CONTIENT « Révoquer ». Sans la
+     * correspondance exacte, ce cas comptait ce bouton-là et croyait avoir trouvé
+     * une session révocable.
+     */
+    await expect(
+      bureau.getByRole('button', { name: 'Révoquer', exact: true }),
+    ).toHaveCount(0);
   });
 });
 
@@ -387,8 +425,18 @@ test.describe('K02 — « Ajouter aux contacts »', () => {
       await visiter(page, `/@${membre.handle}`, width);
       await page.locator(`${cadre(width)} [data-modal-open="K02C"]`).first().click();
 
-      // Le nom accessible vient du titre VISIBLE, via `aria-labelledby`.
-      const dialog = page.getByRole('dialog', { name: 'Ajouter Fatou aux contacts' });
+      /**
+       * Le nom accessible vient du titre VISIBLE, via `aria-labelledby`.
+       *
+       * LE PRÉNOM VIENT DU MEMBRE, PAS DE LA MAQUETTE. « Ajouter Fatou aux
+       * contacts » était écrit ici en dur : c'est le prénom que la planche dessine,
+       * et le SQUELETTE le reprend. Ce cas passait donc au vert sur le squelette, et
+       * il rougit depuis que `visiter` attend la donnée — la fenêtre réelle titre
+       * « Ajouter Awa aux contacts ». Même défaut, même correction que
+       * « Contacter Sarah » dans `e2e/services.spec.ts`.
+       */
+      const prenom = membre.displayName.split(' ')[0] ?? membre.displayName;
+      const dialog = page.getByRole('dialog', { name: `Ajouter ${prenom} aux contacts` });
       await expect(dialog).toBeVisible();
 
       // 420 px : la largeur que la maquette donne à cette planche. Elle n'a pas
@@ -561,13 +609,35 @@ test.describe('K08 — supprimer mon compte', () => {
   });
 
   /**
-   * Le cadre MOBILE ne dessine aucun bouton « Supprimer » : la maquette n'en met
-   * qu'au premier de ses trois blocs. Le déclencheur est donc borné à
-   * l'ordinateur, et ce test empêche qu'un lot suivant l'élargisse sans le voir.
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE BOUTON EST MAINTENANT SUR LES DEUX PLANCHES                          ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * CE QUE CE CAS DISAIT AVANT : « le cadre MOBILE ne dessine aucun bouton
+   * Supprimer : la maquette n'en met qu'au premier de ses trois blocs. Le
+   * déclencheur est donc borné à l'ordinateur, et ce test empêche qu'un lot
+   * suivant l'élargisse sans le voir. »
+   *
+   * IL S'EST VU, et c'était bien un manque et non un choix. Le porteur : « La
+   * page des sanctions et ses options ? (suppression de compte, désactivation et
+   * lancement de téléchargement de données) » — et sur la planche de 390 px,
+   * « Désactiver » et « Supprimer » n'étaient que des TITRES DE CARTE. Un membre
+   * sur téléphone ne pouvait ni désactiver ni supprimer son compte.
+   *
+   * Les deux cartes ont maintenant leur bouton, dans le dessin de celui de
+   * « Demander » juste au-dessus. Ce cas vérifie la nouvelle règle : le
+   * déclencheur de la fenêtre K08S existe sur les DEUX planches.
    */
-  test('390 px — la maquette ne dessine pas ce bouton', async ({ page }) => {
+  test('390 px — « Supprimer » déclenche la fenêtre, comme sur l’ordinateur', async ({ page }) => {
     await visiter(page, '/compte/donnees', 390);
-    await expect(page.locator('[data-frame="mobile"] [data-modal-open="K08S"]')).toHaveCount(0);
+    await expect(
+      page.locator('[data-frame="mobile"] [data-modal-open="K08S"]'),
+      'la planche de 390 px n’offre aucune suppression de compte',
+    ).toHaveCount(1);
+    await expect(
+      page.locator('[data-frame="mobile"] [data-donnees-desactiver]'),
+      'la planche de 390 px n’offre aucune désactivation',
+    ).toHaveCount(1);
   });
 });
 

@@ -18,8 +18,16 @@ import {
   type PlacesCountry,
   type UpdateMe,
   type UpdateProfile,
+  publicProfileResponseSchema,
+  placesLanguagesResponseSchema,
+  placesSkillSchema,
+  placesSkillsResponseSchema,
+  type PlacesLanguage,
+  type PlacesSkill,
+  mediaAssetSchema,
+  type MediaAssetView,
 } from '@app/shared';
-import { fetchMe, memberApi, setAccessToken } from './api/index';
+import { ApiError, fetchMe, memberApi, setAccessToken } from './api/index';
 
 /**
  * Les appels de l'INSCRIPTION — 01-identite.md §4.1 et §5.
@@ -99,6 +107,116 @@ export function updateProfile(patch: UpdateProfile): Promise<MeResponse> {
 /** 02 §2.1 — pays actifs. Un pays inactif n'apparaît nulle part côté membres. */
 export function listCountries(): Promise<{ items: readonly PlacesCountry[] }> {
   return memberApi.get('/places/countries', placesCountriesResponseSchema);
+}
+
+/**
+ * LE PORTRAIT DU MEMBRE — `PUT /me/avatar` (01 §4.2).
+ *
+ * Le porteur : « la sélection d'image ». MESURÉ sur O04 : zéro `input[type=file]`
+ * et zéro bouton. Le rond en pointillés avec son appareil photo était un `<div>`
+ * — un dessin d'intention, sans mécanisme.
+ *
+ * La route EXISTAIT : multipart, champ `file`, un seul fichier, et elle écrit
+ * `users.avatar_asset_id` en retirant l'ancien portrait, octets compris. Il n'y
+ * avait rien à ajouter côté serveur.
+ *
+ * `FormData` SANS `content-type` : un multipart porte une frontière que seul le
+ * navigateur sait écrire. La poser à la main l'envoie sans frontière, et multer
+ * ne trouve alors aucun fichier — `lib/api/transport.ts` le documente déjà pour
+ * la photo de story.
+ */
+export function uploadAvatar(file: File, signal?: AbortSignal): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', file);
+  return memberApi.put(
+    '/me/avatar',
+    mediaAssetSchema,
+    signal === undefined ? { body: corps } : { body: corps, signal },
+  );
+}
+
+/**
+ * LES LANGUES ET LES COMPÉTENCES PROPOSÉES AU PROFIL (O04).
+ *
+ * Le porteur : « L'ajout de compétences et langue ». Les deux routes EXISTAIENT
+ * et personne ne les appelait : l'écran affichait « Comptabilité », « Excel »,
+ * « Français », « Fon », « Anglais » — cinq littéraux de maquette, que rien ne
+ * rendait cliquables et que rien n'enregistrait.
+ *
+ * Aucune pagination : `GET /places/skills` rend les 60 compétences actives et
+ * `GET /places/languages` les 24 langues, triées par le serveur. C'est assez
+ * petit pour tenir en une réponse, et c'est pourquoi le filtre se fait à l'écran
+ * plutôt qu'en interrogeant à chaque frappe.
+ */
+export function listLanguages(): Promise<{ items: readonly PlacesLanguage[] }> {
+  return memberApi.get('/places/languages', placesLanguagesResponseSchema);
+}
+
+export function listSkills(): Promise<{ items: readonly PlacesSkill[] }> {
+  return memberApi.get('/places/skills', placesSkillsResponseSchema);
+}
+
+/**
+ * ÉCRIRE SA PROPRE COMPÉTENCE — « le free typing qui crée de nouvelles
+ * compétences que les administrateurs peuvent globaliser ».
+ *
+ * Elle naît RATTACHÉE À SON AUTEUR (`skills.created_by_user_id`) : lui seul la
+ * voit dans le champ, les autres la voient sur son profil sans pouvoir la
+ * choisir. L'équipe peut l'ouvrir à tous depuis D08, ce qui efface l'auteur.
+ *
+ * La réponse a la forme d'une ligne de référentiel, donc le même schéma que la
+ * liste — c'est ce qui permet de l'ajouter au catalogue sans conversion.
+ */
+export function creerCompetence(nameFr: string): Promise<PlacesSkill> {
+  return memberApi.post('/places/skills', placesSkillSchema, { body: { nameFr } });
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE PSEUDO EST-IL LIBRE ? — ET POURQUOI AUCUNE ROUTE NEUVE                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le pseudo est vérifié ? » Il ne l'était PAS. La maquette dessine
+ * une coche verte et le mot « Disponible » sous le champ ; ce sont des littéraux,
+ * et ils s'affichaient quoi qu'on tape — y compris sur un pseudo déjà pris. Le
+ * refus n'arrivait qu'au `PATCH /me`, deux écrans plus loin, sur un champ que le
+ * membre ne voyait plus.
+ *
+ * ── LA ROUTE EXISTE DÉJÀ, ET C'EST `GET /users/{pseudo}` ──────────────────
+ *
+ * Aucune route de disponibilité n'a été ajoutée, et c'est délibéré : le dépôt
+ * refuse par défaut toute route sans capacité déclarée, et en ouvrir une pour
+ * répondre « oui / non » aurait doublé une lecture qui existe. Un profil est
+ * PUBLIC (`@PublicRead`) : si `GET /users/{pseudo}` répond, le pseudo est pris ;
+ * s'il répond `404`, il est libre. On ne révèle donc rien que l'annuaire ne
+ * révèle déjà.
+ *
+ * ── LE CAS QUI FAIT MENTIR UNE RÉPONSE NAÏVE ─────────────────────────────
+ *
+ * Le membre a DÉJÀ un pseudo quand il arrive sur cet écran — l'inscription lui en
+ * attribue un. Retaper le sien rendrait `200`, donc « déjà pris », sur son propre
+ * compte. L'appelant compare donc au pseudo courant AVANT d'appeler ; c'est lui
+ * qui le connaît, pas cette fonction.
+ *
+ * Toute autre erreur — réseau, `429`, `500` — rend `null` : « on ne sait pas ».
+ * Répondre « libre » par défaut ferait promettre une disponibilité qu'on n'a pas
+ * vérifiée, et répondre « pris » bloquerait un pseudo valide sur une panne.
+ */
+export async function pseudoEstPris(
+  handle: string,
+  signal?: AbortSignal,
+): Promise<boolean | null> {
+  try {
+    await memberApi.get(
+      `/users/${encodeURIComponent(handle)}`,
+      publicProfileResponseSchema,
+      signal === undefined ? {} : { signal },
+    );
+    return true;
+  } catch (erreur) {
+    if (erreur instanceof ApiError && erreur.status === 404) return false;
+    return null;
+  }
 }
 
 /**

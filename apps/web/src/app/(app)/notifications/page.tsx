@@ -60,6 +60,17 @@ import { EcranNotifications } from '@/screens/messages/ecran-donnees';
  */
 const VUES = { panneau: 'panneau' } as const;
 
+/**
+ * LES SEPT FILTRES QUE LA MAQUETTE DESSINE, et aucun autre.
+ *
+ * Le porteur : « Les filtres sur la page notification marchent ? » Ils ne
+ * marchaient pas — sept `<span>`, zéro geste. Ils sont maintenant des liens vers
+ * `?type=…`, et cette liste est le garde-fou : l'URL est publique, un `type`
+ * inconnu est IGNORÉ plutôt qu'envoyé au serveur. C'est la même règle que `vue`
+ * juste au-dessus.
+ */
+const FILTRES = ['Parcours', 'Entraide', 'Réseaux', 'Événements', 'Messages', 'Compte'];
+
 export default async function NotificationsPage({
   searchParams,
 }: {
@@ -71,5 +82,8 @@ export default async function NotificationsPage({
   const panneau =
     typeof demande === 'string' && VUES[demande as keyof typeof VUES] === 'panneau';
 
-  return <EcranNotifications panneau={panneau} />;
+  const type = params['type'];
+  const filtre = typeof type === 'string' && FILTRES.includes(type) ? type : '*';
+
+  return <EcranNotifications panneau={panneau} filtre={filtre} />;
 }

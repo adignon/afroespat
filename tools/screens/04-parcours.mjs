@@ -72,11 +72,157 @@
 
 /** Les quinze sections ; `docs/specs/T5-pages-et-prompts.md` §5 donne les routes. */
 import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+import { barreBasse } from '../squelette-membre.mjs';
 
 const FILE = 'docs/template/04 Parcours.dc.html';
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES SEPT ENTRÉES DU PANNEAU « MON PARCOURS » — ET POURQUOI CE SONT DES      ║
+ * ║ BOUTONS ET NON DES LIENS                                                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La maquette dessine sept lignes de 44 px — Vue d'ensemble, Étape en cours,
+ * Discussion, Équipe, Checklist de documents, Historique, Réglages — en `<span>`.
+ * Aucun `href="#"`, donc le récapitulatif « ── NAVIGATION ── » n'en voit AUCUNE,
+ * et c'est pourtant la sous-navigation du parcours : ce que le porteur appelle
+ * « les sous liens ».
+ *
+ * ── LA MAQUETTE DONNE ELLE-MÊME LA CORRESPONDANCE, ET ELLE A ÉTÉ MESURÉE ────
+ *
+ * Elle PEINT l'entrée qui désigne la planche, cadre par cadre. Relevé sur les
+ * onze cadres d'ordinateur qui dessinent ce panneau (`background:#E3F0EB`) :
+ *
+ *     J01  → Vue d’ensemble            J06  → Checklist de documents
+ *     J01S → Étape en cours            J07  → Historique
+ *     J01D → Discussion                J08  → Réglages
+ *     J05  → Équipe                    J01M → Vue d’ensemble
+ *     J02, J09, J11 → AUCUNE entrée peinte
+ *
+ * Les sept destinations ne sont donc PAS lues dans le libellé : elles sont la
+ * route de la planche que la maquette désigne, c'est-à-dire exactement
+ * `/parcours/:id`, `…/etapes`, `…/discussion`, `…/equipe`, `…/documents`,
+ * `…/historique`, `…/reglages` — toutes servies par `app/(app)/parcours/[id]/`,
+ * et J05 à J08 sont dans la table de `T5 §5`.
+ *
+ * ── CE QUI MANQUE AU MÉCANISME, ET POURQUOI CE SONT DONC DES BOUTONS ────────
+ *
+ * La destination a besoin de `:id`, qui est dans l'URL. `markLinks` sait poser une
+ * destination calculée — `vers: '{{ r.href }}'` — mais son garde-fou EXIGE qu'une
+ * interpolation soit englobée par un `<sc-for as="r">`, et ce panneau n'est pas
+ * une boucle : il est écrit sept fois en clair. Un `vers` interpolé ARRÊTERAIT
+ * donc la génération, à juste titre selon la règle écrite.
+ *
+ * La seule clé disponible pour une cible qui dépend de la route est donc
+ * `action` — déjà employée par le dépôt pour le « Renvoyer » de l'écran du code —
+ * et elle produit un `<button>`. Conséquence assumée et DITE : ces sept entrées
+ * cliquent et changent l'URL, mais elles ne s'ouvrent pas dans un nouvel onglet et
+ * un clic du milieu n'y fait rien. Le manque est remonté : il faudrait que
+ * `markLinks` accepte une destination interpolée HORS boucle, sur une racine
+ * déclarée, pour que ce panneau devienne sept vrais `<a>`.
+ *
+ * ── J02, J09 ET J11 N'EN REÇOIVENT AUCUNE, ET C'EST UN REFUS ────────────────
+ *
+ * Ces trois planches dessinent le même panneau (`/parcours/nouveau`,
+ * `/parcours/publics`, `/parcours`) et la maquette n'y peint AUCUNE entrée : il
+ * n'y a pas de parcours courant, donc pas de `:id`. Choisir lequel serait inventer
+ * la donnée. Leurs vingt-une lignes restent inertes, et c'est remonté.
+ *
+ * ── LE MARQUEUR COMMENCE AU `</svg>` ───────────────────────────────────────
+ *
+ * `markLinks` remonte du marqueur jusqu'à la première balise promouvable. Le
+ * libellé est enfermé dans un `<span style="flex:1">` : un discriminant `texte`
+ * promouvrait CE span, et la zone cliquable ferait la largeur du mot au lieu des
+ * 44 px de la ligne. En partant du `</svg>`, la remontée traverse `<path>` et
+ * `<svg>` — non promouvables — et atteint la ligne. Le libellé est dans le
+ * marqueur, donc il est unique ; les tracés d'icône ne le sont pas (le tracé de
+ * « Discussion » figure deux fois par cadre).
+ */
+const ENTREES_PANNEAU_PARCOURS = [
+  ['Vue d’ensemble', 'onPanneauVue', '/parcours/:id', 'J01'],
+  ['Étape en cours', 'onPanneauEtape', '/parcours/:id/etapes', 'J01S'],
+  ['Discussion', 'onPanneauDiscussion', '/parcours/:id/discussion', 'J01D'],
+  ['Équipe', 'onPanneauEquipe', '/parcours/:id/equipe', 'J05'],
+  ['Checklist de documents', 'onPanneauDocuments', '/parcours/:id/documents', 'J06'],
+  ['Historique', 'onPanneauHistorique', '/parcours/:id/historique', 'J07'],
+  ['Réglages', 'onPanneauReglages', '/parcours/:id/reglages', 'J08'],
+];
+
+/** Les sept entrées du panneau, sur le seul cadre d'ordinateur qui le dessine. */
+const panneauParcours = () =>
+  ENTREES_PANNEAU_PARCOURS.map(([libelle, action, route, planche]) => ({
+    marqueur: `</svg><span style="flex:1">${libelle}</span>`,
+    action,
+    frames: ['Desktop'],
+    why:
+      `L’entrée « ${libelle} » du panneau mène à ${route} — la planche ${planche}, celle que ` +
+      'la maquette PEINT quand elle est ouverte. La destination dépend du `:id` de la route, ' +
+      'donc elle passe par un gestionnaire : `markLinks` n’accepte un `vers` interpolé que ' +
+      'dans une boucle, et ce panneau n’en est pas une.',
+  }));
+
+/**
+ * ─── LES DEUX DESTINATIONS QUE LA MAQUETTE BALISE MAIS N'ADRESSE PAS ────────
+ *
+ * Elles portent bien un `<a>`, donc elles COMPTENT dans le récapitulatif
+ * « ── NAVIGATION ── » — contrairement au panneau ci-dessus. Les deux sont dans
+ * la table de `T5 §5`, mot pour mot : J02 `/parcours/nouveau`, J09
+ * `/parcours/publics`, J11 `/parcours`.
+ *
+ * « VOIR TOUS » EST ÉCRIT DEUX FOIS DANS LE CADRE DE J01S, et les deux ne mènent
+ * pas au même endroit : celui de la carte « PARCOURS PUBLICS » (13 cadres) et
+ * celui de « ILS ONT FRANCHI CETTE ÉTAPE À LYON · 8 » (un seul). Le texte ne les
+ * distingue pas ; LE CORPS, oui — 12 px pour le premier, 12,5 px pour le second,
+ * compté sur les octets de la maquette. Le discriminant est donc un fragment
+ * VERBATIM du balisage, et il commence DANS la balise ouvrante pour que la
+ * remontée de `markLinks` trouve bien ce `<a>`-là et non le précédent.
+ *
+ * Le second « Voir tous » n'est PAS posé : aucune route ne liste les membres qui
+ * ont franchi une étape. Remonté.
+ */
+const NOUVEAU_PARCOURS = (frames, fois = 1) => ({
+  texte: 'Nouveau parcours',
+  vers: '/parcours/nouveau',
+  frames,
+  fois,
+  why:
+    'Le bouton pointillé du panneau mène à J02 « Créer un parcours » — ' +
+    '`/parcours/nouveau` (T5 §5). La maquette le balise en <a> sans l’adresser.',
+});
+
+/**
+ * LA MÊME DESTINATION, MAIS SUR LA PLANCHE « ABOUTI », OÙ LE TEXTE NE SUFFIT PAS.
+ *
+ * `DesktopAbouti` écrit « Nouveau parcours » DEUX FOIS : une fois dans le bouton
+ * pointillé du panneau (`<a href="#">`), une fois dans le `<button>` vert de la
+ * carte « Aider le suivant ». Le compte de `markLinks` l'a refusé, et il avait
+ * raison : avec `fois: 2`, il aurait transformé LE BOUTON EN LIEN — un changement
+ * de dessin et de sémantique, sur un contrôle que la maquette dessine en vert
+ * plein. Le discriminant est donc un fragment du balisage du seul lien : son
+ * pointillé.
+ */
+const NOUVEAU_PARCOURS_POINTILLE = (frames) => ({
+  marqueur: 'border:1.5px dashed #9FB3AB;background:#fff',
+  vers: '/parcours/nouveau',
+  frames,
+  why:
+    'Le bouton pointillé du panneau mène à `/parcours/nouveau` (T5 §5). Le texte ne peut ' +
+    'pas servir de discriminant ici : la planche écrit « Nouveau parcours » aussi dans un ' +
+    '<button> que l’on ne doit PAS promouvoir en lien.',
+});
+
+const VOIR_TOUS_PUBLICS = (frames) => ({
+  marqueur: 'font-size:12px;font-weight:700">Voir tous',
+  vers: '/parcours/publics',
+  frames,
+  why:
+    'Le « Voir tous » de la carte PARCOURS PUBLICS mène à J09 — `/parcours/publics` ' +
+    '(T5 §5). Le corps de 12 px le distingue du « Voir tous » de 12,5 px de J01S, qui ' +
+    'liste les membres ayant franchi l’étape et n’a aucune route.',
+});
+
 const screen = ({ section, out, frames, dataType = 'ParcoursData', modal = false,
-  squelette = !modal, ...rest }) => ({
+  squelette = !modal, panneauDuParcours = false, liensPlus = [], ...rest }) => ({
   file: FILE,
   /**
    * ─── LE SQUELETTE MEMBRE : LE RAIL ──────────────────────────────────────────
@@ -103,7 +249,18 @@ const screen = ({ section, out, frames, dataType = 'ParcoursData', modal = false
    * peint déjà l'entrée qui désigne la page, planche par planche.
    */
   ...(modal ? { modal } : {}),
-  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
+  /**
+   * TROIS FAMILLES DE LIENS, CONCATÉNÉES : le rail (déclaré une fois pour les sept
+   * modules membre), le panneau « MON PARCOURS » quand l'écran porte un `:id`, et
+   * les destinations propres à l'écran (`liensPlus`). Les trois sont des « sous
+   * liens » au sens du porteur, et les deux premières sont INVISIBLES au compteur
+   * de `href="#"`.
+   */
+  liens: [
+    ...(squelette ? railLitteral(cadresDuRail(frames)) : []),
+    ...(panneauDuParcours ? panneauParcours() : []),
+    ...liensPlus,
+  ],
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule: '../parcours/data',
@@ -839,6 +996,8 @@ export const screens = [
   screen({
     section: 'J01',
     out: 'j01',
+    liensPlus: [...barreBasse(['Mobile', 'MobileEdition']), NOUVEAU_PARCOURS(['Desktop', 'Mobile']), VOIR_TOUS_PUBLICS(['Desktop'])],
+    panneauDuParcours: true,
     dataType: 'J01Data',
     /**
      * TROIS FENÊTRES S'OUVRENT DEPUIS CET ÉCRAN, et aucune depuis le cadre mobile
@@ -1035,6 +1194,15 @@ export const screens = [
   screen({
     section: 'J01M',
     out: 'j01m',
+    liensPlus: [NOUVEAU_PARCOURS(['Desktop'], 2), VOIR_TOUS_PUBLICS(['Desktop']),
+      {
+        texte: 'Voir tous mes parcours',
+        vers: '/parcours',
+        frames: ['Desktop'],
+        why:
+          'Le pied du sélecteur mène à J11 « Mes parcours » — `/parcours` (T5 §5).',
+      },],
+    panneauDuParcours: true,
     dataType: 'J01MData',
     triggers: [{ marker: 'Je suis bloqué·e', modal: 'J03', all: true }],
     frames: [f(1440, 'Desktop', 0, t('Mes études à Lyon', '30px'))],
@@ -1105,6 +1273,7 @@ export const screens = [
   screen({
     section: 'J01M',
     out: 'j01mfeuille',
+    liensPlus: [NOUVEAU_PARCOURS(['Mobile'])],
     dataType: 'J01MData',
     modal: true,
     // Le titre VISIBLE de la feuille, compteur compris — c'est lui qui donnera
@@ -1210,6 +1379,7 @@ export const screens = [
     section: 'J01E',
     out: 'j01e',
     dataType: 'J01EVideData',
+    liensPlus: [...barreBasse(['MobileVide']), VOIR_TOUS_PUBLICS(['DesktopVide'])],
     /**
      * AUCUN DÉCLENCHEUR, et c'est le générateur qui l'a montré.
      *
@@ -1257,6 +1427,11 @@ export const screens = [
     section: 'J01E',
     out: 'j01e',
     dataType: 'J01EAboutiData',
+    liensPlus: [...barreBasse(['MobileAbouti']), 
+      NOUVEAU_PARCOURS_POINTILLE(['DesktopAbouti']),
+      NOUVEAU_PARCOURS(['MobileAbouti']),
+      VOIR_TOUS_PUBLICS(['DesktopAbouti']),
+    ],
     frames: [
       f(1440, 'DesktopAbouti', 1, t('Mes études à Lyon', '30px')),
       f(390, 'MobileAbouti', 1, t('Mes études à Lyon', '22px')),
@@ -1376,6 +1551,8 @@ export const screens = [
   screen({
     section: 'J01S',
     out: 'j01s',
+    liensPlus: [...barreBasse(['Mobile']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
+    panneauDuParcours: true,
     dataType: 'J01SData',
     /**
      * §3.6 : « à `step_completed` … proposition de partage » sur une étape
@@ -1472,6 +1649,8 @@ export const screens = [
   screen({
     section: 'J01D',
     out: 'j01d',
+    liensPlus: [NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
+    panneauDuParcours: true,
     dataType: 'J01DData',
     /**
      * « Je suis bloqué·e » est dessiné DEUX FOIS dans le cadre d'ordinateur —
@@ -1533,6 +1712,7 @@ export const screens = [
   screen({
     section: 'J02',
     out: 'j02',
+    liensPlus: [NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
     dataType: 'J02Data',
     /**
      * « Je suis bloqué·e » est dessiné DEUX FOIS dans le cadre d'ordinateur —
@@ -1642,6 +1822,8 @@ export const screens = [
   screen({
     section: 'J05',
     out: 'j05',
+    liensPlus: [...barreBasse(['Mobile']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
+    panneauDuParcours: true,
     dataType: 'J05Data',
     /**
      * Sur ordinateur le bouton « Inviter » porte son texte ; sur mobile la
@@ -1805,6 +1987,8 @@ export const screens = [
   screen({
     section: 'J06',
     out: 'j06',
+    liensPlus: [...barreBasse(['Mobile']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
+    panneauDuParcours: true,
     dataType: 'J06Data',
     /**
      * « Je suis bloqué·e » est dessiné DEUX FOIS dans le cadre d'ordinateur —
@@ -1940,6 +2124,8 @@ export const screens = [
   screen({
     section: 'J07',
     out: 'j07',
+    liensPlus: [...barreBasse(['Mobile']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
+    panneauDuParcours: true,
     dataType: 'J07Data',
     /**
      * L'export est réservé à Premium (T5 J07). La maquette dessine « Exporter en
@@ -2070,6 +2256,8 @@ export const screens = [
   screen({
     section: 'J08',
     out: 'j08',
+    liensPlus: [...barreBasse(['Mobile']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
+    panneauDuParcours: true,
     dataType: 'J08Data',
     /**
      * La confirmation d'arrêt est une FEUILLE sur mobile et une carte DANS LA
@@ -2168,6 +2356,7 @@ export const screens = [
     section: 'J09',
     out: 'j09',
     dataType: 'J09Data',
+    liensPlus: [...barreBasse(['Mobile']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
     /**
      * « Je suis bloqué·e » est dessiné DEUX FOIS dans le cadre d'ordinateur —
      * carte du panneau et carte de l'étape en cours — d'où `all`. Le cadre
@@ -2443,6 +2632,7 @@ export const screens = [
   screen({
     section: 'J11',
     out: 'j11',
+    liensPlus: [...barreBasse(['Mobile', 'MobileVide']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
     dataType: 'J11Data',
     /**
      * « Je suis bloqué·e » est dessiné DEUX FOIS dans le cadre d'ordinateur —

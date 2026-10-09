@@ -8,23 +8,82 @@ import {
 } from '../index.js';
 
 describe('matrice des capacités (§7.3)', () => {
+  /**
+   * LE CUMUL, éprouvé sur une capacité qui exige ENCORE un niveau.
+   *
+   * Il l'était sur `post.create`, qui est depuis ouverte à L0 — arbitrage du
+   * porteur, écart nommé dans `capabilities.ts`. Une capacité ouverte à tous ne
+   * prouve plus rien sur le cumul : les trois niveaux y répondent « oui ».
+   * `housing.publish` (L2) le montre, et le fichier en garde la trace.
+   */
   it('les niveaux sont cumulatifs', () => {
-    expect(levelSatisfies('L2', 'post.create')).toBe(true);
-    expect(levelSatisfies('L1', 'post.create')).toBe(true);
-    expect(levelSatisfies('L0', 'post.create')).toBe(false);
-    expect(levelSatisfies('L1', 'housing.publish')).toBe(false);
     expect(levelSatisfies('L2', 'housing.publish')).toBe(true);
+    expect(levelSatisfies('L1', 'housing.publish')).toBe(false);
+    expect(levelSatisfies('L0', 'housing.publish')).toBe(false);
+    /** `help.offer` est la capacité de palier intermédiaire depuis la refonte N0/N1/N2. */
+    expect(levelSatisfies('L2', 'help.offer')).toBe(true);
+    expect(levelSatisfies('L1', 'help.offer')).toBe(true);
+    expect(levelSatisfies('L0', 'help.offer')).toBe(false);
   });
 
-  it('le parcours et la demande d’aide sont ouverts dès L0 — un pré-départ doit pouvoir démarrer', () => {
-    for (const cap of ['journey.create', 'journey.manage', 'help.ask', 'mentorship.request'] as const) {
-      expect(levelSatisfies('L0', cap)).toBe(true);
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LES TROIS NIVEAUX, TELS QUE LE PORTEUR LES A REDÉFINIS — 2026-10-09    ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * « N0 : commenter des publications, créer des demandes d'entraide, ajouter
+   * des contacts et discuter avec eux, créer et gérer les parcours. N1 : publier
+   * dans le fil d'actualité et stories, répondre à l'entraide, demander un
+   * parrain. N2 : faire tout le reste. »
+   *
+   * Ce cas énumère la liste DANS SES MOTS, capacité par capacité : c'est le seul
+   * moyen qu'un déplacement futur se voie, et qu'on sache lequel des deux — la
+   * table ou la demande — a changé.
+   */
+  it('N0 fait exactement ce que le porteur y range', () => {
+    for (const cap of [
+      'comment.create',
+      'help.ask',
+      'connection.request',
+      'message.send',
+      'journey.create',
+      'journey.manage',
+    ] as const) {
+      expect(levelSatisfies('L0', cap), cap).toBe(true);
     }
   });
 
-  it('seul le logement, le parrainage et la fiche pro exigent L2', () => {
+  it('N1 ajoute la publication, l’offre d’entraide et la demande de parrain', () => {
+    for (const cap of ['post.create', 'help.offer', 'mentorship.request'] as const) {
+      expect(levelSatisfies('L0', cap), `${cap} ne doit PAS être ouvert à L0`).toBe(false);
+      expect(levelSatisfies('L1', cap), cap).toBe(true);
+    }
+  });
+
+  /**
+   * ⚠ DEUX EXCEPTIONS À « TOUT LE RESTE », et elles sont voulues : signaler et
+   * contester une sanction sont des DROITS, pas des fonctionnalités. Les ranger
+   * en L2 fermerait l'alerte aux comptes les plus exposés (13 §1) et rendrait
+   * une sanction incontestable. ÉCART REMONTÉ au porteur.
+   */
+  it('« tout le reste » exige N2, sauf la lecture, le signalement et la contestation', () => {
     const l2 = CAPABILITY_KEYS.filter((k) => CAPABILITIES[k].minLevel === 'L2');
-    expect(l2.sort()).toEqual(['housing.publish', 'mentor.become', 'pro.register']);
+    expect(l2.sort()).toEqual([
+      'community.create',
+      'event.attend',
+      'event.create',
+      'guide.propose_revision',
+      'guide.vote',
+      'guide.write',
+      'housing.publish',
+      'job.publish',
+      'mentor.become',
+      'pro.contact',
+      'pro.register',
+    ]);
+    for (const droit of ['content.read', 'report.create', 'sanction.appeal'] as const) {
+      expect(levelSatisfies('L0', droit), droit).toBe(true);
+    }
   });
 
   // RÈGLE DURE 14 §2 — rien de ce qui relève de l'aide n'est jamais payant.

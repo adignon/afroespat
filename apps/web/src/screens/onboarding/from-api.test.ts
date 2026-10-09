@@ -95,10 +95,10 @@ describe('les modèles de parcours, tels que O03 les montre', () => {
   });
 
   it('accorde le singulier — « 1 étape », jamais « 1 étapes »', () => {
-    const cartes = goalCards([{ id: 'x', code: 'STUDIES', nameFr: 'Un seul pas', stepCount: 1 }]);
+    const cartes = goalCards([{ id: 'x', code: 'STUDIES', nameFr: 'Un seul pas', stepCount: 1, icon: null, createsJourney: true }]);
     expect(cartes[0]?.steps).toBe('1 étape');
     expect(
-      createAnnounce([{ id: 'x', code: 'WORK', nameFr: 'Un seul pas', stepCount: 1 }]),
+      createAnnounce([{ id: 'x', code: 'WORK', nameFr: 'Un seul pas', stepCount: 1, icon: null, createsJourney: true }]),
     ).toContain('(1 étape)');
   });
 });
@@ -147,7 +147,7 @@ describe('les témoins — ce qui ne décide rien reste VERT', () => {
      */
     const cartes = goalCards([
       ...toTemplateChoices(reponse),
-      { id: 'z', code: 'CODE_QUI_N_EXISTE_PAS', nameFr: 'Un cinquième', stepCount: 3 },
+      { id: 'z', code: 'CODE_QUI_N_EXISTE_PAS', nameFr: 'Un cinquième', stepCount: 3, icon: null, createsJourney: true },
     ]);
     expect(cartes).toHaveLength(reponse.items.length + 1);
     expect(cartes.at(-1)?.icon.length).toBeGreaterThan(10);

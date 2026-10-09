@@ -100,6 +100,25 @@ model JourneyTemplate {
   isActive    Boolean @map("is_active")
   sortOrder   Int     @map("sort_order")
 
+  /// Ce type OUVRE-T-IL un parcours ?
+  ///
+  /// Faux pour les deux objectifs que T5 §O03 dessine sous « sans créer de
+  /// parcours » — « M'intégrer, rencontrer du monde » et « Aider les autres ».
+  /// La même page pose que « les deux groupes ont le même rang visuel de choix »
+  /// et la règle dure « le parcours n'est jamais imposé » : ce sont donc des
+  /// OBJECTIFS au même titre que les quatre autres, et c'est à ce titre qu'ils
+  /// vivent ici plutôt qu'écrits en dur dans l'écran.
+  ///
+  /// Un type non développable n'a aucune étape. Sa version publiée en compte
+  /// zéro — plutôt que de n'en avoir aucune, ce qui l'exclurait de
+  /// `GET /journey-templates` : « un type sans version publiée n'est pas
+  /// proposé ». La règle de résolution reste donc intacte, et c'est ce booléen,
+  /// pas l'absence de version, qui dit de ne rien créer.
+  ///
+  /// Défaut VRAI : les quatre types existants ouvrent un parcours, et une colonne
+  /// ajoutée ne doit pas changer ce qu'ils font.
+  createsJourney Boolean @default(true) @map("creates_journey")
+
   versions JourneyTemplateVersion[]
 
   @@map("journey_templates")

@@ -1610,10 +1610,21 @@ export class CommunitiesService {
         id: true,
         question: true,
         isMultiple: true,
+        resultsAfterVote: true,
+        isAnonymous: true,
         closesAt: true,
         createdAt: true,
         author: { select: { id: true, handle: true, displayName: true } },
-        options: { orderBy: { position: 'asc' }, select: { id: true, label: true, position: true, voteCount: true } },
+        options: {
+          orderBy: { position: 'asc' },
+          select: {
+            id: true,
+            label: true,
+            position: true,
+            voteCount: true,
+            votes: { select: { user: { select: { id: true, handle: true, displayName: true } } } },
+          },
+        },
       },
     });
 
@@ -1623,39 +1634,74 @@ export class CommunitiesService {
       select: { pollOptionId: true, pollOption: { select: { pollId: true } } },
     });
 
+    /**
+     * LA SÉPARATION VAUT AUSSI DANS UNE LISTE DE VOTANTS. Un membre qui m'a bloqué
+     * — ou que j'ai bloqué — n'est nommé nulle part, y compris sous une option de
+     * sondage non anonyme. On la charge une fois pour toute la page.
+     */
+    const separes = new Set(await this.visibility.separatedFrom(userId));
+
     return {
-      items: page.items.map((poll) => this.shapePoll(poll, myVotes)),
+      items: page.items.map((poll) => this.shapePoll(poll, myVotes, separes)),
       nextCursor: page.nextCursor,
     };
   }
 
   /**
-   * « Résultats visibles après vote ou clôture » (§2.3).
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES RÉSULTATS, ET MAINTENANT DEUX RÉGLAGES QUI DÉCIDENT DE CE QUI SORT   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * Les compteurs sont donc RETIRÉS de la réponse tant que le membre n'a pas
-   * voté : les laisser et demander au front de ne pas les afficher revient à les
-   * publier, puisqu'ils sont dans la réponse HTTP.
+   * « Résultats visibles après vote ou clôture » (§2.3) ÉTAIT la règle, pour tout
+   * le monde. Le porteur en a fait un réglage — `resultsAfterVote` — et le défaut
+   * reste l'ancienne règle, donc rien ne change pour ce qui existe.
+   *
+   * Les compteurs sont RETIRÉS de la réponse quand ils sont masqués : les laisser
+   * et demander au front de ne pas les afficher revient à les publier, puisqu'ils
+   * sont dans la réponse HTTP. C'était vrai avant, ça l'est toujours.
+   *
+   * ── LES NOMS NE SORTENT PAS « PARCE QUE CE N'EST PAS ANONYME » ────────────
+   *
+   * Ils sortent quand les RÉSULTATS sortent, ET que le sondage n'est pas anonyme.
+   * Les deux conditions, pas l'une ou l'autre : sans cela, le réglage d'anonymat
+   * contournerait celui des résultats, et on saurait QUI a voté QUOI avant d'avoir
+   * le droit de savoir COMBIEN.
+   *
+   * `separes` : un membre qui m'a bloqué, ou que j'ai bloqué, n'est jamais nommé —
+   * la séparation vaut partout, y compris dans une liste de votants.
    */
   private shapePoll(
     poll: {
       id: string;
       question: string;
       isMultiple: boolean;
+      resultsAfterVote: boolean;
+      isAnonymous: boolean;
       closesAt: Date | null;
       createdAt: Date;
       author: { id: string; handle: string; displayName: string };
-      options: { id: string; label: string; position: number; voteCount: number }[];
+      options: {
+        id: string;
+        label: string;
+        position: number;
+        voteCount: number;
+        votes?: { user: { id: string; handle: string; displayName: string } }[];
+      }[];
     },
     myVotes: { pollOptionId: string; pollOption: { pollId: string } }[],
+    separes: ReadonlySet<string> = new Set(),
   ) {
     const mine = myVotes.filter((v) => v.pollOption.pollId === poll.id).map((v) => v.pollOptionId);
     const closed = poll.closesAt !== null && poll.closesAt.getTime() <= Date.now();
-    const revealed = closed || mine.length > 0;
+    const revealed = !poll.resultsAfterVote || closed || mine.length > 0;
+    const nomme = revealed && !poll.isAnonymous;
 
     return {
       id: poll.id,
       question: poll.question,
       isMultiple: poll.isMultiple,
+      resultsAfterVote: poll.resultsAfterVote,
+      isAnonymous: poll.isAnonymous,
       closesAt: poll.closesAt,
       closed,
       createdAt: poll.createdAt,
@@ -1668,6 +1714,11 @@ export class CommunitiesService {
         label: o.label,
         position: o.position,
         voteCount: revealed ? o.voteCount : null,
+        voters: nomme
+          ? (o.votes ?? [])
+              .map((v) => v.user)
+              .filter((u) => !separes.has(u.id))
+          : [],
       })),
     };
   }
@@ -1690,6 +1741,8 @@ export class CommunitiesService {
           authorUserId: userId,
           question: input.question,
           isMultiple: input.isMultiple,
+          resultsAfterVote: input.resultsAfterVote,
+          isAnonymous: input.isAnonymous,
           closesAt: input.closesAt ?? null,
           options: {
             create: input.options.map((label, position) => ({ id: newId(), label, position })),
@@ -1708,19 +1761,36 @@ export class CommunitiesService {
       select: {
         id: true,
         communityId: true,
+        postId: true,
         question: true,
         isMultiple: true,
+        resultsAfterVote: true,
+        isAnonymous: true,
         closesAt: true,
         createdAt: true,
         authorUserId: true,
         author: { select: { id: true, handle: true, displayName: true } },
-        options: { orderBy: { position: 'asc' }, select: { id: true, label: true, position: true, voteCount: true } },
+        options: {
+          orderBy: { position: 'asc' },
+          select: {
+            id: true,
+            label: true,
+            position: true,
+            voteCount: true,
+            /**
+             * LES VOTANTS SONT RAMENÉS, PAS TOUJOURS RENDUS. `shapePoll` ne les
+             * nomme que sur un sondage NON anonyme dont les résultats sont
+             * visibles ; les charger inconditionnellement coûte une jointure et
+             * évite une seconde requête conditionnelle dont on oublierait un cas.
+             */
+            votes: { select: { user: { select: { id: true, handle: true, displayName: true } } } },
+          },
+        },
       },
     });
     if (poll === null) throw ApiError.notFound();
 
-    const access = await this.load(poll.communityId, userId);
-    this.assertMember(access);
+    await this.assertPollAccess(poll, userId);
     if (await this.visibility.isSeparated(userId, poll.authorUserId)) throw ApiError.notFound();
 
     const myVotes = await this.prisma.pollVote.findMany({
@@ -1728,7 +1798,9 @@ export class CommunitiesService {
       select: { pollOptionId: true, pollOption: { select: { pollId: true } } },
     });
 
-    return { ...this.shapePoll(poll, myVotes), communityId: poll.communityId };
+    /** Même garde que la liste : un membre séparé n'est nommé nulle part. */
+    const separes = new Set(await this.visibility.separatedFrom(userId));
+    return { ...this.shapePoll(poll, myVotes, separes), communityId: poll.communityId };
   }
 
   /**
@@ -1738,12 +1810,62 @@ export class CommunitiesService {
    * repose les nouveaux, dans une seule transaction, en ajustant les compteurs.
    * Un `create` simple ferait compter deux fois un membre qui change d'avis.
    */
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ QUI PEUT TOUCHER À CE SONDAGE — ET IL Y A MAINTENANT DEUX RÉPONSES       ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Un sondage appartient à un RÉSEAU ou à une PUBLICATION du fil, jamais aux deux
+   * (contrainte `polls_rattachement`). Les trois routes — lire, voter, clore —
+   * posaient la même question à `load(communityId)` puis `assertMember`. Avec un
+   * `community_id` devenu facultatif, ce chemin recevait `null` et `tsc` l'a dit
+   * tout de suite : c'est exactement ce qu'on veut d'un type.
+   *
+   * ── LA VISIBILITÉ D'UN SONDAGE EST CELLE DE SON PORTEUR ───────────────────
+   *
+   * Pour un réseau, c'est l'adhésion ACTIVE. Pour une publication, c'est la
+   * publication elle-même : si elle est dans un fil de réseau, il faut en être
+   * membre ; dans le fil global, il suffit qu'elle soit publiée et non supprimée.
+   * On ne réinvente pas une règle de visibilité — on suit celle du contenu qui
+   * porte le sondage, sans quoi un sondage deviendrait une porte dérobée vers un
+   * fil de réseau fermé.
+   *
+   * Rend le rôle quand le sondage est celui d'un réseau, `null` sinon : seule la
+   * clôture s'en sert, et un sondage de publication n'a pas de modérateur de
+   * réseau — c'est son AUTEUR qui le clôt.
+   */
+  private async assertPollAccess(
+    poll: { communityId: string | null; postId: string | null },
+    userId: string,
+  ): Promise<{ role: string } | null> {
+    if (poll.communityId !== null) {
+      const access = await this.load(poll.communityId, userId);
+      return this.assertMember(access);
+    }
+    if (poll.postId === null) {
+      // La contrainte de base l'interdit ; si elle tombait, on refuse plutôt que
+      // d'ouvrir un sondage que personne ne porte.
+      throw ApiError.notFound();
+    }
+    const post = await this.prisma.post.findFirst({
+      where: { id: poll.postId, deletedAt: null, status: 'PUBLISHED' },
+      select: { communityId: true },
+    });
+    if (post === null) throw ApiError.notFound();
+    if (post.communityId !== null) {
+      const access = await this.load(post.communityId, userId);
+      this.assertMember(access);
+    }
+    return null;
+  }
+
   async vote(pollId: string, userId: string, optionIds: string[]) {
     const poll = await this.prisma.poll.findUnique({
       where: { id: pollId },
       select: {
         id: true,
         communityId: true,
+        postId: true,
         isMultiple: true,
         closesAt: true,
         options: { select: { id: true } },
@@ -1751,8 +1873,7 @@ export class CommunitiesService {
     });
     if (poll === null) throw ApiError.notFound();
 
-    const access = await this.load(poll.communityId, userId);
-    this.assertMember(access);
+    await this.assertPollAccess(poll, userId);
 
     if (poll.closesAt !== null && poll.closesAt.getTime() <= Date.now()) this.fail('POLL_CLOSED');
     if (!poll.isMultiple && optionIds.length > 1) {
@@ -1800,13 +1921,17 @@ export class CommunitiesService {
   async closePoll(pollId: string, userId: string) {
     const poll = await this.prisma.poll.findUnique({
       where: { id: pollId },
-      select: { id: true, communityId: true, authorUserId: true, closesAt: true },
+      select: { id: true, communityId: true, postId: true, authorUserId: true, closesAt: true },
     });
     if (poll === null) throw ApiError.notFound();
 
-    const access = await this.load(poll.communityId, userId);
-    const membership = this.assertMember(access);
-    const isModerator = membership.role === 'OWNER' || membership.role === 'MODERATOR';
+    const membership = await this.assertPollAccess(poll, userId);
+    /**
+     * UN SONDAGE DE PUBLICATION N'A PAS DE MODÉRATEUR DE RÉSEAU : `membership` est
+     * alors `null`, et seul l'AUTEUR peut clore. C'est la lecture juste de « auteur
+     * ou modérateur » hors d'un réseau — il n'y a pas de modérateur à désigner.
+     */
+    const isModerator = membership !== null && (membership.role === 'OWNER' || membership.role === 'MODERATOR');
     if (poll.authorUserId !== userId && !isModerator) {
       throw ApiError.transverse('FORBIDDEN', { reason: 'AUTHOR_OR_MODERATOR_REQUIRED' });
     }

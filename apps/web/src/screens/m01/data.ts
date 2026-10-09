@@ -47,9 +47,12 @@ import type { BarreHaute } from '../messages/data';
  *      de message `SYSTEM` (la colonne `kind` n'existe pas, le kind est déduit).
  *      Elle est retirée du gabarit : la laisser l'afficherait en tête de CHAQUE
  *      conversation, pour toujours ;
- *   3. la vignette d'image — `kind: 'IMAGE'` et `mediaId` arrivent bien, mais
- *      aucune route de ce lot ne résout un média en URL, et la vignette dessinée
- *      est toujours du côté de l'expéditeur ;
+ *   3. ✅ COMBLÉ — la vignette d'image. `kind: 'IMAGE'` et `mediaId` arrivaient
+ *      bien, mais aucune route ne résolvait un média en URL, et la vignette
+ *      dessinée portait `align-self:flex-end`, donc elle était figée du côté de
+ *      l'expéditeur. `mediaUrl` est maintenant rendue par le serveur, et la
+ *      vignette est posée DANS la colonne de la bulle — qui aligne déjà sur
+ *      `m.cote`. Voir `image` ci-dessous ;
  *   4. le préfixe d'auteur de l'aperçu (« Aïcha : », « Vous : ») — l'API rend le
  *      corps NU. Il est composé ici, à partir de l'auteur que `members[]` nomme :
  *      c'est de la mise en forme, pas une donnée inventée.
@@ -96,6 +99,14 @@ export interface RangeeConversation {
   readonly apercu: string;
   /** Le compteur de non-lus. `0` fait disparaître la pastille (`<sc-if>`). */
   readonly nonLus: number;
+  /**
+   * L'ADRESSE DE LA CONVERSATION — `/messages/<id>`.
+   *
+   * MESURÉ : la ligne était un `<div>`, donc cliquer dessus ne faisait rien et
+   * l'URL ne bougeait pas. Aucune conversation ne pouvait être ouverte depuis la
+   * liste, ni sur l'ordinateur ni sur le téléphone.
+   */
+  readonly href: string;
 }
 
 /**
@@ -131,12 +142,87 @@ export interface BulleMessage {
    * n'est exposé par l'API. Voir l'en-tête.
    */
   readonly mention: string;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ L'IMAGE JOINTE — LA VIGNETTE EST REVENUE                                ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « quand on envoie un message dans le contexte d'une story, il
+   * faudrait que la story soit capturée comme une image et ajoutée au message juste
+   * un peu sous le message ».
+   *
+   * Le manque n°3 de l'en-tête de ce fichier est donc levé : `GET
+   * /conversations/:id/messages` rend maintenant `mediaUrl`, composée par le
+   * serveur. Il le fallait de toute façon — le module ACCEPTAIT `mediaId` à
+   * l'écriture depuis le début, donc une image envoyée partait en base et n'était
+   * jamais montrée.
+   *
+   * C'EST UNE VALEUR CSS DE FOND, et non une adresse : `url("…") center/cover
+   * no-repeat`, comme `photoFond` sur la story et sur les annonces. La maquette
+   * dessine cet emplacement en `<div>` hachuré, jamais en `<img>` — il n'y a pas un
+   * seul `<img>` dans les 250 cadres produits — donc on peint le fond plutôt que
+   * d'introduire une balise que le transcodeur n'a jamais émise.
+   *
+   * VIDE quand le message n'a pas d'image : le `<sc-if>` de la maquette ne rend
+   * alors rien, et aucun rectangle ne s'ajoute au fil.
+   */
+  readonly image: string;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA VIGNETTE MÈNE À LA STORY — OU DIT QU'ELLE A EXPIRÉ                   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Il faut qu'on puisse cliquer sur ça et aller vers la story si
+   * toujours en ligne. Sinon ça affirme que la story a expiré. »
+   *
+   * `onImage` ABSENT = une image ordinaire, pas une story : la vignette reste un
+   * `<div>`. Le transcodeur branche là-dessus, et c'est voulu — rendre cliquable
+   * une photo qui ne vient d'aucune story promettrait une destination inexistante.
+   *
+   * LE GESTE EST DANS LA PAGE, PAS ICI : « encore en ligne » se lit sur
+   * `storyAlive`, que le serveur calcule (une story vit vingt-quatre heures), et
+   * la page choisit alors entre la navigation et le message d'expiration. Le cadre
+   * ne connaît qu'un clic.
+   */
+  readonly onImage?: () => void;
+  /** Le nom accessible de la vignette — « Voir la story de Fatim », ou l'image seule. */
+  readonly imageNom?: string;
 }
 
 /** L'en-tête de la conversation ouverte. */
 export interface EnteteConversation {
   /** Le titre du parcours (§8), ou le nom de l'interlocuteur. */
   readonly nom: string;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ L'AVATAR DE L'INTERLOCUTEUR, EN HAUT DE LA CONVERSATION                 ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « l'avatar de la personne n'est pas affichée en haut de la
+   * conversation. »
+   *
+   * MESURÉ : la planche d'ordinateur dessine à cet endroit un carré de 44 px au
+   * rayon 14, aplat `#FBE3D4`, portant le glyphe d'un PARCOURS — parce que
+   * l'exemple de la maquette est une conversation de parcours (08 §8). La planche
+   * de téléphone, elle, ne dessine rien du tout : chevron, titre, menu.
+   *
+   * `estParcours` DISTINGUE LES DEUX CAS, et il le faut : remplacer le glyphe par
+   * un avatar sur une conversation de groupe de parcours effacerait ce que la
+   * maquette dit — « Mes études à Lyon » n'est pas une personne. On garde donc le
+   * dessin pour un parcours, et on peint l'interlocuteur pour une conversation
+   * directe.
+   *
+   * `photo` est une valeur CSS de fond, pas une adresse — même recette que
+   * partout ailleurs (`fondAvatar`). `null` quand le membre n'en a pas : le rond
+   * reprend alors `fond` et écrit `initiales`.
+   */
+  readonly estParcours: boolean;
+  readonly photo: string | null;
+  readonly initiales: string;
+  /** La teinte stable de l'interlocuteur, dérivée de son handle. */
+  readonly fond: string;
+  /** `/<handle>` — le profil public, vers lequel mène « Voir le profil ». */
+  readonly profil: string | null;
   /** Les membres, tels que `members[].displayName` les nomme. */
   readonly sousTitre: string;
 }
@@ -152,4 +238,109 @@ export interface M01Data {
   };
   readonly entete: EnteteConversation;
   readonly messages: readonly BulleMessage[];
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ QUELLE CONVERSATION EST RÉELLEMENT OUVERTE                              ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * `/messages` ne porte AUCUN identifiant dans son URL, et le cadre
+   * d'ordinateur y montre pourtant les deux volets : la liste ET une
+   * conversation — celle de repli que le chargeur choisit (la plus récente).
+   *
+   * Le composeur a besoin de savoir LAQUELLE. Sans ce champ il se fiait au
+   * paramètre d'URL, donc à `null` sur `/messages`, donc il se bloquait
+   * lui-même : champ grisé, émojis grisés, trombone grisé, flèche grise. C'est
+   * exactement ce que le porteur décrit — « l'envoi de message, la saisie,
+   * l'ajout d'image et d'emojis ne marche toujours pas ».
+   *
+   * `null` quand il n'y a aucune conversation du tout : le composeur reste alors
+   * inerte, et c'est juste.
+   */
+  readonly conversationOuverte?: string | null;
+  /** L'état de sourdine de la conversation ouverte — le menu en lit le libellé. */
+  readonly conversationSourdine?: boolean;
+  /** `/<handle>` de l'interlocuteur, ou `null` sur une conversation de parcours. */
+  readonly conversationHandle?: string | null;
+  /**
+   * L'IDENTIFIANT de l'interlocuteur — `POST /reports` prend un `subjectId`, pas
+   * un handle, là où `POST /blocks` prend l'inverse. Les deux sont donc portés.
+   */
+  readonly conversationUserId?: string | null;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE COMPOSEUR — « L'ENVOI DE MESSAGE NE MARCHE PAS »                     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le module avait été livré en LECTURE SEULE, et l'en-tête de
+   * `app/(app)/messages/[id]/page.tsx` le disait : « ce lot ne branche aucune
+   * écriture ». Les trois contrôles de la barre basse étaient donc DESSINÉS — un
+   * `<span>`, un `<div>`, un `<span>`. Le porteur demande l'écriture ; la voici.
+   *
+   * TOUTES FACULTATIVES : les quatre cadres de ce module se partagent ce type, et
+   * les deux cadres BLOQUÉS n'ont pas de composeur du tout (la maquette l'ôte).
+   * Les rendre obligatoires forcerait la page à inventer des gestes pour un écran
+   * qui n'en dessine aucun.
+   */
+  readonly composeurTexte?: string;
+  readonly onComposeurTexte?: (e: { readonly target: { readonly value: string } }) => void;
+  readonly onComposeurTouche?: (e: {
+    readonly key: string;
+    readonly shiftKey: boolean;
+    preventDefault: () => void;
+  }) => void;
+  readonly onEnvoyer?: () => void;
+  /**
+   * VRAI pendant l'envoi, pendant le dépôt d'une image, ou quand il n'y a rien à
+   * envoyer. Le bouton passe au gris de l'inactif plutôt que de disparaître : la
+   * planche le dessine en permanence, et le faire sauter à chaque frappe ferait
+   * bouger la barre sous le doigt.
+   */
+  readonly envoiBloque?: boolean;
+  /**
+   * VRAI quand le composeur n'accepte RIEN — pas de conversation ouverte, ou un
+   * dépôt d'image en cours. À distinguer d'`envoiBloque`, qui dit seulement qu'il
+   * n'y a rien à envoyer à cet instant : mesuré, les confondre désactive le champ
+   * tant qu'il est vide, c'est-à-dire exactement quand il faut pouvoir y taper.
+   */
+  readonly composeurBloque?: boolean;
+  readonly onJoindreImage?: () => void;
+  readonly onEmoji?: (emoji: string) => void;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES PIÈCES JOINTES DU MESSAGE — PLUSIEURS, ET DANS L'INPUT              ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Pour l'image dans l'input lors de l'envoi du message il faut
+   * faire comme on a fait avec l'input de publication. Déjà il faut permettre
+   * plusieurs images ensuite tu le mets dans l'input. »
+   *
+   * MÊME FORME QUE `A01_PIECES_JOINTES` sur le composeur du fil, délibérément :
+   * deux formes voisines pour la même chose divergeraient au premier changement,
+   * et le défaut ne se verrait que sur l'un des deux composeurs.
+   *
+   * `fond` est une valeur CSS — l'aperçu local du fichier (`blob:`) peint en
+   * « couvrir », ou l'aplat de la maquette tant qu'il n'y a rien à montrer.
+   * `apercu` dit laquelle des deux : sans lui, le nom du fichier s'écrirait
+   * PAR-DESSUS la vignette.
+   */
+  readonly composeurImages?: readonly {
+    readonly fond: string;
+    readonly nom: string;
+    readonly apercu: boolean;
+    readonly retirer: string;
+    readonly onRetirer: () => void;
+  }[];
+  /** Vrai à la borne : au-delà, le dépôt écarterait le fichier en silence. */
+  readonly composeurAjoutBloque?: boolean;
+  /**
+   * LE CLAVIER D'ÉMOJIS EST OUVERT.
+   *
+   * Le porteur : « un highlight du bouton d'emoji qui se transforme en bouton
+   * close pour montrer que c'est ça qui est ouvert et un second clic va fermer ».
+   * L'état vit donc DANS LA PAGE et non dans un composant replié sur lui-même :
+   * le cadre en a besoin à deux endroits — l'aplat du bouton, et la section qu'il
+   * monte sous la barre.
+   */
+  readonly emojisOuverts?: boolean;
+  readonly onBasculerEmojis?: () => void;
 }

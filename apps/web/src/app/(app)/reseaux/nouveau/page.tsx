@@ -5,6 +5,7 @@ import { A10Desktop } from '@/screens/a10/desktop.generated';
 import { A10Mobile } from '@/screens/a10/mobile.generated';
 import { a10Fallback } from '@/screens/a10/data';
 import { useCreation } from '@/screens/reseaux/use-creation';
+import { GardeNiveau } from '@/components/garde-niveau';
 
 /**
  * A10 — créer un réseau. `/reseaux/nouveau`
@@ -29,6 +30,7 @@ export default function NouveauReseauPage() {
   const props = data ?? a10Fallback;
 
   return (
+    <>
     <>
       <ScreenFrames
         screen="A10"
@@ -56,6 +58,8 @@ export default function NouveauReseauPage() {
             : `Pour ${echec.levelRequired.labelFr}, vérifiez votre compte.`}
         </p>
       )}
+    </>
+      <GardeNiveau capacite="community.create" />
     </>
   );
 }

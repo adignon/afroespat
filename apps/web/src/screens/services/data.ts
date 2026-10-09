@@ -75,6 +75,15 @@
  * n'affiche ni le nom complet, ni le pseudo, ni le niveau.
  */
 export interface Moi {
+  /**
+   * LE FOND DU ROND D'AVATAR : la photo du membre, ou rien.
+   *
+   * FACULTATIVE : seul le module Compte la remplit aujourd'hui, parce que lui seul
+   * lit `GET /me`. Absente, le cadre reprend l'aplat de la maquette et écrit les
+   * initiales — exactement ce qu'il faisait avant. Le jour où ce module lira
+   * `avatarUrl`, il suffira de la poser.
+   */
+  readonly photo?: string | null;
   /** Deux lettres au plus, dérivées du nom affiché de `GET /me`. */
   readonly initiales: string;
   /** Le premier mot du nom affiché. */

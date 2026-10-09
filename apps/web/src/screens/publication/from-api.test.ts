@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { commentsResponseSchema, postDetailResponseSchema } from '@app/shared';
-import { commentairesA02From, GUIDES_RATTACHES_SANS_SOURCE } from './from-api';
+import { commentairesA02From, relGuidesDe } from './from-api';
 
 /**
  * LE FIL DE RÉPONSES DE A02, ÉPROUVÉ SUR DES CHARGES RÉELLES.
@@ -125,19 +125,43 @@ describe('`GET /posts/:id` sert déjà le fil, et A02 s’en sert', () => {
 });
 
 /**
- * LES GUIDES RATTACHÉS N'ONT AUCUNE SOURCE, et ce test garde ce CONSTAT.
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE BLOC GARDAIT UN MANQUE — IL GARDE MAINTENANT CE QUI LE COMBLE         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
  *
- * Il rougirait le jour où quelqu'un remplirait la liste avec les trois guides
- * d'exemple de la maquette — ce qui mettrait à l'écran trois rattachements
- * affirmés sur une publication réelle, et un vote qui n'irait nulle part.
+ * Il affirmait deux choses, et les deux étaient vraies : les guides rattachés
+ * arrivaient vides, et la réponse de détail n'en portait aucun. Le porteur a
+ * demandé que cela cesse — `post_guides` existe, `createPostSchema` accepte
+ * `guideIds`, et `postCardSchema` rend `guides`.
+ *
+ * LE CAS EST DONC RETOURNÉ, pas supprimé : il mesure maintenant que la réponse
+ * PORTE le champ, et que le convertisseur en fait des rattachements. Supprimer un
+ * cas qui garde un manque comblé, c'est perdre la trace du jour où il l'a été.
  */
 describe('les guides rattachés à une publication', () => {
-  it('arrivent vides tant qu’aucune route n’en donne', () => {
-    expect(GUIDES_RATTACHES_SANS_SOURCE).toEqual([]);
+  it('la réponse de détail porte maintenant le champ', () => {
+    expect(Object.keys(detail.post)).toContain('guides');
+    expect(Array.isArray(detail.post.guides)).toBe(true);
   });
 
-  it('et la réponse de détail n’en porte toujours aucun', () => {
-    expect(Object.keys(detail.post)).not.toContain('guides');
-    expect(Object.keys(detail.post)).not.toContain('relatedGuides');
+  it('chaque guide lié devient un rattachement nommé, choisi par l’auteur', () => {
+    const lignes = relGuidesDe([{ title: 'Visale sans CDI', slug: 'visale-sans-cdi' }]);
+    expect(lignes).toHaveLength(1);
+    expect(lignes[0]?.t).toBe('Visale sans CDI');
+    /** Choisi dans la fenêtre par l'auteur — jamais suggéré automatiquement. */
+    expect(lignes[0]?.auto).toBe(false);
+  });
+
+  /**
+   * ⚠ LE VOTE SUR UN RATTACHEMENT N'A TOUJOURS AUCUNE SOURCE, et ce cas garde CE
+   * manque-là : `guide_votes` porte un vote sur LE GUIDE, pas sur son
+   * rattachement, et aucune réponse ne rend « ce rattachement a été jugé utile N
+   * fois ». Les deux boutons restent au repos et ne retiennent rien.
+   */
+  it('mais le vote sur le rattachement n’en a aucune, et ne prétend pas en avoir', () => {
+    const ligne = relGuidesDe([{ title: 'Visale sans CDI', slug: 'visale-sans-cdi' }])[0];
+    expect(ligne?.voted).toBe(false);
+    expect(ligne?.upBg).toBe('#F2F5F4');
+    expect(ligne?.downBg).toBe('#F2F5F4');
   });
 });

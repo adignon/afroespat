@@ -1,10 +1,11 @@
 'use client';
 
-import { chargerE03 } from '@/screens/agenda/appels';
+import { SQUELETTE_E03, chargerE03 } from '@/screens/agenda/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { E03Desktop } from '@/screens/e03/desktop.generated';
 import { E03Mobile } from '@/screens/e03/mobile.generated';
+import { GardeNiveau } from '@/components/garde-niveau';
 
 /**
  * E03 — Créer un événement (`/agenda/nouveau`, 09 §3.1).
@@ -36,7 +37,14 @@ import { E03Mobile } from '@/screens/e03/mobile.generated';
  */
 export default function NewEventPage() {
   return (
-    <EcranDonnees charger={chargerE03}>
+    <>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant « DisaporyPlus Chargement de l'agenda... » et rien d'autre — ni
+       * rail, ni barre basse. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_E03} charger={chargerE03}>
       {(donnees) => (
         <ScreenFrames
           screen="E03"
@@ -45,5 +53,7 @@ export default function NewEventPage() {
         />
       )}
     </EcranDonnees>
+      <GardeNiveau capacite="event.create" />
+    </>
   );
 }

@@ -197,3 +197,99 @@
     scroll-behavior: auto !important;
   }
 }
+
+/**
+ * L'INVITE D'UN CHAMP POSÉ SUR UN FOND GRIS.
+ *
+ * `A14_RECHERCHE` transcode la barre « Rechercher une étape ou un sujet » que la
+ * maquette dessine avec `color:#8A958F` sur le CONTENANT — parce qu'elle y
+ * dessine une invite, pas une saisie. Le champ doit donc écrire en encre
+ * (`#16211D`, posé en ligne) et garder le gris de la maquette POUR L'INVITE
+ * SEULE. Un style en ligne ne peut pas viser `::placeholder` : la règle vit ici,
+ * et elle est bornée par un attribut, pas par une classe.
+ *
+ * `opacity: 1` : Firefox applique sinon sa propre transparence à l'invite, et le
+ * gris de la maquette en ressortirait délavé.
+ */
+[data-saisie-sur-gris]::placeholder {
+  color: #8a958f;
+  opacity: 1;
+}
+
+/**
+ * L'ENTRÉE D'UNE STORY QUAND ON PASSE À LA SUIVANTE — A13.
+ *
+ * Le porteur : « le clic sur les écrans gauche ou droite ou sur les boutons next
+ * ou preview doivent animer parfaitement les stories et afficher celui
+ * sélectionné. » Mesuré avant : AUCUNE transition ni animation déclarée dans tout
+ * l'écran, et les boutons n'existaient pas.
+ *
+ * Le mouvement n'est pas inventé : c'est `panelAdvance`, que `packages/config/
+ * motion.js` porte depuis le début — « vous avancez dans une démarche, vous ne
+ * sautez pas d'un écran à l'autre », 240 ms, courbe `out`, seize pixels, fondu.
+ * `dp-panel-advance` existe déjà plus haut dans ce fichier pour les volets ; on
+ * réemploie la même, sans en écrire une seconde.
+ *
+ * L'écran est REMONTÉ à chaque changement de story (`key={storyId}`), donc
+ * l'animation rejoue d'elle-même. `prefers-reduced-motion` la coupe comme tout le
+ * reste, par la règle générale en fin de fichier.
+ */
+[data-story-carte] {
+  animation: dp-panel-advance 240ms cubic-bezier(0.16, 1, 0.3, 1) both; /* motion:panelAdvance */
+}
+
+/**
+ * LA BARRE DE PROGRESSION D'UNE STORY — A13.
+ *
+ * Le porteur : « La barre de progression doit progresser pendant 15 s et
+ * automatiquement slide right pour aller vers le story suivant. » Mesuré avant :
+ * deux segments dessinés, aucun minuteur, et l'URL inchangée après huit secondes.
+ *
+ * La barre se remplit en quinze secondes, linéairement — une barre qui ralentit
+ * en fin de course mentirait sur le temps restant. Le passage à la story suivante
+ * n'est PAS porté par cette animation : c'est un minuteur de même durée dans
+ * `story-ecran.tsx`, parce qu'une animation CSS ne navigue pas.
+ *
+ * `prefers-reduced-motion` la coupe comme tout le reste. Le minuteur, lui,
+ * continue : couper le MOUVEMENT ne doit pas bloquer la lecture.
+ */
+@keyframes dp-story-progress {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+
+[data-story-barre="active"] {
+  animation: dp-story-progress 15000ms linear both; /* motion:storyProgress */
+}
+
+/**
+ * ── LA BARRE S'ARRÊTE PENDANT QU'ON ÉCRIT ───────────────────────────────────
+ *
+ * Le porteur : « Le focus dans l'input de message doit stopper temporairement la
+ * progress bar. » Elle ne décore pas : à son terme, l'écran PASSE à la story
+ * suivante, et un message à moitié écrit disparaissait sous les doigts.
+ *
+ * `animation-play-state` et non une seconde animation : la règle ci-dessus reste
+ * la SEULE à déclarer `dp-story-progress`, donc la barre reprend là où elle s'est
+ * arrêtée. Déclarer l'animation une deuxième fois la ferait repartir de zéro à
+ * chaque passage dans le champ.
+ */
+[data-story-barre="active"][data-story-pause="oui"] {
+  animation-play-state: paused;
+}
+
+/**
+ * ── LE FOND D'UNE STORY SE FOND DANS LE SUIVANT ─────────────────────────────
+ *
+ * La traversée ne navigue pas : elle change l'identifiant DANS L'ÉTAT, et le même
+ * nœud reste en place. Sa couleur passait donc d'un vert profond à un rouge sombre
+ * d'un seul coup. Une transition sur la couleur de fond suffit — il n'y a rien à
+ * monter ni à démonter.
+ *
+ * `background-color` et non `background` : la propriété courte couvre aussi les
+ * images, qui ne s'animent pas, et une transition déclarée dessus ne ferait rien
+ * sur un fond photo tout en coûtant un calcul à chaque trame.
+ */
+[data-story-fond] {
+  transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1); /* motion:storyFond */
+}

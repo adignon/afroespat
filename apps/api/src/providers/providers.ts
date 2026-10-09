@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Logger } from '@nestjs/common';
 
 /**
@@ -128,7 +130,27 @@ export class FakeKycProvider implements KycProvider {
   private readonly sessions = new Map<string, KycStatusValue>();
 
   createSession(userId: string): Promise<{ providerSessionId: string; verificationUrl: string }> {
-    const providerSessionId = `fake-kyc-${userId.slice(0, 8)}-${Date.now()}`;
+    /**
+     * ╔═════════════════════════════════════════════════════════════════════╗
+     * ║ `Date.now()` NE SUFFIT PAS À IDENTIFIER UNE SESSION                      ║
+     * ╚═════════════════════════════════════════════════════════════════════╝
+     *
+     * `kyc_verifications.provider_session_id` est UNIQUE, et les huit premiers
+     * octets d'un UUID v7 sont une horloge : deux membres créés dans la même
+     * seconde partagent leur préfixe. Il ne restait donc que la milliseconde pour
+     * les distinguer.
+     *
+     * MESURÉ : deux ouvertures de session dans la même milliseconde — ce qui
+     * arrive dès qu'une suite d'e2e monte deux membres en L1 de front — et la
+     * seconde échouait sur la contrainte d'unicité. Le journal l'a dit mot pour
+     * mot : « Unique constraint failed on the fields: (`provider_session_id`) »,
+     * rendu au navigateur en `500 INTERNAL_ERROR`. Vu dans le journal de l'API,
+     * avec deux identifiants consécutifs à une milliseconde d'écart.
+     *
+     * Le vrai fournisseur émet son propre identifiant ; celui-ci doit donc être au
+     * moins aussi unique, et `randomUUID` l'est sans horloge partagée.
+     */
+    const providerSessionId = `fake-kyc-${userId.slice(0, 8)}-${randomUUID()}`;
     this.sessions.set(providerSessionId, 'IN_PROGRESS');
     this.logger.log(`Session KYC fictive : ${providerSessionId}`);
     return Promise.resolve({
@@ -342,6 +364,25 @@ export interface StorageProvider {
    * qu'impose la règle dure §8.2.
    */
   put(key: string, body: Buffer, mime: string): Promise<void>;
+  /**
+   * RELIT les octets déposés, pour que l'API puisse les servir elle-même.
+   *
+   * ── POURQUOI PAS `createDownloadUrl` ──────────────────────────────────────
+   *
+   * Elle existe, et elle reste la bonne réponse pour l'archive RGPD : un fichier
+   * qu'on télécharge une fois, dont l'adresse expire. Elle ne l'est PAS pour les
+   * images du produit, et le dépôt a déjà tranché sans l'écrire ici — neuf
+   * endroits dans six modules composent `/media/<clé>` à la main (avatars, images
+   * de publication, photos de logement, albums de réseau, fiches pro, membres
+   * d'une ville). Une seconde convention d'adresse ferait apprendre au front
+   * laquelle s'applique où, et le commentaire de `media.service.ts` dit déjà
+   * « une seule convention d'adresse de média, sinon le front en apprend deux ».
+   *
+   * Rendre `null` plutôt que lever quand la clé est absente : une ligne peut
+   * survivre à ses octets (purge de rétention, reprise de tâche), et l'appelant
+   * doit pouvoir répondre « disparu » sans distinguer la panne de l'absence.
+   */
+  get(key: string): Promise<{ body: Buffer; mime: string } | null>;
   delete(key: string): Promise<void>;
 }
 
@@ -404,6 +445,31 @@ export class FakeStorageProvider implements StorageProvider {
         this.logger.log(`Suppression fictive : ${key} — déjà absent`);
         return;
       }
+      throw error;
+    }
+  }
+
+  /**
+   * RELIT ce que `put` a écrit, depuis le même bac.
+   *
+   * `pathFor` fait seul le travail de sécurité : il résout la clé puis vérifie
+   * qu'elle reste sous la racine, donc un « .. » glissé dans l'URL ne peut pas
+   * remonter l'arborescence. C'est la MÊME garde que pour l'écriture, et c'est
+   * voulu : une doublure qui lirait plus largement qu'elle n'écrit donnerait des
+   * tests verts sur un chemin que le vrai fournisseur refusera.
+   *
+   * `mime` n'est pas relu du disque : le fichier n'en porte pas. L'appelant tient
+   * le type réel dans `media_assets.mime`, établi par les OCTETS MAGIQUES à
+   * l'import (§8.3) et non par l'extension. Le rendre ici serait une seconde
+   * source, moins sûre que la première.
+   */
+  async get(key: string): Promise<{ body: Buffer; mime: string } | null> {
+    const fs = await import('node:fs/promises');
+    const target = await this.pathFor(key);
+    try {
+      return { body: await fs.readFile(target), mime: 'application/octet-stream' };
+    } catch (error) {
+      if ((error as { code?: string }).code === 'ENOENT') return null;
       throw error;
     }
   }

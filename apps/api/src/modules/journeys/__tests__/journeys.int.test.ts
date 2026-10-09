@@ -26,6 +26,7 @@ import { HelpService } from '../../help/help.service';
 import { MessagingService } from '../../messaging/messaging.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { JourneysService, type JourneyActor } from '../journeys.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Parcours — 03-parcours.md §10.
@@ -89,8 +90,7 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
   };
 
   let counter = 0;
-  const nextPhone = (): string =>
-    `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   async function newMember(
     level: 'L0' | 'L1' | 'L2' = 'L1',

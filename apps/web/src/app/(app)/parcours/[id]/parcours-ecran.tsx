@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useParams } from 'next/navigation';
-import { chargerEcranParcours } from '@/screens/parcours/appels';
+import { VUE_NEUTRE, chargerEcranParcours } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { plancheBlocage, plancheJalon } from '@/screens/parcours/modales';
@@ -80,6 +80,14 @@ export function ParcoursEcran({ etat }: { readonly etat: EtatParcours }) {
 
   return (
     <EcranParcoursDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE. `VUE_NEUTRE` est le DESSIN sans la
+       * donnee, et il existait deja pour les planches d'illustration : rien n'est
+       * invente ici. Sans lui, cette route repond 200 en servant « DisaporyPlus
+       * Chargement de votre parcours... » et RIEN d'autre — ni rail, ni panneau,
+       * ni barre basse. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={VUE_NEUTRE}
       screen="J01"
       charger={charger}
       contexte={contexte}

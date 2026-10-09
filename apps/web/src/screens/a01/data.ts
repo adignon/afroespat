@@ -386,6 +386,8 @@ export const feedPosts: readonly FeedPostView[] = [
     ctx: 'Parcours Travail · Lyon 3e · il y a 9 h',
     body: 'Premier jour chez mon employeur ! Il y a six mois je cherchais encore un stage. Merci à Sandra pour la relecture de mon CV.',
     photo: 'Photo de Kofi',
+    /** Le hachurage de la maquette : ces cartes sont des DESSINS, pas des données. */
+    photoFond: 'repeating-linear-gradient(135deg,#E3ECE8 0 14px,#DCE6E1 14px 28px)',
     photoH: '260px',
     n: 67,
     word: 'félicitations',
@@ -419,37 +421,80 @@ export const online: readonly PersonView[] = [
 
 // ─── Mobile ──────────────────────────────────────────────────────────────────
 
-/** Le panneau de section devient une barre d'onglets horizontale (T1 §3.2). */
-const M_TABS: readonly (readonly [string, number | null])[] = [
-  ["Fil d'actualité", null],
-  ['Guides', null],
-  ['Entraide', 12],
-  ['Réseaux', null],
-  ['Parrainage', null],
-  ['Villes', null],
-  ['Événements', 3],
+/**
+ * ─── LA BARRE D'ONGLETS DE SECTION, ET SES SEPT DESTINATIONS ────────────────
+ *
+ * Le panneau de section devient une barre d'onglets horizontale (T1 §3.2), et ses
+ * sept entrées mènent aux SEPT MÊMES PAGES que celui de l'ordinateur — voir
+ * `PANEL_ITEMS` ci-dessus, dont les routes sont reprises une par une. Rien n'est
+ * choisi ici.
+ *
+ * ELLES N'ÉTAIENT PAS DES LIENS, et le compteur de « href="#" » ne pouvait pas le
+ * dire : la maquette dessine ces sept pastilles en `<span>`. Ce n'étaient pas des
+ * liens cassés — CE N'ÉTAIENT PAS DES LIENS. Sur un téléphone, c'était toute la
+ * navigation de section qui ne répondait pas, et c'est ce que le porteur a touché.
+ */
+const M_TABS: readonly (readonly [string, number | null, string])[] = [
+  ["Fil d'actualité", null, '/accueil'],
+  ['Guides', null, '/guides'],
+  ['Entraide', 12, '/entraide'],
+  ['Réseaux', null, '/reseaux'],
+  ['Parrainage', null, '/parrainage'],
+  ['Villes', null, '/villes'],
+  ['Événements', 3, '/agenda'],
 ];
 
-export const mTabs = M_TABS.map(([label, count], i) => ({
+export const mTabs = M_TABS.map(([label, count, href], i) => ({
   label,
   count,
+  href,
   bg: i === 0 ? '#16785E' : '#fff',
   fg: i === 0 ? '#fff' : '#16211D',
   bd: i === 0 ? '#16785E' : '#E6EBE9',
 }));
 
-/** Barre d'onglets basse : Agenda cède sa place à Compte (§10.1). */
-const M_BOTTOM: readonly (readonly [string, string])[] = [
-  ['Accueil', I.home],
-  ['Parcours', I.path],
-  ['Entraide', I.heart],
-  ['Services', I.serv],
-  ['Compte', I.account],
+/**
+ * Barre d'onglets basse : Agenda cède sa place à Compte (§10.1).
+ *
+ * Les QUATRE PREMIÈRES entrées sont les quatre premières du RAIL d'ordinateur, aux
+ * mêmes adresses (`RAIL_ITEMS` ci-dessus) : il n'y a rien à décider, et c'est la
+ * même barre sous une autre forme.
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « COMPTE » MÈNE AU MODULE COMPTE — IL NE MENAIT NULLE PART                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le bouton compte dans le menu sur mobile au niveau du bottom bar
+ * ne marche pas. »
+ *
+ * CE QUI ÉTAIT ÉCRIT ICI, et qui était vrai au jour où ça a été écrit : « il
+ * n'existe aucune route `/compte` […] choisir laquelle EST "Compte" serait
+ * décider à la place du porteur ». `href` restait donc `undefined`, et l'onglet
+ * était aussi inerte que le `<div>` de la maquette.
+ *
+ * LE PORTEUR A TRANCHÉ EN LE SIGNALANT. `app/(app)/compte/page.tsx` existe
+ * maintenant et redirige vers `/compte/profil` — la PREMIÈRE des dix pages du
+ * module dans T5 §11, et la première entrée du panneau « MON COMPTE » que les
+ * cadres d'ordinateur dessinent. Ce n'est donc plus un choix inventé : c'est
+ * l'ordre que la maquette écrit elle-même.
+ *
+ * La redirection plutôt qu'un lien direct vers `/compte/profil` : l'onglet dit
+ * « Compte », et l'adresse doit dire la même chose. Le jour où le module gagne
+ * une page d'accueil propre, c'est la redirection qui change, pas les onze
+ * cadres qui portent cette barre.
+ */
+const M_BOTTOM: readonly (readonly [string, string, string | undefined])[] = [
+  ['Accueil', I.home, '/accueil'],
+  ['Parcours', I.path, '/parcours'],
+  ['Entraide', I.heart, '/entraide'],
+  ['Services', I.serv, '/services/logement'],
+  ['Compte', I.account, '/compte'],
 ];
 
-export const mBottom = M_BOTTOM.map(([label, icon], i) => ({
+export const mBottom = M_BOTTOM.map(([label, icon, href], i) => ({
   label,
   icon,
+  href,
   bg: i === 0 ? '#E3F0EB' : 'transparent',
   fg: i === 0 ? '#0F5C48' : '#8A958F',
 }));
@@ -659,6 +704,20 @@ export const shareOut = [
  */
 export interface FeedPostView {
   /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur à partir des
+   * publications (quand on clique sur son nom […]) partout où le nom est
+   * affiché ». Les trente-sept noms dessinés dans les cadres étaient des `<span>`
+   * et aucun ne menait au profil.
+   *
+   * FACULTATIVE, ET C'EST LA GARDE : tous les noms ne sont pas des membres — un
+   * réseau, une ville, un partenaire en portent un aussi — et le cadre ne pose le
+   * lien que si la ligne porte une adresse. Sans elle, le nom reste nu, c'est-à-
+   * dire exactement le dessin d'avant.
+   */
+  readonly profil?: string;
+  /**
    * L'IDENTIFIANT DE LA PUBLICATION, et il n'est pas DESSINÉ : il est POSÉ.
    *
    * Les deux boutons « Commenter » et « Partager » vivent dans la boucle des
@@ -674,6 +733,36 @@ export interface FeedPostView {
    * d'ouvrir la fenêtre d'une autre publication, ce qui était le défaut.
    */
   readonly postId?: string;
+  /**
+   * ╔═════════════════════════════════════════════════════════════════════╗
+   * ║ LE SIGNET ET LE MENU DE L'AUTEUR                                       ║
+   * ╚═════════════════════════════════════════════════════════════════════╝
+   *
+   * `isAuthor` VIENT DU SERVEUR (`postCardSchema.isAuthor`), jamais d'une
+   * comparaison faite ici : un menu de suppression affiché à tort serait une
+   * promesse que l'API refuserait, et la comparaison aurait besoin de l'identité
+   * du lecteur, que la carte ne porte pas.
+   *
+   * TOUS FACULTATIFS : les cartes d'exemple de ce fichier sont des DESSINS. Sans
+   * `onEnregistrer`, le signet est un bouton sans geste — ce qu'il était avant ce
+   * lot, et ce qu'il doit rester sur une planche de documentation.
+   */
+  readonly isAuthor?: boolean;
+  readonly enregistre?: boolean;
+  /**
+   * « J'AI DÉJÀ RÉAGI » — DÉRIVÉ de `postCardSchema.reaction.mine`, qui porte
+   * le GENRE de la réaction (ou `null`), jamais d'une bascule locale. Le porteur : « quand l'utilisateur clique dessus, il faut
+   * que l'icône de réaction devienne filled ». Le champ existait dans la réponse
+   * et arrivait jusqu'à la carte ; personne ne le LISAIT, et le cœur restait
+   * vide une fois la réaction prise.
+   *
+   * FACULTATIF : les cartes dessinées de la maquette n'en portent pas, et une
+   * carte sans réaction n'est pas une carte « non réagie ».
+   */
+  readonly reagi?: boolean;
+  readonly onEnregistrer?: () => void;
+  readonly onModifier?: () => void;
+  readonly onSupprimer?: () => void;
   readonly name: string;
   readonly i: string;
   readonly bg: string;
@@ -690,6 +779,28 @@ export interface FeedPostView {
   readonly actionIcon: string;
   readonly reactBg: string;
   readonly comment: string;
+  /**
+   * LE FOND DU BLOC PHOTO — l'image, ou le hachurage de la maquette.
+   *
+   * Le porteur : « les images ne marchent pas ». MESURÉ : le bloc gardait le
+   * `repeating-linear-gradient` de la planche ET affichait `{p.photo}` COMME
+   * TEXTE — c'est-à-dire l'adresse du média, en gris, sur un rectangle rayé.
+   * Même défaut, même endroit et même correction que `photoFond` sur la story.
+   *
+   * FACULTATIF : le bloc n'est rendu que sous `p.photo`, et les cartes d'exemple de
+   * ce fichier sont des DESSINS — elles n'ont pas d'image à montrer.
+   */
+  readonly photoFond?: string;
+  /**
+   * TOUTES LES ADRESSES D'IMAGE, dans l'ordre de `position`.
+   *
+   * `photoFond` ne porte que la première, DÉJÀ RECADRÉE en « couvrir », et la
+   * carte n'en montrait qu'une alors que §2.4 en autorise quatre.
+   * `CarrouselPhotos` lit CELLE-CI parce qu'il a besoin des deux recadrages : la
+   * carte couvre, la visionneuse contient. `photoFond` reste pour les cartes
+   * d'exemple de ce fichier, qui sont des DESSINS sans image.
+   */
+  readonly photoUrls?: readonly string[];
   readonly aBg: string;
   readonly aFg: string;
   readonly step?: string;
@@ -697,6 +808,21 @@ export interface FeedPostView {
   readonly photoH?: string;
   readonly tip?: string;
   readonly tags?: readonly string[];
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LE SONDAGE D'UNE PUBLICATION — DESSINÉ DEPUIS LE DÉBUT                ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « la création de sondage […] ne marche pas ». Le bloc existait
+   * dans la planche, cette prise existait, et la BASE ne savait pas rattacher un
+   * sondage à une publication — `polls.community_id` était obligatoire. Il est
+   * devenu facultatif, exclusif de `post_id` (migration
+   * `20261007040000_sondage_et_guides_sur_publication`).
+   *
+   * `optionId` et `pollId` sont POSÉS, pas dessinés : la maquette ne connaît que
+   * des pourcentages. Sans eux, une option ne peut pas être votée — c'est
+   * exactement la même histoire que `postId` sur la carte.
+   */
   readonly poll?: readonly {
     readonly t: string;
     readonly p: string;
@@ -704,8 +830,31 @@ export interface FeedPostView {
     readonly fill: string;
     readonly bd: string;
     readonly fw: number;
+    readonly optionId?: string;
+    readonly pollId?: string;
+    /**
+     * LE SONDAGE EST TERMINÉ — l'option n'est plus un bouton actif.
+     *
+     * Facultatif comme les deux précédents : la maquette n'en sait rien, et les
+     * cartes d'exemple de ce fichier sont des dessins. Absent, le bouton reste
+     * cliquable, ce qui est le cas courant d'un sondage ouvert.
+     */
+    readonly clos?: boolean;
   }[];
+  /**
+   * LA QUESTION DU SONDAGE. Facultative : les cartes d'exemple de ce fichier sont
+   * des DESSINS, et une publication d'avant ce lot n'en porte pas. Absente, le
+   * cadre ne dessine rien au-dessus des réponses — plutôt qu'une ligne vide.
+   */
+  readonly pollQuestion?: string;
   readonly pollMeta?: string;
+  /**
+   * LES GUIDES LIÉS — « Jusqu'à 3. Étiquettes vertes avec croix. »
+   *
+   * `slug` et non seulement `id` : une étiquette MÈNE au guide, et un guide
+   * s'ouvre par son slug. Le serveur le rend, l'écran n'a rien à résoudre.
+   */
+  readonly guides?: readonly { readonly slug: string; readonly title: string }[];
 }
 
 /**
@@ -726,6 +875,63 @@ export interface StoryView {
   readonly seen: boolean;
   readonly ring: string;
   readonly pad: string;
+  /**
+   * L'IDENTIFIANT DE LA STORY — ce qui rend la bulle ouvrable.
+   *
+   * Le porteur : « ajouter le click sur les stories déjà créé ». `storiesFrom`
+   * le posait DÉJÀ sur chaque bulle depuis le branchement du ruban ; il manquait
+   * seulement à ce type, donc le transcodeur ne pouvait pas en faire un lien.
+   * Une story publiée ne pouvait plus jamais être rouverte, alors que
+   * `/stories/[id]` sert la planche A13 depuis le début.
+   */
+  readonly storyId: string;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE FOND DE LA CARTE — « Fil d'actualité v2 » montre la story entière    ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Change la section de stories comme sur la page ci. »
+   *
+   * La bande d'avant montrait un ROND d'initiales ; la nouvelle montre la story
+   * EN FOND, derrière un voile dégradé. Il lui faut donc une image — ou, à
+   * défaut, la couleur que l'auteur a choisie à la composition.
+   *
+   * C'EST UNE VALEUR CSS DE FOND, pas une adresse : `url("…") center/cover
+   * no-repeat` comme partout ailleurs dans le dépôt, ou simplement `#2D6A4F`.
+   * Sans `cover` et `no-repeat`, le navigateur poserait l'image à sa taille
+   * naturelle et la répéterait.
+   */
+  readonly fond: string;
+  /** `/stories/<id>` — la carte entière devient un lien. */
+  readonly lien: string;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CE QUE LA CARTE MONTRE — LE CONTENU, PAS UNE ÉTIQUETTE                  ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le preview doit montrer déjà le contenu exact comme affiché au
+   * display story. »
+   *
+   * `caption` portait le LIEU ou la catégorie — « Logement », « Lyon ». C'est une
+   * étiquette, pas la story. `apercu` porte son CORPS : exactement le texte que
+   * l'écran de lecture écrit au centre du fond (A13, `st.text`), à la taille de
+   * la carte.
+   *
+   * AUCUNE COUPE ICI : le corps d'une story tient en 280 caractères (règle de
+   * composition), et la carte le borne par son dessin — trois lignes, puis le
+   * débordement est masqué. Couper au mot près demanderait de connaître la
+   * largeur rendue, que la donnée ne connaît pas.
+   */
+  readonly apercu: string;
+  /**
+   * VRAI quand `fond` est une PHOTO, faux quand c'est un aplat.
+   *
+   * L'écran de lecture ne pose son voile dégradé que sur une photo (A13) : sur
+   * un aplat, il assombrirait une couleur choisie exprès. La vignette suit la
+   * même règle, et elle ne peut pas la deviner d'une valeur CSS sans la lire au
+   * préfixe — ce qui marcherait jusqu'au jour où la recette change.
+   */
+  readonly estPhoto: boolean;
 }
 
 /** Un événement de la colonne droite : jour, mois, titre, lieu et heure. */
@@ -738,6 +944,17 @@ export interface EventView {
 
 /** Un nouvel arrivant, et un contact en ligne — la même forme à l'écran. */
 export interface PersonView {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur […] partout
+   * où le nom est affiché ». Les noms dessinés dans les cadres étaient des
+   * `<span>` et aucun ne menait au profil.
+   *
+   * FACULTATIVE : le cadre ne pose le lien que si la ligne porte une adresse.
+   * Sans elle, le nom reste nu — exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly name: string;
   readonly i: string;
   readonly bg: string;
@@ -752,6 +969,20 @@ export interface PersonView {
  * maquette en dessine le compteur, donc la prise est là ; elle arrive vide.
  */
 export interface CommentView {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur à partir des
+   * publications (quand on clique sur son nom […]) partout où le nom est
+   * affiché ». Les trente-sept noms dessinés dans les cadres étaient des `<span>`
+   * et aucun ne menait au profil.
+   *
+   * FACULTATIVE, ET C'EST LA GARDE : tous les noms ne sont pas des membres — un
+   * réseau, une ville, un partenaire en portent un aussi — et le cadre ne pose le
+   * lien que si la ligne porte une adresse. Sans elle, le nom reste nu, c'est-à-
+   * dire exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly i: string;
   readonly bg: string;
   readonly name: string;
@@ -763,11 +994,113 @@ export interface CommentView {
   readonly indentM: string;
   readonly canReply: boolean;
   readonly av: string;
+  /**
+   * LE COMPTEUR « UTILE », ET POURQUOI IL EST FACULTATIF.
+   *
+   * Aucune réaction de commentaire n'existe — ni table, ni colonne, ni route. La
+   * prise reste déclarée parce que la maquette la dessine, et le cadre ne REND le
+   * compteur que si elle est là : sans ça, l'ordinateur affichait un pouce sans
+   * chiffre et le téléphone « Utile · » suivi de rien. Un `0` serait pire : il
+   * affirmerait que personne n'a trouvé le commentaire utile.
+   */
   readonly likes?: number;
   readonly likeFg?: string;
+  /**
+   * « Répondre » — désigne la RACINE à laquelle on répond.
+   *
+   * FACULTATIF : les cartes d'exemple de ce fichier sont des DESSINS, et la
+   * planche n'ouvre l'affordance que sous `canReply`, qui ne vaut que pour une
+   * racine (§2.5 — une seule profondeur, pas de réponse à une réponse).
+   */
+  readonly onRepondre?: () => void;
+  /**
+   * SIGNALER CE COMMENTAIRE.
+   *
+   * Le porteur : « sur les publications le signalement des commentaires ne
+   * marche pas non plus. » La planche dessine `<a href="#">Signaler</a>` sous
+   * chaque commentaire — un lien mort.
+   *
+   * FACULTATIF : les commentaires d'exemple de ce fichier sont des DESSINS, et
+   * on ne signale pas un dessin. Le cadre éteint alors le bouton plutôt que de
+   * promettre une fenêtre qui ne s'ouvrirait pas.
+   */
+  readonly onSignaler?: () => void;
 }
 
-export interface A01Data {
+/** Un des trois contrôles du bas du composeur, dans son apparence du moment. */
+export interface PastilleComposeur {
+  readonly garni: boolean;
+  /** « Sondage », « 1 guide lié », « 2 images » — vide quand le rond est nu. */
+  readonly libelle: string;
+  /** Le nom accessible, TOUJOURS présent : un rond nu n'a pas de texte. */
+  readonly titre: string;
+  readonly encre: string;
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE QUE LA FENÊTRE DE SONDAGE LIT — ET RIEN D'AUTRE                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Sondage et guides liés : sur mobile ça ne marche pas aussi. »
+ *
+ * La fenêtre A01S ne lit que le sondage. Tant qu'elle déclarait `A01Data`, la
+ * monter demandait de fournir le fil, les stories, les raccourcis et vingt
+ * autres prises qu'elle n'ouvre jamais — ce qui a suffi à ce qu'aucune autre
+ * page qu'`/accueil` ne puisse l'afficher.
+ *
+ * `A01Data` l'étend : la page du fil s'y étale comme avant, sans changement.
+ */
+export interface A01SData {
+  sondageQuestion: string;
+  onSondageQuestion: (event: { target: { value: string } }) => void;
+  sondageOptions: readonly {
+    readonly texte: string;
+    readonly onTexte: (event: { target: { value: string } }) => void;
+    readonly onRetirer: () => void;
+    /** Faux en dessous de deux options : un sondage à une réponse n'en est pas un. */
+    readonly retirable: boolean;
+  }[];
+  onAjouterOption: () => void;
+  /** Les quatre durées dessinées — 1, 3, 7, 14 jours — dont une retenue. */
+  sondageDurees: readonly {
+    readonly label: string;
+    readonly on: boolean;
+    readonly bg: string;
+    readonly fg: string;
+    readonly onPick: () => void;
+  }[];
+  /**
+   * « Plusieurs réponses possibles » — le SEUL des trois interrupteurs qui ait
+   * quelque chose à changer : `polls.is_multiple`. Les deux autres décrivent des
+   * invariants et restent inertes, avec leur raison en infobulle.
+   */
+  sondageMultiple: boolean;
+  onSondageMultiple: () => void;
+  /**
+   * LES DEUX AUTRES RÉGLAGES — ils étaient inertes, le porteur en a fait des
+   * choix : « non, fais de ça un réglage ».
+   *
+   * `sondageApresVote` : allumé (le défaut) = les comptes restent masqués tant
+   * qu'on n'a pas voté. C'est l'ancienne règle, donc rien ne change pour les
+   * sondages déjà créés. Éteint = les résultats sont visibles tout de suite.
+   *
+   * `sondageAnonyme` : allumé (le défaut) = seuls les totaux sortent. Éteint = la
+   * réponse nomme les votants de chaque option, et l'écran les affiche sous le
+   * sondage. Le défaut est le silence : un sondage créé sans y toucher ne nomme
+   * personne.
+   */
+  sondageApresVote: boolean;
+  onSondageApresVote: () => void;
+  sondageAnonyme: boolean;
+  onSondageAnonyme: () => void;
+  onValiderSondage: () => void;
+  onAnnulerSondage: () => void;
+  /** Éteint tant que la question ou deux réponses manquent. */
+  sondageBloque: boolean;
+}
+
+export interface A01Data extends A01SData {
   rail: typeof rail;
   panelFil: typeof panelFil;
   shortcuts: typeof shortcuts;
@@ -775,6 +1108,98 @@ export interface A01Data {
   storyFilters: ReturnType<typeof storyFiltersFor>;
   postTypes: ReturnType<typeof postTypesFor>;
   feedPosts: readonly FeedPostView[];
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LE COMPOSEUR DU FIL — IL N'AVAIT AUCUN ÉTAT                            ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « la création de la publication dans le fil d'actualité ne marche
+   * pas ». MESURÉ : le seul champ de saisie du cadre d'ordinateur était celui de
+   * la barre haute. La zone « Que voulez-vous partager avec la diaspora ? » était
+   * un `<div>` de texte, et « Publier » un bouton sans geste.
+   *
+   * `screens/accueil/composeur.test.ts` le disait déjà, et prévoyait ce moment :
+   * « le composeur N'A AUCUN ÉTAT dans l'application […] quand le composeur aura un
+   * état — lot 3, quand `POST /posts` acceptera des pièces jointes — les trois
+   * constantes déménagent dans le garde-fou d'exécution ».
+   */
+  composeurTexte: string;
+  onComposeurTexte: (event: { target: { value: string } }) => void;
+  onPublier: () => void;
+  /** Éteint tant qu'il n'y a rien à publier, et pendant l'envoi. */
+  publierBloque: boolean;
+  /** Ouvre le sélecteur de fichiers. §2.4 : quatre images au plus. */
+  onAjouterImage: () => void;
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LE COMPOSEUR GARNI — LA PLANCHE QUE JE N'AVAIS PAS CHERCHÉE           ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « quand les éléments sont ajoutés au champ de la publication, ça
+   * doit se présenter comme sur le A01·S — COMPOSEUR AVEC PIÈCES JOINTES ».
+   *
+   * Le composeur a DEUX états dessinés, vide et garni, et je n'avais transcodé que
+   * le premier. Les pièces jointes partaient bien au serveur — mesuré — sans que
+   * rien ne les montre. C'est le défaut le plus facile à commettre ici : croire
+   * qu'un dessin manque alors qu'il est sur la planche d'à côté.
+   */
+  composeurGarni: boolean;
+  /** Les images déposées : la vignette de 92 px et sa croix. */
+  composeurImages: readonly {
+    readonly fond: string;
+    readonly nom: string;
+    readonly retirer: string;
+    readonly onRetirer: () => void;
+  }[];
+  /** « 2 / 4 », dans la case en tireté. §2.4 : quatre au plus. */
+  composeurImagesCompte: string;
+  /** La case en tireté est un BOUTON : éteinte quand les quatre sont là. */
+  composeurAjoutBloque: boolean;
+  /** La carte de sondage, ou `null`. */
+  composeurSondage: {
+    readonly question: string;
+    readonly options: readonly string[];
+    /** « 3 jours · résultats après le vote · anonyme » — composée des RÉGLAGES. */
+    readonly meta: string;
+    readonly onModifier: () => void;
+    readonly onRetirer: () => void;
+  } | null;
+  composeurGuides: readonly {
+    readonly titre: string;
+    readonly retirer: string;
+    readonly onRetirer: () => void;
+  }[];
+  /**
+   * LES TROIS CONTRÔLES DU BAS, dans l'une ou l'autre de leurs apparences
+   * dessinées : rond gris à icône quand ils ne portent rien, pastille verte à
+   * libellé quand ils portent quelque chose.
+   */
+  composeurPastilles: {
+    readonly sondage: PastilleComposeur;
+    readonly guides: PastilleComposeur;
+    readonly images: PastilleComposeur;
+  };
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LA FENÊTRE « CRÉER UN SONDAGE » — ELLE N'AVAIT PAS UN SEUL CHAMP      ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « la création de sondage […] ne marche pas ». MESURÉ : zéro
+   * `<input>` dans tout le cadre — la question, les trois options et la durée
+   * étaient des `<div>` portant les exemples de la maquette.
+   *
+   * Le sondage n'est PAS envoyé par cette fenêtre : elle le pose sur le
+   * composeur, et c'est « Publier » qui l'envoie, dans la même transaction que la
+   * publication. Deux appels laisseraient une publication dont la maquette promet
+   * un sondage et qui n'en a pas.
+   *
+   * ⚠ DEUX INTERRUPTEURS SUR TROIS RESTENT DESSINÉS, et il faut dire lesquels :
+   * « Résultats visibles après le vote » n'est pas une option mais LA RÈGLE
+   * (§2.3), et « Vote anonyme » n'a aucune colonne — `poll_votes` porte
+   * `user_id`, et aucune réponse ne rend les noms des votants. REMONTÉS.
+   */
   events: readonly EventView[];
   arrivals: readonly PersonView[];
   online: readonly PersonView[];

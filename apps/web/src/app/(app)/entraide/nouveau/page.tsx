@@ -1,10 +1,11 @@
 'use client';
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH03 } from '@/screens/entraide/appels';
+import { SQUELETTE_H03, chargerH03 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H03Desktop } from '@/screens/h03/desktop.generated';
 import { H03Mobile } from '@/screens/h03/mobile.generated';
+import { GardeNiveau } from '@/components/garde-niveau';
 
 /**
  * H03 — Publier une demande (`/entraide/nouveau`, 06 §5).
@@ -14,7 +15,7 @@ import { H03Mobile } from '@/screens/h03/mobile.generated';
  *
  * CET ÉCRAN NE LIT QUE SON BANDEAU, et c'est la maquette qui le décide : ses
  * champs sont des exemples devenus `placeholder` au transcodage, ses cinq types
- * sont l'énumération `HelpType2`, et « Pour un logement ou un emploi, utilisez
+ * sont l'énumération `HelpType`, et « Pour un logement ou un emploi, utilisez
  * Services. » est `HELP_USE_SERVICES_HINT` — déjà source unique dans `@app/shared`.
  *
  * « Publier la demande » est INERTE. Une demande d'entraide est une publication
@@ -27,7 +28,17 @@ import { H03Mobile } from '@/screens/h03/mobile.generated';
  */
 export default function HelpComposePage() {
   return (
-    <EcranDonnees charger={chargerH03}>
+    <>
+    <EcranDonnees
+      charger={chargerH03}
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre
+       * compte… » — et aucune entrée de rail dans le HTML servi. Voir
+       * `screens/compte/ecran-donnees.tsx` pour le raisonnement complet.
+       */
+      squelette={SQUELETTE_H03}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="H03"
@@ -36,5 +47,7 @@ export default function HelpComposePage() {
         />
       )}
     </EcranDonnees>
+      <GardeNiveau capacite="help.ask" />
+    </>
   );
 }

@@ -1,8 +1,8 @@
 'use client';
 
-import { useCallback, type ReactNode } from 'react';
-import { ApiError, displayMessageFor, hasAccessToken, resumeSession } from '@/lib/api/index';
-import { useDonnees } from '@/screens/compte/ecran-donnees';
+import { useCallback, useState, type ReactNode } from 'react';
+import { hasAccessToken, resumeSession } from '@/lib/api/index';
+import { BandeAttente, BandeEchec, useDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranParcours, useParcours, type PlancheModale } from './ecran';
 import type { NomModale, ParcoursData } from './data';
 import type { ContexteParcours } from './use-parcours-api';
@@ -55,51 +55,36 @@ import type { ContexteParcours } from './use-parcours-api';
 
 type Etat = 'attente' | 'échec';
 
-const CADRE: React.CSSProperties = {
-  minHeight: '60vh',
-  background: '#F6F8F7',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: '24px',
-  textAlign: 'center',
-};
-
-function Attente() {
-  return (
-    <div style={CADRE} role="status" aria-live="polite">
-      <span style={{ fontSize: '14px', color: '#5D6B66' }}>Chargement de votre parcours…</span>
-    </div>
-  );
-}
-
 /**
- * L'échec, décidé sur `error.code` et jamais sur le message.
+ * ─── NI L'ATTENTE NI L'ÉCHEC NE SONT PLUS ÉCRITS ICI ───────────────────────
  *
- * `displayMessageFor` sait déjà ce que le front ne doit pas refaire : sur un
- * `429` elle n'affiche PAS le message du serveur — il dit « patientez un instant »
- * pour une heure d'attente — et rien ne réessaie ici, parce qu'un `429` rejoué
- * n'est qu'un second `429`. `ApiShapeError` n'hérite PAS d'`ApiError`, ce qui
- * interdit structurellement de prendre un contrat cassé pour une règle métier.
+ * Ce fichier portait les deux : un `CADRE` de 60 vh, une fonction `Attente` et
+ * une fonction `Echec` identiques au caractère près à celles de
+ * `screens/compte/ecran-donnees.tsx` — même fond, même `displayMessageFor`, même
+ * garde 401/403, même `role="alert"`. Les deux copies portaient donc le MÊME
+ * DÉFAUT : elles REMPLAÇAIENT le cadre entier, rail compris, et le membre
+ * n'avait plus aucune navigation. Corriger une seule des deux aurait laissé les
+ * douze écrans de Parcours exactement aussi fermés qu'avant.
+ *
+ * `BandeAttente` et `BandeEchec` viennent maintenant du module Compte, et ce
+ * fichier n'a plus de chemin où le cadre disparaît : un seul panneau à relire,
+ * une seule sortie à tenir. Leur en-tête porte le raisonnement, la mesure qui
+ * l'a imposé, et ce qui n'était PAS atteignable.
+ *
+ * Ce fichier portait sa propre fonction `Echec`, identique au caractère près à
+ * celle de `screens/compte/ecran-donnees.tsx` : même `CADRE`, même
+ * `displayMessageFor`, même garde 401/403, même `role="alert"`. Les deux
+ * portaient donc le MÊME DÉFAUT — un chargement raté rendait un `<div>` qui
+ * remplaçait le cadre entier, rail compris, et le membre n'avait plus aucune
+ * navigation.
+ *
+ * Le corriger dans une seule des deux copies aurait laissé les douze écrans de
+ * Parcours exactement aussi fermés qu'avant. `PanneauEchec` est donc exporté
+ * par le module Compte et employé par les deux : un seul panneau à relire, une
+ * seule sortie à tenir. Son en-tête porte le raisonnement et dit ce qui n'était
+ * PAS atteignable — rendre le rail demanderait les données qui viennent de
+ * manquer.
  */
-function Echec({ erreur }: { readonly erreur: unknown }) {
-  const perdue = erreur instanceof ApiError && (erreur.status === 401 || erreur.status === 403);
-  return (
-    <div style={CADRE} role="alert">
-      <span style={{ fontSize: '14px', color: '#5D6B66' }}>
-        {displayMessageFor(erreur)}
-        {perdue ? (
-          <>
-            {' '}
-            <a href="/connexion" style={{ color: '#0F5C48', fontWeight: 700 }}>
-              Se reconnecter
-            </a>
-          </>
-        ) : null}
-      </span>
-    </div>
-  );
-}
 
 /**
  * Un écran de parcours qui LIT ses données.
@@ -108,15 +93,22 @@ function Echec({ erreur }: { readonly erreur: unknown }) {
  * cadres transcodés déclarent la forme dont ils ont besoin (`J06Data`), qui étend
  * `ParcoursData`. La fusion se fait ICI, une fois, plutôt que dans onze pages.
  */
-export function EcranParcoursDonnees<T>({
-  screen,
-  charger,
-  contexte = {},
-  modaleInitiale = null,
-  desktop,
-  mobile,
-  modales,
-}: {
+export function EcranParcoursDonnees<T>(
+  proprietes: ProprietesEcranParcours<T>,
+) {
+  /**
+   * LA CLÉ D'ESSAI DE « RÉESSAYER », posée sur le composant qui tient
+   * `useDonnees` : la changer le démonte et le remonte, donc le chargement repart
+   * par le chemin normal. Même mécanisme que `EcranDonnees` du module Compte, et
+   * pour la même raison — un second chemin de chargement serait un second code à
+   * tenir à jour, donc un des deux faux. Voir `PanneauEchec`.
+   */
+  const [essai, setEssai] = useState(0);
+  const reessayer = useCallback(() => setEssai((n) => n + 1), []);
+  return <Chargement<T> key={essai} {...proprietes} onReessayer={reessayer} />;
+}
+
+type ProprietesEcranParcours<T> = {
   readonly screen: string;
   /** DOIT être stable : fonction de module, ou `useCallback` mémoïsé. */
   readonly charger: () => Promise<T>;
@@ -137,7 +129,33 @@ export function EcranParcoursDonnees<T>({
     donnees: T & ParcoursData,
     volet: number,
   ) => Partial<Record<NomModale, PlancheModale>>;
-}) {
+  /**
+   * LE DESSIN, DISPONIBLE AVANT LA DONNÉE — ET IL EST OBLIGATOIRE.
+   *
+   * Le cadre est donc rendu dès le premier rendu : le rail, le panneau
+   * « MON PARCOURS » et la barre basse sont dans le HTML SERVI, et ils cliquent.
+   * L'attente et l'échec deviennent une bande en `position: fixed`.
+   *
+   * OBLIGATOIRE, et pas facultatif : une coquille vide répond `200`, donc aucun
+   * test de statut ne la voit et rien ne rougit. `tsc` refuse l'oubli au prochain
+   * écran branché. Les onze pages de ce module passent `VUE_NEUTRE`, qui existait
+   * déjà pour les planches d'illustration — rien n'a été inventé pour cela. Le
+   * raisonnement complet est dans `screens/compte/ecran-donnees.tsx`.
+   */
+  readonly squelette: T;
+};
+
+function Chargement<T>({
+  screen,
+  charger,
+  contexte = {},
+  modaleInitiale = null,
+  desktop,
+  mobile,
+  modales,
+  squelette,
+  onReessayer,
+}: ProprietesEcranParcours<T> & { readonly onReessayer: () => void }) {
   /**
    * ─── LA SESSION EST REPRISE AVANT LA PREMIÈRE LECTURE, ET C'EST MESURÉ ────
    *
@@ -172,24 +190,58 @@ export function EcranParcoursDonnees<T>({
   const etat = useDonnees(lire);
   const vue = useParcours(modaleInitiale, contexte);
 
-  if (etat.phase === 'attente') return <Attente />;
-  if (etat.phase === 'échec') return <Echec erreur={etat.erreur} />;
-
-  const donnees = { ...vue.data, ...etat.donnees } as T & ParcoursData;
+  /**
+   * ─── LE CADRE PASSE AVANT, LA DONNÉE REMPLIT ENSUITE ──────────────────────
+   *
+   * `squelette` fourni, les deux états qui n'ont pas de donnée rendent QUAND MÊME
+   * le cadre — donc le rail, le panneau et la barre basse sont servis et cliquent —
+   * et se contentent d'une bande par-dessus. C'est le motif de `/accueil`, et la
+   * mesure qui l'a imposé est dans `screens/compte/ecran-donnees.tsx`.
+   *
+   * LES GESTES SONT FUSIONNÉS DANS LE SQUELETTE AUSSI (`vue.data`), et il le faut :
+   * sans eux le cadre référencerait sept gestionnaires de panneau indéfinis, et
+   * cliquer « Équipe » pendant le chargement lèverait. Le squelette que la page
+   * fournit ne porte donc QUE les champs de son propre type.
+   */
+  /**
+   * UN SEUL CHEMIN DE RENDU : le cadre est rendu avec la donnée si elle est là, et
+   * avec le squelette sinon. Plus de retour anticipé, donc plus de branche où le
+   * cadre pourrait disparaître.
+   *
+   * LES GESTES SONT FUSIONNÉS DANS LES DEUX CAS (`vue.data`), et il le faut : sans
+   * eux le cadre référencerait sept gestionnaires de panneau indéfinis, et cliquer
+   * « Équipe » pendant le chargement lèverait. Le squelette que la page fournit ne
+   * porte donc QUE les champs de son propre type.
+   *
+   * LA FENÊTRE RESTE FERMÉE tant que la donnée n'est pas là : `ouverte` vaut `null`
+   * et aucune `modales` n'est passée. Ouvrir une fenêtre sur un squelette
+   * afficherait une feuille vide — et `modales(inerte, …)` construirait des
+   * planches sur des valeurs absentes.
+   */
+  const pret = etat.phase === 'prêt';
+  const donnees = { ...vue.data, ...(pret ? etat.donnees : squelette) } as T & ParcoursData;
 
   return (
-    <EcranParcours
-      screen={screen}
-      desktop={desktop(donnees)}
-      {...(mobile === undefined ? {} : { mobile: mobile(donnees) })}
-      ouverte={vue.ouverte}
-      onOuvrir={vue.onOuvrir}
-      onFermer={vue.onFermer}
-      {...(modales === undefined ? {} : { modales: modales(donnees, vue.volet) })}
-      erreur={vue.erreur}
-      niveauRequis={vue.niveauRequis}
-      oublierNiveauRequis={vue.oublierNiveauRequis}
-    />
+    <>
+      <EcranParcours
+        screen={screen}
+        desktop={desktop(donnees)}
+        {...(mobile === undefined ? {} : { mobile: mobile(donnees) })}
+        ouverte={pret ? vue.ouverte : null}
+        onOuvrir={vue.onOuvrir}
+        onFermer={vue.onFermer}
+        {...(pret && modales !== undefined ? { modales: modales(donnees, vue.volet) } : {})}
+        erreur={vue.erreur}
+        niveauRequis={vue.niveauRequis}
+        oublierNiveauRequis={vue.oublierNiveauRequis}
+      />
+      {etat.phase === 'attente' ? (
+        <BandeAttente texte="Chargement de votre parcours…" />
+      ) : null}
+      {etat.phase === 'échec' ? (
+        <BandeEchec erreur={etat.erreur} onReessayer={onReessayer} />
+      ) : null}
+    </>
   );
 }
 

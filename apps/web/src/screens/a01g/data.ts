@@ -49,6 +49,21 @@ import type { GuideLiableView } from '../accueil/data';
  * `readonly` : la fenêtre AFFICHE deux listes, elle ne les trie ni ne les complète.
  */
 export interface A01GData {
+  /**
+   * LA RECHERCHE DE GUIDES. La barre était un `<div>` portant le mot « médecin » :
+   * le texte que la planche écrit pour montrer une recherche en cours.
+   *
+   * Elle interroge `GET /search?type=GUIDE` et NON `GET /guides`, qui n'accepte
+   * aucun texte — filtrer la page chargée aurait cherché dans vingt guides sur
+   * plusieurs centaines. Voir `useRechercheGuides`.
+   */
+  guideRecherche: string;
+  onGuideRecherche: (event: { target: { value: string } }) => void;
   guidesSuggeres: readonly GuideLiableView[];
   guidesTrouves: readonly GuideLiableView[];
+  /** Valide la sélection et la pose sur le composeur. Voir `accueil/page.tsx`. */
+  onLierGuides: () => void;
+  onAnnulerGuides: () => void;
+  /** Éteint tant qu'aucun guide n'est choisi. */
+  lierBloque: boolean;
 }

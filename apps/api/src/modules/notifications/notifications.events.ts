@@ -1276,7 +1276,7 @@ export function alertMatchTitle(kind: 'HOUSING' | 'JOB', count: number): string 
 /**
  * DEUX ÉNUMÉRATIONS DE « TYPE D'AIDE », ET ELLES NE SE RECOUVRENT PAS.
  *
- * `help_requests.type` est un `HelpType2` (module 06) : PAPERWORK, SERVICE, RIDE,
+ * `help_requests.type` est un `HelpType` (module 06) : PAPERWORK, SERVICE, RIDE,
  * MATERIAL, OTHER. `user_profiles.help_types` est un `HelpType[]` (module 01) :
  * PAPERWORK, HOUSING, JOB, WELCOME, OTHER.
  *

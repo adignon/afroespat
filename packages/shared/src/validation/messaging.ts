@@ -77,24 +77,96 @@ export const MESSAGING_ERROR_MESSAGES: Record<MessagingErrorCode, string> = {
 
 // ── Écriture ────────────────────────────────────────────────────────────────
 
-/** `POST /conversations/direct` (§7.3). Le premier message EST la demande (§5.2). */
+/**
+ * `POST /conversations/direct` (§7.3). Le premier message EST la demande (§5.2).
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `mediaId` SUR LE PREMIER MESSAGE — ET C'EST §5.2 QUI L'EXIGE AINSI         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « quand on envoie un message dans le contexte d'une story, il
+ * faudrait que la story soit capturée comme une image et ajoutée au message juste
+ * un peu sous le message ».
+ *
+ * LE RÉFLEXE — envoyer le texte, puis un second message portant l'image — EST
+ * REFUSÉ PAR LE SERVEUR, et c'est une règle dure, pas un accident :
+ * `sendMessage` répond `409 PENDING_CONVERSATION` quand la conversation est en
+ * attente et que c'est l'initiateur qui écrit (§5.2, « votre premier message
+ * attend une réponse »). Or écrire à l'auteur d'une story, c'est précisément le
+ * cas froid : la conversation naît EN ATTENTE. Le second message serait donc
+ * refusé une fois sur deux — exactement quand il s'agit d'un inconnu, c'est-à-dire
+ * le cas pour lequel la capture sert le plus.
+ *
+ * L'image voyage donc AVEC le premier message. `sendMessageSchema` portait déjà
+ * `mediaId` ; cette route l'ignorait, et c'était le seul endroit du module où une
+ * image ne pouvait pas accompagner un texte.
+ */
 export const createDirectConversationSchema = z
   .object({
     toHandle: handleSchema,
     firstMessage: z.string().trim().min(MESSAGE_BODY_MIN).max(MESSAGE_BODY_MAX),
+    /** Une image facultative, déjà passée par le pipeline média (§5.3, §8.3). */
+    mediaId: uuidSchema.optional(),
+    /** La story d'où part ce premier message — voir `sendMessageSchema.storyId`. */
+    storyId: uuidSchema.optional(),
   })
   .strict();
 
 export type CreateDirectConversation = z.infer<typeof createDirectConversationSchema>;
 
 /** `POST /conversations/:id/messages` (§7.3). */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ UN MESSAGE PEUT N'ÊTRE QU'UNE IMAGE — LA BORNE A ÉTÉ DESSERRÉE            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « il faut permettre plusieurs images ensuite tu le mets dans
+ * l'input comme on a fait avec l'input de publication de la file d'actualité ».
+ *
+ * CE QUE LA BORNE INTERDISAIT. `body` exigeait au moins un caractère, et la
+ * route ne porte qu'UNE image (`mediaId`, au singulier). Plusieurs images, c'est
+ * donc plusieurs messages — comme Messenger, où chaque photo est sa propre
+ * bulle — et chacun aurait eu besoin d'un texte. On aurait demandé au membre
+ * d'écrire quatre phrases pour envoyer quatre photos, ou inventé un corps à sa
+ * place, ce qui est pire.
+ *
+ * LA RÈGLE DEVIENT « AU MOINS L'UN DES DEUX », et elle reste une règle : un
+ * message entièrement vide est toujours refusé. `superRefine` le dit sur `body`,
+ * pour que l'erreur désigne le champ que le membre peut corriger.
+ *
+ * ⚠ ARBITRAGE : §7.3 résume la route par « 1 à 4 000 caractères, image
+ * facultative ». La borne haute ne bouge pas ; la borne BASSE devient
+ * conditionnelle. Remonté au porteur, qui l'a demandé en demandant les images
+ * multiples.
+ */
 export const sendMessageSchema = z
   .object({
-    body: z.string().trim().min(MESSAGE_BODY_MIN).max(MESSAGE_BODY_MAX),
+    body: z.string().trim().max(MESSAGE_BODY_MAX).optional(),
     /** Une image facultative, déjà passée par le pipeline média (§5.3). */
     mediaId: uuidSchema.optional(),
+    /**
+     * LA STORY D'OÙ LE MESSAGE PART, quand il part de l'écran de lecture.
+     *
+     * Le porteur : « Il faut qu'on puisse cliquer sur [la vignette] et aller vers
+     * la story si toujours en ligne. Sinon ça affirme que la story a expiré. »
+     *
+     * La vignette jointe est une CAPTURE, c'est-à-dire un média autonome qui
+     * survit à la story. Elle ne ramène donc à rien par elle-même : il faut dire
+     * CE QU'ELLE MONTRE. Facultatif, parce qu'une image jointe à la main dans une
+     * conversation ne vient d'aucune story.
+     */
+    storyId: uuidSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((valeur, ctx) => {
+    const corps = valeur.body ?? '';
+    if (corps.length >= MESSAGE_BODY_MIN || valeur.mediaId !== undefined) return;
+    ctx.addIssue({
+      code: 'custom',
+      path: ['body'],
+      message: 'Un message doit porter un texte ou une image.',
+    });
+  });
 
 export type SendMessage = z.infer<typeof sendMessageSchema>;
 
@@ -166,7 +238,14 @@ export const conversationMemberSchema = z
     userId: uuidSchema,
     handle: handleSchema,
     displayName: z.string(),
-    /** La clé de stockage de l'avatar, ou `null` — jamais une URL signée. */
+    /**
+     * Chemin RELATIF (`/media/…`), ou `null` — jamais une URL signée.
+     *
+     * Rendait la clé de STOCKAGE nue jusqu'à ce lot, seul endroit du dépôt à le
+     * faire : le front l'aurait résolue contre l'API en `/v1/<clé>`, qui ne sert
+     * rien. Aligné sur `memberSummarySchema.avatarUrl` et sur les cinq autres
+     * routes qui rendent un média.
+     */
     avatarUrl: z.string().nullable(),
     hidden: z.boolean(),
     /** Non nul quand ce membre a quitté la conversation. */
@@ -201,6 +280,15 @@ export const conversationSchema = z
      */
     lastMessagePreview: z.string().max(CONVERSATION_PREVIEW_MAX).nullable(),
     unreadCount: z.number().int().nonnegative(),
+    /**
+     * LA SOURDINE DE CETTE CONVERSATION, pour MOI.
+     *
+     * `conversation_members.is_muted` existait dans le schéma figé depuis le
+     * début et aucune route ne la lisait : l'entrée « Mettre en sourdine » du
+     * menu de conversation était un décor. Elle est par MEMBRE, pas par
+     * conversation — mettre en sourdine est un choix personnel.
+     */
+    muted: z.boolean(),
     pendingForMe: z.boolean(),
     awaitingReply: z.boolean(),
   })
@@ -246,6 +334,55 @@ export const messageSchema = z
     kind: z.enum(MESSAGE_KINDS),
     body: z.string().nullable(),
     mediaId: uuidSchema.nullable(),
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ L'ADRESSE DE L'IMAGE — SANS ELLE, `mediaId` NE SERVAIT À RIEN        ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * `screens/m01/data.ts` l'avait consigné comme l'un de ses quatre manques :
+     * « la vignette d'image — `kind: 'IMAGE'` et `mediaId` arrivent bien, mais
+     * AUCUNE route de ce lot ne résout un média en URL ». La maquette dessine
+     * pourtant la vignette, et le module acceptait déjà `mediaId` à l'écriture :
+     * une image envoyée partait en base et n'était JAMAIS montrée.
+     *
+     * L'adresse est `/media/<clé de stockage>`, composée par le serveur comme
+     * `feed.service.ts`, `housing.service.ts` et `users.service.ts` le font déjà.
+     * Le front n'a pas accès aux clés de stockage, et il ne doit pas : la clé
+     * porte seize octets d'aléa et VAUT l'autorisation de lecture (voir
+     * `media.service.ts`, `keyFor`). La composer côté client demanderait de servir
+     * les clés en clair à des gens qui n'ont pas le média.
+     *
+     * `null` quand le message n'en porte pas, et aussi quand le média a été
+     * supprimé — la relation est `onDelete: SetNull`, donc `mediaId` tombe avec
+     * lui.
+     */
+    mediaUrl: z.string().nullable(),
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA STORY QUE LA VIGNETTE MONTRE, ET SI ELLE VIT ENCORE               ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * DEUX CHAMPS ET NON UN, parce que l'écran a deux gestes à choisir et qu'un
+     * seul ne les distingue pas :
+     *
+     *   · `storyId` null → la vignette n'est pas une story : une image jointe à la
+     *     main. Elle ne mène nulle part, et le cadre la laisse en `<div>` ;
+     *   · `storyId` posé, `storyAlive` vrai → la vignette ouvre `/stories/<id>` ;
+     *   · `storyId` posé, `storyAlive` faux → « Cette story a expiré ».
+     *
+     * `storyAlive` EST CALCULÉ PAR LE SERVEUR et jamais déduit d'une date rendue
+     * au client : une story vit vingt-quatre heures, l'horloge du navigateur peut
+     * être fausse de plusieurs heures, et c'est déjà la règle que `feed.service`
+     * applique (`status === 'EXPIRED' || expiresAt <= now`). Le dire ici garde une
+     * seule définition de « encore en ligne » pour tout le dépôt.
+     *
+     * Il vaut FAUX aussi quand la story a été supprimée : la relation est
+     * `onDelete: SetNull`, donc `storyId` tombe avec elle et le premier cas
+     * s'applique — la vignette redevient une image muette plutôt que de promettre
+     * une page qui rendrait 404.
+     */
+    storyId: uuidSchema.nullable(),
+    storyAlive: z.boolean(),
     sentAt: z.string().datetime(),
     deletedAt: z.string().datetime().nullable(),
     /** Vrai quand c'est MOI qui ai écrit : la bulle change de côté et de couleur. */

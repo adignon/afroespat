@@ -20,15 +20,19 @@
           "id": "01a0f3b8-c967-7000-af81-f11c9e6d0991",
           "label": "La premiere",
           "position": 0,
-          "voteCount": null
+          "voteCount": null,
+          "voters": []
         },
         {
           "id": "01a0f3b8-c967-7001-833c-652cbf4eaf22",
           "label": "La seconde",
           "position": 1,
-          "voteCount": null
+          "voteCount": null,
+          "voters": []
         }
-      ]
+      ],
+      "resultsAfterVote": true,
+      "isAnonymous": true
     }
   ],
   "nextCursor": null

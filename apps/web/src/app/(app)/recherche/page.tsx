@@ -32,11 +32,16 @@ import { EcranRecherche } from '@/screens/messages/ecran-donnees';
  * resterait un titre inventé — ce qui a coûté A01. Le générateur le signale à chaque
  * exécution. Consigné au rapport.
  *
- * ⚠ LES FACETTES ET LES CARTES DE RÉSULTAT NE SONT PAS LIÉES, et il faut savoir
- * pourquoi : les libellés que le serveur rend diffèrent de ceux que la maquette
- * écrit (« Sujets de réseau » contre « Sujets »), et les sous-lignes des cartes
- * — « 84 utiles », « 14 réponses », « Ouverte · Lyon 7e », « 620 € » — n'ont AUCUNE
- * source dans `SearchHit`. Le détail est dans `screens/x01/data.ts`. Signalé.
+ * LES FILTRES SONT DANS LA COLONNE DE GAUCHE, et c'est une demande du porteur :
+ * « Lorsqu'on est sur la page du search, il faut que la left side bar contienne
+ * plutôt les filtres (guide, actualité, événement, etc.) avec le nombre matché. »
+ * La colonne portait jusque-là le menu « ACCUEIL » de la maquette — six entrées
+ * mortes sur une page de recherche. Elles reviennent au SURVOL DU RAIL, l'autre
+ * moitié de la même demande. `?type=` porte le filtre retenu.
+ *
+ * ⚠ LES SOUS-LIGNES DES CARTES RESTENT NON LIÉES — « 84 utiles », « 14 réponses »,
+ * « Ouverte · Lyon 7e », « 620 € » n'ont AUCUNE source dans `SearchHit`. La carte
+ * affiche l'extrait que le serveur rend. Le détail est dans `screens/x01/data.ts`.
  *
  * L'ÉTAT VIDE — « Aucun résultat. Posez la question à la communauté ? » (11 §2.4) —
  * est dessiné par la maquette en COMPOSANT, dans une carte « ÉTATS » posée à côté
@@ -55,5 +60,16 @@ export default async function SearchPage({
   // serait refusée par le serveur. On borne ici plutôt que d'afficher un `400`.
   const requete = typeof brut === 'string' ? brut.slice(0, SEARCH_MAX_QUERY_LENGTH) : '';
 
-  return <EcranRecherche requete={requete} />;
+  /**
+   * LE TYPE N'EST PAS VALIDÉ ICI, mais dans `chargerX01`.
+   *
+   * Ce n'est pas un report de travail : le schéma qui tranche est
+   * `searchSubjectTypeSchema`, celui-là même que le serveur emploie, et il est lu
+   * là où la requête se compose. Le valider deux fois ferait deux endroits à
+   * changer le jour où un dixième type apparaît.
+   */
+  const typeBrut = params['type'];
+  const type = typeof typeBrut === 'string' ? typeBrut : null;
+
+  return <EcranRecherche requete={requete} type={type} />;
 }

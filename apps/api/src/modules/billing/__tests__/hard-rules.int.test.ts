@@ -13,6 +13,7 @@ import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/provide
 import { AuthService } from '../../auth/auth.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { HelpService } from '../../help/help.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Les règles dures du §2 de 14-monetisation.md — celles que TIENT UNE ABSENCE DE
@@ -138,7 +139,7 @@ describe('règles dures de monétisation tenues par une absence de code (14 §2,
 
     const member = async (plan: 'FREE' | 'PREMIUM'): Promise<string> => {
       const { challengeId } = await auth.requestOtp({
-        phone: `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`,
+        phone: numeroDEpreuve(counter++),
         countryIso2: 'BJ',
         captchaToken: 'test',
         purpose: 'SIGNUP',

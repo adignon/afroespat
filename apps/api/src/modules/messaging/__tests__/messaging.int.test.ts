@@ -117,22 +117,35 @@ describe('messagerie (08 §5)', () => {
   // ── §5.2 Qui peut écrire à qui ────────────────────────────────────────────
 
   /**
-   * RÈGLE DURE (§12) : « un L0 peut demander un parrain mais ne peut pas ouvrir de
-   * conversation directe. »
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CE CAS DISAIT L'INVERSE — ÉCART ASSUMÉ AVEC §5.2                        ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * MUTATION éprouvée : en retirant `assertCanSendDirect` de `openDirect`, ce test
-   * tombe seul — le L0 ouvre la conversation.
+   * Il gelait « un L0 ne peut pas ouvrir de conversation directe », qui est le
+   * tableau §5.2 et que §12 range parmi les règles dures. Le porteur a rencontré
+   * ce refus en lisant une story et a demandé de l'ouvrir ; la décision, et ce
+   * qu'elle coûte, sont écrites sur `message.send` dans `capabilities.ts`.
+   *
+   * Il gèle maintenant L'AUTRE MOITIÉ, celle qui n'a pas bougé et qui est
+   * désormais la SEULE à retenir un compte non vérifié : le premier message à un
+   * inconnu ouvre une conversation EN ATTENTE. Sans ce mécanisme, ouvrir le
+   * niveau reviendrait à ouvrir le démarchage de masse — et rien ne le dirait.
+   *
+   * MUTATION éprouvée : en rendant `pendingState` toujours faux, ce cas tombe.
    */
-  it('[RÈGLE DURE §12] un L0 ne peut pas ouvrir de conversation directe', async () => {
+  it('un L0 ouvre une conversation directe, et elle part EN ATTENTE (§5.2)', async () => {
     const l0 = await member({ level: 'L0', phase: 'PRE_DEPARTURE' });
     const target = await member();
 
-    await expect(
-      messaging.openDirect(
-        { userId: l0.id, level: 'L0' },
-        { toHandle: target.handle, firstMessage: 'Bonjour, puis-je vous poser une question ?' },
-      ),
-    ).rejects.toMatchObject({ code: 'LEVEL_REQUIRED' });
+    const ouverte = await messaging.openDirect(
+      { userId: l0.id, level: 'L0' },
+      { toHandle: target.handle, firstMessage: 'Bonjour, puis-je vous poser une question ?' },
+    );
+    expect(ouverte.conversationId).toBeTruthy();
+    expect(ouverte.messageId).toBeTruthy();
+    // EN ATTENTE : l'autre accepte ou ignore, et sans réponse il n'y a pas de
+    // second message. C'est ce qui borne ce qu'un compte non vérifié peut faire.
+    expect(ouverte.pending, 'la demande doit partir en attente d’acceptation').toBe(true);
   });
 
   /**
@@ -666,5 +679,118 @@ describe('messagerie (08 §5)', () => {
     });
     createdMediaIds.push(hers.id);
     await expect(send(hers.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  // ── La story capturée, jointe au PREMIER message ───────────────────────────
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ UNE IMAGE SUR LE PREMIER MESSAGE — ET POURQUOI PAS SUR UN SECOND         ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « quand on envoie un message dans le contexte d'une story, il
+   * faudrait que la story soit capturée comme une image et ajoutée au message
+   * juste un peu sous le message ».
+   *
+   * LE RÉFLEXE — un second message portant l'image — EST REFUSÉ PAR §5.2 : la
+   * conversation naît EN ATTENTE quand la relation est froide, et c'est exactement
+   * le cas quand on écrit à l'auteur d'une story qu'on ne connaît pas. Ce cas
+   * MESURE les deux moitiés : l'image passe sur le premier message, et un second
+   * message est bien refusé — donc le chemin choisi n'est pas une préférence, c'est
+   * le seul qui marche.
+   *
+   * ── MUTATIONS APPLIQUÉES ──────────────────────────────────────────────────
+   *
+   *   · `mediaAssetId: input.mediaId ?? null` retiré de la branche qui CRÉE la
+   *     conversation → le message part sans image, le cas tombe ;
+   *   · `assertOwnedMedia` retiré de cette même branche → la moitié « média d'un
+   *     autre » tombe, et la conversation est créée pour rien ;
+   *   · `urlDuMedia` rendant toujours `null` → la moitié `mediaUrl` tombe.
+   */
+  it('joint l’image au PREMIER message, et en rend l’adresse à la lecture', async () => {
+    const a = await member();
+    const b = await member();
+
+    const asset = await prisma.mediaAsset.create({
+      data: {
+        id: newId(),
+        ownerUserId: a.id,
+        kind: 'MESSAGE',
+        storageKey: `test/story-capture/${newId()}.png`,
+        mime: 'image/png',
+        sizeBytes: BigInt(4096),
+        status: 'READY',
+        exifStripped: true,
+      },
+    });
+    createdMediaIds.push(asset.id);
+
+    const opened = await messaging.openDirect(
+      { userId: a.id, level: 'L1' },
+      {
+        toHandle: b.handle,
+        firstMessage: 'Votre story sur le dossier Visale m’aide beaucoup.',
+        mediaId: asset.id,
+      },
+    );
+
+    /**
+     * LA CONVERSATION EST BIEN EN ATTENTE — c'est la prémisse, et sans elle le
+     * reste ne dirait rien : si la relation était chaude, un second message
+     * passerait et le choix du premier message serait arbitraire.
+     */
+    expect(opened.pending).toBe(true);
+    await expect(
+      messaging.sendMessage({ userId: a.id, level: 'L1' }, opened.conversationId, {
+        body: 'Et voici la capture.',
+        mediaId: asset.id,
+      }),
+    ).rejects.toMatchObject({ code: 'PENDING_CONVERSATION' });
+
+    // ── L'IMAGE EST SUR LE PREMIER MESSAGE, ET SON ADRESSE EST RENDUE ──────
+    const page = await messaging.listMessages(a.id, opened.conversationId, { limit: 20 });
+    const premier = (page.items as { id: string; kind: string; mediaId: string | null; mediaUrl: string | null }[])
+      .find((m) => m.id === opened.messageId);
+    expect(premier?.mediaId).toBe(asset.id);
+    expect(premier?.mediaUrl).toBe(`/media/${asset.storageKey}`);
+    /** Le kind est DÉDUIT de la présence du média (§6, colonne absente). */
+    expect(premier?.kind).toBe('IMAGE');
+
+    // ── ET UNE IMAGE QUI N'EST PAS LA MIENNE N'OUVRE RIEN ─────────────────
+    //
+    // La branche qui CRÉE ne passe pas par `sendMessage` : sans son propre
+    // contrôle, elle attacherait le média d'un autre membre — ou créerait la
+    // conversation avant d'échouer.
+    const c = await member();
+    const sienne = await prisma.mediaAsset.create({
+      data: {
+        id: newId(),
+        ownerUserId: b.id,
+        kind: 'MESSAGE',
+        storageKey: `test/story-capture/${newId()}.png`,
+        mime: 'image/png',
+        sizeBytes: BigInt(4096),
+        status: 'READY',
+        exifStripped: true,
+      },
+    });
+    createdMediaIds.push(sienne.id);
+
+    await expect(
+      messaging.openDirect(
+        { userId: a.id, level: 'L1' },
+        { toHandle: c.handle, firstMessage: 'Bonjour.', mediaId: sienne.id },
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    const entre = await prisma.conversationMember.findMany({
+      where: { userId: { in: [a.id, c.id] } },
+      select: { conversationId: true, userId: true },
+    });
+    const partagees = entre
+      .filter((m) => m.userId === a.id)
+      .map((m) => m.conversationId)
+      .filter((id) => entre.some((m) => m.userId === c.id && m.conversationId === id));
+    expect(partagees, 'une conversation a été créée malgré le refus').toHaveLength(0);
   });
 });

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditService } from '../../../common/audit.service';
 import { CryptoService } from '../../../common/crypto.service';
@@ -9,6 +10,7 @@ import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../../auth/auth.service';
 import { UsersService } from '../users.service';
 import { newId } from '@app/db';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Compte et profil — 01-identite.md §2.2, §2.6, §2.7 et §4.4.
@@ -31,7 +33,7 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
   const createdUserIds: string[] = [];
 
   let counter = 0;
-  const nextPhone = () => `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   async function newMember(iso2 = 'BJ') {
     const phone = nextPhone();
@@ -200,6 +202,40 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     const upper = await prisma.$queryRaw<{ id: string }[]>`
       SELECT id FROM users WHERE handle = ${handle.toUpperCase()}::citext`;
     expect(upper.length).toBe(1);
+  });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ DEUX MEMBRES VISENT LE MÊME PSEUDO EN MÊME TEMPS                        ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le contrôle de disponibilité LIT avant d'écrire : deux requêtes simultanées
+   * le passent toutes les deux, et c'est l'index unique qui tranche. MESURÉ sur
+   * la suite d'épreuves du web, dont deux ouvriers inscrivaient un membre au même
+   * instant : `PATCH /me` répondait `500 INTERNAL_ERROR`.
+   *
+   * Ce cas n'exige PAS que la course ait lieu — elle dépend de l'ordonnancement.
+   * Il exige ce qui doit valoir dans les deux cas : un seul gagne, et le perdant
+   * apprend que le pseudo est pris, jamais qu'une panne est survenue chez nous.
+   */
+  it('deux demandes simultanées du même handle : une passe, l’autre reçoit 409', async () => {
+    const a = await newMember();
+    const b = await newMember();
+    const handle = `course${Date.now().toString(36)}`;
+
+    const issues = await Promise.allSettled([
+      users.updateMe(a, { handle }),
+      users.updateMe(b, { handle }),
+    ]);
+    const tenus = issues.filter((r) => r.status === 'fulfilled');
+    const refus = issues.filter((r) => r.status === 'rejected');
+    expect(tenus).toHaveLength(1);
+    expect(refus).toHaveLength(1);
+    // Le refus NOMME la cause, et ce n'est pas une erreur interne.
+    expect((refus[0] as PromiseRejectedResult).reason).toMatchObject({
+      code: 'CONFLICT',
+      details: { field: 'handle', reason: 'HANDLE_TAKEN' },
+    });
   });
 
   it('n’autorise qu’un changement de handle par 30 jours', async () => {
@@ -477,5 +513,17 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     expect(metadata).toContain('displayName');
     // Le journal est conservé cinq ans (§8.4) : il dit ce qui a changé, pas quoi.
     expect(metadata).not.toContain('Aïcha');
+  });
+  /**
+   * LA DATE D'ARRIVÉE SORT DE `GET /me`.
+   *
+   * Elle était ÉCRIVABLE et pas LISIBLE : le champ « Arrivée » de K01 n'avait donc
+   * aucune valeur à afficher, et serait parti vide à l'enregistrement suivant.
+   */
+  it('rend la date d’arrivée en date nue, pas en horodatage', async () => {
+    const userId = await newMember();
+    expect((await users.me(userId)).user.arrivalDate).toBeNull();
+    const apres = await users.updateMe(userId, { arrivalDate: '2026-09-15' });
+    expect(apres.user.arrivalDate).toBe('2026-09-15');
   });
 });

@@ -473,6 +473,22 @@ export const journeyTemplateSchema = z.object({
   description: z.string().nullable(),
   targetPhase: z.enum(Phase),
   icon: z.string().nullable(),
+  /**
+   * CE TYPE OUVRE-T-IL UN PARCOURS ?
+   *
+   * Faux pour les deux objectifs que T5 §O03 dessine sous « sans créer de
+   * parcours » — « M'intégrer, rencontrer du monde » et « Aider les autres ». La
+   * même page pose que « les deux groupes ont le même rang visuel de choix », et
+   * §5 que « le parcours n'est jamais imposé » : ce sont des objectifs au même
+   * titre que les quatre autres, et l'écran doit pouvoir les proposer de la même
+   * façon.
+   *
+   * Ils ont une version publiée à ZÉRO étape — sans elle, « un type sans version
+   * publiée n'est pas proposé » les exclurait. C'est donc ce booléen, et non
+   * l'absence de version, qui dit de ne rien créer. Un client qui l'ignorerait
+   * créerait un parcours vide.
+   */
+  createsJourney: z.boolean(),
   version: journeyTemplateVersionSchema,
 });
 
@@ -489,6 +505,71 @@ export const journeyTemplatesResponseSchema = z.object({
 });
 
 export type JourneyTemplatesResponse = z.infer<typeof journeyTemplatesResponseSchema>;
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `GET /journey-templates/:id/steps` — LES ÉTAPES D'UN TYPE DE PARCOURS      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * ── POURQUOI CETTE ROUTE N'EXISTAIT PAS, ET POURQUOI ELLE MANQUE ───────────
+ *
+ * `GET /journey-templates` rend le NOMBRE d'étapes (`version.stepCount`) et rien
+ * d'autre : de quoi écrire « 15 étapes » sous un type, pas de quoi en nommer une
+ * seule. Aucune route ne servait les étapes elles-mêmes à un membre — seule
+ * l'ouverture d'un parcours les matérialisait, en les COPIANT dans `journey_steps`.
+ *
+ * Le composeur de story en a besoin AVANT toute ouverture : `createStorySchema`
+ * accepte un `stepDefinitionId` pour rattacher un conseil à l'étape qu'il
+ * concerne — c'est ce qui, dit §2.6, « le rend réutilisable ». Sans cette route,
+ * l'écran ne peut proposer qu'une liste écrite en dur, donc sans identifiant,
+ * donc impossible à envoyer.
+ *
+ * ── CE QU'ELLE REND, ET CE QU'ELLE NE REND PAS ────────────────────────────
+ *
+ * `stepDefinitionId` est la clé qui part dans `POST /stories` : c'est l'identifiant
+ * de la DÉFINITION, pas celui de `template_steps`. Deux versions d'un même type
+ * réutilisent la même définition ; rattacher un conseil à la ligne de version le
+ * rendrait caduc à la publication suivante.
+ *
+ * `position` est l'ordre que la VERSION fixe — §2.1 : elle « assemble et ordonne
+ * des définitions ». Il sert à afficher « Étape 7 », jamais à identifier.
+ *
+ * Le nom et la description obéissent aux SURCHARGES de la version
+ * (`template_steps.overrides`), exactement comme à l'ouverture d'un parcours.
+ * Servir ici la définition brute ferait lire au membre un intitulé que son
+ * parcours n'emploiera pas — la déclinaison Bénin de T3 A.3 est précisément faite
+ * pour que les deux diffèrent.
+ *
+ * `isOptional` est servi parce que la liste le montre : proposer une étape
+ * facultative sans le dire laisserait croire qu'elle est due.
+ *
+ * Pas de `nextCursor` : une version publiée compte quinze étapes, pas mille, et
+ * les couper en pages ferait de l'ordre une illusion.
+ */
+export const journeyTemplateStepSchema = z
+  .object({
+    /** L'identifiant qui part dans `POST /stories` — voir l'en-tête. */
+    stepDefinitionId: uuidSchema,
+    code: z.string(),
+    nameFr: z.string(),
+    description: z.string().nullable(),
+    category: z.enum(StepCategory),
+    /** Le rang dans la version, à partir de 1. Pour l'affichage, jamais pour l'identité. */
+    position: z.number().int(),
+    isOptional: z.boolean(),
+  })
+  .strict();
+
+export type JourneyTemplateStep = z.infer<typeof journeyTemplateStepSchema>;
+
+export const journeyTemplateStepsResponseSchema = z.object({
+  items: z.array(journeyTemplateStepSchema),
+  /** La version RÉSOLUE pour le pays du membre — celle dont ces étapes viennent. */
+  version: journeyTemplateVersionSchema,
+  meta: journeyMetaSchema,
+});
+
+export type JourneyTemplateStepsResponse = z.infer<typeof journeyTemplateStepsResponseSchema>;
 
 /**
  * Le parcours tel que `POST /journeys` et `GET /journeys/:id` le rendent.
@@ -557,8 +638,29 @@ export const journeyListItemSchema = z.object({
   status: z.enum(JourneyStatus),
   visibility: z.enum(JourneyVisibility),
   progressPct: z.number(),
-  /** `null` quand toutes les étapes sont franchies. */
-  currentStep: z.object({ id: uuidSchema, title: z.string() }).strict().nullable(),
+  /**
+   * `null` quand toutes les étapes sont franchies.
+   *
+   * ── POURQUOI LA DESCRIPTION EST ICI ────────────────────────────────────────
+   *
+   * Elle n'y était pas, et O05 — « Votre parcours est prêt » — récitait donc la
+   * phrase de la maquette, « Campus France, choix des formations, lettre de
+   * motivation », sous l'étape d'un parcours de REGROUPEMENT FAMILIAL. Le porteur
+   * l'a vu : « il faut que cette page prenne en compte le parcours réel ».
+   *
+   * Le chemin remonté à l'époque était un second aller-retour vers
+   * `GET /journeys/:id`, au dernier écran de l'inscription, pour une phrase. La
+   * liste la SERT maintenant : elle lit déjà `JourneyStep` pour compter les étapes
+   * et nommer celle en cours, et `description` est une colonne de la même ligne —
+   * aucune jointure, aucune requête de plus.
+   *
+   * `nullable` parce que la colonne l'est : une étape ajoutée à la main peut
+   * n'avoir que son titre.
+   */
+  currentStep: z
+    .object({ id: uuidSchema, title: z.string(), description: z.string().nullable() })
+    .strict()
+    .nullable(),
   doneCount: z.number().int(),
   stepCount: z.number().int(),
   memberCount: z.number().int(),

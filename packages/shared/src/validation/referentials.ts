@@ -1,4 +1,17 @@
 import { z } from 'zod';
+import {
+  getExampleNumber,
+  parsePhoneNumberFromString,
+  type CountryCode,
+} from 'libphonenumber-js';
+/**
+ * L'attribut `with { type: 'json' }` NE MARCHE PAS ICI, et ce n'est pas un
+ * oubli : `libphonenumber-js/examples.mobile.json` n'est pas un fichier JSON mais
+ * un MODULE JavaScript qui l'exporte — la bibliothèque le dit en tête du fichier,
+ * « a workaround for a bug in web browsers' native ES6 importing system ». Node
+ * refuse alors l'attribut (`ERR_IMPORT_ATTRIBUTE_TYPE_INCOMPATIBLE`).
+ */
+import exemplesMobiles from 'libphonenumber-js/examples.mobile.json';
 import { CountryKind } from '../enums/generated.js';
 import { cursorQuerySchema, pageSchema } from './pagination.js';
 
@@ -49,7 +62,29 @@ export const createTaggedSchema = z.object({
 });
 export type CreateTagged = z.infer<typeof createTaggedSchema>;
 
-export const updateTaggedSchema = createTaggedSchema.partial().refine(
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ GLOBALISER UNE COMPÉTENCE — LE SEUL GESTE QUI EFFACE SON AUTEUR           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « de nouvelles compétences que les administrateurs peuvent
+ * globaliser […] quand c'est globalisé tout le monde y a accès. »
+ *
+ * `skills.created_by_user_id` à NULL VEUT DIRE « à tout le monde » : c'est déjà
+ * l'état des soixante compétences semées. Globaliser, c'est donc effacer cette
+ * colonne — pas poser un drapeau de plus, qui ferait deux vérités à tenir
+ * d'accord.
+ *
+ * Le champ est un BOOLÉEN À SENS UNIQUE : `true` globalise. Il n'y a pas de
+ * `false` qui rendrait une compétence à son auteur, et c'est voulu — d'autres
+ * membres l'ont peut-être déjà choisie entre-temps, et la leur retirer serait
+ * modifier leur profil sans qu'ils le sachent. REMONTÉ : si le porteur veut
+ * pouvoir dé-globaliser, il faudra décider ce qu'on fait de ces profils.
+ */
+export const updateTaggedSchema = createTaggedSchema
+  .partial()
+  .extend({ global: z.literal(true).optional() })
+  .refine(
   (v) => Object.keys(v).length > 0,
   { message: 'Indiquez au moins un champ à modifier.' },
 );
@@ -193,6 +228,16 @@ export const placesCountrySchema = z.object({
   /** `+33`, `+229`… La saisie du numéro s'y appuie (voir `normalizePhone`). */
   dialCode: z.string(),
   kind: z.enum(CountryKind),
+  /**
+   * Le nombre de chiffres d'un numéro NATIONAL dans ce pays, ou `null` quand le
+   * référentiel ne le dit pas encore.
+   *
+   * Le porteur : « il faut la validation du numéro selon le pays. Backend et
+   * frontend aussi pour valider le format. » L'écran en a besoin pour refuser
+   * AVANT d'envoyer un SMS ; le serveur applique la même règle, lue de la même
+   * colonne — une seule vérité, et c'est le référentiel qui la porte.
+   */
+  phoneNationalLength: z.number().int().positive().nullable(),
 });
 export type PlacesCountry = z.infer<typeof placesCountrySchema>;
 
@@ -219,6 +264,147 @@ export const placesCitySchema = z.object({
 export type PlacesCity = z.infer<typeof placesCitySchema>;
 
 export const placesCitiesResponseSchema = pageSchema(placesCitySchema);
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ UN NUMÉRO EST-IL BIEN FORMÉ POUR SON PAYS ? — LIBPHONENUMBER TRANCHE      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « il faut la validation du numéro selon le pays. Backend et
+ * frontend aussi pour valider le format », puis : « pour la validation utilise
+ * les librairies de validation de lib number de Google ».
+ *
+ * ── POURQUOI LA TABLE ÉCRITE À LA MAIN A ÉTÉ JETÉE ────────────────────────
+ *
+ * Une première version posait la longueur attendue dans le référentiel, pays par
+ * pays. Elle marchait, et elle était fausse par nature : un plan de numérotation
+ * ne tient pas en un nombre. Le Bénin le prouve — `libphonenumber` sait que ses
+ * mobiles valent `01` + huit chiffres depuis 2023, et que `97123442` n'est plus
+ * valide. Aucune table tenue à la main n'aurait su ça.
+ *
+ * ── CE QUE LA MAQUETTE DESSINE EST L'ANCIEN FORMAT ───────────────────────
+ *
+ * Les planches écrivent « 97 12 34 42 » et « +229 •• •• •• 42 » : huit chiffres,
+ * c'est-à-dire le Bénin d'AVANT 2023. REMONTÉ au porteur — l'invite du champ et
+ * l'exemple du masque sont à reprendre, et ce lot ne les change pas de lui-même.
+ *
+ * ── LA MÊME FONCTION DES DEUX CÔTÉS ──────────────────────────────────────
+ *
+ * L'écran s'en sert pour griser « Recevoir le code » ; le serveur pour refuser.
+ * Deux implémentations divergeraient, et c'est le membre qui paierait l'écart.
+ */
+export function numeroValide(saisie: string, iso2: string): boolean {
+  const lu = parsePhoneNumberFromString(saisie, iso2.toUpperCase() as CountryCode);
+  return lu !== undefined && lu.isValid();
+}
+
+/**
+ * LE NUMÉRO AU FORMAT INTERNATIONAL — « il faut que ce soit le format
+ * international qu'il faut enregistrer ».
+ *
+ * `null` quand la saisie n'est pas un numéro valide dans ce pays : rendre une
+ * chaîne quand même ferait enregistrer un numéro que personne ne peut appeler,
+ * et deux écritures du même numéro créeraient deux comptes — ce que
+ * `e164Schema` dit déjà vouloir empêcher.
+ *
+ * La bibliothèque retire le zéro de service, accepte les espaces, les points et
+ * les tirets, et accepte aussi une saisie DÉJÀ internationale : c'est exactement
+ * ce que `normalizePhone` faisait à la main, en moins complet.
+ */
+export function enFormatInternational(saisie: string, iso2: string): string | null {
+  const lu = parsePhoneNumberFromString(saisie, iso2.toUpperCase() as CountryCode);
+  return lu !== undefined && lu.isValid() ? lu.number : null;
+}
+
+/**
+ * L'EXEMPLE OFFICIEL D'UN NUMÉRO DE CE PAYS, écrit comme on l'écrit sur place.
+ *
+ * Il remplace l'invite « 97 12 34 42 » de la planche, qui est un numéro béninois
+ * d'avant la renumérotation de 2023 — donc un exemple que le serveur refuse
+ * désormais. L'exemple vient des métadonnées de `libphonenumber` : il est juste
+ * par construction, et il suit le pays choisi.
+ *
+ * Chaîne vide si le pays est inconnu de la bibliothèque : une invite absente vaut
+ * mieux qu'une invite fausse.
+ */
+export function exempleNational(iso2: string): string {
+  const exemple = getExampleNumber(iso2.toUpperCase() as CountryCode, exemplesMobiles);
+  return exemple === undefined ? '' : exemple.formatNational();
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE NUMÉRO MASQUÉ, POUR L'ÉCRAN DU CODE                                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Au niveau de la page de l'OTP, le numéro n'est pas celui qui est
+ * renseigné. » Il ne l'était pas : la planche écrit « +229 •• •• •• 42 » EN
+ * CLAIR, et cet exemple s'affichait quel que soit le numéro tapé.
+ *
+ * ── POURQUOI LE MASQUE SE CONSTRUIT ICI ET NON AU SERVEUR ────────────────
+ *
+ * Le serveur sait masquer — `GET /me` rend `phones[].masked` — mais il ne répond
+ * qu'à un membre AUTHENTIFIÉ, et à cette étape le code n'est pas encore vérifié.
+ * Le seul qui connaisse le numéro est l'écran qui vient de le recevoir.
+ *
+ * ── LA FORME EST CELLE DU SERVEUR, PAS UNE AUTRE ─────────────────────────
+ *
+ * Indicatif, des paires masquées, et les DEUX DERNIERS chiffres en clair :
+ * « +229 •• •• •• 42 ». C'est exactement ce que la planche dessine et ce que le
+ * serveur rend ailleurs. Deux masques différents dans la même application
+ * feraient douter le membre de ce qu'il lit.
+ */
+export function masqueNumero(saisie: string, iso2: string): string {
+  const lu = parsePhoneNumberFromString(saisie, iso2.toUpperCase() as CountryCode);
+  if (lu === undefined) return '';
+  const national = lu.nationalNumber;
+  const visibles = national.slice(-2);
+  const caches = Math.max(0, national.length - 2);
+  const paires = Array.from({ length: Math.ceil(caches / 2) }, () => '••').join(' ');
+  return `+${lu.countryCallingCode} ${paires} ${visibles}`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Une LANGUE, telle que `GET /v1/places/languages` la renvoie.
+ *
+ * RELEVÉ SUR L'API QUI TOURNE, pas déduit du service : trois colonnes — `id`,
+ * `code` (ISO 639-1 : `fr`, `en`, `de`…) et `nameFr`. La route n'en sert pas
+ * d'autres, et `.strict()` le fige : une colonne qui apparaîtrait sans que le
+ * front la lise ferait échouer la frontière plutôt que de passer inaperçue.
+ *
+ * Ces schémas N'EXISTAIENT PAS : les deux routes étaient servies et personne ne
+ * les appelait. Elles sont branchées depuis que le porteur a demandé « l'ajout de
+ * compétence langue ».
+ */
+export const placesLanguageSchema = z
+  .object({
+    id: z.string().uuid(),
+    code: z.string(),
+    nameFr: z.string(),
+  })
+  .strict();
+export type PlacesLanguage = z.infer<typeof placesLanguageSchema>;
+
+export const placesLanguagesResponseSchema = pageSchema(placesLanguageSchema);
+
+/**
+ * Une COMPÉTENCE, telle que `GET /v1/places/skills` la renvoie.
+ *
+ * `category` regroupe les compétences (« Bâtiment », « Bureautique »…) et le
+ * service trie DESSUS avant `nameFr`. Elle est donc servie, et le front la lit :
+ * c'est ce qui permet de montrer d'où vient une suggestion sans inventer de
+ * classement.
+ */
+export const placesSkillSchema = z
+  .object({
+    id: z.string().uuid(),
+    nameFr: z.string(),
+    category: z.string().nullable(),
+  })
+  .strict();
+export type PlacesSkill = z.infer<typeof placesSkillSchema>;
+
+export const placesSkillsResponseSchema = pageSchema(placesSkillSchema);
 
 // ── La vue d'ÉQUIPE d'une ville — `GET /v1/admin/ref/cities` (D08) ──────────
 //

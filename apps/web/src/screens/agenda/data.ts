@@ -9,6 +9,7 @@ import {
   type OrganizerAttendeesResponse,
   type PublicAttendeesResponse,
 } from '@app/shared';
+import { fondAvatar } from '@/lib/avatar';
 
 /**
  * Données des écrans E01 à E04, et ce que la maquette `07 Agenda.dc.html` en dit.
@@ -56,6 +57,15 @@ import {
 
 /** L'identité de la barre haute. Le niveau n'y est pas : la maquette ne l'écrit pas. */
 export interface MoiAgenda {
+  /**
+   * LE FOND DU ROND D'AVATAR : la photo du membre, ou rien.
+   *
+   * FACULTATIVE : seul le module Compte la remplit aujourd'hui, parce que lui seul
+   * lit `GET /me`. Absente, le cadre reprend l'aplat de la maquette et écrit les
+   * initiales — exactement ce qu'il faisait avant. Le jour où ce module lira
+   * `avatarUrl`, il suffira de la poser.
+   */
+  readonly photo?: string | null;
   readonly initiales: string;
   readonly prenom: string;
 }
@@ -233,6 +243,17 @@ export interface E03Data {
  * qu'une case vide qui affirmerait « absent ». Ne pas savoir n'est pas dire non.
  */
 export interface LignePresence {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur […] partout
+   * où le nom est affiché ». Les noms dessinés dans les cadres étaient des
+   * `<span>` et aucun ne menait au profil.
+   *
+   * FACULTATIVE : le cadre ne pose le lien que si la ligne porte une adresse.
+   * Sans elle, le nom reste nu — exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly fond: string;
   readonly initiales: string;
   readonly nom: string;
@@ -688,9 +709,22 @@ export function construireFeuille(
   };
 }
 
-/** Le bandeau d'identité de la barre haute. */
-export function construireMoi(nomAffiche: string): MoiAgenda {
-  return { initiales: initialesDe(nomAffiche), prenom: prenomDe(nomAffiche) };
+/**
+ * Le bandeau d'identité de la barre haute.
+ *
+ * `avatarUrl` EST OBLIGATOIRE, ET C'EST LE CORRECTIF. Ce paramètre avait une
+ * valeur par défaut de `null` : l'unique appelant l'omettait, le compilateur ne
+ * disait rien, et l'agenda était le seul des six modules à dessiner encore
+ * l'aplat de la maquette alors que la photo du membre était posée partout
+ * ailleurs. MESURÉ : « /agenda : ronds = 1 | avec photo = 0 ». Sans valeur par
+ * défaut, le prochain oubli ne compile pas.
+ */
+export function construireMoi(nomAffiche: string, avatarUrl: string | null): MoiAgenda {
+  return {
+    initiales: initialesDe(nomAffiche),
+    prenom: prenomDe(nomAffiche),
+    photo: fondAvatar(avatarUrl),
+  };
 }
 
 /** Les lignes de la carte « CE WEEK-END » : titre, puis « samedi 12 h ». */

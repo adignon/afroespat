@@ -33,6 +33,20 @@ import { chip, panel, panelReseaux, rail } from '../reseaux/chrome';
  * donc neutres, et c'est remonté plutôt que rempli d'un nombre inventé.
  */
 export interface MyNetView {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur à partir des
+   * publications (quand on clique sur son nom […]) partout où le nom est
+   * affiché ». Les trente-sept noms dessinés dans les cadres étaient des `<span>`
+   * et aucun ne menait au profil.
+   *
+   * FACULTATIVE, ET C'EST LA GARDE : tous les noms ne sont pas des membres — un
+   * réseau, une ville, un partenaire en portent un aussi — et le cadre ne pose le
+   * lien que si la ligne porte une adresse. Sans elle, le nom reste nu, c'est-à-
+   * dire exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly i: string;
   readonly name: string;
   readonly bg: string;
@@ -54,6 +68,20 @@ export interface MyNetView {
  * dans un tableau indexé par rang, se désynchroniserait au premier filtre.
  */
 export interface DiscoverView {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur à partir des
+   * publications (quand on clique sur son nom […]) partout où le nom est
+   * affiché ». Les trente-sept noms dessinés dans les cadres étaient des `<span>`
+   * et aucun ne menait au profil.
+   *
+   * FACULTATIVE, ET C'EST LA GARDE : tous les noms ne sont pas des membres — un
+   * réseau, une ville, un partenaire en portent un aussi — et le cadre ne pose le
+   * lien que si la ligne porte une adresse. Sans elle, le nom reste nu, c'est-à-
+   * dire exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly name: string;
   readonly cat: string;
   readonly desc: string;

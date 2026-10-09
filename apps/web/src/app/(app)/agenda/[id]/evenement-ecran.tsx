@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { chargerE02 } from '@/screens/agenda/appels';
+import { SQUELETTE_E02, chargerE02 } from '@/screens/agenda/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { E02Desktop } from '@/screens/e02/desktop.generated';
@@ -17,7 +17,13 @@ export function EvenementEcran({ id }: { readonly id: string }) {
   const charger = useCallback(() => chargerE02(id), [id]);
 
   return (
-    <EcranDonnees charger={charger}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant « DisaporyPlus Chargement de l'agenda... » et rien d'autre — ni
+       * rail, ni barre basse. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_E02} charger={charger}>
       {(donnees) => (
         <ScreenFrames
           screen="E02"

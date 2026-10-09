@@ -1,4 +1,5 @@
 import { NouvelleStoryScreen } from './nouvelle-story-screen';
+import { GardeNiveau } from '@/components/garde-niveau';
 
 /**
  * A14 — créer une story. `/stories/nouvelle`
@@ -17,5 +18,17 @@ export default async function Page({
   const params = await searchParams;
   const raw = params['etape'];
   const etape = typeof raw === 'string' ? Number.parseInt(raw, 10) : 1;
-  return <NouvelleStoryScreen etape={Number.isFinite(etape) ? etape : 1} />;
+  return (
+    <>
+      <NouvelleStoryScreen etape={Number.isFinite(etape) ? etape : 1} />
+      {/**
+       * `post.create` GARDE AUSSI LES STORIES — c'est la même capacité, et le
+       * porteur l'a rangée en N1 : « publier dans le fil d'actualité et
+       * stories ». Il n'existe pas de capacité propre aux stories dans la table,
+       * et en inventer une ici créerait une règle que les specs ne connaissent
+       * pas.
+       */}
+      <GardeNiveau capacite="post.create" />
+    </>
+  );
 }

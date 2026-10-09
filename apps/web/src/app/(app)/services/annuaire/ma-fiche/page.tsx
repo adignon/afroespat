@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS08 } from '@/screens/services/appels';
+import { SQUELETTE_S08, chargerS08 } from '@/screens/services/appels';
 import { S08Desktop } from '@/screens/s08/desktop.generated';
 import { S08Mobile } from '@/screens/s08/mobile.generated';
 
@@ -41,7 +41,19 @@ import { S08Mobile } from '@/screens/s08/mobile.generated';
  */
 export default function MaFicheProPage() {
   return (
-    <EcranDonnees charger={chargerS08} attente="Chargement de votre fiche…">
+    <EcranDonnees
+      charger={chargerS08}
+      attente="Chargement
+      de
+      votre
+      fiche…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots et aucune entrée de rail dans le HTML
+       * servi. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S08}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="S08"

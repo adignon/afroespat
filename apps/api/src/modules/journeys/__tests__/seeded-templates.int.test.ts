@@ -20,6 +20,7 @@ import { HelpService } from '../../help/help.service';
 import { MessagingService } from '../../messaging/messaging.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { JourneysService, type JourneyActor } from '../journeys.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Les modèles AMORCÉS (T3 partie A), vus depuis le service.
@@ -91,8 +92,7 @@ describe('modèles amorcés (T3 partie A) vus du service', () => {
   let togoCountryId: string | null = null;
 
   let counter = 0;
-  const nextPhone = (): string =>
-    `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   /** Un membre L1, à Lyon, originaire du Bénin (le seul pays d'origine actif). */
   async function newMember(): Promise<JourneyActor> {

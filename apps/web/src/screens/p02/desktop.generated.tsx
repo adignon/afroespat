@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function P02Desktop(props: OnboardingVals) {
-  const { codeValue, onChangeNumber, onCodeChange, otp, resend } = props;
+  const { codeValue, onChangeNumber, onCodeChange, otp, phoneMasque, resend } = props;
 
   return (
     <>
@@ -19,7 +19,7 @@ export function P02Desktop(props: OnboardingVals) {
         <div style={{ width: "420px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "32px" }}>
           <button type="button" onClick={onChangeNumber} style={{ font: "inherit", display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: "700", color: "#16785E", border: "none", background: "none", padding: 0, cursor: "pointer" }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg>Changer de numéro</button>
           <h1 style={{ margin: "18px 0 0", fontSize: "28px", fontWeight: "800", letterSpacing: "-0.8px" }}>Entrez le code reçu</h1>
-          <p style={{ margin: "8px 0 0", fontSize: "14px", color: "#5D6B66" }}>Envoyé au <strong style={{ color: "#16211D" }}>+229 •• •• •• 42</strong></p>
+          <p style={{ margin: "8px 0 0", fontSize: "14px", color: "#5D6B66" }}>Envoyé au <strong style={{ color: "#16211D" }}>{phoneMasque}</strong></p>
           <div style={{ position: "relative", display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: "8px", marginTop: "24px" }}>
             {(otp ?? []).map((d, dIndex) => (
 <Fragment key={dIndex}><div style={{ height: "60px", borderRadius: "14px", background: d.bg, border: `1.5px solid ${d.bd}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "24px", fontWeight: "800" }}>{d.v}</div></Fragment>

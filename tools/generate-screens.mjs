@@ -65,14 +65,54 @@ const FRAME_ADAPTATIONS = [
     // une régression d'accessibilité — ce qu'elle a fait, et qu'axe a vu.
     attrs: 'tabIndex={0}',
   },
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ `flex: "1"` DEVIENT `flexGrow: "1"` — IL ÉTAIT RETIRÉ, ET LA BARRE      ║
+   * ║ BASSE RESTAIT EN L'AIR                                                  ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Cette règle retirait `flex: "1", minHeight: "0"` en même temps qu'elle
+   * ouvrait l'`overflow`, et le retrait du `minHeight` est juste : c'est lui qui
+   * autorisait la zone à se comprimer sous son contenu. MAIS RETIRER LE
+   * `flex-grow` AVEC LUI A COÛTÉ UN DÉFAUT FONCTIONNEL, mesuré au navigateur sur
+   * `/villes/lyon` à 390 px :
+   *
+   *   le cadre mobile fait bien ses 844 px en colonne flex, mais son contenu n'en
+   *   occupait que 684 — AUCUN enfant ne grandissait. Une colonne flex tasse ses
+   *   enfants en haut : il restait donc 75 px de vide SOUS la barre d'onglets
+   *   basse, qui flottait à 684→769 au lieu de toucher le bord. Et le « + »
+   *   flottant, lui ancré à la FENÊTRE par `bottom: 108px`, occupait 680→736 : la
+   *   barre lui recouvrait 52 de ses 56 pixels.
+   *
+   * Conséquence : `elementFromPoint` au centre du « + » rendait l'icône
+   * « Compte » de la barre, et le clic n'ouvrait JAMAIS la fenêtre de
+   * contribution. Un appel à l'action principal inerte, sur une page où la
+   * maquette dessine précisément le « + » 108 px au-dessus du bord pour qu'il
+   * dégage une barre de 85 px.
+   *
+   * POURQUOI `flexGrow: "1"` ET NON LE `flex: "1"` D'ORIGINE : le raccourci
+   * `flex: 1` vaut `1 1 0%` — il pose une BASE NULLE, donc la zone repart de zéro
+   * et se trouve plafonnée par les 844 px, ce qui est exactement le défaut que
+   * cette règle corrigeait. `flex-grow` seul laisse `flex-basis: auto` : la zone
+   * part de la hauteur de son contenu et ne grandit QUE dans l'espace libre.
+   *
+   *   · contenu court  → elle remplit, la barre touche le bas, le « + » est libre ;
+   *   · contenu long   → aucun espace libre, `grow` ne fait rien, la page défile
+   *                      et la barre reste visible par son `position: sticky`.
+   *
+   * Et `minHeight` reste retiré, donc `min-height: auto` : la zone ne peut pas se
+   * comprimer sous son contenu, quelle que soit sa hauteur.
+   */
   {
-    why: 'Le contenu vertical du cadre mobile était borné par ses 844 px : il doit couler.',
+    why: 'Le contenu vertical du cadre mobile était borné par ses 844 px : il doit couler, et remplir.',
     match: (style) =>
       style.includes('overflow: "hidden"') &&
       style.includes('flex: "1"') &&
       style.includes('minHeight: "0"'),
     apply: (style) =>
-      style.replace('overflow: "hidden"', 'overflow: "visible"').replace('flex: "1", minHeight: "0", ', ''),
+      style
+        .replace('overflow: "hidden"', 'overflow: "visible"')
+        .replace('flex: "1", minHeight: "0", ', 'flexGrow: "1", '),
   },
   /**
    * Les 50 px du haut simulaient l’encoche.
@@ -270,18 +310,64 @@ const TOUCH_TARGET_ADAPTATIONS = [
       style.includes('height: "28px"') &&
       style.includes('borderRadius: "999px"') &&
       style.includes('padding: "0"'),
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LE RACCOURCI `background` EFFACE `background-clip` — PIÈGE REACT        ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Le switch button au niveau de "Autoriser les messages" ne
+     * s'affiche pas bien. »
+     *
+     * MESURÉ au navigateur, le même interrupteur avant et après une bascule :
+     *
+     *     allumé  → background-clip: content-box   (piste de 48 × 28, juste)
+     *     éteint  → background-clip: border-box    (la piste remplit 48 × 44)
+     *
+     * LA CAUSE N'EST PAS DANS LE DESSIN, elle est dans la façon dont React écrit
+     * les styles. La planche pose `background: <variable>` — un RACCOURCI — et
+     * `backgroundClip` juste après : au premier rendu les deux s'appliquent dans
+     * l'ordre, et tout va bien. À la bascule, seule la couleur change ; React ne
+     * réécrit QUE `style.background`, et un raccourci REMET ses longhands à leur
+     * valeur initiale — `background-clip` repasse donc à `border-box`, sans que
+     * personne ne le lui demande. La piste déborde alors sur les seize pixels de
+     * remplissage ajoutés pour la cible tactile, et l'interrupteur devient un gros
+     * rectangle.
+     *
+     * On écrit donc `backgroundColor`, une LONGHAND, qui ne touche à rien d'autre.
+     * Le dessin est identique : la maquette ne pose jamais qu'une couleur ici.
+     */
     apply: (style) =>
-      style.replace(
-        'padding: "0"',
-        'padding: "8px 0", boxSizing: "content-box", backgroundClip: "content-box"',
-      ),
+      style
+        .replace(
+          'padding: "0"',
+          'padding: "8px 0", boxSizing: "content-box", backgroundClip: "content-box"',
+        )
+        .replace(/background: (\w[\w.]*),/, 'backgroundColor: $1,'),
   },
   {
+    /**
+     * ── LE MOTIF NE NOMMAIT QU'UN SEUL INTERRUPTEUR, ET IL Y EN A DEUX ──────
+     *
+     * Il cherchait `left: helpKnob` — le curseur de O04. Celui de A14 s'appelle
+     * `msgsKnob` : il n'a JAMAIS reçu le décalage, et son curseur se peignait
+     * 5 px au-dessus de sa piste. Le porteur l'a vu : « La checkbox sur l'étape
+     * trois s'affiche très mal. »
+     *
+     * MESURÉ : le bouton fait 48 × 44 (la cible, correcte), la piste 48 × 28
+     * (correcte aussi, `background-clip` la borne), mais le curseur était posé à
+     * 3 px du bord de la CIBLE au lieu de 3 px du bord de la PISTE.
+     *
+     * Le motif ne nomme donc plus la prise : il reconnaît la FORME d'un curseur
+     * d'interrupteur — rond de 22 px, en absolu, à 3 px du haut, dont la position
+     * horizontale vient d'une donnée en `…Knob`. Tout interrupteur ajouté demain
+     * sera couvert sans qu'on y pense.
+     */
     why: 'Le curseur suit le remplissage de la cible : 3 px deviennent 11 px.',
     match: (style) =>
       style.includes('top: "3px"') &&
-      style.includes('left: helpKnob') &&
-      style.includes('height: "22px"'),
+      style.includes('height: "22px"') &&
+      style.includes('width: "22px"') &&
+      /left: \w+Knob/.test(style),
     apply: (style) => style.replace('top: "3px"', 'top: "11px"'),
   },
 ];
@@ -337,7 +423,32 @@ const FIELD_ADAPTATIONS = [
   {
     screens: ['P01'],
     sample: '97 12 34 42',
-    why: 'Le champ de téléphone devient saisissable.',
+    why: 'Le champ de téléphone devient saisissable, et il valide son numéro.',
+    /**
+     * ── L'INVITE SUIT LE PAYS, ET LE TRAIT DIT LE REFUS ────────────────────
+     *
+     * Le porteur : « il faut la validation du numéro selon le pays […] utilise
+     * les librairies de validation de lib number de Google ».
+     *
+     * « 97 12 34 42 » est un numéro béninois d'AVANT la renumérotation de 2023,
+     * que `libphonenumber` déclare invalide aujourd'hui. L'invite devient donc
+     * l'exemple OFFICIEL que la bibliothèque donne pour le pays choisi, et elle
+     * change avec l'indicatif.
+     *
+     * `phoneBordure` reprend le trait dessiné (`1.5px solid #16785E`) et le passe
+     * à `#B4581F` — la teinte de refus de CETTE maquette — quand ce qui est tapé
+     * n'est pas valide. Un champ vide reste vert : on ne reproche rien à qui n'a
+     * encore rien écrit.
+     */
+    placeholderExpr: '{phoneExemple}',
+    styleRemplace: ['border: "1.5px solid #16785E"', 'border: phoneBordure'],
+    /**
+     * Ce que ces deux liaisons introduisent, et que le dialecte de la maquette ne
+     * nomme nulle part — c'est nous qui les posons. `phoneValide` y figure aussi :
+     * il est employé par le bouton « Recevoir le code », qui est adapté ailleurs,
+     * et seul ce qui apparaît RÉELLEMENT dans le JSX produit est retenu.
+     */
+    provides: ['phoneExemple', 'phoneBordure', 'phoneValide'],
     attrs: [
       'type="tel"',
       'name="phone"',
@@ -408,34 +519,98 @@ const FIELD_ADAPTATIONS = [
 const BENIN_FLAG = 'background: "linear-gradient(90deg,#16785E 33%,#F2C94C 33% 66%,#E0733A 66%)"';
 
 const DRAWN_SELECTS = [
+  /**
+   * P01 — L'INDICATIF S'OUVRE DANS LE MÊME PANNEAU QUE O02.
+   *
+   * Le porteur : « Utilise le modal de sélection du pays ici aussi. »
+   *
+   * C'est le même geste et le même contrôle : `screens/onboarding/selecteur-pays.tsx`,
+   * construit pour O02, qui glisse depuis la droite et recouvre sa section. Le
+   * monter une seconde fois aurait fait deux dessins qui divergent.
+   *
+   * Et c'est la même raison de fond qu'en O02 : un `<option>` ne rend QUE du
+   * texte, donc aucun menu natif ne peut porter de drapeau. La pastille de la
+   * ligne cesse elle aussi de peindre le dégradé béninois pour porter le drapeau
+   * DU pays choisi, dérivé de son code ISO.
+   */
   {
     screens: ['P01'],
     literal: '+229',
     label: 'Indicatif du pays',
     value: 'dialCode',
     selected: 'countryIso2',
-    onChange: 'onCountryChange',
     options: 'countryOptions',
     flag: 'flagDisplay',
-    optionLabel: '{c.nameFr} {c.dialCode}',
-    why: 'Le sélecteur d’indicatif devient un menu natif, le drapeau suit le choix.',
+    panneau: {
+      ouvrir: 'onCountryOuvrir',
+      ouvert: 'countryOuvert',
+      selecteur: 'paysIndicatifSelecteur',
+      emoji: 'countryFlag',
+      /**
+       * LA CARTE DE P01 : la planche l'écrit `background:#fff;border:1px solid
+       * #E6EBE9;border-radius:24px;padding:28px`. C'est elle que le panneau
+       * recouvre, comme en O02 il recouvre la sienne.
+       */
+      carte:
+        'style={{ width: "420px", background: "#fff", border: "1px solid #E6EBE9", ' +
+        'borderRadius: "22px", padding: "32px" }}',
+    },
+    why: 'L’indicatif s’ouvre dans le panneau de pays, avec le drapeau de chaque pays.',
   },
+  /**
+   * O02 — LE PAYS D'ORIGINE N'EST PLUS UN MENU NATIF, C'EST UN PANNEAU.
+   *
+   * Le porteur : « il faut afficher un slide left modal quand on clique sur le pays
+   * et qui montre tous les pays de l'afrique AVEC LEUR DRAPEAU CORRECTEMENT et on
+   * peut selectionner. Il faut pas que ce soit comme les autres modals mais plutôt
+   * un modal dans la section qui cache tout le contenu de la section. »
+   *
+   * Un `<option>` ne rend QUE du texte — c'est une limite du HTML, pas un oubli du
+   * transcodeur. Aucun menu natif ne pouvait donc porter de drapeau, et le dessin
+   * demandé était hors de sa portée. Trois choses changent ici, et rien d'autre :
+   *
+   *   · `panneau` — le `<select>` transparent devient un BOUTON de la même taille,
+   *     posé au même endroit, qui ouvre `screens/onboarding/selecteur-pays.tsx` ;
+   *   · `emoji` — la pastille du drapeau cesse de peindre le dégradé béninois pour
+   *     porter le drapeau DU pays choisi. Le dégradé était juste pour un pays sur
+   *     seize et masqué pour les quinze autres (`originFlagDisplay`) ; `drapeauDe`
+   *     le rend pour tous, dans la boîte de 22 × 15 px que la maquette dessine
+   *     déjà. La géométrie ne bouge pas, seul le contenu de la pastille change ;
+   *   · `carte` — la carte blanche d'ordinateur passe en `position: relative`,
+   *     pour que le panneau qui la recouvre se cale SUR ELLE et non sur le cadre.
+   *     Le cadre mobile, lui, est DÉJÀ relatif (`screens/frames.tsx`) et la
+   *     maquette n'y dessine aucune carte : le panneau y prend la page, ce qui est
+   *     la même intention à 390 px.
+   */
   {
     screens: ['O02'],
     literal: 'Bénin',
     label: 'Pays d’origine',
     value: 'originName',
     selected: 'originIso2',
-    onChange: 'onOriginChange',
     options: 'originOptions',
     flag: 'originFlagDisplay',
-    optionLabel: '{c.nameFr}',
-    why: 'Le sélecteur de pays d’origine devient un menu natif.',
+    panneau: {
+      ouvrir: 'onOriginOuvrir',
+      ouvert: 'originOuvert',
+      selecteur: 'paysSelecteur',
+      emoji: 'originFlag',
+      carte:
+        'style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", ' +
+        'padding: "22px", marginTop: "28px" }}',
+    },
+    why:
+      'Le pays d’origine s’ouvre dans un panneau qui recouvre sa section, avec le ' +
+      'drapeau de chaque pays.',
   },
 ];
 
 function applyDrawnSelect(jsx, spec) {
-  const provides = [spec.value, spec.selected, spec.onChange, spec.options, spec.flag];
+  const p = spec.panneau;
+  const provides =
+    p === undefined
+      ? [spec.value, spec.selected, spec.onChange, spec.options, spec.flag]
+      : [spec.value, p.ouvrir, p.ouvert, p.selecteur, p.emoji];
 
   // Le bloc dessiné : un div dont le contenu porte la valeur littérale et aucun
   // div imbriqué. Les cadres n'ont pas le même contenu — le mobile de P01 n'a ni
@@ -449,13 +624,66 @@ function applyDrawnSelect(jsx, spec) {
   const style = m[1].replace('style={{ ', 'style={{ position: "relative", ');
   const content = m[2]
     .replace(spec.literal, `{${spec.value}}`)
-    // Le drapeau ne s'affiche que pour le pays dessiné.
-    .replace(BENIN_FLAG, `${BENIN_FLAG}, display: ${spec.flag}`);
+    .replace(
+      BENIN_FLAG,
+      p === undefined
+        // Le drapeau dessiné ne s'affiche que pour le pays dessiné.
+        ? `${BENIN_FLAG}, display: ${spec.flag}`
+        /**
+         * La pastille garde SA BOÎTE — 22 × 15 px, rayon 3 px, dessinées par la
+         * maquette — et perd son dégradé, qui ne valait que pour le Bénin. Le
+         * glyphe de 15 px la remplit sans la dépasser ; `lineHeight: 1` empêche
+         * la police d'ajouter son interligne, qui le décentrerait.
+         */
+        : 'display: "flex", alignItems: "center", justifyContent: "center", ' +
+          'overflow: "hidden", fontSize: "15px", lineHeight: 1',
+    );
+
+  /**
+   * LE CONTRÔLE POSÉ SUR LA LIGNE : un menu natif, ou un bouton qui ouvre un
+   * panneau. Dans les deux cas il occupe la ligne ENTIÈRE et il est transparent —
+   * la surface cliquée est le dessin de la maquette, pas un contrôle à côté.
+   */
+  const SURFACE =
+    'style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", ' +
+    'opacity: 0, cursor: "pointer", font: "inherit", border: "none", appearance: "none" }}';
+
+  if (p !== undefined) {
+    const bouton =
+      `<button type="button" onClick={${p.ouvrir}} aria-haspopup="dialog" ` +
+      `aria-expanded={${p.ouvert}} aria-label="${spec.label}" ` +
+      `${SURFACE.replace('style={{ ', 'style={{ padding: 0, background: "transparent", ')}></button>`;
+    /**
+     * LA PASTILLE REÇOIT LE DRAPEAU, et devient `aria-hidden` : la ligne écrit
+     * déjà le nom du pays en clair juste à côté. Sans ça, un lecteur d'écran
+     * annoncerait soit un nom de drapeau, soit — sur un système sans glyphe de
+     * drapeau — les deux lettres du code, en plus du nom.
+     */
+    const pastille = content
+      .replace('<span style={{ width: "22px"', '<span aria-hidden="true" style={{ width: "22px"')
+      .replace('lineHeight: 1 }}></span>', `lineHeight: 1 }}>{${p.emoji}}</span>`);
+    const ligne = `<div ${style}>${pastille}${bouton}</div>{${p.selecteur}}`;
+    /**
+     * `carte` n'existe que dans le cadre d'ordinateur : la maquette ne dessine
+     * aucune carte à 390 px. Son absence n'est donc pas une erreur, et le
+     * remplacement est volontairement sans effet quand elle manque.
+     */
+    const avecCarte = jsx.replace(
+      p.carte,
+      p.carte.replace('style={{ ', 'style={{ position: "relative", '),
+    );
+    const decalage = avecCarte.length - jsx.length;
+    const i = m.index + decalage;
+    return {
+      jsx: `${avecCarte.slice(0, i)}${ligne}${avecCarte.slice(i + m[0].length)}`,
+      applied: true,
+      provides,
+    };
+  }
 
   const select =
     `<select value={${spec.selected}} onChange={${spec.onChange}} aria-label="${spec.label}" ` +
-    'style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", ' +
-    'opacity: 0, cursor: "pointer", font: "inherit", border: "none", appearance: "none" }}>' +
+    `${SURFACE}>` +
     `{(${spec.options} ?? []).map((c) => (<option key={c.iso2} value={c.iso2}>${spec.optionLabel}</option>))}` +
     '</select>';
 
@@ -882,6 +1110,8928 @@ const OTP_BACK = {
 };
 
 /**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A14 — LE CORPS DE LA STORY DEVIENT UNE VRAIE SAISIE                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * ── CE QUE LE LOT PRÉCÉDENT AVAIT CONCLU, ET POURQUOI C'ÉTAIT FAUX ──────────
+ *
+ * L'en-tête de `screens/a14/data.ts` écrivait : « CE CADRE N'A AUCUN CHAMP DE
+ * SAISIE. Compté sur les cinq cadres — zéro `<textarea>`, zéro `<input>`, zéro
+ * `contentEditable` ». Le comptage était JUSTE et la conclusion FAUSSE : il
+ * comptait des BALISES là où il fallait lire une INTENTION. Trois mesures la
+ * donnent, et aucune ne demande d'interpréter :
+ *
+ *   · LE CADRE D'ORDINATEUR DESSINE UN CHAMP, avec son étiquette et son
+ *     compteur. Le panneau de droite écrit « Texte » en 12.5 px, puis une boîte
+ *     `border:1.5px solid #16785E` — le vert que la maquette emploie pour le
+ *     focus — avec `min-height:96px`, et SOUS elle « 118 / 280 ». Une étiquette,
+ *     une boîte à hauteur minimale, un compteur de caractères : il n'existe
+ *     aucune autre chose que cela dessine ;
+ *   · LE COMPTEUR EST DESSINÉ TROIS FOIS — deux dans le cadre d'ordinateur, une
+ *     dans le cadre mobile — et son plafond, 280, est EXACTEMENT
+ *     `FEED_LIMITS.storyBodyMax`. On ne compte pas les caractères d'un texte
+ *     qu'on ne peut pas taper ;
+ *   · LE CARET EST DESSINÉ. Un `<span>` de 3 × 32 px, blanc, à la fin du corps.
+ *     Un caret ne se dessine que dans un champ.
+ *
+ * Mieux : le compteur dessiné dit « 118 / 280 » alors que le littéral qu'il
+ * compte fait 80 caractères. Le nombre ne correspond à RIEN dans le cadre — c'est
+ * donc une valeur d'exemple, ce qui achève de dire que la zone est un champ
+ * rempli pour la photo, et non un bloc de texte.
+ *
+ * Le porteur a tranché dans ce sens : « Le template il faut surtout analyser et
+ * remplacer les sections de saisie mal faites en saisi input », et « tu dois
+ * t'inspirer de l'idée dans les maquettes pour bien les finaliser ».
+ *
+ * ── UN `<textarea>`, ET NON UN `contentEditable` ────────────────────────────
+ *
+ * C'est la décision qui désamorce le piège du caret dessiné, et elle le fait PAR
+ * CONSTRUCTION plutôt que par précaution :
+ *
+ *   · en `contentEditable`, le caret dessiné est DANS la zone modifiable. Il
+ *     devient donc du contenu : on le sélectionne, on l'efface, et il part dans
+ *     `body`. Il faudrait alors le masquer ou le neutraliser — deux rustines ;
+ *   · en `<textarea>`, le `<div>` entier est REMPLACÉ. Le caret dessiné est
+ *     consommé avec lui, et le navigateur en dessine un VRAI, au bon endroit,
+ *     qui clignote et qui suit la frappe. C'est exactement ce que le span de
+ *     3 × 32 px REPRÉSENTAIT. Garder les deux afficherait deux carets.
+ *
+ * Et c'est la mécanique que ce fichier applique DÉJÀ aux champs dessinés
+ * (`FIELD_ADAPTATIONS`, « LES CHAMPS DESSINÉS DEVIENNENT DE VRAIS CHAMPS ») : le
+ * `<div>` devient un champ, avec EXACTEMENT les mêmes styles en ligne, et
+ * l'exemple devient le `placeholder`. Un `<textarea>` n'est que la forme
+ * multiligne de cette même décision — le corps d'une story fait trois lignes en
+ * 30 px, pas une.
+ *
+ * ── L'EXEMPLE DEVIENT `placeholder`, ET NON VALEUR INITIALE ─────────────────
+ *
+ * Trois raisons, dont la dernière est un risque réel :
+ *
+ *   · le porteur appelle lui-même le flux du template « un flow d'exemple » ;
+ *   · c'est la règle que `FIELD_ADAPTATIONS` tient déjà pour les trois autres
+ *     champs du dépôt (« 97 12 34 42 », « @amina.d », « Amina Diallo ») ;
+ *   · en valeur initiale, un membre qui appuie sur « Publier » sans rien écrire
+ *     PUBLIERAIT le texte Visale sous son nom. `createStorySchema` l'accepterait
+ *     — 80 caractères, non vide — donc rien ne l'arrêterait. En `placeholder`,
+ *     le corps part vide, `body.min(1)` refuse, et le membre voit pourquoi.
+ *
+ * ── LES DEUX LITTÉRAUX SONT DEUX EXEMPLES, PAS DEUX ÉTATS ───────────────────
+ *
+ * La variante couleur porte « Pour Visale, déposez votre VLS-TS… » en 30 px, la
+ * variante photo « Épicerie Wax et Saveurs : attiéké frais le samedi matin. » en
+ * 26 px. Deux textes pour un seul champ : la maquette montre deux exemples de
+ * story, pas la même story avec et sans photo. Les deux deviennent donc le
+ * `placeholder` de leur cadre, et LA VALEUR EST LA MÊME DES DEUX CÔTÉS — un
+ * membre qui ajoute une photo garde ce qu'il a écrit. Le perdre serait un défaut,
+ * et aucun dessin ne le demande.
+ *
+ * ── AUCUN NOMBRE DE BORNE N'EST ÉCRIT ICI ───────────────────────────────────
+ *
+ * `maxLength={bodyMax}` est une PRISE, et le 280 n'apparaît nulle part dans ce
+ * fichier : il vient de `FEED_LIMITS.storyBodyMax` par l'écran. Ce module est du
+ * JavaScript simple, il ne sait pas lire le TypeScript de `@app/shared`, donc
+ * recopier la borne ici en ferait une seconde source — exactement ce que
+ * `photosMax` de `AccueilData` évite déjà, et pour la même raison.
+ *
+ * ── CHAQUE ZONE EST BORNÉE PAR SON PROPRE STYLE, ET POURQUOI ────────────────
+ *
+ * Le littéral du corps est dessiné CINQ fois en tout, et trois de ces cinq fois
+ * ne sont pas des champs : ce sont des RÉCAPITULATIFS (l'étape 2 le rappelle en
+ * grisé, l'étape 3 le montre dans sa carte d'aperçu, le cadre d'ordinateur le
+ * montre dans son téléphone sombre). Les récapitulatifs sont liés à la donnée par
+ * `donnees` (voir `tools/screens/03-accueil.mjs`), AVANT le transcodage ; ils ne
+ * portent donc plus le littéral quand ces transformations tournent, et il ne
+ * reste à chacune que sa cible. Le style la borne, et il est écrit en entier :
+ * si la maquette le change, la transformation ne s'applique plus et le journal le
+ * dit, au lieu de laisser un champ muet.
+ */
+
+/**
+ * Ce qu'un `<textarea>` impose de lui-même et que la maquette ne veut pas.
+ *
+ * `fontFamily` SEUL, et jamais le raccourci `font` : `font: inherit` écraserait
+ * `fontSize`, `fontWeight`, `lineHeight` et `letterSpacing` que la maquette pose
+ * juste après — et un raccourci qui mange des longhands est précisément l'écart
+ * qu'un oracle comparant des ENSEMBLES de paires de styles ne voit pas.
+ */
+const AIRE_TEXTE_RESET = [
+  'width: "100%"',
+  'boxSizing: "border-box"',
+  'border: "none"',
+  'background: "transparent"',
+  'fontFamily: "inherit"',
+  'color: "inherit"',
+  'outline: "none"',
+  'resize: "none"',
+  'display: "block"',
+  'padding: "0"',
+  'margin: "0"',
+];
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA MAQUETTE GAGNE — ET EN JSX, « GAGNER » VEUT DIRE « ÊTRE SEULE »         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * En CSS, deux déclarations de la même propriété se résolvent par l'ordre : la
+ * dernière gagne. EN JSX, UN OBJET NE PEUT PAS AVOIR DEUX FOIS LA MÊME CLÉ —
+ * `tsc` refuse par `TS1117`, et il a raison : `{ padding: "0", padding: "14px" }`
+ * est une faute, pas une cascade.
+ *
+ * Le champ « Texte » du panneau d'ordinateur l'a fait apparaître tout de suite :
+ * son style de maquette déclare `border: "1.5px solid #16785E"` et
+ * `padding: "14px"`, que le reset déclare aussi en `"none"` et `"0"`. Deux clés en
+ * double, deux erreurs de compilation — et si JSX l'avait tolérée, le reset aurait
+ * EFFACÉ la bordure verte et le remplissage que la maquette dessine.
+ *
+ * Le reset est donc FILTRÉ : toute propriété que la maquette déclare est retirée
+ * du reset avant la fusion. La maquette n'est pas « dernière », elle est SEULE sur
+ * les propriétés qu'elle décide — ce qui est plus fort et plus lisible.
+ */
+const resetFiltre = (styleExact) => {
+  const declarees = new Set(
+    [...styleExact.matchAll(/([A-Za-z][\w]*):/g)].map((m) => m[1]),
+  );
+  return AIRE_TEXTE_RESET.filter((paire) => !declarees.has(paire.slice(0, paire.indexOf(':'))));
+};
+
+/**
+ * Fabrique une transformation « ce `<div>` dessiné devient le champ du corps ».
+ *
+ * `styleExact` est le style de la maquette, VERBATIM, tel que le transcodeur
+ * l'écrit. Il sert de borne ET de garde-fou : il n'y a aucun joker. Le reset passe
+ * DEVANT lui, pour que la maquette gagne sur chaque propriété qu'elle déclare.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `apercu` — SEUL L'APERÇU PORTE LE STYLE DE COMPOSITION                     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, en ouvrant l'écran : « Le bouton centrer et gras doivent agir sur
+ * l'écran à côté et non sur le champ input. L'écran à gauche c'est le display ou
+ * le preview de ce qui sera affiché aux utilisateurs, à droite c'est juste un
+ * éditeur du contenu à gauche. Sur mobile tout est intégré sur la preview. »
+ *
+ * C'EST LA LECTURE JUSTE DU CADRE D'ORDINATEUR, et elle décide de ce bloc. Il
+ * porte DEUX champs, et ce ne sont pas deux variantes du même :
+ *
+ *   · celui de 26 px et 800 de graisse, dans le téléphone de gauche, EST LA STORY
+ *     telle qu'elle sera lue. « Centré » et « Aa » le concernent ;
+ *   · celui de 14,5 px, bordé de `1.5px solid #16785E` dans le panneau de droite,
+ *     n'est QU'UN ÉDITEUR. Lui appliquer la police de la story ferait changer
+ *     l'outil au lieu de l'ouvrage — et montrerait un aperçu à deux endroits, dont
+ *     l'un aux mauvaises dimensions.
+ *
+ * `bodyStyle` ÉTAIT ÉTALÉ SUR LES QUATRE. Les boutons agissaient donc bien sur
+ * l'aperçu — mais aussi sur l'éditeur, ce que le porteur a vu tout de suite.
+ *
+ * SUR MOBILE IL N'Y A QU'UN CHAMP, et il EST l'aperçu : « tout est intégré sur la
+ * preview ». Les deux cadres mobiles restent donc à `apercu: true`, sans exception
+ * à écrire — c'est la même règle, appliquée à un écran qui ne sépare pas les deux.
+ */
+const aireDeTexte = ({
+  nom,
+  why,
+  styleExact,
+  placeholder,
+  apres = '',
+  ajouts = '',
+  apercu = true,
+}) => ({
+  screens: ['A14'],
+  nom,
+  why,
+  provides: apercu
+    ? ['storyBodyValue', 'onStoryBodyChange', 'bodyMax', 'bodyStyle']
+    : ['storyBodyValue', 'onStoryBodyChange', 'bodyMax'],
+  apply(jsx) {
+    const cible = `<div style={{ ${styleExact} }}>${placeholder}${apres}</div>`;
+    const at = jsx.indexOf(cible);
+    if (at < 0) return { jsx, applied: false };
+    const champ =
+      '<textarea value={storyBodyValue} onChange={onStoryBodyChange} ' +
+      `placeholder=${JSON.stringify(placeholder)} ` +
+      `maxLength={bodyMax} aria-label="Le texte de votre story"${ajouts} ` +
+      `style={{ ${resetFiltre(styleExact).join(', ')}, ${styleExact}` +
+      `${apercu ? ', ...bodyStyle' : ''} }} />`;
+    return { jsx: jsx.slice(0, at) + champ + jsx.slice(at + cible.length), applied: true };
+  },
+});
+
+/** Le caret DESSINÉ, consommé avec le `<div>` qu'il termine. Voir l'en-tête. */
+const CARET_DESSINE =
+  '<span style={{ display: "inline-block", width: "3px", height: "32px", background: "#fff", ' +
+  'verticalAlign: "-6px", marginLeft: "3px", borderRadius: "2px" }}></span>';
+
+const CORPS_VISALE =
+  "Pour Visale, déposez votre VLS-TS dès sa validation sur l'ANEF. Réponse en 48 h.";
+const CORPS_EPICERIE = 'Épicerie Wax et Saveurs : attiéké frais le samedi matin.';
+
+/**
+ * LA SAISIE DE L'ÉTAPE 1, VARIANTE COULEUR, SUR MOBILE.
+ *
+ * Le téléphone EST le champ : le corps est écrit en 30 px blanc sur la couleur
+ * choisie, le caret dessiné le termine, le compteur est juste dessous. C'est la
+ * seule des cinq occurrences du littéral qui porte le caret — donc la seule que
+ * la maquette montre EN COURS DE FRAPPE.
+ *
+ * `rows={3}` : la planche dessine ce texte sur trois lignes dans un cadre de
+ * 390 px. Sans `rows`, un `<textarea>` en fait deux et la zone se tasserait — la
+ * hauteur est du dessin, et trois est le nombre que la planche montre.
+ */
+const A14_CORPS_MOBILE = aireDeTexte({
+  nom: 'A14_CORPS_MOBILE',
+  why: 'Le corps de la story devient saisissable (mobile, variante couleur).',
+  styleExact: 'fontSize: "30px", fontWeight: "800", lineHeight: "1.2", letterSpacing: "-0.6px"',
+  placeholder: CORPS_VISALE,
+  apres: CARET_DESSINE,
+  ajouts: ' rows={3}',
+});
+
+/**
+ * LA SAISIE DE L'ÉTAPE 1, VARIANTE PHOTO, SUR MOBILE.
+ *
+ * Même champ, autre exemple et autre taille (26 px) : c'est le texte posé sur la
+ * photo, dans le calque à poignées. Pas de caret dessiné ici — la maquette montre
+ * le calque SÉLECTIONNÉ, pas en frappe.
+ */
+const A14_CORPS_PHOTO_MOBILE = aireDeTexte({
+  nom: 'A14_CORPS_PHOTO_MOBILE',
+  why: 'Le corps posé sur la photo devient saisissable (mobile, variante photo).',
+  styleExact: 'fontSize: "26px", fontWeight: "800", lineHeight: "1.2", letterSpacing: "-0.5px"',
+  placeholder: CORPS_EPICERIE,
+  ajouts: ' rows={2}',
+});
+
+/**
+ * LA SAISIE DE L'ÉTAPE 1, VARIANTE PHOTO, SUR ORDINATEUR.
+ *
+ * Le même calque, dans le téléphone sombre du cadre de 1440 px. Son style ne
+ * diffère que par le `marginTop: "8px"` qui le sépare de l'étiquette au-dessus.
+ */
+const A14_CORPS_PHOTO_WEB = aireDeTexte({
+  nom: 'A14_CORPS_PHOTO_WEB',
+  why: 'Le corps posé sur la photo devient saisissable (ordinateur, variante photo).',
+  styleExact:
+    'fontSize: "26px", fontWeight: "800", lineHeight: "1.2", letterSpacing: "-0.5px", marginTop: "8px"',
+  placeholder: CORPS_EPICERIE,
+  ajouts: ' rows={2}',
+});
+
+/**
+ * LE CHAMP « TEXTE » DU PANNEAU D'ORDINATEUR — le plus explicite des quatre.
+ *
+ * La maquette l'étiquette « Texte », l'entoure du vert de focus
+ * (`1.5px solid #16785E`), lui donne une hauteur minimale de 96 px et place son
+ * compteur dessous. C'est un champ dessiné au sens plein, et c'est la mesure qui
+ * a démenti le « aucun champ de saisie » du lot précédent.
+ *
+ * `minHeight: "96px"` est GARDÉ : il vient de la maquette, et sur un `<textarea>`
+ * il fait exactement ce qu'il dessine — la boîte ne descend jamais sous 96 px.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'APERÇU EN VARIANTE COULEUR PREND AUSSI LE STYLE DE COMPOSITION           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le cadre d'ordinateur a DEUX aperçus, selon la variante, et ils ne sont pas de
+ * même nature :
+ *
+ *   · en variante PHOTO, le texte est posé sur l'image et se saisit sur place —
+ *     c'est le calque déplaçable, un `<textarea>` (voir `A14_CORPS_PHOTO_WEB`) ;
+ *   · en variante COULEUR, l'aperçu n'est PAS saisissable : c'est un `<div>` lié
+ *     à `storyBody`, qui reflète ce qu'on tape à droite. C'est juste — « l'écran
+ *     à gauche c'est le display ou le preview de ce qui sera affiché aux
+ *     utilisateurs, à droite c'est juste un éditeur du contenu à gauche ».
+ *
+ * MAIS CE SECOND APERÇU NE PORTAIT PAS `bodyStyle`. Mesuré : à l'ouverture de
+ * l'écran, le seul champ visible sur ordinateur est l'ÉDITEUR, et « Centré » ne
+ * déplaçait rien de visible une fois le style retiré de l'éditeur. Le bouton
+ * paraissait mort alors qu'il avait simplement perdu sa cible.
+ *
+ * Le `<div>` reçoit donc le même `bodyStyle` que les champs d'aperçu : un seul
+ * chemin pour le style de composition, quelle que soit la variante.
+ *
+ * LA LIGNE DE RÉCAPITULATIF de l'étape 3 (`mobilepublier`, 13 px) lit la même
+ * prise et NE REÇOIT PAS ce style : c'est un résumé dans une carte, pas un
+ * aperçu de la story, et la maquette lui donne sa propre taille. REMONTÉ plutôt
+ * que tranché.
+ */
+const A14_APERCU_COULEUR_WEB = {
+  screens: ['A14'],
+  nom: 'A14_APERCU_COULEUR_WEB',
+  why: 'L’aperçu d’ordinateur en variante couleur suit la police et l’alignement choisis.',
+  provides: ['bodyStyle'],
+  apply(jsx) {
+    const cible =
+      '<div style={{ fontSize: "30px", fontWeight: "800", lineHeight: "1.2", ' +
+      'letterSpacing: "-0.6px", marginTop: "14px" }}>{storyBody}';
+    const at = jsx.indexOf(cible);
+    if (at < 0) return { jsx, applied: false };
+    const remplace =
+      '<div style={{ fontSize: "30px", fontWeight: "800", lineHeight: "1.2", ' +
+      'letterSpacing: "-0.6px", marginTop: "14px", ...bodyStyle }}>{storyBody}';
+    return { jsx: jsx.slice(0, at) + remplace + jsx.slice(at + cible.length), applied: true };
+  },
+};
+
+const A14_CORPS_WEB = aireDeTexte({
+  nom: 'A14_CORPS_WEB',
+  why:
+    'Le champ « Texte » du panneau d’ordinateur devient saisissable — et reste un ÉDITEUR : ' +
+    'ni la police ni l’alignement de la story ne s’y appliquent (voir `apercu`).',
+  apercu: false,
+  styleExact:
+    'border: "1.5px solid #16785E", borderRadius: "16px", padding: "14px", fontSize: "14.5px", lineHeight: "1.55", minHeight: "96px"',
+  placeholder: CORPS_VISALE,
+});
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE CALQUE DE TEXTE SE DÉPLACE — ET LE TEXTE RESTE MODIFIABLE               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « sur mobile le texte est écrit sur l'image ou la couleur et
+ * déplaçable etc... comme avec whatsapp. sur Web aussi il faut permettre son
+ * déplacement aussi comme dans la photo. »
+ *
+ * CE QUE LA MAQUETTE DESSINE, ET QUI N'EST PAS DÉCORATIF : une bordure
+ * `1.5px dashed rgba(255,255,255,.85)`, un rayon de 14 px, un remplissage de
+ * 16 px, et QUATRE poignées rondes de 12 × 12 px blanches, posées à -6 px des
+ * quatre coins. Un pointillé plus quatre poignées aux coins est le vocabulaire
+ * d'un calque qu'on déplace. Aucun nombre n'est inventé ici : ils sont tous repris
+ * tels quels, et ce bloc n'ajoute AUCUN dessin — seulement un comportement.
+ *
+ * ── LE CLIC NE PEUT PAS ÊTRE AMBIGU, ET C'EST LA GÉOMÉTRIE QUI TRANCHE ──────
+ *
+ * Un calque à la fois modifiable et déplaçable pose une vraie question : que fait
+ * un clic ? La réponse est DANS le dessin, et il n'y a rien à arbitrer :
+ *
+ *   · LE TEXTE est la zone de frappe. Un clic dessus place le caret ;
+ *   · LE CADRE — les 16 px de remplissage, le pointillé, les quatre poignées —
+ *     est la zone de prise. Un clic dessus déplace.
+ *
+ * C'est pour cela que la maquette dessine un remplissage de 16 px AUTOUR du texte
+ * et des poignées HORS du cadre : elle sépare déjà les deux gestes. Le
+ * gestionnaire est donc posé sur le CADRE et rend la main dès que l'événement
+ * vient du `<textarea>` : éditer reste possible, et déplacer ne demande pas de
+ * viser. Un calque qu'on ne pourrait plus éditer parce qu'on l'a rendu déplaçable
+ * serait un recul, et c'est la raison de cette garde.
+ *
+ * ── CE QUI N'EST PAS ENVOYÉ, ET QU'IL FAUT LIRE COMME UN MANQUE REMONTÉ ─────
+ *
+ * LA POSITION DU CALQUE NE PART PAS. `createStorySchema` est `.strict()` et ses
+ * champs sont `type`, `body`, `backgroundColor`, `backgroundAssetId`,
+ * `textStyle`, `cityId`, `stepDefinitionId`, `category`, `placeLabel`,
+ * `validUntil`, `audience`, `allowMessages` : AUCUN n'exprime une position. Y
+ * glisser un `textX`/`textY` serait refusé par le `.strict()` — et l'ajouter au
+ * schéma partagé serait décider d'une colonne de base à la place du porteur.
+ *
+ * Conséquence ASSUMÉE et remontée : on déplace le texte pendant la composition,
+ * la story publiée le rend là où A13 le dessine. C'est un défaut de bout en bout,
+ * il est SIGNALÉ et non masqué. Le champ qui manquerait est une position relative
+ * du calque — deux nombres, en pourcentage du cadre — sur `stories`.
+ */
+const A14_CALQUE_DEPLACABLE = {
+  screens: ['A14'],
+  nom: 'A14_CALQUE_DEPLACABLE',
+  why: 'Le calque de texte à poignées devient déplaçable.',
+  provides: ['layerStyle', 'onLayerGrab'],
+  apply(jsx) {
+    /**
+     * LES DEUX CADRES DU CALQUE, et ils ne s'écrivent pas pareil :
+     *
+     *   · sur mobile la bordure est LITTÉRALE (`1.5px dashed rgba(255,255,255,.85)`) ;
+     *   · sur ordinateur elle arrive PAR UNE PRISE (`border: w.frameBd`), parce que
+     *     la fenêtre sombre efface le pointillé hors de l'étape 1. C'est ce qui rend
+     *     un `grep dashed` AVEUGLE sur ce cadre — on cherche la FORME, pas la chaîne.
+     *
+     * Le discriminant commun est la fin du style : une déclaration de bordure, un
+     * rayon de 14 px, un remplissage de 16 px.
+     */
+    const pattern =
+      /<div style=\{\{ ([^}]*border: (?:"1\.5px dashed rgba\(255,255,255,\.85\)"|w\.frameBd), borderRadius: "14px", padding: "16px") \}\}>/g;
+    const cibles = [...jsx.matchAll(pattern)];
+    if (cibles.length === 0) return { jsx, applied: false };
+
+    let out = jsx;
+    // De la dernière à la première : les décalages des précédentes restent justes.
+    for (const m of [...cibles].reverse()) {
+      const remplace = `<div onPointerDown={onLayerGrab} style={{ ${m[1]}, ...layerStyle }}>`;
+      out = out.slice(0, m.index) + remplace + out.slice(m.index + m[0].length);
+    }
+    return { jsx: out, applied: true };
+  },
+};
+
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A14 — LES SEPT CONTRÔLES QUE LE PORTEUR A TROUVÉS MORTS DANS SON NAVIGATEUR ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, après avoir ouvert `/stories/nouvelle` : « Les actions sur la texte et
+ * photo ne marche pas. Centré, gras, Changer, Recadrer, Assombrir le bas. Sur
+ * l'écran 3, la recherche, les étapes et sujet. »
+ *
+ * Les sept sont dans la maquette, et les sept sont dessinés en `<span>` ou en
+ * `<div>` SANS gestionnaire — c'est-à-dire en image. `BUTTON_ACTIONS` ne peut rien
+ * pour eux : il ne branche que des `<button>` déjà présents. Chacun reçoit donc ici
+ * sa transformation, bornée par le style EXACT de la maquette, et aucune n'ajoute
+ * un pixel : les styles sont recopiés, et seules les propriétés qu'un `<button>`
+ * impose de lui-même (`font`, `cursor`, la bordure quand la maquette n'en déclare
+ * pas, l'alignement du texte) sont annulées — exactement comme `applyChipRow` et
+ * `CITY_ROWS` le font déjà.
+ *
+ * CE QUI EST CONSERVÉ EN BASE ET CE QUI NE L'EST PAS, mesuré sur `createStorySchema`
+ * et sur la table `Story` :
+ *
+ *   · `Aa · Gras` → `textStyle`, qui EST un champ du schéma (`BOLD | SERIF | MONO`)
+ *     et qui PART dans la charge. Le seul des trois outils de texte à survivre à la
+ *     publication ;
+ *   · `Centré`, `Recadrer`, `Assombrir le bas` → AUCUN champ. Ils agissent à la
+ *     COMPOSITION et rien n'en reste. `createStorySchema` est `.strict()` : y
+ *     glisser un alignement serait refusé, et l'ajouter au schéma partagé serait
+ *     décider d'une colonne de base à la place du porteur. REMONTÉ, pas masqué ;
+ *   · `Changer` → rouvre le sélecteur de fichier, donc remplace `backgroundAssetId`.
+ */
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE QU'UN `<button>` IMPOSE, ET POURQUOI CE N'EST PAS `font: "inherit"`     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Promouvoir un `<span>` en `<button>` lui fait hériter de trois choses que le
+ * navigateur impose et que la maquette ne dessine pas : une police de formulaire,
+ * une bordure, et une couleur de texte (`color: buttontext`). Il faut donc les
+ * annuler — mais PAS avec `font: "inherit"`, et c'est une erreur que ce fichier a
+ * failli commettre.
+ *
+ * `font` est un RACCOURCI. En JSX les propriétés s'appliquent dans l'ordre
+ * d'insertion, et le reset est ajouté EN FIN de style : `{ fontSize: "12.5px",
+ * fontWeight: "600", font: "inherit" }` EFFACE donc la taille et la graisse que la
+ * maquette venait de déclarer. La pastille se serait affichée à la taille du
+ * paragraphe, en graisse normale — une dérive de dessin qu'un oracle comparant des
+ * ENSEMBLES de paires de styles ne voit pas, puisque les deux paires sont toujours
+ * là.
+ *
+ * `fontFamily: "inherit"` fait le travail sans toucher à la taille ni à la graisse.
+ * C'est déjà le choix d'`AIRE_TEXTE_RESET`, pour la même raison.
+ *
+ * `color: "inherit"` est la moitié qu'on oublie : sur la variante photo, les trois
+ * pastilles d'outils n'ont AUCUNE couleur déclarée — elles héritent du blanc du
+ * cadre. Sans ce reset, elles seraient passées au noir du navigateur sur un fond
+ * sombre, et le contraste serait tombé.
+ */
+const RESET_BOUTON = 'fontFamily: "inherit", color: "inherit", cursor: "pointer"';
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ N'AJOUTER QUE CE QUI MANQUE — UNE CLÉ EN DOUBLE EST UNE ERREUR DURE        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `RESET_BOUTON` suppose que la maquette ne déclare NI police, NI couleur, NI
+ * curseur. C'est vrai des `<span>` promus, et faux dès que la planche dessine
+ * déjà un bouton : le rond de portrait de O04 écrit `color:#8A958F`, le bouton
+ * « Commencer » de O05 écrit `color:#fff` et `font:inherit`.
+ *
+ * Le coller tel quel produisait `{ color: "#fff", …, color: "inherit" }` —
+ * TS1117, « an object literal cannot have multiple properties with the same
+ * name ». Le compilateur l'arrête, donc ce n'est jamais passé en production ;
+ * mais il a fallu deux allers-retours pour s'en apercevoir, une fois par écran.
+ *
+ * `fontFamily` est traité à part : un `font:` dessiné est un RACCOURCI qui porte
+ * déjà la famille, donc le redire serait aussi un doublon de fait — et le poser
+ * APRÈS écraserait la taille que la planche vient d'écrire.
+ */
+const resetBoutonManquant = (style) => {
+  const manquants = [];
+  if (!/\bfont(Family)?:/.test(style)) manquants.push('fontFamily: "inherit"');
+  if (!/\bcolor:/.test(style)) manquants.push('color: "inherit"');
+  if (!/\bcursor:/.test(style)) manquants.push('cursor: "pointer"');
+  if (!/\bborder:/.test(style)) manquants.push('border: "none"');
+  return manquants.join(', ');
+};
+/** Le même, quand la maquette ne déclare PAS de bordure : il faut retirer celle du UA. */
+const RESET_BOUTON_SANS_BORDURE = `border: "none", ${RESET_BOUTON}`;
+
+/**
+ * `Centré` — UNE BASCULE, PAS UN CYCLE, et c'est le dessin qui l'impose.
+ *
+ * La maquette n'écrit qu'UN mot : « Centré ». Elle ne dessine ni « Gauche » ni
+ * « Droite », et les inventer serait écrire du texte d'interface à la place du
+ * porteur. Le contrôle est donc une bascule — centré ou non — et son état s'annonce
+ * par `aria-pressed`, l'attribut que `applyChipRow` emploie déjà ici pour ce sens.
+ *
+ * L'alignement voyage dans `bodyStyle`, que les quatre `<textarea>` étalent en fin
+ * de style (voir `aireDeTexte`) : un seul chemin pour le style de composition.
+ */
+const A14_ALIGNEMENT = {
+  screens: ['A14'],
+  nom: 'A14_ALIGNEMENT',
+  why: 'Le bouton « Centré » centre vraiment le texte (composition seulement — aucun champ en base).',
+  provides: ['alignCentre', 'onAlign'],
+  apply(jsx) {
+    const pattern =
+      /<span (style=\{\{ height: "40px", padding: "0 14px", borderRadius: "12px", background: "#F2F5F4", display: "flex", alignItems: "center", gap: "7px", fontSize: "13px", fontWeight: "700" \}\})>([\s\S]*?)<\/span>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style = m[1].replace(' }}', `, ${RESET_BOUTON_SANS_BORDURE} }}`);
+    const bouton = `<button type="button" onClick={onAlign} aria-pressed={alignCentre} ${style}>${m[2]}</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * `Aa · Gras` — LE SEUL DES TROIS OUTILS DE TEXTE QUI PART DANS LA CHARGE.
+ *
+ * `StoryTextStyle` énumère `BOLD | SERIF | MONO` et `createStorySchema.textStyle`
+ * l'EXIGE : le champ existait, il était simplement posé en constante. Le bouton
+ * tourne maintenant sur les trois valeurs, et son libellé est une DONNÉE
+ * (`{textStyleLabel}`, lié dans `A14_DONNEES`) — sans quoi il afficherait « Gras »
+ * en servant du monospace.
+ *
+ * Le discriminant est `fontWeight: "800"` : c'est ce qui le sépare du « Centré »
+ * voisin, qui porte la même boîte en 700 et un `gap` pour son icône.
+ */
+const A14_STYLE_TEXTE = {
+  screens: ['A14'],
+  nom: 'A14_STYLE_TEXTE',
+  why: 'Le bouton « Aa · Gras » tourne sur les trois valeurs de StoryTextStyle, et le style PART dans la charge.',
+  provides: ['textStyleLabel', 'onTextStyle'],
+  apply(jsx) {
+    const pattern =
+      /<span (style=\{\{ height: "40px", padding: "0 14px", borderRadius: "12px", background: "#F2F5F4", display: "flex", alignItems: "center", fontSize: "13px", fontWeight: "800" \}\})>\{textStyleLabel\}<\/span>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style = m[1].replace(' }}', `, ${RESET_BOUTON_SANS_BORDURE} }}`);
+    const bouton = `<button type="button" onClick={onTextStyle} ${style}>{textStyleLabel}</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * `Changer · Recadrer · Assombrir le bas` — LA RANGÉE D'OUTILS PHOTO.
+ *
+ * Trois pastilles, dessinées DEUX fois (la rangée du panneau d'ordinateur en
+ * `#fff`, celle posée sur la photo du téléphone en `rgba(0,0,0,.35)`) et mortes aux
+ * deux largeurs. Le motif est donc écrit en deux boîtes, et chacune s'applique au
+ * cadre qui la dessine.
+ *
+ * ET LA CAUSE PROFONDE ÉTAIT AILLEURS : il n'existait AUCUN sélecteur de fichier
+ * dans tout le composeur (`type="file"` : zéro occurrence mesurée), et
+ * `backgroundAssetId` ne partait jamais. « Changer » n'avait donc rien à changer et
+ * « Recadrer » recadrait l'image d'exemple de la maquette. Le sélecteur est posé par
+ * l'écran (`nouvelle-story-screen.tsx`), hors des cadres, parce que la maquette n'en
+ * dessine aucun et qu'un champ invisible n'est pas du dessin.
+ */
+const OUTILS_PHOTO_BOITES = [
+  'height: "36px", padding: "0 13px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", fontSize: "12.5px", fontWeight: "700"',
+  'height: "38px", padding: "0 14px", borderRadius: "999px", background: "rgba(0,0,0,.35)", display: "flex", alignItems: "center", fontSize: "12.5px", fontWeight: "700"',
+];
+
+const A14_OUTILS_PHOTO = {
+  screens: ['A14'],
+  nom: 'A14_OUTILS_PHOTO',
+  why: 'Les trois outils photo répondent : « Changer » rouvre le sélecteur, « Recadrer » et « Assombrir le bas » agissent à la composition.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let applied = false;
+    for (const boite of OUTILS_PHOTO_BOITES) {
+      const cible = `<span style={{ ${boite} }}>{t.label}</span>`;
+      const at = out.indexOf(cible);
+      if (at < 0) continue;
+      /**
+       * La boîte du panneau d'ordinateur DÉCLARE sa bordure : la maquette gagne, et
+       * le reset ne doit pas l'effacer. C'est la règle de `resetFiltre`, appliquée
+       * ici à la main parce qu'il n'y a qu'une propriété en jeu.
+       */
+      const reset = boite.includes('border:') ? RESET_BOUTON : RESET_BOUTON_SANS_BORDURE;
+      const bouton =
+        `<button type="button" onClick={t.onPick} aria-pressed={t.on} ` +
+        `style={{ ${boite}, ${reset} }}>{t.label}</button>`;
+      out = out.slice(0, at) + bouton + out.slice(at + cible.length);
+      applied = true;
+    }
+    return { jsx: out, applied };
+  },
+};
+
+/**
+ * « Rechercher une étape ou un sujet » — UN `<div>` QUI DEVIENT UN CHAMP.
+ *
+ * Même mécanique que `CITY_SEARCH`, et même raison de la BORNER : la loupe de cette
+ * barre a le tracé de celle du fil (`m20 20-3.5-3.5`), donc un motif non borné
+ * transformerait la recherche de A01 en filtre d'étapes. La borne est ici le style
+ * EXACT de la boîte, qui est le même sur les deux cadres de A14.
+ *
+ * Le champ filtre les DEUX listes — les étapes et les sujets — parce que c'est ce
+ * que son texte promet : « une étape OU un sujet ».
+ */
+const A14_RECHERCHE = {
+  screens: ['A14'],
+  nom: 'A14_RECHERCHE',
+  why: 'La barre « Rechercher une étape ou un sujet » devient un vrai champ, qui filtre les deux listes.',
+  provides: ['attachQuery', 'onAttachQuery'],
+  apply(jsx) {
+    const pattern =
+      /(<div style=\{\{ height: "44px", borderRadius: "999px", background: "#F2F5F4", padding: "0 16px", display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", color: "#8A958F" \}\}>(?:(?!<div)[\s\S])*?<\/svg>)Rechercher une étape ou un sujet<\/div>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    /**
+     * `color` EST ÉCRIT, et ce n'est pas un détail de forme.
+     *
+     * La maquette dessine cette barre avec `color:#8A958F` SUR LE CONTENANT,
+     * parce qu'elle y dessine une INVITE — du texte gris dans un champ vide. Le
+     * champ héritait de cette couleur, donc ce que le membre TAPAIT sortait du
+     * même gris que l'invite : mesuré au navigateur, `rgb(138,149,143)`. On
+     * tapait dans un champ qui avait toujours l'air vide, et c'est exactement ce
+     * que le porteur a vu — « le champ de recherche n'est pas bien affiché ».
+     *
+     * L'encre reprend donc `#16211D`, celle de tout le texte de cette maquette,
+     * et le gris retourne à sa place : l'INVITE, posée en CSS parce qu'un style
+     * en ligne ne peut pas viser `::placeholder`. La loupe, elle, garde le gris
+     * du contenant — elle est en `currentColor` et n'est pas du texte saisi.
+     */
+    const champ =
+      /**
+       * `text` ET NON `search` : sur `type="search"`, le navigateur dessine SON
+       * bouton d'effacement, qui n'est pas dans la maquette et dont l'allure
+       * change d'un navigateur à l'autre. Le porteur l'a pris pour une icône
+       * qu'on aurait posée — « c'est pas beau, c'est un emoji ». On ne le
+       * supprime pas : on ne le demande pas.
+       */
+      '<input type="text" value={attachQuery} onChange={onAttachQuery} ' +
+      'placeholder="Rechercher une étape ou un sujet" ' +
+      'aria-label="Rechercher une étape ou un sujet" data-saisie-sur-gris="" ' +
+      'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+      'font: "inherit", color: "#16211D", outline: "none", padding: 0 }} />';
+    return {
+      jsx: `${jsx.slice(0, m.index)}${m[1]}${champ}</div>${jsx.slice(m.index + m[0].length)}`,
+      applied: true,
+    };
+  },
+};
+
+/**
+ * LES ÉTAPES DU PARCOURS DEVIENNENT DES BOUTONS.
+ *
+ * La maquette dessine ces lignes en `<div>`, et elle leur donne pourtant une
+ * apparence « choisie » dans son propre `renderVals()` — `bg: a.on?'#E3F0EB':'#fff'`,
+ * `bd: a.on?'1.5px solid #16785E':'1px solid #E6EBE9'`, et une coche remplie. Ce
+ * SONT donc des choix : il ne manquait que la balise et le gestionnaire.
+ *
+ * `textAlign: "left"` et `width: "100%"` annulent ce qu'un `<button>` impose — même
+ * correction que `CITY_ROWS`, et pour la même raison : sans eux le texte se
+ * centrerait et la ligne cesserait de remplir sa colonne.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES CARTES D'OBJECTIF DEVIENNENT SÉLECTIONNABLES (O03)                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, en ouvrant l'écran : « Au niveau de l'étape des objectifs, ils ne
+ * sont pas cliquables. c'est pas câblé ? »
+ *
+ * ── UN REFUS ANTÉRIEUR, HONNÊTE, ET QUE LE PORTEUR VIENT DE LEVER ──────────
+ *
+ * `screens/onboarding/data.ts` portait ceci, et c'était la bonne conduite :
+ * « LA MAQUETTE NE LES REND PAS CLIQUABLES […] elles sont dessinées en <div>,
+ * sans déclencheur, et la première est simplement mise en avant. On n'ajoute donc
+ * PAS de sélecteur. » Avec la conséquence remontée plutôt que corrigée d'autorité :
+ * « le parcours créé est celui du PREMIER modèle servi ».
+ *
+ * CE QUE LA MAQUETTE DESSINE POURTANT, et qui tranche : la carte en avant porte
+ * `bg: g.on ? '#EFF7F3' : '#fff'` et `bd: g.on ? '2px solid #16785E' : …` — un
+ * état CHOISI, pas une mise en avant éditoriale — et la phrase sous la case nomme
+ * le parcours retenu (« Le parcours “Étudier en France” (15 étapes) sera créé à la
+ * fin de l'inscription »). Une phrase qui nomme un choix suppose qu'on puisse en
+ * changer. C'est exactement le raisonnement déjà tenu pour les étapes de A14 :
+ * « ce SONT donc des choix : il ne manquait que la balise et le gestionnaire ».
+ *
+ * Deux cadres, deux dessins — la carte d'ordinateur est une colonne de 18 px de
+ * remplissage, celle du téléphone une rangée de 62 px — donc deux motifs, chacun
+ * ancré sur le style EXACT de sa maquette. Aucun nombre n'est inventé.
+ *
+ * `textAlign: "left"` et `width: "100%"` annulent ce qu'un `<button>` impose de
+ * lui-même : sans eux le texte se centrerait et la carte cesserait de remplir sa
+ * colonne de grille. Même correction que `A14_ETAPES`, et pour la même raison.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « SANS CRÉER DE PARCOURS » — DEUX OBJECTIFS, PAS DEUX DÉCORATIONS         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « seuls les sans parcours doivent être cliquables aussi. Je pense
+ * qu'il faut enregistrer ça comme étant un parcours non développable. Donc ils
+ * viennent de la base aussi. »
+ *
+ * T5 §O03 le disait déjà : « Séparateur “sans créer de parcours”. Deux cartes
+ * plus légères […] LES DEUX GROUPES ONT LE MÊME RANG VISUEL DE CHOIX. » Et §5
+ * pose la règle dure : « Le parcours n'est jamais imposé. » Ces deux cartes sont
+ * donc des OBJECTIFS, au même titre que les quatre autres.
+ *
+ * Elles étaient ÉCRITES EN DUR dans le cadre — deux `<div>` avec leur libellé et,
+ * sur l'ordinateur, leur icône. Ni cliquables, ni connues du serveur. Elles sont
+ * maintenant deux lignes de `journey_templates` portant `creates_journey = false`
+ * et une version publiée à zéro étape, servies par `GET /journey-templates` comme
+ * les autres.
+ *
+ * ── CE QUE CETTE TRANSFORMATION CHANGE, ET CE QU'ELLE NE CHANGE PAS ────────
+ *
+ * Elle remplace deux cartes littérales par UNE BOUCLE sur `goalsSansParcours`, et
+ * promeut le `<div>` en `<button>`. Les nombres restent ceux de la maquette —
+ * 64 px de haut et 18 px de rayon sur l'ordinateur, 52 px et 16 px sur le
+ * téléphone — et la couleur de l'état choisi est celle que la maquette emploie
+ * DÉJÀ pour la carte retenue de la première section.
+ *
+ * L'ICÔNE SUIT LA DONNÉE sur l'ordinateur (`{g.icon}`), comme pour les quatre
+ * autres. Le cadre de téléphone n'en dessine aucune : on n'en ajoute pas.
+ */
+const O03_SANS_PARCOURS = {
+  screens: ['O03'],
+  nom: 'O03_SANS_PARCOURS',
+  why:
+    'Les deux objectifs « sans créer de parcours » deviennent des boutons alimentés par la ' +
+    'base : ce sont des choix de même rang, et ils n’ouvrent simplement aucun parcours.',
+  provides: ['goalsSansParcours'],
+  apply(jsx) {
+    const CARTE_WEB =
+      'style={{ height: "64px", padding: "0 18px", borderRadius: "18px", background: "#fff", ' +
+      'border: "1px solid #E6EBE9", display: "flex", alignItems: "center", gap: "12px", ' +
+      'fontSize: "14.5px", fontWeight: "700" }}';
+    const CARTE_MOBILE =
+      'style={{ height: "52px", padding: "0 14px", borderRadius: "16px", background: "#fff", ' +
+      'border: "1px solid #E6EBE9", display: "flex", alignItems: "center", fontSize: "14px", ' +
+      'fontWeight: "700" }}';
+
+    // Le cadre d'ordinateur : deux cartes à icône, dans une grille de deux colonnes.
+    const web = new RegExp(
+      `<div ${CARTE_WEB.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}>[\\s\\S]*?</div>\\s*<div ${CARTE_WEB.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}>[\\s\\S]*?</div>`,
+    );
+    if (web.test(jsx)) {
+      const boucle =
+        '{(goalsSansParcours ?? []).map((g, gsIndex) => (' +
+        '<Fragment key={gsIndex}><button type="button" onClick={g.onPick} aria-pressed={g.on} ' +
+        'style={{ height: "64px", padding: "0 18px", borderRadius: "18px", background: g.bg, ' +
+        'border: g.bd, display: "flex", alignItems: "center", gap: "12px", fontSize: "14.5px", ' +
+        `fontWeight: "700", ${RESET_BOUTON}, textAlign: "left", width: "100%" }}>` +
+        '<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" ' +
+        'strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={g.icon} /></svg>' +
+        '{g.title}</button></Fragment>))}';
+      return { jsx: jsx.replace(web, boucle), applied: true };
+    }
+
+    // Le cadre de téléphone : deux cartes sans icône, en colonne.
+    const mobile = new RegExp(
+      `<div ${CARTE_MOBILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}>[\\s\\S]*?</div><div ${CARTE_MOBILE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}>[\\s\\S]*?</div>`,
+    );
+    if (mobile.test(jsx)) {
+      const boucle =
+        '{(goalsSansParcours ?? []).map((g, gsIndex) => (' +
+        '<Fragment key={gsIndex}><button type="button" onClick={g.onPick} aria-pressed={g.on} ' +
+        'style={{ height: "52px", padding: "0 14px", borderRadius: "16px", background: g.bg, ' +
+        `border: g.bd, display: "flex", alignItems: "center", fontSize: "14px", fontWeight: "700", ${RESET_BOUTON}, ` +
+        'textAlign: "left", width: "100%" }}>{g.title}</button></Fragment>))}';
+      return { jsx: jsx.replace(mobile, boucle), applied: true };
+    }
+    return { jsx, applied: false };
+  },
+};
+
+const O03_OBJECTIFS = {
+  screens: ['O03'],
+  nom: 'O03_OBJECTIFS',
+  why: 'Les cartes d’objectif deviennent des boutons : choisir un type décide du parcours créé.',
+  provides: [],
+  apply(jsx) {
+    const motifs = [
+      // Cadre d'ordinateur : carte en colonne.
+      /<div (style=\{\{ padding: "18px", borderRadius: "18px", background: g\.bg, border: g\.bd, display: "flex", flexDirection: "column", gap: "12px" \}\})>([\s\S]*?)<\/div><\/Fragment>/,
+      // Cadre de téléphone : carte en rangée de 62 px.
+      /<div (style=\{\{ height: "62px", padding: "0 14px", borderRadius: "16px", background: g\.bg, border: g\.bd, display: "flex", alignItems: "center", gap: "12px" \}\})>([\s\S]*?)<\/div><\/Fragment>/,
+    ];
+    for (const motif of motifs) {
+      const m = motif.exec(jsx);
+      if (m === null) continue;
+      const style = m[1].replace(' }}', `, ${RESET_BOUTON}, textAlign: "left", width: "100%" }}`);
+      const bouton =
+        `<button type="button" onClick={g.onPick} aria-pressed={g.on} ${style}>${m[2]}</button></Fragment>`;
+      return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+    }
+    return { jsx, applied: false };
+  },
+};
+
+/**
+ * LE CHAMP DU SUJET « AUTRE », POSÉ SOUS LES PASTILLES.
+ *
+ * Le porteur : « Au niveau du sujet, Autre doit permettre de saisir dans un
+ * champ. » Le transcodeur ne fait que MÉNAGER LA PLACE — le champ lui-même est
+ * `screens/a14/champ-sujet.tsx`, et il ne se rend que lorsque « Autre » est
+ * retenu. C'est le même montage que `parcoursSelecteur` : la maquette ne dessine
+ * pas ce contrôle, donc rien à transformer, seulement un emplacement.
+ */
+const A14_SUJET_LIBRE = {
+  screens: ['A14'],
+  nom: 'A14_SUJET_LIBRE',
+  why: 'Le sujet « Autre » ouvre un champ de saisie, posé sous les pastilles.',
+  provides: ['sujetLibre'],
+  apply(jsx) {
+    /**
+     * L'ANCRE DÉSIGNE LES PASTILLES DE SUJET, ET RIEN D'AUTRE.
+     *
+     * Première version : « la fin de la première boucle sur `t` ». Mesurée au
+     * navigateur, elle était fausse — A14 porte DEUX boucles dont l'élément
+     * s'appelle `t`, et l'autre vient avant. Le champ s'est posé sous des
+     * pastilles qui n'étaient pas les sujets, « Autre » se cochait et rien
+     * n'apparaissait. Un motif trop large ne se trompe pas bruyamment : il
+     * s'applique ailleurs, en silence.
+     *
+     * On vise donc la SIGNATURE que `A14_SUJETS` vient d'écrire — `t.bg` et
+     * `t.bd`, qui n'appartiennent qu'aux sujets — puis le `))}</div>` qui ferme
+     * leur conteneur APRÈS cette signature.
+     */
+    const signature = 'background: t.bg, border: t.bd';
+    const i = jsx.indexOf(signature);
+    if (i === -1) return { jsx, applied: false };
+    const ferme = jsx.indexOf('))}</div>', i);
+    if (ferme === -1) return { jsx, applied: false };
+    const fin = ferme + '))}</div>'.length;
+    return { jsx: `${jsx.slice(0, fin)}{sujetLibre}${jsx.slice(fin)}`, applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE RÉCAPITULATIF DE L'ÉTAPE 3 RÉCITAIT LA MAQUETTE                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « L'étape 3 doit afficher le sujet sélectionné et autres. »
+ *
+ * La planche écrit « Logement · Visale » et « Étape 7 de mon parcours » EN CLAIR.
+ * Mesuré au navigateur : un membre qui choisissait « Emploi » et l'étape 2 voyait
+ * toujours « Logement · Visale » et « Étape 7 ». L'écran s'appelle « Prêt à
+ * publier » — c'est la dernière chose qu'on lit avant de publier, et elle mentait
+ * sur ce qui allait partir.
+ *
+ * Les deux lignes viennent maintenant de l'état, et `sujetRecapFor` est construit
+ * SUR `storyCategoryFor`, c'est-à-dire sur la fonction qui décide ce que la charge
+ * emporte. Le récapitulatif ne peut donc pas diverger de la publication : c'est la
+ * même valeur, affichée une fois et envoyée une fois.
+ */
+const A14_RECAP = {
+  screens: ['A14'],
+  nom: 'A14_RECAP',
+  why: 'Le récapitulatif de l’étape 3 affiche le sujet et l’étape RETENUS, non ceux de la planche.',
+  provides: ['sujetRecap', 'etapeRecap'],
+  apply(jsx) {
+    const sujet = '>Logement · Visale</div>';
+    const etape = '>Étape 7 de mon parcours</div>';
+    if (!jsx.includes(sujet) || !jsx.includes(etape)) return { jsx, applied: false };
+    return {
+      jsx: jsx.split(sujet).join('>{sujetRecap}</div>').split(etape).join('>{etapeRecap}</div>'),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ONGLET DE VILLE PORTE UN CHEVRON, ET IL OUVRE QUELQUE CHOSE              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Pour la ville "Lyon seulement", je souhaite que par défaut on
+ * affiche un chevron down après le titre du bouton. Quand l'utilisateur clique sur
+ * ça une fois ça active le tab, une deuxième fois ça affiche un modal […] Donc
+ * quand le tab est déjà sur la ville, les clics doivent afficher le modal. »
+ *
+ * La maquette dessine deux boutons nus dans une piste grise. Trois choses leur sont
+ * ajoutées, et aucune ne déplace un pixel :
+ *
+ *   · `aria-pressed` — les deux onglets n'étaient distingués QUE par une couleur de
+ *     fond, invisible pour un lecteur d'écran ;
+ *   · le CHEVRON, sur le second seul (`a.chevron`). Son tracé est `m6 9 6 6 6-6`,
+ *     celui que cette même maquette dessine pour « ceci se déplie » (sélecteur de
+ *     pays de O02, menus de A14), en 14 px et en `currentColor` — il suit donc la
+ *     teinte de l'onglet, retenu ou non, sans créer de paire de contraste nouvelle ;
+ *   · `display: flex` avec un écart de 6 px, pour poser le chevron APRÈS le titre.
+ *     Le bouton gardait sinon son centrage de texte et le chevron aurait collé au
+ *     mot. La hauteur dessinée (42 px) et le rayon (11 px) ne bougent pas.
+ *
+ * L'OUVERTURE elle-même n'est pas ici : c'est `a.onPick` qui la porte, et l'écran
+ * décide — premier appui, on retient l'onglet ; appui suivant sur l'onglet DÉJÀ
+ * retenu, on ouvre la fenêtre. Le transcodeur ne connaît pas cette règle et n'a pas
+ * à la connaître.
+ */
+const A14_ONGLET_VILLE = {
+  screens: ['A14'],
+  nom: 'A14_ONGLET_VILLE',
+  why: 'L’onglet de ville porte un chevron et annonce son état ; il ouvre le choix de ville.',
+  provides: [],
+  apply(jsx) {
+    const pattern =
+      /<button onClick=\{a\.onPick\} (style=\{\{ height: "42px", borderRadius: "11px"[^}]*\}\})>\{a\.label\}<\/button>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style = m[1].replace(
+      ' }}',
+      ', display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}',
+    );
+    const chevron =
+      '{a.chevron ? (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" ' +
+      'stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true" ' +
+      'style={{ flexShrink: 0 }}><path d="m6 9 6 6 6-6" /></svg>) : null}';
+    const bouton =
+      `<button type="button" onClick={a.onPick} aria-pressed={a.on} ${style}>{a.label}${chevron}</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE PSEUDO EST VÉRIFIÉ — LA COCHE ET LA PHRASE PRENNENT UNE VALEUR          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le pseudo est vérifié ? »
+ *
+ * La maquette dessine, sous le champ, une COCHE VERTE pleine
+ * (`fill="#16785E"`, un cercle de rayon 10 et le tracé `m8 12 3 3 5-6` en blanc)
+ * et la phrase « Disponible » en `#16785E`, 11,5 px, graisse 600. Ces deux
+ * littéraux s'affichaient QUOI QU'ON TAPE — y compris sur un pseudo déjà pris,
+ * et le refus n'arrivait qu'au `PATCH /me`, deux écrans plus loin.
+ *
+ * RIEN N'EST REDESSINÉ ICI : la coche garde sa taille, sa teinte et son tracé, la
+ * phrase garde sa boîte. Seules trois valeurs deviennent des données —
+ * l'affichage de la coche, le mot, et la teinte du mot. Les cinq états et les
+ * deux teintes sont décrits dans `etatPseudo` (`screens/onboarding/data.ts`), et
+ * les deux teintes sont dessinées dans CETTE maquette.
+ */
+const O04_PSEUDO_VERIFIE = {
+  screens: ['O04'],
+  nom: 'O04_PSEUDO_VERIFIE',
+  why: 'La coche et la phrase du pseudo suivent la vérification au serveur, au lieu de se réciter.',
+  provides: ['handleCheckDisplay', 'handleHint', 'handleHintColor'],
+  apply(jsx) {
+    const coche =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="#16785E">' +
+      '<circle cx="12" cy="12" r="10" />' +
+      '<path d="m8 12 3 3 5-6" stroke="#fff" strokeWidth="2.2" fill="none" /></svg>';
+    const phrase =
+      '<div style={{ fontSize: "11.5px", color: "#16785E", fontWeight: "600", marginTop: "5px" }}>Disponible</div>';
+    if (!jsx.includes(coche) || !jsx.includes(phrase)) return { jsx, applied: false };
+
+    const cocheLiee = coche.replace(
+      '<svg width="16"',
+      '<svg aria-hidden="true" style={{ display: handleCheckDisplay, flexShrink: 0 }} width="16"',
+    );
+    /**
+     * `role="status"` : la phrase CHANGE après coup, sans que le membre ait
+     * touché à rien — c'est une réponse du serveur. Sans ce rôle, un lecteur
+     * d'écran ne l'annonce jamais, et la vérification n'existe que pour qui voit.
+     * `aria-live` reste implicite (`polite`), donc elle n'interrompt pas la frappe.
+     */
+    const phraseLiee =
+      '<div role="status" style={{ fontSize: "11.5px", color: handleHintColor, ' +
+      'fontWeight: "600", marginTop: "5px", minHeight: "16px" }}>{handleHint}</div>';
+    return {
+      jsx: jsx.split(coche).join(cocheLiee).split(phrase).join(phraseLiee),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES BOÎTES « COMPÉTENCES » ET « LANGUES » DEVIENNENT DES CHAMPS            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « L'ajout de compétences et langue », puis « les inputs d'ajout de
+ * langue, compétences et autres de la page marchent ? »
+ *
+ * Ils ne marchaient pas. MESURÉ : zéro `input`, zéro bouton dans ces deux boîtes.
+ * « Comptabilité », « Excel », « Français », « Fon », « Anglais » et le mot gris
+ * « Rechercher… » étaient SIX `<span>` littéraux — un dessin, pas un contrôle.
+ * `updateProfileSchema` portait pourtant `languageIds` et `skillIds` depuis le
+ * début, et `GET /places/skills` comme `GET /places/languages` répondaient : il
+ * manquait uniquement le branchement.
+ *
+ * ── CE QUE LE TRANSCODEUR FAIT, ET CE QU'IL NE FAIT PAS ───────────────────
+ *
+ * Il garde LA BOÎTE de la maquette — `min-height:48px;padding:6px;
+ * border-radius:14px;background:#F2F5F4;border:1px solid #EAEEEC;display:flex;
+ * gap:6px;flex-wrap:wrap;align-items:center` — et remplace son seul CONTENU par
+ * une prise. Les pastilles, le champ et la liste de suggestions sont rendus par
+ * `screens/onboarding/choix-referentiel.tsx`, qui emprunte à cette même planche.
+ *
+ * `position: relative` est AJOUTÉ sur la boîte, et c'est la seule propriété
+ * nouvelle : la liste de suggestions se pose dessous en `position: absolute`.
+ * Sans elle, elle se calerait sur le cadre entier et flotterait au hasard.
+ *
+ * ── LES DEUX BOÎTES SONT IDENTIQUES, D'OÙ LE LITTÉRAL EN REPÈRE ──────────
+ *
+ * Leurs styles sont les MÊMES au caractère près. On ne peut donc les distinguer
+ * que par ce qu'elles contiennent : « Comptabilité » pour l'une, « Français »
+ * pour l'autre. C'est ce que fait `repere`, et c'est aussi ce qui rend la
+ * transformation bruyante si la maquette change ces mots — plutôt que silencieuse.
+ */
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE ROND EN POINTILLÉS DEVIENT UN BOUTON — « LA SÉLECTION D'IMAGE »        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « la sélection d'image ». MESURÉ sur O04 : zéro `input[type=file]`,
+ * zéro bouton nommé. La maquette dessine un rond de 84 px en pointillés avec un
+ * appareil photo — l'intention est limpide — mais c'était un `<div>` : rien à
+ * cliquer, rien au clavier.
+ *
+ * TROIS CHANGEMENTS, ET AUCUN NE DÉPLACE UN PIXEL :
+ *
+ *   · le `<div>` devient un `<button>`. Taille, rayon, fond, trait pointillé et
+ *     teinte sont repris mot pour mot ; `RESET_BOUTON` annule ce qu'un bouton
+ *     ajoute de lui-même (police, couleur, bordure, retrait) ;
+ *   · il reçoit le portrait choisi en IMAGE DE FOND (`avatarFond`,
+ *     `background-size: cover`). Le fond `#F2F5F4` de la maquette reste écrit
+ *     dessous : tant qu'aucune photo n'est choisie, rien ne change ;
+ *   · l'appareil photo S'EFFACE quand une photo est là (`avatarIconDisplay`).
+ *     Le laisser par-dessus le portrait serait illisible.
+ *
+ * LE CHOISISSEUR DE FICHIER N'EST PAS ICI : c'est un `<input type="file">`
+ * invisible, monté UNE FOIS par la page, hors de `ScreenFrames` — qui rend les
+ * deux cadres, donc l'y mettre le dédoublerait. Même montage que le sélecteur de
+ * photo de A14, et pour la même raison exactement.
+ */
+const O04_AVATAR = {
+  screens: ['O04'],
+  nom: 'O04_AVATAR',
+  why: 'Le rond de portrait devient un bouton qui ouvre le choisisseur de fichier.',
+  provides: ['onAvatar', 'avatarFond', 'avatarIconDisplay'],
+  apply(jsx) {
+    const pattern =
+      /<div (style=\{\{ width: "84px", height: "84px", borderRadius: "999px"[^}]*\}\})>(<svg[\s\S]*?<\/svg>)<\/div>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    /**
+     * `resetBoutonManquant` PLUTÔT QUE `RESET_BOUTON` : la maquette déclare déjà
+     * `color:#8A958F` sur ce rond — c'est la teinte de l'appareil photo — et deux
+     * `color` dans le même objet est une erreur de compilation. On ne pose que ce
+     * que la planche ne dit pas.
+     */
+    const style = m[1].replace(
+      ' }}',
+      ', backgroundImage: avatarFond, backgroundSize: "cover", backgroundPosition: "center", ' +
+        `padding: 0, ${resetBoutonManquant(m[1])} }}`,
+    );
+    const icone = m[2].replace(
+      '<svg ',
+      '<svg aria-hidden="true" style={{ display: avatarIconDisplay }} ',
+    );
+    const bouton =
+      `<button type="button" onClick={onAvatar} aria-label="Choisir une photo de profil" ${style}>${icone}</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA CROIX DE FERMETURE DE A14 — DESSINÉE TROIS FOIS, BRANCHÉE ZÉRO FOIS    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Sur grand écran le bouton fermer en haut ne marche pas. »
+ *
+ * MESURÉ : zéro bouton nommé « Fermer » sur les deux cadres. Il ne marchait pas
+ * parce qu'il n'existait pas — la maquette le dessine en `<span>`, trois fois :
+ *
+ *   · le rond de 44 px en haut à droite du cadre d'ordinateur
+ *     (`position:absolute;top:22px;right:28px;background:rgba(255,255,255,.12)`) ;
+ *   · le carré de 40 px en haut à gauche des deux cadres de téléphone.
+ *
+ * Les trois portent le MÊME tracé, `M18 6 6 18M6 6l12 12`, et c'est lui qui sert
+ * de repère : on ne promeut que ce qui dessine une croix, pas tout `<span>` de
+ * 40 px. Le geste est celui d'`applyIconButtonName` pour les autres icônes —
+ * `RESET_BOUTON` annule ce qu'un bouton ajoute, rien d'autre ne bouge.
+ */
+const A14_FERMER = {
+  screens: ['A14'],
+  nom: 'A14_FERMER',
+  why: 'La croix de fermeture devient un bouton : elle était dessinée, jamais branchée.',
+  provides: ['onClose'],
+  apply(jsx) {
+    const pattern =
+      /<span (style=\{\{ [^}]*\}\})>(<svg[^>]*><path d="M18 6 6 18M6 6l12 12" \/><\/svg>)<\/span>/g;
+    let applique = false;
+    const out = jsx.replace(pattern, (_tout, style, icone) => {
+      applique = true;
+      return (
+        `<button type="button" onClick={onClose} aria-label="Fermer" ` +
+        `${style.replace('style={{ ', `style={{ ${RESET_BOUTON_SANS_BORDURE}, padding: 0, `)}>${icone}</button>`
+      );
+    });
+    return { jsx: out, applied: applique };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE BANDEAU « PAS DE LIEN, DE NUMÉRO NI DE MONTANT PRÉCIS. » EST RETIRÉ    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, mot pour mot : « "Pas de lien, de numéro ni de montant précis." :
+ * Supprime ça car je ne sais pas son rôle. »
+ *
+ * C'est le SEUL endroit de ce fichier où l'on RETIRE un élément dessiné, et il
+ * faut donc dire d'où vient l'autorisation : du porteur, nommément, sur cette
+ * phrase. Rien d'autre n'est enlevé.
+ *
+ * Ce que la phrase disait : c'est la règle de §2.6 sur le contenu d'une story —
+ * ni lien, ni numéro, ni montant. Elle est TENUE PAR LE SERVEUR, qui refuse la
+ * publication ; l'écran ne faisait que l'annoncer, et il l'annonçait à l'étape 3,
+ * c'est-à-dire APRÈS que le texte soit écrit. Le refus, lui, arrive avec son
+ * message. Retirer l'avertissement ne retire donc aucune protection.
+ */
+const A14_SANS_AVERTISSEMENT = {
+  screens: ['A14'],
+  nom: 'A14_SANS_AVERTISSEMENT',
+  why: 'Le bandeau « Pas de lien… » est retiré — demande explicite du porteur.',
+  provides: [],
+  apply(jsx) {
+    const pattern =
+      /<div style=\{\{ background: "#FBE3D4"[^}]*\}\}>Pas de lien, de numéro ni de montant précis\.<\/div>\s*/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, m.index) + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * LE COMPTEUR DES TYPES D'AIDE — « préciser le nombre d'aide possible à cocher ».
+ *
+ * Le porteur : « Au niveau de "Je suis disponible pour aider", il faut préciser le
+ * nombre d'aide possible à cocher. J'ai remarqué que c'était 5. » Il l'a remarqué
+ * parce que rien ne le disait : le sixième appui ne faisait simplement rien.
+ *
+ * La ligne est posée AU-DESSUS de la rangée de pastilles, dans le gris des textes
+ * secondaires de cette maquette (`#5D6B66`), à la taille de ses petites lignes
+ * (11,5 px / 600). Son CONTENU est « 2 / 5 » — le compteur que le dossier écrit
+ * déjà sous la zone de texte de A14. Aucun mot nouveau n'est ajouté à l'interface.
+ */
+const O04_COMPTEUR_AIDES = {
+  screens: ['O04'],
+  nom: 'O04_COMPTEUR_AIDES',
+  why: 'La section « disponible pour aider » annonce combien de types on peut cocher.',
+  provides: ['helpTypesCount'],
+  apply(jsx) {
+    const ancre =
+      '<div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>{(helpTypes ?? [])';
+    const i = jsx.indexOf(ancre);
+    if (i === -1) return { jsx, applied: false };
+    const ligne =
+      '<div style={{ fontSize: "11.5px", color: "#5D6B66", fontWeight: "600", ' +
+      'marginTop: "10px" }}>{helpTypesCount}</div>';
+    return { jsx: `${jsx.slice(0, i)}${ligne}${jsx.slice(i)}`, applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE PANNEAU DE A14 DÉFILE EN LUI-MÊME — LA PAGE ENTIÈRE DÉFILAIT           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le modal qui suit s'affiche très mal et scroll toute la page au
+ * lieu que le scroll soit dans le bottom modal. »
+ *
+ * MESURÉ, et c'est net : à l'étape 2, le panneau d'ordinateur a 746 px de boîte
+ * pour 1723 px de contenu, et la feuille du bas 658 pour 1728 — avec
+ * `overflow: visible` dans les deux cas. Le contenu DÉBORDAIT donc, et c'est le
+ * document qui s'allongeait (1850 px sur ordinateur, 1914 sur téléphone).
+ *
+ * ── POURQUOI CE N'EST PAS UN OUBLI DE LA MAQUETTE ─────────────────────────
+ *
+ * La planche dessine ces deux panneaux à hauteur FIXE — 746 px, ou 78 % du
+ * téléphone — et y pose une liste de TROIS étapes. L'API en sert QUINZE. Une
+ * image n'a pas à prévoir ce qui dépasse ; un écran, si. C'est la même nature de
+ * correction que « une maquette est une image de taille fixe ».
+ *
+ * ── LA BARRE DE BOUTONS RESTE ATTEIGNABLE ─────────────────────────────────
+ *
+ * `position: sticky; bottom: 0` : elle garde sa place dessinée et cesse de
+ * disparaître sous quinze étapes. Sans elle, « Continuer » n'existerait qu'au
+ * bout d'un défilement — exactement le défaut qu'on vient de retirer à la page.
+ * Le fond est RECOPIÉ du panneau (`#fff`) pour que le contenu ne transparaisse
+ * pas dessous, et les retraits négatifs annulent ceux du panneau afin que la
+ * barre couvre toute sa largeur, comme elle le fait déjà à l'arrêt.
+ */
+const A14_PANNEAU_DEFILE = {
+  screens: ['A14'],
+  nom: 'A14_PANNEAU_DEFILE',
+  why: 'Le panneau des étapes défile en lui-même ; la page ne s’allonge plus.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let applique = false;
+
+    /** Les deux panneaux dessinés : la carte d'ordinateur et la feuille du bas. */
+    for (const coque of [
+      '<div style={{ width: "460px", height: "746px", background: "#fff", borderRadius: "28px", padding: "26px", display: "flex", flexDirection: "column", gap: "16px" }}>',
+      '<div style={{ position: "absolute", left: "0", right: "0", bottom: "0", height: "78%", background: "#fff", borderRadius: "28px 28px 0 0", padding: "12px 18px 26px", display: "flex", flexDirection: "column", gap: "12px" }}>',
+    ]) {
+      if (!out.includes(coque)) continue;
+      out = out.replace(coque, coque.replace(' }}>', ', overflowY: "auto" }}>'));
+      applique = true;
+    }
+
+    /**
+     * LES DEUX BARRES DE BOUTONS. Celle d'ordinateur est une rangée
+     * (« Retour » + « Continuer ») ; celle du téléphone est le seul bouton
+     * « Continuer », précédé de l'espaceur `flex: 1` que la planche dessine.
+     */
+    const COLLE = 'position: "sticky", bottom: "0", background: "#fff", zIndex: 1';
+
+    const rangee = '<div style={{ display: "flex", gap: "8px" }}><button style={{ height: "50px"';
+    if (out.includes(rangee)) {
+      out = out.replace(
+        rangee,
+        `<div style={{ display: "flex", gap: "8px", ${COLLE}, marginLeft: "-26px", marginRight: "-26px", padding: "10px 26px 0" }}><button style={{ height: "50px"`,
+      );
+      applique = true;
+    }
+
+    const seul =
+      '<button style={{ height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue}>Continuer</button>';
+    if (out.includes(seul)) {
+      out = out.split(seul).join(
+        seul.replace(
+          'style={{ height: "52px"',
+          `style={{ ${COLLE}, flexShrink: 0, marginLeft: "-18px", marginRight: "-18px", width: "calc(100% + 36px)", height: "52px"`,
+        ),
+      );
+      applique = true;
+    }
+
+    return { jsx: out, applied: applique };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES ACTIONS DU HAUT, SUR TÉLÉPHONE — DESSINÉES, JAMAIS BRANCHÉES          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Sur mobile les actions en haut ne marchent pas (centrer, police,
+ * et autres). »
+ *
+ * MESURÉ : la barre de boutons du cadre mobile ne contenait QUE « Fermer », les
+ * trois onglets de type, les sept pastilles de couleur, « Photo » et « Suivant ».
+ * Ni alignement, ni police. La maquette les dessine pourtant — trois ronds de
+ * 40 px en `rgba(255,255,255,.14)` en haut à droite — mais en `<span>`.
+ *
+ * Les PRISES, elles, existaient déjà : `onAlign` / `alignCentre` et `onTextStyle`
+ * / `textStyleLabel` sont celles que le cadre d'ordinateur emploie depuis
+ * `A14_ALIGNEMENT` et `A14_STYLE_TEXTE`. Il n'y avait rien à écrire côté
+ * comportement — seulement à relier.
+ *
+ * ── LES NOMS ACCESSIBLES SONT EMPRUNTÉS, PAS INVENTÉS ────────────────────
+ *
+ * Un rond portant une icône n'a pas de texte. Son nom vient donc de ce que la
+ * planche d'ORDINATEUR écrit À CÔTÉ DE LA MÊME ICÔNE : « Centré » pour les trois
+ * barres, et `textStyleLabel` (« Aa · Gras ») pour le « Aa ». Deux cadres de la
+ * même maquette, un seul vocabulaire.
+ *
+ * ── LE TROISIÈME ROND N'EST PAS PROMU, ET C'EST VOLONTAIRE ───────────────
+ *
+ * C'est la palette. Le cadre mobile dessine DÉJÀ ses sept pastilles de couleur
+ * en bas, et elles sont vivantes : ce rond n'a rien à ouvrir. Lui inventer un
+ * geste serait dessiner à la place du porteur. REMONTÉ.
+ */
+const A14_ACTIONS_MOBILE = {
+  screens: ['A14'],
+  nom: 'A14_ACTIONS_MOBILE',
+  why: 'Les ronds d’alignement et de police du haut deviennent des boutons (cadres mobiles).',
+  provides: ['onAlign', 'alignCentre', 'onTextStyle', 'textStyleLabel'],
+  apply(jsx) {
+    const ROND =
+      '<span style={{ width: "40px", height: "40px", borderRadius: "999px", ' +
+      'background: "rgba(255,255,255,.14)", display: "flex", alignItems: "center", ' +
+      'justifyContent: "center"';
+
+    let out = jsx;
+    let applique = false;
+
+    // L'ALIGNEMENT — reconnu à son tracé, le même que le bouton « Centré » du web.
+    const aligne = `${ROND} }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M7 12h10M5 18h14" /></svg></span>`;
+    if (out.includes(aligne)) {
+      out = out.replace(
+        aligne,
+        aligne
+          .replace(
+            '<span style={{ ',
+            `<button type="button" onClick={onAlign} aria-pressed={alignCentre} aria-label="Centré" style={{ ${RESET_BOUTON_SANS_BORDURE}, padding: 0, `,
+          )
+          .replace('</span>', '</button>'),
+      );
+      applique = true;
+    }
+
+    // LA POLICE — le rond qui porte « Aa » en toutes lettres.
+    const police = `${ROND}, fontSize: "15px", fontWeight: "800" }}>Aa</span>`;
+    if (out.includes(police)) {
+      out = out.replace(
+        police,
+        police
+          .replace(
+            '<span style={{ ',
+            `<button type="button" onClick={onTextStyle} aria-label={textStyleLabel} style={{ ${RESET_BOUTON_SANS_BORDURE}, padding: 0, `,
+          )
+          .replace('</span>', '</button>'),
+      );
+      applique = true;
+    }
+
+    return { jsx: out, applied: applique };
+  },
+};
+
+/**
+ * LE LIBELLÉ DE VARIANTE « AVEC PARCOURS » N'APPARTIENT PAS À L'ÉCRAN.
+ *
+ * La planche de O05 en porte un en haut à gauche, en 11 px gris, pour distinguer
+ * ses deux variantes DANS LE DOSSIER DE MAQUETTE. C'est une annotation de
+ * designer, au même titre que le `data-screen-label` que le transcodeur retire
+ * déjà — sauf que celle-ci est écrite en clair dans le dessin, donc elle passait.
+ *
+ * Le porteur l'a vue : son « Votre parcours est prêt » affiche « AVEC PARCOURS »
+ * au-dessus du titre. Un membre n'a rien à faire de cette mention : elle nomme un
+ * cas de figure, pas son parcours.
+ *
+ * On ne retire QUE ce libellé-là, reconnu à sa signature complète — 11 px, 700,
+ * interlettrage 1 px, gris `#8A958F`, `align-self: flex-start` et
+ * `margin-bottom: auto`, qui n'existe nulle part ailleurs.
+ */
+const O05_SANS_LIBELLE_DE_VARIANTE = {
+  screens: ['O05'],
+  nom: 'O05_SANS_LIBELLE_DE_VARIANTE',
+  why: 'Les libellés de variante « AVEC PARCOURS » et « SANS PARCOURS » sont retirés : ce sont des annotations de maquette.',
+  provides: [],
+  /**
+   * ── ON VISE LE TEXTE, PLUS LE STYLE ──────────────────────────────────────
+   *
+   * La première version décrivait le style EXACT du libellé de « AvecParcours »
+   * — `alignSelf` et `marginBottom` compris. Celui de « SansParcours » ne les
+   * porte pas, et il est donc RESTÉ : le membre qui n'a pas créé de parcours
+   * lisait « SANS PARCOURS » en tête de son atterrissage, c'est-à-dire le nom
+   * que la maquette donne à sa propre planche.
+   *
+   * Les deux mots sont sans ambiguïté : aucun autre nœud de cet écran ne les
+   * porte. Le texte est donc un meilleur discriminant que la liste des
+   * propriétés de style, qui diffère d'une planche à l'autre sans raison.
+   */
+  apply(jsx) {
+    const pattern =
+      /<div style=\{\{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F"[^}]*\}\}>(?:AVEC|SANS) PARCOURS<\/div>\s*/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, m.index) + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * « COMMENCER » OUVRE LE PARCOURS CRÉÉ — IL N'OUVRAIT RIEN.
+ *
+ * Le porteur : « Le bouton commencer ne marche pas sur cet écran. » MESURÉ : le
+ * bouton n'avait AUCUN `onClick`. Il ne pouvait pas en avoir — l'écran lisait le
+ * titre, le rang et le nom de l'étape de `GET /journeys`, mais jamais
+ * l'identifiant du parcours. `journeyListItemSchema` le portait pourtant.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ PAS DE LIGNE QUAND L'ÉTAPE N'A RIEN À DIRE                                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La description de l'étape vient de `currentStep.description`, et elle est
+ * `null` pour TOUTES les étapes du référentiel actuel : `seed/templates.ts`
+ * l'écrit — « T3 ne donne aucune description (les procédures vivent dans les
+ * guides communautaires) ». La planche, elle, dessine toujours une ligne.
+ *
+ * Liée telle quelle, elle produisait un paragraphe VIDE sous le titre de
+ * l'étape : rien à lire, et six pixels de marge qui décollent le bouton
+ * « Commencer » sans raison. On ne dessine donc la ligne que s'il y a une phrase.
+ *
+ * Ce n'est pas réécrire la maquette : c'est ce que son propre dialecte fait avec
+ * `<sc-if>`. Le jour où le back-office remplit `step_definitions.description`,
+ * la ligne apparaît, telle qu'elle est dessinée.
+ */
+const O05_DESCRIPTION_FACULTATIVE = {
+  screens: ['O05'],
+  nom: 'O05_DESCRIPTION_FACULTATIVE',
+  why: 'La description de l’étape n’est dessinée que si elle existe : sinon la planche laissait un paragraphe vide.',
+  provides: [],
+  apply(jsx) {
+    const pattern = /<p (style=\{\{ margin: "6px 0 0"[^}]*\}\})>\{parcours\.description\}<\/p>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const ligne = `{parcours.description === "" ? null : <p ${m[1]}>{parcours.description}</p>}`;
+    return { jsx: jsx.slice(0, m.index) + ligne + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+const O05_COMMENCER = {
+  screens: ['O05'],
+  nom: 'O05_COMMENCER',
+  why: 'Le bouton « Commencer » ouvre le parcours créé.',
+  provides: ['onCommencer'],
+  apply(jsx) {
+    const pattern = /<button (style=\{\{ width: "100%", height: "50px", marginTop: "16px"[^}]*\}\})>Commencer<\/button>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const ajout = resetBoutonManquant(m[1]);
+    const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+    const bouton = `<button type="button" onClick={onCommencer} ${style}>Commencer</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ UNE BULLE DE STORY S'OUVRE — ELLE N'ÉTAIT CLIQUABLE NULLE PART            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « ajouter le click sur les stories déjà créé ».
+ *
+ * Le ruban « STORIES DU JOUR » dessine chaque story en `<div>` : un anneau, une
+ * initiale, une pastille de sujet, une légende, un compte de votes. Rien n'était
+ * cliquable — on publiait une story et on ne pouvait plus jamais la rouvrir, alors
+ * que `/stories/[id]` existe et sert la planche A13.
+ *
+ * L'identifiant était DÉJÀ LÀ : `storiesFrom` pose `storyId: s.id` sur chaque
+ * bulle depuis le branchement du ruban. Il ne manquait que le lien.
+ *
+ * ── UN `<a>` ET NON UN `<button>` ─────────────────────────────────────────
+ *
+ * Une story a une adresse. Un lien se partage, s'ouvre dans un onglet, et le
+ * navigateur l'annonce comme un lien — ce qu'un bouton ne fait pas. C'est aussi
+ * ce qui permettra à l'interception de route de la montrer en fenêtre sans que
+ * l'adresse directe cesse de fonctionner.
+ */
+const A01_BULLES_CLIQUABLES = {
+  screens: ['A01'],
+  nom: 'A01_BULLES_CLIQUABLES',
+  why: 'Chaque bulle du ruban mène à sa story : `/stories/<id>`.',
+  /**
+   * RIEN À DÉCLARER : `storyId` est un champ de l'élément de boucle `s`, pas une
+   * prise de l'écran. L'annoncer en `provides` le faisait entrer dans la
+   * déstructuration des props — `const { s.storyId } = props`, qui n'est pas du
+   * JavaScript. Le compilateur l'a dit tout de suite.
+   */
+  provides: [],
+  apply(jsx) {
+    /**
+     * ── ON CHERCHE DANS LA BOUCLE, PAS DANS LE RUBAN ────────────────────────
+     *
+     * La première bulle de 92 px du ruban est « CRÉER UNE STORY » — même gabarit,
+     * même écart, et elle vient AVANT la boucle. Une recherche naïve l'attrapait
+     * et l'enveloppait dans un lien vers `/stories/undefined`, en imbriquant deux
+     * `<a>` l'un dans l'autre, ce que le HTML interdit. Le compilateur l'a dit ;
+     * ça aurait pu passer silencieusement dans un cas moins chanceux.
+     *
+     * On part donc de l'ouverture de la boucle sur `stories`, et on prend la
+     * première bulle APRÈS elle.
+     */
+    const boucle = jsx.indexOf('(stories ?? []).map(');
+    if (boucle === -1) return { jsx, applied: false };
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LE CADRE MOBILE EST RESTÉ MUET PENDANT TOUT CE TEMPS                 ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « sur mobile l'affichage des stories ne marche pas ».
+     *
+     * MESURÉ au navigateur, à 390 px : le ruban affiche bien ses CINQUANTE-QUATRE
+     * bulles — elles ne manquaient pas — mais `a` y compte ZÉRO. On touche une
+     * story, il ne se passe rien. À 1440 px, les mêmes bulles sont cinquante-quatre
+     * liens.
+     *
+     * LA CAUSE EST UNE LARGEUR ÉCRITE EN DUR ICI : cette transformation cherchait
+     * `width: "92px"`, qui est la bulle de la planche D'ORDINATEUR. Le téléphone
+     * dessine la sienne à 76 px, avec un écart de 5 et non de 6. Elle ne
+     * correspondait donc à rien, et comme `A01` porte aussi un cadre d'ordinateur
+     * où elle réussissait, le garde-fou « transformation jamais appliquée » ne
+     * voyait aucune anomalie.
+     *
+     * On relève donc la géométrie plutôt que de la supposer, et le lien reprend
+     * CELLE DU CADRE qu'il enveloppe. Une planche qui changerait ses 92 px ne
+     * casserait plus le lien en silence.
+     */
+    const motif =
+      /<div style=\{\{ width: "(\d+)px", flexShrink: "0", display: "flex", flexDirection: "column", alignItems: "center", gap: "(\d+)px" \}\}>/;
+    const trouve = motif.exec(jsx.slice(boucle));
+    if (trouve === null) return { jsx, applied: false };
+    const ouvre = trouve[0];
+    const largeur = trouve[1];
+    const ecart = trouve[2];
+    const i = boucle + trouve.index;
+    // La fermeture de CETTE bulle : le `</div>` qui précède la fin de sa boucle.
+    const fin = jsx.indexOf('</div></Fragment>', i);
+    if (fin === -1) return { jsx, applied: false };
+
+    /**
+     * ── `<Link>` ET NON `<a>`, ET CE N'EST PAS UNE PRÉFÉRENCE ───────────────
+     *
+     * Le porteur veut que la story s'ouvre PAR-DESSUS le fil, pas à sa place.
+     * C'est l'interception de route (`@fenetre/(.)stories/[id]`) qui le fait, et
+     * elle n'opère QUE sur une navigation côté client. Un `<a>` ordinaire
+     * recharge la page : mesuré, le voile n'apparaissait jamais et l'URL changeait
+     * quand même — un défaut qui ressemble à une interception cassée alors que le
+     * lien n'avait jamais rien intercepté.
+     *
+     * L'adresse ne change pas pour autant : tapée, collée ou rechargée, elle sert
+     * toujours la page entière.
+     */
+    const lien =
+      `<Link href={\`/stories/\${s.storyId}\`} style={{ width: "${largeur}px", flexShrink: "0", ` +
+      `display: "flex", flexDirection: "column", alignItems: "center", gap: "${ecart}px", ` +
+      'color: "inherit", textDecoration: "none", cursor: "pointer" }}>';
+    const corps = jsx.slice(i + ouvre.length, fin);
+    return {
+      jsx: `${jsx.slice(0, i)}${lien}${corps}</Link>${jsx.slice(fin + '</div>'.length)}`,
+      applied: true,
+    };
+  },
+};
+
+/**
+ * « CRÉER UNE STORY » PASSE AUSSI PAR `<Link>`.
+ *
+ * Même raison que les bulles : seule une navigation côté client déclenche
+ * l'interception de route, donc seul un `<Link>` ouvre le composeur en fenêtre
+ * par-dessus le fil. Le lien est produit par le mécanisme `liens` sous forme de
+ * `<a>` ; on le convertit ici, et nulle part ailleurs.
+ */
+const A01_LIEN_CREER_STORY = {
+  screens: ['A01'],
+  nom: 'A01_LIEN_CREER_STORY',
+  why: 'Le lien « Créer une story » devient un `<Link>` : sinon la fenêtre ne s’ouvre pas.',
+  provides: [],
+  apply(jsx) {
+    const debut = jsx.indexOf('<a href="/stories/nouvelle"');
+    if (debut === -1) return { jsx, applied: false };
+    const fin = jsx.indexOf('</a>', debut);
+    if (fin === -1) return { jsx, applied: false };
+    const element = jsx.slice(debut, fin + '</a>'.length);
+    const converti = `${element.slice(0, -'</a>'.length).replace('<a ', '<Link ')}</Link>`;
+    return { jsx: jsx.slice(0, debut) + converti + jsx.slice(fin + '</a>'.length), applied: true };
+  },
+};
+
+/**
+ * LE NUMÉRO DE L'ÉCRAN DU CODE EST CELUI QU'ON A TAPÉ.
+ *
+ * Le porteur : « Au niveau de la page de l'OTP, le numéro n'est pas celui qui est
+ * renseigné. » La planche écrit « +229 •• •• •• 42 » EN CLAIR — l'exemple de la
+ * maquette — et il s'affichait quel que soit le numéro saisi, sur l'écran dont
+ * tout le propos est de confirmer QUEL numéro a reçu le code.
+ *
+ * La forme du masque ne change pas d'un caractère : indicatif, des paires
+ * masquées, les deux derniers chiffres en clair. C'est celle que la planche
+ * dessine ET celle que le serveur rend ailleurs (`GET /me` → `phones[].masked`).
+ */
+const P02_NUMERO_MASQUE = {
+  screens: ['P02'],
+  nom: 'P02_NUMERO_MASQUE',
+  why: 'L’écran du code annonce le numéro RÉELLEMENT saisi, masqué.',
+  provides: ['phoneMasque'],
+  apply(jsx) {
+    const litteral = '+229 •• •• •• 42';
+    if (!jsx.includes(litteral)) return { jsx, applied: false };
+    return { jsx: jsx.split(litteral).join('{phoneMasque}'), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A13 — LES CHEVRONS ET LES VOISINS ÉTAIENT DESSINÉS, JAMAIS BRANCHÉS       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Je parle des boutons next. Aussi pour les écrans précédent et
+ * suivant ça affiche à gauche ou à droite selon la maquette non ? Il faut
+ * finaliser proprement. Aussi le clic sur les écrans gauche ou droite ou sur les
+ * boutons next ou preview doivent animer parfaitement les stories et afficher
+ * celui sélectionné. »
+ *
+ * MESURÉ : `0` bouton et `0` lien dans tout l'écran. Les deux chevrons de 52 px
+ * existaient en `<span>`, et les deux panneaux de voisins — « Aïcha D. » à gauche,
+ * « Kofi B. » à droite, à `opacity: .55` — en `<div>`. Rien ne répondait.
+ *
+ * ── CE QUE LA TRANSFORMATION FAIT, ET CE QU'ELLE NE FAIT PAS ─────────────
+ *
+ * Elle PROMEUT, elle ne dessine pas : taille, rayon, fond, opacité et tracés
+ * restent ceux de la planche. Les deux chevrons prennent `onPrecedent` et
+ * `onSuivant` ; les deux panneaux prennent les mêmes prises, parce que le porteur
+ * demande que cliquer SUR L'ÉCRAN de gauche fasse ce que fait le chevron de
+ * gauche.
+ *
+ * L'ORDRE DÉCIDE DU SENS, et il est celui de la planche : voisin gauche, chevron
+ * gauche, story, chevron droit, voisin droit. On s'appuie donc sur le tracé du
+ * chevron — `m15 18-6-6 6-6` pointe à gauche, `m9 18 6-6-6-6` à droite — plutôt
+ * que sur une position dans le fichier, qui se déplacerait au premier ajout.
+ *
+ * L'ANIMATION n'est pas ici : elle est portée par la prise `storyAnim`, que
+ * `story-ecran.tsx` pose sur la carte quand la story change.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA CROIX DE A13 ÉTAIT UN DESSIN                                           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le bouton close ne fonctionne pas ? »
+ *
+ * MESURÉ dans le cadre produit : la croix est un `<span>` de 40 px contenant le
+ * tracé « M18 6 6 18M6 6l12 12 ». Aucun `onClick`, aucun rôle, aucun nom
+ * accessible — ni cliquable ni atteignable au clavier. Les deux planches, la
+ * grande et celle de 390 px, la dessinent pareil.
+ *
+ * Elle devient un vrai bouton, nommé « Fermer », qui rend la main à l'écran d'où
+ * la story a été ouverte. Le style dessiné est GARDÉ tel quel, complété des seules
+ * remises à zéro qui manquent à un `<button>` — sans quoi le navigateur lui
+ * ajouterait sa bordure, son fond gris et sa police.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ PAS DE LOGO SUR UNE STORY                                                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Retire le logo de la page de display des story. »
+ *
+ * La planche de 1440 px pose le logo du produit en absolu, en haut à gauche du
+ * cadre (`top: 24px; left: 28px`). C'est juste pour une PAGE — elle doit se
+ * nommer — et faux pour ce que l'écran est devenu : une FENÊTRE posée sur le fil,
+ * où le logo du produit est déjà en haut de la page de dessous. Il s'y retrouvait
+ * deux fois, dont une par-dessus le voile.
+ *
+ * Le repère est la POSITION ABSOLUE du bloc, pas son contenu : c'est elle qui le
+ * distingue des autres en-têtes de la planche.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA PHOTO D'UNE STORY NE S'AFFICHAIT PAS SUR GRAND ÉCRAN                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « J'ajoute une image mais elle ne s'affiche pas dans le display de
+ * story. »
+ *
+ * MESURÉ de bout en bout — média envoyé (201), story publiée (201), `GET
+ * /stories/:id` rendant bien `backgroundUrl` — puis relue à 1440 px : les trois
+ * couches de la carte portent `background-image: none`. La photo était composée,
+ * stockée, servie, et JAMAIS PEINTE.
+ *
+ * LA CAUSE EST DANS LA MAQUETTE, et c'est elle qui rend ce correctif légitime :
+ * elle dessine le bloc photo dans le cadre de 390 px (`<sc-if cond="photo">` :
+ * l'emplacement, le dégradé de lisibilité) et PAS dans celui de 1440 px. Le
+ * transcodage était fidèle ; c'est la planche qui est incomplète.
+ *
+ * On ne dessine donc rien de neuf : on pose sur le grand cadre le bloc que la
+ * maquette donne au petit, pour le MÊME écran.
+ *
+ * ── CE QU'ON NE REPREND PAS, ET POURQUOI ─────────────────────────────────
+ *
+ * Le libellé « Photo de l'auteur » du bloc mobile. C'est l'étiquette que la
+ * maquette met SUR SON HACHURAGE pour dire « ici il y aura une image » — une
+ * annotation, comme « AVEC PARCOURS » sur O05. Transcodée telle quelle, elle
+ * s'imprime par-dessus la vraie photo du membre. Elle est retirée des DEUX
+ * planches par `A13_PHOTO_SANS_ETIQUETTE`.
+ *
+ * Le dégradé, lui, est GARDÉ : il n'annote rien, il rend le texte lisible sur une
+ * photo claire.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA BARRE HAUTE ÉTAIT UN DESSIN, SUR SOIXANTE-CINQ PLANCHES                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Corrige la top bar qui n'est pas du tout dynamique en termes de
+ * données, de liens et autres, donc simplement non fonctionnelle. »
+ *
+ * MESURÉ au navigateur, sur le fil : la barre ne contenait QU'UN SEUL nœud nommé
+ * — le mot « Diaspora ». Le champ de recherche était un `<div>` portant son texte
+ * en dur, le `+` et les deux icônes des `<span>` sans rôle ni geste, et la
+ * pastille orange d'alerte était peinte en permanence.
+ *
+ * ── ON PROMEUT CONTRÔLE PAR CONTRÔLE, PAS LA BARRE ENTIÈRE ────────────────
+ *
+ * Remplacer la barre entière par un composant unique aurait effacé soixante-cinq
+ * dessins au profit d'un seul. Or ils ne sont pas tous identiques : la barre
+ * existe sous DEUX formes — avec pastille de membre (39 planches) et sans (25) —
+ * et quelques écrans changent une couleur ou un écart.
+ *
+ * Chaque contrôle est donc remplacé SUR PLACE par un composant qui reçoit LE
+ * STYLE DESSINÉ et n'ajoute que ce qui manquait : un rôle, un nom accessible, un
+ * geste. Le dessin reste celui de la planche, écran par écran.
+ *
+ * ── LES QUATRE ────────────────────────────────────────────────────────────
+ *
+ *   · la RECHERCHE devient un `<form>` vers `/recherche?q=`, avec un vrai champ ;
+ *   · le `+` ouvre la fenêtre de raccourcis demandée ;
+ *   · les MESSAGES et les NOTIFICATIONS deviennent des liens vers leur écran, et
+ *     leur pastille ne se peint que s'il y a vraiment du non-lu.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA RECHERCHE AFFICHAIT LES RÉSULTATS DE LA MAQUETTE                       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « La recherche ne marche pas bien. Regarde l'URL, est-ce qui est
+ * sur la page ? »
+ *
+ * MESURÉ sur `/recherche?q=simple` : la page montrait « Tout · 24 », « Guides · 5 »
+ * et quatre cartes sur Visale. `chargerX01` DEMANDAIT pourtant `GET /search?q=…`
+ * — et jetait la réponse. Le titre « Résultats pour « simple » » était lié, lui :
+ * la page annonçait donc la bonne requête au-dessus des mauvais résultats, ce qui
+ * est pire que de ne rien annoncer.
+ *
+ * ── CE QUI EST LIÉ, ET CE QUI RESTE DESSINÉ ──────────────────────────────
+ *
+ * Les COMPTEURS des facettes et les CARTES de résultat. Les LIBELLÉS des facettes
+ * restent ceux de la planche — le serveur écrit « Sujets de réseau » là où elle
+ * écrit « Sujets », et changer un texte affiché est une décision de produit.
+ *
+ * Les quatre sous-lignes dessinées — « 84 utiles », « 14 réponses », « 620 € » —
+ * n'existent sur aucun champ de `SearchHit`. La carte affiche donc l'EXTRAIT que
+ * le serveur rend. L'écart est consigné dans `x01/data.ts`.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES FILTRES PASSENT DE LA RANGÉE DE PASTILLES À LA COLONNE DE GAUCHE      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Lorsqu'on est sur la page du search, il faut que la left side bar
+ * contienne PLUTÔT les filtres (guide, actualité, événement, etc.) avec le nombre
+ * matché dans ces catégories. »
+ *
+ * Deux coupes, donc, et elles vont ensemble :
+ *
+ *   · LA RANGÉE DE PASTILLES AU-DESSUS DES RÉSULTATS EST RETIRÉE. « Plutôt » le
+ *     dit : les filtres changent de place, ils ne se dédoublent pas. La garder
+ *     laisserait deux jeux de filtres sur la même page, qui devraient s'accorder ;
+ *   · LA COLONNE DE GAUCHE PORTAIT LE MENU « ACCUEIL » DE LA MAQUETTE — six
+ *     entrées en `<span>`, donc mortes, et qui n'avaient de toute façon rien à
+ *     faire sur une page de recherche. Elle porte les filtres.
+ *
+ * LE MENU DE SECTION N'EST PAS PERDU POUR AUTANT, et c'est l'autre moitié de la
+ * demande : « le menu green de gauche affiche au hover un floatting side bar menu
+ * quand on passe le curseur sur Accueil, Parcours etc. — ça va permettre d'avoir la
+ * navigation même sur les pages où la side bar est réutilisée pour le contexte de la
+ * page ». C'est `RAIL_SURVOL`, plus bas.
+ *
+ * ── LE DESSIN EST CELUI DE LA CARTE QU'ON REMPLACE ────────────────────────
+ *
+ * Rien n'est inventé : la carte garde son fond, son bord, son rayon et son retrait ;
+ * les lignes gardent la hauteur de 44, l'écart de 11, le rayon de 14 et la taille de
+ * 13,5 des entrées de menu ; l'état retenu reprend `#E3F0EB / #0F5C48 / 700`, qui
+ * est EXACTEMENT ce que les planches peignent pour une entrée active — mesuré, 35
+ * occurrences dans le dépôt. La pastille de compte reprend le gris neutre des
+ * pastilles de type (`#F2F5F4 / #5D6B66`) et NON l'orange des badges de non-lu : un
+ * compte de résultats n'est pas une alerte.
+ */
+const X01_FILTRES = {
+  screens: ['X01'],
+  nom: 'X01_FILTRES',
+  why: 'La colonne de gauche porte les filtres avec leurs comptes ; elle portait un menu « ACCUEIL » mort.',
+  provides: ['filtres'],
+  apply(jsx) {
+    const titre = '>ACCUEIL</div>';
+    const iTitre = jsx.indexOf(titre);
+    if (iTitre === -1) return { jsx, applied: false };
+
+    const carte =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px" }}>';
+    const iCarte = jsx.lastIndexOf(carte, iTitre);
+    if (iCarte === -1) return { jsx, applied: false };
+    const finCarte = finDuDiv(jsx, iCarte);
+    if (finCarte === -1) return { jsx, applied: false };
+
+    const colonne =
+      carte +
+      '<div style={{ padding: "0 6px 8px" }}>' +
+      '<div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>FILTRES</div></div>' +
+      '{(filtres ?? []).map((f, fIndex) => (\n<Fragment key={fIndex}>' +
+      '<a href={f.href} aria-current={f.active ? "page" : undefined} ' +
+      'style={{ height: "44px", display: "flex", alignItems: "center", gap: "11px", padding: "0 12px", ' +
+      'borderRadius: "14px", background: f.fond, color: f.encre, fontWeight: f.poids, fontSize: "13.5px", ' +
+      'textDecoration: "none" }}>' +
+      '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" ' +
+      'strokeLinecap="round" strokeLinejoin="round"><path d={f.trace} /></svg>' +
+      '<span style={{ flex: "1" }}>{f.libelle}</span>' +
+      '<span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11px", fontWeight: "700", ' +
+      'minWidth: "22px", padding: "2px 8px", borderRadius: "999px", textAlign: "center" }}>{f.compte}</span>' +
+      '</a></Fragment>))}</div>';
+
+    let out = jsx.slice(0, iCarte) + colonne + jsx.slice(finCarte);
+
+    /**
+     * LA RANGÉE DE PASTILLES DE L'ORDINATEUR, RETIRÉE. Son conteneur est repéré par
+     * son dessin exact, et son contenu va jusqu'au `</span></div>` qui le ferme —
+     * c'est le même repère que l'ancienne transformation employait pour y poser sa
+     * boucle.
+     */
+    const rangee = '<div style={{ display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0" }}>';
+    const iRangee = out.indexOf(rangee);
+    if (iRangee !== -1) {
+      const finRangee = out.indexOf('</span></div>', iRangee);
+      if (finRangee !== -1) {
+        out = out.slice(0, iRangee) + out.slice(finRangee + '</span></div>'.length);
+      }
+    }
+
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE CADRE MOBILE DISAIT ENCORE « Tout · 24 »                               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le téléphone n'a pas de colonne de gauche : la planche y dessine une rangée de
+ * pastilles qui défile, et son conteneur n'a RIEN à voir avec celui de
+ * l'ordinateur — `overflowX: auto`, `tabIndex`, pas de `flexWrap`. La correction
+ * de l'ordinateur ne pouvait donc pas le toucher, et il continuait d'afficher les
+ * quatre exemples de la maquette : « Tout · 24 », « Guides · 5 », « Sujets · 7 »,
+ * « Entraide · 4 ». MESURÉ sur le cadre produit.
+ *
+ * Même boucle, autre forme, autres couleurs : la pastille retenue est un vert
+ * PLEIN bordé, là où la ligne de colonne est un vert pâle sans bordure. C'est
+ * pourquoi `FiltreRecherche` porte les deux jeux — voir son en-tête.
+ *
+ * ET CE SONT DES LIENS, comme en colonne : `/recherche?q=…&type=…`.
+ */
+const X01_FILTRES_MOBILE = {
+  screens: ['X01'],
+  nom: 'X01_FILTRES_MOBILE',
+  why: 'La rangée de pastilles du téléphone portait « Tout · 24 » — les quatre exemples de la maquette.',
+  provides: ['filtres'],
+  apply(jsx) {
+    const ouverture =
+      '<div style={{ display: "flex", gap: "6px", padding: "10px 16px", overflowX: "auto", flexShrink: "0" }} tabIndex={0}>';
+    const i = jsx.indexOf(ouverture);
+    if (i === -1) return { jsx, applied: false };
+    const fin = finDuDiv(jsx, i);
+    if (fin === -1) return { jsx, applied: false };
+
+    const boucle =
+      ouverture +
+      '{(filtres ?? []).map((f, fIndex) => (\n<Fragment key={fIndex}>' +
+      '<a href={f.href} aria-current={f.active ? "page" : undefined} ' +
+      'style={{ height: "36px", padding: "0 13px", borderRadius: "999px", display: "flex", ' +
+      'alignItems: "center", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", ' +
+      'background: f.piluleFond, color: f.piluleEncre, border: f.piluleBordure, ' +
+      'textDecoration: "none" }}>{f.libelle} · {f.compte}</a></Fragment>))}</div>';
+
+    return { jsx: jsx.slice(0, i) + boucle + jsx.slice(fin), applied: true };
+  },
+};
+
+/**
+ * LES QUATRE CARTES DE RÉSULTAT deviennent UNE boucle.
+ *
+ * La maquette en dessine quatre, une par type, pour montrer la variété. Elles ont
+ * la MÊME structure — un rond d'icône, une pastille de type, un titre, une
+ * sous-ligne, un chevron — et ne diffèrent que par le tracé de l'icône, le mot de
+ * la pastille et le texte de la sous-ligne. Ce sont donc des DONNÉES, pas quatre
+ * dessins : la boucle garde la forme de la première et reçoit les trois valeurs.
+ *
+ * ⚠ LA SOUS-LIGNE N'EST PAS CELLE DE LA MAQUETTE, et c'est assumé : « 84 utiles »,
+ * « 14 réponses », « 620 € » ne correspondent à aucun champ de `SearchHit`. La
+ * carte affiche l'EXTRAIT que le serveur rend. Consigné dans `x01/data.ts`.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE PANNEAU DE SUGGESTIONS COUVRAIT LE TITRE, TOUJOURS                     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Sur la capture du porteur, une boîte blanche flotte par-dessus « Résultats
+ * pour… » et montre un guide sur Visale. Deux choses s'y mêlaient :
+ *
+ *   · le panneau est posé en ABSOLU et rendu SANS CONDITION. Sans suggestion, il
+ *     reste une boîte blanche sur le titre ; avec, il le masque quand même ;
+ *   · il se termine par une ligne DESSINÉE — un séparateur, une icône de guide,
+ *     « Obtenir la garantie Visale sans CDI » et une pastille « Guide ». C'est le
+ *     « meilleur résultat » que la maquette illustre, et `GET /search/suggest`
+ *     n'en rend aucun : il rend `{ title, subjectType }`, sans identifiant, donc
+ *     sans moyen d'ouvrir quoi que ce soit.
+ *
+ * Le panneau n'apparaît donc que s'il y a des suggestions, et la ligne d'exemple
+ * est retirée. Ce qui reste est la boucle, déjà liée.
+ */
+/**
+ * L'index JUSTE APRÈS le `</div>` qui ferme le `<div>` ouvert à `debut`.
+ *
+ * Un compteur de niveaux, et rien de plus : les `<div/>` auto-fermants n'existent
+ * pas dans ces planches, et les autres balises ne comptent pas.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA FIN D'UN NŒUD, QUEL QUE SOIT SON NOM DE BALISE                         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `finDuDiv` ne sait compter que les `<div>`. Les enfants d'un panneau de fenêtre
+ * ne sont pas tous des `div` : le pied de A01G est un `<div>`, mais celui de A01P
+ * est un `<button>`, et le titre de certaines planches est un `<h2>`. Une règle
+ * écrite sur `div` seul aurait traité une fenêtre sur deux.
+ *
+ * On lit donc le NOM de la balise à `debut`, et on compte ses ouvertures et ses
+ * fermetures — exactement comme `finDuDiv`, mais sur ce nom-là. Une balise
+ * auto-fermante (`<input … />`) n'a pas de fermeture : elle est détectée au `/>`
+ * qui clôt sa balise ouvrante.
+ */
+function finDuNoeud(jsx, debut) {
+  const nom = /^<([A-Za-z][\w.-]*)/.exec(jsx.slice(debut))?.[1];
+  if (nom === undefined) return -1;
+
+  const finOuvrante = jsx.indexOf('>', debut);
+  if (finOuvrante === -1) return -1;
+  if (jsx[finOuvrante - 1] === '/') return finOuvrante + 1;
+
+  const ouvre = `<${nom}`;
+  const ferme = `</${nom}>`;
+  let niveau = 0;
+  let i = debut;
+  while (i < jsx.length) {
+    const o = jsx.indexOf(ouvre, i);
+    const f = jsx.indexOf(ferme, i);
+    if (f === -1) return -1;
+    if (o !== -1 && o < f) {
+      /** `<buttonX` n'est pas `<button` : on exige un délimiteur après le nom. */
+      const apres = jsx[o + ouvre.length];
+      if (apres === '>' || apres === ' ' || apres === '/' || apres === '\n') niveau += 1;
+      i = o + ouvre.length;
+      continue;
+    }
+    niveau -= 1;
+    i = f + ferme.length;
+    if (niveau === 0) return i;
+  }
+  return -1;
+}
+
+/**
+ * LES ENFANTS DIRECTS d'un conteneur, en positions `[début, fin]`.
+ *
+ * Un enfant est soit un ÉLÉMENT (`<div …>…</div>`), soit une EXPRESSION JSX
+ * (`{(liste ?? []).map(…)}`) — les panneaux transcodés mêlent les deux, et une
+ * lecture qui ignorerait les secondes couperait une boucle en deux.
+ *
+ * Rend `null` dès que quelque chose ne se lit pas : l'appelant retombe alors sur
+ * le comportement d'avant plutôt que de produire du JSX bancal.
+ */
+function enfantsDirects(jsx, debutContenu, finContenu) {
+  const enfants = [];
+  let i = debutContenu;
+  while (i < finContenu) {
+    const c = jsx[i];
+    if (c === undefined) return null;
+    if (/\s/.test(c)) {
+      i += 1;
+      continue;
+    }
+    if (c === '<') {
+      const fin = finDuNoeud(jsx, i);
+      if (fin === -1 || fin > finContenu) return null;
+      enfants.push([i, fin]);
+      i = fin;
+      continue;
+    }
+    if (c === '{') {
+      let prof = 0;
+      let j = i;
+      while (j < finContenu) {
+        if (jsx[j] === '{') prof += 1;
+        else if (jsx[j] === '}') {
+          prof -= 1;
+          if (prof === 0) break;
+        }
+        j += 1;
+      }
+      if (prof !== 0) return null;
+      enfants.push([i, j + 1]);
+      i = j + 1;
+      continue;
+    }
+    /** Du texte nu entre deux enfants : ces panneaux n'en ont pas. */
+    return null;
+  }
+  return enfants;
+}
+
+function finDuDiv(jsx, debut) {
+  let niveau = 0;
+  let i = debut;
+  while (i < jsx.length) {
+    const ouvre = jsx.indexOf('<div', i);
+    const ferme = jsx.indexOf('</div>', i);
+    if (ferme === -1) return -1;
+    if (ouvre !== -1 && ouvre < ferme) {
+      niveau += 1;
+      i = ouvre + '<div'.length;
+      continue;
+    }
+    niveau -= 1;
+    i = ferme + '</div>'.length;
+    if (niveau === 0) return i;
+  }
+  return -1;
+}
+
+const X01_SUGGESTIONS = {
+  screens: ['X01'],
+  nom: 'X01_SUGGESTIONS',
+  why: 'Le panneau de suggestions n’apparaît que s’il y en a, et sa ligne d’exemple dessinée est retirée.',
+  provides: [],
+  apply(jsx) {
+    const ouverture = '<div style={{ position: "absolute", left: "424px", top: "58px"';
+    const i = jsx.indexOf(ouverture);
+    if (i === -1) return { jsx, applied: false };
+
+    // La ligne d'exemple : du séparateur qui suit la boucle jusqu'à la fin du panneau.
+    const finBoucle = jsx.indexOf('))}', jsx.indexOf('suggestions ?? []', i));
+    if (finBoucle === -1) return { jsx, applied: false };
+    const apresBoucle = finBoucle + '))}'.length;
+
+    /**
+     * ON COMPTE LES NIVEAUX, on ne cherche pas `</div></div>`.
+     *
+     * Première version : couper au premier `</div></div>` après la boucle. Il
+     * tombait AU MILIEU de la ligne d'exemple — qui en contient — et le reste de
+     * son balisage survivait, orphelin : le cadre produit ne compilait plus.
+     * « Expected corresponding closing tag for JSX fragment », mesuré.
+     */
+    const finPanneau = finDuDiv(jsx, i);
+    if (finPanneau === -1) return { jsx, applied: false };
+
+    /**
+     * ── ET CHAQUE LIGNE DEVIENT UN LIEN ─────────────────────────────────────
+     *
+     * Le porteur : « les propositions sous l'input doivent s'afficher et permettre
+     * d'ALLER DIRECTEMENT sur un élément ». La ligne était un `<div>` : ce n'était
+     * pas un lien cassé, ce n'était pas un lien. `GET /search/suggest` ne rendait
+     * d'ailleurs rien à quoi en accrocher un — ni identifiant, ni adresse — et
+     * c'était consigné comme un manque dans `screens/x01/data.ts`. La route rend
+     * maintenant `subjectId` et `url`, composée par le serveur.
+     *
+     * La hauteur de 42, l'écart de 10, le rayon de 12 et la taille de 13,5 sont
+     * ceux que la planche dessine : seule la nature du nœud change. `textDecoration`
+     * et `color` sont remis, parce qu'un `<a>` les change et qu'un `<div>` ne les
+     * portait pas.
+     */
+    const ligne =
+      '<div style={{ height: "42px", display: "flex", alignItems: "center", gap: "10px", padding: "0 12px", borderRadius: "12px", fontSize: "13.5px" }}>';
+    let corps = jsx.slice(i, apresBoucle);
+    if (!corps.includes(ligne)) return { jsx, applied: false };
+    corps = corps.replace(
+      ligne,
+      '<a href={s.vers} style={{ height: "42px", display: "flex", alignItems: "center", gap: "10px", padding: "0 12px", borderRadius: "12px", fontSize: "13.5px", textDecoration: "none", color: "inherit" }}>',
+    );
+    // La fermeture de CETTE ligne : le dernier `</div>` du corps de la boucle.
+    const iFermeture = corps.lastIndexOf('</div>');
+    if (iFermeture === -1) return { jsx, applied: false };
+    corps = corps.slice(0, iFermeture) + '</a>' + corps.slice(iFermeture + '</div>'.length);
+
+    const panneau = corps + '</div>';
+    const conditionne = `{(suggestions ?? []).length === 0 ? null : (${panneau})}`;
+    return {
+      jsx: jsx.slice(0, i) + conditionne + jsx.slice(finPanneau),
+      applied: true,
+    };
+  },
+};
+
+const X01_RESULTATS = {
+  screens: ['X01'],
+  nom: 'X01_RESULTATS',
+  why: 'Les cartes de résultat portent ce que `GET /search` rend : elles montraient les quatre exemples de la maquette, et la page ne disait rien quand elle ne trouvait rien.',
+  provides: ['resultats', 'vide'],
+  apply(jsx) {
+    const debutCarte = '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "16px", flexShrink: "0" }}>';
+    const i = jsx.indexOf(debutCarte);
+    if (i === -1) return { jsx, applied: false };
+    /**
+     * LA FIN DE LA DERNIÈRE CARTE. On ne compte pas les `</div>` : on part du
+     * dernier chevron du groupe — le tracé `m9 18 6-6-6-6` — et on referme les
+     * deux niveaux que la carte ouvre.
+     */
+    const dernierChevron = jsx.lastIndexOf('m9 18 6-6-6-6');
+    if (dernierChevron === -1 || dernierChevron < i) return { jsx, applied: false };
+    const finSvg = jsx.indexOf('</svg>', dernierChevron);
+    if (finSvg === -1) return { jsx, applied: false };
+    /**
+     * DEUX fermetures, pas une : la carte ouvre son cadre PUIS la rangée qui
+     * porte l'icône, le texte et le chevron. N'en consommer qu'une laissait un
+     * `</div>` orphelin, et le cadre produit ne compilait plus — « JSX element
+     * 'main' has no corresponding closing tag ». Mesuré.
+     */
+    const apres = finSvg + '</svg>'.length;
+    if (!jsx.slice(apres).startsWith('</div></div>')) return { jsx, applied: false };
+    const coupe = apres + '</div></div>'.length;
+
+    /**
+     * ── LA CARTE OUVRE ENFIN CE QU'ELLE MONTRE ──────────────────────────────
+     *
+     * Elle dessine un CHEVRON depuis le premier jour : elle promettait d'ouvrir
+     * quelque chose, et n'ouvrait rien — `SearchHit` ne portait que `subjectType`
+     * et `subjectId`, et quatre des neuf types ne s'ouvrent pas par leur
+     * identifiant. `GET /search` rend maintenant `url`, composée par le serveur.
+     *
+     * `CadreCliquable` et non un ternaire : `url` peut être nulle (la source a
+     * disparu entre l'indexation et la lecture), et un ternaire recopierait tout le
+     * dessin intérieur dans ses deux branches. Voir son en-tête.
+     */
+    const cadre = `<CadreCliquable vers={r.url} style={{ ${
+      /style=\{\{([^}]*)\}\}/.exec(debutCarte)[1].trim()
+    } }}>`;
+
+    const carte =
+      `{(resultats ?? []).map((r, rIndex) => (\n<Fragment key={rIndex}>` +
+      cadre +
+      '<div style={{ display: "flex", gap: "12px", alignItems: "center" }}>' +
+      '<span style={{ width: "40px", height: "40px", borderRadius: "12px", background: "#E3F0EB", display: "flex", alignItems: "center", justifyContent: "center" }}>' +
+      '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={r.trace} /></svg></span>' +
+      '<div style={{ flex: "1" }}>' +
+      '<div style={{ display: "flex", gap: "6px", alignItems: "center" }}>' +
+      '<span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px", whiteSpace: "nowrap" }}>{r.pastille}</span></div>' +
+      '<div style={{ fontSize: "14.5px", fontWeight: "700", marginTop: "4px" }}>{r.titre}</div>' +
+      '<div style={{ fontSize: "12px", color: "#8A958F" }}>{r.extrait}</div></div>' +
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#8A958F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>' +
+      '</div></CadreCliquable></Fragment>))}';
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ ET LA CARTE « AUCUN RÉSULTAT », QUI N'ÉTAIT MONTÉE NULLE PART            ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, capture à l'appui sur `/recherche?q=siple` : « ça ne met pas
+     * qu'il n'a rien trouvé ». MESURÉ : dix filtres à zéro, aucune carte, et
+     * AUCUNE phrase — une page blanche sous un titre.
+     *
+     * LA MAQUETTE LA DESSINE, et c'est pour cela qu'on la monte ici plutôt que de
+     * l'écrire : elle vit dans une carte « ÉTATS / VIDE » posée à côté des
+     * planches de la maquette, sans écran autour. Le dessin est repris À
+     * L'IDENTIQUE — fond, bord, rayon, retrait, les trois tailles de texte, le
+     * vert `#16785E` du bouton — et seuls les mots deviennent des données, parce
+     * que §2.4 les fait venir du SERVEUR (`meta.zeroResult`).
+     *
+     * LE BOUTON DEVIENT UN LIEN : la maquette le dessine en `<div>`. Un bouton qui
+     * propose « Poser la question » et ne mène nulle part est exactement le défaut
+     * que ce lot corrige ailleurs. Il n'apparaît que si le serveur a proposé
+     * quelque chose — voir `videDe`.
+     */
+    const vide =
+      '{vide === null ? null : (' +
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "16px", flexShrink: "0" }}>' +
+      '<div style={{ textAlign: "center" }}>' +
+      '<div style={{ fontSize: "14px", fontWeight: "700" }}>{vide.titre}</div>' +
+      '{vide.invite === "" ? null : (<div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>{vide.invite}</div>)}' +
+      '{vide.bouton === "" ? null : (<a href={vide.href} style={{ marginTop: "10px", display: "inline-block", background: "#16785E", color: "#fff", fontSize: "12.5px", fontWeight: "700", padding: "8px 14px", borderRadius: "999px", textDecoration: "none" }}>{vide.bouton}</a>)}' +
+      '</div></div>)}';
+
+    return { jsx: jsx.slice(0, i) + carte + vide + jsx.slice(coupe), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE RAIL DÉPLIE SON MENU AU SURVOL — SUR LES 65 PLANCHES QUI LE DESSINENT   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « le menu green de gauche affiche au "hover" un floatting side bar
+ * menu quand on passe le curseur sur Accueil, Parcours etc. — ça va permettre
+ * d'avoir la navigation même sur les pages où la side bar est réutilisée pour le
+ * contexte de la page, comme la recherche. »
+ *
+ * ── UNE SEULE SUBSTITUTION, ET ELLE TIENT POUR LES DEUX FORMES DE RAIL ────
+ *
+ * Le `<nav>` est remplacé par `RailSurvol`, qui le rend à l'identique avec son
+ * style et ses enfants. RIEN D'AUTRE NE BOUGE : ni les cinq `<a>` littéraux des 51
+ * planches, ni l'unique `<a>` en boucle des 13 autres. C'est ce qui permet à une
+ * déclaration de couvrir les deux formes — le composant demande au DOM quel lien
+ * est survolé, là où un mécanisme indexé sur le JSX aurait dû traiter la boucle
+ * séparément, donc exister en double. La même leçon que `markLinks` a appris sur
+ * ces mêmes rails.
+ *
+ * ── LE CONTENEUR EST REPÉRÉ PAR SON DESSIN EXACT, ET C'EST UN FILTRE ──────
+ *
+ * MESURÉ sur les cadres produits : ce dessin précis — 76 px, `#0F5C48`, rayon 22,
+ * retrait 12/8 — figure exactement 65 fois, et ce sont les 65 rails MEMBRE. Les
+ * trois autres `<nav>` du dépôt sont ceux de l'administration (`#16211D` en 15
+ * exemplaires, et deux panneaux blancs) : ils ne correspondent pas, donc ils ne
+ * sont pas touchés. Leurs rubriques n'ont de toute façon pas de menu dessiné.
+ *
+ * `screens: ['*']` : la transformation vaut pour tout écran qui dessine ce rail, et
+ * ne compte pas comme manquée là où il n'y en a pas — les cadres mobiles n'ont pas
+ * de rail, la maquette y met une barre d'onglets basse.
+ */
+const RAIL_SURVOL = {
+  screens: ['*'],
+  nom: 'RAIL_SURVOL',
+  why: 'Le rail déplie le menu de sa rubrique au survol : la navigation de second niveau survit aux pages dont la colonne sert au contexte.',
+  provides: [],
+  apply(jsx) {
+    const ouverture =
+      '<nav style={{ width: "76px", background: "#0F5C48", borderRadius: "22px", padding: "12px 8px", display: "flex", flexDirection: "column", gap: "4px", flexShrink: "0", alignSelf: "stretch" }}>';
+    const i = jsx.indexOf(ouverture);
+    if (i === -1) return { jsx, applied: false };
+
+    const style = /style=\{\{([^}]*)\}\}/.exec(ouverture);
+    if (style === null) return { jsx, applied: false };
+
+    /**
+     * LA FERMETURE EST LE PREMIER `</nav>` QUI SUIT, et c'est sûr : un écran ne
+     * dessine qu'un rail — le compte de 65 pour 65 cadres le dit — et les `<nav>`
+     * ne s'imbriquent pas dans ces planches.
+     */
+    const fin = jsx.indexOf('</nav>', i);
+    if (fin === -1) return { jsx, applied: false };
+
+    const dedans = jsx.slice(i + ouverture.length, fin);
+    return {
+      jsx:
+        jsx.slice(0, i) +
+        `<RailSurvol style={{ ${style[1].trim()} }}>` +
+        dedans +
+        '</RailSurvol>' +
+        jsx.slice(fin + '</nav>'.length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ X01 À 390 px — ON VOYAIT SA RECHERCHE, ON NE POUVAIT PAS EN FAIRE UNE     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Ça doit afficher une page de recherche et un input en haut pour
+ * le texte avec un bouton de recherche qui permettra de lancer la recherche. La
+ * page affiche le contenu. »
+ *
+ * MESURÉ sur `/recherche?q=lyon` à 390 px : ZÉRO champ de saisie. La maquette
+ * dessine la requête dans une pastille grise — un `<div>` — et le chevron de
+ * retour en `<span>`. Les résultats, eux, étaient déjà réels (« Ville Lyon ·
+ * Auvergne-Rhône-Alpes »), et l'état vide aussi (« Aucun résultat. Posez la
+ * question à la communauté ? »). Il n'y avait donc qu'une chose à faire sur
+ * cette page, et c'est la seule qu'on ne pouvait pas faire : chercher.
+ *
+ * ── LE MÊME CHAMP QU'EN HAUT DES AUTRES PAGES ───────────────────────────────
+ *
+ * `<ChampRecherche>` — pas un second champ écrit pour l'occasion. Il porte déjà
+ * le formulaire `method="get"` vers `/recherche`, les propositions dès trois
+ * caractères, la croix d'effacement et le clavier (flèches, Échap, Entrée). Lui
+ * en écrire un jumeau voudrait dire tenir deux recherches qui divergeront.
+ *
+ * Deux prises s'ajoutent pour cette page : `valeurInitiale` — sinon le champ
+ * s'affiche vide au-dessus des résultats de la requête qu'il vient de faire — et
+ * `avecBouton`, qui est la demande explicite du porteur.
+ *
+ * ── LE CHEVRON DE RETOUR MÈNE AU FIL ────────────────────────────────────────
+ *
+ * Il était mort. `/accueil` plutôt qu'un retour d'historique : c'est de là que
+ * la loupe de la barre haute amène, et un lien se comporte pareil au clavier,
+ * au clic long et dans un onglet neuf.
+ */
+const X01_CHAMP_MOBILE = {
+  screens: ['X01'],
+  nom: 'X01_CHAMP_MOBILE',
+  why: 'La page de recherche du téléphone reçoit un vrai champ, son bouton, et un retour qui revient.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    // ── LA PASTILLE DE REQUÊTE DEVIENT LE CHAMP ───────────────────────────
+    const pastille =
+      /<div (style=\{\{ flex: "1", height: "44px", borderRadius: "999px", background: "#F2F5F4", padding: "0 16px", display: "flex", alignItems: "center", fontSize: "14px", fontWeight: "600" \}\})>\{requete\}<\/div>/;
+    const mp = pastille.exec(out);
+    if (mp !== null) {
+      const style = /style=\{\{([^}]*)\}\}/.exec(mp[1]);
+      if (style !== null) {
+        out =
+          out.slice(0, mp.index) +
+          /**
+           * `minWidth: 0` — SANS LUI LE CHAMP NE RÉTRÉCIT PAS, et la batterie l'a
+           * mesuré : 323 px dans une fenêtre de 320. Un enfant de flex a
+           * `min-width: auto`, c'est-à-dire sa largeur de CONTENU : la loupe, le
+           * champ, le bouton de 44 px et les retraits de la pastille. `flex: 1`
+           * ne l'autorise à grandir, jamais à passer sous ce plancher. C'est la
+           * même règle que les `minHeight: 0` que ce fichier pose sur les
+           * colonnes qui doivent défiler.
+           */
+          `<ChampRecherche style={{ ${style[1].trim()}, gap: "10px", minWidth: "0" }} ` +
+          'valeurInitiale={requete} avecBouton />' +
+          out.slice(mp.index + mp[0].length);
+        pris += 1;
+      }
+    }
+
+    // ── LE CHEVRON DE RETOUR ──────────────────────────────────────────────
+    const retour =
+      /<span (style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: "#EEF2F0"[^}]*\}\})>(<svg[^>]*><path d="m15 18-6-6 6-6" \/><\/svg>)<\/span>/;
+    const mr = retour.exec(out);
+    if (mr !== null) {
+      const style = /style=\{\{([^}]*)\}\}/.exec(mr[1]);
+      if (style !== null) {
+        out =
+          out.slice(0, mr.index) +
+          `<Link href="/accueil" aria-label="Retour au fil" data-recherche-retour="" ` +
+          /**
+           * 40 px DESSINÉS, 44 px TACTILES — T1 §2.3. Le rond garde ses 40 px de
+           * fond ; c'est la BOÎTE du lien qui atteint 44, ce qui ne déplace rien
+           * dans une rangée dont le champ voisin fait déjà 44.
+           */
+          `style={{ ${style[1].trim()}, minWidth: "44px", minHeight: "44px", ` +
+          `textDecoration: "none", color: "inherit" }}>${mr[2]}</Link>` +
+          out.slice(mr.index + mr[0].length);
+        pris += 1;
+      }
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LES FILTRES SUR LA PAGE NOTIFICATION MARCHENT ? »                       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Non. Et la réponse mesurée est nette : ZÉRO `onClick` dans les trois cadres de
+ * X02. Les sept pastilles de la page et les quatre du téléphone étaient des
+ * `<span>` — du dessin.
+ *
+ * ── UN LIEN, PAS UN ÉTAT DE PAGE ────────────────────────────────────────────
+ *
+ * `/notifications` est un composant SERVEUR qui lit `searchParams` — c'est déjà
+ * ainsi que `?vue=panneau` fonctionne, et la raison est écrite dans sa page :
+ * `useSearchParams()` y forcerait un rendu client et servirait un HTML vide. Le
+ * filtre voyage donc par `?type=`, et chaque pastille est un `<Link>`.
+ *
+ * Ça donne en prime ce qu'un état local n'aurait pas : la vue filtrée a une
+ * adresse, elle se partage, le retour du navigateur la défait, et un clic long
+ * l'ouvre dans un onglet.
+ *
+ * `aria-current="page"` plutôt que `aria-pressed` : ce sont des liens de
+ * navigation, pas des interrupteurs.
+ */
+const X02_FILTRES = {
+  screens: ['X02'],
+  nom: 'X02_FILTRES',
+  why: 'Les pastilles de filtre des notifications filtrent vraiment : c’étaient sept dessins.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * LES DEUX BOÎTES, parce que la maquette en dessine deux : la page
+     * d'ordinateur en `padding: 8px 13px`, la rangée défilante du téléphone en
+     * `height: 36px`. Un motif unique aurait écrasé l'un des deux dessins.
+     */
+    const boites = [
+      /<span (style=\{\{ padding: "8px 13px", borderRadius: "999px", fontSize: "12\.5px", fontWeight: "700", whiteSpace: "nowrap", background: ft\.fond, color: ft\.texte, border: `1px solid \$\{ft\.bord\}` \}\})>\{ft\.libelle\}<\/span>/,
+      /<span (style=\{\{ height: "36px", padding: "0 13px", borderRadius: "999px", display: "flex", alignItems: "center", fontSize: "12\.5px", fontWeight: "700", whiteSpace: "nowrap", background: ft\.fond, color: ft\.texte, border: `1px solid \$\{ft\.bord\}` \}\})>\{ft\.libelle\}<\/span>/,
+    ];
+
+    for (const motif of boites) {
+      const m = motif.exec(jsx);
+      if (m === null) continue;
+      /**
+       * ── 44 px, ET C'EST UN ÉCART ASSUMÉ ────────────────────────────────
+       *
+       * La rangée du téléphone est dessinée à 36 px de haut. Tant que c'étaient
+       * des `<span>`, personne ne la touchait ; devenues des liens, ce sont des
+       * CIBLES, et T1 §2.3 en exige 44. La batterie l'a relevé tout de suite —
+       * « a « Parcours » 82×36 px » — et elle a eu raison.
+       *
+       * On relève donc la hauteur plutôt que de déclarer un écart connu : huit
+       * pixels sur une rangée qui défile ne déplacent rien d'autre, et une
+       * pastille qu'on rate est un filtre qui « ne marche pas ».
+       */
+      const tactile = m[1]
+        .replace('height: "36px"', 'minHeight: "44px"')
+        .replace(' }}', ', textDecoration: "none" }}');
+      const lien =
+        `<Link href={ft.href} data-notif-filtre={ft.cle} ` +
+        `aria-current={ft.actif ? "page" : undefined} ` +
+        `${tactile}>{ft.libelle}</Link>`;
+      return { jsx: jsx.slice(0, m.index) + lien + jsx.slice(m.index + m[0].length), applied: true };
+    }
+    return { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « SUR LE PROFIL, LE BOUTON ÉCRIRE ET AJOUTER NE MARCHENT PAS »            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Sur le profil, le bouton écrire et ajouter ne marche pas. Le
+ * bouton ajouter affiche un modal qui ne marche pas. Aussi ces deux boutons
+ * sont-ils sur l'interface desktop ? »
+ *
+ * RÉPONSE À LA DERNIÈRE QUESTION, mesurée : OUI, les deux sont dessinés sur les
+ * deux planches — « Écrire » et « Ajouter aux contacts » à 1440 px, « Écrire » et
+ * « Ajouter » à 390 px, la maquette raccourcissant le libellé faute de place.
+ * « Ajouter » ouvrait déjà la fenêtre K02C (`data-modal-open`, mesuré sur les
+ * deux cadres) ; « Écrire », lui, n'avait AUCUN geste nulle part.
+ *
+ * ── « ÉCRIRE » OUVRE UNE FENÊTRE, ET LA ROUTE L'IMPOSE ────────────────────
+ *
+ * `POST /conversations/direct` exige un `firstMessage`. Il n'existe pas de
+ * conversation vide dans ce produit — §5.2 — donc un lien vers `/messages`
+ * n'aurait rien ouvert. Le bouton ouvre `FenetreEcrire`, qui demande ce premier
+ * message et rien d'autre.
+ */
+const K02_ECRIRE = {
+  screens: ['K02'],
+  nom: 'K02_ECRIRE',
+  why: 'Le bouton « Écrire » du profil public ouvre une conversation : il n’avait aucun geste, sur aucune des deux planches.',
+  provides: ['onEcrire'],
+  apply(jsx) {
+    /**
+     * LE LIBELLÉ EST LE DISCRIMINANT, pas la géométrie : les deux planches
+     * dessinent la même boîte verte de 44 px, et « Ajouter » la porte aussi sur
+     * l'ordinateur. On part donc du mot, et on remonte au `<button>` qui
+     * l'ouvre — même méthode que la barre de recherche, et pour la même raison.
+     */
+    const fin = '</svg>Écrire</button>';
+    const at = jsx.indexOf(fin);
+    const nu = jsx.indexOf('>Écrire</button>');
+    const cible = at >= 0 ? at : nu;
+    if (cible < 0) return { jsx, applied: false };
+
+    const debut = jsx.lastIndexOf('<button', cible);
+    if (debut < 0) return { jsx, applied: false };
+    const ouvre = jsx.slice(debut, jsx.indexOf('>', debut) + 1);
+    if (ouvre.includes('onClick')) return { jsx, applied: false };
+
+    const neuf = ouvre.replace(
+      '<button',
+      '<button type="button" onClick={onEcrire} data-profil-ecrire=""',
+    );
+    return {
+      jsx: jsx.slice(0, debut) + neuf + jsx.slice(debut + ouvre.length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ K02C — « LE BOUTON AJOUTER AFFICHE UN MODAL QUI NE MARCHE PAS »           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ : zéro `onClick`, zéro `<textarea>`, zéro `<input>` dans le cadre.
+ * Les quatre motifs étaient des `<span>` dont UN peint en vert — l'exemple de la
+ * maquette, pris pour un état —, le message un `<div>` de texte, et « Envoyer la
+ * demande » un bouton sans geste. La fenêtre s'ouvrait, et c'est tout ce qu'elle
+ * faisait.
+ *
+ * ── DEUX ÉCARTS ENTRE LA MAQUETTE ET LA ROUTE, ET ILS COMPTENT ────────────
+ *
+ * 1. LE MESSAGE N'EST PAS FACULTATIF. La planche écrit « Message (facultatif) ».
+ *    `createConnectionRequestSchema` l'EXIGE — `min(CONNECTION_MESSAGE_MIN)` —
+ *    et le commentaire du schéma dit pourquoi : « Obligatoire : c'est la moitié
+ *    de l'anti-spam de §3.1 ». Envoyer vide rendrait 400. Le bouton reste donc
+ *    éteint tant que rien n'est écrit, plutôt que d'échouer après le clic.
+ *    L'ÉTIQUETTE DESSINÉE N'EST PAS RÉÉCRITE — on ne réécrit pas la maquette —
+ *    mais l'écart est remonté au porteur : c'est elle qu'il faut corriger.
+ *
+ * 2. LE MOTIF NE PART PAS. `createConnectionRequestSchema` est `.strict()` et ne
+ *    porte que `toHandle` et `message` ; `ConnectionRequest` n'a pas de colonne
+ *    pour le motif. Les quatre pastilles deviennent une vraie sélection — elles
+ *    répondent, elles s'annoncent (`aria-pressed`) — mais ce choix ne quitte pas
+ *    l'écran. Lui fabriquer une place dans le texte du message écrirait à la
+ *    place du membre. REMONTÉ : il manque un champ `reason` à la route.
+ */
+const K02C_DEMANDE = {
+  /**
+   * `K02`, ET PAS `K02C` : les transformations sont appariées sur la SECTION, et
+   * la fenêtre d'ajout est le troisième cadre de la section K02 (420 px, sorti
+   * dans `k02contact/`). Déclarée sous un nom de cadre, elle ne tournait sur
+   * rien — mesuré : zéro `data-demande-envoyer` dans le fichier produit.
+   *
+   * Elle tourne donc aussi sur les deux cadres de profil, où ses trois motifs
+   * sont introuvables : `apply` n'y fait rien, et le générateur le signale. Voir
+   * la leçon de `O04_CHOIX_REFERENTIEL` — « introuvable » veut dire « introuvable
+   * SUR CE CADRE », jamais « inutile ».
+   */
+  screens: ['K02'],
+  nom: 'K02C_DEMANDE',
+  why: 'La fenêtre « Ajouter aux contacts » choisit, écrit et envoie : elle ne faisait que s’ouvrir.',
+  provides: ['motifs', 'demandeTexte', 'onDemandeTexte', 'onEnvoyerDemande', 'demandeBloque'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── LES QUATRE MOTIFS ────────────────────────────────────────────────
+     *
+     * La maquette en peint UN en vert : c'est son exemple, pas un état. Les
+     * quatre deviennent une boucle sur `motifs`, dont le fond, l'encre et le
+     * trait sont les DEUX variantes qu'elle dessine.
+     */
+    const pastille =
+      /<span style=\{\{ padding: "8px 13px", borderRadius: "999px", fontSize: "12\.5px", fontWeight: "700", whiteSpace: "nowrap", background: "(?:#fff|#16785E)", color: "(?:#16211D|#fff)", border: "1px solid (?:#E6EBE9|#16785E)" \}\}>(Entraide|Parrainage|Rencontre|Réseau)<\/span>/g;
+    const trouves = [...out.matchAll(pastille)];
+    if (trouves.length === 4) {
+      const premier = trouves[0];
+      const dernier = trouves[3];
+      if (premier !== undefined && dernier !== undefined) {
+        const boucle =
+          '{(motifs ?? []).map((mo) => (' +
+          '<button key={mo.cle} type="button" onClick={mo.onChoisir} aria-pressed={mo.actif} ' +
+          'data-demande-motif={mo.cle} style={{ padding: "8px 13px", borderRadius: "999px", ' +
+          'fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", background: mo.fond, ' +
+          'color: mo.texte, border: `1px solid ${mo.bord}`, fontFamily: "inherit", ' +
+          'cursor: "pointer" }}>{mo.libelle}</button>))}';
+        out =
+          out.slice(0, premier.index) +
+          boucle +
+          out.slice(dernier.index + dernier[0].length);
+        pris += 1;
+      }
+    }
+
+    // ── LE MESSAGE : un `<div>` de texte devient un vrai champ ────────────
+    const boite =
+      /<div (style=\{\{ minHeight: "48px", borderRadius: "14px", border: "1\.5px solid #16785E", background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1\.5" \}\})>([^<]*)<\/div>/;
+    const mb = boite.exec(out);
+    if (mb !== null) {
+      const champ =
+        '<textarea value={demandeTexte} onChange={onDemandeTexte} ' +
+        `placeholder="${mb[2]}" aria-label="Message de votre demande" data-demande-message="" ` +
+        /**
+         * LE STYLE CAPTURÉ PORTE DÉJÀ `fontSize` ET `lineHeight` — les redire
+         * donnerait TS1117, « an object literal cannot have multiple properties
+         * with the same name ». On n'ajoute donc que ce qu'un `<div>` n'avait
+         * pas besoin d'avoir : la famille, la largeur, la poignée de
+         * redimension et la remise à zéro du contour.
+         */
+        `${mb[1].replace(' }}', ', width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit", color: "#16211D", outline: "none" }}')} />`;
+      out = out.slice(0, mb.index) + champ + out.slice(mb.index + mb[0].length);
+      pris += 1;
+    }
+
+    // ── L'ENVOI ───────────────────────────────────────────────────────────
+    const envoi =
+      /<button (style=\{\{ height: "44px", padding: "0 18px", borderRadius: "14px", background: "#16785E"[^}]*\}\})>Envoyer la demande<\/button>/;
+    const me = envoi.exec(out);
+    if (me !== null) {
+      const bouton =
+        '<button type="button" onClick={onEnvoyerDemande} disabled={demandeBloque} ' +
+        `data-demande-envoyer="" ${me[1].replace(' }}', ', cursor: demandeBloque ? "default" : "pointer", opacity: demandeBloque ? ".55" : "1" }}')}>Envoyer la demande</button>`;
+      out = out.slice(0, me.index) + bouton + out.slice(me.index + me[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LE CHAMP RECHERCHE DU MODAL PARTAGER NE DIT PAS QU'IL N'A RIEN TROUVÉ » ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : il tape « Si » dans la feuille « Partager », et
+ * la rangée de contacts disparaît sans un mot. Rien ne distingue « vous n'avez
+ * aucun contact en ligne » de « aucun ne porte ce nom » ni de « la fenêtre est
+ * cassée ».
+ *
+ * ── LE DESSIN EST CELUI DES AUTRES ÉTATS VIDES DU PRODUIT ─────────────────
+ *
+ * Deux lignes centrées : 14 px / 700 pour le constat, 12,5 px sur `#5D6B66`
+ * pour la suite à donner. C'est exactement la carte « ÉTATS · VIDE » que les
+ * maquettes posent à côté de leurs planches — celle de K10 (« Vous n'avez rien
+ * enregistré » / « Touchez le signet… ») et celle de X01 (« Aucun résultat » /
+ * « Posez la question à la communauté ? »). On reprend leur grammaire plutôt que
+ * d'en inventer une troisième.
+ *
+ * LE TEXTE EST DEMANDÉ PAR LE PORTEUR — « il doit dire qu'il n'a pas trouvé » —
+ * et la seconde ligne renvoie à « Copier le lien », que la même feuille dessine
+ * juste en dessous : on ne laisse pas sur un cul-de-sac.
+ */
+const A01P_AUCUN_CONTACT = {
+  screens: ['A01P'],
+  nom: 'A01P_AUCUN_CONTACT',
+  why: 'La recherche de contacts du partage dit quand elle ne trouve rien : la rangée disparaissait en silence.',
+  provides: ['partageAucun'],
+  apply(jsx) {
+    /**
+     * LA RANGÉE DE CONTACTS, ET LES DEUX PLANCHES NE LA DESSINENT PAS PAREIL :
+     * le téléphone défile horizontalement (`gap: 2px`, `overflowX: auto`),
+     * l'ordinateur aligne six ronds (`gap: 6px`, `marginTop: 12px`). Un motif
+     * unique n'aurait attrapé qu'un cadre sur deux — l'erreur que la réaction du
+     * fil a déjà fait payer dans ce même lot.
+     *
+     * L'ancre commune est la boucle `{(shareContacts ?? []).map(` : c'est elle
+     * qui identifie la rangée, quel que soit son dessin.
+     */
+    const ancre = '{(shareContacts ?? []).map(';
+    const at = jsx.indexOf(ancre);
+    if (at < 0) return { jsx, applied: false };
+    const m = { index: jsx.lastIndexOf('<div', at) };
+    if (m.index < 0) return { jsx, applied: false };
+    const fin = finDuDiv(jsx, m.index);
+    if (fin === -1) return { jsx, applied: false };
+
+    const vide =
+      '{partageAucun ? (<div style={{ textAlign: "center", padding: "8px 0" }}>' +
+      '<div style={{ fontSize: "14px", fontWeight: "700" }}>Aucun contact à ce nom</div>' +
+      '<div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>' +
+      'Essayez un autre prénom, ou partagez le lien.</div></div>) : null}';
+
+    return { jsx: jsx.slice(0, fin) + vide + jsx.slice(fin), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LA PAGE DE PUBLICATION SUR MOBILE N'EST PAS DYNAMIQUE »                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : « La page pour la publication d'une actualité
+ * sur mobile n'est pas dynamique, pas d'input, l'ajout de sondage ne marche pas,
+ * etc. »
+ *
+ * MESURÉ sur `/publications/nouvelle` à 390 px : ZÉRO `<input>`, ZÉRO
+ * `<textarea>`, UN seul bouton. Tout le corps était l'exemple de la maquette —
+ * « On organise un repas partagé pour les nouveaux arrivants », « Photo 1 »,
+ * « Samedi 22 mars », « Repas pas cher à Lyon » — affiché à qui n'avait rien
+ * écrit.
+ *
+ * La déclaration d'écran a rendu ces textes DONNÉES. Restent les gestes, et
+ * aucun n'était dessiné : les quatre types sont des `<span>`, le corps un
+ * `<div>`, « Publier » un bouton sans `onClick`, et les croix des miniatures,
+ * du sondage et des guides de simples `<svg>`.
+ *
+ * ── LES PRISES SONT CELLES DU COMPOSEUR D'ORDINATEUR, SANS EXCEPTION ──────
+ *
+ * `onComposeurTexte`, `onPublier`, `publierBloque`, `composeurSondage`,
+ * `composeurGuides`, `onAjouterImage` : `A01_COMPOSEUR_CHAMP` et ses voisines
+ * les posent déjà à 1440 px, et `(app)/accueil/page.tsx` les attache. Deux jeux
+ * de prises auraient fait deux brouillons, et le jour où l'un gagne une règle
+ * l'autre la perdrait.
+ *
+ * ── LA CARTE DE SONDAGE DISPARAÎT QUAND IL N'Y EN A PAS ───────────────────
+ *
+ * `composeurSondage` vaut `null` tant qu'aucun sondage n'est composé. Sans la
+ * garde, le cadre lirait `null.question` — et c'est le compilateur qui l'a dit
+ * avant l'écran.
+ */
+const A01N_COMPOSEUR = {
+  screens: ['A01N'],
+  nom: 'A01N_COMPOSEUR',
+  why: 'Le composeur de 390 px écrit, choisit son type, pose ses images, son sondage et ses guides, et publie.',
+  provides: [
+    'composeurTexte',
+    'onComposeurTexte',
+    'onPublier',
+    'publierBloque',
+    'onAjouterImage',
+  ],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    // ── 1. LA CROIX DE L'EN-TÊTE REVIENT AU FIL ───────────────────────────
+    const fermer =
+      /<span (style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: "#F2F5F4"[^}]*\}\})>(<svg[^>]*><path d="M18 6 6 18M6 6l12 12" \/><\/svg>)<\/span>/;
+    const mf = fermer.exec(out);
+    if (mf !== null) {
+      const style = /style=\{\{([^}]*)\}\}/.exec(mf[1]);
+      if (style !== null) {
+        out =
+          out.slice(0, mf.index) +
+          `<Link href="/accueil" aria-label="Fermer" data-composeur-fermer="" ` +
+          `style={{ ${style[1].trim()}, textDecoration: "none", color: "inherit" }}>${mf[2]}</Link>` +
+          out.slice(mf.index + mf[0].length);
+        pris += 1;
+      }
+    }
+
+    // ── 2. « PUBLIER » ────────────────────────────────────────────────────
+    const publier =
+      /<button (style=\{\{ height: "40px", padding: "0 18px", borderRadius: "12px", background: "#16785E"[^}]*\}\})>Publier<\/button>/;
+    const mp = publier.exec(out);
+    if (mp !== null) {
+      out =
+        out.slice(0, mp.index) +
+        '<button type="button" onClick={onPublier} disabled={publierBloque} ' +
+        `data-composeur-publier="" ${mp[1].replace(' }}', ', cursor: publierBloque ? "default" : "pointer", opacity: publierBloque ? ".55" : "1" }}')}>Publier</button>` +
+        out.slice(mp.index + mp[0].length);
+      pris += 1;
+    }
+
+    // ── 3. LES QUATRE TYPES ───────────────────────────────────────────────
+    const type =
+      /<span (style=\{\{ height: "34px", padding: "0 12px", borderRadius: "999px", fontSize: "12px", fontWeight: "700", display: "flex", alignItems: "center", background: t\.bg, color: t\.fg, border: `1px solid \$\{t\.bd\}` \}\})>\{t\.label\}<\/span>/;
+    const mt = type.exec(out);
+    if (mt !== null) {
+      const ajout = resetBoutonManquant(mt[1]);
+      const style = ajout === '' ? mt[1] : mt[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, mt.index) +
+        `<button type="button" onClick={t.onPick} aria-pressed={t.on === true} ` +
+        `data-composeur-type={t.label} ${style}>{t.label}</button>` +
+        out.slice(mt.index + mt[0].length);
+      pris += 1;
+    }
+
+    // ── 4. LE CORPS DU BROUILLON ──────────────────────────────────────────
+    const corps = '<div style={{ fontSize: "15px", lineHeight: "1.55" }}>{brouillon.texte}</div>';
+    const ic = out.indexOf(corps);
+    if (ic >= 0) {
+      const champ =
+        '<textarea value={composeurTexte} onChange={onComposeurTexte} ' +
+        'placeholder="Que voulez-vous partager ?" aria-label="Que voulez-vous partager ?" ' +
+        'data-composeur-texte="" style={{ fontSize: "15px", lineHeight: "1.55", flex: "1", ' +
+        'minHeight: "120px", width: "100%", boxSizing: "border-box", border: "none", ' +
+        'background: "transparent", fontFamily: "inherit", color: "#16211D", outline: "none", ' +
+        'resize: "none", padding: 0 }} />';
+      out = out.slice(0, ic) + champ + out.slice(ic + corps.length);
+      pris += 1;
+    }
+
+    // ── 5. LA CARTE DE SONDAGE : gardée, modifiable, retirable ────────────
+    const carte =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "16px", padding: "12px 14px" }}>';
+    const icarte = out.indexOf(carte);
+    if (icarte >= 0) {
+      const fin = finDuDiv(out, icarte);
+      if (fin !== -1) {
+        let dedans = out.slice(icarte, fin);
+        dedans = dedans.replace(
+          '<span style={{ fontSize: "12px", fontWeight: "700", color: "#16785E" }}>Modifier</span>',
+          '<button type="button" onClick={composeurSondage.onModifier} data-sondage-modifier="" ' +
+            'style={{ fontSize: "12px", fontWeight: "700", color: "#16785E", border: "none", ' +
+            'background: "none", padding: 0, fontFamily: "inherit", cursor: "pointer" }}>Modifier</button>',
+        );
+        dedans = dedans.replace(
+          /(<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5D6B66"[^>]*><path d="M18 6 6 18M6 6l12 12" \/><\/svg>)/,
+          '<button type="button" onClick={composeurSondage.onRetirer} aria-label="Retirer le sondage" ' +
+            'data-sondage-retirer="" style={{ minWidth: "44px", minHeight: "44px", display: "flex", ' +
+            'alignItems: "center", justifyContent: "center", border: "none", background: "none", ' +
+            'padding: 0, cursor: "pointer" }}>$1</button>',
+        );
+        out =
+          out.slice(0, icarte) +
+          `{composeurSondage === null || composeurSondage === undefined ? null : (${dedans})}` +
+          out.slice(fin);
+        pris += 1;
+      }
+    }
+
+    /**
+     * ── 6. LES TROIS BOUTONS DU PIED ──────────────────────────────────────
+     *
+     * Le porteur, capture à l'appui : « L'ajout d'image et autres à la
+     * publication ne marche pas. »
+     *
+     * MESURÉ : trois `<span>` de 36 px, aucun geste. Ce sont les trois pièces
+     * que la planche « COMPOSANTS » énumère — images, sondage, guides — et leur
+     * compteur est déjà lié ; il ne leur manquait que le clic.
+     *
+     * L'IMAGE OUVRE LE SÉLECTEUR, tout de suite : c'est `onAjouterImage`, la
+     * même fonction que le composeur du fil appelle, et elle ne dépend d'aucune
+     * fenêtre.
+     *
+     * LE SONDAGE ET LES GUIDES ouvrent leurs fenêtres par `data-modal-open`,
+     * comme partout ailleurs dans ce dépôt. ⚠ Ces deux fenêtres ne sont pas
+     * encore montées sur cette page — leur état vit dans la page du fil — donc
+     * les deux boutons sont posés mais inertes tant que ce lot n'est pas fait.
+     * C'est dit plutôt que caché, et le bouton d'image, lui, répond.
+     *
+     * 44 px SUR LES TROIS : la planche les dessine à 36, et T1 §2.3 en exige 44
+     * dès qu'on peut les toucher. Même arbitrage que les pastilles de filtre des
+     * notifications, dans ce même lot.
+     */
+    const PIEDS = [
+      ['M3 4h18v16H3zM8.5 11a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2zM21 16l-5-5-9 9', 'image'],
+      ['M4 20V10M10 20V4M16 20v-7M22 20H2', 'sondage'],
+      [
+        'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+        'guides',
+      ],
+    ];
+    const GESTES_PIED = {
+      image: 'onClick={onAjouterImage} aria-label="Ajouter une image"',
+      sondage: 'data-modal-open="A01S" aria-label="Créer un sondage"',
+      guides: 'data-modal-open="A01G" aria-label="Lier un guide"',
+    };
+
+    /**
+     * ON PART DU TRACÉ, ET ON REMONTE AU `<span title=`.
+     *
+     * Pas d'expression régulière ici : ces trois tracés contiennent des
+     * parenthèses, des points et des barres obliques, et les échapper trois fois
+     * — une pour le tracé, une pour la chaîne, une pour le moteur — est
+     * exactement le genre de motif qui ne matche jamais et qu'on croit posé.
+     * Mesuré : la première version rendait zéro des trois.
+     */
+    for (const [trace, quoi] of PIEDS) {
+      /**
+       * `lastIndexOf` ET NON `indexOf` : deux de ces trois tracés sont dessinés
+       * DEUX fois dans le cadre — l'histogramme sur la carte de sondage ET sur
+       * son bouton de pied, le livre sur l'étiquette de guide ET sur le sien. Le
+       * pied est le DERNIER bloc de la page ; partir du début attrapait l'icône
+       * de la carte, dont le `<span title=` le plus proche n'existe pas, et les
+       * deux boutons restaient morts. Mesuré : un sur trois posé.
+       */
+      const ancreTrace = `<path d="${trace}" /></svg>`;
+      const at = out.lastIndexOf(ancreTrace);
+      if (at < 0) continue;
+      const debutSpan = out.lastIndexOf('<span title="', at);
+      if (debutSpan < 0) continue;
+      const finSpan = out.indexOf('</span>', at);
+      if (finSpan < 0) continue;
+
+      const ouverture = out.slice(debutSpan, out.indexOf('>', debutSpan) + 1);
+      const styleBrut = /style=\{\{([^}]*)\}\}/.exec(ouverture);
+      if (styleBrut === null) continue;
+      /** Entre l'ouverture et la fermeture : le svg, puis le compteur. */
+      const dedans = out.slice(out.indexOf('>', debutSpan) + 1, finSpan);
+
+      const base = `style={{ ${styleBrut[1].trim()} }}`;
+      const ajout = resetBoutonManquant(base);
+      const avecReset = ajout === '' ? base : base.replace(' }}', `, ${ajout} }}`);
+      const style = avecReset
+        .replace('height: "36px"', 'minHeight: "44px"')
+        .replace('minWidth: "36px"', 'minWidth: "44px"');
+
+      out =
+        out.slice(0, debutSpan) +
+        `<button type="button" ${GESTES_PIED[quoi]} data-composeur-${quoi}="" ${style}>` +
+        `${dedans}</button>` +
+        out.slice(finSpan + '</span>'.length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const BARRE_HAUTE = {
+  screens: ['*'],
+  nom: 'BARRE_HAUTE',
+  why: 'Les quatre contrôles de la barre haute deviennent de vrais contrôles : recherche, création, messages, notifications.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let applique = false;
+
+    /** Le style dessiné d'un nœud, tel quel — c'est lui qu'on transmet. */
+    const styleDe = (ouverture) => {
+      const m = /style=\{\{([^}]*)\}\}/.exec(ouverture);
+      return m === null ? null : m[1].trim();
+    };
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ 1. LA RECHERCHE — ET LE MOTIF QUI AVAIT MANGÉ LE LOGO                ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * La première version cherchait `<div (style)>(<svg…>.*?</svg>)Rechercher`
+     * avec le drapeau `s`. Le `.*?` est paresseux, mais le `<div` du DÉBUT, lui,
+     * pouvait être n'importe lequel : le moteur reculait jusqu'au logo du
+     * produit — qui porte lui aussi un `<div style>` et un `<svg>` — et la
+     * capture allait du LOGO jusqu'au texte de la recherche.
+     *
+     * CE QUE ÇA A FAIT, et le porteur l'a vu sur sa capture : le logo « Diaspora »
+     * et la boîte de recherche étaient remplacés par UN SEUL nœud, qui héritait du
+     * style du logo — 38 × 38 px au lieu de 420 × 44. La barre s'écrasait, et avec
+     * elle toute la mise en page de la page. Sur cinquante-trois planches.
+     *
+     * On ne recule donc plus : on part du TEXTE, on remonte au `<div` le plus
+     * proche, et on REFUSE si quoi que ce soit d'autre s'ouvre entre les deux.
+     */
+    const texte = 'Rechercher dans la diaspora</div>';
+    const iTexte = out.indexOf(texte);
+    if (iTexte !== -1) {
+      const iDiv = out.lastIndexOf('<div style={{', iTexte);
+      const entre = iDiv === -1 ? '' : out.slice(iDiv + '<div style={{'.length, iTexte);
+      // Rien d'autre ne doit s'ouvrir ni se fermer entre la boîte et son texte.
+      if (iDiv !== -1 && !entre.includes('<div') && !entre.includes('</div>')) {
+        const bloc = out.slice(iDiv, iTexte + texte.length);
+        const style = styleDe(bloc);
+        if (style !== null) {
+          out =
+            out.slice(0, iDiv) +
+            `<ChampRecherche style={{ ${style} }} />` +
+            out.slice(iTexte + texte.length);
+          applique = true;
+        }
+      }
+    }
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ 1 bis. LA LOUPE DU TÉLÉPHONE — « LE TOP BUTTON DE RECHERCHE SUR      ║
+     * ║        MOBILE NE MARCHE PAS »                                        ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, mot pour mot : « Le top button de recherche sur mobile ne
+     * marche pas. Ça doit afficher une page de recherche et un input en haut pour
+     * le texte avec un bouton de recherche qui permettra de lancer la recherche.
+     * La page affiche le contenu. »
+     *
+     * MESURÉ : à 390 px, la barre haute ne portait que DEUX nœuds nommés,
+     * « Messages » et « Notifications ». La loupe était un `<span>` — ni rôle, ni
+     * nom, ni geste — et aucun `data-recherche*` n'existait dans le cadre.
+     *
+     * ── UN LIEN, PAS UN CHAMP ─────────────────────────────────────────────
+     *
+     * À 1440 px, l'étape 1 remplace la boîte dessinée par `<ChampRecherche>` : il
+     * y a la place d'une barre de 420 px. À 390 px la maquette dessine un ROND de
+     * 44 px, et y loger un champ voudrait dire redessiner la barre. C'est
+     * d'ailleurs ce que le porteur demande : que le bouton MÈNE À UNE PAGE de
+     * recherche, dont le champ est en haut.
+     *
+     * `/recherche` existe et sert `GET /search` — c'est la destination que
+     * `ChampRecherche` emploie déjà (`/recherche?q=…`). On ne crée donc pas une
+     * seconde recherche : on ouvre la même, sans requête.
+     */
+    const loupe =
+      /<span (style=\{\{ width: "44px", height: "44px", borderRadius: "999px"[^}]*\}\})>(<svg[^>]*><circle cx="11" cy="11" r="7" \/><path d="m20 20-3\.5-3\.5" \/><\/svg>)<\/span>/;
+    const mLoupe = loupe.exec(out);
+    if (mLoupe !== null) {
+      const style = styleDe(mLoupe[1]);
+      if (style !== null) {
+        out =
+          out.slice(0, mLoupe.index) +
+          `<Link href="/recherche" aria-label="Rechercher" data-recherche-ouvrir="" ` +
+          `style={{ ${style}, textDecoration: "none", color: "inherit" }}>${mLoupe[2]}</Link>` +
+          out.slice(mLoupe.index + mLoupe[0].length);
+        applique = true;
+      }
+    }
+
+    // ── 2. LE « + » ────────────────────────────────────────────────────────
+    const plus = /<span (style=\{\{[^}]*\}\})>(<svg[^>]*><path d="M12 5v14M5 12h14" \/><\/svg>)<\/span>/;
+    const mPlus = plus.exec(out);
+    if (mPlus !== null) {
+      const style = styleDe(mPlus[1]);
+      if (style !== null) {
+        out =
+          out.slice(0, mPlus.index) +
+          `<BoutonCreer style={{ ${style} }}>${mPlus[2]}</BoutonCreer>` +
+          out.slice(mPlus.index + mPlus[0].length);
+        applique = true;
+      }
+    }
+
+    /**
+     * ── 3 et 4. LES DEUX ICÔNES À PASTILLE ───────────────────────────────
+     *
+     * La pastille DESSINÉE est retirée du contenu : le composant la repeint, et
+     * seulement s'il y a du non-lu. La laisser ici en ferait deux.
+     */
+    const aPastille = (trace, composant) => {
+      /**
+       * ── DEUX DESSINS POUR LA MÊME ICÔNE, ET IL A FALLU LES MESURER ───────
+       *
+       * La cloche existe sous DEUX formes dans les planches : un seul `<path>`
+       * avec le tracé complet, ou DEUX `<path>` séparés — et sa pastille est
+       * tantôt un point de neuf pixels, tantôt une capsule portant un NOMBRE.
+       * Un motif écrit sur la première forme laissait la seconde intacte :
+       * mesuré au navigateur, le fil n'avait que son lien « Messages », la
+       * cloche restait un `<span>` muet.
+       *
+       * On ne cherche donc plus un balisage exact : on cherche le nœud qui
+       * CONTIENT le tracé, jusqu'à sa fermeture, pastille comprise.
+       */
+      const debut = new RegExp(`<span (style=\\{\\{[^}]*\\}\\})>(<svg[^>]*>(?:(?!</svg>).)*${trace}(?:(?!</svg>).)*</svg>)`, 's');
+      const m = debut.exec(out);
+      if (m === null) return;
+      const style = styleDe(m[1]);
+      if (style === null) return;
+      /**
+       * CE QUI SUIT L'ICÔNE : la pastille dessinée, s'il y en a une, puis la
+       * fermeture du nœud. On la RETIRE — le composant la repeint, et seulement
+       * s'il y a du non-lu — mais on retient SA FORME : un point là où la
+       * maquette dessine un point, un nombre là où elle dessine un nombre.
+       */
+      const apres = out.slice(m.index + m[0].length);
+      const pastille = /^<span style=\{\{ position: "absolute"[^}]*\}\}>([^<]*)<\/span>/.exec(apres);
+      const reste = pastille === null ? apres : apres.slice(pastille[0].length);
+      if (!reste.startsWith('</span>')) return;
+      const forme = pastille !== null && /\d/.test(pastille[1]) ? 'nombre' : 'point';
+      const longueur = m[0].length + (pastille === null ? 0 : pastille[0].length) + '</span>'.length;
+      /**
+       * `position: "relative"` est AJOUTÉ s'il manque : la pastille du composant
+       * se place en absolu dans ce nœud. La planche le pose sur l'icône des
+       * messages (qui porte la pastille dessinée) et pas sur celle des
+       * notifications — qui n'en avait pas, et qui en recevra une.
+       */
+      const avecRelative = style.includes('position: "relative"')
+        ? style
+        : `position: "relative", ${style}`;
+      out =
+        out.slice(0, m.index) +
+        `<${composant} forme="${forme}" style={{ ${avecRelative} }}>${m[2]}</${composant}>` +
+        out.slice(m.index + longueur);
+      applique = true;
+    };
+
+    /**
+     * ── LA PASTILLE DU MEMBRE, QUI DISAIT « AMINA » À TOUT LE MONDE ───────
+     *
+     * Le porteur : « La top bar montre toujours Amina, qui n'est pas le nom de
+     * l'utilisateur actif. » La planche écrit `AD` et `Amina` EN DUR, sur
+     * vingt-six cadres — un exemple de maquette pris pour une donnée, comme la
+     * pastille d'alerte toujours allumée juste à côté.
+     *
+     * Les TROIS styles sont transmis — la boîte, le rond, le prénom — parce
+     * qu'ils ne sont pas identiques d'un cadre à l'autre : deux variantes
+     * coexistent, et les figer dans le composant en effacerait une.
+     */
+    const membre =
+      /<div (style=\{\{[^}]*\}\})><span (style=\{\{ width: "38px", height: "38px"[^}]*\}\})>AD<\/span><span (style=\{\{ fontSize: "13\.5px", fontWeight: "600" \}\})>Amina<\/span><\/div>/;
+    const mMembre = membre.exec(out);
+    if (mMembre !== null) {
+      const boite = styleDe(mMembre[1]);
+      const avatar = styleDe(mMembre[2]);
+      const nom = styleDe(mMembre[3]);
+      if (boite !== null && avatar !== null && nom !== null) {
+        out =
+          out.slice(0, mMembre.index) +
+          `<PastilleMembre styleBoite={{ ${boite} }} styleAvatar={{ ${avatar} }} styleNom={{ ${nom} }} />` +
+          out.slice(mMembre.index + mMembre[0].length);
+        applique = true;
+      }
+    }
+
+    /**
+     * ── LA CARTE DE PROFIL DU RAIL ────────────────────────────────────────
+     *
+     * Même défaut que la pastille, treize cadres plus bas : `AD`, « Amina
+     * Diallo », et un « Voir mon profil public » en `href="#"` — un lien mort
+     * sous un nom qui n'est pas le vôtre.
+     */
+    const carte =
+      /<span (style=\{\{ width: "44px", height: "44px"[^}]*\}\})>AD<\/span><span style=\{\{ minWidth: "0" \}\}><span (style=\{\{[^}]*\}\})>Amina Diallo<\/span><a href="[^"]*" (style=\{\{[^}]*\}\})>([^<]*)<\/a><\/span>/;
+    const mCarte = carte.exec(out);
+    if (mCarte !== null) {
+      const avatar = styleDe(mCarte[1]);
+      const nom = styleDe(mCarte[2]);
+      const lien = styleDe(mCarte[3]);
+      if (avatar !== null && nom !== null && lien !== null) {
+        out =
+          out.slice(0, mCarte.index) +
+          `<CarteMembre styleAvatar={{ ${avatar} }} styleNom={{ ${nom} }} styleLien={{ ${lien} }} libelle=${JSON.stringify(mCarte[4])} />` +
+          out.slice(mCarte.index + mCarte[0].length);
+        applique = true;
+      }
+    }
+
+    aPastille('M4 5h16v11H9l-5 4z', 'LienMessages');
+    aPastille('M6 16V11a6 6 0 0 1 12 0v5l1\\.5 2h-15z', 'LienNotifications');
+
+    return { jsx: out, applied: applique };
+  },
+};
+
+const A13_PHOTO_SUR_ORDINATEUR = {
+  screens: ['A13'],
+  nom: 'A13_PHOTO_SUR_ORDINATEUR',
+  why: 'La photo de fond est peinte sur le grand cadre : la maquette ne dessine ce bloc que sur celui de 390 px.',
+  provides: [],
+  apply(jsx) {
+    // Le bloc n'a de sens que là où il manque : la planche de 390 px l'a déjà.
+    if (jsx.includes('st.photoFond')) return { jsx, applied: false };
+    /**
+     * ON NE SUPPOSE PAS L'ORDRE DES TRANSFORMATIONS. Une première version visait
+     * la chaîne exacte, `data-story-fond=""` compris — or ce repère est posé par
+     * `A13_FOND_EN_FONDU`, qui passe APRÈS. La transformation ne trouvait donc
+     * rien et ne disait rien : la photo restait invisible, et le garde-fou ne
+     * voyait qu'une transformation « non appliquée », ce qui est permis.
+     */
+    const ouverture =
+      /<div (?:data-story-fond="" )?style=\{\{ position: "relative", width: "100%", height: "100%", background: st\.bg,[^}]*\}\}>/;
+    const m = ouverture.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const i = m.index;
+    const couche =
+      '{st.photo ? (<><div style={{ position: "absolute", inset: "0", background: st.photoFond }}></div>' +
+      '<div style={{ position: "absolute", left: "0", right: "0", bottom: "0", height: "60%", ' +
+      'background: "linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.78))" }}></div></>) : null}';
+    const coupe = i + m[0].length;
+    return { jsx: jsx.slice(0, coupe) + couche + jsx.slice(coupe), applied: true };
+  },
+};
+
+/**
+ * « Photo de l'auteur » est l'étiquette du HACHURAGE, pas une légende : la
+ * maquette la pose sur son motif rayé pour dire « ici il y aura une image ».
+ * Comme la condition qui l'entoure est VRAIE seulement quand il y a une vraie
+ * photo, elle s'imprimait par-dessus celle du membre.
+ */
+const A13_PHOTO_SANS_ETIQUETTE = {
+  screens: ['A13'],
+  nom: 'A13_PHOTO_SANS_ETIQUETTE',
+  why: 'L’étiquette « Photo de l’auteur » est retirée : c’est l’annotation du hachurage, et elle se posait sur la vraie photo.',
+  provides: [],
+  apply(jsx) {
+    const pattern =
+      /<div style=\{\{ position: "absolute", left: "0", right: "0", top: "34%"[^}]*\}\}>Photo de l'auteur<\/div>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, m.index) + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+const A13_SANS_LOGO = {
+  screens: ['A13'],
+  nom: 'A13_SANS_LOGO',
+  why: 'Le logo du produit est retiré de la story : l’écran est une fenêtre posée sur le fil, qui le porte déjà.',
+  provides: [],
+  apply(jsx) {
+    const pattern =
+      /<div style=\{\{ position: "absolute", top: "24px", left: "28px"[^}]*\}\}>.*?Diaspora<\/span><\/div>\s*/s;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, m.index) + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+const A13_FERMER = {
+  screens: ['A13'],
+  nom: 'A13_FERMER',
+  why: 'La croix de l’en-tête ferme la story : elle était dessinée, sans geste ni nom accessible.',
+  provides: [],
+  apply(jsx) {
+    const pattern =
+      /<span (style=\{\{ width: "40px", height: "40px"[^}]*\}\})>(<svg [^>]*><path d="M18 6 6 18M6 6l12 12" \/><\/svg>)<\/span>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const ajout = resetBoutonManquant(m[1]);
+    const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+    const bouton =
+      `<button type="button" onClick={st.onFermer} aria-label="Fermer" ${style}>${m[2]}</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE FOND D'UNE STORY SE FOND DANS LE SUIVANT                               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Au niveau de la story il faut que le background se change avec
+ * une animation de fade. »
+ *
+ * La traversée change d'identifiant DANS L'ÉTAT — pas par le routeur — donc le
+ * même nœud reste en place et sa couleur saute d'un coup. Il suffit de le nommer
+ * pour que la feuille de style l'anime : la règle et sa durée vivent dans
+ * `packages/ui/src/styles.css`, sous le moment `storyFond`, comme toutes les
+ * autres de ce dépôt. Rien n'est écrit en dur ici.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'IMAGE D'UNE PUBLICATION S'AFFICHAIT COMME UN RECTANGLE RAYÉ             ║
+ * ║ AVEC SON ADRESSE ÉCRITE DEDANS                                           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « les images ne marchent pas ».
+ *
+ * MESURÉ dans le cadre produit : le bloc photo de la carte garde le HACHURAGE de la
+ * maquette en fond — `repeating-linear-gradient(135deg,#E3ECE8 …)`, son motif « ici
+ * il y a une image » — et affiche `{p.photo}` COMME TEXTE. Or `feedPostFrom` y met
+ * `urlMedia(...)` depuis le branchement du fil : une publication avec photo montrait
+ * donc un rectangle rayé portant « /media/post/2026/10/… » en gris.
+ *
+ * C'est exactement le défaut déjà corrigé sur la story (`photoFond` de A13), au même
+ * endroit de la même maquette, et il est corrigé de la même façon : `photoFondFor`
+ * compose `url("…") center/cover no-repeat` — sans `cover` et `no-repeat`, le
+ * navigateur pose l'image à sa taille naturelle et la répète.
+ *
+ * LE HACHURAGE RESTE LA VALEUR PAR DÉFAUT : une publication sans photo n'entre pas
+ * dans cette branche, et `photoFondFor(null, …)` rend le motif dessiné.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE SIGNET N'AVAIT AUCUN GESTE, ET L'AUTEUR N'AVAIT AUCUN MENU             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le bouton bookmark des publications marche ? Mets à côté du
+ * bouton bookmark (à gauche du bouton) le bouton d'option sur la publication,
+ * visible uniquement par le propriétaire […] Modifier […] Supprimer. »
+ *
+ * ── LE SIGNET ─────────────────────────────────────────────────────────────
+ *
+ * MESURÉ : l'ordinateur dessine `<button title="Enregistrer">` SANS `type` et
+ * SANS geste ; le téléphone dessine un `<span>` — même pas un bouton. Et côté
+ * API, `PUT /stories/:id/bookmark` existait pour les stories seules, alors que
+ * `BookmarkSubjectType` énumère `POST` depuis le début.
+ *
+ * L'ÉTAT SE VOIT SUR LE GLYPHE, pas sur une étiquette : enregistré, le signet est
+ * REMPLI de `#16785E` sur fond `#E3F0EB` — les deux couleurs vertes que cette
+ * maquette emploie partout pour « actif ». Un signet qu'on ne distingue pas d'un
+ * autre ne dit pas si le geste a pris.
+ *
+ * ── LES TROIS POINTS ──────────────────────────────────────────────────────
+ *
+ * Posés À GAUCHE du signet, comme demandé, et rendus SOUS `p.isAuthor` — qui
+ * vient du serveur. Le dessin vit dans `MenuPublication` et non ici : un menu a
+ * un état (ouvert, fermé), une sortie au clavier et une fermeture au clic dehors,
+ * et rien de tout cela ne s'écrit dans du JSX transcodé.
+ *
+ * LES DEUX PLANCHES SONT TRAITÉES, et leurs dessins DIFFÈRENT : `<button>` et
+ * svg de 17 px sur l'ordinateur, `<span>` et svg de 16 px sur le téléphone. La
+ * transformation relève donc la balise et la taille au lieu de les figer — c'est
+ * la leçon déjà payée par le bloc photo et les tuiles de partage.
+ */
+const A01_SIGNET_ET_OPTIONS = {
+  screens: ['A01', 'A02'],
+  nom: 'A01_SIGNET_ET_OPTIONS',
+  why: 'Le signet d’une publication s’enregistre, et son auteur reçoit le menu « Modifier / Supprimer ».',
+  provides: [],
+  apply(jsx) {
+    const motif =
+      /<(button|span)((?: title="Enregistrer")?) (style=\{\{ width: "40px", height: "40px", borderRadius: "999px",[^}]*\}\})><svg width="(\d+)" height="\d+" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1\.7" strokeLinejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" \/><\/svg><\/(?:button|span)>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    /**
+     * `resetBoutonManquant` POUR LE `<span>` DU TÉLÉPHONE : promu en `<button>`, il
+     * hériterait de la police, du retrait et de la bordure que le navigateur
+     * ajoute, et que la maquette n'écrit pas. Le rond de l'ordinateur est DÉJÀ un
+     * `<button>` et porte donc déjà `border: "none"` — l'appel est sans effet là,
+     * et indispensable ici.
+     */
+    const ajout = resetBoutonManquant(m[3]);
+    const styleBase = ajout === '' ? m[3] : m[3].replace(' }}', `, ${ajout} }}`);
+    /**
+     * LE FOND SUIT L'ÉTAT. On ne remplace pas le style : on substitue la SEULE
+     * déclaration de fond que la maquette écrit, pour que tout le reste — diamètre,
+     * centrage, `flexShrink` — reste mot pour mot celui de la planche.
+     */
+    const style = styleBase.replace(
+      'background: "#F2F5F4"',
+      'background: p.enregistre ? "#E3F0EB" : "#F2F5F4"',
+    );
+
+    const signet =
+      '<button type="button" onClick={p.onEnregistrer} aria-pressed={p.enregistre === true} ' +
+      'aria-label={p.enregistre ? "Retirer des enregistrés" : "Enregistrer"} ' +
+      'title={p.enregistre ? "Retirer des enregistrés" : "Enregistrer"} ' +
+      `data-post-signet="" ${style}>` +
+      `<svg width="${m[4]}" height="${m[4]}" viewBox="0 0 24 24" ` +
+      'fill={p.enregistre ? "#16785E" : "none"} stroke={p.enregistre ? "#16785E" : "#16211D"} ' +
+      'strokeWidth="1.7" strokeLinejoin="round">' +
+      '<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg></button>';
+
+    const menu =
+      '{p.isAuthor ? (<MenuPublication onModifier={p.onModifier} onSupprimer={p.onSupprimer} />) : null}';
+
+    return {
+      jsx: jsx.slice(0, m.index) + menu + signet + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « MON PROFIL » SE LISAIT, NE S'ÉCRIVAIT PAS                               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « La page de profil utilisateur est finalisée ? Les input pour
+ * l'édition images, nom, bio, Phase, Ville, Arrivée, Statut, et autres checks ou
+ * switch. »
+ *
+ * MESURÉ : le cadre d'ordinateur de K01 contient UN SEUL `<button>` — celui qui
+ * dit « Enregistrer » et n'a aucun geste — et ZÉRO `<input>`. Tout ce qui
+ * ressemble à un champ est un `<div>` à bordure portant la valeur lue. Les quatre
+ * pastilles de statut sont des `<span>`, les trois interrupteurs aussi. La page
+ * affichait donc un formulaire complet dont rien n'était saisissable.
+ *
+ * Les routes, elles, existaient toutes : `PATCH /me` (nom, pseudo, phase, ville,
+ * date d'arrivée) et `PATCH /me/profile` (bio, statut, disponibilité, visibilité).
+ *
+ * ── CE QUI DEVIENT SAISISSABLE, ET CE QUI NE PEUT PAS ─────────────────────
+ *
+ * Saisissable : le nom, le pseudo, la bio, la phase, la ville, la date d'arrivée,
+ * le statut, « Disponible pour aider », « Profil visible hors connexion », et la
+ * photo de profil.
+ *
+ * PAS saisissable, et c'est dit plutôt que bricolé :
+ *
+ *   · COMPÉTENCES et LANGUES — `PATCH /me/profile` attend `skillIds` et
+ *     `languageIds`, des IDENTIFIANTS de référentiel. Un champ de texte libre ne
+ *     peut pas les produire : il faudrait un sélecteur sur `/referentials/*`, qui
+ *     est une route d'ÉQUIPE. Les deux boîtes restent donc en lecture ;
+ *   · PAYS D'ORIGINE — la maquette le dessine DÉJÀ verrouillé, avec son cadenas
+ *     et sa phrase « Déjà modifié une fois. Contactez le support. » C'est §2.7, et
+ *     le serveur le tient aussi (`ORIGIN_COUNTRY_LOCKED`) ;
+ *   · « APPARAÎTRE DANS LES NOUVEAUX ARRIVANTS » — aucune colonne, aucune route.
+ *     Le bloc « nouveaux arrivants » de l'accueil se calcule sur la date d'arrivée,
+ *     sans opt-out. Cet interrupteur reste donc inerte, et c'est REMONTÉ.
+ *
+ * ── LES DEUX PLANCHES NE DESSINENT PAS LA MÊME PAGE ───────────────────────
+ *
+ * Le cadre de 390 px ne dessine QUE la bio, la ville et deux interrupteurs — ni
+ * nom, ni pseudo, ni phase, ni arrivée, ni statut, ni bouton « Enregistrer ». On
+ * ne lui invente pas les six autres : la transformation applique ce qu'elle
+ * trouve, et c'est pourquoi elle rend `applied` dès qu'UNE pièce a pris. Remonté
+ * au porteur — la page de profil du téléphone est une planche réduite.
+ */
+/**
+ * LES REPÈRES SONT PRÉFIXÉS `data-k01-`, PAS `data-profil-`, ET C'EST MESURÉ :
+ * `collectProps` ne retient une prise que si son nom figure dans le JSX produit,
+ * et il le cherche avec `\bprofil\b`. Un attribut `data-profil-bio` contient ce
+ * mot entre deux frontières de mot — la prise `profil` passait donc pour employée
+ * sur la planche de téléphone, qui ne la lit plus du tout, et le build échouait
+ * sur `no-unused-vars`.
+ */
+const K01_PROFIL_EDITABLE = {
+  screens: ['K01'],
+  nom: 'K01_PROFIL_EDITABLE',
+  why: 'La page « Mon profil » se modifie : tout y était dessiné en lecture seule.',
+  provides: ['edition'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+
+    /**
+     * LE CONTENANT RESTE, SON CONTENU DEVIENT LE CHAMP — la règle déjà suivie pour
+     * le composeur du fil, la barre de A14 et la recherche de contacts. La boîte
+     * garde sa hauteur, son rayon, sa bordure et son retrait ; seul le texte lu
+     * est remplacé par un contrôle qui hérite de la place.
+     */
+    const boite = (valeur) =>
+      new RegExp(
+        '<div style=\\{\\{ minHeight: "48px", borderRadius: "14px", border: "([^"]+)", ' +
+          'background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1\\.5" \\}\\}>' +
+          valeur +
+          '</div>',
+      );
+
+    const styleChamp = (bordure) =>
+      `style={{ minHeight: "48px", width: "100%", borderRadius: "14px", border: "${bordure}", ` +
+      'background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1.5", ' +
+      'font: "inherit", color: "#16211D", outline: "none", boxSizing: "border-box" }}';
+
+    /** Un champ de texte simple : nom, pseudo. */
+    const champ = (motif, cle, libelle) => {
+      const m = motif.exec(out);
+      if (m === null) return;
+      out =
+        out.slice(0, m.index) +
+        `<input type="text" value={edition.${cle}} onChange={edition.on${cle[0].toUpperCase()}${cle.slice(1)}} ` +
+        `aria-label="${libelle}" data-k01-${cle}="" ${styleChamp(m[1])} />` +
+        out.slice(m.index + m[0].length);
+      pris = true;
+    };
+
+    champ(boite('\\{moi\\.nom\\}'), 'nom', 'Nom');
+    champ(boite('\\{moi\\.pseudo\\}'), 'pseudo', 'Pseudo');
+
+    // ── LA BIO EST UN TEXTAREA : 500 caractères ne tiennent pas sur une ligne.
+    const mBio = boite('\\{profil\\.bio\\}').exec(out) ?? boite('[^<{}]*').exec(out);
+    if (mBio !== null && /profil\.bio|Étudiante en gestion/.test(mBio[0])) {
+      out =
+        out.slice(0, mBio.index) +
+        '<textarea value={edition.bio} onChange={edition.onBio} maxLength={500} ' +
+        'aria-label="Bio" placeholder="Quelques mots sur vous" data-k01-bio="" ' +
+        /**
+         * ON REMPLACE `minHeight`, ON NE L'AJOUTE PAS. Un second `minHeight` dans
+         * le même objet est une erreur de compilation (`TS1117`) — et même
+         * accepté, il laisserait deux vérités sur la hauteur du champ.
+         */
+        styleChamp(mBio[1])
+          .replace('minHeight: "48px"', 'minHeight: "88px"')
+          .replace(' }}', ', resize: "vertical" }}') +
+        ' />' +
+        out.slice(mBio.index + mBio[0].length);
+      pris = true;
+    }
+
+    /**
+     * LA PHASE ET LA VILLE SONT DES LISTES FERMÉES, donc des `<select>`.
+     *
+     * Un champ de texte libre y produirait une valeur que le serveur refuserait :
+     * `phase` est un enum généré depuis la base, et `cityId` un identifiant de
+     * référentiel. Le `<select>` est le SEUL contrôle qui ne peut pas produire
+     * autre chose que ce que l'API accepte — et il hérite du dessin de la boîte,
+     * donc rien ne change à l'œil sauf le chevron que le navigateur ajoute.
+     */
+    const liste = (motif, cle, libelle, source) => {
+      const m = motif.exec(out);
+      if (m === null) return;
+      out =
+        out.slice(0, m.index) +
+        `<select value={edition.${cle}} onChange={edition.on${cle[0].toUpperCase()}${cle.slice(1)}} ` +
+        `aria-label="${libelle}" data-k01-${cle}="" ${styleChamp(m[1])}>` +
+        `{edition.${source}.map((o, oIndex) => (\n<Fragment key={oIndex}>` +
+        '<option value={o.valeur}>{o.libelle}</option></Fragment>))}</select>' +
+        out.slice(m.index + m[0].length);
+      pris = true;
+    };
+
+    liste(boite('\\{profil\\.phase\\}'), 'phase', 'Phase', 'phases');
+    liste(boite('\\{profil\\.ville\\}'), 'ville', 'Ville', 'villes');
+
+    // ── LA DATE D'ARRIVÉE — la maquette l'écrit « Septembre 2026 », en dur.
+    const mDate = boite('Septembre 2026').exec(out);
+    if (mDate !== null) {
+      out =
+        out.slice(0, mDate.index) +
+        '<input type="date" value={edition.arrivee} onChange={edition.onArrivee} ' +
+        `aria-label="Date d’arrivée" data-k01-arrivee="" ${styleChamp(mDate[1])} />` +
+        out.slice(mDate.index + mDate[0].length);
+      pris = true;
+    }
+
+    /**
+     * ── LES QUATRE PASTILLES DE STATUT ────────────────────────────────────
+     *
+     * La maquette dessine LES DEUX apparences — la choisie en `#16785E` sur blanc,
+     * les autres en blanc à bordure `#E6EBE9`. On ne choisit donc rien : chaque
+     * bouton prend l'une ou l'autre selon le statut courant. C'est le même
+     * raisonnement que les deux onglets de tri des commentaires.
+     */
+    const iStatut = out.indexOf('>Statut</div>');
+    if (iStatut !== -1) {
+      const iRangee = out.indexOf('<div style={{ display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0" }}>', iStatut);
+      if (iRangee !== -1) {
+        const fin = finDuDiv(out, iRangee);
+        if (fin !== -1) {
+          const rangee =
+            '<div style={{ display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0" }}>' +
+            '{edition.statuts.map((st, stIndex) => (\n<Fragment key={stIndex}>' +
+            '<button type="button" onClick={st.onChoisir} aria-pressed={st.choisi} ' +
+            'data-k01-statut={st.valeur} ' +
+            'style={{ padding: "8px 13px", borderRadius: "999px", fontSize: "12.5px", ' +
+            'fontWeight: "700", whiteSpace: "nowrap", ' +
+            'background: st.choisi ? "#16785E" : "#fff", ' +
+            'color: st.choisi ? "#fff" : "#16211D", ' +
+            'border: st.choisi ? "1px solid #16785E" : "1px solid #E6EBE9", ' +
+            'font: "inherit", cursor: "pointer" }}>{st.libelle}</button></Fragment>))}</div>';
+          out = out.slice(0, iRangee) + rangee + out.slice(fin);
+          pris = true;
+        }
+      }
+    }
+
+    // ── LE BADGE D'APPAREIL PHOTO OUVRE LE CHOISISSEUR DE FICHIER ─────────
+    const badge =
+      /<span style=\{\{ position: "absolute", right: "-2px", bottom: "-2px", width: "30px", height: "30px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", justifyContent: "center" \}\}>(<svg[^]*?<\/svg>)<\/span>/;
+    const mb = badge.exec(out);
+    if (mb !== null) {
+      out =
+        out.slice(0, mb.index) +
+        '<button type="button" onClick={edition.onPhoto} aria-label="Changer ma photo" ' +
+        'title="Changer ma photo" data-k01-photo="" ' +
+        'style={{ position: "absolute", right: "-2px", bottom: "-2px", width: "30px", ' +
+        'height: "30px", borderRadius: "999px", background: "#fff", ' +
+        'border: "1px solid #E6EBE9", display: "flex", alignItems: "center", ' +
+        `justifyContent: "center", padding: 0, font: "inherit", cursor: "pointer" }}>${mb[1]}</button>` +
+        out.slice(mb.index + mb[0].length);
+      pris = true;
+    }
+
+    /**
+     * ── LES INTERRUPTEURS, DÉSIGNÉS PAR LEUR RANG ────────────────────────
+     *
+     * Les trois sont dessinés par la MÊME chaîne, au caractère près : seul leur
+     * ordre les distingue. C'est exactement le cas déjà rencontré sur les trois
+     * interrupteurs du sondage (`A01S_INTERRUPTEURS`), et la même méthode
+     * s'applique — désigner par le rang, et remplacer EN PARTANT DE LA FIN pour
+     * que les positions des précédents ne bougent pas.
+     *
+     * ORDRE DE LA PLANCHE D'ORDINATEUR : 0 « Disponible pour aider »,
+     * 1 « Apparaître dans les nouveaux arrivants », 2 « Profil visible hors
+     * connexion ». Celle du téléphone n'en dessine que deux : 0 et 1.
+     *
+     * LE RANG 1 N'EST PAS TOUCHÉ, et c'est délibéré : aucune colonne ne porte
+     * « apparaître dans les nouveaux arrivants », aucune route ne l'accepte. Le
+     * brancher sur `availableToHelp` ou `isPublic` ferait basculer un réglage
+     * pour un autre — un mensonge silencieux. Il reste donc dessiné et inerte, et
+     * c'est REMONTÉ au porteur.
+     */
+    const dessinInterrupteur =
+      '<span style={{ width: "46px", height: "26px", borderRadius: "999px", ' +
+      'background: "#16785E", position: "relative", flexShrink: "0" }}>' +
+      '<span style={{ position: "absolute", top: "3px", left: "23px", width: "20px", ' +
+      'height: "20px", borderRadius: "999px", background: "#fff" }}></span></span>';
+    const dessinInterrupteurEteint = dessinInterrupteur
+      .replace('background: "#16785E"', 'background: "#CBD5D1"')
+      .replace('left: "23px"', 'left: "3px"');
+
+    const positions = [];
+    for (const forme of [dessinInterrupteur, dessinInterrupteurEteint]) {
+      let i = out.indexOf(forme);
+      while (i !== -1) {
+        positions.push({ i, longueur: forme.length });
+        i = out.indexOf(forme, i + forme.length);
+      }
+    }
+    positions.sort((a, b) => a.i - b.i);
+
+    const INTERRUPTEURS = [
+      { rang: 0, cle: 'aide', libelle: 'Disponible pour aider' },
+      { rang: 2, cle: 'visible', libelle: 'Profil visible hors connexion' },
+    ];
+    for (const { rang, cle, libelle } of [...INTERRUPTEURS].reverse()) {
+      const place = positions[rang];
+      if (place === undefined) continue;
+      const bouton =
+        `<button type="button" role="switch" aria-checked={edition.${cle}} ` +
+        `onClick={edition.on${cle[0].toUpperCase()}${cle.slice(1)}} aria-label="${libelle}" ` +
+        `data-k01-${cle}="" ` +
+        'style={{ width: "46px", height: "26px", borderRadius: "999px", ' +
+        `background: edition.${cle} ? "#16785E" : "#CBD5D1", position: "relative", ` +
+        'flexShrink: "0", border: "none", padding: 0, cursor: "pointer" }}>' +
+        '<span style={{ position: "absolute", top: "3px", ' +
+        `left: edition.${cle} ? "23px" : "3px", width: "20px", height: "20px", ` +
+        'borderRadius: "999px", background: "#fff" }}></span></button>';
+      out = out.slice(0, place.i) + bouton + out.slice(place.i + place.longueur);
+      pris = true;
+    }
+
+    // ── « ENREGISTRER » ───────────────────────────────────────────────────
+    const bouton =
+      /<button (style=\{\{ padding: "0 18px", borderRadius: "14px", background: "#16785E",[^}]*\}\})>Enregistrer<\/button>/;
+    const mBtn = bouton.exec(out);
+    if (mBtn !== null) {
+      const style = mBtn[1].replace(' }}', ', opacity: edition.bloque ? ".55" : "1" }}');
+      out =
+        out.slice(0, mBtn.index) +
+        `<button type="button" onClick={edition.onEnregistrer} disabled={edition.bloque} ` +
+        `data-k01-enregistrer="" ${style}>{edition.libelle}</button>` +
+        out.slice(mBtn.index + mBtn[0].length);
+      pris = true;
+    } else if (pris) {
+      /**
+       * \u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557
+       * \u2551 LE T\u00c9L\u00c9PHONE N'A PAS DE BOUTON \u2014 ON LUI EN DONNE UN, ET IL LE FAUT  \u2551
+       * \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d
+       *
+       * MESUR\u00c9 au navigateur : sur la planche de 390 px, la bio, la ville et
+       * \u00ab Disponible pour aider \u00bb sont devenus saisissables \u2014 et AUCUN bouton
+       * n'existait pour les enregistrer. L'\u00e9cran laissait donc saisir quelque chose
+       * qui ne pouvait pas partir, ce qui est pire que le formulaire inerte d'avant.
+       *
+       * ON N'INVENTE PAS SON DESSIN : c'est celui de la planche d'ORDINATEUR, au
+       * caract\u00e8re pr\u00e8s, qui est repris. Il est pos\u00e9 juste apr\u00e8s le dernier bloc de
+       * r\u00e9glages, avant la barre basse \u2014 le seul endroit o\u00f9 il reste dans le flux
+       * et au-dessus de la navigation.
+       *
+       * REMONT\u00c9 AU PORTEUR : la planche de t\u00e9l\u00e9phone de K01 ne dessine ni nom, ni
+       * pseudo, ni phase, ni arriv\u00e9e, ni statut, ni bouton. Les six manquent, et ce
+       * lot n'en ajoute qu'un \u2014 celui sans lequel les trois autres ne servent \u00e0 rien.
+       */
+      const barre = out.indexOf('<div style={{ position: "sticky", flexShrink: "0", bottom: "0", zIndex: 10');
+      if (barre !== -1) {
+        const ajout =
+          '<button type="button" onClick={edition.onEnregistrer} disabled={edition.bloque} ' +
+          'data-k01-enregistrer="" style={{ padding: "0 18px", borderRadius: "14px", ' +
+          'background: "#16785E", color: "#fff", border: "none", font: "inherit", ' +
+          'fontSize: "13.5px", fontWeight: "700", display: "flex", alignItems: "center", ' +
+          'justifyContent: "center", gap: "8px", whiteSpace: "nowrap", flexShrink: "0", ' +
+          'margin: "0 16px 16px", height: "48px", ' +
+          'opacity: edition.bloque ? ".55" : "1" }}>{edition.libelle}</button>';
+        out = out.slice(0, barre) + ajout + out.slice(barre);
+        pris = true;
+      }
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A01_PHOTO_PUBLICATION = {
+  screens: ['A01', 'A02'],
+  nom: 'A01_PHOTO_PUBLICATION',
+  why: 'Le bloc photo d’une publication porte ses images, et les fait défiler quand il y en a plusieurs.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * LA MARGE DIFFÈRE D'UNE PLANCHE À L'AUTRE — 14 px sur l'ordinateur, 12 sur le
+     * téléphone. La relever plutôt que de l'écrire a une conséquence mesurée : la
+     * première version cherchait `marginTop: "14px"` et n'a corrigé QUE le cadre
+     * d'ordinateur. Le téléphone a continué d'afficher l'adresse du média sur le
+     * hachurage, et il a fallu la sonde du navigateur pour le voir — les deux
+     * cadres étant dans le DOM, le relevé en a trouvé un juste et un faux.
+     */
+    const motif =
+      /<div style=\{\{ marginTop: "(\d+)px", height: p\.photoH, borderRadius: "16px", background: "repeating-linear-gradient\([^"]*\)", ([^}]*)\}\}>\{p\.photo\}<\/div>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    /**
+     * ╔════════════════════════════════════════════════════════════════════╗
+     * ║ LE BLOC DEVIENT UN RAIL, PARCE QU'IL Y A JUSQU'À QUATRE IMAGES          ║
+     * ╚════════════════════════════════════════════════════════════════════╝
+     *
+     * La maquette dessine UN bloc, et `media` en porte quatre : l'écran en jetait
+     * trois. `CarrouselPhotos` rend EXACTEMENT ce bloc quand il n'y en a qu'une —
+     * même hauteur, même rayon, même marge — et ne se déplie en rail qu'au-delà.
+     * Le cas courant reste donc la transcription.
+     *
+     * LA MARGE EST RELEVÉE, JAMAIS ÉCRITE : 14 px sur l'ordinateur, 12 sur le
+     * téléphone. C'est la leçon déjà payée ici — une première version cherchait
+     * `marginTop: "14px"` et ne corrigeait qu'un cadre sur deux.
+     *
+     * CE QUI EST PERDU, ET POURQUOI ÇA NE L'EST PAS : le reste du style capturé
+     * (`display: flex`, `alignItems`, la police et l'encre `#7C8C85`) ne servait
+     * qu'à centrer le TEXTE que la maquette écrivait sur le hachurage. Ce texte
+     * n'existe plus depuis que le bloc porte l'image ; le centrage d'un contenu
+     * absent n'a rien à tenir.
+     */
+    const noeud =
+      `<CarrouselPhotos urls={p.photoUrls} hauteur={p.photoH} marge="${m[1]}px" />`;
+    return { jsx: jsx.slice(0, m.index) + noeud + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE COMPOSEUR DU FIL N'AVAIT AUCUN CHAMP                                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « la création de la publication dans le fil d'actualité ne marche
+ * pas ».
+ *
+ * MESURÉ au navigateur : sur `/accueil`, le SEUL champ de saisie de tout le cadre
+ * d'ordinateur est celui de la barre haute. La zone « Que voulez-vous partager avec
+ * la diaspora ? » est un `<div>` portant ce texte en dur, et le bouton « Publier »
+ * n'a aucun geste. Le dépôt le disait d'ailleurs lui-même, dans
+ * `screens/accueil/composeur.test.ts` : « le composeur N'A AUCUN ÉTAT dans
+ * l'application : la planche transcodée est entièrement statique ».
+ *
+ * ── LE CONTENANT RESTE, LE TEXTE DEVIENT UN CHAMP ────────────────────────
+ *
+ * Le `<div>` porte TROIS boutons en position absolue — sondage, guide, image — et
+ * son `padding: 14px 146px 14px 18px` leur réserve la place. Le remplacer par un
+ * `<textarea>` les sortirait du cadre. On garde donc la boîte et on remplace son
+ * TEXTE par le champ, qui hérite de la place déjà réservée.
+ *
+ * L'ENCRE DU CHAMP EST CELLE DU CONTENU (`#16211D`), pas le `#8A958F` du
+ * contenant : ce gris est la couleur d'un PLACEHOLDER, et l'écrire dans le champ
+ * ferait saisir en gris clair. Le placeholder, lui, hérite du gris du contenant —
+ * un style en ligne ne peut pas viser `::placeholder`. Même raisonnement, même
+ * solution que `A14_RECHERCHE`.
+ */
+const A01_COMPOSEUR_CHAMP = {
+  screens: ['A01'],
+  nom: 'A01_COMPOSEUR_CHAMP',
+  why: 'La zone « Que voulez-vous partager » devient un vrai champ : c’était un <div> de texte.',
+  provides: ['composeurTexte', 'onComposeurTexte'],
+  apply(jsx) {
+    const texte = 'Que voulez-vous partager avec la diaspora ?';
+    const i = jsx.indexOf(texte);
+    if (i === -1) return { jsx, applied: false };
+    const champ =
+      '<textarea value={composeurTexte} onChange={onComposeurTexte} ' +
+      `placeholder="${texte}" aria-label="${texte}" data-composeur-texte="" ` +
+      'style={{ width: "100%", minHeight: "64px", border: "none", background: "transparent", ' +
+      'font: "inherit", fontSize: "14px", color: "#16211D", outline: "none", padding: 0, ' +
+      'resize: "none" }} />';
+    return { jsx: jsx.slice(0, i) + champ + jsx.slice(i + texte.length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE COMPOSEUR GARNI — « ça doit se présenter comme sur A01·S »            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, planche à l'appui : « quand les éléments sont ajoutés au champ de la
+ * publication, ça doit se présenter comme ceci, comme sur le A01·S — COMPOSEUR
+ * AVEC PIÈCES JOINTES ».
+ *
+ * CETTE PLANCHE EXISTE, et je ne l'avais pas cherchée : le composeur a DEUX états
+ * dessinés, vide et garni, et je n'avais transcodé que le premier. Les pièces
+ * jointes partaient donc bien au serveur — mesuré — sans que rien ne les montre.
+ * C'est le défaut le plus facile à commettre sur ce projet : croire qu'un dessin
+ * manque alors qu'il est sur la planche d'à côté.
+ *
+ * ── TOUT CE QUI SUIT EST REPRIS DE CETTE PLANCHE, À L'OCTET ───────────────
+ *
+ *   · la vignette de 92 px, son hachurage, sa croix de 24 px en haut à droite ;
+ *   · la case « + N / 4 » en tireté `#CBD5D1` ;
+ *   · la carte de sondage — rond d'icône de 28 px, question en gras, « Modifier »
+ *     en `#16785E`, croix, les options en pastilles `#F2F5F4`, la ligne grise ;
+ *   · l'étiquette de guide verte `#EFF7F3` sur `#0F5C48`, avec sa croix ;
+ *   · la rangée de trois pastilles en bas à droite, et le retrait de 58 px que la
+ *     boîte leur réserve.
+ *
+ * SEULE LA VIGNETTE S'ÉCARTE : la planche y dessine un hachurage portant
+ * « Photo 1 ». On y met l'image déposée — c'est la même correction que sur la
+ * carte de publication, où le hachurage affichait l'adresse du média en texte.
+ */
+const A01_PIECES_JOINTES = {
+  screens: ['A01'],
+  nom: 'A01_PIECES_JOINTES',
+  why: 'Le composeur montre ses pièces jointes, comme la planche « COMPOSEUR AVEC PIÈCES JOINTES » les dessine.',
+  provides: [
+    'composeurGarni',
+    'composeurImages',
+    'composeurSondage',
+    'composeurGuides',
+    'composeurImagesCompte',
+    'composeurAjoutBloque',
+    'composeurPastilles',
+  ],
+  apply(jsx) {
+    // ── 1. LA BOÎTE PREND LE DESSIN DE LA PLANCHE GARNIE QUAND ELLE L'EST ──
+    const boite =
+      '<div style={{ flex: "1", minWidth: "0", position: "relative", minHeight: "92px", borderRadius: "18px", background: "#F2F5F4", padding: "14px 146px 14px 18px", fontSize: "14px", color: "#8A958F" }}>';
+    const iB = jsx.indexOf(boite);
+    if (iB === -1) return { jsx, applied: false };
+    const boiteGarnie =
+      '<div style={{ flex: "1", minWidth: "0", position: "relative", minHeight: "92px", ' +
+      'borderRadius: "18px", background: "#F2F5F4", ' +
+      'padding: composeurGarni ? "14px 14px 58px 18px" : "14px 146px 14px 18px", ' +
+      'display: "flex", flexDirection: "column", gap: "12px", ' +
+      'fontSize: "14px", color: "#8A958F" }}>';
+    let out = jsx.slice(0, iB) + boiteGarnie + jsx.slice(iB + boite.length);
+
+    // ── 2. LE BLOC DE PIÈCES JOINTES, APRÈS LE CHAMP ──────────────────────
+    const champ = out.indexOf('<textarea value={composeurTexte}');
+    if (champ === -1) return { jsx, applied: false };
+    const finChamp = out.indexOf('/>', champ);
+    if (finChamp === -1) return { jsx, applied: false };
+
+    const croixBlanche =
+      '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" ' +
+      'strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>';
+    const croixGrise = (taille, couleur, trait) =>
+      `<svg width="${taille}" height="${taille}" viewBox="0 0 24 24" fill="none" stroke="${couleur}" ` +
+      `strokeWidth="${trait}" strokeLinecap="round" strokeLinejoin="round">` +
+      '<path d="M18 6 6 18M6 6l12 12" /></svg>';
+
+    const vignettes =
+      '{(composeurImages ?? []).length === 0 ? null : (' +
+      '<div style={{ display: "flex", gap: "8px" }}>' +
+      '{(composeurImages ?? []).map((im, imIndex) => (\n<Fragment key={imIndex}>' +
+      '<div style={{ position: "relative", width: "92px", height: "92px", borderRadius: "14px", ' +
+      'background: im.fond, display: "flex", alignItems: "center", justifyContent: "center", ' +
+      'fontSize: "10.5px", fontWeight: "600", color: "#7C8C85", flexShrink: "0" }}>{im.nom}' +
+      '<button type="button" onClick={im.onRetirer} aria-label={im.retirer} ' +
+      'data-composeur-retirer-image="" ' +
+      'style={{ position: "absolute", top: "6px", right: "6px", width: "24px", height: "24px", ' +
+      'borderRadius: "999px", background: "rgba(22,33,29,.7)", display: "flex", ' +
+      'alignItems: "center", justifyContent: "center", border: "none", padding: 0, ' +
+      `cursor: "pointer" }}>${croixBlanche}</button></div></Fragment>))}` +
+      /**
+       * ╔══════════════════════════════════════════════════════════════════╗
+       * ║ LA CARTE « + N / 4 » EST UN BOUTON — elle était un `<div>` inerte       ║
+       * ╚══════════════════════════════════════════════════════════════════╝
+       *
+       * Le porteur : « l'ajout d'images ne marche pas avec la carte du + 3/4 ». La
+       * planche la dessine avec un « + » et le compte : c'est VISIBLEMENT l'endroit
+       * où l'on ajoute, et cliquer dessus ne faisait rien. Le seul chemin était la
+       * pastille du bas, que le « + » de la carte contredisait.
+       *
+       * `RESET_BOUTON` n'est pas appelé ici : il annulerait la BORDURE, et c'est
+       * elle que la maquette dessine (`1.5px dashed #CBD5D1`). On n'annule donc que
+       * ce qu'un `<button>` ajoute SANS que la planche l'écrive — police, retrait,
+       * fond — et la bordure dessinée reste.
+       *
+       * ÉTEINTE À QUATRE : au-delà, `onAjouterImage` écarterait le fichier en
+       * silence. Un bouton actif qui ne fait rien est exactement ce que cette
+       * correction supprime, et le refaire à la borne serait absurde.
+       */
+      '<button type="button" onClick={onAjouterImage} disabled={composeurAjoutBloque} ' +
+      'aria-label="Ajouter une image" data-composeur-ajouter-image="" ' +
+      'style={{ width: "92px", height: "92px", borderRadius: "14px", ' +
+      'border: "1.5px dashed #CBD5D1", display: "flex", flexDirection: "column", ' +
+      'alignItems: "center", justifyContent: "center", gap: "4px", fontSize: "11px", ' +
+      'fontWeight: "700", color: "#5D6B66", background: "none", font: "inherit", ' +
+      'padding: 0, cursor: composeurAjoutBloque ? "default" : "pointer", ' +
+      'opacity: composeurAjoutBloque ? ".55" : "1" }}>' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" ' +
+      'strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">' +
+      '<path d="M12 5v14M5 12h14" /></svg>{composeurImagesCompte}</button>' +
+      '</div>)}';
+
+    const carteSondage =
+      '{composeurSondage === null ? null : (' +
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "16px", padding: "12px 14px" }}>' +
+      '<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>' +
+      '<span style={{ width: "28px", height: "28px", borderRadius: "9px", background: "#E3F0EB", ' +
+      'display: "flex", alignItems: "center", justifyContent: "center" }}>' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="2" ' +
+      'strokeLinecap="round" strokeLinejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg></span>' +
+      '<span style={{ fontSize: "13px", fontWeight: "700", flex: "1" }}>{composeurSondage.question}</span>' +
+      '<button type="button" onClick={composeurSondage.onModifier} data-composeur-sondage-modifier="" ' +
+      'style={{ fontSize: "12px", fontWeight: "700", color: "#16785E", border: "none", ' +
+      'background: "none", padding: 0, font: "inherit", cursor: "pointer" }}>Modifier</button>' +
+      '<button type="button" onClick={composeurSondage.onRetirer} aria-label="Retirer le sondage" ' +
+      'data-composeur-sondage-retirer="" style={{ border: "none", background: "none", padding: 0, ' +
+      `cursor: "pointer", display: "flex" }}>${croixGrise(13, '#5D6B66', '2.4')}</button></div>` +
+      '<div style={{ display: "flex", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>' +
+      '{composeurSondage.options.map((op, opIndex) => (\n<Fragment key={opIndex}>' +
+      '<span style={{ padding: "6px 10px", borderRadius: "10px", background: "#F2F5F4", ' +
+      'fontSize: "12px", fontWeight: "600" }}>{op}</span></Fragment>))}</div>' +
+      '<div style={{ fontSize: "11.5px", color: "#8A958F", marginTop: "8px" }}>{composeurSondage.meta}</div>' +
+      '</div>)}';
+
+    const etiquettes =
+      '{(composeurGuides ?? []).length === 0 ? null : (' +
+      '<div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>' +
+      '{(composeurGuides ?? []).map((g, gIndex) => (\n<Fragment key={gIndex}>' +
+      '<span style={{ display: "flex", alignItems: "center", gap: "6px", background: "#EFF7F3", ' +
+      'color: "#0F5C48", fontSize: "12px", fontWeight: "700", padding: "6px 8px 6px 12px", ' +
+      'borderRadius: "999px" }}>' +
+      '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="2" ' +
+      'strokeLinecap="round" strokeLinejoin="round">' +
+      '<path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" /></svg>{g.titre}' +
+      '<button type="button" onClick={g.onRetirer} aria-label={g.retirer} ' +
+      'data-composeur-retirer-guide="" style={{ border: "none", background: "none", padding: 0, ' +
+      `cursor: "pointer", display: "flex" }}>${croixGrise(11, '#0F5C48', '2.6')}</button>` +
+      '</span></Fragment>))}</div>)}';
+
+    out =
+      out.slice(0, finChamp + 2) +
+      vignettes +
+      carteSondage +
+      etiquettes +
+      out.slice(finChamp + 2);
+
+    /**
+     * ── 3. LES TROIS CONTRÔLES DEVIENNENT LA RANGÉE DE PASTILLES ───────────
+     *
+     * La planche vide les dessine en trois ronds de 36 px posés en ABSOLU à
+     * droite — `right: 94 / 52 / 10`. La planche garnie les dessine en une RANGÉE
+     * flexible, chacun portant son compte : « Sondage », « 1 guide lié »,
+     * « 2 images ». Ce sont les mêmes trois contrôles dans deux apparences, et
+     * les deux sont dessinées.
+     *
+     * Trois positions absolues figées ne peuvent pas porter des pastilles de
+     * largeur variable : elles se chevaucheraient. On les remplace donc par la
+     * RANGÉE de la planche garnie, et chaque contrôle choisit son apparence selon
+     * qu'il porte quelque chose — rond gris à icône, ou pastille verte à libellé.
+     * Aucune des deux n'est inventée.
+     */
+    const iSondage = out.indexOf('<button type="button" data-modal-open="A01S"');
+    if (iSondage === -1) return { jsx, applied: false };
+    const iImage = out.indexOf('data-composeur-image', iSondage);
+    if (iImage === -1) return { jsx, applied: false };
+    const finImage = out.indexOf('</button>', iImage);
+    if (finImage === -1) return { jsx, applied: false };
+
+    const pastille = (ouvre, trace) =>
+      ouvre +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={p.encre} ' +
+      'strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">' +
+      `<path d="${trace}" /></svg>{p.libelle}</button>`;
+
+    /**
+     * LE STYLE EST CELUI DE L'UNE OU L'AUTRE PLANCHE, choisi sur `p.garni` :
+     * 36 × 36 en `#E3F0EB` quand le contrôle est vide, et la pastille verte de
+     * 36 px de haut à retrait `0 10px` quand il porte quelque chose.
+     */
+    const stylePastille =
+      'style={{ height: "36px", minWidth: "36px", ' +
+      'padding: p.garni ? "0 10px" : "0", borderRadius: "12px", ' +
+      'background: p.garni ? "#16785E" : "#E3F0EB", color: p.encre, ' +
+      'display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", ' +
+      'fontSize: "12px", fontWeight: "700", border: "none", font: "inherit", ' +
+      'cursor: "pointer" }}';
+
+    const rangee =
+      '<span style={{ position: "absolute", right: "10px", bottom: "10px", display: "flex", gap: "6px" }}>' +
+      pastille(
+        `<button type="button" data-modal-open="A01S" aria-label={composeurPastilles.sondage.titre} title={composeurPastilles.sondage.titre} ${stylePastille.replace(/p\./g, 'composeurPastilles.sondage.')}>`,
+        'M4 20V10M10 20V4M16 20v-7M22 20H2',
+      ).replace(/\{p\./g, '{composeurPastilles.sondage.') +
+      pastille(
+        `<button type="button" data-modal-open="A01G" aria-label={composeurPastilles.guides.titre} title={composeurPastilles.guides.titre} ${stylePastille.replace(/p\./g, 'composeurPastilles.guides.')}>`,
+        'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+      ).replace(/\{p\./g, '{composeurPastilles.guides.') +
+      pastille(
+        `<button type="button" onClick={onAjouterImage} data-composeur-image="" aria-label={composeurPastilles.images.titre} title={composeurPastilles.images.titre} ${stylePastille.replace(/p\./g, 'composeurPastilles.images.')}>`,
+        'M3 4h18v16H3zM8.5 11a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2zM21 16l-5-5-9 9',
+      ).replace(/\{p\./g, '{composeurPastilles.images.') +
+      '</span>';
+
+    out = out.slice(0, iSondage) + rangee + out.slice(finImage + '</button>'.length);
+
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * « PUBLIER » N'ENVOYAIT RIEN — il n'avait pas même un `type`.
+ *
+ * `disabled` plutôt qu'un refus au clic : un bouton qui a l'air actif et répond
+ * « il faut écrire quelque chose » fait faire le geste pour rien. Il est éteint
+ * tant qu'il n'y a rien à publier, et pendant l'envoi — c'est ce qui empêche le
+ * double clic que le porteur avait signalé sur le composeur de story.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA FENÊTRE DE COMMENTAIRES — SIX ÉLÉMENTS DESSINÉS, AUCUN BRANCHÉ         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Les commentaires aussi il faut finaliser ça. La publication, les
+ * réponses, Voir les autres commentaires, pertinent/récents, Le bouton Fermer de
+ * "En réponse à Sandra M." ».
+ *
+ * MESURÉ sur la capture qu'il a jointe : une publication SANS AUCUN commentaire
+ * affichait « Commentaires · 8 », la carte d'Amina Diallo et son texte, et « Voir
+ * 3 autres commentaires ». Les quatre venaient de la planche, pas de la base — un
+ * écran qui raconte autre chose que ce qu'il montre.
+ *
+ * ── CE QUE CHACUN DES SIX DEVIENT ─────────────────────────────────────────
+ *
+ *   1. la carte du haut est LA PUBLICATION commentée, pas un commentaire : nom de
+ *      son auteur, pastille de type, extrait. Elle disparaît si on ne l'a pas ;
+ *   2. « · 8 » devient le compte réel, celui du serveur ;
+ *   3. « Pertinents » / « Récents » deviennent deux boutons qui RECHARGENT le fil
+ *      avec le tri demandé ;
+ *   4. « Voir 3 autres commentaires » devient un bouton, et il n'est dessiné que
+ *      s'il reste une page — `nextCursor` existait depuis le début sans lecteur ;
+ *   5. « En réponse à Sandra M. » ne paraît que lorsqu'on répond vraiment, et sa
+ *      croix — un `<svg>` nu — devient le bouton qui annule la réponse ;
+ *   6. « Répondre » devient le bouton qui désigne la racine à laquelle on répond.
+ *
+ * ── LES DEUX PLANCHES NE DESSINENT PAS LA MÊME CHOSE, ET ON NE COMBLE PAS ──
+ *
+ * Le cadre de 390 px n'a NI carte de publication, NI « Voir N autres », NI bande
+ * « En réponse à ». Il porte un seul déclencheur « Pertinents ▾ ». On ne lui
+ * invente pas les trois autres : la transformation applique ce qu'elle trouve et
+ * se tait sur le reste. C'est pour cela qu'elle rend `applied` dès qu'UNE pièce a
+ * pris, et non quand les six ont pris.
+ *
+ * LE ▾ DU TÉLÉPHONE DEVIENT UNE BASCULE, pas un menu : il n'y a que DEUX tris, et
+ * un menu déroulant pour deux valeurs serait du dessin en plus. Le libellé dit
+ * lequel est actif. Signalé au porteur — c'est le seul endroit où cette planche
+ * et celle de l'ordinateur divergent de comportement.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA FENÊTRE « PARTAGER » — UN SEUL DE SES QUATRE BLOCS AGISSAIT            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le modal partager et son contenu (recherche de contact, réseaux
+ * et autres) ».
+ *
+ * ÉTAT MESURÉ : seuls les cinq ronds de contacts cliquaient. L'aperçu du haut
+ * annonçait « Amina Diallo · Victoire » quelle que soit la publication partagée ;
+ * « Rechercher un contact » était un `<div>` de texte ; les deux réseaux étaient
+ * ceux de la maquette, avec leurs 1 400 et 890 membres inventés, et leur bouton
+ * « Partager » était un `<span>` ; les trois tuiles du bas — « Copier le lien »,
+ * « WhatsApp », « Email » — étaient des `<div>`.
+ *
+ * ── CE QUE CHAQUE BLOC DEVIENT ────────────────────────────────────────────
+ *
+ *   1. l'aperçu porte la publication VRAIMENT partagée, et disparaît si on ne
+ *      l'a pas — un aperçu d'exemple vaut moins que pas d'aperçu ;
+ *   2. la barre devient un champ qui FILTRE les contacts dessous ;
+ *   3. « Partager » d'un réseau devient un bouton, et son libellé porte l'état de
+ *      l'envoi — c'est le même raisonnement que « Publier » du composeur ;
+ *   4. les trois tuiles deviennent des boutons.
+ *
+ * LE CADRE DE 390 px N'A PAS D'APERÇU et dessine ses réseaux en LIGNES À CHEVRON,
+ * sans bouton « Partager ». On ne lui ajoute donc pas de bouton : c'est la LIGNE
+ * ENTIÈRE qui devient cliquable, ce que le chevron annonce déjà.
+ */
+const A01P_PARTAGE = {
+  screens: ['A01P'],
+  nom: 'A01P_PARTAGE',
+  why: 'La fenêtre de partage montre la vraie publication, filtre les contacts, et ses réseaux comme ses tuiles agissent.',
+  provides: ['partageSujet', 'partageRecherche', 'onPartageRecherche'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+
+    // ── 1. L'APERÇU DE LA PUBLICATION PARTAGÉE ────────────────────────────
+    const apercu =
+      '<div style={{ display: "flex", gap: "12px", alignItems: "center", background: "#F6F8F7", borderRadius: "18px", padding: "12px 14px" }}>';
+    const iA = out.indexOf(apercu);
+    if (iA !== -1) {
+      const finA = finDuDiv(out, iA);
+      if (finA !== -1) {
+        const dessin =
+          apercu +
+          '<span style={{ width: "38px", height: "38px", borderRadius: "999px", ' +
+          'background: partageSujet.bg, color: "#fff", fontSize: "11px", fontWeight: "700", ' +
+          'display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>' +
+          '{partageSujet.i}</span><div style={{ minWidth: "0" }}>' +
+          '<div style={{ fontSize: "13px", fontWeight: "700" }}>{partageSujet.titre}</div>' +
+          '<div style={{ fontSize: "12.5px", color: "#5D6B66", whiteSpace: "nowrap", ' +
+          'overflow: "hidden", textOverflow: "ellipsis" }}>{partageSujet.extrait}</div>' +
+          '</div></div>';
+        out =
+          out.slice(0, iA) +
+          `{partageSujet === null ? null : (${dessin})}` +
+          out.slice(finA);
+        pris = true;
+      }
+    }
+
+    // ── 2. LA BARRE DE RECHERCHE DEVIENT UN CHAMP ─────────────────────────
+    /**
+     * LE CONTENANT RESTE, SON TEXTE DEVIENT LE CHAMP — c'est la règle déjà suivie
+     * pour le composeur du fil et pour la barre de A14 : la boîte porte le dessin
+     * (hauteur, rayon, fond, icône), et seul le mot gris est remplacé.
+     *
+     * L'ENCRE DU CHAMP EST CELLE DU CONTENU (`#16211D`) et non le `#8A958F` du
+     * contenant : ce gris est la couleur d'un placeholder, pas d'une saisie.
+     */
+    const invite = 'Rechercher un contact';
+    const iR = out.indexOf(`/></svg>${invite}</div>`);
+    if (iR !== -1) {
+      const champ =
+        '<input type="search" value={partageRecherche} onChange={onPartageRecherche} ' +
+        `placeholder="${invite}" aria-label="${invite}" data-partage-recherche="" ` +
+        'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+        'font: "inherit", fontSize: "13.5px", color: "#16211D", outline: "none", padding: 0 }} />';
+      out = out.slice(0, iR + '/></svg>'.length) + champ + out.slice(iR + `/></svg>${invite}`.length);
+      pris = true;
+    }
+
+    // ── 3. LE RÉSEAU, SUR L'ORDINATEUR : SON BOUTON « PARTAGER » ──────────
+    const btnNet =
+      '<span style={{ height: "34px", padding: "0 14px", borderRadius: "999px", background: "#F2F5F4", fontSize: "12.5px", fontWeight: "700", display: "flex", alignItems: "center" }}>Partager</span>';
+    if (out.includes(btnNet)) {
+      out = out.replace(
+        btnNet,
+        '<button type="button" onClick={n.onPartager} disabled={n.bloque} ' +
+          'data-partage-reseau="" style={{ height: "34px", padding: "0 14px", ' +
+          'borderRadius: "999px", background: "#F2F5F4", fontSize: "12.5px", ' +
+          'fontWeight: "700", display: "flex", alignItems: "center", border: "none", ' +
+          'font: "inherit", cursor: n.bloque ? "default" : "pointer", ' +
+          'opacity: n.bloque ? ".55" : "1" }}>{n.action}</button>',
+      );
+      pris = true;
+    } else {
+      /**
+       * LE CADRE DE 390 px : la ligne entière devient le bouton. Le chevron de la
+       * maquette l'annonçait déjà ; lui ajouter un bouton « Partager » que la
+       * planche ne dessine pas serait du dessin en plus.
+       */
+      const ligne =
+        '<Fragment key={nIndex}><div style={{ display: "flex", alignItems: "center", gap: "12px", height: "52px" }}>';
+      if (out.includes(ligne)) {
+        out = out.replace(
+          ligne,
+          '<Fragment key={nIndex}><button type="button" onClick={n.onPartager} ' +
+            'disabled={n.bloque} data-partage-reseau="" aria-label={n.action} ' +
+            'style={{ display: "flex", alignItems: "center", gap: "12px", height: "52px", ' +
+            'width: "100%", border: "none", background: "none", padding: 0, font: "inherit", ' +
+            'textAlign: "left", cursor: n.bloque ? "default" : "pointer", ' +
+            'opacity: n.bloque ? ".55" : "1" }}>',
+        );
+        out = out.replace(
+          '<path d="m9 18 6-6-6-6" /></svg></div></Fragment>',
+          '<path d="m9 18 6-6-6-6" /></svg></button></Fragment>',
+        );
+        pris = true;
+      }
+    }
+
+    // ── 4. LES TROIS TUILES ───────────────────────────────────────────────
+    /**
+     * LA HAUTEUR ET LA TAILLE DE POLICE SONT RELEVÉES, PAS ÉCRITES : 74 px / 12,5
+     * sur l'ordinateur, 70 px / 12 sur le téléphone. Une première version figeait
+     * `12.5px` et n'a transformé QUE le cadre d'ordinateur — exactement la même
+     * erreur que le bloc photo avait déjà coûtée dans ce fichier.
+     */
+    const tuile =
+      /<Fragment key=\{oIndex\}><div style=\{\{ height: "(\d+)px", borderRadius: "16px", background: "#F6F8F7", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "6px", fontSize: "(\d+(?:\.\d+)?)px", fontWeight: "700" \}\}>/;
+    const mt = tuile.exec(out);
+    if (mt !== null) {
+      const ouvre =
+        '<Fragment key={oIndex}><button type="button" onClick={o.onChoisir} ' +
+        'data-partage-sortie="" aria-label={o.label} ' +
+        `style={{ height: "${mt[1]}px", borderRadius: "16px", background: "#F6F8F7", ` +
+        'display: "flex", flexDirection: "column", alignItems: "center", ' +
+        `justifyContent: "center", gap: "6px", fontSize: "${mt[2]}px", fontWeight: "700", ` +
+        'border: "none", font: "inherit", cursor: "pointer", width: "100%" }}>';
+      out = out.slice(0, mt.index) + ouvre + out.slice(mt.index + mt[0].length);
+      const finTuile = '{o.label}</div></Fragment>';
+      if (out.includes(finTuile)) {
+        out = out.replace(finTuile, '{o.label}</button></Fragment>');
+        pris = true;
+      }
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A01C_FIL = {
+  screens: ['A01C'],
+  nom: 'A01C_FIL',
+  why: 'La fenêtre de commentaires montre la vraie publication, le vrai compte, le vrai tri et la vraie suite.',
+  provides: [
+    'sujetCarte',
+    'commentairesCompte',
+    'triCommentaires',
+    'triLibelle',
+    'onTriCommentaires',
+    'suiteVisible',
+    'suiteLibelle',
+    'onVoirSuite',
+    'reponseA',
+    'onAnnulerReponse',
+  ],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+
+    // ── 1. LA CARTE DU HAUT EST LA PUBLICATION COMMENTÉE ──────────────────
+    const carte =
+      '<div style={{ display: "flex", gap: "12px", alignItems: "flex-start", background: "#F6F8F7", borderRadius: "18px", padding: "14px" }}>';
+    const iCarte = out.indexOf(carte);
+    if (iCarte !== -1) {
+      const finCarte = finDuDiv(out, iCarte);
+      if (finCarte !== -1) {
+        const dessin =
+          carte +
+          '<span style={{ width: "38px", height: "38px", borderRadius: "999px", ' +
+          'background: sujetCarte.bg, color: "#fff", fontSize: "11px", fontWeight: "700", ' +
+          'display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>' +
+          '{sujetCarte.i}</span><div style={{ minWidth: "0" }}>' +
+          '<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>' +
+          '<span style={{ fontSize: "13.5px", fontWeight: "700" }}>{sujetCarte.nom}</span>' +
+          '<span style={{ background: "#E3F0EB", color: "#0F5C48", fontSize: "10.5px", ' +
+          'fontWeight: "700", padding: "3px 9px", borderRadius: "999px" }}>{sujetCarte.badge}</span>' +
+          '</div><div style={{ fontSize: "13px", color: "#5D6B66", lineHeight: "1.5", ' +
+          'marginTop: "3px" }}>{sujetCarte.extrait}</div></div></div>';
+        out =
+          out.slice(0, iCarte) +
+          `{sujetCarte === null ? null : (${dessin})}` +
+          out.slice(finCarte);
+        pris = true;
+      }
+    }
+
+    // ── 2. LE COMPTE ──────────────────────────────────────────────────────
+    const compte = />· 8<\/span>/;
+    if (compte.test(out)) {
+      out = out.replace(compte, '>{commentairesCompte}</span>');
+      pris = true;
+    }
+
+    // ── 3. LES DEUX TRIS ──────────────────────────────────────────────────
+    const actif =
+      '<span style={{ padding: "7px 12px", borderRadius: "9px", background: "#fff", fontSize: "12.5px", fontWeight: "700" }}>Pertinents</span>';
+    const inactif =
+      '<span style={{ padding: "7px 12px", borderRadius: "9px", fontSize: "12.5px", fontWeight: "700", color: "#5D6B66" }}>Récents</span>';
+    if (out.includes(actif) && out.includes(inactif)) {
+      /**
+       * LES DEUX APPARENCES SONT TOUTES DEUX DESSINÉES — l'onglet actif en blanc
+       * sur fond clair, l'autre en `#5D6B66` sans fond. On ne choisit donc rien :
+       * chaque bouton prend l'une ou l'autre selon le tri courant.
+       */
+      const onglet = (valeur, libelle) =>
+        `<button type="button" onClick={() => { onTriCommentaires('${valeur}'); }} ` +
+        `aria-pressed={triCommentaires === '${valeur}'} data-tri-commentaires="${valeur}" ` +
+        'style={{ padding: "7px 12px", borderRadius: "9px", ' +
+        `background: triCommentaires === '${valeur}' ? "#fff" : "transparent", ` +
+        'fontSize: "12.5px", fontWeight: "700", ' +
+        `color: triCommentaires === '${valeur}' ? "#16211D" : "#5D6B66", ` +
+        `border: "none", font: "inherit", cursor: "pointer" }}>${libelle}</button>`;
+      out = out.replace(actif, onglet('RELEVANT', 'Pertinents'));
+      out = out.replace(inactif, onglet('RECENT', 'Récents'));
+      pris = true;
+    } else {
+      /**
+       * LE CADRE DE 390 px : un seul libellé, suivi du chevron. Les deux deviennent
+       * UN bouton — le chevron est à l'intérieur, sinon il resterait un dessin
+       * mort à côté d'un bouton.
+       */
+      const seul =
+        /<span style=\{\{ fontSize: "12\.5px", fontWeight: "700", color: "#5D6B66" \}\}>Pertinents<\/span>(<svg width="14" height="14"[^]*?<\/svg>)/;
+      const m = seul.exec(out);
+      if (m !== null) {
+        /**
+         * `onClick={onTriCommentaires}` PASSERAIT L'ÉVÉNEMENT EN ARGUMENT. La prise
+         * prend un tri, et React lui aurait donné un `MouseEvent` — la bascule
+         * aurait trié sur un objet. On l'appelle donc SANS argument, ce que la
+         * prise lit comme « l'autre tri ».
+         *
+         * ET C'EST `triLibelle` QUI S'AFFICHE, pas `triCommentaires` : ce dernier
+         * porte la valeur de l'énumération (`RELEVANT`), et l'écrire mettrait un
+         * mot d'API sous les yeux du membre.
+         */
+        const bouton =
+          '<button type="button" onClick={() => { onTriCommentaires(); }} ' +
+          'aria-label="Changer le tri des commentaires" data-tri-commentaires="bascule" ' +
+          'style={{ display: "flex", alignItems: "center", fontSize: "12.5px", ' +
+          'fontWeight: "700", color: "#5D6B66", border: "none", background: "none", ' +
+          `padding: 0, font: "inherit", cursor: "pointer" }}>{triLibelle}${m[1]}</button>`;
+        out = out.slice(0, m.index) + bouton + out.slice(m.index + m[0].length);
+        pris = true;
+      }
+    }
+
+    // ── 4. « VOIR N AUTRES COMMENTAIRES » ─────────────────────────────────
+    const suite =
+      '<a href="#" style={{ fontSize: "12.5px", fontWeight: "700", paddingLeft: "48px" }}>Voir 3 autres commentaires</a>';
+    if (out.includes(suite)) {
+      out = out.replace(
+        suite,
+        '{suiteVisible ? (<button type="button" onClick={onVoirSuite} ' +
+          'data-commentaires-suite="" style={{ fontSize: "12.5px", fontWeight: "700", ' +
+          'paddingLeft: "48px", border: "none", background: "none", font: "inherit", ' +
+          'color: "#16785E", cursor: "pointer", textAlign: "left" }}>{suiteLibelle}</button>) : null}',
+      );
+      pris = true;
+    }
+
+    // ── 5. LA BANDE « EN RÉPONSE À » ──────────────────────────────────────
+    const bande =
+      /<div style=\{\{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#5D6B66", background: "#F2F5F4", borderRadius: "12px", padding: "8px 12px" \}\}>En réponse à <strong style=\{\{ color: "#16211D" \}\}>Sandra M\.<\/strong><span style=\{\{ flex: "1" \}\}><\/span>(<svg width="14" height="14"[^]*?<\/svg>)<\/div>/;
+    const mb = bande.exec(out);
+    if (mb !== null) {
+      const dessin =
+        '<div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", ' +
+        'color: "#5D6B66", background: "#F2F5F4", borderRadius: "12px", padding: "8px 12px" }}>' +
+        'En réponse à <strong style={{ color: "#16211D" }}>{reponseA}</strong>' +
+        '<span style={{ flex: "1" }}></span>' +
+        '<button type="button" onClick={onAnnulerReponse} aria-label="Annuler la réponse" ' +
+        'data-reponse-annuler="" style={{ border: "none", background: "none", padding: 0, ' +
+        `font: "inherit", cursor: "pointer", display: "flex" }}>${mb[1]}</button></div>`;
+      out =
+        out.slice(0, mb.index) +
+        `{reponseA === null ? null : (${dessin})}` +
+        out.slice(mb.index + mb[0].length);
+      pris = true;
+    }
+
+    /**
+     * ── 5 bis. LE COMPTEUR « UTILE » NE SE DESSINE QUE S'IL A UNE SOURCE ──
+     *
+     * La planche dessine un pouce et un nombre sur chaque commentaire. AUCUNE
+     * réaction de commentaire n'existe — ni table, ni colonne, ni route — donc
+     * `c.likes` arrive vide, et l'écran affichait un pouce sans chiffre sur
+     * l'ordinateur et, pire, « Utile · » suivi de rien sur le téléphone.
+     *
+     * ON NE MET PAS `0` : un zéro affirmerait que personne n'a trouvé le
+     * commentaire utile, alors que la question n'a jamais été posée. Et on ne
+     * supprime pas le dessin : il reste, sous condition, pour le jour où la
+     * réaction de commentaire existera. C'est la même mécanique que `sujetCarte`.
+     */
+    const utile =
+      /<span style=\{\{ (display: "flex", alignItems: "center", gap: "5px", fontWeight: "700", color: c\.likeFg|fontWeight: "700", color: c\.likeFg) \}\}>([^]*?)\{c\.likes\}<\/span>/;
+    const mu = utile.exec(out);
+    if (mu !== null) {
+      out =
+        out.slice(0, mu.index) +
+        `{c.likes === undefined ? null : (${mu[0]})}` +
+        out.slice(mu.index + mu[0].length);
+      pris = true;
+    }
+
+    // ── 6. « RÉPONDRE » ───────────────────────────────────────────────────
+    const repondre =
+      /\{c\.canReply \? \(<><(a href="#"|span) style=\{\{ fontWeight: "700", color: "#5D6B66" \}\}>Répondre<\/(?:a|span)><\/>\) : null\}/;
+    const mr = repondre.exec(out);
+    if (mr !== null) {
+      out =
+        out.slice(0, mr.index) +
+        '{c.canReply ? (<><button type="button" onClick={c.onRepondre} ' +
+        'data-commentaire-repondre="" style={{ fontWeight: "700", color: "#5D6B66", ' +
+        'border: "none", background: "none", padding: 0, font: "inherit", ' +
+        'cursor: "pointer" }}>Répondre</button></>) : null}' +
+        out.slice(mr.index + mr[0].length);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A01_COMPOSEUR_PUBLIER = {
+  screens: ['A01'],
+  nom: 'A01_COMPOSEUR_PUBLIER',
+  why: 'Le bouton « Publier » envoie la publication : il n’avait aucun geste.',
+  provides: ['onPublier', 'publierBloque'],
+  apply(jsx) {
+    const motif = /<button (style=\{\{ height: "40px", padding: "0 20px", borderRadius: "14px", background: "#16785E"[^}]*\}\})>Publier<\/button>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const bouton =
+      '<button type="button" onClick={onPublier} disabled={publierBloque} ' +
+      `data-composeur-publier="" ${m[1].replace(' }}', ', cursor: "pointer", opacity: publierBloque ? ".55" : "1" }}')}>Publier</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * « AJOUTER UNE IMAGE » ÉTAIT UN `<span>`.
+ *
+ * Ses deux voisins — sondage et guide — sont des `<button>` depuis le lot de
+ * navigation, parce qu'ils ouvrent une fenêtre. Celui-ci est resté en arrière : il
+ * n'est ni cliquable au clavier, ni annoncé comme un contrôle. Il ouvre le
+ * sélecteur de fichiers, qui est le geste que son infobulle promet.
+ */
+const A01_COMPOSEUR_IMAGE = {
+  screens: ['A01'],
+  nom: 'A01_COMPOSEUR_IMAGE',
+  why: 'L’icône « Ajouter une image » ouvre le sélecteur de fichiers : c’était un <span> inerte.',
+  provides: ['onAjouterImage'],
+  apply(jsx) {
+    const motif = /<span title="Ajouter une image" (style=\{\{[^}]*\}\})>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const ajout = resetBoutonManquant(m[1]);
+    const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+    const ouvre =
+      '<button type="button" title="Ajouter une image" aria-label="Ajouter une image" ' +
+      `onClick={onAjouterImage} data-composeur-image="" ${style}>`;
+    const fin = jsx.indexOf('</span>', m.index);
+    if (fin === -1) return { jsx, applied: false };
+    return {
+      jsx:
+        jsx.slice(0, m.index) +
+        ouvre +
+        jsx.slice(m.index + m[0].length, fin) +
+        '</button>' +
+        jsx.slice(fin + '</span>'.length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE BOUTON DE RÉACTION NE RÉAGISSAIT PAS                                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « finalise les réactions […] au niveau des posts ».
+ *
+ * MESURÉ : on clique « Bravo », rien ne part et rien ne change. Ses deux voisins —
+ * « Commenter » et « Partager » — portent `data-modal-open`, donc le lot précédent
+ * les a traités ; celui-ci est resté sans geste. `useFil` expose pourtant
+ * `basculerReaction` depuis le branchement du fil, avec sa mise à jour optimiste et
+ * son retour en arrière sur échec. Il manquait le fil entre les deux.
+ *
+ * ── UN ATTRIBUT, PAS UNE FONCTION ────────────────────────────────────────
+ *
+ * Le bouton est enfoui dans la boucle des publications, et faire voyager une
+ * fonction par carte à travers le JSX transcodé est précisément ce que ce dépôt
+ * évite — c'est écrit dans `app/(app)/accueil/page.tsx`. On pose donc
+ * `data-post-reagir={p.postId}`, exactement comme `data-modal-open` à côté, et
+ * l'écouteur délégué de la page fait le reste.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ ON POUVAIT VOIR UN SONDAGE, PAS Y RÉPONDRE                                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « la création de sondage […] ne marche pas ».
+ *
+ * La planche dessine chaque option en `<div tabIndex={0}>` : tabulable — donc
+ * elle PREND le foyer et annonce quelque chose — et sans aucun geste. C'est pire
+ * qu'un `<span>` inerte : le clavier s'y arrête pour rien.
+ *
+ * `data-poll-vote` et `data-poll-id`, comme `data-post-reagir` à côté : l'option
+ * est dans une boucle imbriquée (les options DANS les publications), et y faire
+ * voyager une fonction serait renoncer au transcodage. L'écouteur délégué de la
+ * page lit les deux attributs.
+ *
+ * LE `tabIndex` DESSINÉ EST RETIRÉ : un `<button>` est tabulable par nature, et
+ * le laisser créerait un second arrêt au même endroit.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA QUESTION DU SONDAGE, SUR LA CARTE                                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Ajoute la question du sondage visible sur la carte. »
+ *
+ * CE QUE LA MAQUETTE DESSINE, et c'est ce qui a produit le manque : le bloc de
+ * sondage d'une carte ne porte QUE les options et la ligne de méta
+ * (`{{ p.pollMeta }}`). Sa publication d'exemple écrit la question dans le CORPS —
+ * « On organise un repas partagé […] Quelle date vous arrange ? » — donc la
+ * planche n'a jamais eu besoin d'un titre séparé.
+ *
+ * Mais le composeur, lui, demande la question dans un champ À PART : une
+ * publication peut donc avoir un sondage dont la question n'est écrite nulle part
+ * ailleurs, et la carte montrait alors trois boutons sans savoir de quoi.
+ *
+ * ── LE DESSIN EST EMPRUNTÉ, PAS INVENTÉ ───────────────────────────────────
+ *
+ * C'est celui de la carte de sondage du COMPOSEUR GARNI (planche A01·S) : 13 px,
+ * graisse 700, encre du contenu. Il est posé au-dessus des options, dans le même
+ * conteneur, avec l'écart de 8 px que la planche y emploie déjà — donc rien ne
+ * bouge autour.
+ *
+ * `{p.pollQuestion ? … : null}` : une carte d'exemple de `screens/a01/data.ts`
+ * n'en a pas, et une publication d'avant ce lot non plus. Rien ne se dessine
+ * alors — plutôt qu'une ligne vide au-dessus des options.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA PHOTO DE PROFIL ÉTAIT ENREGISTRÉE, ET JAMAIS AFFICHÉE                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Au niveau de la photo de profil, quand on change ça met "photo
+ * mise à jour" sans rien faire. »
+ *
+ * MESURÉ : `PUT /me/avatar` répondait 200 et `GET /me` rendait bien `avatarUrl` —
+ * la photo était donc bien posée. Mais AUCUN cadre ne la dessinait : les
+ * cinquante et un ronds d'avatar de ce dépôt écrivent `{moi.initiales}` sur un
+ * aplat `#B4581F`, et rien d'autre. Le message disait vrai et l'écran ne bougeait
+ * pas — ce qui est pire qu'un échec, puisque rien n'invite à réessayer.
+ *
+ * ── LE DESSIN RESTE CELUI DE LA MAQUETTE ──────────────────────────────────
+ *
+ * On ne change NI la taille, NI la forme, NI la position : seul le FOND devient
+ * la photo quand il y en a une, et les initiales s'effacent alors. C'est ce qu'un
+ * rond d'avatar est — l'aplat à initiales est son repli, pas son dessin.
+ *
+ * `moi.photo` est composé par `photoFondFor` (`url(…) center/cover no-repeat`),
+ * la même recette que la story, le composeur et le carrousel. `null` quand le
+ * membre n'a pas de photo : l'aplat de la planche reprend alors sa place, mot
+ * pour mot.
+ *
+ * ── DEUX FORMES À TRAITER, ET LA SECONDE EST FACILE À MANQUER ─────────────
+ *
+ * Les ronds de barre haute et de bandeau sont des `<span>` dont le contenu est
+ * EXACTEMENT `{moi.initiales}`. Celui de K01 est un `<div>` de 84 px qui porte EN
+ * PLUS le badge d'appareil photo : son contenu n'est donc pas que les initiales,
+ * et une règle écrite sur la première forme l'aurait laissé derrière — c'est
+ * pourtant LE rond que le membre regarde en changeant sa photo.
+ */
+const COMPOSEUR_ROND_MOI = {
+  screens: ['*'],
+  nom: 'COMPOSEUR_ROND_MOI',
+  why: 'Le rond posé à côté du champ de saisie écrivait « AD », les initiales du dessin, et non celles du membre connecté.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * ╔═══════════════════════════════════════════════════════════════════════╗
+     * ║ CE QUI DISTINGUE « MON » ROND DE CELUI D'UN AUTRE : LE CHAMP          ║
+     * ╚═══════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ : vingt cadres écrivent `AD` en dur. Ce ne sont pas vingt fois le
+     * même rond — douze dessinent « Aïcha Diop » ou « Amina D. », des MEMBRES de
+     * la communauté, et y substituer le lecteur serait un défaut pire que celui
+     * qu'on corrige : il lirait son propre nom sur la fiche d'un autre.
+     *
+     * LE CRITÈRE EST DONC LE VOISIN DE DROITE, pas le texte du rond : « mon »
+     * rond est le seul suivi immédiatement du CHAMP DE SAISIE — un conteneur
+     * `flex: "1"` sur l'aplat `#F2F5F4` de la maquette. C'est la définition même
+     * d'un composeur : le rond de qui écrit, puis la zone où il écrit.
+     *
+     * Le relevé donne HUIT cadres, et pas un de plus : le fil (deux planches),
+     * la fenêtre de commentaires, le détail d'une publication et les deux fils
+     * de réseau avec leurs variantes d'administration. Les deux planches de
+     * chaque écran y sont — la correction vaut aussi à 390 px.
+     *
+     * ── POURQUOI UN COMPOSANT PLUTÔT QU'UNE PRISE ────────────────────────
+     *
+     * Voir l'en-tête de `RondMoi` : les quatre types de données en cause ne
+     * portent aucun membre et leurs pages ne lisent pas `/me`. Le composant
+     * réemploie la promesse partagée de la barre haute, donc il n'ajoute aucun
+     * appel réseau — c'est la raison pour laquelle `provides` est vide.
+     */
+    const rond =
+      /<span style=\{\{ ([^}]*borderRadius: "999px"[^}]*)\}\}>AD<\/span>(?=<div style=\{\{ flex: "1",[^}]*background: "#F2F5F4")/g;
+
+    /**
+     * LE STYLE DESSINÉ PASSE TEL QUEL. Le diamètre, la police et le centrage
+     * changent d'un cadre à l'autre — 44 px sur le fil d'ordinateur, 38 px sur
+     * sa planche de téléphone — et `RondMoi` ne substitue que le fond.
+     */
+    const out = jsx.replace(rond, (_m, style) => `<RondMoi style={{ ${style}}} />`);
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+const X03_SIGNALEMENT = {
+  screens: ['X03'],
+  nom: 'X03_SIGNALEMENT',
+  why: 'La feuille « Signaler » était entièrement dessinée : ni choix de motif, ni champ de détails, ni envoi.',
+  provides: ['signalement'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LE MODAL N'EST PAS DU TOUT DYNAMIQUE »                              ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Ensuite le modal n'est pas du tout dynamique (pas d'input,
+     * les choix ne marchent pas ainsi que la soumission). »
+     *
+     * MESURÉ dans le cadre produit : SIX `<div>` pour les six motifs, un `<div>`
+     * portant la phrase d'exemple à la place du champ de détails, et un
+     * `<button>` sans geste. L'en-tête de la page de messagerie le disait :
+     * « "Envoyer le signalement" est inerte — `POST /reports` existe mais ce lot
+     * ne branche aucune écriture ».
+     *
+     * ── LES SIX MOTIFS SONT CEUX DE L'ÉNUMÉRATION, DANS SON ORDRE ────────
+     *
+     * `ReportReason` donne `SCAM, MONEY_REQUEST, HARASSMENT, SPAM,
+     * INAPPROPRIATE, OTHER`, et la planche dessine « Arnaque, Demande d'argent,
+     * Harcèlement, Indésirable, Inapproprié, Autre » — six pour six, dans le même
+     * ordre. La correspondance n'est donc pas une invention : elle est relevée,
+     * et c'est le LIBELLÉ DESSINÉ qui sert de clé de substitution, pour qu'un
+     * changement de la maquette se voie au lieu de passer en silence.
+     *
+     * ── LES DEUX DESSINS SONT DANS LA PLANCHE, ON NE CHOISIT RIEN ────────
+     *
+     * La maquette montre « Demande d'argent » SÉLECTIONNÉ et les cinq autres au
+     * repos : on a donc les deux états sous les yeux — aplat `#EFF7F3` et trait
+     * `1.5px solid #16785E` contre `#fff` et `1px solid #E6EBE9`, pastille à
+     * `6px` contre `1.5px`. Le cadre bascule entre ces deux-là, sans en inventer
+     * un troisième.
+     *
+     * ── `role="radio"` ET UN GROUPE ──────────────────────────────────────
+     *
+     * Six boutons dont un seul peut être choisi, ce sont des boutons radio. Sans
+     * le `radiogroup` autour, un lecteur d'écran annonce six boutons sans dire
+     * qu'ils s'excluent, et axe-core le relève.
+     */
+    const MOTIFS = [
+      ['Arnaque', 'SCAM'],
+      ['Demande d’argent', 'MONEY_REQUEST'],
+      ['Harcèlement', 'HARASSMENT'],
+      ['Indésirable', 'SPAM'],
+      ['Inapproprié', 'INAPPROPRIATE'],
+      ['Autre', 'OTHER'],
+    ];
+
+    let out = jsx;
+    let pris = 0;
+
+    for (const [libelle, code] of MOTIFS) {
+      const motif = new RegExp(
+        '<div style=\\{\\{ display: "flex", alignItems: "center", gap: "12px", height: "48px", ' +
+          'padding: "0 14px", borderRadius: "14px", background: "(?:#fff|#EFF7F3)", ' +
+          'border: "[^"]*" \\}\\}>' +
+          '<span style=\\{\\{ width: "20px", height: "20px", borderRadius: "999px", ' +
+          'border: "[^"]*" \\}\\}><\\/span>' +
+          `<span style=\\{\\{ fontSize: "14px", fontWeight: "600" \\}\\}>${libelle}<\\/span><\\/div>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      const choisi = `signalement?.motif === "${code}"`;
+      const bouton =
+        `<button type="button" role="radio" aria-checked={${choisi}} ` +
+        `onClick={() => { signalement?.onMotif?.("${code}"); }} data-signalement-motif="${code}" ` +
+        `style={{ display: "flex", alignItems: "center", gap: "12px", height: "48px", ` +
+        `padding: "0 14px", borderRadius: "14px", width: "100%", ` +
+        `background: ${choisi} ? "#EFF7F3" : "#fff", ` +
+        `border: ${choisi} ? "1.5px solid #16785E" : "1px solid #E6EBE9", ` +
+        `font: "inherit", textAlign: "left", color: "inherit", cursor: "pointer" }}>` +
+        `<span style={{ width: "20px", height: "20px", borderRadius: "999px", flexShrink: "0", ` +
+        `boxSizing: "border-box", ` +
+        `border: ${choisi} ? "6px solid #16785E" : "1.5px solid #CBD5D1" }}></span>` +
+        `<span style={{ fontSize: "14px", fontWeight: "600" }}>${libelle}</span></button>`;
+      out = out.slice(0, m.index) + bouton + out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+    if (pris === 0) return { jsx, applied: false };
+
+    /** Le groupe, autour des six — voir l'en-tête pour le pourquoi. */
+    const colonne = '<div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>';
+    const iC = out.indexOf(colonne);
+    if (iC !== -1) {
+      out =
+        out.slice(0, iC) +
+        '<div role="radiogroup" aria-label="Motif du signalement" ' +
+        'style={{ display: "flex", flexDirection: "column", gap: "6px" }}>' +
+        out.slice(iC + colonne.length);
+    }
+
+    /**
+     * ── LE CHAMP DE DÉTAILS ÉTAIT LA PHRASE D'EXEMPLE ────────────────────
+     *
+     * La planche écrit « Il me demande 150 € pour "accélérer" mon dossier. » dans
+     * une boîte au trait vert — c'est un exemple REMPLI, pas une invite. On garde
+     * sa boîte au pixel près et on y pose un `<textarea>` ; l'invite devient
+     * « Détails (facultatif) », le libellé que la planche écrit juste au-dessus,
+     * plutôt que la phrase d'exemple qui laisserait croire à un texte déjà saisi.
+     */
+    const details =
+      /<div style=\{\{ (minHeight: "48px", borderRadius: "14px", border: "1\.5px solid #16785E", background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1\.5") \}\}>[^<]*<\/div>/;
+    const mD = details.exec(out);
+    if (mD !== null) {
+      const champ =
+        `<textarea value={signalement?.details ?? ""} onChange={signalement?.onDetails} ` +
+        `placeholder="Détails (facultatif)" aria-label="Détails (facultatif)" rows={3} ` +
+        `data-signalement-details="" style={{ ${mD[1]}, width: "100%", boxSizing: "border-box", ` +
+        `resize: "vertical", outline: "none", fontFamily: "inherit", color: "#16211D" }} />`;
+      out = out.slice(0, mD.index) + champ + out.slice(mD.index + mD[0].length);
+    }
+
+    /**
+     * ── ET L'ENVOI PART ──────────────────────────────────────────────────
+     *
+     * `disabled` tant qu'aucun motif n'est choisi : `createReportSchema.reason`
+     * est obligatoire, et un bouton actif qui prendrait un `400` dirait au membre
+     * que son signalement a échoué alors qu'il n'a rien choisi.
+     */
+    const envoi =
+      /<button style=\{\{ ([^}]*) \}\}>Envoyer le signalement<\/button>/;
+    const mE = envoi.exec(out);
+    if (mE !== null) {
+      /**
+       * L'APLAT DESSINÉ EST RETIRÉ, PAS DOUBLÉ. Le style capturé porte déjà
+       * `background: "#16211D"` ; en poser un second dans le même objet ne
+       * compile pas (TS1117), et c'est ce que le compilateur a dit tout de suite.
+       */
+      const dessine = mE[1].replace('background: "#16211D", ', '');
+      const bouton =
+        `<button type="button" onClick={signalement?.onEnvoyer} ` +
+        `disabled={signalement?.envoiBloque === true} data-signalement-envoyer="" ` +
+        `style={{ ${dessine}, background: signalement?.envoiBloque === true ? "#8A958F" : "#16211D", ` +
+        `cursor: signalement?.envoiBloque === true ? "default" : "pointer" }}>` +
+        'Envoyer le signalement</button>';
+      out = out.slice(0, mE.index) + bouton + out.slice(mE.index + mE[0].length);
+    }
+
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA BANDE DE STORIES PASSE AUX CARTES DE « Fil d'actualité v2 »            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Change la section de stories comme sur la page ci » —
+ * `docs/template/Fil d'actualité v2.dc.html`.
+ *
+ * ── LE DESSIN EST TRANSCODÉ, PAS RÉÉCRIT ──────────────────────────────────
+ *
+ * C'est la règle du dépôt, et elle vaut ici plus qu'ailleurs : le fragment est
+ * LU dans le nouveau fichier de maquette au moment de la génération, puis passé
+ * au même convertisseur que toutes les autres planches. Le jour où le porteur
+ * retouche ce fichier, la retouche arrive seule. Recopier le JSX à la main aurait
+ * figé une photographie de la maquette d'aujourd'hui.
+ *
+ * ── CE QUI CHANGE, MESURÉ SUR LES DEUX PLANCHES ───────────────────────────
+ *
+ * AVANT : une bande horizontale de ronds de 68 px (60 sur téléphone) — initiales,
+ * anneau vert, pastille de type, légende, compte d'utiles.
+ *
+ * APRÈS : une grille de cinq cartes de 198 px de haut. La première est un appel à
+ * publier, en trait tireté ; les quatre autres portent la story EN FOND, un voile
+ * dégradé, l'avatar de l'auteur en haut à gauche et, en bas, l'étiquette de type
+ * puis le titre.
+ *
+ * ── TROIS SUBSTITUTIONS DANS LE FRAGMENT, ET AUCUNE DANS SON DESSIN ───────
+ *
+ *   1. LES PRISES. Le nouveau fichier nomme sa liste `jalons` et ses champs
+ *      `j.initials`, `j.tag`, `j.title`, `j.avatarBg`. Le cadre A01 porte déjà
+ *      `stories` avec `s.i`, `s.type`, `s.caption`, `s.bg` — mêmes valeurs, noms
+ *      différents. On renomme les PRISES ; aucun style n'est touché.
+ *
+ *   2. `<image-slot>`. C'est le marqueur de photo des maquettes, et aucun
+ *      transcodage ne le connaît : il n'existe nulle part ailleurs dans le dépôt.
+ *      Il devient une boîte qui porte `s.fond` — la photo de la story, ou son
+ *      aplat de couleur quand elle n'en a pas.
+ *
+ *   3. LA NAVIGATION. La maquette dessine des cartes, pas des liens. Chacune
+ *      devient un `<Link>` vers sa story, et l'appel à publier vers
+ *      `/stories/nouvelle` — c'est ce que l'ancienne bande faisait, et le perdre
+ *      rendrait la nouvelle jolie et morte.
+ *
+ * ⚠ LA PLANCHE DE TÉLÉPHONE N'EXISTE PAS DANS CE FICHIER : il ne dessine qu'un
+ * cadre de 1440 px. Une grille de cinq colonnes sur 390 px donnerait des cartes
+ * de 70 px, illisibles. On garde donc LA CARTE À L'IDENTIQUE et on remplace la
+ * grille par un défilement horizontal — la forme que la bande avait déjà sur
+ * cette planche. C'est une DÉDUCTION, remontée au porteur.
+ */
+const CHEMIN_JALONS = join(ROOT, 'docs', 'template', "Fil d'actualité v2.dc.html");
+
+function fragmentJalons() {
+  const html = readFileSync(CHEMIN_JALONS, 'utf8');
+  const ouvre =
+    '<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;height:198px">';
+  const i = html.indexOf(ouvre);
+  if (i === -1) return null;
+  const fin = findMatchingCloseLocal(html, i, 'div');
+  if (fin === -1) return null;
+  return html.slice(i, fin);
+}
+
+/** Comptage de balises — `dc-to-jsx` garde le sien pour lui. */
+function findMatchingCloseLocal(html, from, tag) {
+  let niveau = 0;
+  let i = from;
+  const ouvre = `<${tag}`;
+  const ferme = `</${tag}>`;
+  while (i < html.length) {
+    const a = html.indexOf(ouvre, i);
+    const b = html.indexOf(ferme, i);
+    if (b === -1) return -1;
+    if (a !== -1 && a < b) {
+      niveau += 1;
+      i = a + ouvre.length;
+      continue;
+    }
+    niveau -= 1;
+    i = b + ferme.length;
+    if (niveau === 0) return i;
+  }
+  return -1;
+}
+
+const K08_DONNEES = {
+  screens: ['K08'],
+  nom: 'K08_DONNEES',
+  why: 'Télécharger, désactiver et supprimer étaient dessinés : aucun des trois ne faisait rien.',
+  provides: ['onDemanderExport', 'onDesactiver', 'donneesOccupe', 'exportEtat', 'exportLien'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LA PAGE DES SANCTIONS ET SES OPTIONS ? »                            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « (suppression de compte, désactivation et lancement de
+     * téléchargement de données). Pour le téléchargement on prépare et dès que
+     * prêt on l'informe pour qu'il vienne télécharger. »
+     *
+     * MESURÉ : trois `<button>` sans geste. « Supprimer » ouvrait bien la fenêtre
+     * K08S — elle porte `data-modal-open="K08S"` — mais la fenêtre elle-même
+     * était un dessin.
+     *
+     * ── « PRÉPARÉ SOUS 48 H » DEVIENT L'ÉTAT RÉEL ───────────────────────
+     *
+     * La planche écrit « Préparé sous 48 h. Lien valable 7 jours. » C'est une
+     * promesse, pas un état. `GET /me/export/latest` rend le VRAI : jamais
+     * demandé, en préparation, prêt avec son lien, ou périmé. La phrase devient
+     * donc une donnée, et le bouton se change en lien de téléchargement quand
+     * l'archive est là — c'est ce que le porteur demande : « dès que prêt on
+     * l'informe pour qu'il vienne télécharger ».
+     */
+    let out = jsx;
+    let pris = false;
+
+    const phrase = '>Préparé sous 48 h. Lien valable 7 jours.<';
+    if (out.includes(phrase)) {
+      out = out.replace(phrase, '>{exportEtat}<');
+      pris = true;
+    }
+
+    const demander = /<button style=\{\{ ([^}]*) \}\}>Demander<\/button>/;
+    const mD = demander.exec(out);
+    if (mD !== null) {
+      out =
+        out.slice(0, mD.index) +
+        /**
+         * DEUX FORMES POUR UN MÊME EMPLACEMENT : un LIEN quand l'archive est
+         * prête, un BOUTON sinon. Télécharger est une destination, demander est
+         * un geste — et un bouton qui ferait les deux selon l'état mentirait à
+         * l'un des deux moments.
+         */
+        `{exportLien ? (<a href={exportLien} download data-donnees-telecharger="" ` +
+        `style={{ ${mD[1]}, textDecoration: "none" }}>Télécharger</a>) : ` +
+        `(<button type="button" onClick={onDemanderExport} disabled={donneesOccupe} ` +
+        `data-donnees-demander="" style={{ ${mD[1]}, ` +
+        `cursor: donneesOccupe ? "default" : "pointer" }}>Demander</button>)}` +
+        out.slice(mD.index + mD[0].length);
+      pris = true;
+    }
+
+    const desactiver = /<button style=\{\{ ([^}]*) \}\}>Désactiver<\/button>/;
+    const mA = desactiver.exec(out);
+    if (mA !== null) {
+      out =
+        out.slice(0, mA.index) +
+        `<button type="button" onClick={onDesactiver} disabled={donneesOccupe} ` +
+        `data-donnees-desactiver="" style={{ ${mA[1]}, ` +
+        `cursor: donneesOccupe ? "default" : "pointer" }}>Désactiver</button>` +
+        out.slice(mA.index + mA[0].length);
+      pris = true;
+    } else {
+      /**
+       * ╔══════════════════════════════════════════════════════════════════╗
+       * ║ SUR LE TÉLÉPHONE, « DÉSACTIVER » EST UN TITRE DE CARTE          ║
+       * ╚══════════════════════════════════════════════════════════════════╝
+       *
+       * ⚠ ÉCART DE MAQUETTE, remonté au porteur. La planche de 390 px dessine
+       * trois cartes — « Télécharger », « Désactiver », « Supprimer » — et SEULE
+       * la première porte un bouton. Les deux autres sont un titre et une
+       * phrase : un membre sur téléphone ne pouvait ni désactiver ni supprimer
+       * son compte.
+       *
+       * Le bouton est posé SOUS la phrase de chaque carte, dans le dessin de
+       * celui de « Demander » juste au-dessus — 40 px, rayon 14, retrait 10 px.
+       * « Supprimer » garde son rôle de déclencheur de la fenêtre K08S, qui
+       * demande le code SMS.
+       */
+      const carte = (apres, geste, repere, texte, fond, encre) =>
+        `<div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>${apres}</div>` +
+        `<button type="button" ${geste} disabled={donneesOccupe} ${repere} ` +
+        `style={{ height: "40px", width: "100%", marginTop: "10px", padding: "0 18px", ` +
+        `borderRadius: "14px", background: "${fond}", color: "${encre}", border: "none", ` +
+        `font: "inherit", fontSize: "13.5px", fontWeight: "700", display: "flex", ` +
+        `alignItems: "center", justifyContent: "center", ` +
+        `cursor: donneesOccupe ? "default" : "pointer" }}>${texte}</button>`;
+
+      const avant = out;
+      out = out.replace(
+        '<div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>Réversible 6 mois</div>',
+        carte(
+          'Réversible 6 mois',
+          'onClick={onDesactiver}',
+          'data-donnees-desactiver=""',
+          'Désactiver',
+          '#F2F5F4',
+          '#16211D',
+        ),
+      );
+      out = out.replace(
+        '<div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>Définitif après 7 jours</div>',
+        carte(
+          'Définitif après 7 jours',
+          'data-modal-open="K08S"',
+          'data-donnees-supprimer=""',
+          'Supprimer',
+          '#fff',
+          '#C2453B',
+        ),
+      );
+      if (out !== avant) pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K09_CONTESTATION = {
+  screens: ['K09'],
+  nom: 'K09_CONTESTATION',
+  why: 'La contestation d’une sanction était un texte d’exemple et un bouton sans geste.',
+  provides: ['contestationTexte', 'onContestationTexte', 'onContester', 'contestationBloquee'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LA PAGE DES SANCTIONS ET SES OPTIONS ? »                            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ : zéro champ sur le cadre. La boîte « Expliquez votre point de vue »
+     * portait la phrase d'EXEMPLE de la maquette — « Le lien renvoyait vers une
+     * association gratuite, pas une publicité. » — et « Envoyer ma contestation »
+     * n'avait aucun geste. `POST /sanctions/:id/appeal` répondait déjà.
+     *
+     * ── VINGT CARACTÈRES AU MOINS, ET C'EST LE SERVEUR QUI LE DIT ────────
+     *
+     * `appealSchema` : `min(20)`. Le bouton reste éteint en dessous plutôt que de
+     * prendre un `422` — « une seule fois », dit la planche, et un refus gâcherait
+     * l'unique tentative dans l'esprit du membre même si le serveur ne la compte
+     * pas.
+     */
+    let out = jsx;
+    let pris = false;
+
+    const boite =
+      /<div style=\{\{ (minHeight: "48px", borderRadius: "14px", border: "1\.5px solid #16785E", background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1\.5") \}\}>[^<]*<\/div>/;
+    const mB = boite.exec(out);
+    if (mB !== null) {
+      out =
+        out.slice(0, mB.index) +
+        `<textarea value={contestationTexte} onChange={onContestationTexte} rows={4} ` +
+        `placeholder="Expliquez votre point de vue" aria-label="Expliquez votre point de vue" ` +
+        `data-sanction-texte="" style={{ ${mB[1]}, width: "100%", boxSizing: "border-box", ` +
+        `resize: "vertical", outline: "none", fontFamily: "inherit", color: "#16211D" }} />` +
+        out.slice(mB.index + mB[0].length);
+      pris = true;
+    }
+
+    const envoyer = /<button style=\{\{ ([^}]*) \}\}>Envoyer ma contestation<\/button>/;
+    const mE = envoyer.exec(out);
+    if (mE !== null) {
+      out =
+        out.slice(0, mE.index) +
+        `<button type="button" onClick={onContester} disabled={contestationBloquee} ` +
+        `data-sanction-envoyer="" style={{ ${mE[1].replace('background: "#16785E", ', '')}, ` +
+        `background: contestationBloquee ? "#8A958F" : "#16785E", ` +
+        `cursor: contestationBloquee ? "default" : "pointer" }}>Envoyer ma contestation</button>` +
+        out.slice(mE.index + mE[0].length);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K07_INTERRUPTEURS = {
+  screens: ['K07'],
+  nom: 'K07_INTERRUPTEURS',
+  why: 'Les interrupteurs de notification étaient des <span> : aucun ne basculait.',
+  provides: ['notificationsOccupe'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LES CONFIGURATIONS DES NOTIFICATIONS ? »                            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ : dix-huit `<span>`. La matrice était un dessin, et les six rangs
+     * étaient écrits en dur — corrigé dans la déclaration d'écran, qui les boucle
+     * maintenant sur `GET /me/notification-preferences`.
+     *
+     * CHAQUE INTERRUPTEUR DEVIENT UN BOUTON, et son geste vient de la LIGNE : le
+     * cadre en dessine trois par catégorie, et une prise d'écran ne saurait ni
+     * laquelle ni quel canal.
+     *
+     * `role="switch"` ET `aria-checked` : c'est ce qu'est un interrupteur. Sans
+     * eux, un lecteur d'écran annonce « bouton » sans dire s'il est allumé, et
+     * axe-core le relève.
+     *
+     * `aria-label` PORTE LA CATÉGORIE ET LE CANAL. Dix-huit boutons nommés
+     * « Activer » seraient indiscernables : la donnée les nomme.
+     */
+    const CANAUX = [
+      ['appli', 'onAppli', 'appliNom', 'appliActif', 'appliVerrouille'],
+      ['push', 'onPush', 'pushNom', 'pushActif', 'pushVerrouille'],
+      ['email', 'onEmail', 'emailNom', 'emailActif', 'emailVerrouille'],
+    ];
+
+    let out = jsx;
+    let pris = 0;
+    for (const [canal, geste, nom, actif, verrouille] of CANAUX) {
+      const motif = new RegExp(
+        `<span style=\\{\\{ (width: "40px", height: "24px", borderRadius: "999px", background: c\\.${canal}Fond, position: "relative", display: "inline-block", opacity: c\\.${canal}Opacite) \\}\\}>(<span[^>]*><\\/span>)<\\/span>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" role="switch" aria-checked={c.${actif}} ` +
+        `aria-label={c.${nom}} onClick={c.${geste}} ` +
+        `disabled={c.${verrouille} || notificationsOccupe} data-notif-${canal}="" ` +
+        `style={{ ${m[1]}, border: "none", padding: 0, ` +
+        `cursor: c.${verrouille} || notificationsOccupe ? "default" : "pointer" }}>` +
+        `${m[2]}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K05_CONTACTS = {
+  screens: ['K05'],
+  nom: 'K05_CONTACTS',
+  why: 'Accepter, Refuser, Ajouter et Débloquer étaient dessinés : aucun ne faisait rien.',
+  provides: ['contactsOccupe'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LES DEMANDES, SUGGESTIONS ET BLOQUÉS ? »                            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « La page des contacts est faite ? Les demandes, suggestions
+     * et bloqués ? »
+     *
+     * MESURÉ, deux défauts l'un sur l'autre : les trois sections étaient des
+     * LIGNES UNIQUES — la maquette en dessine une par section, et le transcodage
+     * l'avait prise pour la liste — et les quatre boutons n'avaient aucun geste.
+     * Le premier est corrigé dans la déclaration d'écran (trois `sc-for`), le
+     * second ici.
+     *
+     * LES GESTES SONT SUR LA LIGNE. Le cadre dessine un bouton PAR demande, PAR
+     * suggestion et PAR blocage ; une prise d'écran ne saurait pas laquelle, et
+     * l'identifiant ne vit que sur la ligne.
+     *
+     * `onPrincipal` / `onSecondaire` plutôt que `onAccepter` / `onRefuser` /
+     * `onAjouter` / `onDebloquer` : les trois sections partagent la même fabrique
+     * de ligne — c'est ce qui garantit qu'elles se ressemblent — et une ligne ne
+     * sait pas de quelle section elle vient. Le SENS est donné par la page.
+     */
+    const GESTES = [
+      ['d', 'Accepter', 'onPrincipal', 'accepter'],
+      ['d', 'Refuser', 'onSecondaire', 'refuser'],
+      ['g', 'Ajouter', 'onPrincipal', 'ajouter'],
+      ['b', 'Débloquer', 'onPrincipal', 'debloquer'],
+    ];
+
+    let out = jsx;
+    let pris = false;
+    for (const [v, texte, geste, repere] of GESTES) {
+      const motif = new RegExp(
+        `<button style=\\{\\{ ([^}]*height: "36px") \\}\\}>${texte}<\\/button>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={${v}.${geste}} disabled={contactsOccupe} ` +
+        `data-contacts-${repere}="" style={{ ${m[1]}, ` +
+        `cursor: contactsOccupe ? "default" : "pointer" }}>${texte}</button>` +
+        out.slice(m.index + m[0].length);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ K10 — LES ENREGISTRÉS RÉPONDENT                                           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Finalise les routes bookmarks et branche-les. »
+ *
+ * La déclaration d'écran (`tools/screens/08-compte.mjs`) a fait des six lignes
+ * et des dix onglets des BOUCLES sur `GET /me/bookmarks`. Il reste trois gestes,
+ * et aucun des trois n'est dessiné :
+ *
+ *   · l'onglet est un `<span>` — dix pastilles, aucune ne filtre ;
+ *   · le signet plein de droite est un `<span title="Retirer">` — il annonce son
+ *     geste DANS SON TITRE et ne le fait pas ;
+ *   · le titre est un `<div>` — la ligne ne mène nulle part, alors que le
+ *     serveur rend `href` pour chacune des douze espèces de sujet.
+ *
+ * ── LE TITRE EST LE LIEN, PAS LA LIGNE ENTIÈRE ──────────────────────────────
+ *
+ * La ligne porte un bouton « Retirer ». Un `<a>` qui l'engloberait contiendrait
+ * donc un contrôle — c'est du balisage invalide, et le navigateur se partage
+ * entre les deux au clic. Le lien est posé sur le TITRE, comme `NOM_VERS_PROFIL`
+ * le fait pour les noms de membre, et pour la même raison.
+ *
+ * `l.href` peut être vide : une publication retirée n'a plus d'adresse. Le
+ * ternaire rend alors le titre nu, c'est-à-dire exactement le dessin d'avant.
+ *
+ * ── 44 px SUR LE SIGNET, ET C'EST UN ÉCART ASSUMÉ ───────────────────────────
+ *
+ * La maquette dessine un svg de 18 px sans boîte. C'est une cible de 18 px, et
+ * T1 §2.3 en exige 44. La boîte est donc posée — centrée, transparente, sans
+ * bordure — et le dessin ne bouge que de l'écart que cette boîte prend dans la
+ * rangée. On ne LIVRE PAS une cible de 18 px sur un téléphone : c'est le genre
+ * de détail qui fait retirer le mauvais enregistré.
+ */
+const K10_ENREGISTRES = {
+  screens: ['K10'],
+  nom: 'K10_ENREGISTRES',
+  why: 'Les onglets filtrent, le signet retire, et le titre mène au contenu enregistré.',
+  provides: ['enregistresOccupe'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    // ── L'onglet : une pastille qui choisit ────────────────────────────────
+    const onglet =
+      /<span (style=\{\{ padding: "8px 13px", borderRadius: "999px", fontSize: "12\.5px", fontWeight: "700", whiteSpace: "nowrap", background: o\.fond, color: o\.texte, border: `1px solid \$\{o\.bord\}` \}\})>\{o\.libelle\}<\/span>/;
+    const mo = onglet.exec(out);
+    if (mo !== null) {
+      const ajout = resetBoutonManquant(mo[1]);
+      const style = ajout === '' ? mo[1] : mo[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, mo.index) +
+        `<button type="button" onClick={o.onChoisir} aria-pressed={o.actif} ` +
+        `data-enregistres-onglet={o.cle} ${style}>{o.libelle}</button>` +
+        out.slice(mo.index + mo[0].length);
+      pris += 1;
+    }
+
+    // ── Le titre : un lien quand le serveur en rend un ─────────────────────
+    const titre =
+      '<div style={{ fontSize: "14px", fontWeight: "700", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.titre}</div>';
+    const at = out.indexOf(titre);
+    if (at >= 0) {
+      const lie = titre.replace(
+        '{l.titre}',
+        '{l.href ? (<Link href={l.href} data-enregistres-lien={l.cle} ' +
+          'style={{ color: "inherit", textDecoration: "none" }}>{l.titre}</Link>) : l.titre}',
+      );
+      out = out.slice(0, at) + lie + out.slice(at + titre.length);
+      pris += 1;
+    }
+
+    // ── Le signet : il retire ──────────────────────────────────────────────
+    const signet =
+      /<span title="Retirer">(<svg width="18"[\s\S]*?<\/svg>)<\/span>/;
+    const ms = signet.exec(out);
+    if (ms !== null) {
+      out =
+        out.slice(0, ms.index) +
+        '<button type="button" onClick={l.onRetirer} disabled={enregistresOccupe} ' +
+        'aria-label={`Retirer ${l.titre} des enregistrés`} title="Retirer" ' +
+        'data-enregistres-retirer={l.cle} ' +
+        'style={{ minWidth: "44px", minHeight: "44px", display: "flex", alignItems: "center", ' +
+        'justifyContent: "center", flexShrink: "0", background: "transparent", border: "none", ' +
+        'padding: 0, cursor: enregistresOccupe ? "default" : "pointer" }}>' +
+        `${ms[1]}</button>` +
+        out.slice(ms.index + ms[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const NOM_VERS_PROFIL = {
+  screens: ['*'],
+  nom: 'NOM_VERS_PROFIL',
+  why: 'Le nom ET l’avatar d’un membre mènent à son profil public, partout où ils sont dessinés.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LE NOM D'UN MEMBRE MÈNE À SON PROFIL — PARTOUT                        ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « ajoute l'accès au profil public d'un utilisateur à partir des
+     * publications (quand on clique sur son nom au niveau de la file d'actualité,
+     * story, guide, entraide etc… partout où le nom est affiché) ».
+     *
+     * MESURÉ : trente-sept noms écrits dans les cadres, et AUCUN cliquable. La
+     * maquette les dessine en `<span>` — c'est une image, pas une interface — et
+     * le profil public existe pourtant (`/@handle`, K02).
+     *
+     * ── UNE SEULE TRANSFORMATION, ET UNIVERSELLE ─────────────────────────
+     *
+     * `screens: ['*']`. Les nommer un à un donnerait une liste à tenir à jour, et
+     * le jour où un écran gagne un nom il faudrait penser à l'y ajouter — c'est
+     * exactement le genre d'oubli qui laisse un contrôle mort. Son `apply` ne
+     * fait rien quand aucun nom n'est dessiné.
+     *
+     * ── ELLE NE DEVINE RIEN : SANS `profil`, RIEN NE CHANGE ──────────────
+     *
+     * Le lien n'est posé que si la LIGNE porte une adresse. Tous les noms ne sont
+     * pas des membres — un réseau, une ville, un partenaire en portent un aussi —
+     * et les rendre cliquables promettrait un profil qui n'existe pas. La prise
+     * est FACULTATIVE sur chaque vue : le ternaire rend le nom nu quand elle
+     * manque, c'est-à-dire exactement le dessin d'avant.
+     *
+     * ── LE DESSIN NE BOUGE PAS ───────────────────────────────────────────
+     *
+     * Le `<span>` dessiné reste, avec son style au caractère près ; le lien est
+     * posé DEDANS. `color: "inherit"` et `textDecoration: "none"` sont les deux
+     * seules déclarations ajoutées — le navigateur souligne et colore tout `<a>`,
+     * et la maquette ne dessine ni l'un ni l'autre.
+     */
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── LA VARIABLE ET LE CHAMP CHANGENT D'UN ÉCRAN À L'AUTRE ────────────
+     *
+     * `[a-z]{1,2}` et non une seule lettre : la boucle s'appelle `p` sur une
+     * publication, `c` sur un commentaire, `a` sur un arrivant, `n` sur un
+     * réseau, `m` sur un membre — mais `st` sur l'écran de lecture de story.
+     * MESURÉ : avec une seule lettre, A13 était silencieusement ignoré, alors que
+     * c'est l'un des écrans que le porteur a nommés.
+     *
+     * `name|nom` pour la même raison : le module Entraide écrit `{r.nom}` là où
+     * le fil écrit `{p.name}`. Les deux disent la même chose, et le transcodeur
+     * reprend le mot de chaque maquette.
+     */
+    const motif = /\{([a-z]{1,2})\.(name|nom)\}/g;
+    const vues = [...out.matchAll(motif)];
+    for (const m of vues.reverse()) {
+      const v = m[1];
+      const champ = m[2];
+      const i = m.index ?? -1;
+      if (i === -1) continue;
+      /**
+       * ON NE TOUCHE PAS UN NOM DÉJÀ DANS UN LIEN. Certains écrans en posent un
+       * par déclaration (`liens:`), et l'envelopper deux fois donnerait un `<a>`
+       * dans un `<a>` — ce que le navigateur défait en silence, et qu'axe-core
+       * relève.
+       */
+      /**
+       * 1 500 CARACTÈRES EN ARRIÈRE, et le chiffre est mesuré. À 400, la fenêtre
+       * de commentaires était ratée : entre le rond de l'auteur et son nom, le
+       * cadre écrit la bulle, ses styles et son balisage — relevé 1 400
+       * caractères sur A01C. Trop court, on manque des membres ; trop long, on
+       * risque de prendre le rond du membre PRÉCÉDENT dans une liste. 1 500 passe
+       * les douze cadres mesurés sans déborder sur le voisin.
+       */
+      const avant = out.slice(Math.max(0, i - 1500), i);
+      if (avant.lastIndexOf('<Link') > avant.lastIndexOf('</Link>')) continue;
+      if (avant.lastIndexOf('<a ') > avant.lastIndexOf('</a>')) continue;
+
+      /**
+       * ╔══════════════════════════════════════════════════════════════════╗
+       * ║ UN MEMBRE SE DESSINE AVEC UN ROND — UN RACCOURCI AVEC UN CARRÉ   ║
+       * ╚══════════════════════════════════════════════════════════════════╝
+       *
+       * MESURÉ : une première version attrapait AUSSI les noms qui ne sont pas
+       * des membres. « VOS RACCOURCIS » boucle sur `s` comme les stories, et ses
+       * entrées sont des RÉSEAUX — « Lyon Rhône », « Béninois en France ». Les
+       * rendre cliquables aurait promis un profil qui n'existe pas, et le
+       * compilateur l'a dit en refusant `profil` sur leur type.
+       *
+       * LE CRITÈRE VIENT DU DESSIN : dans cette maquette, une PERSONNE porte un
+       * rond (`borderRadius: "999px"`) et un réseau un carré arrondi.
+       *
+       * ── ON REGARDE LE DERNIER AVATAR, PAS LE DERNIER RAYON ─────────────
+       *
+       * Une deuxième version cherchait le dernier `borderRadius` de chaque
+       * forme, et ratait les commentaires : leur BULLE porte
+       * `borderRadius: "16px"` entre le rond de l'auteur et son nom, et passait
+       * pour un carré. Un avatar, lui, a toujours une largeur ET une hauteur
+       * fixes — c'est ce qui le distingue d'une boîte de texte. On prend donc le
+       * dernier élément qui en porte, et on lit SON rayon.
+       */
+      const avatars = [
+        ...avant.matchAll(/width: "\d+px", height: "\d+px", borderRadius: "([^"]+)"/g),
+      ];
+      const dernier = avatars.at(-1);
+      if (dernier === undefined || !dernier[1].startsWith('999')) continue;
+
+      out =
+        out.slice(0, i) +
+        `{${v}.profil ? (<Link href={${v}.profil} data-nom-profil="" ` +
+        `style={{ color: "inherit", textDecoration: "none" }}>{${v}.${champ}}</Link>) : ${v}.${champ}}` +
+        out.slice(i + m[0].length);
+      pris += 1;
+
+      /**
+       * ╔══════════════════════════════════════════════════════════════════╗
+       * ║ L'AVATAR MÈNE AU MÊME PROFIL QUE LE NOM                          ║
+       * ╚══════════════════════════════════════════════════════════════════╝
+       *
+       * Le porteur : « à part le nom on peut aussi cliquer sur l'avatar d'une
+       * personne pour voir son profil public ».
+       *
+       * C'est le geste que tout le monde a appris ailleurs : le rond EST la
+       * personne. Et le travail est déjà fait — `dernier` est précisément
+       * l'avatar de ce membre, celui dont le rayon vient de servir de garde.
+       * L'envelopper ici plutôt que dans une seconde adaptation garantit que
+       * les deux cibles mènent À LA MÊME ADRESSE : il n'y a qu'un `profil` lu,
+       * qu'une garde de forme, et aucun moyen qu'elles divergent.
+       *
+       * ── LE ROND EST REMPLACÉ, PAS ENVELOPPÉ DEUX FOIS ─────────────────
+       *
+       * On remonte au `<span` qui l'ouvre et on cherche SA fermeture en comptant
+       * la profondeur : un avatar porte souvent une pastille de niveau ou une
+       * coche de vérification à l'intérieur, et s'arrêter au premier `</span>`
+       * couperait le rond en deux.
+       *
+       * ── TROIS REFUS, ET CHACUN A SA RAISON ────────────────────────────
+       *
+       * · si le rond est DÉJÀ dans un lien, on passe : un `<a>` dans un `<a>`
+       *   est défait en silence par le navigateur et relevé par axe-core ;
+       * · s'il ne nomme pas la MÊME variable que le nom (`${v}.`), on passe :
+       *   ce serait le rond d'un voisin dans une liste ;
+       * · si la fermeture ne se trouve pas, on passe. Un cadre à moitié
+       *   réécrit ne compile pas, et un `continue` se voit au journal.
+       */
+      const debutRond = avant.lastIndexOf('<span', dernier.index ?? 0);
+      if (debutRond < 0) continue;
+      const absolu = Math.max(0, i - 1500) + debutRond;
+      const finOuverture = out.indexOf('>', absolu);
+      if (finOuverture < 0) continue;
+      const ouverture = out.slice(absolu, finOuverture + 1);
+      if (!ouverture.includes(`${v}.`)) continue;
+      if (out.slice(0, absolu).lastIndexOf('<Link') > out.slice(0, absolu).lastIndexOf('</Link>')) {
+        continue;
+      }
+
+      let profondeur = 1;
+      let curseur = finOuverture + 1;
+      let finRond = -1;
+      while (profondeur > 0) {
+        const ouvre = out.indexOf('<span', curseur);
+        const ferme = out.indexOf('</span>', curseur);
+        if (ferme < 0) break;
+        if (ouvre >= 0 && ouvre < ferme) {
+          profondeur += 1;
+          curseur = ouvre + 5;
+          continue;
+        }
+        profondeur -= 1;
+        curseur = ferme + 7;
+        if (profondeur === 0) finRond = curseur;
+      }
+      if (finRond < 0) continue;
+
+      const rond = out.slice(absolu, finRond);
+      out =
+        out.slice(0, absolu) +
+        `{${v}.profil ? (<Link href={${v}.profil} data-avatar-profil="" ` +
+        `aria-label={\`Voir le profil de \${${v}.${champ}}\`} ` +
+        'style={{ display: "contents", color: "inherit", textDecoration: "none" }}>' +
+        `${rond}</Link>) : (${rond})}` +
+        out.slice(finRond);
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K02_AVATAR_PROFIL = {
+  screens: ['K02'],
+  nom: 'K02_AVATAR_PROFIL',
+  why: 'Le grand rond du profil public porte la photo du membre, et la bande de couverture ne le coupe plus à 390 px.',
+  provides: ['membre'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LA SECTION DE L'AVATAR A UN SOUCI »                                 ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, à propos du profil public : « la section de l'avatar a un souci
+     * de z-index ».
+     *
+     * MESURÉ, et il y avait DEUX défauts l'un sur l'autre :
+     *
+     *   1. LE ROND ÉCRIVAIT « FN » EN DUR sur la planche d'ordinateur — les
+     *      initiales de « Fatou Ndiaye », l'exemple de la maquette. Tout le monde
+     *      portait les mêmes. La planche de téléphone, elle, lisait bien
+     *      `membre.initiales` : l'écart ne se voyait que sur un grand écran.
+     *
+     *   2. AUCUNE PHOTO. `publicProfileResponseSchema` sert `avatarUrl` depuis le
+     *      début et personne ne la lisait — le même défaut que les six modules
+     *      corrigés plus tôt.
+     *
+     * ── ET LE Z-INDEX, QUI EST LE SYMPTÔME VISIBLE ──────────────────────
+     *
+     * La carte blanche remonte son premier rang de 60 px (`marginTop: "-60px"`)
+     * pour que le rond chevauche la bannière. Le rang DÉBORDE donc de la carte
+     * sans créer de contexte d'empilement : il se peint au gré de l'ordre du
+     * document, et n'importe quel frère positionné ajouté au-dessus passerait
+     * devant lui. `position: relative` + `zIndex: 1` le posent FRANCHEMENT
+     * au-dessus de la bannière, au lieu de compter sur l'ordre.
+     */
+    const rond =
+      /<span style=\{\{ (width: "88px", height: "88px", borderRadius: "999px", )background: "#2FA37D"([^}]*border: "4px solid #fff") \}\}>FN<\/span>/;
+    const m = rond.exec(jsx);
+    let out = jsx;
+    let pris = 0;
+    if (m !== null) {
+      out =
+        out.slice(0, m.index) +
+        `<span data-profil-avatar="" style={{ ${m[1]}background: membre.photo ?? "#2FA37D"${m[2]}, ` +
+        `position: "relative", zIndex: 1 }}>{membre.photo ? null : membre.initiales}</span>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LE MÊME DÉFAUT À 390 px, ET IL COUPAIT LE ROND EN DEUX                ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, capture à l'appui : sur le téléphone, la moitié haute de
+     * l'avatar DISPARAÎT sous la bande de couverture.
+     *
+     * LA CAUSE N'EST PAS LE ROND, c'est son parent. Le cadre mobile empile deux
+     * frères : la bande de 120 px, qui porte `position: relative` parce qu'elle
+     * loge la flèche de retour en absolu, puis le bloc de contenu, qui n'est pas
+     * positionné et remonte de 50 px pour que le rond chevauche la bande. Or un
+     * élément POSITIONNÉ se peint au-dessus d'un élément statique, quel que soit
+     * l'ordre du document : la bande passait donc devant le rond, et le coupait
+     * exactement à sa limite basse.
+     *
+     * Le rond lui-même porte déjà `zIndex: 1` sur l'ordinateur ; ici il ne
+     * servirait à rien, puisque c'est le PARENT qui est derrière. On positionne
+     * donc le bloc de contenu — rien d'autre, et aucun pixel de dessin ne bouge.
+     *
+     * Le porteur, règle permanente : « veille toujours à ce que toutes les
+     * corrections soient aussi faites sur mobile ». Celle-ci ne l'était pas.
+     */
+    const bloc =
+      '<div style={{ flexGrow: "1", overflow: "visible", padding: "12px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>';
+    const at = out.indexOf(bloc);
+    if (at >= 0) {
+      out =
+        out.slice(0, at) +
+        bloc.replace(
+          'flexGrow: "1"',
+          'flexGrow: "1", position: "relative", zIndex: 1',
+        ) +
+        out.slice(at + bloc.length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LA PAGE EST VIDE, C'EST COMME ÇA SUR LE DESKTOP ? »                     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture du profil public à 390 px à l'appui. NON, ce n'est pas
+ * comme ça sur l'ordinateur, et c'est mesurable :
+ *
+ *     cadre 1440 px : 10 champs — bio, niveau, pseudo, phase, ville, pays,
+ *                     « membre depuis », « Disponible pour aider », entraides, nom
+ *     cadre  390 px :  6 champs — nom, initiales, phase, ville, pays, entraides
+ *
+ * Quatre manquent, et ce sont précisément ceux qui font qu'un profil dit quelque
+ * chose : LA BIO, le pseudo, le niveau, et la disponibilité à aider. Un membre
+ * consulté depuis un téléphone n'avait qu'un rond, un nom et deux chiffres.
+ *
+ * ── RIEN N'EST DESSINÉ ICI, TOUT EST EMPRUNTÉ À LA PLANCHE VOISINE ────────
+ *
+ * Les trois blocs sont repris AU CARACTÈRE PRÈS du cadre d'ordinateur de la
+ * MÊME section de la MÊME maquette : la pastille « Niveau N » (`#E3F0EB` /
+ * `#0F5C48`, 11 px / 700, retrait `4px 10px`, rayon 999), la ligne grise des
+ * attributs, le paragraphe de bio, la pastille « Disponible pour aider ».
+ *
+ * DEUX ADAPTATIONS DE TAILLE, et elles sont dites : la ligne grise passe de
+ * 13,5 à 12,5 px et la bio de 14,5 à 14 — ce sont les tailles que le cadre
+ * mobile emploie DÉJÀ pour ces deux rôles (sa ligne « phase · ville · pays » est
+ * en 12,5). On reprend donc son échelle, pas celle du grand écran.
+ *
+ * ── LE POINT D'INSERTION EST LA LIGNE QUI EXISTE ──────────────────────────
+ *
+ * Le cadre mobile écrit déjà « {membre.phase} · {membre.ville} · {membre.pays} ».
+ * On l'ALLONGE — pseudo devant, « membre depuis » derrière — plutôt que d'ajouter
+ * une seconde ligne grise sous la première, ce que la maquette ne dessine nulle
+ * part. La bio et la disponibilité se posent juste après, avant les deux cartes
+ * de chiffres.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LES BOUTONS ÉCRIRE, RECOMMANDER ET AUTRES MARCHENT ? »                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, sur la planche d'ordinateur du profil public. MESURÉ, les quatre
+ * boutons un par un :
+ *
+ *     Écrire                 → branché (ce lot)
+ *     Ajouter aux contacts   → ouvre K02C, branché (ce lot)
+ *     Recommander            → AUCUN geste
+ *     « ··· »                → ouvre son menu
+ *
+ * ── LA ROUTE EXISTAIT, ET DEPUIS LONGTEMPS ───────────────────────────────
+ *
+ * `POST /recommendations/members` (`jobs.controller.ts`), avec
+ * `createMemberRecommendationSchema` : `toHandle`, et `jobId` / `comment`
+ * facultatifs. Le profil en lit d'ailleurs déjà le pendant —
+ * `GET /users/:handle/recommendations`, « Recommandé·e par N membres ».
+ *
+ * ⚠ UNE RECOMMANDATION EST IRRÉVERSIBLE DEPUIS CET ÉCRAN : aucune route ne la
+ * retire. Le bouton passe donc par une CONFIRMATION, comme la suppression de
+ * publication et le blocage — c'est la règle que ce dépôt s'est donnée pour tout
+ * geste qu'on ne peut pas défaire. REMONTÉ : il manque un `DELETE`.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES SEPT ONGLETS DU PROFIL PUBLIC                                         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Je propose qu'il y ait des tabs (guides, fil d'actualités,
+ * stories, entraides, services, évènements, parcours publics) qui montrent ce
+ * que l'utilisateur a publié dans ces choses. »
+ *
+ * ── CE N'EST PAS DESSINÉ, ET C'EST ASSUMÉ ───────────────────────────────────
+ *
+ * La maquette ne dessine qu'UNE carte, « GUIDES PUBLIÉS », sans onglet. Les sept
+ * onglets sont une DEMANDE EXPLICITE du porteur — la seule autorisation qui
+ * vaille pour ajouter du dessin dans ce dépôt.
+ *
+ * On n'invente pas une forme pour autant : la pastille est celle que ce produit
+ * emploie déjà pour tous ses onglets — enregistrés (K10), filtres de
+ * notification (X02), types de publication —, au caractère près, avec ses deux
+ * variantes choisie et non choisie.
+ *
+ * ── ET LA CARTE ARRIVE SUR LE TÉLÉPHONE, OÙ IL N'Y AVAIT RIEN ──────────────
+ *
+ * Le porteur, capture à l'appui : « la page aussi est vide non ». Le cadre de
+ * 390 px ne dessine AUCUNE carte de contenu : un profil consulté depuis un
+ * téléphone s'arrêtait aux deux chiffres. La carte lui est posée, avec le même
+ * châssis que celle de l'ordinateur — fond blanc, trait `#E6EBE9`, rayon 22,
+ * retrait 20 — et la même liste.
+ */
+const K02_ONGLETS_CONTENU = {
+  screens: ['K02'],
+  nom: 'K02_ONGLETS_CONTENU',
+  why: 'Le profil public montre ce que le membre a publié, en sept onglets, sur les deux planches.',
+  provides: ['contenuOnglets', 'contenus', 'contenuTitre', 'contenuVide', 'contenuEspece'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════╗
+     * ║ « IL REPREND LE DESIGN DES ÉLÉMENTS DE LA PAGE D'ORIGINE »        ║
+     * ╚════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « La tab fil d'actualité sur le profil doit afficher et
+     * lister les publications comme sur la page de fil d'actualité. Pareil pour
+     * les guides, stories, etc. Les stories c'est les previews l'un à côté de
+     * l'autre et ça peut aller à la ligne (pas besoin de prev et next). »
+     *
+     * ── LES STORIES SONT TRAITÉES À PART, ET C'EST LA DEMANDE EXACTE ────
+     *
+     * Une story ne se résume pas en ligne de titre : elle se REDESSINE. Le
+     * composant qui sait le faire existe déjà — `ApercuStory`, écrit pour le
+     * bandeau du fil — et le serveur rend maintenant ce qu'il lui faut (fond,
+     * étiquette, texte). La grille `flexWrap` donne « l'un à côté de l'autre et
+     * ça peut aller à la ligne » ; AUCUN chevron de défilement, puisque le
+     * porteur n'en veut pas ici.
+     *
+     * ── LES AUTRES ESPÈCES GAGNENT LEUR LIGNE DE CONTEXTE ───────────────
+     *
+     * La ligne dessinée ne porte qu'un titre et un chevron. Les cartes des pages
+     * d'origine en disent plus : un guide dit ses votes utiles, une demande son
+     * état, un événement sa date. `ct.sous`, composée par le serveur, prend la
+     * place que la grammaire du produit réserve au sous-titre — 12 px sur
+     * `#5D6B66`, la paire que les cartes de ce dépôt emploient partout.
+     *
+     * ⚠ CE N'EST PAS ENCORE LA CARTE DE LA PAGE D'ORIGINE. Les cartes du fil, des
+     * guides et de l'agenda vivent DANS leurs cadres générés : il n'existe pas de
+     * composant `<CartePublication>` à monter ici, et en extraire un de chaque
+     * module est un lot à part entière. Ce qui est livré est la ligne enrichie,
+     * sur la grammaire dessinée. REMONTÉ au porteur.
+     */
+    const GRILLE_STORIES =
+      '<div style={{ display: "flex", flexWrap: "wrap", gap: "10px", padding: "12px 0" }}>' +
+      '{(contenus ?? []).map((ct) => (' +
+      /**
+       * LA CARTE PORTE SA TAILLE ET SON `position: relative` — `ApercuStory`
+       * est `position: absolute; inset: 0`, donc sans parent positionné ET
+       * dimensionné il se replie à zéro. Mesuré : deux aperçus dans le DOM,
+       * zéro visible.
+       *
+       * 120 × 200 est le portrait que la bande de stories du fil dessine, et le
+       * rayon 18 est celui de ses cartes.
+       */
+      '<a key={ct.id} href={ct.href} data-profil-story={ct.id} ' +
+      'style={{ position: "relative", width: "120px", height: "200px", flexShrink: 0, ' +
+      'borderRadius: "18px", overflow: "hidden", display: "block", ' +
+      'textDecoration: "none", color: "inherit" }}>' +
+      '{ct.apercu === undefined ? null : (<ApercuStory fond={ct.apercu.fond} ' +
+      'photo={ct.apercu.photo} etiquette={ct.apercu.etiquette} texte={ct.apercu.texte} />)}' +
+      '</a>))}</div>';
+
+    /** La rangée d'onglets, dans la grammaire de pastille du produit. */
+    const RANGEE =
+      '<div style={{ display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0", ' +
+      'marginBottom: "12px" }}>{(contenuOnglets ?? []).map((ot) => (' +
+      '<button key={ot.cle} type="button" onClick={ot.onChoisir} aria-pressed={ot.actif} ' +
+      'data-profil-onglet={ot.cle} style={{ padding: "8px 13px", borderRadius: "999px", ' +
+      'fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", minHeight: "44px", ' +
+      'background: ot.fond, color: ot.texte, border: `1px solid ${ot.bord}`, ' +
+      'fontFamily: "inherit", cursor: "pointer" }}>{ot.libelle}</button>))}</div>';
+
+    /** La phrase de l'onglet vide — un profil neuf n'a rien publié. */
+    const VIDE =
+      '{contenuVide ? (<div style={{ textAlign: "center", padding: "12px 0" }}>' +
+      '<div style={{ fontSize: "14px", fontWeight: "700" }}>Rien à montrer ici</div>' +
+      '<div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>' +
+      'Ce membre n’a encore rien publié dans cette rubrique.</div></div>) : null}';
+
+    /** La carte d'ordinateur, repérée par le titre que la déclaration a lié. */
+    const carte =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "20px", flexShrink: "0" }}>';
+    const at = jsx.indexOf(carte);
+    if (at >= 0 && jsx.slice(at, at + 700).includes('{contenuTitre}')) {
+      const ouvert = at + carte.length;
+      /** Les onglets DANS la carte, au-dessus de son titre. */
+      let out = jsx.slice(0, ouvert) + RANGEE + jsx.slice(ouvert);
+
+      /**
+       * LA LIGNE DESSINÉE DEVIENT UN LIEN À DEUX ÉTAGES, et la boucle entière
+       * cède la place à la grille d'aperçus sous l'onglet « Stories ».
+       */
+      const boucle = '{(contenus ?? []).map((ct, ctIndex) => (';
+      const iB = out.indexOf(boucle);
+      if (iB >= 0) {
+        const finB = out.indexOf('))}', iB) + '))}'.length;
+        const dedans = out
+          .slice(iB, finB)
+          .replace(
+            '}}>{ct.titre}<svg',
+            '}}><a href={ct.href} data-profil-contenu={ct.id} style={{ flex: "1", minWidth: "0", ' +
+              'display: "flex", flexDirection: "column", gap: "2px", color: "inherit", ' +
+              'textDecoration: "none" }}><span>{ct.titre}</span>' +
+              '<span style={{ fontSize: "12px", fontWeight: "500", color: "#5D6B66" }}>' +
+              '{ct.sous}</span></a><svg',
+          );
+        out =
+          out.slice(0, iB) +
+          `{contenuEspece === "STORY" ? (${GRILLE_STORIES}) : (<>${dedans}</>)}` +
+          out.slice(finB);
+      }
+      const fin = finDuDiv(out, at);
+      if (fin === -1) return { jsx, applied: false };
+      return {
+        jsx: out.slice(0, fin - '</div>'.length) + VIDE + out.slice(fin - '</div>'.length),
+        applied: true,
+      };
+    }
+
+    /**
+     * ── LE CADRE MOBILE : LA CARTE ENTIÈRE EST POSÉE ──────────────────────
+     *
+     * Elle se glisse après la grille des deux chiffres, qui est le dernier bloc
+     * du corps. Son châssis est celui de la carte d'ordinateur de la MÊME
+     * maquette, et ses lignes celles que la déclaration vient de boucler.
+     */
+    const grille =
+      '<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>';
+    const ag = jsx.indexOf(grille);
+    if (ag < 0) return { jsx, applied: false };
+    const fg = finDuDiv(jsx, ag);
+    if (fg === -1) return { jsx, applied: false };
+
+    const carteMobile =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", ' +
+      'padding: "16px", flexShrink: "0" }}>' +
+      RANGEE +
+      '<div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", ' +
+      'color: "#8A958F" }}>{contenuTitre}</div>' +
+      `{contenuEspece === "STORY" ? (${GRILLE_STORIES}) : (<>` +
+      '{(contenus ?? []).map((ct) => (' +
+      '<a key={ct.id} href={ct.href} data-profil-contenu={ct.id} ' +
+      'style={{ display: "flex", justifyContent: "space-between", alignItems: "center", ' +
+      'gap: "12px", minHeight: "44px", padding: "12px 0", borderBottom: "1px solid #F0F3F2", ' +
+      'fontSize: "13.5px", fontWeight: "600", color: "inherit", textDecoration: "none" }}>' +
+      '<span style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", ' +
+      'gap: "2px" }}><span>{ct.titre}</span>' +
+      '<span style={{ fontSize: "12px", fontWeight: "500", color: "#5D6B66" }}>{ct.sous}</span>' +
+      '</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A958F" ' +
+      'strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">' +
+      '<path d="m9 18 6-6-6-6" /></svg></a>))}</>)}' +
+      VIDE +
+      '</div>';
+
+    return { jsx: jsx.slice(0, fg) + carteMobile + jsx.slice(fg), applied: true };
+  },
+};
+
+const K02_RECOMMANDER = {
+  screens: ['K02'],
+  nom: 'K02_RECOMMANDER',
+  why: 'Le bouton « Recommander » du profil public recommande vraiment : il n’avait aucun geste.',
+  provides: ['onRecommander', 'recommandeBloque'],
+  apply(jsx) {
+    const motif = /<button (style=\{\{[^}]*\}\})>Recommander<\/button>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const bouton =
+      '<button type="button" onClick={onRecommander} disabled={recommandeBloque} ' +
+      `data-profil-recommander="" ${m[1].replace(' }}', ', cursor: recommandeBloque ? "default" : "pointer", opacity: recommandeBloque ? ".55" : "1" }}')}>Recommander</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+const K02_PROFIL_MOBILE = {
+  screens: ['K02'],
+  nom: 'K02_PROFIL_MOBILE',
+  why: 'Le profil public de 390 px montre la bio, le pseudo, le niveau et la disponibilité — il n’avait qu’un rond, un nom et deux chiffres.',
+  provides: ['membre'],
+  apply(jsx) {
+    const ligne =
+      '<div style={{ fontSize: "12.5px", color: "#5D6B66" }}>{membre.phase} · {membre.ville} · {membre.pays}</div>';
+    const at = jsx.indexOf(ligne);
+    if (at < 0) return { jsx, applied: false };
+
+    const PASTILLE =
+      'background: "#E3F0EB", color: "#0F5C48", fontSize: "11px", fontWeight: "700", ' +
+      'padding: "4px 10px", borderRadius: "999px", whiteSpace: "nowrap"';
+
+    const complet =
+      /** Le niveau, dans la pastille que l'ordinateur pose à côté du nom. */
+      `<div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>` +
+      `<span style={{ ${PASTILLE} }}>Niveau {membre.niveau}</span>` +
+      '<span style={{ fontSize: "12.5px", color: "#5D6B66" }}>{membre.pseudo}</span></div>' +
+      /** La ligne grise, allongée de « membre depuis » comme à 1440 px. */
+      '<div style={{ fontSize: "12.5px", color: "#5D6B66" }}>{membre.phase} · {membre.ville}' +
+      ' · {membre.pays} · membre depuis {membre.depuis}</div>' +
+      /**
+       * LA BIO NE SE DESSINE QUE SI ELLE EXISTE : un paragraphe vide laisserait
+       * un trou de seize pixels sous le nom, et le profil aurait l'air cassé là
+       * où il est simplement neuf.
+       */
+      '{membre.bio ? (<p style={{ margin: "0", fontSize: "14px", lineHeight: "1.65" }}>' +
+      '{membre.bio}</p>) : null}' +
+      '{membre.aides ? (<div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>' +
+      `<span style={{ ${PASTILLE} }}>Disponible pour aider · {membre.aides}</span></div>) : null}`;
+
+    return {
+      jsx: jsx.slice(0, at) + complet + jsx.slice(at + ligne.length),
+      applied: true,
+    };
+  },
+};
+
+const O04_CHOIX_REFERENTIEL = {
+  screens: ['O04'],
+  nom: 'O04_CHOIX_REFERENTIEL',
+  why: 'Les boîtes « Compétences » et « Langues » deviennent des champs qui ajoutent et retirent.',
+  provides: ['competencesChamp', 'languesChamp'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LA BOÎTE DESSINÉE CÈDE LA PLACE AU CHAMP QUE LA PAGE MONTE            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, à propos de l'inscription : « les champs de langue, compétences
+     * et autres de la page marchent ? » Ils ne marchaient pas : la maquette
+     * dessine cinq pastilles et le mot « Rechercher… » en `<span>` — zéro
+     * `input`, zéro bouton.
+     *
+     * ⚠ CE BLOC A ÉTÉ SUPPRIMÉ PAR ERREUR, PUIS REMIS. Le garde-fou le disait
+     * « attendu mais introuvable » à chaque exécution, et j'en ai conclu qu'il
+     * était mort. Il ne l'était pas : il est déclaré pour O04 et s'applique à sa
+     * planche d'ORDINATEUR seulement — la planche de 390 px ne dessine NI
+     * compétences NI langues, et c'est elle qui faisait crier le garde-fou.
+     * `e2e/profil-o04.spec.ts` est tombé en trois cas, et c'est ce qui l'a dit.
+     *
+     * LA LEÇON : « attendu mais introuvable » signifie « introuvable SUR CE
+     * CADRE », pas « inutile ». Une adaptation déclarée pour un écran à deux
+     * planches dont une seule porte le motif criera toujours.
+     *
+     * ── LE CONTRÔLE EST MONTÉ PAR LA PAGE, PAS ICI ───────────────────────
+     *
+     * Le transcodeur MÉNAGE LA PLACE — `{competencesChamp}` — et
+     * `app/(onboarding)/bienvenue/profil/page.tsx` y pose le champ avec ses
+     * suggestions et ses pastilles. Même raison que le panneau de pays de O02 :
+     * une adaptation de générateur ne doit pas écrire d'état React.
+     */
+    const BOITE =
+      '<div style={{ minHeight: "48px", padding: "6px", borderRadius: "14px", ' +
+      'background: "#F2F5F4", border: "1px solid #EAEEEC", display: "flex", gap: "6px", ' +
+      'flexWrap: "wrap", alignItems: "center" }}>';
+
+    let out = jsx;
+    let pris = 0;
+    for (const [libelle, prise] of [
+      ['Compétences', 'competencesChamp'],
+      ['Langues', 'languesChamp'],
+    ]) {
+      /**
+       * ON PART DU LIBELLÉ, pas de la boîte : les deux boîtes sont IDENTIQUES au
+       * caractère près, et chercher la première donnerait deux fois la même.
+       */
+      const titre = `>${libelle}</div>`;
+      const iT = out.indexOf(titre);
+      if (iT === -1) continue;
+      const iB = out.indexOf(BOITE, iT);
+      if (iB === -1) continue;
+      const fin = finDuNoeud(out, iB);
+      if (fin === -1) continue;
+      out =
+        out.slice(0, iB) +
+        BOITE +
+        `{${prise}}` +
+        '</div>' +
+        out.slice(fin);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K01_COMPETENCES_LANGUES = {
+  screens: ['K01'],
+  nom: 'K01_COMPETENCES_LANGUES',
+  why: 'Compétences et Langues étaient du texte : rien ne permettait de les changer.',
+  provides: ['onCompetences', 'onLangues', 'profilOccupe'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « COMPÉTENCES ET LANGUES NE SONT PAS MODIFIABLES ? »                  ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Non. MESURÉ : deux boîtes blanches portant `{profil.competences}` et
+     * `{profil.langues}` — du TEXTE. Une adaptation existait bien pour les rendre
+     * sélectionnables, et le générateur disait à chaque exécution qu'elle était
+     * « attendue mais introuvable » : elle visait un dessin que la maquette n'a
+     * plus (une boîte à pastilles sur `#F2F5F4`).
+     *
+     * `PATCH /me/profile` accepte pourtant `skillIds` et `languageIds` depuis le
+     * début, et `GET /places/skills` / `GET /places/languages` servent les
+     * référentiels aux MEMBRES — l'inscription s'en sert déjà.
+     *
+     * ── UN BOUTON QUI OUVRE, PLUTÔT QU'UN CHAMP À PASTILLES ──────────────
+     *
+     * La boîte garde son dessin et devient cliquable : soixante compétences ne
+     * tiennent pas dans une ligne de profil, et la fenêtre de choix porte déjà la
+     * recherche et la borne de dix. C'est la forme qu'emploie le sélecteur de
+     * parcours, pour la même raison.
+     *
+     * Le chevron dit que ça s'ouvre — sans lui, une boîte au dessin inchangé ne
+     * se distingue pas des champs en lecture seule qui l'entourent.
+     */
+    const CHEVRON =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A958F" ' +
+      'strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">' +
+      '<path d="m9 18 6-6-6-6" /></svg>';
+
+    let out = jsx;
+    let pris = false;
+    for (const [prise, geste, nom, repere] of [
+      ['competences', 'onCompetences', 'Modifier mes compétences', 'competences'],
+      ['langues', 'onLangues', 'Modifier mes langues', 'langues'],
+    ]) {
+      const motif = new RegExp(
+        `<div style=\\{\\{ (minHeight: "48px", borderRadius: "14px", border: "1px solid #E6EBE9", background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1\\.5") \\}\\}>\\{profil\\.${prise}\\}<\\/div>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={${geste}} disabled={profilOccupe} ` +
+        `aria-label="${nom}" data-profil-${repere}="" style={{ ${m[1]}, width: "100%", ` +
+        `boxSizing: "border-box", font: "inherit", textAlign: "left", color: "#16211D", ` +
+        `display: "flex", alignItems: "center", gap: "10px", ` +
+        `cursor: profilOccupe ? "default" : "pointer" }}>` +
+        `<span style={{ flex: "1", minWidth: "0" }}>{profil.${prise}}</span>${CHEVRON}</button>` +
+        out.slice(m.index + m[0].length);
+      pris = true;
+    }
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA PLANCHE DE TÉLÉPHONE N'A NI COMPÉTENCES NI LANGUES               ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * ⚠ ÉCART DE MAQUETTE, remonté au porteur. Relevé des textes du cadre de
+     * 390 px : « Bio », « Ville », « Disponible pour aider », « Nouveaux
+     * arrivants » — et rien d'autre. Le profil mobile ne montre QUE quatre
+     * champs, là où celui d'ordinateur en montre dix.
+     *
+     * Le porteur tient à ce que chaque correction prenne sur les deux planches.
+     * Les deux boîtes sont donc posées APRÈS le champ « Ville », dans le même
+     * dessin que lui — 48 px, rayon 14, trait `#E6EBE9` — avec leur libellé
+     * au-dessus, comme la planche le fait pour « Bio » et « Ville ».
+     */
+    if (!pris && out.includes('data-k01-ville=""')) {
+      const fin = out.indexOf('</select>', out.indexOf('data-k01-ville=""'));
+      if (fin !== -1) {
+        const apres = out.indexOf('</div>', fin) + '</div>'.length;
+        const boite = (prise, geste, nom, repere, libelle) =>
+          `<div style={{ flexShrink: "0" }}>` +
+          `<div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "6px" }}>${libelle}</div>` +
+          `<button type="button" onClick={${geste}} disabled={profilOccupe} ` +
+          `aria-label="${nom}" data-profil-${repere}="" style={{ minHeight: "48px", width: "100%", ` +
+          `borderRadius: "14px", border: "1px solid #E6EBE9", background: "#fff", ` +
+          `padding: "13px 14px", fontSize: "14px", lineHeight: "1.5", font: "inherit", ` +
+          `textAlign: "left", color: "#16211D", boxSizing: "border-box", display: "flex", ` +
+          `alignItems: "center", gap: "10px", ` +
+          `cursor: profilOccupe ? "default" : "pointer" }}>` +
+          `<span style={{ flex: "1", minWidth: "0" }}>{profil.${prise}}</span>${CHEVRON}</button></div>`;
+        out =
+          out.slice(0, apres) +
+          boite('competences', 'onCompetences', 'Modifier mes compétences', 'competences', 'Compétences') +
+          boite('langues', 'onLangues', 'Modifier mes langues', 'langues', 'Langues') +
+          out.slice(apres);
+        pris = true;
+      }
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K03_ETATS_KYC = {
+  screens: ['K03'],
+  nom: 'K03_ETATS_KYC',
+  why: 'La carte « ÉTATS KYC » allumait « En revue » pour tout le monde : c’était une légende figée.',
+  provides: ['etatsKyc'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « L'ÉTAT KYC EST JUSTE ? » — NON, C'ÉTAIT UNE LÉGENDE                 ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, en désignant la carte : « En cours / Terminez sur votre
+     * téléphone · En revue / Réponse sous 24 h · Refusée / Nouvel essai possible
+     * dans 7 jours · Mineur / Disponible à partir de 18 ans ».
+     *
+     * MESURÉ : quatre pavés ÉCRITS EN DUR, et le deuxième — « En revue » — peint
+     * sur l'aplat orange `#FBE3D4` avec l'encre `#B4581F`. C'est l'exemple de la
+     * maquette, et il s'affichait allumé POUR TOUT LE MONDE : un membre qui n'a
+     * jamais ouvert de vérification lisait qu'il était en revue.
+     *
+     * ── CE QUI CHANGE, ET CE QUI NE CHANGE PAS ──────────────────────────
+     *
+     * Les quatre pavés RESTENT — la carte est une légende, elle dit ce qui peut
+     * arriver, et c'est utile. Ce qui devient une donnée, c'est LEQUEL est
+     * allumé : `GET /me/kyc` rend `status` et `isMinor`, et un seul pavé à la
+     * fois porte l'aplat orange. Les trois autres reprennent le gris `#F2F5F4`
+     * que la planche met déjà sur eux.
+     *
+     * La SECONDE LIGNE devient une donnée elle aussi : « Nouvel essai possible
+     * dans 7 jours » est un exemple, et `retryAvailableAt` dit la vraie date.
+     */
+    const PAVES = [
+      ['En cours', 'enCours'],
+      ['En revue', 'enRevue'],
+      ['Refusée', 'refusee'],
+      ['Mineur', 'mineur'],
+    ];
+
+    let out = jsx;
+    let pris = 0;
+    for (const [texte, cle] of PAVES) {
+      const motif = new RegExp(
+        `<div style=\\{\\{ background: "(?:#F2F5F4|#FBE3D4)", borderRadius: "12px", padding: "10px 12px" \\}\\}>` +
+          `<div style=\\{\\{ fontSize: "12\\.5px", fontWeight: "700", color: "(?:#5D6B66|#B4581F|#16211D|#8A958F)" \\}\\}>${texte}<\\/div>` +
+          `<div style=\\{\\{ fontSize: "11\\.5px", color: "#5D6B66" \\}\\}>([^<]*)<\\/div><\\/div>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      out =
+        out.slice(0, m.index) +
+        /**
+         * `aria-current` DIT L'ÉTAT À QUI N'EST PAS VOYANT. Un aplat orange ne
+         * s'annonce pas ; sans lui, la carte est une liste de quatre pavés dont
+         * rien ne distingue le sien.
+         */
+        `<div aria-current={etatsKyc?.${cle} === true ? "step" : undefined} data-kyc-etat="${cle}" ` +
+        `style={{ background: etatsKyc?.${cle} === true ? "#FBE3D4" : "#F2F5F4", ` +
+        `borderRadius: "12px", padding: "10px 12px" }}>` +
+        `<div style={{ fontSize: "12.5px", fontWeight: "700", ` +
+        `color: etatsKyc?.${cle} === true ? "#B4581F" : "#5D6B66" }}>${texte}</div>` +
+        `<div style={{ fontSize: "11.5px", color: "#5D6B66" }}>` +
+        `{etatsKyc?.${cle}Sous ?? ${JSON.stringify(m[1])}}</div></div>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K03_VERIFICATION = {
+  screens: ['K03'],
+  nom: 'K03_VERIFICATION',
+  why: 'Les deux boutons de « Vérification et niveaux » étaient dessinés : ni KYC, ni ajout de numéro.',
+  provides: [
+    'onVerifierIdentite',
+    'onAjouterNumero',
+    'verificationOccupe',
+    'kycBloque',
+    'kycLibelle',
+  ],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LE BOUTON POUR FAIRE LA VÉRIFICATION D'IDENTITÉ EST LÀ ? »          ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Il était là, et il ne faisait rien. MESURÉ : deux `<button>` sans `onClick`
+     * — « Commencer » sous « VÉRIFIER MON IDENTITÉ », et « Ajouter mon numéro ».
+     * `POST /me/kyc/session` et `POST /me/phones` répondaient déjà.
+     *
+     * ── LE LIBELLÉ DE « COMMENCER » SUIT L'ÉTAT KYC ──────────────────────
+     *
+     * La planche dessine « Commencer », ce qui est juste pour qui n'a jamais
+     * essayé. `GET /me/kyc` rend aussi `IN_REVIEW`, `APPROVED`, `DECLINED` : un
+     * bouton qui dirait « Commencer » à qui est déjà en revue l'inviterait à
+     * recommencer une démarche en cours. Le mot vient donc de la donnée, et le
+     * bouton s'éteint quand il n'y a rien à faire — déjà vérifié, ou nouvel essai
+     * pas encore permis (`retryAvailableAt`).
+     */
+    let out = jsx;
+    let pris = false;
+
+    /**
+     * LES MOTIFS SONT ANCRÉS SUR LE TEXTE, pas sur la géométrie. Les deux
+     * planches ne dessinent pas le même bouton d'ajout — 40 px de haut sur
+     * l'ordinateur, 44 px pleine largeur sur le téléphone — et une première
+     * version figée sur `height: "40px"` manquait la seconde. Pire : son motif
+     * de « Commencer », figé sur `marginTop: "12px"`, aurait attrapé le bouton
+     * d'ajout du téléphone, qui porte la même déclaration.
+     */
+    const numero = /<button style=\{\{ ([^}]*) \}\}>Ajouter mon numéro<\/button>/;
+    const mN = numero.exec(out);
+    if (mN !== null) {
+      out =
+        out.slice(0, mN.index) +
+        `<button type="button" onClick={onAjouterNumero} disabled={verificationOccupe} ` +
+        `data-verification-numero="" style={{ ${mN[1]}, ` +
+        `cursor: verificationOccupe ? "default" : "pointer" }}>Ajouter mon numéro</button>` +
+        out.slice(mN.index + mN[0].length);
+      pris = true;
+    }
+
+    const identite = /<button style=\{\{ ([^}]*) \}\}>Commencer<\/button>/;
+    const mI = identite.exec(out);
+    if (mI !== null) {
+      out =
+        out.slice(0, mI.index) +
+        /**
+         * `kycBloque` ET NON `verificationOccupe` — MESURÉ, et c'était mon
+         * défaut : un seul drapeau éteignait les DEUX boutons. Un membre dont
+         * l'identité est déjà vérifiée ne pouvait donc plus ajouter de numéro.
+         * « Rien à vérifier » et « un appel est en cours » ne sont pas le même
+         * état, et un seul des deux concerne l'ajout d'un numéro.
+         */
+        `<button type="button" onClick={onVerifierIdentite} disabled={kycBloque} ` +
+        `data-kyc-commencer="" style={{ ${mI[1]}, ` +
+        `opacity: kycBloque ? 0.6 : 1, cursor: kycBloque ? "default" : "pointer" }}>{kycLibelle}</button>` +
+        out.slice(mI.index + mI[0].length);
+      pris = true;
+    } else if (mN !== null) {
+      /**
+       * ╔══════════════════════════════════════════════════════════════════╗
+       * ║ LA PLANCHE DE TÉLÉPHONE N'A PAS DE BOUTON DE VÉRIFICATION       ║
+       * ╚══════════════════════════════════════════════════════════════════╝
+       *
+       * ⚠ ÉCART DE MAQUETTE, et il est de ceux qui comptent : relevé des textes
+       * du cadre de 390 px — « Identité vérifiée », « Publier, commenter »,
+       * « Ajouter mon numéro », et RIEN pour lancer la vérification. La carte
+       * « VÉRIFIER MON IDENTITÉ » n'existe que sur l'ordinateur.
+       *
+       * Or le KYC SE FAIT AU TÉLÉPHONE — la planche d'ordinateur l'écrit
+       * elle-même : « Terminez sur votre téléphone ». Le seul appareil d'où on
+       * peut aller au bout était donc le seul d'où on ne pouvait pas commencer.
+       *
+       * Le bouton est posé JUSTE AVANT celui d'ajout de numéro, dans la même
+       * carte et le même dessin — 44 px, pleine largeur, aplat `#16785E` — avec
+       * la phrase que la planche d'ordinateur écrit au-dessus du sien.
+       */
+      const carte =
+        '<div style={{ marginTop: "14px", fontSize: "13px", lineHeight: "1.55", color: "#5D6B66" }}>' +
+        'Avec notre partenaire Didit, en deux minutes : une photo de votre pièce d’identité et un selfie.' +
+        '</div>' +
+        `<button type="button" onClick={onVerifierIdentite} disabled={kycBloque} ` +
+        `data-kyc-commencer="" style={{ ${mN[1]}, ` +
+        `opacity: kycBloque ? 0.6 : 1, cursor: kycBloque ? "default" : "pointer" }}>{kycLibelle}</button>`;
+      const place = out.indexOf('<button type="button" onClick={onAjouterNumero}');
+      if (place !== -1) out = out.slice(0, place) + carte + out.slice(place);
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const K04_SECURITE = {
+  screens: ['K04'],
+  nom: 'K04_SECURITE',
+  why: 'Les quatre contrôles de « Téléphones et sessions » étaient dessinés : ni ajout, ni retrait, ni révocation.',
+  provides: ['onAjouterNumero', 'onRevoquerTout', 'securiteOccupe'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « L'AJOUT DE NUMÉRO MARCHE, ET LA RÉVOCATION DE SESSIONS ? »          ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Non, ni l'un ni l'autre. MESURÉ sur le cadre produit : QUATRE contrôles,
+     * zéro `onClick`. Le chargeur lisait pourtant déjà les vraies données —
+     * `me.phones` et `GET /auth/sessions` — et les routes existent toutes :
+     * `POST /me/phones`, `DELETE /me/phones/:id`, `DELETE /sessions/:id`,
+     * `DELETE /sessions`. Il manquait le branchement, rien d'autre.
+     *
+     * ── « RÉVOQUER TOUTES LES AUTRES » ÉTAIT UN LIEN MORT ────────────────
+     *
+     * `<a href="#">`. Ce n'est pas une destination mais un GESTE, et destructeur :
+     * il déconnecte tous les autres appareils. Il devient un bouton, et la page
+     * lui pose une confirmation.
+     *
+     * Le dessin ne change pas : on n'annule que ce qu'un `<button>` ajoute sans
+     * que la planche l'écrive.
+     */
+    let out = jsx;
+    let pris = false;
+
+    /** Le « + Ajouter » de la carte des numéros. */
+    const ajouter = new RegExp(
+      '<button style=\\{\\{ ([^}]*height: "36px") \\}\\}>(<svg[^>]*><path d="M12 5v14M5 12h14" \\/><\\/svg>)Ajouter<\\/button>',
+    );
+    const mA = ajouter.exec(out);
+    if (mA !== null) {
+      out =
+        out.slice(0, mA.index) +
+        `<button type="button" onClick={onAjouterNumero} disabled={securiteOccupe} ` +
+        `data-securite-ajouter="" style={{ ${mA[1]}, cursor: securiteOccupe ? "default" : "pointer" }}>` +
+        `${mA[2]}Ajouter</button>` +
+        out.slice(mA.index + mA[0].length);
+      pris = true;
+    }
+
+    /**
+     * « RETIRER » EST DANS LA BOUCLE DES NUMÉROS : son geste vient de la LIGNE
+     * (`t.onRetirer`), pas d'une prise d'écran. Le cadre en porte une par
+     * téléphone, et une prise unique ne saurait pas lequel.
+     *
+     * `disabled` sur `t.retirable`, que le chargeur calcule déjà : le serveur
+     * refuse le DERNIER numéro (`LAST_PHONE`, 01 §2.5), et un bouton actif qui
+     * prendrait ce refus dirait au membre que son retrait a échoué alors que la
+     * règle l'interdit.
+     */
+    const retirer = new RegExp(
+      '<button style=\\{\\{ ([^}]*height: "36px") \\}\\}>Retirer<\\/button>',
+    );
+    const mR = retirer.exec(out);
+    if (mR !== null) {
+      out =
+        out.slice(0, mR.index) +
+        `<button type="button" onClick={t.onRetirer} disabled={!t.retirable || securiteOccupe} ` +
+        `data-securite-retirer="" style={{ ${mR[1]}, ` +
+        `opacity: t.retirable ? 1 : 0.5, ` +
+        `cursor: t.retirable && !securiteOccupe ? "pointer" : "default" }}>Retirer</button>` +
+        out.slice(mR.index + mR[0].length);
+      pris = true;
+    }
+
+    const tout = new RegExp(
+      '<a href="#" style=\\{\\{ (fontSize: "12\\.5px", fontWeight: "700") \\}\\}>Révoquer toutes les autres<\\/a>',
+    );
+    const mT = tout.exec(out);
+    if (mT !== null) {
+      out =
+        out.slice(0, mT.index) +
+        `<button type="button" onClick={onRevoquerTout} disabled={securiteOccupe} ` +
+        `data-securite-revoquer-tout="" style={{ ${mT[1]}, background: "none", border: "none", ` +
+        `padding: 0, font: "inherit", color: "#16785E", ` +
+        `cursor: securiteOccupe ? "default" : "pointer" }}>Révoquer toutes les autres</button>` +
+        out.slice(mT.index + mT[0].length);
+      pris = true;
+    }
+
+    /** « Révoquer » est dans la boucle des sessions : son geste vient de la ligne. */
+    const une = new RegExp('<button style=\\{\\{ ([^}]*height: "36px") \\}\\}>Révoquer<\\/button>');
+    const mU = une.exec(out);
+    if (mU !== null) {
+      out =
+        out.slice(0, mU.index) +
+        `<button type="button" onClick={s.onRevoquer} disabled={securiteOccupe} ` +
+        `data-securite-revoquer="" style={{ ${mU[1]}, ` +
+        `cursor: securiteOccupe ? "default" : "pointer" }}>Révoquer</button>` +
+        out.slice(mU.index + mU[0].length);
+      pris = true;
+    }
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA PLANCHE DE TÉLÉPHONE N'A NI « AJOUTER » NI « RÉVOQUER TOUTES »   ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * ⚠ ÉCART DE MAQUETTE, remonté au porteur. Relevé des textes du cadre de
+     * 390 px : « Dernier numéro, non retirable », « Retirer », « Actuelle »,
+     * « Révoquer » — et rien d'autre. Ni l'ajout d'un numéro, ni la révocation
+     * en bloc, que la planche d'ordinateur dessine tous deux. Un membre sur
+     * téléphone ne pouvait donc ni ajouter un numéro ni déconnecter ses autres
+     * appareils.
+     *
+     * Le porteur tient à ce que chaque correction prenne sur les deux planches.
+     * Les deux contrôles sont posés EN TÊTE de leur carte, avant la liste, et
+     * empruntent le dessin de leurs jumeaux d'ordinateur — 36 px de haut, rayon
+     * 14, aplat `#16785E` pour l'ajout, texte vert pour la révocation.
+     */
+    const carteTelephones =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "0 14pxpx", flexShrink: "0" }}>{(telephones ?? []).map(';
+    if (out.includes(carteTelephones)) {
+      out = out.replace(
+        carteTelephones,
+        '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", ' +
+          'padding: "0 14pxpx", flexShrink: "0" }}>' +
+          '<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", ' +
+          'padding: "14px 0 0" }}>' +
+          '<span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", ' +
+          'color: "#8A958F" }}>NUMÉROS</span>' +
+          '<button type="button" onClick={onAjouterNumero} disabled={securiteOccupe} ' +
+          'data-securite-ajouter="" style={{ padding: "0 14px", borderRadius: "14px", ' +
+          'background: "#16785E", color: "#fff", border: "none", font: "inherit", ' +
+          'fontSize: "12.5px", fontWeight: "700", height: "36px", display: "flex", ' +
+          'alignItems: "center", justifyContent: "center", flexShrink: "0", ' +
+          'cursor: securiteOccupe ? "default" : "pointer" }}>Ajouter</button></div>' +
+          '{(telephones ?? []).map(',
+      );
+      pris = true;
+    }
+
+    const carteSessions =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "0 14pxpx", flexShrink: "0" }}>{(sessions ?? []).map(';
+    if (out.includes(carteSessions)) {
+      out = out.replace(
+        carteSessions,
+        '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", ' +
+          'padding: "0 14pxpx", flexShrink: "0" }}>' +
+          '<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", ' +
+          'gap: "10px", padding: "14px 0 0" }}>' +
+          '<span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", ' +
+          'color: "#8A958F" }}>SESSIONS ACTIVES</span>' +
+          '<button type="button" onClick={onRevoquerTout} disabled={securiteOccupe} ' +
+          'data-securite-revoquer-tout="" style={{ fontSize: "12.5px", fontWeight: "700", ' +
+          'color: "#16785E", background: "none", border: "none", padding: 0, font: "inherit", ' +
+          'minHeight: "44px", textAlign: "right", ' +
+          'cursor: securiteOccupe ? "default" : "pointer" }}>Révoquer toutes les autres</button>' +
+          '</div>{(sessions ?? []).map(',
+      );
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A01_JALONS = {
+  screens: ['A01'],
+  nom: 'A01_JALONS',
+  why: 'La bande de stories prend les cartes de « Fil d’actualité v2 », à la demande du porteur.',
+  provides: [],
+  apply(jsx) {
+    const brut = fragmentJalons();
+    if (brut === null) return { jsx, applied: false };
+
+    const telephone = jsx.includes('gap: "4px", overflowX: "auto"');
+
+    let source = brut
+      /** 1. LES PRISES — mêmes valeurs, noms du cadre A01. */
+      .replace(/\{\{ jalons \}\}/g, '{{ stories }}')
+      .replace(/as="j"/g, 'as="s"')
+      .replace(/\{\{ j\.initials \}\}/g, '{{ s.i }}')
+      .replace(/\{\{ j\.avatarBg \}\}/g, '{{ s.bg }}')
+      .replace(/\{\{ j\.tag \}\}/g, '{{ s.type }}')
+      /**
+       * ── L'APERÇU MONTRE LE CONTENU, PAS UNE LÉGENDE ────────────────────
+       *
+       * Le porteur : « Le preview doit montrer déjà le contenu exact comme
+       * affiché au display story. »
+       *
+       * `s.caption` portait le LIEU ou la catégorie — « Logement », « Lyon » —
+       * c'est-à-dire une étiquette, pas la story. `s.apercu` porte son CORPS,
+       * celui que l'écran de lecture écrit en 30 px au centre du fond (A13,
+       * `st.text`). La carte le reprend dans sa propre taille.
+       */
+      .replace(/\{\{ j\.title \}\}/g, '{{ s.apercu }}');
+
+    /** 2. `<image-slot>` — la photo de la story, ou son aplat. */
+    source = source
+      .replace(
+        /<image-slot id="\{\{ j\.id \}\}"[^>]*>\s*<\/image-slot>/g,
+        '<div style="position:absolute;inset:0;background:{{ s.fond }}"></div>',
+      )
+      .replace(
+        /<image-slot id="v2-jalon-cta"[^>]*>\s*<\/image-slot>/g,
+        '<div style="height:100%;background:#F2F5F4"></div>',
+      );
+
+    /** 3. LA NAVIGATION — la maquette dessine des cartes, pas des liens. */
+    source = source
+      .replace(
+        '<div style="position:relative;border-radius:20px;overflow:hidden">',
+        '<a href="{{ s.lien }}" style="position:relative;border-radius:20px;overflow:hidden;display:block;color:inherit;text-decoration:none">',
+      )
+      .replace(
+        '<div style="border:1.5px dashed #CBD5D1;border-radius:20px;background:#fff;display:flex;flex-direction:column;overflow:hidden">',
+        '<a href="/stories/nouvelle" style="border:1.5px dashed #CBD5D1;border-radius:20px;background:#fff;display:flex;flex-direction:column;overflow:hidden;color:inherit;text-decoration:none">',
+      );
+    /** La carte-lien se referme en `</a>` : on retourne les deux fermetures. */
+    source = fermerEnLien(source);
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA GRILLE DEVIENT UN RUBAN, ET SON DESSIN NE BOUGE PAS              ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Pour le scroll de liste des stories il faut plutôt utiliser
+     * des boutons prev et next bien présentés. »
+     *
+     * LA PLANCHE DESSINE CINQ CASES POUR UNE LIGNE DE 198 px. Le fil réel porte
+     * plus de quatre stories : en grille, elles débordaient sur une deuxième
+     * ligne et les 198 px se partageaient entre les rangs — relevé 79 px de haut
+     * par carte au lieu de 198.
+     *
+     * Chaque carte prend donc EXACTEMENT un cinquième de la largeur, écarts
+     * compris : `calc((100% - 48px) / 5)`, soit les quatre écarts de 12 px de la
+     * grille. Cinq cartes visibles, 198 px de haut, 12 px d'écart — la planche au
+     * pixel près — et les suivantes se parcourent au chevron. `RubanStories`
+     * porte le défilement et les deux boutons.
+     *
+     * SUR LA PLANCHE DE TÉLÉPHONE, 124 px fixes : un cinquième de 390 px ferait
+     * 70 px, illisible. Trois cartes tiennent, la quatrième est amorcée — ce qui
+     * dit qu'il y en a d'autres. ⚠ Le fichier ne dessine PAS cette planche ; c'est
+     * une déduction, remontée au porteur.
+     */
+    const largeurCarte = telephone ? '124px' : 'calc((100% - 48px) / 5)';
+    source = source.replace(
+      'display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;height:198px',
+      'display:contents',
+    );
+    source = source.replace(
+      /border-radius:20px;overflow:hidden;display:block/g,
+      `border-radius:20px;overflow:hidden;display:block;width:${largeurCarte};flex-shrink:0;scroll-snap-align:start`,
+    );
+    source = source.replace(
+      /border-radius:20px;background:#fff;display:flex;flex-direction:column;overflow:hidden/g,
+      `border-radius:20px;background:#fff;display:flex;flex-direction:column;overflow:hidden;width:${largeurCarte};flex-shrink:0;scroll-snap-align:start`,
+    );
+
+    let neuf = transcode(source).trim();
+
+    /**
+     * ── DEUX RETOUCHES SUR LE JSX PRODUIT, ET AUCUNE SUR LE DESSIN ───────
+     *
+     * 1. `<Link>` ET NON `<a>`. La maquette écrit des balises HTML ; le dépôt
+     *    navigue avec `next/link`, qui garde la page montée. L'ancienne bande le
+     *    faisait déjà, et retomber sur un `<a>` nu rechargerait tout le fil à
+     *    chaque story ouverte.
+     *
+     * 2. UN REPÈRE SUR LE ROND VERT DU « + ». `BARRE_HAUTE` cherche le premier
+     *    `<span style={{…}}>` portant le tracé `M12 5v14M5 12h14` et le remplace
+     *    par `<BoutonCreer>`, le contrôle de la barre haute. Sur la planche de
+     *    téléphone il n'y a PAS de barre haute : elle tombait donc sur le « + »
+     *    de la carte « Partager un jalon » et en faisait un bouton de création de
+     *    publication. Mesuré sur le cadre produit. Son motif exige `<span ` suivi
+     *    immédiatement de `style=` ; un attribut posé devant suffit à l'écarter,
+     *    et il dit en même temps ce que ce rond est.
+     */
+    /**
+     * ── « VU / NON VU » — LE SIGNAL SURVIT, SUR LE TRAIT QUE LA PLANCHE DESSINE ─
+     *
+     * ⚠ DÉDUCTION, remontée au porteur. La bande d'avant portait un ANNEAU autour
+     * de chaque rond : 3 px vert tant que la story n'était pas vue, 1,5 px gris
+     * ensuite. `Fil d'actualité v2` ne dessine AUCUN état de lecture — ses cartes
+     * sont toutes pareilles.
+     *
+     * Perdre ce signal en silence serait une régression de produit, pas un choix
+     * de dessin : c'est ce qui dit au membre ce qu'il lui reste à lire. On le
+     * reporte donc sur un trait que la planche dessine DÉJÀ — le liseré de 2 px
+     * autour de l'avatar — dont seule la COULEUR change. Aucune épaisseur, aucune
+     * boîte, aucun élément ajouté.
+     *
+     * `s.seen` vient du serveur, comme avant.
+     */
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA VIGNETTE EST LA STORY, ET LE BAS PORTE LE NOM DE L'AUTEUR        ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, capture à l'appui : « Ça doit être le même composant du display
+     * qui est affiché en preview, un peu comme WhatsApp. Et non écrire le texte
+     * sur la story comme tu as fait. »
+     *
+     * CE QUI PRÉCÉDAIT, et pourquoi c'était faux : la carte peignait le fond de
+     * la story et RECOLLAIT son corps par-dessus, en bas, dans la typographie de
+     * la carte. Le membre voyait une légende sur une couleur — pas sa story. Une
+     * story est une COMPOSITION : un fond, une étiquette, un texte centré à une
+     * certaine taille.
+     *
+     * TROIS SUBSTITUTIONS, et le reste de la carte ne bouge pas :
+     *
+     *   1. la boîte de fond devient `<ApercuStory>`, qui rend la story à SA
+     *      taille (430 × 800, celle de `data-story-carte`) et la réduit par
+     *      `transform: scale()`. Les proportions sont donc exactes et les retours
+     *      à la ligne tombent aux mêmes mots que sur l'écran de lecture ;
+     *
+     *   2. l'étiquette de type disparaît du bas : elle est DANS la story
+     *      maintenant, et la répéter dirait deux fois la même chose ;
+     *
+     *   3. le bas porte le NOM DE L'AUTEUR, en blanc gras — c'est ce que montre
+     *      la capture du porteur, et c'est ce qu'une vignette doit dire : de qui
+     *      est cette story. Une ligne, coupée par points de suspension : les noms
+     *      longs ne doivent pas pousser la carte.
+     */
+    neuf = neuf.replace(
+      '<div style={{ position: "absolute", inset: "0", background: s.fond }}></div>',
+      '<ApercuStory fond={s.fond} photo={s.estPhoto} etiquette={s.type} texte={s.apercu} />',
+    );
+    neuf = neuf.replace(
+      '<span style={{ display: "inline-block", background: "rgba(255,255,255,.22)", fontSize: "9.5px", fontWeight: "700", padding: "4px 9px", borderRadius: "999px" }}>{s.type}</span>',
+      '',
+    );
+    neuf = neuf.replace(
+      '<div style={{ fontSize: "12.5px", fontWeight: "700", marginTop: "6px", lineHeight: "1.3", letterSpacing: "-0.1px" }}>{s.apercu}</div>',
+      '<div data-story-auteur="" style={{ fontSize: "12.5px", fontWeight: "700", ' +
+        'lineHeight: "1.3", letterSpacing: "-0.1px", whiteSpace: "nowrap", ' +
+        'overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</div>',
+    );
+
+    neuf = neuf.replace(
+      'border: "2px solid rgba(255,255,255,.9)"',
+      'border: s.seen ? "2px solid rgba(255,255,255,.9)" : "2px solid #16785E"',
+    );
+
+    neuf = neuf
+      .replace(/<a href=/g, '<Link href=')
+      .replace(/<\/a>/g, '</Link>')
+      .replace(
+        '<span style={{ width: "30px", height: "30px", borderRadius: "999px", background: "#16785E"',
+        '<span data-jalon-publier="" style={{ width: "30px", height: "30px", borderRadius: "999px", background: "#16785E"',
+      );
+
+    /** LA BANDE REMPLACÉE : son conteneur entier, repéré par son dessin. */
+    const ouvre = telephone
+      ? '<div style={{ display: "flex", gap: "4px", overflowX: "auto" }} tabIndex={0}>'
+      : '<div style={{ display: "flex", gap: "6px", marginTop: "14px", overflowX: "auto" }} tabIndex={0}>';
+    const i = jsx.indexOf(ouvre);
+    if (i === -1) return { jsx, applied: false };
+    const fin = finDuNoeud(jsx, i);
+    if (fin === -1) return { jsx, applied: false };
+
+    /**
+     * `marginTop` EST CONSERVÉ sur la planche d'ordinateur : il sépare la bande
+     * de la ligne de filtres au-dessus, et le nouveau fragment ne le porte pas —
+     * le fichier v2 ne dessine pas cette ligne de filtres.
+     */
+    /**
+     * `display: contents` SUR L'ANCIEN CONTENEUR DE GRILLE : ses enfants — les
+     * cartes — deviennent enfants directs du rail de `RubanStories`, qui porte
+     * l'écart, la hauteur et le défilement. Le supprimer purement aurait demandé
+     * de défaire l'arbre que le transcodeur vient de produire.
+     *
+     * `marginTop` sur l'ordinateur : il séparait la bande de la rangée de filtres
+     * au-dessus, que le fichier v2 ne dessine pas. Il est posé sur la boîte du
+     * ruban, pas sur ses cartes.
+     */
+    const enveloppe = telephone
+      ? `<RubanStories>${neuf}</RubanStories>`
+      : `<div style={{ marginTop: "14px" }}><RubanStories>${neuf}</RubanStories></div>`;
+    const out = jsx.slice(0, i) + enveloppe + jsx.slice(fin);
+
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * `</div>` → `</a>` pour les deux cartes devenues des liens, et elles seules.
+ *
+ * ON COMPTE DEPUIS L'INTÉRIEUR DE LA CARTE, pas depuis son ouverture : celle-ci
+ * est devenue un `<a>`, donc elle ne compte plus comme un `<div>`. La première
+ * version partait de la balise `<a>` et retombait sur le `</div>` du PREMIER
+ * enfant — le JSX produit fermait la carte au milieu d'elle-même, et le reste de
+ * son dessin se retrouvait dehors.
+ *
+ * On entre donc à `niveau = 1` juste après la balise ouvrante : chaque `<div`
+ * monte, chaque `</div>` descend, et le `</div>` qui ramène à zéro est celui de
+ * la carte.
+ */
+function fermerEnLien(html) {
+  let out = html;
+  for (const ouvre of ['<a href="{{ s.lien }}"', '<a href="/stories/nouvelle"']) {
+    const debut = out.indexOf(ouvre);
+    if (debut === -1) continue;
+    let i = out.indexOf('>', debut) + 1;
+    let niveau = 1;
+    while (i < out.length && niveau > 0) {
+      const a = out.indexOf('<div', i);
+      const b = out.indexOf('</div>', i);
+      if (b === -1) break;
+      if (a !== -1 && a < b) {
+        niveau += 1;
+        i = a + 4;
+        continue;
+      }
+      niveau -= 1;
+      i = b + '</div>'.length;
+    }
+    if (niveau !== 0) continue;
+    out = `${out.slice(0, i - '</div>'.length)}</a>${out.slice(i)}`;
+  }
+  return out;
+}
+
+const A01C_SIGNALER_COMMENTAIRE = {
+  screens: ['A01C', 'A02'],
+  nom: 'A01C_SIGNALER_COMMENTAIRE',
+  why: 'Le « Signaler » de chaque commentaire était un lien mort (href="#").',
+  provides: [],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « LE SIGNALEMENT DES COMMENTAIRES NE MARCHE PAS NON PLUS »            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ dans le cadre produit : `<a href="#">Signaler</a>`, sous chaque
+     * commentaire. Un lien mort — cliquer n'ouvrait rien et ne changeait même pas
+     * l'URL. Le garde-fou de navigation le comptait d'ailleurs déjà parmi les
+     * « href="#" sans destination déclarée ».
+     *
+     * UN BOUTON ET NON UN LIEN, contrairement au « Signaler » du menu de
+     * conversation : celui-ci n'a pas d'adresse. La fenêtre de signalement d'une
+     * conversation s'ouvre par `?feuille=signaler` — un paramètre d'URL que la
+     * page de messagerie sait lire — mais un commentaire n'est pas une page, et
+     * vingt commentaires ne peuvent pas partager un seul paramètre sans dire
+     * LEQUEL. Le geste porte donc l'identifiant, et c'est la page qui ouvre.
+     *
+     * LE DESSIN NE CHANGE PAS : même graisse, même encre `#8A958F`. On n'annule
+     * que ce qu'un `<button>` ajoute sans que la planche l'écrive — fond,
+     * bordure, retrait, police.
+     */
+    const bouton = (taille) =>
+      `<button type="button" onClick={c.onSignaler} disabled={c.onSignaler === undefined} ` +
+      `data-commentaire-signaler="" style={{ fontWeight: "600", color: "#8A958F", ` +
+      `background: "none", border: "none", padding: 0, font: "inherit", fontSize: "${taille}", ` +
+      `cursor: c.onSignaler === undefined ? "default" : "pointer" }}>Signaler</button>`;
+
+    const lien = /<a href="#" style=\{\{ fontWeight: "600", color: "#8A958F" \}\}>Signaler<\/a>/g;
+    let out = jsx.replace(lien, () => bouton('12px'));
+    const pris = out !== jsx;
+
+    /**
+     * ── ET ON L'AJOUTE À LA PLANCHE DE TÉLÉPHONE, QUI N'EN DESSINE PAS ───
+     *
+     * ⚠ ÉCART DE MAQUETTE, remonté au porteur. Relevé : « Signaler » n'est
+     * dessiné que sur la planche d'ORDINATEUR de la fenêtre de commentaires. Sur
+     * celle de 390 px, la ligne d'actions s'arrête à « Répondre » — un membre sur
+     * téléphone ne pouvait donc signaler aucun commentaire.
+     *
+     * Le porteur tient à ce que chaque correction prenne sur les deux planches.
+     * Le bouton est posé APRÈS « Répondre », dans la même ligne d'actions, et il
+     * emprunte sa typographie à celle-ci — 11,5 px, l'écart de 14 px de la
+     * planche mobile — plutôt que celle de l'ordinateur.
+     */
+    const finRepondre = '>Répondre</button></>) : null}</div>';
+    if (out.includes(finRepondre)) {
+      out = out.replace(
+        finRepondre,
+        `>Répondre</button></>) : null}${bouton('11.5px')}</div>`,
+      );
+    }
+
+    return pris || out !== jsx ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const M01_MENU = {
+  screens: ['M01'],
+  nom: 'M01_MENU',
+  why: 'Les quatre entrées du menu de conversation étaient des <span> : aucune ne faisait rien.',
+  provides: ['menu'],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « VOIR LE PROFIL, METTRE EN SOURDINE, BLOQUER, SIGNALER »             ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Les options voir le profil, mettre en sourdine, bloquer et
+     * signaler ne marchent pas. Intègre tout ça. »
+     *
+     * MESURÉ : les quatre étaient des `<span style={{ height: "44px", … }}>`. La
+     * maquette les dessine ainsi — elle dessine une image, pas une interface — et
+     * le transcodage les avait laissées telles quelles.
+     *
+     * ── DEUX NATURES, DEUX BALISES ───────────────────────────────────────
+     *
+     * « Voir le profil » et « Signaler » MÈNENT QUELQUE PART : un profil public a
+     * une adresse, et la feuille de signalement s'ouvre par `?feuille=signaler`,
+     * ce que l'écran sait déjà faire. Ce sont donc des LIENS — clic droit, nouvel
+     * onglet, annonce par un lecteur d'écran.
+     *
+     * « Mettre en sourdine » et « Bloquer » CHANGENT QUELQUE CHOSE : des boutons.
+     *
+     * ── LE LIBELLÉ DE LA SOURDINE SUIT L'ÉTAT ────────────────────────────
+     *
+     * Une entrée qui dit « Mettre en sourdine » sur une conversation DÉJÀ en
+     * sourdine ment. Le texte dessiné sert donc d'état « éteint », et l'autre est
+     * sa réciproque — « Réactiver les notifications », qui dit ce que le clic
+     * fait, et non ce que l'état est.
+     *
+     * ── CE QUI RESTE DU DESSIN ───────────────────────────────────────────
+     *
+     * Tout : la hauteur de 44 px, l'écart de 12, la police, le tracé de chaque
+     * icône. On n'ajoute que ce qu'un `<button>` ou un `<a>` impose sans que la
+     * planche l'écrive — fond, bordure, retrait, soulignement, encre.
+     */
+    const ENTREES = [
+      {
+        texte: 'Voir le profil',
+        /**
+         * UN LIEN SEULEMENT S'IL Y A OÙ ALLER. Sur une conversation de parcours
+         * il n'y a pas UN interlocuteur mais plusieurs : `menu.profil` vaut alors
+         * `null`, et l'entrée reste un libellé. Un `href="#"` serait un lien mort,
+         * ce que le garde-fou de navigation compte et refuse.
+         */
+        rendu: (style, icone, texte) =>
+          /**
+           * TEST DE VÉRITÉ et non `== null` : `eqeqeq` est `error` dans la
+           * configuration de lint du dépôt, et `next build` échoue dessus. Une
+           * adresse vide n'est de toute façon pas une destination.
+           */
+          `{menu?.profil ? (<Link href={menu.profil} data-menu-profil="" style={{ ${style}, ` +
+          `textDecoration: "none", color: "inherit" }}>${icone}${texte}</Link>) : ` +
+          `(<span style={{ ${style} }}>${icone}${texte}</span>)}`,
+      },
+      {
+        texte: 'Mettre en sourdine',
+        rendu: (style, icone) =>
+          `<button type="button" onClick={menu?.onSourdine} disabled={menu?.menuOccupe === true} ` +
+          `aria-pressed={menu?.sourdine === true} data-menu-sourdine="" ` +
+          `style={{ ${style}, width: "100%", background: "none", border: "none", padding: 0, ` +
+          `font: "inherit", textAlign: "left", color: "inherit", ` +
+          `cursor: menu?.menuOccupe === true ? "default" : "pointer" }}>${icone}` +
+          `{menu?.sourdine === true ? "Réactiver les notifications" : "Mettre en sourdine"}</button>`,
+      },
+      {
+        texte: 'Bloquer',
+        rendu: (style, icone, texte) =>
+          `<button type="button" onClick={menu?.onBloquer} disabled={menu?.menuOccupe === true} ` +
+          `data-menu-bloquer="" style={{ ${style}, width: "100%", background: "none", ` +
+          `border: "none", padding: 0, font: "inherit", textAlign: "left", color: "#C2453B", ` +
+          `cursor: menu?.menuOccupe === true ? "default" : "pointer" }}>${icone}${texte}</button>`,
+      },
+      {
+        texte: 'Signaler',
+        /**
+         * `?feuille=signaler` EST LE CHEMIN QUE L'ÉCRAN CONNAÎT DÉJÀ : les pages
+         * de messagerie lisent ce paramètre et ouvrent la feuille X03. On ne
+         * recâble rien, on emprunte ce qui existe.
+         */
+        rendu: (style, icone, texte) =>
+          `<Link href="?feuille=signaler" data-menu-signaler="" style={{ ${style}, ` +
+          `textDecoration: "none", color: "#C2453B" }}>${icone}${texte}</Link>`,
+      },
+    ];
+
+    let out = jsx;
+    let pris = false;
+    for (const entree of ENTREES) {
+      /**
+       * `(?:(?!<svg)[\s\S])*?` ET NON `[\s\S]*?` DANS L'ICÔNE.
+       *
+       * MESURÉ : avec un joker ordinaire, le moteur BACKTRACKE. Le motif de
+       * « Mettre en sourdine » partait de l'entrée « Voir le profil », étendait
+       * son groupe d'icône à travers DEUX entrées, et produisait un `<button>`
+       * ouvert sur un `</span>` fermé — le compilateur a dit « Expected
+       * corresponding JSX closing tag for 'button' ». Interdire un second `<svg`
+       * à l'intérieur borne la capture à UNE icône, donc à UNE entrée.
+       */
+      const motif = new RegExp(
+        `<span style=\\{\\{ (height: "44px", display: "flex", alignItems: "center", gap: "12px", fontSize: "14px", fontWeight: "600")( \\}\\})>(<svg\\b(?:(?!<svg)[\\s\\S])*?<\\/svg>)${entree.texte}<\\/span>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      out =
+        out.slice(0, m.index) +
+        entree.rendu(m[1], m[3], entree.texte) +
+        out.slice(m.index + m[0].length);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const M01_LIGNES_CONVERSATION = {
+  screens: ['M01', 'M01BLOQUE'],
+  nom: 'M01_LIGNES_CONVERSATION',
+  why: 'Les lignes de la liste de conversations étaient des <div> muets : aucune conversation ne pouvait être ouverte.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ ON NE POUVAIT OUVRIR AUCUNE CONVERSATION                              ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Messagerie toujours. L'envoi de message, la saisie, l'ajout
+     * d'image et d'emojis ne marche toujours pas hein. »
+     *
+     * MESURÉ, et c'est la cause commune des quatre : il teste depuis `/messages`,
+     * pas depuis `/messages/<id>`. Or les lignes de la liste sont des `<div>` —
+     * cliquer dessus ne fait RIEN, l'URL ne bouge pas (relevé : « URL après clic
+     * = /messages »). Le volet de droite montre alors la conversation de repli
+     * que le chargeur choisit, et le composeur s'y bloque lui-même puisque l'URL
+     * ne porte aucun identifiant.
+     *
+     * La correction a donc deux moitiés, et celle-ci est la première : chaque
+     * ligne devient un LIEN vers sa conversation. L'autre moitié est
+     * `conversationOuverte` dans `M01Data` — le chargeur dit QUELLE conversation
+     * il a réellement ouverte, et le composeur écrit dedans.
+     *
+     * ── UN LIEN, ET NON UN `onClick` ─────────────────────────────────────
+     *
+     * Une conversation A UNE ADRESSE : `/messages/<id>`. Un `onClick` qui
+     * pousserait l'URL donnerait la même chose au doigt, mais pas au clic-droit,
+     * pas au « ouvrir dans un nouvel onglet », pas au lecteur d'écran qui annonce
+     * les liens d'une page. Le dépôt emploie `Link` partout ailleurs.
+     *
+     * ── LE DESSIN NE CHANGE PAS ──────────────────────────────────────────
+     *
+     * `textDecoration: "none"` et `color: "inherit"` sont les deux SEULES
+     * déclarations ajoutées : le navigateur souligne et colore tout `<a>`, et la
+     * maquette ne dessine ni l'un ni l'autre. Le reste de la boîte — l'aplat de
+     * sélection `c.fond`, le retrait, le rayon — passe mot pour mot.
+     */
+    let out = jsx;
+    let pris = false;
+
+    for (;;) {
+      const motif =
+        /<div style=\{\{ display: "flex", gap: "12px", alignItems: "center", padding: "12px", borderRadius: "16px", background: ([a-z])\.fond \}\}>/;
+      const m = motif.exec(out);
+      if (m === null) break;
+      const fin = finDuNoeud(out, m.index);
+      if (fin === -1) break;
+      const dedans = out.slice(m.index + m[0].length, fin - '</div>'.length);
+      const v = m[1];
+      out =
+        out.slice(0, m.index) +
+        `<Link href={${v}.href} data-conversation-ligne="" style={{ display: "flex", ` +
+        `gap: "12px", alignItems: "center", padding: "12px", borderRadius: "16px", ` +
+        `background: ${v}.fond, textDecoration: "none", color: "inherit" }}>` +
+        dedans +
+        '</Link>' +
+        out.slice(fin);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const M01_ENTETE = {
+  screens: ['M01', 'M01BLOQUE'],
+  nom: 'M01_ENTETE',
+  why: 'L’en-tête de conversation ne montrait pas l’interlocuteur, et le chevron de retour du téléphone était inerte.',
+  provides: ['entete'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « L'AVATAR DE LA PERSONNE N'EST PAS AFFICHÉE EN HAUT »                ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ : la planche d'ordinateur dessine à cet endroit un carré de 44 px au
+     * rayon 14, aplat `#FBE3D4`, portant le glyphe d'un PARCOURS — l'exemple de
+     * la maquette est « Mes études à Lyon » (08 §8). C'était donc ce carré beige
+     * qui s'affichait au-dessus de TOUTE conversation, y compris directe.
+     *
+     * ON GARDE LE GLYPHE POUR UN PARCOURS. Un groupe de parcours n'est pas une
+     * personne, et y peindre l'avatar de l'un de ses membres dirait faux. Pour
+     * une conversation directe, la même boîte porte la photo de l'interlocuteur —
+     * ou sa teinte et ses initiales, comme partout ailleurs dans le dépôt.
+     */
+    const carre =
+      /<span style=\{\{ (width: "44px", height: "44px", borderRadius: "14px", )background: "#FBE3D4"(, display: "flex", alignItems: "center", justifyContent: "center")( \}\}>)(<svg[\s\S]*?<\/svg>)<\/span>/;
+    const mCarre = carre.exec(out);
+    if (mCarre !== null) {
+      const remplace =
+        `{entete.estParcours ? (<span style={{ ${mCarre[1]}background: "#FBE3D4"${mCarre[2]} }}>${mCarre[4]}</span>) : ` +
+        `(<span data-entete-avatar="" style={{ ${mCarre[1]}background: entete.photo ?? entete.fond` +
+        `${mCarre[2]}, color: "#fff", fontSize: "15px", fontWeight: "700", flexShrink: "0" }}>` +
+        `{entete.photo ? null : entete.initiales}</span>)}`;
+      out = out.slice(0, mCarre.index) + remplace + out.slice(mCarre.index + mCarre[0].length);
+      pris = true;
+    }
+
+    /**
+     * ── LE CHEVRON DE RETOUR DU TÉLÉPHONE ÉTAIT UN `<span>` ──────────────
+     *
+     * Le porteur : « Le bouton back sur mobile des conversations ne marche pas. »
+     *
+     * Il ne marchait pas parce qu'il n'était pas un contrôle : la maquette le
+     * dessine, et le transcodage l'a laissé tel quel. Relevé des noms accessibles
+     * du cadre mobile : « Menu de la conversation », « Joindre une image »,
+     * « Message… », « Envoyer » — aucun retour.
+     *
+     * UN LIEN VERS `/messages`, et non `router.back()` : sur le téléphone la
+     * liste EST la page précédente dans la navigation du module, mais on peut
+     * arriver sur une conversation par une notification ou un lien partagé — et
+     * `back()` renverrait alors hors de l'application. Le chevron doit toujours
+     * mener à la liste, c'est ce qu'il promet.
+     *
+     * ET L'AVATAR S'INSÈRE JUSTE APRÈS : la planche de 390 px ne dessine aucune
+     * identité dans son en-tête — chevron, titre, menu — alors que celle
+     * d'ordinateur en dessine une. Le porteur la demande sur les deux. Sa boîte
+     * est celle du chevron voisin (36 px, rond), pour ne pas pousser le titre.
+     */
+    const retour =
+      /<span style=\{\{ (width: "40px", height: "40px", borderRadius: "999px", background: "#EEF2F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0") \}\}>(<svg[^>]*><path d="m15 18-6-6 6-6" \/><\/svg>)<\/span>/;
+    const mRetour = retour.exec(out);
+    if (mRetour !== null) {
+      const remplace =
+        /**
+         * 44 px, COMME LES BOUTONS DU COMPOSEUR. La planche dessine ce rond à
+         * 40 px, et c'était sans conséquence tant qu'il était un `<span>` :
+         * T1 §2.3 borne les CIBLES TACTILES, et un décor n'en est pas une. Dès
+         * qu'il devient un lien, la règle s'applique — le garde-fou tactile l'a
+         * nommé tout de suite : « a « Retour aux messages » 40×40 px ».
+         */
+        `<Link href="/messages" aria-label="Retour aux messages" data-conversation-retour="" ` +
+        `style={{ ${mRetour[1]}, minWidth: "44px", minHeight: "44px", ` +
+        `textDecoration: "none", color: "inherit" }}>${mRetour[2]}</Link>` +
+        `{entete.estParcours ? null : (<span data-entete-avatar="" style={{ width: "36px", ` +
+        `height: "36px", borderRadius: "999px", background: entete.photo ?? entete.fond, ` +
+        `color: "#fff", fontSize: "13px", fontWeight: "700", display: "flex", ` +
+        `alignItems: "center", justifyContent: "center", flexShrink: "0" }}>` +
+        `{entete.photo ? null : entete.initiales}</span>)}`;
+      out = out.slice(0, mRetour.index) + remplace + out.slice(mRetour.index + mRetour[0].length);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const M01_COMPOSEUR = {
+  screens: ['M01'],
+  nom: 'M01_COMPOSEUR',
+  why: 'La barre d’envoi d’une conversation était entièrement dessinée : ni champ, ni bouton d’envoi, ni bouton d’image, ni émojis, ni pièces jointes.',
+  provides: [
+    'composeurTexte',
+    'onComposeurTexte',
+    'onComposeurTouche',
+    'onEnvoyer',
+    'envoiBloque',
+    'composeurBloque',
+    'onJoindreImage',
+    'onEmoji',
+    'composeurImages',
+    'composeurAjoutBloque',
+    'emojisOuverts',
+    'onBasculerEmojis',
+  ],
+  apply(jsx) {
+    let out = jsx;
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « L'ENVOI DE MESSAGE NE MARCHE PAS, AINSI QUE LES IMAGES »            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ sur le cadre produit : la barre basse de la conversation était
+     * composée de TROIS ÉLÉMENTS MORTS — un `<span>` pour le trombone d'image, un
+     * `<div>` portant le texte dessiné « Écrire un message… », et un `<span>`
+     * vert pour la flèche d'envoi. Aucun n'était un contrôle. Le module avait été
+     * livré en LECTURE SEULE, c'est écrit en toutes lettres dans l'en-tête de
+     * `app/(app)/messages/[id]/page.tsx`.
+     *
+     * ── LES DEUX PLANCHES NE DESSINENT PAS LA MÊME BARRE ─────────────────
+     *
+     * L'ordinateur : rond de 40 px, champ de 46 px, invite « Écrire un
+     * message… », envoi de 46 px. Le téléphone : 40 px, 44 px, « Message… »,
+     * 44 px. Tout est donc CAPTURÉ et réécrit tel quel — une valeur figée aurait
+     * manqué l'une des deux planches en silence, et c'est très exactement ce qui
+     * est arrivé à la barre d'écriture des stories.
+     */
+    const image =
+      /<span style=\{\{ (width: "(\d+)px", height: "\d+px", borderRadius: "999px", background: "#EEF2F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0") \}\}>(<svg[^>]*><path d="M3 4h18v16H3zM8\.5 11a1\.6 1\.6 0 1 0 0-3\.2 1\.6 1\.6 0 0 0 0 3\.2zM21 16l-5-5-9 9" \/><\/svg>)<\/span>/;
+    const mImage = image.exec(out);
+    if (mImage === null) return { jsx, applied: false };
+
+    const boiteRonde = mImage[1];
+    const d = Number(mImage[2]);
+    const ouvreSvg = mImage[3].slice(0, mImage[3].indexOf('>') + 1);
+    const rayon = Math.round((d / 40) * 17);
+
+    /**
+     * ── 44 px, PARCE QUE CE N'EST PLUS UN DESSIN ──────────────────────────
+     *
+     * La maquette dessine ces ronds à 40 px. C'était sans conséquence tant
+     * qu'ils étaient des `<span>` inertes : T1 §2.3 borne les CIBLES TACTILES, et
+     * un décor n'en est pas une. Dès qu'ils deviennent des boutons, la règle
+     * s'applique — le garde-fou tactile l'a dit tout de suite, en les nommant.
+     */
+    const commun = `${boiteRonde}, minWidth: "44px", minHeight: "44px", border: "none", padding: 0, font: "inherit"`;
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LE BOUTON D'ÉMOJI S'ALLUME ET DEVIENT UNE CROIX                       ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Avec un highlight du bouton d'emoji qui se transforme en
+     * bouton close pour montrer que c'est ça qui est ouvert et un second clique
+     * va fermer. »
+     *
+     * L'aplat passe donc au vert du dépôt quand le clavier est ouvert, le tracé
+     * devient la croix de fermeture, et le nom accessible suit l'état — un
+     * lecteur d'écran doit annoncer « Fermer les émojis », pas « Émojis », sur un
+     * bouton qui ferme. `aria-expanded` le dit aussi, pour la même raison.
+     *
+     * ⚠ AUCUNE MAQUETTE NE DESSINE DE BOUTON D'ÉMOJI — vérifié sur les onze
+     * fichiers, et sur les trois composeurs du dépôt. Sa BOÎTE est empruntée mot
+     * pour mot au trombone qui le précède ; seul le tracé est ajouté. DÉDUCTION,
+     * remontée au porteur.
+     */
+    const svgEmoji =
+      `${ouvreSvg.replace(/width="\d+" height="\d+"/, `width="${rayon}" height="${rayon}"`)}` +
+      '<circle cx="12" cy="12" r="9" /><path d="M9 10h.01M15 10h.01M8.5 14.5a4.5 4.5 0 0 0 7 0" /></svg>';
+    const svgCroix =
+      `${ouvreSvg
+        .replace(/width="\d+" height="\d+"/, `width="${rayon}" height="${rayon}"`)
+        .replace('stroke="#16211D"', 'stroke="#fff"')}` +
+      '<path d="M18 6 6 18M6 6l12 12" /></svg>';
+
+    const boutons =
+      `<button type="button" onClick={onJoindreImage} aria-label="Joindre une image" ` +
+      `disabled={composeurBloque || composeurAjoutBloque} data-conversation-image="" ` +
+      `style={{ ${commun}, cursor: composeurBloque || composeurAjoutBloque ? "default" : "pointer" }}>` +
+      `${mImage[3]}</button>` +
+      `<button type="button" onClick={onBasculerEmojis} ` +
+      `aria-label={emojisOuverts ? "Fermer les émojis" : "Émojis"} aria-expanded={emojisOuverts} ` +
+      `disabled={composeurBloque} data-bouton-emojis="" ` +
+      `style={{ ${commun.replace('background: "#EEF2F0"', 'background: emojisOuverts ? "#16785E" : "#EEF2F0"')}, ` +
+      `cursor: composeurBloque ? "default" : "pointer" }}>` +
+      `{emojisOuverts ? (${svgCroix}) : (${svgEmoji})}</button>`;
+
+    out = out.slice(0, mImage.index) + boutons + out.slice(mImage.index + mImage[0].length);
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LES IMAGES VONT DANS L'INPUT, COMME SUR LE COMPOSEUR DU FIL           ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Pour l'image dans l'input lors de l'envoi du message il faut
+     * faire comme on a fait avec l'input de publication. Déjà il faut permettre
+     * plusieurs images ensuite tu le mets dans l'input comme on a fait avec
+     * l'input de publication de la fil d'actualité. »
+     *
+     * La boîte dessinée est une PASTILLE d'une seule ligne ; les vignettes ne
+     * peuvent pas y tenir. Elle devient donc une colonne QUAND IL Y A DES IMAGES,
+     * exactement comme `A01_PIECES_JOINTES` fait passer le composeur du fil à sa
+     * planche « COMPOSEUR AVEC PIÈCES JOINTES » : le rayon s'ouvre de 999 à 18,
+     * un retrait apparaît, et les vignettes se posent au-dessus du champ.
+     *
+     * SANS IMAGE, RIEN NE CHANGE : même hauteur, même rayon, même aplat. C'est la
+     * planche, au pixel près.
+     *
+     * L'APLAT PASSE SUR LA BOÎTE, et le champ devient transparent : deux fonds
+     * superposés donneraient un liseré visible au bord du rayon.
+     *
+     * `color` EST RETIRÉ DU STYLE CAPTURÉ, PAS AJOUTÉ À CÔTÉ. La planche écrit
+     * `color: "#8A958F"` — le gris de l'INVITE, parce qu'elle dessine un `<div>`
+     * qui ne contient que l'invite. Sur un vrai champ, ce gris s'appliquerait au
+     * texte SAISI, et le membre écrirait en gris pâle. Le navigateur grise déjà
+     * le `placeholder` tout seul. (Et deux `color` dans un même objet ne
+     * compilent pas — TS1117.)
+     */
+    const champ =
+      /<div style=\{\{ flex: "1", height: "(\d+)px", borderRadius: "999px", background: "#F2F5F4", padding: "0 (\d+)px", display: "flex", alignItems: "center", fontSize: "13\.5px", color: "#8A958F" \}\}>([^<{]+)<\/div>/;
+    const mChamp = champ.exec(out);
+    if (mChamp === null) return { jsx, applied: false };
+
+    const hauteur = mChamp[1];
+    const retrait = mChamp[2];
+    const invite = mChamp[3];
+    const garni = '(composeurImages ?? []).length > 0';
+
+    const croixBlanche =
+      '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" ' +
+      'strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg>';
+
+    const vignettes =
+      `{${garni} ? (<div style={{ display: "flex", gap: "8px", flexWrap: "wrap", padding: "8px 8px 0" }}>` +
+      '{(composeurImages ?? []).map((im, imIndex) => (\n<Fragment key={imIndex}>' +
+      '<div style={{ position: "relative", width: "72px", height: "72px", borderRadius: "14px", ' +
+      'background: im.fond, backgroundSize: "cover", backgroundPosition: "center", ' +
+      'display: "flex", alignItems: "center", justifyContent: "center", ' +
+      'fontSize: "10.5px", fontWeight: "600", color: "#7C8C85", flexShrink: "0" }}>' +
+      '{im.apercu ? null : im.nom}' +
+      '<button type="button" onClick={im.onRetirer} aria-label={im.retirer} ' +
+      'data-conversation-retirer-image="" ' +
+      'style={{ position: "absolute", top: "5px", right: "5px", width: "24px", height: "24px", ' +
+      'borderRadius: "999px", background: "rgba(22,33,29,.7)", display: "flex", ' +
+      'alignItems: "center", justifyContent: "center", border: "none", padding: 0, ' +
+      `cursor: "pointer" }}>${croixBlanche}</button></div></Fragment>))}</div>) : null}`;
+
+    const boite =
+      `<div data-conversation-boite="" style={{ flex: "1", minWidth: "0", display: "flex", ` +
+      `flexDirection: "column", background: "#F2F5F4", ` +
+      `borderRadius: ${garni} ? "18px" : "999px", ` +
+      `paddingBottom: ${garni} ? "8px" : "0" }}>` +
+      vignettes +
+      `<input value={composeurTexte} onChange={onComposeurTexte} onKeyDown={onComposeurTouche} ` +
+      `placeholder="${invite}" aria-label="${invite}" disabled={composeurBloque} ` +
+      `data-conversation-champ="" style={{ width: "100%", minWidth: "0", height: "${hauteur}px", ` +
+      `borderRadius: "999px", background: "transparent", padding: "0 ${retrait}px", ` +
+      `fontSize: "13.5px", border: "none", outline: "none", fontFamily: "inherit", ` +
+      `color: "#16211D", boxSizing: "border-box" }} />` +
+      '</div>';
+
+    out = out.slice(0, mChamp.index) + boite + out.slice(mChamp.index + mChamp[0].length);
+
+    /**
+     * ── LA FLÈCHE VERTE DEVIENT LE BOUTON D'ENVOI ────────────────────────
+     *
+     * `disabled` plutôt que caché : la planche dessine ce rond en permanence, et
+     * le faire disparaître quand le champ est vide ferait sauter la barre à
+     * chaque frappe. L'aplat passe au gris de l'inactif — c'est la façon dont
+     * tout le dépôt dit « ce bouton attend quelque chose ».
+     *
+     * `alignSelf: "flex-end"` : la boîte peut maintenant faire trois lignes de
+     * haut quand elle porte des vignettes. Sans cela, la flèche se centrerait sur
+     * cette hauteur et flotterait loin du champ qu'elle envoie.
+     */
+    const envoi =
+      /<span style=\{\{ (width: "\d+px", height: "\d+px", borderRadius: "999px"), background: "#16785E"(, display: "flex", alignItems: "center", justifyContent: "center") \}\}>(<svg[^>]*><path d="M5 12h14m-6-6 6 6-6 6" \/><\/svg>)<\/span>/;
+    const mEnvoi = envoi.exec(out);
+    if (mEnvoi === null) return { jsx, applied: false };
+    const bouton =
+      `<button type="button" onClick={onEnvoyer} aria-label="Envoyer" disabled={envoiBloque} ` +
+      `data-conversation-envoyer="" style={{ ${mEnvoi[1]}, ` +
+      `background: envoiBloque ? "#C7D2CD" : "#16785E"${mEnvoi[2]}, flexShrink: "0", ` +
+      `alignSelf: "flex-end", border: "none", padding: 0, font: "inherit", ` +
+      `cursor: envoiBloque ? "default" : "pointer" }}>${mEnvoi[3]}</button>`;
+    out = out.slice(0, mEnvoi.index) + bouton + out.slice(mEnvoi.index + mEnvoi[0].length);
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LE CLAVIER D'ÉMOJIS EST UNE SECTION SOUS LA BARRE                     ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « affiche-le en bas. C'est-à-dire quand actif ça crée une
+     * section en bas de la section de l'input et image et emoji et se met en bas
+     * de ça. »
+     *
+     * Il est donc posé APRÈS la barre, comme dernier enfant de la colonne de
+     * conversation — et non en panneau flottant au-dessus, ce qu'était la
+     * première version. C'est la forme des claviers de téléphone : la liste des
+     * messages se réduit, la barre monte, le clavier occupe le bas.
+     *
+     * LA FIN DE LA BARRE SE TROUVE PAR COMPTAGE DE BALISES (`finDuNoeud`) à
+     * partir de son ouverture, et non par un `indexOf('</div>')` : elle contient
+     * maintenant la boîte du champ et ses vignettes, donc plusieurs `<div>`
+     * imbriqués. Chercher le premier `</div>` aurait inséré le clavier au milieu.
+     */
+    const ouvreBarre = out.lastIndexOf('<div style={{', out.indexOf('data-conversation-image='));
+    if (ouvreBarre === -1) return { jsx, applied: false };
+    const finBarre = finDuNoeud(out, ouvreBarre);
+    if (finBarre === -1) return { jsx, applied: false };
+
+    out =
+      out.slice(0, finBarre) +
+      '{emojisOuverts ? (<ClavierEmojis onChoisir={onEmoji} />) : null}' +
+      out.slice(finBarre);
+
+    return { jsx: out, applied: true };
+  },
+};
+
+const M01_VIGNETTE = {
+  screens: ['M01', 'M01BLOQUE'],
+  nom: 'M01_VIGNETTE',
+  why: 'La vignette d’image était peinte sur 0 px de large, posée SOUS la bulle, et ne menait à aucune story.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ « L'IMAGE DOIT ÊTRE EN HAUT DU MESSAGE » — LA FORME DE MESSENGER       ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, en trois temps :
+     *
+     *   1. « L'association de l'image de la story n'est toujours pas faite » ;
+     *   2. « Il faut qu'on puisse cliquer sur ça et aller vers la story si
+     *      toujours en ligne. Sinon ça affirme que la story a expiré » ;
+     *   3. « L'image doit être en haut du message et le message va monter un peu
+     *      sur lui. C'est le format de messenger de Facebook il faut suivre. »
+     *
+     * ── 1. LA LARGEUR : `max-width` SANS `width` DONNE ZÉRO ──────────────
+     *
+     * MESURÉ dans un vrai navigateur : la vignette existait, son fond était bien
+     * `url(…/v1/media/message/…)`, elle faisait 140 px de haut — et ZÉRO de
+     * large. Le média partait, arrivait, était `READY` en base et peint par le
+     * navigateur ; il n'occupait aucune largeur, donc personne ne l'a jamais vu.
+     *
+     * La maquette écrit `max-width:220px;height:140px` sur une boîte dont le fond
+     * est un DÉGRADÉ hachuré. Un dégradé n'a pas de taille propre, une image de
+     * fond non plus, et dans une colonne `flex` avec `align-self` la largeur se
+     * calcule sur le contenu : zéro. `max-width` BORNE une largeur ; il n'en donne
+     * aucune. On POSE donc la largeur dessinée, et on garde la borne en `100%`
+     * pour qu'une bulle plus étroite ne soit pas débordée.
+     *
+     * ── 2. L'ORDRE : LA VIGNETTE PASSE AVANT LA BULLE ────────────────────
+     *
+     * La maquette dessine le texte PUIS l'image. Messenger fait l'inverse quand on
+     * répond à une story : la story en haut, la réponse dessous, et la bulle
+     * mord légèrement sur l'image — c'est ce qui dit « ce message parle de ÇA »
+     * plutôt que « voici un texte, et voici une image ».
+     *
+     * Les deux morceaux sont donc capturés ENSEMBLE et réécrits dans l'autre
+     * sens. Capturer la bulle seule ne suffirait pas : il faut que la vignette
+     * disparaisse de sa place d'origine, sans quoi elle serait dessinée deux fois.
+     *
+     * LE CHEVAUCHEMENT N'EST POSÉ QUE S'IL Y A UNE IMAGE : `marginTop` négatif sur
+     * un message sans vignette le collerait à celui du dessus. `position` et
+     * `zIndex` vont avec — sans eux, la bulle passerait SOUS l'image, et le texte
+     * serait coupé.
+     *
+     * ── 3. ET ELLE DEVIENT CLIQUABLE, QUAND ELLE PORTE UNE STORY ─────────
+     *
+     * Le bouton n'apparaît que si le message PORTE une story (`m.onImage`) : une
+     * photo jointe à la main n'en est pas une, et la rendre cliquable promettrait
+     * une destination qui n'existe pas. « Encore en ligne » est jugé par le
+     * SERVEUR (`storyAlive`) ; expirée, l'écran le DIT au lieu de mener à une page
+     * qui répondrait 404.
+     */
+    const bloc =
+      /<div style=\{\{ maxWidth: "70%", ([^}]*)\}\}>([\s\S]*?\{m\.corps\})<\/div>\{m\.image \? \(<><div style=\{\{ maxWidth: "220px", height: "140px", borderRadius: "18px", background: m\.image, alignSelf: m\.cote \}\}><\/div><\/>\) : null\}/g;
+
+    const boite =
+      'width: "220px", maxWidth: "100%", height: "140px", borderRadius: "18px", ' +
+      'background: m.image, backgroundSize: "cover", backgroundPosition: "center", ' +
+      'alignSelf: m.cote';
+
+    const vignette =
+      `{m.image ? (<>{m.onImage ? (<button type="button" onClick={m.onImage} ` +
+      `aria-label={m.imageNom} data-message-image="" style={{ ${boite}, border: "none", ` +
+      `padding: 0, font: "inherit", cursor: "pointer" }} />) : (<div data-message-image="" ` +
+      `style={{ ${boite} }} />)}</>) : null}`;
+
+    const out = jsx.replace(
+      bloc,
+      (_m, styleBulle, contenu) =>
+        vignette +
+        /**
+         * LA VIRGULE EST POSÉE ICI : le groupe capturé s'arrête AVANT le ` }}` et
+         * n'en a donc pas. Sans elle, `lineHeight: "1.5" ...(m.image ? …)` ne
+         * compile pas — ce que le compilateur a dit tout de suite.
+         */
+        `<div style={{ maxWidth: "70%", ${styleBulle.trimEnd()}, ` +
+        /**
+         * 14 px de remontée : la bulle couvre le bas de l'image sans en cacher le
+         * sujet, et son rayon dessiné reste lisible par-dessus. Posé seulement
+         * quand il y a une image — voir l'en-tête.
+         */
+        `...(m.image ? { marginTop: "-14px", position: "relative", zIndex: 1 } : {}) }}>` +
+        `${contenu}</div>`,
+    );
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+const AVATAR_PHOTO = {
+  screens: ['*'],
+  nom: 'AVATAR_PHOTO',
+  why: 'Le rond d’avatar porte la photo du membre quand il en a une : il ne montrait que ses initiales.',
+  provides: ['moi'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+
+    /**
+     * LE FOND DEVIENT LA PHOTO, et les initiales ne s'écrivent que sans elle. On
+     * substitue la SEULE déclaration de fond que la planche écrit : tout le reste
+     * — diamètre, police, centrage — reste celui de la maquette.
+     */
+    const rond =
+      /<span style=\{\{ (width: "(?:38|44|60)px", height: "(?:38|44|60)px", borderRadius: "999px", )background: "#B4581F"([^}]*)\}\}>\{moi\.initiales\}<\/span>/g;
+    out = out.replace(
+      rond,
+      (_m, tete, queue) =>
+        `<span style={{ ${tete}background: moi.photo ?? "#B4581F"${queue}}}>` +
+        /**
+         * `moi.photo ? null : moi.initiales` et non `=== null` : la prise est
+         * FACULTATIVE sur les dix types `moi` du dépôt — seul le module Compte la
+         * remplit aujourd'hui. `undefined === null` est faux, donc une comparaison
+         * stricte aurait effacé les initiales partout ailleurs, laissant des ronds
+         * de couleur vides sur neuf modules.
+         */
+        '{moi.photo ? null : moi.initiales}</span>',
+    );
+    if (out !== jsx) pris = true;
+
+    /** Le rond de 84 px de K01 — il porte le badge d'appareil photo en plus. */
+    const grand =
+      /<div style=\{\{ (width: "84px", height: "84px", borderRadius: "999px", )background: "#B4581F"([^}]*)\}\}>\{moi\.initiales\}/;
+    const m = grand.exec(out);
+    if (m !== null) {
+      out =
+        out.slice(0, m.index) +
+        `<div style={{ ${m[1]}background: moi.photo ?? "#B4581F"${m[2]}}}>` +
+        '{moi.photo ? null : moi.initiales}' +
+        out.slice(m.index + m[0].length);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A01_SONDAGE_QUESTION = {
+  screens: ['A01', 'A02'],
+  nom: 'A01_SONDAGE_QUESTION',
+  why: 'La carte dit de quoi parle son sondage : elle n’en montrait que les réponses.',
+  /**
+   * `provides` EST VIDE, et c'est important : il décrit les prises de l'ÉCRAN, que
+   * le cadre déstructure en tête. `pollQuestion` est une prise de la CARTE (`p.…`),
+   * posée par `screens/a01/data.ts` comme `poll` et `pollMeta` le sont. L'annoncer
+   * ici ferait déstructurer `pollQuestion` de `A01Data`, où il n'existe pas.
+   */
+  provides: [],
+  apply(jsx) {
+    const ouverture =
+      '{p.poll ? (<><div style={{ marginTop: "12px", display: "flex", flexDirection: "column", gap: "8px" }}>';
+    const i = jsx.indexOf(ouverture);
+    if (i === -1) return { jsx, applied: false };
+    const titre =
+      '{p.pollQuestion ? (<div style={{ fontSize: "13px", fontWeight: "700", ' +
+      'color: "#16211D" }}>{p.pollQuestion}</div>) : null}';
+    return {
+      jsx: jsx.slice(0, i + ouverture.length) + titre + jsx.slice(i + ouverture.length),
+      applied: true,
+    };
+  },
+};
+
+const A01_SONDAGE_VOTE = {
+  screens: ['A01', 'A02'],
+  nom: 'A01_SONDAGE_VOTE',
+  why: 'Une option de sondage se vote : elle était un <div tabIndex> sans geste.',
+  provides: [],
+  apply(jsx) {
+    const motif =
+      /<div (style=\{\{ position: "relative", height: "44px", borderRadius: "14px", border: o\.bd,[^}]*\}\}) tabIndex=\{0\}>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const ajout = resetBoutonManquant(m[1]);
+    const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+    /**
+     * ╔═════════════════════════════════════════════════════════════════════╗
+     * ║ UN SONDAGE TERMINÉ ÉTEINT SES OPTIONS                                   ║
+     * ╚═════════════════════════════════════════════════════════════════════╝
+     *
+     * Le serveur refuse déjà un vote après `closesAt` (`POLL_CLOSED`). Sans
+     * `disabled`, l'écran offrait un bouton dont la seule issue était un message
+     * d'erreur — c'est la définition d'une affordance menteuse.
+     *
+     * LE CURSEUR SUIT, et c'est le seul dessin ajouté : `cursor: "pointer"` fait
+     * partie du style de la maquette, et le laisser sur un bouton éteint
+     * continuerait de promettre le clic. On ne touche NI la bordure, NI le
+     * remplissage, NI l'opacité : les résultats d'un sondage clos doivent rester
+     * aussi lisibles qu'avant, et un grisé les rendrait moins lisibles au moment
+     * précis où ils comptent le plus.
+     */
+    const styleClos = style.replace('cursor: "pointer"', 'cursor: o.clos ? "default" : "pointer"');
+    const ouvre =
+      '<button type="button" data-poll-vote={o.optionId} data-poll-id={o.pollId} ' +
+      `disabled={o.clos === true} aria-pressed={o.fw === 700} ${styleClos}>`;
+    const fin = jsx.indexOf('</div>', m.index + m[0].length);
+    if (fin === -1) return { jsx, applied: false };
+    return {
+      jsx:
+        jsx.slice(0, m.index) +
+        ouvre +
+        jsx.slice(m.index + m[0].length, fin) +
+        '</button>' +
+        jsx.slice(fin + '</div>'.length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES GUIDES LIÉS N'ÉTAIENT NULLE PART                                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « les guides […] ne marchent pas ».
+ *
+ * La maquette dessine « Lier un guide » dans le composeur et une carte « Guides »
+ * qui énonce la règle — « Jusqu'à 3. Étiquettes vertes avec croix. » — mais la
+ * carte de publication NE DESSINE AUCUNE ÉTIQUETTE. Il n'y avait donc rien à
+ * lier : ni en base, ni dans la réponse, ni dans le cadre.
+ *
+ * ── LE DESSIN EST EMPRUNTÉ AUX MOTS-DIÈSE DE LA MÊME CARTE ────────────────
+ *
+ * Elle dessine juste au-dessus une rangée d'étiquettes `#logement` — même
+ * conteneur, même écart, même rayon. On reprend sa forme et on change les deux
+ * couleurs pour celles que la règle énonce : « étiquettes VERTES ». `#E3F0EB` sur
+ * `#0F5C48` est la paire verte de cette maquette, employée partout ailleurs.
+ *
+ * ET ELLES MÈNENT AU GUIDE : une étiquette qui nomme un guide et ne l'ouvre pas
+ * est la promesse non tenue que ce lot corrige partout.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LIER UN GUIDE » — LA RECHERCHE ÉTAIT UN MOT DESSINÉ                     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Au niveau de lier un guide la recherche ne marche pas. »
+ *
+ * MESURÉ : la barre est un `<div>` contenant le mot « médecin » — le texte que la
+ * planche écrit pour montrer à quoi ressemble une recherche en cours. Ce n'était
+ * pas un champ cassé : ce n'était pas un champ.
+ *
+ * LE CONTENANT RESTE, SON TEXTE DEVIENT LE CHAMP. C'est la règle déjà suivie pour
+ * le composeur du fil, la barre de A14 et la recherche de contacts du partage :
+ * la boîte garde sa hauteur, son rayon, son fond et son icône ; seul le mot
+ * dessiné est remplacé.
+ *
+ * L'ENCRE EST CELLE DU CONTENU (`#16211D`) — c'est déjà ce que la planche écrit
+ * ici, parce qu'elle dessine une recherche DÉJÀ SAISIE. Le gris du placeholder,
+ * lui, est hérité : un style en ligne ne peut pas viser `::placeholder`.
+ */
+const A01G_RECHERCHE = {
+  screens: ['A01G'],
+  nom: 'A01G_RECHERCHE',
+  why: 'La barre de « Lier un guide » est un vrai champ : c’était un <div> portant un mot dessiné.',
+  provides: ['guideRecherche', 'onGuideRecherche'],
+  apply(jsx) {
+    const motif = /(<svg width="16" height="16"[^]*?m20 20-3\.5-3\.5"[^]*?<\/svg>)médecin<\/div>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const champ =
+      '<input type="search" value={guideRecherche} onChange={onGuideRecherche} ' +
+      'placeholder="Rechercher un guide" aria-label="Rechercher un guide" ' +
+      'data-guide-recherche="" style={{ flex: "1", minWidth: "0", border: "none", ' +
+      'background: "transparent", font: "inherit", fontSize: "13.5px", ' +
+      'color: "#16211D", outline: "none", padding: 0 }} /></div>';
+    return {
+      jsx: jsx.slice(0, m.index) + m[1] + champ + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+const A01_GUIDES_LIES = {
+  screens: ['A01', 'A02'],
+  nom: 'A01_GUIDES_LIES',
+  why: 'Les guides liés s’affichent en étiquettes qui mènent au guide : la carte n’en dessinait aucune.',
+  provides: [],
+  apply(jsx) {
+    const ancre = '{p.poll ? (<>';
+    const i = jsx.indexOf(ancre);
+    if (i === -1) return { jsx, applied: false };
+    const etiquettes =
+      '{(p.guides ?? []).length === 0 ? null : (' +
+      '<div style={{ display: "flex", gap: "6px", marginTop: "14px", flexWrap: "wrap" }}>' +
+      '{(p.guides ?? []).map((g, gIndex) => (\n<Fragment key={gIndex}>' +
+      /**
+       * 44 px DE HAUT, ET C'EST T1 §2.3 — pas un choix de style.
+       *
+       * Le dessin est emprunté aux mots-dièse de la même carte, qui mesurent 30 px.
+       * Mais un mot-dièse est un `<span>` : ce n'est PAS une cible tactile. Une
+       * étiquette de guide est un LIEN, donc une cible, donc la règle s'applique.
+       *
+       * MESURÉ : `e2e/responsive.spec.ts` l'a attrapée à 390 px — « a « Déclarer son
+       * médecin tra » 317×30 ». Le retrait dessiné reste ; c'est `minHeight` et le
+       * centrage qui portent les 44 px, donc le texte ne bouge pas d'un pixel.
+       */
+      '<a href={`/guides/${g.slug}`} style={{ background: "#E3F0EB", color: "#0F5C48", ' +
+      'fontSize: "12px", fontWeight: "600", padding: "6px 12px", borderRadius: "999px", ' +
+      'textDecoration: "none", display: "inline-flex", alignItems: "center", ' +
+      'minHeight: "44px", boxSizing: "border-box" }}>{g.title}</a></Fragment>))}</div>)}';
+    return { jsx: jsx.slice(0, i) + etiquettes + jsx.slice(i), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « ENVOYER À N CONTACTS » N'ENVOYAIT RIEN                                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « l'envoi d'un partage — aucune route n'existe ».
+ *
+ * C'était exact, et ce l'est resté : il n'existe NI `POST /posts/:id/share`, NI
+ * compteur de partages. Mais la fenêtre promet quelque chose de précis — « ENVOYER
+ * À UN CONTACT », avec une liste de contacts à cocher — et ce qu'elle promet
+ * existe déjà sous un autre nom : envoyer un message.
+ *
+ * ── PARTAGER À UN CONTACT, C'EST LUI ÉCRIRE ───────────────────────────────
+ *
+ * `POST /conversations/direct` porte toutes les règles qu'un partage doit
+ * respecter et qu'une route neuve aurait dû redire : le niveau L1, le blocage, la
+ * séparation, le quota de nouvelles conversations, et la règle du §5.2 — un seul
+ * message tant que la demande n'est pas acceptée. Écrire une route de partage
+ * aurait dupliqué ces cinq règles, et la copie aurait divergé.
+ *
+ * On ne pose donc AUCUNE route : le bouton envoie un message par contact choisi,
+ * portant l'adresse de la publication. C'est ce que la fenêtre dessine, et c'est
+ * remonté comme tel — si le porteur veut un compteur de partages, c'est une autre
+ * décision, avec sa colonne et sa migration.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA FENÊTRE « CRÉER UN SONDAGE » N'AVAIT PAS UN SEUL CHAMP                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « la création de sondage […] ne marche pas ». MESURÉ : zéro
+ * `<input>` et zéro `<textarea>` dans tout le cadre. La question, les trois
+ * options, la durée et le bouton « Ajouter à la publication » étaient des `<div>`
+ * et des `<span>` portant les exemples de la maquette.
+ *
+ * ── LES TROIS OPTIONS DESSINÉES DEVIENNENT UNE BOUCLE ─────────────────────
+ *
+ * La maquette en dessine trois pour montrer qu'il y en a plusieurs, avec la croix
+ * de retrait sur la dernière seulement. Ce sont des DONNÉES, pas trois dessins :
+ * la boucle garde la forme de la première et reçoit les valeurs. C'est le même
+ * mécanisme que les quatre cartes de résultat de la recherche.
+ *
+ * ── CE QUE LA FENÊTRE DESSINE ET QUE L'API NE SAIT PAS PORTER ─────────────
+ *
+ * Deux interrupteurs sur trois restent DU DESSIN, et il faut dire lesquels :
+ *
+ *   · « Résultats visibles après le vote » — ce n'est pas une option, c'est LA
+ *     RÈGLE (§2.3 du module 07) : les comptes sont masqués tant qu'on n'a pas voté
+ *     et que le sondage n'est pas clos, pour tout le monde. Un interrupteur
+ *     laisserait croire qu'on peut l'éteindre ;
+ *   · « Vote anonyme » — `poll_votes` porte `user_id` et aucune colonne
+ *     d'anonymat ; aucune réponse ne rend les noms des votants non plus. L'allumer
+ *     ou l'éteindre ne changerait rien, ce qui est pire que de ne pas l'offrir.
+ *
+ * Les deux sont REMONTÉS. « Plusieurs réponses possibles », lui, EST porté :
+ * `polls.is_multiple`.
+ */
+const A01S_CHAMPS = {
+  screens: ['A01S'],
+  nom: 'A01S_CHAMPS',
+  why: 'La fenêtre de sondage reçoit ses champs, ses options et son envoi : elle n’avait aucun champ.',
+  provides: [
+    'sondageQuestion',
+    'onSondageQuestion',
+    'sondageOptions',
+    'onSondageOption',
+    'onRetirerOption',
+    'onAjouterOption',
+    'sondageDurees',
+    'onValiderSondage',
+    'onAnnulerSondage',
+    'sondageBloque',
+  ],
+  apply(jsx) {
+    let out = jsx;
+
+    // ── 1. LA QUESTION ────────────────────────────────────────────────────
+    const question = 'Quelle date pour le repas partagé ?';
+    const iQ = out.indexOf(question);
+    if (iQ === -1) return { jsx, applied: false };
+    out =
+      out.slice(0, iQ) +
+      '<input type="text" value={sondageQuestion} onChange={onSondageQuestion} ' +
+      `placeholder="${question}" aria-label="Question du sondage" data-sondage-question="" ` +
+      'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+      'font: "inherit", color: "#16211D", outline: "none", padding: 0 }} />' +
+      out.slice(iQ + question.length);
+
+    // ── 2. LES TROIS OPTIONS DESSINÉES DEVIENNENT UNE BOUCLE ──────────────
+    const premiere = out.indexOf('<div style={{ display: "flex", alignItems: "center", gap: "8px"');
+    if (premiere === -1) return { jsx, applied: false };
+    const ajouter = out.indexOf('Ajouter une option');
+    if (ajouter === -1 || ajouter < premiere) return { jsx, applied: false };
+    const avantAjouter = out.lastIndexOf('<span', ajouter);
+    if (avantAjouter === -1) return { jsx, applied: false };
+
+    const rangee =
+      '{(sondageOptions ?? []).map((o, oIndex) => (\n<Fragment key={oIndex}>' +
+      '<div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>' +
+      '<input type="text" value={o.texte} onChange={o.onTexte} ' +
+      'placeholder="Une réponse" aria-label="Réponse du sondage" data-sondage-option="" ' +
+      'style={{ flex: "1", height: "48px", borderRadius: "14px", border: "1px solid #E6EBE9", ' +
+      'background: "#fff", padding: "0 14px", fontSize: "14px", font: "inherit", ' +
+      'color: "#16211D", outline: "none" }} />' +
+      '{o.retirable ? (<button type="button" onClick={o.onRetirer} aria-label="Retirer cette réponse" ' +
+      'style={{ width: "32px", height: "32px", border: "none", background: "transparent", ' +
+      'cursor: "pointer", padding: 0, color: "#5D6B66" }}>' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">' +
+      '<path d="M18 6 6 18M6 6l12 12" /></svg></button>) : null}' +
+      '</div></Fragment>))}';
+    out = out.slice(0, premiere) + rangee + out.slice(avantAjouter);
+
+    // ── 3. « AJOUTER UNE OPTION » ─────────────────────────────────────────
+    const motifAjout = /<span (style=\{\{ display: "flex"[^}]*color: "#16785E" \}\})>/;
+    const mA = motifAjout.exec(out);
+    if (mA === null) return { jsx, applied: false };
+    const ajoutReset = resetBoutonManquant(mA[1]);
+    const styleA = ajoutReset === '' ? mA[1] : mA[1].replace(' }}', `, ${ajoutReset} }}`);
+    const finA = out.indexOf('</span>', mA.index);
+    if (finA === -1) return { jsx, applied: false };
+    out =
+      out.slice(0, mA.index) +
+      `<button type="button" onClick={onAjouterOption} data-sondage-ajouter="" ${styleA}>` +
+      out.slice(mA.index + mA[0].length, finA) +
+      '</button>' +
+      out.slice(finA + '</span>'.length);
+
+    // ── 4. LES QUATRE DURÉES ──────────────────────────────────────────────
+    //
+    // Elles sont dessinées en quatre `<span>` figés — « 1 jour », « 3 jours »,
+    // « 7 jours », « 14 jours ». Ce sont quatre valeurs, donc une boucle, et
+    // l'allumée se peint avec ce que la maquette emploie pour une pastille
+    // retenue ailleurs dans la même planche.
+    const grille = '<div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "4px", background: "#EEF2F0", borderRadius: "14px", padding: "4px" }}>';
+    const iG = out.indexOf(grille);
+    if (iG === -1) return { jsx, applied: false };
+    const finG = finDuDiv(out, iG);
+    if (finG === -1) return { jsx, applied: false };
+    const durees =
+      grille +
+      '{(sondageDurees ?? []).map((d, dIndex) => (\n<Fragment key={dIndex}>' +
+      '<button type="button" onClick={d.onPick} aria-pressed={d.on} ' +
+      'style={{ height: "38px", borderRadius: "11px", display: "flex", alignItems: "center", ' +
+      'justifyContent: "center", fontSize: "13px", fontWeight: "700", border: "none", ' +
+      'font: "inherit", cursor: "pointer", background: d.bg, color: d.fg }}>{d.label}</button>' +
+      '</Fragment>))}</div>';
+    out = out.slice(0, iG) + durees + out.slice(finG);
+
+    // ── 5. LES DEUX BOUTONS DU BAS ────────────────────────────────────────
+    /**
+     * « ANNULER » N'EXISTE QUE SUR L'ORDINATEUR. La planche de 390 px n'en dessine
+     * pas — on y ferme par la croix de l'en-tête, qui porte déjà `data-modal-close`.
+     * On ne l'invente donc pas : s'il est là, il est branché ; sinon on continue.
+     */
+    const motifAnnuler = /<button (style=\{\{ height: "50px", padding: "0 20px", borderRadius: "14px", background: "#F2F5F4"[^}]*\}\})>Annuler<\/button>/;
+    const mAn = motifAnnuler.exec(out);
+    if (mAn !== null) {
+      out =
+        out.slice(0, mAn.index) +
+        `<button type="button" onClick={onAnnulerSondage} ${mAn[1].replace(' }}', ', cursor: "pointer" }}')}>Annuler</button>` +
+        out.slice(mAn.index + mAn[0].length);
+    }
+
+    /** Le bouton de validation : 50 px sur l'ordinateur, 52 sur le téléphone. */
+    const motifValider = /<button (style=\{\{ (?:flex: "1", )?height: "5[02]px", borderRadius: "14px", background: "#16785E"[^}]*\}\})>Ajouter à la publication<\/button>/;
+    const mV = motifValider.exec(out);
+    if (mV === null) return { jsx, applied: false };
+    out =
+      out.slice(0, mV.index) +
+      '<button type="button" onClick={onValiderSondage} disabled={sondageBloque} ' +
+      `data-sondage-valider="" ${mV[1].replace(' }}', ', cursor: "pointer", opacity: sondageBloque ? ".55" : "1" }}')}>Ajouter à la publication</button>` +
+      out.slice(mV.index + mV[0].length);
+
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LIER UN GUIDE » MONTRAIT DE VRAIS GUIDES ET N'EN LIAIT AUCUN           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « les guides […] ne marchent pas ».
+ *
+ * La fenêtre cherchait DÉJÀ dans de vrais guides — `GET /guides`, par `useGuides`
+ * — et sa sélection n'allait nulle part : les lignes étaient des `<div>`, et le
+ * bouton « Lier 2 guides » n'avait aucun geste. La page le disait elle-même :
+ * « `createPostSchema` est `.strict()` et n'a pas de `guideIds`, donc `POST
+ * /posts` refuserait un guide lié ».
+ *
+ * Il en a un depuis, et la table `post_guides` le porte. Il ne manquait que le
+ * geste : une ligne se choisit, le bouton valide, et « Publier » emporte la
+ * sélection dans la même transaction que la publication.
+ *
+ * `aria-pressed` et non une case à cocher : la maquette ne dessine pas de case,
+ * elle peint la ligne retenue. On annonce donc l'état là où il est.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ UNE FENÊTRE PLUS HAUTE QUE L'ÉCRAN DÉBORDAIT DES DEUX CÔTÉS              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui sur « Créer un sondage » : « le modal ne s'affiche
+ * pas bien ». Sur sa capture, l'en-tête de la fenêtre est COUPÉ au-dessus de
+ * l'écran et le bas dépasse en dessous — on ne voit ni le titre ni les boutons.
+ *
+ * ── POURQUOI, ET POURQUOI CE N'EST PAS UNE FAUTE DE LA MAQUETTE ──────────
+ *
+ * Elle dessine un panneau `position: fixed` centré par
+ * `top: 50%; transform: translateY(-50%)`, SANS hauteur maximale. C'est juste tant
+ * que le contenu tient : un panneau de 400 px au milieu d'un écran de 900 est
+ * parfaitement centré. Mais un panneau PLUS HAUT que l'écran, centré de cette
+ * façon, déborde de la moitié de l'excédent EN HAUT — donc hors de la fenêtre, là
+ * où rien ne peut le ramener : le voile est `fixed`, il ne défile pas.
+ *
+ * La fenêtre de sondage le dépasse dès qu'on ajoute des réponses, et c'est
+ * exactement ce que le porteur a vu.
+ *
+ * ── CE QU'ON AJOUTE, ET POURQUOI ÇA NE CHANGE RIEN QUAND ÇA TIENT ────────
+ *
+ * `maxHeight: calc(100vh - 48px)` et `overflowY: auto`. En dessous de cette
+ * hauteur, les deux déclarations n'ont AUCUN effet : le panneau garde la taille et
+ * la place que la maquette lui donne, au pixel. Au-dessus, il s'arrête au bord de
+ * l'écran et défile — au lieu de sortir par le haut.
+ *
+ * Les 48 px sont la marge que la maquette laisse elle-même autour de ses fenêtres
+ * (24 px de retrait, en haut comme en bas). Rien n'est inventé.
+ *
+ * `screens: ['*']` : les 38 cadres qui dessinent une fenêtre centrée ont le même
+ * défaut latent, et il ne se voit que sur les plus hautes.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ UNE FENÊTRE A TROIS ZONES, ET UNE SEULE DÉFILE                            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, deux fois : « Les actions du modal, le titre et le bouton de
+ * fermeture ne doivent pas scroller. Seul le contenu du modal scrolle. » puis,
+ * après la première correction : « C'est encore pareil au niveau de Lier un guide
+ * pour la publication. »
+ *
+ * ── CE QUE FAISAIT LA VERSION PRÉCÉDENTE, ET POURQUOI ÇA NE SUFFISAIT PAS ──
+ *
+ * Elle posait `maxHeight` et `overflowY: auto` sur LE PANNEAU ENTIER. La fenêtre
+ * ne sortait donc plus de l'écran — c'était le défaut d'alors — mais TOUT y
+ * défilait, titre compris. Sur « Lier un guide », où la liste peut compter
+ * quarante entrées, le titre et les deux boutons du bas partaient avec.
+ *
+ * ── LE DÉCOUPAGE, SUR DU JSX TRANSCODÉ ────────────────────────────────────
+ *
+ * Le panneau est un `flex` en colonne dont les enfants sont à plat : en-tête,
+ * contenu, pied. On garde donc son dessin — retrait, écart, rayon — et on
+ * EMBALLE le milieu dans une zone qui défile :
+ *
+ *   · le PREMIER enfant est l'en-tête s'il porte le `<h2 id="…-titre">` ;
+ *   · le DERNIER est le pied s'il contient un `<button` ;
+ *   · tout ce qui reste entre les deux part dans un `flex: 1; minHeight: 0;
+ *     overflowY: auto`, qui reprend l'écart du panneau pour que rien ne bouge.
+ *
+ * `minHeight: 0` EST INDISPENSABLE : un enfant de flex a `min-height: auto`, donc
+ * il refuse de rétrécir sous sa hauteur naturelle et déborde au lieu de défiler.
+ * C'est l'erreur classique, et elle ne se voit qu'avec un contenu long.
+ *
+ * ── LE REPLI, ET POURQUOI IL EXISTE ───────────────────────────────────────
+ *
+ * Toutes les planches ne se lisent pas : certaines mêlent du texte nu aux
+ * éléments, d'autres portent DÉJÀ leur propre zone de défilement (A01C en a une,
+ * dessinée par la maquette). Dès que la lecture échoue ou qu'un `overflowY`
+ * existe déjà, on retombe sur le comportement d'avant — borner et faire défiler
+ * l'ensemble. Mieux vaut l'ancien défaut qu'un panneau cassé.
+ */
+const FENETRE_QUI_DEBORDE = {
+  screens: ['*'],
+  nom: 'FENETRE_QUI_DEBORDE',
+  why: 'Une fenêtre garde son titre et ses actions à l’écran : seul son contenu défile.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let applique = false;
+
+    /**
+     * Les deux formes de panneau, avec le plafond qui convient à chacune : une
+     * fenêtre centrée laisse 48 px (24 de chaque côté), une feuille collée en bas
+     * n'en laisse que 24, en haut — c'est ce que les planches dessinent.
+     */
+    const FORMES = [
+      {
+        ouvre:
+          '<div style={{ position: "fixed", left: "50%", top: "50%", transform: "translate(-50%,-50%)", ',
+        plafond: 'calc(100vh - 48px)',
+      },
+      {
+        ouvre: '<div style={{ position: "fixed", left: "0", right: "0", bottom: "0", ',
+        plafond: 'calc(100vh - 24px)',
+      },
+    ];
+
+    for (const { ouvre, plafond } of FORMES) {
+      let depuis = 0;
+      for (;;) {
+        const i = out.indexOf(ouvre, depuis);
+        if (i === -1) break;
+        const finStyle = out.indexOf(' }} data-modal-panel="">', i);
+        if (finStyle === -1) {
+          depuis = i + ouvre.length;
+          continue;
+        }
+        const style = out.slice(i + ouvre.length, finStyle);
+        depuis = i + ouvre.length;
+        if (style.includes('maxHeight')) continue;
+
+        const debutContenu = finStyle + ' }} data-modal-panel="">'.length;
+        const finPanneau = finDuNoeud(out, i);
+        if (finPanneau === -1) continue;
+        const finContenu = finPanneau - '</div>'.length;
+
+        /**
+         * LA CAPTURE EST NORMALISÉE : les panneaux ne finissent pas tous pareil —
+         * les uns par `flexShrink: "0" `, les autres par `gap: "12px" `, avec une
+         * espace et sans virgule. Coller directement produisait
+         * `gap: "12px" maxHeight: …`, que TypeScript refuse.
+         */
+        const tete = style.trim().replace(/,$/, '');
+        const ecart = /gap: "([^"]+)"/.exec(tete)?.[1] ?? '12px';
+
+        const enfants = out.slice(debutContenu, finContenu).includes('overflowY')
+          ? null
+          : enfantsDirects(out, debutContenu, finContenu);
+
+        /** Le repli : on borne et on fait défiler l'ensemble, comme avant. */
+        const replier = () => {
+          const noeud = `${ouvre}${tete}, maxHeight: "${plafond}", overflowY: "auto" }} data-modal-panel="">`;
+          out = out.slice(0, i) + noeud + out.slice(debutContenu);
+          applique = true;
+        };
+
+        if (enfants === null || enfants.length < 3) {
+          replier();
+          continue;
+        }
+
+        /**
+         * ╔══════════════════════════════════════════════════════════════════════╗
+         * ║ L'EN-TÊTE SE RECONNAÎT À SA CROIX, PAS À SON `<h2>`                  ║
+         * ╚══════════════════════════════════════════════════════════════════════╝
+         *
+         * La première version cherchait `<h2 id="…-titre">`. Elle ne trouvait
+         * RIEN, sur aucune des trente-huit fenêtres — et le relevé l'a dit : le
+         * premier enfant était encore `<div style={{ display: "flex", alignItems:
+         * "center" }}><div style={{ flex: "1" }}><div …`.
+         *
+         * LA RAISON EST L'ORDRE DU MOTEUR : la promotion du titre en `<h2>` a lieu
+         * APRÈS les adaptations. À l'instant où celle-ci tourne, le titre est
+         * encore le `<div>` de la maquette.
+         *
+         * ON RECONNAÎT DONC L'EN-TÊTE À CE QUI NE BOUGE PAS DANS LE PIPELINE : la
+         * CROIX DE FERMETURE, que le transcodeur pose en `data-modal-close` bien
+         * avant. Elle vit dans la rangée de titre sur l'ordinateur ; sur une
+         * feuille de téléphone, c'est la POIGNÉE — 40 × 5 px, centrée — et la
+         * rangée de titre la suit. Les deux sont alors fixes.
+         *
+         * UN PANNEAU SANS CROIX N'A PAS D'EN-TÊTE : certaines confirmations n'en
+         * dessinent aucune (« Merci. Nous regardons sous 24 heures. »). On retombe
+         * alors sur le repli, qui est juste pour elles — il n'y a rien à retenir
+         * en haut.
+         */
+        const estPoignee = (html) =>
+          html.includes('data-modal-close') && html.includes('alignSelf: "center"');
+
+        const premier = out.slice(enfants[0][0], enfants[0][1]);
+        if (!premier.includes('data-modal-close')) {
+          replier();
+          continue;
+        }
+        /** La poignée seule ne dit rien : la rangée de titre qui la suit est fixe aussi. */
+        const dernierDeLEnTete = estPoignee(premier) ? 1 : 0;
+        if (enfants.length < dernierDeLEnTete + 3) {
+          replier();
+          continue;
+        }
+
+        const dernier = out.slice(enfants.at(-1)[0], enfants.at(-1)[1]);
+        const aPied = dernier.includes('<button');
+
+        const debutMilieu = enfants[dernierDeLEnTete + 1][0];
+        const finMilieu = aPied ? enfants.at(-1)[0] : finContenu;
+        if (finMilieu <= debutMilieu) {
+          replier();
+          continue;
+        }
+
+        const panneau =
+          `${ouvre}${tete}, maxHeight: "${plafond}", overflow: "hidden" }} data-modal-panel="">`;
+        const milieu =
+          `<div data-fenetre-contenu="" style={{ flex: "1", minHeight: "0", overflowY: "auto", ` +
+          `display: "flex", flexDirection: "column", gap: "${ecart}" }}>` +
+          out.slice(debutMilieu, finMilieu) +
+          '</div>';
+
+        out =
+          out.slice(0, i) +
+          panneau +
+          out.slice(debutContenu, debutMilieu) +
+          milieu +
+          out.slice(finMilieu);
+        applique = true;
+      }
+    }
+
+    return applique ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A01G_CHOIX = {
+  screens: ['A01G'],
+  nom: 'A01G_CHOIX',
+  why: 'Une ligne de guide se choisit et le bouton lie vraiment : la sélection n’allait nulle part.',
+  provides: ['onLierGuides', 'onAnnulerGuides', 'lierBloque'],
+  apply(jsx) {
+    let out = jsx;
+
+    const boucle = out.indexOf('(guidesTrouves ?? []).map(');
+    if (boucle === -1) return { jsx, applied: false };
+    const motif = /<div (style=\{\{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", borderRadius: "16px", background: "#fff", border: "1px solid #E6EBE9" \}\})>/;
+    const m = motif.exec(out.slice(boucle));
+    if (m === null) return { jsx, applied: false };
+    const i = boucle + m.index;
+    const ajout = resetBoutonManquant(m[1]);
+    const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+    /**
+     * LA LIGNE RETENUE PREND LE VERT PÂLE ET LE BORD VERT que cette maquette
+     * emploie partout pour un choix fait — même paire que l'option de sondage
+     * cochée et que l'entrée active d'un menu de section. Rien n'est inventé.
+     */
+    const ouvre =
+      '<button type="button" onClick={g.onPick} aria-pressed={g.choisi === true} ' +
+      'data-guide-choix={g.guideId} ' +
+      `${style.replace('background: "#fff", border: "1px solid #E6EBE9"', 'background: g.choisi === true ? "#E3F0EB" : "#fff", border: g.choisi === true ? "1.5px solid #16785E" : "1px solid #E6EBE9"')}>`;
+    const fin = out.indexOf('</div></Fragment>', i);
+    if (fin === -1) return { jsx, applied: false };
+    out = out.slice(0, i) + ouvre + out.slice(i + m[0].length, fin) + '</button>' + out.slice(fin + '</div>'.length);
+
+    const motifAnnuler = /<button (style=\{\{ height: "5[02]px", padding: "0 20px", borderRadius: "14px", background: "#F2F5F4"[^}]*\}\})>Annuler<\/button>/;
+    const mAn = motifAnnuler.exec(out);
+    if (mAn !== null) {
+      out =
+        out.slice(0, mAn.index) +
+        `<button type="button" onClick={onAnnulerGuides} ${mAn[1].replace(' }}', ', cursor: "pointer" }}')}>Annuler</button>` +
+        out.slice(mAn.index + mAn[0].length);
+    }
+
+    const motifLier = /<button (style=\{\{ (?:flex: "1", )?height: "5[02]px", borderRadius: "14px", background: "#16785E"[^}]*\}\})>(Lier [^<]*)<\/button>/;
+    const mL = motifLier.exec(out);
+    if (mL === null) return { jsx, applied: false };
+    out =
+      out.slice(0, mL.index) +
+      '<button type="button" onClick={onLierGuides} disabled={lierBloque} data-guide-lier="" ' +
+      `${mL[1].replace(' }}', ', cursor: "pointer", opacity: lierBloque ? ".55" : "1" }}')}>${mL[2]}</button>` +
+      out.slice(mL.index + mL[0].length);
+
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LES SWITCH NE MARCHENT PAS » — ILS ÉTAIENT TROIS `<span>`               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, sur la fenêtre de sondage. Il a raison : les trois interrupteurs
+ * sont dessinés en `<span>`, donc ni cliquables, ni atteignables au clavier, ni
+ * annoncés comme des contrôles. Deux sont peints allumés, un éteint, et aucun ne
+ * bouge.
+ *
+ * ── LES TROIS SONT DE VRAIS RÉGLAGES, ET DEUX D'ENTRE EUX SONT RÉCENTS ───
+ *
+ * Un seul était porté par la base : `polls.is_multiple`. J'avais donc rendu les
+ * deux autres explicitement INERTES, en expliquant que le produit imposait leurs
+ * règles — résultats masqués avant le vote (§2.3), et anonymat par construction,
+ * l'API ne rendant jamais les noms des votants.
+ *
+ * Le porteur a tranché autrement : « non, fais de ça un réglage. » `polls` porte
+ * maintenant `results_after_vote` et `is_anonymous`, et les trois interrupteurs
+ * basculent. Les DÉFAUTS sont l'ancien comportement, donc rien de ce qui existe
+ * n'a changé de sens.
+ *
+ * ── CE QUE « NON ANONYME » FAIT VRAIMENT ──────────────────────────────────
+ *
+ * La réponse nomme alors les votants de chaque option — mais SEULEMENT quand les
+ * résultats sont visibles, et jamais un membre séparé du lecteur. Les deux
+ * conditions ensemble : sinon le réglage d'anonymat contournerait celui des
+ * résultats, et on saurait qui a voté quoi avant d'avoir le droit de savoir
+ * combien.
+ */
+const A01S_INTERRUPTEURS = {
+  screens: ['A01S'],
+  nom: 'A01S_INTERRUPTEURS',
+  why: 'Les trois interrupteurs deviennent des contrôles : ils étaient des <span> inertes.',
+  provides: [
+    'sondageMultiple',
+    'onSondageMultiple',
+    'sondageApresVote',
+    'onSondageApresVote',
+    'sondageAnonyme',
+    'onSondageAnonyme',
+  ],
+  apply(jsx) {
+    const piste = /<span style=\{\{ width: "46px", height: "26px", borderRadius: "999px", background: "([^"]*)", position: "relative", flexShrink: "0" \}\}>/g;
+    const trouves = [];
+    for (let m = piste.exec(jsx); m !== null; m = piste.exec(jsx)) trouves.push(m);
+    if (trouves.length !== 3) return { jsx, applied: false };
+
+    /**
+     * LE CURSEUR SE DÉPLACE AVEC L'ÉTAT. La maquette dessine la pastille à
+     * `left: 3px` quand l'interrupteur est éteint ; allumé, elle va à droite —
+     * `calc(100% - 23px)`, soit la largeur moins la pastille et sa marge. On
+     * reprend ses deux positions plutôt que d'en inventer une.
+     */
+    const curseur = (actif) =>
+      `<span style={{ position: "absolute", top: "3px", left: ${actif}, width: "20px", ` +
+      'height: "20px", borderRadius: "999px", background: "#fff" }}></span>';
+
+    let out = jsx;
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ L'ORDRE DE CE TABLEAU EST CELUI DE LA PLANCHE — JE L'AVAIS INVERSÉ   ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « pourquoi ces deux sont désactivés : Plusieurs réponses
+     * possibles / Résultats visibles après le vote ».
+     *
+     * MESURÉ au navigateur : le `<button>` — le seul des trois qui marche — était
+     * rendu en TROISIÈME position, sur « Vote anonyme ». Les deux premiers, ceux
+     * qu'on voit d'abord, étaient les inertes.
+     *
+     * LA CAUSE : ce tableau était écrit du dernier au premier, parce que la BOUCLE
+     * qui l'applique va du dernier au premier — elle doit, sinon le remplacement
+     * d'un interrupteur décalerait les index de ceux qui suivent. J'avais inversé
+     * le tableau EN PLUS de la boucle, donc deux fois.
+     *
+     * Il est maintenant dans l'ORDRE DE LA PLANCHE, qui est le seul ordre qu'un
+     * lecteur peut vérifier d'un coup d'œil : « Plusieurs réponses possibles »,
+     * « Résultats visibles après le vote », « Vote anonyme ». C'est la boucle, et
+     * elle seule, qui les parcourt à l'envers.
+     */
+    const remplacements = [
+      {
+        // 1. Plusieurs réponses possibles — un vrai interrupteur (`is_multiple`).
+        ouvre:
+          '<button type="button" role="switch" aria-checked={sondageMultiple} ' +
+          'onClick={onSondageMultiple} aria-label="Plusieurs réponses possibles" ' +
+          'data-sondage-multiple="" ' +
+          'style={{ width: "46px", height: "26px", borderRadius: "999px", ' +
+          'background: sondageMultiple ? "#16785E" : "#CBD5D1", position: "relative", ' +
+          'flexShrink: "0", border: "none", padding: 0, cursor: "pointer" }}>',
+        dedans: curseur('sondageMultiple ? "calc(100% - 23px)" : "3px"'),
+        ferme: '</button>',
+      },
+      {
+        // 2. Résultats visibles après le vote — `polls.results_after_vote`.
+        ouvre:
+          '<button type="button" role="switch" aria-checked={sondageApresVote} ' +
+          'onClick={onSondageApresVote} aria-label="Résultats visibles après le vote" ' +
+          'data-sondage-apres-vote="" ' +
+          'style={{ width: "46px", height: "26px", borderRadius: "999px", ' +
+          'background: sondageApresVote ? "#16785E" : "#CBD5D1", position: "relative", ' +
+          'flexShrink: "0", border: "none", padding: 0, cursor: "pointer" }}>',
+        dedans: curseur('sondageApresVote ? "calc(100% - 23px)" : "3px"'),
+        ferme: '</button>',
+      },
+      {
+        // 3. Vote anonyme — `polls.is_anonymous`.
+        ouvre:
+          '<button type="button" role="switch" aria-checked={sondageAnonyme} ' +
+          'onClick={onSondageAnonyme} aria-label="Vote anonyme" ' +
+          'data-sondage-anonyme="" ' +
+          'style={{ width: "46px", height: "26px", borderRadius: "999px", ' +
+          'background: sondageAnonyme ? "#16785E" : "#CBD5D1", position: "relative", ' +
+          'flexShrink: "0", border: "none", padding: 0, cursor: "pointer" }}>',
+        dedans: curseur('sondageAnonyme ? "calc(100% - 23px)" : "3px"'),
+        ferme: '</button>',
+      },
+    ];
+
+    for (let rang = 2; rang >= 0; rang -= 1) {
+      const m = trouves[rang];
+      const r = remplacements[rang];
+      if (m === undefined || r === undefined) return { jsx, applied: false };
+      const fin = out.indexOf('</span>', m.index + m[0].length);
+      if (fin === -1) return { jsx, applied: false };
+      const apresInterne = out.indexOf('</span>', fin + '</span>'.length);
+      if (apresInterne === -1) return { jsx, applied: false };
+      out =
+        out.slice(0, m.index) +
+        r.ouvre +
+        r.dedans +
+        (r.ferme ?? '</span>') +
+        out.slice(apresInterne + '</span>'.length);
+    }
+    return { jsx: out, applied: true };
+  },
+};
+
+const A01P_ENVOYER = {
+  screens: ['A01P'],
+  nom: 'A01P_ENVOYER',
+  why: 'Le bouton d’envoi du partage envoie vraiment : il n’avait aucun geste.',
+  provides: ['onPartager', 'partageBloque'],
+  apply(jsx) {
+    const motif = /<button (style=\{\{ height: "5[02]px", borderRadius: "14px", background: shareBtnBg[^}]*\}\})>\{shareBtn\}<\/button>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const bouton =
+      '<button type="button" onClick={onPartager} disabled={partageBloque} ' +
+      `data-partage-envoyer="" ${m[1].replace(' }}', ', cursor: "pointer", opacity: partageBloque ? ".55" : "1" }}')}>{shareBtn}</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LE BOUTON DE RÉACTION NE MARCHE PAS SUR MOBILE »                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le bouton de réaction (soutenir, bravo, etc.) ne marche pas sur
+ * mobile ? Aussi quand l'utilisateur clique dessus, il faut que l'icône de
+ * réaction devienne filled. »
+ *
+ * ── LE MOTIF NE DÉCRIVAIT QU'UNE PLANCHE SUR DEUX ─────────────────────────
+ *
+ * Il exigeait `borderRadius: "14px"`. La maquette dessine le MÊME bouton à 12 px
+ * sur le téléphone — rayon plus court, `gap` de 6 px au lieu de 8, police de
+ * 12,5 px au lieu de 13,5 — et le motif n'y trouvait rien. Mesuré :
+ * `data-post-reagir` figurait 1 fois dans le cadre d'ordinateur et 0 fois dans
+ * celui de 390 px. La réaction était donc morte exactement là où le porteur
+ * l'essayait.
+ *
+ * C'est la troisième fois que ce dépôt paie la même erreur — le bloc photo, les
+ * tuiles de partage, et maintenant la réaction. La règle est écrite une fois de
+ * plus ici : un motif qui fige une valeur de DESSIN plutôt que la structure ne
+ * décrit qu'un cadre, et il n'y en a jamais qu'un sur deux.
+ *
+ * ── L'ICÔNE PLEINE EST L'ÉTAT, ET IL VENAIT DÉJÀ DU SERVEUR ───────────────
+ *
+ * `p.reagi` porte « j'ai réagi », dérivé de `postCardSchema.reaction.mine` — qui
+ * est le GENRE de réaction, pas un booléen — et
+ * `basculerReaction` le met à jour sur la réponse de la route — jamais en
+ * optimiste. Rien ne le LISAIT : le cœur restait vide après la réaction, et le
+ * seul retour était le compteur qui montait. On remplit donc le tracé —
+ * `fill="currentColor"` — ce qui reprend la couleur que la maquette donne déjà
+ * au bouton, sans en inventer une.
+ *
+ * `aria-pressed` suit le même état : sans lui, un lecteur d'écran annonce
+ * « Soutenir » sans dire que c'est déjà fait.
+ */
+const A01_REACTION = {
+  screens: ['A01'],
+  nom: 'A01_REACTION',
+  why: 'Le bouton de réaction bascule la réaction SUR LES DEUX PLANCHES, et son icône se remplit quand c’est fait.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * LE RAYON EST RELEVÉ, PAS FIGÉ — c'est lui qui séparait les deux cadres. Le
+     * discriminant reste `background: p.aBg`, qui n'appartient qu'à ce bouton.
+     */
+    const motif =
+      /<button (style=\{\{ height: "44px", borderRadius: "1[24]px", background: p\.aBg[^}]*\}\})><svg (width="17" height="17" viewBox="0 0 24 24") fill="none" (stroke="currentColor"[^>]*)><path d=\{p\.actionIcon\} \/><\/svg>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const bouton =
+      `<button type="button" data-post-reagir={p.postId} aria-label={p.action} ` +
+      `aria-pressed={p.reagi === true} ${m[1]}>` +
+      `<svg ${m[2]} fill={p.reagi ? "currentColor" : "none"} ${m[3]}>` +
+      '<path d={p.actionIcon} /></svg>';
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ ON POUVAIT LIRE LES COMMENTAIRES, PAS EN ÉCRIRE                          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « finalise […] les commentaires […] au niveau des posts ».
+ *
+ * MESURÉ : la fenêtre A01C s'ouvre bien sur la bonne publication et affiche son
+ * fil — « Commentaires · 8 », les réponses, les deux onglets. Elle porte un bouton
+ * « Envoyer » et AUCUN champ : la ligne « Écrire un commentaire… » est un `<div>`.
+ * On lit, on ne répond pas.
+ *
+ * Même correction que le composeur du fil, même raison pour l'encre.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « RÉPONDRE AUX COMMENTAIRES NE MARCHE PAS SUR MOBILE »                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, mot pour mot. Et le bouton EXISTAIT pourtant sur les deux planches
+ * — `data-commentaire-repondre`, mesuré 1 fois dans chacune.
+ *
+ * CE QUI MANQUAIT EST LA BANDE « EN RÉPONSE À ». La maquette ne la dessine que
+ * sur le cadre d'ordinateur. Sur le téléphone, toucher « Répondre » posait donc
+ * la cible de réponse SANS RIEN MONTRER : le champ ne changeait pas, aucune
+ * mention de la personne à qui on répond, et aucun moyen d'annuler. Du point de
+ * vue de qui s'en sert, le bouton ne faisait rien — et c'est exactement ce que
+ * le porteur a rapporté.
+ *
+ * ── LE DESSIN EST EMPRUNTÉ, PAS INVENTÉ ─────────────────────────────────────
+ *
+ * La bande est reprise AU CARACTÈRE PRÈS de la planche d'ordinateur de la même
+ * maquette — fond `#F2F5F4`, rayon 12, `padding: 8px 12px`, le nom en gras, la
+ * croix à droite. On ne dessine rien de neuf : on pose à 390 px ce que la
+ * maquette dessine à 1440.
+ *
+ * ── LA SEULE CHOSE AJOUTÉE EST UN ALIGNEMENT ────────────────────────────────
+ *
+ * La barre de saisie du téléphone porte `padding: "10px 12px 26px"`. Posée nue
+ * au-dessus d'elle, la bande toucherait les bords de l'écran alors que le champ
+ * s'arrête à 12 px. L'enveloppe reprend donc ces 12 px et rien d'autre — c'est
+ * de la colle de mise en page, du même genre que les `minHeight: 0` que ce
+ * fichier pose ailleurs, et elle est écrite ici pour qu'on sache qu'elle n'est
+ * pas de la maquette.
+ */
+const A01C_REPONSE_MOBILE = {
+  screens: ['A01C'],
+  nom: 'A01C_REPONSE_MOBILE',
+  why: 'La bande « En réponse à » existe aussi à 390 px : sans elle, « Répondre » ne montrait RIEN sur un téléphone.',
+  provides: ['reponseA', 'onAnnulerReponse'],
+  apply(jsx) {
+    /**
+     * LA BARRE DE SAISIE DU TÉLÉPHONE, et elle seule : `borderTop` + le padding
+     * bas de 26 px qui laisse la place à la barre d'accueil du système. Le cadre
+     * d'ordinateur n'a ni l'un ni l'autre, donc cette adaptation ne le touche
+     * pas — il porte déjà sa bande, dessinée.
+     */
+    const barre =
+      '<div style={{ flexShrink: "0", borderTop: "1px solid #EAEEEC", padding: "10px 12px 26px", display: "flex", gap: "8px", alignItems: "center" }}>';
+    const at = jsx.indexOf(barre);
+    if (at < 0) return { jsx, applied: false };
+
+    const bande =
+      '{reponseA === null ? null : (' +
+      '<div style={{ flexShrink: "0", padding: "0 12px" }}>' +
+      '<div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", ' +
+      'color: "#5D6B66", background: "#F2F5F4", borderRadius: "12px", padding: "8px 12px" }}>' +
+      'En réponse à <strong style={{ color: "#16211D" }}>{reponseA}</strong>' +
+      '<span style={{ flex: "1" }}></span>' +
+      '<button type="button" onClick={onAnnulerReponse} aria-label="Annuler la réponse" ' +
+      'data-reponse-annuler="" style={{ minWidth: "44px", minHeight: "44px", border: "none", ' +
+      'background: "none", padding: 0, font: "inherit", cursor: "pointer", display: "flex", ' +
+      'alignItems: "center", justifyContent: "center" }}>' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>' +
+      '</button></div></div>)}';
+
+    return { jsx: jsx.slice(0, at) + bande + jsx.slice(at), applied: true };
+  },
+};
+
+const A01C_CHAMP = {
+  screens: ['A01C'],
+  nom: 'A01C_CHAMP',
+  why: 'La fenêtre de commentaires reçoit son champ et son envoi : on pouvait lire, pas écrire.',
+  provides: ['commentaireTexte', 'onCommentaireTexte', 'onEnvoyerCommentaire', 'envoiBloque'],
+  apply(jsx) {
+    const texte = 'Écrire un commentaire…';
+    const i = jsx.indexOf(texte);
+    if (i === -1) return { jsx, applied: false };
+    const debut = jsx.lastIndexOf('<div style={{', i);
+    if (debut === -1) return { jsx, applied: false };
+    const entre = jsx.slice(debut + '<div style={{'.length, i);
+    // Rien d'autre ne doit s'ouvrir entre la boîte et son texte : même garde
+    // que la boîte de recherche de la barre haute, et pour la même raison.
+    if (entre.includes('<div') || entre.includes('</div>')) return { jsx, applied: false };
+    const styleBoite = /style=\{\{([^}]*)\}\}/.exec(jsx.slice(debut, i));
+    if (styleBoite === null) return { jsx, applied: false };
+    const champ =
+      `<div style={{ ${styleBoite[1].trim()} }}>` +
+      '<input type="text" value={commentaireTexte} onChange={onCommentaireTexte} ' +
+      `placeholder="${texte}" aria-label="${texte}" data-commentaire-texte="" ` +
+      'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+      'font: "inherit", color: "#16211D", outline: "none", padding: 0 }} /></div>';
+    const fin = jsx.indexOf('</div>', i);
+    if (fin === -1) return { jsx, applied: false };
+    let out = jsx.slice(0, debut) + champ + jsx.slice(fin + '</div>'.length);
+
+    /**
+     * ── DEUX ENVOIS, UN PAR PLANCHE ────────────────────────────────────────
+     *
+     * L'ordinateur dessine un bouton vert portant le mot « Envoyer ». Le téléphone
+     * dessine un ROND VERT de 44 px avec une flèche, et c'est un `<span>` — ni
+     * cliquable au clavier, ni annoncé. Les deux font la même chose ; on les
+     * traite tous deux, et le rond reçoit le nom accessible que son dessin ne
+     * porte pas.
+     */
+    const ordinateur =
+      /<button (style=\{\{ height: "46px", padding: "0 20px", borderRadius: "999px", background: "#16785E"[^}]*\}\})>Envoyer<\/button>/;
+    const m = ordinateur.exec(out);
+    if (m !== null) {
+      const bouton =
+        '<button type="button" onClick={onEnvoyerCommentaire} disabled={envoiBloque} ' +
+        `data-commentaire-envoyer="" ${m[1].replace(' }}', ', cursor: "pointer", opacity: envoiBloque ? ".55" : "1" }}')}>Envoyer</button>`;
+      return { jsx: out.slice(0, m.index) + bouton + out.slice(m.index + m[0].length), applied: true };
+    }
+
+    const telephone = /<span (style=\{\{ width: "44px", height: "44px", borderRadius: "999px", background: "#16785E"[^}]*\}\})>/;
+    const t = telephone.exec(out);
+    if (t === null) return { jsx, applied: false };
+    const ajout = resetBoutonManquant(t[1]);
+    const style = ajout === '' ? t[1] : t[1].replace(' }}', `, ${ajout} }}`);
+    const ouvre =
+      '<button type="button" onClick={onEnvoyerCommentaire} disabled={envoiBloque} ' +
+      `aria-label="Envoyer" data-commentaire-envoyer="" ${style.replace(' }}', ', opacity: envoiBloque ? ".55" : "1" }}')}>`;
+    const finSpan = out.indexOf('</span>', t.index);
+    if (finSpan === -1) return { jsx, applied: false };
+    out =
+      out.slice(0, t.index) +
+      ouvre +
+      out.slice(t.index + t[0].length, finSpan) +
+      '</button>' +
+      out.slice(finSpan + '</span>'.length);
+    return { jsx: out, applied: true };
+  },
+};
+
+const A13_FOND_EN_FONDU = {
+  screens: ['A13'],
+  nom: 'A13_FOND_EN_FONDU',
+  why: 'Le fond de la story porte un repère pour que son changement se fasse en fondu.',
+  provides: [],
+  apply(jsx) {
+    const pattern = /<div (style=\{\{ position: "relative", width: "100%", height: "100%", background: st\.bg,[^}]*\}\})>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const noeud = `<div data-story-fond="" ${m[1]}>`;
+    return { jsx: jsx.slice(0, m.index) + noeud + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ SUR TÉLÉPHONE, LA CARTE DE STORY N'AVAIT AUCUNE HAUTEUR                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : « ça s'affiche mal ». Sur sa capture, la story
+ * occupe le haut de l'écran et le fil apparaît dessous, à travers le voile.
+ *
+ * MESURÉ au navigateur, à 390 px : `[data-story-fond]` fait **0 pixel de haut**.
+ * À 1 440 px la même carte fait 800. Ce n'est donc pas une marge de trop ni un
+ * débordement — la carte n'a tout simplement pas de hauteur.
+ *
+ * ── POURQUOI, ET POURQUOI ÇA N'EST PAS UN DÉFAUT DE MAQUETTE ──────────────
+ *
+ * La planche écrit `height: 100%`, ce qui est juste : sur l'ordinateur, la carte
+ * vit dans une boîte de 430 × 800, donc le pourcentage se résout. Sur le
+ * téléphone, son parent est le cadre — `flex min-h-screen flex-col` — et un
+ * pourcentage de hauteur NE SE RÉSOUT PAS contre un `min-height`. Le navigateur le
+ * traite comme `auto`, et `auto` sur un enfant de colonne flexible sans contenu
+ * dimensionné vaut zéro.
+ *
+ * ── UNE SEULE DÉCLARATION, ET LA PREMIÈRE ESSAYÉE ÉTAIT LA MAUVAISE ───────
+ *
+ * `flex: 1` semblait l'évidence : le cadre est une colonne flexible, la carte doit
+ * la remplir. MESURÉ après coup : la carte est passée de 0 à 481 px, sur une vue de
+ * 844. Mieux, et toujours faux — le fil restait visible sous la story.
+ *
+ * LA RAISON, trouvée en remontant la chaîne des parents dans le navigateur : entre
+ * le cadre et la carte, le transcodeur pose la COQUILLE de la planche, un
+ * `<div style="flex-grow:1;flex-shrink:1;flex-basis:auto">`. C'est bien un ENFANT
+ * flexible — donc il fait 844 — mais lui-même est un bloc ORDINAIRE. La carte n'est
+ * donc pas un élément flexible, et son `flex: 1` ne veut rien dire ; quant à son
+ * `height: 100%`, il se résout contre une hauteur `auto` et retombe sur le contenu.
+ *
+ * `minHeight: 100vh` ne dépend d'AUCUN ancêtre : c'est la hauteur de la vue, qui
+ * est exactement ce que le cadre promet par son `min-h-screen` et ce que le voile
+ * de la fenêtre occupe. Le dessin de la maquette n'est pas touché : sa déclaration
+ * reste, et on ajoute celle qui la rend applicable ici.
+ *
+ * LE CADRE D'ORDINATEUR EST ÉCARTÉ, et pas par son nom : on refuse si le JSX
+ * porte la carte de 430 × 800, qui n'existe que sur lui. Un jour où la maquette
+ * changerait cette taille, la transformation cesserait de s'appliquer plutôt que
+ * de s'appliquer au mauvais cadre.
+ */
+const A13_MOBILE_PLEINE_HAUTEUR = {
+  screens: ['A13'],
+  nom: 'A13_MOBILE_PLEINE_HAUTEUR',
+  why: 'La carte de story remplit la colonne du téléphone : son `height: 100%` se résolvait à zéro.',
+  provides: [],
+  apply(jsx) {
+    // La carte de 430 × 800 n'existe que sur la planche d'ordinateur.
+    if (jsx.includes('width: "430px", height: "800px"')) return { jsx, applied: false };
+    const pattern =
+      /<div data-story-fond="" style=\{\{ position: "relative", width: "100%", height: "100%", /;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const noeud =
+      '<div data-story-fond="" style={{ position: "relative", width: "100%", height: "100%", minHeight: "100vh", ';
+    return {
+      jsx: jsx.slice(0, m.index) + noeud + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « IL FAUT METTRE LES BOUTONS NEXT ET PREV » — SUR TÉLÉPHONE, IL N'Y EN A  ║
+ * ║ AUCUN                                                                     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, sur la capture de son téléphone.
+ *
+ * MESURÉ : la planche de 390 px ne dessine NI chevron NI carte voisine. Elle écrit
+ * une phrase à la place — « Touchez pour passer au suivant · glissez pour changer
+ * de membre » — qui décrit deux gestes dont AUCUN n'est implémenté : ni le toucher
+ * ni le glissement ne changent de story. Le téléphone n'avait donc littéralement
+ * aucun moyen d'aller à la story suivante, et la seule phrase qui en parlait
+ * promettait ce qui n'existait pas.
+ *
+ * ── LE DESSIN EST EMPRUNTÉ À LA PLANCHE D'ORDINATEUR, PAS INVENTÉ ─────────
+ *
+ * Elle dessine les deux chevrons pour cet usage exact : ronds de 52 px,
+ * `rgba(255,255,255,.12)`, trait blanc de 2, bouts arrondis. On reprend ces
+ * valeurs à l'identique — ce n'est pas un dessin nouveau, c'est le même dessin sur
+ * l'autre cadre. 52 px tient par ailleurs la cible tactile de 44 px de T1.
+ *
+ * ── POURQUOI ILS SONT POSÉS EN ABSOLU, SUR LES BORDS ──────────────────────
+ *
+ * L'ordinateur les place À CÔTÉ de la carte, ce que 390 px ne permet pas. Ils vont
+ * donc SUR la carte, aux bords et à mi-hauteur : c'est la convention de toutes les
+ * visionneuses de stories, et c'est le seul endroit qui ne recouvre ni l'en-tête de
+ * l'auteur, ni les deux boutons de vote, ni le champ de message.
+ *
+ * `onPrecedent` et `onSuivant` SONT DÉJÀ LÀ : `A13Data` les porte, et le cadre
+ * mobile reçoit le type entier. Il n'y avait que les boutons à poser.
+ */
+const A13_MOBILE_CHEVRONS = {
+  screens: ['A13'],
+  nom: 'A13_MOBILE_CHEVRONS',
+  why: 'Le cadre mobile reçoit les deux chevrons de la planche d’ordinateur : il n’avait aucun moyen de changer de story.',
+  provides: ['onPrecedent', 'onSuivant'],
+  apply(jsx) {
+    // Même garde que `A13_MOBILE_PLEINE_HAUTEUR` : la carte de 430 × 800 est
+    // celle de l'ordinateur, qui a DÉJÀ ses chevrons.
+    if (jsx.includes('width: "430px", height: "800px"')) return { jsx, applied: false };
+    const ouvre = '<div data-story-fond=""';
+    const i = jsx.indexOf(ouvre);
+    if (i === -1) return { jsx, applied: false };
+    const fin = finDuDiv(jsx, i);
+    if (fin === -1) return { jsx, applied: false };
+
+    /** Le rond, verbatim de la planche d'ordinateur, posé sur un bord. */
+    const rond = (bord) =>
+      `position: "absolute", ${bord}: "6px", top: "50%", transform: "translateY(-50%)", ` +
+      'zIndex: 2, width: "52px", height: "52px", borderRadius: "999px", ' +
+      'background: "rgba(255,255,255,.12)", display: "flex", alignItems: "center", ' +
+      'justifyContent: "center", fontFamily: "inherit", color: "inherit", ' +
+      'cursor: "pointer", border: "none", padding: 0';
+    const fleche = (trace) =>
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" ' +
+      `strokeWidth="2" strokeLinecap="round"><path d="${trace}" /></svg>`;
+
+    /**
+     * ── LES NOMS SONT CEUX DES CHEVRONS DE L'ORDINATEUR, MOT POUR MOT ──────
+     *
+     * Première version : `precedentNom`, qui vaut « Story de Aïcha D. » — plus
+     * informatif, et faux. `story-lecture.spec.ts` compte les boutons dont le nom
+     * commence par « Story de » pour désigner LES DEUX CARTES VOISINES de la
+     * planche d'ordinateur ; il en a trouvé QUATRE, parce que le cadre mobile est
+     * dans le DOM même quand il n'est pas affiché. Le cas avait raison : « Story
+     * de Aïcha D. » désigne une carte qui MONTRE cette story, pas une flèche.
+     *
+     * Les chevrons de l'ordinateur disent « Story précédente » et « Story
+     * suivante ». Ceux-ci disent la même chose : c'est le même contrôle.
+     */
+    const boutons =
+      `<button type="button" onClick={onPrecedent} aria-label="Story précédente" style={{ ${rond('left')} }}>` +
+      `${fleche('m15 18-6-6 6-6')}</button>` +
+      `<button type="button" onClick={onSuivant} aria-label="Story suivante" style={{ ${rond('right')} }}>` +
+      `${fleche('m9 18 6-6-6-6')}</button>`;
+
+    const coupe = fin - '</div>'.length;
+    return { jsx: jsx.slice(0, coupe) + boutons + jsx.slice(coupe), applied: true };
+  },
+};
+
+const A13_NAVIGATION = {
+  screens: ['A13'],
+  nom: 'A13_NAVIGATION',
+  why: 'Les chevrons et les deux voisins deviennent des boutons : ils étaient morts.',
+  provides: [
+    'onPrecedent',
+    'onSuivant',
+    'precedentNom',
+    'suivantNom',
+    'precedentFond',
+    'precedentTexte',
+    'precedentAuteur',
+    'precedentPastille',
+    'precedentEtiquette',
+    'suivantFond',
+    'suivantTexte',
+    'suivantAuteur',
+    'suivantPastille',
+    'suivantEtiquette',
+  ],
+  apply(jsx) {
+    let out = jsx;
+    let applique = false;
+
+    /** Les deux chevrons de 52 px, reconnus à leur tracé. */
+    for (const [trace, prise, nom] of [
+      ['m15 18-6-6 6-6', 'onPrecedent', 'Story précédente'],
+      ['m9 18 6-6-6-6', 'onSuivant', 'Story suivante'],
+    ]) {
+      const motif = new RegExp(
+        `<span (style=\\{\\{ width: "52px", height: "52px"[^}]*\\}\\})>(<svg[^>]*><path d="${trace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" \\/><\\/svg>)<\\/span>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      const bouton =
+        `<button type="button" onClick={${prise}} aria-label="${nom}" ` +
+        `${m[1].replace(' }}', `, ${resetBoutonManquant(m[1])}, padding: 0 }}`)}>${m[2]}</button>`;
+      out = out.slice(0, m.index) + bouton + out.slice(m.index + m[0].length);
+      applique = true;
+    }
+
+    /**
+     * LES DEUX PANNEAUX DE VOISIN. Ils ont le MÊME style ; seul leur contenu les
+     * distingue — le nom qu'ils portent. On prend donc le premier pour le
+     * précédent et le second pour le suivant, dans l'ordre où la planche les
+     * dessine : gauche avant la story, droite après.
+     */
+    const PANNEAU =
+      '<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", opacity: ".55" }}>';
+    for (const [prise, nom, fond, texte, auteur, pastille, etiquette] of [
+      [
+        'onPrecedent',
+        'precedentNom',
+        'precedentFond',
+        'precedentTexte',
+        'precedentAuteur',
+        'precedentPastille',
+        'precedentEtiquette',
+      ],
+      [
+        'onSuivant',
+        'suivantNom',
+        'suivantFond',
+        'suivantTexte',
+        'suivantAuteur',
+        'suivantPastille',
+        'suivantEtiquette',
+      ],
+    ]) {
+      const i = out.indexOf(PANNEAU);
+      if (i === -1) break;
+      const fin = out.indexOf('</div>', i);
+      if (fin === -1) break;
+      /**
+       * ── LA CARTE MONTRE LA STORY VOISINE ────────────────────────────────
+       *
+       * Le porteur : « les cartes left et right doivent afficher le contenu des
+       * story qui suivent dynamiquement selon le filtre appliqué ».
+       *
+       * La planche dessine un rectangle `#0F5C48` VIDE de 180 × 320 et un nom
+       * d'exemple en dessous. Le rectangle garde sa taille, son rayon et sa
+       * place ; seuls son FOND et son CONTENU deviennent des données — la
+       * couleur de la story voisine, et son texte. Le nom suit l'auteur.
+       *
+       * Le texte reprend l'échelle du corps de la carte principale, réduite à
+       * la largeur de la vignette : 13 px / 800, interligne 1,25, encre blanche
+       * comme sur la planche. Il est BORNÉ par `WebkitLineClamp` — une vignette
+       * n'est pas une lecture, c'est un aperçu.
+       */
+      /**
+       * ── LA VIGNETTE EST UNE STORY EN PETIT, PAS UNE LIGNE AU FOND ─────────
+       *
+       * Le porteur : « Le contenu du next et prev ne s'affiche pas intégralement ».
+       * MESURÉ : le texte faisait SEIZE pixels de haut, collé au bas d'une carte
+       * de 320 — on lisait une ligne, pas une story.
+       *
+       * La vignette reprend donc la COMPOSITION de la carte principale, à son
+       * échelle : l'étiquette de type en haut, le corps centré verticalement en
+       * 15 px / 800 avec l'interligne 1,2 de la planche, et le même retrait de
+       * 14 px. `justifyContent: center` remplace `flex-end` — c'est ainsi que la
+       * carte principale compose son texte, et une vignette qui compose
+       * autrement ne montre pas ce qu'on va voir.
+       *
+       * Le `line-clamp` passe de 4 à 8 lignes : à 180 px de large et 15 px de
+       * corps, huit lignes couvrent la plupart des stories, qui sont bornées à
+       * 280 caractères. Ce n'est plus un aperçu tronqué, c'est la story.
+       */
+      /**
+       * ── LA VIGNETTE EST LA CARTE, MISE À L'ÉCHELLE ────────────────────────
+       *
+       * Le porteur : « Le preview doit avoir la même présentation que le story […]
+       * c'est le composant du story qu'il faut afficher en taille petite », puis
+       * « La vignette peut être juste le composant story en petit scale ».
+       *
+       * C'est exactement ce qui est fait, et c'est PLUS FIDÈLE qu'une réduction
+       * calculée à la main : la carte est composée à SA taille — 430 × 800, les
+       * retraits `24px 26px`, l'étiquette en 11 px / 800 interlettrage 1,4, le
+       * corps en 30 px / 800 interligne 1,18, la pastille en 10 px / 800 — puis
+       * `transform: scale()` la ramène à la boîte de 180 × 320 que la planche
+       * dessine pour le voisin.
+       *
+       * AUCUNE VALEUR N'EST RECALCULÉE : une première version divisait chaque
+       * nombre par 2,39 à la main, ce qui est une seconde interprétation du
+       * dessin. Ici il n'y en a qu'une, et le facteur se lit : 180/430.
+       *
+       * `transformOrigin: "top left"` et `overflow: hidden` sur la boîte : la
+       * carte réduite se cale dans le coin et rien ne dépasse. La boîte garde donc
+       * sa taille DESSINÉE, et c'est elle qui occupe la place dans la rangée.
+       */
+      const vignette =
+        '<span style={{ width: "180px", height: "320px", borderRadius: "22px", ' +
+        'overflow: "hidden", flexShrink: 0, display: "block" }}>' +
+        '<span aria-hidden="true" style={{ display: "flex", flexDirection: "column", ' +
+        'width: "430px", height: "764px", transform: "scale(0.4186)", ' +
+        `transformOrigin: "top left", background: ${fond}, color: "#fff", textAlign: "left" }}>` +
+        // L'en-tête de la carte : sa pastille, posée comme la planche la pose.
+        '<span style={{ padding: "18px 16px 0", display: "flex" }}>' +
+        '<span style={{ background: "#fff", color: "#16785E", fontSize: "10px", ' +
+        'fontWeight: "800", letterSpacing: ".8px", padding: "5px 11px", borderRadius: "999px", ' +
+        `whiteSpace: "nowrap", overflow: "hidden" }}>{${pastille}}</span></span>` +
+        // Le corps : étiquette puis texte, centrés comme sur la carte.
+        '<span style={{ flex: "1", minHeight: "0", display: "flex", flexDirection: "column", ' +
+        'justifyContent: "center", padding: "24px 26px", gap: "16px" }}>' +
+        '<span style={{ fontSize: "11px", fontWeight: "800", letterSpacing: "1.4px", ' +
+        `color: "rgba(255,255,255,.75)" }}>{${etiquette}}</span>` +
+        '<span style={{ fontSize: "30px", fontWeight: "800", lineHeight: "1.18", ' +
+        'letterSpacing: "-0.6px", display: "-webkit-box", WebkitLineClamp: 7, ' +
+        `WebkitBoxOrient: "vertical", overflow: "hidden" }}>{${texte}}</span></span></span></span>` +
+        `<span style={{ fontSize: "13px", fontWeight: "700", color: "#fff" }}>{${auteur}}</span>`;
+
+      const bouton =
+        `<button type="button" onClick={${prise}} aria-label={${nom}} ` +
+        'style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", ' +
+        'opacity: ".55", background: "transparent", border: "none", padding: 0, ' +
+        `fontFamily: "inherit", color: "inherit", cursor: "pointer" }}>${vignette}</button>`;
+      out = out.slice(0, i) + bouton + out.slice(fin + '</div>'.length);
+      applique = true;
+    }
+
+    /**
+     * ── LA BARRE DE PROGRESSION SE REMPLIT ──────────────────────────────────
+     *
+     * Le porteur : « La barre de progression doit progresser pendant 15 s et
+     * automatiquement slide right pour aller vers le story suivant. »
+     *
+     * La planche dessine un segment plein (`width: b`). Il reçoit un repère que
+     * le CSS anime — `dp-story-progress`, quinze secondes, linéaire — et sa
+     * largeur dessinée devient le point de DÉPART du segment déjà vu. `st.barre`
+     * dit lequel des deux : « active » pour celui en cours, rien pour les autres.
+     *
+     * L'animation ne navigue pas : c'est un minuteur de même durée, dans
+     * `story-ecran.tsx`, qui passe à la story suivante. Une animation CSS ne sait
+     * pas changer d'adresse.
+     */
+    const segment =
+      '<span style={{ display: "block", height: "100%", width: b, background: "#fff" }}></span>';
+    if (out.includes(segment)) {
+      out = out.replace(
+        segment,
+        /**
+         * `key={st.cle}` — ET C'EST CE QUI PERMET AU FOND DE SE FONDRE.
+         *
+         * Une animation CSS ne rejoue que si le nœud est RECRÉÉ. L'écran remontait
+         * donc le cadre ENTIER à chaque story pour faire repartir cette barre, et
+         * ce remontage interdisait au fond de se fondre dans le suivant : on ne
+         * transitionne pas la couleur d'un nœud qui vient de naître.
+         *
+         * La clé descend sur la seule barre : elle repart de zéro, le reste du
+         * cadre reste en place, et `[data-story-fond]` fait son fondu.
+         */
+        '<span key={st.cle} data-story-barre={st.barre} data-story-pause={st.barrePause} ' +
+          'style={{ display: "block", height: "100%", width: b, background: "#fff" }}></span>',
+      );
+      applique = true;
+    }
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LES DEUX BOUTONS DE VOTE — ILS N'ÉTAIENT PAS CLIQUABLES               ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Les boutons utile et pas utile permettent à l'utilisateur de
+     * voter donc ils doivent être cliquables. Donc selon le clic de l'utilisateur
+     * une icône check ou close s'affiche sur le bouton cliqué ainsi que le
+     * background blanc. L'autre bouton n'a donc plus de background ou d'icône
+     * affiché. Juste le texte et le nombre. »
+     *
+     * La planche dessine les deux APPARENCES, une sur chaque bouton : fond blanc
+     * et encre `#0F5C48` sur « Utile », trait `1.5px solid rgba(255,255,255,.7)`
+     * sans fond sur « Pas utile ». Elles deviennent des DONNÉES et changent de
+     * bouton selon le vote — rien n'est redessiné.
+     *
+     * L'icône de « Pas utile » n'est dessinée NULLE PART : la planche ne montre
+     * que le cas « j'ai voté utile ». On emprunte donc la croix du dépôt,
+     * `M18 6 6 18M6 6l12 12`, au même format que la coche voisine (17 px,
+     * `stroke-width` 2.2, bouts ronds) — c'est le seul tracé de refus du dossier.
+     */
+    const COCHE =
+      '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">' +
+      '<path d="m5 12 4.5 4.5L19 7" /></svg>';
+    const CROIX =
+      '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">' +
+      '<path d="M18 6 6 18M6 6l12 12" /></svg>';
+
+    const utile =
+      /<span style=\{\{ height: "50px", borderRadius: "999px", background: "#fff", color: "#0F5C48",([^}]*)\}\}>\{st\.useful \?[\s\S]*?\{st\.a1\}<span style=\{\{ color: "#6FA893", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n1\}<\/span><\/span>/;
+    const mUtile = utile.exec(out);
+    if (mUtile !== null) {
+      const bouton =
+        '<button type="button" onClick={st.onVoteUtile} aria-pressed={st.voteUtileIcone} ' +
+        `style={{ height: "50px", borderRadius: "999px", background: st.voteUtileBg, ` +
+        // Le groupe capturé s'arrête AVANT le ` }}` et n'a donc pas de virgule
+        // finale : on la pose, sinon deux propriétés se collent et le JSX ne
+        // compile pas — ce que le compilateur a dit tout de suite.
+        `color: st.voteUtileFg, border: st.voteUtileBd,${mUtile[1].trimEnd()}, ` +
+        'fontFamily: "inherit", cursor: "pointer" }}>' +
+        `{st.voteUtileIcone ? (${COCHE}) : null}{st.a1}` +
+        '<span style={{ color: st.voteUtileCompteFg, fontSize: "12.5px", fontWeight: "700" }}>' +
+        '{st.n1}</span></button>';
+      out = out.slice(0, mUtile.index) + bouton + out.slice(mUtile.index + mUtile[0].length);
+      applique = true;
+    }
+
+    const pasUtile =
+      /<span style=\{\{ height: "50px", borderRadius: "999px", border: "1\.5px solid rgba\(255,255,255,\.7\)",([^}]*)\}\}>\{st\.a2\}<span style=\{\{ opacity: "\.55", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n2\}<\/span><\/span>/;
+    const mPas = pasUtile.exec(out);
+    if (mPas !== null) {
+      const bouton =
+        '<button type="button" onClick={st.onVotePasUtile} aria-pressed={st.votePasUtileIcone} ' +
+        'style={{ height: "50px", borderRadius: "999px", background: st.votePasUtileBg, ' +
+        `color: st.votePasUtileFg, border: st.votePasUtileBd,${mPas[1].trimEnd()}, ` +
+        'fontFamily: "inherit", cursor: "pointer" }}>' +
+        `{st.votePasUtileIcone ? (${CROIX}) : null}{st.a2}` +
+        '<span style={{ color: st.votePasUtileCompteFg, fontSize: "12.5px", fontWeight: "700" }}>' +
+        '{st.n2}</span></button>';
+      out = out.slice(0, mPas.index) + bouton + out.slice(mPas.index + mPas[0].length);
+      applique = true;
+    }
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ ÉCRIRE À L'AUTEUR, ET ENREGISTRER LA STORY                            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « implémente l'envoi de message avec l'input et le serveur »
+     * et « Le bouton de bookmark permet d'enregistrer la stories. Tu peux
+     * l'implémenter ? »
+     *
+     * La planche dessine une invite « Écrire à Awa… » en `<span>` — donc pas un
+     * champ — et un signet en `<span>` lui aussi. Ni l'un ni l'autre ne répondait.
+     *
+     * Le champ garde sa boîte : 48 px, rayon 999, trait
+     * `1px solid rgba(255,255,255,.45)`, retrait `0 18px`, encre
+     * `rgba(255,255,255,.85)`. On n'ajoute que `background: transparent` et
+     * `outline: none`, que le navigateur impose sinon à tout `<input>`.
+     *
+     * Le signet garde son tracé et sa boîte de 44 × 48 ; il reçoit un nom
+     * accessible qui DIT L'ÉTAT — « Enregistrer » ou « Retirer des enregistrées »,
+     * puisque le même bouton fait les deux — et son tracé se remplit quand la
+     * story est gardée : `fill` passe de `none` à `#fff`, ce qui est la façon dont
+     * un signet dit « plein » partout.
+     */
+    /**
+     * ── LA HAUTEUR EST CAPTURÉE, PAS FIGÉE — ET C'EST LE CORRECTIF ────────
+     *
+     * Le porteur : « Quand on envoie un message à partir d'une story,
+     * normalement la story doit s'attacher au message envoyé dans l'inbox.
+     * J'avais dit ça. À la façon de Messenger. Mais toujours pas le cas. »
+     *
+     * MESURÉ : la pièce entière marchait — la capture, le dépôt du média,
+     * `POST /conversations/direct` avec `mediaId`, la vignette dans le fil de
+     * l'auteur — mais SUR L'ORDINATEUR SEULEMENT. Sur la planche de 390 px, le
+     * relevé des noms accessibles de A13 donnait « Fermer », « Story
+     * précédente », « Story suivante » et RIEN d'autre : aucun champ, aucun
+     * « Envoyer ». La maquette dessine pourtant la barre d'écriture sur les deux
+     * planches ; elle restait un `<span>` inerte sur celle du téléphone.
+     *
+     * LA CAUSE ÉTAIT UNE COMPARAISON DE CHAÎNE EXACTE : ce motif était écrit en
+     * dur avec `height: "48px"`, la valeur de la planche d'ordinateur. Le
+     * téléphone dessine la même barre en 46 px — deux pixels, et la substitution
+     * ne trouvait rien. Elle ne le DISAIT pas non plus, parce que les deux autres
+     * pièces de `A13_NAVIGATION` (les chevrons, les votes) s'appliquaient : la
+     * transformation rendait `applied: true`, et le garde-fou des
+     * « transformations attendues mais introuvables » restait muet.
+     *
+     * La hauteur est donc CAPTURÉE et réécrite telle quelle, sur les deux
+     * planches. Le reste de la boîte est identique mot pour mot.
+     */
+    const champ =
+      /<span style=\{\{ flex: "1", height: "(4[0-9])px", borderRadius: "999px", border: "1px solid rgba\(255,255,255,\.45\)", padding: "0 18px", display: "flex", alignItems: "center", fontSize: "13\.5px", color: "rgba\(255,255,255,\.85\)" \}\}>\{st\.write\}<\/span>/;
+    const mChamp = champ.exec(out);
+    if (mChamp !== null) {
+      /**
+       * ── UN BOUTON D'ENVOI, FLOTTANT DANS LE CHAMP ─────────────────────────
+       *
+       * Le porteur : « dès que l'input est focus il faut afficher un bouton
+       * d'icône d'envoi rounded blanc flottant dans le coin droit de l'input ».
+       *
+       * Il n'apparaît QUE lorsque le champ est actif ou rempli : la planche n'en
+       * dessine aucun, et en montrer un en permanence occuperait la place d'une
+       * invite qui doit rester lisible. `position: absolute` le pose DANS le
+       * champ, sans changer la boîte de 48 px que la planche dessine.
+       *
+       * Le rond blanc de 36 px est celui des ronds d'action de ce dossier, et le
+       * tracé est la flèche d'envoi `M5 12h14M13 5l7 7-7 7` — le même sens que le
+       * chevron « suivant » de cet écran. L'encre est le vert du dépôt, comme sur
+       * toute pastille blanche.
+       */
+      out = out.replace(
+        mChamp[0],
+        '<span style={{ flex: "1", minWidth: "0", position: "relative", display: "flex" }}>' +
+          '<input value={st.messageTexte} onChange={st.onMessageTexte} ' +
+          'onKeyDown={st.onMessageTouche} onFocus={st.onMessageFocus} onBlur={st.onMessageBlur} ' +
+          'placeholder={st.write} aria-label={st.write} ' +
+          `disabled={st.messageBloque} style={{ flex: "1", minWidth: "0", height: "${mChamp[1]}px", ` +
+          'borderRadius: "999px", border: "1px solid rgba(255,255,255,.45)", ' +
+          'padding: st.messageEnvoiVisible ? "0 52px 0 18px" : "0 18px", ' +
+          'fontSize: "13.5px", color: "rgba(255,255,255,.85)", background: "transparent", ' +
+          'outline: "none", fontFamily: "inherit" }} />' +
+          '{st.messageEnvoiVisible ? (<button type="button" onMouseDown={st.onMessageEnvoyer} ' +
+          'onClick={st.onMessageEnvoyer} aria-label="Envoyer" style={{ position: "absolute", ' +
+          /**
+           * `top: 50%` ET NON `6px` : le rond de 36 px était posé à 6 px du haut,
+           * ce qui le centre dans une boîte de 48 px et PAS dans celle de 46 px du
+           * téléphone — il y pendrait d'un pixel. Centré, il est juste sur les
+           * deux planches, et le calcul donne exactement 6 px sur 48.
+           */
+          'top: "50%", transform: "translateY(-50%)", ' +
+          'right: "6px", width: "36px", height: "36px", borderRadius: "999px", ' +
+          'background: "#fff", border: "none", padding: 0, display: "flex", ' +
+          'alignItems: "center", justifyContent: "center", cursor: "pointer" }}>' +
+          '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16785E" ' +
+          'strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">' +
+          '<path d="M5 12h14M13 5l7 7-7 7" /></svg></button>) : null}</span>',
+      );
+      applique = true;
+    }
+
+    /** `4[0-9]px` pour la même raison que le champ : 48 px dessinés sur
+     * l'ordinateur, 46 sur le téléphone — et le signet y était inerte lui aussi. */
+    const signet =
+      /<span (style=\{\{ width: "44px", height: "4[0-9]px"[^}]*\}\})>(<svg[^>]*>)<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" \/><\/svg><\/span>/;
+    const mSignet = signet.exec(out);
+    if (mSignet !== null) {
+      const bouton =
+        '<button type="button" onClick={st.onSignet} aria-pressed={st.signetActif} ' +
+        `aria-label={st.signetNom} ${mSignet[1].replace(' }}', `, ${resetBoutonManquant(mSignet[1])}, padding: 0 }}`)}>` +
+        `${mSignet[2].replace('fill="none"', 'fill={st.signetFill}')}` +
+        '<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg></button>';
+      out = out.slice(0, mSignet.index) + bouton + out.slice(mSignet.index + mSignet[0].length);
+      applique = true;
+    }
+
+    /**
+     * ── LA CARTE PORTE UN REPÈRE, POUR SON ANIMATION D'ENTRÉE ──────────────
+     *
+     * « le clic […] doit animer parfaitement les stories et afficher celui
+     * sélectionné ». L'écran est REMONTÉ à chaque changement (`key={storyId}`),
+     * donc une animation d'entrée suffit — il n'y a rien à faire sortir.
+     *
+     * Le mouvement est `panelAdvance`, DÉJÀ déclaré dans `motion.js` pour « vous
+     * avancez dans une démarche, vous ne sautez pas d'un écran à l'autre » : 240 ms,
+     * courbe `out`, seize pixels, fondu. C'est exactement le geste. La règle vit
+     * dans `packages/ui/src/styles.css`, parce qu'un style en ligne ne peut pas
+     * porter de `@keyframes`.
+     */
+    const carte =
+      '<div style={{ width: "430px", height: "800px", borderRadius: "28px", overflow: "hidden", flexShrink: "0" }}>';
+    if (out.includes(carte)) {
+      out = out.replace(carte, carte.replace('<div ', '<div data-story-carte="" '));
+      applique = true;
+    }
+
+    return { jsx: out, applied: applique };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ O02 — LA VILLE S'OUVRE DANS LE MÊME PANNEAU QUE LE PAYS                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « La sélection de ville : utilise le panneau aussi. »
+ *
+ * La planche pose, sous « Où vivez-vous ? », un champ de recherche PUIS une liste
+ * à plat. Les deux partent dans le panneau — le champ avec sa loupe et sa boîte,
+ * la liste avec ses lignes — et la section ne garde qu'UNE LIGNE qui montre la
+ * ville retenue et ouvre le choix.
+ *
+ * ── LA LIGNE QUI RESTE N'EST PAS DESSINÉE AILLEURS ───────────────────────
+ *
+ * Elle REPREND la boîte du champ de recherche qu'elle remplace — mêmes 52 px,
+ * même rayon, même retrait — et le chevron de la ligne de PAYS juste au-dessus,
+ * `m6 9 6 6 6-6`. Les deux lignes de cette carte se ressemblent donc, ce qui est
+ * exactement ce que le porteur demande : un seul geste pour choisir un lieu.
+ *
+ * Son fond est `#F2F5F4`, celui de la ligne de pays, et non le `#fff` du champ de
+ * saisie : ce n'est plus une saisie, c'est un choix.
+ */
+const O02_VILLE_EN_PANNEAU = {
+  screens: ['O02'],
+  nom: 'O02_VILLE_EN_PANNEAU',
+  why: 'La ville s’ouvre dans le panneau, comme le pays : la section ne garde qu’une ligne.',
+  provides: ['villeNom', 'onVilleOuvrir', 'villeOuvert', 'villeSelecteur'],
+  apply(jsx) {
+    /**
+     * Du champ de recherche jusqu'à la FIN de la liste de villes. On s'accroche
+     * au début du champ et à la fermeture de la boucle, deux repères que la
+     * planche écrit — pas à un comptage de balises, qui se déplacerait au premier
+     * ajout.
+     */
+    const debutChamp = jsx.indexOf('<div style={{ height: "5');
+    const i = jsx.indexOf('aria-label="Votre ville"');
+    if (i === -1 || debutChamp === -1) return { jsx, applied: false };
+
+    // La boîte du champ : le `<div>` qui précède immédiatement le champ.
+    const ouverture = jsx.lastIndexOf('<div style={{ height:', i);
+    if (ouverture === -1) return { jsx, applied: false };
+
+    // La liste : le `))}` de sa boucle, puis le `</div>` qui ferme sa boîte.
+    const boucle = jsx.indexOf('(cities ?? []).map(', i);
+    if (boucle === -1) return { jsx, applied: false };
+    const ferme = jsx.indexOf('</div>', jsx.indexOf('))}', boucle));
+    if (ferme === -1) return { jsx, applied: false };
+
+    /**
+     * La géométrie est LUE sur le champ qu'on remplace, pas réécrite : les deux
+     * cadres n'ont pas la même (52 px et retrait de 16 sur ordinateur, 50 et 14
+     * sur téléphone), et les recopier ici en figerait une seule.
+     */
+    const mesures = /height: "(5[02])px", marginTop: "(\d+)px", padding: "0 (\d+)px"/.exec(
+      jsx.slice(ouverture, i),
+    );
+    if (mesures === null) return { jsx, applied: false };
+    const [, hauteur, marge, retrait] = mesures;
+
+    const ligne =
+      `<div style={{ position: "relative", height: "${hauteur}px", marginTop: "${marge}px", ` +
+      `padding: "0 ${retrait}px", borderRadius: "14px", background: "#F2F5F4", ` +
+      'border: "1px solid #EAEEEC", display: "flex", alignItems: "center", gap: "10px", ' +
+      'fontSize: "14.5px", fontWeight: "600" }}>{villeNom}<span style={{ flex: "1" }}></span>' +
+      '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" ' +
+      'strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg>' +
+      '<button type="button" onClick={onVilleOuvrir} aria-haspopup="dialog" ' +
+      'aria-expanded={villeOuvert} aria-label="Votre ville" style={{ padding: 0, ' +
+      'background: "transparent", position: "absolute", top: 0, left: 0, width: "100%", ' +
+      'height: "100%", opacity: 0, cursor: "pointer", font: "inherit", border: "none", ' +
+      'appearance: "none" }}></button></div>{villeSelecteur}';
+
+    return {
+      jsx: jsx.slice(0, ouverture) + ligne + jsx.slice(ferme + '</div>'.length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE COMPOSEUR SIGNE AVEC LE NOM DU MEMBRE, PAS CELUI DE LA PLANCHE         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Au niveau de la création de story ça affiche "Amina Diallo
+ * DÉCOUVERTE · LOGEMENT". Le nom n'est pas dynamique. »
+ *
+ * La planche écrit « AD » et « Amina Diallo » EN CLAIR — c'est son exemple. Un
+ * membre voyait donc l'aperçu de SA story signé du nom de quelqu'un d'autre, sur
+ * l'écran même où il la compose.
+ *
+ * Les deux deviennent des données ; la pastille, elle, est déjà liée et ne dit
+ * plus le sujet tant qu'il n'est pas choisi (`webPillFor`).
+ */
+const A14_SIGNATURE = {
+  screens: ['A14'],
+  nom: 'A14_SIGNATURE',
+  why: 'L’aperçu signe avec le nom du membre, plus avec celui de la planche.',
+  provides: ['moiInitiales', 'moiNom'],
+  apply(jsx) {
+    let out = jsx;
+    let applique = false;
+    if (out.includes('>AD</span>')) {
+      out = out.split('>AD</span>').join('>{moiInitiales}</span>');
+      applique = true;
+    }
+    if (out.includes('>Amina Diallo</span>')) {
+      out = out.split('>Amina Diallo</span>').join('>{moiNom}</span>');
+      applique = true;
+    }
+    return { jsx: out, applied: applique };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA LISTE D'ÉTAPES DEVIENT UN BOUTON QUI OUVRE UNE FENÊTRE                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Pour la section "MON PARCOURS" avec la section des étapes je
+ * propose de faire comme la section qui le précède et mettre un chevron et
+ * afficher un modal de sélection d'une étape. »
+ *
+ * La liste était posée à plat : quinze étapes, dont certaines portent quatre
+ * lignes de description. Elle occupait tout le panneau et repoussait les sujets
+ * et « Continuer » hors de vue — c'est elle qui avait rendu le défilement du
+ * panneau indispensable. Elle part dans une fenêtre, où elle défile chez elle.
+ *
+ * Le transcodeur ne fait que MÉNAGER LA PLACE : le bouton et la fenêtre sont
+ * `screens/a14/selecteur-parcours.tsx`, à côté de ceux du parcours — même
+ * dessin, même `Modal`, pour que les deux lignes de cette section se
+ * ressemblent, ce que le porteur demande explicitement.
+ */
+const A14_ETAPE_EN_FENETRE = {
+  screens: ['A14'],
+  nom: 'A14_ETAPE_EN_FENETRE',
+  why: 'La liste d’étapes devient un bouton qui ouvre une fenêtre, comme le parcours.',
+  provides: ['etapeSelecteur'],
+  apply(jsx) {
+    const boucle = jsx.indexOf('{(attachSteps ?? []).map(');
+    if (boucle === -1) return { jsx, applied: false };
+    const fin = jsx.indexOf('))}', boucle);
+    if (fin === -1) return { jsx, applied: false };
+    return {
+      jsx: `${jsx.slice(0, boucle)}{etapeSelecteur}${jsx.slice(fin + '))}'.length)}`,
+      applied: true,
+    };
+  },
+};
+
+const A14_ETAPES = {
+  screens: ['A14'],
+  nom: 'A14_ETAPES',
+  why: 'Les étapes du parcours deviennent des boutons : choisir une étape renseigne `stepDefinitionId`.',
+  provides: [],
+  apply(jsx) {
+    const pattern =
+      /<div (style=\{\{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", borderRadius: "16px", background: a\.bg, border: a\.bd \}\})>([\s\S]*?)<\/div><\/Fragment>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style = m[1].replace(
+      ' }}',
+      `, ${RESET_BOUTON}, textAlign: "left", width: "100%" }}`,
+    );
+    const bouton = `<button type="button" onClick={a.onPick} aria-pressed={a.on} ${style}>${m[2]}</button></Fragment>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * LES SUJETS DEVIENNENT DES BOUTONS — et ce ne sont plus les cinq de la maquette.
+ *
+ * ÉCART MESURÉ, ET TRANCHÉ : la maquette dessine « Visale · Garant · CAF ·
+ * Colocation · Banque », ce qui n'est AUCUNE valeur de `STORY_SUBJECTS`. Mais ces
+ * cinq mots ne sont pas du DESSIN : ils sont dans un tableau de données de son
+ * `renderVals()` (`attachTopics: ['Visale','Garant',…]`), rendu par `<sc-for>` —
+ * exactement comme le corps « Pour Visale… » est une donnée d'exemple. Ce sont donc
+ * des EXEMPLES, tous du même thème parce que la story d'exemple parle de Visale.
+ *
+ * Les pastilles sont donc alimentées par `STORY_SUBJECT_LABELS` (`@app/shared`), neuf
+ * libellés français écrits POUR être montrés. Rien n'est deviné : une donnée
+ * d'exemple est remplacée par la donnée réelle, ce que ce lot fait partout ailleurs.
+ * La rangée que la maquette dessine porte déjà `flexWrap: "wrap"` — neuf pastilles y
+ * tiennent sans qu'un pixel bouge, et aucune n'est coupée pour tenir dans le dessin.
+ */
+const A14_SUJETS = {
+  screens: ['A14'],
+  nom: 'A14_SUJETS',
+  why: 'Les sujets deviennent sélectionnables et renseignent `category` — alimentés par STORY_SUBJECT_LABELS.',
+  provides: [],
+  apply(jsx) {
+    const pattern =
+      /<span (style=\{\{ padding: "8px 13px", borderRadius: "999px", background: t\.bg, border: t\.bd, fontSize: "12.5px", fontWeight: "600" \}\})>\{t\.label\}<\/span>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style = m[1].replace(' }}', `, ${RESET_BOUTON}, lineHeight: "normal" }}`);
+    const bouton = `<button type="button" onClick={t.onPick} aria-pressed={t.on} ${style}>{t.label}</button>`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
  * LES PASTILLES DE CHOIX DEVIENNENT DES BOUTONS.
  *
  * La maquette les dessine en `<span>` — statut d'occupation, types d'aide — et
@@ -970,7 +10120,16 @@ function applyChipRow(jsx, spec) {
  * genre de dérive qu'un motif trop large produit en silence ».
  */
 const BUTTON_ACTIONS = [
-  { screens: ['P01'], label: 'Recevoir le code', attrs: ['onClick={onSubmit}', 'disabled={busy}'] },
+  {
+    screens: ['P01'],
+    label: 'Recevoir le code',
+    /**
+     * `phoneValide` S'AJOUTE À `busy` : on n'envoie pas de SMS pour un numéro que
+     * le serveur refusera. La règle est celle de `libphonenumber`, la même des
+     * deux côtés — un bouton actif suivi d'un refus serait pire que rien.
+     */
+    attrs: ['onClick={onSubmit}', 'disabled={busy || !phoneValide}'],
+  },
   {
     screens: ['O01', 'O02', 'O03', 'O04'],
     label: 'Continuer',
@@ -1020,6 +10179,60 @@ const BUTTON_ACTIONS = [
 
   /** §3.6 — « Publier / Plus tard » sur le partage de jalon. */
   { screens: ['J04'], label: 'Plus tard', attrs: ['onClick={onCancel}'] },
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ A14 — LES QUATRE CONTRÔLES DU COMPOSEUR DE STORY QUI ÉTAIENT INERTES     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur, devant la capture de l'accueil : « Sur la création du stories et
+   * ça envoie vers la section A14 […] Il faut que ce soit dynamique et permettre à
+   * l'utilisateur de modifier les valeurs et de publier la story. Qui va
+   * s'afficher dans sa liste de stories. »
+   *
+   * « PUBLIER » N'ÉTAIT BRANCHÉ NULLE PART, et le commentaire ci-dessus explique
+   * pourquoi : §3.5 veut que « l'objet cible n'est créé qu'à l'appel explicite de
+   * la route de publication ». CETTE RÈGLE N'EST PAS LEVÉE, elle est APPLIQUÉE —
+   * `onPublish` appelle `POST /stories`, c'est-à-dire exactement l'appel explicite
+   * qu'elle exige. Ce que la règle interdit, c'est un `onClick` qui refermerait la
+   * feuille en laissant croire qu'on a publié ; c'est l'inverse d'ici.
+   *
+   * La borne `screens: ['A14']` vaut pour les cinq cadres de cet écran, et le
+   * « Publier » de J03 reste inerte : il appartient à un autre lot, qui ne branche
+   * aucune route.
+   *
+   * `disabled={busy}` sur « Publier » : un envoi réseau est en cours, et deux
+   * appuis créeraient deux stories. Le « Continuer » de l'étape 2 ne l'a pas, et
+   * la note plus haut dit pourquoi — il ne part rien sur le réseau.
+   */
+  { screens: ['A14'], label: 'Publier', attrs: ['onClick={onPublish}', 'disabled={busy}'] },
+  /** « Modifier », à côté de « Publier » : il ramène à l'étape 1. */
+  { screens: ['A14'], label: 'Modifier', attrs: ['onClick={onEdit}'] },
+
+  /**
+   * LA NAVIGATION D'ÉTAPE DU CADRE D'ORDINATEUR — un cul-de-sac mesuré.
+   *
+   * Les deux boutons du bas de la fenêtre sombre portent des PRISES et non des
+   * libellés : `{w.prev}` vaut « Annuler » puis « Retour », `{w.next}` vaut
+   * « Suivant », « Continuer » puis « Publier » (voir `webFrameFor`). Aucun des
+   * deux n'avait d'`onClick` : SUR ORDINATEUR ON NE POUVAIT NI AVANCER NI RECULER,
+   * donc l'étape 3 — celle qui porte la publication — était INATTEIGNABLE au
+   * clavier comme à la souris. Le `onContinue` déclaré plus haut ne couvre que le
+   * « Continuer » LITTÉRAL du cadre mobile de l'étape 2.
+   *
+   * Le libellé déclaré est donc l'interpolation elle-même. C'est licite et
+   * vérifié : `adaptButtons` tourne APRÈS `transcode`, donc `{w.next}` est bel et
+   * bien le texte du bouton dans le JSX, et `escapeRe` échappe ses accolades et
+   * son point. Si la maquette cessait de passer par une prise, le motif ne
+   * collerait plus et le journal dirait le bouton non branché.
+   *
+   * Pourquoi `w.onNext` et non `onNext` : ces deux boutons ne vivent que dans le
+   * cadre d'ordinateur, dont tout l'état d'étape voyage déjà groupé dans `w`. Une
+   * prise de plus à la racine obligerait les quatre cadres mobiles à la déclarer
+   * sans l'employer, et le lint refuse une variable inutilisée.
+   */
+  { screens: ['A14'], label: '{w.next}', attrs: ['onClick={w.onNext}', 'disabled={w.busy}'] },
+  { screens: ['A14'], label: '{w.prev}', attrs: ['onClick={w.onPrev}'] },
 ];
 
 /**
@@ -1100,10 +10313,155 @@ function adaptFields(jsx, section) {
     OTP_FIELD,
     OTP_RESEND_ROW,
     OTP_BACK,
+    /**
+     * A14 — LES QUATRE ZONES DE SAISIE DU COMPOSEUR, ET LE CALQUE DÉPLAÇABLE.
+     *
+     * Quatre et non une : la maquette dessine le champ du corps QUATRE fois, et
+     * jamais avec le même style — 30 px sur le mobile en couleur, 26 px sur la
+     * variante photo (deux fois, le `marginTop` près), et la boîte étiquetée
+     * « Texte » du panneau d'ordinateur. Un seul motif large les aurait pris
+     * toutes les quatre ET les trois récapitulatifs avec : chaque zone porte donc
+     * son style en entier, ce qui la borne et la vérifie à la fois.
+     *
+     * Une transformation attendue qui ne s'applique pas est un AVERTISSEMENT
+     * (`missed`) : un cadre n'en porte jamais les cinq — `mobilerattacher` et
+     * `mobilepublier` n'ont aucune saisie, et c'est juste.
+     */
+    A14_CORPS_MOBILE,
+    A14_CORPS_PHOTO_MOBILE,
+    A14_CORPS_PHOTO_WEB,
+    A14_CORPS_WEB,
+    A14_APERCU_COULEUR_WEB,
+    A14_CALQUE_DEPLACABLE,
+    /**
+     * LES SEPT CONTRÔLES QUE LE PORTEUR A TROUVÉS MORTS. Voir leur en-tête commun.
+     *
+     * Aucun n'est présent sur les cinq cadres, et c'est juste : les outils de texte
+     * et de photo ne vivent que sur l'étape 1, la recherche, les étapes et les sujets
+     * que sur l'étape 2. Un `missed` est donc attendu ici, comme pour les quatre
+     * zones de saisie — ce que le journal dit à chaque exécution.
+     */
+    A14_ALIGNEMENT,
+    A14_STYLE_TEXTE,
+    A14_OUTILS_PHOTO,
+    A14_RECHERCHE,
+    A14_ETAPES,
+    O03_OBJECTIFS,
+    O03_SANS_PARCOURS,
+    A14_SUJETS,
+    /**
+     * APRÈS `A14_SUJETS`, ET CE N'EST PAS UN DÉTAIL D'ORDRE : le champ du sujet
+     * « Autre » s'accroche à la FIN de la boucle des pastilles, c'est-à-dire au
+     * balisage que `A14_SUJETS` vient de réécrire. Placé avant, il ne trouvait
+     * rien et la génération s'arrêtait en le disant — ce qu'elle a fait.
+     */
+    A14_SUJET_LIBRE,
+    A14_RECAP,
+    A14_ONGLET_VILLE,
+    O04_PSEUDO_VERIFIE,
+    O04_AVATAR,
+    A14_FERMER,
+    A14_SANS_AVERTISSEMENT,
+    A14_SIGNATURE,
+    A14_ETAPE_EN_FENETRE,
+    A14_PANNEAU_DEFILE,
+    A14_ACTIONS_MOBILE,
+    O04_COMPTEUR_AIDES,
+    O05_SANS_LIBELLE_DE_VARIANTE,
+    O05_DESCRIPTION_FACULTATIVE,
+    O05_COMMENCER,
+    A01_BULLES_CLIQUABLES,
+    A01_LIEN_CREER_STORY,
+    P02_NUMERO_MASQUE,
+    A13_PHOTO_SUR_ORDINATEUR,
+    A13_PHOTO_SANS_ETIQUETTE,
+    A13_SANS_LOGO,
+    A13_FERMER,
+    A01C_CHAMP,
+    A01C_REPONSE_MOBILE,
+    A01_COMPOSEUR_CHAMP,
+    A01_COMPOSEUR_IMAGE,
+    A01_COMPOSEUR_PUBLIER,
+    A01_PIECES_JOINTES,
+    A01C_FIL,
+    A01P_PARTAGE,
+    A01_PHOTO_PUBLICATION,
+    K01_PROFIL_EDITABLE,
+    A01_SIGNET_ET_OPTIONS,
+    A01G_CHOIX,
+    A01P_ENVOYER,
+    FENETRE_QUI_DEBORDE,
+    A01S_CHAMPS,
+    A01S_INTERRUPTEURS,
+    A01G_RECHERCHE,
+    A01_GUIDES_LIES,
+    A01_REACTION,
+    AVATAR_PHOTO,
+    COMPOSEUR_ROND_MOI,
+    M01_COMPOSEUR,
+    M01_ENTETE,
+    M01_LIGNES_CONVERSATION,
+    NOM_VERS_PROFIL,
+    K02_AVATAR_PROFIL,
+    K02_PROFIL_MOBILE,
+    K02_RECOMMANDER,
+    K02_ONGLETS_CONTENU,
+    O04_CHOIX_REFERENTIEL,
+    K01_COMPETENCES_LANGUES,
+    K03_ETATS_KYC,
+    K03_VERIFICATION,
+    K05_CONTACTS,
+    K10_ENREGISTRES,
+    K07_INTERRUPTEURS,
+    K08_DONNEES,
+    K09_CONTESTATION,
+    K04_SECURITE,
+    A01_JALONS,
+    A01C_SIGNALER_COMMENTAIRE,
+    M01_MENU,
+    X03_SIGNALEMENT,
+    M01_VIGNETTE,
+    A01_SONDAGE_QUESTION,
+    A01_SONDAGE_VOTE,
+    A13_FOND_EN_FONDU,
+    A13_MOBILE_CHEVRONS,
+    A13_MOBILE_PLEINE_HAUTEUR,
+    A13_NAVIGATION,
+    /**
+     * EN DERNIER, ET C'EST NÉCESSAIRE : cette transformation enveloppe un groupe
+     * que `A13_NAVIGATION` vient de construire — le champ de message AVEC son
+     * bouton d'envoi. Placée avant, elle ne trouvait rien et ne disait rien.
+     */
+    O02_VILLE_EN_PANNEAU,
+    RAIL_SURVOL,
+    X01_FILTRES,
+    X01_FILTRES_MOBILE,
+    X01_RESULTATS,
+    X01_SUGGESTIONS,
+    BARRE_HAUTE,
+    A01N_COMPOSEUR,
+    A01P_AUCUN_CONTACT,
+    K02_ECRIRE,
+    K02C_DEMANDE,
+    X02_FILTRES,
+    X01_CHAMP_MOBILE,
   ]) {
-    if (!transform.screens.includes(section)) continue;
+    /**
+     * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
+     *
+     * Une seule l'emploie : la BARRE HAUTE, qui est dessinée sur soixante-cinq
+     * planches. Les nommer une à une donnerait une liste à tenir à jour, et le
+     * jour où un écran la gagne il faudrait penser à l'y ajouter — c'est
+     * exactement le genre d'oubli qui laisse un contrôle mort.
+     *
+     * Son `apply` ne fait rien quand la barre n'est pas là, et elle ne figure
+     * donc PAS dans les transformations « attendues mais introuvables ».
+     */
+    const universelle = transform.screens.includes('*');
+    if (!universelle && !transform.screens.includes(section)) continue;
     const result = transform.apply(out);
     if (!result.applied) {
+      if (universelle) continue;
       // Attendue sur cet écran mais introuvable : c'est un motif qui a cessé de
       // coller, pas un cadre qui n'en a pas besoin. Le dire évite un écran muet
       // qui compile parfaitement.
@@ -1146,9 +10504,29 @@ function adaptFields(jsx, section) {
       missed.push(field.why);
       continue;
     }
+    /**
+     * ── DEUX LIAISONS FACULTATIVES, DÉCLARÉES PAR CHAMP ────────────────────
+     *
+     * `placeholderExpr` remplace l'invite par une EXPRESSION : le champ de
+     * téléphone montre l'exemple du pays choisi, que `libphonenumber` rend, au
+     * lieu du littéral de la planche — lequel est un numéro béninois d'avant la
+     * renumérotation de 2023.
+     *
+     * `styleRemplace` échange une valeur du style dessiné contre une prise : le
+     * trait du champ dit alors le refus. La substitution est bornée à CE champ,
+     * et non au fichier : la même valeur dessine d'autres champs ailleurs.
+     */
+    const invite =
+      field.placeholderExpr === undefined
+        ? `placeholder="${placeholder}"`
+        : `placeholder=${field.placeholderExpr}`;
+    const style =
+      field.styleRemplace === undefined
+        ? m[1]
+        : m[1].replace(field.styleRemplace[0], field.styleRemplace[1]);
     out =
       out.slice(0, m.index) +
-      `<input ${m[1]} placeholder="${placeholder}" ${field.attrs.join(' ')} />` +
+      `<input ${style} ${invite} ${field.attrs.join(' ')} />` +
       out.slice(m.index + m[0].length);
     applied.push(field);
   }
@@ -1271,6 +10649,33 @@ const INTERACTIVE_ROLES = [
     // Pas de `label` : ce bouton contient déjà son propre texte, et un
     // `aria-label` le REMPLACERAIT — on perdrait le détail qu'il affiche.
     why: 'La case « créer le parcours » annonce son état.',
+  },
+  /**
+   * L'INTERRUPTEUR « AUTORISER LES MESSAGES » DE A14 (étape 3, et le panneau
+   * d'ordinateur).
+   *
+   * TROUVÉ PAR LA MESURE AU NAVIGATEUR, et c'est ce qui rend ce cas intéressant :
+   * la suite de tests ne pouvait pas désigner cet interrupteur par son rôle et son
+   * nom. C'est précisément ce qu'un membre au lecteur d'écran ne pouvait pas faire
+   * non plus — le `<button>` ne portait NI texte, NI rôle, NI état. Il n'avait que
+   * `onClick={toggleMsgs}` et deux styles pilotés par la donnée (la couleur de la
+   * piste, la position du curseur), c'est-à-dire du DESSIN et rien d'autre.
+   *
+   * `role="switch"` plutôt que `checkbox` : la maquette dessine bien une piste et
+   * un curseur qui voyage de 3 px à 23 px, pas une case. C'est le même choix que
+   * pour `toggleHelp`, et pour la même raison.
+   *
+   * LE NOM EST RECOPIÉ DU `<span>` FRÈRE, qui écrit « Autoriser les messages » en
+   * 14 px juste à gauche de la piste. Il n'est pas inventé, et le générateur refuse
+   * de produire s'il disparaît de la maquette (voir la garde de `INTERACTIVE_ROLES`
+   * dans la boucle de génération, qui relit `inner`).
+   */
+  {
+    handler: 'toggleMsgs',
+    role: 'switch',
+    checked: 'msgsOn',
+    label: 'Autoriser les messages',
+    why: 'L’interrupteur « autoriser les messages » annonce son nom et son état.',
   },
 ];
 
@@ -2147,6 +11552,19 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
     const root = /^[A-Za-z_$][\w$]*/.exec(m[1].trim())?.[0];
     if (root === undefined) continue;
     if (loopVars.has(root) || JS_GLOBALS.has(root)) continue;
+    /**
+     * ── SEULEMENT CE QUI SURVIT DANS LE JSX PRODUIT ─────────────────────────
+     *
+     * Les noms se lisaient dans la MAQUETTE, et c'était juste tant qu'aucune
+     * adaptation n'en retirait. Une adaptation qui DÉPLACE du contenu — la liste
+     * de villes de O02, partie dans son panneau — laisse une donnée déclarée que
+     * personne n'emploie, et `no-unused-vars` la refuse.
+     *
+     * La même précaution existait déjà pour les `provides` d'une adaptation, avec
+     * le même commentaire : « on ne retient que ce qui figure réellement dans le
+     * JSX produit ». Elle manquait ici.
+     */
+    if (!new RegExp(`\\b${root}\\b`).test(producedJsx)) continue;
     names.add(root);
   }
 
@@ -2160,9 +11578,31 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
     for (const provided of field.provides ?? []) {
       if (new RegExp(`\\b${provided}\\b`).test(producedJsx)) names.add(provided);
     }
+    /**
+     * ── TOUS LES IDENTIFIANTS DE L'EXPRESSION, PAS SEULEMENT LE PREMIER ────
+     *
+     * Le motif d'origine ne reconnaissait qu'une accolade contenant UN nom nu :
+     * `value={phoneValue}`. Dès qu'une prise devient une expression —
+     * `disabled={busy || !phoneValide}` — il ne reconnaissait plus rien, et les
+     * DEUX noms disparaissaient de la déstructuration. Le composant référençait
+     * alors des variables qu'il ne déclarait pas ; le compilateur l'a dit, mais
+     * la cause ne se lisait pas dans son message.
+     *
+     * On lit donc tout ce qui ressemble à un identifiant dans l'accolade, en
+     * écartant les globales et les mots réservés comme ailleurs dans ce fichier.
+     */
     for (const attr of field.attrs ?? []) {
-      const bound = /\{([A-Za-z_$][\w$]*)\}/.exec(attr);
-      if (bound !== null) names.add(bound[1]);
+      const accolade = /\{([^}]*)\}/.exec(attr);
+      if (accolade === null) continue;
+      /**
+       * LA RACINE SEULE, comme pour les interpolations du dialecte : `w.onNext`
+       * dépend de `w`, pas d'un `onNext` qui n'existe nulle part. Sans cette
+       * garde, les cadres de A14 déclaraient `onNext` et `onPrev` en propriétés —
+       * et `A14Data` ne les a pas.
+       */
+      for (const m of accolade[1].matchAll(/(?<![.\w$])[A-Za-z_$][\w$]*/g)) {
+        if (!loopVars.has(m[0]) && !JS_GLOBALS.has(m[0])) names.add(m[0]);
+      }
     }
   }
 
@@ -2175,13 +11615,72 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
  * aucun besoin. Un import inutile est une erreur de lint, et un fichier généré
  * ne doit pas avoir besoin qu'on désactive le lint pour passer.
  */
-const HEADER = (section, width, file, dataModule, dataType, needsFragment) => `// GÉNÉRÉ depuis ${file}, section ${section}, cadre ${width} px.
+/**
+ * ─── LES COMPOSANTS QUE LE DÉPÔT AJOUTE, ET D'OÙ ILS VIENNENT ───────────────
+ *
+ * `barre` ne pouvait porter que les contrôles de la barre haute : sa répartition
+ * entre deux fichiers est écrite en dur dans `HEADER`. Trois composants sont
+ * arrivés depuis, chacun dans son module — un cadre de carte cliquable, le survol
+ * du rail — et chaque ajout demandait une branche de plus.
+ *
+ * Cette table est lue comme `barre` : on cherche `<Nom` dans le JSX PRODUIT, et on
+ * n'importe que ce qui est vraiment employé. Un cadre mobile, une fenêtre, une
+ * planche d'administration n'importent rien.
+ */
+/**
+ * CEUX DES COMPOSANTS DE `barre` QUI VIVENT DANS `barre-haute/membre`.
+ *
+ * Un JEU et non une liste de comparaisons en ligne : il en est passé de deux à
+ * trois avec `RondMoi`, et la forme `n !== 'A' && n !== 'B'` oblige à retoucher
+ * DEUX expressions symétriques à chaque ajout — un oubli y produit un import
+ * depuis `controles`, qui n'exporte pas le nom, donc un cadre qui ne compile
+ * pas. Le jeu ne se décline qu'une fois.
+ *
+ * Ils ne passent PAS par `AJOUTS` : un cadre peut employer `CarteMembre` ET
+ * `RondMoi` — le fil d'ordinateur le fait — et deux tables distinctes
+ * écriraient alors deux imports du même module.
+ */
+const DU_MODULE_MEMBRE = new Set(['PastilleMembre', 'CarteMembre', 'RondMoi']);
+
+const AJOUTS = {
+  ClavierEmojis: '@/components/clavier-emojis',
+  CadreCliquable: '@/components/cadre-cliquable',
+  CarrouselPhotos: '@/components/carrousel-photos',
+  MenuPublication: '@/components/menu-publication',
+  RailSurvol: '@/components/rail/survol',
+  ApercuStory: '@/components/apercu-story',
+  RubanStories: '@/components/ruban-stories',
+};
+
+const HEADER = (
+  section,
+  width,
+  file,
+  dataModule,
+  dataType,
+  needsFragment,
+  needsLink = false,
+  barre = [],
+  ajouts = [],
+) => `// GÉNÉRÉ depuis ${file}, section ${section}, cadre ${width} px.
 // Ne pas modifier à la main : relancer \`node tools/generate-screens.mjs\`.
 //
 // Les styles en ligne sont ceux de la maquette, à l'identique. Le conteneur
 // extérieur, lui, est fluide : la maquette le fige à ${width} px, ce qui ne
 // serait pas responsive.
-${needsFragment ? "import { Fragment } from 'react';\n" : ''}import type { ${dataType} } from '${dataModule}';
+${needsFragment ? "import { Fragment } from 'react';\n" : ''}${needsLink ? "import Link from 'next/link';\n" : ''}${
+  barre.length === 0
+    ? ''
+    : `${
+        barre.filter((n) => !DU_MODULE_MEMBRE.has(n)).length === 0
+          ? ''
+          : `import { ${barre.filter((n) => !DU_MODULE_MEMBRE.has(n)).join(', ')} } from '@/components/barre-haute/controles';\n`
+      }${
+        barre.filter((n) => DU_MODULE_MEMBRE.has(n)).length === 0
+          ? ''
+          : `import { ${barre.filter((n) => DU_MODULE_MEMBRE.has(n)).join(', ')} } from '@/components/barre-haute/membre';\n`
+      }`
+}${ajouts.map((n) => `import { ${n} } from '${AJOUTS[n]}';\n`).join('')}import type { ${dataType} } from '${dataModule}';
 
 `;
 
@@ -3562,7 +13061,45 @@ for (const screen of SCREENS) {
     const donneesForFrame = (screen.donnees ?? []).filter(
       (d) => d.frames === undefined || d.frames.includes(frame.name),
     );
-    const bound = applyData(linked.html, donneesForFrame, screen.section, frame.name);
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ `coque: true` — UNE DONNÉE QUI VIT DANS LA BALISE OUVRANTE DU CADRE      ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * `applyData` travaille sur `inner`, qui s'arrête au `>` de la balise ouvrante.
+     * Or la variante photo de A14 peint sa PHOTO dans cette balise, et nulle part
+     * ailleurs : `background: repeating-linear-gradient(135deg,#46564F …)`, le
+     * hachurage que la maquette emploie pour dire « ici il y a une image ». Tant que
+     * cette déclaration restait hors de portée, la photo choisie par le membre ne
+     * pouvait PAS s'afficher — le sélecteur de fichier aurait téléversé dans le vide.
+     *
+     * Aucun second mécanisme : la MÊME fonction, les MÊMES trois contrôles, appliqués
+     * à `raw.openTag`. Et la coque n'est lue qu'avec `keepFrameStyle` (c'est elle qui
+     * la fait survivre jusqu'au JSX), donc une donnée de coque déclarée sans lui
+     * ARRÊTE la génération au lieu de disparaître en silence.
+     */
+    const coqueForFrame = donneesForFrame.filter((d) => d.coque === true);
+    if (coqueForFrame.length > 0 && screen.keepFrameStyle !== true) {
+      throw new Error(
+        `${screen.section} ${frame.name} : une donnée « coque » est déclarée alors que l’écran ` +
+          'n’a pas `keepFrameStyle` — la balise ouvrante ne survivrait pas jusqu’au JSX, et la ' +
+          'donnée serait liée à un fragment que personne ne rend.',
+      );
+    }
+    const coqueBound = applyData(
+      raw.openTag,
+      coqueForFrame,
+      screen.section,
+      `${frame.name} (coque)`,
+    );
+    raw.openTag = coqueBound.html;
+
+    const bound = applyData(
+      linked.html,
+      donneesForFrame.filter((d) => d.coque !== true),
+      screen.section,
+      frame.name,
+    );
     const inner = bound.html;
     const {
       adapted: jsx, counts, promotedHeading, headingAlreadyThere,
@@ -3586,7 +13123,71 @@ for (const screen of SCREENS) {
     // la balise ouvrante. Sans cette ligne, le composant lisait une variable qu'il
     // n'avait pas déclarée : erreur à la compilation, et non pas en silence.
     const scanned = screen.keepFrameStyle === true ? raw.openTag + inner : inner;
-    const used = collectProps(scanned, [...fields, ...buttons], jsx);
+    /**
+     * L'ÉTAT QU'UN RÔLE INTERACTIF ANNONCE EST UNE PRISE, et il faut le déclarer.
+     *
+     * `INTERACTIVE_ROLES` pose `aria-checked={msgsOn}` sur l'interrupteur de A14.
+     * Ce nom n'est écrit NULLE PART dans le dialecte de la maquette — c'est nous qui
+     * le posons — donc `collectProps`, qui lit les `{{ … }}`, ne le voyait pas, et
+     * le cadre produit référençait une variable qu'il ne déclarait pas. `tsc` le
+     * dit (« Cannot find name 'msgsOn' »), donc le mal était borné ; mais il le dit
+     * à des centaines de lignes de la table qui l'a causé, dans un fichier qu'on
+     * n'a pas le droit de corriger à la main.
+     *
+     * Les deux rôles qui existaient avant n'avaient pas le problème PAR CHANCE :
+     * `{{ help }}` et `{{ create }}` sont écrits dans la maquette d'onboarding pour
+     * peindre leurs propres pistes, donc ils étaient collectés par le chemin normal.
+     * Le troisième ne l'est pas, et rien ne garantissait que le quatrième le soit.
+     *
+     * Passés comme des `provides` : la garde de `collectProps` ne retient un nom que
+     * s'il figure VRAIMENT dans le JSX produit, donc un rôle qui ne s'applique pas à
+     * ce cadre-ci n'y ajoute aucune variable inutilisée — ce que le lint refuserait.
+     */
+    const etatsDeRole = INTERACTIVE_ROLES.filter((c) => roles.has(c.handler)).map((c) => ({
+      provides: [c.checked],
+    }));
+    /**
+     * ── LA COQUE COMPTE AUSSI ───────────────────────────────────────────────
+     *
+     * `collectProps` ne retient un nom que s'il figure dans le JSX produit, ce
+     * qui évite de déclarer une donnée qu'une adaptation vient de retirer. Mais
+     * certains noms ne vivent QUE dans la coque du cadre — `writeBg` peint le
+     * fond de A14, `photoFond` celui de sa variante photo — et la coque est
+     * construite PLUS BAS, à partir de la balise ouvrante de la planche.
+     *
+     * On donne donc les deux à lire. Sans ça, ces deux cadres référençaient un
+     * identifiant qu'ils ne déclaraient plus.
+     */
+    const used = collectProps(
+      scanned,
+      [
+        ...fields,
+        ...buttons,
+        ...etatsDeRole,
+        /**
+         * La prise que `coqueRemplace` introduit ne figure NULLE PART ailleurs :
+         * elle remplace une valeur de la planche, donc ni le dialecte ni le JSX
+         * produit ne la nomment avant que la coque soit construite — et la coque
+         * l'est après. On l'annonce comme une fourniture, au même titre qu'une
+         * adaptation de champ.
+         */
+        ...(screen.coqueRemplace === undefined ||
+        !transcode(raw.openTag).includes(screen.coqueRemplace[0])
+          ? []
+          : [{ provides: [screen.coqueRemplace[1].split(': ')[1] ?? ''] }]),
+      ],
+      /**
+       * LE REMPLACEMENT N'EST ANNONCÉ QUE S'IL S'APPLIQUE À CE CADRE. Les deux
+       * planches n'ont pas le même style : celle de téléphone ne peint pas
+       * `#101A17`, donc sa coque ne porte pas la prise, et la déclarer y laissait
+       * une variable que personne n'emploie — ce que le lint refuse.
+       */
+      `${jsx} ${transcode(raw.openTag)} ${
+        transcode(raw.openTag).includes(screen.coqueRemplace?.[0] ?? '\u0000')
+          ? (screen.coqueRemplace?.[1] ?? '')
+          : ''
+      }`,
+    );
 
     // Le repère principal vit avec le CONTENU, pas dans le conteneur de mise en
     // page. La maquette du fil écrit déjà son `<main>` autour de la colonne
@@ -3671,11 +13272,62 @@ for (const screen of SCREENS) {
      *     une image de taille fixe », sauf qu'ici la borne est GARDÉE : 420 px est
      *     la largeur voulue de la carte, pas celle de l'écran qui la porte.
      */
+    /** La largeur de téléphone du dossier — celle que `ScreenFrames` borne déjà. */
+    const LARGEUR_TELEPHONE = 390;
     const PLANK_ONLY = new Set(['width', 'height', 'borderRadius', 'overflow', 'flexShrink']);
     const CARD_DROPPED = new Set(['height']);
     const asCard = screen.frameIsCard === true;
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ UNE PLANCHE QUI DESSINE UN RETRAIT LE GARDE                            ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, devant l'onboarding sur téléphone : « Les pages mobiles ont un
+     * souci de padding. »
+     *
+     * MESURÉ : `padding: 0px` sur le cadre mobile des six écrans d'accès, alors
+     * que la maquette écrit `padding:56px 20px 28px` sur sa planche de téléphone.
+     * Le texte et les cartes touchaient les deux bords.
+     *
+     * LA CAUSE N'EST PAS UN OUBLI, c'est une conséquence : le conteneur de la
+     * planche portait À LA FOIS la taille de l'image (390 × 844, rayon, trait,
+     * `overflow`) et le retrait du contenu. On le retirait en bloc — à raison
+     * pour la taille, à tort pour le retrait, qui est du DESSIN.
+     *
+     * LA RÈGLE EST DÉRIVÉE DE LA MAQUETTE, PAS DÉCLARÉE ÉCRAN PAR ÉCRAN — mais
+     * elle est BORNÉE AUX PLANCHES DE TÉLÉPHONE, et la borne a été mesurée.
+     *
+     * Sans elle, 39 cadres changeaient : les onglets de A08T et A12T, les volets
+     * de J03 et J04, et d'autres conteneurs de 360 ou 420 px qui portent eux
+     * aussi un retrait. Ceux-là ne sont pas des planches de téléphone — ce sont
+     * des cartes et des panneaux, dont le conteneur est retiré pour d'autres
+     * raisons que la taille de l'image. Les toucher aurait été une refonte de 39
+     * écrans là où le porteur en désigne une poignée.
+     *
+     * Avec la borne : NEUF planches, toutes de 390 px — les six de l'accès
+     * (`56px 20px 28px`) et les trois cadres mobiles de A14 (`48px 16/18px 26px`).
+     * Les 107 autres planches de téléphone n'ont aucun retrait dessiné et ne
+     * changent donc pas d'un pixel.
+     *
+     * 390 px n'est pas un nombre choisi : c'est la largeur de téléphone de tout le
+     * dossier, celle que `ScreenFrames` borne déjà par `max-w-[390px]`.
+     *
+     * `PLANK_ONLY` continue de retirer ce qui est INCOMPATIBLE avec un écran réel
+     * — largeur, hauteur, rayon, `overflow` — et la coque garde donc le retrait,
+     * le fond et la direction de la colonne. Le trio `flexGrow/Shrink/Basis` la
+     * fait remplir la hauteur, pour la même raison que `coqueRemplitLaHauteur` :
+     * sans lui, une coque de hauteur `auto` ne remplirait pas le `min-h-screen`
+     * du cadre et les écarts dessinés en pourcentage ne résoudraient contre rien.
+     */
+    const planchePorteUnRetrait =
+      screen.keepFrameStyle !== true &&
+      !asCard &&
+      frame.width === LARGEUR_TELEPHONE &&
+      /padding:/.test(raw.openTag);
+
     const shell =
-      screen.keepFrameStyle !== true && !asCard
+      screen.keepFrameStyle !== true && !asCard && !planchePorteUnRetrait
         ? null
         : (() => {
             const style = /style=\{\{ ([^}]*) \}\}/.exec(transcode(raw.openTag));
@@ -3696,7 +13348,71 @@ for (const screen of SCREENS) {
                   ? `width: "100%", maxWidth: "${frame.width}px"`
                   : entry,
               );
-            return kept.length === 0 ? null : kept.join(', ');
+            /**
+             * ╔════════════════════════════════════════════════════════════════╗
+             * ║ LA COQUE REMPLIT LA HAUTEUR — SANS QUOI UN `height: %` DESSINÉ ║
+             * ║ NE RÉSOUT CONTRE RIEN                                          ║
+             * ╚════════════════════════════════════════════════════════════════╝
+             *
+             * MESURÉ AU NAVIGATEUR, et c'est la PREMIÈRE phrase du porteur devant
+             * `/stories/nouvelle` : « ça ne s'affiche pas bien ». La feuille du bas de
+             * l'étape 2 faisait 55 px de haut dans une fenêtre de 844 px.
+             *
+             * La cause est juste au-dessus : `PLANK_ONLY` retire `height` de la coque,
+             * et il a raison de le faire — 844 px est la taille d'une IMAGE de
+             * téléphone, pas celle d'un écran. Mais la maquette dessine À L'INTÉRIEUR
+             * des hauteurs en POURCENTAGE : la feuille de l'étape 2 est
+             * `position:absolute; bottom:0; height:78%`, le voile de la variante photo
+             * `height:60%`. Un pourcentage de hauteur contre un conteneur de hauteur
+             * AUTO retombe sur `auto` : la feuille s'est donc réduite à son contenu
+             * tassé, et tout le dessin de l'étape 2 s'est écrasé en bas de page.
+             *
+             * ── POURQUOI DES LONGHANDS ET PAS `flex: "1"` ────────────────────
+             *
+             * `flex` est un RACCOURCI, et ce fichier a déjà payé une fois le prix d'un
+             * raccourci posé en fin de style (voir `RESET_BOUTON`). Les trois
+             * propriétés sont donc écrites séparément. `flexBasis: "auto"` et non `0%` :
+             * avec `auto`, la coque part de son contenu puis GRANDIT pour remplir —
+             * elle ne peut donc jamais devenir plus petite que ce qu'elle contient.
+             *
+             * ── CE QUE CELA N'EST PAS ────────────────────────────────────────
+             *
+             * Ce n'est pas un dessin : aucune couleur, aucune taille, aucune position
+             * n'est inventée. C'est le REMPLACEMENT de la hauteur fixe de la planche
+             * par « remplis l'écran », qui est exactement ce que `ScreenFrames` fait
+             * déjà pour la largeur (« une maquette est une image de taille fixe »), et
+             * ce que son conteneur mobile annonce déjà par `min-h-screen`.
+             *
+             * DÉCLARÉ PAR CADRE, jamais global : seuls les cadres qui dessinent une
+             * hauteur en pourcentage en ont besoin, et l'appliquer ailleurs changerait
+             * la géométrie d'écrans hors périmètre.
+             */
+            const remplit = screen.coqueRemplitLaHauteur ?? [];
+            if (remplit.includes(frame.name) || planchePorteUnRetrait) {
+              kept.push('flexGrow: "1"', 'flexShrink: "1"', 'flexBasis: "auto"');
+            }
+
+            /**
+             * ── UNE VALEUR DE LA COQUE PEUT DEVENIR UNE DONNÉE ───────────────
+             *
+             * Le porteur, devant A13 ouvert en fenêtre : « Le background n'est pas
+             * transparent […] le background dark doit couvrir toute la page et
+             * être transparent pour voir le contenu derrière. »
+             *
+             * La coque de A13 peint `#101A17` EN DUR — c'est la planche qui
+             * l'écrit, et c'est juste pour une page entière. Ouverte par-dessus le
+             * fil, cette même coque recouvre le voile, donc la page de dessous.
+             *
+             * `coqueRemplace` échange une valeur du style de la planche contre une
+             * prise, et UNIQUEMENT celle-là : l'écran décide alors, selon qu'il est
+             * une page ou une fenêtre. Déclaré par écran, jamais global.
+             */
+            const echange = screen.coqueRemplace;
+            const finale =
+              echange === undefined
+                ? kept
+                : kept.map((e) => (e === echange[0] ? echange[1] : e));
+            return finale.length === 0 ? null : finale.join(', ');
           })();
 
     const shelled =
@@ -3708,7 +13424,27 @@ for (const screen of SCREENS) {
         : `  const { ${used.join(', ')} } = props;\n\n`;
     const signature = used.length === 0 ? `_props: ${screen.dataType}` : `props: ${screen.dataType}`;
 
-    const body = `${HEADER(frame.section ?? screen.section, frame.width, screen.file, screen.dataModule, screen.dataType, shelled.includes('<Fragment'))}export function ${screen.section}${frame.name}(${signature}) {
+    /**
+     * Les contrôles de barre haute EFFECTIVEMENT employés par ce cadre. On les
+     * relit dans le JSX produit plutôt que de les supposer : une planche sans
+     * barre — un cadre mobile, une fenêtre — n'importe rien.
+     */
+    const barre = [
+      'BoutonCreer',
+      'ChampRecherche',
+      'LienMessages',
+      'LienNotifications',
+      'PastilleMembre',
+      'CarteMembre',
+      'RondMoi',
+    ].filter(
+      (nom) => shelled.includes(`<${nom}`),
+    );
+
+    /** Les composants ajoutés par le dépôt qu'emploie ce cadre. Voir `AJOUTS`. */
+    const ajouts = Object.keys(AJOUTS).filter((nom) => shelled.includes(`<${nom}`));
+
+    const body = `${HEADER(frame.section ?? screen.section, frame.width, screen.file, screen.dataModule, screen.dataType, shelled.includes('<Fragment'), shelled.includes('<Link'), barre, ajouts)}export function ${screen.section}${frame.name}(${signature}) {
 ${destructure}  return (
     <>
 ${shelled}
@@ -3777,7 +13513,7 @@ ${shelled}
      * maquette qui aurait changé. Le journal nomme le littéral de la maquette et
      * l'expression qui le remplace — la liaison n'est jamais silencieuse.
      */
-    for (const d of bound.applied) {
+    for (const d of [...coqueBound.applied, ...bound.applied]) {
       const exprs = [...new Set([...d.devient.matchAll(/\{\{\s*([\s\S]+?)\s*\}\}/g)].map((m) => m[1]))];
       const combien = d.fois === 1 ? '' : ` (${d.fois} occurrences)`;
       const abrege = d.noeud.length > 70 ? `${d.noeud.slice(0, 70)}…` : d.noeud;

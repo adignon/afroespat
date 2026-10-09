@@ -1,7 +1,7 @@
 // GÉNÉRÉ depuis packages/db/prisma/schema/*.prisma — ne pas modifier à la main.
 // Régénérer : pnpm --filter @app/shared generate
 //
-// 96 enums, 16 fichiers de schéma.
+// 95 enums, 16 fichiers de schéma.
 
 /** Module 13-moderation. */
 export const AiVerdict = [
@@ -295,19 +295,12 @@ export const HelpType = [
   'HOUSING',
   'JOB',
   'WELCOME',
-  'OTHER',
-] as const;
-export type HelpType = (typeof HelpType)[number];
-
-/** Module 06-help. */
-export const HelpType2 = [
-  'PAPERWORK',
   'SERVICE',
   'RIDE',
   'MATERIAL',
   'OTHER',
 ] as const;
-export type HelpType2 = (typeof HelpType2)[number];
+export type HelpType = (typeof HelpType)[number];
 
 /** Module 10-services. */
 export const HousingKind = [
@@ -914,7 +907,6 @@ export const ALL_ENUMS = {
   HelpKind,
   HelpStatus,
   HelpType,
-  HelpType2,
   HousingKind,
   HousingStatus,
   JobKind,

@@ -46,6 +46,15 @@ describe('export RGPD (01 §2.8)', () => {
       this.puts.set(key, body);
       return Promise.resolve();
     }
+    /**
+     * La doublure RELIT ce qu'elle a écrit, et rend `null` sur une clé absente —
+     * comme le fournisseur fictif. Une doublure qui rendrait toujours des octets
+     * ferait passer pour servi un média dont le fichier a disparu.
+     */
+    get(key: string): Promise<{ body: Buffer; mime: string } | null> {
+      const body = this.puts.get(key);
+      return Promise.resolve(body === undefined ? null : { body, mime: 'application/octet-stream' });
+    }
     delete(key: string): Promise<void> {
       this.deleted.push(key);
       this.puts.delete(key);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import { chargerE01 } from '@/screens/agenda/appels';
+import { chargerE01, SQUELETTE_E01 } from '@/screens/agenda/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { E01Desktop } from '@/screens/e01/desktop.generated';
@@ -23,7 +23,15 @@ export function AgendaEcran({ jour }: { readonly jour: string | null }) {
   const charger = useCallback(() => chargerE01(jour), [jour]);
 
   return (
-    <EcranDonnees charger={charger}>
+    <EcranDonnees
+      charger={charger}
+      attente="Chargement de l’agenda…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est mesuré : sans cela, `/agenda`
+       * répondait 200 sans rail et sans barre basse. Voir `SQUELETTE_E01`.
+       */
+      squelette={SQUELETTE_E01}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="E01"

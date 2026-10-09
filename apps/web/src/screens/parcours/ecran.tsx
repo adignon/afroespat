@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import type { LevelRequiredDetailsParsed } from '@app/shared';
 import { Modal } from '@/components/modal';
 import { FlowError } from '@/screens/onboarding/flow-error';
@@ -142,6 +143,51 @@ export function EcranParcours({
  * une fenêtre s'ouvrira autrement qu'au clic, celle de l'ouverture ne s'appliquera
  * plus. Le test mesure la PROPRIÉTÉ, pas la ligne.
  */
+/**
+ * ─── LES SEPT DESTINATIONS DU PANNEAU « MON PARCOURS » ──────────────────────
+ *
+ * Elles sont les routes de `app/(app)/parcours/[id]/`, et la maquette dit
+ * elle-même laquelle va avec quelle entrée : elle PEINT l'entrée qui désigne la
+ * planche ouverte (relevé cadre par cadre dans
+ * `tools/screens/04-parcours.mjs`). Aucune n'est déduite d'un libellé.
+ *
+ * ── LE SEGMENT EST LU BRUT, ET PAS PAR `useContexteParcours` ────────────────
+ *
+ * `useContexteParcours` filtre l'identifiant sur `UUID` — il le doit, puisqu'il
+ * sert à APPELER l'API, et `/parcours/1` est l'URL des planches d'illustration.
+ * La NAVIGATION, elle, n'appelle rien : `/parcours/1/equipe` est une route
+ * parfaitement servie, et c'est précisément celle où l'on vérifie que le panneau
+ * clique. Filtrer ici rendrait les sept entrées inertes sur la démonstration,
+ * donc intestables — et muettes pour le porteur qui ouvre le produit.
+ *
+ * SANS SEGMENT, RIEN NE BOUGE. Sur `/parcours`, `/parcours/nouveau` et
+ * `/parcours/publics`, la maquette ne peint AUCUNE entrée : il n'y a pas de
+ * parcours courant. Ces trois planches ne reçoivent donc pas ces liens du tout
+ * (voir la déclaration) ; le garde ci-dessous est la ceinture qui rend la
+ * fonction sûre si une quatrième page les demandait un jour.
+ */
+function usePanneauParcours() {
+  const router = useRouter();
+  const params = useParams<{ id?: string }>();
+  const id = typeof params.id === 'string' && params.id !== '' ? params.id : null;
+
+  return useMemo(() => {
+    const aller = (suffixe: string) => () => {
+      if (id === null) return;
+      router.push(`/parcours/${id}${suffixe}`);
+    };
+    return {
+      onPanneauVue: aller(''),
+      onPanneauEtape: aller('/etapes'),
+      onPanneauDiscussion: aller('/discussion'),
+      onPanneauEquipe: aller('/equipe'),
+      onPanneauDocuments: aller('/documents'),
+      onPanneauHistorique: aller('/historique'),
+      onPanneauReglages: aller('/reglages'),
+    };
+  }, [id, router]);
+}
+
 export function useParcours(
   ouverteInitiale: NomModale | null = null,
   contexte: ContexteParcours = {},
@@ -149,6 +195,7 @@ export function useParcours(
   const [ouverte, setOuverte] = useState<NomModale | null>(ouverteInitiale);
   const [volet, setVolet] = useState(0);
   const api = useParcoursApi(contexte);
+  const panneau = usePanneauParcours();
 
   const onOuvrir = useCallback(
     (event: React.MouseEvent<HTMLDivElement>): void => {
@@ -235,6 +282,7 @@ export function useParcours(
     onNext: suivant,
     onBack: precedent,
     onCancel,
+    ...panneau,
   };
 
   return {

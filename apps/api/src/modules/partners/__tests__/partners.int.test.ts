@@ -19,6 +19,7 @@ import { AuthService } from '../../auth/auth.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { PlanService } from '../../billing/plan.service';
 import { PartnersService } from '../partners.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Partenaires et affiliation — 14-monetisation.md §5 et §12.
@@ -50,8 +51,7 @@ describe('partenaires (14 §5, §12)', () => {
   let togo = '';
   let cityLyon = '';
 
-  const nextPhone = (): string =>
-    `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   async function newMember(options?: {
     plan?: 'FREE' | 'PREMIUM';

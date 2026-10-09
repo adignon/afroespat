@@ -25,6 +25,7 @@ import {
   type StaffUpdate,
   isSettingKey,
   looksLikePhone,
+  type SearchSubjectType,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
@@ -1118,6 +1119,50 @@ export class AdminService {
    * sinon l'IP du §2.3 serait oubliée une fois sur trois, et l'acteur pourrait
    * être recopié à la main depuis la mauvaise variable.
    */
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ RECONSTRUIRE L'INDEX DE RECHERCHE, EN LE TRAÇANT — 11 §4                ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La reconstruction elle-même appartient au module 11 : elle est passée en
+   * fonction (`reindex`) plutôt qu'en service injecté, pour que l'administration
+   * n'ait pas à dépendre de la recherche juste pour écrire une ligne de journal.
+   *
+   * ── EN SÉRIE, ET LA TRACE APRÈS ──────────────────────────────────────────
+   *
+   * Chaque type relit TOUTE sa source. Neuf lectures de front sur la même base se
+   * gêneraient plus qu'elles ne s'aideraient, et une reconstruction n'est pas
+   * pressée.
+   *
+   * La trace est écrite À LA FIN, avec les comptes réels — et c'est délibéré : une
+   * ligne posée d'avance dirait « on a demandé », pas « on a fait ». Le journal doit
+   * répondre à « combien de documents ont été réécrits, et combien retirés », ce
+   * qu'on ne sait qu'après. Si la reconstruction échoue en route, l'exception
+   * remonte et AUCUNE trace n'est écrite : il n'y a alors rien à raconter d'exact,
+   * et le journal n'est pas un endroit où l'on approxime.
+   */
+  async reindexSearch(
+    staff: StaffUser,
+    types: readonly SearchSubjectType[],
+    reindex: (type: SearchSubjectType) => Promise<{ indexed: number; removed: number }>,
+  ): Promise<{ items: { type: SearchSubjectType; indexed: number; removed: number }[] }> {
+    const items: { type: SearchSubjectType; indexed: number; removed: number }[] = [];
+    for (const type of types) {
+      const compte = await reindex(type);
+      items.push({ type, ...compte });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.record(tx, staff, {
+        action: AUDIT_ACTIONS.searchReindexed,
+        targetType: 'search_index',
+        metadata: { items },
+      });
+    });
+
+    return { items };
+  }
+
   private async record(
     tx: Prisma.TransactionClient,
     staff: StaffUser,

@@ -107,6 +107,39 @@ async function visiter(page: Page, route: string, width: number, height = 900): 
         'schéma de réponse refuse la charge, et son nom est dans la console du navigateur.',
     );
   }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ `[data-screen]` NE DIT PAS QUE LA DONNÉE EST LÀ                         ║
+   * ║ — dix cas mesuraient le SQUELETTE                                       ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * `EcranDonnees` appelle `children(donnees)` TOUJOURS — avec le squelette tant
+   * que la réponse n'est pas là. Le cadre, donc `[data-screen]`, EXISTE DÈS LE
+   * PREMIER RENDU, et l'attendre ne prouve que son existence.
+   *
+   * CE QUE ÇA A COÛTÉ, mesuré : dix cas de ce fichier échouaient ensemble, et
+   * leurs captures d'échec montraient des listes PLEINES — la donnée arrivait un
+   * souffle après la mesure. « pas assez de marge pour défiler : 0 » sur S04, S06
+   * et S09 ; le relevé d'ombres qui n'examinait que 1 847 nœuds au lieu des 2 000
+   * attendus ; le nombre affiché de S09 introuvable ; la mention de mise en avant
+   * absente. Aucun de ces défauts n'existait à l'écran.
+   *
+   * ON ATTEND DONC LA DISPARITION DE LA BANDE D'ATTENTE, seul signal que
+   * `EcranDonnees` émette à la bascule : un `role="status"` tant que la phase est
+   * « attente », retiré du document quand la donnée est posée. Son expiration est
+   * nommée elle aussi — une bande qui ne part jamais est une réponse qui n'arrive
+   * pas, pas une géométrie fausse.
+   */
+  const bande = page.locator('[role="status"]').filter({ hasText: /Chargement/ });
+  try {
+    await bande.first().waitFor({ state: 'detached', timeout: 20_000 });
+  } catch {
+    throw new Error(
+      `${route} à ${width} px a monté son cadre mais la bande d’attente ne part pas en 20 s : ` +
+        'la réponse de l’API n’arrive pas. Ce qui suit aurait été mesuré SUR LE SQUELETTE.',
+    );
+  }
 }
 
 /**
@@ -300,21 +333,39 @@ test.describe('les écrans affichent les données du SERVEUR, et plus celles de 
        * 38 px — comme le reste de cette suite reconnaît ce que la maquette ne
        * nomme pas. Son voisin immédiat porte le prénom.
        */
-      const bandeau = await page.evaluate(() => {
-        const frame = document.querySelector('[data-frame="desktop"]');
-        if (frame === null) return null;
-        const avatar = [...frame.querySelectorAll<HTMLElement>('span')].find((el) => {
-          const s = getComputedStyle(el);
-          return (
-            s.width === '38px' && s.height === '38px' && s.borderTopLeftRadius.startsWith('999')
-          );
+      /**
+       * ── ON ATTEND LA VALEUR : L'AVATAR EST VIDE AVANT QUE `/me` RÉPONDE ─────
+       *
+       * `visiter` rend la main dès que `[data-screen]` est ATTACHÉ, c'est-à-dire
+       * avant que l'identité soit lue. MESURÉ : l'avatar porte `""` à cet
+       * instant, et les neuf cas de cette boucle accusaient l'écran de montrer
+       * autre chose que le membre — alors qu'il ne montrait encore RIEN.
+       *
+       * Et le vide est ici le bon comportement : la barre ne peint PAS un
+       * repli en attendant (c'est le défaut corrigé sur l'en-tête de réseau).
+       * Il n'y a donc rien à voir avant la réponse, et le test doit l'attendre.
+       */
+      const lireBandeau = () =>
+        page.evaluate(() => {
+          const frame = document.querySelector('[data-frame="desktop"]');
+          if (frame === null) return null;
+          const avatar = [...frame.querySelectorAll<HTMLElement>('span')].find((el) => {
+            const s = getComputedStyle(el);
+            return (
+              s.width === '38px' && s.height === '38px' && s.borderTopLeftRadius.startsWith('999')
+            );
+          });
+          if (avatar === undefined) return null;
+          return {
+            initiales: avatar.textContent?.trim() ?? '',
+            prenom: avatar.nextElementSibling?.textContent?.trim() ?? '',
+          };
         });
-        if (avatar === undefined) return null;
-        return {
-          initiales: avatar.textContent?.trim() ?? '',
-          prenom: avatar.nextElementSibling?.textContent?.trim() ?? '',
-        };
-      });
+
+      await expect
+        .poll(async () => (await lireBandeau())?.initiales ?? null, { timeout: 15_000 })
+        .not.toBe('');
+      const bandeau = await lireBandeau();
 
       expect(bandeau, `${nom} : l’avatar de 38 px de la barre haute est introuvable`).not.toBeNull();
       expect(
@@ -365,8 +416,17 @@ test.describe('les écrans affichent les données du SERVEUR, et plus celles de 
     const { page, jeu } = await atelier(browser, request);
     await visiter(page, '/services/logement', 1440);
 
-    const texte = await page.locator('[data-frame="desktop"]').innerText();
-    expect(texte).toContain(jeu.titreAnnonce);
+    /**
+     * ON ATTEND LA LISTE. `visiter` rend la main dès que `[data-screen]` est
+     * attaché : lire `innerText` tout de suite lit la colonne de gauche et une
+     * liste encore vide, puis conclut que l'annonce publiée n'y est pas. Même
+     * piège que le bandeau d'identité, dix lignes plus haut.
+     */
+    const cadre = page.locator('[data-frame="desktop"]');
+    await expect
+      .poll(async () => (await cadre.innerText()).includes(jeu.titreAnnonce), { timeout: 15_000 })
+      .toBe(true);
+    const texte = await cadre.innerText();
     /**
      * LES SIX TITRES, ET AUCUN NOM DE PERSONNE.
      *
@@ -428,8 +488,12 @@ test.describe('les écrans affichent les données du SERVEUR, et plus celles de 
     const { page, jeu } = await atelier(browser, request);
     await visiter(page, '/services/emploi', 1440);
 
-    const texte = await page.locator('[data-frame="desktop"]').innerText();
-    expect(texte).toContain(jeu.titreOffre);
+    // On attend la liste, pour la raison écrite au cas précédent.
+    const cadre = page.locator('[data-frame="desktop"]');
+    await expect
+      .poll(async () => (await cadre.innerText()).includes(jeu.titreOffre), { timeout: 15_000 })
+      .toBe(true);
+    const texte = await cadre.innerText();
     expect(texte).toContain(ENTREPRISE_OFFRE);
     for (const dessine of ['Développeur·se web', 'Bourse de mobilité 2026', 'Studio Kora']) {
       expect(texte, `« ${dessine} » est encore dessiné : la boucle n’est pas liée`).not.toContain(
@@ -676,13 +740,27 @@ test.describe('le défilement — ordinateur', () => {
           el === null ? null : Math.round(el.getBoundingClientRect().top);
         const rail = frame.querySelector('nav');
         /**
-         * La barre haute est reconnue par sa GÉOMÉTRIE, pas par un sélecteur : la
-         * maquette ne lui donne ni rôle ni texte propre. C'est la rangée de 64 px
-         * qui contient le champ « Rechercher dans la diaspora ».
+         * ╔══════════════════════════════════════════════════════════════════╗
+         * ║ LA SONDE CHERCHAIT UN TEXTE QUI N'EXISTE PLUS                   ║
+         * ╚══════════════════════════════════════════════════════════════════╝
+         *
+         * Elle trouvait la barre par un nœud dont le `textContent` valait
+         * « Rechercher dans la diaspora ». C'était vrai quand la maquette dessinait
+         * la boîte de recherche en `<div>` portant ce texte EN DUR — c'est-à-dire
+         * quand elle n'était pas un champ.
+         *
+         * Elle l'est devenue : un `<form role="search">` avec un `<input>` dont ce
+         * texte est le PLACEHOLDER. Un placeholder n'est pas du `textContent`, donc
+         * la sonde rendait `null` et vingt cas de ce fichier échouaient sur « la
+         * barre haute est introuvable » — alors que la barre est là, et que
+         * `barre-haute.spec.ts` la mesure à 44 px de haut.
+         *
+         * La sonde vise maintenant le RÔLE, qui est ce que la barre est : une zone
+         * de recherche. C'est stable par construction — un champ de recherche sans
+         * `role="search"` serait un défaut d'accessibilité que `a11y.spec.ts`
+         * attraperait.
          */
-        const recherche = [...frame.querySelectorAll<HTMLElement>('*')].find(
-          (el) => el.textContent?.trim() === 'Rechercher dans la diaspora',
-        );
+        const recherche = frame.querySelector('form[role="search"]');
         const barre = recherche?.parentElement ?? null;
         return {
           defile: Math.round(window.scrollY),
@@ -1051,7 +1129,14 @@ test.describe('S02 — l’état L0 de « Contacter »', () => {
   test('390 px — ?niveau=l0 ouvre la feuille de vérification dès l’arrivée', async ({ browser, request }) => {
     const { page, jeu } = await atelier(browser, request);
     await visiter(page, `/services/logement/${jeu.idAnnonce}?niveau=l0`, 390);
-    const dialog = page.getByRole('dialog', { name: 'Contacter Sarah' });
+    /**
+     * LE PRÉNOM VIENT DU JEU, PAS DE LA MAQUETTE. « Contacter Sarah » était écrit
+     * ici en dur : c'est le prénom que la planche dessine, et le SQUELETTE le
+     * reprend. Ces deux cas passaient donc au vert sur le squelette et rougissent
+     * dès qu'on attend la donnée — la feuille réelle titre « Contacter Awa »,
+     * du nom de l'auteur que le jeu crée.
+     */
+    const dialog = page.getByRole('dialog', { name: `Contacter ${PRENOM_MEMBRE}` });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Contacter demande une identité vérifiée.')).toBeVisible();
     await expect(
@@ -1085,7 +1170,14 @@ test.describe('S02 — l’état L0 de « Contacter »', () => {
   test('1440 px — la feuille s’efface : la maquette dessine cet état dans la page', async ({ browser, request }) => {
     const { page, jeu } = await atelier(browser, request);
     await visiter(page, `/services/logement/${jeu.idAnnonce}?niveau=l0`, 390);
-    const dialog = page.getByRole('dialog', { name: 'Contacter Sarah' });
+    /**
+     * LE PRÉNOM VIENT DU JEU, PAS DE LA MAQUETTE. « Contacter Sarah » était écrit
+     * ici en dur : c'est le prénom que la planche dessine, et le SQUELETTE le
+     * reprend. Ces deux cas passaient donc au vert sur le squelette et rougissent
+     * dès qu'on attend la donnée — la feuille réelle titre « Contacter Awa »,
+     * du nom de l'auteur que le jeu crée.
+     */
+    const dialog = page.getByRole('dialog', { name: `Contacter ${PRENOM_MEMBRE}` });
     await expect(dialog, 'la feuille doit d’abord exister — sinon on ne prouve rien').toBeVisible();
 
     await page.setViewportSize({ width: 1440, height: 900 });

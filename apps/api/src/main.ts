@@ -84,6 +84,26 @@ async function bootstrap(): Promise<void> {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('X-Frame-Options', 'DENY');
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ RIEN DE CE QUE CETTE API REND NE SE RANGE DANS UN CACHE                 ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Toutes les réponses sont PERSONNELLES — ce qu'un membre a vu, ses signets,
+     * ses messages, son niveau. Elles portaient un `ETag` et AUCUN `Cache-Control` :
+     * une réponse ainsi faite est « heuristiquement fraîche », c'est-à-dire que le
+     * navigateur a le droit de la resservir sans redemander, pour une durée qu'il
+     * choisit seul.
+     *
+     * MESURÉ, et c'est le porteur qui l'a vu : « je clique sur un story mais ça ne
+     * montre pas que c'est lu même quand je rafraîchis la page ». Le ruban revenait
+     * du cache, anneaux verts compris.
+     *
+     * `no-store` plutôt que `no-cache` : le premier interdit d'ÉCRIRE la réponse sur
+     * disque, le second autorise à la garder en revalidant. Des données personnelles
+     * n'ont pas à être écrites, ni ici ni dans un relais intermédiaire.
+     */
+    res.setHeader('Cache-Control', 'no-store');
     next();
   });
 

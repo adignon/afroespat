@@ -69,6 +69,48 @@ export const COUNTRIES: CountrySeed[] = [
   { iso2: 'MA', nameFr: 'Maroc', dialCode: '+212', kind: 'ORIGIN', isActive: false, sortOrder: 14 },
   { iso2: 'DZ', nameFr: 'Algérie', dialCode: '+213', kind: 'ORIGIN', isActive: false, sortOrder: 15 },
   { iso2: 'TN', nameFr: 'Tunisie', dialCode: '+216', kind: 'ORIGIN', isActive: false, sortOrder: 16 },
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LES DESTINATIONS HORS AFRIQUE — « il faut permettre de changer le pays »   ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Aussi il faut permettre de changer le pays (les pays hors
+   * Afrique). »
+   *
+   * CE QUI MANQUAIT : le catalogue ne portait que des pays AFRICAINS plus la
+   * France — dix-sept lignes, et aucune autre destination. Un membre installé en
+   * Belgique, au Canada ou en Allemagne ne pouvait ni choisir son pays ni, ce qui
+   * est pire, ajouter son numéro : `addPhoneStartSchema` exige un `countryIso2`,
+   * et l'indicatif vient de cette table.
+   *
+   * ── `DESTINATION` ET NON `BOTH`, ET C'EST IMPORTANT ───────────────────────
+   *
+   * L'en-tête du Bénin ci-dessus l'explique : `kind` porte DEUX sens à la fois, et
+   * `BOTH` fait passer en L2 tout membre muni d'un numéro de ce pays (01 §2.5).
+   * Une destination est un pays où l'on s'installe — c'est exactement ce que ces
+   * neuf-là sont — et les marquer `BOTH` donnerait le niveau « présence vérifiée »
+   * à qui a seulement un numéro belge.
+   *
+   * ── ACTIFS, PARCE QUE SINON ILS NE SERVENT À RIEN ─────────────────────────
+   *
+   * `GET /places/countries` filtre sur `isActive`. Le lancement reste mono-pays
+   * pour les VILLES et les réseaux — Paris est la ville pilote — mais un pays de
+   * destination inactif ne pourrait pas porter un numéro de téléphone, et c'est
+   * la demande du porteur.
+   *
+   * Les neuf retenus sont les pays d'installation que la diaspora ouest-africaine
+   * francophone nomme en premier. La liste s'allonge d'une ligne.
+   */
+  { iso2: 'BE', nameFr: 'Belgique', dialCode: '+32', kind: 'DESTINATION', isActive: true, sortOrder: 17 },
+  { iso2: 'CH', nameFr: 'Suisse', dialCode: '+41', kind: 'DESTINATION', isActive: true, sortOrder: 18 },
+  { iso2: 'CA', nameFr: 'Canada', dialCode: '+1', kind: 'DESTINATION', isActive: true, sortOrder: 19 },
+  { iso2: 'DE', nameFr: 'Allemagne', dialCode: '+49', kind: 'DESTINATION', isActive: true, sortOrder: 20 },
+  { iso2: 'GB', nameFr: 'Royaume-Uni', dialCode: '+44', kind: 'DESTINATION', isActive: true, sortOrder: 21 },
+  { iso2: 'US', nameFr: 'États-Unis', dialCode: '+1', kind: 'DESTINATION', isActive: true, sortOrder: 22 },
+  { iso2: 'ES', nameFr: 'Espagne', dialCode: '+34', kind: 'DESTINATION', isActive: true, sortOrder: 23 },
+  { iso2: 'IT', nameFr: 'Italie', dialCode: '+39', kind: 'DESTINATION', isActive: true, sortOrder: 24 },
+  { iso2: 'PT', nameFr: 'Portugal', dialCode: '+351', kind: 'DESTINATION', isActive: true, sortOrder: 25 },
 ];
 
 export interface CitySeed {

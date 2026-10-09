@@ -629,10 +629,57 @@ export function markTriggers(html, triggers) {
       } else {
         const close = findMatchingClose(out, openEnd, tag);
         const style = /style="([^"]*)"/.exec(openTag);
+        /**
+         * ╔══════════════════════════════════════════════════════════════════════╗
+         * ║ LA NEUTRALISATION EST PRÉFIXÉE, COMME CELLE DE `markLinks`            ║
+         * ╚══════════════════════════════════════════════════════════════════════╝
+         *
+         * ELLE ÉTAIT SUFFIXÉE, et c'était un défaut CONNU, signalé au porteur par
+         * deux lots qui ne l'ont pas corrigé pour ne pas sortir de leur périmètre
+         * (l'en-tête de `markLinks` le dit : « son `padding:0` écrase le
+         * `padding:0 12px` d'un `<span>` promu en bouton »).
+         *
+         * `styleToJsx` fusionne par propriété en gardant la DERNIÈRE déclaration.
+         * Suffixer faisait donc de `border:none;padding:0;font:inherit` des
+         * SURCHARGES : promouvoir un `<span>` en bouton pouvait lui retirer son
+         * remplissage et sa police, c'est-à-dire CHANGER LE DESSIN de la maquette
+         * en silence. Préfixer en fait des DÉFAUTS — on remplace les valeurs du
+         * NAVIGATEUR, pas celles du designer, ce qui est exactement le sens de la
+         * promotion.
+         *
+         * `cursor:pointer` reste dans le même paquet : la maquette l'écrit parfois
+         * elle-même, et dans ce cas c'est la sienne qui gagne, ce qui est juste.
+         *
+         * MESURÉ SUR LES 250 CADRES, raccourcis dépliés DANS L'ORDRE : quinze en
+         * sont déplacés, et aucun n'y perd quoi que ce soit.
+         *
+         *   — SIX rendent au designer la police que le suffixe lui prenait :
+         *     `a12/desktop` et les trois planches d'ordinateur de `a12t`
+         *     (« Contribuer », 12.5px/700 et 13px/700, plus un `padding`
+         *     `0 14px` / `0 16px` qu'un suffixe écrasait à `0`), `j07/mobile`
+         *     (12.5px/700) et `j08/mobile` (13.5px/700).
+         *   — NEUF sont des réordonnancements purs : mêmes déclarations, ordre
+         *     différent, valeurs effectives identiques.
+         *
+         * Les vingt changements de police vont tous dans le sens
+         * `inherit → la valeur du designer`, jamais l'inverse. Zéro couleur,
+         * zéro fond, zéro géométrie, zéro texte. Le détail est au rapport de lot.
+         *
+         * ATTENTION AU CONTRÔLE : un oracle qui compare les styles comme des
+         * ENSEMBLES de paires ne peut PAS voir ce défaut — clés identiques,
+         * valeurs identiques, seul l'ordre change. Il rend « rien ne bouge » sur
+         * les cadres mêmes qui justifient la correction. Il faut lire l'ordre et
+         * déplier `font`, `padding`, `margin`, `background` et `border`.
+         *
+         * L'adaptation de CIBLE TACTILE (`cible`, plus bas) reste SUFFIXÉE, et
+         * c'est voulu : elle doit, elle, surcharger le dessin — c'est une
+         * exigence de `T1 §2.3` qui porte une cible de 40 px à 44 sans déplacer
+         * un pixel, pas une valeur de navigateur à remplacer.
+         */
         const styleAttr =
           style === null
             ? ' style="border:none;padding:0;font:inherit;cursor:pointer"'
-            : ` style="${style[1]};border:none;padding:0;font:inherit;cursor:pointer"`;
+            : ` style="border:none;padding:0;font:inherit;cursor:pointer;${style[1]}"`;
 
         /**
          * UN BOUTON CRÉÉ AUTOUR D'UNE ICÔNE N'A AUCUN NOM ACCESSIBLE.
@@ -685,7 +732,26 @@ export function markTriggers(html, triggers) {
         const styleFinal =
           cible === '' ? styleAttr : styleAttr.replace(/"$/, `${cible}"`);
 
-        const replacement = `<button type="button"${attr}${labelAttr}${styleFinal}>`;
+        /**
+         * LES AUTRES ATTRIBUTS DE LA MAQUETTE SURVIVENT À LA PROMOTION.
+         *
+         * Ils étaient JETÉS : seuls le nom de la fenêtre, le nom accessible et le
+         * style passaient. C'est `markLinks` qui avait raison — « les autres
+         * attributs de la maquette sont gardés MOT POUR MOT » — et le défaut
+         * s'est mesuré sur ce module : le déclencheur de « Lier un guide » est un
+         * `<span title="Lier un guide">`, et la promotion effaçait ce `title`,
+         * c'est-à-dire l'INFOBULLE que la maquette dessine. Un contrôle en icône
+         * seule perdait son seul libellé visible à la souris.
+         *
+         * Le `style` est retiré d'abord : il est recomposé juste au-dessus, et le
+         * laisser passer donnerait deux attributs `style` sur le même bouton.
+         */
+        const autres = openTag
+          .slice(1 + tag.length, openTag.endsWith('/>') ? -2 : -1)
+          .replace(/\s*style="[^"]*"/, '')
+          .replace(/\s+$/, '');
+
+        const replacement = `<button type="button"${attr}${labelAttr}${styleFinal}${autres}>`;
         out =
           out.slice(0, openIdx) +
           replacement +

@@ -31,6 +31,7 @@ import {
   type E02Data,
   type E03Data,
   type E04Data,
+  type EtatBouton,
   type PanneauAgenda,
 } from './data';
 
@@ -169,7 +170,7 @@ async function chargerSocle(jourChoisi: string | null): Promise<Socle> {
 
   return {
     panneau: construirePanneau(calendrier, abonnement, choisi, aujourdhui),
-    moi: construireMoi(me.user.displayName),
+    moi: construireMoi(me.user.displayName, me.user.avatarUrl),
     calendrier,
     zone,
     aujourdhui: choisi,
@@ -340,3 +341,113 @@ export async function chargerE04(id: string): Promise<E04Data> {
 
 /** Réexporté pour les écrans : le détail sert aussi à nommer la page. */
 export type { EventDetailResponse };
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE DESSIN SANS LA DONNÉE — POUR QUE LE CADRE SOIT SERVI TOUT DE SUITE      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Mesuré au HTML servi, sans exécuter le JavaScript : `/agenda` répondait 200
+ * avec une coquille — aucun rail, aucune barre basse. La branche d'attente de
+ * `EcranDonnees` remplaçait le cadre entier par sa phrase, donc les destinations
+ * déclarées sur ce cadre n'atteignaient jamais le navigateur. Ce n'était pas un
+ * lien mort — le `<a href="/parcours">` est bien dans `e01/desktop.generated.tsx` —
+ * c'était un cadre non rendu.
+ *
+ * Le motif est celui de `/accueil` : le dessin tout de suite, la donnée ensuite.
+ * Tout est à zéro ou vide, ce qui n'invente rien : un agenda qui n'a pas encore
+ * ses événements n'en affiche aucun, et son calendrier n'a aucune semaine à
+ * peindre.
+ *
+ * `pluriel` VAUT LA CHAÎNE VIDE, et c'est juste : la maquette écrit
+ * « {nombre} événement{pluriel} », donc « 0 événement » au singulier. Mettre un
+ * « s » aurait écrit « 0 événements », ce que `pluriel()` de ce module ne fait pas
+ * non plus.
+ *
+ * `plafond` vient du plan : il est rendu par l'API dans le quota. Non chargé, il
+ * reste vide — et la ligne « 0 sur  ce mois-ci » n'annonce aucun plafond faux.
+ * C'est préférable à un plafond inventé, qui serait affiché comme vrai.
+ */
+export const SQUELETTE_E01: E01Data = {
+  moi: { initiales: '', prenom: '' },
+  panneau: {
+    mois: '',
+    aujourdhui: '',
+    totalMois: 0,
+    semaines: [],
+    quota: { utilise: 0, plafond: '', reset: '' },
+  },
+  jour: '',
+  nombre: 0,
+  pluriel: '',
+  evenements: [],
+  weekEnd: [],
+  ville: '',
+  bande: [],
+};
+
+/**
+ * LES TROIS AUTRES ÉCRANS DU MODULE — la fiche, la création, la présence.
+ *
+ * Même cause, même remède que `SQUELETTE_E01` : sans squelette, `/agenda/:id`,
+ * `/agenda/nouveau` et `/agenda/:id/presence` répondent 200 en servant
+ * « DisaporyPlus Chargement de l'agenda… » et rien d'autre — ni rail, ni barre
+ * basse. Le cadre est désormais rendu tout de suite, et l'attente est une bande.
+ *
+ * LES COULEURS DES BOUTONS DE RSVP SONT CELLES DE LA MAQUETTE, au repos : un
+ * bouton sans fond ni couleur de texte serait invisible, et en choisir d'autres
+ * serait inventer un dessin. `#F2F5F4` et `#5D6B66` sont les deux jetons que
+ * `07 Agenda` emploie pour un choix NON retenu — c'est donc l'état « je n'ai pas
+ * encore répondu », qui est exactement vrai tant que le serveur n'a pas répondu.
+ *
+ * `complet: false` et `organisateur: false` sont les choix PRUDENTS : annoncer
+ * « complet » à tort fermerait la porte, et se dire organisateur à tort
+ * afficherait des contrôles de gestion que le membre n'a pas. `attente: null`
+ * n'annonce aucune file d'attente.
+ */
+const CHOIX_AU_REPOS: EtatBouton = { fond: '#F2F5F4', texte: '#5D6B66' };
+
+export const SQUELETTE_E02: E02Data = {
+  moi: SQUELETTE_E01.moi,
+  panneau: SQUELETTE_E01.panneau,
+  evenement: {
+    titre: '—',
+    type: '',
+    reseau: null,
+    quand: '',
+    quandCourt: '',
+    lieu: '',
+    lieuCourt: '',
+    adresse: '',
+    description: null,
+    organisateur: { nom: '', initiales: '' },
+    avatars: [],
+    reste: null,
+    inscrits: 0,
+    places: null,
+    plurielPlaces: '',
+  },
+  choix: { vient: CHOIX_AU_REPOS, peutEtre: CHOIX_AU_REPOS, refuse: CHOIX_AU_REPOS },
+  presence: { debut: '', fin: '' },
+  attente: null,
+  complet: false,
+  organisateur: false,
+};
+
+export const SQUELETTE_E03: E03Data = {
+  moi: SQUELETTE_E01.moi,
+  panneau: SQUELETTE_E01.panneau,
+  ville: '',
+};
+
+export const SQUELETTE_E04: E04Data = {
+  moi: SQUELETTE_E01.moi,
+  panneau: SQUELETTE_E01.panneau,
+  evenement: { titre: '—', quand: '' },
+  compteur: false,
+  presents: 0,
+  plurielPresents: '',
+  inscrits: 0,
+  plurielInscrits: '',
+  participants: [],
+};

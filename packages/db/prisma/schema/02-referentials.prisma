@@ -26,6 +26,22 @@ model Country {
   isActive  Boolean     @map("is_active")
   sortOrder Int         @map("sort_order")
 
+  /// Le nombre de chiffres d'un numéro NATIONAL dans ce pays — 8 au Togo, 9 en
+  /// France, 10 au Bénin depuis la renumérotation de 2023.
+  ///
+  /// Le porteur : « il faut la validation du numéro selon le pays. Backend et
+  /// frontend aussi pour valider le format. »
+  ///
+  /// LA RÈGLE VIT DANS LE RÉFÉRENTIEL, PAS DANS LE CODE, et c'est délibéré : un
+  /// plan de numérotation change — celui du Bénin l'a fait en 2023, celui de la
+  /// Côte d'Ivoire en 2021 — et l'équipe doit pouvoir le corriger en back-office
+  /// sans déploiement, comme elle corrige une ville ou un pays (02 §2.1).
+  ///
+  /// NULL = « on ne sait pas » : le numéro n'est alors contrôlé que par la forme
+  /// internationale (E.164, 7 à 15 chiffres). Refuser faute de règle bloquerait
+  /// l'inscription d'un pays qu'on vient d'ouvrir.
+  phoneNationalLength Int? @map("phone_national_length")
+
   // Colonne ajoutée par 02-referentiels.md §3.
   /// Ville proposée par défaut à l'onboarding pour ce pays de destination.
   defaultCityId String? @map("default_city_id") @db.Uuid
@@ -130,8 +146,22 @@ model Skill {
   category String?
   isActive Boolean @map("is_active")
 
+  /// Le membre qui l'a écrite à la main, ou NULL si elle est GLOBALE.
+  ///
+  /// Le porteur : « Les compétences doivent aussi supporter le free typing qui crée
+  /// de nouvelles compétences que les administrateurs peuvent globaliser. On a donc
+  /// un createdBy si c'est uniquement pour cet utilisateur. Les autres pourront le
+  /// voir sur son profil mais pas le choisir dans le champ des compétences. Mais
+  /// quand c'est globalisé tout le monde y a accès. »
+  ///
+  /// NULL VEUT DONC DIRE « À TOUT LE MONDE », et c'est le sens du référentiel
+  /// d'origine : les 60 compétences semées n'appartiennent à personne. Globaliser,
+  /// c'est effacer cette colonne — pas ajouter un drapeau de plus.
+  createdByUserId String? @map("created_by_user_id") @db.Uuid
+
   userSkills UserSkill[]
 
+  @@index([createdByUserId])
   @@map("skills")
 }
 

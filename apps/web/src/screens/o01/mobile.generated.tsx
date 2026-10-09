@@ -12,6 +12,7 @@ export function O01Mobile(props: OnboardingVals) {
 
   return (
     <>
+      <div style={{ background: "#F6F8F7", padding: "56px 20px 28px", display: "flex", flexDirection: "column", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
       <main style={{ display: "contents" }}>
 
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}><div style={{ flex: "1", display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: "4px" }}>{(seg1 ?? []).map((s, sIndex) => (
@@ -31,6 +32,7 @@ export function O01Mobile(props: OnboardingVals) {
       <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
     
       </main>
+      </div>
     </>
   );
 }

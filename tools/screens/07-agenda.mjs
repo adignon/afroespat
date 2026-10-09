@@ -90,6 +90,7 @@
  */
 
 import { cadresDuRail, railLitteral } from '../squelette-membre.mjs';
+import { barreBasse } from '../squelette-membre.mjs';
 
 const FILE = 'docs/template/07 Agenda.dc.html';
 
@@ -110,9 +111,25 @@ const FILE = 'docs/template/07 Agenda.dc.html';
  * refuse. Le défaut ne peut pas être silencieusement faux.
  */
 
+/**
+ * SEUL E01 DESSINE LA BARRE D'ONGLETS BASSE, et c'est compté : E02 (la fiche d'un
+ * événement), E03 (la création) et E04 (la présence) n'en ont pas — on y entre
+ * depuis l'agenda et on en sort par le retour de l'en-tête. Une règle sur le nom
+ * « Mobile » les aurait toutes les quatre, et la génération aurait refusé sur les
+ * trois dernières en les nommant.
+ */
+const BARRE_BASSE_AGENDA = new Set(['E01']);
+
 const screen = ({ section, out, frames, dataType, squelette = true, ...rest }) => ({
   file: FILE,
-  ...(squelette ? { liens: railLitteral(cadresDuRail(frames)) } : {}),
+  ...(squelette
+    ? {
+        liens: [
+          ...railLitteral(cadresDuRail(frames)),
+          ...(BARRE_BASSE_AGENDA.has(section) ? barreBasse(['Mobile']) : []),
+        ],
+      }
+    : {}),
   section,
   out: `apps/web/src/screens/${out}`,
   dataModule: '../agenda/data',

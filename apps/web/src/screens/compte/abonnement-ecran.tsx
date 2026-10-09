@@ -1,6 +1,6 @@
 'use client';
 
-import { chargerK06 } from '@/screens/compte/appels';
+import { chargerK06, SQUELETTE_K06 } from '@/screens/compte/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { VOLETS_PAIEMENT, type VoletPaiement } from '@/screens/compte/data';
@@ -64,7 +64,15 @@ export function AbonnementEcran({ volet }: { readonly volet: VoletPaiement | nul
    * l'instrument.
    */
   return (
-    <EcranDonnees charger={chargerK06}>
+    <EcranDonnees
+      charger={chargerK06}
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : `/premium` et `/compte/abonnement`
+       * repondaient 200 avec CINQ mots et zero entree de rail. Voir
+       * `SQUELETTE_K06` — et la correction qu'il porte sur la cause annoncee.
+       */
+      squelette={SQUELETTE_K06}
+    >
       {(donnees) => (
         <EcranCompte
           screen="K06"

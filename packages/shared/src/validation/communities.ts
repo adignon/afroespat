@@ -273,12 +273,44 @@ export const createAnnouncementSchema = z.object({
   body: z.string().trim().min(1).max(2_000),
 });
 
+/**
+ * LES DEUX BORNES D'UN SONDAGE, NOMMÉES PLUTÔT QU'ÉCRITES.
+ *
+ * Elles étaient deux nombres dans le schéma, et l'écran qui compose un sondage en
+ * a besoin : sans elles, il laisserait ajouter une neuvième réponse que le serveur
+ * refuserait à la publication — un refus que le membre ne découvrirait qu'à la
+ * fin. Un `8` recopié dans le front serait une seconde source, et quatre bornes
+ * recopiées ont déjà divergé dans ce dépôt.
+ *
+ * ⚠ LA MAQUETTE ÉCRIT « 2 à 5 » sous le titre « Options », là où §2.3 et ce schéma
+ * disent 2 à 8. L'écart est REMONTÉ : on suit le SERVEUR, qui est ce qui refuse.
+ */
+export const POLL_OPTIONS_MIN = 2;
+export const POLL_OPTIONS_MAX = 8;
+
 export const createPollSchema = z.object({
   question: z.string().trim().min(5).max(200),
   /** 2–8 options (§2.3). Une seule option n'est pas un sondage. */
-  options: z.array(z.string().trim().min(1).max(100)).min(2).max(8),
+  options: z.array(z.string().trim().min(1).max(100)).min(POLL_OPTIONS_MIN).max(POLL_OPTIONS_MAX),
   isMultiple: z.boolean().default(false),
   closesAt: z.coerce.date().optional(),
+  /**
+   * ── LES DEUX RÉGLAGES QUE LA MAQUETTE DESSINE ─────────────────────────────
+   *
+   * Ils étaient deux interrupteurs inertes : le produit imposait les deux règles.
+   * Le porteur a tranché — « non, fais de ça un réglage ».
+   *
+   * LES DÉFAUTS SONT L'ANCIEN COMPORTEMENT, au bit près : résultats masqués avant
+   * le vote, et aucun nom de votant. Un appelant qui ne les passe pas obtient donc
+   * exactement ce qu'il obtenait, ce qui est la seule façon d'ajouter un réglage
+   * sans changer le sens de ce qui existe.
+   */
+  resultsAfterVote: z.boolean().default(true),
+  /**
+   * LE DÉFAUT EST LE SILENCE. C'est le seul défaut acceptable pour un réglage de
+   * confidentialité : un sondage créé sans rien dire ne nomme personne.
+   */
+  isAnonymous: z.boolean().default(true),
 });
 
 export type CreatePoll = z.infer<typeof createPollSchema>;
@@ -725,12 +757,36 @@ export const createAnnouncementResponseSchema = z
  * de demander au front de ne pas les afficher — les laisser dans la réponse HTTP
  * reviendrait à les publier. L'écran ne doit donc jamais écrire `?? 0`.
  */
+/**
+ * UN VOTANT NOMMÉ — seulement sur un sondage NON anonyme, et seulement quand les
+ * résultats sont visibles.
+ *
+ * Les noms ne sortent pas « parce que le sondage n'est pas anonyme » : ils sortent
+ * quand les RÉSULTATS sortent. Un sondage non anonyme dont les résultats sont
+ * encore masqués ne nomme personne — sinon le réglage d'anonymat contournerait
+ * celui des résultats, et on saurait qui a voté quoi avant d'avoir le droit de
+ * savoir combien.
+ */
+export const pollVoterSchema = z
+  .object({ id: uuidSchema, handle: z.string(), displayName: z.string() })
+  .strict();
+
 export const pollOptionSchema = z
   .object({
     id: uuidSchema,
     label: z.string(),
     position: z.number().int(),
     voteCount: z.number().int().nullable(),
+    /**
+     * LES VOTANTS DE CETTE OPTION — vide sauf sur un sondage non anonyme dont les
+     * résultats sont visibles.
+     *
+     * Un TABLEAU VIDE et non `null` : l'absence de noms n'est pas une inconnue,
+     * c'est un fait — personne n'est nommé. `voteCount`, lui, est `null` quand on
+     * n'a pas le droit de connaître le compte, ce qui est une inconnue. Les deux
+     * situations sont différentes et le schéma les distingue.
+     */
+    voters: z.array(pollVoterSchema),
   })
   .strict();
 
@@ -738,6 +794,10 @@ const pollFields = {
   id: uuidSchema,
   question: z.string(),
   isMultiple: z.boolean(),
+  /** Vrai = les comptes restent masqués tant qu'on n'a pas voté (§2.3). */
+  resultsAfterVote: z.boolean(),
+  /** Vrai = seuls les totaux sortent ; faux = les options nomment leurs votants. */
+  isAnonymous: z.boolean(),
   closesAt: z.string().datetime().nullable(),
   /** Calculé serveur : `closesAt` dépassé. Le schéma n'a pas de colonne d'état. */
   closed: z.boolean(),
@@ -752,6 +812,27 @@ const pollFields = {
 
 /** Un sondage vu EN LISTE — `GET /communities/:id/polls`. */
 export const pollSchema = z.object(pollFields).strict();
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE MÊME SONDAGE, PORTÉ PAR UNE PUBLICATION DU FIL                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur voulait le sondage du composeur du fil. Le mécanisme existait
+ * ENTIER ici — 2 à 8 options, vote modifiable, résultats masqués avant vote,
+ * clôture — et seule la base refusait le rattachement : `polls.community_id`
+ * était obligatoire. Il est devenu facultatif, exclusif de `post_id`.
+ *
+ * CE SCHÉMA EST `pollFields` TEL QUEL, et c'est le point : un second schéma
+ * aurait dupliqué neuf champs et quatre règles, et la copie aurait divergé. Il
+ * existe sous son propre nom parce que `04-fil` ne doit pas importer le schéma
+ * d'un sondage de RÉSEAU pour décrire celui d'une publication — les deux se
+ * ressemblent aujourd'hui, et le jour où l'un gagne un champ, l'autre doit
+ * pouvoir ne pas le gagner.
+ */
+export const postPollSchema = z.object(pollFields).strict();
+
+export type PostPoll = z.infer<typeof postPollSchema>;
 
 export type Poll = z.infer<typeof pollSchema>;
 
@@ -768,8 +849,18 @@ export type PollsResponse = z.infer<typeof pollsResponseSchema>;
  * ferait échouer la validation sur un vote parfaitement réussi, et `.strict()`
  * est ce qui a rendu l'écart visible au lieu de le laisser passer.
  */
+/**
+ * ── `communityId` EST DEVENU NULLABLE, ET IL FALLAIT LE DIRE ICI ────────────
+ *
+ * Un sondage appartient désormais à un RÉSEAU ou à une PUBLICATION du fil (voir
+ * `postPollSchema`). `POST /polls/:id/vote` sert les deux — c'est la même route,
+ * le même modèle, le même vote — donc sa réponse rend `null` pour un sondage de
+ * publication. Garder `uuidSchema` ferait échouer la validation sur un vote
+ * PARFAITEMENT RÉUSSI, et `.strict()` est ce qui rend ce genre d'écart visible
+ * au lieu de le laisser passer.
+ */
 export const pollDetailResponseSchema = z
-  .object({ ...pollFields, communityId: uuidSchema })
+  .object({ ...pollFields, communityId: uuidSchema.nullable() })
   .strict();
 
 export type PollDetailResponse = z.infer<typeof pollDetailResponseSchema>;

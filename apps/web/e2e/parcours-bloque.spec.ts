@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { connecter } from './session';
 
 /**
  * « JE SUIS BLOQUÉ·E » — J03, et la règle qui commande tout le module.
@@ -18,9 +19,59 @@ import { expect, test, type Page } from '@playwright/test';
 /** Ce fichier pilote lui-même ses tailles : un seul projet suffit. */
 test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
-async function ouvrir(page: Page, width = 1440): Promise<void> {
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ ON ATTEND LA DONNÉE, PAS LE CADRE — sinon le clic porte sur un élément qui  ║
+ * ║ se détache                                                                 ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * `EcranDonnees` rend le SQUELETTE tant que la réponse n'est pas là, puis le
+ * remplace. Un clic lancé entre les deux vise un bouton du squelette, que React
+ * retire sous lui — Playwright le dit mot pour mot : « element was detached from
+ * the DOM, retrying », jusqu'à expiration.
+ *
+ * La bande `role="status"` est le seul signal de la bascule. Son absence n'est pas
+ * un échec : certains écrans de ce module ne chargent rien.
+ */
+/**
+ * ╔═════════════════════════════════════════════════════════════════════════╗
+ * ║ CE FICHIER N'OUVRAIT AUCUNE SESSION — et `/parcours/…` est gardé          ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ : `/parcours/1/etapes/7` sans session rend L'ÉCRAN DE CONNEXION —
+ * « Votre numéro de téléphone », relevé au navigateur. Les déclencheurs J03 et J04
+ * n'y existent pas, et les sept cas de ce fichier cliquaient dans le vide.
+ *
+ * LE DÉFAUT ÉTAIT MASQUÉ PAR `networkidle` : `goto` expirait AVANT d'atteindre le
+ * clic, et l'échec ressemblait à une lenteur. En passant à `load`, le clic est
+ * atteint — et Playwright a dit la vérité : « element was detached from the DOM »,
+ * le squelette cédant la place à l'écran de connexion.
+ */
+async function session(page: Page, request: APIRequestContext): Promise<void> {
+  await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+}
+
+async function pret(page: Page): Promise<void> {
+  await page
+    .locator('[role="status"]')
+    .filter({ hasText: /Chargement/ })
+    .first()
+    .waitFor({ state: 'detached', timeout: 20_000 })
+    .catch(() => {});
+}
+
+async function ouvrir(page: Page, request: APIRequestContext, width = 1440): Promise<void> {
+  await session(page, request);
   await page.setViewportSize({ width, height: 900 });
-  await page.goto('/parcours/1/etapes/7', { waitUntil: 'networkidle' });
+  /**
+   * `load` ET NON `networkidle` : Next précharge les liens visibles d'une page App
+   * Router, et le réseau ne retombe pas au calme sur les pages de parcours —
+   * `goto` expirait à 30 s, et dix cas étaient comptés échoués sans jamais avoir
+   * été EXÉCUTÉS. Même cause et même correction que `e2e/services.spec.ts`,
+   * `e2e/a11y.spec.ts` et `visual/screens.spec.ts`.
+   */
+  await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
+  await pret(page);
   const cadre = width >= 1024 ? 'desktop' : 'mobile';
   await page.locator(`[data-frame="${cadre}"] [data-modal-open="J03"]`).first().click();
   await expect(page.getByRole('dialog', { name: /Je suis bloqué/ })).toBeVisible();
@@ -29,8 +80,8 @@ async function ouvrir(page: Page, width = 1440): Promise<void> {
 const dialogue = (page: Page) => page.getByRole('dialog', { name: /Je suis bloqué/ });
 
 test.describe('la règle dure : jamais de publication en un clic (§3.5)', () => {
-  test('« Publier » n’existe PAS au premier volet', async ({ page }) => {
-    await ouvrir(page);
+  test('« Publier » n’existe PAS au premier volet', async ({ page, request }) => {
+    await ouvrir(page, request);
     await expect(dialogue(page).getByRole('button', { name: 'Publier' })).toHaveCount(0);
     /**
      * Ce qu'on voit à la place : relire, et « Suivant ».
@@ -45,8 +96,8 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
     await expect(dialogue(page).getByRole('button', { name: 'Suivant' })).toBeVisible();
   });
 
-  test('« Publier » n’existe PAS au deuxième volet non plus', async ({ page }) => {
-    await ouvrir(page);
+  test('« Publier » n’existe PAS au deuxième volet non plus', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
     await expect(dialogue(page).getByText('Publier dans Annonces logement')).toBeVisible();
     // « Publier dans Annonces logement » est le libellé d'un CHOIX DE PORTÉE,
@@ -56,8 +107,8 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
     await expect(dialogue(page).getByRole('button', { name: 'Publier', exact: true })).toHaveCount(0);
   });
 
-  test('« Publier » n’apparaît qu’au TROISIÈME volet, après l’aperçu', async ({ page }) => {
-    await ouvrir(page);
+  test('« Publier » n’apparaît qu’au TROISIÈME volet, après l’aperçu', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
     await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
 
@@ -66,8 +117,8 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
     await expect(dialogue(page).getByRole('button', { name: 'Publier', exact: true })).toBeVisible();
   });
 
-  test('refermer et rouvrir REVIENT au premier volet', async ({ page }) => {
-    await ouvrir(page);
+  test('refermer et rouvrir REVIENT au premier volet', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
     await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
     await expect(dialogue(page).getByRole('button', { name: 'Publier', exact: true })).toBeVisible();
@@ -86,16 +137,16 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
     await expect(dialogue(page).getByRole('button', { name: 'Suivant' })).toBeVisible();
   });
 
-  test('« Retour » redescend d’un volet', async ({ page }) => {
-    await ouvrir(page);
+  test('« Retour » redescend d’un volet', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
     await dialogue(page).getByRole('button', { name: 'Retour' }).click();
     await expect(dialogue(page).getByRole('button', { name: 'Suivant' })).toBeVisible();
     await expect(dialogue(page).getByRole('button', { name: 'Publier', exact: true })).toHaveCount(0);
   });
 
-  test('« Annuler » referme sans rien publier (§3.5 → CANCELLED)', async ({ page }) => {
-    await ouvrir(page);
+  test('« Annuler » referme sans rien publier (§3.5 → CANCELLED)', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Annuler' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
@@ -117,8 +168,9 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
 test.describe('le volet AVANCE, il ne se rouvre pas', () => {
   test('première ouverture : l’animation d’entrée ; volet suivant : panelAdvance', async ({
     page,
+    request,
   }) => {
-    await ouvrir(page, 1440);
+    await ouvrir(page, request, 1440);
     const panneau = dialogue(page).locator('[data-modal-panel]');
 
     const ouverture = await panneau.evaluate((n) => getComputedStyle(n).animationName);
@@ -137,8 +189,8 @@ test.describe('le volet AVANCE, il ne se rouvre pas', () => {
     expect(avance.duree).toBe('0.24s');
   });
 
-  test('sur mobile aussi, le volet avance au lieu de remonter du bas', async ({ page }) => {
-    await ouvrir(page, 390);
+  test('sur mobile aussi, le volet avance au lieu de remonter du bas', async ({ page, request }) => {
+    await ouvrir(page, request, 390);
     const panneau = dialogue(page).locator('[data-modal-panel]');
     expect(await panneau.evaluate((n) => getComputedStyle(n).animationName)).toBe('dp-sheet-in');
 
@@ -179,8 +231,8 @@ test.describe('le clavier garde la main après un changement de volet', () => {
    * Le premier `n === 0` vérifie l'état AVANT toute touche. C'est lui qui tombe
    * quand l'effet de focus est neutralisé, et c'est donc lui qui compte.
    */
-  test('le focus ne quitte jamais la boîte, dès le changement de volet', async ({ page }) => {
-    await ouvrir(page);
+  test('le focus ne quitte jamais la boîte, dès le changement de volet', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
     await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
 
@@ -194,15 +246,15 @@ test.describe('le clavier garde la main après un changement de volet', () => {
     }
   });
 
-  test('Échap ferme ENCORE au deuxième volet', async ({ page }) => {
-    await ouvrir(page);
+  test('Échap ferme ENCORE au deuxième volet', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
-  test('le focus revient sur le bouton d’origine, même après trois volets', async ({ page }) => {
-    await ouvrir(page);
+  test('le focus revient sur le bouton d’origine, même après trois volets', async ({ page, request }) => {
+    await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
     await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
     await page.keyboard.press('Escape');
@@ -230,8 +282,8 @@ test.describe('le clavier garde la main après un changement de volet', () => {
  * la carte est bien devenue une fenêtre, et la feuille bien une feuille.
  */
 test.describe('fenêtre sur ordinateur, feuille sur mobile', () => {
-  test('1440 px — une fenêtre de 540 px, centrée', async ({ page }) => {
-    await ouvrir(page, 1440);
+  test('1440 px — une fenêtre de 540 px, centrée', async ({ page, request }) => {
+    await ouvrir(page, request, 1440);
     const boite = await dialogue(page).locator('[data-modal-panel]').boundingBox();
     expect(boite).not.toBeNull();
     if (boite === null) return;
@@ -243,8 +295,8 @@ test.describe('fenêtre sur ordinateur, feuille sur mobile', () => {
     expect(boite.y).toBeGreaterThan(20);
   });
 
-  test('390 px — une feuille collée en bas, sur toute la largeur', async ({ page }) => {
-    await ouvrir(page, 390);
+  test('390 px — une feuille collée en bas, sur toute la largeur', async ({ page, request }) => {
+    await ouvrir(page, request, 390);
     const boite = await dialogue(page).locator('[data-modal-panel]').boundingBox();
     expect(boite).not.toBeNull();
     if (boite === null) return;
@@ -253,8 +305,8 @@ test.describe('fenêtre sur ordinateur, feuille sur mobile', () => {
     expect(Math.round(boite.y + boite.height)).toBeGreaterThanOrEqual(898);
   });
 
-  test('le voile est emprunté à la planche mobile, et il ferme', async ({ page }) => {
-    await ouvrir(page, 1440);
+  test('le voile est emprunté à la planche mobile, et il ferme', async ({ page, request }) => {
+    await ouvrir(page, request, 1440);
     // La planche d'ordinateur de J03 n'a PAS de voile : il vient des planches
     // mobiles de la même section. S'il manquait, un clic hors panneau ne
     // fermerait rien et le membre serait coincé dans la fenêtre.
@@ -271,9 +323,11 @@ test.describe('fenêtre sur ordinateur, feuille sur mobile', () => {
  * texte pré-rédigé — c'est le membre qui écrit). »
  */
 test.describe('§3.6 — partager un jalon', () => {
-  test('« Marquer comme franchie » PROPOSE le partage, il ne publie pas', async ({ page }) => {
+  test('« Marquer comme franchie » PROPOSE le partage, il ne publie pas', async ({ page, request }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/parcours/1/etapes/7', { waitUntil: 'networkidle' });
+    await session(page, request);
+    await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
+    await pret(page);
     await page.locator('[data-frame="desktop"] [data-modal-open="J04"]').first().click();
 
     const jalon = page.getByRole('dialog', { name: /Partager un jalon/ });
@@ -282,9 +336,11 @@ test.describe('§3.6 — partager un jalon', () => {
     await expect(jalon.getByRole('button', { name: 'Plus tard' })).toBeVisible();
   });
 
-  test('le champ de texte est VIDE — aucun texte pré-rédigé', async ({ page }) => {
+  test('le champ de texte est VIDE — aucun texte pré-rédigé', async ({ page, request }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/parcours/1/etapes/7', { waitUntil: 'networkidle' });
+    await session(page, request);
+    await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
+    await pret(page);
     await page.locator('[data-frame="desktop"] [data-modal-open="J04"]').first().click();
 
     const jalon = page.getByRole('dialog', { name: /Partager un jalon/ });
@@ -297,9 +353,11 @@ test.describe('§3.6 — partager un jalon', () => {
     await expect(jalon.locator('textarea')).toHaveCount(0);
   });
 
-  test('« Plus tard » referme sans publier (§3.6 → share_prompt_dismissed_at)', async ({ page }) => {
+  test('« Plus tard » referme sans publier (§3.6 → share_prompt_dismissed_at)', async ({ page, request }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/parcours/1/etapes/7', { waitUntil: 'networkidle' });
+    await session(page, request);
+    await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
+    await pret(page);
     await page.locator('[data-frame="desktop"] [data-modal-open="J04"]').first().click();
     await page
       .getByRole('dialog', { name: /Partager un jalon/ })

@@ -20,6 +20,7 @@ import {
   storyReactionAllowed,
   type CommentSubjectType,
   type CommentsQuery,
+  type CommentSort,
   type ConvertStory,
   type CreateComment,
   type CreatePost,
@@ -227,6 +228,49 @@ const POST_INCLUDE = {
   media: {
     orderBy: { position: 'asc' },
     select: { position: true, mediaAsset: { select: { id: true, storageKey: true } } },
+  },
+  /**
+   * ── LE SONDAGE ET LES GUIDES VIENNENT AVEC LA PUBLICATION ────────────────
+   *
+   * Dans la MÊME requête, et pas une par carte : une page de fil porte vingt
+   * publications, donc vingt allers-retours de plus à chaque défilement. Une
+   * jointure n'en coûte aucun.
+   *
+   * Les options sont ordonnées par `position` : sans cela, l'ordre serait celui
+   * de l'index, c'est-à-dire celui des identifiants — un sondage dont les
+   * réponses changent de place d'un chargement à l'autre.
+   */
+  poll: {
+    select: {
+      id: true,
+      question: true,
+      isMultiple: true,
+      resultsAfterVote: true,
+      isAnonymous: true,
+      closesAt: true,
+      createdAt: true,
+      author: { select: { id: true, handle: true, displayName: true } },
+      options: {
+        orderBy: { position: 'asc' },
+        select: {
+          id: true,
+          label: true,
+          position: true,
+          voteCount: true,
+          /**
+           * LES VOTANTS SONT RAMENÉS, PAS TOUJOURS RENDUS : `carteDeSondage` ne
+           * les nomme que sur un sondage NON anonyme dont les résultats sont
+           * visibles. Les charger inconditionnellement coûte une jointure et
+           * évite une seconde requête conditionnelle dont on oublierait un cas.
+           */
+          votes: { select: { user: { select: { id: true, handle: true, displayName: true } } } },
+        },
+      },
+    },
+  },
+  guides: {
+    orderBy: { position: 'asc' },
+    select: { guide: { select: { id: true, slug: true, title: true } } },
   },
 } as const;
 
@@ -520,29 +564,71 @@ export class FeedService {
       // et « présent à undefined » sont deux types différents, et la query
       // validée par zod porte le second.
       cursor?: string | undefined;
+      sort?: CommentSort | undefined;
     },
   ) {
-    const scope = `feed:comments:${query.subjectType}:${query.subjectId}`;
+    const tri: CommentSort = query.sort ?? 'RELEVANT';
+    /**
+     * LE TRI ENTRE DANS LA PORTÉE DU CURSEUR. `decodeCursor` refuse un curseur dont
+     * la portée ne correspond pas : sans cela, basculer d'onglet en gardant le
+     * curseur de l'autre rendrait une page cohérente EN APPARENCE et fausse en
+     * fait. C'est exactement ce que la portée existe pour empêcher.
+     */
+    const scope = `feed:comments:${query.subjectType}:${query.subjectId}:${tri}`;
     const visible = await this.commentVisibilityWhere(actor.userId);
 
+    const filtres = [
+      ...visible,
+      { subjectType: query.subjectType, subjectId: query.subjectId },
+      { parentCommentId: null },
+    ];
+
+    /**
+     * ╔═════════════════════════════════════════════════════════════════════╗
+     * ║ DEUX ORDRES, DEUX PAGINATIONS — ET CE N'EST PAS UN CHOIX DE STYLE      ║
+     * ╚═════════════════════════════════════════════════════════════════════╝
+     *
+     * `RECENT` trie sur l'identifiant, qui est un UUID v7 : décroissant sur l'id
+     * EST décroissant sur la date. La pagination reste donc une PAGINATION PAR
+     * CLÉ — « ce qui vient après cet id » — et rien ne peut être sauté ni doublé
+     * si un commentaire paraît pendant la lecture.
+     *
+     * `RELEVANT` trie sur le NOMBRE DE RÉPONSES, qui n'est pas une colonne : c'est
+     * un `_count` de relation. On ne peut pas écrire « ce qui vient après » dans
+     * un `where` sur une valeur que la base calcule à la volée, donc la seule
+     * pagination possible est par DÉCALAGE. Le décalage voyage dans le curseur
+     * signé, comme n'importe quelle autre charge de curseur.
+     *
+     * CE QUE LE DÉCALAGE COÛTE, dit plutôt que tu : si une réponse paraît pendant
+     * qu'on déroule, une racine peut changer de rang et être revue ou manquée à la
+     * page suivante. Sur un fil de commentaires — borné, lu d'une traite — c'est
+     * acceptable ; ça ne le serait pas sur le fil d'actualité, qui garde sa
+     * pagination par clé.
+     */
+    const decalage =
+      tri === 'RELEVANT' && query.cursor !== undefined
+        ? Number(decodeCursor(query.cursor, this.cursorSecret, scope).sort ?? 0)
+        : 0;
+
     const roots = await this.prisma.comment.findMany({
-      where: this.withIdCursor(
-        [
-          ...visible,
-          { subjectType: query.subjectType, subjectId: query.subjectId },
-          { parentCommentId: null },
-        ],
-        query.cursor,
-        scope,
-      ),
-      // §2.5 : le plus ancien d'abord — une discussion se lit dans l'ordre où
-      // elle s'est tenue, contrairement au fil.
-      orderBy: { id: 'asc' },
+      where:
+        tri === 'RELEVANT'
+          ? { AND: filtres }
+          : this.withIdCursor(filtres, query.cursor, scope, 'lt'),
+      orderBy:
+        tri === 'RELEVANT'
+          ? // À égalité de réponses, l'ordre de la discussion (§2.5).
+            [{ replies: { _count: 'desc' } }, { id: 'asc' }]
+          : { id: 'desc' },
+      ...(tri === 'RELEVANT' && decalage > 0 ? { skip: decalage } : {}),
       take: query.limit + 1,
       include: { author: { select: AUTHOR_SELECT } },
     });
 
-    const page = buildPage(roots, query.limit, scope, this.cursorSecret);
+    const page =
+      tri === 'RELEVANT'
+        ? buildPage(roots, query.limit, scope, this.cursorSecret, () => decalage + query.limit)
+        : buildPage(roots, query.limit, scope, this.cursorSecret);
     const rootIds = page.items.map((r) => r.id);
 
     const replies =
@@ -601,6 +687,9 @@ export class FeedService {
         author: { select: AUTHOR_SELECT },
         city: { select: { id: true, name: true } },
         stepDefinition: { select: { id: true, nameFr: true } },
+        // Le fond IMAGE. Sans cette relation, `storyBubble` ne pouvait rendre que
+        // `null` — voir son commentaire.
+        backgroundAsset: { select: { storageKey: true, status: true } },
       },
     });
 
@@ -620,7 +709,7 @@ export class FeedService {
       }
     }
 
-    const bubbles = [...byAuthor.values()]
+    const classees = [...byAuthor.values()]
       .map((entry) => {
         const ordered = [...entry.stories].sort(compareForBand);
         const top = ordered[0];
@@ -634,8 +723,42 @@ export class FeedService {
           sortKey: top === undefined ? Number.MAX_SAFE_INTEGER : bandRank(top),
         };
       })
+      .sort((a, b) => a.sortKey - b.sortKey);
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LIRE UNE STORY NE DOIT PAS LA FAIRE DISPARAÎTRE DU RUBAN                ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Le marquage de lecture a un comportement bizarre. Quand tu
+     * cliques sur plusieurs stories, l'une est lue et l'autre non. Parfois rien
+     * n'est marqué lu. Je ne comprends pas. »
+     *
+     * MESURÉ : après lecture, la story n'était plus dans le ruban DU TOUT — ni
+     * grise, ni verte : ABSENTE. Et donc jamais « marquée lue », puisqu'il n'y
+     * avait plus rien à marquer.
+     *
+     * LA CAUSE ÉTAIT UN SEUL ENCHAÎNEMENT : on triait « non-vu d'abord » PUIS on
+     * coupait aux trente auteurs. Le départage par `hasUnseen` n'était censé jouer
+     * qu'à rang ÉGAL — mais pour un CONSEIL le rang est `-score`, et un score vaut
+     * zéro tant que personne n'a voté : tous les rangs sont donc égaux, le vu/non-vu
+     * devient le tri PRINCIPAL, et la bulle qu'on vient de lire tombe au-delà de la
+     * coupe. Mesuré sur la base de développement : soixante-dix-huit auteurs pour
+     * trente places.
+     *
+     * On sépare donc les deux questions, qui n'ont jamais été la même :
+     *
+     *   · QUI entre dans le ruban — le rang de contenu, et lui seul. Il ne dépend
+     *     pas de ce que le lecteur a vu, donc le ruban ne se dérobe pas sous lui ;
+     *   · DANS QUEL ORDRE on les montre — le non-vu d'abord, à rang égal, ce que
+     *     §2.6 demande. Une bulle lue recule, elle ne sort pas.
+     *
+     * `Array.prototype.sort` est STABLE : le second tri garde l'ordre du premier
+     * entre égaux, donc l'ordre à l'intérieur du ruban reste celui du serveur.
+     */
+    const retenues = classees.slice(0, FEED_LIMITS.storyBandMaxAuthors);
+    const bubbles = [...retenues]
       .sort((a, b) => a.sortKey - b.sortKey || Number(a.hasUnseen ? 0 : 1) - Number(b.hasUnseen ? 0 : 1))
-      .slice(0, FEED_LIMITS.storyBandMaxAuthors)
       .map(({ sortKey: _sortKey, ...bubble }) => bubble);
 
     return {
@@ -666,6 +789,9 @@ export class FeedService {
         author: { select: AUTHOR_SELECT },
         city: { select: { id: true, name: true } },
         stepDefinition: { select: { id: true, nameFr: true } },
+        // Le fond IMAGE. Sans cette relation, `storyBubble` ne pouvait rendre que
+        // `null` — voir son commentaire.
+        backgroundAsset: { select: { storageKey: true, status: true } },
       },
     });
     if (story === null || story.deletedAt !== null) throw ApiError.notFound();
@@ -745,6 +871,9 @@ export class FeedService {
         author: { select: AUTHOR_SELECT },
         city: { select: { id: true, name: true } },
         stepDefinition: { select: { id: true, nameFr: true } },
+        // Le fond IMAGE. Sans cette relation, `storyBubble` ne pouvait rendre que
+        // `null` — voir son commentaire.
+        backgroundAsset: { select: { storageKey: true, status: true } },
       },
     });
 
@@ -843,6 +972,7 @@ export class FeedService {
       input.journeyStepId,
     );
     const mediaIds = await this.resolveMedia(actor.userId, input.mediaIds ?? []);
+    const guideIds = await this.resolveGuides(input.guideIds ?? []);
 
     // §2.2 : la ville de contexte est celle du membre. `posts.city_id` reste
     // nullable — un pré-départ sans ville publie quand même, et la remontée
@@ -880,6 +1010,63 @@ export class FeedService {
         });
       }
 
+      /**
+       * ╔══════════════════════════════════════════════════════════════════════╗
+       * ║ LE SONDAGE NAÎT AVEC LA PUBLICATION, OU AUCUN DES DEUX               ║
+       * ╚══════════════════════════════════════════════════════════════════════╝
+       *
+       * Le porteur : « la création de sondage […] ne marche pas ».
+       *
+       * DANS LA MÊME TRANSACTION, et ce n'est pas du confort : une publication
+       * créée puis un sondage qui échoue laisserait une carte dont la maquette
+       * promet un sondage et qui n'en a pas — un état que rien ne rattraperait,
+       * puisque `PATCH /posts/:id` ne porte que le corps.
+       *
+       * LE MODÈLE EST CELUI DU MODULE 07, repris tel quel : `polls` et
+       * `poll_options`, avec `post_id` au lieu de `community_id`. La contrainte
+       * `polls_rattachement` de la base refuse les deux à la fois et aucun des
+       * deux. Le vote, les résultats masqués et la clôture sont ceux qui
+       * existaient déjà — on n'en écrit pas un second.
+       */
+      if (input.poll !== undefined) {
+        const pollId = newId();
+        await tx.poll.create({
+          data: {
+            id: pollId,
+            postId: id,
+            authorUserId: actor.userId,
+            question: input.poll.question,
+            isMultiple: input.poll.isMultiple,
+            resultsAfterVote: input.poll.resultsAfterVote,
+            isAnonymous: input.poll.isAnonymous,
+            ...(input.poll.closesAt === undefined ? {} : { closesAt: input.poll.closesAt }),
+          },
+        });
+        await tx.pollOption.createMany({
+          data: input.poll.options.map((label, position) => ({
+            id: newId(),
+            pollId,
+            label,
+            position,
+          })),
+        });
+      }
+
+      /**
+       * ── LES GUIDES LIÉS — « Jusqu'à 3 » ────────────────────────────────────
+       *
+       * `resolveGuides` a déjà écarté les identifiants qui ne désignent aucun
+       * guide PUBLIÉ : lier un brouillon ou un guide supprimé poserait une
+       * étiquette qui mène à une page introuvable. La borne, elle, est tenue
+       * DEUX FOIS — par `createPostSchema` à la frontière, et par le service —
+       * parce qu'un schéma refuse une requête quand un service refuse un état.
+       */
+      if (guideIds.length > 0) {
+        await tx.postGuide.createMany({
+          data: guideIds.map((guideId, position) => ({ postId: id, guideId, position })),
+        });
+      }
+
       await this.outbox.emit(tx, {
         type: 'post.published',
         aggregateId: id,
@@ -900,6 +1087,30 @@ export class FeedService {
   }
 
   /**
+   * LES GUIDES QU'ON PEUT VRAIMENT LIER.
+   *
+   * Un identifiant qui ne désigne aucun guide PUBLIÉ est ÉCARTÉ, et non refusé :
+   * la différence compte. Refuser ferait échouer toute la publication parce qu'un
+   * guide a été dépublié entre le moment où le membre l'a choisi et celui où il
+   * appuie sur « Publier » — un délai qui se compte en minutes dans un composeur.
+   * L'écarter publie ce qui est publiable, et l'étiquette absente se voit.
+   *
+   * L'ORDRE DU MEMBRE EST GARDÉ : `findMany` rend l'ordre de l'index, pas celui
+   * de la liste. On réordonne donc sur l'entrée, sinon les trois étiquettes
+   * s'afficheraient dans un ordre que personne n'a choisi.
+   */
+  private async resolveGuides(ids: readonly string[]): Promise<string[]> {
+    if (ids.length === 0) return [];
+    const uniques = [...new Set(ids)].slice(0, FEED_LIMITS.postGuidesMax);
+    const rows = await this.prisma.guide.findMany({
+      where: { id: { in: uniques }, deletedAt: null, status: 'PUBLISHED' },
+      select: { id: true },
+    });
+    const connus = new Set(rows.map((r) => r.id));
+    return uniques.filter((id) => connus.has(id));
+  }
+
+  /**
    * `PATCH /posts/:id` (§2.4) : « Modification : 15 minutes après publication,
    * puis figée (mention "modifié"). »
    *
@@ -907,23 +1118,160 @@ export class FeedService {
    * pas après. » Le schéma de mise à jour ne le porte donc pas du tout, plutôt
    * que de l'accepter pour le refuser ensuite.
    */
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ PLUS DE DÉLAI DE QUINZE MINUTES SUR UNE PUBLICATION                     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « C'est quoi cette affaire de délai de modification de 15 min
+   * pour les publications dans le fil d'actualité ? Corrige ça. On peut modifier
+   * quand on veut. »
+   *
+   * §2.4 l'écrivait, et le refus était donc fidèle à la spec. C'est un ARBITRAGE
+   * DU PORTEUR qui la remplace, et il est consigné ici parce que rien d'autre ne
+   * dirait pourquoi le code s'écarte de `docs/specs/04-fil.md`.
+   *
+   * CE QUI NE CHANGE PAS, et qui est la raison d'être de cette route :
+   *
+   *   · `ownedPost` — seul l'auteur modifie la sienne ;
+   *   · `assertPostPublishable` — le texte modifié REPASSE par le filtre local,
+   *     sinon publier un texte acceptable puis le remplacer le contournerait ;
+   *   · `moderationStatus: 'PENDING'` — une publication modifiée repasse en
+   *     modération, quel que soit son âge. C'est ce qui rend l'ouverture tenable :
+   *     sans délai, un contenu ancien et déjà validé peut être réécrit, et il doit
+   *     donc être revu comme s'il était neuf.
+   *
+   * LE DÉLAI RESTE SUR LES COMMENTAIRES (§2.5). Le porteur a nommé les
+   * publications, et un commentaire est une réponse à quelqu'un : le réécrire des
+   * jours plus tard change le sens de ce à quoi d'autres ont déjà répondu. Si cela
+   * doit tomber aussi, c'est une seconde décision, pas une conséquence de
+   * celle-ci.
+   */
   async updatePost(actor: FeedActor, id: string, patch: UpdatePost) {
     const post = await this.ownedPost(actor.userId, id);
-
-    const deadline = post.createdAt.getTime() + FEED_LIMITS.editWindowMinutes * 60_000;
-    if (Date.now() > deadline) {
-      this.fail('EDIT_WINDOW_CLOSED', { publishedAt: post.createdAt.toISOString() });
-    }
 
     // Le texte modifié repasse par les règles locales : sans cela, publier un
     // texte acceptable puis le remplacer contournerait entièrement le filtre.
     this.assertPostPublishable(patch.body);
+
+    /**
+     * ╔═════════════════════════════════════════════════════════════════════╗
+     * ║ LES PIÈCES JOINTES SE VÉRIFIENT AVANT LA TRANSACTION                    ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * `resolveMedia` refuse un média qui n'est pas à soi ou pas prêt ;
+     * `resolveGuides` écarte ce qui n'est pas publié. Les appeler DEDANS tiendrait
+     * la transaction ouverte pendant des lectures qui peuvent échouer, et le
+     * message d'erreur arriverait après un rollback — plus lisible avant.
+     */
+    const mediaIds =
+      patch.mediaIds === undefined
+        ? undefined
+        : await this.resolveMedia(actor.userId, patch.mediaIds);
+    const guideIds =
+      patch.guideIds === undefined ? undefined : await this.resolveGuides(patch.guideIds);
+
+    /**
+     * ╔═════════════════════════════════════════════════════════════════════╗
+     * ║ UN SONDAGE DÉJÀ VOTÉ NE SE MODIFIE PAS, ET NE SE RETIRE PAS            ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Changer le libellé d'une option après coup RÉÉCRIRAIT ce que des membres ont
+     * choisi ; le retirer effacerait leur voix. Un sondage voté est un engagement
+     * pris envers ses votants, et c'est la SEULE règle de ce lot qui refuse un
+     * geste à l'auteur de sa propre publication.
+     *
+     * La fenêtre de quinze minutes ne suffit pas à l'empêcher : un sondage peut
+     * recevoir un vote dans la minute qui suit sa publication.
+     */
+    if (patch.poll !== undefined) {
+      /**
+       * LE COMPTE PASSE PAR LES OPTIONS : `poll_votes` porte `poll_option_id`, pas
+       * `poll_id` — un vote appartient à une OPTION. `Poll` n'a donc aucune
+       * relation `votes` à compter directement, et c'est la table des votes qu'on
+       * interroge, par les options du sondage.
+       */
+      const existant = await this.prisma.poll.findUnique({
+        where: { postId: id },
+        select: { id: true },
+      });
+      if (existant !== null) {
+        const votes = await this.prisma.pollVote.count({
+          where: { pollOption: { pollId: existant.id } },
+        });
+        if (votes > 0) this.fail('POLL_HAS_VOTES');
+      }
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.post.update({
         where: { id },
         data: { body: patch.body, moderationStatus: 'PENDING' },
       });
+
+      /**
+       * ON REMPLACE, ON NE FUSIONNE PAS. `mediaIds` décrit l'ÉTAT VOULU, pas un
+       * ajout : la fenêtre de modification montre les images restantes, et ce
+       * qu'elle rend est ce que la publication doit porter. Fusionner rendrait le
+       * retrait d'une image impossible.
+       *
+       * LA POSITION EST CELLE DU TABLEAU REÇU : l'ordre que l'auteur voit dans la
+       * fenêtre est celui que le carrousel rendra.
+       */
+      if (mediaIds !== undefined) {
+        await tx.postMedia.deleteMany({ where: { postId: id } });
+        if (mediaIds.length > 0) {
+          await tx.postMedia.createMany({
+            data: mediaIds.map((mediaAssetId, position) => ({
+              id: newId(),
+              postId: id,
+              mediaAssetId,
+              position,
+            })),
+          });
+        }
+      }
+
+      if (guideIds !== undefined) {
+        await tx.postGuide.deleteMany({ where: { postId: id } });
+        if (guideIds.length > 0) {
+          await tx.postGuide.createMany({
+            data: guideIds.map((guideId, position) => ({ postId: id, guideId, position })),
+          });
+        }
+      }
+
+      /**
+       * LE SONDAGE EST REMPLACÉ EN ENTIER, options comprises. `onDelete: Cascade`
+       * sur `poll_options` emporte les anciennes ; les votes, eux, ne peuvent pas
+       * exister — le refus ci-dessus l'a déjà garanti.
+       */
+      if (patch.poll !== undefined) {
+        await tx.poll.deleteMany({ where: { postId: id } });
+        if (patch.poll !== null) {
+          const pollId = newId();
+          await tx.poll.create({
+            data: {
+              id: pollId,
+              postId: id,
+              authorUserId: actor.userId,
+              question: patch.poll.question,
+              isMultiple: patch.poll.isMultiple,
+              resultsAfterVote: patch.poll.resultsAfterVote,
+              isAnonymous: patch.poll.isAnonymous,
+              ...(patch.poll.closesAt === undefined ? {} : { closesAt: patch.poll.closesAt }),
+            },
+          });
+          await tx.pollOption.createMany({
+            data: patch.poll.options.map((label, position) => ({
+              id: newId(),
+              pollId,
+              label,
+              position,
+            })),
+          });
+        }
+      }
       await this.outbox.emit(tx, {
         type: 'post.published',
         aggregateId: id,
@@ -1338,6 +1686,9 @@ export class FeedService {
             ? {}
             : { stepDefinitionId: attachment.stepDefinitionId }),
           ...(attachment.category === null ? {} : { category: attachment.category }),
+          ...(attachment.categoryOther === null
+            ? {}
+            : { categoryOther: attachment.categoryOther }),
           ...(attachment.placeLabel === null ? {} : { placeLabel: attachment.placeLabel }),
           ...(attachment.validUntil === null ? {} : { validUntil: attachment.validUntil }),
         },
@@ -2413,6 +2764,7 @@ export class FeedService {
     cityId: string;
     stepDefinitionId: string | null;
     category: string | null;
+    categoryOther: string | null;
     placeLabel: string | null;
     validUntil: Date | null;
   }> {
@@ -2495,6 +2847,12 @@ export class FeedService {
       cityId: city.mergedIntoCityId ?? city.id,
       stepDefinitionId: input.stepDefinitionId ?? null,
       category,
+      /**
+       * Le sujet écrit à la main. `createStorySchema` a déjà refusé de l'accepter
+       * sans « Autre » ; il n'y a donc rien à revérifier, et le relire ici serait
+       * une seconde vérité qui finirait par diverger de la première.
+       */
+      categoryOther: input.categoryOther ?? null,
       placeLabel: input.placeLabel ?? null,
       validUntil,
     };
@@ -2707,6 +3065,60 @@ export class FeedService {
     });
     const mine = new Map(myReactions.map((r) => [r.postId, r.kind]));
 
+    /**
+     * ── MES VOTES, EN UNE REQUÊTE POUR TOUTE LA PAGE ────────────────────────
+     *
+     * Ils décident de DEUX choses, et la seconde est une règle : quelles options
+     * sont cochées, et si les résultats sont visibles. §2.3 du module 07 : les
+     * comptes restent cachés tant qu'on n'a pas voté et que le sondage n'est pas
+     * clos. Les laisser dans la réponse HTTP en demandant au front de ne pas les
+     * afficher reviendrait à les publier — c'est écrit dans `pollOptionSchema`,
+     * et c'est pourquoi `voteCount` est NULLABLE.
+     */
+    /**
+     * LA SÉPARATION, UNE FOIS POUR TOUTE LA PAGE. Elle ne sert qu'aux votants
+     * nommés d'un sondage non anonyme — mais un membre qui m'a bloqué, ou que j'ai
+     * bloqué, ne doit apparaître nulle part, et une liste de votants est un
+     * endroit comme un autre.
+     */
+    const separes = new Set(await this.visibility.separatedFrom(viewerId));
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════╗
+     * ║ LES SIGNETS DE LA PAGE, EN UNE REQUÊTE                                 ║
+     * ╚════════════════════════════════════════════════════════════════════╝
+     *
+     * Une requête PAR PAGE, et non une par carte : vingt cartes feraient vingt
+     * allers-retours pour un booléen. C'est la même forme que `mesVotes` juste
+     * au-dessus, et pour la même raison.
+     */
+    const signets = new Set(
+      (
+        await this.prisma.bookmark.findMany({
+          where: {
+            userId: viewerId,
+            subjectType: 'POST',
+            subjectId: { in: rows.map((r) => r.id) },
+          },
+          select: { subjectId: true },
+        })
+      ).map((b) => b.subjectId),
+    );
+
+    const pollIds = rows.flatMap((r) => (r.poll === null ? [] : [r.poll.id]));
+    const mesVotes =
+      pollIds.length === 0
+        ? []
+        : await this.prisma.pollVote.findMany({
+            where: { userId: viewerId, pollOption: { pollId: { in: pollIds } } },
+            select: { pollOptionId: true, pollOption: { select: { pollId: true } } },
+          });
+    const votesParSondage = new Map<string, string[]>();
+    for (const v of mesVotes) {
+      const cle = v.pollOption.pollId;
+      votesParSondage.set(cle, [...(votesParSondage.get(cle) ?? []), v.pollOptionId]);
+    }
+
     return rows.map((row) => {
       const vocabulary = POST_TYPE_VOCABULARY[row.type];
       return {
@@ -2720,6 +3132,15 @@ export class FeedService {
         city: row.city,
         community: row.community,
         media: row.media.map((m) => ({
+          /**
+           * L'IDENTIFIANT DU MÉDIA, et pas seulement son adresse.
+           *
+           * `PATCH /posts/:id` attend des IDENTIFIANTS, et la fenêtre de
+           * modification doit pouvoir renvoyer la liste amputée de celui qu'on
+           * retire. Sans ce champ, elle n'avait aucun moyen de nommer une image :
+           * l'adresse porte une clé de stockage, pas la clé de la ligne.
+           */
+          id: m.mediaAsset.id,
           position: m.position,
           url: `/media/${m.mediaAsset.storageKey}`,
         })),
@@ -2743,9 +3164,78 @@ export class FeedService {
         },
         commentCount: row.commentCount,
         commentLabel: vocabulary.commentLabel,
+        /** « Enregistrer » : le bouton était dessiné, et rien ne disait son état. */
+        bookmarked: signets.has(row.id),
+        /**
+         * LE SONDAGE DE LA PUBLICATION (§2.4), avec la règle de visibilité du
+         * module 07 appliquée telle quelle : tant qu'on n'a pas voté et que le
+         * sondage n'est pas clos, les comptes sont `null` — pas zéro, pas cachés
+         * côté écran. Un `0` dirait « personne n'a voté », ce qui est faux.
+         */
+        poll: row.poll === null ? null : this.carteDeSondage(row.poll, votesParSondage, separes),
+        /** Les guides liés, dans l'ordre choisi par l'auteur. */
+        guides: row.guides.map((g) => g.guide),
         linkRel: POST_LINK_REL,
       };
     });
+  }
+
+  /**
+   * UN SONDAGE DE PUBLICATION, MIS EN FORME.
+   *
+   * La règle de visibilité des résultats est celle du module 07, et elle est
+   * reprise plutôt que réécrite : on voit les comptes si l'on a voté OU si le
+   * sondage est clos. Sinon `voteCount` et `totalVotes` valent `null`, et
+   * `pollOptionSchema` est `.strict()` avec un `nullable()` explicite — un `0`
+   * glissé là dirait « personne n'a voté » à qui n'a pas le droit de savoir.
+   */
+  private carteDeSondage(
+    poll: PostRow['poll'] & object,
+    votesParSondage: ReadonlyMap<string, string[]>,
+    separes: ReadonlySet<string>,
+  ) {
+    const miens = votesParSondage.get(poll.id) ?? [];
+    const closed = poll.closesAt !== null && poll.closesAt.getTime() <= Date.now();
+    /**
+     * `resultsAfterVote` EST UN RÉGLAGE DEPUIS CE LOT, et son défaut est l'ancienne
+     * règle : masqué avant le vote. Posé à faux, les comptes sortent tout de suite.
+     */
+    const resultsVisible = !poll.resultsAfterVote || miens.length > 0 || closed;
+    /**
+     * LES NOMS SUIVENT LES RÉSULTATS, pas l'anonymat seul : les deux conditions,
+     * sinon on saurait QUI a voté QUOI avant d'avoir le droit de savoir COMBIEN.
+     */
+    const nomme = resultsVisible && !poll.isAnonymous;
+    return {
+      id: poll.id,
+      question: poll.question,
+      isMultiple: poll.isMultiple,
+      resultsAfterVote: poll.resultsAfterVote,
+      isAnonymous: poll.isAnonymous,
+      closesAt: poll.closesAt,
+      closed,
+      createdAt: poll.createdAt,
+      /**
+       * `communityAuthorSchema` — trois champs, et non `memberSummarySchema`.
+       *
+       * C'est le schéma que le module 07 emploie pour l'auteur d'un sondage, et
+       * `postPollSchema` le reprend : le réutiliser ici évite qu'un sondage de
+       * publication rende un auteur d'une autre forme que le même sondage dans un
+       * réseau. `this.summary` en rend neuf, et `.strict()` les refuserait.
+       */
+      author: { id: poll.author.id, handle: poll.author.handle, displayName: poll.author.displayName },
+      myOptionIds: miens,
+      resultsVisible,
+      totalVotes: resultsVisible ? poll.options.reduce((n, o) => n + o.voteCount, 0) : null,
+      options: poll.options.map((o) => ({
+        id: o.id,
+        label: o.label,
+        position: o.position,
+        voteCount: resultsVisible ? o.voteCount : null,
+        /** Un membre séparé n'est nommé nulle part, y compris sous une option. */
+        voters: nomme ? o.votes.map((v) => v.user).filter((u) => !separes.has(u.id)) : [],
+      })),
+    };
   }
 
   /**
@@ -2829,11 +3319,37 @@ export class FeedService {
       typeLabel: vocabulary.label,
       body: story.body,
       backgroundColor: story.backgroundColor,
-      backgroundUrl: null as string | null,
+      /**
+       * ── LE FOND IMAGE ÉTAIT CODÉ À `null`, DONC INVISIBLE ────────────────
+       *
+       * Cette ligne valait `null as string | null` sur les TROIS lectures de
+       * story — bandeau, détail, historique. La colonne `background_asset_id`
+       * était écrite, et personne ne la lisait : un membre composait sa photo,
+       * elle était publiée, et `apps/web/src/screens/story/from-api.ts` posait
+       * `photo: false` faute d'URL. L'écran retombait sur une couleur, et la
+       * photo n'était JAMAIS vue — ni par l'auteur, ni par personne.
+       *
+       * L'écart était consigné des deux côtés (« LE MUR : UNE STORY À FOND IMAGE
+       * EST INDESSINABLE ») mais restait théorique tant qu'aucun écran n'envoyait
+       * de fond image. Le composeur de A14 le rend réel.
+       *
+       * `READY` et rien d'autre : la même barre que `resolveMedia` à l'écriture.
+       * Un fichier encore en analyse antivirus ne doit pas sortir parce qu'une
+       * story le désigne — et rendre `null` fait retomber l'écran sur la couleur,
+       * ce qu'il sait déjà faire, plutôt que d'afficher une image cassée.
+       *
+       * La forme de l'adresse est celle de tout le dépôt, `/media/<clé>`, servie
+       * par `GET /media/*key` (`media.service.ts`, `bytes`).
+       */
+      backgroundUrl:
+        story.backgroundAsset !== null && story.backgroundAsset.status === 'READY'
+          ? `/media/${story.backgroundAsset.storageKey}`
+          : null,
       textStyle: story.textStyle,
       city: story.city,
       category: story.category,
       categoryLabel: subjectLabel(story.category),
+      categoryOther: story.categoryOther,
       placeLabel: story.placeLabel,
       stepDefinition: story.stepDefinition,
       audience: story.audience,
@@ -3023,6 +3539,116 @@ export class FeedService {
     return new Set(views.map((v) => v.storyId));
   }
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ ENREGISTRER UNE STORY — LE SIGNET AVAIT UNE TABLE, PAS DE ROUTE          ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le bouton de bookmark permet d'enregistrer la stories. Tu peux
+   * l'implémenter ? »
+   *
+   * TOUT EXISTAIT SAUF L'ÉCRITURE. La table `bookmarks` est là, son enum porte
+   * `STORY`, `bookmarks.service.ts` rafraîchit l'état des signets toutes les
+   * heures, et `GET /stories/:id` rend DÉJÀ `bookmarked`. Il manquait les deux
+   * routes qui posent et retirent — vérifié : le mot n'apparaissait dans aucun
+   * `*.controller.ts` du dépôt.
+   *
+   * ── CE QUE LE SIGNET CHANGE, ET QUI N'EST PAS DÉCORATIF ───────────────────
+   *
+   * Une story EXPIRE en vingt-quatre heures, et `storyDetail` le dit en toutes
+   * lettres : une story expirée est introuvable SAUF pour son auteur et pour qui
+   * l'a enregistrée (`if (expired && !isAuthor && !bookmarked) throw notFound`).
+   * Enregistrer, c'est donc garder un accès que le temps retire — exactement ce
+   * que la planche promet sous « VISIBLE · 24 heures · puis gardé par ceux qui
+   * l'enregistrent ».
+   *
+   * ── IDEMPOTENT DES DEUX CÔTÉS ────────────────────────────────────────────
+   *
+   * Poser deux fois ne crée pas deux signets, retirer deux fois ne lève pas : le
+   * membre appuie sur un bouton, il ne gère pas un état de base. `upsert` et
+   * `deleteMany` disent la même chose au serveur.
+   */
+  /**
+   * ╔═══════════════════════════════════════════════════════════════════════╗
+   * ║ ENREGISTRER UNE PUBLICATION                                              ║
+   * ╚═══════════════════════════════════════════════════════════════════════╝
+   *
+   * `visiblePost` ET NON UNE VÉRIFICATION ÉCRITE ICI, pour la raison exacte que
+   * `bookmarkStory` donne juste en dessous : un signet sur une publication qu'on
+   * ne peut pas lire serait une FUITE — il suffirait d'en poser un pour apprendre
+   * qu'elle existe. La fonction porte déjà le masquage par modération, le blocage
+   * et la cloison des réseaux.
+   *
+   * `upsert` ET NON `create` : poser deux fois le même signet doit être sans effet,
+   * pas une erreur. L'écran peut répéter l'appel — double clic, réseau lent — et
+   * la réponse doit rester la même.
+   */
+  async bookmarkPost(actor: FeedActor, postId: string): Promise<{ bookmarked: boolean }> {
+    await this.visiblePost(actor, postId);
+    await this.prisma.bookmark.upsert({
+      where: {
+        userId_subjectType_subjectId: {
+          userId: actor.userId,
+          subjectType: 'POST',
+          subjectId: postId,
+        },
+      },
+      create: { id: newId(), userId: actor.userId, subjectType: 'POST', subjectId: postId },
+      update: {},
+    });
+    return { bookmarked: true };
+  }
+
+  /**
+   * `deleteMany` ET NON `delete` : retirer un signet qu'on n'a pas est un geste
+   * sans effet, pas une erreur — et c'est ce que l'écran fait quand il rejoue.
+   * Aucune vérification de visibilité : on retire CE QUI EST À SOI, et une
+   * publication devenue invisible doit justement pouvoir être désenregistrée.
+   */
+  async unbookmarkPost(actor: FeedActor, postId: string): Promise<{ bookmarked: boolean }> {
+    await this.prisma.bookmark.deleteMany({
+      where: { userId: actor.userId, subjectType: 'POST', subjectId: postId },
+    });
+    return { bookmarked: false };
+  }
+
+  async bookmarkStory(actor: FeedActor, storyId: string): Promise<{ bookmarked: boolean }> {
+    /**
+     * `visibleStory` ET NON UNE VÉRIFICATION ÉCRITE ICI : elle existe déjà,
+     * `reactToStory` s'en sert, et elle porte les règles de §2.6 — supprimée,
+     * audience `CITY` hors de sa ville, etc. En réécrire une seconde aurait
+     * créé deux vérités sur ce qu'un membre a le droit de voir.
+     *
+     * Un signet sur une story qu'on ne peut pas lire serait une fuite : il
+     * suffirait d'en poser un pour apprendre qu'elle existe.
+     */
+    await this.visibleStory(actor, storyId);
+    await this.prisma.bookmark.upsert({
+      where: {
+        userId_subjectType_subjectId: {
+          userId: actor.userId,
+          subjectType: 'STORY',
+          subjectId: storyId,
+        },
+      },
+      create: {
+        id: newId(),
+        userId: actor.userId,
+        subjectType: 'STORY',
+        subjectId: storyId,
+      },
+      update: {},
+    });
+    return { bookmarked: true };
+  }
+
+  async unbookmarkStory(actor: FeedActor, storyId: string): Promise<{ bookmarked: boolean }> {
+    await this.prisma.bookmark.deleteMany({
+      where: { userId: actor.userId, subjectType: 'STORY', subjectId: storyId },
+    });
+    return { bookmarked: false };
+  }
+
   private async hasStoryBookmark(userId: string, storyId: string): Promise<boolean> {
     const found = await this.prisma.bookmark.findUnique({
       where: {
@@ -3083,6 +3709,24 @@ type PostRow = {
     stepDefinition: { nameFr: string } | null;
   } | null;
   media: { position: number; mediaAsset: { id: string; storageKey: string } }[];
+  poll: {
+    id: string;
+    question: string;
+    isMultiple: boolean;
+    resultsAfterVote: boolean;
+    isAnonymous: boolean;
+    closesAt: Date | null;
+    createdAt: Date;
+    author: { id: string; handle: string; displayName: string };
+    options: {
+      id: string;
+      label: string;
+      position: number;
+      voteCount: number;
+      votes: { user: { id: string; handle: string; displayName: string } }[];
+    }[];
+  } | null;
+  guides: { guide: { id: string; slug: string; title: string } }[];
 };
 
 type StoryRow = {
@@ -3090,8 +3734,10 @@ type StoryRow = {
   type: StoryType;
   body: string;
   backgroundColor: string | null;
+  backgroundAsset: { storageKey: string; status: string } | null;
   textStyle: string;
   category: string | null;
+  categoryOther: string | null;
   placeLabel: string | null;
   audience: string;
   allowMessages: boolean;

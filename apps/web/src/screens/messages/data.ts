@@ -47,6 +47,15 @@
  * l'action, et c'est `403 LEVEL_REQUIRED` qui fait afficher l'invitation du §7.3.
  */
 export interface BarreHaute {
+  /**
+   * LE FOND DU ROND D'AVATAR : la photo du membre, ou rien.
+   *
+   * FACULTATIVE : seul le module Compte la remplit aujourd'hui, parce que lui seul
+   * lit `GET /me`. Absente, le cadre reprend l'aplat de la maquette et écrit les
+   * initiales — exactement ce qu'il faisait avant. Le jour où ce module lira
+   * `avatarUrl`, il suffira de la poser.
+   */
+  readonly photo?: string | null;
   readonly initiales: string;
   readonly prenom: string;
 }
@@ -80,4 +89,60 @@ export interface BarreHaute {
  * quelle valeur non nulle en TypeScript, y compris un nombre ou une chaîne. Un
  * type qui n'interdit rien ne dirait pas que le cadre ne consomme rien.
  */
-export type MessagesData = Record<string, never>;
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE MENU DE LA CONVERSATION — QUATRE ENTRÉES, QUATRE `<span>` INERTES      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Les options voir le profil, mettre en sourdine, bloquer et
+ * signaler ne marchent pas. Intègre tout ça. »
+ *
+ * MESURÉ dans le cadre produit : les quatre entrées étaient des `<span>`. La
+ * maquette les dessine ainsi, et le transcodage les avait laissées telles quelles.
+ *
+ * TOUTES FACULTATIVES, parce que ce type sert aussi aux deux feuilles X03 et à la
+ * confirmation, qui n'ont pas de conversation ouverte. Sans geste, l'entrée reste
+ * ce qu'elle était — un libellé — plutôt que de promettre une action morte.
+ */
+export interface MenuConversation {
+  /** `/<handle>` du profil public, ou `null` sur une conversation de parcours. */
+  readonly profil?: string | null;
+  /** L'état courant : le libellé de l'entrée en dépend. */
+  readonly sourdine?: boolean;
+  readonly onSourdine?: () => void;
+  readonly onBloquer?: () => void;
+  /** Vrai pendant l'appel : l'entrée se désactive plutôt que de partir deux fois. */
+  readonly menuOccupe?: boolean;
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA FEUILLE « SIGNALER » — SIX `<div>`, UN TEXTE D'EXEMPLE, UN BOUTON MORT ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « le modal n'est pas du tout dynamique (pas d'input, les choix ne
+ * marchent pas ainsi que la soumission) ».
+ *
+ * `motif` porte un `ReportReason` — `SCAM`, `MONEY_REQUEST`, `HARASSMENT`,
+ * `SPAM`, `INAPPROPRIATE`, `OTHER` — et `null` tant que rien n'est choisi, ce qui
+ * désactive l'envoi : `createReportSchema.reason` est obligatoire.
+ */
+export interface SignalementVue {
+  readonly motif?: string | null;
+  readonly onMotif?: (motif: string) => void;
+  readonly details?: string;
+  readonly onDetails?: (e: { readonly target: { readonly value: string } }) => void;
+  readonly onEnvoyer?: () => void;
+  readonly envoiBloque?: boolean;
+}
+
+export interface MessagesData {
+  /**
+   * `| undefined` EXPLICITE : `exactOptionalPropertyTypes` est actif dans ce
+   * dépôt, et `menu?: MenuConversation` interdit alors de PASSER `undefined` —
+   * seulement de l'omettre. Or `EcranMessages` transmet sa propre prise
+   * facultative telle quelle.
+   */
+  readonly menu?: MenuConversation | undefined;
+  readonly signalement?: SignalementVue | undefined;
+}

@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS09 } from '@/screens/services/appels';
+import { SQUELETTE_S09, chargerS09 } from '@/screens/services/appels';
 import { S09Desktop } from '@/screens/s09/desktop.generated';
 import { S09Mobile } from '@/screens/s09/mobile.generated';
 
@@ -42,7 +42,19 @@ import { S09Mobile } from '@/screens/s09/mobile.generated';
  */
 export default function MesAnnoncesPage() {
   return (
-    <EcranDonnees charger={chargerS09} attente="Chargement de vos annonces…">
+    <EcranDonnees
+      charger={chargerS09}
+      attente="Chargement
+      de
+      vos
+      annonces…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots et aucune entrée de rail dans le HTML
+       * servi. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S09}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="S09"

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Patch, Delete, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   conversationsQuerySchema,
@@ -7,7 +7,7 @@ import {
   sendMessageSchema,
   uuidSchema,
 } from '@app/shared';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
 import { RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { zodPipe } from '../../common/zod.pipe';
@@ -94,6 +94,23 @@ export class MessagingController {
    * MENTORSHIP et JOURNEY dont il fait partie (§5.2). Le refus pour une DIRECT est
    * pris par le service, qui seul connaît le kind de la conversation.
    */
+  /**
+   * `PATCH` et non deux routes `POST`/`DELETE` : la sourdine est un INTERRUPTEUR
+   * sur ma ligne de membre, pas une ressource qu'on crée et qu'on supprime. Le
+   * corps porte l'état voulu, donc rejouer la même requête ne change rien — ce
+   * qu'un bouton à bascule cliqué deux fois produit naturellement.
+   */
+  @Patch('conversations/:id/mute')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Mettre une conversation en sourdine, ou l’en sortir (§7.3)' })
+  async mute(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(z.object({ muted: z.boolean() }).strict())) body: { muted: boolean },
+  ) {
+    return this.messaging.setMuted(auth.userId, id, body.muted);
+  }
+
   @Post('conversations/:id/messages')
   @HttpCode(201)
   @RequiresCapability('content.read')

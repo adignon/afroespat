@@ -52,6 +52,14 @@ import type { GuideLiableView } from '../a01g/data';
 export interface GuideCarte extends GuideCardView {
   readonly guideId: string;
   readonly slug: string;
+  /**
+   * L'adresse de la carte — `/guides/:slug` — OBLIGATOIRE ici alors qu'elle est
+   * facultative sur `GuideCardView`. C'est voulu : les trois cartes de la maquette
+   * n'ont pas de slug et n'en auront pas (voir la note de `GuideCardView.href`),
+   * mais un guide venu de l'API en a toujours un, donc `tsc` doit refuser un
+   * convertisseur qui cesserait de poser l'adresse.
+   */
+  readonly href: string;
 }
 
 export interface ContributeurPastille extends ContributorView {
@@ -199,6 +207,21 @@ export function guideCardFrom(g: GuideListItemView, now: Date = new Date()): Gui
     scope: scopeLabel(g),
     /** §8 — un guide anonymisé garde son contenu et perd son auteur. */
     author: auteur === null ? 'Auteur anonymisé' : auteur.displayName,
+    /**
+     * ⚠ PAS DE PHOTO ICI, ET CE N'EST PAS UN OUBLI : L'API NE LA SERT PAS.
+     *
+     * Le porteur a demandé que la photo du membre s'applique partout, et elle le
+     * fait maintenant sur le fil, les stories, les commentaires d'une
+     * publication, la messagerie, l'entraide, les services, l'agenda et le
+     * compte. Le module Guides est le dernier, et il est bloqué EN AMONT : son
+     * auteur arrive en `{ handle, displayName, verificationLevel }`, sans
+     * `avatarUrl`. Même chose pour ses contributeurs et ses proposants.
+     *
+     * Le réparer demande d'élargir les schémas de `guides` côté serveur, ce qui
+     * dépasse ce lot. REMONTÉ au porteur.
+     *
+     * §8 : un guide anonymisé n'a PAS d'auteur — ni photo, ni initiales.
+     */
     i: auteur === null ? '·' : initials(auteur.displayName),
     bg: auteur === null ? '#8A958F' : avatarColor(auteur.handle),
     useful: g.helpfulCount,
@@ -214,6 +237,12 @@ export function guideCardFrom(g: GuideListItemView, now: Date = new Date()): Gui
     excerpt: `${CATEGORY_LABEL[g.category] ?? g.category} · ${scopeLabel(g)}`,
     guideId: g.id,
     slug: g.slug,
+    /**
+     * L'adresse du guide, composée du SLUG QUE LE SERVEUR REND et de la route que
+     * `app/(app)/guides/[slug]/` sert. Rien n'est déduit du titre : deux guides
+     * peuvent porter le même titre, et c'est le slug qui les distingue.
+     */
+    href: `/guides/${g.slug}`,
   };
 }
 
@@ -263,6 +292,7 @@ export function guideHeadFrom(
 
 export function contributorsFrom(detail: GuideDetailResponse): readonly ContributeurPastille[] {
   return detail.contributors.map((c) => ({
+    /** Voir plus haut : l'API des guides ne sert pas `avatarUrl`. */
     i: initials(c.user.displayName),
     bg: avatarColor(c.user.handle),
     handle: c.user.handle,
@@ -368,6 +398,7 @@ export function propositionFrom(
     motif: p.reason,
     source: p.sourceUrl,
     proposant: p.proposer.displayName,
+    /** Voir plus haut : l'API des guides ne sert pas `avatarUrl`. */
     i: initials(p.proposer.displayName),
     bg: avatarColor(p.proposer.handle),
     delai: delaiAvantEscalade(p.escalateAt, now),
@@ -500,6 +531,22 @@ export function guideLiableDe(g: GuideListItemView): GuideLiableView {
   };
 }
 
-export function guidesLiablesDe(page: GuideListResponse): readonly GuideLiableView[] {
-  return page.items.map((g) => guideLiableDe(g));
+/**
+ * LES GUIDES LIABLES, AVEC DE QUOI LES CHOISIR.
+ *
+ * `choisis` et `onToggle` viennent de l'écran : la fenêtre ne décide pas de ce
+ * qui est retenu, elle le montre. Sans eux la liste reste affichable telle quelle
+ * — c'est ce que font les deux listes d'exemple de la maquette.
+ */
+export function guidesLiablesDe(
+  page: GuideListResponse,
+  choisis: readonly string[] = [],
+  onToggle?: (id: string) => void,
+): readonly GuideLiableView[] {
+  return page.items.map((g) => ({
+    ...guideLiableDe(g),
+    guideId: g.id,
+    choisi: choisis.includes(g.id),
+    ...(onToggle === undefined ? {} : { onPick: () => onToggle(g.id) }),
+  }));
 }

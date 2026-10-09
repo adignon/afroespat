@@ -180,6 +180,40 @@ export class PostsController {
   }
 
   /**
+   * ╔═══════════════════════════════════════════════════════════════════════╗
+   * ║ ENREGISTRER UNE PUBLICATION — le bouton était dessiné, la route manquait  ║
+   * ╚═══════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le bouton bookmark des publications marche ? » Il ne marchait
+   * pas : la carte dessine un `<button title="Enregistrer">` depuis le début, et
+   * SEULES LES STORIES avaient une route.
+   *
+   * LA TABLE, ELLE, ÉTAIT DÉJÀ PRÊTE : `BookmarkSubjectType` énumère `POST` au
+   * même titre que `STORY`, et la clé unique porte déjà le triplet
+   * (membre, type, sujet). Il n'y avait donc rien à migrer — seulement deux routes
+   * à ouvrir, calquées sur celles de la story.
+   *
+   * `comment.create` (L0) ET NON `post.create` : enregistrer, c'est lire. §9 dit
+   * qu'un L0 « ne peut pas publier mais peut commenter et réagir » ; lui refuser un
+   * signet reviendrait à lui interdire de garder ce qu'il a le droit de lire.
+   */
+  @Put(':id/bookmark')
+  @HttpCode(200)
+  @RequiresCapability('comment.create')
+  @ApiOperation({ summary: 'Enregistrer une publication' })
+  async bookmark(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.feed.bookmarkPost(actorOf(auth), id);
+  }
+
+  @Delete(':id/bookmark')
+  @HttpCode(200)
+  @RequiresCapability('comment.create')
+  @ApiOperation({ summary: 'Retirer une publication de ses enregistrés' })
+  async unbookmark(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.feed.unbookmarkPost(actorOf(auth), id);
+  }
+
+  /**
    * §2.3 : « Non automatique. » La route est le seul chemin, et elle exige
    * `post.create` — déplacer sa question, c'est publier dans un réseau.
    */
@@ -305,6 +339,36 @@ export class StoriesController {
   @ApiOperation({ summary: 'Retirer son vote' })
   async unreact(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
     return this.feed.unreactToStory(actorOf(auth), id);
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ ENREGISTRER UNE STORY — « Le bouton de bookmark […] Tu peux l'implémenter ? » ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La table, son enum, la tâche de rafraîchissement et le champ `bookmarked` de
+   * `GET /stories/:id` existaient déjà. Il manquait ces deux routes — le mot
+   * n'apparaissait dans AUCUN contrôleur du dépôt.
+   *
+   * `content.read` et non `comment.create` : enregistrer ne PUBLIE rien et n'est
+   * visible de personne d'autre. C'est la capacité des gestes de lecture et de
+   * profil (`GET /me`, `PUT /me/avatar`), et elle est ouverte dès L0 — refuser à
+   * un membre non vérifié de garder une story qu'il peut lire n'aurait aucun sens.
+   */
+  @Put(':id/bookmark')
+  @HttpCode(200)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Enregistrer la story — elle survit à ses 24 h (§2.6)' })
+  async bookmark(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.feed.bookmarkStory(actorOf(auth), id);
+  }
+
+  @Delete(':id/bookmark')
+  @HttpCode(200)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Retirer la story de ses enregistrées' })
+  async unbookmark(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.feed.unbookmarkStory(actorOf(auth), id);
   }
 
   /**

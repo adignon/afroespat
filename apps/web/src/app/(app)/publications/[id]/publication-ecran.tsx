@@ -4,7 +4,7 @@ import { ScreenFrames } from '@/screens/frames';
 import { A02Desktop } from '@/screens/a02/desktop.generated';
 import { A02Mobile } from '@/screens/a02/mobile.generated';
 import { panelFil, rail, shortcuts } from '@/screens/a02/data';
-import { GUIDES_RATTACHES_SANS_SOURCE } from '@/screens/publication/from-api';
+import { relGuidesDe } from '@/screens/publication/from-api';
 import { usePublication } from '@/screens/publication/use-publication';
 
 /**
@@ -51,7 +51,13 @@ export function PublicationEcran({ postId }: { readonly postId: string }) {
     panelFil,
     shortcuts,
     comments: pub.commentaires,
-    relGuides: GUIDES_RATTACHES_SANS_SOURCE,
+    /**
+     * LES GUIDES LIÉS, depuis la publication elle-même. `usePublication` la charge
+     * avec `avecPublication: true` sur cet écran — c'est sa raison d'être.
+     * Tant qu'elle n'est pas là, la liste est vide : un écran qui attend ne doit
+     * pas affirmer qu'il n'y a aucun rattachement.
+     */
+    relGuides: relGuidesDe(pub.post?.guides ?? []),
   };
 
   return (

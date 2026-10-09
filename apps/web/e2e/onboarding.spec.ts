@@ -80,7 +80,22 @@ test.describe('O01 — choix de la phase', () => {
         frame,
       );
 
-    const cards = page.locator(`${frame} button`).filter({ hasNot: page.locator('text=Continuer') });
+    /**
+     * ── LES CARTES SE DÉSIGNENT PAR LEUR HAUTEUR, PAS PAR LEUR RANG ──────────
+     *
+     * C'était « tous les boutons du cadre sauf Continuer », et un rang. Ce repère
+     * a cassé le jour où le BOUTON RETOUR de l'en-tête est devenu un vrai
+     * `<button>` : il est premier dans le document, donc tous les rangs ont
+     * glissé d'un cran et `nth(2)` désignait la DEUXIÈME carte. Le cas accusait
+     * la sélection, qui n'y était pour rien.
+     *
+     * On emploie donc le MÊME discriminant que `selected()` juste au-dessus — la
+     * hauteur minimale, que seules les cartes portent. Un repère par rang se
+     * casse au premier bouton ajouté ; celui-ci tient.
+     */
+    const cards = page.locator(`${frame} button`).filter({
+      has: page.locator('xpath=self::*[contains(@style,"min-height")]'),
+    });
 
     // La maquette démarre sur la deuxième carte : c'est son état initial, pas un
     // hasard, et le reproduire évite un écran qui s'ouvre sans rien de choisi.

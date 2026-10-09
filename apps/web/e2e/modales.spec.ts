@@ -20,6 +20,18 @@ import { expect, test, type Page } from '@playwright/test';
 test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
 /**
+ * TRENTE SECONDES NE SUFFISENT PAS, et ce n'est pas une question de machine lente.
+ *
+ * Chaque cas pose sa taille, charge `/accueil`, attend trois réponses, puis ouvre
+ * une fenêtre. En `next dev` la première compilation d'une route dépasse la
+ * minute, et la création d'un contexte de navigateur sous charge a été mesurée
+ * au-delà de 30 s — un autre lot a relevé 55 échecs à charge 82 contre 6 à charge
+ * 6, sur la même suite. La borne large ne masque rien : un déclencheur inerte
+ * n'ouvre JAMAIS, quelle que soit l'attente.
+ */
+test.describe.configure({ timeout: 180_000 });
+
+/**
  * LE FIL EST SERVI PAR DES CHARGES RELEVÉES, ET IL DOIT L'ÊTRE.
  *
  * Ces tests échouaient tous, et pour une raison qu'il faut nommer : depuis que le
@@ -94,24 +106,81 @@ async function servirLeFil(page: Page): Promise<void> {
     });
 
   /**
-   * La reprise de session n'a RIEN à reprendre, et elle doit échouer proprement :
-   * un `401` avec les bons en-têtes, comme l'API le renvoie. Laisser la vraie route
-   * répondre marcherait aussi, mais ces tests ne doivent pas dépendre de l'API.
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE FOURRE-TOUT D'ABORD : AUCUN APPEL NE DOIT ATTEINDRE UNE VRAIE API     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Playwright donne la main au DERNIER motif inscrit, donc ce `**` doit venir en
+   * premier pour que les routes précises le recouvrent.
+   *
+   * Il n'est pas une commodité : sans lui, une route non interceptée part vers le
+   * serveur qui écoute sur ce port — qui peut être l'API d'un AUTRE arbre de
+   * travail, branchée sur une autre base. Le symptôme est alors un succès qui ne
+   * prouve rien. Idiome repris de `e2e/sous-liens.spec.ts`, qui l'a mesuré.
+   *
+   * `503` et non `401` : un `401` déclencherait la reprise de session et la garde.
+   */
+  await page.route('**/v1/**', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      headers: entetes(route),
+      body: '{"error":{"code":"HORS_TEST","message":"Appel non intercepté par cette spec."}}',
+    }),
+  );
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA REPRISE DOIT RÉUSSIR, ET CE N'EST PLUS LE CHOIX QU'ELLE ÉTAIT         ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Cette route répondait `401` — « la reprise n'a RIEN à reprendre, et elle doit
+   * échouer proprement » — et c'était juste quand ce fichier a été écrit : aucune
+   * garde ne lisait ce refus.
+   *
+   * CE FICHIER ÉTAIT ROUGE SUR LE COMMIT DE BASE, les quatorze cas, et la cause
+   * n'est pas dans ce fichier : un lot ultérieur a posé `GardeSession` sur
+   * `(app)/layout.tsx`, qui RENVOIE VERS LA CONNEXION dès que la reprise a échoué.
+   * Avec un `401`, `/accueil` redirigeait donc vers `/connexion`, et
+   * `[data-modal-open="A01C"]` n'existait jamais. Mesuré : l'instantané de
+   * Playwright montre « Votre numéro de téléphone », l'écran de connexion.
+   *
+   * Un `401` ne prouvait d'ailleurs rien ici : ces tests éprouvent la FORME des
+   * fenêtres et les promesses d'`aria-modal`, pas l'authentification — qui est
+   * éprouvée par `garde-session.spec.ts` et `code-otp.spec.ts` sur une vraie
+   * chaîne. On sert donc un jeton, comme `shell.spec.ts` le fait pour la même
+   * raison, et l'écran mesuré est celui que le test croit mesurer.
    */
   await page.route('**/v1/auth/refresh', (route) =>
     route.fulfill({
-      status: 401,
+      status: 200,
       contentType: 'application/json',
       headers: entetes(route),
-      body: '{"error":{"code":"UNAUTHENTICATED","message":"Session expirée."}}',
+      body: JSON.stringify({ accessToken: 'jeton-de-test', isNewUser: false }),
     }),
   );
+  /**
+   * `GET /me` part dès qu'une session existe : il n'était pas intercepté puisque
+   * la reprise échouait. Sans lui, un refus traînerait dans le journal et ferait
+   * chercher le défaut au mauvais endroit.
+   */
+  await page.route('**/v1/me', servir(charge('compte_me')));
   await page.route('**/v1/feed/sidebar*', servir(sidebar));
   await page.route('**/v1/feed?**', servir(fil));
   await page.route('**/v1/feed', servir(fil));
   await page.route('**/v1/stories?**', servir(bandeau));
   await page.route('**/v1/stories', servir(bandeau));
   await page.route('**/v1/comments?**', servir(commentaires));
+  /**
+   * `GET /guides` : la fenêtre « Lier un guide » ne le demande QU'À L'OUVERTURE
+   * (`useGuides(0, open === 'A01G')`), parce qu'un panneau que personne n'ouvre n'a
+   * aucune raison de coûter un appel à chaque affichage du fil. Sans cette charge,
+   * la fenêtre s'ouvrirait sur une liste vide — ce qui n'invaliderait pas les cas
+   * d'ouverture et de fermeture, mais laisserait un rouge réseau dans le journal
+   * qui ferait chercher le défaut au mauvais endroit.
+   */
+  await page.route('**/v1/guides?**', servir(charge('guides_list')));
+  await page.route('**/v1/guides', servir(charge('guides_list')));
 }
 
 async function visit(page: Page, width: number): Promise<void> {
@@ -399,5 +468,195 @@ test.describe('la fenêtre de commentaires sait DE QUELLE publication elle parle
     );
     await boutons.nth(0).click();
     expect(new URL((await appel).url()).searchParams.get('subjectId')).toBe(premier);
+  });
+});
+
+/**
+ * ═══ LES DEUX FENÊTRES DU COMPOSEUR — « Lier un guide » et « Créer un sondage »
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA DETTE QUE CES CAS SOLDENT, ET ELLE ÉTAIT ÉCRITE                         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * A01G était branchée, et mal : la page s'accrochait à l'attribut `title="Lier un
+ * guide"` que la maquette écrit, sur un `<span>`. Le lot qui l'avait fait a dit ce
+ * que cela coûtait, verbatim : « LIMITE ASSUMÉE ET REMONTÉE : un `<span>` n'est pas
+ * atteignable au clavier. Ce déclencheur est à la souris et au doigt seulement,
+ * jusqu'à ce que le lot de navigation le promeuve en `<button>`. »
+ *
+ * A01S, elle, n'était PAS MONTÉE DU TOUT : ses deux cadres étaient générés et
+ * aucune page ne les rendait. Aucun test ne pouvait le voir — un cadre non monté
+ * ne casse rien.
+ *
+ * Les deux déclencheurs sont maintenant DÉCLARÉS (`triggers` dans
+ * `tools/screens/03-accueil.mjs`), donc promus en `<button type="button">` avec le
+ * nom accessible que la maquette écrit elle-même dans son `title`. Le premier cas
+ * ci-dessous est celui qui prouve la différence : il n'emploie PAS la souris.
+ */
+const COMPOSEUR = [
+  { modal: 'A01G', titre: 'Lier un guide' },
+  { modal: 'A01S', titre: 'Créer un sondage' },
+] as const;
+
+test.describe('les fenêtres du composeur s’ouvrent, et AU CLAVIER', () => {
+  for (const { modal, titre } of COMPOSEUR) {
+    /**
+     * LE CLAVIER, ET PAS LA SOURIS. `focus()` puis `Entrée` : c'est exactement ce
+     * qu'un `<span>` ne pouvait pas faire — il n'est pas focalisable, donc
+     * `toBeFocused()` aurait échoué avant même la touche. Ce cas est la MESURE de
+     * la promotion, pas sa paraphrase.
+     */
+    test(`« ${titre} » s’ouvre au CLAVIER (ce qu’un <span> ne pouvait pas)`, async ({ page }) => {
+      await visit(page, 1440);
+      const bouton = trigger(page, modal, 1440);
+      await expect(bouton).toHaveCount(1);
+      // Un vrai bouton, avec le nom que la maquette écrit dans son `title`.
+      await expect(bouton).toHaveAttribute('type', 'button');
+      await expect(bouton).toHaveAccessibleName(titre);
+
+      await bouton.focus();
+      await expect(bouton).toBeFocused();
+      await page.keyboard.press('Enter');
+
+      await expect(page.getByRole('dialog', { name: new RegExp(titre) })).toBeVisible();
+    });
+
+    test(`« ${titre} » s’ouvre au clic, et porte le titre de la maquette`, async ({ page }) => {
+      await visit(page, 1440);
+      await trigger(page, modal, 1440).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog).toBeVisible();
+      await expect(dialog).toHaveAttribute('aria-modal', 'true');
+      await expect(dialog).toHaveAttribute('aria-labelledby', `${modal.toLowerCase()}-titre`);
+      await expect(page.locator(`#${modal.toLowerCase()}-titre`)).toContainText(titre);
+      // UN SEUL élément porte cet identifiant : deux rendraient `aria-labelledby`
+      // ambigu et la fenêtre pourrait prendre le nom du cadre masqué.
+      await expect(page.locator(`#${modal.toLowerCase()}-titre`)).toHaveCount(1);
+    });
+
+    test(`« ${titre} » se ferme par la croix`, async ({ page }) => {
+      await visit(page, 1440);
+      await trigger(page, modal, 1440).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Fermer' }).first().click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    test(`« ${titre} » se ferme par Échap`, async ({ page }) => {
+      await visit(page, 1440);
+      await trigger(page, modal, 1440).click();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    test(`« ${titre} » se ferme par un clic HORS du panneau, et pas dedans`, async ({ page }) => {
+      await visit(page, 1440);
+      await trigger(page, modal, 1440).click();
+      const dialog = page.getByRole('dialog');
+
+      // La moitié qu'on oublie d'abord : cliquer DANS le panneau ne ferme rien.
+      await dialog.locator('[data-modal-panel]').click({ position: { x: 8, y: 8 } });
+      await expect(dialog).toBeVisible();
+
+      // Puis le voile, là où le panneau n'est pas : la fenêtre fait 720 px centrés
+      // sur 1440, donc x = 30 est hors d'elle.
+      await page.mouse.click(30, 450);
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    /**
+     * LE PIÈGE SE MESURE SUR LE PARCOURS RÉEL DU FOCUS, et non sur la place du
+     * portail dans le DOM — ce dépôt a déjà hébergé un test creux qui mesurait la
+     * seconde et passait sur un piège qui fuyait.
+     */
+    test(`« ${titre} » piège la tabulation dans son panneau`, async ({ page }) => {
+      await visit(page, 1440);
+      await trigger(page, modal, 1440).click();
+      const dialog = page.getByRole('dialog');
+      for (let n = 0; n < 20; n += 1) {
+        await page.keyboard.press('Tab');
+        const dedans = await dialog.evaluate((node) => node.contains(document.activeElement));
+        expect(dedans, `après ${n + 1} tabulation(s)`).toBe(true);
+      }
+    });
+
+    test(`« ${titre} » REND le focus au contrôle qui l’a ouverte`, async ({ page }) => {
+      await visit(page, 1440);
+      const bouton = trigger(page, modal, 1440);
+      await bouton.focus();
+      await page.keyboard.press('Enter');
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+
+      // Sans le retour de focus, refermer renvoie au début du document : un membre
+      // au clavier devrait re-parcourir tout le fil pour revenir où il était.
+      await expect(bouton).toBeFocused();
+    });
+
+    test(`« ${titre} » est une FEUILLE sur un téléphone`, async ({ page }) => {
+      await visit(page, 390);
+      await trigger(page, modal, 390).click();
+      const box = await page.getByRole('dialog').locator('[data-modal-panel]').boundingBox();
+      expect(box).not.toBeNull();
+      if (box === null) return;
+      // Toute la largeur et posée sur le bord bas : c'est ce qui distingue une
+      // feuille d'une fenêtre, et c'est le seul point que la géométrie peut dire.
+      expect(Math.round(box.width)).toBe(390);
+      expect(Math.round(box.y + box.height)).toBeGreaterThanOrEqual(898);
+    });
+  }
+
+  /**
+   * LES DEUX DÉCLENCHEURS SONT DEUX CONTRÔLES DISTINCTS, et il faut le mesurer :
+   * ils sont voisins dans le composeur, de même taille et de même fond, et une
+   * déclaration mal bornée les aurait fait ouvrir la même fenêtre — exactement le
+   * défaut que les publications du fil ont connu avant que `subject` n'existe.
+   */
+  test('« Lier un guide » et « Créer un sondage » n’ouvrent PAS la même fenêtre', async ({
+    page,
+  }) => {
+    await visit(page, 1440);
+    await trigger(page, 'A01G', 1440).click();
+    await expect(page.getByRole('dialog', { name: /Lier un guide/ })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /sondage/ })).toHaveCount(0);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await trigger(page, 'A01S', 1440).click();
+    await expect(page.getByRole('dialog', { name: /Créer un sondage/ })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: /Lier un guide/ })).toHaveCount(0);
+  });
+
+  /**
+   * L'INFOBULLE DE LA MAQUETTE SURVIT À LA PROMOTION.
+   *
+   * `markTriggers` JETAIT les autres attributs de la balise promue : le `title`
+   * — seul libellé visible à la souris d'un contrôle en icône seule — disparaissait
+   * en silence. Ce cas tient la correction.
+   */
+  test('la promotion garde le `title` que la maquette dessine', async ({ page }) => {
+    await visit(page, 1440);
+    await expect(trigger(page, 'A01G', 1440)).toHaveAttribute('title', 'Lier un guide');
+    await expect(trigger(page, 'A01S', 1440)).toHaveAttribute('title', 'Créer un sondage');
+  });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « AJOUTER UNE IMAGE » N'OUVRE RIEN, ET C'EST UN REFUS                    ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La maquette dessine une TROISIÈME icône dans le composeur,
+   * `title="Ajouter une image"`, et elle ne dessine AUCUNE fenêtre pour elle : ses
+   * quatre sections de modale sont A01C, A01P, A01G et A01S. Lui ouvrir A01S
+   * reviendrait à décider que « Ajouter une image » et « Créer un sondage » sont le
+   * même geste. Ce cas tient le refus pour qu'il soit une décision, pas un oubli.
+   */
+  test('« Ajouter une image » reste sans fenêtre : la maquette n’en dessine aucune', async ({
+    page,
+  }) => {
+    await visit(page, 1440);
+    const icone = page.locator('[data-frame="desktop"] [title="Ajouter une image"]').first();
+    await expect(icone).toHaveCount(1);
+    expect(await icone.getAttribute('data-modal-open')).toBeNull();
   });
 });

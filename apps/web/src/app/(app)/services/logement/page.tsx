@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS01 } from '@/screens/services/appels';
+import { chargerS01, SQUELETTE_S01 } from '@/screens/services/appels';
 import { S01Desktop } from '@/screens/s01/desktop.generated';
 import { S01Mobile } from '@/screens/s01/mobile.generated';
 
@@ -42,7 +42,16 @@ import { S01Mobile } from '@/screens/s01/mobile.generated';
  */
 export default function LogementListePage() {
   return (
-    <EcranDonnees charger={chargerS01} attente="Chargement des annonces…">
+    <EcranDonnees
+      charger={chargerS01}
+      attente="Chargement des annonces…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est mesuré : sans cela,
+       * `/services/logement` répondait 200 sans rail, sans panneau « SERVICES » et
+       * sans barre basse. Voir `SQUELETTE_S01`.
+       */
+      squelette={SQUELETTE_S01}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="S01"

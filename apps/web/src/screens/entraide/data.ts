@@ -59,6 +59,15 @@ export interface Reputation {
 
 /** L'identité de la barre haute : un avatar de repli et un prénom. */
 export interface MoiEntraide {
+  /**
+   * LE FOND DU ROND D'AVATAR : la photo du membre, ou rien.
+   *
+   * FACULTATIVE : seul le module Compte la remplit aujourd'hui, parce que lui seul
+   * lit `GET /me`. Absente, le cadre reprend l'aplat de la maquette et écrit les
+   * initiales — exactement ce qu'il faisait avant. Le jour où ce module lira
+   * `avatarUrl`, il suffira de la poser.
+   */
+  readonly photo?: string | null;
   readonly initiales: string;
   readonly prenom: string;
 }

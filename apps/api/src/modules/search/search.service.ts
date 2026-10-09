@@ -77,6 +77,16 @@ export interface SearchHit {
   readonly communityId: string | null;
   readonly rank: number;
   readonly updatedAt: Date;
+  /** Où mène ce résultat — composé par `destinations`, `null` si la source a disparu. */
+  readonly url: string | null;
+}
+
+/** Une suggestion de titre, telle que `GET /search/suggest` la rend. */
+export interface Suggestion {
+  readonly title: string;
+  readonly subjectType: SearchSubjectType;
+  readonly subjectId: string;
+  readonly url: string | null;
 }
 
 interface RawHit {
@@ -132,7 +142,7 @@ export class SearchService {
   private readonly cursorSecret = loadEnv().CURSOR_SECRET;
 
   /** §2.3 : « 6 max, mis en cache ». Une minute suffit : les titres bougent peu. */
-  private readonly suggestCache = new Map<string, { at: number; value: { title: string; subjectType: string }[] }>();
+  private readonly suggestCache = new Map<string, { at: number; value: Suggestion[] }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -243,6 +253,11 @@ export class SearchService {
       perType,
     });
     const visible = await this.dropBlockedAuthors(rows, separated);
+    /**
+     * LES DESTINATIONS SONT RÉSOLUES AVANT DE COMPOSER LES GROUPES — une requête
+     * par type présent, et non une par ligne. Voir `destinations`.
+     */
+    const urls = await this.destinations(visible);
 
     const groups = new Map<string, { type: string; label: string; count: number; capped: boolean; items: SearchHit[] }>();
     for (const row of visible) {
@@ -261,7 +276,9 @@ export class SearchService {
           items: [],
         };
       group.count += 1;
-      if (group.items.length < SEARCH_GROUP_PREVIEW_SIZE) group.items.push(this.toHit(row));
+      if (group.items.length < SEARCH_GROUP_PREVIEW_SIZE) {
+        group.items.push(this.toHit(row, urls.get(row.subject_id) ?? null));
+      }
       groups.set(key, group);
     }
 
@@ -296,7 +313,8 @@ export class SearchService {
     });
 
     const visible = await this.dropBlockedAuthors(rows, separated);
-    const hits = visible.map((row) => this.toHit(row));
+    const urls = await this.destinations(visible);
+    const hits = visible.map((row) => this.toHit(row, urls.get(row.subject_id) ?? null));
 
     const page = buildPage(hits, query.limit, scope, this.cursorSecret, (hit) => hit.rank);
     return { ...page, meta: this.meta(query, hits.length === 0) };
@@ -522,7 +540,7 @@ export class SearchService {
     });
   }
 
-  private toHit(row: RawHit): SearchHit {
+  private toHit(row: RawHit, url: string | null = null): SearchHit {
     return {
       id: row.id,
       subjectType: row.subject_type,
@@ -534,7 +552,115 @@ export class SearchService {
       communityId: row.community_id,
       rank: Number(row.rank),
       updatedAt: row.updated_at,
+      url,
     };
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ OÙ MÈNE UN RÉSULTAT — ET POURQUOI C'EST LE SERVEUR QUI LE DIT            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « les propositions sous l'input doivent s'afficher et permettre
+   * d'aller directement sur un élément ».
+   *
+   * L'index ne porte que `subject_type` et `subject_id`. Or quatre des neuf types
+   * ne s'ouvrent PAS par leur identifiant : un guide s'ouvre par son SLUG, un
+   * membre par son PSEUDO, une ville par son SLUG, et un sujet par le slug de son
+   * RÉSEAU en plus de son identifiant. Un client qui composerait les adresses
+   * devrait donc connaître neuf règles de routage ET savoir résoudre trois
+   * référentiels — c'est-à-dire refaire ici ce que la base sait déjà.
+   *
+   * On résout donc côté serveur, EN UNE REQUÊTE PAR TYPE PRÉSENT : les résultats
+   * arrivent groupés, et un aller-retour par ligne serait trente requêtes pour une
+   * page de recherche.
+   *
+   * `null` quand la source a disparu entre l'indexation et la lecture : l'écran
+   * affiche alors le résultat sans le rendre cliquable, plutôt que de mener à une
+   * page absente.
+   */
+  private async destinations(
+    rows: readonly { readonly subject_type: string; readonly subject_id: string }[],
+  ): Promise<Map<string, string>> {
+    const parType = new Map<string, string[]>();
+    for (const row of rows) {
+      const liste = parType.get(row.subject_type) ?? [];
+      liste.push(row.subject_id);
+      parType.set(row.subject_type, liste);
+    }
+
+    const urls = new Map<string, string>();
+    const poser = (id: string, url: string): void => {
+      urls.set(id, url);
+    };
+
+    for (const [type, ids] of parType) {
+      switch (type) {
+        case 'GUIDE': {
+          const lignes = await this.prisma.guide.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, slug: true },
+          });
+          for (const g of lignes) poser(g.id, `/guides/${g.slug}`);
+          break;
+        }
+        case 'USER': {
+          const lignes = await this.prisma.user.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, handle: true },
+          });
+          /**
+           * L'ARROBASE FAIT PARTIE DE L'ADRESSE, et son absence rend 404.
+           *
+           * Le front sert le profil d'un membre sur `/@:pseudo` — jamais sur
+           * `/:pseudo`. Le segment dynamique porte l'arobase DANS SA VALEUR et
+           * refuse tout le reste, pour qu'un pseudo ne puisse pas masquer
+           * `/accueil` ou `/parcours`. Un résultat de recherche de type `USER`
+           * menait donc à une page introuvable, et l'épreuve ne l'avait pas vu :
+           * elle comparait l'adresse obtenue à l'adresse attendue, toutes deux
+           * fausses de la même façon. Elle vérifie maintenant la forme AUSSI.
+           */
+          for (const u of lignes) poser(u.id, `/@${u.handle}`);
+          break;
+        }
+        case 'CITY': {
+          const lignes = await this.prisma.city.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, slug: true },
+          });
+          for (const c of lignes) poser(c.id, `/villes/${c.slug}`);
+          break;
+        }
+        case 'TOPIC': {
+          const lignes = await this.prisma.topic.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, community: { select: { slug: true } } },
+          });
+          for (const t of lignes) poser(t.id, `/reseaux/${t.community.slug}/sujets/${t.id}`);
+          break;
+        }
+        // Les quatre derniers s'ouvrent par leur identifiant : rien à résoudre.
+        case 'HELP_REQUEST':
+          for (const id of ids) poser(id, `/entraide/${id}`);
+          break;
+        case 'HOUSING':
+          for (const id of ids) poser(id, `/services/logement/${id}`);
+          break;
+        case 'JOB':
+          for (const id of ids) poser(id, `/services/emploi/${id}`);
+          break;
+        case 'EVENT':
+          for (const id of ids) poser(id, `/agenda/${id}`);
+          break;
+        case 'PRO':
+          for (const id of ids) poser(id, `/services/annuaire/${id}`);
+          break;
+        default:
+          break;
+      }
+    }
+
+    return urls;
   }
 
   private meta(query: SearchQuery, empty: boolean) {
@@ -597,16 +723,30 @@ export class SearchService {
    *
    * Préfixe ET trigram : le préfixe sert la frappe en cours, la similarité
    * rattrape la faute (« secutire » → « sécurité »).
+   *
+   * ── CHAQUE SUGGESTION MÈNE À SON ÉLÉMENT ──────────────────────────────────
+   *
+   * Le porteur : « les propositions sous l'input doivent s'afficher et permettre
+   * d'ALLER DIRECTEMENT sur un élément ». Avant, une suggestion ne portait qu'un
+   * titre et un type : la choisir ne pouvait que relancer la recherche sur son
+   * texte — un détour par une page de résultats dont on connaissait déjà la
+   * réponse. Elle porte maintenant son identifiant et son adresse, résolus comme
+   * ceux des résultats (voir `destinations`).
+   *
+   * LA RÉSOLUTION EST DANS LE CACHE, et pas devant : les adresses d'une page de
+   * recherche se recalculeraient à chaque touche frappée. Un slug qui change
+   * laisse donc une adresse morte pendant au plus la minute du cache, ce qui est
+   * le même risque que le titre affiché à côté.
    */
-  async suggest(q: string): Promise<{ items: { title: string; subjectType: string }[] }> {
+  async suggest(q: string): Promise<{ items: Suggestion[] }> {
     const key = normalizeQuery(q);
     const cached = this.suggestCache.get(key);
     if (cached !== undefined && Date.now() - cached.at < SUGGEST_CACHE_TTL_MS) {
       return { items: cached.value };
     }
 
-    const rows = await this.prisma.$queryRaw<{ title: string; subject_type: string }[]>(Prisma.sql`
-      SELECT DISTINCT ON (d.title) d.title, d.subject_type::text AS subject_type,
+    const rows = await this.prisma.$queryRaw<{ title: string; subject_type: SearchSubjectType; subject_id: string }[]>(Prisma.sql`
+      SELECT DISTINCT ON (d.title) d.title, d.subject_type::text AS subject_type, d.subject_id,
              similarity(immutable_unaccent(d.title), immutable_unaccent(${q})) AS sim
       FROM search_documents d
       WHERE d.visibility = 'PUBLIC'::"SearchVisibility"
@@ -618,7 +758,13 @@ export class SearchService {
       LIMIT ${SUGGEST_MAX_RESULTS}
     `);
 
-    const items = rows.map((r) => ({ title: r.title, subjectType: r.subject_type }));
+    const urls = await this.destinations(rows);
+    const items: Suggestion[] = rows.map((r) => ({
+      title: r.title,
+      subjectType: r.subject_type,
+      subjectId: r.subject_id,
+      url: urls.get(r.subject_id) ?? null,
+    }));
     this.suggestCache.set(key, { at: Date.now(), value: items });
     return { items };
   }

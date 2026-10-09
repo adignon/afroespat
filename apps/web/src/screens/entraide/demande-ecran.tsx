@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH02 } from '@/screens/entraide/appels';
+import { SQUELETTE_H02, chargerH02 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H02Desktop } from '@/screens/h02/desktop.generated';
 import { H02Mobile } from '@/screens/h02/mobile.generated';
@@ -33,7 +33,13 @@ export function DemandeEcran({ id }: { readonly id: string }) {
   const charger = useCallback(() => chargerH02(id), [id]);
 
   return (
-    <EcranDonnees charger={charger}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant « DisaporyPlus Chargement de votre compte... » et rien d'autre.
+       * Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_H02} charger={charger}>
       {(donnees) => (
         <ScreenFrames
           screen="H02"

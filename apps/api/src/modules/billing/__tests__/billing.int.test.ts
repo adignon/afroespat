@@ -29,6 +29,7 @@ import {
 } from '../billing.ports';
 import { BillingService } from '../billing.service';
 import { PlanService } from '../plan.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Facturation — 14-monetisation.md §3, §4, §12.
@@ -57,8 +58,7 @@ describe('facturation (14 §3, §4, §12)', () => {
   const createdUserIds: string[] = [];
   let counter = 0;
 
-  const nextPhone = (): string =>
-    `07${String(Date.now()).slice(-6)}${String(counter++).padStart(2, '0')}`;
+  const nextPhone = (): string => numeroDEpreuve(counter++);
 
   async function newMember(plan: 'FREE' | 'PREMIUM' = 'FREE'): Promise<string> {
     const { challengeId } = await auth.requestOtp({

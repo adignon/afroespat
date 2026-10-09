@@ -257,11 +257,25 @@ model Message {
   senderUserId   String   @map("sender_user_id") @db.Uuid
   bodyEncrypted  Bytes    @map("body_encrypted")
   mediaAssetId   String?  @map("media_asset_id") @db.Uuid
+  /// La story D'OÙ ce message est parti, quand il vient de l'écran de lecture.
+  ///
+  /// Le porteur : « Il faut qu'on puisse cliquer sur [la vignette] et aller vers
+  /// la story si toujours en ligne. Sinon ça affirme que la story a expiré. »
+  ///
+  /// La vignette est une CAPTURE — un média indépendant, qui survit à la story.
+  /// Sans ce lien, rien ne ramène de l'une à l'autre : la capture est un PNG parmi
+  /// d'autres, et le message ne sait pas d'où il vient.
+  ///
+  /// `onDelete: SetNull` et non `Cascade` : une story supprimée ne doit pas
+  /// emporter le message qu'elle a provoqué. Le lien tombe, la vignette reste, et
+  /// l'écran dit « cette story a expiré » — ce qui est exactement vrai.
+  storyId        String?  @map("story_id") @db.Uuid
   sentAt         DateTime @map("sent_at") @db.Timestamptz
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderUserId], references: [id], onDelete: Cascade)
   mediaAsset   MediaAsset?  @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  story        Story?       @relation(fields: [storyId], references: [id], onDelete: SetNull)
 
   @@index([conversationId])
   @@index([senderUserId])

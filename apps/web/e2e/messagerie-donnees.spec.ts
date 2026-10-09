@@ -56,7 +56,14 @@ test.beforeAll(async ({ browser, request }) => {
 });
 
 test.afterAll(async () => {
-  await page.close();
+  /**
+ * `page` est VIDE quand le `describe` s'est sauté : `beforeAll` ne tourne pas,
+ * mais `afterAll` SI. MESURÉ : trois cas comptés « échoués » — `TypeError:
+ * Cannot read properties of undefined (reading 'close')` — là où ils étaient
+ * simplement sautés faute de `API_LOG`. Un saut ne doit pas se lire comme une
+ * panne : c'est ce qui fait chercher un défaut là où il n'y en a pas.
+ */
+  await page?.close();
 });
 
 /**

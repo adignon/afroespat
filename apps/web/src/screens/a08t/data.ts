@@ -167,9 +167,33 @@ export interface A08TData {
  * « Béninois en France » ferait exactement ce que ce lot corrige — afficher le
  * nom d'un réseau à qui regarde un autre. Un en-tête vide se voit ; un en-tête
  * faux ne se voit pas.
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE NOM EST UN TIRET CADRATIN, PAS LA CHAÎNE VIDE                           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Il ÉTAIT la chaîne vide, et la doctrine ci-dessus restait juste — mais le
+ * dessin produit l'était moins. Les vingt-quatre planches qui lisent
+ * `{reseau.nom}` le posent dans le TITRE de la page : servir la chaîne vide
+ * servait un `<h1></h1>`, mesuré tel quel par Playwright (« locator resolved to
+ * <h1></h1> … unexpected value "hidden" », six cas sur A08 et A08T). Un titre
+ * qui s'annonce sans nom est une violation `empty-heading` d'axe-core, et §10.6
+ * exige un nom accessible sur tout élément qui en porte un.
+ *
+ * Et ce n'est pas un chemin rare : `reseau-screen.tsx` ne peint ce repli que si
+ * `pret` est vrai ET `echec` non nul — c'est-à-dire exactement quand l'appel a
+ * ÉCHOUÉ. Le filet devenait l'écran au pire moment.
+ *
+ * Le tiret cadratin n'invente aucun nom — il ne ressemble à aucun réseau — et
+ * c'est déjà la marque d'attente que `screens/compte/ecran-donnees.tsx` et sa
+ * jumelle d'administration emploient, pour la même raison : « Inscrits 0 » est
+ * faux et se lit comme vrai, « Inscrits — » dit qu'on ne sait pas encore.
+ *
+ * `initiales` reste le point médian : c'est ce que `initials()` rend, et le
+ * repli doit dire la même chose que le convertisseur.
  */
 export const enteteVide: ReseauEnteteView = {
-  nom: '',
+  nom: '—',
   /**
    * UN POINT MÉDIAN, et non la chaîne vide : c'est ce que `initials()` rend pour
    * un nom vide, donc le repli dit la même chose que le convertisseur plutôt
@@ -180,15 +204,44 @@ export const enteteVide: ReseauEnteteView = {
    * l'appel soit revenu : le repli est un filet, pas un écran.
    */
   initiales: '·',
-  membres: '',
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LES QUATRE CHAMPS ASSIS ENTRE DES SÉPARATEURS PORTENT LA MARQUE        ║
+   * ║ D'ATTENTE, PAS LA CHAÎNE VIDE                                          ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * `membres`, `genre`, `monAppartenance` et `monRole` sont les SEULS que la
+   * maquette encadre de points médians écrits en dur — mesuré sur les cadres
+   * produits, il n'existe que deux motifs : `{reseau.membres} · {reseau.genre}`
+   * (suivi de `· {reseau.monAppartenance}`) et `{reseau.membres} ·
+   * {reseau.monRole}`. Les autres champs se rendent seuls : la chaîne vide y est
+   * invisible et reste donc le bon repli.
+   *
+   * C'ÉTAIT LA CAUSE D'UN DÉFAUT PLUS GRAVE QUE CELUI QU'ELLE ÉVITAIT. Avec
+   * trois valeurs vides, la ligne de résumé laissait deux points médians
+   * orphelins — « · · » — et c'est pour ne pas les montrer que
+   * `reseau-screen.tsx` avait cessé de peindre le cadre avant le retour de
+   * l'appel. Mais ne rien peindre a un prix qui ne se voyait pas à l'œil : le
+   * SERVEUR, lui, n'a jamais la donnée, donc il ne servait plus que quatre mots
+   * — « DisaporyPlus Chargement du réseau… ». Mesuré au `curl` sur
+   * `/reseaux/beninois-en-france?onglet=fil` : une COQUILLE VIDE, le défaut même
+   * que ce dépôt a déjà corrigé sur seize routes membre et six routes d'équipe.
+   *
+   * Le tiret cadratin règle la cause plutôt que le symptôme : la ligne lit
+   * « — · — · — », qui est la marque d'attente employée par
+   * `screens/compte/ecran-donnees.tsx`, et le cadre peut donc être peint tout de
+   * suite, rail et panneau compris. Aucun nom n'est emprunté à la maquette : un
+   * tiret ne ressemble à aucun réseau.
+   */
+  membres: '—',
   membresNombre: '',
-  genre: '',
+  genre: '—',
   genreCourt: '',
   creeEn: '',
   resume: '',
   resumeProprietaire: '',
-  monAppartenance: '',
-  monRole: '',
+  monAppartenance: '—',
+  monRole: '—',
   visibilite: '',
   description: '',
   descriptionLongueur: 0,

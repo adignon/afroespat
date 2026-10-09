@@ -55,6 +55,45 @@ const donnees = {
   stories: [],
   storyFilters: storyFiltersFor(-1, () => {}),
   postTypes: postTypesFor(0, () => {}),
+  /**
+   * LE COMPOSEUR A MAINTENANT UN ÉTAT, donc la prise du cadre le réclame.
+   *
+   * Ce cas mesure les DÉCLENCHEURS de fenêtre, pas le composeur : il lui donne donc
+   * un composeur vide et des gestes qui ne font rien. C'est exactement ce qu'il
+   * faut — un composeur branché ici ferait de ce cas un second test du composeur,
+   * et un test qui mesure deux choses rougit pour la mauvaise.
+   */
+  composeurTexte: '',
+  onComposeurTexte: () => {},
+  onPublier: () => {},
+  publierBloque: true,
+  onAjouterImage: () => {},
+  sondageQuestion: '',
+  onSondageQuestion: () => {},
+  sondageOptions: [],
+  onAjouterOption: () => {},
+  sondageDurees: [],
+  onValiderSondage: () => {},
+  onAnnulerSondage: () => {},
+  sondageBloque: true,
+  sondageMultiple: false,
+  onSondageMultiple: () => {},
+  sondageApresVote: true,
+  onSondageApresVote: () => {},
+  sondageAnonyme: true,
+  onSondageAnonyme: () => {},
+  /** Composeur VIDE : ce cas mesure les déclencheurs, pas les pièces jointes. */
+  composeurGarni: false,
+  composeurImages: [],
+  composeurImagesCompte: '0 / 4',
+  composeurAjoutBloque: false,
+  composeurSondage: null,
+  composeurGuides: [],
+  composeurPastilles: {
+    sondage: { garni: false, libelle: '', titre: 'Créer un sondage', encre: '#0F5C48' },
+    guides: { garni: false, libelle: '', titre: 'Lier un guide', encre: '#0F5C48' },
+    images: { garni: false, libelle: '', titre: 'Ajouter une image', encre: '#0F5C48' },
+  },
   feedPosts: cartes,
   events: [],
   arrivals: [],

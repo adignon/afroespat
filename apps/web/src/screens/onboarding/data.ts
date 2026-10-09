@@ -1,12 +1,20 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 // `import type` : les enums générés servent ici de TYPES et rien de plus. Une
 // importation de valeur depuis un module `'use client'` rapporterait une référence
 // client au lieu de l'objet — le piège déjà payé sur `resume.ts` (voir
 // docs/decisions.md). Un type, lui, est effacé à la compilation.
+import {
+  exempleNational,
+  handleSchema,
+  masqueNumero,
+  numeroValide,
+} from '@app/shared';
 import type { HelpType, OccupationStatus } from '@app/shared';
 import { createAnnounce, goalCards, type GoalCard, type JourneyTemplateChoice } from './from-api';
+import { drapeauDe } from './drapeau';
+import type { ChoixItem } from './choix-referentiel';
 
 /**
  * Données et état des écrans d'accès et d'onboarding.
@@ -29,6 +37,18 @@ import { createAnnounce, goalCards, type GoalCard, type JourneyTemplateChoice } 
 export interface OnboardingState {
   /** Carte de phase sélectionnée à l'écran O01 : 0, 1 ou 2. */
   readonly phase: number;
+  /**
+   * Carte d'OBJECTIF sélectionnée à l'écran O03 — le rang du modèle de parcours.
+   *
+   * Un RANG et non un identifiant : les modèles arrivent de `GET
+   * /journey-templates` et la maquette dessine quatre cartes dans l'ordre servi.
+   * Garder un identifiant obligerait à le réconcilier quand la liste change
+   * (un type retiré, un pays différent) ; un rang se borne tout seul.
+   *
+   * Zéro par défaut : c'est la carte que la maquette met en avant, donc un membre
+   * qui ne touche à rien obtient ce qu'il voyait.
+   */
+  readonly goal: number;
   /** Le numéro en cours de saisie (P01), tel que le membre le tape. */
   readonly phone: string;
   /** Le pays de l'INDICATIF choisi en P01. Distinct du pays d'origine (§2.7). */
@@ -60,11 +80,44 @@ export interface OnboardingState {
   readonly create: boolean;
   /** O04 — « je suis disponible pour aider ». */
   readonly help: boolean;
+  /**
+   * O04 — les compétences et les langues retenues, par identifiant.
+   *
+   * DES IDENTIFIANTS, pas des noms : `updateProfileSchema` attend `skillIds` et
+   * `languageIds`, deux tableaux d'UUID bornés à dix. Garder les noms obligerait
+   * à les retrouver au moment d'enregistrer, et un nom qui ne retrouve pas sa
+   * ligne partirait en silence.
+   */
+  readonly skillIds: readonly string[];
+  readonly languageIds: readonly string[];
+  /**
+   * O02 — le panneau de choix du pays est ouvert.
+   *
+   * Il vit dans l'état du flux et non dans celui de l'écran parce que les DEUX
+   * cadres de `ScreenFrames` doivent s'ouvrir et se fermer ensemble : un membre
+   * qui redimensionne sa fenêtre pendant le choix ne doit pas retrouver un
+   * panneau ouvert d'un côté et fermé de l'autre. Cet état n'est pas conservé
+   * d'une visite à l'autre — rien de ce flux ne l'est — donc un rechargement
+   * revient sur l'écran, panneau fermé.
+   */
+  readonly originOuvert: boolean;
+  /** P01 — le panneau de choix de l'indicatif est ouvert. Même raison qu'en O02. */
+  readonly countryOuvert: boolean;
+  /**
+   * O02 — le panneau de choix de la VILLE est ouvert.
+   *
+   * Le porteur : « La sélection de ville : utilise le panneau aussi. » Deux
+   * manières de choisir un lieu sur le même écran — un panneau pour le pays, une
+   * liste à plat pour la ville — était l'incohérence qu'il corrige.
+   */
+  readonly villeOuvert: boolean;
 }
 
 /** La maquette démarre sur la deuxième carte et les deux interrupteurs actifs. */
 export const INITIAL_ONBOARDING_STATE: OnboardingState = {
   phase: 1,
+  // La carte que la maquette met en avant — voir `goal` dans `OnboardingState`.
+  goal: 0,
   // La maquette montre « 97 12 34 42 » et trois chiffres déjà saisis : ce sont
   // des EXEMPLES, faits pour illustrer une image. Un écran réel s'ouvre vide, et
   // l'exemple du téléphone survit en `placeholder`.
@@ -84,6 +137,14 @@ export const INITIAL_ONBOARDING_STATE: OnboardingState = {
   // valeurs de départ, qui évitent un écran sans rien de sélectionné.
   occupation: 0,
   helpChoices: [0, 1],
+  // Les panneaux de choix de pays s'ouvrent sur un geste, jamais à l'arrivée.
+  originOuvert: false,
+  countryOuvert: false,
+  villeOuvert: false,
+  // La maquette montre deux compétences et trois langues : des EXEMPLES, comme
+  // « Amina Diallo ». Un écran réel s'ouvre sans rien de coché.
+  skillIds: [],
+  languageIds: [],
   code: '',
   create: true,
   help: true,
@@ -98,10 +159,29 @@ export const INITIAL_ONBOARDING_STATE: OnboardingState = {
  * Aucun résultat sous deux caractères : le catalogue compte des dizaines de
  * villes, et les afficher toutes ne rendrait service à personne.
  */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES VILLES PROPOSÉES — LA RÈGLE A CHANGÉ AVEC LE PANNEAU                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Elle rendait un tableau VIDE tant qu'on n'avait pas tapé deux lettres, et six
+ * résultats au plus. C'était juste pour la liste à plat que la planche dessine
+ * SOUS le champ : une liste qui s'ouvre toute seule sous une page d'inscription
+ * la pousse vers le bas à chaque frappe.
+ *
+ * Le porteur a demandé le PANNEAU (« La sélection de ville : utilise le panneau
+ * aussi »), et dans un panneau la règle s'inverse : il s'ouvre pour qu'on
+ * CHOISISSE, et s'ouvrir vide ressemble à un écran cassé — mesuré, « villes
+ * listées : 0 » à l'ouverture.
+ *
+ * Donc : sans recherche, TOUTES les villes, dans l'ordre du serveur. Avec
+ * recherche, celles qui correspondent. La borne de six tombe avec la liste à
+ * plat qui la justifiait — le panneau défile, c'est sa raison d'être.
+ */
 function matchCities(catalogue: readonly CityChoice[], search: string): readonly CityChoice[] {
   const needle = fold(search.trim());
-  if (needle.length < 2) return [];
-  return catalogue.filter((c) => fold(c.name).includes(needle)).slice(0, 6);
+  if (needle === '') return catalogue;
+  return catalogue.filter((c) => fold(c.name).includes(needle));
 }
 
 /** Le pays que la maquette a dessiné : le seul dont elle fournit le drapeau. */
@@ -133,18 +213,72 @@ const OCCUPATIONS = [
 ] as const;
 
 /**
- * Les types d'aide. La maquette en montre cinq ; l'enum `HelpType` en compte
- * cinq aussi, mais « Trajet », « Traduction » et « Matériel » n'y ont pas de
- * code propre — ils relèvent de `OTHER`, ce que la spec assume (§2.7 liste
- * PAPERWORK, HOUSING, JOB, WELCOME, OTHER).
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES TYPES D'AIDE — HUIT, ET TROIS AVAIENT PERDU LEUR CODE                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « ajoute aussi plus d'option au niveau de la section je suis
+ * disponible pour aider ».
+ *
+ * ── CE QUI A CHANGÉ DEPUIS, ET QUI N'ÉTAIT PAS VISIBLE ────────────────────
+ *
+ * Ce commentaire disait, à raison à l'époque : « "Trajet", "Traduction" et
+ * "Matériel" n'ont pas de code propre — ils relèvent de `OTHER` ». Il y avait
+ * DEUX énumérations `HelpType` dans le dépôt, et c'est la plus pauvre qui servait
+ * ici. Elles ont été fusionnées depuis (`20261004054632_fusion_help_type`) : il
+ * existe maintenant `RIDE`, `MATERIAL` et `SERVICE`.
+ *
+ * Trois pastilles sur cinq s'enregistraient donc en `OTHER`, et le dédoublonnage
+ * de `helpTypeCodes` les réduisait à UNE SEULE valeur. Un membre qui cochait
+ * « Trajet » et « Matériel » enregistrait un seul `OTHER` : la moitié de son
+ * choix disparaissait en silence.
+ *
+ * ── LES CINQ LABELS DESSINÉS SONT GARDÉS, TROIS SONT AJOUTÉS ─────────────
+ *
+ * Les cinq premiers sont ceux de la planche, mot pour mot. Les trois derniers
+ * viennent de `HELP_TYPE_LABELS` (`@app/shared`), la table unique créée par la
+ * fusion — on ne réinvente pas leurs mots, on les lit.
+ *
+ * « Traduction » reçoit `SERVICE`, le code générique de service rendu : c'est le
+ * seul des huit qui n'ait pas de correspondance exacte, et le dire vaut mieux que
+ * de le laisser retomber dans `OTHER` avec deux autres. REMONTÉ au porteur.
+ *
+ * AU PLUS CINQ CHOIX : `updateProfileSchema.helpTypes` porte `.max(5)`. Offrir
+ * huit pastilles sans tenir cette borne ferait refuser l'enregistrement par le
+ * serveur, sur un écran qui aurait laissé cocher.
  */
 const HELP_TYPES = [
+  // Les cinq de la planche.
   { label: 'Démarches', code: 'PAPERWORK' },
   { label: 'Relecture CV', code: 'JOB' },
-  { label: 'Trajet', code: 'OTHER' },
-  { label: 'Traduction', code: 'OTHER' },
-  { label: 'Matériel', code: 'OTHER' },
+  { label: 'Trajet', code: 'RIDE' },
+  { label: 'Traduction', code: 'SERVICE' },
+  { label: 'Matériel', code: 'MATERIAL' },
+  // Les trois que la fusion rend disponibles, avec les mots de `HELP_TYPE_LABELS`.
+  { label: 'Logement', code: 'HOUSING' },
+  { label: 'Accueil', code: 'WELCOME' },
+  { label: 'Autre', code: 'OTHER' },
 ] as const;
+
+/**
+ * `updateProfileSchema` : dix compétences et dix langues au plus. La borne vit
+ * là-bas — elle est recopiée ici parce que l'écran doit la tenir AVANT l'envoi,
+ * sinon le serveur refuse un formulaire qui a laissé cocher.
+ */
+const CHOIX_MAX = 10;
+
+/** Les lignes du catalogue qui portent ces identifiants, dans l'ordre retenu. */
+function resoudre(
+  catalogue: readonly ChoixItem[],
+  ids: readonly string[],
+): readonly ChoixItem[] {
+  return ids
+    .map((id) => catalogue.find((c) => c.id === id))
+    .filter((c): c is ChoixItem => c !== undefined);
+}
+
+/** `updateProfileSchema.helpTypes` : au plus cinq. La borne vit là-bas, pas ici. */
+const HELP_TYPES_MAX = 5;
 
 const fold = (value: string): string =>
   value
@@ -280,6 +414,68 @@ export interface CountryChoice {
 }
 
 /**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE QUE LE CHAMP DE PSEUDO ANNONCE — CINQ ÉTATS, UNE SEULE FORME            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La maquette ne dessine qu'un état : la coche verte et « Disponible » en
+ * `#16785E`. Les quatre autres réemploient EXACTEMENT la même boîte — même
+ * taille, même graisse, même position — et ne changent que le mot et la teinte.
+ *
+ * ── D'OÙ VIENNENT LES DEUX TEINTES ────────────────────────────────────────
+ *
+ * `#16785E` est celle que la maquette écrit sur « Disponible ». `#B4581F` est
+ * dessinée dans LA MÊME maquette (`01 Accès et Onboarding.dc.html`, trois
+ * occurrences) et c'est sa teinte de refus. Rien n'est inventé.
+ *
+ * ── LES MOTS, EUX, NE SONT PAS DESSINÉS ───────────────────────────────────
+ *
+ * « Déjà pris », « Vérification… » et le rappel de format n'existent sur aucune
+ * planche, parce qu'aucune ne dessine ces états. Ils sont secs et factuels, et
+ * REMONTÉS au porteur comme les autres textes d'interface non dessinés.
+ *
+ * ── POURQUOI « ON NE SAIT PAS » NE DIT RIEN ───────────────────────────────
+ *
+ * `pris === null` après une vérification couvre deux cas : rien n'a encore été
+ * demandé, ou l'appel a échoué (réseau, `429`). Dans les deux, la coche reste
+ * ÉTEINTE et la phrase vide. Allumer la coche « par défaut » est exactement le
+ * défaut qu'on corrige : une promesse que personne n'a vérifiée.
+ */
+export function etatPseudo(
+  handle: string,
+  pris: boolean | null,
+  enCours: boolean,
+): { handleCheckDisplay: string; handleHint: string; handleHintColor: string } {
+  const eteint = { handleCheckDisplay: 'none', handleHint: '', handleHintColor: '#5D6B66' };
+  if (handle === '') return eteint;
+
+  /**
+   * LA MÊME RÈGLE QUE LE SERVEUR, LUE DEPUIS LE SERVEUR. `handleSchema` vient de
+   * `@app/shared` : trois caractères au moins, trente au plus, minuscules,
+   * chiffres, tiret et souligné sans doublon, et jamais un chiffre en tête. La
+   * recopier ici ferait deux vérités, et c'est la seconde qui finit par mentir.
+   */
+  const forme = handleSchema.safeParse(handle);
+  if (!forme.success) {
+    return {
+      handleCheckDisplay: 'none',
+      handleHint: forme.error.issues[0]?.message ?? 'Pseudo invalide.',
+      handleHintColor: '#B4581F',
+    };
+  }
+
+  if (enCours) return { ...eteint, handleHint: 'Vérification…' };
+  if (pris === true) {
+    return { handleCheckDisplay: 'none', handleHint: 'Déjà pris', handleHintColor: '#B4581F' };
+  }
+  if (pris === false) {
+    // Le seul état que la maquette dessine : la coche et son mot, à l'identique.
+    return { handleCheckDisplay: 'block', handleHint: 'Disponible', handleHintColor: '#16785E' };
+  }
+  return eteint;
+}
+
+/**
  * Le compte à rebours de renvoi et le bouton qui l'attend — P02.
  *
  * UN SEUL objet pour les deux, parce que c'est un seul état : la maquette dessine
@@ -346,6 +542,8 @@ export interface ScreenActions {
   readonly onChangeNumber: () => void;
   /** O01 à O04 — enregistrer et passer à l'écran suivant. */
   readonly onContinue: () => void;
+  /** Le bouton retour de l'en-tête — remonte d'une étape. Voir `use-onboarding-flow.ts`. */
+  readonly onBack: () => void;
   /**
    * Les pays proposés, chargés depuis `/places/countries`.
    *
@@ -355,6 +553,14 @@ export interface ScreenActions {
   readonly countryOptions: readonly CountryChoice[];
   /** Les villes du pays de destination, chargées une fois (02 §2.2). */
   readonly cityCatalogue: readonly CityChoice[];
+  /**
+   * Les compétences et les langues proposées — `GET /places/skills` et
+   * `GET /places/languages`. Soixante et vingt-quatre lignes, servies triées :
+   * assez peu pour tenir en une réponse, d'où un filtre à l'écran plutôt qu'un
+   * aller-retour par frappe.
+   */
+  readonly skillCatalogue: readonly ChoixItem[];
+  readonly languageCatalogue: readonly ChoixItem[];
   /**
    * Les modèles de parcours, chargés depuis `GET /journey-templates` (03 §2.1).
    *
@@ -392,8 +598,48 @@ export interface OnboardingVals extends ScreenActions {
   // ── O02 : pays d'origine et ville ─────────────────────────────────────────
   readonly originName: string;
   readonly originIso2: string;
-  readonly onOriginChange: (event: { target: { value: string } }) => void;
-  readonly originFlagDisplay: string;
+  /**
+   * Le drapeau du pays choisi, dérivé de son code ISO (`drapeau.ts`).
+   *
+   * Il REMPLACE `originFlagDisplay`, qui ne servait qu'à MASQUER la pastille :
+   * la maquette ne peint qu'un drapeau, celui du Bénin, et l'afficher à côté du
+   * Sénégal aurait été un défaut. Un drapeau juste pour chaque pays rend ce
+   * masquage inutile.
+   */
+  /**
+   * ── P01 : L'INDICATIF S'OUVRE DANS LE MÊME PANNEAU QUE O02 ───────────────
+   *
+   * Le porteur : « Utilise le modal de sélection du pays ici aussi. » C'est le
+   * même contrôle, monté une seconde fois par la page — et la même raison : un
+   * `<option>` ne rend que du texte, donc le menu natif ne pouvait pas porter de
+   * drapeau.
+   */
+  readonly countryFlag: string;
+  readonly countryOuvert: boolean;
+  readonly onCountryOuvrir: () => void;
+  readonly onCountryFermer: () => void;
+  readonly onCountryPick: (iso2: string) => void;
+  readonly paysIndicatifSelecteur: ReactNode;
+
+  readonly originFlag: string;
+  /** Le panneau de choix du pays est ouvert — porte `aria-expanded`. */
+  readonly originOuvert: boolean;
+  readonly onOriginOuvrir: () => void;
+  readonly onOriginFermer: () => void;
+  /** Choisir un pays le retient ET referme le panneau : un seul geste. */
+  readonly onOriginPick: (iso2: string) => void;
+  /**
+   * LE PANNEAU LUI-MÊME, monté par la page.
+   *
+   * Il ne peut pas être construit ici : `data.ts` n'est pas un fichier de rendu,
+   * et surtout les deux cadres ont une GÉOMÉTRIE DIFFÉRENTE — la carte blanche de
+   * 22 px de rayon sur ordinateur, la page nue sur téléphone. La page passe donc
+   * à chaque cadre le panneau de sa variante, exactement comme
+   * `nouvelle-story-screen.tsx` fait pour le sélecteur de parcours de A14.
+   *
+   * `null` pour les cinq autres écrans de l'onboarding, qui n'en ont pas.
+   */
+  readonly paysSelecteur: ReactNode;
   /**
    * Les pays proposés comme ORIGINE. La France en est exclue : elle est
    * `DESTINATION` (02 §2.1), et l'API refuse de l'accepter comme pays d'origine.
@@ -402,13 +648,111 @@ export interface OnboardingVals extends ScreenActions {
   readonly originOptions: readonly CountryChoice[];
   readonly citySearch: string;
   readonly onCitySearch: (event: { target: { value: string } }) => void;
+  /**
+   * ── O02 : LA VILLE DANS LE PANNEAU ────────────────────────────────────────
+   *
+   * `villeNom` est la ville retenue, ou l'invite que la planche écrit dans son
+   * champ (« Votre ville ») tant que rien n'est choisi : la ligne dit alors ce
+   * qu'elle attend, comme le faisait le champ qu'elle remplace.
+   */
+  readonly villeNom: string;
+  readonly villeOuvert: boolean;
+  readonly onVilleOuvrir: () => void;
+  readonly onVilleFermer: () => void;
+  readonly villeSelecteur: ReactNode;
 
   // ── O04 : profil ──────────────────────────────────────────────────────────
   readonly displayNameValue: string;
   readonly onDisplayNameChange: (event: { target: { value: string } }) => void;
   readonly handleValue: string;
   readonly onHandleChange: (event: { target: { value: string } }) => void;
+  /**
+   * ── LE PSEUDO EST-IL LIBRE ? ──────────────────────────────────────────────
+   *
+   * Le porteur : « Le pseudo est vérifié ? » Il ne l'était pas. La maquette
+   * dessine une coche verte et le mot « Disponible » SOUS le champ, et ces deux
+   * littéraux s'affichaient quoi qu'on tape — y compris sur un pseudo déjà pris.
+   *
+   * Les trois prises ci-dessous ne font que donner une VALEUR à ce que la
+   * maquette dessine déjà : la coche s'affiche ou non, et la phrase change de
+   * mot et de teinte. Aucune forme nouvelle, aucune position nouvelle.
+   */
+  readonly handleCheckDisplay: string;
+  readonly handleHint: string;
+  readonly handleHintColor: string;
+
+  // ── O04 : compétences et langues ──────────────────────────────────────────
+  /**
+   * LES DEUX CHAMPS, montés par la page.
+   *
+   * `data.ts` n'est pas un fichier de rendu — il ne peut pas construire de JSX.
+   * La page passe donc le contrôle à chaque cadre, exactement comme pour le
+   * panneau de pays de O02. `null` partout ailleurs.
+   */
+  /**
+   * ── LE PORTRAIT ───────────────────────────────────────────────────────────
+   *
+   * `avatarFond` est une valeur CSS `background-image` : `none` tant qu'aucune
+   * photo n'est choisie, `url(...)` ensuite. L'appareil photo de la maquette
+   * s'efface alors (`avatarIconDisplay`), sans quoi il se superposerait au
+   * portrait.
+   *
+   * Les trois sont recouvertes par la page, qui tient le choisisseur de fichier.
+   */
+  /** « 2 / 5 » — l'idiome de compteur de ce dossier, pas une phrase nouvelle. */
+  readonly helpTypesCount: string;
+
+  readonly onAvatar: () => void;
+  readonly avatarFond: string;
+  readonly avatarIconDisplay: string;
+
+  readonly competencesChamp: ReactNode;
+  readonly languesChamp: ReactNode;
+  readonly competencesOptions: readonly ChoixItem[];
+  readonly competencesChoisies: readonly ChoixItem[];
+  readonly onAjouterCompetence: (id: string) => void;
+  readonly onRetirerCompetence: (id: string) => void;
+  /**
+   * CRÉER une compétence qui n'existe pas encore — « le free typing ». Elle naît
+   * rattachée à son auteur et n'est choisissable que par lui, jusqu'à ce que
+   * l'équipe la globalise. Recouverte par le crochet, qui tient le catalogue.
+   */
+  readonly onCreerCompetence: (nom: string) => Promise<void>;
+  readonly languesOptions: readonly ChoixItem[];
+  readonly languesChoisies: readonly ChoixItem[];
+  readonly onAjouterLangue: (id: string) => void;
+  readonly onRetirerLangue: (id: string) => void;
+  /** `updateProfileSchema` : dix au plus, pour chacune des deux listes. */
+  readonly choixMax: number;
   readonly onPhoneChange: (event: { target: { value: string } }) => void;
+  /**
+   * ── LE NUMÉRO, VALIDÉ PAR `libphonenumber` ───────────────────────────────
+   *
+   * Le porteur : « il faut la validation du numéro selon le pays. Backend et
+   * frontend aussi », puis « utilise les librairies de validation de lib number
+   * de Google ».
+   *
+   * `phoneExemple` remplace l'invite dessinée « 97 12 34 42 » — un numéro
+   * béninois d'AVANT la renumérotation de 2023, que la bibliothèque refuse
+   * aujourd'hui — par l'exemple officiel du pays choisi.
+   *
+   * `phoneBordure` reprend le trait dessiné et le passe au refus quand ce qui est
+   * tapé ne vaut rien. Un champ VIDE reste vert : on ne reproche rien à qui n'a
+   * encore rien écrit.
+   *
+   * `phoneValide` grise « Recevoir le code » : on n'envoie pas un SMS pour
+   * recevoir un refus.
+   */
+  readonly phoneExemple: string;
+  readonly phoneValide: boolean;
+  readonly phoneBordure: string;
+  /**
+   * Le numéro MASQUÉ, pour l'écran du code. La planche écrit « +229 •• •• •• 42 »
+   * en clair, et cet exemple s'affichait quel que soit le numéro tapé — c'est le
+   * défaut que le porteur a signalé. Le serveur ne peut pas le fournir : il ne
+   * masque que pour un membre authentifié, et le code n'est pas encore vérifié.
+   */
+  readonly phoneMasque: string;
   readonly codeValue: string;
   readonly onCodeChange: (event: { target: { value: string } }) => void;
   readonly phases: readonly {
@@ -449,6 +793,7 @@ export interface OnboardingVals extends ScreenActions {
    * boutons — il leur faut donc quelque chose à appeler.
    */
   readonly cities: readonly {
+    readonly id: string;
     readonly name: string;
     readonly meta: string;
     readonly bg: string;
@@ -466,6 +811,18 @@ export interface OnboardingVals extends ScreenActions {
     readonly bg: string;
     readonly bd: string;
     readonly iconBg: string;
+    /** Choisir ce type décide du parcours créé à la fin de l'inscription. */
+    readonly onPick: () => void;
+    /** Le rang dans la liste COMPLÈTE des modèles — voir le bloc `goals`. */
+    readonly rang: number;
+  })[];
+  /** Les objectifs qui n'ouvrent AUCUN parcours — la section « sans créer de parcours ». */
+  readonly goalsSansParcours: readonly (GoalCard & {
+    readonly bg: string;
+    readonly bd: string;
+    readonly iconBg: string;
+    readonly onPick: () => void;
+    readonly rang: number;
   })[];
   readonly statuses: readonly Chip[];
   readonly create: boolean;
@@ -517,6 +874,21 @@ export function onboardingVals(
   patch: (next: Partial<OnboardingState>) => void,
   actions: ScreenActions,
 ): OnboardingVals {
+  /**
+   * LE MEMBRE CRÉERA-T-IL VRAIMENT UN PARCOURS ?
+   *
+   * Deux conditions, et il faut les deux : la case cochée, ET un type qui ouvre
+   * quelque chose. Les objectifs « sans créer de parcours » portent
+   * `creates_journey = false` — voir `packages/db/prisma/schema/03-journeys.prisma`.
+   *
+   * Tant que la liste n'est pas arrivée, `templates[state.goal]` est `undefined` :
+   * on s'en tient alors à la case, comme avant ce lot. Un écran qui annoncerait
+   * « aucun parcours » le temps d'un aller-retour réseau mentirait dans l'autre
+   * sens.
+   */
+  const choisi = actions.templates[state.goal];
+  const creeUnParcours = state.create && choisi?.createsJourney !== false;
+
   return {
     ...actions,
     phases: PHASE_CARDS.map((p, i) => {
@@ -547,6 +919,17 @@ export function onboardingVals(
       // comptent.
       patch({ phone: event.target.value.replace(/[^\d\s]/g, '').slice(0, 20) });
     },
+    /**
+     * Le pays de l'INDICATIF (P01), et non celui d'origine : c'est lui qui décide
+     * du plan de numérotation. Les deux sont distincts depuis toujours (§2.7).
+     */
+    phoneExemple: exempleNational(state.countryIso2),
+    phoneValide: numeroValide(state.phone, state.countryIso2),
+    phoneBordure:
+      state.phone.trim() === '' || numeroValide(state.phone, state.countryIso2)
+        ? '1.5px solid #16785E'
+        : '1.5px solid #B4581F',
+    phoneMasque: masqueNumero(state.phone, state.countryIso2),
     codeValue: state.code,
     onCodeChange: (event: { target: { value: string } }) => {
       patch({ code: event.target.value.replace(/\D/g, '').slice(0, 6) });
@@ -555,11 +938,31 @@ export function onboardingVals(
     originIso2: state.originIso2,
     originName:
       actions.countryOptions.find((c) => c.iso2 === state.originIso2)?.nameFr ?? 'Bénin',
-    originFlagDisplay: state.originIso2 === DRAWN_COUNTRY ? 'block' : 'none',
+    countryFlag: drapeauDe(state.countryIso2),
+    countryOuvert: state.countryOuvert,
+    onCountryOuvrir: () => patch({ countryOuvert: true }),
+    onCountryFermer: () => patch({ countryOuvert: false }),
+    /**
+     * UN SEUL `patch` : retenir l'indicatif ET refermer. Deux appels feraient deux
+     * rendus, et le second rouvrirait un panneau que le premier a remplacé.
+     */
+    onCountryPick: (iso2: string) => patch({ countryIso2: iso2, countryOuvert: false }),
+    // La page de P01 passe le sien ; les autres écrans n'en ont pas.
+    paysIndicatifSelecteur: null,
+    originFlag: drapeauDe(state.originIso2),
     originOptions: actions.countryOptions.filter((c) => c.iso2 !== 'FR'),
-    onOriginChange: (event: { target: { value: string } }) => {
-      patch({ originIso2: event.target.value });
-    },
+    originOuvert: state.originOuvert,
+    onOriginOuvrir: () => patch({ originOuvert: true }),
+    onOriginFermer: () => patch({ originOuvert: false }),
+    /**
+     * UN SEUL `patch` pour les deux changements : le pays retenu et la fermeture.
+     * Deux appels successifs feraient deux rendus, et le second rouvrirait un
+     * panneau que le premier a déjà remplacé — c'est le genre de scintillement
+     * qu'on ne voit qu'au navigateur.
+     */
+    onOriginPick: (iso2: string) => patch({ originIso2: iso2, originOuvert: false }),
+    // Les cinq autres écrans n'ont pas de panneau ; la page de O02 passe le sien.
+    paysSelecteur: null,
     displayNameValue: state.displayName,
     onDisplayNameChange: (event: { target: { value: string } }) => {
       patch({ displayName: event.target.value.slice(0, 60) });
@@ -568,6 +971,62 @@ export function onboardingVals(
     onHandleChange: (event: { target: { value: string } }) => {
       patch({ handle: toHandle(event.target.value) });
     },
+    /**
+     * L'ÉTAT PAR DÉFAUT NE SAIT RIEN DU SERVEUR — et c'est volontaire.
+     *
+     * Cette fonction est pure : elle ne peut pas interroger l'API. Le crochet
+     * `use-onboarding-flow` recouvre ces trois valeurs une fois la réponse
+     * connue. Ici on ne décide que de ce qui se lit SANS le serveur : un champ
+     * vide ou trop court ne promet rien.
+     */
+    ...etatPseudo(state.handle, null, false),
+
+    /**
+     * ── CE QUI EST RETENU, RÉSOLU DEPUIS LE CATALOGUE ───────────────────────
+     *
+     * L'état ne garde que des identifiants ; les NOMS viennent du catalogue. Un
+     * identifiant qui n'y est plus — une compétence désactivée en back-office
+     * entre deux visites — disparaît simplement de l'affichage au lieu de rendre
+     * une pastille vide.
+     */
+    competencesOptions: actions.skillCatalogue,
+    competencesChoisies: resoudre(actions.skillCatalogue, state.skillIds),
+    onAjouterCompetence: (id: string) => {
+      if (state.skillIds.includes(id) || state.skillIds.length >= CHOIX_MAX) return;
+      patch({ skillIds: [...state.skillIds, id] });
+    },
+    onRetirerCompetence: (id: string) => {
+      patch({ skillIds: state.skillIds.filter((x) => x !== id) });
+    },
+    /**
+     * Le défaut ne crée RIEN : cette fonction est pure, elle ne peut pas appeler
+     * l'API. `use-onboarding-flow` la recouvre — c'est lui qui tient le catalogue
+     * et qui doit y ajouter la ligne créée pour que la pastille sache se nommer.
+     */
+    // `Promise.resolve()` et non `async` : une fonction `async` sans `await` est
+    // refusée par la règle `require-await`, et elle aurait raison — il n'y a rien
+    // à attendre ici.
+    onCreerCompetence: () => Promise.resolve(),
+    languesOptions: actions.languageCatalogue,
+    languesChoisies: resoudre(actions.languageCatalogue, state.languageIds),
+    onAjouterLangue: (id: string) => {
+      if (state.languageIds.includes(id) || state.languageIds.length >= CHOIX_MAX) return;
+      patch({ languageIds: [...state.languageIds, id] });
+    },
+    onRetirerLangue: (id: string) => {
+      patch({ languageIds: state.languageIds.filter((x) => x !== id) });
+    },
+    choixMax: CHOIX_MAX,
+    // Les cinq autres écrans n'ont pas ces champs ; la page de O04 passe les siens.
+    competencesChamp: null,
+    languesChamp: null,
+    /**
+     * Le portrait, à l'état « rien de choisi » — c'est exactement ce que la
+     * maquette dessine. La page de O04 recouvre les trois dès qu'une photo part.
+     */
+    onAvatar: () => undefined,
+    avatarFond: 'none',
+    avatarIconDisplay: 'block',
     consentAccepted: state.consentAccepted,
     onToggleConsent: () => patch({ consentAccepted: !state.consentAccepted }),
     consentBg: state.consentAccepted ? '#16785E' : '#fff',
@@ -674,16 +1133,31 @@ export function onboardingVals(
      * vert pâle, une ville sans réseau ouvert est grisée et porte « bientôt » —
      * elle reste sélectionnable, comme 02 §2.2 l'exige.
      */
+    villeNom:
+      actions.cityCatalogue.find((c) => c.id === state.cityId)?.name ?? 'Votre ville',
+    villeOuvert: state.villeOuvert,
+    onVilleOuvrir: () => patch({ villeOuvert: true }),
+    onVilleFermer: () => patch({ villeOuvert: false }),
+    // La page de O02 passe le sien ; les autres écrans n'en ont pas.
+    villeSelecteur: null,
     cities: matchCities(actions.cityCatalogue, state.citySearch).map((city) => {
       const chosen = state.cityId === city.id;
       return {
+        /** L'identifiant : le panneau en a besoin pour sa clé et sa coche. */
+        id: city.id,
         name: city.name,
         meta: city.isActive ? `${city.memberCount} membres` : 'bientôt',
         bg: chosen ? '#E3F0EB' : 'transparent',
         fg: city.isActive || chosen ? '#16211D' : '#8A958F',
         metaFg: chosen ? '#0F5C48' : city.isActive ? '#5D6B66' : '#8A958F',
         metaBg: chosen ? '#fff' : '#F2F5F4',
-        onPick: () => patch({ cityId: city.id, citySearch: city.name }),
+        /**
+         * CHOISIR UNE VILLE REFERME LE PANNEAU — un seul geste, comme pour le
+         * pays. `citySearch` est vidé plutôt que rempli du nom : la recherche a
+         * fait son travail, et la rouvrir sur un filtre déjà posé cacherait les
+         * autres villes.
+         */
+        onPick: () => patch({ cityId: city.id, citySearch: '', villeOuvert: false }),
       };
     }),
 
@@ -701,22 +1175,74 @@ export function onboardingVals(
      * met en avant. Le choix réel du type se fait sur J02 (`/parcours/nouveau`),
      * où la maquette dessine bien quatre cartes sélectionnables.
      */
-    goals: goalCards(actions.templates).map((g) => ({
-      ...g,
-      bg: g.on ? '#EFF7F3' : '#fff',
-      bd: g.on ? '2px solid #16785E' : '1px solid #E6EBE9',
-      iconBg: g.on ? '#fff' : '#E3F0EB',
-    })),
+    /**
+     * ── DEUX GROUPES, UN SEUL INDEX ───────────────────────────────────────────
+     *
+     * `GET /journey-templates` sert maintenant SIX objectifs : les quatre qui
+     * ouvrent un parcours, et les deux que T5 §O03 met sous « sans créer de
+     * parcours » (`createsJourney: false`). La maquette les dessine en deux
+     * sections ; la donnée les sépare donc ici, et NULLE PART AILLEURS.
+     *
+     * `state.goal` reste un rang dans la liste COMPLÈTE, et c'est le point : les
+     * deux listes filtrent mais conservent l'index d'origine dans leur `onPick`.
+     * Un index par section obligerait `use-onboarding-flow.ts` à savoir laquelle
+     * a été choisie pour retrouver le modèle — deux sources pour un seul choix.
+     */
+    goals: goalCards(actions.templates, state.goal)
+      .map((g, i) => ({ ...g, rang: i }))
+      .filter((g) => actions.templates[g.rang]?.createsJourney !== false)
+      .map((g) => ({
+        ...g,
+        onPick: () => patch({ goal: g.rang }),
+        bg: g.on ? '#EFF7F3' : '#fff',
+        bd: g.on ? '2px solid #16785E' : '1px solid #E6EBE9',
+        iconBg: g.on ? '#fff' : '#E3F0EB',
+      })),
+
+    /**
+     * Les objectifs QUI N'OUVRENT PAS DE PARCOURS — la seconde section.
+     *
+     * Mêmes jetons de sélection que la première : T5 §O03 pose que « les deux
+     * groupes ont le même rang visuel de choix », donc la même paire
+     * `#EFF7F3` / `2px solid #16785E` que la maquette emploie déjà pour la carte
+     * choisie. Rien n'est inventé : c'est son état choisi, repris tel quel.
+     */
+    goalsSansParcours: goalCards(actions.templates, state.goal)
+      .map((g, i) => ({ ...g, rang: i }))
+      .filter((g) => actions.templates[g.rang]?.createsJourney === false)
+      .map((g) => ({
+        ...g,
+        onPick: () => patch({ goal: g.rang }),
+        bg: g.on ? '#EFF7F3' : '#fff',
+        bd: g.on ? '2px solid #16785E' : '1px solid #E6EBE9',
+        iconBg: g.on ? '#fff' : '#E3F0EB',
+      })),
 
     // Un seul statut à la fois : c'est une colonne unique dans `user_profiles`.
     statuses: OCCUPATIONS.map((o, i) =>
       chip(o.label, state.occupation === i, () => patch({ occupation: i })),
     ),
 
-    create: state.create,
+    /**
+     * ── UN OBJECTIF NON DÉVELOPPABLE NE CRÉE RIEN, ET LA CASE LE DIT ─────────
+     *
+     * « M'intégrer, rencontrer du monde » et « Aider les autres » portent
+     * `creates_journey = false` : choisir l'un d'eux n'ouvre aucun parcours, et
+     * `use-onboarding-flow.ts` s'arrête avant la création.
+     *
+     * La case et sa phrase doivent le dire. Sans cela l'écran annonçait « Le
+     * parcours “M'intégrer, rencontrer du monde” (0 étapes) sera créé à la fin de
+     * l'inscription » — mesuré au navigateur — c'est-à-dire exactement ce qui ne
+     * se passera pas. Un engagement faux sur le dernier écran avant la fin.
+     *
+     * `creeUnParcours` est donc la VÉRITÉ AFFICHÉE : la case du membre ET le type
+     * choisi. L'état `state.create` n'est pas touché — le membre le retrouve tel
+     * qu'il l'a laissé s'il revient sur un parcours développable.
+     */
+    create: creeUnParcours,
     toggleCreate: () => patch({ create: !state.create }),
-    createBg: state.create ? '#16785E' : '#fff',
-    createBd: state.create ? 'none' : '1.5px solid #CBD5D1',
+    createBg: creeUnParcours ? '#16785E' : '#fff',
+    createBd: creeUnParcours ? 'none' : '1.5px solid #CBD5D1',
     /**
      * La phrase sous la case, avec le NOM et le NOMBRE D'ÉTAPES du vrai modèle.
      *
@@ -729,9 +1255,9 @@ export function onboardingVals(
      * chiffrer : promettre un nombre qu'on ne connaît pas est exactement la faute
      * que la maquette commettait.
      */
-    createHelp: !state.create
+    createHelp: !creeUnParcours
       ? 'Aucun parcours ne sera créé. Vous pourrez en créer un plus tard depuis Parcours.'
-      : createAnnounce(actions.templates),
+      : createAnnounce(actions.templates, state.goal),
 
     /**
      * Le même `templates[0]` que `createHelp` et que la création elle-même.
@@ -749,16 +1275,40 @@ export function onboardingVals(
     // La pastille de l'interrupteur : 3 px à gauche, 23 px à droite. C'est le
     // SEUL mouvement de cet écran, et il tient en une transition de `left`.
     helpKnob: state.help ? '23px' : '3px',
-    // Plusieurs types d'aide, au plus cinq (`updateProfileSchema`).
-    helpTypes: HELP_TYPES.map((h, i) =>
-      chip(h.label, state.helpChoices.includes(i), () =>
+    /**
+     * Huit types d'aide, AU PLUS CINQ RETENUS.
+     *
+     * La borne est celle du serveur (`updateProfileSchema.helpTypes.max(5)`).
+     * Un sixième appui ne fait RIEN plutôt que de remplacer un choix au hasard :
+     * remplacer sans le dire ferait disparaître une pastille que le membre vient
+     * de cocher, sous ses yeux, sans qu'il comprenne pourquoi.
+     */
+    /**
+     * LE COMPTEUR DES TYPES D'AIDE — « il faut préciser le nombre d'aide possible
+     * à cocher. J'ai remarqué que c'était 5. »
+     *
+     * La forme « 2 / 5 » n'est PAS inventée : c'est le compteur que ce dossier
+     * écrit déjà, mot pour mot, sous la zone de texte de A14 (« 118 / 280 »).
+     * Reprendre son idiome évite d'écrire une phrase d'interface pour dire un
+     * nombre.
+     *
+     * La borne vient de `updateProfileSchema.helpTypes.max(5)` — elle n'est pas
+     * choisie ici, elle est RECOPIÉE de ce que le serveur accepte, et c'est la
+     * même constante qui empêche le sixième appui.
+     */
+    helpTypesCount: `${String(state.helpChoices.length)} / ${String(HELP_TYPES_MAX)}`,
+    helpTypes: HELP_TYPES.map((h, i) => {
+      const on = state.helpChoices.includes(i);
+      const plein = !on && state.helpChoices.length >= HELP_TYPES_MAX;
+      return chip(h.label, on, () => {
+        if (plein) return;
         patch({
-          helpChoices: state.helpChoices.includes(i)
+          helpChoices: on
             ? state.helpChoices.filter((x) => x !== i)
             : [...state.helpChoices, i],
-        }),
-      ),
-    ),
+        });
+      });
+    }),
 
     events: [
       { d: '24', m: 'FÉV', t: 'Apéro Diaspora et Étudiants', s: 'Berges du Rhône · 19h00' },
@@ -801,13 +1351,34 @@ export function onboardingVals(
  * qu'on retire. Les valeurs de la maquette ne reviennent jamais en repli.
  */
 export interface ParcoursPret {
+  /**
+   * L'identifiant du parcours créé, ou `null` tant que `GET /journeys` n'a pas
+   * répondu. C'est lui que « Commencer » ouvre — le bouton n'avait AUCUN geste
+   * (« Le bouton commencer ne marche pas sur cet écran »), et il ne pouvait pas
+   * en avoir : l'écran lisait le titre et le rang de l'étape, jamais l'identifiant.
+   */
+  readonly id: string | null;
   readonly titre: string;
   readonly rang: number;
   readonly total: number;
   readonly etape: string;
+  /**
+   * La description de l'étape en cours. Vide tant que la réponse n'est pas là —
+   * et vide pour de bon si l'étape n'en a pas : la planche écrivait sinon
+   * « Campus France, choix des formations, lettre de motivation » sous l'étape de
+   * n'importe quel parcours.
+   */
+  readonly description: string;
 }
 
-export const PARCOURS_INCONNU: ParcoursPret = { titre: '', rang: 0, total: 0, etape: '' };
+export const PARCOURS_INCONNU: ParcoursPret = {
+  id: null,
+  titre: '',
+  rang: 0,
+  total: 0,
+  etape: '',
+  description: '',
+};
 
 /**
  * O05 — les deux atterrissages de §5, écran 6.
@@ -817,6 +1388,12 @@ export const PARCOURS_INCONNU: ParcoursPret = { titre: '', rang: 0, total: 0, et
  */
 export interface O05Data extends OnboardingVals {
   readonly parcours: ParcoursPret;
+  /**
+   * « Commencer » — il n'avait AUCUN geste. Il ouvre le parcours que l'écran vient
+   * d'annoncer, par son identifiant ; tant que `GET /journeys` n'a pas répondu, il
+   * ne fait rien plutôt que d'aller sur une adresse construite avec `null`.
+   */
+  readonly onCommencer: () => void;
 }
 
 /** L'état et les valeurs, pour un composant client. */

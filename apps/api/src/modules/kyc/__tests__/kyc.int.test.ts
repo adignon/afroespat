@@ -18,6 +18,7 @@ import { VerificationLevelService } from '../../users/verification-level.service
 import { hashStaffPassword } from '../../admin/staff-password';
 import { generateTotpSecret } from '../../admin/totp';
 import { KycService } from '../kyc.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Vérification d'identité et fraîcheur du jeton — 01 §2.3, §2.4, §4.3 et T4 §2.
@@ -57,7 +58,7 @@ describe('vérification d’identité (01 §2.3, §2.4, §4.3)', () => {
   /** Un numéro béninois distinct par appel : les limites d'OTP sont par numéro. */
   const nextPhone = (): string => {
     counter += 1;
-    return `9${String(Date.now()).slice(-6)}${String(counter).padStart(2, '0')}`;
+    return numeroDEpreuve(counter);
   };
 
   /** Inscription complète, par le service : on veut une VRAIE session en base. */

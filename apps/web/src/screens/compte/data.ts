@@ -73,6 +73,17 @@
 export interface Bandeau {
   readonly nom: string;
   readonly initiales: string;
+  /**
+   * LE FOND DU ROND D'AVATAR : la photo du membre, ou `null`.
+   *
+   * `null` et non la chaîne vide : c'est ce que le cadre teste pour décider s'il
+   * écrit les initiales. Une chaîne vide poserait un `background` vide ET
+   * effacerait les lettres — un rond blanc, sans rien.
+   *
+   * Composé par `photoFondFor`, la même recette que la story, le composeur et le
+   * carrousel : un fond CSS prêt, jamais une adresse nue.
+   */
+  readonly photo: string | null;
   readonly pseudo: string;
   readonly niveau: number;
   readonly prenom: string;
@@ -81,8 +92,73 @@ export interface Bandeau {
 }
 
 /** K01 — mon profil. `profil` mêle `GET /me` et `GET /users/{pseudo}` : voir `appels.ts`. */
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ CE QUE LA PAGE « MON PROFIL » PERMET D'ÉCRIRE                               ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * `profil` reste la LECTURE — ce que la page affiche avant qu'on y touche, et ce
+ * que les boîtes non modifiables (compétences, langues, pays) continuent de
+ * montrer. `edition` est l'ÉCRITURE, et les deux coexistent parce que la page
+ * fait les deux : elle affiche un profil ET le modifie.
+ *
+ * `phases` et `villes` SONT DES LISTES FERMÉES : la phase est un enum généré
+ * depuis la base, la ville un identifiant de référentiel. Les passer en options
+ * plutôt qu'en texte libre est ce qui empêche la page d'envoyer une valeur que
+ * l'API refuserait.
+ */
+export interface EditionProfil {
+  readonly nom: string;
+  readonly onNom: (event: { target: { value: string } }) => void;
+  readonly pseudo: string;
+  readonly onPseudo: (event: { target: { value: string } }) => void;
+  readonly bio: string;
+  readonly onBio: (event: { target: { value: string } }) => void;
+  readonly phase: string;
+  readonly onPhase: (event: { target: { value: string } }) => void;
+  readonly phases: readonly { readonly valeur: string; readonly libelle: string }[];
+  readonly ville: string;
+  readonly onVille: (event: { target: { value: string } }) => void;
+  readonly villes: readonly { readonly valeur: string; readonly libelle: string }[];
+  /** `YYYY-MM-DD` — la forme que `updateMeSchema.arrivalDate` attend. */
+  readonly arrivee: string;
+  readonly onArrivee: (event: { target: { value: string } }) => void;
+  readonly statuts: readonly {
+    readonly valeur: string;
+    readonly libelle: string;
+    readonly choisi: boolean;
+    readonly onChoisir: () => void;
+  }[];
+  readonly aide: boolean;
+  readonly onAide: () => void;
+  readonly visible: boolean;
+  readonly onVisible: () => void;
+  readonly onPhoto: () => void;
+  readonly onEnregistrer: () => void;
+  readonly bloque: boolean;
+  readonly libelle: string;
+}
+
 export interface K01Data {
   readonly moi: Bandeau;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « COMPÉTENCES ET LANGUES NE SONT PAS MODIFIABLES ? »                    ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Non — c'étaient deux boîtes de TEXTE. `PATCH /me/profile` accepte pourtant
+   * `skillIds` et `languageIds` depuis le début, et `GET /places/skills` /
+   * `GET /places/languages` servent les référentiels aux membres.
+   *
+   * LES IDENTIFIANTS VOYAGENT À CÔTÉ DES LIBELLÉS : la boîte affiche
+   * « Relecture de CV, Démarches CAF » — une phrase composée — et la fenêtre de
+   * choix a besoin de savoir lesquels sont cochés.
+   */
+  readonly competencesIds?: readonly string[];
+  readonly languesIds?: readonly string[];
+  readonly onCompetences?: () => void;
+  readonly onLangues?: () => void;
+  readonly profilOccupe?: boolean;
   readonly profil: {
     readonly statut: string;
     readonly ville: string;
@@ -93,7 +169,18 @@ export interface K01Data {
     readonly langues: string;
     readonly aides: string;
   };
+  readonly edition: EditionProfil;
 }
+
+/**
+ * CE QUE LE CHARGEUR REND, SANS LES GESTES.
+ *
+ * `edition` porte des RAPPELS et de l'état de formulaire : rien de cela ne sort
+ * d'un appel à l'API, et le demander au chargeur l'obligerait à fabriquer des
+ * fonctions vides. L'écran compose les deux — la lecture vient du réseau,
+ * l'écriture vit dans la page.
+ */
+export type K01Lecture = Omit<K01Data, 'edition'>;
 
 /** K02 — le profil public d'un autre membre (`GET /users/{pseudo}`). */
 export interface K02Data {
@@ -110,6 +197,15 @@ export interface K02Data {
      */
     readonly prenom: string;
     readonly initiales: string;
+    /**
+     * LA PHOTO DU MEMBRE VISITÉ, en valeur CSS de fond — `null` sans photo.
+     *
+     * Le porteur : « la section de l'avatar a un souci ». Le grand rond écrivait
+     * « FN » EN DUR sur la planche d'ordinateur — les initiales de l'exemple — et
+     * ne lisait jamais `avatarUrl`, que `publicProfileResponseSchema` sert depuis
+     * le début.
+     */
+    readonly photo: string | null;
     readonly pseudo: string;
     readonly niveau: number;
     readonly phase: string;
@@ -119,7 +215,121 @@ export interface K02Data {
     readonly bio: string;
     readonly aides: string;
     readonly entraides: number;
+    /**
+     * LES TROIS AUTRES COMPTEURS, de `publicProfileResponseSchema.stats`.
+     *
+     * Le porteur : « la page desktop marche ? » Sur les quatre cartes de
+     * chiffres, UNE SEULE était liée : « 3 guides utiles », « 2 parrainages » et
+     * « 9 événements » étaient les nombres de la maquette, servis à tout le
+     * monde. Les trois champs existaient dans la réponse depuis le début.
+     */
+    readonly guides: number;
+    readonly parrainages: number;
+    readonly evenements: number;
   };
+  /** « Recommander » — `POST /recommendations/members`. */
+  readonly onRecommander?: () => void;
+  readonly recommandeBloque?: boolean;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CE QUE CE MEMBRE A PUBLIÉ — LES SEPT ONGLETS                            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « des tabs (guides, fil d'actualités, stories, entraides,
+   * services, évènements, parcours publics) qui montrent ce que l'utilisateur a
+   * publié ». La carte « GUIDES PUBLIÉS » de la planche d'ordinateur affichait
+   * deux titres écrits en dur, et le cadre mobile n'en dessinait aucune.
+   *
+   * De `GET /users/:handle/content` — la route qui manquait, et qui porte la
+   * même visibilité que le profil lui-même.
+   */
+  readonly contenuOnglets?: readonly OngletContenu[];
+  readonly contenus?: readonly CarteContenu[];
+  /** `'STORY'` fait dessiner des aperçus côte à côte plutôt que des lignes. */
+  readonly contenuEspece?: string;
+  /** Le titre de la carte, qui suit l'onglet : « GUIDES », « STORIES »… */
+  readonly contenuTitre?: string;
+  readonly contenuVide?: boolean;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES DEUX BOUTONS DU PROFIL, ET LA FENÊTRE QUI NE FAISAIT QUE S'OUVRIR    ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Sur le profil, le bouton écrire et ajouter ne marche pas. Le
+   * bouton ajouter affiche un modal qui ne marche pas. »
+   *
+   * Tout ce qui suit est FACULTATIF, et c'est voulu : le squelette sert le cadre
+   * avant la donnée, et un bouton qui n'a pas encore son geste ne doit pas faire
+   * tomber le rendu.
+   */
+  readonly onEcrire?: () => void;
+  /** Les quatre motifs de la fenêtre K02C — une vraie sélection. */
+  readonly motifs?: readonly MotifDemande[];
+  readonly demandeTexte?: string;
+  readonly onDemandeTexte?: (event: { target: { value: string } }) => void;
+  readonly onEnvoyerDemande?: () => void;
+  /**
+   * Vrai tant que la demande ne peut pas partir.
+   *
+   * ⚠ ÉCART SIGNALÉ : la planche écrit « Message (facultatif) », mais
+   * `createConnectionRequestSchema` EXIGE le message — « c'est la moitié de
+   * l'anti-spam de §3.1 ». Le bouton reste donc éteint tant que rien n'est
+   * écrit, plutôt que d'échouer en 400 après le clic. C'est l'ÉTIQUETTE qu'il
+   * faut corriger, et c'est au porteur.
+   */
+  readonly demandeBloque?: boolean;
+}
+
+/**
+ * Un motif de demande de contact — « Entraide », « Parrainage », « Rencontre »,
+ * « Réseau », les quatre que la planche de 420 px dessine.
+ *
+ * ⚠ CE CHOIX NE QUITTE PAS L'ÉCRAN. `createConnectionRequestSchema` est
+ * `.strict()` et ne porte que `toHandle` et `message` ; la table
+ * `connection_requests` n'a pas de colonne pour le motif. Le glisser dans le
+ * texte du message écrirait à la place du membre. REMONTÉ : il manque un champ
+ * `reason` à la route.
+ */
+export interface OngletContenu {
+  readonly cle: string;
+  readonly libelle: string;
+  readonly fond: string;
+  readonly texte: string;
+  readonly bord: string;
+  readonly actif: boolean;
+  readonly onChoisir: () => void;
+}
+
+/**
+ * Une ligne de contenu publié.
+ *
+ * Le porteur : « pour tous les tabs il reprend le design des éléments présentés
+ * de la façon dont ils sont présentés sur les pages d'origine ». `apercu` porte
+ * ce qu'il faut pour redessiner une STORY telle que le bandeau du fil la
+ * dessine ; `sous` porte la ligne de contexte que l'espèce a d'utile à dire —
+ * la catégorie d'un guide, l'état d'une demande, la ville d'un événement.
+ */
+export interface CarteContenu {
+  readonly id: string;
+  readonly titre: string;
+  readonly sous: string;
+  readonly href: string;
+  readonly apercu?: {
+    readonly fond: string;
+    readonly photo: boolean;
+    readonly etiquette: string;
+    readonly texte: string;
+  };
+}
+
+export interface MotifDemande {
+  readonly cle: string;
+  readonly libelle: string;
+  readonly fond: string;
+  readonly texte: string;
+  readonly bord: string;
+  readonly actif: boolean;
+  readonly onChoisir: () => void;
 }
 
 /**
@@ -142,6 +352,60 @@ export interface K03Data {
     readonly n1: PastilleNiveau;
     readonly n2: PastilleNiveau;
   };
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES GESTES DE « VÉRIFICATION ET NIVEAUX »                               ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La page vérification est faite totalement ? Le bouton pour
+   * faire la vérification d'identité est là ? Et l'ajout du numéro marche ? »
+   *
+   * Le bouton était là et ne faisait RIEN — deux `<button>` sans `onClick`.
+   * `POST /me/kyc/session` et `POST /me/phones` répondaient déjà ; il manquait le
+   * branchement.
+   *
+   * `kycLibelle` SUIT L'ÉTAT. La planche écrit « Commencer », ce qui est juste
+   * pour qui n'a jamais essayé. `GET /me/kyc` rend aussi `IN_REVIEW`, `APPROVED`
+   * et `DECLINED` : dire « Commencer » à qui est déjà en revue l'inviterait à
+   * recommencer une démarche en cours.
+   */
+  readonly onVerifierIdentite?: () => void;
+  readonly onAjouterNumero?: () => void;
+  /** Vrai pendant un appel : les deux boutons s'éteignent. */
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA CARTE « ÉTATS KYC » ALLUMAIT « EN REVUE » POUR TOUT LE MONDE         ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur, en désignant la carte : « l'état KYC est juste ? »
+   *
+   * MESURÉ : non. Quatre pavés écrits EN DUR, et le deuxième peint sur l'aplat
+   * orange `#FBE3D4` — l'exemple de la maquette. Un membre qui n'a jamais ouvert
+   * de vérification lisait qu'il était en revue.
+   *
+   * Les quatre pavés RESTENT : la carte est une légende, elle dit ce qui peut
+   * arriver. Ce qui devient une donnée, c'est LEQUEL est allumé, et la seconde
+   * ligne de celui-là — « Nouvel essai possible dans 7 jours » est un exemple,
+   * `retryAvailableAt` dit la vraie date.
+   */
+  readonly etatsKyc?: {
+    readonly enCours?: boolean;
+    readonly enCoursSous?: string;
+    readonly enRevue?: boolean;
+    readonly enRevueSous?: string;
+    readonly refusee?: boolean;
+    readonly refuseeSous?: string;
+    readonly mineur?: boolean;
+    readonly mineurSous?: string;
+  };
+  readonly verificationOccupe?: boolean;
+  /**
+   * VRAI QUAND IL N'Y A RIEN À VÉRIFIER — identité déjà validée, ou démarche en
+   * revue. À DISTINGUER de `verificationOccupe` : mesuré, les confondre éteignait
+   * aussi le bouton d'ajout de numéro pour un membre déjà vérifié.
+   */
+  readonly kycBloque?: boolean;
+  readonly kycLibelle?: string;
 }
 
 /**
@@ -153,6 +417,14 @@ export interface K03Data {
  * d'atteindre cet écran.
  */
 export interface LigneTelephone {
+  /**
+   * L'IDENTIFIANT, et il manquait : `DELETE /me/phones/:id` ne prend pas un
+   * masque. Facultatif, parce que les lignes d'exemple de ce fichier sont des
+   * dessins — on ne retire pas un dessin.
+   */
+  readonly id?: string;
+  /** Le geste est sur la LIGNE : le cadre dessine un « Retirer » par numéro. */
+  readonly onRetirer?: () => void;
   readonly masque: string;
   readonly role: string;
   /**
@@ -190,7 +462,32 @@ export interface K04Data {
     readonly vu: string;
     readonly courante: boolean;
     readonly revocable: boolean;
+    /** L'identifiant : `DELETE /sessions/:id` ne prend pas un libellé d'appareil. */
+    readonly id?: string;
+    /**
+     * LE GESTE EST SUR LA LIGNE, pas sur l'écran : le cadre dessine un bouton
+     * « Révoquer » PAR SESSION, et une prise unique ne saurait pas laquelle.
+     * Facultatif, parce que les lignes d'exemple de ce fichier sont des dessins.
+     */
+    readonly onRevoquer?: () => void;
   }[];
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES GESTES DE « TÉLÉPHONES ET SESSIONS »                                ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Niveau page sécurité, l'ajout de numéro marche et la
+   * révocation de SESSIONS ? » — ni l'un ni l'autre : les quatre contrôles
+   * étaient dessinés, et « Révoquer toutes les autres » était même un
+   * `<a href="#">`.
+   *
+   * Les routes existaient toutes : `POST /me/phones`, `DELETE /me/phones/:id`,
+   * `DELETE /sessions/:id`, `DELETE /sessions`.
+   */
+  readonly onAjouterNumero?: () => void;
+  readonly onRevoquerTout?: () => void;
+  /** Vrai pendant un appel : les boutons s'éteignent plutôt que de partir deux fois. */
+  readonly securiteOccupe?: boolean;
 }
 
 /** K05 — contacts, demandes et bloqués. */
@@ -205,9 +502,80 @@ export interface K05Data {
       readonly nom: string;
       readonly depuis: string;
       readonly origine: string;
+      /**
+       * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente. Le porteur :
+       * « ajoute l'accès au profil public […] partout où le nom est affiché ».
+       */
+      readonly profil?: string;
     }[];
   };
   readonly bloque: { readonly nom: string; readonly date: string };
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES TROIS SECTIONS ÉTAIENT DES LIGNES UNIQUES                           ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La page des contacts est faite ? Les demandes, suggestions et
+   * bloqués ? »
+   *
+   * MESURÉ : la maquette dessine UNE ligne par section — « Yasmine Benali »,
+   * « Théo Adjovi », « Paul A. » — et le transcodage l'avait prise pour la liste.
+   * Un membre avec trois demandes n'en voyait qu'une, et toujours la même. Les
+   * quatre boutons — Accepter, Refuser, Ajouter, Débloquer — étaient en plus sans
+   * geste.
+   *
+   * Les trois routes existaient : `GET /me/connection-requests`,
+   * `GET /me/connection-suggestions`, `GET /me/blocks`.
+   */
+  readonly demandesRecues: readonly LigneContact[];
+  readonly suggestions: readonly LigneContact[];
+  readonly bloques: readonly LigneContact[];
+  /** Vrai pendant un appel : les boutons s'éteignent plutôt que de partir deux fois. */
+  readonly contactsOccupe?: boolean;
+}
+
+/**
+ * Une ligne des trois sections de K05.
+ *
+ * `message`, `raison` et `date` occupent la MÊME place dans le dessin — la
+ * seconde ligne grise — et ne diffèrent que par ce qu'elles disent. Un seul champ
+ * `sous` aurait été plus court ; trois noms disent ce qu'on lit, et les trois
+ * sections ne se mélangent pas quand on relit le chargeur.
+ */
+export interface LigneContact {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur […] partout
+   * où le nom est affiché ». Les noms dessinés dans les cadres étaient des
+   * `<span>` et aucun ne menait au profil.
+   *
+   * FACULTATIVE : le cadre ne pose le lien que si la ligne porte une adresse.
+   * Sans elle, le nom reste nu — exactement le dessin d'avant.
+   */
+  readonly profil?: string;
+  readonly fond: string;
+  readonly initiales: string;
+  readonly nom: string;
+  /** La seconde ligne : le message d'une demande, la raison d'une suggestion… */
+  readonly message: string;
+  readonly raison: string;
+  /** …ou « Bloqué le 3 mars » pour un blocage. */
+  readonly date: string;
+  /**
+   * L'IDENTIFIANT DE LA LIGNE — celui de la demande, de la suggestion ou du
+   * membre bloqué. Les trois routes en ont besoin, et un nom d'affichage n'en
+   * est pas un.
+   */
+  readonly cle: string;
+  /** `POST /blocks` et `POST /connection-suggestions/accept` prennent un HANDLE. */
+  readonly handle: string;
+  /** L'origine d'une suggestion — `acceptSuggestionSchema` l'exige. */
+  readonly origine?: string;
+  /** Accepter une demande, ajouter une suggestion, débloquer. */
+  readonly onPrincipal?: () => void;
+  /** Refuser une demande. Absent ailleurs : les deux autres n'ont qu'un geste. */
+  readonly onSecondaire?: () => void;
 }
 
 /** K06 — abonnement, prix et factures. */
@@ -247,16 +615,108 @@ export interface K07Data {
     readonly calmeFin: string;
     readonly resume: string;
   };
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES CATÉGORIES — SIX RANGS DESSINÉS DEVENAIENT LA LISTE DE TOUT LE MONDE ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Les configurations des notifications ? »
+   *
+   * MESURÉ : la planche dessine six catégories EN DUR avec leurs dix-huit
+   * interrupteurs, tous des `<span>`. `GET /me/notification-preferences` rend
+   * pourtant la vraie liste, avec les libellés composés par le serveur.
+   *
+   * LES TROIS VALEURS DE DESSIN VOYAGENT EN DONNÉES — fond, position du bouton,
+   * opacité — plutôt que d'être recalculées dans le cadre. C'est la règle du
+   * dépôt : le cadre dessine, il ne décide pas.
+   */
+  readonly categories: readonly CategorieNotification[];
+  /** Vrai pendant l'enregistrement : les interrupteurs s'éteignent. */
+  readonly notificationsOccupe?: boolean;
 }
 
-/** K08 — mes données. Le bandeau seul : la planche ne dessine aucun état. */
+/** Un rang de la matrice : la catégorie et ses trois canaux. */
+export interface CategorieNotification {
+  readonly titre: string;
+  readonly sous: string;
+  readonly appliFond: string;
+  readonly appliGauche: string;
+  readonly appliOpacite: string;
+  readonly appliActif: boolean;
+  readonly appliVerrouille: boolean;
+  readonly appliNom: string;
+  readonly onAppli?: () => void;
+  readonly pushFond: string;
+  readonly pushGauche: string;
+  readonly pushOpacite: string;
+  readonly pushActif: boolean;
+  readonly pushVerrouille: boolean;
+  readonly pushNom: string;
+  readonly onPush?: () => void;
+  readonly emailFond: string;
+  readonly emailGauche: string;
+  readonly emailOpacite: string;
+  readonly emailActif: boolean;
+  readonly emailVerrouille: boolean;
+  readonly emailNom: string;
+  readonly onEmail?: () => void;
+  /** La clé serveur (`NotificationCategory`), pour `PUT`. */
+  readonly cle: string;
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ K08 — MES DONNÉES : TROIS BOUTONS, ZÉRO GESTE                             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « La page des sanctions et ses options ? (suppression de compte,
+ * désactivation et lancement de téléchargement de données). Pour le
+ * téléchargement on prépare et dès que prêt on l'informe pour qu'il vienne
+ * télécharger. »
+ *
+ * `exportEtat` REMPLACE UNE PROMESSE PAR UN ÉTAT. La planche écrit « Préparé sous
+ * 48 h. Lien valable 7 jours. » — une phrase vraie en général et fausse pour qui
+ * attend. `GET /me/export/latest` rend le vrai : jamais demandé, en préparation,
+ * prêt, ou périmé.
+ *
+ * `exportLien` NON NUL = l'archive est là. Le bouton « Demander » se change alors
+ * en lien « Télécharger » : télécharger est une destination, demander est un
+ * geste, et un seul contrôle pour les deux mentirait à l'un des deux moments.
+ */
 export interface K08Data {
   readonly moi: Bandeau;
+  readonly exportEtat?: string;
+  readonly exportLien?: string | null;
+  readonly onDemanderExport?: () => void;
+  readonly onDesactiver?: () => void;
+  readonly donneesOccupe?: boolean;
 }
 
-/** K09 — sanctions. `etat` et la date viennent du SERVEUR, jamais de l'horloge locale. */
+/**
+ * K09 — sanctions. `etat` et la date viennent du SERVEUR, jamais de l'horloge
+ * locale.
+ *
+ * ── LA CONTESTATION ÉTAIT UN TEXTE D'EXEMPLE ──────────────────────────────
+ *
+ * Le porteur : « La page des sanctions et ses options ? »
+ *
+ * MESURÉ : zéro champ sur le cadre. La boîte « Expliquez votre point de vue »
+ * portait la phrase d'exemple de la maquette, et « Envoyer ma contestation »
+ * n'avait aucun geste. `POST /sanctions/:id/appeal` répondait déjà.
+ *
+ * `contestationBloquee` : `appealSchema` exige VINGT caractères. Le bouton reste
+ * éteint en dessous plutôt que de prendre un refus — « une seule fois », dit la
+ * planche, et un échec gâcherait l'unique tentative dans l'esprit du membre même
+ * si le serveur ne la compte pas.
+ */
 export interface K09Data {
   readonly moi: Bandeau;
+  /** `null` quand aucune sanction : il n'y a alors rien à contester. */
+  readonly sanctionId?: string | null;
+  readonly contestationTexte?: string;
+  readonly onContestationTexte?: (e: { readonly target: { readonly value: string } }) => void;
+  readonly onContester?: () => void;
+  readonly contestationBloquee?: boolean;
   readonly sanction: {
     readonly type: string;
     readonly regle: string;
@@ -265,9 +725,85 @@ export interface K09Data {
   };
 }
 
-/** K10 — enregistrés. Le bandeau seul : aucune route n'existe (voir l'en-tête). */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ K10 — LES ENREGISTRÉS, ET LES ROUTES QUI MANQUAIENT                       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Finalise les routes bookmarks et branche-les. »
+ *
+ * Cet écran a longtemps été LE SEUL des dix sans source : `apps/api/src/modules/
+ * bookmarks/` ne contenait qu'un service et sa tâche horaire, sans contrôleur.
+ * Les quatre routes de §2.9 existent maintenant et répondent — mesuré sur un
+ * compte neuf : quatre `PUT` acceptés, `GET` qui rend les quatre avec
+ * `meta.parType`, `DELETE` qui fait tomber le total de 4 à 3.
+ */
 export interface K10Data {
   readonly moi: Bandeau;
+  /** « 14 enregistrés » — de `meta.total`, jamais compté sur la page courante. */
+  readonly compte: string;
+  readonly onglets: readonly OngletEnregistres[];
+  readonly lignes: readonly LigneEnregistree[];
+  /**
+   * Vrai quand il n'y a RIEN À MONTRER — pas « zéro signet », mais « zéro dans
+   * l'onglet courant ». Le bloc vide de la planche « ÉTATS » prend alors la place
+   * de la liste. C'est le premier état que voit un compte neuf.
+   */
+  readonly vide: boolean;
+  /** Vrai pendant un retrait : le signet s'éteint plutôt que de partir deux fois. */
+  readonly enregistresOccupe?: boolean;
+}
+
+/**
+ * Un onglet de filtre — « Tout », puis un par espèce de sujet.
+ *
+ * LE FOND, LA COULEUR ET LA BORDURE SONT DES DONNÉES parce que la maquette
+ * dessine les DEUX variantes, choisie et non choisie, avec leurs six valeurs. Les
+ * recopier dans le cadre figerait « Tout » comme choisi pour toujours.
+ */
+export interface OngletEnregistres {
+  /** `'*'` pour « Tout », sinon un `BookmarkSubjectType`. */
+  readonly cle: string;
+  readonly libelle: string;
+  readonly fond: string;
+  readonly texte: string;
+  readonly bord: string;
+  readonly actif: boolean;
+  readonly onChoisir: () => void;
+}
+
+/** Une ligne d'enregistré, telle que la maquette en dessine six. */
+export interface LigneEnregistree {
+  /** `TYPE:id` — ce que `DELETE /me/bookmarks/:type/:id` demande, en un morceau. */
+  readonly cle: string;
+  /**
+   * LE TRACÉ SVG DE L'ICÔNE, dicté par le type du sujet.
+   *
+   * La maquette dessine six tracés différents sur ses six lignes : un livre pour
+   * le guide, une étoile pour la story, un cœur pour l'entraide, un calendrier
+   * pour l'événement, un toit pour l'annonce, une bulle pour la publication. Ce
+   * n'est pas de la décoration — une fois la pastille d'état posée, c'est la
+   * SEULE chose qui dise de quoi la ligne parle.
+   */
+  readonly icone: string;
+  readonly titre: string;
+  /**
+   * LE LIBELLÉ D'ÉTAT, OU LA CHAÎNE VIDE.
+   *
+   * `BookmarkState` le dit dans sa propre documentation : « `AVAILABLE` n'a PAS
+   * de libellé : c'est l'absence de pastille, le cas normal ». Vide, le cadre ne
+   * dessine pas la pastille.
+   */
+  readonly etat: string;
+  readonly etatFond: string;
+  readonly etatTexte: string;
+  /** « enregistré hier » — relatif, comme la maquette l'écrit. */
+  readonly depuis: string;
+  /** `'.55'` quand le contenu a disparu, `'1'` sinon. La maquette dessine les deux. */
+  readonly opacite: string;
+  /** L'adresse du contenu, ou la chaîne vide : un contenu retiré n'en a plus. */
+  readonly href: string;
+  readonly onRetirer: () => void;
 }
 
 /**

@@ -11,11 +11,11 @@ import {
   myMentorshipsResponseSchema,
   publicProfileResponseSchema,
   type HelpCard,
-  type HelpType2,
   type HelpMember,
   type MeResponse,
   type Phase,
   type PublicProfileResponse,
+  HELP_TYPE_LABELS,
 } from '@app/shared';
 import { fetchMe, memberApi } from '@/lib/api/index';
 import type { BandeauEntraide, CompteursEntraide, MembreDessine } from './data';
@@ -29,6 +29,7 @@ import type { H07Data } from '../h07/data';
 import type { H08Data } from '../h08/data';
 import type { H09Data } from '../h09/data';
 import type { H10Data } from '../h10/data';
+import { fondAvatar } from '@/lib/avatar';
 
 /**
  * LES APPELS DES ÉCRANS H01 À H10 — un chargeur par écran, et rien d'autre.
@@ -91,23 +92,12 @@ import type { H10Data } from '../h10/data';
  * à partir de son prénom.
  */
 /**
- * Les cinq types de `HelpType2`, dans les mots que la maquette écrit.
- *
- * Relevés sur ses rangées de filtres — « Démarches », « Service », « Trajet »,
- * « Matériel » — et sur `T2 §help.type.*`, qui nomme cette énumération-ci et non
- * celle du module Identité (voir l'écart déjà signalé dans `compte/appels.ts`).
- *
- * ÉCART SIGNALÉ : `OTHER` n'est écrit sur AUCUNE planche de `05 Entraide` — ses
- * rangées de filtres s'arrêtent à quatre types sur cinq. « Autre » est donc le seul
- * mot de cette carte qui n'ait pas de source dessinée ; à faire valider.
+ * Les libellés viennent de `@app/shared` : UNE seule table pour les huit
+ * types, depuis que les deux énumérations n'en font plus qu'une. Deux tables
+ * disant le même vocabulaire finiraient par se contredire.
  */
-const CATEGORIES_FR: Record<HelpType2, string> = {
-  PAPERWORK: 'Démarches',
-  SERVICE: 'Service',
-  RIDE: 'Trajet',
-  MATERIAL: 'Matériel',
-  OTHER: 'Autre',
-};
+const CATEGORIES_FR = HELP_TYPE_LABELS;
+
 
 const PHASES_FR: Record<Phase, string> = {
   PRE_DEPARTURE: 'En préparation',
@@ -230,7 +220,11 @@ async function chargerBandeau(): Promise<BandeauEntraide & { readonly profil: Pu
 
   const stats = profil.stats;
   return {
-    moi: { initiales: initialesDe(me.user.displayName), prenom: prenomDe(me.user.displayName) },
+    moi: {
+      initiales: initialesDe(me.user.displayName),
+      prenom: prenomDe(me.user.displayName),
+      photo: fondAvatar(me.user.avatarUrl),
+    },
     reputation: {
       entraides: stats?.helpValidatedCount ?? 0,
       guides: stats?.guideHelpfulVotes ?? 0,
@@ -573,3 +567,129 @@ export async function chargerH10(): Promise<H10Data> {
     },
   };
 }
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE DESSIN SANS LA DONNÉE — POUR QUE LE CADRE SOIT SERVI TOUT DE SUITE      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Mesuré au HTML servi, sans exécuter le JavaScript : `/entraide` répondait 200
+ * avec une coquille — pas de rail, pas de panneau de section, pas de barre basse.
+ * La branche d'attente de `EcranDonnees` remplaçait le cadre entier par sa phrase,
+ * donc les destinations déclarées sur ce cadre n'atteignaient jamais le navigateur.
+ * Ce n'était PAS un lien mort : le `<a href="/entraide/aider">` est bien dans
+ * `h01/desktop.generated.tsx` — c'était un cadre non rendu. Deux défauts
+ * différents, et il ne faut pas confondre la cause.
+ *
+ * Le motif juste est celui de `/accueil` : le dessin se rend tout de suite, la
+ * donnée se remplit ensuite. Cet objet est la part « dessin » — des compteurs à
+ * zéro et des chaînes vides, c'est-à-dire RIEN D'INVENTÉ : un écran qui n'a pas
+ * encore ses nombres n'en affiche aucun.
+ *
+ * `avertissement` EST LA SEULE EXCEPTION, ET C'EST UNE RÈGLE DURE. §2.7 exige la
+ * phrase « sur chaque page de la section », et `HELP_SAFETY_BANNER` est la MÊME
+ * constante que le serveur sert dans son `meta`. La laisser vide ferait une page
+ * où la règle de sécurité manque pendant le chargement — exactement l'écran où
+ * l'oublier serait le plus facile. C'est la discipline que `VUE_NEUTRE` du module
+ * Parcours applique déjà à `CHECKLIST_NOTICE`.
+ */
+const SQUELETTE_BANDEAU: BandeauEntraide = {
+  moi: { initiales: '', prenom: '' },
+  /**
+   * ─── LE TIRET CADRATIN, ET PAS UN ZÉRO ────────────────────────────────────
+   *
+   * `0` est un NOMBRE FAUX qui se lit comme vrai : « 23 entraides validées »
+   * devenu « 0 entraides validées » annonce au membre qu'il n'a rien fait, le
+   * temps que l'appel réponde. Les champs numériques du bandeau sont donc des
+   * chaînes dans leur type là où la maquette les affiche en texte… et ils ne le
+   * sont PAS : `Reputation` et `CompteursEntraide` les déclarent `number`.
+   *
+   * On ne peut donc pas y mettre un tiret, et c'est une limite DITE plutôt que
+   * contournée : le zéro reste, il est visible pendant quelques dizaines de
+   * millisecondes, et le rendre juste demanderait que ces champs acceptent une
+   * chaîne — ce qui est un changement de type, donc d'autres écrans. Remonté.
+   */
+  reputation: { entraides: 0, guides: 0, parrainages: 0, evenements: 0 },
+  compteurs: { ouvertes: 0, pouvezAider: 0, parrainages: 0, resoluesCeMois: 0 },
+  avertissement: HELP_SAFETY_BANNER,
+};
+
+/**
+ * LES SEPT ÉCRANS DU MODULE QUI ONT UNE ROUTE DE PANNEAU, chacun avec SA prise.
+ *
+ * Ce ne sont pas sept copies : six d'entre eux n'ajoutent RIEN au bandeau (H03,
+ * H04, H07 et H08 sont littéralement `BandeauEntraide`), et les trois autres
+ * n'ajoutent qu'un compteur. C'est le `data.ts` de chaque écran qui le dit, pas
+ * une supposition.
+ *
+ * POURQUOI LES SEPT ET PAS SEULEMENT H01 : parce que ce sont les destinations que
+ * le panneau de section vient de gagner. Un sous-lien qui atterrit sur une
+ * coquille vide est, pour le porteur, un sous-lien qui ne marche pas — il verrait
+ * « Chargement de votre compte… » et pas la page. Mesuré au HTML servi :
+ * `/entraide/aider` servait CINQ mots et zéro entrée de rail.
+ */
+export const SQUELETTE_H01: H01Data = { ...SQUELETTE_BANDEAU, ville: '' };
+export const SQUELETTE_H03: H03Data = SQUELETTE_BANDEAU;
+export const SQUELETTE_H04: H04Data = SQUELETTE_BANDEAU;
+export const SQUELETTE_H05: H05Data = { ...SQUELETTE_BANDEAU, ville: '' };
+export const SQUELETTE_H07: H07Data = SQUELETTE_BANDEAU;
+export const SQUELETTE_H08: H08Data = SQUELETTE_BANDEAU;
+export const SQUELETTE_H09: H09Data = {
+  ...SQUELETTE_BANDEAU,
+  mesDemandes: { total: 0, avecNouvelles: 0 },
+};
+export const SQUELETTE_H10: H10Data = {
+  ...SQUELETTE_BANDEAU,
+  mesReponses: { total: 0, utiles: 0, liste: [] },
+};
+
+/**
+ * LES DEUX ÉCRANS DE DÉTAIL DU MODULE — la demande, la fiche d'un parrain.
+ *
+ * Même cause, même remède : sans squelette, `/entraide/:id` et
+ * `/parrainage/:handle` répondent 200 en servant « DisaporyPlus Chargement de
+ * votre compte… » et rien d'autre.
+ *
+ * `titre: '—'` ET PAS LA CHAÎNE VIDE, et c'est axe-core qui l'a tranché ailleurs :
+ * un titre vide promu en `<h1>` fait un en-tête SANS CONTENU, et la même chaîne
+ * vide dans un `<a>` fait un lien sans nom accessible (`link-name`, `serious`).
+ * Le tiret cadratin donne un nom sans inventer de titre — et il se lit comme
+ * « pas encore de valeur », ce que `0` ne fait pas.
+ *
+ * `parcours: null` et `resolue: null` font DISPARAÎTRE les lignes
+ * correspondantes (la maquette les dessine sous condition) plutôt que d'afficher
+ * « Étape undefined » ou une résolution qui n'a pas eu lieu.
+ *
+ * LES TEINTES DE LA PASTILLE DE DISPONIBILITÉ sont celles de la maquette pour
+ * « Disponible » — `#E3F0EB` sur `#0F5C48`. Le LIBELLÉ, lui, est un tiret : la
+ * pastille garde sa forme sans annoncer une disponibilité que le serveur n'a pas
+ * confirmée.
+ */
+export const SQUELETTE_H02: H02Data = {
+  ...SQUELETTE_BANDEAU,
+  demande: {
+    titre: '—',
+    corps: '',
+    extrait: '',
+    auteur: { initiales: '', nom: '', fond: '#F2F5F4', phase: '', ville: '' },
+    nbReponses: 0,
+    parcours: null,
+    resolue: null,
+  },
+  reponses: [],
+};
+
+export const SQUELETTE_H06: H06Data = {
+  ...SQUELETTE_BANDEAU,
+  parrain: {
+    nom: '—',
+    initiales: '',
+    dispo: { libelle: '—', fond: '#E3F0EB', texte: '#0F5C48' },
+    situation: '',
+    bio: '',
+    menes: 0,
+    note: '',
+    appellation: '',
+  },
+  evaluations: [],
+};

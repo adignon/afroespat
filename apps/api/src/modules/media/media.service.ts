@@ -21,6 +21,24 @@ import {
 } from '../../providers/providers';
 import { sniffType, stripMetadata } from './media-bytes';
 
+/**
+ * LES TROIS GENRES QUI NE SORTENT QUE POUR LEUR PROPRIÉTAIRE.
+ *
+ * La clé de stockage porte seize octets d'aléa (voir `keyFor`), donc la posséder
+ * vaut autorisation pour un avatar ou la photo d'une annonce — ils sont de toute
+ * façon rendus dans des réponses que le lecteur avait le droit de recevoir.
+ *
+ * Pour ces trois-là, non : une adresse qui fuit — un journal, un presse-papiers,
+ * un historique de navigateur — ne doit pas suffire à ouvrir le justificatif
+ * d'identité de quelqu'un, l'archive de TOUTES ses données, ou une facture qui
+ * porte son nom et un montant. Le contrôle de propriétaire coûte une comparaison.
+ *
+ * `AVATAR` n'y est PAS, et c'est délibéré : un portrait est montré à tout membre
+ * dans chaque liste du produit. L'y mettre casserait toutes les listes sans rien
+ * protéger.
+ */
+const PRIVATE_MEDIA_KINDS: ReadonlySet<MediaKind> = new Set(['PROOF', 'EXPORT', 'INVOICE']);
+
 /** Ce qu'un champ de fichier multipart apporte. */
 export interface UploadedFile {
   /**
@@ -286,6 +304,100 @@ export class MediaService {
      * mettre donnait `/media/media/housing/…` — mesuré au curl, pas relu.
      */
     return `${kind.toLowerCase()}/${year}/${month}/${assetId}-${secret}.${extension}`;
+  }
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ `GET /media/<clé>` — LES OCTETS. AUCUNE ROUTE NE LES SERVAIT.             ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * ── CE QUI MANQUAIT, ET DEPUIS QUAND ──────────────────────────────────────
+   *
+   * Neuf endroits, dans six modules, composent `/media/<clé>` à la main : les
+   * avatars du fil, des villes, des réseaux et des fiches pro, les images de
+   * publication, les photos de logement, les albums de réseau. `view()`
+   * ci-dessous en fait autant. Et AUCUN `@Get` du dépôt ne répondait à cette
+   * adresse — vérifié sur l'ensemble de `apps/api/src`, et aucun service statique
+   * n'était monté dans `main.ts`.
+   *
+   * Autrement dit TOUTE IMAGE DU PRODUIT POINTAIT VERS UNE ROUTE INEXISTANTE.
+   * Le défaut ne se voyait pas dans les tests parce qu'ils vérifient la FORME de
+   * l'adresse, jamais qu'elle réponde.
+   *
+   * ── POURQUOI SERVIR LES OCTETS PLUTÔT QU'UNE URL SIGNÉE ───────────────────
+   *
+   * `StorageProvider.createDownloadUrl` existe et reste la bonne réponse pour
+   * l'archive RGPD : un fichier téléchargé une fois, dont l'adresse expire. Mais
+   * le dépôt a déjà choisi `/media/<clé>` partout ailleurs, et `view()` écrit
+   * lui-même pourquoi : « une seule convention d'adresse de média, sinon le front
+   * en apprend deux ». On sert donc cette adresse-là.
+   *
+   * ── L'AUTORISATION, GENRE PAR GENRE ───────────────────────────────────────
+   *
+   * La clé porte DÉJÀ seize octets d'aléa en plus d'un UUID (voir `keyFor`) :
+   * elle est indevinable, et la posséder est en soi une autorisation. Ce n'est
+   * PAS suffisant pour tout, et la raison est écrite dans le chemin lui-même —
+   * `proof/2026/01/…` annonce son genre et sa date, ce que le dépôt sait déjà
+   * (`feed.int.test.ts` : « le chemin `/media/proof/…` daterait même son dépôt »).
+   *
+   * Trois genres ne sont servis QU'À LEUR PROPRIÉTAIRE, parce qu'une adresse qui
+   * fuit ne doit pas suffire à les ouvrir :
+   *
+   *   · `PROOF`   — le justificatif d'un professionnel ou d'une vérification ;
+   *   · `EXPORT`  — l'archive RGPD, c'est-à-dire TOUTES les données d'un membre ;
+   *   · `INVOICE` — une facture, qui porte un nom et un montant.
+   *
+   * Les autres sont servis à tout membre authentifié. Ce ne sont pas des secrets :
+   * ils sont rendus DANS des réponses que le lecteur avait le droit de recevoir
+   * (un avatar dans une liste de membres, une photo dans une annonce). Refaire ici
+   * le contrôle de visibilité de chaque conteneur demanderait de rejouer six
+   * modules, et le ferait DIVERGER d'eux au premier changement — ce qui serait
+   * moins sûr, pas plus.
+   *
+   * CE QUI RESTE À FAIRE, et je le marque plutôt que de le masquer : un média
+   * `POST` dont la publication est supprimée reste lisible par qui tient
+   * l'adresse. Le lier à la visibilité de son conteneur demande le travail
+   * ci-dessus. REMONTÉ.
+   *
+   * ── LES AUTRES REFUS ──────────────────────────────────────────────────────
+   *
+   * `status` doit valoir `READY` et `exifStripped` être vrai : exactement la barre
+   * de `resolveMedia`, pour qu'un fichier refusé par l'antivirus ou dont les
+   * métadonnées GPS n'ont pas été retirées ne puisse jamais sortir. Un média
+   * supprimé (`deletedAt`) ne sort pas non plus.
+   *
+   * Tous les refus rendent le MÊME 404. Distinguer « inconnu », « pas prêt » et
+   * « pas à vous » dirait à qui tâtonne lesquels existent.
+   */
+  async bytes(userId: string | null, storageKey: string) {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { storageKey, deletedAt: null },
+      select: { kind: true, mime: true, status: true, exifStripped: true, ownerUserId: true },
+    });
+
+    const introuvable = (): never => {
+      throw ApiError.notFound();
+    };
+
+    if (asset === null) return introuvable();
+    if (asset.status !== 'READY' || !asset.exifStripped) return introuvable();
+    /**
+     * `userId` peut être `null` : la route est `@PublicRead()`, parce qu'un
+     * navigateur ne porte aucun jeton sur une image. Un appelant anonyme n'est
+     * donc propriétaire de rien, et les trois genres privés lui sont fermés — la
+     * comparaison le dit d'elle-même, sans cas particulier à écrire.
+     */
+    if (PRIVATE_MEDIA_KINDS.has(asset.kind) && (userId === null || asset.ownerUserId !== userId)) {
+      return introuvable();
+    }
+
+    const octets = await this.storage.get(storageKey);
+    // La ligne peut survivre à ses octets : purge de rétention, reprise de tâche.
+    if (octets === null) return introuvable();
+
+    // Le type vient de `media_assets.mime`, établi par les OCTETS MAGIQUES à
+    // l'import (§8.3). Jamais de l'extension, jamais du fournisseur.
+    return { body: octets.body, mime: asset.mime };
   }
 
   private view(row: MediaViewRow): MediaAssetView {

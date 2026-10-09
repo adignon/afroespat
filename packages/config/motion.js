@@ -108,6 +108,55 @@ const moments = {
    */
   panelAdvance: { duration: '240ms', easing: easing.out, from: 'translateX(16px)', fade: true },
 
+  /**
+   * Un panneau qui RECOUVRE sa section en glissant depuis la droite.
+   *
+   * Le porteur, pour le choix du pays d'origine : « il faut afficher un slide left
+   * modal quand on clique sur le pays […] Il faut pas que ce soit comme les autres
+   * modals mais plutôt un modal dans la section qui cache tout le contenu de la
+   * section. »
+   *
+   * Ce n'est donc ni `modalIn` (une fenêtre de page, qui monte de 8 px avec un
+   * voile) ni `panelAdvance` (une avance de 16 px à l'intérieur d'un contenu) :
+   * c'est un panneau PLEIN qui prend la place de sa section. D'où un déplacement
+   * complet, et la durée de `sheet` — la même que la feuille du bas, parce que
+   * c'est le même geste, couché.
+   */
+  sectionPanelIn: { duration: duration.sheet, easing: easing.out, from: 'translateX(100%)' },
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LA BARRE D'UNE STORY — QUINZE SECONDES, ET CE N'EST PAS UNE TRANSITION    ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La barre de progression doit progresser pendant 15 s et
+   * automatiquement slide right pour aller vers le story suivant. »
+   *
+   * `exempt: true` parce que ce n'est PAS un mouvement d'interface : c'est une
+   * DURÉE DE LECTURE rendue visible. Le plafond de 300 ms existe pour qu'aucune
+   * transition ne fasse attendre ; ici, l'attente EST le propos — la barre dit
+   * combien de temps il reste avant la story suivante, exactement comme le fait
+   * n'importe quel lecteur de stories.
+   *
+   * `linear` et non une courbe : une barre qui ralentit en fin de course
+   * mentirait sur le temps restant.
+   */
+  storyProgress: { duration: '15000ms', easing: 'linear', exempt: true },
+
+  /**
+   * LE FOND D'UNE STORY QUI DEVIENT CELUI DE LA SUIVANTE.
+   *
+   * Le porteur : « il faut que le background se change avec une animation de
+   * fade ». La traversée change d'identifiant dans l'ÉTAT, donc le même nœud
+   * reste en place et sa couleur sautait d'un coup — d'un vert profond à un rouge
+   * sombre, sans transition.
+   *
+   * Même durée et même courbe que le reste des passages d'écran : c'est le même
+   * geste — on passe d'un contenu à un autre — et rien ne justifie qu'il ait sa
+   * propre grammaire.
+   */
+  storyFond: { duration: duration.sheet, easing: easing.out, fade: true },
+
   /** L'onboarding emploie la MÊME grammaire : cinq écrans, un seul chemin. */
   onboardingStep: { duration: '240ms', easing: easing.out, from: 'translateX(16px)', fade: true },
 

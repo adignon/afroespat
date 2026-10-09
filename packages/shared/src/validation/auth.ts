@@ -24,6 +24,14 @@ import { handleSchema, uuidSchema } from './pagination.js';
 /** Codes d'erreur propres à l'authentification (§4.1). */
 export const AUTH_ERROR_CODES = {
   COUNTRY_NOT_SUPPORTED: 400,
+  /**
+   * Le numéro ne respecte pas le plan de numérotation de son pays.
+   *
+   * `422` et non `400` : la demande est bien formée — c'est sa VALEUR qui ne
+   * convient pas, et le membre peut la corriger. C'est le même choix que pour
+   * `OTP_INVALID`.
+   */
+  PHONE_INVALID: 422,
   CAPTCHA_FAILED: 400,
   OTP_INVALID: 422,
   OTP_EXPIRED: 422,
@@ -40,6 +48,12 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
   // Message volontairement accueillant : un membre dont le pays n'est pas
   // ouvert n'a rien fait de mal, et la plateforme y viendra.
   COUNTRY_NOT_SUPPORTED: 'Nous n’ouvrons pas encore dans ce pays.',
+  /**
+   * Le message ne cite PAS la longueur attendue : elle dépend du pays, et le
+   * serveur la met dans `details.expectedLength` pour que l'écran l'écrive avec
+   * ses propres mots. §5.2 : « le front utilise le code, jamais le message ».
+   */
+  PHONE_INVALID: 'Ce numéro ne correspond pas au format du pays choisi.',
   CAPTCHA_FAILED: 'La vérification anti-robot a échoué. Réessayez.',
   OTP_INVALID: 'Ce code n’est pas le bon. Vérifiez et réessayez.',
   OTP_EXPIRED: 'Ce code a expiré. Demandez-en un nouveau.',
@@ -141,11 +155,11 @@ export const updateProfileSchema = z
     occupationStatus: z.enum(OccupationStatus).optional(),
     availableToHelp: z.boolean().optional(),
     /**
-     * `HelpType` — celui du module 01, PAS `HelpType2`.
+     * `HelpType` — celui du module 01, PAS `HelpType`.
      *
      * Les deux existent et n'ont pas les mêmes membres : `HelpType` est
      * `PAPERWORK | HOUSING | JOB | WELCOME | OTHER` (ce que le profil déclare
-     * savoir faire), `HelpType2` est `PAPERWORK | SERVICE | RIDE | MATERIAL | OTHER`
+     * savoir faire), `HelpType` est `PAPERWORK | SERVICE | RIDE | MATERIAL | OTHER`
      * (le type d'une demande d'entraide du module 06). Trois membres sur cinq
      * diffèrent, et une liste recopiée à la main ne dit pas laquelle des deux elle
      * voulait dire — c'est précisément pourquoi elle est importée.
@@ -245,6 +259,20 @@ export const meResponseSchema = z.object({
     status: z.enum(UserStatus),
     originCountryId: uuidSchema,
     cityId: uuidSchema.nullable(),
+    /**
+     * ╔═══════════════════════════════════════════════════════════════════╗
+     * ║ LA DATE D'ARRIVÉE — on pouvait l'ÉCRIRE sans jamais la RELIRE          ║
+     * ╚═══════════════════════════════════════════════════════════════════╝
+     *
+     * `updateMeSchema.arrivalDate` existe, la colonne aussi, et `GET /me` ne la
+     * rendait pas. Le champ « Arrivée » de K01 n'avait donc aucune valeur à
+     * afficher : il serait parti vide et aurait effacé la date au premier
+     * enregistrement.
+     *
+     * `YYYY-MM-DD` et non un horodatage : c'est une DATE, le champ de saisie
+     * n'accepte que cette forme, et l'heure n'aurait aucun sens pour une arrivée.
+     */
+    arrivalDate: z.string().nullable(),
     originCountryLocked: z.boolean(),
   }),
   profile: z

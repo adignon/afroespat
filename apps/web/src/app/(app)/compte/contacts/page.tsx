@@ -1,6 +1,8 @@
 'use client';
 
-import { chargerK05 } from '@/screens/compte/appels';
+import { useCallback, useState } from 'react';
+import { ContactsVivants } from '@/screens/compte/contacts-vivants';
+import { SQUELETTE_K05, chargerK05 } from '@/screens/compte/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { K05Desktop } from '@/screens/k05/desktop.generated';
@@ -26,14 +28,42 @@ import { K05Mobile } from '@/screens/k05/mobile.generated';
  * qu'un sous-titre différent de la maquette.
  */
 export default function ContactsPage() {
+  /**
+   * ── RECHARGER APRÈS UN GESTE ─────────────────────────────────────────────
+   *
+   * Même recette que la sécurité et la vérification : `useDonnees` relance son
+   * effet quand `charger` CHANGE D'IDENTITÉ, et c'est le seul mécanisme qu'il
+   * offre. Accepter une demande la retire de la liste et ajoute un contact — les
+   * deux sections doivent suivre, et seul un rechargement le garantit.
+   */
+  const [recharge, setRecharge] = useState(0);
+  const charger = useCallback(() => {
+    /** `recharge` n'est lu par personne : il est là POUR changer l'identité. */
+    void recharge;
+    return chargerK05();
+  }, [recharge]);
+  const recharger = useCallback(() => {
+    setRecharge((n) => n + 1);
+  }, []);
+
   return (
-    <EcranDonnees charger={chargerK05}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_K05} charger={charger}>
       {(donnees) => (
-        <ScreenFrames
-          screen="K05"
-          desktop={<K05Desktop {...donnees} />}
-          mobile={<K05Mobile {...donnees} />}
-        />
+        <ContactsVivants donnees={donnees} onRecharger={recharger}>
+          {(vivantes) => (
+            <ScreenFrames
+              screen="K05"
+              desktop={<K05Desktop {...vivantes} />}
+              mobile={<K05Mobile {...vivantes} />}
+            />
+          )}
+        </ContactsVivants>
       )}
     </EcranDonnees>
   );

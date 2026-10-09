@@ -2,7 +2,7 @@
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
-import { chargerS06 } from '@/screens/services/appels';
+import { SQUELETTE_S06, chargerS06 } from '@/screens/services/appels';
 import { S06Desktop } from '@/screens/s06/desktop.generated';
 import { S06Mobile } from '@/screens/s06/mobile.generated';
 
@@ -30,7 +30,18 @@ import { S06Mobile } from '@/screens/s06/mobile.generated';
  */
 export default function AnnuaireListePage() {
   return (
-    <EcranDonnees charger={chargerS06} attente="Chargement de l’annuaire…">
+    <EcranDonnees
+      charger={chargerS06}
+      attente="Chargement
+      de
+      l’annuaire…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots et aucune entrée de rail dans le HTML
+       * servi. Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_S06}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="S06"

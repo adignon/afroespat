@@ -1,7 +1,7 @@
 'use client';
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH10 } from '@/screens/entraide/appels';
+import { SQUELETTE_H10, chargerH10 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H10Desktop } from '@/screens/h10/desktop.generated';
 import { H10Mobile } from '@/screens/h10/mobile.generated';
@@ -19,7 +19,16 @@ import { H10Mobile } from '@/screens/h10/mobile.generated';
  */
 export default function MyHelpResponsesPage() {
   return (
-    <EcranDonnees charger={chargerH10}>
+    <EcranDonnees
+      charger={chargerH10}
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
+       * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre
+       * compte… » — et aucune entrée de rail dans le HTML servi. Voir
+       * `screens/compte/ecran-donnees.tsx` pour le raisonnement complet.
+       */
+      squelette={SQUELETTE_H10}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="H10"

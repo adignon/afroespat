@@ -425,13 +425,27 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
     }
   });
 
-  it('un L0 est refusé par le GARDE sur /media, mais peut poser son portrait', async () => {
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CE CAS DISAIT L'INVERSE — ÉCART ASSUMÉ AVEC 04 §2.4                     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Il gelait « le plancher de `POST /media` est L1 » : la route porte
+   * `post.create`, qui valait L1. Le porteur, après avoir vu la photo refusée dans
+   * le composeur de story : « Autorise pour tout le monde la possibilité de publier
+   * des stories AVEC TOUT CE QUI VA AVEC. » La photo passe par cette route ; la
+   * décision est écrite sur `post.create` dans `capabilities.ts`.
+   *
+   * Ce qui est gelé ici maintenant : l'envoi PASSE pour un compte non vérifié, et
+   * TOUT LE RESTE DE LA ROUTE tient — c'est lui qui retient désormais, puisque le
+   * niveau ne retient plus. L'EXIF est retiré, le genre est contrôlé, et le
+   * portrait reste ouvert comme il l'a toujours été (01 §4.2).
+   */
+  it('un L0 envoie un média, EXIF retiré — et pose toujours son portrait', async () => {
     const { token } = await membre('L0');
 
-    // Le plancher de la route est L1 : le garde répond avant le service.
-    const refus = await envoyer(token, 'POST', jpegAvecExif(), 'photo.jpg', 'image/jpeg');
-    expect(refus.status).toBe(403);
-    expect((refus.body as ErrorBody).error.code).toBe('LEVEL_REQUIRED');
+    const envoi = await envoyer(token, 'POST', jpegAvecExif(), 'photo.jpg', 'image/jpeg');
+    expect(envoi.status, JSON.stringify(envoi.body)).toBe(201);
 
     // `PUT /me/avatar` est à `content.read` (L0) : 01 §4.2 ne fait pas du
     // portrait une récompense de vérification.

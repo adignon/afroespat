@@ -228,7 +228,26 @@ async function visiter(page: Page, route: string, width: number, height = 1000):
    * elle reste bornée par le délai de 120 s du fichier : un vrai blocage échoue
    * toujours, et il échoue EN NOMMANT l'état d'attente.
    */
-  await expect(page.getByText('Chargement de votre compte…')).toHaveCount(0, { timeout: 60_000 });
+  /**
+   * ── LA PHRASE ATTENDUE N'ÉTAIT PAS CELLE QUE CET ÉCRAN ÉCRIT ──────────────
+   *
+   * MESURÉ : ce cas attendait « Chargement de votre compte… », la phrase par
+   * défaut d'`EcranDonnees`. `agenda-ecran.tsx` passe la SIENNE —
+   * « Chargement de l'agenda… » — donc le compte à zéro était vrai dès la
+   * première image, l'attente ne patientait PAS, et la mesure partait sur le
+   * squelette. Le symptôme : « le calendrier vertical doit porter ses lignes de
+   * jour : expected > 27, received 0 » — alors que le calendrier s'affiche très
+   * bien à l'écran. `SQUELETTE_E01` rend `semaines: []`, et c'est exactement ce
+   * que le relevé comptait.
+   *
+   * ON ATTEND DONC LE RÔLE, PAS LA PHRASE. `EcranDonnees` marque sa bande d'un
+   * `role="status"` quelle que soit la phrase qu'on lui donne : le relevé ne peut
+   * plus manquer un écran parce qu'il s'annonce autrement. C'est la même raison
+   * qui a fait rater celui-ci pendant tout un lot.
+   */
+  await expect(
+    page.locator('[role="status"]').filter({ hasText: /Chargement/ }),
+  ).toHaveCount(0, { timeout: 60_000 });
   await expect(page.locator('[data-screen]')).toBeVisible({ timeout: 60_000 });
 }
 

@@ -86,6 +86,7 @@ const MESSAGES = {
       kind: 'TEXT',
       body: 'Oui avec plaisir, je t’envoie tout.',
       mediaId: null,
+      mediaUrl: null,
       sentAt: '2026-10-01T19:02:26.941Z',
       deletedAt: null,
       mine: true,
@@ -97,6 +98,7 @@ const MESSAGES = {
       kind: 'TEXT',
       body: 'Avec Visale ça passe. Tu veux que je relise ton dossier ce soir ?',
       mediaId: null,
+      mediaUrl: null,
       sentAt: '2026-10-01T19:02:26.916Z',
       deletedAt: null,
       mine: false,
@@ -139,8 +141,29 @@ const NOTIFICATIONS = {
   meta: { unread: 2 },
 };
 
-/** `GET /v1/search/suggest` — enveloppe À PART : ni `nextCursor` ni `meta`. */
-const SUGGESTIONS = { items: [{ title: 'visale étudiant', subjectType: 'GUIDE' }] };
+/**
+ * `GET /v1/search/suggest` — enveloppe À PART : ni `nextCursor` ni `meta`.
+ *
+ * `subjectId` ET `url` ONT ÉTÉ AJOUTÉS À CETTE CHARGE, et relevés comme le reste :
+ * une proposition était dessinée sans être cliquable, faute de savoir où elle mène.
+ * Forme relevée sur l'API qui tourne :
+ *
+ *   { "title": "Visite guidée du quartier", "subjectType": "EVENT",
+ *     "subjectId": "01a11020-…", "url": "/agenda/01a11020-…" }
+ *
+ * `url` est NULLABLE : un type de sujet sans page dédiée rend `null`, et l'écran
+ * dessine alors la proposition sans lien plutôt qu'un lien mort.
+ */
+const SUGGESTIONS = {
+  items: [
+    {
+      title: 'visale étudiant',
+      subjectType: 'GUIDE',
+      subjectId: '01a0f8d8-0000-7000-8000-000000000002',
+      url: '/guides/obtenir-la-garantie-visale-sans-cdi',
+    },
+  ],
+};
 
 /** `GET /v1/search` sans `type` — des GROUPES, et `nextCursor` toujours nul. */
 const RECHERCHE_GROUPEE = {
@@ -162,6 +185,14 @@ const RECHERCHE_GROUPEE = {
           communityId: null,
           rank: 0.84,
           updatedAt: '2026-09-12T08:00:00.000Z',
+          /**
+           * OÙ MÈNE CE RÉSULTAT — le champ manquait, et les cartes de `/recherche`
+           * n'étaient donc pas cliquables. Résolu par le SERVEUR, une requête par
+           * type présent, jamais deviné par l'écran : seul le serveur connaît le
+           * `slug` d'un guide et le `handle` d'un membre. Forme relevée sur l'API :
+           * `"url": "/services/logement/01a11025-…"` pour un logement.
+           */
+          url: '/guides/obtenir-la-garantie-visale-sans-cdi',
         },
       ],
     },

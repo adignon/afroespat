@@ -180,6 +180,14 @@ export function accueilData(state: AccueilState = {}): AccueilData {
     draftTypes: draftTypesFor(3),
     brouillon,
     /**
+     * LES DEUX COMPTEURS DU PIED DU COMPOSEUR MOBILE, aux valeurs que la planche
+     * dessine — un sondage, un guide. Cette fabrique sert les cadres de
+     * DOCUMENTATION, qui doivent rester le dessin ; la page réelle
+     * (`useComposeurMobile`) les écrase par ce que le brouillon porte vraiment.
+     */
+    composeurSondageCompte: '1',
+    composeurGuidesCompte: '1',
+    /**
      * RÈGLE DURE 04 §2.4 — « jusqu'à 4 images ». La borne est lue de `@app/shared`,
      * jamais recopiée : `createPostSchema` en fait la MÊME borne côté serveur, et
      * deux copies d'une limite finissent toujours par se contredire.

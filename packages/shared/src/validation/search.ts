@@ -223,6 +223,25 @@ export const searchHitSchema = z
     cityId: uuidSchema.nullable(),
     countryId: uuidSchema.nullable(),
     communityId: uuidSchema.nullable(),
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ OÙ MÈNE CE RÉSULTAT — COMPOSÉ PAR LE SERVEUR                            ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « les propositions doivent permettre d'aller directement sur un
+     * élément ».
+     *
+     * L'index ne porte que le type et l'identifiant. Or quatre types sur neuf ne
+     * s'ouvrent PAS par leur identifiant : un guide par son slug, un membre par
+     * son pseudo, une ville par son slug, un sujet par le slug de son réseau. Un
+     * client qui composerait les adresses devrait connaître neuf règles de routage
+     * et savoir résoudre trois référentiels.
+     *
+     * `null` quand la source a disparu entre l'indexation et la lecture : l'écran
+     * montre alors le résultat sans le rendre cliquable, plutôt que de mener à une
+     * page absente.
+     */
+    url: z.string().nullable(),
     rank: z.number(),
     updatedAt: z.string().datetime(),
   })
@@ -290,17 +309,74 @@ export type TypedSearchResponse = z.infer<typeof typedSearchResponseSchema>;
  * `nextCursor` y est requis — c'est le genre d'écart qu'on ne voit qu'en lisant le
  * contrôleur, et c'est pour cela qu'il est écrit ici.
  *
- * Une suggestion est un TITRE et un TYPE, rien de plus : pas d'identifiant, donc
- * aucun moyen d'y poser un lien. Choisir une suggestion ne peut que relancer la
- * recherche sur son texte. Écart remonté au porteur.
+ * UNE SUGGESTION PORTE DE QUOI OUVRIR SON ÉLÉMENT — `subjectId` et `url`.
+ *
+ * Elle ne portait auparavant qu'un titre et un type : la choisir ne pouvait que
+ * relancer la recherche sur son texte, alors que le serveur savait déjà de quel
+ * élément il parlait. Le porteur l'a demandé autrement : « les propositions sous
+ * l'input doivent s'afficher et permettre d'ALLER DIRECTEMENT sur un élément. »
+ *
+ * `url` est NULLABLE pour la même raison que celui d'un résultat : la source peut
+ * avoir disparu entre l'indexation et la frappe, et une suggestion qui mène à une
+ * page absente est pire qu'une suggestion qu'on ne peut qu'ouvrir en recherche.
  */
 export const suggestResponseSchema = z
   .object({
-    items: z.array(z.object({ title: z.string(), subjectType: searchSubjectTypeSchema }).strict()),
+    items: z.array(
+      z
+        .object({
+          title: z.string(),
+          subjectType: searchSubjectTypeSchema,
+          subjectId: z.string(),
+          url: z.string().nullable(),
+        })
+        .strict(),
+    ),
   })
   .strict();
 
 export type SuggestResponse = z.infer<typeof suggestResponseSchema>;
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `POST /v1/admin/search/reindex` — §4, ET ELLE N'EXISTAIT PAS              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La spec la nomme : « Admin : `/v1/admin/search/reindex` (type) ». Le service
+ * porte `reindexType` depuis toujours ; AUCUNE route ne l'appelait — le
+ * contrôleur de recherche l'écrit en commentaire : « attendent le module 15 ».
+ *
+ * Elle a manqué le jour où il l'a fallu. Le relais d'événements ne tournait pas
+ * (`APP_ROLE=api` sans worker), donc rien n'avait jamais été indexé ; une fois le
+ * worker démarré, les CONTENUS NOUVEAUX s'indexent, mais les anciens restent hors
+ * de l'index — leurs événements sont passés. Rejouer des événements vieux de
+ * plusieurs jours serait faux ; relire la source est exactement ce que cette
+ * route fait.
+ *
+ * `types` et non `type` : reconstruire l'index entier demande neuf appels, et neuf
+ * appels successifs se coupent en deux au premier qui échoue.
+ */
+export const adminReindexSchema = z
+  .object({ types: z.array(searchSubjectTypeSchema).min(1) })
+  .strict();
+
+export type AdminReindex = z.infer<typeof adminReindexSchema>;
+
+export const adminReindexResponseSchema = z
+  .object({
+    items: z.array(
+      z
+        .object({
+          type: searchSubjectTypeSchema,
+          indexed: z.number().int().nonnegative(),
+          removed: z.number().int().nonnegative(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type AdminReindexResponse = z.infer<typeof adminReindexResponseSchema>;
 
 export const SEARCH_TYPE_LABELS_FR: Record<string, string> = {
   GUIDE: 'Guides',

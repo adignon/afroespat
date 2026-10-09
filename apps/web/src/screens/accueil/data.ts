@@ -13,6 +13,7 @@
  * généré, lui, ne bougera pas d'une virgule.
  */
 import { I, arrivals, events, panel, rail, shortcuts } from '../a01/data';
+import type { A01Data } from '../a01/data';
 
 export { arrivals, events, rail, shortcuts };
 
@@ -404,7 +405,24 @@ export const dirFilters = [
   chip('Disponible'),
 ];
 
-export const directory = [
+/**
+ * Un membre de l'annuaire de ville (A11).
+ *
+ * `profil` EST FACULTATIF et absent des exemples ci-dessous : ce sont des
+ * DESSINS, et on ne visite pas le profil d'un dessin. Le cadre ne pose le lien
+ * que si la ligne porte une adresse — voir `NOM_VERS_PROFIL` dans le générateur.
+ */
+export interface MembreAnnuaire {
+  readonly i: string;
+  readonly name: string;
+  readonly sub: string;
+  readonly bg: string;
+  readonly help: boolean;
+  readonly skills: readonly string[];
+  readonly profil?: string;
+}
+
+export const directory: readonly MembreAnnuaire[] = [
   {
     i: 'SM',
     name: 'Sandra M.',
@@ -455,7 +473,22 @@ export const CITY_TABS = [
   'Témoignages',
 ] as const;
 
-export const cityTabsFor = (active: number) => CITY_TABS.map((l, i) => tab(l, i === active));
+/**
+ * ─── LE NOM DE CHAQUE ONGLET DANS L'URL, DANS L'ORDRE DE `CITY_TABS` ────────
+ *
+ * Les quatre valeurs que `app/(app)/villes/[slug]/page.tsx` lit dans `?onglet=`
+ * et que `ville-screen.tsx` range dans son `SLUGS` : la table est recopiée de là,
+ * rien n'est inventé.
+ *
+ * LA DESTINATION EST RELATIVE — même raison que pour les onglets du réseau
+ * (`screens/reseaux/chrome.ts`) : le slug de la ville n'est dessiné dans aucune de
+ * ces planches, et leur prise ne le porte pas. Une requête seule garde le chemin
+ * courant ; composer une adresse absolue demanderait d'inventer la ville.
+ */
+const CITY_TAB_SLUGS = ['bons-plans', 'produits', 'budgets', 'temoignages'] as const;
+
+export const cityTabsFor = (active: number) =>
+  CITY_TABS.map((l, i) => ({ ...tab(l, i === active), href: `?onglet=${CITY_TAB_SLUGS[i]}` }));
 
 export const cityTabs = cityTabsFor(2);
 
@@ -474,7 +507,8 @@ export const cityTabs = cityTabsFor(2);
  * formes sont deux vues du MÊME état — le rang de l'onglet courant est l'unique
  * argument — donc rien ne peut divergir entre elles.
  */
-export const cityPillsFor = (active: number) => CITY_TABS.map((l, i) => chip(l, i === active));
+export const cityPillsFor = (active: number) =>
+  CITY_TABS.map((l, i) => ({ ...chip(l, i === active), href: `?onglet=${CITY_TAB_SLUGS[i]}` }));
 
 export const cityPills = cityPillsFor(2);
 
@@ -518,12 +552,24 @@ export const budgets = [
 // `composeur.test.ts` décrit : la pastille « 2 images » ne bougeait pas quand on
 // dessinait une cinquième miniature.
 
-/** Un onglet de type dans le composeur MOBILE : fond, texte et bordure, les trois. */
-const typeChip = (label: string, on: boolean) => ({
+/**
+ * Un onglet de type dans le composeur MOBILE : fond, texte et bordure, les trois.
+ *
+ * `on` ET `onPick` SONT PORTÉS PAR LA PASTILLE, pas déduits à l'écran : le cadre
+ * en dessine quatre, et une prise d'écran ne saurait pas laquelle a été touchée.
+ * C'est la même règle que les interrupteurs de notification et les onglets des
+ * enregistrés — le geste vit sur la LIGNE.
+ *
+ * `onPick` est facultatif : les cadres de documentation emploient la fabrique
+ * `accueilData()`, qui n'a personne à prévenir.
+ */
+const typeChip = (label: string, on: boolean, onPick?: () => void) => ({
   label,
+  on,
   bg: on ? '#0F5C48' : '#fff',
   fg: on ? '#fff' : '#5D6B66',
   bd: on ? '#0F5C48' : '#E6EBE9',
+  onPick: onPick ?? ((): void => undefined),
 });
 
 /**
@@ -534,8 +580,12 @@ const typeChip = (label: string, on: boolean) => ({
  * composeur mobile dessine un seul vert pour l'actif et du blanc pour les autres.
  * Deux dessins, un seul état — le rang actif est l'unique argument des deux.
  */
-export const draftTypesFor = (active: number) =>
-  ['Victoire', 'Question', 'Info', 'Discussion'].map((l, i) => typeChip(l, i === active));
+export const draftTypesFor = (active: number, onPick?: (rang: number) => void) =>
+  ['Victoire', 'Question', 'Info', 'Discussion'].map((l, i) =>
+    typeChip(l, i === active, () => {
+      onPick?.(i);
+    }),
+  );
 
 export const draftTypes = draftTypesFor(3);
 
@@ -590,6 +640,20 @@ export interface GuideLiableView {
   readonly titre: string;
   /** « Santé · mis à jour le 2 février », ou « Santé · Lyon · 57 utiles ». */
   readonly meta: string;
+  /**
+   * L'IDENTIFIANT ET L'ÉTAT DE CHOIX — posés, pas dessinés.
+   *
+   * La fenêtre cherchait déjà dans de vrais guides et sa sélection n'allait nulle
+   * part : `createPostSchema` n'avait pas de `guideIds`, et `posts` aucune
+   * relation vers un guide. Les deux existent depuis la migration
+   * `20261007040000_sondage_et_guides_sur_publication`.
+   *
+   * FACULTATIFS parce que les deux listes d'exemple de ce fichier sont des
+   * DESSINS : elles n'ont pas de guide derrière.
+   */
+  readonly guideId?: string;
+  readonly choisi?: boolean;
+  readonly onPick?: () => void;
 }
 
 export const guidesSuggeres = [
@@ -986,6 +1050,9 @@ export const storyViewFor = (index: number) => storyViews[index] ?? MAIN_STORY;
 
 // ═══ A14 · créer une story ═══════════════════════════════════════════════════
 
+/** L'inerte des gestionnaires d'étape non fournis. Voir `webFrameFor`. */
+const noopFlux = (): void => undefined;
+
 const PALETTE = [
   '#16785E',
   '#0F5C48',
@@ -1042,7 +1109,24 @@ export const webKindsFor = (sk: number, onPick: (i: number) => void) =>
   }));
 
 export const webKindFor = (sk: number) => (STORY_KINDS[sk] ?? STORY_KINDS[0]).toUpperCase();
-export const webPillFor = (sk: number) => `${webKindFor(sk)} · LOGEMENT`;
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA PASTILLE DU COMPOSEUR — « LOGEMENT » ÉTAIT ÉCRIT EN DUR                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « le "Logement" n'est pas non plus dynamique et est affiché même
+ * quand ce n'est pas encore sélectionné par l'utilisateur ».
+ *
+ * La planche écrit « CONSEIL · LOGEMENT » parce qu'elle illustre un conseil sur
+ * le logement. Le TYPE suivait déjà les onglets ; le sujet, lui, était le mot de
+ * l'exemple, et il s'affichait avant même qu'on ait coché quoi que ce soit.
+ *
+ * Sans sujet retenu, la pastille ne dit QUE le type. C'est plus court et c'est
+ * vrai — annoncer un sujet que le membre n'a pas choisi est exactement ce qu'on
+ * vient de retirer de la charge (`storyCategoryFor`).
+ */
+export const webPillFor = (sk: number, sujet: string | null = null) =>
+  sujet === null ? webKindFor(sk) : `${webKindFor(sk)} · ${sujet.toLocaleUpperCase('fr-FR')}`;
 
 export const photoTools = ['Changer', 'Recadrer', 'Assombrir le bas'];
 
@@ -1065,11 +1149,42 @@ export const attachSteps = [
 
 export const attachTopics = ['Visale', 'Garant', 'CAF', 'Colocation', 'Banque'];
 
-export const audienceFor = (aud: number, onPick: (i: number) => void) =>
-  ['Tous les membres', 'Lyon seulement'].map((label, i) => {
+/**
+ * LES DEUX ONGLETS D'AUDIENCE — « Tous les membres » / « <Ville> seulement ».
+ *
+ * ── LA VILLE N'EST PLUS « LYON » EN DUR ───────────────────────────────────
+ *
+ * Le porteur : « Pour la ville "Lyon seulement", je souhaite que par défaut on
+ * affiche un chevron down après le titre du bouton. Quand l'utilisateur clique
+ * sur ça une fois ça active le tab, une deuxième fois ça affiche un modal de
+ * toutes les villes rangées par pays. »
+ *
+ * « Lyon » était le mot de la planche, et il restait affiché quelle que soit la
+ * ville du membre — un Béninois de Cotonou publiait « Lyon seulement ». La forme
+ * de la phrase, elle, est EXACTEMENT celle de la maquette : un nom de ville, un
+ * espace, « seulement ». Seul le nom vient maintenant de l'état.
+ *
+ * `villeLabel` retombe sur `'Lyon'` : c'est ce que la planche écrit, donc les
+ * appelants qui ne choisissent pas de ville voient ce qu'ils voyaient.
+ *
+ * `chevron` ne vaut que pour le SECOND onglet, parce que lui seul ouvre quelque
+ * chose. Le premier n'a rien à montrer : « tous les membres » n'a pas de liste.
+ *
+ * `on` est exposé pour que l'onglet puisse ANNONCER son état (`aria-pressed`) —
+ * les deux boutons n'étaient distingués que par une couleur de fond, ce qu'un
+ * lecteur d'écran ne voit pas.
+ */
+export const audienceFor = (
+  aud: number,
+  onPick: (i: number) => void,
+  villeLabel = 'Lyon',
+) =>
+  ['Tous les membres', `${villeLabel} seulement`].map((label, i) => {
     const on = aud === i;
     return {
       label,
+      on,
+      chevron: i === 1,
       bg: on ? '#fff' : 'transparent',
       fg: on ? '#16211D' : '#5D6B66',
       onPick: () => onPick(i),
@@ -1084,6 +1199,24 @@ export const audienceFor = (aud: number, onPick: (i: number) => void) =>
 export const msgsFor = (on: boolean) => ({
   msgsTrack: on ? '#16785E' : '#CBD5D1',
   msgsKnob: on ? '23px' : '3px',
+  /**
+   * L'ÉTAT, EN BOOLÉEN, POUR QUE L'INTERRUPTEUR PUISSE L'ANNONCER.
+   *
+   * `msgsTrack` et `msgsKnob` sont du DESSIN — une couleur et une position. Un
+   * lecteur d'écran n'en tire rien : l'interrupteur de « Autoriser les messages »
+   * était un `<button>` sans nom, sans rôle et sans état, donc indiscernable d'un
+   * bouton quelconque, et son basculement était invisible.
+   *
+   * `INTERACTIVE_ROLES` lui pose maintenant `role="switch"`,
+   * `aria-checked={msgsOn}` et le nom que la maquette écrit dans le `<span>` frère.
+   * Il lui fallait pour cela l'état sous forme de booléen, et c'est tout ce que
+   * cette prise ajoute — aucun dessin ne change.
+   *
+   * MESURÉ AU NAVIGATEUR : c'est la suite de tests qui l'a trouvé. Elle ne pouvait
+   * pas désigner cet interrupteur par son rôle et son nom, ce qui est exactement ce
+   * qu'un membre au lecteur d'écran ne pouvait pas faire non plus.
+   */
+  msgsOn: on,
 });
 
 const WEB_STEPS = ['1 · Écrire', '2 · Rattacher', '3 · Publier'] as const;
@@ -1098,7 +1231,46 @@ const WEB_STEPS = ['1 · Écrire', '2 · Rattacher', '3 · Publier'] as const;
  * couleur. C'est pourquoi `color: !photo` et non un troisième booléen — deux
  * booléens indépendants auraient permis l'état impossible « ni l'un ni l'autre ».
  */
-export const webFrameFor = (step: number, photo: boolean, onPhoto: () => void) => ({
+/**
+ * LA NAVIGATION D'ÉTAPE DU CADRE D'ORDINATEUR — quatrième argument, facultatif.
+ *
+ * Les deux boutons du bas de la fenêtre sombre portent `{{ w.prev }}` et
+ * `{{ w.next }}`, et ils n'avaient AUCUN gestionnaire : sur ordinateur, on ne
+ * pouvait ni avancer ni reculer dans le flux, donc l'étape 3 — celle qui publie —
+ * était inatteignable. Le transcodeur les branche maintenant sur `w.onNext` et
+ * `w.onPrev` (`BUTTON_ACTIONS`, borné à A14, discriminé sur l'interpolation
+ * elle-même).
+ *
+ * Les gestionnaires voyagent DANS `w` et non à la racine des prises : ces deux
+ * boutons n'existent que sur le cadre de 1440 px, et une prise de racine
+ * obligerait les quatre cadres mobiles à la déclarer sans l'employer — ce que le
+ * lint refuse.
+ *
+ * FACULTATIF, avec des valeurs inertes par défaut : `screens/accueil/props.ts`
+ * construit `AccueilData` pour quatorze autres écrans qui ne composent rien, et il
+ * n'a pas à connaître la publication d'une story.
+ */
+/**
+ * Ce que le bouton dit PENDANT l'envoi, étape par étape. Seule la dernière part
+ * sur le réseau ; les deux premières ne font que changer d'étape, et leur
+ * `busy` ne dure pas assez pour être lu — on garde néanmoins un mot pour chacune,
+ * plutôt qu'un libellé qui disparaîtrait.
+ */
+const PUBLICATION_EN_COURS = ['Suivant', 'Continuer', 'Publication en cours…'];
+
+export const webFrameFor = (
+  step: number,
+  photo: boolean,
+  onPhoto: () => void,
+  flux: {
+    readonly onNext?: () => void;
+    readonly onPrev?: () => void;
+    readonly busy?: boolean;
+  } = {},
+) => ({
+  onNext: flux.onNext ?? noopFlux,
+  onPrev: flux.onPrev ?? noopFlux,
+  busy: flux.busy ?? false,
   title:
     ['ORDINATEUR · 1 · ÉCRIRE', 'ORDINATEUR · 2 · RATTACHER', 'ORDINATEUR · 3 · PUBLIER'][step] ??
     '',
@@ -1112,7 +1284,28 @@ export const webFrameFor = (step: number, photo: boolean, onPhoto: () => void) =
   photoFg: photo ? '#fff' : '#16211D',
   onPhoto,
   prev: step === 0 ? 'Annuler' : 'Retour',
-  next: ['Suivant', 'Continuer', 'Publier'][step] ?? 'Suivant',
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE BOUTON DIT QU'IL TRAVAILLE                                           ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Quand on clique sur publier, le bouton permet d'autres clics
+   * et ça ne montre pas de loading. »
+   *
+   * MESURÉ : il se DÉSACTIVE bien dès le clic — `disabled={w.busy}`, et
+   * `onPublish` sort d'entrée si `busy` — donc le second clic ne partait pas. Ce
+   * qui manquait était le SIGNE : le bouton gardait le mot « Publier », grisé, et
+   * rien ne distinguait « j'envoie » de « je refuse de répondre ». Sur une
+   * connexion lente, il n'y a plus qu'à cliquer encore.
+   *
+   * Le libellé le dit maintenant. Il n'y a pas de mot sur la planche pour cet
+   * état — aucune maquette ne dessine un bouton en cours d'envoi —, « Publication
+   * en cours… » est donc un texte d'interface écrit ici et REMONTÉ, comme les
+   * autres.
+   */
+  next: flux.busy === true
+    ? PUBLICATION_EN_COURS[step] ?? 'Envoi en cours…'
+    : (['Suivant', 'Continuer', 'Publier'][step] ?? 'Suivant'),
   steps: WEB_STEPS.map((label, i) => ({
     label,
     bar: i <= step ? '#16785E' : '#E6EBE9',
@@ -1177,6 +1370,42 @@ export interface AccueilData {
 
   draftTypes: ReturnType<typeof draftTypesFor>;
   brouillon: BrouillonView;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE COMPOSEUR DE 390 px LIT CE QUE CELUI DE 1440 px LIT DÉJÀ              ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La page pour la publication d'une actualité sur mobile n'est
+   * pas dynamique, pas d'input, l'ajout de sondage ne marche pas. »
+   *
+   * MESURÉ sur `/publications/nouvelle` : ZÉRO champ de saisie, un seul bouton
+   * (« Publier »), et le corps de la page était l'exemple de la maquette — « On
+   * organise un repas partagé… », « Photo 1 », « Samedi 22 mars ».
+   *
+   * Ces deux prises sont les MÊMES que `A01Data` porte pour le composeur
+   * d'ordinateur. Les redéclarer d'un autre nom aurait fait deux brouillons.
+   * Elles sont facultatives parce que la fabrique de démonstration
+   * (`accueilData()`) sert encore les cadres de documentation.
+   */
+  composeurSondage?: A01Data['composeurSondage'];
+  composeurGuides?: A01Data['composeurGuides'];
+  /**
+   * LES DEUX COMPTEURS DU PIED, DÉRIVÉS LÀ OÙ LES LISTES SONT TENUES.
+   *
+   * Ils affichaient « 1 » en dur — mesuré sur un brouillon vide : « 0 1 1 ». Ce
+   * sont des CHAÎNES et non des nombres parce que le cadre les écrit tels quels,
+   * et des prises distinctes parce que `composeurSondage` est un objet ou `null`
+   * et que `composeurGuides` est facultatif : `.length` sur un facultatif ne
+   * compile pas, et la garde a sa place là où la donnée est construite.
+   */
+  composeurSondageCompte?: string;
+  composeurGuidesCompte?: string;
+  composeurTexte?: string;
+  onComposeurTexte?: (event: { target: { value: string } }) => void;
+  onPublier?: () => void;
+  publierBloque?: boolean;
+  onAjouterImage?: () => void;
+  composeurImages?: A01Data['composeurImages'];
   /** La borne de 04 §2.4, lue de `@app/shared` et non recopiée dans le front. */
   photosMax: number;
   guidesSuggeres: readonly GuideLiableView[];

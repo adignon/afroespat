@@ -1,12 +1,14 @@
 'use client';
 
-import { useCallback } from 'react';
-import { chargerK02 } from '@/screens/compte/appels';
+import { useCallback, useState } from 'react';
+import type { MemberContentType } from '@app/shared';
+import { SQUELETTE_K02, chargerK02 } from '@/screens/compte/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { K02Desktop } from '@/screens/k02/desktop.generated';
 import { K02Mobile } from '@/screens/k02/mobile.generated';
 import { K02Ajout } from '@/screens/k02contact/ajout.generated';
+import { ProfilContactVivant } from '@/screens/compte/profil-contact-vivant';
 
 /**
  * K02 — le profil d'un autre membre, et la fenêtre « Ajouter aux contacts ».
@@ -20,8 +22,17 @@ import { K02Ajout } from '@/screens/k02contact/ajout.generated';
  * et « Ajouter » sur mobile, parce que la maquette raccourcit le libellé quand la
  * place manque. Le transcodeur marque les deux.
  *
- * « Envoyer la demande » est INERTE : une demande de contact est un message
- * adressé à quelqu'un, et ce lot ne branche aucune route.
+ * ── LES DEUX BOUTONS RÉPONDENT MAINTENANT ────────────────────────────────
+ *
+ * Le porteur : « Sur le profil, le bouton écrire et ajouter ne marche pas. Le
+ * bouton ajouter affiche un modal qui ne marche pas. » Les deux sont bien
+ * dessinés sur les DEUX planches — c'était sa troisième question — et aucun des
+ * deux n'avait de geste : zéro `onClick` mesuré dans les trois cadres de K02.
+ *
+ * `ProfilContactVivant` les attache : « Écrire » cherche la conversation
+ * existante puis, à défaut, ouvre la fenêtre du premier message
+ * (`POST /conversations/direct`) ; « Envoyer la demande » appelle
+ * `POST /connection-requests`.
  */
 /**
  * LE PSEUDO VIENT DE LA ROUTE, et c'est lui qui décide de l'appel.
@@ -39,26 +50,49 @@ import { K02Ajout } from '@/screens/k02contact/ajout.generated';
  */
 export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
   const { ouverte, onOuvrir, onFermer } = useCompte();
-  const charger = useCallback(() => chargerK02(pseudo), [pseudo]);
+  /**
+   * L'ONGLET DE CONTENU EST UN ÉTAT DE PAGE, et il recharge : `useDonnees`
+   * relance son effet quand `charger` change d'identité — c'est le seul
+   * mécanisme qu'il offre, et les cinq autres écrans de ce module s'en servent
+   * déjà. Le filtre part dans la requête (`?type=`), parce que la liste est
+   * paginée et qu'un tri local donnerait un onglet vide sur une page deux.
+   */
+  const [onglet, setOnglet] = useState<MemberContentType>('GUIDE');
+  const charger = useCallback(
+    () => chargerK02(pseudo, onglet, setOnglet),
+    [pseudo, onglet],
+  );
 
   return (
-    <EcranDonnees charger={charger}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_K02}
+      charger={charger}
+    >
       {(donnees) => (
-        <EcranCompte
-          screen="K02"
-          desktop={<K02Desktop {...donnees} />}
-          mobile={<K02Mobile {...donnees} />}
-          ouverte={ouverte}
-          onOuvrir={onOuvrir}
-          onFermer={onFermer}
-          /**
-           * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut : son
-           * titre nomme le membre visité (« Ajouter Fatou aux contacts »). Figé,
-           * il disait « Fatou » sur le profil de Kofi — la fenêtre aurait menti
-           * par-dessus un écran qui, lui, disait vrai.
-           */
-          modales={{ K02C: { mobile: <K02Ajout {...donnees} /> } }}
-        />
+        <ProfilContactVivant donnees={donnees} pseudo={pseudo} onFermerAjout={onFermer}>
+          {(vivantes) => (
+            <EcranCompte
+              screen="K02"
+              desktop={<K02Desktop {...vivantes} />}
+              mobile={<K02Mobile {...vivantes} />}
+              ouverte={ouverte}
+              onOuvrir={onOuvrir}
+              onFermer={onFermer}
+              /**
+               * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut : son
+               * titre nomme le membre visité (« Ajouter Fatou aux contacts »). Figé,
+               * il disait « Fatou » sur le profil de Kofi — la fenêtre aurait menti
+               * par-dessus un écran qui, lui, disait vrai.
+               */
+              modales={{ K02C: { mobile: <K02Ajout {...vivantes} /> } }}
+            />
+          )}
+        </ProfilContactVivant>
       )}
     </EcranDonnees>
   );

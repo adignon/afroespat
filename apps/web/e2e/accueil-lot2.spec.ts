@@ -1,6 +1,36 @@
 import { expect, test, type Page } from '@playwright/test';
 
 /**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE FICHIER ÉTAIT ROUGE — 88 CAS SUR 93 — ET LA CAUSE N'ÉTAIT PAS EN LUI    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Mesuré sur le commit de base, et vérifié avec la version HEAD de ce fichier
+ * jouée telle quelle : chaque cas atterrissait sur « Votre numéro de téléphone »,
+ * c'est-à-dire sur l'écran de CONNEXION. L'instantané de Playwright le dit.
+ *
+ * Un lot ultérieur à l'écriture de ce fichier a posé `GardeSession` sur
+ * `(app)/layout.tsx` : elle RENVOIE vers `/connexion` dès que la reprise de
+ * session a échoué. Ces cas n'ouvraient aucune session et n'interceptaient rien,
+ * donc la reprise échouait, donc aucune des dix-sept routes ne rendait son cadre.
+ * Les assertions de géométrie et de titre mesuraient un écran qui n'était pas
+ * celui du test — et toutes étaient rouges, ce qui au moins ne mentait pas.
+ *
+ * Ce qu'il fallait AJOUTER est le `beforeEach` ci-dessous, et rien d'autre : ces
+ * cas éprouvent le DESSIN TRANSCODÉ, pas le réseau.
+ *
+ *   · un fourre-tout qui répond `503` à tout appel, pour qu'aucune route ne
+ *     parte vers une vraie API — celle d'un autre arbre de travail, branchée sur
+ *     une autre base, donnerait un succès qui ne prouve rien ;
+ *   · une reprise de session qui RÉUSSIT, pour que la garde ouvre.
+ *
+ * Les écrans qui lisent l'API rendent alors leur cadre de REPLI (c'est le
+ * `squelette` d'`EcranDonnees`, et `useReseau` pose `pret` dans son `finally`) :
+ * le dessin est là, la donnée est absente, et c'est précisément ce que ces cas
+ * mesurent.
+ */
+
+/**
  * Les dix-sept écrans du lot 2 — A02 à A14 de `docs/template/03 Accueil v2.dc.html`.
  *
  * Les assertions portent sur la GÉOMÉTRIE, les RÔLES et le TEXTE VISIBLE de la
@@ -20,6 +50,43 @@ import { expect, test, type Page } from '@playwright/test';
  * réel plutôt que de le maquiller — et si un titre APPARAÎT un jour dans la
  * maquette, il tombera, ce qui est exactement ce qu'on veut savoir.
  */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `ATTENTE` — LE TITRE QUE CES CAS PEUVENT HONNÊTEMENT EXIGER               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Trois titres de ce tableau portaient « Béninois en France », et les cas
+ * correspondants étaient ROUGES EN PERMANENCE. La raison n'est pas dans l'écran :
+ * c'est LE NOM DU RÉSEAU, et il vient de `GET /communities/:slug`, un appel
+ * CLIENT — alors que le `beforeEach` de ce fichier répond `503` À TOUTE L'API,
+ * délibérément, pour que ces cas éprouvent le DESSIN TRANSCODÉ et jamais le
+ * réseau d'un autre arbre de travail. Ces cas demandaient donc une donnée que la
+ * suite s'interdit elle-même de fournir.
+ *
+ * ── CE QUE CES CAS TENAIENT QUAND MÊME, ET QU'IL NE FAUT PAS PERDRE ─────────
+ *
+ * Leur rouge a servi : il a tenu la COQUILLE VIDE. Mesuré au `curl`,
+ * `/reseaux/beninois-en-france?onglet=fil` ne servait que quatre mots
+ * (« DisaporyPlus Chargement du réseau… ») parce que `reseau-screen.tsx`
+ * renvoyait un paquet d'attente À LA PLACE du cadre. C'est corrigé — 203 mots
+ * servis — et il faut que le remplacer par un vert ne rende pas ce dépôt aveugle
+ * à la rechute.
+ *
+ * D'où une valeur EXACTE et non un assouplissement. Le cas compare toujours au
+ * caractère près, et il rougit sur les trois rechutes possibles :
+ *
+ *   · le titre redevient VIDE (`<h1></h1>`, violation `empty-heading` d'axe) ;
+ *   · le titre EMPRUNTE le nom de la maquette — « Béninois en France » peint sur
+ *     la fiche de Lyon, qui est le défaut d'origine du module ;
+ *   · l'écran cesse de peindre son cadre, et il n'y a plus de `<h1>` du tout.
+ *
+ * CE QUI RESTE NON TENU, ET C'EST UN MANQUE ASSUMÉ : que le nom RÉEL s'affiche
+ * quand l'API répond. Aucun cas de ce fichier ne peut le dire, puisqu'il
+ * n'allume jamais l'API. Il faut pour cela une suite à base semée — c'est ce que
+ * fait `e2e/session.ts`, et c'est une autre nature de vérification.
+ */
+const ATTENTE = '—';
+
 const ROUTES = [
   { path: '/guides', screen: 'A03', h1: 'Guides et Démarches', h1Mobile: 'Guides et Démarches' },
   {
@@ -58,19 +125,24 @@ const ROUTES = [
   {
     path: '/reseaux/beninois-en-france',
     screen: 'A08',
-    h1: 'Béninois en France',
-    h1Mobile: 'Béninois en France',
+    // Le nom vient de l'API, que ce fichier coupe : voir `ATTENTE` ci-dessus.
+    h1: ATTENTE,
+    h1Mobile: ATTENTE,
   },
   {
     path: '/reseaux/beninois-en-france?onglet=fil',
     screen: 'A08T-fil',
-    h1: 'Béninois en France',
-    h1Mobile: 'Béninois en France',
+    h1: ATTENTE,
+    h1Mobile: ATTENTE,
   },
   {
     path: '/reseaux/beninois-en-france?onglet=gerer&vue=proprietaire',
     screen: 'A08T-gerer',
-    h1: 'Béninois en France',
+    // `h1Mobile` reste un MOT DE LA MAQUETTE : la planche mobile de « Gérer »
+    // écrit son propre titre, elle ne reprend pas le nom du réseau. Les deux
+    // largeurs ne dépendent donc pas de la même chose, et c'est la donnée qui le
+    // dit — pas une préférence.
+    h1: ATTENTE,
     h1Mobile: 'Gérer le réseau',
   },
   {
@@ -104,6 +176,29 @@ const ROUTES = [
     h1Mobile: 'Ce conseil concerne…',
   },
 ] as const;
+
+/**
+ * LE FOURRE-TOUT D'ABORD, LA REPRISE ENSUITE — voir l'en-tête de ce fichier.
+ *
+ * Playwright donne la main au DERNIER motif inscrit : l'ordre est donc le contraire
+ * de l'intuition, et l'inverser ferait avaler la route précise par le fourre-tout.
+ */
+test.beforeEach(async ({ page }) => {
+  await page.route('**/v1/**', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: '{"error":{"code":"HORS_TEST","message":"Appel non intercepté par cette spec."}}',
+    }),
+  );
+  await page.route('**/v1/auth/refresh', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ accessToken: 'jeton-de-test', isNewUser: false }),
+    }),
+  );
+});
 
 const isDesktop = (page: Page): boolean => (page.viewportSize()?.width ?? 0) >= 1024;
 
@@ -218,7 +313,27 @@ test.describe('le serveur rend le contenu, pas une coquille', () => {
     { path: '/villes?vue=carte', text: 'Villes et Membres' },
     { path: '/villes/lyon?onglet=produits', text: 'Lyon' },
     { path: '/guides/visale-sans-cdi?vue=auteur', text: 'Obtenir la garantie Visale sans CDI' },
-    { path: '/reseaux/beninois-en-france?onglet=fil', text: 'Béninois en France' },
+    /**
+     * LE MOT-TÉMOIN N'EST PAS LE NOM DU RÉSEAU, ET C'EST UNE CORRECTION.
+     *
+     * Il l'était — « Béninois en France » — et ce cas était ROUGE À RAISON, mais
+     * pas pour la raison qu'il affichait. Mesuré au `curl` : le serveur ne
+     * servait que QUATRE MOTS sur cette route, « DisaporyPlus Chargement du
+     * réseau… », parce que `reseau-screen.tsx` renvoyait un paquet d'attente À LA
+     * PLACE du cadre. C'était la coquille vide, et ce cas la tenait.
+     *
+     * La coquille est corrigée (203 mots servis, rail, panneau et onglets
+     * compris). Mais le NOM, lui, ne peut pas revenir ici : il vient de
+     * `GET /communities/:slug`, un appel CLIENT. Exiger du serveur une donnée
+     * qu'il n'a pas, c'est exiger une refonte en rendu serveur — un arbitrage du
+     * porteur, pas une assertion de test.
+     *
+     * Le témoin est donc un mot que la MAQUETTE écrit et que le serveur sert :
+     * « ANNONCE DU RÉSEAU », l'intitulé du bloc épinglé de la planche. Il
+     * disparaîtrait si cette route repassait en rendu client — ce que ce bloc
+     * surveille — sans rien affirmer sur la donnée.
+     */
+    { path: '/reseaux/beninois-en-france?onglet=fil', text: 'ANNONCE DU RÉSEAU' },
     { path: '/stories/nouvelle?etape=2', text: 'Ce conseil concerne' },
   ] as const;
 
@@ -373,12 +488,82 @@ test('A08 · deux onglets montrent deux contenus', async ({ page }) => {
   await page.goto('/reseaux/beninois-en-france?onglet=evenements', { waitUntil: 'networkidle' });
   const evenements = await frame(page).innerText();
 
-  expect(sujets.length, 'l’onglet Sujets a du contenu').toBeGreaterThan(200);
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE PLANCHER ET LES TÉMOINS SONT PAR LARGEUR, ET C'EST LA MAQUETTE QUI   ║
+   * ║ L'IMPOSE                                                                 ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Un seul plancher à 200 caractères servait les deux largeurs, et il était
+   * faux en mobile : mesuré, le cadre mobile de l'onglet Sujets sert 149
+   * caractères SANS RIEN QUI MANQUE —
+   *
+   *   « · — 890 membres · vous êtes membre · Réseau automatique · Sourdine ·
+   *     Fil · Sujets · Événements · Membres · Album · À propos ·
+   *     Accueil · Parcours · Entraide · Services · Compte »
+   *
+   * c'est-à-dire la pastille, le titre, la ligne de résumé, les six onglets de
+   * section et les cinq de la barre basse : TOUT ce que la maquette dessine à
+   * cette largeur quand l'API ne donne pas de sujet. Son homologue d'ordinateur
+   * en sert 452, parce que la maquette y ajoute les actions de propriétaire. Deux
+   * dessins différents, donc deux planchers — comme `h1` et `h1Mobile` plus haut.
+   *
+   * ── CE PLANCHER A DÉJÀ SERVI, ET IL NE DOIT PAS DEVENIR DÉCORATIF ─────────
+   *
+   * C'est lui qui a fait trouver la coquille vide : il est tombé quand
+   * `reseau-screen.tsx` renvoyait un paquet d'attente à la place du cadre. Il
+   * reste donc, serré sous la valeur mesurée et très au-dessus des quatre mots
+   * d'une coquille.
+   */
+  const etroit = (page.viewportSize()?.width ?? 0) < 1024;
+  const plancher = etroit ? 140 : 400;
+  expect(sujets.length, `l’onglet Sujets a du contenu (plancher ${plancher})`).toBeGreaterThan(
+    plancher,
+  );
   expect(evenements, 'un autre onglet, un autre contenu').not.toBe(sujets);
-  // Et c'est bien le contenu ATTENDU, pas simplement un autre : la maquette écrit
-  // ce sujet épinglé sur l'onglet Sujets, et lui seul.
-  expect(sujets).toContain('Renouveler son passeport depuis la France');
-  expect(evenements).not.toContain('Renouveler son passeport depuis la France');
+
+  /**
+   * ── LES TÉMOINS NE SONT PLUS UN TITRE DE SUJET, ET C'EST UNE CORRECTION ───
+   *
+   * Ce cas exigeait « Renouveler son passeport depuis la France » sur l'onglet
+   * Sujets. C'était un TITRE DE SUJET, que la maquette écrivait en dur et qu'un
+   * lot de branchement a délibérément cessé de peindre : il vient maintenant de
+   * `GET /communities/:slug/topics`, et le `beforeEach` de ce fichier coupe
+   * l'API. Le cas demandait donc une donnée que la suite s'interdit de fournir.
+   *
+   * Le premier `expect` ci-dessus a servi, lui : il est tombé à 147 caractères
+   * quand `reseau-screen.tsx` renvoyait un paquet d'attente à la place du cadre,
+   * et il est la raison pour laquelle la coquille vide a été trouvée. Il reste.
+   *
+   * Les deux témoins sont désormais des mots que la MAQUETTE dessine, et chacun
+   * est vérifié DANS LES DEUX SENS — présent chez l'un, absent chez l'autre.
+   * C'est ce qui empêche un aiguillage cassé de passer : rendre deux fois le même
+   * onglet ferait tomber la seconde moitié de chaque paire.
+   *
+   *   · « Épingler » est une action de PROPRIÉTAIRE que seul le cadre complet de
+   *     A08 dessine — la planche d'événements ne la porte pas ;
+   *   · « Repas partagé béninois » est un événement que seule la planche
+   *     d'événements dessine.
+   *
+   * Mesuré au `curl` sur le serveur de production, les quatre comptes : 1 / 0 et
+   * 1 / 0.
+   */
+  /**
+   * Le témoin de l'onglet Sujets diffère selon la largeur, parce que la maquette
+   * y dessine deux choses : les ACTIONS DE PROPRIÉTAIRE sur l'ordinateur
+   * (« Annonce · Épingler · Gérer »), qu'elle ne porte pas sur le téléphone, et
+   * la bascule « Sourdine » de l'en-tête mobile. Mesurés tous les quatre au
+   * navigateur, cadre par cadre et largeur par largeur.
+   */
+  const temoinSujets = etroit ? 'Sourdine' : 'Épingler';
+  expect(sujets, `l’onglet Sujets porte « ${temoinSujets} »`).toContain(temoinSujets);
+  expect(evenements, `la planche d’événements ne porte pas « ${temoinSujets} »`).not.toContain(
+    temoinSujets,
+  );
+  expect(evenements, 'la planche d’événements porte ses événements').toContain(
+    'Repas partagé béninois',
+  );
+  expect(sujets, 'l’onglet Sujets n’en porte pas').not.toContain('Repas partagé béninois');
 });
 
 /**
@@ -655,20 +840,51 @@ test.describe('A01N — « Nouvelle publication »', () => {
     });
 
     /**
-     * CHAQUE COMPTE EST BORNÉ DES DEUX CÔTÉS, et la borne basse n'est pas
-     * décorative : sans elle, un sélecteur qui cesserait de reconnaître sa pièce
-     * renverrait zéro, et `0 <= 3` passerait — le test deviendrait creux sans que
-     * rien ne change de couleur. C'est la même faute que compter l'étiquette
-     * « 2 images » au lieu des miniatures, déplacée d'un cran.
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LES BORNES BASSES ONT SAUTÉ, ET C'EST LE DÉFAUT QU'ELLES GARDAIENT   ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Elles exigeaient « au moins une miniature, au moins une étiquette, au
+     * moins un sondage » SUR UN BROUILLON NEUF. Elles ne tenaient que parce que
+     * la page montait `accueilData()`, la fabrique de DÉMONSTRATION : « Photo
+     * 1 », « Repas pas cher à Lyon », « Quelle date pour le repas partagé ? »
+     * étaient affichés à qui n'avait rien écrit. Le porteur l'a vu — « la page
+     * n'est pas dynamique, pas d'input » — et c'est corrigé.
+     *
+     * CE TEST GARDE DONC L'INVERSE, qui est la règle vraie : une page de
+     * création neuve ne montre le brouillon de PERSONNE. C'est un garde-fou plus
+     * fort que l'ancien, parce qu'il échouerait si la fabrique de démonstration
+     * revenait.
+     *
+     * Les bornes HAUTES restent : ce sont les trois règles de la planche
+     * « COMPOSANTS », et elles valent quel que soit le contenu.
      */
+    expect(compte.miniatures, 'un brouillon neuf ne porte aucune image').toBe(0);
+    expect(compte.etiquettes, 'un brouillon neuf ne porte aucun guide lié').toBe(0);
+    expect(compte.sondages, 'un brouillon neuf ne porte aucun sondage').toBe(0);
+
     // « Jusqu’à 4. Miniatures avec croix, case « + » pour en ajouter. »
-    expect(compte.miniatures, 'les miniatures doivent être reconnues').toBeGreaterThan(0);
     expect(compte.miniatures, 'Images — jusqu’à 4').toBeLessThanOrEqual(4);
     // « Jusqu’à 3. Étiquettes vertes avec croix. »
-    expect(compte.etiquettes, 'les étiquettes de guide doivent être reconnues').toBeGreaterThan(0);
     expect(compte.etiquettes, 'Guides — jusqu’à 3').toBeLessThanOrEqual(3);
     // « Un seul par publication. »
-    expect(compte.sondages, 'l’aperçu de sondage doit être reconnu').toBeGreaterThan(0);
     expect(compte.sondages, 'Sondage — un seul par publication').toBeLessThanOrEqual(1);
+
+    /**
+     * ET LES TROIS CONTRÔLES SONT BIEN LÀ — sans quoi « 0, 0, 0 » serait aussi
+     * ce que rendrait une page cassée. Le porteur : « pas d'input ».
+     */
+    await expect(
+      page.locator('[data-composeur-texte]').filter({ visible: true }),
+      'le composeur doit avoir un champ',
+    ).toHaveCount(1);
+    await expect(
+      page.locator('[data-composeur-type]').filter({ visible: true }),
+      'les quatre types doivent être des boutons',
+    ).toHaveCount(4);
+    await expect(
+      page.locator('[data-composeur-publier]').filter({ visible: true }),
+      'le bouton « Publier » doit exister',
+    ).toHaveCount(1);
   });
 });

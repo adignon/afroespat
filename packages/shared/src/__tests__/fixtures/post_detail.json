@@ -43,10 +43,13 @@
     },
     "commentCount": 3,
     "commentLabel": "Répondre",
+    "bookmarked": false,
     "linkRel": "noopener nofollow ugc",
     "body": "Quel justificatif de domicile accepte la CAF quand on est en colocation ?",
     "movedTo": null,
-    "canMoveToTopic": false
+    "canMoveToTopic": false,
+    "poll": null,
+    "guides": []
   },
   "comments": {
     "items": [

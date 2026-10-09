@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { connecter } from './session';
 import { monterParcours, ETAPES_COMPTEES, type MontageParcours } from './parcours-session';
 
 /**
@@ -62,8 +63,34 @@ test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test'
  */
 async function visiter(page: Page, url: string, width = 1440): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
-  await page.goto(url, { waitUntil: 'networkidle' });
-  await page.locator('[data-screen]').first().waitFor({ state: 'attached' });
+  /**
+   * `load` ET NON `networkidle` : Next précharge les liens visibles d'une page App
+   * Router, et le réseau ne retombe pas au calme sur les pages de parcours —
+   * `goto` expirait à 30 s, et dix cas étaient comptés échoués sans jamais avoir
+   * été EXÉCUTÉS. Même cause et même correction que `e2e/services.spec.ts`,
+   * `e2e/a11y.spec.ts` et `visual/screens.spec.ts`.
+   */
+  await page.goto(url, { waitUntil: 'load' });
+  await page.locator('[data-screen]').first().waitFor({ state: 'attached', timeout: 20_000 });
+
+  /**
+   * ET LA DONNÉE, PAS SEULEMENT LE CADRE. `EcranDonnees` rend le SQUELETTE tant
+   * que la réponse n'est pas là : `[data-screen]` existe dès le premier rendu.
+   *
+   * MESURÉ : en passant de `networkidle` à `load`, la navigation est devenue assez
+   * rapide pour que le relevé de cibles tactiles tombe sur le squelette — il n'y
+   * trouvait AUCUN bouton, et la garde de non-vacuité du cas l'a dit mot pour mot :
+   * « « button « Écrire » » n'est plus mesuré à /parcours/publics ». C'est
+   * exactement le rôle de cette garde, et elle a joué.
+   */
+  await page
+    .locator('[role="status"]')
+    .filter({ hasText: /Chargement/ })
+    .first()
+    .waitFor({ state: 'detached', timeout: 20_000 })
+    .catch(() => {
+      /** Tous les écrans de ce module n'ont pas de bande : son absence n'est pas un échec. */
+    });
 }
 
 /** Le cadre d'ordinateur, le seul visible au-delà de 1024 px. */
@@ -417,21 +444,62 @@ test.describe('les états de §6 sont atteignables', () => {
     await expect(desktop(page).getByRole('heading', { level: 1 })).toHaveText(m.titre);
   });
 
-  test('?etape=plan — « plan atteint » SANS bloquer la lecture (§3.1)', async ({ page }) => {
-    // J02 n'a pas été rebranché par ce lot : ses planches restent statiques, et
-    // cette route n'a besoin d'aucune session.
+  test('?etape=plan — « plan atteint » SANS bloquer la lecture (§3.1)', async ({
+    page,
+    request,
+  }) => {
+    /**
+     * ╔═══════════════════════════════════════════════════════════════════════╗
+     * ║ « CETTE ROUTE N'A BESOIN D'AUCUNE SESSION » — ce n'est plus vrai        ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le commentaire précédent disait « J02 n'a pas été rebranché par ce lot : ses
+     * planches restent statiques ». MESURÉ au navigateur aujourd'hui :
+     * `/parcours/nouveau` rend L'ÉCRAN DE CONNEXION — « Votre numéro de
+     * téléphone ». La route est passée sous garde depuis.
+     */
+    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
     await visiter(page, '/parcours/nouveau?etape=plan', 390);
     const cadre = page.locator('[data-frame="mobile"]');
-    await expect(cadre.getByText('Vous avez déjà un parcours actif')).toBeVisible();
+    /**
+     * 20 s SUR LE PREMIER REPÈRE, et sur lui seul.
+     *
+     * Le volet est choisi par `?etape=…`, LU CÔTÉ CLIENT : il n'existe donc pas
+     * dans le HTML servi, et il n'apparaît qu'après l'hydratation. `load` rend la
+     * main avant — c'est tout l'intérêt du passage à `load`, et c'en est le prix
+     * ici. Les assertions suivantes gardent les 5 s par défaut : une fois le
+     * premier repère là, l'écran entier l'est.
+     */
+    await expect(cadre.getByText('Vous avez déjà un parcours actif')).toBeVisible({
+      timeout: 20_000,
+    });
     /**
      * §3.1 : « encart avec bouton Premium, SANS BLOQUER LA LECTURE ». Les types
      * de parcours doivent rester lisibles SOUS l'encart — c'est la moitié de la
      * règle qu'on oublie, et la seule qu'un écran puisse trahir.
      */
-    await expect(cadre.getByText('Étudier · 12 étapes')).toBeVisible();
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LA RÈGLE, PAS LE LIBELLÉ DE LA MAQUETTE                                 ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * « Étudier · 12 étapes » était écrit en dur : c'est ce que la PLANCHE dessine.
+     * La donnée dit « Étudier en France · 15 étapes » — relevé au navigateur. Ce cas
+     * ne passait donc que sur le squelette, et il a rougi dès qu'une session a été
+     * ouverte.
+     *
+     * CE QUE §3.1 EXIGE, c'est que les types de parcours restent LISIBLES sous
+     * l'encart Premium — pas qu'ils portent tel ou tel nom. On mesure donc la
+     * règle : au moins un type, avec son compte d'étapes, visible sous l'encart.
+     */
+    await expect(
+      cadre.getByText(/\u00b7 \d+ \u00e9tapes?/).first(),
+      'les types de parcours doivent rester lisibles SOUS l\u2019encart',
+    ).toBeVisible();
   });
 
-  test('?etape=regulariser — les trois sous-situations (§3.1)', async ({ page }) => {
+  test('?etape=regulariser — les trois sous-situations (§3.1)', async ({ page, request }) => {
+    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
     await visiter(page, '/parcours/nouveau?etape=regulariser', 390);
     const cadre = page.locator('[data-frame="mobile"]');
     for (const choix of ['Régularisation', 'Changement de statut', 'Renouvellement']) {

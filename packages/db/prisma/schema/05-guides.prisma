@@ -97,6 +97,8 @@ model Guide {
   contributors    GuideContributor[]
   outdatedFlags   GuideOutdatedFlag[]
   stepDefinitions StepDefinition[]
+  /// Les publications du fil qui lient ce guide (04 §2.4). Voir `PostGuide`.
+  postLinks       PostGuide[]
 
   @@index([authorUserId])
   @@index([category])

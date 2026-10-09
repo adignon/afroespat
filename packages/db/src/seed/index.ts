@@ -11,6 +11,7 @@ import {
   SKILLS,
   STATIC_PAGES,
 } from './referentials.js';
+import { demoStoriesAsked, seedDemoStories } from './stories.js';
 import { seedJourneyTemplates } from './templates.js';
 
 /**
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
   log(`  villes : ${CITIES.length} (toutes inactives — la ville pilote s’active en back-office)`);
 
   await activatePilotCity(log);
+  await activateOriginCities(log);
 
   // ── Pages statiques référencées par les consentements (01 §2.10) ────────
   for (const page of STATIC_PAGES) {
@@ -155,6 +157,25 @@ async function main(): Promise<void> {
     `  plans : ${billing.plans} · ancre partenaire Logement ${billing.housingAnchor} · ` +
       `prix annuels ${billing.yearPrices}`,
   );
+
+  /**
+   * ── STORIES DE DÉMONSTRATION (opt-in) ────────────────────────────────────
+   *
+   * Hors du chargement T3 et derrière un interrupteur, pour la raison écrite en
+   * tête de `stories.ts` : des stories sont des CONTENUS signés par des membres
+   * fictifs, pas des données de départ.
+   */
+  if (demoStoriesAsked(process.env)) {
+    const demo = await seedDemoStories(prisma);
+    if (demo === null) {
+      log('  stories de démonstration : aucune ville active — rien n’a été semé');
+    } else {
+      log(
+        `  stories de démonstration : ${demo.stories} sur ${demo.auteurs} membres fictifs ` +
+          `(${demo.ville}) — visibles 24 h`,
+      );
+    }
+  }
 }
 
 /**
@@ -202,6 +223,71 @@ async function activatePilotCity(log: (s: string) => void): Promise<void> {
     data: { isActive: true, activatedAt: city.activatedAt ?? new Date() },
   });
   log(`  ${label} : ${city.name} activée (développement — réseau NON créé)`);
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES VILLES DU PAYS DE DÉPART, OUVERTES POUR LE LANCEMENT                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Pour le départ active toutes les villes du pays de départ. »
+ *
+ * Le constat qui l'a amené là : sur l'écran O02, Cotonou portait « bientôt »
+ * — mesuré, `is_active = false`. Le Bénin comptait DOUZE villes au référentiel et
+ * UNE SEULE ouverte. Un membre qui part de Cotonou ne pouvait donc pas rattacher
+ * son compte à sa propre ville.
+ *
+ * ── CE QUE CET INTERRUPTEUR NE CHANGE PAS ─────────────────────────────────
+ *
+ * La doctrine de `pilot-city.ts` tient toujours, et pour la même raison :
+ * « confondre les deux ferait d'un chargement de données une décision produit ».
+ * L'ouverture reste un OPT-IN EXPLICITE, refusé en production, et elle ne pose que
+ * `is_active` et `activated_at`. Le réseau de la ville — le `community` CITY et
+ * l'inscription des membres — naît de l'événement `city.activated`, que le seed
+ * n'a pas de boîte d'envoi pour émettre. Le jour J passe par
+ * `POST /v1/admin/ref/cities/:id/activate`.
+ *
+ * ── POURQUOI « LE PAYS DE DÉPART » ET NON « TOUS LES PAYS » ───────────────
+ *
+ * Ouvrir les villes d'un pays d'ORIGINE actif, c'est ouvrir le départ. Les villes
+ * de DESTINATION, elles, restent gouvernées par la ville pilote : ouvrir Lyon ou
+ * Marseille d'office déciderait du déploiement à la place du porteur. La
+ * distinction est celle que `countries.kind` porte déjà.
+ *
+ *     SEED_ACTIVATE_ORIGIN_CITIES=true pnpm --filter @app/db seed
+ */
+async function activateOriginCities(log: (s: string) => void): Promise<void> {
+  const demande = (process.env['SEED_ACTIVATE_ORIGIN_CITIES'] ?? '').trim().toLowerCase();
+  if (!['1', 'true', 'yes', 'oui', 'on'].includes(demande)) return;
+
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error(
+      'Ouvrir les villes d’un pays depuis le seed est refusé en production : ' +
+        'elles s’ouvrent en back-office, pour que leurs réseaux soient créés (02 §6).',
+    );
+  }
+
+  const villes = await prisma.city.findMany({
+    where: { isActive: false, country: { kind: 'ORIGIN', isActive: true } },
+    select: { id: true, name: true, country: { select: { nameFr: true } } },
+    orderBy: { name: 'asc' },
+  });
+  if (villes.length === 0) {
+    log('  villes de départ : toutes déjà ouvertes');
+    return;
+  }
+
+  const maintenant = new Date();
+  for (const ville of villes) {
+    // `activatedAt` n'est posé QUE s'il est vide : la date à laquelle une ville
+    // s'est ouverte est un fait, pas une valeur de seed. Même règle que la pilote.
+    await prisma.city.update({
+      where: { id: ville.id },
+      data: { isActive: true, activatedAt: maintenant },
+    });
+  }
+  const pays = [...new Set(villes.map((v) => v.country.nameFr))].join(', ');
+  log(`  villes de départ : ${villes.length} ouverte(s) — ${pays} (réseaux NON créés)`);
 }
 
 main()

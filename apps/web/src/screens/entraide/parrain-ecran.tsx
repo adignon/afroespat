@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH06 } from '@/screens/entraide/appels';
+import { SQUELETTE_H06, chargerH06 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H06Desktop } from '@/screens/h06/desktop.generated';
 
@@ -28,7 +28,13 @@ export function ParrainEcran({ pseudo }: { readonly pseudo: string }) {
   const charger = useCallback(() => chargerH06(pseudo), [pseudo]);
 
   return (
-    <EcranDonnees charger={charger}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant « DisaporyPlus Chargement de votre compte... » et rien d'autre.
+       * Voir `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_H06} charger={charger}>
       {(donnees) => (
         <ScreenFrames
           screen="H06"

@@ -26,14 +26,20 @@
  * deux booléens sont calculés par le serveur à chaque requête, donc ils ne peuvent
  * pas périmer comme une copie gardée le ferait.
  */
+import { z } from 'zod';
 import {
   commentMutationResponseSchema,
   commentsResponseSchema,
   createCommentSchema,
   createPostSchema,
+  updatePostSchema,
+  pollDetailResponseSchema,
+  pollVoteSchema,
+  type PollDetailResponse,
   createStorySchema,
   feedResponseSchema,
   feedSidebarResponseSchema,
+  mediaAssetSchema,
   myStoriesResponseSchema,
   postDetailResponseSchema,
   postReactionStateSchema,
@@ -41,17 +47,22 @@ import {
   storyDetailResponseSchema,
   storyVotesResponseSchema,
   type CommentsResponse,
+  type CommentSort,
   type CreateComment,
   type CreatePost,
+  type UpdatePost,
   type CreateStory,
   type FeedResponse,
   type FeedSidebarResponse,
+  type MediaAssetView,
   type MyStoriesResponse,
   type PostDetailResponse,
   type PostReactionState,
   type StoryBandResponse,
   type StoryDetailResponse,
   type StoryVotesResponse,
+  createDirectConversationSchema,
+  uuidSchema,
 } from '@app/shared';
 /**
  * `@/lib/api/index` ET NON `@/lib/api`.
@@ -144,9 +155,15 @@ export function fetchComments(
   subjectId: string,
   cursor?: string,
   signal?: AbortSignal,
+  /**
+   * LE TRI DES DEUX ONGLETS DE LA PLANCHE A01C. Absent, le serveur retombe sur
+   * `RELEVANT` — l'onglet que la maquette dessine actif. On ne l'envoie donc que
+   * lorsqu'il a été changé, ce qui garde l'adresse courte et lisible au journal.
+   */
+  sort?: CommentSort,
 ): Promise<CommentsResponse> {
   return memberApi.get(
-    `/comments${query({ subjectType, subjectId, cursor })}`,
+    `/comments${query({ subjectType, subjectId, cursor, sort })}`,
     commentsResponseSchema,
     opts(signal),
   );
@@ -168,6 +185,28 @@ export function createPost(input: CreatePost): Promise<PostDetailResponse> {
   });
 }
 
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ PARTAGER DANS UN RÉSEAU — une publication dans le fil de ce réseau           ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * Aucune route de partage n'existe. `POST /posts` avec `communityId` en porte
+ * déjà toutes les règles — §2.3 : « renseigné = fil du réseau, visible de ses
+ * membres seuls » — appartenance et quotas compris. Une route de partage les
+ * aurait redites, et la copie aurait divergé.
+ *
+ * LE CORPS PORTE LE LIEN ET RIEN D'AUTRE D'INVENTÉ : la phrase est celle déjà
+ * employée pour le partage à un contact, pour qu'un même geste produise le même
+ * texte où qu'il aille.
+ */
+export function publierDansReseau(communityId: string, lien: string): Promise<PostDetailResponse> {
+  return createPost({
+    type: 'DISCUSSION',
+    body: `Je partage cette publication avec le réseau : ${lien}`,
+    communityId,
+  });
+}
+
 export function createComment(input: CreateComment) {
   return memberApi.post('/comments', commentMutationResponseSchema, {
     body: createCommentSchema.parse(input),
@@ -181,6 +220,81 @@ export function createStory(input: CreateStory): Promise<StoryDetailResponse> {
 }
 
 /**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE FOND PHOTO D'UNE STORY — `POST /media`, ET LE GENRE EST `POST`          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * C'est le téléversement qui MANQUAIT, et son absence était la cause profonde des
+ * trois boutons morts du composeur : « Changer » n'avait rien à changer et
+ * « Recadrer » recadrait l'image d'exemple de la maquette, parce qu'il n'existait
+ * aucun sélecteur de fichier dans tout l'écran et que `backgroundAssetId` ne
+ * partait jamais.
+ *
+ * `kind: 'POST'` N'EST PAS UN CHOIX PAR DÉFAUT, et il ne fallait pas le deviner :
+ * `apps/api/src/common/media-attachment.ts` déclare `ATTACHABLE_KINDS.feed = ['POST']`
+ * et explique pourquoi — « Publication et story partagent `POST`. 04-fil.md §2.1 et
+ * §2.6 ne nomment pas de genre distinct, et l'énumération de 00 §6.3 n'en offre
+ * pas ». Il n'existe donc pas de genre `STORY`, et en inventer un serait toucher à
+ * une énumération partagée.
+ *
+ * Et c'est bien le genre que le SERVEUR exigera : `feed.service.ts` passe le
+ * `backgroundAssetId` à `resolveMedia`, qui filtre par `ownedAttachableWhere('feed', …)`
+ * — propriétaire, non supprimé, genre recevable, statut prêt, EXIF retirées. Un
+ * média d'un autre genre tombe sur le même 404 qu'un identifiant inconnu.
+ *
+ * LE SCHÉMA DE RÉPONSE VIENT DE `@app/shared` (`mediaAssetSchema`), comme tous les
+ * autres : l'en-tête de ce fichier l'exige, et un schéma recopié serait une seconde
+ * source.
+ */
+export function uploadStoryBackground(file: File, signal?: AbortSignal): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', file);
+  corps.append('kind', 'POST');
+  return memberApi.post('/media', mediaAssetSchema, { body: corps, ...opts(signal) });
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA CAPTURE D'UNE STORY, DÉPOSÉE COMME PIÈCE JOINTE DE MESSAGE              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `kind: 'MESSAGE'` ET NON `'POST'`, et ce n'est pas interchangeable : le genre
+ * décide de la capacité exigée, du plafond d'octets, des types acceptés — et
+ * surtout de ce à quoi le média pourra être ATTACHÉ. `media-attachment.ts` déclare
+ * `ATTACHABLE_KINDS.message = ['MESSAGE']` ; un média `POST` passé à
+ * `POST /conversations/direct` tomberait sur le même `404` qu'un identifiant
+ * inconnu, et l'écran annoncerait « introuvable » pour une image qu'il vient
+ * lui-même de déposer.
+ *
+ * La capacité de ce genre est `message.send` (L1) : c'est exactement celle de la
+ * route qui enverra le message. Un membre qui peut écrire peut donc joindre, et un
+ * L0 est refusé AU DÉPÔT plutôt qu'après — ce qui est le bon ordre, puisqu'il n'a
+ * pas écrit de texte pour rien.
+ */
+/**
+ * UNE IMAGE DE PUBLICATION.
+ *
+ * `kind: 'POST'` — le même genre que le fond d'une story, et ce n'est pas un
+ * raccourci : `apps/api/src/common/media-attachment.ts` déclare
+ * `ATTACHABLE_KINDS.feed = ['POST']` et explique pourquoi — « Publication et story
+ * partagent `POST`. 04-fil.md §2.1 et §2.6 ne nomment pas de genre distinct, et
+ * l'énumération de 00 §6.3 n'en offre pas. »
+ */
+export function uploadPostImage(fichier: File, signal?: AbortSignal): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', fichier);
+  corps.append('kind', 'POST');
+  return memberApi.post('/media', mediaAssetSchema, { body: corps, ...opts(signal) });
+}
+
+export function uploadStoryCapture(fichier: File, signal?: AbortSignal): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', fichier);
+  corps.append('kind', 'MESSAGE');
+  return memberApi.post('/media', mediaAssetSchema, { body: corps, ...opts(signal) });
+}
+
+/**
  * Réagir, et retirer sa réaction.
  *
  * AUCUN `kind` n'est envoyé : §4 dit « le serveur déduit le `kind` du type », et
@@ -190,6 +304,23 @@ export function createStory(input: CreateStory): Promise<StoryDetailResponse> {
  */
 export function reactToPost(postId: string): Promise<PostReactionState> {
   return memberApi.put(`/posts/${postId}/reaction`, postReactionStateSchema);
+}
+
+/**
+ * VOTER SUR LE SONDAGE D'UNE PUBLICATION.
+ *
+ * `POST /polls/:id/vote` — LA ROUTE DU MODULE 07, celle qui existait déjà. Un
+ * sondage de publication et un sondage de réseau sont le MÊME modèle depuis que
+ * `polls.community_id` est devenu facultatif : écrire une seconde route aurait
+ * dupliqué le vote modifiable, le compte par option et le masquage des résultats.
+ *
+ * `pollVoteSchema.parse` avant l'envoi : un tableau vide ou une neuvième option
+ * échoue ici, avec le nom du champ, plutôt qu'en `400` qui ne dit pas lequel.
+ */
+export function votePoll(pollId: string, optionIds: readonly string[]): Promise<PollDetailResponse> {
+  return memberApi.post(`/polls/${pollId}/vote`, pollDetailResponseSchema, {
+    body: pollVoteSchema.parse({ optionIds: [...optionIds] }),
+  });
 }
 
 export function unreactToPost(postId: string): Promise<PostReactionState> {
@@ -212,6 +343,136 @@ export function unvoteStory(storyId: string): Promise<StoryVotesResponse> {
   return memberApi.del(`/stories/${storyId}/reaction`, storyVotesResponseSchema);
 }
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ ENREGISTRER UNE STORY — « Le bouton de bookmark […] Tu peux l'implémenter ? » ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La table `bookmarks`, son enum `STORY`, la tâche horaire qui rafraîchit l'état
+ * et le champ `bookmarked` de `GET /stories/:id` existaient TOUS. Il manquait les
+ * deux routes d'écriture — le mot n'apparaissait dans aucun contrôleur du dépôt —
+ * et elles viennent d'être posées (`PUT`/`DELETE /stories/:id/bookmark`).
+ *
+ * CE QUE LE SIGNET CHANGE : une story expire en vingt-quatre heures, et
+ * `storyDetail` refuse alors de la servir SAUF à son auteur et à qui l'a
+ * enregistrée. C'est exactement ce que la planche promet — « 24 heures, puis gardé
+ * par ceux qui l'enregistrent ».
+ */
+const reponseSignet = z.object({ bookmarked: z.boolean() }).strict();
+
+export function bookmarkStory(storyId: string): Promise<{ bookmarked: boolean }> {
+  return memberApi.put(`/stories/${storyId}/bookmark`, reponseSignet);
+}
+
+export function unbookmarkStory(storyId: string): Promise<{ bookmarked: boolean }> {
+  return memberApi.del(`/stories/${storyId}/bookmark`, reponseSignet);
+}
+
+/**
+ * ÉCRIRE À L'AUTEUR D'UNE STORY — « implémente l'envoi de message avec l'input et
+ * le serveur ».
+ *
+ * UN SEUL APPEL, et c'est le serveur qui le veut ainsi : `POST
+ * /conversations/direct` prend le pseudo du destinataire ET le premier message.
+ * Ouvrir la conversation puis envoyer séparément ferait deux allers-retours pour
+ * un geste, et laisserait une conversation vide si le second échouait.
+ *
+ * `message.send` est une capacité L1 : un membre non vérifié reçoit
+ * `LEVEL_REQUIRED`, que l'écran montre comme n'importe quel refus. La planche
+ * dessine d'ailleurs cette invite sur TOUTES les stories ; c'est `canMessage`,
+ * servi par le détail, qui dit si l'auteur l'accepte.
+ */
+export function ecrireAAuteur(
+  toHandle: string,
+  firstMessage: string,
+  /**
+   * L'IMAGE VOYAGE AVEC LE PREMIER MESSAGE, et c'est §5.2 qui l'impose.
+   *
+   * Envoyer le texte puis l'image en second message serait le réflexe. Le serveur
+   * le REFUSE : `409 PENDING_CONVERSATION` tant que la demande n'est pas acceptée
+   * — et écrire à l'auteur d'une story qu'on ne connaît pas est exactement ce cas.
+   * `createDirectConversationSchema` porte donc `mediaId`, comme
+   * `sendMessageSchema` le portait déjà.
+   */
+  mediaId?: string,
+  /**
+   * LA STORY D'OÙ LE MESSAGE PART, pour que sa vignette y ramène.
+   *
+   * Le porteur : « Il faut qu'on puisse cliquer sur [la vignette] et aller vers la
+   * story si toujours en ligne. Sinon ça affirme que la story a expiré. »
+   *
+   * La capture est un média AUTONOME : elle survit à la story et ne dit pas d'où
+   * elle vient. Sans cet identifiant, la messagerie ne peut rien proposer d'autre
+   * qu'une image muette.
+   */
+  storyId?: string,
+): Promise<{ conversationId: string; messageId: string; pending: boolean }> {
+  /**
+   * ── LA FORME EST CELLE DU SERVEUR, RELEVÉE SUR LUI ────────────────────────
+   *
+   * Première version : `{ id }`. La route rend `{ conversationId, messageId,
+   * pending }`, et le schéma a donc REFUSÉ une réponse parfaitement valide — le
+   * `201` partait, le message était bien créé, et l'écran croyait à un échec.
+   *
+   * C'est exactement ce que ces schémas sont là pour attraper, et ils l'ont fait :
+   * mieux vaut un refus bruyant qu'un champ qui se vide sur une réponse qu'on n'a
+   * pas lue. Relevé sur `messaging.service.ts`, pas deviné.
+   *
+   * `pending` dit que le premier message EST une demande, tant que la relation est
+   * froide (§5.2). L'écran ne s'en sert pas encore — REMONTÉ : il annonce
+   * « envoyé » sans dire « en attente d'acceptation ».
+   */
+  return memberApi.post(
+    '/conversations/direct',
+    z
+      .object({
+        conversationId: uuidSchema,
+        messageId: uuidSchema,
+        pending: z.boolean(),
+      })
+      .strict(),
+    {
+      body: createDirectConversationSchema.parse({
+        toHandle,
+        firstMessage,
+        ...(mediaId === undefined ? {} : { mediaId }),
+        ...(storyId === undefined ? {} : { storyId }),
+      }),
+    },
+  );
+}
+
 export function deletePost(postId: string): Promise<void> {
   return memberApi.del(`/posts/${postId}`, voidResponse);
+}
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ ENREGISTRER UNE PUBLICATION — les routes n'existaient que pour les stories  ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * MÊME RÉPONSE que pour une story — `{ bookmarked }` — donc même schéma. Le
+ * réemployer plutôt que d'en écrire un second n'est pas une économie : deux
+ * schémas pour une seule forme divergent au premier champ ajouté.
+ */
+export function bookmarkPost(postId: string): Promise<{ bookmarked: boolean }> {
+  return memberApi.put(`/posts/${postId}/bookmark`, reponseSignet);
+}
+
+export function unbookmarkPost(postId: string): Promise<{ bookmarked: boolean }> {
+  return memberApi.del(`/posts/${postId}/bookmark`, reponseSignet);
+}
+
+/**
+ * MODIFIER UNE PUBLICATION, avec ce qu'elle porte.
+ *
+ * `updatePostSchema.parse` AVANT l'envoi, comme `createPost` : un corps hors
+ * bornes échoue ici, avec le nom du champ, plutôt qu'en `400` qui ne dit pas
+ * lequel. Et comme c'est le schéma du serveur, la fenêtre ne peut pas envoyer un
+ * champ que l'API refuserait.
+ */
+export function updatePost(postId: string, input: UpdatePost): Promise<PostDetailResponse> {
+  return memberApi.patch(`/posts/${postId}`, postDetailResponseSchema, {
+    body: updatePostSchema.parse(input),
+  });
 }

@@ -64,6 +64,33 @@ const BASE_URL = `http://localhost:${PORT}`;
 const API_PORT = process.env.API_PORT ?? '3001';
 const API_URL = `http://localhost:${API_PORT}/v1`;
 
+/**
+ * ╔═════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ADRESSE DE L'API ATTEINT AUSSI LE PROCESSUS DE TEST, ET PAS QUE LE SERVEUR ║
+ * ╚═════════════════════════════════════════════════════════════════════════╝
+ *
+ * `API_URL` était calculé ici et passé au seul `webServer`. Or PLUSIEURS SUITES
+ * appellent l'API DEPUIS LE TEST — `code-otp.spec.ts`, `inscription.spec.ts`,
+ * `onboarding-parcours.spec.ts` lisent toutes `process.env['API_URL']` avec pour
+ * défaut `http://localhost:3001/v1`. Dans un arbre de travail qui emploie un autre
+ * port, le NAVIGATEUR interrogeait donc l'API de l'arbre courant et le TEST celle
+ * du voisin : deux bases différentes, et une session ouverte dans l'une qui ne
+ * vaut rien dans l'autre.
+ *
+ * Le symptôme ne désigne jamais la cause — on voit un écran vide, un `401`, un
+ * sélecteur sans option — et la mesure d'un autre lot est sans appel : 55 échecs
+ * sur 199 ont disparu avec cette seule variable. Il peut aussi passer pour un
+ * SUCCÈS, ce qui est pire : la suite verdit contre un back construit ailleurs.
+ *
+ * Le fichier de configuration est évalué DANS CHAQUE PROCESSUS OUVRIER de
+ * Playwright, pas seulement dans le processus principal : l'affectation ci-dessous
+ * atteint donc les tests eux-mêmes. `??=` ne recouvre pas une valeur posée à la
+ * main dans l'environnement, pour qu'on puisse encore viser une autre API
+ * expressément.
+ */
+process.env['API_URL'] ??= API_URL;
+process.env['NEXT_PUBLIC_API_URL'] ??= API_URL;
+
 export default defineConfig({
   testDir: '.',
   // Sur le chemin critique : un test instable fait plus de mal qu'un test absent.

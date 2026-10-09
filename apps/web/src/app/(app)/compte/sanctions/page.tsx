@@ -1,6 +1,8 @@
 'use client';
 
-import { chargerK09 } from '@/screens/compte/appels';
+import { useCallback, useState } from 'react';
+import { SanctionsVivantes } from '@/screens/compte/sanctions-vivantes';
+import { SQUELETTE_K09, chargerK09 } from '@/screens/compte/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { K09Desktop } from '@/screens/k09/desktop.generated';
@@ -27,14 +29,37 @@ import { K09Mobile } from '@/screens/k09/mobile.generated';
  * rien.
  */
 export default function SanctionsPage() {
+  /** Recharger après une contestation : voir la page Sécurité pour le pourquoi. */
+  const [recharge, setRecharge] = useState(0);
+  const [sanctionId, setSanctionId] = useState<string | null>(null);
+  const charger = useCallback(async () => {
+    void recharge;
+    const d = await chargerK09();
+    setSanctionId(d.sanctionId ?? null);
+    return d;
+  }, [recharge]);
+  const recharger = useCallback(() => {
+    setRecharge((n) => n + 1);
+  }, []);
+
   return (
-    <EcranDonnees charger={chargerK09}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_K09} charger={charger}>
       {(donnees) => (
-        <ScreenFrames
+        <SanctionsVivantes donnees={donnees} sanctionId={sanctionId} onRecharger={recharger}>
+          {(vivantes) => (
+            <ScreenFrames
           screen="K09"
-          desktop={<K09Desktop {...donnees} />}
-          mobile={<K09Mobile {...donnees} />}
+          desktop={<K09Desktop {...vivantes} />}
+          mobile={<K09Mobile {...vivantes} />}
         />
+          )}
+        </SanctionsVivantes>
       )}
     </EcranDonnees>
   );

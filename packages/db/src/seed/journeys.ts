@@ -398,6 +398,40 @@ export interface JourneyTemplateSeed {
   nameFr: string;
   /** Phase attendue à la création (00 §6.3). */
   targetPhase: 'PRE_DEPARTURE' | 'RECENT_ARRIVAL' | 'SETTLED';
+  /**
+   * LE TRACÉ DE L'ICÔNE, SERVI PAR L'API AVEC LE TYPE.
+   *
+   * Le porteur : « Les objectifs de la première section doivent être les
+   * différents parcours disponibles du coup viennent du backend avec leur icon et
+   * tout. »
+   *
+   * La colonne `journey_templates.icon` existait et restait VIDE sur les quatre
+   * types — compté en base. L'écran d'objectif tirait donc ses icônes d'une table
+   * LOCALE indexée par `code` (`screens/onboarding/from-api.ts`), ce qui marche
+   * tant que les types sont ces quatre-là et cesse de marcher le jour où un
+   * cinquième est créé en back-office : il arriverait sans icône.
+   *
+   * Les quatre tracés viennent de `docs/template/01 Accès et Onboarding.dc.html`,
+   * recopiés à l'identique depuis la table locale qui les avait transcrits. Rien
+   * n'est redessiné ; la donnée change seulement de côté.
+   *
+   * La table locale RESTE, comme repli : un type sans icône en base doit encore
+   * s'afficher.
+   */
+  icon: string;
+  /**
+   * CE TYPE OUVRE-T-IL UN PARCOURS ?
+   *
+   * Faux pour les deux objectifs que T5 §O03 dessine sous « sans créer de
+   * parcours ». Ils sont des OBJECTIFS — la même page pose que « les deux groupes
+   * ont le même rang visuel de choix » — mais ils n'ouvrent rien.
+   *
+   * Un type non développable n'a aucune étape, et sa version publiée en compte
+   * donc zéro : c'est elle qui le rend PROPOSABLE, puisque « un type sans version
+   * publiée n'est pas proposé ». C'est le booléen, pas l'absence de version, qui
+   * dit de ne rien créer.
+   */
+  createsJourney?: boolean;
   sortOrder: number;
   steps: TemplateStepSeed[];
   variants: CountryVariantSeed[];
@@ -458,6 +492,7 @@ export const JOURNEY_TEMPLATES: JourneyTemplateSeed[] = [
     code: 'STUDIES',
     nameFr: 'Étudier en France',
     targetPhase: 'PRE_DEPARTURE',
+    icon: 'M2 9 12 4l10 5-10 5zM6 11v5c3 2 9 2 12 0v-5',
     sortOrder: 1,
     steps: [
       { code: 'CHOOSE_PROGRAM', daysBeforeArrival: 240, isOptional: false, dependsOn: [] },
@@ -488,6 +523,7 @@ export const JOURNEY_TEMPLATES: JourneyTemplateSeed[] = [
     code: 'WORK',
     nameFr: 'Travailler en France',
     targetPhase: 'PRE_DEPARTURE',
+    icon: 'M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
     sortOrder: 2,
     steps: [
       { code: 'FIND_JOB_OFFER', daysBeforeArrival: 150, isOptional: false, dependsOn: [] },
@@ -508,6 +544,7 @@ export const JOURNEY_TEMPLATES: JourneyTemplateSeed[] = [
     code: 'FAMILY',
     nameFr: 'Rejoindre ma famille',
     targetPhase: 'PRE_DEPARTURE',
+    icon: 'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5',
     sortOrder: 3,
     steps: [
       { code: 'FAMILY_FILE', daysBeforeArrival: 300, isOptional: false, dependsOn: [] },
@@ -530,6 +567,7 @@ export const JOURNEY_TEMPLATES: JourneyTemplateSeed[] = [
     // l'ancienneté. `target_phase` n'est aujourd'hui LU par rien côté API — il est
     // seulement rendu au client — l'enjeu reste donc éditorial.
     targetPhase: 'SETTLED',
+    icon: 'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5',
     sortOrder: 4,
     // « sans rétro-planning » : `days_before_arrival` nul partout. Le membre est
     // arrivé, il n'y a plus de date d'arrivée à décompter.
@@ -542,6 +580,48 @@ export const JOURNEY_TEMPLATES: JourneyTemplateSeed[] = [
       { code: 'FIND_JOB_AFTER', daysBeforeArrival: null, isOptional: true, dependsOn: [1] },
       { code: 'LOCAL_INTEGRATION', daysBeforeArrival: null, isOptional: false, dependsOn: [] },
     ],
+    variants: [],
+  },
+  /**
+   * ── LES DEUX OBJECTIFS QUI N'OUVRENT PAS DE PARCOURS ──────────────────────
+   *
+   * T5 §O03 : « Séparateur “sans créer de parcours”. Deux cartes plus légères :
+   * “M'intégrer, rencontrer du monde”, “Aider les autres”. LES DEUX GROUPES ONT
+   * LE MÊME RANG VISUEL DE CHOIX. » Et la règle dure de §5 : « Le parcours n'est
+   * jamais imposé. »
+   *
+   * Ils étaient ÉCRITS EN DUR dans le cadre transcodé, donc ni cliquables ni
+   * connus du serveur. Le porteur a tranché : « seuls les sans parcours doivent
+   * être cliquables aussi. Je pense qu'il faut enregistrer ça comme étant un
+   * parcours non développable. Donc ils viennent de la base aussi. »
+   *
+   * `steps: []` — et c'est le point : la version publiée existe, et elle compte
+   * ZÉRO étape. Sans version, le type serait exclu de `GET /journey-templates`
+   * (« un type sans version publiée n'est pas proposé ») ; avec une version vide,
+   * la règle de résolution reste intacte et c'est `createsJourney` qui porte la
+   * différence.
+   *
+   * Les deux tracés d'icône viennent de `docs/template/01 Accès et
+   * Onboarding.dc.html`, planche O03, recopiés à l'identique.
+   */
+  {
+    code: 'INTEGRATE',
+    nameFr: 'M’intégrer, rencontrer du monde',
+    targetPhase: 'SETTLED',
+    icon: 'M17 20a5 5 0 0 0-10 0M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM20 19a4 4 0 0 0-3-3.8M18 10.5a2.5 2.5 0 1 0 0-5',
+    createsJourney: false,
+    sortOrder: 90,
+    steps: [],
+    variants: [],
+  },
+  {
+    code: 'HELP_OTHERS',
+    nameFr: 'Aider les autres',
+    targetPhase: 'SETTLED',
+    icon: 'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z',
+    createsJourney: false,
+    sortOrder: 91,
+    steps: [],
     variants: [],
   },
 ];

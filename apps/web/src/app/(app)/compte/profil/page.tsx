@@ -1,8 +1,11 @@
 'use client';
 
-import { chargerK01 } from '@/screens/compte/appels';
+import { useCallback, useState } from 'react';
+import { ProfilReferentiels } from '@/screens/compte/profil-referentiels';
+import { SQUELETTE_K01, chargerK01 } from '@/screens/compte/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
+import { useEditionProfil } from '@/screens/compte/profil-edition';
 import { K01Desktop } from '@/screens/k01/desktop.generated';
 import { K01Mobile } from '@/screens/k01/mobile.generated';
 
@@ -31,14 +34,55 @@ import { K01Mobile } from '@/screens/k01/mobile.generated';
  * téléphone du module vit sur K04, masqué par le serveur.
  */
 export default function ProfilPage() {
+  /**
+   * ╔═══════════════════════════════════════════════════════════════════════╗
+   * ║ LA LECTURE ET L'ÉCRITURE SONT DEUX CHOSES, ET ELLES SE REJOIGNENT ICI    ║
+   * ╚═══════════════════════════════════════════════════════════════════════╝
+   *
+   * `EcranDonnees` sert la LECTURE — le profil tel qu'il est, avec son squelette
+   * servi avant la réponse. `useEditionProfil` porte l'ÉCRITURE : l'état du
+   * formulaire, les deux listes fermées, le téléversement de la photo et les deux
+   * `PATCH`.
+   *
+   * `cle` FORCE LE RECHARGEMENT APRÈS UN ENREGISTREMENT. Sans elle, la page
+   * continuerait d'afficher le profil d'avant — un membre qui change son nom le
+   * verrait dans le champ et pas dans le bandeau du haut, et croirait que rien
+   * n'a été pris.
+   */
+  const { edition, rechargement } = useEditionProfil();
+
+  /**
+   * ── RECHARGER APRÈS UN CHOIX DE COMPÉTENCES OU DE LANGUES ───────────────
+   *
+   * `EcranDonnees` est remonté par sa `key` : c'est le mécanisme que cette page
+   * emploie déjà pour la photo de profil, et il relit tout. On réutilise le
+   * même compteur plutôt que d'en ajouter un second qui ferait la même chose.
+   */
+  const [choixFaits, setChoixFaits] = useState(0);
+  const rechargerProfil = useCallback(() => {
+    setChoixFaits((n) => n + 1);
+  }, []);
+
   return (
-    <EcranDonnees charger={chargerK01}>
+    <EcranDonnees
+      key={`${rechargement}-${choixFaits}`}
+      charger={chargerK01}
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : `/compte/profil` repondait 200 avec
+       * CINQ mots et zero entree de rail. Voir `SQUELETTE_K01`.
+       */
+      squelette={SQUELETTE_K01}
+    >
       {(donnees) => (
-        <ScreenFrames
-          screen="K01"
-          desktop={<K01Desktop {...donnees} />}
-          mobile={<K01Mobile {...donnees} />}
-        />
+        <ProfilReferentiels donnees={donnees} onRecharger={rechargerProfil}>
+          {(vivantes) => (
+            <ScreenFrames
+              screen="K01"
+              desktop={<K01Desktop {...vivantes} edition={edition} />}
+              mobile={<K01Mobile {...vivantes} edition={edition} />}
+            />
+          )}
+        </ProfilReferentiels>
       )}
     </EcranDonnees>
   );

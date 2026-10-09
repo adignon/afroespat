@@ -126,7 +126,34 @@ export function createTransport(config: TransportConfig): Transport {
     options: RequestOptions,
   ): Promise<Response> {
     const headers: Record<string, string> = {};
-    if (options.body !== undefined) headers['content-type'] = 'application/json';
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ UN CORPS `FormData` N'EST PAS DU JSON, ET IL NE FAUT SURTOUT PAS LE DIRE ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * `POST /media` (00 §8.1) est la seule route du socle qui attend du
+     * `multipart/form-data`, et c'est elle que le composeur de story appelle pour
+     * téléverser le fond choisi par le membre. Deux choses devaient changer ici, et
+     * aucune n'est optionnelle :
+     *
+     *   · NE PAS POSER `content-type`. Un multipart porte une FRONTIÈRE
+     *     (`boundary=…`) que seul le navigateur connaît, puisqu'il la tire au sort en
+     *     sérialisant le corps. Poser l'en-tête à la main — même à
+     *     `multipart/form-data` — l'envoie SANS frontière, et multer ne trouve alors
+     *     aucun champ : la route répond `MEDIA_EMPTY` pour un fichier bel et bien
+     *     joint. C'est le piège classique de `fetch`, et il est silencieux ;
+     *   · NE PAS SÉRIALISER. `JSON.stringify(formData)` rend `"{}"` — pas une
+     *     erreur, une chaîne vide de sens. Le fichier serait parti dans le vide.
+     *
+     * `typeof FormData !== 'undefined'` : ce module est importé par des composants
+     * que Next rend aussi côté serveur, où le constructeur peut manquer. La garde
+     * évite un `ReferenceError` au lieu d'une requête.
+     */
+    const estFormulaire =
+      typeof FormData !== 'undefined' && options.body instanceof FormData;
+    if (options.body !== undefined && !estFormulaire) {
+      headers['content-type'] = 'application/json';
+    }
     if (options.idempotencyKey !== undefined) {
       headers['idempotency-key'] = options.idempotencyKey;
     }
@@ -155,8 +182,42 @@ export function createTransport(config: TransportConfig): Transport {
          * en silence.
          */
         credentials: 'include',
+        /**
+         * ╔══════════════════════════════════════════════════════════════════════╗
+         * ║ AUCUNE RÉPONSE DE MEMBRE NE SORT D'UN CACHE                         ║
+         * ╚══════════════════════════════════════════════════════════════════════╝
+         *
+         * Le porteur : « Je clique sur un story mais ça ne montre pas que c'est lu
+         * même quand je rafraîchis la page. »
+         *
+         * MESURÉ : `GET /v1/stories` rend un `ETag` et AUCUN `Cache-Control`. Une
+         * réponse ainsi faite est « heuristiquement fraîche » — le navigateur a le
+         * droit de la resservir SANS redemander, et la durée qu'il s'accorde ne
+         * dépend que de lui. Le ruban revenait donc tel qu'il était avant la
+         * lecture, anneaux verts compris, et un rafraîchissement n'y changeait
+         * rien puisque rien n'était redemandé.
+         *
+         * Ces réponses sont PERSONNELLES : ce qu'un membre a vu, ses signets, ses
+         * messages. Elles n'ont rien à faire dans un cache, ici ni ailleurs — d'où
+         * aussi le `Cache-Control: no-store` posé côté API, qui vaut pour tous les
+         * clients et pas seulement pour celui-ci.
+         */
+        cache: 'no-store',
         ...(options.signal === undefined ? {} : { signal: options.signal }),
-        ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+        /**
+         * AUCUNE ASSERTION DE TYPE ICI, ET CE N'EST PAS UN OUBLI.
+         *
+         * `options.body` est `unknown`, donc `as FormData` semblait nécessaire.
+         * Il ne l'est pas : TypeScript déduit du `const estFormulaire = … instanceof
+         * FormData` une garde réutilisable, et dans cette branche `options.body` est
+         * DÉJÀ un `FormData`. L'assertion était donc redondante, et
+         * `@typescript-eslint/no-unnecessary-type-assertion` la refuse — mesuré :
+         * elle a fait échouer `pnpm build`, là où `eslint src` seul ne l'avait pas
+         * relevée. La porte de lint de ce dépôt n'est pas la seule qui compte.
+         */
+        ...(options.body === undefined
+          ? {}
+          : { body: estFormulaire ? options.body : JSON.stringify(options.body) }),
       });
     } catch (cause) {
       // `fetch` ne lève que si la requête n'a pas abouti : réseau, DNS, CORS,

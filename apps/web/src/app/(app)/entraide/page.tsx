@@ -1,7 +1,7 @@
 'use client';
 
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH01 } from '@/screens/entraide/appels';
+import { chargerH01, SQUELETTE_H01 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H01Desktop } from '@/screens/h01/desktop.generated';
 import { H01Mobile } from '@/screens/h01/mobile.generated';
@@ -27,7 +27,16 @@ import { H01Mobile } from '@/screens/h01/mobile.generated';
  */
 export default function HelpListPage() {
   return (
-    <EcranDonnees charger={chargerH01}>
+    <EcranDonnees
+      charger={chargerH01}
+      attente="Chargement du fil d’entraide…"
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est mesuré : sans cela,
+       * `/entraide` répondait 200 avec une coquille — ni rail, ni panneau de
+       * section, ni barre basse dans le HTML servi. Voir `SQUELETTE_H01`.
+       */
+      squelette={SQUELETTE_H01}
+    >
       {(donnees) => (
         <ScreenFrames
           screen="H01"

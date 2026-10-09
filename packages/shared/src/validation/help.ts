@@ -3,7 +3,6 @@ import {
   HelpKind,
   HelpStatus,
   HelpType,
-  HelpType2,
   Phase,
   VerificationLevel,
 } from '../enums/generated.js';
@@ -29,8 +28,21 @@ import {
 
 export const helpKindSchema = z.enum(['REQUEST', 'OFFER']);
 
-/** Les cinq types de §2.1. Ni logement ni emploi : ils vivent dans Services. */
-export const helpTypeSchema = z.enum(HelpType2);
+/**
+ * LES CINQ TYPES D'UNE DEMANDE — un SOUS-ENSEMBLE de `HelpType` depuis la fusion.
+ *
+ * Les deux énumérations n'en font plus qu'une (le porteur : « il ne faut en garder
+ * qu'un seul »), mais LA RÈGLE MÉTIER N'A PAS FUSIONNÉ AVEC ELLES. §2.1 pose que
+ * ni le logement ni l'emploi ne sont de l'entraide — ils vivent dans Services — et
+ * `WELCOME` n'est pas un type de DEMANDE : c'est une disponibilité de profil.
+ *
+ * Le sous-ensemble est donc écrit ici, et il l'était déjà implicitement par la
+ * seconde énumération. Ce qui change : il se lit maintenant comme une RESTRICTION
+ * assumée, et non comme une divergence de schéma qu'il fallait expliquer.
+ */
+export const HELP_REQUEST_TYPES = ['PAPERWORK', 'SERVICE', 'RIDE', 'MATERIAL', 'OTHER'] as const;
+
+export const helpTypeSchema = z.enum(HELP_REQUEST_TYPES);
 
 /**
  * Ce que le composeur peut ENVOYER : les cinq types, plus les deux qui doivent
@@ -42,7 +54,7 @@ export const helpTypeSchema = z.enum(HelpType2);
  * au membre que sa saisie est mal formée, alors qu'elle est comprise et qu'on
  * sait exactement où l'envoyer.
  */
-export const helpTypeInputSchema = z.enum([...HelpType2, 'HOUSING', 'JOB']);
+export const helpTypeInputSchema = z.enum([...HELP_REQUEST_TYPES, 'HOUSING', 'JOB']);
 
 export type HelpTypeInput = z.infer<typeof helpTypeInputSchema>;
 
@@ -51,12 +63,23 @@ export const HELP_TYPES_IN_SERVICES: readonly HelpTypeInput[] = ['HOUSING', 'JOB
 
 /**
  * Correspondance entre les types d'aide DÉCLARÉS au profil (`user_profiles.
- * help_types`, énumération `HelpType` du module 01) et les types de DEMANDE
- * (`HelpType2` du module 06). Sert à « Vous pouvez aider » (§2.6).
+ * help_types`) et les types de DEMANDE. Sert à « Vous pouvez aider » (§2.6).
  *
- * Les deux énumérations ne coïncident pas — c'est une divergence du schéma, pas
- * un choix de ce module : `HelpType` porte `HOUSING`, `JOB` et `WELCOME`, que
- * §2.1 exclut ou ne nomme pas, et ignore `SERVICE`, `RIDE`, `MATERIAL`.
+ * ── DEPUIS LA FUSION, LA PLUPART SONT DES IDENTITÉS ───────────────────────
+ *
+ * Il y avait DEUX énumérations qui ne coïncidaient pas, et c'est ce qui rendait
+ * cette table nécessaire. Elles n'en font plus qu'une : un membre qui se déclare
+ * disponible pour un TRAJET porte désormais `RIDE`, exactement le type d'une
+ * demande de trajet, et le rapprochement est direct. Avant la fusion il portait
+ * `OTHER`, comme celui disponible pour du matériel — les deux étaient
+ * indistinguables, et c'est le défaut que le porteur a fait corriger.
+ *
+ * La table SUBSISTE pour les trois cas qui ne sont pas des identités, et ce ne
+ * sont pas des oublis :
+ *
+ *   · `HOUSING` et `JOB` ne correspondent à RIEN : §2.1 les renvoie à Services ;
+ *   · `WELCOME` (« aider à l'arrivée ») couvre les trois formes concrètes que
+ *     prend l'accueil dans §2.1 — rendre un service, emmener, prêter.
  *
  *   · `HOUSING` et `JOB` ne correspondent à RIEN ici : §2.1 les renvoie à
  *     Services. Un membre qui ne déclare que ceux-là n'a donc aucune suggestion
@@ -67,13 +90,18 @@ export const HELP_TYPES_IN_SERVICES: readonly HelpTypeInput[] = ['HOUSING', 'JOB
  */
 export const HELP_TYPES_FROM_PROFILE: Record<
   (typeof HelpType)[number],
-  readonly (typeof HelpType2)[number][]
+  readonly (typeof HELP_REQUEST_TYPES)[number][]
 > = {
   PAPERWORK: ['PAPERWORK'],
   WELCOME: ['SERVICE', 'RIDE', 'MATERIAL'],
   OTHER: ['OTHER'],
   HOUSING: [],
   JOB: [],
+  // Les trois que la fusion rend DIRECTS : le profil et la demande disent le
+  // même mot, et « Vous pouvez aider » n'a plus à les deviner.
+  SERVICE: ['SERVICE'],
+  RIDE: ['RIDE'],
+  MATERIAL: ['MATERIAL'],
 };
 
 // ── Textes imposés (T2 §6) ──────────────────────────────────────────────────
@@ -87,6 +115,41 @@ export const HELP_TYPES_FROM_PROFILE: Record<
 export const HELP_SAFETY_BANNER =
   'Aucun versement entre membres pour une démarche administrative. ' +
   'Si on vous demande de l’argent, signalez.';
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES HUIT LIBELLÉS, À UN SEUL ENDROIT                                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Il y en avait DEUX tables, une par module, parce qu'il y avait deux
+ * énumérations : `screens/compte/appels.ts` nommait celle du profil,
+ * `screens/entraide/appels.ts` celle des demandes. Elles disaient « Démarches »
+ * et « Autre » toutes les deux, et divergeaient sur le reste.
+ *
+ * La fusion les rend identiques par construction — même énumération, mêmes mots —
+ * donc deux tables seraient deux sources qui finiraient par se contredire. Elle
+ * vit ici, à côté de l'énumération, comme `STORY_SUBJECT_LABELS` vit à côté de
+ * `STORY_SUBJECTS`.
+ *
+ * ── LA SOURCE DE CHAQUE MOT, ET CEUX QUI N'EN ONT PAS ─────────────────────
+ *
+ * Dessinés : « Démarches » (`T2 §help.type.paperwork`), « Service », « Trajet »
+ * et « Matériel » (rangées de filtres de `05 Entraide`), « Relecture CV » (`01`).
+ *
+ * SANS SOURCE, et donc À FAIRE VALIDER par le porteur — les deux tables d'origine
+ * le signalaient déjà, chacune de son côté : « Logement », « Accueil » et
+ * « Autre » ne sont écrits sur aucune planche ni dans `T2`.
+ */
+export const HELP_TYPE_LABELS: Record<(typeof HelpType)[number], string> = {
+  PAPERWORK: 'Démarches',
+  SERVICE: 'Service',
+  RIDE: 'Trajet',
+  MATERIAL: 'Matériel',
+  JOB: 'Relecture CV',
+  HOUSING: 'Logement',
+  WELCOME: 'Accueil',
+  OTHER: 'Autre',
+};
 
 /** Rappel du composeur (§2.1), et message de l'erreur `USE_SERVICES`. */
 export const HELP_USE_SERVICES_HINT = 'Pour un logement ou un emploi, utilisez Services.';
@@ -329,7 +392,7 @@ export const helpCardSchema = z
   .object({
     id: uuidSchema,
     kind: z.enum(HelpKind),
-    type: z.enum(HelpType2),
+    type: z.enum(HELP_REQUEST_TYPES),
     title: z.string(),
     excerpt: z.string(),
     status: z.enum(HelpStatus),

@@ -19,6 +19,33 @@ import { GardeSession } from '@/components/garde-session';
  * tests de `e2e/shell.spec.ts` vérifient en lisant la réponse sans exécuter de
  * JavaScript.
  */
-export default function LayoutApplication({ children }: { readonly children: ReactNode }) {
-  return <GardeSession>{children}</GardeSession>;
+export default function LayoutApplication({
+  children,
+  fenetre,
+}: {
+  readonly children: ReactNode;
+  /**
+   * ── LE CRÉNEAU DE FENÊTRE ────────────────────────────────────────────────
+   *
+   * Le porteur : « la création et le display des stories sont en fait des modals
+   * qui couvrent tout l'écran et non des nouvelles pages de lien ».
+   *
+   * `@fenetre` est un CRÉNEAU PARALLÈLE : il se rend À CÔTÉ de `children`, sans
+   * le démonter. Les routes `@fenetre/(.)stories/…` interceptent `/stories/…`
+   * quand on y arrive depuis une page du groupe, et la page d'origine reste
+   * visible dessous, sous un voile. La même adresse tapée directement sert la
+   * page entière — c'est tout l'intérêt, et c'est pourquoi aucune route n'a été
+   * supprimée.
+   *
+   * `default.tsx` rend `null` partout ailleurs : sans lui, Next rendrait un 404
+   * pour ce créneau dès qu'on quitte une story.
+   */
+  readonly fenetre: ReactNode;
+}) {
+  return (
+    <GardeSession>
+      {children}
+      {fenetre}
+    </GardeSession>
+  );
 }

@@ -1,6 +1,7 @@
 'use client';
 
-import { chargerK08 } from '@/screens/compte/appels';
+import { SQUELETTE_K08, chargerK08 } from '@/screens/compte/appels';
+import { DonneesVivantes } from '@/screens/compte/donnees-vivantes';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { K08Desktop } from '@/screens/k08/desktop.generated';
@@ -35,17 +36,27 @@ export function DonneesEcran() {
   const { ouverte, onOuvrir, onFermer } = useCompte();
 
   return (
-    <EcranDonnees charger={chargerK08}>
+    <EcranDonnees
+      /*
+       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
+       * en servant cinq mots et aucune entree de rail. Voir
+       * `screens/compte/ecran-donnees.tsx`.
+       */
+      squelette={SQUELETTE_K08} charger={chargerK08}>
       {(donnees) => (
-        <EcranCompte
-          screen="K08"
-          desktop={<K08Desktop {...donnees} />}
-          mobile={<K08Mobile {...donnees} />}
-          ouverte={ouverte}
-          onOuvrir={onOuvrir}
-          onFermer={onFermer}
-          modales={{ K08S: { mobile: <K08Confirmation /> } }}
-        />
+        <DonneesVivantes donnees={donnees}>
+          {(vivantes) => (
+            <EcranCompte
+              screen="K08"
+              desktop={<K08Desktop {...vivantes} />}
+              mobile={<K08Mobile {...vivantes} />}
+              ouverte={ouverte}
+              onOuvrir={onOuvrir}
+              onFermer={onFermer}
+              modales={{ K08S: { mobile: <K08Confirmation /> } }}
+            />
+          )}
+        </DonneesVivantes>
       )}
     </EcranDonnees>
   );

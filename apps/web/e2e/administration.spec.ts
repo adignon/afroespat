@@ -386,9 +386,23 @@ test('02 §4.2 — la confirmation d’activation d’une ville est une carte, p
   page,
 }) => {
   await visiter(page, '/admin/referentiels');
-  await expect(page.getByText('Activer Nantes ?')).toBeVisible();
+  /**
+   * ── LA VILLE ET LE NOMBRE SONT DEVENUS DES DONNÉES ───────────────────────
+   *
+   * Ce cas attendait « Activer Nantes ? » et « les 190 membres », mot pour mot.
+   * Ce sont les valeurs que la MAQUETTE dessine ; le cadre les lit maintenant du
+   * serveur — `Activer {activation.ville} ?` et `{activation.membres} membres`.
+   * Le cas rougissait donc sur une liaison réussie, en disant « élément
+   * introuvable ».
+   *
+   * CE QU'IL DOIT TENIR N'A PAS CHANGÉ, et c'est écrit dans son titre : la
+   * confirmation est une CARTE DANS LA PAGE, pas une boîte de dialogue. On vérifie
+   * donc la FORME — l'invite, sa phrase d'explication, et l'absence de `dialog` —
+   * sans réclamer la ville de l'exemple.
+   */
+  await expect(page.getByText(/^Activer .+ \?$/)).toBeVisible();
   await expect(
-    page.getByText('Un réseau de ville sera créé et les 190 membres y seront rattachés automatiquement.'),
+    page.getByText(/Un réseau de ville sera créé et les .+ membres y seront rattachés/),
   ).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });

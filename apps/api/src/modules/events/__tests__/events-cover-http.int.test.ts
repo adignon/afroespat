@@ -10,6 +10,7 @@ import { ApiErrorFilter } from '../../../common/error.filter';
 import { PrismaService } from '../../../common/prisma.service';
 import { FakeSmsProvider, SMS_PROVIDER } from '../../../providers/providers';
 import { AuthService } from '../../auth/auth.service';
+import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * COUVERTURE D'ÉVÉNEMENT — les CODES DE RETOUR, mesurés par HTTP.
@@ -55,7 +56,7 @@ describe('couverture d’événement — codes de retour HTTP (09 §3.1, 00 §8.
   /** Un numéro distinct par appel : les limites d'OTP sont PAR NUMÉRO. */
   const nextPhone = (): string => {
     counter += 1;
-    return `9${String(Date.now()).slice(-6)}${String(counter).padStart(2, '0')}`;
+    return numeroDEpreuve(counter);
   };
 
   /**

@@ -60,6 +60,33 @@ export type ParcoursData = {
   readonly onBack: () => void;
   /** J03 « Annuler » (§3.5 → `CANCELLED`) et J04 « Plus tard » (§3.6). */
   readonly onCancel: () => void;
+  /**
+   * ─── LES SEPT ENTRÉES DU PANNEAU « MON PARCOURS » ─────────────────────────
+   *
+   * La maquette les dessine en `<span>` : ce n'étaient pas des liens cassés,
+   * CE N'ÉTAIENT PAS DES LIENS, et c'est la phrase du porteur (« Aucun sous lien
+   * aussi ne fonctionne »). La déclaration d'écran
+   * (`tools/screens/04-parcours.mjs`, `ENTREES_PANNEAU_PARCOURS`) les promeut en
+   * boutons, un gestionnaire par entrée.
+   *
+   * POURQUOI SEPT NOMS ET NON UN SEUL AVEC UN ARGUMENT : `collectProps` déduit
+   * les propriétés d'un cadre des RACINES des interpolations de la maquette. Une
+   * flèche (`onClick={() => aller('equipe')}`) ne commence pas par un
+   * identifiant, donc sa racine est indéterminée et la propriété ne serait PAS
+   * déclarée — le composant généré référencerait un nom qu'il ne reçoit pas.
+   * Mesuré sur `collectProps`, pas supposé.
+   *
+   * POURQUOI DES GESTIONNAIRES ET NON DES `href` : la destination a besoin du
+   * `:id` de la route, et `markLinks` n'accepte un `vers` interpolé que DANS une
+   * boucle. Le manque est remonté au porteur ; voir l'en-tête de la déclaration.
+   */
+  readonly onPanneauVue: () => void;
+  readonly onPanneauEtape: () => void;
+  readonly onPanneauDiscussion: () => void;
+  readonly onPanneauEquipe: () => void;
+  readonly onPanneauDocuments: () => void;
+  readonly onPanneauHistorique: () => void;
+  readonly onPanneauReglages: () => void;
 };
 
 /**
@@ -198,6 +225,17 @@ export interface EtapeAffichee {
 
 /** Un membre de l'équipe du parcours (§3.4), prêt à poser dans la planche. */
 export interface MembreAffiche {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur […] partout
+   * où le nom est affiché ». Les noms dessinés dans les cadres étaient des
+   * `<span>` et aucun ne menait au profil.
+   *
+   * FACULTATIVE : le cadre ne pose le lien que si la ligne porte une adresse.
+   * Sans elle, le nom reste nu — exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly fond: string;
   readonly initiales: string;
   readonly nom: string;
@@ -313,6 +351,17 @@ export interface SegmentPublic {
 
 /** Un parcours public d'un autre membre (§3.7) — jamais son titre personnel. */
 export interface ParcoursPublicAffiche {
+  /**
+   * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
+   *
+   * Le porteur : « ajoute l'accès au profil public d'un utilisateur […] partout
+   * où le nom est affiché ». Les noms dessinés dans les cadres étaient des
+   * `<span>` et aucun ne menait au profil.
+   *
+   * FACULTATIVE : le cadre ne pose le lien que si la ligne porte une adresse.
+   * Sans elle, le nom reste nu — exactement le dessin d'avant.
+   */
+  readonly profil?: string;
   readonly fond: string;
   readonly initiales: string;
   readonly nom: string;

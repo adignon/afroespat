@@ -250,3 +250,159 @@ export const squeletteBoucle = (frames) => [...railBoucle(frames), ...panneauBou
  */
 export const cadresDuRail = (frames) =>
   frames.map((f) => f.name).filter((n) => n.includes('Desktop'));
+
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ * LA BARRE D'ONGLETS BASSE DU MOBILE — LE TROISIÈME JEU DE DESTINATIONS
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ * ── D'OÙ CE BLOC VIENT, ET POURQUOI IL EST ICI MAINTENANT ───────────────────
+ *
+ * Il vivait dans `tools/barre-basse.mjs`, posé à part par le lot de Parcours,
+ * Entraide, Services et Agenda — qui a écrit lui-même, dans son en-tête : « CE
+ * FICHIER DEVRAIT ÊTRE DANS `tools/squelette-membre.mjs`. C'est là qu'il
+ * appartient, à côté de `railLitteral` : même nature, même emploi, mêmes sept
+ * modules. Il est posé à part parce que ce lot n'a mandat que sur […] et qu'un
+ * autre lot travaille en parallèle dans `squelette-membre.mjs`. Les deux fichiers
+ * sont à fusionner. » La fusion est faite ici, et `tools/barre-basse.mjs` a
+ * disparu : les cinq modules qui l'employaient importent cette table.
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE QUE LA MESURE A DÉMENTI, ET LA PHRASE EXACTE QUI A ÉGARÉ               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Quelques lignes plus haut, `cadresDuRail` écrit : « En mobile la maquette met
+ * une barre d'onglets basse à la place, qui n'est pas le même contrôle et ne
+ * relève pas de cette table. » La phrase est EXACTE — ce n'est pas le même
+ * contrôle — mais elle a été lue comme « il n'y a rien à faire là », et c'était
+ * faux. Compté sur les cadres produits :
+ *
+ *   · LA BARRE EXISTE SUR 54 CADRES du dépôt, rigoureusement la même partout :
+ *     un `<div>` en grille de cinq colonnes, cinq lignes de 54 px, chacune un
+ *     `<div>` avec son icône et son libellé en clair ;
+ *   · CES CINQ LIGNES SONT DES `<div>`. Ce ne sont pas des liens cassés : CE NE
+ *     SONT PAS DES LIENS. Aucun `href="#"`, donc le récapitulatif
+ *     « ── NAVIGATION ── » n'en voit AUCUNE — exactement comme il ne voyait pas
+ *     les 51 rails littéraux ;
+ *   · ET SES CINQ ENTRÉES NE SONT PAS CELLES DU RAIL. Le rail d'ordinateur dit
+ *     « Accueil, Parcours, Entraide, Services, Agenda » ; la barre basse dit
+ *     « Accueil, Parcours, Entraide, Services, COMPTE ». Pas d'Agenda en bas, et
+ *     un Compte. Une table unique pour les deux aurait donc envoyé « Compte » sur
+ *     `/agenda`, et rien ne l'aurait signalé : les deux contrôles ont cinq
+ *     entrées, et seul le cinquième libellé les distingue. C'est la raison pour
+ *     laquelle `ENTREES_BARRE_BASSE` existe À CÔTÉ de `ENTREES_RAIL` et non à sa
+ *     place.
+ *
+ * Sur un téléphone, c'est LA navigation : il n'y a pas de rail. Les cadres
+ * mobiles de sept modules membre n'avaient donc aucune sortie, et c'est
+ * précisément la phrase du porteur — « Aucun sous lien aussi ne fonctionne ».
+ *
+ * ─── POURQUOI LE MARQUEUR EST `</svg>Libellé</div>` ─────────────────────────
+ *
+ * `markLinks` remonte du marqueur jusqu'à la PREMIÈRE balise promouvable qui le
+ * contient. Le libellé est un enfant TEXTE direct de la ligne, posé juste après le
+ * `</svg>` de son icône : la remontée traverse `<path>` et `<svg>`, qui ne sont pas
+ * promouvables, et atteint la ligne — donc la zone cliquable fait les 54 px de la
+ * ligne, pas la largeur du mot. Le marqueur porte le libellé ET sa fermeture, ce
+ * qui le rend unique dans le cadre : « Parcours » est aussi écrit dans des titres
+ * et des pastilles, mais jamais collé à un `</svg>` et suivi d'un `</div>`.
+ *
+ * `fois: 1` est le défaut, et il recompte à chaque génération : le jour où un
+ * cadre dessinera deux barres, la génération s'arrêtera en le nommant.
+ *
+ * ─── « COMPTE » N'EST PAS POSÉ, ET C'EST UN REFUS ──────────────────────────
+ *
+ * IL N'EXISTE AUCUNE ROUTE `/compte` : `apps/web/src/app/(app)/compte/` n'a que
+ * des sous-pages (`profil`, `securite`, `notifications`, `abonnement`,
+ * `verification`, `donnees`, `contacts`, `sanctions`, `enregistres`) et PAS de
+ * `page.tsx` — vérifié, pas supposé. Choisir laquelle EST « Compte » serait décider
+ * à la place du porteur. C'est le même refus que le bouton réglages du bas du rail,
+ * et pour la même raison : un lien qui mène au mauvais endroit est pire qu'un lien
+ * mort, parce que le lien mort se voit. La cinquième entrée reste donc inerte, et
+ * `apps/web/e2e/sous-liens.spec.ts` comme `apps/web/e2e/accueil-sous-liens.spec.ts`
+ * MESURENT cette absence — le jour où le porteur tranche, les deux rougiront et lui
+ * feront nommer sa décision.
+ */
+
+/**
+ * Les quatre entrées QUI ONT UNE ROUTE, dans l'ordre où la maquette les dessine.
+ *
+ * « SERVICES » REPREND L'ARBITRAGE DÉJÀ PRIS ET DÉJÀ REMONTÉ pour `ENTREES_RAIL` :
+ * il n'existe pas de `app/(app)/services/page.tsx`, et la première planche que la
+ * maquette dessine pour ce module est S01 « Logement — liste ». On déclare donc
+ * `/services/logement`, par défaut et non par préférence du logement sur l'emploi.
+ * Si le porteur tranche autrement, les deux tables changent ensemble.
+ */
+const ENTREES_BARRE_BASSE = [
+  ['Accueil', '/accueil'],
+  ['Parcours', '/parcours'],
+  ['Entraide', '/entraide'],
+  ['Services', '/services/logement'],
+];
+
+/**
+ * LES CADRES SONT OBLIGATOIRES ET SANS DÉFAUT, comme pour `railLitteral` : la
+ * barre n'est que sur les planches mobiles, et l'appliquer à un cadre
+ * d'ordinateur ferait tomber le compte à zéro — donc ARRÊTERAIT la génération en
+ * nommant l'écran et le cadre. Le faire déclarer écran par écran est ce qui garde
+ * le refus parlant plutôt que de le rendre probable.
+ */
+export const barreBasse = (frames) =>
+  ENTREES_BARRE_BASSE.map(([libelle, vers]) => ({
+    marqueur: `</svg>${libelle}</div>`,
+    vers,
+    frames,
+    why:
+      `L’onglet « ${libelle} » de la barre basse du mobile mène à ${vers}. La maquette le ` +
+      'dessine en <div> : ce n’était pas un lien cassé, ce n’était pas un lien — et sur un ' +
+      'téléphone c’est LA navigation, puisqu’il n’y a pas de rail.',
+  }));
+
+/**
+ * ─── LA MÊME BARRE, QUAND LA MAQUETTE L'ÉCRIT EN BOUCLE ─────────────────────
+ *
+ * UN SEUL CADRE DU DÉPÔT est dans ce cas, et c'est le cadre mobile de A01 :
+ * `03 Accueil v2.dc.html` construit sa barre par `<sc-for list="{{ mBottom }}"
+ * as="b">`, une entrée de maquette pour cinq lignes au rendu. Les 53 autres
+ * l'écrivent en clair.
+ *
+ * `barreBasse` ne peut donc rien y faire : il n'y a AUCUN libellé à distinguer,
+ * le marqueur serait `</svg>{{ b.label }}</div>` pour les cinq. La destination
+ * voyage avec la DONNÉE (`b.href`, dans `apps/web/src/screens/a01/data.ts`),
+ * exactement comme pour le rail en boucle de cette même maquette — et c'est là,
+ * dans la donnée, que « Compte » vaut `undefined`.
+ *
+ * `dans` borne la recherche au conteneur de la barre : « Accueil », « Parcours »
+ * et « Entraide » sont aussi écrits dans la barre d'onglets de SECTION, juste
+ * au-dessus, et le marqueur d'icône seul ne les distinguerait pas.
+ */
+export const BARRE_BASSE_EN_BOUCLE =
+  '<div style="position:relative;flex-shrink:0;background:#fff;border-top:1px solid #E6EBE9;' +
+  'padding:6px 8px 24px;display:grid;grid-template-columns:repeat(5,1fr)">';
+
+export const barreBasseBoucle = (frames) => [
+  {
+    dans: BARRE_BASSE_EN_BOUCLE,
+    marqueur: '{{ b.icon }}',
+    vers: '{{ b.href }}',
+    frames,
+    why:
+      'Les cinq entrées de la barre basse sont UNE entrée de maquette dans `<sc-for as="b">` ' +
+      'sur le cadre mobile de A01 : la destination ne peut pas être distinguée par le texte, ' +
+      'qui est `{{ b.label }}`. Elle voyage donc avec la donnée (`b.href`), comme `b.icon` — et ' +
+      '« Compte » y vaut `undefined`, faute de route.',
+  },
+];
+
+/**
+ * Les cadres d'un écran qui dessinent la barre basse : ceux dont le nom porte
+ * « Mobile ».
+ *
+ * MÊME RÈGLE, MÊME SÛRETÉ que `cadresDuRail` : c'est une règle sur les noms, et un
+ * faux positif ne peut pas passer en silence — un cadre mobile SANS barre compte
+ * le marqueur à zéro et refuse. Les cadres de FENÊTRE sont donc exclus à la main
+ * par chaque module (une feuille ne dessine pas la barre : elle se pose
+ * par-dessus), et un oubli s'arrête au lieu de dériver.
+ */
+export const cadresDeLaBarre = (frames) =>
+  frames.map((f) => f.name).filter((n) => n.includes('Mobile'));

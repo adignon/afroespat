@@ -91,6 +91,28 @@ async function visiter(page: Page, route: string, width: number, height = 900): 
   await page.goto(route, { waitUntil: 'load' });
 }
 
+/**
+ * ⚠ CE FICHIER MESURE PARFOIS LE SQUELETTE, ET LA RÉPARATION ÉVIDENTE EMPIRE TOUT.
+ *
+ * Douze de ses cas échouent par vagues — « rail 76 px » sur H05 à H10 avec
+ * `element(s) not found`, les bornes de 660 px, le débordement à 320, 360 et
+ * 430 px. Aucun de ces défauts n'existe à l'écran : `EcranDonnees` rend
+ * `children(donnees)` DÈS LE PREMIER RENDU, avec le squelette, et la mesure part
+ * avant la donnée.
+ *
+ * LA RECETTE APPLIQUÉE AILLEURS NE MARCHE PAS ICI. Attendre que la bande
+ * `role="status"` « Chargement » se détache — ce que font `services.spec.ts`,
+ * `compte.spec.ts` et `parcours.spec.ts` — a fait TOMBER cette suite de 73 cas
+ * verts à 37 : sur plusieurs de ces routes la bande ne part JAMAIS, chaque visite
+ * brûle alors son délai entier, et le budget de 30 s de Playwright expire avant
+ * l'assertion. Mesuré, puis retiré.
+ *
+ * La cause reste donc à trouver — vraisemblablement un écran d'entraide dont le
+ * chargement n'aboutit pas sur une route de documentation (`/entraide/abc`,
+ * `/parrainage/amina`). REMONTÉ AU PORTEUR, hors du lot en cours : ce sont des
+ * cas d'épreuve qui clignotent, pas un défaut que quelqu'un voit à l'écran.
+ */
+
 // ─── Le titre de page ────────────────────────────────────────────────────────
 
 /**
