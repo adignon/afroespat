@@ -36,6 +36,8 @@ import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 describe('réseaux (07 §2, §9)', () => {
   let prisma: PrismaService;
   let communities: CommunitiesService;
+  /** Gardé à part pour relire la LISTE des conversations (titre du fil d'équipe). */
+  let messaging: MessagingService;
   let users: UsersService;
   let auth: AuthService;
   const sms = new FakeSmsProvider();
@@ -122,20 +124,15 @@ describe('réseaux (07 §2, §9)', () => {
      * conversation. Le monter ici n'ajoute aucune dépendance de test — ses
      * quatre collaborateurs sont déjà debout juste au-dessus.
      */
-    communities = new CommunitiesService(
+    messaging = new MessagingService(
       prisma,
+      crypto,
       outbox,
       audit,
       visibility,
-      new MessagingService(
-        prisma,
-        crypto,
-        outbox,
-        audit,
-        visibility,
-        new ConnectionsService(prisma, outbox, audit, visibility),
-      ),
+      new ConnectionsService(prisma, outbox, audit, visibility),
     );
+    communities = new CommunitiesService(prisma, outbox, audit, visibility, messaging);
     // `ConsentsService` a été ajouté au tronc commun après l'écriture de ce
     // module : les consentements de l'inscription s'écrivent dans la transaction
     // de création du compte (01 §5).
@@ -2494,6 +2491,25 @@ describe('réseaux (07 §2, §9)', () => {
     expect(new Set(fil.members.filter((m) => m.leftAt === null).map((m) => m.userId))).toEqual(
       new Set([demandeur, owner, moderateur]),
     );
+  });
+
+  it('nomme le fil par le réseau, suivi pour l’équipe du nom du membre qui écrit', async () => {
+    const owner = await newMember();
+    const community = await createInterest(owner);
+    const demandeur = await newMember();
+    await communities.join(community.id, demandeur);
+    await prisma.user.update({ where: { id: demandeur }, data: { displayName: 'Aïcha Diop' } });
+
+    const { conversationId } = await communities.openModeratorsConversation(community.id, demandeur);
+    const titreDe = async (lecteur: string) =>
+      (await messaging.listConversations(lecteur, { limit: 50 })).items.find((c) => c.id === conversationId)
+        ?.title;
+
+    // Le porteur : « OUI ajoute » — un modérateur contacté par plusieurs membres
+    // voyait autant de lignes au même nom. Le membre, lui, n'a qu'un fil par
+    // réseau : son propre nom n'y apprendrait rien.
+    expect(await titreDe(owner)).toBe(`${community.name} · Aïcha Diop`);
+    expect(await titreDe(demandeur)).toBe(community.name);
   });
 
   it('est idempotente : un second appel rouvre LE MÊME fil', async () => {
