@@ -273,6 +273,12 @@ export interface ReseauEnteteView {
   readonly monRole: string;
   /** « Public » · « Sur demande » · « Privé », de `visibility`. */
   readonly visibilite: string;
+  /**
+   * L'adresse ABSOLUE de la couverture (`coverUrl` passé par `urlMedia`), ou
+   * `null`. Le bandeau la pose en `backgroundImage` PAR-DESSUS sa teinte
+   * dessinée (`#CFE3DA`) : sans couverture, c'est exactement la maquette.
+   */
+  readonly couverture: string | null;
   /** `description`, qui est NULLABLE : les réseaux automatiques n'en ont pas. */
   readonly description: string;
   /**
@@ -1239,6 +1245,7 @@ export const enteteVide: ReseauEnteteView = {
   monAppartenance: '—',
   monRole: '—',
   visibilite: '',
+  couverture: null,
   description: '',
   descriptionLongueur: 0,
   moderateurs: 0,

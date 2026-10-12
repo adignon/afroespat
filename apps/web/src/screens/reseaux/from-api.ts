@@ -102,6 +102,7 @@ import type {
   TopicListItem,
   TopicReply,
 } from '@app/shared';
+import { urlMedia } from '../../lib/api/base';
 import { CHAT, PIN, initials, tint } from './chrome';
 import type { DiscoverView, MyNetView } from '../a07/data';
 import { topicRowTint, type TopicRowView } from '../a08/data';
@@ -703,6 +704,7 @@ export function enteteReseauFrom(
     monAppartenance: role === null ? '' : APPARTENANCE[role],
     monRole: role === null ? '' : ROLE[role],
     visibilite: VISIBILITE[c.visibility],
+    couverture: c.coverUrl === null ? null : urlMedia(c.coverUrl),
     /** NULLABLE côté serveur : les réseaux automatiques de ville et de pays n'en ont pas. */
     description: c.description ?? '',
     /** Compté sur le texte même : `Array.from` pour ne pas couper un caractère combiné en deux. */

@@ -81,6 +81,18 @@ export interface ActionsReseauView {
    */
   readonly peutQuitter: boolean;
   readonly onQuitter: () => void;
+  /**
+   * « CHANGER LA COUVERTURE » — le PROPRIÉTAIRE seul : la couverture est un
+   * champ fondateur, que le serveur réserve au propriétaire (`assertOwner` dans
+   * `update`). À 1036 px, c'est le bouton que la maquette dessine sur le bandeau
+   * des planches propriétaire ; à 390 px, où elle ne le dessine pas, c'est une
+   * entrée du menu du rond (`ActionsReseau`, variante `rond`).
+   */
+  readonly peutChangerCouverture: boolean;
+  /** Le dépôt puis le rattachement sont en cours : le bouton s'éteint. */
+  readonly couvertureOccupee: boolean;
+  /** Ouvre le sélecteur de fichier — l'unique `<input type="file">` de l'écran. */
+  readonly onChangerCouverture: () => void;
 }
 
 /**
@@ -376,6 +388,9 @@ export const actionsVides: ActionsReseauView = {
   onSourdine: () => {},
   peutQuitter: false,
   onQuitter: () => {},
+  peutChangerCouverture: false,
+  couvertureOccupee: false,
+  onChangerCouverture: () => {},
 };
 
 export const outilsVides: OutilsReseauView = {

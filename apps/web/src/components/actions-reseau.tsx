@@ -295,6 +295,8 @@ const CLOCHE_BARREE = 'M6 16V11a6 6 0 0 1 9.5-4.9M18 11v5l1.5 2H8M10 20a2 2 0 0 
 const ROUE =
   'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4';
 const SORTIE = 'M15 4h4v16h-4M10 17l5-5-5-5M15 12H4';
+/** L'icône que la maquette dessine sur « Changer la couverture », au bandeau d'ordinateur. */
+const IMAGE = 'M3 4h18v16H3zM8.5 11a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2zM21 16l-5-5-9 9';
 const PLUS = 'M12 5v14M5 12h14';
 
 function Menu({
@@ -376,6 +378,26 @@ function Menu({
             <Icone d={ROUE} />
             Gérer le réseau
           </Link>
+        ) : null}
+        {/*
+          « Changer la couverture » à 390 px : la maquette ne dessine ce geste
+          que sur le bandeau d'ordinateur. Le PROPRIÉTAIRE seul, comme le serveur.
+        */}
+        {avecPorte && actions.peutChangerCouverture ? (
+          <button
+            type="button"
+            role="menuitem"
+            disabled={actions.couvertureOccupee}
+            onClick={() => {
+              onFermer();
+              actions.onChangerCouverture();
+            }}
+            data-reseau-changer-couverture=""
+            style={ENTREE}
+          >
+            <Icone d={IMAGE} />
+            {actions.couvertureOccupee ? 'Envoi de la couverture…' : 'Changer la couverture'}
+          </button>
         ) : null}
         {membre ? (
           <button

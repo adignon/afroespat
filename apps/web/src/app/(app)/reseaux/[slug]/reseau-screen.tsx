@@ -324,6 +324,8 @@ export function ReseauScreen({
     fenetreEvenement,
     contenuSignale,
     onFermerContenuSignale,
+    champCouverture,
+    onFichierCouverture,
   } = useReseau(reseauSlug, rangDemande, section);
 
   /**
@@ -595,6 +597,23 @@ export function ReseauScreen({
   const nomReseau = reseau?.name ?? 'ce réseau';
   const fenetresVivantes = (
     <>
+      {/*
+        L'UNIQUE SÉLECTEUR DE COUVERTURE. Hors des deux cadres : un champ par
+        cadre en aurait fait deux, et « Changer la couverture » (bandeau à
+        1036 px, menu du rond à 390 px) n'en ouvre qu'un. Caché mais présent dans
+        l'arbre, pour que `click()` l'ouvre ; `accept` borne aux images, le
+        serveur restant juge du type réel.
+      */}
+      <input
+        ref={champCouverture}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={onFichierCouverture}
+        data-reseau-couverture-fichier=""
+      />
       <FenetreSignalement sujet={gerer.signalement} onFermer={gerer.onFermerSignalement} />
       <FenetreConfirmation
         ouverte={gerer.retirerOuverte}

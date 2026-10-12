@@ -342,6 +342,21 @@ export function addAlbumPhoto(albumId: string, mediaAssetId: string): Promise<un
  * `FormData` ET NON JSON : la route est multipart (`@UseInterceptors(FileInterceptor)`),
  * et `kind` y arrive en champ texte du MÊME corps.
  */
+/**
+ * LA COUVERTURE D'UN RÉSEAU, déposée AVANT d'être rattachée.
+ *
+ * Genre `EVENT_COVER` : l'énumération de 00 §6.3 n'a pas de `COMMUNITY_COVER`,
+ * et le serveur n'accepte pour couverture de réseau que ce genre-là
+ * (`communities.service.ts`, `assertOwnedCover`). Sert à la création (A10) comme
+ * au « Changer la couverture » du bandeau.
+ */
+export function uploadCommunityCover(fichier: File): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', fichier);
+  corps.append('kind', 'EVENT_COVER');
+  return memberApi.post('/media', mediaAssetSchema, { body: corps });
+}
+
 export function uploadAlbumImage(fichier: File): Promise<MediaAssetView> {
   const corps = new FormData();
   corps.append('file', fichier);

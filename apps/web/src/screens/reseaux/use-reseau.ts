@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useRouter } from 'next/navigation';
 import type {
   Album,
@@ -51,6 +51,7 @@ import {
   updateMember,
   updateTopic,
   uploadAlbumImage,
+  uploadCommunityCover,
 } from './api';
 import {
   albumPastillesFrom,
@@ -289,6 +290,11 @@ export interface ReseauEtat {
   };
   readonly contenuSignale: ContenuSignale | null;
   readonly onFermerContenuSignale: () => void;
+  /** L'unique sélecteur de couverture, posé par l'écran hors des cadres. */
+  readonly champCouverture: RefObject<HTMLInputElement | null>;
+  readonly onFichierCouverture: (e: {
+    target: { files: FileList | null; value: string };
+  }) => void;
 }
 
 export function useReseau(
@@ -1786,6 +1792,44 @@ export function useReseau(
   const [confirmation, setConfirmation] = useState<'sourdine' | 'quitter' | null>(null);
   const [actionEnVol, setActionEnVol] = useState(false);
 
+  /**
+   * ── « CHANGER LA COUVERTURE » ────────────────────────────────────────────
+   *
+   * Le porteur : « Ajouter une couverture ne marche pas ? Aussi l'ajout ou
+   * l'édition après la création ? » Deux temps, comme à la création :
+   * `POST /media` (genre `EVENT_COVER`), puis `PATCH /communities/:id` avec
+   * `coverAssetId`. La fiche rendue par le PATCH remplace `reseau` : le bandeau
+   * (`reseau.couverture`) change sans recharger.
+   *
+   * L'`<input type="file">` est UNIQUE et vit dans `reseau-screen.tsx`, hors des
+   * deux cadres (un champ par cadre aurait ouvert deux sélecteurs) ; ce crochet
+   * n'en garde que la RÉFÉRENCE, que le bouton du bandeau et l'entrée du menu
+   * mobile « cliquent » tous deux.
+   */
+  const champCouverture = useRef<HTMLInputElement | null>(null);
+  const [couvertureOccupee, setCouvertureOccupee] = useState(false);
+  const onFichierCouverture = useCallback(
+    (e: { target: { files: FileList | null; value: string } }): void => {
+      const fichier = e.target.files?.[0];
+      // Vidé AVANT l'envoi : choisir deux fois le même fichier doit relancer.
+      e.target.value = '';
+      if (fichier === undefined || slug === '') return;
+      setCouvertureOccupee(true);
+      void uploadCommunityCover(fichier)
+        .then((media) => updateCommunity(slug, { coverAssetId: media.id }))
+        .then((apres) => {
+          setReseau(apres);
+        })
+        .catch((cause: unknown) => {
+          setEchec(echecDe(cause));
+        })
+        .finally(() => {
+          setCouvertureOccupee(false);
+        });
+    },
+    [slug],
+  );
+
   const actions: ActionsReseauView = useMemo(() => {
     if (reseau === null) return actionsVides;
     const etat: ActionsReseauView['etat'] =
@@ -1822,8 +1866,13 @@ export function useReseau(
       onQuitter: () => {
         setConfirmation('quitter');
       },
+      peutChangerCouverture: reseau.myRole === 'OWNER' && reseau.myStatus === 'ACTIVE',
+      couvertureOccupee,
+      onChangerCouverture: () => {
+        champCouverture.current?.click();
+      },
     };
-  }, [reseau, equipe, actionEnVol, sourdine.occupe, rejoindre]);
+  }, [reseau, equipe, actionEnVol, sourdine.occupe, rejoindre, couvertureOccupee]);
 
   const confirmer = useCallback(() => {
     const quoi = confirmation;
@@ -2476,6 +2525,8 @@ export function useReseau(
     onFermerContenuSignale: () => {
       setContenuSignale(null);
     },
+    champCouverture,
+    onFichierCouverture,
     membre,
     contenuFerme,
     compteursFiables: membre,

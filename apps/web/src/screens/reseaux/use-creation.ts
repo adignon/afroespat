@@ -14,7 +14,8 @@ import {
 } from '@app/shared';
 import { memberApi } from '@/lib/api/index';
 import { avatarColor, initials, sansAccent } from '../accueil/from-api';
-import { createCommunity } from './api';
+import { urlMedia } from '../../lib/api/base';
+import { createCommunity, uploadCommunityCover } from './api';
 import { echecDe, type ReseauEchec } from './echec';
 import { panelReseaux, rail } from './chrome';
 import type { A10Data, InviteeView } from '../a10/data';
@@ -138,6 +139,34 @@ export function useCreation(
   const [echec, setEchec] = useState<ReseauEchec | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [cree, setCree] = useState<CommunityDetailResponse | null>(null);
+  /**
+   * LA COUVERTURE CHOISIE — déposée DÈS le choix (`POST /media`, genre
+   * `EVENT_COVER`), rattachée à la création par `coverAssetId`. Déposer tout de
+   * suite donne l'aperçu, et fait échouer un fichier refusé (type, taille,
+   * antivirus) au moment où le membre le choisit, pas au clic « Créer ».
+   */
+  const [couverture, setCouverture] = useState<{ id: string; url: string } | null>(null);
+  const [couvertureOccupee, setCouvertureOccupee] = useState(false);
+  const onCouverture = useCallback(
+    (e: { target: { files: FileList | null; value: string } }): void => {
+      const fichier = e.target.files?.[0];
+      e.target.value = '';
+      if (fichier === undefined) return;
+      setCouvertureOccupee(true);
+      setEchec(null);
+      void uploadCommunityCover(fichier)
+        .then((media) => {
+          setCouverture({ id: media.id, url: urlMedia(media.url) });
+        })
+        .catch((cause: unknown) => {
+          setEchec(echecDe(cause));
+        })
+        .finally(() => {
+          setCouvertureOccupee(false);
+        });
+    },
+    [],
+  );
 
   /** DÉDOUBLONNÉ et en minuscules, comme le schéma partagé le fait avant de compter. */
   const handles = useMemo(
@@ -274,6 +303,7 @@ export function useCreation(
         category: categorie,
         visibility: visibilite,
         inviteHandles: handles,
+        ...(couverture === null ? {} : { coverAssetId: couverture.id }),
       });
       setCree(reseau);
       apresCreation?.(reseau);
@@ -282,7 +312,7 @@ export function useCreation(
     } finally {
       setEnvoi(false);
     }
-  }, [apresCreation, categorie, description, handles, nom, visibiliteIndex]);
+  }, [apresCreation, categorie, couverture, description, handles, nom, visibiliteIndex]);
 
   /**
    * CE QU'IL RESTE À FAIRE, EN UNE PHRASE QUI PEUT DISPARAÎTRE.
@@ -306,6 +336,9 @@ export function useCreation(
       invitees,
       nomValue: nom,
       onNomChange: (e) => setNom(e.target.value),
+      couvertureUrl: couverture?.url ?? null,
+      couvertureOccupee,
+      onCouverture,
       nomMax: communityNameSchema.maxLength ?? 0,
       descriptionValue: description,
       onDescriptionChange: (e) => setDescription(e.target.value),
@@ -335,9 +368,13 @@ export function useCreation(
         void soumettre();
       },
       onFermer: () => surFermeture?.(),
-      creerPret: complet && !envoi,
-      creerFond: complet && !envoi ? CREER_ALLUME.fond : CREER_INACTIF.fond,
-      creerEncre: complet && !envoi ? CREER_ALLUME.encre : CREER_INACTIF.encre,
+      /**
+       * Une couverture EN COURS de dépôt retient « Créer » : partir avant serait
+       * créer le réseau sans l'image que le membre vient de choisir.
+       */
+      creerPret: complet && !envoi && !couvertureOccupee,
+      creerFond: complet && !envoi && !couvertureOccupee ? CREER_ALLUME.fond : CREER_INACTIF.fond,
+      creerEncre: complet && !envoi && !couvertureOccupee ? CREER_ALLUME.encre : CREER_INACTIF.encre,
       invitesTexte: `${handles.length} sur ${COMMUNITY_MIN_INVITES}`,
       invitesBarre: `${Math.round((Math.min(handles.length, COMMUNITY_MIN_INVITES) / COMMUNITY_MIN_INVITES) * 100)}%`,
       invitesReste: reste === '' ? '' : `${reste} pour créer le réseau.`,
@@ -347,8 +384,11 @@ export function useCreation(
       basculer,
       categorie,
       complet,
+      couverture,
+      couvertureOccupee,
       description,
       envoi,
+      onCouverture,
       handles.length,
       invitees,
       nom,

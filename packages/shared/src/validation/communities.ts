@@ -654,6 +654,12 @@ export const communityPublicSchema = z
     countryId: uuidSchema.nullable(),
     memberCount: z.number().int(),
     coverAssetId: uuidSchema.nullable(),
+    /**
+     * `/media/<clé>` de la couverture, ou `null` — le bandeau du réseau s'en
+     * sert. Un DÉFAUT et non un champ exigé, pour la même raison que `rules` :
+     * les charges relevées avant ce champ ne le portent pas.
+     */
+    coverUrl: z.string().nullable().default(null),
     lastActivityAt: z.string().datetime(),
     createdAt: z.string().datetime(),
   })

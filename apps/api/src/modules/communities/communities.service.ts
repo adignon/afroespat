@@ -31,6 +31,7 @@ import {
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
+import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
@@ -83,6 +84,7 @@ type CommunityRow = Prisma.CommunityGetPayload<{
     visibility: true;
     createdByUserId: true;
     coverAssetId: true;
+    coverAsset: { select: { storageKey: true; deletedAt: true } };
     memberCount: true;
     status: true;
     lastActivityAt: true;
@@ -107,6 +109,12 @@ const COMMUNITY_SELECT = {
   visibility: true,
   createdByUserId: true,
   coverAssetId: true,
+  /**
+   * LA CLÉ DE STOCKAGE DE LA COUVERTURE, pour composer `coverUrl` — voir
+   * `publicShape`. L'identifiant seul (`coverAssetId`) ne s'affiche pas : la
+   * route `/media/<clé>` attend la CLÉ, qui porte un segment aléatoire.
+   */
+  coverAsset: { select: { storageKey: true, deletedAt: true } },
   memberCount: true,
   status: true,
   lastActivityAt: true,
@@ -671,6 +679,31 @@ export class CommunitiesService {
     return COMMUNITY_CITY_THRESHOLD_DEFAULT;
   }
 
+  /**
+   * LA COUVERTURE D'UN RÉSEAU EST UN MÉDIA DE SON PROPRIÉTAIRE, PRÊT.
+   *
+   * `create` et `update` recopiaient `coverAssetId` tel quel : n'importe quel
+   * identifiant de média passait — celui d'un autre membre, ou un justificatif
+   * (`PROOF`, « jamais affiché ») qu'on aurait ainsi exposé en bandeau. C'est
+   * exactement le trou que `events.service.ts` a refermé pour ses couvertures,
+   * et c'est le même contrôle : `ownedAttachableWhere('eventCover', …)`, car
+   * l'énumération de 00 §6.3 n'a pas de `COMMUNITY_COVER` et le réseau emprunte
+   * `EVENT_COVER` (voir `media-attachment.ts`).
+   *
+   * 404 pour un média étranger ou d'un autre genre (indistinguable d'un média
+   * absent), 400 `MEDIA_NOT_READY` pour un fichier encore en analyse.
+   */
+  private async assertOwnedCover(userId: string, coverAssetId: string): Promise<void> {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id: coverAssetId, ...ownedAttachableWhere('eventCover', userId) },
+      select: { status: true },
+    });
+    if (asset === null) throw ApiError.notFound();
+    if (asset.status !== REQUIRED_MEDIA_STATUS) {
+      throw ApiError.validation([{ path: 'coverAssetId', code: 'MEDIA_NOT_READY' }]);
+    }
+  }
+
   private publicShape(c: CommunityRow) {
     return {
       id: c.id,
@@ -685,6 +718,17 @@ export class CommunitiesService {
       countryId: c.countryId,
       memberCount: c.memberCount,
       coverAssetId: c.coverAssetId,
+      /**
+       * L'ADRESSE DE LA COUVERTURE, `/media/<clé>` — la forme que rendent déjà
+       * les événements (`events.service.ts`, `mediaUrl`) et la messagerie. Sans
+       * elle, le bandeau du réseau ne pouvait rien afficher : la fiche ne portait
+       * que l'identifiant. Un média supprimé rend `null`, et le bandeau retombe
+       * sur sa teinte dessinée plutôt que sur une image cassée.
+       */
+      coverUrl:
+        c.coverAsset === null || c.coverAsset.deletedAt !== null
+          ? null
+          : `/media/${c.coverAsset.storageKey}`,
       lastActivityAt: c.lastActivityAt,
       createdAt: c.createdAt,
     };
@@ -892,6 +936,7 @@ export class CommunitiesService {
     }
 
     const id = newId();
+    if (input.coverAssetId !== undefined) await this.assertOwnedCover(userId, input.coverAssetId);
     const slug = await this.uniqueSlug(input.name);
 
     await this.prisma.$transaction(async (tx) => {
@@ -1029,6 +1074,9 @@ export class CommunitiesService {
     if (fondateur) this.assertOwner(access);
     else this.assertModerator(access);
     this.assertWritable(access);
+    if (patch.coverAssetId !== undefined && patch.coverAssetId !== null) {
+      await this.assertOwnedCover(userId, patch.coverAssetId);
+    }
 
     const automatique = AUTO_KINDS.includes(access.community.kind as 'CITY' | 'COUNTRY');
     if (

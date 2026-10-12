@@ -1696,6 +1696,117 @@ const RV_CONTACTER = {
   },
 };
 
+/**
+ * ── LA COUVERTURE DU RÉSEAU : LE BANDEAU L'AFFICHE, LE PROPRIÉTAIRE LA CHANGE ─
+ *
+ * Le porteur : « Ajouter une couverture ne marche pas ? Aussi l'ajout ou
+ * l'édition après la création ? » Deux gestes ici, sur les 25 planches de A08T
+ * et les deux de A08 :
+ *
+ *   1. LE BANDEAU. Toutes les planches peignent la même bande `#CFE3DA` (120 px à
+ *      1036, 118 px à 390, 140/150 px sur A08). On n'en change rien : on lui
+ *      AJOUTE `backgroundImage` depuis `reseau.couverture`. Sans couverture, la
+ *      valeur est `"none"` et c'est exactement la maquette ; avec, l'image couvre
+ *      la bande (`cover`, centrée). `background` vient AVANT `backgroundImage`
+ *      dans l'objet — le même ordre que les vignettes de l'album, sans quoi le
+ *      raccourci effacerait l'image.
+ *
+ *   2. « CHANGER LA COUVERTURE ». La maquette le dessine en `<span>` inerte sur
+ *      les sept planches propriétaire d'ordinateur. Il devient un bouton,
+ *      montré au PROPRIÉTAIRE seul (`actions.peutChangerCouverture` : un
+ *      modérateur voit ces mêmes planches, et le serveur lui refuserait ce champ
+ *      fondateur). Il ouvre l'unique sélecteur de fichier de l'écran. À 390 px,
+ *      où rien n'est dessiné, le geste est une entrée du menu du rond
+ *      (`ActionsReseau`).
+ */
+const RV_COUVERTURE = {
+  screens: ['A08T', 'A08'],
+  nom: 'RV_COUVERTURE',
+  why: 'Le bandeau affiche la couverture du réseau (`reseau.couverture`) par-dessus sa teinte dessinée, et « Changer la couverture » — dessiné sur les sept planches propriétaire à 1036 px — ouvre le sélecteur, pour le propriétaire seul.',
+  provides: ['reseau', 'actions'],
+  apply(jsx) {
+    let out = jsx;
+    let applied = false;
+
+    const bandeau = remplacerUn(
+      out,
+      /<div style=\{\{ height: "(\d+)px", background: "#CFE3DA"([^}]*)\}\}>/,
+      (m) =>
+        `<div style={{ height: "${m[1]}px", background: "#CFE3DA"${m[2]}, ` +
+        'backgroundImage: reseau.couverture === null ? "none" : `url("${reseau.couverture}")`, ' +
+        'backgroundSize: "cover", backgroundPosition: "center" }}>',
+    );
+    if (bandeau !== null && !jsx.includes('reseau.couverture')) {
+      out = bandeau;
+      applied = true;
+    }
+
+    const libelle = 'Changer la couverture</span>';
+    const fin = out.indexOf(libelle);
+    if (fin >= 0) {
+      const debut = out.lastIndexOf('<span style={{', fin);
+      const ouvre = out.slice(debut, out.indexOf('>', debut) + 1);
+      const ms = /style=\{\{ ([^}]*) \}\}/.exec(ouvre);
+      if (debut >= 0 && ms !== null) {
+        const interieur = out.slice(debut + ouvre.length, fin);
+        const style = fusion(nu(ms[1]), 'color: "#16211D", cursor: actions.couvertureOccupee ? "default" : "pointer", opacity: actions.couvertureOccupee ? ".6" : "1"');
+        const bouton =
+          '{actions.peutChangerCouverture ? (<button type="button" onClick={actions.onChangerCouverture} ' +
+          'disabled={actions.couvertureOccupee} data-reseau-changer-couverture="" ' +
+          `style={{ ${style} }}>${interieur}` +
+          '{actions.couvertureOccupee ? "Envoi de la couverture…" : "Changer la couverture"}</button>) : null}';
+        out = out.slice(0, debut) + bouton + out.slice(fin + libelle.length);
+        applied = true;
+      }
+    }
+    return { jsx: out, applied };
+  },
+};
+
+/**
+ * ── A10 : « AJOUTER UNE COUVERTURE » DEVIENT UN VRAI CHAMP DE FICHIER ────────
+ *
+ * Le porteur : « Ajouter une couverture ne marche pas ? » La zone pointillée
+ * (120 px à 1 440, 84 px à 390) était un `<div>` inerte. Elle devient un
+ * `<label>` qui porte un `<input type="file">` caché : toute la zone ouvre le
+ * sélecteur, au clavier comme à la souris, sans script de clic.
+ *
+ * Une fois l'image déposée (`use-creation.ts` la dépose dès le choix), elle
+ * REMPLIT la zone en `backgroundImage` et le libellé devient une pastille
+ * « Changer la couverture » posée dessus, lisible sur n'importe quelle photo.
+ * Pendant le dépôt, « Envoi… ». Le style dessiné est gardé tel quel ; on n'ajoute
+ * que ce qu'un fond d'image exige (`cover`, centré, `overflow: hidden`).
+ */
+const RV_A10_COUVERTURE = {
+  screens: ['A10'],
+  nom: 'RV_A10_COUVERTURE',
+  why: 'La zone « Ajouter une couverture » de la création de réseau ouvre le sélecteur de fichier, affiche l’image déposée et propose de la changer — sur les deux planches.',
+  provides: ['couvertureUrl', 'couvertureOccupee', 'onCouverture'],
+  apply(jsx) {
+    const r = remplacerUn(
+      jsx,
+      /<div style=\{\{ ([^}]*border: "1\.5px dashed #CBD5D1"[^}]*) \}\}>Ajouter une couverture<\/div>/,
+      (m) => {
+        const style = fusion(
+          m[1],
+          'cursor: couvertureOccupee ? "default" : "pointer", ' +
+            'backgroundImage: couvertureUrl === null ? "none" : `url("${couvertureUrl}")`, ' +
+            'backgroundSize: "cover", backgroundPosition: "center", overflow: "hidden"',
+        );
+        return (
+          `<label style={{ ${style} }} data-creation-couverture="">` +
+          '<input type="file" accept="image/jpeg,image/png,image/webp" hidden ' +
+          'disabled={couvertureOccupee} onChange={onCouverture} data-creation-couverture-fichier="" />' +
+          '{couvertureOccupee ? "Envoi de la couverture…" : couvertureUrl === null ? "Ajouter une couverture" : ' +
+          '(<span style={{ padding: "6px 12px", borderRadius: "12px", background: "rgba(255,255,255,.92)", color: "#16211D" }}>Changer la couverture</span>)}' +
+          '</label>'
+        );
+      },
+    );
+    return r === null ? { jsx, applied: false } : { jsx: r, applied: true };
+  },
+};
+
 const SANS_DOUBLONS = (adaptation) => ({
   ...adaptation,
   apply(jsx) {
@@ -1719,6 +1830,8 @@ export const ADAPTATIONS_RESEAU_VIVANT = [
   RV_ALBUM_OUVERT,
   RV_APROPOS,
   RV_CONTACTER,
+  RV_COUVERTURE,
+  RV_A10_COUVERTURE,
   RV_EDITION,
   RV_GERER,
   RV_SUJET_VIDE,

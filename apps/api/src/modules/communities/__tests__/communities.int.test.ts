@@ -2447,6 +2447,62 @@ describe('réseaux (07 §2, §9)', () => {
     expect(after.lastActivityAt.getTime()).toBeGreaterThan(longAgo.getTime());
   });
 
+  // ══ La couverture : un média du PROPRIÉTAIRE, prêt, et rendu en `coverUrl` ══
+  //
+  // `create` et `update` recopiaient `coverAssetId` sans rien vérifier : le
+  // média d'un autre membre, ou un justificatif (`PROOF`, « jamais affiché »),
+  // pouvait devenir le bandeau d'un réseau. C'est le contrôle des couvertures
+  // d'événement (`assertOwnedCover`), appliqué ici.
+
+  it('n’accepte pour couverture qu’un média EVENT_COVER du propriétaire, et rend son adresse', async () => {
+    const owner = await newMember();
+    const autre = await newMember();
+    const media = async (proprio: string, kind: 'EVENT_COVER' | 'PROOF', status: 'READY' | 'PENDING' = 'READY') =>
+      (
+        await prisma.mediaAsset.create({
+          data: {
+            id: newId(),
+            ownerUserId: proprio,
+            kind,
+            storageKey: `test/reseau-couverture/${newId()}.jpg`,
+            mime: 'image/jpeg',
+            sizeBytes: BigInt(4096),
+            status,
+            exifStripped: true,
+          },
+        })
+      ).id;
+    const mienne = await media(owner, 'EVENT_COVER');
+    const etrangere = await media(autre, 'EVENT_COVER');
+    const justificatif = await media(owner, 'PROOF');
+    const enCours = await media(owner, 'EVENT_COVER', 'PENDING');
+    const community = await createInterest(owner);
+    try {
+      // Étrangère ou d'un autre genre : 404, indistinguable d'un média absent.
+      await expect(communities.update(community.id, owner, { coverAssetId: etrangere })).rejects.toMatchObject({
+        status: 404,
+      });
+      await expect(communities.update(community.id, owner, { coverAssetId: justificatif })).rejects.toMatchObject({
+        status: 404,
+      });
+      // Encore en analyse : une erreur de validation, le membre sait qu'il existe.
+      await expect(communities.update(community.id, owner, { coverAssetId: enCours })).rejects.toMatchObject({
+        status: 400,
+      });
+
+      const apres = await communities.update(community.id, owner, { coverAssetId: mienne });
+      expect(apres.coverAssetId).toBe(mienne);
+      expect(apres.coverUrl).toMatch(/^\/media\/test\/reseau-couverture\//);
+
+      // Retirer la couverture reste possible : `null` ne passe pas par le contrôle.
+      const sans = await communities.update(community.id, owner, { coverAssetId: null });
+      expect(sans.coverUrl).toBeNull();
+    } finally {
+      await prisma.community.update({ where: { id: community.id }, data: { coverAssetId: null } });
+      await prisma.mediaAsset.deleteMany({ where: { id: { in: [mienne, etrangere, justificatif, enCours] } } });
+    }
+  });
+
   // ══ « Contacter les modérateurs » — le fil de groupe (08 §5.1) ═════════════
   //
   // CE N'EST PAS UN SIGNALEMENT, et les cas ci-dessous le figent : la route

@@ -16,7 +16,7 @@ export function A08TMembres(props: A08TData) {
     <>
       <main style={{ display: "contents" }}>
 <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", overflow: "hidden" }}>
-  <div style={{ height: "120px", background: "#CFE3DA", position: "relative" }}></div>
+  <div style={{ height: "120px", background: "#CFE3DA", position: "relative", backgroundImage: reseau.couverture === null ? "none" : `url("${reseau.couverture}")`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
   <div style={{ padding: "0 22px 16px", display: "flex", alignItems: "flex-end", gap: "14px", marginTop: "-30px", position: "relative" }}>
     <span style={{ width: "72px", height: "72px", borderRadius: "22px", background: "#E0733A", border: "4px solid #fff", color: "#fff", fontSize: "19px", fontWeight: "800", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{reseau.initiales}</span>
     <div style={{ flex: "1", minWidth: "0", paddingBottom: "2px" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><h1 style={{ margin: "0", fontSize: "22px", fontWeight: "800", letterSpacing: "-0.6px" }}>{reseau.nom}</h1></div><div style={{ fontSize: "13px", color: "#5D6B66", marginTop: "2px" }}>{reseau.resume}</div></div>
