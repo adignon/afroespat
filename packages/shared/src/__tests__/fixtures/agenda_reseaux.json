@@ -16,7 +16,8 @@
       "lastActivityAt": "2026-09-27T19:36:08.628Z",
       "createdAt": "2026-09-27T19:36:08.629Z",
       "myRole": "MEMBER",
-      "joinedAt": "2026-10-01T00:35:45.749Z"
+      "joinedAt": "2026-10-01T00:35:45.749Z",
+      "muted": false
     },
     {
       "id": "01a0e449-5278-7000-83cd-749025e4d4b3",
@@ -34,7 +35,8 @@
       "lastActivityAt": "2026-09-27T19:13:25.625Z",
       "createdAt": "2026-09-27T19:13:25.626Z",
       "myRole": "MEMBER",
-      "joinedAt": "2026-10-01T00:35:45.758Z"
+      "joinedAt": "2026-10-01T00:35:45.758Z",
+      "muted": false
     },
     {
       "id": "01a0f4e3-81a9-7000-8d47-89b731907acb",
@@ -52,7 +54,8 @@
       "lastActivityAt": "2026-10-01T00:35:45.709Z",
       "createdAt": "2026-10-01T00:35:45.709Z",
       "myRole": "OWNER",
-      "joinedAt": "2026-10-01T00:35:45.711Z"
+      "joinedAt": "2026-10-01T00:35:45.711Z",
+      "muted": false
     }
   ],
   "invitations": [],

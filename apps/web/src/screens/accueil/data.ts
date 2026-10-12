@@ -37,9 +37,9 @@ const ALERT = 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 8v5M12 16h.01';
  * dans la maquette. Les indices sont ceux de sa liste — 1 Guides, 3 Réseaux,
  * 5 Villes & Membres.
  */
-export const panelGuides = panel(1);
-export const panelReseaux = panel(3);
-export const panelVilles = panel(5);
+export const panelGuides = panel('Guides & Démarches');
+export const panelReseaux = panel('Réseaux');
+export const panelVilles = panel('Villes & Membres');
 export { panelFil } from '../a01/data';
 
 // ─── Deux fabriques que la maquette définit en tête de son `renderVals()` ────

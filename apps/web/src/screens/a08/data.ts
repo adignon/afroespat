@@ -18,7 +18,12 @@
  */
 export { CHAT, I, PIN, netTabsFor, panel, panelReseaux, rail, tab } from '../reseaux/chrome';
 import { netTabsFor, panel, panelReseaux, rail } from '../reseaux/chrome';
-import { enteteVide, type ReseauEnteteView } from '../a08t/data';
+import {
+  enteteVide,
+  sourdineVide,
+  type ReseauEnteteView,
+  type SourdineView,
+} from '../a08t/data';
 
 /**
  * Une ligne de sujet.
@@ -89,6 +94,23 @@ export const netTabs = netTabsFor(1);
 /** Les trois actions du bandeau propriétaire, telles que la maquette les nomme. */
 export const ownerActions = ['Annonce', 'Épingler', 'Gérer'];
 
+/**
+ * LA DESTINATION DE « GÉRER », et pourquoi c'est une prise à part.
+ *
+ * Le bandeau vert « Propriétaire du réseau » de A08 dessine ses trois actions
+ * par une BOUCLE sur `ownerActions`, qui est un tableau de CHAÎNES. Les trois
+ * ne vont pas au même endroit — « Annonce » ouvre le formulaire d'annonce,
+ * « Épingler » agit sur un sujet, « Gérer » ouvre la planche de gestion — et
+ * remplacer le tableau par des objets porteurs d'une adresse obligerait à
+ * décider ici des trois destinations.
+ *
+ * Deux d'entre elles ne sont pas de ce lot : l'annonce et l'épinglage sont des
+ * gestes d'ÉCRITURE. Une prise séparée pour la seule qu'on connaît laisse donc
+ * `ownerActions` exactement tel qu'il est, et le cadre choisit sur le libellé —
+ * `o === 'Gérer'` — plutôt que sur un rang, qui bougerait au premier ajout.
+ */
+export const hrefGerer = '?onglet=gerer&vue=proprietaire';
+
 export const topics: readonly TopicRowView[] = [];
 
 export interface A08Data {
@@ -114,17 +136,31 @@ export interface A08Data {
   panelReseaux: ReturnType<typeof panel>;
   netTabs: ReturnType<typeof netTabsFor>;
   ownerActions: typeof ownerActions;
+  /** La destination de « Gérer » dans le bandeau propriétaire. Voir sa déclaration. */
+  hrefGerer: string;
   topics: readonly TopicRowView[];
+  /**
+   * LA SOURDINE — §2.5. A08 dessine le bouton sur SES DEUX planches : un
+   * `<button>` dans la rangée d'actions de l'en-tête à 1 440 px, un `<span>` de
+   * 40 px de haut dans la paire de pastilles à 390 px. Les deux étaient inertes.
+   *
+   * Le type vient de `a08t/data.ts` et n'est pas redéclaré : c'est la MÊME prise,
+   * remplie par le MÊME hook, et les six planches d'onglet la lisent aussi. Deux
+   * déclarations de la même forme divergeraient au premier champ ajouté.
+   */
+  sourdine: SourdineView;
 }
 
 export const shortcuts: readonly { name: string; sub: string; i: string; bg: string }[] = [];
 
 export const a08Fallback: A08Data = {
   reseau: enteteVide,
+  sourdine: sourdineVide,
   rail,
   shortcuts,
   panelReseaux,
   netTabs,
   ownerActions,
+  hrefGerer,
   topics,
 };

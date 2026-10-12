@@ -19,10 +19,11 @@ import {
 } from '@app/shared';
 import { fetchMe, memberApi } from '@/lib/api/index';
 import type { BandeauEntraide, CompteursEntraide, MembreDessine } from './data';
+import type { EtatVide, FiltreTypeDemande, LigneDemande, PorteeFil } from '../h01/data';
 import type { H01Data } from '../h01/data';
 import type { H02Data, ReponsePublique } from '../h02/data';
 import type { H03Data } from '../h03/data';
-import type { H04Data } from '../h04/data';
+import type { H04Data, LigneSuggestion } from '../h04/data';
 import type { H05Data } from '../h05/data';
 import type { H06Data } from '../h06/data';
 import type { H07Data } from '../h07/data';
@@ -334,9 +335,425 @@ function membreDessine(membre: HelpMember, rang: number): MembreDessine {
  * pseudo — que le bandeau charge de toute façon pour la réputation, donc sans
  * aller-retour de plus.
  */
-export async function chargerH01(): Promise<H01Data> {
-  const { moi, reputation, compteurs, avertissement, profil } = await chargerBandeau();
-  return { moi, reputation, compteurs, avertissement, ville: profil.city?.name ?? '—' };
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES SIX FILTRES DE TYPE, DANS LES MOTS DE LA MAQUETTE                     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Elle écrit « Tout · Démarches · Service · Trajet · Matériel · Autre » ; le
+ * serveur connaît `PAPERWORK · SERVICE · RIDE · MATERIAL · OTHER`. La table fait
+ * la correspondance, et l'ordre est celui de la planche.
+ */
+const TYPES_FIL: readonly { readonly cle: string; readonly libelle: string }[] = [
+  { cle: '*', libelle: 'Tout' },
+  { cle: 'PAPERWORK', libelle: 'Démarches' },
+  { cle: 'SERVICE', libelle: 'Service' },
+  { cle: 'RIDE', libelle: 'Trajet' },
+  { cle: 'MATERIAL', libelle: 'Matériel' },
+  { cle: 'OTHER', libelle: 'Autre' },
+];
+
+/**
+ * LES DEUX ÉTATS D'UNE PASTILLE, DANS LES COULEURS DE LA MAQUETTE, UNE SEULE FOIS.
+ *
+ * Les filtres de type et les pastilles de portée les écrivaient séparément — les
+ * mêmes six valeurs, recopiées deux fois. Une pastille dessinée par la maquette en
+ * `#16785E`/`#fff` et une autre en `#16785e` seraient deux verts pour l'œil du
+ * garde-fou de contraste, et personne ne saurait lequel est le bon.
+ */
+const teinte = (actif: boolean) =>
+  actif
+    ? { fond: '#16785E', texte: '#fff', bord: '#16785E' }
+    : { fond: '#fff', texte: '#16211D', bord: '#E6EBE9' };
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA RANGÉE DE TYPES S'ÉTEINT QUAND ELLE NE PEUT RIEN FILTRER                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ AU SCHÉMA, et c'est le fait qui décide de tout : `helpCanHelpQuerySchema`
+ * n'accepte que `limit` et `radiusKm`. `GET /help/can-help` N'A PAS de paramètre
+ * `type` — sa liste est CALCULÉE depuis les types d'aide déclarés au profil et les
+ * définitions d'étapes franchies, triée échéance proche d'abord. On ne l'interroge
+ * pas par type.
+ *
+ * Dès que la portée « Vous pouvez aider » est choisie, cette rangée ne peut donc
+ * plus rien filtrer. Trois sorties étaient possibles ; voici celle qui a été prise
+ * et pourquoi les deux autres ont été écartées.
+ *
+ *   · ÉTEINTE — retenue. `desactive: true` sur les six pastilles, `disabled` sur
+ *     le `<button>` produit, et AUCUNE pastille allumée : « Tout » perd son vert.
+ *     Le dessin ne bouge pas d'un pixel de hauteur, la rangée reste à sa place —
+ *     donc le pouce du membre ne retombe pas sur une autre pastille — et le
+ *     contrôle sort du parcours au clavier, ce qui est la vérité : il n'y a rien
+ *     à y faire. Les couleurs employées sont les DEUX que la maquette dessine ;
+ *     aucune n'est assombrie, aucune n'est inventée.
+ *   · APPLIQUÉE SUR LA PAGE REÇUE — écartée, et c'est MESURABLE. `can-help` rend
+ *     au plus `limit` éléments (20 ici) et son `nextCursor` est TOUJOURS nul : il
+ *     n'y a pas de page deux, par conception du service. Un membre avec vingt-cinq
+ *     suggestions qui filtrerait sur « Trajet » verrait donc zéro résultat alors
+ *     que des demandes « Trajet » lui correspondent — simplement parce qu'elles
+ *     sont au-delà du vingtième rang par échéance, et qu'aucun geste ne peut les
+ *     atteindre. Un filtre qui dit « rien » là où il y a quelque chose est pire
+ *     qu'un filtre éteint.
+ *   · MASQUÉE — écartée pour une raison de dessin : la rangée disparaîtrait, le
+ *     fil remonterait de sa hauteur, et les cartes bougeraient sous le doigt à
+ *     chaque changement de portée. C'est la même règle que la bande d'attente de
+ *     `EcranDonnees` applique déjà en se posant en `position: fixed`.
+ */
+function filtresType(
+  choisi: string,
+  onChoisir: (cle: string) => void,
+  desactive = false,
+): readonly FiltreTypeDemande[] {
+  return TYPES_FIL.map((t) => {
+    /** Éteinte, AUCUNE n'est allumée : un filtre allumé qui ne filtre rien mentirait. */
+    const actif = !desactive && t.cle === choisi;
+    return {
+      cle: t.cle,
+      libelle: t.libelle,
+      ...teinte(actif),
+      actif,
+      desactive,
+      onChoisir: () => {
+        onChoisir(t.cle);
+      },
+    };
+  });
+}
+
+/** Les deux portées que le fil sait charger SANS QUITTER LA PAGE. */
+export type PorteeChoisie = 'toutes' | 'aider';
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES CINQ PASTILLES DE PORTÉE, ET LEURS ADRESSES RECOPIÉES DU PANNEAU       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Intègre donc. »
+ *
+ * `adresse` N'EST PAS CHOISIE, ELLE EST RECOPIÉE : ce sont les cinq premières
+ * entrées de `ENTREES_PANNEAU_ENTRAIDE` dans `tools/screens/05-entraide.mjs`,
+ * c'est-à-dire les routes que le panneau de gauche du cadre de 1440 px porte DÉJÀ
+ * en liens qui marchent. Le cadre de 390 px dessine les mêmes entrées sous forme de
+ * pastilles ; leur donner d'autres destinations créerait deux navigations pour une
+ * seule maquette.
+ *
+ * `bascule` dit laquelle des deux natures. « Toutes » et « Vous pouvez aider » sont
+ * DEUX ROUTES D'API — `GET /help` et `GET /help/can-help` — et changer de portée
+ * recharge la liste SUR PLACE : le membre qui cherche à aider n'a aucune raison de
+ * perdre sa position de défilement et son filtre pour voir une autre sélection du
+ * même fil. Les trois autres sont des ÉCRANS, avec leur propre bandeau, leur propre
+ * sous-titre et leurs propres compteurs : elles naviguent.
+ *
+ * LE COMPTEUR EST DANS LE LIBELLÉ, et c'est la maquette qui l'écrit ainsi :
+ * « Toutes · 41 », « Vous pouvez aider · 4 ». Les deux nombres sont ceux que le rail
+ * d'ordinateur porte dans ses pastilles — `meta.open` de `GET /help` et la longueur
+ * de `GET /help/can-help` — donc UNE donnée à deux largeurs, pas deux comptes.
+ */
+const PORTEES_FIL: readonly {
+  readonly cle: string;
+  readonly libelle: (c: CompteursEntraide) => string;
+  readonly adresse: string;
+  readonly bascule: boolean;
+}[] = [
+  {
+    cle: 'toutes',
+    libelle: (c) => `Toutes · ${String(c.ouvertes)}`,
+    adresse: '/entraide',
+    bascule: true,
+  },
+  {
+    cle: 'aider',
+    libelle: (c) => `Vous pouvez aider · ${String(c.pouvezAider)}`,
+    adresse: '/entraide/aider',
+    bascule: true,
+  },
+  {
+    cle: 'mes-demandes',
+    libelle: () => 'Mes demandes',
+    adresse: '/entraide/mes-demandes',
+    bascule: false,
+  },
+  {
+    cle: 'mes-reponses',
+    libelle: () => 'Mes réponses',
+    adresse: '/entraide/mes-reponses',
+    bascule: false,
+  },
+  { cle: 'parrainage', libelle: () => 'Parrainage', adresse: '/parrainage', bascule: false },
+];
+
+/** Les cinq pastilles du fil : deux bascules, trois liens. */
+/**
+ * EXPORTÉE POUR ÊTRE ÉPROUVÉE, et c'est la seule raison.
+ *
+ * Le nombre des deux premières pastilles — « Toutes · 9 », « Vous pouvez aider ·
+ * 5 » — était interpolé dans le JSX du cadre, donc `queues-donnees.test.ts` le
+ * voyait. Depuis que la rangée est une boucle, il entre dans le LIBELLÉ et le
+ * cadre ne nomme plus `compteurs` : ce test-là ne peut plus l'atteindre. La
+ * fonction devient donc le point de mesure, faute de quoi rien ne vérifierait
+ * qu'un compteur réel arrive à l'écran.
+ */
+export function porteesDuFil(
+  choisie: PorteeChoisie,
+  compteurs: CompteursEntraide,
+  onPortee: (cle: PorteeChoisie) => void,
+): readonly PorteeFil[] {
+  return PORTEES_FIL.map((p): PorteeFil => {
+    const actif = p.cle === choisie;
+    const commun = { cle: p.cle, libelle: p.libelle(compteurs), ...teinte(actif), actif };
+    return p.bascule
+      ? {
+          ...commun,
+          href: null,
+          onChoisir: () => {
+            onPortee(p.cle as PorteeChoisie);
+          },
+        }
+      : { ...commun, href: p.adresse, onChoisir: null };
+  });
+}
+
+/**
+ * LES TROIS PASTILLES DE H04 — TOUTES DES LIENS, et c'est une décision.
+ *
+ * H04 EST la portée « Vous pouvez aider », servie à son adresse propre. Une bascule
+ * y serait un contrôle qui ne change rien : celui qui est déjà choisi, et les deux
+ * autres mènent ailleurs. La pastille courante reste un lien vers sa propre page —
+ * c'est ce que fait une barre d'onglets, et c'est ce que le panneau d'ordinateur
+ * fait déjà pour l'entrée de la page affichée.
+ */
+function porteesDeH04(compteurs: CompteursEntraide): readonly PorteeFil[] {
+  return PORTEES_FIL.slice(0, 3).map((p): PorteeFil => {
+    const actif = p.cle === 'aider';
+    return {
+      cle: p.cle,
+      libelle: p.libelle(compteurs),
+      ...teinte(actif),
+      actif,
+      href: p.adresse,
+      onChoisir: null,
+    };
+  });
+}
+
+/** Les deux teintes de pastille de catégorie que la maquette dessine. */
+const CATEGORIE_OUVERTE = { fond: '#E3F0EB', encre: '#0F5C48' };
+const CATEGORIE_CLOSE = { fond: '#EDF1EF', encre: '#8A958F' };
+
+/**
+ * UNE DEMANDE, DANS L'UNE DES TROIS VARIANTES DESSINÉES.
+ *
+ * ⚠ ÉCART CONSIGNÉ : la maquette écrit « Étape 7 · Logement · parcours Études ».
+ * `helpCardSchema` porte `fromJourney` (un booléen) mais ni le numéro d'étape,
+ * ni son titre, ni le NOM du parcours — vérifié au schéma, pas supposé. La ligne
+ * d'étape dit donc « Demande issue d'un parcours », ce qui est vrai, plutôt que
+ * de composer trois informations qu'on n'a pas. REMONTÉ au porteur.
+ */
+function ligneDemande(d: HelpCard, rang: number): LigneDemande {
+  const close = d.status !== 'OPEN';
+  const parcours = d.fromJourney;
+  const categorie = close ? CATEGORIE_CLOSE : CATEGORIE_OUVERTE;
+  const nom = d.author.displayName;
+  return {
+    fond: close ? '#F6F8F7' : parcours ? '#FFFBF8' : '#fff',
+    trait: parcours && !close ? '1.5px solid #E0733A' : '1px solid #E6EBE9',
+    deParcours: parcours && !close,
+    categorie: CATEGORIES_FR[d.type] ?? d.type,
+    categorieFond: categorie.fond,
+    categorieEncre: categorie.encre,
+    etat: close ? 'Résolue' : '',
+    delai: ageCourt(d.createdAt),
+    etape: parcours && !close ? 'Demande issue d’un parcours' : '',
+    titre: d.title,
+    titreCouleur: close ? '#5D6B66' : '#16211D',
+    extrait: d.excerpt,
+    href: `/entraide/${d.id}`,
+    ouverte: !close,
+    auteur: nom,
+    auteurInitiales: initialesDe(nom),
+    auteurFond: FONDS_AVATAR[rang % FONDS_AVATAR.length] ?? FONDS_AVATAR[0],
+    auteurPhase: PHASES_FR[d.author.phase],
+    reponses: `${String(d.responseCount)} réponse${d.responseCount > 1 ? 's' : ''}`,
+    boutonFond: parcours ? '#E0733A' : '#16785E',
+    resolution: close ? `${nom} a marqué cette demande comme résolue` : '',
+  };
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE FIL D'ENTRAIDE LIT ENFIN SES DEMANDES                                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Corrige l'entraide » puis « rends aussi la page, les filtres
+ * etc. dynamique ».
+ *
+ * Ce chargeur ne lisait que le bandeau : les trois cartes de la planche étaient
+ * servies à tout le monde. `GET /help` répondait pourtant depuis le début, et
+ * `helpListQuerySchema` accepte `type` — le filtre part donc dans la requête, et
+ * non sur la page déjà chargée : une liste paginée filtrée localement donnerait
+ * un onglet vide alors que la demande existe, simplement parce qu'elle est page
+ * deux.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ÉTAT VIDE — ET SURTOUT CELUI QUI NE VEUT PAS DIRE « IL N'Y A RIEN »      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Quatre cas, et ils ne disent PAS la même chose au membre :
+ *
+ *   1. PORTÉE « VOUS POUVEZ AIDER », SANS AUCUN CRITÈRE. `GET /help/can-help`
+ *      répond une liste vide avec `meta.reason = 'NO_CRITERIA'` au membre qui n'a
+ *      déclaré aucun type d'aide à son profil et franchi aucune étape. Le
+ *      commentaire du service dit pourquoi il ne replie pas sur « toutes les
+ *      demandes » : « Renvoyer "toutes les demandes" serait la pire réponse —
+ *      l'encadré perdrait son sens et son taux de réponse. » Il a raison, et la
+ *      conséquence est un fil vide pour une raison qui n'est pas « il n'y a rien à
+ *      faire » mais « nous ne savons pas encore ce que vous savez faire ».
+ *      LAISSER CE FIL MUET LUI APPREND L'INVERSE DE CE QU'IL FAUT FAIRE : il
+ *      conclurait que la ville est calme, et n'irait jamais remplir son profil. La
+ *      pastille verte est donc le chemin vers `/compte/profil` — le seul geste qui
+ *      fasse cesser ce vide.
+ *   2. LA MÊME PORTÉE, AVEC DES CRITÈRES MAIS SANS CORRESPONDANCE. Là, il n'y a
+ *      vraiment rien pour lui aujourd'hui, et le dire ainsi est juste. La pastille
+ *      mène quand même au profil : élargir ses types d'aide est la seule action qui
+ *      change ce résultat, et §2.6 ne propose rien d'autre.
+ *   3. LE FIL FILTRÉ SUR UN TYPE, SANS RÉSULTAT. La catégorie est NOMMÉE : un
+ *      « Aucune demande ouverte à Lyon » affiché alors que la ville en a quarante,
+ *      dont aucune en « Trajet », ferait croire à un fil vide au lieu d'un filtre
+ *      étroit.
+ *   4. LE FIL ENTIER, VIDE. C'est le seul des quatre que la maquette ÉCRIT, mot
+ *      pour mot : « Aucune demande ouverte à Lyon · Vous avez besoin d'un coup de
+ *      main ? · Publier une demande ». Il est repris tel quel.
+ *
+ * LE DESSIN DES QUATRE EST CELUI DE LA MAQUETTE, pris dans la colonne « ÉTATS »
+ * que H01 range à côté de ses deux cadres — titre de 14 px, phrase en `#5D6B66`,
+ * pastille `#16785E`. Voir `ETAT_VIDE` dans `tools/screens/05-entraide.mjs` : trois
+ * champs, et pas un de plus, parce que la planche n'en dessine pas plus.
+ *
+ * `null` DÈS QU'UNE CARTE S'AFFICHE : un état vide posé sous une liste pleine
+ * serait un deuxième mensonge, à l'envers.
+ */
+function videDuFil(
+  combien: number,
+  portee: PorteeChoisie,
+  sansCritere: boolean,
+  type: string,
+  ville: string,
+): EtatVide | null {
+  if (combien > 0) return null;
+
+  if (portee === 'aider') {
+    return sansCritere
+      ? {
+          titre: 'Nous ne savons pas encore ce que vous savez faire',
+          phrase:
+            'Déclarez vos types d’aide sur votre profil : les demandes qui vous correspondent apparaîtront ici.',
+          lien: 'Compléter mon profil',
+          href: '/compte/profil',
+        }
+      : {
+          titre: 'Aucune demande ne correspond à votre expérience',
+          phrase:
+            'Cette liste suit vos types d’aide et les étapes que vous avez franchies. En déclarer d’autres l’élargit.',
+          lien: 'Compléter mon profil',
+          href: '/compte/profil',
+        };
+  }
+
+  const categorie = TYPES_FIL.find((t) => t.cle === type);
+  return {
+    titre:
+      type === '*' || categorie === undefined
+        ? `Aucune demande ouverte à ${ville}`
+        : `Aucune demande « ${categorie.libelle} » ouverte à ${ville}`,
+    phrase: 'Vous avez besoin d’un coup de main ?',
+    lien: 'Publier une demande',
+    href: '/entraide/nouveau',
+  };
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES DEUX PORTÉES SONT DEUX ROUTES, PAS DEUX TRIS                           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `GET /help` rend le fil de la ville, filtrable par `type`. `GET /help/can-help`
+ * rend une liste CALCULÉE : les types d'aide déclarés au profil, plus les
+ * définitions d'étapes que le membre a franchies, dans son rayon de ville,
+ * demandes seulement, jamais les siennes, triées échéance proche d'abord (§2.6).
+ * Aucune des deux n'est un tri de l'autre, et c'est pourquoi la portée change
+ * d'APPEL et pas d'ordre de tableau.
+ *
+ * ── LE `catch` A ÉTÉ RETIRÉ, ET C'EST UNE CORRECTION ────────────────────────
+ *
+ * La version précédente avalait l'échec en liste vide, avec cette raison : « le fil
+ * doit s'afficher même si cette route faiblit, avec son bandeau et sa règle de
+ * sécurité ». Elle était juste AVANT que cet écran ait un état vide dessiné. Elle
+ * ne l'est plus : une panne réseau afficherait maintenant « Aucune demande ouverte
+ * à Lyon », c'est-à-dire une affirmation FAUSSE sur la ville, là où la vérité est
+ * « nous n'avons pas pu charger ».
+ *
+ * Et le motif de l'époque n'a plus besoin de ce `catch` : `EcranDonnees` reçoit un
+ * `squelette`, donc l'échec rend le CADRE ENTIER — rail, panneau, barre basse,
+ * bandeau de sécurité — plus une bande « Réessayer » en `position: fixed`. Le fil
+ * s'affiche, la règle §2.7 reste à l'écran, et l'erreur se dit comme une erreur.
+ */
+async function listeDuFil(
+  portee: PorteeChoisie,
+  type: string,
+): Promise<{ readonly items: readonly HelpCard[]; readonly sansCritere: boolean }> {
+  if (portee === 'aider') {
+    const suggestions = await memberApi.get('/help/can-help?limit=20', helpCanHelpResponseSchema);
+    return { items: suggestions.items, sansCritere: suggestions.meta.reason === 'NO_CRITERIA' };
+  }
+  const requete = type === '*' ? '?limit=20' : `?type=${encodeURIComponent(type)}&limit=20`;
+  const fil = await memberApi.get(`/help${requete}`, helpListResponseSchema);
+  return { items: fil.items, sansCritere: false };
+}
+
+/**
+ * ── CE QUE LE CHARGEUR REÇOIT, ET POURQUOI C'EST UN OBJET ───────────────────
+ *
+ * Quatre arguments positionnels — portée, type, et leurs deux prises — se lisent
+ * `chargerH01('aider', '*', setPortee, setType)` sur l'appel, et plus personne ne
+ * sait lequel est lequel six mois plus tard. L'objet nomme chaque pièce à l'endroit
+ * où elle est écrite.
+ */
+export async function chargerH01({
+  portee = 'toutes',
+  type = '*',
+  onPortee = () => undefined,
+  onType = () => undefined,
+}: {
+  readonly portee?: PorteeChoisie;
+  readonly type?: string;
+  readonly onPortee?: (cle: PorteeChoisie) => void;
+  readonly onType?: (cle: string) => void;
+} = {}): Promise<H01Data> {
+  const [{ moi, reputation, compteurs, avertissement, profil }, liste] = await Promise.all([
+    chargerBandeau(),
+    listeDuFil(portee, type),
+  ]);
+
+  const ville = profil.city?.name ?? '—';
+  return {
+    moi,
+    reputation,
+    compteurs,
+    avertissement,
+    ville,
+    demandes: liste.items.map((d, rang) => ligneDemande(d, rang)),
+    /**
+     * LA RANGÉE DE TYPES S'ÉTEINT SOUS LA PORTÉE « VOUS POUVEZ AIDER », et le
+     * raisonnement entier est dans l'en-tête de `filtresType` : `can-help` n'a pas
+     * de paramètre `type`, donc une pastille allumée y mentirait.
+     */
+    typesDemande: filtresType(type, onType, portee === 'aider'),
+    portees: porteesDuFil(portee, compteurs, onPortee),
+    vide: videDuFil(liste.items.length, portee, liste.sansCritere, type, ville),
+  };
 }
 
 // ─── H02 · /entraide/:id ────────────────────────────────────────────────────
@@ -454,7 +871,122 @@ export const chargerH08 = (): Promise<H08Data> => bandeauSeul();
 
 // ─── H04 · /entraide/aider ──────────────────────────────────────────────────
 
-export const chargerH04 = (): Promise<H04Data> => bandeauSeul();
+/**
+ * H04 — « Vous pouvez aider », à son adresse propre.
+ *
+ * Son bandeau, et SA RANGÉE DE PORTÉE, qui était restée un dessin : la laisser
+ * ainsi aurait créé à deux routes de distance le défaut exact que ce lot répare —
+ * le membre qui tape « Vous pouvez aider » sur le fil arriverait sur une page où la
+ * rangée redevient une image, et où « Toutes » ne le ramène pas.
+ *
+ * ⚠ SA LISTE DE CARTES N'EST TOUJOURS PAS LIÉE, et l'écart s'est ÉLARGI avec ce
+ * lot : la portée « Vous pouvez aider » du fil affiche désormais la vraie liste de
+ * `GET /help/can-help`, et cette page-ci affiche encore les deux cartes dessinées
+ * par la maquette. La raison du blocage est écrite dans
+ * `app/(app)/entraide/aider/page.tsx` — la pastille de MOTIF de chaque carte
+ * (« Vous avez franchi l'étape Logement » contre « Correspond à vos types
+ * d'aide ») dit POURQUOI la demande correspond, et `helpCardSchema` ne porte que
+ * `fromJourney`. REMONTÉ, avec le chemin pour refermer : `fromJourney: false`
+ * PROUVE la correspondance par types déclarés (le `where` du service n'a pas
+ * d'autre critère disponible dans ce cas) ; `fromJourney: true` reste ambigu entre
+ * les deux critères, et c'est là que la décision du porteur manque.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ÉCHÉANCE, OU L'ÂGE — LA PLANCHE N'ÉCRIT QUE LA PREMIÈRE                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * « échéance dans 2 j » est ce que la planche de H04 écrit, et `helpCardSchema`
+ * porte bien `dueDate`. Mais il le porte NULLABLE : une demande sans échéance
+ * existe, et le service la range après celles qui en ont (« nulls last »). La
+ * planche ne dessine pas ce cas.
+ *
+ * On ne compose donc pas une fausse échéance : à `null`, le même emplacement
+ * reçoit l'ÂGE de la demande, par `ageCourt` — le seul formateur du module, celui
+ * que H02 et le fil emploient déjà. Deux échelles de temps dans un module
+ * divergeraient au premier changement.
+ *
+ * Les deux bords sont nommés plutôt qu'arrondis à zéro : « échéance dans 0 j » se
+ * lirait comme un défaut d'affichage, et une échéance passée n'est pas une
+ * échéance proche. Ces deux phrases ne sont dans aucune planche — ce sont des
+ * DONNÉES composées ici, comme « Demande issue d'un parcours ».
+ */
+function echeanceCourte(dueDate: string | null, createdAt: string, maintenant = Date.now()): string {
+  if (dueDate === null) return ageCourt(createdAt, maintenant);
+  const jours = Math.ceil((new Date(dueDate).getTime() - maintenant) / 86_400_000);
+  if (jours < 0) return 'échéance dépassée';
+  if (jours === 0) return 'échéance aujourd’hui';
+  return `échéance dans ${String(jours)} j`;
+}
+
+/**
+ * UNE SUGGESTION, ET LA MOITIÉ DE MOTIF QUE L'API PERMET DE DÉMONTRER.
+ *
+ * La planche dit POURQUOI chaque demande est suggérée — « Vous avez franchi
+ * l'étape Logement » contre « Correspond à vos types d'aide ». `helpCardSchema`
+ * ne porte que `fromJourney`, et le `where` du service en dit juste assez :
+ *
+ *   · `fromJourney === false` ⇒ `originJourneyStep` est nul ⇒ le critère « étape
+ *     franchie » N'A PAS PU jouer, donc c'est le type d'aide déclaré. La phrase de
+ *     la planche est alors DÉMONTRÉE ;
+ *   · `fromJourney === true` reste ambigu entre les deux critères, qui sont en
+ *     `OR`. On écrit donc « Demande issue d'un parcours » — la phrase que
+ *     `ligneDemande` emploie déjà pour le même manque — et SURTOUT pas le nom
+ *     d'une étape que la réponse ne contient pas.
+ *
+ * ⚠ ÉCART REMONTÉ : la planche perd son « Vous avez franchi l'étape Logement ». Le
+ * combler demande que la route dise ce qui a matché — un `matchedBy` dans la carte.
+ */
+function ligneSuggestion(d: HelpCard, rang: number): LigneSuggestion {
+  const nom = d.author.displayName;
+  return {
+    categorie: CATEGORIES_FR[d.type] ?? d.type,
+    motif: d.fromJourney ? 'Demande issue d’un parcours' : 'Correspond à vos types d’aide',
+    delai: echeanceCourte(d.dueDate, d.createdAt),
+    titre: d.title,
+    extrait: d.excerpt,
+    href: `/entraide/${d.id}`,
+    auteur: nom,
+    auteurInitiales: initialesDe(nom),
+    auteurFond: FONDS_AVATAR[rang % FONDS_AVATAR.length] ?? FONDS_AVATAR[0],
+    auteurPhase: PHASES_FR[d.author.phase],
+    reponses: `${String(d.responseCount)} réponse${d.responseCount > 1 ? 's' : ''}`,
+  };
+}
+
+/**
+ * H04 — « Vous pouvez aider », à son adresse propre, et SUR LA MÊME DONNÉE QUE LA
+ * PASTILLE DU FIL.
+ *
+ * MESURÉ avant correction, aux deux largeurs : `GET /help/can-help` rendait sept
+ * suggestions, la portée « Vous pouvez aider » du fil en affichait sept à 390 px,
+ * et cette page affichait les deux cartes de la planche. Le lot qui a rendu la
+ * pastille vivante avait donc ÉLARGI l'écart avant de le refermer ; c'est pour cela
+ * que les deux sont dans le même lot.
+ *
+ * `/help/can-help?limit=20` — le MÊME appel, la même limite, et le `meta.reason`
+ * lu de la même façon : une seule lecture de la route pour les deux chemins, donc
+ * aucun moyen qu'ils se contredisent.
+ */
+export const chargerH04 = async (): Promise<H04Data> => {
+  const [bandeau, suggestions] = await Promise.all([
+    bandeauSeul(),
+    memberApi.get('/help/can-help?limit=20', helpCanHelpResponseSchema),
+  ]);
+
+  return {
+    ...bandeau,
+    portees: porteesDeH04(bandeau.compteurs),
+    suggestions: suggestions.items.map((d, rang) => ligneSuggestion(d, rang)),
+    vide: videDuFil(
+      suggestions.items.length,
+      'aider',
+      suggestions.meta.reason === 'NO_CRITERIA',
+      '*',
+      '',
+    ),
+  };
+};
 
 // ─── H06 · /parrainage/:handle ──────────────────────────────────────────────
 
@@ -628,9 +1160,39 @@ const SQUELETTE_BANDEAU: BandeauEntraide = {
  * « Chargement de votre compte… » et pas la page. Mesuré au HTML servi :
  * `/entraide/aider` servait CINQ mots et zéro entrée de rail.
  */
-export const SQUELETTE_H01: H01Data = { ...SQUELETTE_BANDEAU, ville: '' };
+/**
+ * LES FILTRES SONT LÀ AVANT LA LISTE : ils ne dépendent d'aucune réponse, et une
+ * rangée de pastilles qui apparaît après coup fait sauter la page.
+ */
+export const SQUELETTE_H01: H01Data = {
+  ...SQUELETTE_BANDEAU,
+  ville: '',
+  demandes: [],
+  typesDemande: filtresType('*', () => undefined),
+  /**
+   * LES CINQ PASTILLES SONT LÀ AVANT LA LISTE, pour la même raison que les
+   * filtres : elles ne dépendent d'aucune réponse, et une rangée qui apparaît
+   * après coup fait sauter la page. Leurs deux compteurs valent zéro le temps du
+   * chargement — la même limite de type que `reputation`, déjà dite plus haut.
+   */
+  portees: porteesDuFil('toutes', SQUELETTE_BANDEAU.compteurs, () => undefined),
+  /**
+   * ⚠ `null` ET SURTOUT PAS UN ÉTAT VIDE. La liste est vide ici parce que l'appel
+   * n'a pas encore répondu, pas parce que la ville n'a aucune demande. Afficher
+   * « Aucune demande ouverte à — » pendant le chargement serait exactement le
+   * mensonge que `videDuFil` existe pour empêcher, et il durerait le temps d'un
+   * aller-retour — assez pour être lu.
+   */
+  vide: null,
+};
 export const SQUELETTE_H03: H03Data = SQUELETTE_BANDEAU;
-export const SQUELETTE_H04: H04Data = SQUELETTE_BANDEAU;
+export const SQUELETTE_H04: H04Data = {
+  ...SQUELETTE_BANDEAU,
+  portees: porteesDeH04(SQUELETTE_BANDEAU.compteurs),
+  suggestions: [],
+  /** `null` : voir `SQUELETTE_H01`. Une liste vide d'attente n'est pas un vide. */
+  vide: null,
+};
 export const SQUELETTE_H05: H05Data = { ...SQUELETTE_BANDEAU, ville: '' };
 export const SQUELETTE_H07: H07Data = SQUELETTE_BANDEAU;
 export const SQUELETTE_H08: H08Data = SQUELETTE_BANDEAU;

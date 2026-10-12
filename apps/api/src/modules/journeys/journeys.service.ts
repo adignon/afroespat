@@ -817,12 +817,36 @@ export class JourneysService {
       { visibility: 'PUBLIC' },
       // Ni en pause, ni arrêté, ni archivé : la règle dure, en SQL.
       { status: { in: ['ACTIVE', 'COMPLETED'] } },
-      // « 5 parcours publics d'AUTRES membres » (§3.7).
-      { ownerUserId: { not: userId } },
-      // Les membres séparés, dans les deux sens. `owner_user_id` est NOT NULL :
-      // le `notIn` est sûr ici, ce qui ne serait pas le cas sur une colonne
-      // d'auteur nullable comme celle des guides anonymisés.
-      ...(separated.length === 0 ? [] : [{ ownerUserId: { notIn: separated } }]),
+      /**
+       * ╔══════════════════════════════════════════════════════════════════╗
+       * ║ DEUX RÈGLES SUR `ownerUserId`, ÉCRITES EN UNE SEULE CLAUSE       ║
+       * ╚══════════════════════════════════════════════════════════════════╝
+       *
+       * 1. « 5 parcours publics d'AUTRES membres » (§3.7) — SAUF quand on
+       *    demande ceux d'une personne précise. L'onglet « Parcours publics »
+       *    d'un profil pose une autre question : non « que découvrir ? », mais
+       *    « qu'a publié cette personne ? ». Garder l'exclusion y viderait
+       *    VOTRE propre profil de vos propres parcours.
+       *
+       * 2. Les membres séparés, dans les deux sens. `owner_user_id` est NOT
+       *    NULL : le `notIn` est sûr ici, ce qui ne serait pas le cas sur une
+       *    colonne d'auteur nullable comme celle des guides anonymisés.
+       *
+       * LES DEUX TIENNENT DANS UN SEUL FILTRE, et c'est voulu :
+       * `check-duplicate-spread-keys.mjs` relève toute clé posée deux fois par
+       * deux diffusions conditionnelles. Ici le tableau devient un `AND`, donc
+       * les deux clauses auraient bien coexisté — mais le garde-fou ne peut pas
+       * le savoir, et une alerte qu'on apprend à ignorer ne garde plus rien.
+       */
+      {
+        ownerUserId: {
+          ...(query.authorHandle === undefined ? { not: userId } : {}),
+          ...(separated.length === 0 ? {} : { notIn: separated }),
+        },
+      },
+      ...(query.authorHandle === undefined
+        ? []
+        : [{ owner: { handle: query.authorHandle } }]),
       // Un compte éteint ou banni n'expose plus rien.
       { owner: { deletedAt: null, status: 'ACTIVE' } },
     ];

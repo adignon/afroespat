@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { commentsResponseSchema, postDetailResponseSchema } from '@app/shared';
+import type { CommentRow, CommentThread } from '@app/shared';
 import { commentairesA02From, relGuidesDe } from './from-api';
 
 /**
@@ -26,12 +27,38 @@ const charge = (nom: string): unknown =>
 const detail = postDetailResponseSchema.parse(charge('post_detail'));
 const fil = commentsResponseSchema.parse(charge('comments'));
 
+/**
+ * LES LIGNES LISIBLES D'UN FIL, séparées des emplacements retirés.
+ *
+ * `GET /comments` rend une UNION depuis que la colonne « ÉTATS » de A01C est
+ * montée : un commentaire, ou `{ removed: true }`. Les charges de
+ * `packages/shared/src/__tests__/fixtures/` n'en portent aucun — relevé, zéro
+ * occurrence de `"removed"` — donc ces deux fonctions ne retirent rien
+ * aujourd'hui. Elles sont là pour que `tsc` cesse de supposer : un emplacement
+ * n'a NI `replies`, NI `relativeTime`, NI `canEdit`, et un cas qui les lirait sur
+ * lui mentirait sur ce que le serveur sert.
+ */
+const racinesLisibles = (
+  items: readonly CommentRow[],
+): readonly CommentThread[] => items.filter((r): r is CommentThread => !('removed' in r));
+
+const reponsesLisibles = (
+  racine: CommentThread,
+): readonly Exclude<CommentThread['replies'][number], { removed: true }>[] =>
+  racine.replies.filter(
+    (r): r is Exclude<CommentThread['replies'][number], { removed: true }> =>
+      !('removed' in r),
+  );
+
 describe('les commentaires d’une publication, convertis pour A02', () => {
   const lignes = commentairesA02From(fil.items);
 
   it('la fixture porte une racine ET une réponse — sinon tout ce qui suit est creux', () => {
-    const racines = fil.items.length;
-    const reponses = fil.items.reduce((n, r) => n + r.replies.length, 0);
+    const racines = racinesLisibles(fil.items).length;
+    const reponses = racinesLisibles(fil.items).reduce(
+      (n, r) => n + reponsesLisibles(r).length,
+      0,
+    );
     expect(racines).toBeGreaterThanOrEqual(1);
     expect(reponses).toBeGreaterThanOrEqual(1);
     expect(lignes.length).toBe(racines + reponses);
@@ -71,7 +98,10 @@ describe('les commentaires d’une publication, convertis pour A02', () => {
    * un poste décalé afficherait « dans 3 h » sur un commentaire d'hier.
    */
   it('l’heure affichée est celle que le serveur compose, jamais une horloge locale', () => {
-    const attendus = fil.items.flatMap((r) => [r.relativeTime, ...r.replies.map((x) => x.relativeTime)]);
+    const attendus = racinesLisibles(fil.items).flatMap((r) => [
+      r.relativeTime,
+      ...reponsesLisibles(r).map((x) => x.relativeTime),
+    ]);
     expect(lignes.map((l) => l.time)).toEqual(attendus);
   });
 
@@ -104,7 +134,10 @@ describe('les commentaires d’une publication, convertis pour A02', () => {
    * il recopie `canEdit`.
    */
   it('le droit de modifier est celui du serveur, jamais un calcul d’ici', () => {
-    const attendus = fil.items.flatMap((r) => [r.canEdit, ...r.replies.map((x) => x.canEdit)]);
+    const attendus = racinesLisibles(fil.items).flatMap((r) => [
+      r.canEdit,
+      ...reponsesLisibles(r).map((x) => x.canEdit),
+    ]);
     expect(lignes.map((l) => l.canEdit)).toEqual(attendus);
   });
 });
@@ -117,9 +150,9 @@ describe('`GET /posts/:id` sert déjà le fil, et A02 s’en sert', () => {
 
   it('les commentaires du détail se convertissent par le même chemin', () => {
     const lignes = commentairesA02From(detail.comments.items);
+    const racines = racinesLisibles(detail.comments.items);
     expect(lignes.length).toBe(
-      detail.comments.items.length +
-        detail.comments.items.reduce((n, r) => n + r.replies.length, 0),
+      racines.length + racines.reduce((n, r) => n + reponsesLisibles(r).length, 0),
     );
   });
 });

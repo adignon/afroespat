@@ -21,10 +21,35 @@ export default async function Page({
   const { slug } = await params;
   const query = await searchParams;
   const onglet = query['onglet'];
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ L'ADRESSE NUE OUVRE LE FIL, ET ELLE OUVRAIT « SUJETS »                     ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur, capture à l'appui : « La page des réseaux doit s'ouvrir par défaut
+   * sur le fil d'actualité. »
+   *
+   * MESURÉ au navigateur avant de toucher quoi que ce soit, sur
+   * `/reseaux/pays-bj` sans paramètre : l'onglet actif était « Sujets » — bordure
+   * `rgb(22, 120, 94)` et graisse 700 sur « Sujets », bordure transparente et
+   * graisse 500 sur « Fil ». Ce n'était donc pas une navigation qui laissait
+   * traîner un onglet : c'est ce `'sujets'` qui le décidait, et lui seul.
+   *
+   * ⚠ CE DÉFAUT NE SE VOYAIT PAS DANS `reseau-screen.tsx`, et c'est pour cela
+   * qu'il a duré : ce fichier-là traite déjà « Fil » comme un onglet ordinaire, et
+   * son repli (« un onglet inconnu retombe sur Sujets ») reste juste — il parle
+   * d'un `?onglet=` ILLISIBLE, pas de son absence. Les deux cas se ressemblent et
+   * ne veulent pas dire la même chose : une adresse sans paramètre est une arrivée
+   * sur le réseau, un paramètre inconnu est une adresse abîmée.
+   *
+   * `'sujets'` reste la valeur que `reseau-screen.tsx` emploie pour le CADRE
+   * COMPLET de A08 — la maquette dessine son onglet « Sujets » avec le rail — et
+   * rien de cela ne change : seule la valeur par DÉFAUT bouge.
+   */
   return (
     <ReseauScreen
       slug={slug}
-      onglet={typeof onglet === 'string' ? onglet : 'sujets'}
+      onglet={typeof onglet === 'string' ? onglet : 'fil'}
       owner={query['vue'] === 'proprietaire'}
     />
   );

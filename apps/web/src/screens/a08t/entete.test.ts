@@ -74,6 +74,8 @@ const RESEAU: CommunityDetailResponse = {
   myRole: 'MEMBER',
   myStatus: 'ACTIVE',
   canJoin: false,
+  /** §2.5 — ajouté au contrat par le lot « sourdine » (2026-10-11). */
+  myMuted: false,
   canLeave: true,
   counters: { members: 7, topics: 3, announcements: 1 },
   pinned: [],

@@ -67,7 +67,7 @@ export { panel, rail } from '../a01/data';
 import { panel } from '../a01/data';
 
 /** « Réseaux » est la quatrième entrée : c'est elle qui s'allume sur A07–A10. */
-export const panelReseaux = panel(3);
+export const panelReseaux = panel('Réseaux');
 
 export const chip = (label: string, on = false) => ({
   label,
@@ -103,7 +103,53 @@ export const NET_TABS = ['Fil', 'Sujets', 'Événements', 'Membres', 'Album', '�
  * cadre complet que dans sa branche `plain`, qui exige `!owner`) : aucun
  * `&vue=proprietaire` n'a donc à voyager ici.
  */
-const NET_TAB_SLUGS = ['fil', 'sujets', 'evenements', 'membres', 'album', 'a-propos'] as const;
+export const NET_TAB_SLUGS = ['fil', 'sujets', 'evenements', 'membres', 'album', 'a-propos'] as const;
+
+/**
+ * LE RANG DE L'ONGLET « MEMBRES », LU DANS LA TABLE ET NON RECOPIÉ.
+ *
+ * `useReseau` ne charge la liste des membres que sur cet onglet-là — deux appels
+ * de plus sur chacun des cinq autres seraient du gaspillage pur. Il lui faut donc
+ * le rang, et un `3` écrit à la main serait une seconde source : il suffirait
+ * d'insérer un onglet dans `NET_TABS` pour que le chargement se mette à suivre
+ * « Album ». On le DÉRIVE.
+ */
+export const RANG_ONGLET_MEMBRES = NET_TAB_SLUGS.indexOf('membres');
+
+/**
+ * LE RANG DE L'ONGLET « FIL », DÉRIVÉ POUR LA MÊME RAISON QUE CELUI DES MEMBRES.
+ *
+ * `useReseau` ne charge les publications du réseau et son annonce épinglée que sur
+ * cet onglet-là — deux appels de plus sur chacun des cinq autres seraient du
+ * gaspillage pur.
+ *
+ * ⚠ C'EST AUSSI L'ONGLET PAR DÉFAUT depuis l'arbitrage du porteur (« la page des
+ * réseaux doit s'ouvrir par défaut sur le fil d'actualité »), ce qui le rend le
+ * plus visité du module : c'est `app/(app)/reseaux/[slug]/page.tsx` qui le décide,
+ * et cette constante ne fait que nommer son rang dans la barre.
+ */
+export const RANG_ONGLET_FIL = NET_TAB_SLUGS.indexOf('fil');
+
+/**
+ * LE RANG DE L'ONGLET « ÉVÉNEMENTS », DÉRIVÉ POUR LA MÊME RAISON QUE LES DEUX
+ * AUTRES.
+ *
+ * `useReseau` ne charge les événements du réseau que sur cet onglet-là : un
+ * appel de plus sur chacun des cinq autres serait du gaspillage pur, et celui-ci
+ * se recharge à chaque bascule de pastille (« À venir » / « Passés »).
+ */
+export const RANG_ONGLET_EVENEMENTS = NET_TAB_SLUGS.indexOf('evenements');
+
+/**
+ * LE RANG DE L'ONGLET « ALBUM », DÉRIVÉ POUR LA MÊME RAISON QUE LES TROIS AUTRES.
+ *
+ * `useReseau` ne charge les albums que sur cet onglet-là, et il y fait DEUX
+ * appels : `GET /communities/:id/albums` pour les albums, et
+ * `GET /feed?communityId=` pour l'onglet « Partagés » — qui n'est pas un album
+ * mais les images des publications. Les lancer sur les cinq autres onglets
+ * doublerait l'appel de fil que l'onglet « Fil » fait déjà.
+ */
+export const RANG_ONGLET_ALBUM = NET_TAB_SLUGS.indexOf('album');
 
 export const netTabsFor = (active: number) =>
   NET_TABS.map((l, i) => ({ ...tab(l, i === active), href: `?onglet=${NET_TAB_SLUGS[i]}` }));

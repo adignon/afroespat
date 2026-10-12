@@ -9,6 +9,7 @@ import { K02Desktop } from '@/screens/k02/desktop.generated';
 import { K02Mobile } from '@/screens/k02/mobile.generated';
 import { K02Ajout } from '@/screens/k02contact/ajout.generated';
 import { ProfilContactVivant } from '@/screens/compte/profil-contact-vivant';
+import { CartesFilVivantes } from '@/screens/accueil/cartes-fil-vivantes';
 
 /**
  * K02 — le profil d'un autre membre, et la fenêtre « Ajouter aux contacts ».
@@ -76,21 +77,39 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
       {(donnees) => (
         <ProfilContactVivant donnees={donnees} pseudo={pseudo} onFermerAjout={onFermer}>
           {(vivantes) => (
-            <EcranCompte
-              screen="K02"
-              desktop={<K02Desktop {...vivantes} />}
-              mobile={<K02Mobile {...vivantes} />}
-              ouverte={ouverte}
-              onOuvrir={onOuvrir}
-              onFermer={onFermer}
-              /**
-               * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut : son
-               * titre nomme le membre visité (« Ajouter Fatou aux contacts »). Figé,
-               * il disait « Fatou » sur le profil de Kofi — la fenêtre aurait menti
-               * par-dessus un écran qui, lui, disait vrai.
-               */
-              modales={{ K02C: { mobile: <K02Ajout {...vivantes} /> } }}
-            />
+            /**
+             * ╔══════════════════════════════════════════════════════════════╗
+             * ║ LA CARTE DU FIL GARDE SES GESTES SUR LE PROFIL              ║
+             * ╚══════════════════════════════════════════════════════════════╝
+             *
+             * Le porteur : « les actions de la carte de fil d'actualité ne
+             * marchent pas (like, comment, partager, bookmarks). Normalement tu
+             * dois ramener toute leur interactivité aussi. »
+             *
+             * Le DESSIN était extrait, pas les GESTES : une carte qui ressemble à
+             * la bonne et ne fait rien. `CartesFilVivantes` les attache — réaction,
+             * signet, commentaires, partage — en appelant LES MÊMES fonctions que
+             * la page du fil.
+             */
+            <CartesFilVivantes cartes={vivantes.contenuPublications ?? []}>
+              {(cartes) => (
+                <EcranCompte
+                  screen="K02"
+                  desktop={<K02Desktop {...vivantes} contenuPublications={cartes} />}
+                  mobile={<K02Mobile {...vivantes} contenuPublications={cartes} />}
+                  ouverte={ouverte}
+                  onOuvrir={onOuvrir}
+                  onFermer={onFermer}
+                  /**
+                   * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut :
+                   * son titre nomme le membre visité (« Ajouter Fatou aux
+                   * contacts »). Figé, il disait « Fatou » sur le profil de Kofi — la
+                   * fenêtre aurait menti par-dessus un écran qui, lui, disait vrai.
+                   */
+                  modales={{ K02C: { mobile: <K02Ajout {...vivantes} /> } }}
+                />
+              )}
+            </CartesFilVivantes>
           )}
         </ProfilContactVivant>
       )}

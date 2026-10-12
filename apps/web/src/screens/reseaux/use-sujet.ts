@@ -4,11 +4,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TopicDetailResponse } from '@app/shared';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
 import { deleteTopic, fetchTopic, updateTopic } from './api';
-import { repliesFrom } from './from-api';
+/**
+ * `POST /comments` VIENT DU MODULE ACCUEIL, ET CE N'EST PAS UN EMPRUNT HASARDEUX.
+ *
+ * Les réponses d'un sujet sont des `Comment` de la table polymorphe — le service
+ * les lit en `{ subjectType: 'TOPIC', subjectId }` — et la seule route qui en
+ * écrit est `POST /comments`, portée par `CommentsController` du module Feed.
+ * `screens/accueil/api.ts` l'appelle déjà, avec `createCommentSchema.parse`
+ * avant l'envoi. En recopier un second appel dans `reseaux/api.ts` donnerait deux
+ * sources pour la même route, et ce fichier dit partout ailleurs pourquoi deux
+ * sources divergent toujours.
+ */
+import { createComment } from '../accueil/api';
+import { repliesFrom, sujetTeteFrom } from './from-api';
 import { echecDe, type ReseauEchec } from './echec';
 import { panelReseaux, rail } from './chrome';
-import type { A09Data, CommentRowView } from '../a09/data';
-import { modActions, shortcuts } from '../a09/data';
+import type { A09Data, CommentRowView, SujetTeteView } from '../a09/data';
+import { modActions, shortcuts, teteVide } from '../a09/data';
 
 /**
  * L'ÉTAT DE A09 — un sujet et ses réponses.
@@ -50,6 +62,17 @@ export interface SujetEtat {
    * pas d'autre : `NONE | RULES | RESOURCE | WELCOME`. Pas d'« IMPORTANT ».
    */
   readonly epingler: (kind: 'NONE' | 'RULES' | 'RESOURCE' | 'WELCOME') => Promise<void>;
+  /**
+   * ⚠ CE N'EST PAS CE QUE LE BOUTON « MARQUER RÉSOLU » APPELLE.
+   *
+   * Le bouton des deux cadres passe par `data.onResoudre`, qui ajoute le verrou
+   * du double clic et rend la promesse au `finally` qui le relâche. Celui-ci
+   * reste exposé pour un appelant qui gérerait son attente lui-même — personne
+   * ne le fait aujourd'hui, et il n'est conservé qu'avec `epingler` et
+   * `masquer`, les trois gestes du panneau MODÉRATION qu'aucun écran ne branche
+   * encore. À ne pas câbler en second chemin sur le même bouton : deux appels
+   * pour un clic est exactement ce que le verrou évite.
+   */
   readonly resoudre: () => Promise<void>;
   /**
    * `masquer` est le SEUL geste qui retire un sujet de la vue.
@@ -63,6 +86,11 @@ export interface SujetEtat {
    * plutôt que comblé ici.
    */
   readonly masquer: () => Promise<void>;
+  /**
+   * RÉPONDRE. Rend l'échec, ou `null` — comme `commenter()` de `usePublication`,
+   * dont ce geste est le jumeau : l'appelant décide s'il met une alerte ou pas.
+   */
+  readonly repondre: (corps: string) => Promise<ReseauEchec | null>;
 }
 
 export function useSujet(topicId: string): SujetEtat {
@@ -71,6 +99,10 @@ export function useSujet(topicId: string): SujetEtat {
   const [pret, setPret] = useState(false);
   const [echec, setEchec] = useState<ReseauEchec | null>(null);
   const [tick, setTick] = useState(0);
+  /** Le brouillon de réponse, et le verrou du double envoi. */
+  const [reponseTexte, setReponseTexte] = useState('');
+  const [envoiEnCours, setEnvoiEnCours] = useState(false);
+  const [resolutionEnCours, setResolutionEnCours] = useState(false);
 
   const reprise = useRef<Promise<boolean> | null>(null);
 
@@ -118,10 +150,57 @@ export function useSujet(topicId: string): SujetEtat {
     [sujet],
   );
 
-  const data: A09Data = useMemo(
-    () => ({ rail, shortcuts, panelReseaux, comments, modActions }),
-    [comments],
+  const tete: SujetTeteView = useMemo(
+    () => (sujet === null ? teteVide : sujetTeteFrom(sujet)),
+    [sujet],
   );
+
+  /**
+   * RÉPONDRE, PUIS RELIRE LE SUJET — on n'insère pas la réponse à la main.
+   *
+   * `usePublication.commenter()` insère le commentaire que le serveur rend, et
+   * c'est juste là-bas : la fenêtre A01C lit `GET /comments`, donc la forme reçue
+   * à la création est EXACTEMENT celle de la liste.
+   *
+   * Ici elles diffèrent. `POST /comments` rend un `CommentView` (avec
+   * `relativeTime`, `canEdit`, `isAuthor`, `replies`) ; `GET /topics/:id` rend un
+   * `TopicReply`, qui n'a que cinq champs. Fabriquer l'un depuis l'autre
+   * demanderait d'inventer les champs manquants — et `replyCount` resterait
+   * périmé dans la tête. On relit donc le sujet, qui est la SEULE source de ses
+   * réponses, et le `tick` existe déjà pour ça (`masquer` l'emploie).
+   *
+   * Un `429` n'est PAS rejoué : voir le même choix dans `usePublication`.
+   */
+  const repondre = useCallback(
+    async (corps: string): Promise<ReseauEchec | null> => {
+      if (topicId === '') return null;
+      try {
+        await createComment({ subjectType: 'TOPIC', subjectId: topicId, body: corps });
+        setTick((t) => t + 1);
+        return null;
+      } catch (e) {
+        return echecDe(e);
+      }
+    },
+    [topicId],
+  );
+
+  const onEnvoyerReponse = useCallback((): void => {
+    const corps = reponseTexte.trim();
+    if (corps === '' || envoiEnCours) return;
+    setEnvoiEnCours(true);
+    void repondre(corps)
+      .then((e) => {
+        /**
+         * LE BROUILLON N'EST VIDÉ QUE SI L'ENVOI A PASSÉ. Le vider d'abord
+         * perdrait le texte sur un `429` ou une coupure de réseau — et c'est
+         * précisément quand on perd le plus à le perdre.
+         */
+        if (e === null) setReponseTexte('');
+        else setEchec(e);
+      })
+      .finally(() => setEnvoiEnCours(false));
+  }, [envoiEnCours, reponseTexte, repondre]);
 
   /**
    * Les quatre gestes de modération. Tous TENTENT, aucun ne vérifie d'abord.
@@ -141,6 +220,40 @@ export function useSujet(topicId: string): SujetEtat {
       }
     },
     [topicId],
+  );
+
+  /**
+   * « Marquer résolu ». Le bouton est MONTRÉ d'après `canResolve` et ÉTEINT
+   * pendant l'envoi comme sur un sujet qui n'est plus ouvert — repatcher
+   * `RESOLVED` sur un sujet résolu est un appel qui ne dit rien.
+   *
+   * `canResolve` est un RÔLE (auteur ou modérateur), pas un niveau : l'éteindre
+   * est ce que `lib/capacites.ts` fait pour les niveaux, et ici c'est le serveur
+   * qui vient de le calculer, à cette lecture-ci.
+   */
+  const onResoudre = useCallback((): void => {
+    if (resolutionEnCours) return;
+    setResolutionEnCours(true);
+    void patch({ status: 'RESOLVED' }).finally(() => setResolutionEnCours(false));
+  }, [patch, resolutionEnCours]);
+
+  const data: A09Data = useMemo(
+    () => ({
+      rail,
+      shortcuts,
+      panelReseaux,
+      comments,
+      modActions,
+      sujet: tete,
+      reponseTexte,
+      onReponseTexte: (event: { target: { value: string } }) => setReponseTexte(event.target.value),
+      onEnvoyerReponse,
+      reponseBloquee: envoiEnCours || reponseTexte.trim() === '',
+      resoudreVisible: sujet?.canResolve === true,
+      resoudreBloque: resolutionEnCours || sujet === null || sujet.status !== 'OPEN',
+      onResoudre,
+    }),
+    [comments, envoiEnCours, onEnvoyerReponse, onResoudre, reponseTexte, resolutionEnCours, sujet, tete],
   );
 
   return {
@@ -164,5 +277,6 @@ export function useSujet(topicId: string): SujetEtat {
         setEchec(echecDe(e));
       }
     }, [topicId]),
+    repondre,
   };
 }

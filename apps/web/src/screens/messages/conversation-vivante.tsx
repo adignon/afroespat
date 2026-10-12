@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { ApiError } from '@/lib/api/index';
 import { notifyError, notifySuccess as notifySucces } from '@/components/notifications';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
+import { FenetreNiveau } from '@/components/fenetre-niveau';
+import { useCapacites } from '@/lib/capacites';
+import type { Capability } from '@app/shared';
 import {
   bloquerMembre,
   deposerImageDeMessage,
@@ -106,6 +109,9 @@ export function ConversationVivante({
   const cible = conversationId ?? donnees.conversationOuverte ?? null;
   const [texte, setTexte] = useState('');
   const [enVol, setEnVol] = useState(false);
+  const { peut } = useCapacites();
+  /** La capacité refusée au dernier geste — elle ouvre l'invitation à monter. */
+  const [niveauRefuse, setNiveauRefuse] = useState<Capability | null>(null);
   const [images, setImages] = useState<readonly Jointe[]>([]);
   const [emojisOuverts, setEmojisOuverts] = useState(false);
   const [blocageDemande, setBlocageDemande] = useState(false);
@@ -373,6 +379,17 @@ export function ConversationVivante({
     },
     envoiBloque: motif === null || enVol || (donnees.conversationUserId ?? null) === null,
     onEnvoyer: () => {
+      /**
+       * ── SIGNALER DEMANDE N2 DEPUIS LE 2026-10-09 ────────────────────────
+       *
+       * Le porteur a rangé `report.create` avec « tout le reste ». On le dit
+       * AVANT l'envoi : laisser partir la requête rendrait un 403 après que le
+       * motif et le détail ont été écrits.
+       */
+      if (!peut('report.create')) {
+        setNiveauRefuse('report.create');
+        return;
+      }
       const sujet = donnees.conversationUserId ?? null;
       if (motif === null || sujet === null || enVol) return;
       setEnVol(true);
@@ -481,6 +498,12 @@ export function ConversationVivante({
         onConfirmer={confirmerBlocage}
         onAnnuler={() => {
           setBlocageDemande(false);
+        }}
+      />
+      <FenetreNiveau
+        capacite={niveauRefuse}
+        onFermer={() => {
+          setNiveauRefuse(null);
         }}
       />
       {children(enrichies, menu, signalement)}

@@ -1,8 +1,12 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { ScreenFrames } from '@/screens/frames';
 import { A08Desktop } from '@/screens/a08/desktop.generated';
+import { A08ChromeGaucheDesktop } from '@/screens/a08/chromegauche-desktop.generated';
+import { A08BarreHauteDesktop } from '@/screens/a08/barrehaute-desktop.generated';
 import { A08Mobile } from '@/screens/a08/mobile.generated';
 import { A08TFil } from '@/screens/a08t/fil.generated';
 import { A08TEvenements } from '@/screens/a08t/evenements.generated';
@@ -32,6 +36,28 @@ import { A08TAdminAnnonceMobile } from '@/screens/a08t/adminannoncemobile.genera
 import { a08Fallback } from '@/screens/a08/data';
 import type { A08TData } from '@/screens/a08t/data';
 import { useReseau } from '@/screens/reseaux/use-reseau';
+import { useAnnonce } from '@/screens/reseaux/use-annonce';
+import { FenetreConfirmation } from '@/components/fenetre-confirmation';
+import { FenetreEcrire } from '@/components/fenetre-ecrire';
+/**
+ * LA FENÊTRE « NOUVEL ALBUM », pour le « Ajouter un album » du menu de l'onglet
+ * « Album ».
+ *
+ * `POST /communities/:id/albums` prend un `title` OBLIGATOIRE (3–80), et AUCUNE
+ * des quatre planches de l'onglet ne dessine de champ pour le saisir — compté.
+ * Voir l'en-tête du composant, qui dit aussi d'où vient son châssis.
+ */
+import { FenetreAlbum } from '@/components/fenetre-album';
+/**
+ * L'INVITATION À MONTER DE NIVEAU, pour le refus de « Je viens ».
+ *
+ * `event.attend` est en N2 et le front PRÉVIENT sans autoriser (mémo §5) : on
+ * tente, le serveur refuse en `403 LEVEL_REQUIRED`, et cette fenêtre écrit le
+ * niveau exigé, la fonctionnalité et les conditions — tous lus sur la table que
+ * le serveur applique, aucun mot écrit ici.
+ */
+import { FenetreNiveau } from '@/components/fenetre-niveau';
+import { CartesFilVivantes } from '@/screens/accueil/cartes-fil-vivantes';
 
 /**
  * A08 et ses treize onglets. `/reseaux/:slug`
@@ -44,22 +70,34 @@ import { useReseau } from '@/screens/reseaux/use-reseau';
  * D'ÉTAT de cet écran, et elles vivent sur cette route, pas sur treize routes
  * inventées.
  *
- * ── CE QUE ÇA COÛTE, ET IL FAUT LE DIRE ─────────────────────────────────────
+ * ── LE MENU DE GAUCHE MANQUAIT, ET IL EST MAINTENANT EMPRUNTÉ ───────────────
  *
- * Sur ORDINATEUR, le cadre de A08 contient à la fois le rail, la barre haute et le
- * contenu de l'onglet « Sujets » — en un seul bloc. Rien dans la déclaration d'un
- * écran ne sait aujourd'hui découper un cadre en « chrome » et « contenu », donc on
- * ne peut pas glisser une planche A08T DANS le cadre de A08. Changer d'onglet
- * remplace donc tout le cadre, et le rail disparaît le temps de cet onglet — parce
- * que la maquette ne le dessine pas sur ces planches.
+ * Le porteur, capture à l'appui : « la page de fil d'actualité N'A PAS DE MENU DE
+ * GAUCHE ». MESURÉ avant correction, fenêtre de 1 440 px : sur
+ * `?onglet=sujets` le lien « Accueil » du rail est à x = 32, y = 88 ; sur
+ * `?onglet=fil` il n'existe pas du tout, et le cadre n'a qu'UN enfant large de
+ * 1 440 px — la planche d'onglet, collée au bord gauche.
  *
- * Écrire le rail à la main pour combler le trou serait RÉÉCRIRE la maquette, ce
- * qu'on ne fait pas. Ce qu'il faudrait est un `slot` dans la déclaration de cadre :
- * « garde tout jusqu'à la barre de 64 px, remplace la suite par `{children}` ». Une
- * demi-journée d'outillage, et ce serait juste pour A08 comme pour A12.
+ * ── CE QUI ÉTAIT ÉCRIT ICI, ET POURQUOI CE N'EST PLUS VRAI ──────────────────
  *
- * Sur MOBILE il n'y a AUCUN manque : les douze planches de MOB2 sont des téléphones
- * complets, barre basse comprise. La navigation par onglets y est entière.
+ * Cet en-tête disait : « rien dans la déclaration d'un écran ne sait découper un
+ * cadre en chrome et contenu […] ce qu'il faudrait est un `slot` […] une
+ * demi-journée d'outillage ». La deuxième phrase était juste, la première ne
+ * l'était plus : `regions:` existe — il extrait une région bornée d'un cadre vers
+ * son propre fichier généré, et A06 s'en sert déjà pour son panneau de
+ * correction. Il lui manquait seulement de savoir porter PLUSIEURS prises (le
+ * menu de gauche en lit trois : `rail`, `panelReseaux`, `shortcuts`).
+ *
+ * A08 déclare donc deux régions — `ChromeGauche` et `BarreHaute` — et cette page
+ * les monte AUTOUR de la planche d'onglet. Rien n'est redessiné : la source reste
+ * le cadre de A08, au caractère près, et la maquette l'autorise en toutes
+ * lettres — la section A08T porte la légende « zone de contenu seule · MENU DE
+ * GAUCHE ET BARRE HAUTE IDENTIQUES À A08 ».
+ *
+ * Sur MOBILE il n'y a AUCUN manque, et c'est mesuré : les planches de MOB2 sont
+ * des téléphones complets, barre basse comprise — à 390 px, sur l'onglet
+ * « Fil », le lien « Accueil » de la barre basse est à y = 766. La navigation par
+ * onglets y est entière, donc on n'y monte rien.
  */
 
 /** Les onglets, dans l'ordre de la maquette, et leur nom dans l'URL. */
@@ -148,6 +186,40 @@ const BOARD: React.CSSProperties = {
 };
 
 /**
+ * ╔═══════════════════════════════════════════════════════════════════════════╗
+ * ║ LA COLONNE DE DROITE DE A08, RECOPIÉE DEPUIS SA PLANCHE — DEUX STYLES    ║
+ * ╚═══════════════════════════════════════════════════════════════════════════╝
+ *
+ * `regions:` extrait des ÉLÉMENTS — le menu de gauche, la barre haute — jamais les
+ * deux conteneurs qui les tiennent : ceux-là contiennent aussi le CONTENU de A08,
+ * c'est-à-dire ses sujets, qu'on ne veut surtout pas emporter ici.
+ *
+ * Ces deux styles sont donc recopiés de `a08/desktop.generated.tsx`, au caractère
+ * près, et c'est la MÊME nature de transcription que `BOARD` juste au-dessus — qui
+ * porte depuis le début le conteneur que le générateur retire aux planches A08T.
+ * Aucune valeur n'est inventée : ni le retrait de 24 px à droite, ni les 12 px de
+ * haut, ni l'écart de 16, ni la borne de 1 036 px — qui est précisément la largeur
+ * à laquelle la maquette dessine les vingt-cinq planches d'onglet. C'est ce qui
+ * fait que la zone de contenu tombe exactement là où A08 la dessine.
+ */
+const COLONNE_DROITE: React.CSSProperties = {
+  flex: '1',
+  minWidth: '0',
+  display: 'flex',
+  flexDirection: 'column',
+  paddingRight: '24px',
+};
+
+const ZONE_CONTENU: React.CSSProperties = {
+  flex: '1',
+  padding: '12px 0 24px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '16px',
+  maxWidth: '1036px',
+};
+
+/**
  * ── CE QUE LES VINGT-CINQ PLANCHES LISENT MAINTENANT ───────────────────────
  *
  * Leur EN-TÊTE — le nom du réseau, ses initiales, son nombre de membres, son
@@ -162,13 +234,47 @@ const BOARD: React.CSSProperties = {
  *
  * ── CE QUI RESTE DESSINÉ, ET IL FAUT LE DIRE ──────────────────────────────
  *
- * Le CONTENU de chaque onglet : les photos de l'album, les événements, les
- * publications du fil, les lignes de membres. Chacun a sa route
- * (`GET /communities/:id/{albums,events,feed,members}`) et demande son propre
- * état — un hook par onglet, avec sa pagination et son refus `403`. Ce n'est pas
- * du branchement de cadre, et `useReseau` n'en appelle aujourd'hui que quatre.
- * REMONTÉ au rapport de lot ; d'ici là l'en-tête dit la vérité et le corps est
- * l'esquisse de la maquette.
+ * ⚠ CE PARAGRAPHE NOMMAIT QUATRE ONGLETS DE CONTENU DESSINÉ — album,
+ * événements, fil, membres — et IL N'EN RESTE AUCUN. Le FIL montre ses vraies
+ * publications (`A08T_FIL_PUBLICATIONS`), l'onglet MEMBRES ses vrais membres
+ * (`A08T_MEMBRES_VUE_MEMBRE`), l'onglet ÉVÉNEMENTS ses vrais événements
+ * (`A08T_EVENEMENTS`), et l'onglet ALBUM ses vraies photos depuis ce lot
+ * (`A08T_ALBUM`) — chacun sur ses quatre planches et aux deux largeurs.
+ *
+ * ⚠ CE QUI RESTE DESSINÉ SUR L'ONGLET « ALBUM », et il faut le dire : le voile
+ * « Masquer · Couverture » de la planche propriétaire de 1 036 px et la bande
+ * « 1 photo sélectionnée » de celle de 390 px. Les deux étaient déjà inertes, et
+ * aucune route ne les porte — le modèle `Album` n'a pas de colonne de couverture,
+ * et « Masquer » ne se distingue pas de la sélection. REMONTÉS : il manque une
+ * planche « une tuile et ses gestes ».
+ *
+ * ── ET LA ROUTE QUI MANQUAIT AUX ÉVÉNEMENTS A ÉTÉ ÉCRITE ──────────────────
+ *
+ * Ce paragraphe disait, et il avait raison au jour où il a été écrit :
+ * « `eventsQuerySchema` est `.strict()` et ne porte AUCUN filtre de réseau […]
+ * il n'existe pas de `GET /communities/:id/events` ». Les deux constats étaient
+ * mesurés, et c'est pour cela que le lot précédent s'est arrêté : brancher
+ * « Je viens » sur les trois événements DESSINÉS aurait fait s'inscrire à des
+ * événements qui n'existent dans aucune base.
+ *
+ * `communityId` a été ajouté à `eventsQuerySchema` et au `visibleWhere` du
+ * service — il s'AJOUTE aux règles de visibilité, il n'en remplace aucune, et
+ * son en-tête dit pourquoi c'est l'inverse de ce que fait le fil. L'onglet lit
+ * donc `GET /events?communityId=…`, ses deux pastilles choisissent la fenêtre
+ * (`?to=hier` pour les passés), « Je viens » appelle `PUT /events/:id/rsvp` et
+ * « Voir » mène à `/agenda/:id`.
+ *
+ * ⚠ CE QUI RESTE DESSINÉ SUR CET ONGLET, et il faut le dire : le bouton
+ * « Créer un événement du réseau » des deux planches propriétaire (il demande
+ * le formulaire entier de `POST /events`, que la planche ne dessine pas), et
+ * l'aside « CE MOIS-CI · 3 · événements du réseau · 132 inscrits » des deux
+ * planches de 1 036 px (aucune route ne la porte : la liste filtrée ne compte
+ * que la fenêtre demandée, pas le mois civil). REMONTÉS tous les deux.
+ *
+ * Les deux filtres de l'onglet « Membres » restent dessinés eux aussi — le champ
+ * « Rechercher parmi N membres » est un `<div>`, les pastilles « Tous ·
+ * Modérateurs · Lyon » des `<span>` —, alors que `memberListQuerySchema` porte
+ * `q` et `role`. REMONTÉ.
  */
 export function ReseauScreen({
   onglet,
@@ -182,10 +288,63 @@ export function ReseauScreen({
   const slug = onglet;
   const rang = Math.max(0, SLUGS.indexOf(slug as (typeof SLUGS)[number]));
 
-  const { data, onglet: enteteOnglet, pret, echec, membre, contenuFerme, reseau } = useReseau(
-    reseauSlug,
-    rang,
-  );
+  const {
+    data,
+    onglet: enteteOnglet,
+    pret,
+    echec,
+    membre,
+    contenuFerme,
+    reseau,
+    gerer,
+    contactEchec,
+    ecrire,
+    evenements,
+    evenementsPrets,
+    album,
+  } = useReseau(reseauSlug, rang);
+
+  const router = useRouter();
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LE FORMULAIRE D'ANNONCE — SON ÉTAT VIT ICI, PAS DANS `useReseau`          ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « L'annonce : tous les champs doivent être branchés. » Les deux
+   * cadres d'annonce étaient entièrement inertes, et le contrat lui-même était en
+   * deçà du dessin — voir l'en-tête de `use-annonce.ts`.
+   *
+   * ── POURQUOI UN CROCHET À PART, ET APPELÉ SANS CONDITION ───────────────────
+   *
+   * `useReseau` porte la fiche, les sujets, les demandes et la modération : il est
+   * déjà la chose la plus chargée du module, et l'état d'un FORMULAIRE n'a rien à
+   * voir avec le chargement d'un réseau. `useAnnonce` ne fait aucun appel au
+   * montage — il n'écrit que sur `onPublier` — donc le monter sur les vingt-cinq
+   * onglets ne coûte rien, et un crochet appelé conditionnellement serait de
+   * toute façon interdit.
+   *
+   * ── APRÈS PUBLICATION, ON REVIENT AU FIL ──────────────────────────────────
+   *
+   * C'est la page qui le décide, parce qu'elle a le routeur : la même publication
+   * demandée depuis une feuille n'irait pas au même endroit. Le fil est l'onglet
+   * d'où la rangée « Outils du propriétaire » mène ici, et c'est aussi là que
+   * l'annonce épinglée apparaît — « Épingler en haut du fil ».
+   *
+   * `router.push` et non `router.back` : la publication a changé l'état du
+   * réseau, et revenir en arrière rejouerait l'entrée d'historique du formulaire.
+   * « Annuler », lui, ne change rien et revient donc par le même chemin que la
+   * croix d'A10 — `router.back()`.
+   */
+  const versLeFil = useCallback(() => {
+    router.push(`/reseaux/${encodeURIComponent(reseauSlug)}?onglet=fil&vue=proprietaire`);
+  }, [reseauSlug, router]);
+
+  const surAnnulation = useCallback(() => {
+    router.back();
+  }, [router]);
+
+  const { annonce } = useAnnonce(reseauSlug, versLeFil, surAnnulation);
 
   const table = owner ? PROPRIETAIRE : MEMBRE;
   // Un onglet inconnu — ou réservé au propriétaire quand on ne l'est pas — retombe
@@ -197,6 +356,24 @@ export function ReseauScreen({
   const plain = (slug === 'sujets' || tab === undefined) && !owner;
 
   const a08 = pret && echec === null ? data : a08Fallback;
+
+  /**
+   * LES PRISES D'ANNONCE SONT FUSIONNÉES DANS L'OBJET DES VINGT-CINQ PLANCHES.
+   *
+   * `reseau-screen` passe le MÊME `A08TData` à toutes — c'est la raison écrite
+   * dans `a08t/data.ts` pour `gerer` — et les planches qui n'en lisent rien ne le
+   * déstructurent pas : le générateur ne déclare que ce que le JSX emploie.
+   *
+   * ⚠ LA FUSION VIENT APRÈS `enteteOnglet` et l'écrase donc : `useReseau` rend
+   * `a08tFallback` tant que l'appel n'est pas revenu, et son `annonce` est le
+   * composeur VIDE, aux gestes inertes. Sans cette priorité, le formulaire serait
+   * mort pendant tout le chargement de la fiche — alors qu'il n'a besoin d'aucune
+   * donnée du réseau pour fonctionner.
+   */
+  const ongletAvecAnnonce: A08TData = useMemo(
+    () => ({ ...enteteOnglet, annonce }),
+    [annonce, enteteOnglet],
+  );
 
   /**
    * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -234,12 +411,146 @@ export function ReseauScreen({
    * le panneau de gauche, la colonne de droite et l'en-tête de recherche restent
    * à l'écran pendant que le fil défile.
    */
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LA CONFIRMATION DU RETRAIT — UNE SEULE INSTANCE, DANS L'ÉCRAN              ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Emploie `components/fenetre-confirmation.tsx`. » §2.4 donne
+   * aux modérateurs le droit de « retirer un membre (`BANNED` : ne peut plus
+   * rejoindre) », et c'est le SEUL geste du module qui ne se défait pas :
+   * `invite()` refuse de réinviter un banni, `join()` répond
+   * `403 BANNED_FROM_COMMUNITY`. Les autres se défont — nommer modérateur se
+   * révoque, masquer se démasque (13 §2), mettre en sourdine se rallume d'un
+   * second clic — et leur poser une question serait du bruit.
+   *
+   * ── ELLE DIT CE QUE LES LIBELLÉS DESSINÉS NE DISENT PAS ──────────────────
+   *
+   * La maquette dessine DEUX entrées dans le menu de rôle — « Retirer du
+   * réseau » et « Bannir du réseau » — alors que §2.4 n'en définit qu'UNE. Les
+   * deux mènent donc au même geste, et c'est `precision` qui porte la vérité :
+   * définitif, et la personne ne pourra plus rejoindre. REMONTÉ : deux entrées
+   * pour un geste invitent à croire qu'il y en a deux ; au porteur de retirer
+   * l'une des deux rangées du dessin.
+   *
+   * ── POURQUOI ICI ET NON DANS LE CADRE GÉNÉRÉ ─────────────────────────────
+   *
+   * ⚠ ELLE Y A ÉTÉ, ET ÇA NE MARCHAIT PAS. Mesuré au navigateur :
+   * `ScreenFrames` rend les DEUX cadres et n'en masque qu'un par
+   * `display: none`, et `Modal` se PORTALISE vers `document.body`. Deux copies
+   * dans les deux cadres s'ouvraient donc ENSEMBLE sur le même
+   * `gerer.bannirOuverte`, et le voile de celle du cadre masqué interceptait les
+   * clics de l'autre — « subtree intercepts pointer events », cinquante-sept
+   * tentatives de clic. S'y ajoutait deux fois le même `id` de titre, ce que
+   * l'en-tête de `Modal` nomme déjà comme un défaut d'`aria-labelledby`.
+   *
+   * UNE SEULE INSTANCE RÈGLE LES DEUX, et la correction prend bien sur les deux
+   * planches : c'est `Modal` qui choisit entre son panneau d'ordinateur et sa
+   * feuille de téléphone (`DESKTOP_QUERY`), pas deux copies qui se gênent.
+   *
+   * ⚠ ELLE EST RENDUE SUR LES DEUX BRANCHES de ce composant — l'écran A08
+   * (`plain`) et les planches d'onglet — parce que le menu de rôle vit sur
+   * l'onglet « Membres » de la vue propriétaire, qui est une planche d'onglet,
+   * et qu'un lecteur peut basculer de l'un à l'autre sans remonter la page.
+   */
+  const confirmationRetrait = (
+    <FenetreConfirmation
+      ouverte={gerer.bannirOuverte}
+      nom="RETIRER-MEMBRE"
+      titre="Retirer du réseau"
+      question={
+        gerer.bannirNom === ''
+          ? 'Retirer ce membre du réseau ?'
+          : `Retirer ${gerer.bannirNom} du réseau ?`
+      }
+      precision="C’est définitif : la personne ne pourra plus rejoindre ce réseau, et elle ne sera pas prévenue du motif."
+      libelleConfirmer="Retirer du réseau"
+      onConfirmer={gerer.onConfirmerBannir}
+      onAnnuler={gerer.onAnnulerBannir}
+      occupe={gerer.occupe}
+    />
+  );
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ « ÉCRIRE » AUX MEMBRES — UNE SEULE FENÊTRE, POUR LES SIX BOUTONS           ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « on ne peut pas écrire aux membres ». Les six « Écrire » de
+   * l'onglet « Membres » — cinq boutons de ligne à 1 036 px, l'entrée du menu de
+   * rôle, celle de la feuille mobile — ouvrent tous celle-ci.
+   *
+   * ⚠ UNE SEULE INSTANCE, ET POUR LA RAISON DÉJÀ MESURÉE SUR
+   * `FenetreConfirmation` juste au-dessus : `ScreenFrames` rend les DEUX cadres
+   * et n'en masque qu'un par `display: none`, et `Modal` se PORTALISE vers
+   * `document.body`. Deux copies posées dans les cadres s'ouvriraient ENSEMBLE,
+   * et le voile de celle du cadre masqué intercepterait les clics de l'autre.
+   * C'est `Modal` qui choisit entre son panneau d'ordinateur et sa feuille de
+   * téléphone (`DESKTOP_QUERY`) : la correction prend donc bien sur les deux
+   * planches, sans deux copies qui se gênent.
+   *
+   * ⚠ ELLE EST RENDUE SUR LES DEUX BRANCHES de ce composant — l'écran A08
+   * (`plain`) et les planches d'onglet — comme la confirmation de retrait, et
+   * pour la même raison : un lecteur peut basculer de l'onglet « Sujets » à
+   * l'onglet « Membres » sans remonter la page.
+   *
+   * `prenom` vient de `prenomDe` (`components/ecrire.ts`) : le titre de la
+   * fenêtre écrit « Écrire à Aïcha », et jamais « Écrire à » — un nom accessible
+   * tronqué est une violation de §10.6.
+   */
+  const fenetreEcrire = (
+    <FenetreEcrire
+      ouverte={ecrire.cible !== null}
+      prenom={ecrire.prenom}
+      occupe={ecrire.occupe}
+      onEnvoyer={ecrire.onEnvoyer}
+      onFermer={ecrire.onFermer}
+    />
+  );
+
   const attente =
     !pret ? (
       <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
         Chargement du réseau…
       </p>
     ) : null;
+
+  /**
+   * ╔═════════════════════════════════════════════════════════════════════════╗
+   * ║ L'INVITATION À REJOINDRE — ET C'EST ICI QUE LA RÈGLE LA PLUS GRAVE DU     ║
+   * ║ MODULE SE TIENT CÔTÉ FRONT                                                ║
+   * ╚═════════════════════════════════════════════════════════════════════════╝
+   *
+   * `contenuFerme` vient d'un `403 NOT_A_MEMBER` mesuré, pas d'une liste vide. La
+   * distinction est tout : une liste vide veut dire « aucun sujet », un refus veut
+   * dire « je ne vous le dirai pas ». Écrire « aucun sujet pour le moment » sur un
+   * refus apprendrait au lecteur que le réseau est mort alors qu'il est seulement
+   * fermé — et ferait passer pour une information ce que le serveur a justement
+   * refusé de donner.
+   *
+   * On n'affiche donc NI les compteurs de l'en-tête (masqués à zéro pour un
+   * passant) NI de liste de substitution : seulement le bouton que le serveur
+   * autorise, d'après `canJoin` qu'il calcule lui-même.
+   *
+   * ⚠ ELLE VIT MAINTENANT SUR LES DEUX BRANCHES, et c'est l'onglet par défaut qui
+   * l'exige. Elle n'était rendue que dans la branche « Sujets » — ce qui suffisait
+   * tant que c'était là qu'on arrivait. Depuis l'arbitrage du porteur, une adresse
+   * nue ouvre le FIL : un passant y serait tombé sur un onglet muet, composeur
+   * compris, sans un mot pour dire pourquoi il est vide. Le texte ne change pas
+   * d'un caractère — il nomme les sujets ET les membres, qui sont fermés tous les
+   * deux.
+   */
+  const invitation = contenuFerme ? (
+    <p role="status" style={{ padding: '12px 24px', color: '#16211D', fontSize: '14px' }}>
+      {reseau?.canJoin === true
+        ? 'Rejoignez ce réseau pour voir ses sujets et ses membres.'
+        : reseau?.myStatus === 'PENDING'
+          ? 'Votre demande est en attente : un modérateur doit l’accepter.'
+          : reseau?.myStatus === 'INVITED'
+            ? 'Vous êtes invité·e : acceptez pour accéder au contenu.'
+            : 'Ce contenu est réservé aux membres du réseau.'}
+    </p>
+  ) : null;
 
   if (plain) {
     return (
@@ -249,32 +560,9 @@ export function ReseauScreen({
           desktop={<A08Desktop {...a08} />}
           mobile={<A08Mobile {...a08} />}
         />
-        {/**
-         * L'INVITATION À REJOINDRE — et c'est ici que la règle la plus grave du
-         * module se tient côté front.
-         *
-         * `contenuFerme` vient d'un `403 NOT_A_MEMBER` mesuré, pas d'une liste
-         * vide. La distinction est tout : une liste vide veut dire « aucun
-         * sujet », un refus veut dire « je ne vous le dirai pas ». Écrire
-         * « aucun sujet pour le moment » sur un refus apprendrait au lecteur que
-         * le réseau est mort alors qu'il est seulement fermé — et ferait passer
-         * pour une information ce que le serveur a justement refusé de donner.
-         *
-         * On n'affiche donc NI les compteurs de l'en-tête (masqués à zéro pour
-         * un passant) NI de liste de substitution : seulement le bouton que le
-         * serveur autorise, d'après `canJoin` qu'il calcule lui-même.
-         */}
-        {contenuFerme && (
-          <p role="status" style={{ padding: '12px 24px', color: '#16211D', fontSize: '14px' }}>
-            {reseau?.canJoin === true
-              ? 'Rejoignez ce réseau pour voir ses sujets et ses membres.'
-              : reseau?.myStatus === 'PENDING'
-                ? 'Votre demande est en attente : un modérateur doit l’accepter.'
-                : reseau?.myStatus === 'INVITED'
-                  ? 'Vous êtes invité·e : acceptez pour accéder au contenu.'
-                  : 'Ce contenu est réservé aux membres du réseau.'}
-          </p>
-        )}
+        {confirmationRetrait}
+        {fenetreEcrire}
+        {invitation}
         {echec !== null && !membre && (
           <p role="status" style={{ padding: '0 24px 12px', color: '#B4581F', fontSize: '13px' }}>
             {echec.message}
@@ -316,11 +604,288 @@ export function ReseauScreen({
    */
   return (
     <>
-      <ScreenFrames
-        screen={`A08T-${slug}`}
-        desktop={<div style={BOARD}>{tab.desktop(enteteOnglet)}</div>}
-        mobile={tab.mobile(enteteOnglet)}
+      {/**
+       * ╔═══════════════════════════════════════════════════════════════════════╗
+       * ║ LA CARTE DU FIL GARDE SES GESTES SUR LE RÉSEAU                        ║
+       * ╚═══════════════════════════════════════════════════════════════════════╝
+       *
+       * Même leçon que sur le profil public, et le même composant : le DESSIN de la
+       * carte vit dans le cadre généré, les GESTES vivent dans la page. Extraire
+       * l'un sans l'autre donne une carte qui ressemble à la bonne et ne fait rien
+       * — réaction, commentaires, signet et partage seraient inertes.
+       *
+       * Il est monté SANS CONDITION, sur les vingt-cinq planches, et non seulement
+       * sur l'onglet « Fil » : `publications` est vide partout ailleurs (le crochet
+       * ne charge le fil que sur son rang), donc il ne rend qu'une liste vide et
+       * deux fenêtres fermées. Le monter conditionnellement le démonterait à chaque
+       * changement d'onglet et jetterait l'état local des cartes.
+       */}
+      <CartesFilVivantes cartes={ongletAvecAnnonce.publications}>
+        {(cartes) => (
+          <ScreenFrames
+            screen={`A08T-${slug}`}
+            /**
+             * LE CADRE D'ORDINATEUR REÇOIT LA COQUE DE A08 AUTOUR DE LA PLANCHE.
+             *
+             * Trois morceaux, et aucun n'est dessiné ici : le menu de gauche et la
+             * barre haute sont les deux régions extraites du cadre de A08, les deux
+             * conteneurs qui les tiennent sont ses deux styles recopiés
+             * (`COLONNE_DROITE`, `ZONE_CONTENU`). `ScreenFrames` pose déjà la
+             * direction `row` : le menu et la colonne se rangent donc côte à côte
+             * exactement comme sur A08.
+             *
+             * ⚠ LE CADRE MOBILE N'EN REÇOIT AUCUN, et c'est mesuré, pas supposé :
+             * les planches de 390 px sont des téléphones complets, barre basse
+             * comprise. Lui ajouter une coque en ferait deux.
+             */
+            desktop={
+              <>
+                <A08ChromeGaucheDesktop {...a08} />
+                <div style={COLONNE_DROITE}>
+                  <A08BarreHauteDesktop />
+                  <div style={ZONE_CONTENU}>
+                    <div style={BOARD}>
+                      {tab.desktop({ ...ongletAvecAnnonce, publications: cartes })}
+                    </div>
+                  </div>
+                </div>
+              </>
+            }
+            mobile={tab.mobile({ ...ongletAvecAnnonce, publications: cartes })}
+          />
+        )}
+      </CartesFilVivantes>
+      {/**
+       * LE FIL VIDE SE DIT, ET IL SE DIT HORS DU CADRE.
+       *
+       * La maquette ne dessine AUCUN état vide pour cet onglet — ses trois cartes
+       * sont toujours là. En inventer un dans le cadre généré serait redessiner ;
+       * on emploie donc la même bande `role="status"` que cette page pose déjà pour
+       * l'attente et pour le contenu fermé, avec ses mesures (le gris `#5D6B66` et
+       * les 13 px de la bande d'attente, juste en dessous).
+       *
+       * `pret` ET `membre` : un fil vide pendant le chargement dirait « aucune
+       * publication » d'un réseau qui en a, et un passant reçoit déjà l'invitation
+       * à rejoindre — lui dire que le fil est vide serait lui apprendre quelque
+       * chose que le serveur a justement refusé de dire.
+       *
+       * FRÈRE DANS LE FRAGMENT, comme `attente` : un conteneur interposé casse le
+       * `position: sticky` du menu de gauche et de la barre haute.
+       */}
+      {slug === 'fil' && pret && membre && ongletAvecAnnonce.publications.length === 0 && (
+        <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
+          Aucune publication dans ce réseau pour le moment.
+        </p>
+      )}
+      {/**
+       * LA LISTE DE MEMBRES VIDE SE DIT, ET ELLE SE DIT HORS DU CADRE.
+       *
+       * La maquette ne dessine AUCUN état vide pour cet onglet — ses cinq lignes
+       * sont toujours là. En inventer un dans le cadre généré serait redessiner ;
+       * on emploie donc la MÊME bande `role="status"` que le fil juste au-dessus,
+       * avec ses mesures (le gris `#5D6B66`, les 13 px, le retrait de 24) et sa
+       * grammaire. Rien n'est emprunté à une autre maquette.
+       *
+       * ⚠ ET CE N'EST PAS UN CAS THÉORIQUE, même si un réseau a toujours au moins
+       * son propriétaire : `useReseau` avale l'échec de cette route pour ne pas
+       * casser la page — l'en-tête, la barre d'onglets et le contexte restent
+       * parfaitement lisibles — et sans cette bande l'onglet serait alors
+       * silencieusement muet.
+       *
+       * `pret` ET `membre` : une liste vide pendant le chargement dirait « aucun
+       * membre » d'un réseau qui en a, et un passant reçoit déjà l'invitation à
+       * rejoindre — lui dire que la liste est vide serait lui apprendre quelque
+       * chose que le serveur a justement refusé de dire.
+       */}
+      {slug === 'membres' && pret && membre && gerer.membres.length === 0 && (
+        <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
+          Aucun membre à afficher pour le moment.
+        </p>
+      )}
+      {/**
+       * ╔═══════════════════════════════════════════════════════════════════════╗
+       * ║ L'ONGLET « ÉVÉNEMENTS » VIDE SE DIT, ET IL SE DIT HORS DU CADRE       ║
+       * ╚═══════════════════════════════════════════════════════════════════════╝
+       *
+       * La maquette ne dessine AUCUN état vide pour cet onglet — ses trois cartes
+       * sont toujours là, et toutes à venir. En inventer un dans le cadre généré
+       * serait redessiner ; on RÉEMPLOIE donc la MÊME bande `role="status"` que le
+       * fil et la liste des membres juste au-dessus, avec ses mesures (le gris
+       * `#5D6B66`, les 13 px, le retrait de 24) et sa grammaire. Rien n'est
+       * emprunté à une autre maquette, et rien n'est neuf.
+       *
+       * ⚠ ET C'EST LE CAS ORDINAIRE, pas un cas de bord : la plupart des réseaux
+       * n'annoncent aucun événement, et « Passés » est vide sur tout réseau créé
+       * depuis moins de deux mois. Sans cette bande, l'onglet serait
+       * silencieusement muet — trois cartes disparues et pas un mot.
+       *
+       * LA PHRASE DIT LAQUELLE DES DEUX LISTES EST VIDE, parce que les deux
+       * pastilles sont maintenant vivantes : « aucun événement » sous la pastille
+       * « Passés » laisserait croire que le réseau n'en a jamais eu, alors qu'il
+       * en a peut-être trois la semaine prochaine.
+       *
+       * `evenementsPrets` ET `membre` : une liste vide pendant le chargement
+       * dirait « aucun événement » d'un réseau qui en a, et un passant reçoit déjà
+       * l'invitation à rejoindre — lui dire que la liste est vide serait lui
+       * apprendre quelque chose que le serveur a justement refusé de dire.
+       *
+       * `evenementsPrets` et NON `pret` : `pret` parle de la FICHE du réseau, qui
+       * est déjà là quand on ouvre cet onglet. La bande doit attendre la LISTE.
+       *
+       * FRÈRE DANS LE FRAGMENT, comme `attente` : un conteneur interposé casse le
+       * `position: sticky` du menu de gauche et de la barre haute.
+       */}
+      {slug === 'evenements' &&
+        evenementsPrets &&
+        membre &&
+        evenements.echec === null &&
+        evenements.liste.length === 0 && (
+          <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
+            {evenements.onglet === 'passes'
+              ? 'Aucun événement passé dans ce réseau.'
+              : 'Aucun événement à venir dans ce réseau.'}
+          </p>
+        )}
+      {/**
+       * LE REFUS DU GESTE OU DE LA LISTE, ET LUI SEUL.
+       *
+       * Distinct de `echec` au-dessus, qui dit « cette page est cassée » : un
+       * « Je viens » refusé — événement complet, déjà commencé, annulé — laisse
+       * l'onglet parfaitement lisible. Le terre cuite `#B4581F` et les 13 px sont
+       * ceux des deux autres bandes de refus de cette page.
+       *
+       * ⚠ UN REFUS DE NIVEAU N'ARRIVE PAS ICI : il pose `niveauRefuse`, et c'est
+       * la fenêtre ci-dessous qui l'explique. Les deux chemins sont séparés dans
+       * `use-reseau.ts`, sur `levelRequired`.
+       */}
+      {slug === 'evenements' && evenements.echec !== null && (
+        <p role="status" style={{ padding: '0 24px 12px', color: '#B4581F', fontSize: '13px' }}>
+          {evenements.echec}
+        </p>
+      )}
+      {/**
+       * L'INVITATION À MONTER DE NIVEAU — UNE SEULE INSTANCE, DANS L'ÉCRAN.
+       *
+       * Même raison que `FenetreConfirmation` et `FenetreEcrire`, déjà mesurée :
+       * `ScreenFrames` rend les DEUX cadres et n'en masque qu'un par
+       * `display: none`, et `Modal` se portalise vers `document.body`. Deux copies
+       * posées dans les cadres s'ouvriraient ENSEMBLE sur le même état, et le
+       * voile de celle du cadre masqué intercepterait les clics de l'autre.
+       *
+       * Elle n'est PAS rendue sur la branche `plain` : la seule capacité que cette
+       * page tente est `event.attend`, et son bouton vit sur une planche d'onglet.
+       */}
+      {/**
+       * ╔═══════════════════════════════════════════════════════════════════════╗
+       * ║ L'ONGLET « ALBUM » VIDE SE DIT, ET IL SE DIT HORS DU CADRE             ║
+       * ╚═══════════════════════════════════════════════════════════════════════╝
+       *
+       * La maquette ne dessine AUCUN état vide pour cet onglet — ses douze tuiles
+       * hachurées sont toujours là. En inventer un dans le cadre généré serait
+       * redessiner ; on RÉEMPLOIE donc la MÊME bande `role="status"` que le fil,
+       * la liste des membres et les événements juste au-dessus, avec ses mesures
+       * (le gris `#5D6B66`, les 13 px, le retrait de 24) et sa grammaire. Rien
+       * n'est emprunté à une autre maquette, et rien n'est neuf.
+       *
+       * ⚠ ET C'EST LE CAS ORDINAIRE, pas un cas de bord : la plupart des réseaux
+       * n'ont aucun album, et « Partagés » est vide sur tout réseau dont personne
+       * n'a encore publié d'image. Sans cette bande, l'onglet serait
+       * silencieusement muet — douze tuiles disparues et pas un mot.
+       *
+       * LA PHRASE DIT LAQUELLE DES VUES EST VIDE, parce que les pastilles sont
+       * maintenant vivantes : « aucune photo » sous « Partagés » laisserait croire
+       * que le réseau n'a aucun album, alors qu'il en a peut-être trois.
+       *
+       * `album.prete` ET `membre` : une grille vide pendant le chargement dirait
+       * « aucune photo » d'un réseau qui en a, et un passant reçoit déjà
+       * l'invitation à rejoindre — lui dire que l'album est vide serait lui
+       * apprendre quelque chose que le serveur a justement refusé de dire.
+       *
+       * `album.prete` et NON `pret` : `pret` parle de la FICHE du réseau, qui est
+       * déjà là quand on ouvre cet onglet. La bande doit attendre les ALBUMS.
+       *
+       * FRÈRE DANS LE FRAGMENT, comme `attente` : un conteneur interposé casse le
+       * `position: sticky` du menu de gauche et de la barre haute.
+       */}
+      {slug === 'album' &&
+        album.prete &&
+        membre &&
+        album.echec === null &&
+        album.photos.length === 0 && (
+          <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
+            {album.onglet === 'partages'
+              ? 'Aucune image partagée dans les publications de ce réseau.'
+              : album.onglet === 'evenements'
+                ? 'Aucune photo d’événement dans ce réseau.'
+                : album.onglet === 'tout'
+                  ? 'Aucune photo dans ce réseau pour le moment.'
+                  : 'Cet album n’a encore aucune photo.'}
+          </p>
+        )}
+      {/**
+       * LE REFUS DU GESTE OU DE LA LISTE, ET LUI SEUL.
+       *
+       * Distinct de `echec` au-dessus, qui dit « cette page est cassée » : un
+       * dépôt refusé — image trop lourde, type rejeté, niveau insuffisant — laisse
+       * l'onglet parfaitement lisible. Le terre cuite `#B4581F` et les 13 px sont
+       * ceux des deux autres bandes de refus de cette page.
+       *
+       * ⚠ UN REFUS DE NIVEAU ARRIVE ICI, lui aussi, et il n'ouvre PAS
+       * `FenetreNiveau` : cette fenêtre est l'état de l'onglet « Événements »
+       * (`evenements.niveauRefuse`), et deux onglets qui se partageraient une
+       * fenêtre ouvriraient celle de l'autre. Le message du serveur dit déjà quel
+       * niveau manque. REMONTÉ.
+       */}
+      {slug === 'album' && album.echec !== null && (
+        <p role="status" style={{ padding: '0 24px 12px', color: '#B4581F', fontSize: '13px' }}>
+          {album.echec}
+        </p>
+      )}
+      {/**
+       * LA FENÊTRE « NOUVEL ALBUM » — UNE SEULE INSTANCE, DANS L'ÉCRAN.
+       *
+       * Même raison que `FenetreConfirmation`, `FenetreEcrire` et
+       * `FenetreNiveau`, déjà mesurée : `ScreenFrames` rend les DEUX cadres et
+       * n'en masque qu'un par `display: none`, et `Modal` se portalise vers
+       * `document.body`. Deux copies posées dans les cadres s'ouvriraient ENSEMBLE
+       * sur le même état, et le voile de celle du cadre masqué intercepterait les
+       * clics de l'autre.
+       *
+       * Elle n'est PAS rendue sur la branche `plain` : le menu « Ajouter » vit sur
+       * une planche d'onglet, et l'onglet « Sujets » n'en dessine aucun.
+       */}
+      <FenetreAlbum
+        ouverte={album.albumOuvert}
+        titreMin={album.titreMin}
+        titreMax={album.titreMax}
+        occupe={album.occupe}
+        onCreer={album.onCreerAlbum}
+        onFermer={album.onFermerAlbum}
       />
+      <FenetreNiveau capacite={evenements.niveauRefuse} onFermer={evenements.onFermerNiveau} />
+      {invitation}
+      {confirmationRetrait}
+      {fenetreEcrire}
+      {/**
+       * LE REFUS DE « CONTACTER LES MODÉRATEURS », ET LUI SEUL.
+       *
+       * Distinct de `echec` au-dessus, qui dit « cette page est cassée » :
+       * l'onglet « À propos » d'un réseau automatique sans bénévole s'affiche
+       * parfaitement, et c'est seulement le GESTE qui n'a personne à joindre
+       * (`NO_MODERATORS_TO_CONTACT`). Le message vient du serveur et propose
+       * déjà « Signaler » comme autre chemin.
+       *
+       * FRÈRE DANS LE FRAGMENT, comme `attente` : un conteneur interposé casse
+       * le `position: sticky` de la barre haute et du rail — leçon déjà payée
+       * sur `screens/compte/ecran-donnees.tsx`. Et il est posé ICI, donc il
+       * vaut pour les DEUX largeurs : `ScreenFrames` choisit le cadre, ce
+       * paragraphe est en dehors du choix.
+       */}
+      {contactEchec !== null && (
+        <p role="status" style={{ padding: '0 24px 12px', color: '#B4581F', fontSize: '13px' }}>
+          {contactEchec.message}
+        </p>
+      )}
       {attente}
     </>
   );

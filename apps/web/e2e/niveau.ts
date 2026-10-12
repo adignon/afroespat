@@ -52,6 +52,9 @@ const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
  */
 const SECRET = process.env['DIDIT_WEBHOOK_SECRET'] ?? 'dev-didit-webhook-secret-change-me';
 
+/** Le code de développement, celui de `SMS_FAKE_FIXED_CODE`. Jamais inventé. */
+const CODE_OTP = process.env['SMS_FAKE_FIXED_CODE'] ?? '123456';
+
 /**
  * Fait passer le membre déjà connecté en L1, et rend son jeton d'accès FRAIS.
  *
@@ -96,6 +99,122 @@ export async function monterEnL1(
   }
 
   // Le jeton d'avant est mort : voir « LE PIÈGE » dans l'en-tête.
+  const frais = await request.post(`${API}/auth/refresh`, { data: {} });
+  if (!frais.ok()) throw new Error(`POST /auth/refresh ${frais.status()} : ${await frais.text()}`);
+  const { accessToken } = (await frais.json()) as { accessToken: string };
+
+  const cookies = await request.storageState();
+  const refresh = cookies.cookies.find((c) => c.name === 'dp_refresh');
+  if (refresh === undefined) throw new Error('dp_refresh absent après rafraîchissement.');
+  await context.clearCookies();
+  await context.addCookies([refresh]);
+
+  return { accessToken };
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ MONTER UN MEMBRE EN L2 — ET POURQUOI CETTE FONCTION N'EXISTAIT PAS ENCORE  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `AMORCAGE-AGENT.md` §4 l'écrit noir sur blanc : « `apps/web/e2e/niveau.ts` porte
+ * `monterEnL1`. **Il n'y a pas encore de `monterEnL2`** — si ton lot en a besoin,
+ * c'est l'occasion de l'écrire une fois pour toutes. » MESURÉ : les mêmes
+ * quarante lignes sont déjà recopiées dans `accueil-guides-branchement.spec.ts`,
+ * et chaque lot qui a eu besoin de N2 les a repayées. Les voici une fois.
+ *
+ * ── CE QUE N2 EXIGE, ET POURQUOI ON NE PEUT PAS L'ÉCRIRE EN BASE ───────────
+ *
+ * Le niveau est DÉRIVÉ, jamais déclaré : `VerificationLevelService.levelFor()` le
+ * recalcule depuis deux faits, et `auth.guard` relance le calcul dès qu'un jeton
+ * est périmé. Un `UPDATE users SET verification_level = 'L2'` ne tient donc pas —
+ * il produirait un membre que le produit n'a jamais fabriqué, et un test vert qui
+ * ne prouve rien.
+ *
+ * Les deux faits (§7.2) :
+ *
+ *   1. KYC approuvé et majeur — c'est `monterEnL1`, réemployée telle quelle ;
+ *   2. un numéro vérifié d'un pays de DESTINATION actif. **La France**, et
+ *      SURTOUT PAS le Bénin : le Bénin est un pays d'ORIGINE, et
+ *      `PhonesService.start` refuse en `PHONE_NOT_DESTINATION` — c'est le piège
+ *      qui coûte un quart d'heure si on ne le sait pas, parce que le numéro
+ *      d'inscription du décor EST béninois et qu'on croit naturellement pouvoir
+ *      le réemployer.
+ *
+ * Le numéro est TIRÉ AU HASARD à chaque appel : `phone_numbers.phone_hmac` est
+ * unique, et un numéro figé ferait échouer le second test de la journée en
+ * `PHONE_ALREADY_USED` (il appartiendrait déjà au membre du test précédent).
+ *
+ * ── LE BUDGET OTP, QUI EST LA RESSOURCE LA PLUS RARE DU DÉPÔT ─────────────
+ *
+ * ⚠ CE PARAGRAPHE DISAIT L'INVERSE DE LA VÉRITÉ, et le conseil qu'il donnait était
+ * exactement celui qui épuise le quota. Il affirmait : « la limite de 10 demandes
+ * par heure et par IP […] montez-en UN et réutilisez-le. »
+ *
+ * MESURÉ DANS LE CODE (`AuthService.assertWithinRateLimits` + `RATE_LIMITS`), et
+ * `AMORCAGE-AGENT.md` §4 porte la correction :
+ *
+ *   · `otpPerIpPerHour` = 10 — NE MORD PAS en local : `isExemptLocalIp` exempte
+ *     `127.0.0.1` et `::1` hors production ;
+ *   · `otpPerPhonePerHour` = **3** — c'est la SEULE qui morde, et elle est par
+ *     NUMÉRO.
+ *
+ * DONC : TIREZ UN NUMÉRO NEUF À CHAQUE COMPTE. C'est ce que `connecter()` fait
+ * déjà (`numeroNeuf()`) et ce que cette fonction fait pour le numéro français.
+ * Réutiliser un numéro est précisément ce qui bloque.
+ *
+ * ── LE MÊME PIÈGE DE JETON QUE POUR L1, ET IL FRAPPE DEUX FOIS ────────────
+ *
+ * Chaque changement de niveau périme le jeton d'accès (`401 TOKEN_STALE`). Il y
+ * en a deux ici — L0→L1 puis L1→L2 — donc deux rafraîchissements. `monterEnL1`
+ * fait le premier et rend son jeton ; celui-ci fait le second. Le cookie
+ * `dp_refresh` est réinstallé dans le navigateur APRÈS, comme pour L1 : celui qui
+ * y était avait été émis pour un membre L1.
+ */
+export async function monterEnL2(
+  context: BrowserContext,
+  request: APIRequestContext,
+  accessTokenActuel: string,
+): Promise<{ readonly accessToken: string }> {
+  const { accessToken: jetonL1 } = await monterEnL1(context, request, accessTokenActuel);
+  const auth = { authorization: `Bearer ${jetonL1}` };
+
+  const numero = `+336${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
+  const depot = await request.post(`${API}/me/phones`, {
+    headers: auth,
+    // `countryIso2: 'FR'` — un pays de DESTINATION actif. Voir l'en-tête.
+    data: { phone: numero, countryIso2: 'FR', captchaToken: 'fake' },
+  });
+  if (!depot.ok()) {
+    throw new Error(`POST /me/phones ${depot.status()} : ${await depot.text()}`);
+  }
+  const { challengeId } = (await depot.json()) as { challengeId: string };
+
+  const confirme = await request.post(`${API}/me/phones/verify`, {
+    headers: auth,
+    data: { challengeId, code: CODE_OTP },
+  });
+  if (!confirme.ok()) {
+    throw new Error(`POST /me/phones/verify ${confirme.status()} : ${await confirme.text()}`);
+  }
+  const { isDestination, level } = (await confirme.json()) as {
+    isDestination: boolean;
+    level: string;
+  };
+  // Le contrôle est ICI et pas dans le test appelant : `is_destination` est la
+  // colonne qui DÉCIDE de L2, et elle est calculée depuis le pays, jamais reçue du
+  // client. Un `false` voudrait dire que le pays a été fermé entre-temps, et
+  // l'appelant verrait un `403 LEVEL_REQUIRED` sans comprendre d'où il vient.
+  if (!isDestination || level !== 'L2') {
+    throw new Error(
+      `le numéro de destination n’a pas porté le membre en L2 (isDestination=${String(
+        isDestination,
+      )}, niveau=${level}) : les capacités N2 — dont \`guide.write\` — répondraient ` +
+        '403 LEVEL_REQUIRED.',
+    );
+  }
+
+  // Le jeton L1 est mort à son tour : voir « LE PIÈGE » dans l'en-tête de L1.
   const frais = await request.post(`${API}/auth/refresh`, { data: {} });
   if (!frais.ok()) throw new Error(`POST /auth/refresh ${frais.status()} : ${await frais.text()}`);
   const { accessToken } = (await frais.json()) as { accessToken: string };

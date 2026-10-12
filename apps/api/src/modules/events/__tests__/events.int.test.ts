@@ -87,11 +87,18 @@ describe('agenda (09 §3)', () => {
     return event;
   }
 
-  /** Un événement PASSÉ : impossible par l'API (TOO_SOON), donc posé en base. */
+  /**
+   * Un événement PASSÉ : impossible par l'API (TOO_SOON), donc posé en base.
+   *
+   * `options` est arrivé avec l'onglet « Événements » d'un réseau, qui a besoin
+   * d'un événement passé RÉSERVÉ — et la seule façon d'en obtenir un est ici,
+   * puisque `create` refuse tout début à moins de deux heures.
+   */
   async function pastEvent(
     organizerUserId: string,
     startsAt: Date,
     endsAt: Date | null = null,
+    options: { communityId?: string; cityId?: string } = {},
   ): Promise<string> {
     const id = newId();
     await prisma.event.create({
@@ -100,11 +107,12 @@ describe('agenda (09 §3)', () => {
         organizerUserId,
         type: 'PICNIC',
         title: 'Événement passé',
-        cityId: paris.id,
+        cityId: options.cityId ?? paris.id,
         addressText: 'Quelque part',
         startsAt,
         endsAt,
         status: 'SCHEDULED',
+        ...(options.communityId === undefined ? {} : { communityId: options.communityId }),
       },
     });
     await prisma.eventAttendee.create({
@@ -411,6 +419,135 @@ describe('agenda (09 §3)', () => {
       await expect(
         newEvent(stranger, { communityId }),
       ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    });
+  });
+
+  // ══ `?communityId=` · l'onglet « Événements » d'un réseau (A08) ════════════
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE FILTRE DE RÉSEAU S'AJOUTE AUX RÈGLES DE VISIBILITÉ                    ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Le contenu de l'onglet événement aussi est dessiné (événements
+   * passés et à venir). » L'onglet n'avait AUCUNE route : ce schéma est
+   * `.strict()`, donc `?communityId=` répondait `400 UNRECOGNIZED_KEYS`.
+   *
+   * Les quatre cas ci-dessous éprouvent la seule chose qui compte sur un filtre
+   * de lecture : qu'il RESTREIGNE sans rien ouvrir. Chacun a été éprouvé en
+   * cassant la règle qu'il garde — en retirant la clause `communityId` du
+   * `visibleWhere`, les deux premiers rougissent ; en remettant la borne de
+   * ville, le troisième.
+   */
+  describe('rule: ?communityId= restreint sans rien ouvrir', () => {
+    it('ne rend que les événements du réseau demandé, pas ceux d’un autre réseau du lecteur', async () => {
+      const organizer = await member({ plan: 'PREMIUM' });
+      const ici = await community(organizer);
+      const ailleurs = await community(organizer);
+
+      const mien = await newEvent(organizer, { communityId: ici, title: 'Chez nous' });
+      const autre = await newEvent(organizer, { communityId: ailleurs, title: 'Chez eux' });
+      // Et un événement PUBLIC, pour vérifier que le filtre l'écarte aussi : un
+      // onglet de réseau qui montrerait les événements de la ville mentirait.
+      const ouvert = await newEvent(organizer, { title: 'Ouvert à tous' });
+
+      const page = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50, communityId: ici } as never,
+        organizer,
+      );
+      const ids = page.items.map((item) => item.id);
+      expect(ids).toContain(mien.id);
+      expect(ids).not.toContain(autre.id);
+      expect(ids).not.toContain(ouvert.id);
+    });
+
+    it('ne rend RIEN à qui n’est pas membre — et la même requête rend l’événement au membre', async () => {
+      const organizer = await member();
+      const communityId = await community(organizer);
+      const reserved = await newEvent(organizer, { communityId });
+
+      const outsider = await member();
+      const refuse = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50, communityId } as never,
+        outsider,
+      );
+      expect(refuse.items.map((item) => item.id)).not.toContain(reserved.id);
+      // Et le filtre ne devient pas une clé de lecture : rien du tout ne sort.
+      expect(refuse.items).toHaveLength(0);
+
+      // Un visiteur non connecté non plus : un réseau n'est pas public.
+      const anonyme = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50, communityId } as never,
+        null,
+      );
+      expect(anonyme.items).toHaveLength(0);
+
+      const insider = await member();
+      await prisma.communityMember.create({
+        data: { id: newId(), communityId, userId: insider, role: 'MEMBER', status: 'ACTIVE' },
+      });
+      const vu = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50, communityId } as never,
+        insider,
+      );
+      expect(vu.items.map((item) => item.id)).toContain(reserved.id);
+    });
+
+    it('ne borne pas à la ville du lecteur : un événement du réseau à 400 km sort quand même', async () => {
+      const organizer = await member({ plan: 'PREMIUM' });
+      const communityId = await community(organizer);
+      const loin = await newEvent(organizer, { communityId, cityId: farCity.id });
+
+      // Le lecteur est à Paris (`member()` l'y pose), l'événement est dans la
+      // ville la plus lointaine du référentiel.
+      const lecteur = await member();
+      await prisma.communityMember.create({
+        data: { id: newId(), communityId, userId: lecteur, role: 'MEMBER', status: 'ACTIVE' },
+      });
+
+      const avecFiltre = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50, communityId } as never,
+        lecteur,
+      );
+      expect(avecFiltre.items.map((item) => item.id)).toContain(loin.id);
+
+      // SANS le filtre, la borne de ville s'applique comme avant : c'est ce qui
+      // rend le filtre nécessaire, et non une commodité d'écran.
+      const sansFiltre = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50 } as never,
+        lecteur,
+      );
+      expect(sansFiltre.items.map((item) => item.id)).not.toContain(loin.id);
+    });
+
+    it('`to` et l’absence de `from`/`to` séparent les passés des à venir', async () => {
+      const organizer = await member();
+      const communityId = await community(organizer);
+      const aVenir = await newEvent(organizer, { communityId, title: 'Bientôt' });
+      const passe = await pastEvent(organizer, new Date(Date.now() - 5 * 86_400_000), null, {
+        communityId,
+      });
+
+      // « À venir » : aucune borne de date — la fenêtre part de MAINTENANT.
+      const venir = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50, communityId } as never,
+        organizer,
+      );
+      const idsVenir = venir.items.map((item) => item.id);
+      expect(idsVenir).toContain(aVenir.id);
+      expect(idsVenir).not.toContain(passe);
+
+      // « Passés » : `to` = hier, dans le fuseau de référence du lecteur. La
+      // frontière est le DÉBUT D'AUJOURD'HUI, donc les deux listes ne se
+      // recouvrent pas et aucun événement ne tombe entre elles.
+      const hier = localDate(new Date(Date.now() - 86_400_000), 'Europe/Paris');
+      const passes = await events.list(
+        { scope: 'all', radiusKm: 30, limit: 50, communityId, to: hier } as never,
+        organizer,
+      );
+      const idsPasses = passes.items.map((item) => item.id);
+      expect(idsPasses).toContain(passe);
+      expect(idsPasses).not.toContain(aVenir.id);
     });
   });
 

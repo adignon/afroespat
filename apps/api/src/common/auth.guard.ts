@@ -43,6 +43,15 @@ interface AuthedRequest extends Request {
   auth?: AuthContext;
 }
 
+/**
+ * Le pas d'écriture de `users.last_seen_at` — voir `assertTokenFresh`.
+ *
+ * Quinze minutes : la règle la plus fine qui lit cette colonne raisonne en JOURS
+ * (six mois d'inactivité d'auteur, fenêtres de 7 et 30 jours des mesures). Un pas
+ * plus court n'apprendrait rien de plus et multiplierait les écritures.
+ */
+const DERNIERE_VUE_FRAICHEUR_MS = 15 * 60 * 1_000;
+
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
@@ -183,10 +192,58 @@ export class AuthGuard implements CanActivate {
         userId: true,
         revokedAt: true,
         levelRefreshRequired: true,
-        user: { select: { verificationLevel: true } },
+        user: { select: { verificationLevel: true, lastSeenAt: true } },
       },
     });
     if (session === null) return;
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ `users.last_seen_at` N'ÉTAIT ÉCRIT PAR PERSONNE — ET CE SILENCE COÛTAIT  ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ : toutes les occurrences de `lastSeenAt` en code de production étaient
+     * des LECTURES, sauf une — l'anonymisation, qui la met à `null`. Les seules
+     * écritures du dépôt vivaient dans des TESTS, qui posaient la valeur eux-mêmes :
+     * c'est pourquoi les règles qui en dépendent étaient vertes en test et fausses
+     * en vrai. En base : 29 855 comptes sur 29 953 sans aucune dernière vue.
+     *
+     * CE QUE ÇA CASSAIT, et ce n'est pas théorique :
+     *
+     *   · `guide.author_inactivity` (hebdomadaire) bascule un guide à la communauté
+     *     quand son auteur n'a pas eu de session depuis six mois, et son critère
+     *     retient `lastSeenAt: null`. Tout guide publié devenait donc « maintenu par
+     *     la communauté » au premier passage de la tâche — son auteur perdait
+     *     l'attribution de son guide sans rien avoir fait. C'est le défaut que le
+     *     porteur voyait sans le nommer : le bandeau vert sur tous les guides ;
+     *   · `members.active_7d` et `active_30d` valaient zéro en permanence ;
+     *   · le fil s'en sert pour trier des membres par activité récente.
+     *
+     * ── POURQUOI ICI, ET POURQUOI BRIDÉ ───────────────────────────────────────
+     *
+     * ICI parce que c'est le seul point par lequel passe CHAQUE appel authentifié,
+     * et parce que la ligne est déjà lue : la valeur ne coûte pas une requête de
+     * plus, seulement une colonne de plus dans un `select` sur clé primaire.
+     *
+     * BRIDÉ parce que sans cela on paierait un `UPDATE` par requête de chaque page —
+     * une page du fil en fait une dizaine. Une écriture au plus toutes les quinze
+     * minutes par membre suffit à toutes les règles ci-dessus, dont la plus fine
+     * raisonne en JOURS.
+     *
+     * ── ET SURTOUT : ELLE NE PEUT PAS FAIRE ÉCHOUER LA REQUÊTE ────────────────
+     *
+     * `void` et `.catch()` : c'est une statistique d'usage, pas une décision
+     * d'autorisation. Une base momentanément indisponible en écriture doit ralentir
+     * les mesures, jamais déconnecter un membre. Le garde ne l'attend pas non plus —
+     * l'attendre ajouterait un aller-retour à chaque appel pour une valeur que
+     * personne ne lit dans la même seconde.
+     */
+    const vueLe = session.user.lastSeenAt;
+    if (vueLe === null || vueLe.getTime() < Date.now() - DERNIERE_VUE_FRAICHEUR_MS) {
+      void this.prisma.user
+        .update({ where: { id: session.userId }, data: { lastSeenAt: new Date() } })
+        .catch(() => undefined);
+    }
 
     // Un `sid` qui désigne la session d'un AUTRE membre ne peut venir que d'un
     // jeton forgé — la signature l'exclut — mais le contrôle ne coûte rien et

@@ -86,6 +86,7 @@ describe('les neuf tâches ajoutées par ce lot', () => {
     etapeInactive: newId(),
     guide: newId(),
     guideVersion: newId(),
+    guidePage: newId(),
     alerte: newId(),
     annonceA: newId(),
     annonceB: newId(),
@@ -765,6 +766,30 @@ describe('les neuf tâches ajoutées par ce lot', () => {
           create: [{ id: ids.guideVersion, version: 1, body: 'Corps du guide de test.' }],
         },
       },
+    });
+    /**
+     * SA PAGE 1, et elle est OBLIGATOIRE depuis que les guides ont des pages
+     * (05 `GuidePage`).
+     *
+     * MESURÉ : sans elle, `GuidesService.bySlug` répond 404 — le corps d'un guide
+     * vit dans ses pages, et un guide sans page n'a rien à rendre. Le décor écrit
+     * donc ce que `POST /guides` écrirait : une page 1 portant le titre du guide,
+     * son slug dérivé, et la version courante. `guides.current_version_id` reste
+     * renseignée : elle est dépréciée mais tenue à jour sur la première page.
+     */
+    await prisma.guidePage.create({
+      data: {
+        id: ids.guidePage,
+        guideId: ids.guide,
+        position: 1,
+        title: `Guide ${marque}`,
+        slug: `guide-${marque}`,
+        currentVersionId: ids.guideVersion,
+      },
+    });
+    await prisma.guideVersion.update({
+      where: { id: ids.guideVersion },
+      data: { pageId: ids.guidePage },
     });
     await prisma.guide.update({
       where: { id: ids.guide },

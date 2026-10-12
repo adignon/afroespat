@@ -29,14 +29,22 @@
  * n'est pas de ce périmètre. `staffApi` n'a donc rien à faire dans ce fichier, et
  * le type l'empêcherait de toute façon.
  */
+import { z } from 'zod';
 import {
   amendProposalSchema,
+  bookmarkStatesResponseSchema,
+  createGuidePageSchema,
   createGuideSchema,
   createProposalSchema,
+  GUIDE_BODY_MAX,
+  guideAuthorEditorResponseSchema,
+  guideCommunityMaintenanceResponseSchema,
+  guideCommunityMaintenanceSchema,
   guideDetailResponseSchema,
   guideEditorResponseSchema,
   guideListResponseSchema,
   guideOutdatedFlagSchema,
+  guideOutdatedFlagsResponseSchema,
   guideOutdatedResponseSchema,
   guideProposalDetailSchema,
   guideProposalsResponseSchema,
@@ -47,13 +55,20 @@ import {
   guideVoteSchema,
   myGuidesResponseSchema,
   myProposalsResponseSchema,
+  putBookmarkSchema,
   rejectProposalSchema,
+  updateGuidePageSchema,
   updateGuideSchema,
+  uuidSchema,
   type CreateGuide,
+  type CreateGuidePage,
   type CreateProposal,
+  type GuideAuthorEditorResponse,
+  type GuideCommunityMaintenanceResponse,
   type GuideDetailResponse,
   type GuideEditorResponse,
   type GuideListResponse,
+  type GuideOutdatedFlagsResponse,
   type GuideOutdatedResponse,
   type GuideProposalDetail,
   type GuideProposalsResponse,
@@ -63,6 +78,7 @@ import {
   type MyGuidesResponse,
   type MyProposalsResponse,
   type UpdateGuide,
+  type UpdateGuidePage,
 } from '@app/shared';
 /**
  * `@/lib/api/index` ET NON `@/lib/api`.
@@ -108,6 +124,14 @@ export interface GuideListFilters {
   readonly countryId?: string;
   readonly cityId?: string;
   readonly cursor?: string;
+  /**
+   * LES GUIDES D'UN MEMBRE — l'onglet « Guides » de son profil public.
+   *
+   * La carte de guide se dessine à partir de `guideCardSchema` entier ; seule
+   * cette route le sert. Le filtre s'ajoute aux règles de visibilité, il n'en
+   * remplace aucune.
+   */
+  readonly authorHandle?: string;
 }
 
 // ── Lectures ────────────────────────────────────────────────────────────────
@@ -127,10 +151,59 @@ export function fetchGuides(
  * « jamais modifié » — précisément pour qu'un lien partagé dans une conversation
  * continue de fonctionner. C'est donc lui la clé d'URL.
  */
-export function fetchGuide(slug: string, signal?: AbortSignal): Promise<GuideDetailResponse> {
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `?page=<slug de page>` — ABSENT, C'EST LA PREMIÈRE PAGE                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le paramètre est FACULTATIF, et c'est la garantie de compatibilité que §2.1
+ * protège en figeant le slug du guide : `/guides/mon-guide` répondait avant les
+ * pages, il répond pareil après. Un lien partagé dans une conversation continue
+ * donc d'ouvrir le guide — sur sa première page.
+ *
+ * ⚠ UN SLUG DE PAGE INCONNU DONNE UN `404`, ET C'EST VOULU côté serveur : rendre
+ * la première page ferait croire au lecteur qu'il lit celle du lien. L'appelant le
+ * traite comme n'importe quel guide introuvable — `useGuide` affiche l'échec.
+ *
+ * LA CLÉ EST OMISE ET NON POSÉE À `undefined` : `query()` filtre déjà les valeurs
+ * vides, mais le dire ici évite qu'un `?page=` nu parte vers `zodPipe`, qui
+ * répondrait `400` sur une chaîne vide.
+ */
+export function fetchGuide(
+  slug: string,
+  pageSlug?: string,
+  signal?: AbortSignal,
+): Promise<GuideDetailResponse> {
   return memberApi.get(
-    `/guides/${encodeURIComponent(slug)}`,
+    `/guides/${encodeURIComponent(slug)}${query({ page: pageSlug })}`,
     guideDetailResponseSchema,
+    opts(signal),
+  );
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `GET /guides/:slug/editor` — CE QUE L'ÉDITEUR LIT POUR S'OUVRIR            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * LA SEULE ROUTE DE LECTURE DE CE FICHIER QUI N'EST PAS PUBLIQUE, et la seule qui
+ * rende LE CORPS DE TOUTES LES PAGES. `fetchGuide` juste au-dessus ne rend que le
+ * corps de la page lue et ne sert jamais un brouillon : un éditeur ouvert sur un
+ * guide existant n'avait donc aucun moyen de montrer la page 3 sans écrire
+ * dedans.
+ *
+ * ⚠ ON NE TESTE RIEN AVANT D'APPELER. `guide.write` est en N2 et seul l'auteur
+ * passe : on tente, et le serveur répond `403 LEVEL_REQUIRED`, `404` (brouillon
+ * d'autrui) ou `NOT_AUTHOR` (guide public d'autrui). Le front PRÉVIENT, il
+ * n'autorise pas — c'est `GardeNiveau` qui explique plus tôt, sans rien garder.
+ */
+export function fetchGuideEditeur(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<GuideAuthorEditorResponse> {
+  return memberApi.get(
+    `/guides/${encodeURIComponent(slug)}/editor`,
+    guideAuthorEditorResponseSchema,
     opts(signal),
   );
 }
@@ -223,6 +296,84 @@ export function updateGuide(guideId: string, patch: UpdateGuide): Promise<GuideE
   });
 }
 
+// ── Écritures — les pages d'un guide (A05, barre latérale de l'auteur) ──────
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES TROIS ROUTES DE PAGE SONT CELLES DE L'AUTEUR, ET DE LUI SEUL           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Les trois exigent `guide.write`, donc N2, et `loadOwned` refuse à quiconque
+ * n'est pas l'auteur. ⚠ ON NE TESTE RIEN ICI : le front PRÉVIENT, il n'autorise
+ * pas (00 §5). On tente, le serveur répond `403 LEVEL_REQUIRED` ou `404`, et
+ * `components/fenetre-niveau.tsx` explique.
+ *
+ * Les trois rendent `guideEditorResponseSchema` — la forme PLATE de
+ * `byIdForAuthor`, avec `pages` et `currentPage`. C'est ce qui évite à l'éditeur de
+ * relire le guide après chaque geste : la réponse dit déjà l'état des pages.
+ */
+
+/**
+ * `POST /guides/:id/pages` — la page naît EN DERNIÈRE POSITION.
+ *
+ * `position` n'est pas accepté : insérer au milieu, c'est créer puis déplacer, et
+ * le déplacement a sa route (`updateGuidePage`). Le `title` est OBLIGATOIRE
+ * (`GUIDE_PAGE_TITLE_MIN` = 2) ; `body` est facultatif, et l'éditeur ne l'envoie
+ * pas — on ajoute un cadre, puis on le remplit.
+ *
+ * La réponse porte `currentPage` = LA PAGE CRÉÉE et `currentVersion: null` : une
+ * page neuve n'a pas de version courante, et c'est un cas prévu par le contrat.
+ */
+export function createGuidePage(
+  guideId: string,
+  input: CreateGuidePage,
+): Promise<GuideEditorResponse> {
+  return memberApi.post(`/guides/${guideId}/pages`, guideEditorResponseSchema, {
+    body: createGuidePageSchema.parse(input),
+  });
+}
+
+/**
+ * `PATCH /guides/:id/pages/:pageId` — renommer, déplacer.
+ *
+ * ⚠ LE CORPS NE PASSE PAS PAR ICI : il passe par `updateGuide` avec `pageId`.
+ * Une seule route écrit du contenu, et c'est elle qui porte la cadence de 60
+ * appels par minute de l'éditeur auto-enregistré.
+ *
+ * `position` est la position VOULUE, comptée à partir de 1, bornée par le serveur
+ * au nombre de pages : l'écran n'a pas à connaître ce nombre pour demander « mets
+ * cette page en dernier ».
+ */
+export function updateGuidePage(
+  guideId: string,
+  pageId: string,
+  patch: UpdateGuidePage,
+): Promise<GuideEditorResponse> {
+  return memberApi.patch(`/guides/${guideId}/pages/${pageId}`, guideEditorResponseSchema, {
+    body: updateGuidePageSchema.parse(patch),
+  });
+}
+
+/**
+ * `DELETE /guides/:id/pages/:pageId` — jamais la dernière.
+ *
+ * ⚠ ELLE RÉPOND `409 { code: 'LAST_PAGE' }` SUR LA DERNIÈRE PAGE, et l'appelant
+ * DOIT le dire avec les mots du produit : un guide sans page n'a pas de corps, et
+ * supprimer le guide entier est un AUTRE geste. Voir `use-editeur-guide.ts`, qui
+ * décide sur le CODE et jamais sur le message (00 §5.2).
+ *
+ * La suppression est LOGIQUE côté serveur (`deleted_at`) : l'historique de §2.7
+ * reste intact, et les commentaires de la page retirée dorment au lieu d'être
+ * effacés — un auteur ne peut pas faire disparaître la critique d'un lecteur en
+ * retirant la page où elle est écrite.
+ */
+export function removeGuidePage(
+  guideId: string,
+  pageId: string,
+): Promise<GuideEditorResponse> {
+  return memberApi.del(`/guides/${guideId}/pages/${pageId}`, guideEditorResponseSchema);
+}
+
 export function publishGuide(guideId: string): Promise<GuideEditorResponse> {
   return memberApi.post(`/guides/${guideId}/publish`, guideEditorResponseSchema);
 }
@@ -287,6 +438,79 @@ export function removeOutdatedFlag(guideId: string): Promise<GuideOutdatedRespon
   return memberApi.del(`/guides/${guideId}/outdated`, guideOutdatedResponseSchema);
 }
 
+/**
+ * `GET /guides/:id/outdated` — CE QUI A ÉTÉ SIGNALÉ, POUR L'AUTEUR.
+ *
+ * Le porteur, revenant sur son arbitrage de la veille : « Il faut faire ceci,
+ * l'auteur doit voir les signalements "a changé". » Ce qui reste du précédent,
+ * c'est l'ANONYMAT — la route ne rend que `{ createdAt, comment }`, et son schéma
+ * `.strict()` refuserait tout champ de plus à la frontière.
+ *
+ * Par l'IDENTIFIANT et non par le slug, comme `fetchProposals` et pour la même
+ * raison : le contrôleur valide `:id` par `uuidSchema`, donc un slug donnerait un
+ * `400` et non un `404` — « ce qui se lit mal quand on cherche pourquoi la liste
+ * est vide ».
+ *
+ * ⚠ RÉSERVÉE À L'AUTEUR (`loadOwned`, capacité `guide.write`). Un lecteur reçoit
+ * `403 NOT_AUTHOR` sur un guide public et `404` sur un brouillon. Le front ne
+ * l'appelle donc que depuis l'écran de l'auteur — mais il ne décide rien : c'est
+ * le serveur qui refuse.
+ */
+export function fetchOutdatedFlags(
+  guideId: string,
+  signal?: AbortSignal,
+): Promise<GuideOutdatedFlagsResponse> {
+  return memberApi.get(
+    `/guides/${guideId}/outdated`,
+    guideOutdatedFlagsResponseSchema,
+    opts(signal),
+  );
+}
+
+/**
+ * `PUT /guides/:id/community` — « Ouvrir à la communauté », et le retour.
+ *
+ * Le porteur : « le bouton ouvrir à la communauté ne marche pas. » MESURÉ : un
+ * `<a href="#">` mort sur `auteurdesktop`, et AUCUNE route derrière —
+ * `maintainedByCommunity` n'était écrit que par la tâche d'inactivité du §2.5 et
+ * par l'anonymisation du §8.
+ *
+ * LE BOOLÉEN PART DANS LE CORPS, et ce n'est pas une bascule : §2.5 veut le geste
+ * « réversible », et une bascule sans valeur aurait rendu le double clic
+ * destructeur. Le pourquoi au long est sur `guideCommunityMaintenanceSchema`.
+ *
+ * ⚠ CE QUE L'AUTEUR PERD EN OUVRANT, et que l'écran doit dire avant : §2.4, ligne
+ * 52 — « les propositions vont directement en file de modération, sans passer par
+ * le créateur ». Il renonce à valider les corrections de son propre guide.
+ */
+export function setCommunityMaintenance(
+  guideId: string,
+  maintained: boolean,
+): Promise<GuideCommunityMaintenanceResponse> {
+  return memberApi.put(
+    `/guides/${guideId}/community`,
+    guideCommunityMaintenanceResponseSchema,
+    { body: guideCommunityMaintenanceSchema.parse({ maintained }) },
+  );
+}
+
+/**
+ * LA LONGUEUR MAXIMALE DU COMMENTAIRE — LUE SUR LE SCHÉMA, PAS RECOPIÉE.
+ *
+ * `packages/shared` est la seule source des bornes (règle du dépôt), et écrire
+ * `500` ici l'aurait dédoublée : le jour où §2.6 passe à 800, le champ de l'écran
+ * refuserait silencieusement ce que la route accepte, et personne ne saurait
+ * pourquoi. Zod porte la borne sur l'instance — `maxLength` sur un `ZodString` —
+ * donc elle se LIT.
+ *
+ * `unwrap()` parce que la clé est `.optional()` : la chaîne est enveloppée dans un
+ * `ZodOptional`. Le repli à 500 n'est pas une seconde source mais un garde-fou de
+ * type : `maxLength` est typé `number | null`, et un `null` donnerait un
+ * `maxLength` d'attribut invalide. Mesuré sur la version livrée : 500.
+ */
+export const OBSOLETE_COMMENTAIRE_MAX: number =
+  guideOutdatedFlagSchema.shape.comment.unwrap().maxLength ?? 500;
+
 // ── Écritures — propositions de correction (A06) ────────────────────────────
 
 /**
@@ -322,6 +546,43 @@ export function amendProposal(
   });
 }
 
+/**
+ * LES BORNES DU MOTIF DE REFUS — LUES SUR LE SCHÉMA, PAS RECOPIÉES.
+ *
+ * Même règle et même raison qu'`OBSOLETE_COMMENTAIRE_MAX` ci-dessus :
+ * `packages/shared` est la seule source des bornes, et un `10` écrit dans un écran
+ * serait une seconde source. `rejectProposalSchema` porte les deux sur son
+ * `ZodString`, donc elles se LISENT — `minLength` et `maxLength`.
+ *
+ * ⚠ LE MINIMUM N'EST PAS CELUI DU MOTIF D'UNE PROPOSITION. Mesuré :
+ * `createProposalSchema.reason` exige `GUIDE_PROPOSAL_REASON_MIN` (20), le refus en
+ * exige 10. Deux bornes voisines, deux valeurs — c'est précisément le genre d'écart
+ * qu'une recopie « raisonnable » aurait effacé.
+ *
+ * Le champ est TRIMÉ par le schéma (`z.string().trim()`), donc l'écran doit compter
+ * sur la valeur trimée lui aussi, sinon un bouton s'allumerait sur des espaces.
+ * Les replis à 10 et 1 000 sont un garde-fou de type (`minLength` est
+ * `number | null`), pas une seconde source : mesuré sur la version livrée, 10 et
+ * 1 000.
+ */
+export const REFUS_MOTIF_MIN: number = rejectProposalSchema.shape.reason.minLength ?? 10;
+export const REFUS_MOTIF_MAX: number = rejectProposalSchema.shape.reason.maxLength ?? 1_000;
+
+/**
+ * LA LONGUEUR MAXIMALE D'UN REMPLACEMENT AMENDÉ, lue sur `amendProposalSchema`.
+ *
+ * ⚠ ELLE PASSE PAR `restrictedMarkdown`, qui enveloppe le `ZodString` dans un
+ * `ZodEffects` (`superRefine`) : `maxLength` n'est donc PAS lisible sur la clé.
+ * C'est pourquoi la borne vient de `GUIDE_BODY_MAX`, la constante que le schéma
+ * lui-même emploie — toujours une seule source, simplement prise une étape plus
+ * haut.
+ *
+ * ⚠ ET LE VIDE EST LICITE : §2.4 prévoit le RETRAIT d'un passage, donc un
+ * remplacement vide n'est pas une erreur de saisie. Aucun plancher n'est posé sur
+ * ce champ.
+ */
+export const AMENDEMENT_MAX: number = GUIDE_BODY_MAX;
+
 /** Refuser : motif OBLIGATOIRE (§2.4), le proposant en est notifié. */
 export function rejectProposal(
   proposalId: string,
@@ -330,4 +591,84 @@ export function rejectProposal(
   return memberApi.post(`/proposals/${proposalId}/reject`, guideProposalDetailSchema, {
     body: rejectProposalSchema.parse({ reason }),
   });
+}
+
+// ── Écritures — le signet d'un guide (A04, barre haute mobile) ──────────────
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LES ICON DU HEADER NE MARCHENT PAS » — LE SIGNET DU GUIDE                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui. Le signet de la barre haute mobile était un
+ * `<span>` inerte.
+ *
+ * ── TOUT EXISTAIT, ET RIEN N'APPELAIT ───────────────────────────────────────
+ *
+ * `BookmarkSubjectType` porte `GUIDE` depuis le début
+ * (`packages/db/prisma/schema/t-transverse.prisma`), et les quatre routes de §2.9
+ * sont livrées : `GET /me/bookmarks`, `PUT /me/bookmarks`,
+ * `DELETE /me/bookmarks/:type/:id`, `GET /me/bookmarks/states`. L'écran K10
+ * « Enregistrés » les emploie déjà pour LIRE la collection ; personne n'y
+ * ÉCRIVAIT un guide.
+ *
+ * ── POURQUOI CE N'EST PAS `PUT /guides/:id/bookmark` ────────────────────────
+ *
+ * Parce que cette route n'existe pas, et qu'il ne faut pas la créer. Le signet de
+ * publication et celui de story ont chacun la leur (`PUT /posts/:id/bookmark`,
+ * `PUT /stories/:id/bookmark`) — ce sont des routes HISTORIQUES, antérieures au
+ * module `bookmarks`, et elles rendent `{ bookmarked }`. Les routes de §2.9 sont
+ * la forme GÉNÉRALE, avec le sujet dans le corps, et c'est elle qui sert les sept
+ * espèces de la collection. En ajouter une par espèce multiplierait les chemins
+ * vers la même table.
+ *
+ * ⚠ CONSÉQUENCE SUR LA RÉPONSE, et il faut la dire : `PUT /me/bookmarks` rend
+ * `{ id, state }`, PAS `{ bookmarked }`. Il n'y a donc rien à lire pour savoir si
+ * le geste a pris — la route est IDEMPOTENTE (`upsert` sur la clé unique), donc
+ * « elle a répondu » VAUT « c'est enregistré ». Le `DELETE`, lui, rend un `204`
+ * et `deleteMany` : retirer un signet qu'on n'a pas vaut succès, « c'est l'état
+ * voulu ». L'appelant pose donc l'état qu'il a DEMANDÉ, et non un état lu —
+ * contrairement au signet d'une publication, où `{ bookmarked }` est la valeur
+ * posée. La différence est dans la route, pas dans un choix d'écran.
+ */
+const etatSignetSchema = z
+  .object({ id: uuidSchema, state: z.string() })
+  .strict();
+
+export function bookmarkGuide(guideId: string): Promise<{ readonly id: string }> {
+  return memberApi.put('/me/bookmarks', etatSignetSchema, {
+    body: putBookmarkSchema.parse({ subjectType: 'GUIDE', subjectId: guideId }),
+  });
+}
+
+/**
+ * `DELETE /me/bookmarks/GUIDE/:id` — le type EST dans le chemin, et il le doit :
+ * la table est unique sur `(userId, subjectType, subjectId)`, donc un identifiant
+ * seul ne désigne pas une ligne. C'est écrit sur le contrôleur.
+ */
+export function unbookmarkGuide(guideId: string): Promise<unknown> {
+  return memberApi.del(`/me/bookmarks/GUIDE/${guideId}`, z.unknown());
+}
+
+/**
+ * L'ÉTAT DU SIGNET DE CE GUIDE-CI, par la route de LOT.
+ *
+ * Elle est faite pour vingt cartes, et on ne lui en donne qu'une — ce qui est
+ * exactement son travail à l'échelle 1, et c'est la SEULE route qui réponde à la
+ * question : `GET /guides/:slug` ne rend PAS de champ `bookmarked`
+ * (`guideDetailResponseSchema` est `.strict()`, vérifié au schéma et non supposé).
+ *
+ * ⚠ L'ABSENCE EST LA RÉPONSE. Le service le dit : « Les absents ne sont pas
+ * rendus. Un identifiant sans ligne n'est pas enregistré ; l'écran le déduit de
+ * son absence. » On ne lit donc pas `state` — un guide enregistré puis supprimé
+ * porte `REMOVED`, et il est toujours dans la collection. La question posée ici
+ * est « est-il enregistré ? », et la ligne existe ou non.
+ */
+export function fetchSignetGuide(guideId: string): Promise<boolean> {
+  return memberApi
+    .get(
+      `/me/bookmarks/states?subjectType=GUIDE&ids=${encodeURIComponent(guideId)}`,
+      bookmarkStatesResponseSchema,
+    )
+    .then((page) => page.items.some((l) => l.subjectId === guideId));
 }

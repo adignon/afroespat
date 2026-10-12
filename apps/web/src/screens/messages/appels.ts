@@ -193,10 +193,20 @@ const RANGEE_FERMEE = 'transparent';
 /**
  * LE NOM D'UNE CONVERSATION.
  *
- * §8 : « conversation de parcours nommée par le titre du parcours ». Le serveur ne
- * renseigne `title` QUE pour une conversation de parcours et rend `null` pour une
- * conversation directe — c'est au front de la nommer par son interlocuteur, ce que
- * la maquette dessine d'ailleurs (« Sandra M. », « Kofi Boateng »).
+ * §8 : « conversation de parcours nommée par le titre du parcours ». Le serveur
+ * renseigne `title` pour les conversations qu'il sait NOMMER — celle d'un parcours,
+ * et depuis le lot « Contacter les modérateurs » celle de MODÉRATION D'UN RÉSEAU,
+ * nommée par le nom du réseau. Il rend `null` pour une conversation directe, et
+ * c'est au front de la nommer par son interlocuteur, ce que la maquette dessine
+ * d'ailleurs (« Sandra M. », « Kofi Boateng »).
+ *
+ * ⚠ LA PRISE S'APPELLE ENCORE `estParcours` ET NE DÉSIGNE PLUS QUE LES PARCOURS.
+ * Elle vaut `title !== null`, c'est-à-dire « conversation de GROUPE nommée par son
+ * objet » — donc vraie aussi pour un fil de modération, où elle produit exactement
+ * le bon dessin : le glyphe de groupe plutôt qu'un avatar, et les membres en
+ * sous-titre. Le nom est resté celui du premier cas rencontré ; le renommer touche
+ * `ecran-donnees.tsx`, `ecran.tsx` et les cadres M01, et ce n'était pas le lot.
+ * REMONTÉ plutôt que laissé à deviner.
  *
  * Un membre masqué (§4, séparation mutuelle) n'est pas nommé : le serveur a déjà
  * posé `hidden`, et afficher son nom contredirait le masquage qu'il vient de faire.
@@ -462,9 +472,13 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
  *
  * Le sous-titre ne porte donc les membres que lorsqu'il ajoute quelque chose. Et le
  * préfixe de TYPE de la maquette (« Parcours · ») n'est pas repris : `kind` vaut
- * `DIRECT`, `JOURNEY` ou `MENTORSHIP`, et aucune table de ce dépôt ne donne le mot
- * français de ces trois valeurs. En inventer trois serait écrire du texte
- * d'interface — signalé au porteur plutôt que deviné.
+ * `DIRECT`, `JOURNEY`, `MENTORSHIP` ou `COMMUNITY_MODERATION`, et aucune table de ce
+ * dépôt ne donne le mot français de ces QUATRE valeurs. En inventer quatre serait
+ * écrire du texte d'interface — signalé au porteur plutôt que deviné.
+ *
+ * Le quatrième est arrivé avec « Contacter les modérateurs » : son titre est le NOM
+ * DU RÉSEAU, et le sous-titre y porte donc les membres de l'équipe, ce qui est
+ * exactement l'information utile — on voit À QUI l'on écrit.
  */
 function enteteDe(ouverte: Conversation | null, moiId: string): EnteteConversation {
   const vide = {

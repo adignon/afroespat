@@ -57,6 +57,24 @@ export const COMMUNITY_MAX_PINNED_TOPICS = 5;
 export const TOPIC_EDIT_WINDOW_MINUTES = 15;
 
 /**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ SEPT JOURS POUR REVENIR SUR UN MASQUAGE — ARBITRAGE DU PORTEUR             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * §2.4 donne aux modérateurs de réseau le droit de masquer un sujet, et RIEN ne
+ * leur permettait de revenir sur une erreur de clic : seule l'équipe pouvait
+ * rétablir (`ModerationActionType.UNHIDE`, module 13). Le porteur a tranché —
+ * « le modérateur qui a masqué peut remettre dans les sept jours ; au-delà, seule
+ * l'équipe ».
+ *
+ * La borne est ICI et non dans le service parce que l'écran doit dire la même
+ * chose que l'API refuse : la carte de modération d'un sujet masqué montre le
+ * geste tant qu'il reste dans la fenêtre, et c'est le serveur qui calcule
+ * `unhideUntil`. Un `7` recopié dans le front serait une seconde source.
+ */
+export const TOPIC_UNHIDE_WINDOW_DAYS = 7;
+
+/**
  * Catégories des réseaux d'intérêt (§2.2). Liste FERMÉE : un membre ne crée pas
  * une catégorie, sinon la découverte par catégorie perd tout son sens.
  */
@@ -112,8 +130,44 @@ export const COMMUNITY_ERROR_CODES = {
   PIN_LIMIT: 422,
   /** Un propriétaire transfère avant de quitter (§2.2). */
   OWNER_MUST_TRANSFER: 422,
-  /** Retiré du réseau : ne peut plus rejoindre (§2.4). */
+  /**
+   * BANNI du réseau : ne peut plus rejoindre (§2.4).
+   *
+   * ⚠ LE COMMENTAIRE DISAIT « RETIRÉ », ET C'ÉTAIT DEVENU FAUX. Le porteur a
+   * tranché : « Retirer, il peut rejoindre à nouveau. Mais banni, il ne peut plus
+   * rejoindre. » Un membre RETIRÉ n'a plus de ligne d'adhésion du tout, donc il
+   * ne rencontre jamais ce refus — il redemande comme n'importe qui. Ce code ne
+   * concerne QUE le bannissement.
+   */
   BANNED_FROM_COMMUNITY: 403,
+  /**
+   * La sourdine ne se pose QUE sur son propre rang (§4 : « `muted` (soi-même) »).
+   *
+   * Ce n'est pas une variante de `FORBIDDEN` : la sourdine n'est pas de la
+   * modération, c'est une PRÉFÉRENCE. Un propriétaire ne peut pas faire taire
+   * un réseau pour quelqu'un d'autre, et un modérateur non plus — il n'existe
+   * aucun rôle qui le permette. Un code à part le dit, là où un `403 FORBIDDEN`
+   * laisserait croire qu'un rang plus élevé y donnerait droit.
+   */
+  MUTE_SELF_ONLY: 403,
+  /**
+   * `muted` arrive dans le même corps que `role` ou `status`.
+   *
+   * Refusé plutôt que départagé : les deux gestes n'ont ni le même acteur
+   * (soi-même contre un modérateur) ni la même nature (préférence contre
+   * modération), et une requête qui les mêle ne peut pas être journalisée
+   * honnêtement — une seule ligne d'audit devrait décrire deux actes.
+   */
+  MUTE_ALONE: 422,
+  /** Le signalement ne vise aucun contenu de ce réseau (§2.4). */
+  REPORT_NOT_IN_COMMUNITY: 404,
+  /** Le signalement est déjà clos : la décision a déjà été prise (§2.4). */
+  REPORT_ALREADY_DECIDED: 409,
+   /**
+   * Le masquage d'un sujet a plus de sept jours : seule l'équipe peut encore le
+   * rétablir (arbitrage du porteur, `TOPIC_UNHIDE_WINDOW_DAYS`).
+   */
+  UNHIDE_WINDOW_CLOSED: 422,
 } as const;
 
 export type CommunityErrorCode = keyof typeof COMMUNITY_ERROR_CODES;
@@ -133,6 +187,13 @@ export const COMMUNITY_ERROR_MESSAGES: Record<CommunityErrorCode, string> = {
   PIN_LIMIT: 'Cinq épinglés au maximum. Retirez-en un avant d’en ajouter.',
   OWNER_MUST_TRANSFER: 'Transférez la propriété du réseau avant de le quitter.',
   BANNED_FROM_COMMUNITY: 'Vous ne pouvez plus rejoindre ce réseau.',
+  MUTE_SELF_ONLY: 'La sourdine est une préférence personnelle : elle ne se pose que sur son propre rang.',
+  MUTE_ALONE: 'La sourdine se change seule, sans toucher au rôle ni au statut du membre.',
+  REPORT_NOT_IN_COMMUNITY: 'Ce signalement ne vise aucun contenu de ce réseau.',
+  REPORT_ALREADY_DECIDED: 'Ce signalement a déjà été traité.',
+  // Le nombre de jours arrive dans `details` : le front compose la phrase, le
+  // back ne fabrique pas de texte avec des trous (même règle que CITY_THRESHOLD).
+  UNHIDE_WINDOW_CLOSED: 'Ce masquage est trop ancien : seule l’équipe peut encore remettre ce contenu.',
 };
 
 // ── Champs (§2.2, §2.3) ─────────────────────────────────────────────────────
@@ -234,11 +295,46 @@ export type InviteMembers = z.infer<typeof inviteMembersSchema>;
  * propriété se transfère par `POST /communities/:id/transfer`, qui déplace
  * l'ancien propriétaire en même temps — un `role: OWNER` posé ici créerait deux
  * propriétaires là où §2.2 en veut un seul.
+ *
+ * ── `muted` ARRIVE PAR LA MÊME ROUTE ET N'EST PAS LE MÊME GESTE ────────────
+ *
+ * §4 le met explicitement dans cette ligne du tableau : « `role`, `status`
+ * (BANNED), `muted` (soi-même) ». Il PARTAGE donc la route, et c'est le service
+ * qui départage — mais les deux gestes n'ont rien en commun :
+ *
+ *   · `role` et `status` sont de la MODÉRATION : un modérateur les pose sur
+ *     quelqu'un d'autre, et §2.4 exige une ligne d'`audit_logs` ;
+ *   · `muted` est une PRÉFÉRENCE (§2.5) : n'importe quel membre la pose sur son
+ *     propre rang, et il n'y a rien à journaliser — personne n'a de pouvoir à
+ *     rendre compte sur le silence qu'il se choisit.
+ *
+ * ⚠ C'est pourquoi le service REFUSE un corps qui mêle `muted` à l'un des deux
+ * (`MUTE_ALONE`) au lieu de les appliquer ensemble : une seule requête ne peut
+ * pas être à la fois un acte de modération et un réglage personnel, et une
+ * seule ligne d'audit ne saurait pas décrire les deux.
+ /**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « RETIRER » N'EST PAS UNE VALEUR DE `status` — C'EST UNE AUTRE ROUTE        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Retirer, il peut rejoindre à nouveau. Mais banni, il ne peut
+ * plus rejoindre. » La maquette dessinait donc bien DEUX entrées dans le menu
+ * d'une ligne de membre, et §2.4 — qui n'écrit que « retirer un membre
+ * (`BANNED`) » — est incomplet.
+ *
+ * `status: 'BANNED'` reste le bannissement. Retirer est `DELETE
+ * /communities/:id/members/:userId`, et c'est une route et non une troisième
+ * valeur ici pour une raison de forme : retirer FAIT DISPARAÎTRE la ligne
+ * d'adhésion, exactement comme `POST /leave` le fait pour soi-même. Un
+ * `status: 'REMOVED'` serait un état que `CommunityMemberStatus` ne porte pas, et
+ * le schéma de base est figé.
  */
 export const updateMemberSchema = z
   .object({
     role: z.enum(['MODERATOR', 'MEMBER']).optional(),
     status: z.enum(['ACTIVE', 'BANNED']).optional(),
+    /** La sourdine du §2.5 — sur son PROPRE rang seulement (`MUTE_SELF_ONLY`). */
+    muted: z.boolean().optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, { message: 'Aucune modification.' });
 
@@ -269,9 +365,102 @@ export const updateTopicSchema = z
 
 export type UpdateTopic = z.infer<typeof updateTopicSchema>;
 
-export const createAnnouncementSchema = z.object({
-  body: z.string().trim().min(1).max(2_000),
-});
+/**
+ * Titre d'annonce : 3–120, FACULTATIF.
+ *
+ * ── LES DEUX BORNES, ET D'OÙ ELLES VIENNENT ─────────────────────────────────
+ *
+ * Le maximum est celui de `topicTitleSchema` — 120 — parce que c'est le titre de
+ * l'autre objet titré du MÊME module, affiché dans les mêmes listes et la même
+ * largeur de carte. Deux maximums différents pour deux titres voisins seraient
+ * une divergence sans raison, et la planche n'en fixe aucun.
+ *
+ * Le minimum, lui, est 3 et NON 10 : les dix de `topicTitleSchema` « écartent les
+ * "aide !" sans objet », ce qui a du sens pour une question posée à un réseau.
+ * Une annonce est écrite par le propriétaire et peut légitimement s'appeler
+ * « AG », « Fête » ou « Visa ». Trois caractères est le minimum qui écarte la
+ * frappe accidentelle sans écarter un mot réel.
+ *
+ * ⚠ FACULTATIF, et c'est la colonne qui le décide : `community_announcements.title`
+ * est NULLABLE, parce que les annonces publiées avant ce lot n'en ont pas. Le
+ * rendre obligatoire ici donnerait un schéma qui refuse ce que la table contient.
+ */
+export const announcementTitleSchema = z.string().trim().min(3).max(120);
+
+/**
+ * `POST /communities/:id/announcements` — LES QUATRE CONTRÔLES DE LA PLANCHE.
+ *
+ * ── CE SCHÉMA N'EN ACCEPTAIT QU'UN, ET C'ÉTAIT UN ÉCART DE CONTRAT ──────────
+ *
+ * Le porteur : « L'annonce : tous les champs doivent être branchés. » MESURÉ : la
+ * planche « ADMIN · ANNONCE » dessine QUATRE contrôles sur les DEUX largeurs —
+ * un titre, un corps, « Épingler en haut du fil », « Notifier les 890 membres » —
+ * et ce schéma n'acceptait que `{ body }`. Deux des quatre n'avaient nulle part
+ * où s'écrire : ce n'était pas un oubli de branchement d'écran, c'était la table
+ * et le schéma qui étaient en deçà du dessin.
+ *
+ * ── LES DEUX DÉFAUTS SONT L'ANCIEN COMPORTEMENT, AU BIT PRÈS ────────────────
+ *
+ * Même règle que les deux réglages de sondage juste en dessous, et pour la même
+ * raison : un appelant qui ne passe NI `pinned` NI `notify` doit obtenir
+ * exactement ce qu'il obtenait avant ce lot. Avant, toute annonce émettait sa
+ * notification et aucune n'était épinglée — d'où `notify: true` et
+ * `pinned: false`.
+ *
+ * ⚠ CE N'EST PAS CE QUE LA PLANCHE DESSINE, et l'écart est volontaire : elle
+ * montre les DEUX interrupteurs ALLUMÉS. C'est l'ÉCRAN qui part de cet état
+ * (`use-annonce.ts`), pas le schéma — un défaut de schéma à `pinned: true`
+ * épinglerait toute annonce créée par un appel direct, c'est-à-dire changerait le
+ * sens d'un appel existant.
+ */
+export const createAnnouncementSchema = z
+  .object({
+    title: announcementTitleSchema.optional(),
+    body: z.string().trim().min(1).max(2_000),
+    /** « Épingler en haut du fil ». Exclusif : le service déépingle les autres. */
+    pinned: z.boolean().default(false),
+    /** « Notifier les N membres ». C'est lui qui pose `notified_at`. */
+    notify: z.boolean().default(true),
+  })
+  .strict();
+
+export type CreateAnnouncement = z.infer<typeof createAnnouncementSchema>;
+
+/**
+ * ╔═══════════════════════════════════════════════════════════════════════════╗
+ * ║ `PATCH /communities/:id/announcements/:announcementId` — ÉPINGLER ET      ║
+ * ║ SURTOUT DÉSÉPINGLER                                                       ║
+ * ╚═══════════════════════════════════════════════════════════════════════════╝
+ *
+ * ── LE MANQUE QUE CETTE ROUTE COMBLE, ARBITRÉ LE 2026-10-11 ───────────────
+ *
+ * `createAnnouncement` pose `pinned_at` et déépingle les autres dans la même
+ * transaction : l'épinglage est EXCLUSIF, et le porteur a confirmé qu'il le
+ * reste. Mais il n'existait AUCUN chemin pour revenir à « aucune annonce
+ * épinglée » : on ne pouvait que remplacer l'épinglée par une autre. « Épingler
+ * en haut du fil » était une porte à sens unique — une fois franchie, le haut du
+ * fil portait une annonce pour toujours, même devenue fausse (« Jusqu'au 14
+ * mars », que la planche écrit elle-même sous l'interrupteur).
+ *
+ * ── UN SEUL CHAMP, ET IL EST OBLIGATOIRE ─────────────────────────────────
+ *
+ * `pinned: boolean`, sans `.optional()` ni défaut. Le besoin arbitré est le
+ * RETRAIT (`false`) ; `true` est servi par la même route parce que la question
+ * posée est la même — « cette annonce est-elle en haut du fil ? » — et qu'une
+ * route par sens aurait doublé la garde de modération pour rien.
+ *
+ * ⚠ L'EXCLUSIVITÉ VAUT ICI AUSSI, et c'est le service qui la tient : épingler
+ * une ANCIENNE annonce déépingle la courante. Sans cela la règle tiendrait à la
+ * création et nulle part ailleurs, et deux annonces épinglées seraient
+ * atteignables par le chemin le plus évident.
+ *
+ * Le corps est `.strict()` : ni `title`, ni `body`, ni `notify`. Une annonce
+ * publiée ne se réécrit pas — §2.3 ne le prévoit pas, la planche ne dessine
+ * aucune édition d'annonce, et la notification est déjà partie.
+ */
+export const updateAnnouncementSchema = z.object({ pinned: z.boolean() }).strict();
+
+export type UpdateAnnouncement = z.infer<typeof updateAnnouncementSchema>;
 
 /**
  * LES DEUX BORNES D'UN SONDAGE, NOMMÉES PLUTÔT QU'ÉCRITES.
@@ -320,8 +509,21 @@ export const pollVoteSchema = z.object({
   optionIds: z.array(uuidSchema).min(1).max(8),
 });
 
+/**
+ * LE TITRE D'UN ALBUM, NOMMÉ À PART POUR QUE L'ÉCRAN LISE SES BORNES.
+ *
+ * Il était écrit en ligne dans `createAlbumSchema`, donc invisible au front : la
+ * fenêtre « Nouvel album » aurait dû RECOPIER 3 et 80, et le mémo l'interdit
+ * (« les bornes ne se recopient jamais : on les importe »). Nommé, le schéma
+ * porte `minLength` et `maxLength`, que `use-reseau.ts` lit — exactement ce que
+ * `announcementTitleSchema` fait déjà pour le formulaire d'annonce.
+ *
+ * AUCUNE BORNE NE CHANGE : `.trim().min(3).max(80)`, au caractère près.
+ */
+export const albumTitleSchema = z.string().trim().min(3).max(80);
+
 export const createAlbumSchema = z.object({
-  title: z.string().trim().min(3).max(80),
+  title: albumTitleSchema,
   /** Album lié à un événement du réseau, ou album libre (§2.3). */
   eventId: uuidSchema.optional(),
 });
@@ -471,6 +673,17 @@ export const communityDetailResponseSchema = communityPublicSchema
     myStatus: z.enum(CommunityMemberStatus).nullable(),
     canJoin: z.boolean(),
     canLeave: z.boolean(),
+    /**
+     * MA sourdine sur CE réseau (§2.5) — jamais celle d'un autre membre.
+     *
+     * UN BOOLÉEN ET NON UN NULLABLE, là où `myRole` et `myStatus` sont nuls pour
+     * un passant. La différence n'est pas une inconséquence : « quel est mon
+     * rôle ? » n'a pas de réponse quand on n'est pas membre, tandis que « ce
+     * réseau me notifie-t-il ? » en a toujours une — non, et `false` la dit.
+     * Un `null` ici obligerait les sept cadres qui dessinent le bouton
+     * « Sourdine » à distinguer trois états pour un interrupteur qui en a deux.
+     */
+    myMuted: z.boolean(),
     counters: z
       .object({
         members: z.number().int(),
@@ -484,9 +697,23 @@ export const communityDetailResponseSchema = communityPublicSchema
 
 export type CommunityDetailResponse = z.infer<typeof communityDetailResponseSchema>;
 
-/** Un réseau de MA liste : l'en-tête public, plus mon rôle et ma date d'entrée. */
+/**
+ * Un réseau de MA liste : l'en-tête public, plus mon rôle et ma date d'entrée.
+ *
+ * `muted` EST AJOUTÉ ICI, et pas seulement sur la fiche : la maquette A07
+ * dessine une pastille « En sourdine » sur les cartes de « Mes réseaux »
+ * (`n.muted` dans le cadre transcodé), qui était posée à `false` en dur faute de
+ * colonne. §2.5 dit « le réseau reste dans sa liste » — c'est donc dans la liste
+ * qu'il faut pouvoir dire qu'il est silencieux, sinon la sourdine devient
+ * invisible et on ne sait plus laquelle on a posée.
+ */
 export const myCommunitySchema = communityPublicSchema
-  .extend({ myRole: z.enum(CommunityMemberRole), joinedAt: z.string().datetime() })
+  .extend({
+    myRole: z.enum(CommunityMemberRole),
+    joinedAt: z.string().datetime(),
+    /** §2.5 — la pastille « En sourdine » des cartes de « Mes réseaux ». */
+    muted: z.boolean(),
+  })
   .strict();
 
 export type MyCommunity = z.infer<typeof myCommunitySchema>;
@@ -621,6 +848,24 @@ export const topicDetailResponseSchema = z
     canResolve: z.boolean(),
     canPin: z.boolean(),
     canEdit: z.boolean(),
+    /**
+     * ── LE SUJET EST-IL MASQUÉ, ET PEUT-ON ENCORE LE REMETTRE ? ─────────────
+     *
+     * `GET /topics/:id` ne rendait QUE les sujets visibles (`deleted_at IS
+     * NULL`). Un modérateur qui venait de masquer par erreur tombait donc sur un
+     * `404` : il n'y avait plus d'écran où revenir sur son clic. La route rend
+     * maintenant le sujet masqué AUX MODÉRATEURS du réseau, et ces trois champs
+     * disent quoi en faire.
+     *
+     * `canUnhide` est CALCULÉ PAR LE SERVEUR, comme `canEdit` : il dépend d'une
+     * fenêtre de sept jours qui se referme pendant qu'on lit la page. L'écran le
+     * lit, il ne le recalcule pas — et il ne s'en sert jamais pour autoriser :
+     * le geste est tenté, le serveur refuse si la fenêtre s'est fermée.
+     */
+    hidden: z.boolean(),
+    canUnhide: z.boolean(),
+    /** La fin de la fenêtre de sept jours. `null` quand le sujet n'est pas masqué. */
+    unhideUntil: z.string().datetime().nullable(),
     replies: z.array(topicReplySchema),
   })
   .strict();
@@ -658,13 +903,24 @@ export const communityMembersResponseSchema = pageSchema(communityMemberSchema);
 
 export type CommunityMembersResponse = z.infer<typeof communityMembersResponseSchema>;
 
-/** `PATCH /communities/:id/members/:userId` — l'état APRÈS, et rien d'autre. */
+/**
+ * `PATCH /communities/:id/members/:userId` — l'état APRÈS, et rien d'autre.
+ *
+ * `muted` EST SERVI PAR LES TROIS CHEMINS de la route — rôle, bannissement,
+ * sourdine — et non seulement par celui qui le change. L'écran rebascule un
+ * interrupteur sur cette réponse : s'il n'arrivait que sur un chemin, le cadre
+ * devrait deviner sa valeur sur les deux autres, ce qui est exactement la
+ * seconde vérité qu'on refuse (le bouton « Sourdine » lirait une chose et le
+ * serveur en porterait une autre).
+ */
 export const memberMutationResponseSchema = z
   .object({
     userId: uuidSchema,
     /** `null` si la ligne a disparu — un banni garde la sienne, mesuré. */
     role: z.enum(CommunityMemberRole).nullable(),
     status: z.enum(CommunityMemberStatus).nullable(),
+    /** §2.5 — l'état de la sourdine APRÈS le geste. */
+    muted: z.boolean(),
   })
   .strict();
 
@@ -728,10 +984,30 @@ export const communityFeedResponseSchema = pageSchema(communityFeedPostSchema);
 
 export type CommunityFeedResponse = z.infer<typeof communityFeedResponseSchema>;
 
+/**
+ * Une annonce telle que `GET /communities/:id/announcements` la rend.
+ *
+ * LES TROIS CHAMPS AJOUTÉS SONT NULLABLES ET NON FACULTATIFS, et la différence
+ * compte sous `exactOptionalPropertyTypes` : le service les SÉLECTIONNE tous les
+ * trois, donc ils sont toujours présents dans la charge — avec la valeur `null`
+ * quand le fait n'a pas eu lieu. Un `.optional()` laisserait croire qu'ils
+ * peuvent manquer, et un écran écrirait alors `?? ` sur une absence qui n'arrive
+ * jamais.
+ *
+ * `pinnedAt` et `notifiedAt` voyagent en INSTANTS plutôt qu'en booléens, comme
+ * les colonnes : « épinglée depuis le 11 octobre » est affichable, « épinglée :
+ * vrai » ne l'est pas.
+ */
 export const announcementSchema = z
   .object({
     id: uuidSchema,
+    /** Nul sur les annonces publiées avant que la colonne existe. */
+    title: z.string().nullable(),
     body: z.string(),
+    /** Non nul = épinglée en haut du fil, et depuis cet instant. */
+    pinnedAt: z.string().datetime().nullable(),
+    /** Non nul = la notification est partie, et à cet instant. */
+    notifiedAt: z.string().datetime().nullable(),
     createdAt: z.string().datetime(),
     author: communityAuthorSchema,
   })
@@ -743,10 +1019,41 @@ export const announcementsResponseSchema = pageSchema(announcementSchema);
 
 export type AnnouncementsResponse = z.infer<typeof announcementsResponseSchema>;
 
-/** `POST /communities/:id/announcements` — SANS `author`. Forme différente. */
+/**
+ * `POST /communities/:id/announcements` — SANS `author`. Forme différente.
+ *
+ * Elle porte MAINTENANT les trois mêmes champs que la forme de liste, moins
+ * l'auteur : c'est le propriétaire qui vient de publier, il se connaît. L'écran
+ * en a besoin pour afficher ce qu'il vient de faire sans rappeler la liste —
+ * notamment pour dire si la notification est partie.
+ */
 export const createAnnouncementResponseSchema = z
-  .object({ id: uuidSchema, body: z.string(), createdAt: z.string().datetime() })
+  .object({
+    id: uuidSchema,
+    title: z.string().nullable(),
+    body: z.string(),
+    pinnedAt: z.string().datetime().nullable(),
+    notifiedAt: z.string().datetime().nullable(),
+    createdAt: z.string().datetime(),
+  })
   .strict();
+
+export type CreateAnnouncementResponse = z.infer<typeof createAnnouncementResponseSchema>;
+
+/**
+ * `PATCH /communities/:id/announcements/:announcementId` — DEUX CHAMPS.
+ *
+ * Volontairement plus court que la forme de création : le seul fait que la
+ * requête change est l'épinglage, et renvoyer `title`, `body` et `notifiedAt`
+ * inchangés inviterait l'écran à les réécrire depuis une réponse qui ne les
+ * décide pas. `pinnedAt` dit l'état ET depuis quand, ce qui est tout ce que le
+ * bouton a besoin de savoir pour changer de libellé.
+ */
+export const updateAnnouncementResponseSchema = z
+  .object({ id: uuidSchema, pinnedAt: z.string().datetime().nullable() })
+  .strict();
+
+export type UpdateAnnouncementResponse = z.infer<typeof updateAnnouncementResponseSchema>;
 
 /**
  * Une option de sondage. `voteCount` est `null` TANT QUE LES RÉSULTATS SONT
@@ -929,3 +1236,195 @@ export const communityMapResponseSchema = z
   .strict();
 
 export type CommunityMapResponse = z.infer<typeof communityMapResponseSchema>;
+
+// ══ LA FILE DE SIGNALEMENTS D'UN RÉSEAU (§2.4) ══════════════════════════════
+//
+// ╔═══════════════════════════════════════════════════════════════════════════╗
+// ║ LE LIEN ENTRE UN SIGNALEMENT ET UN RÉSEAU N'EXISTE PAS EN COLONNE        ║
+// ╚═══════════════════════════════════════════════════════════════════════════╝
+//
+// MESURÉ avant d'écrire une ligne : `reports` (13 §…, `13-moderation.prisma`)
+// porte `reporter_user_id`, `subject_type`, `subject_id`, `reason`, `details`,
+// `status`, `case_id` — et AUCUN `community_id`. `ReportSubjectType` nomme douze
+// sujets (POST, COMMENT, TOPIC, GUIDE, HELP_REQUEST, HELP_RESPONSE, HOUSING,
+// JOB, PRO, EVENT, MESSAGE, USER) ; aucun n'est « réseau ».
+//
+// LE LIEN EXISTE DONC, MAIS EN DÉRIVATION, et c'est ce qui a été retenu plutôt
+// que d'ajouter une colonne :
+//
+//   · `POST`    → `posts.community_id` (nullable : null = fil global) ;
+//   · `TOPIC`   → `topics.community_id` (NON nullable : un sujet est toujours
+//                 dans un réseau) ;
+//   · `COMMENT` → `comments.subject_type`/`subject_id` remonte au POST ou au
+//                 TOPIC, puis la règle ci-dessus. `comments` n'a pas non plus de
+//                 `community_id`, et une réponse de sujet est un commentaire de
+//                 sujet (§2.3 : « Réponses via `comments` (subject TOPIC) »).
+//
+// LES NEUF AUTRES GENRES NE SONT JAMAIS DANS UN RÉSEAU et sont donc absents de
+// cette file — pas filtrés par prudence, absents par construction : un guide,
+// un logement ou un compte n'appartiennent à aucun réseau, et §2.4 borne le
+// pouvoir d'un modérateur bénévole au CONTENU DE SON RÉSEAU.
+//
+// ⚠ POURQUOI PAS UNE COLONNE `reports.community_id` : elle serait écrite par le
+// module 13 au moment du signalement, donc FIGÉE — et un post déplacé vers un
+// sujet (`post.moved_to_topic`, §6) ou un sujet fusionné changerait de réseau
+// sans que la colonne suive. La dérivation, elle, dit toujours où le contenu est
+// AUJOURD'HUI, ce qui est la seule question que pose un modérateur. Le coût est
+// une jointure par genre ; il est payé à la lecture d'une file de quelques
+// lignes. REMONTÉ au porteur : si la file devenait longue, une vue matérialisée
+// serait le bon lot, pas une colonne.
+
+/**
+ * ⚠ LA LIMITE DE POUVOIR D'UN MODÉRATEUR DE RÉSEAU EST UN ENUM À DEUX VALEURS.
+ *
+ * §2.4 : « Ils ne peuvent pas suspendre un compte — ils SIGNALENT à l'équipe. »
+ * `ModerationResolution` porte aussi `REMOVE`, `WARN` et `SUSPEND` ; aucun des
+ * trois n'a sa place ici. Un modérateur bénévole agit sur du CONTENU, jamais sur
+ * un compte, et c'est `communityReportDecisionSchema` ci-dessous — deux valeurs,
+ * `HIDE` et `KEEP` — qui tient cette frontière. Ce n'est pas une simplification
+ * de l'API : c'est la garde elle-même.
+ *
+ *   · `HIDE`  — « Masquer » : le contenu signalé disparaît du réseau ;
+ *   · `KEEP`  — « Conserver » : les signalements sont clos sans suite.
+ *
+ * Les deux mots sont ceux de `ModerationResolution` (`HIDE`, `KEEP`), et c'est
+ * volontaire : le dossier d'équipe qui regroupe ces signalements emploie déjà ce
+ * vocabulaire, et deux tables de mots pour la même décision divergeraient.
+ */
+
+/**
+ * `GET /communities/:id/reports` — UNE LIGNE PAR CONTENU SIGNALÉ, pas par
+ * signalement.
+ *
+ * ── C'EST LE DESSIN QUI L'IMPOSE, ET IL A RAISON ──────────────────────────
+ *
+ * La planche « Gérer » écrit, sur UNE rangée : « Publication de Joël K. ·
+ * « Vends attestation d’hébergement » » puis « Demande d’argent · 5
+ * signalements · transmis à la modération de la plateforme ». Cinq
+ * signalements, UNE rangée, UNE paire « Masquer » / « Conserver ».
+ *
+ * Une ligne par signalement aurait affiché cinq rangées identiques pour la même
+ * publication, avec cinq paires de boutons dont le premier clic aurait rendu les
+ * quatre autres sans objet. Le regroupement n'est donc pas une optimisation :
+ * c'est la seule forme qui corresponde à la décision qu'on prend, qui porte sur
+ * un CONTENU et pas sur l'acte d'un signaleur.
+ *
+ * ⚠ CONSÉQUENCE SUR L'IDENTITÉ DE LA LIGNE : elle est désignée par
+ * `subjectType` + `subjectId`, et il n'y a PAS de champ `id`. Servir
+ * l'identifiant d'un des cinq signalements serait un piège — l'écran le
+ * prendrait pour la cible de la décision, alors que la décision clôt les cinq.
+ *
+ * ── CE QUI N'Y EST PAS, ET POURQUOI ──────────────────────────────────────
+ *
+ * ⚠ AUCUN SIGNALEUR. 13 §… : le signaleur n'est jamais révélé — ni à l'auteur,
+ * ni à un modérateur bénévole. `count` dit COMBIEN ils sont ; rien ne dit qui.
+ *
+ * ⚠ AUCUN `details`. C'est du texte libre écrit par un membre sur un autre,
+ * purgé à 90 jours (`purgeOldReportDetails`). L'équipe le lit dans le dossier ;
+ * choisir entre masquer et conserver n'en a pas besoin, et le servir ferait
+ * voyager une accusation nominale de plus vers un modérateur bénévole.
+ */
+export const communityReportSchema = z
+  .object({
+    /** Les trois seuls genres qui puissent appartenir à un réseau. */
+    subjectType: z.enum(['POST', 'COMMENT', 'TOPIC']),
+    subjectId: uuidSchema,
+    /**
+     * Le motif du signalement le PLUS RÉCENT du groupe.
+     *
+     * Choisi comme tel plutôt qu'en liste : la rangée dessine UN motif, et les
+     * cinq signalements d'un même contenu portent presque toujours le même. Le
+     * plus récent plutôt que le premier parce que c'est celui qui a fait
+     * remonter la rangée dans la file, donc celui que le modérateur vient de
+     * voir arriver.
+     */
+    reason: z.string(),
+    /** Combien de membres ont signalé CE contenu. Jamais qui. */
+    count: z.number().int(),
+    /** L'auteur du CONTENU signalé — nul si le contenu a perdu son auteur. */
+    author: communityAuthorSchema.nullable(),
+    /** Les 160 premiers caractères du contenu, ou le titre d'un sujet. */
+    extrait: z.string(),
+    /**
+     * Le contenu est-il DÉJÀ masqué ?
+     *
+     * La planche ne le dessine pas, et il est servi quand même : sans lui, un
+     * modérateur appuierait sur « Masquer » un contenu que l'équipe a déjà
+     * masqué, sans savoir qu'il ne change rien.
+     */
+    hidden: z.boolean(),
+    /**
+     * `true` quand un dossier d'équipe est OUVERT sur ce contenu — c'est la
+     * phrase « transmis à la modération de la plateforme » que la planche écrit
+     * sous la première rangée et pas sous la seconde. Les deux rangées de la
+     * maquette montrent donc les deux valeurs : ce n'est pas une décoration.
+     */
+    escalated: z.boolean(),
+    /** Le signalement le plus RÉCENT du groupe — « il y a 4 h » sur la planche. */
+    lastReportedAt: z.string().datetime(),
+  })
+  .strict();
+
+export type CommunityReport = z.infer<typeof communityReportSchema>;
+
+/**
+ * `GET /communities/:id/reports`.
+ *
+ * ⚠ `meta.open` EST LE NOMBRE QUE LA PLANCHE AFFICHE TROIS FOIS — « SIGNALEMENTS
+ * · 2 », la tuile « 2 / signalements ouverts » et la pastille « Signalements
+ * · 2 » du rail — et c'est la raison pour laquelle cette route porte un `meta`
+ * là où `GET /communities/:id/members` n'en a pas. Le défaut déjà payé sur cette
+ * maquette est exactement celui-là : un compte déduit de `items.length` sur une
+ * page tronquée est une affirmation FAUSSE affichée comme un compte. Ici le
+ * serveur le compte, donc l'écran n'a rien à déduire.
+ *
+ * `nextCursor` vaut TOUJOURS `null` : le service rend les cinquante premières
+ * rangées et ne pagine pas — le regroupement par contenu se fait en SQL, et un
+ * curseur sur une agrégation demanderait une clé de tri stable qu'aucune colonne
+ * ne porte. REMONTÉ : au-delà de cinquante contenus signalés en attente, c'est
+ * un réseau que l'équipe doit regarder, pas son propriétaire.
+ */
+export const communityReportsResponseSchema = pageSchema(communityReportSchema).extend({
+  meta: z.object({ open: z.number().int() }).strict(),
+});
+
+export type CommunityReportsResponse = z.infer<typeof communityReportsResponseSchema>;
+
+/**
+ * `POST /communities/:id/reports/decide` — la cible ET la décision dans le corps.
+ *
+ * ── POURQUOI LA CIBLE N'EST PAS DANS L'URL ───────────────────────────────
+ *
+ * Parce qu'elle est à DEUX morceaux. `reports` n'a pas de clé unique par
+ * contenu — son unique est `(reporter, subject_type, subject_id)` — et la
+ * décision porte sur le COUPLE `(subjectType, subjectId)`, pas sur un
+ * signalement. Un `/reports/:id/decide` aurait désigné un des cinq signalements
+ * pour une décision qui clôt les cinq, et le prochain lecteur aurait cru que
+ * l'un d'eux était traité et les autres non.
+ */
+export const communityReportDecisionSchema = z
+  .object({
+    subjectType: z.enum(['POST', 'COMMENT', 'TOPIC']),
+    subjectId: uuidSchema,
+    decision: z.enum(['HIDE', 'KEEP']),
+  })
+  .strict();
+
+export type CommunityReportDecision = z.infer<typeof communityReportDecisionSchema>;
+
+/** `POST /communities/:id/reports/decide` — ce que la décision rend. */
+export const communityReportDecisionResponseSchema = z
+  .object({
+    subjectType: z.enum(['POST', 'COMMENT', 'TOPIC']),
+    subjectId: uuidSchema,
+    decision: z.enum(['HIDE', 'KEEP']),
+    /** Combien de signalements la décision a clos. */
+    closed: z.number().int(),
+    /** Le contenu est-il masqué APRÈS la décision ? Inchangé sur « Conserver ». */
+    hidden: z.boolean(),
+  })
+  .strict();
+
+export type CommunityReportDecisionResponse = z.infer<
+  typeof communityReportDecisionResponseSchema
+>;

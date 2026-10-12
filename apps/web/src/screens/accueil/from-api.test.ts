@@ -189,7 +189,13 @@ describe('les commentaires (§2.5)', () => {
 
   it('la fixture porte un fil avec au moins une réponse', () => {
     expect(lignes.length).toBeGreaterThan(0);
-    expect(commentaires.items.some((c) => c.replies.length > 0)).toBe(true);
+    // `'removed' in c` écarte les emplacements retirés que `GET /comments` rend
+    // désormais : ils n'ont pas de `replies`. Les charges de `packages/shared`
+    // n'en portent aucun, donc ce filtre ne retire rien — il empêche seulement le
+    // cas de supposer une forme que le serveur ne garantit plus.
+    expect(
+      commentaires.items.some((c) => !('removed' in c) && c.replies.length > 0),
+    ).toBe(true);
   });
 
   /**

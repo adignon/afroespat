@@ -2,15 +2,19 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   amendProposalSchema,
+  createGuidePageSchema,
   createGuideSchema,
   createProposalSchema,
   cursorQuerySchema,
+  guideCommunityMaintenanceSchema,
+  guideDetailQuerySchema,
   guideListQuerySchema,
   guideOutdatedFlagSchema,
   guideRevertSchema,
   guideVoteSchema,
   rejectProposalSchema,
   slugSchema,
+  updateGuidePageSchema,
   updateGuideSchema,
   uuidSchema,
 } from '@app/shared';
@@ -74,14 +78,25 @@ export class GuidesController {
     return this.guides.myProposals(auth.userId, query.limit);
   }
 
+  /**
+   * `?page=<slug de page>` — FACULTATIF, et absent il rend la PREMIÈRE page.
+   *
+   * C'est ce qui garde en état les liens partagés avant les pages : un guide
+   * d'une seule page répond exactement comme avant, et §2.1 fige le slug du
+   * guide pour cette raison même. Un slug de page inconnu donne 404 — rendre la
+   * première page ferait croire au lecteur qu'il lit celle du lien.
+   */
   @Get('guides/:slug')
   @PublicRead()
-  @ApiOperation({ summary: 'Un guide : version courante, contributeurs, mon vote, bandeaux' })
+  @ApiOperation({
+    summary: 'Un guide : plan des pages, page lue, contributeurs, mon vote, bandeaux',
+  })
   async bySlug(
     @Param('slug', zodPipe(slugSchema)) slug: string,
+    @Query(zodPipe(guideDetailQuerySchema)) query: z.infer<typeof guideDetailQuerySchema>,
     @MaybeAuth() viewer: AuthContext | null,
   ) {
-    return this.guides.bySlug(slug, viewer?.userId ?? null);
+    return this.guides.bySlug(slug, viewer?.userId ?? null, query.page);
   }
 
   @Get('guides/:slug/versions')
@@ -103,6 +118,34 @@ export class GuidesController {
     @MaybeAuth() viewer: AuthContext | null,
   ) {
     return this.guides.version(slug, versionId, viewer?.userId ?? null);
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA SEULE LECTURE DE CE MODULE QUI N'EST PAS `@PublicRead()`              ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Elle sert le guide ET TOUTES SES PAGES AVEC LEUR CORPS, à son AUTEUR, qu'il
+   * soit brouillon ou publié — c'est tout son objet : sans elle, un éditeur ouvert
+   * sur un guide existant n'a aucun moyen de montrer le corps de la page 3 sans
+   * écrire dedans (voir l'en-tête de `editorBySlug`).
+   *
+   * `guide.write` (N2) ET NON `content.read` : ce qu'elle rend inclut le contenu
+   * NON PUBLIÉ de son auteur. C'est le service qui vérifie l'auteur — `loadOwned`,
+   * le même que les neuf écritures —, et aucune règle d'accès n'est écrite ici.
+   *
+   * ⚠ `editor` EST UN SEGMENT LITTÉRAL, et il ne peut pas entrer en concurrence
+   * avec `GET /guides/:slug` (deux segments) ni avec `guides/:slug/versions`
+   * (littéral lui aussi). Le paramètre est le slug DU GUIDE et non son
+   * identifiant, parce que c'est ce que l'adresse du web porte
+   * (`/guides/:slug/modifier`) : demander l'identifiant aurait obligé l'écran à
+   * lire le guide une première fois pour pouvoir le relire.
+   */
+  @Get('guides/:slug/editor')
+  @RequiresCapability('guide.write')
+  @ApiOperation({ summary: 'Mon guide pour l’éditer : toutes les pages AVEC leur corps' })
+  async editor(@Auth() auth: AuthContext, @Param('slug', zodPipe(slugSchema)) slug: string) {
+    return this.guides.editorBySlug(slug, auth.userId);
   }
 
   // ── Rédaction ─────────────────────────────────────────────────────────────
@@ -131,9 +174,55 @@ export class GuidesController {
     return this.guides.update(auth.userId, id, body);
   }
 
+  // ── Les pages d'un guide ──────────────────────────────────────────────────
+
+  /**
+   * LES TROIS ROUTES DE PAGES PORTENT `guide.write` (N2), comme les cinq autres
+   * écritures de ce module.
+   *
+   * Aucune n'invente de permission : c'est le SERVICE qui vérifie que le
+   * demandeur est l'AUTEUR (`loadOwned` — 404 sur un brouillon d'autrui,
+   * `NOT_AUTHOR` sur un guide public), exactement comme `PATCH /guides/:id`,
+   * `publish`, `unpublish` et `revert`. La modération n'a pas de route d'écriture
+   * de contenu dans ce module et n'en gagne pas une ici.
+   */
+  @Post('guides/:id/pages')
+  @RequiresCapability('guide.write')
+  @ApiOperation({ summary: 'Ajoute une page au guide, en dernière position' })
+  async addPage(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(createGuidePageSchema)) body: z.infer<typeof createGuidePageSchema>,
+  ) {
+    return this.guides.addPage(auth.userId, id, body);
+  }
+
+  @Patch('guides/:id/pages/:pageId')
+  @RequiresCapability('guide.write')
+  @ApiOperation({ summary: 'Renomme ou déplace une page' })
+  async updatePage(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Param('pageId', zodPipe(uuidSchema)) pageId: string,
+    @Body(zodPipe(updateGuidePageSchema)) body: z.infer<typeof updateGuidePageSchema>,
+  ) {
+    return this.guides.updatePage(auth.userId, id, pageId, body);
+  }
+
+  @Delete('guides/:id/pages/:pageId')
+  @RequiresCapability('guide.write')
+  @ApiOperation({ summary: 'Retire une page — jamais la dernière (LAST_PAGE)' })
+  async removePage(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Param('pageId', zodPipe(uuidSchema)) pageId: string,
+  ) {
+    return this.guides.removePage(auth.userId, id, pageId);
+  }
+
   @Post('guides/:id/publish')
   @RequiresCapability('guide.write')
-  @ApiOperation({ summary: 'Publie le guide (§2.1)' })
+  @ApiOperation({ summary: 'Publie le guide ENTIER — toutes ses pages d’un bloc (§2.1)' })
   async publish(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
     return this.guides.publish(auth.userId, id);
   }
@@ -207,6 +296,65 @@ export class GuidesController {
     @Param('id', zodPipe(uuidSchema)) id: string,
   ) {
     return this.guides.removeOutdatedFlag(auth.userId, id);
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA LECTURE DES SIGNALEMENTS EST À L'AUTEUR, ET À LUI SEUL                ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur, revenant sur son arbitrage de la veille : « Il faut faire ceci,
+   * l'auteur doit voir les signalements "a changé". » Ce qui RESTE de l'arbitrage
+   * précédent, c'est l'ANONYMAT — voir `listOutdatedFlags`, qui ne rend que la
+   * date et le commentaire.
+   *
+   * ── POURQUOI `guide.write` ET NON `guide.propose_revision` ───────────────
+   *
+   * Les deux routes voisines portent `guide.propose_revision` (L1) parce qu'elles
+   * sont le geste d'un LECTEUR. Celle-ci est le geste de l'AUTEUR, et c'est la
+   * capacité de l'auteur que le module emploie partout pour cela — `guide.write`
+   * (N2), la même que l'éditeur, les pages, la publication et les décisions de
+   * proposition. L'aligner sur ses voisines de chemin aurait ouvert à L1 une
+   * lecture réservée, et `loadOwned` aurait été le seul rempart : un rempart
+   * suffit, deux se vérifient.
+   *
+   * ⚠ ET CE N'EST PAS `@PublicRead()`, contrairement à `GET /guides/:id/proposals`
+   * qui est publique (elle rend les propositions ACCEPTÉES à tous). Un signalement
+   * d'obsolescence n'a pas d'équivalent public : le COMPTE est déjà sur le guide
+   * (`outdatedFlagCount`) et le bandeau du §2.6 le dit à tout le monde ; les
+   * commentaires, non.
+   */
+  @Get('guides/:id/outdated')
+  @RequiresCapability('guide.write')
+  @ApiOperation({ summary: 'Les signalements « a changé » de SON guide — anonymes (§2.6)' })
+  async listOutdatedFlags(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+  ) {
+    return this.guides.listOutdatedFlags(auth.userId, id);
+  }
+
+  // ── Maintenu par la communauté (§2.5) ─────────────────────────────────────
+
+  /**
+   * « Ouvrir à la communauté », et le chemin du retour.
+   *
+   * `PUT` avec un booléen dans le corps — un seul chemin, une seule règle
+   * d'accès, idempotent, et la réversibilité que §2.5 exige est dans la valeur
+   * plutôt que dans un second verbe. Le pourquoi au long est écrit sur
+   * `guideCommunityMaintenanceSchema` (`@app/shared`) et sur
+   * `setCommunityMaintenance`.
+   */
+  @Put('guides/:id/community')
+  @RequiresCapability('guide.write')
+  @ApiOperation({ summary: 'Ouvre le guide à la communauté, ou reprend la main (§2.5)' })
+  async setCommunityMaintenance(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(guideCommunityMaintenanceSchema))
+    body: z.infer<typeof guideCommunityMaintenanceSchema>,
+  ) {
+    return this.guides.setCommunityMaintenance(auth.userId, id, body.maintained);
   }
 
   // ── Propositions de mise à jour ───────────────────────────────────────────

@@ -30,6 +30,75 @@ import {
   HELP_TYPE_LABELS,
 } from '@app/shared';
 import { ApiError, fetchMe, memberApi } from '@/lib/api/index';
+import { fetchFeed } from '@/screens/accueil/api';
+import { feedPostsFrom } from '@/screens/accueil/from-api';
+import { fetchGuides } from '@/screens/guides/api';
+import { guideCardsFrom } from '@/screens/guides/from-api';
+import { construireCarte } from '@/screens/agenda/data';
+import { eventsResponseSchema, housingListResponseSchema } from '@app/shared';
+import type { HousingCardView } from '@app/shared';
+import type { CarteAnnonce } from '@/screens/s01/data';
+import { publicJourneysResponseSchema } from '@app/shared';
+import type { PublicJourneysResponse } from '@app/shared';
+import type { CarteParcours as CarteParcoursView } from '@/screens/parcours/data';
+
+type PublicJourneyCardView = PublicJourneysResponse['items'][number];
+
+/**
+ * LA CARTE D'ANNONCE DU PROFIL — la même fabrique que `/services/logement`,
+ * moins le `fondDeRang` qui appartient à la grille de cette page-là.
+ */
+function carteAnnoncePublique(a: HousingCardView, rang: number): CarteAnnonce {
+  return {
+    href: `/services/logement/${a.id}`,
+    genre: a.kind,
+    titre: a.title,
+    prix: a.priceCents === null ? 'Gratuit' : `${String(Math.round(a.priceCents / 100))} €`,
+    /**
+     * LA VILLE ET LE GENRE, et rien de plus : `HousingCardView` ne porte pas de
+     * nombre de pièces, et le composer à partir d'autre chose serait inventer.
+     * La page d'origine y met « Meublé · 1er oct. · 12 mois » ; ici la carte est
+     * posée sur un profil, où la ville dit le principal.
+     */
+    detail: a.city.name,
+    fond: FONDS_ANNONCE[rang % FONDS_ANNONCE.length] ?? '#E3ECE8',
+    initiales: initialesDe(a.author.displayName),
+    auteur: a.author.displayName,
+  };
+}
+
+/** Les quatre aplats que la grille des annonces dessine, dans son ordre. */
+const FONDS_ANNONCE = ['#E3ECE8', '#EFE6DE', '#E6EBF2', '#EAE4EF'];
+
+/**
+ * LA CARTE DE PARCOURS DU PROFIL.
+ *
+ * `/journeys/public` ne rend PAS la même ligne que `/journeys` : pas de titre
+ * personnel — c'est la règle dure de 04 §2, « jamais le titre que le membre lui
+ * a donné » — pas de date de dernière activité, pas d'étape courante nommée. On
+ * compose donc avec ce qu'elle rend, et pas un champ de plus : le NOM DU TYPE de
+ * parcours, la ville de destination, et l'avancement.
+ */
+function carteParcoursPublic(j: PublicJourneyCardView): CarteParcoursView {
+  const pct = Math.round(j.progressPct);
+  const abouti = j.status === 'COMPLETED';
+  return {
+    href: `/parcours/${j.id}`,
+    type: j.template.nameFr.toUpperCase(),
+    actif: !abouti,
+    enPause: false,
+    titre: j.template.nameFr,
+    sousTitre: abouti ? 'Abouti' : `${j.destinationCity.name} · ${String(pct)} %`,
+    sousTitreCourt: abouti ? 'Abouti' : `${String(pct)} %`,
+    pourcent: `${String(pct)} %`,
+    barre: `${String(pct)}%`,
+    teinte: abouti ? '#16785E' : '#E0733A',
+  };
+}
+
+/** `/@fatou` dans l'URL, `fatou` dans la charge : `handleSchema` refuse le `@`. */
+const sansArobase = (pseudo: string): string =>
+  pseudo.startsWith('@') ? pseudo.slice(1) : pseudo;
 import { fondAvatar } from '@/lib/avatar';
 import { urlMedia } from '@/lib/api/base';
 import { photoFondFor } from '@/screens/a14/data';
@@ -432,7 +501,17 @@ export async function chargerK02(
   onglet: MemberContentType = 'GUIDE',
   onChoisir: (cle: MemberContentType) => void = () => undefined,
 ): Promise<K02Data> {
-  const [me, membre, demandes, contenu] = await Promise.all([
+  const [
+    me,
+    membre,
+    demandes,
+    contenu,
+    publications,
+    guidesPublies,
+    evenements,
+    annonces,
+    parcours,
+  ] = await Promise.all([
     fetchMe(),
     memberApi.get(`/users/${encodeURIComponent(pseudo)}`, publicProfileResponseSchema),
     compterDemandes(),
@@ -447,6 +526,74 @@ export async function chargerK02(
         memberContentResponseSchema,
       )
       .catch(() => ({ items: [], nextCursor: null, meta: { total: 0, parType: {} } })),
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ L'ONGLET « FIL » MONTRE LA VRAIE CARTE DU FIL                       ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, capture à l'appui. Une carte se dessine à partir de
+     * `postCardSchema` ENTIER — pastille de type, contexte, photos, sondage,
+     * compteurs, réaction, signet — donc une route résumée ne peut pas la
+     * nourrir. On interroge LE FIL filtré par auteur, et on le passe par
+     * `feedPostsFrom`, exactement comme la page d'accueil.
+     *
+     * DEMANDÉ SEULEMENT SOUS CET ONGLET : six profils sur sept n'en ont pas
+     * besoin, et un appel de plus à chaque ouverture de profil se paierait sur
+     * la page la plus visitée après le fil.
+     */
+    onglet === 'POST'
+      ? fetchFeed({ authorHandle: sansArobase(pseudo), limit: 20 })
+          .then(feedPostsFrom)
+          .catch(() => [])
+      : Promise.resolve([]),
+    /**
+     * LES GUIDES, MÊME PRINCIPE : `GET /guides?authorHandle=…`, puis le
+     * convertisseur du module Guides. La carte vient de sa page d'origine.
+     */
+    onglet === 'GUIDE'
+      ? fetchGuides({ tab: 'recent', authorHandle: sansArobase(pseudo) })
+          .then((page) => guideCardsFrom(page))
+          .catch(() => [])
+      : Promise.resolve([]),
+    /**
+     * LES ÉVÉNEMENTS ORGANISÉS et LES ANNONCES, mêmes principes : la liste
+     * d'origine filtrée par auteur, puis le convertisseur du module. Chaque
+     * onglet n'appelle QUE sa route — six profils sur sept n'en ont pas besoin,
+     * et un appel de plus par ouverture se paierait sur une page très visitée.
+     */
+    onglet === 'EVENT'
+      ? memberApi
+          .get(
+            `/events?authorHandle=${encodeURIComponent(sansArobase(pseudo))}&limit=20`,
+            eventsResponseSchema,
+          )
+          /**
+           * LA TABLE DES RÉSEAUX EST VIDE ICI, et c'est juste : elle sert à
+           * nommer le réseau d'un événement réservé. Le profil public ne montre
+           * que les événements SANS réseau — voir la règle de visibilité du
+           * service — donc elle n'a rien à nommer.
+           */
+          .then((page) => page.items.map((e) => construireCarte(e, new Map())))
+          .catch(() => [])
+      : Promise.resolve([]),
+    onglet === 'SERVICE'
+      ? memberApi
+          .get(
+            `/housing?authorHandle=${encodeURIComponent(sansArobase(pseudo))}&limit=20`,
+            housingListResponseSchema,
+          )
+          .then((page) => page.items.map(carteAnnoncePublique))
+          .catch(() => [])
+      : Promise.resolve([]),
+    onglet === 'JOURNEY'
+      ? memberApi
+          .get(
+            `/journeys/public?authorHandle=${encodeURIComponent(sansArobase(pseudo))}&limit=20`,
+            publicJourneysResponseSchema,
+          )
+          .then((page) => page.items.map(carteParcoursPublic))
+          .catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   return {
@@ -476,6 +623,11 @@ export async function chargerK02(
           }),
     })),
     contenuEspece: onglet,
+    contenuPublications: publications,
+    contenuGuides: guidesPublies,
+    contenuEvenements: evenements,
+    contenuAnnonces: annonces,
+    contenuParcours: parcours,
     /**
      * LE TITRE DE LA CARTE EST CELUI DE L'ONGLET, EN CAPITALES — c'est la forme
      * que la maquette donne à ses intitulés de carte (« GUIDES PUBLIÉS »,

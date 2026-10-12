@@ -402,8 +402,48 @@ export class NotificationEventsService {
     });
     if (community === null) return;
 
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LE FILTRE DE LA SOURDINE — 07 §2.3, ET IL MANQUAIT                     ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * §2.3 : « Annonces […] notification à tous les membres NON EN SOURDINE ».
+     * §6 le redit dans le tableau des événements : `community.announcement_published`
+     * → « notifications (membres non en sourdine) ».
+     *
+     * Ce `where` ne portait que `communityId`. Le lot qui a branché
+     * l'interrupteur « Notifier » a DIT qu'il ne pouvait pas filtrer —
+     * `community_members.muted` n'était pas dans le schéma — et il avait raison.
+     * La colonne existe depuis la migration
+     * `reseaux_sourdine_inviteur_avertissement` ; le filtre est posé ici, qui est
+     * le seul endroit du dépôt où il change quelque chose.
+     *
+     * ── `status: 'ACTIVE'` EST AJOUTÉ EN MÊME TEMPS, ET C'EST UN DÉFAUT À PART ──
+     *
+     * Le `where` ne regardait pas le statut : une annonce réveillait donc aussi
+     * les `PENDING` (qui ont seulement DEMANDÉ à entrer), les `INVITED` (qui
+     * n'ont pas répondu) et les `BANNED` — c'est-à-dire des gens que §2.4 vient
+     * de retirer du réseau. Notifier un banni des annonces du réseau dont il est
+     * exclu est le contraire de ce qu'un bannissement promet.
+     *
+     * Ce n'était pas le défaut qu'on venait corriger ; c'est le même `where`, il
+     * se lisait d'un coup d'œil, et le mémo demande de corriger ce qu'on croise.
+     *
+     * ── POURQUOI PAS UN FILTRE EN MÉMOIRE APRÈS COUP ─────────────────────────
+     *
+     * `take: 1_000` plafonne la lecture. Filtrer après aurait rempli ce millier
+     * de lignes avec des membres en sourdine et des bannis, puis les aurait
+     * jetés : sur un réseau de 890 membres dont la moitié a demandé le silence,
+     * la moitié des destinataires réels n'aurait jamais été lue. Le filtre est
+     * dans le `WHERE`, et l'index `(community_id, status, muted)` est là pour lui.
+     */
     const members = await this.prisma.communityMember.findMany({
-      where: { communityId, ...(author === null ? {} : { userId: { not: author } }) },
+      where: {
+        communityId,
+        status: 'ACTIVE',
+        muted: false,
+        ...(author === null ? {} : { userId: { not: author } }),
+      },
       select: { userId: true },
       take: 1_000,
     });
@@ -493,6 +533,62 @@ export class NotificationEventsService {
       refType: 'COMMUNITY',
       refId: aggregateId,
       url: `/reseaux/${aggregateId}`,
+    });
+  }
+
+  /**
+   * L'avertissement d'archivage à 45 jours (07 §2.2, §7) — le propriétaire SEUL.
+   *
+   * ── POURQUOI PAS LES MODÉRATEURS, NI LES MEMBRES ────────────────────────
+   *
+   * §2.2 nomme le destinataire : « Le propriétaire reçoit un avertissement à 45
+   * jours. » Et c'est le bon : lui seul peut réveiller le réseau sans rien y
+   * publier (`POST /communities/:id/reactivate` est `assertOwner`), et lui seul
+   * répond de son sommeil. Prévenir les 890 membres qu'un réseau qu'ils ont
+   * peut-être oublié va s'endormir serait une notification que personne ne peut
+   * suivre d'un geste.
+   *
+   * ⚠ LA SOURDINE N'EST PAS CONSULTÉE ICI, et c'est délibéré. §2.5 dit « plus de
+   * notifications » du réseau — ses annonces, son activité. L'avertissement
+   * d'archivage ne parle pas DU réseau, il parle de sa DISPARITION, et il est
+   * adressé à la seule personne qui peut l'empêcher. Un propriétaire qui a mis
+   * son propre réseau en sourdine n'a pas demandé à le perdre.
+   *
+   * ⚠ UN RÉSEAU AUTOMATIQUE N'ARRIVE JAMAIS ICI : c'est la tâche qui filtre
+   * `kind: 'INTEREST'` (règle dure du §9), et `createdByUserId` y est de toute
+   * façon nul — les réseaux de ville et de pays n'ont pas de créateur (§2.1).
+   */
+  async onCommunityArchiveWarning(aggregateId: string, payload: unknown): Promise<void> {
+    const owner = readString(payload, 'ownerUserId');
+    if (owner === null) return;
+
+    const community = await this.prisma.community.findUnique({
+      where: { id: aggregateId },
+      select: { name: true, slug: true },
+    });
+    if (community === null) return;
+
+    /**
+     * LE NOMBRE DE JOURS VIENT DE LA CHARGE, et un repli le remplace s'il
+     * manque. La tâche le calcule depuis `lastActivityAt` et ses deux seuils ;
+     * le recalculer ici obligerait ce module à importer les constantes du 07.
+     * Un événement d'une version antérieure n'en porterait pas : la phrase perd
+     * alors le nombre plutôt que d'en inventer un.
+     */
+    const jours = readNumber(payload, 'daysLeft');
+
+    await this.notifications.deliver({
+      userId: owner,
+      category: 'COMMUNITY',
+      type: 'community.archive_warning',
+      title: `${community.name} va être mis en sommeil`,
+      body:
+        jours === null
+          ? 'Faute d’activité, ce réseau sera archivé. Publiez-y quelque chose pour le garder éveillé.'
+          : `Faute d’activité, ce réseau sera archivé dans ${jours} jour${jours > 1 ? 's' : ''}. Publiez-y quelque chose pour le garder éveillé.`,
+      refType: 'COMMUNITY',
+      refId: aggregateId,
+      url: `/reseaux/${community.slug}`,
     });
   }
 

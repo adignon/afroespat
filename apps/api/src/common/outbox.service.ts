@@ -75,6 +75,23 @@ export type DomainEventType =
   | 'guide.proposal_accepted'
   | 'guide.proposal_rejected'
   | 'guide.proposal_escalated'
+  /**
+   * UNE PAGE A ÉTÉ RETIRÉE D'UN GUIDE (05 `GuidePage`).
+   *
+   * SON CONSOMMATEUR EST NOMMÉ, comme l'exige ce catalogue : `search`, qui
+   * réindexe le guide. C'est NÉCESSAIRE et pas décoratif — l'index porte le corps
+   * de TOUTES les pages (`search.service.ts`, cas `GUIDE`), donc retirer une page
+   * RÉTRÉCIT le document indexé. Sans cet événement, le texte de la page retirée
+   * resterait cherchable et mènerait vers une page qu'aucune route ne rend.
+   *
+   * L'AJOUT d'une page n'a PAS d'événement à lui : quand elle arrive avec un
+   * corps, `appendVersion` émet déjà `guide.version_created`, auquel `search` est
+   * abonné ; quand elle arrive vide, rien n'a changé pour personne. Le
+   * RENOMMAGE et le DÉPLACEMENT n'en ont pas non plus — ni l'index ni aucune
+   * notification ne portent le titre d'une page, et ce catalogue refuse les
+   * événements sans consommateur.
+   */
+  | 'guide.page_removed'
   // Les quatre événements de 06 §6. `published` et non `created` : c'est le nom
   // que la spec donne, et celui que search, moderation et les notifications
   // « Vous pouvez aider » attendent. `help_request.created` était une invention
@@ -196,6 +213,11 @@ export type DomainEventType =
   // aujourd'hui, donc rien ne peut l'émettre.
   | 'community.created'
   | 'community.archived'
+  // L'avertissement d'archivage à 45 jours (§2.2, §7). Il a attendu la colonne
+  // `communities.warning_sent_at` : sans elle, la tâche QUOTIDIENNE l'aurait
+  // émis les quinze jours qui séparent le 45e du 60e. Consommateur :
+  // `notifications` (`onCommunityArchiveWarning`).
+  | 'community.archive_warning'
   | 'community.reactivated'
   | 'community.member_joined'
   | 'community.member_left'

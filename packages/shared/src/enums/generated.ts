@@ -96,6 +96,7 @@ export const CommentSubjectType = [
   'POST',
   'TOPIC',
   'GUIDE',
+  'GUIDE_PAGE',
   'EVENT',
 ] as const;
 export type CommentSubjectType = (typeof CommentSubjectType)[number];
@@ -181,6 +182,7 @@ export const ConversationKind = [
   'DIRECT',
   'JOURNEY',
   'MENTORSHIP',
+  'COMMUNITY_MODERATION',
 ] as const;
 export type ConversationKind = (typeof ConversationKind)[number];
 
@@ -417,6 +419,7 @@ export type KycStatus = (typeof KycStatus)[number];
 export const MediaKind = [
   'AVATAR',
   'POST',
+  'GUIDE',
   'HOUSING',
   'EVENT_COVER',
   'ALBUM',

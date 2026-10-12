@@ -83,6 +83,24 @@ model Community {
   lastActivityAt DateTime  @map("last_activity_at") @db.Timestamptz
   archivedAt     DateTime? @map("archived_at") @db.Timestamptz
 
+  /// ── L'AVERTISSEMENT D'ARCHIVAGE, ET POURQUOI IL LUI FALLAIT UNE COLONNE ──
+  ///
+  /// §2.2 : « Le propriétaire reçoit un avertissement à 45 jours », l'archivage
+  /// tombant à 60. La tâche `community.archive_inactive` est QUOTIDIENNE : sans
+  /// mémoire de l'envoi, elle aurait prévenu le même propriétaire QUINZE fois
+  /// de suite — une fois par jour entre le 45e et le 60e. C'est pour cela que §3
+  /// annonce cette colonne « ajoutée », et c'est tout ce qu'elle sert à faire.
+  ///
+  /// NON NULLE = l'avertissement est parti, et à cet instant. Même convention
+  /// que `archivedAt` juste au-dessus et que `notifiedAt` sur les annonces.
+  ///
+  /// ⚠ ELLE EST REMISE À NULL PAR LA RÉACTIVATION ET PAR TOUTE ACTIVITÉ
+  /// (`touch()`), et c'est la moitié du mécanisme : un réseau qui se rendort
+  /// quinze jours après avoir repris doit être prévenu de nouveau. Un
+  /// horodatage jamais effacé aurait fait taire l'avertissement pour toujours
+  /// après le premier.
+  warningSentAt DateTime? @map("warning_sent_at") @db.Timestamptz
+
   city       City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
   country    Country?    @relation(fields: [countryId], references: [id], onDelete: SetNull)
   createdBy  User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
@@ -96,6 +114,9 @@ model Community {
   posts           Post[]
   events          Event[]
   searchDocuments SearchDocument[]
+  /// Les fils « Contacter les modérateurs » ouverts sur ce réseau (08 §5.1).
+  /// Un par demandeur ; le modèle vit dans `08-mentorship-messaging.prisma`.
+  moderationConversations Conversation[] @relation("ConversationCommunity")
 
   @@index([kind])
   @@index([cityId])
@@ -116,12 +137,58 @@ model CommunityMember {
   status      CommunityMemberStatus
   joinedAt    DateTime?             @map("joined_at") @db.Timestamptz
 
+  /// ── LA SOURDINE — UNE PRÉFÉRENCE PERSONNELLE, PAS DE LA MODÉRATION ──────
+  ///
+  /// §2.5 : « Un membre peut mettre un réseau en sourdine : plus de
+  /// notifications, le réseau reste dans sa liste. » Elle vit donc sur la ligne
+  /// d'ADHÉSION et non sur le réseau : deux membres du même réseau n'ont pas la
+  /// même préférence, et c'est exactement ce que cette colonne dit.
+  ///
+  /// `@default(false)` est ce qui rend la migration additive : les adhésions
+  /// déjà en base n'ont jamais demandé le silence, et `NOT NULL DEFAULT false`
+  /// leur donne la bonne valeur sans qu'aucune ligne soit à écrire.
+  ///
+  /// ⚠ ELLE EST LUE PAR `notifications.events.ts` (`onCommunityAnnouncement`) —
+  /// §2.3 : « notification à tous les membres NON EN SOURDINE ». C'est le seul
+  /// endroit du dépôt où cette colonne décide de quelque chose, et c'est la
+  /// raison pour laquelle elle existe : avant elle, « Notifier » réveillait ceux
+  /// qui avaient demandé le silence, faute d'avoir où l'écrire.
+  ///
+  /// C'est le réseau que l'on met en sourdine, jamais un membre : il n'existe
+  /// AUCUN geste pour poser la sourdine de quelqu'un d'autre, et le service le
+  /// refuse (`MUTE_SELF_ONLY`).
+  muted Boolean @default(false)
+
+  /// ── QUI A INVITÉ, ET CE QUE CELA PERMETTRA DE DIRE ──────────────────────
+  ///
+  /// §3 l'annonce « ajoutée ». Elle est écrite aux DEUX endroits où une
+  /// invitation naît : `POST /communities` (les cinq `inviteHandles` exigés à la
+  /// création) et `POST /communities/:id/invite`.
+  ///
+  /// NULLABLE, et il faut qu'elle le soit : une adhésion AUTOMATIQUE — le réseau
+  /// de sa ville, celui de son pays d'origine — n'a pas d'inviteur, pas plus
+  /// qu'une adhésion spontanée à un réseau `PUBLIC`. Une colonne obligatoire
+  /// aurait exigé de désigner un inviteur fictif pour la majorité des lignes.
+  ///
+  /// `onDelete: SetNull` plutôt que `Cascade` : la suppression du compte de
+  /// l'inviteur ne doit PAS emporter l'adhésion de l'invité. 07 §8 ne parle que
+  /// des adhésions DU membre supprimé ; celles qu'il a provoquées restent.
+  invitedByUserId String? @map("invited_by_user_id") @db.Uuid
+
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation("CommunityMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  /// Nommée explicitement : Prisma exige un nom dès qu'un modèle pointe DEUX
+  /// fois le même autre modèle, et `user` ci-dessus est la première.
+  invitedBy User?     @relation("CommunityMemberInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
 
   @@unique([communityId, userId])
   @@index([communityId])
   @@index([userId])
+  /// Le filtre de `onCommunityAnnouncement` : « les membres ACTIFS non en
+  /// sourdine de ce réseau ». Sans cet index il balaie toutes les adhésions du
+  /// réseau pour en écarter une poignée.
+  @@index([communityId, status, muted])
+  @@index([invitedByUserId])
   @@map("community_members")
 }
 
@@ -159,6 +226,35 @@ model Topic {
 }
 
 /// Annonce du créateur, notifiée à tous les membres du réseau.
+///
+/// ── LES DEUX COLONNES AJOUTÉES, ET POURQUOI LE MODÈLE ÉTAIT EN DEÇÀ ───────
+///
+/// La maquette (`docs/template/03 Accueil v2.dc.html`, planche « ADMIN ·
+/// ANNONCE », les DEUX largeurs) dessine QUATRE contrôles : un titre, un corps,
+/// « Épingler en haut du fil » et « Notifier les 890 membres ». Le modèle n'en
+/// portait que deux — `body` et `notifiedAt` — et `createAnnouncementSchema`
+/// n'acceptait que `{ body }`. Ce n'était donc pas un oubli de branchement mais
+/// un écart de CONTRAT : deux des quatre contrôles n'avaient nulle part où
+/// s'écrire. Les deux colonnes sont ajoutées, et l'écart est fermé.
+///
+/// `title` EST NULLABLE, et il devait l'être : les annonces déjà publiées n'en
+/// ont pas, et une colonne obligatoire aurait exigé une valeur inventée pour
+/// chacune. Une annonce sans titre reste donc une annonce valide — ce qui est
+/// aussi ce que la planche permet, puisqu'elle ne marque pas le champ requis.
+///
+/// `pinnedAt` EST UN HORODATAGE ET NON UN BOOLÉEN, exactement comme `notifiedAt`
+/// juste à côté. Deux raisons, et la seconde est la vraie : le modèle porte déjà
+/// cette convention (un instant nul = le fait n'a pas eu lieu), et un instant
+/// dit QUAND, ce qu'un booléen ne dira jamais — « épinglé depuis quand » est la
+/// question qu'on pose d'un épinglage, et la réponse est gratuite ici.
+///
+/// ⚠ L'ÉPINGLAGE EST EXCLUSIF — une seule annonce épinglée par réseau à la fois,
+/// et c'est le SERVICE qui le tient (`createAnnouncement` déépingle les autres
+/// dans la même transaction), pas une contrainte SQL : un index unique partiel
+/// sur `(community_id) WHERE pinned_at IS NOT NULL` ferait ÉCHOUER la création
+/// d'une seconde annonce épinglée au lieu de remplacer la première, ce qui n'est
+/// pas ce que « Épingler en haut du fil » promet. Le raisonnement entier est
+/// écrit au-dessus de `createAnnouncement`.
 model CommunityAnnouncement {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -166,13 +262,19 @@ model CommunityAnnouncement {
 
   communityId  String    @map("community_id") @db.Uuid
   authorUserId String    @map("author_user_id") @db.Uuid
+  /// Le titre que la planche dessine. Nul sur les annonces d'avant ce lot.
+  title        String?
   body         String
+  /// Non nul = épinglée en haut du fil, et depuis cet instant. Exclusif par réseau.
+  pinnedAt     DateTime? @map("pinned_at") @db.Timestamptz
   notifiedAt   DateTime? @map("notified_at") @db.Timestamptz
 
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
   author    User      @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
 
   @@index([communityId])
+  /// Retrouver l'annonce épinglée d'un réseau sans balayer toutes ses annonces.
+  @@index([communityId, pinnedAt])
   @@map("community_announcements")
 }
 

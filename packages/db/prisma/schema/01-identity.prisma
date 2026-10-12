@@ -193,7 +193,11 @@ model User {
   helpRequests            HelpRequest[]
   helpResponses           HelpResponse[]
   communitiesCreated      Community[]
-  communityMemberships    CommunityMember[]
+  communityMemberships    CommunityMember[]            @relation("CommunityMemberUser")
+  /// Les adhésions que CE membre a provoquées en invitant (07 §3,
+  /// `community_members.invited_by_user_id`). Elles ne lui appartiennent pas :
+  /// la suppression de son compte les détache (`SetNull`), elle ne les emporte pas.
+  communityInvitesSent    CommunityMember[]            @relation("CommunityMemberInvitedBy")
   topics                  Topic[]
   communityAnnouncements  CommunityAnnouncement[]
   polls                   Poll[]
@@ -212,6 +216,8 @@ model User {
   blocksMade              Block[]                      @relation("Blocker")
   blocksReceived          Block[]                      @relation("Blocked")
   conversationMemberships ConversationMember[]
+  /// Les fils « Contacter les modérateurs » que ce membre a ouverts (08 §5.1).
+  conversationsOpened     Conversation[]               @relation("ConversationOpenedBy")
   messages                Message[]
   cityTips                CityTip[]
   eventsOrganized         Event[]

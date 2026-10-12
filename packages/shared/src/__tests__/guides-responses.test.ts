@@ -127,6 +127,24 @@ describe('les règles dures sont tenues À LA FRONTIÈRE', () => {
 
   const refus: readonly Cas[] = [
     /**
+     * `commentCount` EST REQUIS sur le détail du guide, et ce cas existe pour que
+     * sa disparition se voie.
+     *
+     * La carte affichait « COMMENTAIRES » sans nombre parce que la route ne le
+     * rendait pas ; le front le lit maintenant à cet emplacement exact
+     * (`guide.commentCount`). Le déplacer à la racine, ou le rendre facultatif,
+     * ramènerait l'intitulé sans chiffre — et personne ne saurait dire si c'est
+     * l'API ou l'écran qui l'a perdu.
+     */
+    [
+      'un détail de guide sans compteur de commentaires',
+      guideDetailResponseSchema,
+      'guide_detail',
+      (d) => {
+        delete obj(d['guide'])['commentCount'];
+      },
+    ],
+    /**
      * RÈGLE DURE 00 §49 — « aucun compteur de vues n'est exposé à personne, sur
      * aucun contenu ».
      *
@@ -149,6 +167,74 @@ describe('les règles dures sont tenues À LA FRONTIÈRE', () => {
       'guide_detail',
       (d) => {
         obj(d['guide'])['viewCount'] = 412;
+      },
+    ],
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LE PLAN DES PAGES EST REQUIS, ET LA PAGE LUE AVEC                    ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Décision du porteur : un guide peut avoir plusieurs pages, et les
+     * commentaires portent sur UNE page. Le front a donc besoin de `currentPage`
+     * pour savoir à quoi attacher le fil — sans elle, il devrait deviner
+     * `pages[0]` et commenterait sous la première page même quand le lecteur en
+     * lit une autre.
+     *
+     * Les rendre facultatifs les ferait oublier par une route un jour, et ce
+     * jour-là l'écran poserait les commentaires au mauvais endroit SANS ERREUR :
+     * la page existe, le commentaire s'écrit, et il paraît ailleurs que là où le
+     * lecteur l'a tapé. C'est pour cela que ces deux cas existent.
+     */
+    [
+      'un détail de guide sans le plan de ses pages',
+      guideDetailResponseSchema,
+      'guide_detail',
+      (d) => {
+        delete d['pages'];
+      },
+    ],
+    [
+      'un détail de guide sans la page LUE',
+      guideDetailResponseSchema,
+      'guide_detail',
+      (d) => {
+        delete d['currentPage'];
+      },
+    ],
+    /**
+     * Et le compteur d'une PAGE est requis sur chaque page du plan : c'est lui
+     * qui permet d'annoncer où la conversation a lieu, et sa SOMME est le total
+     * que la carte de liste porte. Facultatif, il rendrait les deux nombres
+     * incomparables.
+     */
+    [
+      'une page du plan sans son compteur de commentaires',
+      guideDetailResponseSchema,
+      'guide_detail',
+      (d) => {
+        delete obj(tab(d['pages'])[0])['commentCount'];
+      },
+    ],
+    /**
+     * `pageCount` sur la carte de liste : c'est ce qui dit « 4 pages » sur A03.
+     * Le déduire de `pages` est impossible — la LISTE ne porte pas le plan, et
+     * c'est volontaire : cinquante plans pour afficher cinquante nombres.
+     */
+    [
+      'une carte de liste sans son nombre de pages',
+      guideListResponseSchema,
+      'guides_list',
+      (d) => {
+        delete premierGuide(d)['pageCount'];
+      },
+    ],
+    [
+      'une carte de liste sans le TOTAL de ses commentaires',
+      guideListResponseSchema,
+      'guides_list',
+      (d) => {
+        delete premierGuide(d)['commentCount'];
       },
     ],
 

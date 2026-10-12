@@ -41,6 +41,7 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
+import { commentRowWhere } from '../../common/comment-visibility';
 import { buildPage, decodeCursor, encodeCursor } from '../../common/cursor';
 import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
@@ -575,10 +576,10 @@ export class FeedService {
      * fait. C'est exactement ce que la portée existe pour empêcher.
      */
     const scope = `feed:comments:${query.subjectType}:${query.subjectId}:${tri}`;
-    const visible = await this.commentVisibilityWhere(actor.userId);
+    const lignes = await this.commentRowsForViewer(actor.userId);
 
     const filtres = [
-      ...visible,
+      ...lignes,
       { subjectType: query.subjectType, subjectId: query.subjectId },
       { parentCommentId: null },
     ];
@@ -629,13 +630,45 @@ export class FeedService {
       tri === 'RELEVANT'
         ? buildPage(roots, query.limit, scope, this.cursorSecret, () => decalage + query.limit)
         : buildPage(roots, query.limit, scope, this.cursorSecret);
-    const rootIds = page.items.map((r) => r.id);
+
+    /**
+     * ╔═════════════════════════════════════════════════════════════════════╗
+     * ║ LES RÉPONSES D'UN EMPLACEMENT RETIRÉ NE SONT PAS CHARGÉES            ║
+     * ╚═════════════════════════════════════════════════════════════════════╝
+     *
+     * `rootIds` ne retient que les racines LISIBLES. Une racine retirée rend donc
+     * un emplacement SANS réponses, et c'est une décision de produit, pas une
+     * économie de requête :
+     *
+     *   · UNE RÉPONSE PARAPHRASE SOUVENT CE QU'ELLE RÉPOND — « oui, et c'est
+     *     pour ça qu'il ne faut jamais passer par eux ». La montrer sous un
+     *     emplacement laisserait reconstituer PAR DÉDUCTION le texte que le
+     *     retrait a ôté, et l'emplacement ne doit rien révéler ni directement ni
+     *     par déduction ;
+     *   · C'EST AUSSI LE COMPORTEMENT D'AVANT CE LOT, à l'identique : une racine
+     *     invisible emportait déjà ses réponses hors de la page, parce que cette
+     *     requête ne les cherche que sous les racines retenues. Les faire
+     *     apparaître aurait été un second changement de produit, non demandé.
+     *
+     * ⚠ `parent_comment_id` est en `onDelete: Cascade` en base — VÉRIFIÉ dans
+     * `packages/db/prisma/schema/04-feed.prisma`, ligne 212 — mais cela ne joue
+     * JAMAIS ici : le retrait comme la suppression sont LOGIQUES (`status`,
+     * `deleted_at`), aucune ligne n'est effacée, donc aucune réponse n'est
+     * détruite. Elles restent en base, `PUBLISHED`, et redeviendraient visibles
+     * le jour où la modération rendrait sa racine. C'est bien le bon état : la
+     * cascade n'aurait laissé aucun retour possible.
+     *
+     * Une réponse RETIRÉE sous une racine lisible, elle, devient un emplacement à
+     * la profondeur de réponse — la maquette dessine un bloc, pas deux, et son
+     * retrait de 50 px (44 px sur mobile) est celui de la ligne qu'il remplace.
+     */
+    const rootIds = page.items.filter((r) => r.status === 'PUBLISHED').map((r) => r.id);
 
     const replies =
       rootIds.length === 0
         ? []
         : await this.prisma.comment.findMany({
-            where: { AND: [...visible, { parentCommentId: { in: rootIds } }] },
+            where: { AND: [...lignes, { parentCommentId: { in: rootIds } }] },
             orderBy: { id: 'asc' },
             include: { author: { select: AUTHOR_SELECT } },
           });
@@ -646,11 +679,28 @@ export class FeedService {
       byParent.set(reply.parentCommentId, [...(byParent.get(reply.parentCommentId) ?? []), reply]);
     }
 
+    /**
+     * L'EMPLACEMENT EST `{ removed: true }`, ET RIEN DE PLUS.
+     *
+     * Pas d'identifiant, pas de date, pas d'auteur : `commentRemovedSchema`
+     * (`packages/shared`) écrit en entier pourquoi chacun des quatre a été écarté.
+     * Ici, le point qui compte est que `commentCard` N'EST PAS APPELÉE sur une
+     * ligne retirée — la projection n'a donc même pas l'occasion de composer un
+     * corps ou un nom que le schéma aurait ensuite à filtrer.
+     */
+    const retire = { removed: true as const };
+
     return {
-      items: page.items.map((root) => ({
-        ...this.commentCard(root, actor.userId),
-        replies: (byParent.get(root.id) ?? []).map((r) => this.commentCard(r, actor.userId)),
-      })),
+      items: page.items.map((root) =>
+        root.status === 'PUBLISHED'
+          ? {
+              ...this.commentCard(root, actor.userId),
+              replies: (byParent.get(root.id) ?? []).map((r) =>
+                r.status === 'PUBLISHED' ? this.commentCard(r, actor.userId) : retire,
+              ),
+            }
+          : retire,
+      ),
       nextCursor: page.nextCursor,
     };
   }
@@ -2137,7 +2187,7 @@ export class FeedService {
         where: { AND: [...(await this.storyVisibilityWhere(viewerId, null, new Date())), { authorUserId: otherId }] },
       });
       const leakedComments = await this.prisma.comment.count({
-        where: { AND: [...(await this.commentVisibilityWhere(viewerId)), { authorUserId: otherId }] },
+        where: { AND: [...(await this.commentRowsForViewer(viewerId)), { authorUserId: otherId }] },
       });
 
       if (leaked + leakedStories + leakedComments > 0) {
@@ -2193,6 +2243,13 @@ export class FeedService {
    * « Publications, images et stories : supprimées. Commentaires : conservés,
    * anonymisés s'ils portent sur un GUIDE ou un TOPIC ; supprimés s'ils portent
    * sur un POST ou un EVENT. Réactions : supprimées, compteurs décrémentés. »
+   *
+   * `GUIDE_PAGE` SUIT LE SORT DE `GUIDE`, et rien n'a eu à changer pour cela : le
+   * `deleteMany` ci-dessous ne nomme QUE `POST` et `EVENT`, donc un commentaire
+   * posé sur une page de guide est CONSERVÉ — ce que §8 demande, parce qu'un
+   * guide est la mémoire collective de la plateforme et que le fil qui l'entoure
+   * en fait partie. C'est écrit ici parce qu'un lecteur de cette liste fermée
+   * doit savoir que l'omission est voulue.
    *
    * L'anonymisation ne se fait pas ici, et ne peut pas s'y faire :
    * `comments.author_user_id` est NOT NULL dans le schéma figé. 01 §2.8 vide en
@@ -2320,7 +2377,40 @@ export class FeedService {
       query.communityId === undefined ? { communityId: null } : { communityId: query.communityId },
       ...(query.type === undefined ? [] : [{ type: query.type }]),
       ...(query.cityId === undefined ? [] : [{ cityId: query.cityId }]),
-      ...(query.phase === undefined ? [] : [{ author: { phase: query.phase } }]),
+      /**
+       * ╔══════════════════════════════════════════════════════════════════╗
+       * ║ DEUX FILTRES SUR L'AUTEUR, ÉCRITS EN UNE SEULE CLAUSE            ║
+       * ╚══════════════════════════════════════════════════════════════════╝
+       *
+       * · la PHASE de l'auteur (§2.3) : cibler les pré-départ, ou les installés ;
+       * · son HANDLE — l'onglet « Fil » de son profil public.
+       *
+       * LE SECOND N'EXISTAIT PAS, et il fallait l'ajouter : le profil montre la
+       * CARTE du fil, pas une ligne de titre, et une carte se dessine à partir
+       * de `postCardSchema` ENTIER. La seule façon honnête de la nourrir est de
+       * filtrer le fil lui-même ; inventer une seconde route recomposerait la
+       * même chose et divergerait.
+       *
+       * LA CLAUSE S'AJOUTE AUX AUTRES, elle n'en remplace aucune : la visibilité
+       * (`postVisibilityWhere`), la séparation et le cloisonnement des réseaux
+       * restent devant. Demander l'auteur ne donne accès à rien de plus.
+       *
+       * UNE SEULE CLAUSE, et c'est pour le garde-fou : deux diffusions
+       * conditionnelles posant toutes deux `author` sont ce que
+       * `check-duplicate-spread-keys.mjs` relève. Le tableau devient un `AND`,
+       * donc les deux auraient coexisté — mais il ne peut pas le savoir, et une
+       * alerte qu'on apprend à ignorer ne garde plus rien.
+       */
+      ...(query.phase === undefined && query.authorHandle === undefined
+        ? []
+        : [
+            {
+              author: {
+                ...(query.phase === undefined ? {} : { phase: query.phase }),
+                ...(query.authorHandle === undefined ? {} : { handle: query.authorHandle }),
+              },
+            },
+          ]),
     ];
   }
 
@@ -2361,30 +2451,30 @@ export class FeedService {
   }
 
   /**
-   * Le filtre des commentaires.
+   * Le filtre des LIGNES d'un fil : les commentaires lisibles, PLUS les
+   * emplacements que la modération a laissés.
+   *
+   * ⚠ CE N'EST PLUS `commentVisibilityWhere`, et le changement de nom est le
+   * point : la clause retient maintenant `status = HIDDEN` en plus de
+   * `PUBLISHED`, parce que la colonne « ÉTATS » de A01C dessine « Ce commentaire
+   * a été retiré par la modération. » et que le porteur l'a tranché. Ce qui reste
+   * EXCLU — la suppression par l'auteur, le compte supprimé, le blocage — est
+   * écrit en entier dans `common/comment-visibility.ts`, et le blocage y est une
+   * règle dure : un emplacement visible ferait du fil un détecteur de blocage.
    *
    * PIÈGE, et il est ici IMPOSSIBLE À DÉSAMORCER : `comments.author_user_id` est
    * NOT NULL, donc `notIn` seul est correct aujourd'hui — mais §8 prévoit de
    * l'annuler à la suppression d'un compte. Le jour où la colonne deviendra
    * nullable, ce `notIn` fera disparaître TOUS les commentaires anonymisés dès
-   * que le lecteur aura UN seul blocage. Voir la note dans le corps.
+   * que le lecteur aura UN seul blocage. Voir la note dans le fichier commun.
    */
-  private async commentVisibilityWhere(viewerId: string): Promise<Prisma.CommentWhereInput[]> {
-    const separated = await this.visibility.separatedFrom(viewerId);
-    return [
-      { deletedAt: null },
-      { status: 'PUBLISHED' },
-      // `notIn` SEUL, et c'est un CONSTAT et non un choix : la forme tolérante au
-      // NULL — `OR: [{ authorUserId: null }, { authorUserId: { notIn } }]` — est
-      // REFUSÉE par les types générés, parce que `comments.author_user_id` est
-      // NOT NULL. §8 demande pourtant de l'annuler à la suppression d'un compte
-      // (« conservés, anonymisés, `author_user_id = null` ») : la règle est
-      // aujourd'hui inapplicable, et le jour où la colonne deviendra nullable,
-      // c'est ICI qu'il faudra repasser — sinon un lecteur avec UN seul blocage
-      // perdra tous les commentaires anonymisés, sans que rien ne l'explique.
-      ...(separated.length === 0 ? [] : [{ authorUserId: { notIn: separated } }]),
-      { author: { deletedAt: null, status: { in: ['ACTIVE' as const, 'SUSPENDED' as const] } } },
-    ];
+  private async commentRowsForViewer(viewerId: string): Promise<Prisma.CommentWhereInput[]> {
+    // LE CRITÈRE VIT dans `common/comment-visibility.ts`. Raison :
+    // `GET /guides/:slug` rend `guide.commentCount`, et un compteur qui ne compte
+    // pas ce que CE fil affiche serait faux à l'écran. Le recopier là-bas aurait
+    // créé deux vérités ; les conditions et leur pourquoi sont donc dans ce
+    // fichier commun, que les deux appellent.
+    return commentRowWhere(await this.visibility.separatedFrom(viewerId));
   }
 
   /** La publication, si le lecteur a le droit de la connaître. */
@@ -2529,12 +2619,53 @@ export class FeedService {
       return;
     }
 
-    if (subjectType === 'GUIDE') {
-      const guide = await this.prisma.guide.findUnique({
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ `GUIDE` N'EST PLUS COMMENTABLE — C'EST `GUIDE_PAGE` QUI L'EST            ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Les commentaires concernent donc une page du guide. » Depuis
+     * que le corps d'un guide vit dans ses pages (05 `GuidePage`), un commentaire
+     * attaché au GUIDE n'a plus d'endroit où s'afficher : A04 rend le fil de la
+     * page LUE, et une ligne posée sur le guide ne paraîtrait sous aucune page.
+     *
+     * LA VALEUR RESTE DANS L'ÉNUMÉRATION — on ne retire jamais une valeur d'enum,
+     * et des lignes anciennes pourraient la porter. Mais plus aucune ne s'y
+     * attache : la reprise de données a déplacé les 69 commentaires existants vers
+     * la page 1 de leur guide, et ce refus ferme la porte pour la suite.
+     *
+     * 404 ET NON 422, et ce n'est pas un détail : cette méthode garde la LECTURE
+     * d'un fil autant que son écriture (`commentPage` l'appelle aussi). Rendre
+     * « liste vide » sur une lecture laisserait croire qu'un fil existe et qu'il
+     * est muet ; rendre 422 sur une écriture apprendrait au client qu'il existe un
+     * autre nom pour le même sujet. « Ce sujet n'existe pas » est la vérité : il
+     * n'y a plus de contenu nommé « guide » qui porte une conversation.
+     *
+     * ⚠ UN CLIENT RESTÉ EN ARRIÈRE reçoit donc 404 là où il recevait 200 avec une
+     * liste vide — relevé, et c'est le comportement voulu : il doit demander la
+     * page, dont `GET /guides/:slug` lui donne l'identifiant dans `currentPage`.
+     */
+    if (subjectType === 'GUIDE') throw ApiError.notFound();
+
+    if (subjectType === 'GUIDE_PAGE') {
+      /**
+       * LA VISIBILITÉ RESTE CELLE DU GUIDE, pas de la page. La page n'a pas de
+       * `status` : la publication est d'un BLOC (décision du porteur), donc c'est
+       * le guide qui dit si son contenu est lisible. Une page RETIRÉE, en
+       * revanche, ne se commente plus — `deletedAt: null` sur la page.
+       */
+      const page = await this.prisma.guidePage.findUnique({
         where: { id: subjectId },
-        select: { id: true, authorUserId: true, status: true, deletedAt: true },
+        select: {
+          deletedAt: true,
+          guide: {
+            select: { id: true, authorUserId: true, status: true, deletedAt: true },
+          },
+        },
       });
-      if (guide === null || guide.deletedAt !== null) throw ApiError.notFound();
+      if (page === null || page.deletedAt !== null) throw ApiError.notFound();
+      const guide = page.guide;
+      if (guide.deletedAt !== null) throw ApiError.notFound();
       if (guide.status !== 'PUBLISHED') throw ApiError.notFound();
       // `guides.author_user_id` EST nullable (anonymisation, 05 §8) : le test
       // passe donc par `!== null` et non par un `notIn` SQL, qui aurait écarté

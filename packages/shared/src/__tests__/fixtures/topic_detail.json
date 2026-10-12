@@ -22,6 +22,9 @@
   "canResolve": true,
   "canPin": true,
   "canEdit": true,
+  "hidden": false,
+  "canUnhide": false,
+  "unhideUntil": null,
   "replies": [
     {
       "id": "01a0f3b8-c994-7000-a6a3-5e9897f83bfb",

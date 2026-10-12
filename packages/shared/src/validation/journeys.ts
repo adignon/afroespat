@@ -391,6 +391,17 @@ export const publicJourneysQuerySchema = z
       .min(1)
       .max(PUBLIC_JOURNEYS_MAX_LIMIT)
       .default(PUBLIC_JOURNEYS_PANEL_LIMIT),
+    /**
+     * LES PARCOURS PUBLICS D'UN MEMBRE — l'onglet de son profil.
+     *
+     * ⚠ IL CHANGE AUSSI LA RÈGLE DES « AUTRES ». Sans lui, cette route sert
+     * « 5 parcours publics d'AUTRES membres » (§3.7) et exclut donc les vôtres :
+     * c'est juste pour un panneau de découverte, et faux pour un profil — le
+     * vôtre n'afficherait rien. Quand l'auteur est demandé, la question n'est
+     * plus « que découvrir ? » mais « qu'a publié cette personne ? », et la
+     * réponse inclut soi-même.
+     */
+    authorHandle: handleSchema.optional(),
   })
   .strict();
 

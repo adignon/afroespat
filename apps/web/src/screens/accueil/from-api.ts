@@ -45,7 +45,7 @@
  * décision assumée du propriétaire sur les huit paires sous AA).
  */
 import type {
-  CommentThread,
+  CommentRow,
   FeedResponse,
   FeedSidebarResponse,
   MemberSummary,
@@ -90,9 +90,24 @@ export interface PersonneCarte extends PersonView {
   readonly handle: string;
 }
 
+/**
+ * Une ligne du fil de A01C, plus ce que la page doit connaître pour agir.
+ *
+ * ⚠ `commentId` ET `canEdit` SONT FACULTATIFS DEPUIS LES EMPLACEMENTS RETIRÉS, et
+ * ce n'est pas un relâchement du contrat : un emplacement « retiré par la
+ * modération » N'A PAS d'identifiant — `commentRemovedSchema` ne le sert pas, et
+ * son en-tête écrit pourquoi (l'identifiant est précisément ce qui permettrait de
+ * retrouver le message). Il n'a pas non plus de fenêtre de modification.
+ *
+ * Les rendre facultatifs plutôt que de poser `commentId: ''` était le choix
+ * honnête : une chaîne vide est une valeur, et une valeur se recopie — un
+ * `data-commentaire-signaler=""` serait parti signaler un commentaire sans
+ * identifiant. Absents, les deux ne peuvent pas être lus par mégarde, et `tsc`
+ * nomme l'appelant qui essaierait.
+ */
 export interface CommentaireLigne extends CommentView {
-  readonly commentId: string;
-  readonly canEdit: boolean;
+  readonly commentId?: string;
+  readonly canEdit?: boolean;
 }
 
 // ─── Identité visuelle d'un membre ──────────────────────────────────────────
@@ -296,6 +311,14 @@ export function feedPostFrom(p: PostCard): FeedPostCarte {
     action: p.reaction.actionLabel,
     actionIcon: ACTION_ICON[p.type],
     comment: p.commentLabel,
+    /**
+     * LE NOMBRE, À CÔTÉ DU LIBELLÉ. `comment` est le MOT du bouton
+     * (« Commenter », « Répondre ») ; celui-ci est le compteur du serveur, posé
+     * pour la feuille A01C que ce bouton ouvre. Voir sa prise dans
+     * `screens/a01/data.ts` : sans lui, la feuille ouverte depuis le profil
+     * n'avait pas de compteur.
+     */
+    commentCount: p.commentCount,
     /** L'encart « Étape franchie · N sur M » (§2.2), absent s'il n'y a pas d'étape. */
     ...(p.stepBadge === null ? {} : { step: p.stepBadge.stepName }),
     /**
@@ -643,7 +666,7 @@ export function sansAccent(texte: string): string {
  * une réponse (§2.5, `DEPTH_EXCEEDED` — mesuré 422).
  */
 export function threadFrom(
-  items: readonly CommentThread[],
+  items: readonly CommentRow[],
   /**
    * « Répondre » — la FABRIQUE, pas la prise.
    *
@@ -676,7 +699,10 @@ export function threadFrom(
             onSignaler(id);
           },
         };
-  return items.flatMap((racine) => [
+  return items.flatMap((racine) =>
+    'removed' in racine
+      ? [{ ...LIGNE_RETIREE, indent: '0px', indentM: '0px' }]
+      : [
     {
       ...avatar(racine.author),
       name: racine.author.displayName,
@@ -699,20 +725,66 @@ export function threadFrom(
           }),
       ...signalerDe(racine.id),
     },
-    ...racine.replies.map((r) => ({
-      ...avatar(r.author),
-      name: r.author.displayName,
-      phase: r.author.cityName === null ? '' : r.author.cityName,
-      author: r.isAuthor,
-      text: r.body,
-      time: r.relativeTime,
-      indent: '50px',
-      indentM: '44px',
-      canReply: false,
-      av: '32px',
-      commentId: r.id,
-      canEdit: r.canEdit,
-      ...signalerDe(r.id),
-    })),
-  ]);
+    ...racine.replies.map((r) =>
+      'removed' in r
+        ? { ...LIGNE_RETIREE, indent: '50px', indentM: '44px' }
+        : {
+            ...avatar(r.author),
+            name: r.author.displayName,
+            phase: r.author.cityName === null ? '' : r.author.cityName,
+            author: r.isAuthor,
+            text: r.body,
+            time: r.relativeTime,
+            indent: '50px',
+            indentM: '44px',
+            canReply: false,
+            av: '32px',
+            commentId: r.id,
+            canEdit: r.canEdit,
+            ...signalerDe(r.id),
+          },
+    ),
+        ],
+  );
 }
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'EMPLACEMENT « RETIRÉ » — UNE LIGNE QUI NE PORTE AUCUNE DONNÉE            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La colonne « ÉTATS » de A01C dessine un bloc gris : « Ce commentaire a été
+ * retiré par la modération. » Le cadre transcodé le pose À LA PLACE DE LA LIGNE
+ * ENTIÈRE quand `c.retire` est vrai — avatar, nom, phase, bulle et pied compris —
+ * parce qu'un emplacement qui garderait le rond d'initiales nommerait l'auteur que
+ * le retrait a ôté.
+ *
+ * ⚠ CES DIX CHAMPS NE SONT PAS DES VALEURS D'EXEMPLE, et la distinction est celle
+ * que ce dépôt tient partout ailleurs (« mieux vaut rien qu'un exemple ») : ce sont
+ * des VIDES. Aucun n'atteint l'écran, puisque la branche qui les lit n'est pas
+ * rendue. Ils existent parce que `CommentView` est le contrat d'une LIGNE DESSINÉE
+ * et que ses onze champs sont requis pour tout vrai commentaire ; les rendre
+ * facultatifs pour ce seul cas affaiblirait le contrat des centaines de lignes qui
+ * en portent une vraie valeur, et laisserait passer un commentaire sans nom.
+ *
+ * `retire` est la SEULE information de cette ligne, et c'est exactement ce que
+ * `commentRemovedSchema` sert : `{ removed: true }`, sans corps, sans auteur, sans
+ * date et sans identifiant.
+ *
+ * `indent` / `indentM` NE SONT PAS ICI : ils disent la PROFONDEUR, et une réponse
+ * retirée se décale comme la réponse qu'elle remplace (50 px, 44 px sur mobile).
+ * Les figer à zéro aurait ramené toutes les réponses retirées à la marge gauche, et
+ * le fil se serait réordonné à l'œil.
+ */
+const LIGNE_RETIREE = {
+  retire: true,
+  i: '',
+  bg: '',
+  name: '',
+  phase: '',
+  author: false,
+  text: '',
+  time: '',
+  canReply: false,
+  av: '0px',
+} as const satisfies Omit<CommentView, 'indent' | 'indentM'>;

@@ -496,6 +496,35 @@ const FIELD_ADAPTATIONS = [
       'onChange={onDisplayNameChange}',
     ],
   },
+  /**
+   * ── A10 · LE NOM DU RÉSEAU, SUR LES DEUX PLANCHES ───────────────────────
+   *
+   * Un seul enregistrement couvre les deux cadres, et c'est mesuré plutôt que
+   * supposé : les deux `<div>` n'ont PAS le même style — celui de 390 px ajoute
+   * `background:#fff` et `flexShrink:0` — mais le motif d'`adaptFields` ne
+   * capture le style que pour le RECOPIER, il ne le compare pas. Le discriminant
+   * est le texte d'exemple, identique sur les deux planches.
+   *
+   * `maxLength={nomMax}` lit `COMMUNITY_NAME_MAX` du contrat partagé, exactement
+   * comme le compteur d'invitations lit `COMMUNITY_MIN_INVITES` : une seconde
+   * borne écrite ici finirait par laisser taper soixante-et-un caractères là où
+   * `communityNameSchema` en refuse plus de soixante.
+   */
+  {
+    screens: ['A10'],
+    sample: 'Entrepreneurs africains à Lyon',
+    why: 'Le nom du réseau devient saisissable — c’était un <div> portant l’exemple de la maquette.',
+    provides: ['nomMax'],
+    attrs: [
+      'type="text"',
+      'name="name"',
+      'autoComplete="off"',
+      'aria-label="Nom du réseau"',
+      'maxLength={nomMax}',
+      'value={nomValue}',
+      'onChange={onNomChange}',
+    ],
+  },
 ];
 
 /**
@@ -1615,6 +1644,81 @@ const resetBoutonManquant = (style) => {
 };
 /** Le même, quand la maquette ne déclare PAS de bordure : il faut retirer celle du UA. */
 const RESET_BOUTON_SANS_BORDURE = `border: "none", ${RESET_BOUTON}`;
+
+/**
+ * LE CURSEUR D'UN BOUTON QUI S'ÉTEINT PENDANT SON APPEL.
+ *
+ * ── POURQUOI CE N'EST PAS UN SUFFIXE ──────────────────────────────────────
+ *
+ * Écrire `style.replace(' }}', ', cursor: … }}')` paraît inoffensif, et c'est
+ * faux DEUX FOIS :
+ *
+ *   1. `resetBoutonManquant` a peut-être DÉJÀ posé `cursor: "pointer"` — il le
+ *      fait dès que la maquette n'en écrit pas. Le suffixe donnait alors un objet
+ *      littéral portant deux fois la clé `cursor`, que `tsc` REFUSE (TS1117). Le
+ *      défaut a été mesuré sur le signet du guide, et il n'apparaît que sur les
+ *      boutons dont la planche ne dessine pas le curseur — donc pas sur ceux où
+ *      l'on essaie d'abord.
+ *   2. Et quand la planche en écrit un, c'est le SIEN qu'il faut remplacer : le
+ *      suffixe l'aurait écrasé sans le dire, ce qui est le défaut que
+ *      `markTriggers` a déjà payé en suffixant sa neutralisation.
+ *
+ * La déclaration est donc SUBSTITUÉE quand elle existe et AJOUTÉE sinon —
+ * exactement la règle que `A04_ACTIONS` applique à l'encre de ses boutons de
+ * vote, et pour la même raison.
+ */
+/**
+ * LA CIBLE TACTILE D'UN ROND D'ICÔNE DE 40 px, PORTÉE À 44 SANS DÉPLACER UN PIXEL.
+ *
+ * ── POURQUOI CE N'EST PAS UNE CORRECTION DE DESSIN ────────────────────────
+ *
+ * `T1` §2.3 demande 44 px. Cette maquette dessine ses ronds d'action à 40 × 40 —
+ * juste comme dessin, court comme cible au pouce. `markTriggers` applique DÉJÀ ce
+ * calcul aux `<span>` qu'il promeut (voir son en-tête), et la MESURE l'a montré
+ * sur l'en-tête du guide : le partage et le « … », promus par lui, font 44 × 44 ;
+ * le retour et le signet, promus ici, faisaient 40 × 40. Deux boutons voisins de
+ * la même barre, à deux cibles différentes, parce que deux mécanismes les
+ * promouvaient.
+ *
+ * Le calcul est celui de `markTriggers`, repris au caractère près :
+ *   · `boxSizing: "content-box"` laisse la boîte de contenu à 40 × 40 ;
+ *   · `padding: "2px"` porte la boîte de bordure — donc la cible — à 44 ;
+ *   · `backgroundClip: "content-box"` ne peint QUE les 40 px du milieu, sinon la
+ *     pastille grise s'étendrait sur tout le remplissage ;
+ *   · `margin: "-2px"` rend au voisinage les 4 px que le remplissage a pris. Sans
+ *     elle, la barre haute passerait de 40 à 44 px et tout ce qui suit
+ *     descendrait d'autant.
+ *
+ * ── LE PIÈGE REACT DU RACCOURCI `background` ──────────────────────────────
+ *
+ * `TOUCH_TARGET_ADAPTATIONS` l'a déjà payé sur l'interrupteur, et il est MESURÉ
+ * là-bas : React ne réécrit que la propriété qui change, et réécrire le RACCOURCI
+ * `background` remet ses longhands à leur valeur initiale — `background-clip`
+ * repasse à `border-box`, sans que personne ne le demande. La pastille déborde
+ * alors sur les quatre pixels de remplissage.
+ *
+ * Ce n'est pas théorique ici : le fond du SIGNET est une expression qui change à
+ * chaque bascule (`entete.signet ? "#E3F0EB" : "#F2F5F4"`). On écrit donc
+ * `backgroundColor`, une longhand, qui ne touche à rien d'autre — et le dessin est
+ * identique, la maquette ne posant jamais qu'une couleur sur ces ronds.
+ */
+const cibleTactileRonde = (style) => {
+  if (!/width: "40px", height: "40px", borderRadius: "999px"/.test(style)) return style;
+  return style
+    .replace(/\bbackground: /, 'backgroundColor: ')
+    .replace(
+      ' }}',
+      ', boxSizing: "content-box", padding: "2px", margin: "-2px", backgroundClip: "content-box" }}',
+    );
+};
+
+const curseurOccupe = (style, occupe) => {
+  const conditionnel = `cursor: ${occupe} ? "default" : "pointer"`;
+  const dessine = /cursor: "[^"]*"/.exec(style);
+  return dessine === null
+    ? style.replace(' }}', `, ${conditionnel} }}`)
+    : style.replace(dessine[0], conditionnel);
+};
 
 /**
  * `Centré` — UNE BASCULE, PAS UN CYCLE, et c'est le dessin qui l'impose.
@@ -5222,10 +5326,24 @@ const A01P_PARTAGE = {
   },
 };
 
+/**
+ * LA SOURCE DU BLOC « COMMENTAIRE MASQUÉ », pour le garde-fou d'emprunt.
+ *
+ * Le motif est écrit SANS son `margin-top:12px` — voir le point 5 ter de
+ * `A01C_FIL`, qui dit pourquoi la marge est retirée. Il reste une sous-chaîne
+ * EXACTE de la maquette : relevé, une occurrence.
+ */
+const A01C_RETIRE_SOURCE = {
+  file: 'docs/template/03 Accueil v2.dc.html',
+  pattern:
+    'background:#F2F5F4;border-radius:14px;padding:12px 14px;font-size:12.5px;' +
+    'color:#5D6B66">Ce commentaire a été retiré par la modération.</div>',
+};
+
 const A01C_FIL = {
   screens: ['A01C'],
   nom: 'A01C_FIL',
-  why: 'La fenêtre de commentaires montre la vraie publication, le vrai compte, le vrai tri et la vraie suite.',
+  why: 'La fenêtre de commentaires montre la vraie publication, le vrai compte, le vrai tri, la vraie suite — et l’emplacement gris d’un commentaire retiré par la modération.',
   provides: [
     'sujetCarte',
     'commentairesCompte',
@@ -5403,6 +5521,121 @@ const A01C_FIL = {
     }
 
     return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A01C · L'EMPLACEMENT D'UN COMMENTAIRE RETIRÉ                               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * ⚠ DÉCLARÉE APRÈS `NOM_VERS_PROFIL`, ET C'EST OBLIGATOIRE — MESURÉ.
+ *
+ * Cette transformation vivait d'abord comme un point de plus dans `A01C_FIL`, qui
+ * tourne AVANT `NOM_VERS_PROFIL`. Conséquence relevée sur le cadre produit : le
+ * cadre d'ordinateur a perdu son `data-nom-profil`, et le nom de l'auteur d'un
+ * commentaire a cessé de mener à son profil public.
+ *
+ * LA RAISON EST UNE MARGE DE CENT CARACTÈRES. `NOM_VERS_PROFIL` cherche l'avatar
+ * d'un membre dans les 1 500 caractères QUI PRÉCÈDENT `{c.name}`, et son propre
+ * commentaire relève que sur A01C cet écart vaut déjà 1 400 — l'avatar qu'il
+ * trouve est celui de la CARTE DU SUJET, parce que celui du commentaire porte une
+ * taille en DONNÉE (`width: c.av`) que son motif ne reconnaît pas. Insérer
+ * l'emplacement gris avant le nom ajoutait ~230 caractères dans cet intervalle, et
+ * le faisait basculer hors de portée. Le défaut compilait sans un mot.
+ *
+ * Posée APRÈS, la transformation trouve le lien déjà en place et l'emporte dans sa
+ * branche « pas retiré », intact. LA FRAGILITÉ RESTE, et elle est REMONTÉE : elle
+ * n'est pas de ce lot — la réparer demande que `NOM_VERS_PROFIL` reconnaisse un
+ * avatar dont la taille est une donnée, ce qui ajouterait un lien de profil sur
+ * l'avatar des commentaires d'ordinateur et doit être mesuré pour lui-même.
+ */
+const A01C_RETIRE = {
+  screens: ['A01C'],
+  nom: 'A01C_RETIRE',
+  why: 'Un commentaire retiré par la modération laisse l’emplacement gris que la colonne « ÉTATS » de A01C dessine, aux deux largeurs — il disparaissait sans trace.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ « CE COMMENTAIRE A ÉTÉ RETIRÉ PAR LA MODÉRATION. »                    ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « fais le reste aussi. » La colonne « ÉTATS » de A01C dessine,
+     * en TROISIÈME carte, un bloc gris portant cette phrase (ligne 283 de la
+     * maquette). Jusqu'ici un commentaire masqué par la modération ne quittait
+     * jamais le serveur : il disparaissait du fil sans trace, et le compteur le
+     * perdait avec lui.
+     *
+     * ── CE QUI EST REMPLACÉ, ET POURQUOI C'EST TOUTE LA LIGNE ─────────────
+     *
+     * L'emplacement remplace LES DEUX ENFANTS de la ligne — l'avatar et la
+     * colonne (bulle, nom, phase, heure, « Répondre », « Signaler »). Garder le
+     * rond d'initiales aurait nommé l'auteur que le retrait a ôté ; garder
+     * l'heure l'aurait daté, ce qui le désigne souvent aussi sûrement. C'est
+     * exactement ce que `commentRemovedSchema` (`packages/shared`) refuse de
+     * servir : l'emplacement arrive en `{ removed: true }`, sans corps, sans
+     * auteur, sans date et sans identifiant.
+     *
+     * LA LIGNE ELLE-MÊME EST GARDÉE, et c'est ce qui rend l'indentation juste :
+     * son `paddingLeft` est `c.indent` (`c.indentM` à 390 px), donc une RÉPONSE
+     * retirée reste décalée de 50 px (44 px sur mobile) comme la réponse qu'elle
+     * remplace. Remplacer la ligne entière aurait ramené toutes les réponses
+     * retirées à la marge gauche, et le fil se serait réordonné à l'œil.
+     *
+     * ⚠ `flex: "1"` EST AJOUTÉ, et c'est la seule chose qui ne vient pas de la
+     * maquette. La ligne est un conteneur `display: flex` ; posé nu, le bloc gris
+     * se réduirait à la largeur de sa phrase au lieu d'occuper la ligne, alors que
+     * la colonne d'états le dessine sur toute la largeur de sa carte. C'est de la
+     * colle de mise en page, du même genre — et déclarée de la même façon — que
+     * les 12 px d'enveloppe de `A01C_REPONSE_MOBILE`.
+     *
+     * ⚠ LE `margin-top:12px` DE LA MAQUETTE EST RETIRÉ. Il écartait le bloc de
+     * l'étiquette « COMMENTAIRE MASQUÉ » posée au-dessus — une étiquette de
+     * documentation, qui n'est pas transcodée (voir l'arbitrage écrit dans
+     * `tools/screens/03-accueil.mjs`, au-dessus de `A01C_DONNEES`). Sans elle la
+     * marge n'a plus de cause, et le fil porte déjà son propre `gap` de 16 px
+     * (14 px sur mobile) entre deux lignes : la recopier aurait ajouté 12 px au
+     * seul emplacement retiré, donc un trou visible à sa place dans le fil.
+     *
+     * ── LE GARDE-FOU EST CELUI DES EMPRUNTS ──────────────────────────────
+     *
+     * Le dessin est recopié de la maquette, donc il doit cesser de l'être le jour
+     * où la maquette change. `lireSourceEmpruntee` relit le fichier et la
+     * génération ARRÊTE si la phrase n'y est plus — même mécanique, même raison et
+     * même message que l'accusé d'envoi de A06 (point 7 de `A06_CORRECTION`).
+     */
+    const ligne =
+      /<Fragment key=\{cIndex\}><div (style=\{\{ display: "flex", gap: "1[02]px", paddingLeft: c\.indentM? \}\})>/;
+    const ml = ligne.exec(out);
+    if (ml !== null) {
+      if (!lireSourceEmpruntee(A01C_RETIRE_SOURCE.file).includes(A01C_RETIRE_SOURCE.pattern)) {
+        throw new Error(
+          'A01C : le bloc « Ce commentaire a été retiré par la modération. » ne figure plus ' +
+            `dans ${A01C_RETIRE_SOURCE.file}. Mettre A01C_RETIRE_SOURCE à jour.`,
+        );
+      }
+      const iDiv = out.indexOf('<div', ml.index);
+      const finOuverture = out.indexOf('>', iDiv);
+      const finLigne = finDuDiv(out, iDiv);
+      if (finOuverture > 0 && finLigne > 0) {
+        const dedans = out.slice(finOuverture + 1, finLigne - '</div>'.length);
+        const bloc =
+          '<div data-commentaire-retire="" style={{ flex: "1", background: "#F2F5F4", ' +
+          'borderRadius: "14px", padding: "12px 14px", fontSize: "12.5px", color: "#5D6B66" }}>' +
+          'Ce commentaire a été retiré par la modération.</div>';
+        out =
+          out.slice(0, finOuverture + 1) +
+          `{c.retire ? (${bloc}) : (<>${dedans}</>)}` +
+          out.slice(finLigne - '</div>'.length);
+        pris += 1;
+      }
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
   },
 };
 
@@ -6593,11 +6826,3612 @@ const K02_AVATAR_PROFIL = {
  * châssis que celle de l'ordinateur — fond blanc, trait `#E6EBE9`, rayon 22,
  * retrait 20 — et la même liste.
  */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES CARTES MÈNENT À LEUR DÉTAIL — ET ELLES N'Y MENAIENT NULLE PART        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, après avoir vu les gestes revenir sur la carte du fil :
+ * « c'est bon aussi pour les autres ? »
+ *
+ * NON, ET LE DÉFAUT EST EN AMONT. Mesuré au navigateur, en comptant les liens
+ * qui mènent au DÉTAIL d'un élément dans le cadre affiché :
+ *
+ *     /guides             1440 : 20     390 : 0
+ *     /agenda             1440 :  0     390 : 0
+ *     /services/logement  1440 :  0     390 : 0
+ *     /parcours           1440 :  2     390 : 0
+ *
+ * Autrement dit : ces cartes ne mènent nulle part SUR LEUR PROPRE PAGE. Le
+ * profil ne faisait que reproduire fidèlement une carte inerte.
+ *
+ * ── UNE SEULE CORRECTION POUR LES DEUX ENDROITS ─────────────────────────────
+ *
+ * L'adaptation tourne sur le CADRE, donc avant l'extraction de `composants:` —
+ * la carte sort déjà cliquable, et la page d'origine comme le profil en
+ * profitent. C'est tout l'intérêt d'avoir une source unique.
+ *
+ * ── `CadreCliquable`, PARCE QUE L'ADRESSE PEUT MANQUER ──────────────────────
+ *
+ * Les cartes dessinées par la maquette n'ont pas de slug (le fichier de A03 le
+ * dit : « LA MAQUETTE N'ÉCRIT AUCUN SLUG »), et une annonce retirée n'a plus
+ * d'adresse. Le composant rend alors un `<div>` — exactement le dessin d'avant —
+ * au lieu de promettre un lien mort. Le dessin, lui, ne bouge pas d'un pixel :
+ * c'est le CONTENANT qui change de nature.
+ *
+ * ── AUCUNE DE CES QUATRE CARTES NE CONTIENT DE BOUTON ───────────────────────
+ *
+ * Vérifié, pas supposé : zéro `<button>` dans les huit fichiers extraits. On
+ * peut donc rendre la carte ENTIÈRE cliquable sans imbriquer un contrôle dans
+ * un lien — ce que le navigateur défait en silence et qu'axe-core relève. La
+ * carte du fil, elle, en porte quatre : c'est pourquoi elle reste un `<div>` et
+ * que ses gestes passent par délégation.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ENCART « ÇA M'A AIDÉ » MANQUE AU CADRE DE 390 px                       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Corrige l'entraide » — et sa règle permanente : « veille
+ * toujours à ce que toutes les corrections soient aussi faites sur mobile ».
+ *
+ * La maquette dessine TROIS variantes de demande sur son cadre d'ordinateur et
+ * DEUX seulement sur celui de 390 px : il n'y a pas de demande résolue à cette
+ * largeur. La même liste y est pourtant servie — un membre qui résout une
+ * demande la verra depuis son téléphone — et sans cet encart elle s'y
+ * afficherait muette, avec un bouton « Répondre » en moins et rien à la place.
+ *
+ * ── POURQUOI UNE ADAPTATION ET NON `donnees` ────────────────────────────────
+ *
+ * Le troisième contrôle de `donnees` parcourt le littéral de la maquette avec un
+ * seul curseur. Un encart emprunté y apporte une FERMETURE que le cadre mobile
+ * n'a pas à offrir, et le contrôle a raison de la refuser : ce n'est pas une
+ * donnée qui manque, c'est du DESSIN qui n'est pas là. Les adaptations sont le
+ * mécanisme prévu pour ça — c'est ainsi que la bande « En réponse à » est
+ * arrivée sur le cadre mobile des commentaires.
+ *
+ * Le dessin est repris AU CARACTÈRE PRÈS de la planche d'ordinateur de la même
+ * maquette : fond `#E3F0EB`, rayon 14, retrait `10px 12px`, 12,5 px / 600 sur
+ * `#0F5C48`.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE FIL D'ENTRAIDE RÉPOND — FILTRES, CARTES, RÉPONSE                       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Corrige l'entraide » puis « rends aussi la page, les filtres
+ * etc. dynamique. »
+ *
+ * MESURÉ AVANT : zéro `onClick` dans les deux cadres de H01. Les six filtres de
+ * type étaient des `<span>`, la carte entière était du dessin, et le bouton
+ * « Répondre » ne répondait pas. La déclaration d'écran vient d'en faire des
+ * listes ; il reste les gestes, et aucun n'est dessiné.
+ *
+ * ── LA CARTE MÈNE AU DÉTAIL, ET LE BOUTON Y MÈNE AUSSI ─────────────────────
+ *
+ * `/entraide/:id` existe et sert la demande. Le bouton « Répondre » y conduit
+ * plutôt que d'ouvrir un champ sur la liste : la maquette dessine la réponse sur
+ * l'écran de DÉTAIL (H02), avec son fil et sa règle de sécurité, et l'ouvrir ici
+ * serait inventer un second endroit où répondre.
+ *
+ * Le TITRE porte le lien, pas la carte : elle contient un bouton, et un `<a>` qui
+ * l'engloberait contiendrait un contrôle — balisage invalide, et le navigateur
+ * se partage entre les deux au clic.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « TOUT Y EST DESSINÉ AUSSI » — LA PAGE DES GUIDES                        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Mais aussi la page de guide, tout y est dessiné aussi. »
+ *
+ * CE QUI ÉTAIT DÉJÀ VRAI, et que l'en-tête de `guides-screen.tsx` avouait :
+ * « Le changement d'onglet [...] cliquer "À vérifier" ne déclenche aucun appel —
+ * vérifié dans un navigateur. L'état et l'appel SONT branchés et éprouvés
+ * derrière : `useGuides(tab)` refait la requête avec `tab=review`, et l'API
+ * filtre correctement. Il ne manque que le clic. »
+ *
+ * Il ne manquait que le clic : le voici. Et les trois filtres — « Catégorie »,
+ * « Pays », « Ville » — étaient des `<span>` à chevron, alors que
+ * `guideListQuerySchema` accepte `category`, `countryId` et `cityId` depuis le
+ * premier jour.
+ *
+ * ── UN `<select>` DANS LA PASTILLE, ET PAS UN MENU RÉINVENTÉ ───────────────
+ *
+ * La maquette dessine une pastille à chevron, c'est-à-dire un menu déroulant.
+ * Le navigateur en a un, il est accessible au clavier, il se comporte comme le
+ * système l'a appris à qui s'en sert, et il n'ajoute pas trois cents lignes de
+ * panneau flottant à tenir. Le `<select>` est donc posé DANS la pastille,
+ * transparent et sans bordure : le dessin reste celui de la planche, le chevron
+ * dessiné compris.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LES ACTIONS SUR LA PAGE DE DÉTAIL DES GUIDES SONT DESSINÉES AUSSI »     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, mot pour mot. MESURÉ sur les deux cadres de A04 : zéro `onClick`,
+ * et les trois actions de la colonne sont des `<a href="#">` — le lien mort que
+ * ce dépôt traque depuis le premier jour. Les deux boutons de vote, « Oui » et
+ * « Non », n'ont aucun geste non plus.
+ *
+ * ── LES QUATRE ROUTES EXISTENT, ET LE CROCHET LES APPELLE DÉJÀ ─────────────
+ *
+ * C'est le même constat que les onglets de la liste : tout était branché
+ * derrière, il ne manquait que le clic.
+ *
+ *   « Oui » / « Non »              → `POST /guides/:id/vote`, `DELETE` pour
+ *                                    défaire — `useGuide` rend `voter()` ;
+ *   « L'information a changé »     → `POST /guides/:id/outdated` — `useGuide`
+ *                                    rend `signalerObsolete()` ;
+ *   « Proposer une correction »    → la page `/guides/:slug/corriger`, qui
+ *                                    EXISTE et porte le formulaire de §2.4 ;
+ *   « Signaler »                   → `POST /reports`, N2 depuis la refonte des
+ *                                    niveaux — l'écran prévient avant.
+ *
+ * ── UNE PRISE PAR ACTION, PAS UN `onClick` PARTAGÉ ────────────────────────
+ *
+ * La colonne en dessine trois et une prise d'écran ne saurait laquelle a été
+ * touchée : le geste vit sur la LIGNE (`a.onChoisir`), comme pour les
+ * interrupteurs de notification et les onglets des enregistrés.
+ *
+ * `vers` est FACULTATIVE : seule « Proposer une correction » mène à une page.
+ * Les deux autres écrivent, et un `<a>` qui écrit serait un lien qui ment.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE CORPS DU GUIDE ÉTAIT CELUI DE LA MAQUETTE                              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : « tout ça est dessiné ». Les deux sections —
+ * « 1. Vérifier votre éligibilité », « 2. Transmettre au propriétaire » —, leurs
+ * paragraphes, leur liste et leurs trois cadres d'image étaient le texte de la
+ * planche, affiché sur TOUS les guides. Un membre ouvrant son guide sur la CAF y
+ * lisait Visale.
+ *
+ * `GET /guides/:slug` rend pourtant `currentVersion.body` depuis le début.
+ *
+ * ── LA RÉGION ENTIÈRE CÈDE LA PLACE, ET IL LE FAUT ────────────────────────
+ *
+ * Ce n'est pas une donnée à lier mot par mot : c'est un corps de longueur et de
+ * structure inconnues. Deux sections dessinées ne peuvent pas accueillir un
+ * guide qui en a sept. On remplace donc tout le bloc par `{corpsGuide}`, que la
+ * page rend avec `CorpsGuide` — lequel reprend les styles de la planche au
+ * caractère près.
+ *
+ * ── CE QUI DISPARAISSAIT AVEC, ET CE QUI REVIENT ──────────────────────────
+ *
+ * Ce bloc a longtemps dit que les trois cadres d'image de la maquette
+ * disparaissaient « parce qu'un guide NE PEUT PAS porter d'image ». C'ÉTAIT VRAI
+ * ET CE N'EST PLUS LE CAS : le porteur a tranché — « Les guides ont des images,
+ * il faut pouvoir les ouvrir » — et le corps accepte désormais
+ * `![légende](/media/<clé>)`, une adresse de média de l'application et rien
+ * d'autre. `CorpsGuide` les dessine, aux valeurs des deux planches (220 px /
+ * rayon 18 sur l'ordinateur, 170 px / rayon 14 sur le mobile).
+ *
+ * Et « Proposer une correction sur ce passage » revient aussi, mais pas comme un
+ * dessin du corps : la maquette l'attache à un passage SURLIGNÉ, donc à une
+ * SÉLECTION DE TEXTE. `CorpsGuide` écoute la sélection et fait apparaître
+ * l'infobulle que la planche dessine.
+ *
+ * ── DEUX PLANCHES, DEUX PRISES — ET CE N'EST PAS UNE SYMÉTRIE GRATUITE ────
+ *
+ * `corpsGuide` servait les QUATRE cadres. Tant que le corps était du texte, un
+ * seul nœud rendu deux fois suffisait. Il ne suffit plus : l'image n'a pas le même
+ * dessin aux deux largeurs — l'ordinateur met la légende SOUS le bloc, suivie de
+ * « · Image ajoutée par … » ; le mobile met la légende DANS le bloc et
+ * l'attribution sur sa propre ligne, en 11,5 px. Un seul nœud rendrait donc le
+ * dessin d'ordinateur sur le téléphone, ou l'inverse.
+ *
+ * La borne qui a servi dit LAQUELLE des deux planches on coupe — c'est la même
+ * information, déjà relevée juste en dessous — donc la prise suit la borne :
+ * `{corpsGuide}` sur les cadres de 1440 px, `{corpsGuideMobile}` sur ceux de
+ * 390 px. Aucune devinette : la borne mobile est celle que la planche mobile
+ * dessine.
+ *
+ * ── LES BORNES SONT DEUX ANCRES DE LA PLANCHE ─────────────────────────────
+ *
+ * Du premier `<h2>` de section jusqu'au séparateur des commentaires. Les deux
+ * sont uniques dans ce cadre, et la génération s'arrête si l'une disparaît.
+ */
+const A04_CORPS = {
+  screens: ['A04'],
+  nom: 'A04_CORPS',
+  why: 'Le corps du guide vient de `currentVersion.body` : les deux sections de la maquette étaient servies sur tous les guides.',
+  provides: ['corpsGuide', 'corpsGuideMobile'],
+  apply(jsx) {
+    /**
+     * ── LES DEUX PLANCHES NE BORNENT PAS LE CORPS PAREIL ─────────────────
+     *
+     * À 1440 px la section est un `<h2>` de 19 px, et le corps s'arrête au
+     * séparateur des commentaires. À 390 px c'est un `<div>` de 17 px — la
+     * planche ne balise pas ses titres — et le corps s'arrête à la barre basse
+     * « Ce guide vous a aidé ? ». Deux bornes par cadre, relevées et non
+     * supposées.
+     */
+    const BORNES = [
+      {
+        debut:
+          '<h2 style={{ margin: "26px 0 0", fontSize: "19px", fontWeight: "700", letterSpacing: "-0.3px" }}>',
+        fin: '<div style={{ marginTop: "28px", paddingTop: "18px", borderTop: "1px solid #EAEEEC"',
+        /** La planche de 1 440 px : l'image y fait 220 px, légende sous le bloc. */
+        prise: 'corpsGuide',
+      },
+      {
+        debut: '<div style={{ fontSize: "17px", fontWeight: "700", marginTop: "18px" }}>',
+        /**
+         * ╔══════════════════════════════════════════════════════════════════╗
+         * ║ LA BORNE MOBILE ÉTAIT LA BARRE BASSE, ET ELLE MANGEAIT L'EMPRUNT ║
+         * ╚══════════════════════════════════════════════════════════════════╝
+         *
+         * Elle valait `<div style={{ flexShrink: "0", background: "#fff",
+         * borderTop: "1px solid #E6EBE9", padding: "12px 16px 28px"` — la barre
+         * « Ce guide vous a aidé ? ». C'était juste tant que RIEN ne se trouvait
+         * entre le corps du guide et cette barre.
+         *
+         * MESURÉ : l'emprunt de l'en-tête « 14 COMMENTAIRES » (voir `borrows` de
+         * A04 dans `tools/screens/03-accueil.mjs`) pose justement un nœud là, et
+         * la coupe l'emportait avec le corps — les deux cadres de 390 px
+         * sortaient sans en-tête de commentaires, `grep -c 'guide.commentaires'`
+         * à 0 sur `mobile.generated.tsx` et `auteurmobile.generated.tsx`, là où
+         * les deux cadres d'ordinateur en portaient un.
+         *
+         * LA BORNE EST DONC LE MÊME NŒUD QUE CELLE DE LA PLANCHE D'ORDINATEUR,
+         * ci-dessus — ce qui est la bonne forme et non un contournement : depuis
+         * l'emprunt, les quatre cadres referment leur article sur le MÊME
+         * séparateur de commentaires, et le corps s'arrête donc au même endroit
+         * partout. Une borne par planche n'avait de sens que quand les planches
+         * finissaient différemment.
+         */
+        fin: '<div style={{ marginTop: "28px", paddingTop: "18px", borderTop: "1px solid #EAEEEC"',
+        /** La planche de 390 px : 170 px, légende DANS le bloc, attribution dessous. */
+        prise: 'corpsGuideMobile',
+      },
+    ];
+
+    for (const borne of BORNES) {
+      const at = jsx.indexOf(borne.debut);
+      if (at < 0) continue;
+      const fin = jsx.indexOf(borne.fin, at);
+      if (fin < 0) continue;
+
+      /**
+       * ── LA RÉGION DOIT ÊTRE ÉQUILIBRÉE, ET C'EST MESURÉ ─────────────────
+       *
+       * Les DEUX planches d'AUTEUR portent la même ancre de titre que celles de
+       * lecture, mais leur corps ne se ferme pas au même endroit : la coupe y
+       * emportait des ouvertures sans leurs fermetures, et le cadre produit
+       * n'avait plus ni `<main>` ni fragment clos — six erreurs du compilateur.
+       *
+       * On compte donc les balises retirées : autant d'ouvertures que de
+       * fermetures, sinon ce n'est pas le corps qu'on coupe. Le refus est le bon
+       * comportement — la planche d'auteur garde alors son dessin, et le manque
+       * se voit.
+       */
+      /**
+       * LES FERMETURES EN TROP APPARTIENNENT AUX ANCÊTRES, et il faut les
+       * laisser : le cadre de lecture de 390 px referme DEUX conteneurs ouverts
+       * avant le titre de section, juste avant sa barre de vote. Les emporter
+       * produisait un `<main>` et un fragment sans fermeture — six erreurs du
+       * compilateur, mesurées.
+       *
+       * On recule donc la borne tant que la région referme plus qu'elle
+       * n'ouvre. Ce qui reste est le corps, et rien que lui.
+       */
+      const compter = (t) => ({
+        ouvertes: (t.match(/<(?!\/)[a-zA-Z]/g) ?? []).length,
+        fermees: (t.match(/<\/[a-zA-Z]/g) ?? []).length + (t.match(/\/>/g) ?? []).length,
+      });
+
+      let borneFin = fin;
+      for (;;) {
+        const { ouvertes, fermees } = compter(jsx.slice(at, borneFin));
+        if (fermees <= ouvertes) break;
+        if (!jsx.slice(at, borneFin).endsWith('</div>')) break;
+        borneFin -= '</div>'.length;
+      }
+
+      /**
+       * ET SI LA RÉGION OUVRE PLUS QU'ELLE NE FERME, ON REFUSE. Les deux
+       * planches d'AUTEUR portent la même ancre de titre mais pas la même
+       * structure : la coupe y emportait des ouvertures sans leurs fermetures.
+       * Le refus est le bon comportement — leur dessin reste, et le manque se
+       * voit. REMONTÉ : les cadres d'auteur gardent le corps de la maquette.
+       */
+      const bilan = compter(jsx.slice(at, borneFin));
+      if (bilan.ouvertes !== bilan.fermees) continue;
+
+      return {
+        jsx: jsx.slice(0, at) + `{${borne.prise}}` + jsx.slice(borneFin),
+        applied: true,
+      };
+    }
+    return { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « COMMENT COMMENTER UN GUIDE, C'EST PAS DANS LES DESIGN ? »                ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, puis son arbitrage : « Fais le point 1 » — EMPRUNTER A01C AU GUIDE.
+ *
+ * CE QUE LA MAQUETTE DESSINE, et c'est tout : l'en-tête « 14 COMMENTAIRES », sur
+ * les deux planches d'ordinateur de A04 (lignes 678 et 728), suivi de
+ * `</div></article>`. AUCUNE section de commentaires. Il n'y a donc rien à
+ * transcoder sur la page du guide — mais la maquette dessine ailleurs, en entier,
+ * la FEUILLE de commentaires A01C, et l'API la sert déjà pour un guide
+ * (`GET /comments?subjectType=GUIDE`, `POST /comments` à `comment.create`, N0).
+ *
+ * Cette adaptation fait la seule chose qui manquait : rendre l'en-tête CLIQUABLE,
+ * et lui faire porter `data-modal-open="A01C"` — le MÊME attribut, le MÊME
+ * écouteur délégué, le MÊME geste que « Commenter » sur le fil.
+ *
+ * ── POURQUOI PAS `markTriggers`, QUI SAIT DÉJÀ FAIRE CELA ───────────────────
+ *
+ * Parce qu'il aurait CHANGÉ LE DESSIN, et c'est mesurable sans navigateur : sa
+ * promotion n'ajoute ni `display` ni `width`, et un `<div>` de bloc devenu
+ * `<button>` passe en `inline-block`. Le `border-top: 1px solid #EAEEEC` que la
+ * planche fait courir sur TOUTE la largeur de l'article se serait rétracté à la
+ * largeur du mot « 14 COMMENTAIRES ». Le séparateur du designer aurait raccourci
+ * de plusieurs centaines de pixels pour qu'un clic soit possible.
+ *
+ * On rend donc le bloc à l'identique — `display: block`, `width: 100%`,
+ * `textAlign: left` — et le reste du style est celui de la planche, REPRIS
+ * VERBATIM par la capture du motif.
+ *
+ * ── LE PIÈGE DE CE DÉPÔT, PAYÉ QUATRE FOIS, ET ÉVITÉ ICI DEUX FOIS ──────────
+ *
+ *   1. LE MOTIF NE FIGE AUCUNE VALEUR DE DESSIN. Il ancre sur la STRUCTURE — un
+ *      `<div>` dont le style porte `borderTop` et dont le contenu est exactement
+ *      `{guide.commentaires}` — et RECOPIE le style capturé. Figer
+ *      `fontSize: "11px"` aurait décrit un cadre et laissé les autres muets ;
+ *      c'est l'erreur que les tuiles de A01P et le bloc photo ont déjà coûtée.
+ *   2. LE REMPLACEMENT EST GLOBAL. `String.replace` avec un motif en CHAÎNE ne
+ *      coupe que la PREMIÈRE occurrence ; le motif est donc une expression
+ *      régulière `g`, parcourue en boucle. Un cadre ne dessine qu'un en-tête
+ *      aujourd'hui, mais c'est la règle du dépôt et elle ne coûte rien.
+ *
+ * ── L'ORDRE EST OBLIGATOIRE : APRÈS `A04_CORPS` ─────────────────────────────
+ *
+ * `A04_CORPS` BORNE le corps du guide sur l'ouverture de ce même `<div>` — sur
+ * les quatre planches depuis l'emprunt. Transformer l'en-tête avant lui lui
+ * ferait chercher un `<div>` devenu `<button>` : il ne trouverait plus sa borne,
+ * et le corps de la maquette — « Obtenir la garantie Visale sans CDI » et ses
+ * deux sections — se réafficherait sur TOUS les guides. Le défaut serait
+ * silencieux : le fichier compile, et seul le journal dirait « adaptation
+ * attendue introuvable ».
+ *
+ * ── CE QUI RESTE EN DEÇÀ, ET QU'ON NE CORRIGE PAS EN PEIGNANT ──────────────
+ *
+ * ⚠ LA CIBLE TACTILE. La boîte cliquable fait `18px` de remplissage haut plus la
+ * hauteur d'une ligne de 11 px, soit environ 31 px — sous les 44 px de `T1`
+ * §2.3. La porter à 44 demanderait d'ajouter du remplissage BAS que la planche
+ * n'écrit pas, donc de déplacer ce qui suit. Sur la planche d'ordinateur rien ne
+ * suit (l'article se referme), mais sur les deux cadres mobiles la barre basse
+ * le fait. REMONTÉ plutôt que comblé : l'en-tête est pleine largeur, donc facile
+ * à viser dans sa dimension longue, et c'est le designer qui tient sa hauteur.
+ */
+const A04_COMMENTAIRES = {
+  screens: ['A04'],
+  nom: 'A04_COMMENTAIRES',
+  why: 'L’en-tête « N COMMENTAIRES » du guide ouvre la feuille A01C : c’était un <div> inerte, et la maquette ne dessine aucune autre entrée vers les commentaires d’un guide.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * LE CONTENU EST L'ANCRE LA PLUS SÛRE : `{guide.commentaires}` est posé par
+     * `A04_DONNEES`, donc il n'existe QUE sur l'en-tête des commentaires. Le
+     * `borderTop` dans le style achève de le distinguer, et le groupe de capture
+     * rend le style tel quel — aucune valeur recopiée à la main.
+     */
+    const motif = /<div style=\{\{ ([^}]*borderTop[^}]*) \}\}>\{guide\.commentaires\}<\/div>/g;
+    let out = jsx;
+    let pris = 0;
+
+    for (;;) {
+      motif.lastIndex = 0;
+      const m = motif.exec(out);
+      if (m === null) break;
+      const bouton =
+        '<button type="button" data-modal-open="A01C" ' +
+        /**
+         * LES QUATRE PREMIÈRES DÉCLARATIONS SONT DES DÉFAUTS DE NAVIGATEUR
+         * REMPLACÉS, pas des valeurs de designer surchargées — c'est pour cela
+         * qu'elles sont EN TÊTE, exactement comme `markTriggers` préfixe sa
+         * neutralisation depuis qu'on a mesuré ce que suffixer coûtait.
+         *
+         * `border: "none"` AVANT le style capturé : React pose les propriétés
+         * dans l'ordre des clés, donc le `borderTop` de la planche gagne et le
+         * séparateur reste dessiné. Suffixer l'aurait effacé.
+         *
+         * `display: "block"`, `width: "100%"` et `textAlign: "left"` rendent au
+         * `<button>` la mise en page du `<div>` qu'il remplace : c'est la seule
+         * raison de leur présence, et sans elles le trait du designer se
+         * rétracterait à la largeur du texte.
+         */
+        'style={{ border: "none", background: "none", font: "inherit", cursor: "pointer", ' +
+        `padding: 0, display: "block", width: "100%", textAlign: "left", ${m[1]} }}>` +
+        '{guide.commentaires}</button>';
+      out = out.slice(0, m.index) + bouton + out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A04_ACTIONS = {
+  screens: ['A04'],
+  nom: 'A04_ACTIONS',
+  why: 'Les trois actions du guide et les deux boutons de vote répondent : c’étaient des href="#" et des boutons sans geste.',
+  provides: ['guideActions', 'onVoteUtile', 'onVotePasUtile', 'voteUtile', 'votePasUtile', 'voteOccupe'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    // ── 1. LES TROIS ACTIONS DE LA COLONNE ────────────────────────────────
+    const action =
+      /<a href="#" (style=\{\{ height: "44px", display: "flex", alignItems: "center", gap: "10px", padding: "0 12px", borderRadius: "14px", fontSize: "13\.5px", fontWeight: "600", color: "#16211D" \}\})>(<svg[^]*?<\/svg>)\{a\.label\}<\/a>/;
+    const ma = action.exec(out);
+    if (ma !== null) {
+      const dessin =
+        `{a.vers ? (<Link href={a.vers} data-guide-action={a.cle} ${ma[1].replace(' }}', ', textDecoration: "none" }}')}>` +
+        `${ma[2]}{a.label}</Link>) : (<button type="button" onClick={a.onChoisir} ` +
+        `data-guide-action={a.cle} ${ma[1].replace(' }}', ', border: "none", background: "none", textAlign: "left", width: "100%", fontFamily: "inherit", cursor: "pointer" }}')}>` +
+        `${ma[2]}{a.label}</button>)}`;
+      out = out.slice(0, ma.index) + dessin + out.slice(ma.index + ma[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. « CE GUIDE VOUS A-T-IL AIDÉ ? » ───────────────────────────────
+     *
+     * Les deux boutons sont une BASCULE : revoter la même valeur retire le vote
+     * (`DELETE /guides/:id/vote`), ce que `voter()` fait déjà. `aria-pressed`
+     * l'annonce, sans quoi un lecteur d'écran dit « Oui » sans dire que c'est
+     * déjà répondu.
+     *
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LE PORTEUR A RETOURNÉ LA LOGIQUE DE COULEUR, ET IL A RAISON          ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * « Quand on clique non, le bouton oui ne doit plus avoir la couleur
+     * primaire. Je propose aussi que par défaut les deux boutons aient la couleur
+     * gray du non. »
+     *
+     * CE QUI ÉTAIT PEINT AVANT, et pourquoi c'était un défaut : la maquette
+     * dessine « Oui » en vert et « Non » en gris, et ce dessin a été transcodé
+     * tel quel. Mais la maquette dessine UN INSTANT, pas un cycle de vie : son
+     * vert sur « Oui » est une INVITATION (« répondez oui »), et il était rendu
+     * comme un ÉTAT. Conséquence mesurable : après un vote « Non », « Non »
+     * devenait vert foncé et « Oui » RESTAIT vert — deux boutons verts, dont le
+     * non-choisi. L'écran affirmait le contraire de ce que le membre venait de
+     * dire.
+     *
+     * CE QUI EST PEINT MAINTENANT : la couleur ne dit plus QUEL bouton est
+     * recommandé, elle dit LEQUEL EST CHOISI. Au repos les deux portent le gris,
+     * et c'est l'instruction du porteur ; choisi, le bouton prend la primaire.
+     *
+     * ── LES DEUX PAIRES VIENNENT DE LA PLANCHE, AUCUNE N'EST INVENTÉE ─────
+     *
+     * C'est la contrainte que ce fichier s'impose partout, et elle tient ici :
+     *
+     *   · la paire ACTIVE — fond `#16785E`, encre `#fff` — est exactement celle
+     *     que la maquette dessine sur « Oui », sur les deux planches ;
+     *   · la paire AU REPOS — fond `#F2F5F4`, encre `#16211D` — est exactement
+     *     celle qu'elle dessine sur « Non » sur la planche d'ordinateur.
+     *
+     * Le `#0F5C48` qui servait de « pressé » DISPARAÎT : c'était la seule teinte
+     * de ce bloc qui ne venait pas de la planche, et le gris au repos rend
+     * l'assombrissement inutile — un bouton choisi se distingue désormais par la
+     * primaire, pas par une nuance de vert.
+     *
+     * ── L'ENCRE DOIT SUIVRE LE FOND, SINON ON ÉCRIT BLANC SUR GRIS ────────
+     *
+     * La planche fige `color` dans le dessin : `#fff` sur « Oui » (les deux
+     * planches), `#16211D` sur « Non » d'ordinateur, et RIEN sur « Non » de
+     * mobile — qui hérite. Substituer le seul fond aurait donc mis, au repos, du
+     * blanc sur du `#F2F5F4` : illisible, et sous le plancher AA. L'encre est
+     * donc substituée QUAND elle est dessinée et AJOUTÉE quand elle manque.
+     *
+     * Tout le reste — hauteur, rayon, retrait, graisse — reste mot pour mot celui
+     * de la planche.
+     */
+    /** La paire que la planche dessine sur « Oui » : le bouton CHOISI. */
+    const ACTIF_FOND = '#16785E';
+    const ACTIF_ENCRE = '#fff';
+    /** La paire que la planche dessine sur « Non » : les deux boutons AU REPOS. */
+    const REPOS_FOND = '#F2F5F4';
+    const REPOS_ENCRE = '#16211D';
+
+    const VOTES = [
+      ['Oui', '#16785E', 'voteUtile', 'onVoteUtile'],
+      ['Non', '#F2F5F4', 'votePasUtile', 'onVotePasUtile'],
+    ];
+    for (const [libelle, fond, etat, geste] of VOTES) {
+      /**
+       * LA HAUTEUR ET LE RAYON SONT RELEVÉS, PAS FIGÉS : la planche de 390 px
+       * dessine ces deux boutons à 42 px / rayon 12 avec un retrait, là où celle
+       * d'ordinateur les met à 44 px / rayon 14 sans retrait. Un motif qui fige
+       * l'un des deux ne décrit qu'un cadre — c'est l'erreur que ce fichier a
+       * déjà payée quatre fois, et elle a rendu zéro ici au premier essai.
+       */
+      const motif = new RegExp(
+        `<button (style=\\{\\{ height: "4[24]px", (?:padding: "0 16px", )?borderRadius: "1[24]px", background: "${fond}"[^}]*\\}\\})>${libelle}<\\/button>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      let style = m[1].replace(
+        `background: "${fond}"`,
+        `background: ${etat} ? "${ACTIF_FOND}" : "${REPOS_FOND}"`,
+      );
+      /**
+       * L'ENCRE. Substituée si la planche l'écrit, ajoutée si elle l'omet — le
+       * cas de « Non » sur la planche mobile, qui hérite de son parent. Sans
+       * l'ajout, ce bouton-là deviendrait vert avec une encre sombre une fois
+       * choisi.
+       */
+      const encre = `color: ${etat} ? "${ACTIF_ENCRE}" : "${REPOS_ENCRE}"`;
+      const encreDessinee = /color: "(?:#fff|#16211D)"/.exec(style);
+      style =
+        encreDessinee === null
+          ? style.replace(' }}', `, ${encre} }}`)
+          : style.replace(encreDessinee[0], encre);
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={${geste}} aria-pressed={${etat} === true} ` +
+        `disabled={voteOccupe} data-guide-vote="${libelle}" ` +
+        `${style.replace(' }}', ', cursor: voteOccupe ? "default" : "pointer" }}')}>${libelle}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LE BOUTON BACK SUR MOBILE ET LES ICON DU HEADER NE MARCHENT PAS »        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui. MESURÉ dans les deux cadres de 390 px produits
+ * avant ce lot : la barre haute est une rangée de `<span>` — aucun `onClick`,
+ * aucun `href`, aucun rôle. QUATRE ronds de 40 px sur le cadre du LECTEUR
+ * (chevron de retour, signet, partage, « … »), TROIS sur celui de l'AUTEUR, qui
+ * écrit « Votre guide » et NE DESSINE PAS LE SIGNET — relevé sur les octets
+ * (maquette, lignes 1370 et 1371), pas supposé symétrique.
+ *
+ * Le PARTAGE et le « … » sont traités par `triggers` dans la déclaration de
+ * l'écran : ils OUVRENT une surface, et `markTriggers` sait déjà poser
+ * `data-modal-open` que la page écoute par délégation. Restent les deux qui
+ * APPELLENT une fonction, et c'est ici.
+ *
+ * ── LES DEUX PIÈGES DE CE DÉPÔT, ET COMMENT ILS SONT ÉVITÉS ────────────────
+ *
+ *   1. AUCUNE VALEUR DE DESSIN N'EST FIGÉE. Le motif ancre sur la STRUCTURE —
+ *      un `<span>` dont le style commence par `width` et `height`, et dont le
+ *      seul contenu est un `<svg>` portant LE tracé — puis RECOPIE le style
+ *      capturé. Figer `width: "40px"` aurait décrit un cadre ; les ronds de la
+ *      barre haute font bien 40 px ici, mais c'est au motif de le relever, pas à
+ *      ce fichier de le réécrire. C'est l'erreur que les tuiles de A01P et le
+ *      bloc photo ont déjà coûtée cinq fois.
+ *   2. LE REMPLACEMENT EST GLOBAL, ET IL LE DOIT. `String.replace` avec un motif
+ *      en CHAÎNE ne coupe que la PREMIÈRE occurrence — et les quatre ronds de
+ *      cette barre se ressemblent au style près. Chaque tracé est donc cherché
+ *      par une expression régulière parcourue EN BOUCLE, et le compte est rendu
+ *      au journal.
+ *
+ * ── LE RETOUR ─────────────────────────────────────────────────────────────
+ *
+ * `entete.onRetour`, et la page y met `router.back()` avec son repli — c'est le
+ * geste que `components/garde-niveau.tsx` et la story emploient déjà. ⚠ LE REPLI
+ * N'EST PAS DÉCORATIF : `back()` ne fait RIEN quand l'onglet s'est ouvert
+ * directement sur l'adresse d'un guide (un lien partagé dans une conversation,
+ * ce que §2.1 protège en figeant le slug), et le bouton paraîtrait mort d'une
+ * autre façon. La décision vit dans la page, pas ici : ce fichier ne sait pas
+ * vers quoi replier.
+ *
+ * ── LE SIGNET ─────────────────────────────────────────────────────────────
+ *
+ * `BookmarkSubjectType` porte `GUIDE` depuis le début, et les quatre routes de
+ * §2.9 sont livrées (`PUT`/`DELETE /me/bookmarks`, `GET /me/bookmarks/states`).
+ *
+ * L'ÉTAT SE VOIT SUR LE GLYPHE, et le plein est EMPRUNTÉ à `A01_SIGNET_ET_OPTIONS`
+ * — le signet de la carte de publication, dans la même maquette : rempli de
+ * `#16785E` sur fond `#E3F0EB`, les deux verts que cette maquette emploie partout
+ * pour « actif ». Aucune teinte n'est inventée ici, et les deux signets du
+ * produit se peignent donc de la même façon.
+ *
+ * `aria-pressed` l'annonce au lecteur d'écran : un signet qu'on ne distingue pas
+ * d'un autre ne dit pas si le geste a pris.
+ */
+const A04_ENTETE_MOBILE = {
+  screens: ['A04'],
+  nom: 'A04_ENTETE_MOBILE',
+  why: 'Le chevron de retour et le signet de la barre haute mobile du guide répondent : c’étaient des <span> inertes, sans geste ni nom accessible.',
+  provides: ['entete'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * LE ROND DE LA BARRE HAUTE, décrit par sa structure et non par ses valeurs.
+     * `(?!.*data-)` n'est pas nécessaire : `markTriggers` a déjà promu en
+     * `<button>` les deux ronds qui ouvrent une surface, et ce motif ne cherche
+     * que des `<span>` — les boutons déjà posés sont donc hors de portée, sans
+     * garde supplémentaire.
+     */
+    const rond = (trace) =>
+      new RegExp(
+        '<span (style=\\{\\{ width: "\\d+px", height: "\\d+px", borderRadius: "999px"[^}]*\\}\\})>' +
+          '(<svg width="(\\d+)" height="\\d+"[^>]*>)' +
+          `<path d="${trace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" \\/><\\/svg><\\/span>`,
+        'g',
+      );
+
+    /** ── 1. LE CHEVRON DE RETOUR ──────────────────────────────────────── */
+    const retour = rond('m15 18-6-6 6-6');
+    for (;;) {
+      retour.lastIndex = 0;
+      const m = retour.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const style = cibleTactileRonde(
+        ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`),
+      );
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={entete.onRetour} aria-label="Retour" ` +
+        `data-guide-retour="" ${style}>${m[2]}<path d="m15 18-6-6 6-6" /></svg></button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /** ── 2. LE SIGNET ─────────────────────────────────────────────────── */
+    const SIGNET = 'M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z';
+    const signet = rond(SIGNET);
+    for (;;) {
+      signet.lastIndex = 0;
+      const m = signet.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const base = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      /**
+       * LE FOND SUIT L'ÉTAT, et on ne remplace QUE la déclaration de fond : tout
+       * le reste — diamètre, centrage, `flexShrink` — reste mot pour mot celui de
+       * la planche. Même procédé que sur la carte de publication.
+       */
+      const style = cibleTactileRonde(
+        base.replace(
+          'background: "#F2F5F4"',
+          'background: entete.signet ? "#E3F0EB" : "#F2F5F4"',
+        ),
+      );
+      /**
+       * LE `<svg>` EST RECOMPOSÉ parce que `fill` et `stroke` deviennent des
+       * expressions. Sa TAILLE est celle que le motif a relevée (`m[3]`), jamais
+       * une valeur écrite ici — les deux planches du produit ne dessinent pas ces
+       * ronds à la même taille, et c'est précisément le piège déjà payé.
+       */
+      out =
+        out.slice(0, m.index) +
+        '<button type="button" onClick={entete.onSignet} ' +
+        'aria-pressed={entete.signet === true} ' +
+        'aria-label={entete.signet ? "Retirer des enregistrés" : "Enregistrer ce guide"} ' +
+        'title={entete.signet ? "Retirer des enregistrés" : "Enregistrer ce guide"} ' +
+        `disabled={entete.signetOccupe} data-guide-signet="" ${curseurOccupe(
+          style,
+          'entete.signetOccupe',
+        )}>` +
+        `<svg width="${m[3]}" height="${m[3]}" viewBox="0 0 24 24" ` +
+        'fill={entete.signet ? "#16785E" : "none"} ' +
+        'stroke={entete.signet ? "#16785E" : "#16211D"} strokeWidth="1.8" ' +
+        `strokeLinecap="round" strokeLinejoin="round"><path d="${SIGNET}" /></svg></button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA FEUILLE D'ACTIONS DU « … » — CE QU'UNE IMAGE DE 844 px NE PEUT PAS DIRE ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La feuille est EMPRUNTÉE à la planche « ADMIN · MEMBRES — menu de rôle » de la
+ * même maquette, et sa condition comme sa liste sont posées par `A04_DONNEES`
+ * (voir `FEUILLE_ACTIONS`). Il reste ce qu'un emprunt ne peut pas poser et qu'une
+ * donnée ne peut pas poser non plus : LES GESTES, et l'ANCRAGE.
+ *
+ * ── L'ANCRAGE : `absolute` NE TIENT PAS SUR UNE PAGE QUI DÉFILE ───────────
+ *
+ * C'est le même écart que `regions` corrige pour le panneau de correction de A06,
+ * et il a été MESURÉ là-bas : « sur un guide de six sections, le voile faisait
+ * 3 100 px de haut et le panneau se terminait hors de l'écran ». La maquette est
+ * une image de 390 × 844 px dont le cadre ne défile pas ; `ScreenFrames` pose
+ * `position: relative` sur son conteneur, donc un `inset: 0` en `absolute`
+ * couvrirait la hauteur du DOCUMENT, pas celle de l'écran.
+ *
+ * `fixed` est la seule valeur qui rende le dessin de la planche sur une vraie
+ * page. Tout le reste — la teinte du voile, le rayon `28px 28px 0 0`, le retrait
+ * `10px 16px 30px`, l'écart de 4 px, la poignée de 40 × 5 — est celui de la
+ * planche, au caractère près. `maxHeight: 80vh` et `overflowY: auto` arrivent
+ * pour la même raison que sur A06 : une feuille plus haute que l'écran ne se
+ * referme pas toute seule.
+ *
+ * ── LE VOILE DEVIENT UNE FERMETURE, ET IL LE DOIT ─────────────────────────
+ *
+ * La planche empruntée ne dessine AUCUNE croix — elle a sa poignée, qui est un
+ * dessin et non un contrôle. Sans ce geste, la feuille ne se refermerait qu'en
+ * choisissant une action : mesuré à 390 px, zéro sortie. C'est le même choix que
+ * `regions` fait pour le voile de A06, et pour la même raison — un `<div>` à
+ * `onClick` serait le défaut d'accessibilité que ce dépôt traque ; un `<button>`
+ * est annoncé, atteint au clavier, et son dessin ne change pas d'un pixel.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LES PAGES ÉCRIRE UN GUIDE EST FINALISÉ ? » — NON, ET C'EST MESURÉ        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ dans les deux cadres produits avant ce lot : `a05/desktop.generated.tsx`
+ * et `a05/mobile.generated.tsx` portent **0 `<input>`, 0 `<textarea>`, 0
+ * `onClick`**. `A05Data` est `{ mdTools, rules }` — la barre d'outils et le
+ * panneau de règles, deux listes de la maquette. La page `/guides/nouveau` monte
+ * cela et un `GardeNiveau`. L'éditeur était une IMAGE.
+ *
+ * `screens/a05/data.ts` l'écrivait lui-même, et sans se tromper : « Brancher
+ * l'éditeur demande que la maquette pose des marqueurs de données sur son `<pre>`
+ * et sur ses champs, puis une régénération. C'est du transcodage, pas du
+ * branchement. » C'est ce transcodage.
+ *
+ * ── CE QUE LA MAQUETTE DESSINE, RELEVÉ CADRE PAR CADRE ─────────────────────
+ *
+ * ORDINATEUR (1 440 px) : une croix de fermeture, le titre « Nouveau guide », la
+ * pastille verte « Brouillon enregistré · il y a 4 s », un bouton « Publier » ;
+ * puis une grille `2fr 1fr 1fr 1fr` de QUATRE boîtes de 50 px — le titre du guide
+ * (bord vert 1,5 px, 16 px/700), « Catégorie : Études », « Portée : Bénin »,
+ * « Ville (facultatif) » en gris ; puis une grille `1fr 1fr 320px` — la carte
+ * d'écriture (barre d'outils de six marques + un `<pre>` en monospace), la carte
+ * « APERÇU » rendue en vrai, et une colonne de deux cartes : « À PARTIR DE MON
+ * PARCOURS » et « AVANT DE PUBLIER ».
+ *
+ * TÉLÉPHONE (390 px) : la croix, « Brouillon enregistré » (SANS le délai), le
+ * bouton « Publier » ; le titre en boîte de 48 px ; TROIS PASTILLES à la place
+ * des trois boîtes — « Études », « Bénin », « Ville ▾ » ; un segment
+ * « Écrire / Aperçu » que l'ordinateur n'a pas (il montre les deux côte à côte) ;
+ * le corps en monospace, qui contient `![Capture](image-1.jpg)` ; un bandeau
+ * orange « Pré-rempli depuis “Mes études à Lyon” » ; et une barre basse avec les
+ * six marques PLUS UNE ICÔNE D'IMAGE.
+ *
+ * ⚠ TROIS ÉCARTS RELEVÉS ENTRE LES DEUX PLANCHES, et aucun n'est supposé :
+ *
+ *   1. L'ICÔNE D'IMAGE N'EST DESSINÉE QUE SUR LE TÉLÉPHONE. La barre d'outils
+ *      d'ordinateur n'a que les six marques. Elle est donc EMPRUNTÉE au cadre
+ *      mobile (voir `borrows` de A05) : les images marchent depuis cette session
+ *      (`POST /media` avec `kind=GUIDE`), et laisser l'ordinateur sans bouton
+ *      aurait été un demi-branchement. Le bouton emprunté garde sa géométrie de
+ *      téléphone (40 px, fond `#E3F0EB`) au milieu d'une barre dessinée à 34 px :
+ *      un emprunt se reconnaît, et c'est préférable à une taille choisie par un
+ *      agent. REMONTÉ.
+ *   2. LE SEGMENT « ÉCRIRE / APERÇU » N'EST QUE SUR LE TÉLÉPHONE, et c'est
+ *      cohérent : l'ordinateur montre l'aperçu EN PERMANENCE, dans sa deuxième
+ *      colonne. Rien à emprunter — les deux planches disent la même chose de deux
+ *      façons.
+ *   3. LE DÉLAI « · il y a 4 s » N'EST QUE SUR L'ORDINATEUR. Les deux étiquettes
+ *      sont donc liées à DEUX prises, et non à une : `editeur.brouillon` porte la
+ *      phrase longue, `editeur.brouillonCourt` la courte. Une prise unique aurait
+ *      écrit un délai sur une planche qui ne le dessine pas.
+ *
+ * ── CE QUI N'EST PAS FAIT, ET POURQUOI C'EST DIT ICI ───────────────────────
+ *
+ * « À PARTIR DE MON PARCOURS » (et son bandeau orange sur le téléphone) reste
+ * SOUS CONDITION et n'est jamais vrai aujourd'hui. `POST /journeys/:id/to-guide`
+ * existe bien (`guides.controller.ts`) et `api.ts` l'appelle déjà
+ * (`draftFromJourney`), mais la maquette n'offre AUCUN geste pour CHOISIR le
+ * parcours : elle dessine le résultat (« Une section par étape de “Mes études à
+ * Lyon” a été pré-remplie »), pas le sélecteur. Le brancher demanderait
+ * d'inventer ce sélecteur, ou de deviner quel parcours un membre veut convertir.
+ * La carte DISPARAÎT donc tant que la page n'a pas de parcours de départ, au lieu
+ * d'affirmer un pré-remplissage qui n'a pas eu lieu — ce qui est exactement le
+ * défaut que ce dépôt traque (« un membre ouvrant son guide sur la CAF y lisait
+ * Visale »). REMONTÉ : il manque une planche « choisir le parcours de départ ».
+ */
+const A05_EDITEUR = {
+  screens: ['A05'],
+  nom: 'A05_EDITEUR',
+  why: 'L’éditeur de guide devient un éditeur : titre, catégorie, portée, ville, corps, barre d’outils, image, enregistrement du brouillon et publication — sur les deux planches.',
+  provides: ['editeur'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /** Remplace la PREMIÈRE occurrence d'un motif, et compte. */
+    const un = (motif, fabrique) => {
+      const m = motif.exec(out);
+      if (m === null) return false;
+      out = out.slice(0, m.index) + fabrique(m) + out.slice(m.index + m[0].length);
+      pris += 1;
+      return true;
+    };
+
+    /**
+     * ── 1. LA CROIX DE FERMETURE ─────────────────────────────────────────
+     *
+     * Les DEUX planches la dessinent, à deux diamètres (42 px et 40 px) et avec
+     * deux tailles de tracé. Le motif les RELÈVE au lieu de les figer — c'est le
+     * piège déjà payé cinq fois par ce fichier.
+     */
+    const croix =
+      /<span (style=\{\{ width: "4[02]px", height: "4[02]px", borderRadius: "999px"[^}]*\}\})>(<svg [^>]*><path d="M18 6 6 18M6 6l12 12" \/><\/svg>)<\/span>/g;
+    for (;;) {
+      croix.lastIndex = 0;
+      const m = croix.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={editeur.onFermer} aria-label="Fermer l’éditeur" ` +
+        `data-a05-fermer="" ${style}>${m[2]}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. LE TITRE DU GUIDE ─────────────────────────────────────────────
+     *
+     * LE LITTÉRAL DE LA MAQUETTE DEVIENT L'INVITE, et c'est la doctrine de
+     * `FIELD_ADAPTATIONS` : « Mon arrivée étudiante à Lyon, étape par étape » est
+     * un EXEMPLE DE FORME — un titre de guide tel qu'on en attend un — et le
+     * garder en `placeholder` est honnête. Ce n'est pas le cas du corps, voir
+     * plus bas.
+     *
+     * ⚠ LE CADRE MOBILE ÉCRIVAIT CE TITRE EN `<h1>`, et il ne le fait plus. La
+     * déclaration `heading` de ce cadre a été RETIRÉE avec cette transformation :
+     * la maquette dessine là une BOÎTE DE SAISIE (48 px, bord vert de focus), pas
+     * un titre de page, et `screens/a05/data.ts` le disait déjà (« le cadre mobile
+     * met à sa place le nom du brouillon en cours »). Un `<h1>` autour d'un champ
+     * vide serait un titre sans texte, qu'axe relève en `empty-heading`.
+     * CONSÉQUENCE ASSUMÉE ET REMONTÉE : la planche de 390 px de l'éditeur n'a plus
+     * de `<h1>` — `page-has-heading-one` est une règle « best-practice » d'axe,
+     * hors du périmètre de `e2e/a11y.spec.ts`, et `e2e/accueil-lot2.spec.ts` a été
+     * mis à `h1Mobile: null` en le disant. Le jour où la maquette donne un titre à
+     * cette planche, c'est là que ça se déclare.
+     */
+    for (const [exemple, aria] of [
+      ['Mon arrivée étudiante à Lyon, étape par étape', 'Titre du guide'],
+      ['Mon arrivée étudiante à Lyon', 'Titre du guide'],
+    ]) {
+      const titre = new RegExp(
+        `<(?:div|h1) (style=\\{\\{ (?:margin: "0", )?height: "(?:50|48)px"[^}]*\\}\\})>${exemple}<\\/(?:div|h1)>`,
+      );
+      un(
+        titre,
+        (m) =>
+          '<input type="text" name="titre" value={editeur.titre} onChange={editeur.onTitre} ' +
+          `placeholder=${JSON.stringify(exemple)} aria-label="${aria}" ` +
+          `maxLength={editeur.titreMax} data-a05-titre="" ` +
+          `${m[1].replace(' }}', ', boxSizing: "border-box", width: "100%", outline: "none" }}')} />`,
+      );
+    }
+
+    /**
+     * ── 3. LES TROIS CHOIX — CATÉGORIE, PORTÉE, VILLE ────────────────────
+     *
+     * LE `<select>` SE SUPERPOSE AU DESSIN, transparent, et le dessin reste celui
+     * de la planche au caractère près. C'est l'idiome que `A03_ONGLETS_ET_FILTRES`
+     * emploie déjà pour les trois filtres de la liste des guides — « pour que le
+     * dessin reste celui de la maquette » — et il vaut ici pour la même raison :
+     * un `<select>` peint par le navigateur n'a ni le rayon de 14 px ni le bord
+     * `#E6EBE9` de la boîte dessinée.
+     *
+     * LE TEXTE AFFICHÉ DEVIENT UNE DONNÉE, parce que la maquette écrit la VALEUR
+     * CHOISIE dans sa boîte (« Catégorie : Études ») et non un libellé fixe : sans
+     * liaison, l'écran aurait dit « Études » quel que soit le choix. Les deux
+     * planches ne l'écrivent pas pareil — l'ordinateur préfixe (« Catégorie : »),
+     * le téléphone ne préfixe pas (« Études ») — donc deux prises, pas une.
+     *
+     * ⚠ LA VILLE EST GRISE SUR L'ORDINATEUR (`color: "#8A958F"`), parce que la
+     * maquette dessine son état VIDE — « Ville (facultatif) ». La couleur suit
+     * donc la valeur : grise quand rien n'est choisi, encre normale sinon. C'est
+     * la seule des quatre boîtes dont la planche montre deux états, et c'est elle
+     * qui dit quoi faire des trois autres.
+     */
+    const CHOIX = [
+      ['Catégorie : Études', 'categorie', 'Catégorie du guide'],
+      ['Portée : Bénin', 'portee', 'Portée du guide'],
+      ['Ville (facultatif)', 'ville', 'Ville du guide (facultatif)'],
+      ['Études', 'categorie', 'Catégorie du guide'],
+      ['Bénin', 'portee', 'Portée du guide'],
+      ['Ville ▾', 'ville', 'Ville du guide (facultatif)'],
+    ];
+    for (const [texte, cle, aria] of CHOIX) {
+      const Cle = `${cle[0].toUpperCase()}${cle.slice(1)}`;
+      /**
+       * `▾` EST GARDÉ TEL QUEL quand la maquette l'écrit : c'est son chevron, en
+       * texte, sur la pastille de 390 px. Le retirer serait changer le dessin.
+       *
+       * ⚠ LE TEXTE EST ÉCHAPPÉ, et ce n'est pas une précaution de principe : la
+       * boîte de la ville s'appelle « Ville (facultatif) », dont les PARENTHÈSES
+       * sont des métacaractères. Sans échappement, `new RegExp` en faisait un
+       * groupe de capture, le motif cherchait « Villefacultatif » — et la seule
+       * des quatre boîtes dont la maquette dessine l'état vide restait un `<div>`
+       * inerte, SANS que la génération le dise. Mesuré sur le cadre produit.
+       */
+      const motif = new RegExp(
+        `<(?:div|span) (style=\\{\\{ (?:height: "50px"|padding: "8px 12px")[^}]*\\}\\})>${texte.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          '\\$&',
+        )}<\\/(?:div|span)>`,
+      );
+      un(motif, (m) => {
+        const base = m[1]
+          .replace('color: "#8A958F"', `color: editeur.${cle} === "" ? "#8A958F" : "#16211D"`)
+          .replace(' }}', ', position: "relative", cursor: "pointer" }}');
+        /**
+         * ── CE QUE LE CADRE ÉCRIT, SELON CE QUE LA PLANCHE DESSINE ─────────
+         *
+         *   · « Catégorie : Études » → le préfixe reste du TEXTE, la valeur
+         *     devient une prise. Le préfixe est du dessin : la planche de 390 px
+         *     ne l'écrit pas, et le mettre dans la prise l'aurait fait apparaître
+         *     sur une pastille qui n'en veut pas.
+         *   · « Ville ▾ » → le chevron EN TEXTE de la pastille mobile reste, et
+         *     la prise est la forme COURTE : la planche écrit « Ville » là où
+         *     celle d'ordinateur écrit « Ville (facultatif) », et les trois
+         *     pastilles de 390 px ne tiennent sur une ligne qu'à ce prix. Relevé
+         *     sur les octets des deux planches.
+         *   · « Études », « Bénin » → la valeur seule.
+         */
+        const court = texte.endsWith('▾') && cle === 'ville' ? 'LibelleCourt' : 'Libelle';
+        const visible = texte.includes(' : ')
+          ? `${texte.split(' : ')[0]} : {editeur.${cle}Libelle}`
+          : texte.endsWith('▾')
+            ? `{editeur.${cle}${court}} ▾`
+            : `{editeur.${cle}Libelle}`;
+        return (
+          `<label ${base}>${visible}` +
+          `<select value={editeur.${cle}} onChange={editeur.on${Cle}} aria-label="${aria}" ` +
+          `data-a05-${cle}="" style={{ position: "absolute", inset: 0, opacity: 0, ` +
+          'width: "100%", height: "100%", cursor: "pointer", border: "none" }}>' +
+          `{(editeur.${cle}Options ?? []).map((op) => (<option key={op.valeur} value={op.valeur}>{op.libelle}</option>))}` +
+          '</select></label>'
+        );
+      });
+    }
+
+    /**
+     * ── 4. LE CORPS DU GUIDE ─────────────────────────────────────────────
+     *
+     * L'ordinateur l'écrit dans un `<pre>`, le téléphone dans un `<div>` — deux
+     * balises, deux motifs, et c'est relevé sur les octets.
+     *
+     * ⚠ LE LITTÉRAL NE DEVIENT PAS UNE INVITE, contrairement au titre. C'est
+     * l'arbitrage que `A06_PANNEAU_CORRECTION` a déjà écrit : « “97 12 34 42” est
+     * une FORME attendue, et la garder est honnête. Ici le littéral est le contenu
+     * d'UN guide. » Le texte de la planche est un brouillon sur Campus France ;
+     * l'afficher en invite sur le guide de quelqu'un qui écrit sur le logement
+     * serait le défaut exact que ce dépôt traque. L'INVITE EST DONC VIDE, et
+     * `aria-label` porte le nom du champ.
+     *
+     * `maxLength` VIENT DU SERVEUR (`GUIDE_BODY_MAX`), pas d'un nombre écrit ici.
+     */
+    const corpsWeb =
+      /<pre (style=\{\{ margin: "0", flex: "1"[^}]*\}\})>[^]*?<\/pre>/;
+    un(
+      corpsWeb,
+      (m) =>
+        '<textarea value={editeur.corps} onChange={editeur.onCorps} ' +
+        'aria-label="Le corps de votre guide, en Markdown" data-a05-corps="" ' +
+        'maxLength={editeur.corpsMax} ' +
+        `${m[1].replace(
+          ' }}',
+          ', border: "none", outline: "none", resize: "none", boxSizing: "border-box", width: "100%" }}',
+        )} />`,
+    );
+
+    /**
+     * SUR LE TÉLÉPHONE, LA MÊME BOÎTE SERT DEUX ÉTATS — le segment
+     * « Écrire / Aperçu » les commande, et la maquette ne dessine qu'un seul
+     * conteneur. On rend donc le champ OU l'aperçu dans le MÊME style.
+     *
+     * ⚠ DEUX DÉCLARATIONS TOMBENT DANS LA BRANCHE « APERÇU », et il faut le dire :
+     * `fontFamily: "ui-monospace,…"` et `whiteSpace: "pre-wrap"`. Elles décrivent
+     * du MARKDOWN BRUT — la planche d'ordinateur ne les écrit pas sur sa carte
+     * « APERÇU » — et les garder aurait rendu le guide composé en police à chasse
+     * fixe. C'est le seul endroit de cette transformation où une déclaration de la
+     * planche est retirée, et elle l'est parce que l'autre planche dit quoi mettre
+     * à la place.
+     */
+    const corpsMobile =
+      /<div (style=\{\{ flex: "1", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "18px", padding: "14px", (fontFamily: "ui-monospace,Menlo,monospace", )(fontSize: "12\.5px", lineHeight: "1\.75", )(whiteSpace: "pre-wrap" )\}\})>[^]*?<\/div>/;
+    un(corpsMobile, (m) => {
+      const champ =
+        '<textarea value={editeur.corps} onChange={editeur.onCorps} ' +
+        'aria-label="Le corps de votre guide, en Markdown" data-a05-corps="" ' +
+        'maxLength={editeur.corpsMax} ' +
+        `${m[1].replace(
+          ' }}',
+          ', outline: "none", resize: "none", boxSizing: "border-box", width: "100%" }}',
+        )} />`;
+      const apercu =
+        `<div style={{ flex: "1", background: "#fff", border: "1px solid #E6EBE9", ` +
+        `borderRadius: "18px", padding: "14px", ${m[3]}overflowY: "auto" }} ` +
+        'data-a05-apercu="">{editeur.apercu}</div>';
+      return `{editeur.apercuOuvert ? (${apercu}) : (${champ})}`;
+    });
+
+    /**
+     * ── 5. LE SEGMENT « ÉCRIRE / APERÇU » (téléphone seul) ───────────────
+     *
+     * Les deux `<span>` portent la MÊME géométrie et diffèrent par UNE
+     * déclaration : `background: "#fff"` sur l'actif, `color: "#5D6B66"` sur
+     * l'autre. Le motif les prend tous les deux et c'est le LIBELLÉ qui dit
+     * lequel est lequel — jamais la couleur, qui est du dessin.
+     */
+    const onglet =
+      /<span (style=\{\{ flex: "1", textAlign: "center", padding: "8px 4px", borderRadius: "9px", fontSize: "12\.5px", fontWeight: "700", whiteSpace: "nowrap"[^}]*\}\})>(Écrire|Aperçu)<\/span>/g;
+    for (;;) {
+      onglet.lastIndex = 0;
+      const m = onglet.exec(out);
+      if (m === null) break;
+      const apercu = m[2] === 'Aperçu';
+      const ajout = resetBoutonManquant(m[1]);
+      const base = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      /**
+       * LE FOND ET L'ENCRE SUIVENT L'ÉTAT, en reprenant les DEUX valeurs que la
+       * planche dessine — `#fff` pour l'actif, `#5D6B66` pour l'autre. Aucune
+       * teinte n'est inventée : la maquette dessine les deux états côte à côte, et
+       * c'est tout ce dont on a besoin.
+       */
+      const choisi = apercu ? 'editeur.apercuOuvert' : '!editeur.apercuOuvert';
+      const style = base
+        .replace('background: "#fff"', `background: ${choisi} ? "#fff" : "transparent"`)
+        .replace('color: "#5D6B66"', `color: ${choisi} ? "#16211D" : "#5D6B66"`);
+      const avecFond = style.includes('background:')
+        ? style
+        : style.replace(' }}', `, background: ${choisi} ? "#fff" : "transparent" }}`);
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={() => { editeur.onApercu(${String(apercu)}); }} ` +
+        `aria-pressed={${choisi}} ` +
+        `data-a05-onglet="${m[2]}" ${avecFond.replace(' }}', ', minHeight: "44px" }}')}>${m[2]}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 6. LA CARTE « APERÇU » DE L'ORDINATEUR ───────────────────────────
+     *
+     * La maquette y dessine un guide d'exemple COMPLET — trois titres, un
+     * paragraphe, une liste. C'est une RÉGION de longueur inconnue, comme le corps
+     * du guide dans A04 : deux sections dessinées ne peuvent pas accueillir un
+     * brouillon qui en a sept. On garde donc la carte et son étiquette, et tout ce
+     * qui suit l'étiquette devient `{editeur.apercu}` — rendu par `CorpsGuide`, la
+     * même grammaire que la page du guide publié emploie.
+     *
+     * LA COUPE EST BORNÉE PAR L'ÉTIQUETTE ET PAR LA FIN DE LA CARTE, et la fin est
+     * COMPTÉE, pas cherchée : prendre le premier `</div>` venu couperait au milieu
+     * du premier titre. On compte donc les balises jusqu'au retour à zéro.
+     */
+    const etiquette =
+      '<div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>APERÇU</div>';
+    const apres = out.indexOf(etiquette);
+    if (apres >= 0) {
+      const debut = apres + etiquette.length;
+      const balises = /<(\/?)[a-zA-Z][^>]*?(\/?)>/g;
+      balises.lastIndex = debut;
+      let profondeur = 0;
+      let fin = -1;
+      for (let m = balises.exec(out); m !== null; m = balises.exec(out)) {
+        if (m[1] === '/') profondeur -= 1;
+        else if (m[2] !== '/') profondeur += 1;
+        if (profondeur < 0) {
+          fin = m.index;
+          break;
+        }
+      }
+      if (fin > debut) {
+        out = `${out.slice(0, debut)}{editeur.apercu}${out.slice(fin)}`;
+        pris += 1;
+      }
+    }
+
+    /**
+     * ── 7. LA BARRE D'OUTILS MARKDOWN ────────────────────────────────────
+     *
+     * Les six marques sont une BOUCLE sur `mdTools`, qui porte des CHAÎNES — le
+     * cadre écrit `{t}` (ordinateur) ou `{m}` (téléphone), deux alias pour la même
+     * liste. Le geste est donc posé par une fermeture sur la variable de boucle,
+     * et non par une prise de plus : `mdTools` reste la liste des marques
+     * AUTORISÉES (§2.1), c'est-à-dire une règle, et une règle ne porte pas de
+     * fonction.
+     */
+    const outil =
+      /<span (style=\{\{ height: "(?:34|40)px", minWidth: "(?:34|40)px"[^}]*\}\})>\{([tm])\}<\/span>/g;
+    for (;;) {
+      outil.lastIndex = 0;
+      const m = outil.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={() => { editeur.onOutil(${m[2]}); }} ` +
+        `aria-label={\`Insérer : \${${m[2]}}\`} data-a05-outil={${m[2]}} ` +
+        `${style.replace(' }}', ', minHeight: "44px" }}')}>{${m[2]}}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 8. LE BOUTON D'IMAGE ─────────────────────────────────────────────
+     *
+     * Il dépose par `POST /media` avec `kind=GUIDE` et insère
+     * `![légende](/media/<clé>)` — la SEULE forme que le corps accepte
+     * (`restrictedMarkdownIssue` → `IMAGE_EXTERNAL` sur toute autre).
+     *
+     * LE CHOIX DE FICHIER EST UN `<input type="file">`, et il est CACHÉ dans le
+     * bouton : un `<label>` qui l'enveloppe suffirait, mais la maquette dessine un
+     * bouton et un bouton s'annonce comme tel. Le champ porte donc `display:
+     * none`, et le bouton le déclenche — c'est ce que `A01_COMPOSEUR_IMAGE` fait
+     * déjà pour la photo d'une publication.
+     */
+    const image =
+      /<span (style=\{\{ height: "40px", minWidth: "40px", borderRadius: "10px"[^}]*\}\})>(<svg [^>]*><path d="M3 4h18v16H3zM8\.5 11a1\.6 1\.6 0 1 0 0-3\.2 1\.6 1\.6 0 0 0 0 3\.2zM21 16l-5-5-9 9" \/><\/svg>)<\/span>/g;
+    for (;;) {
+      image.lastIndex = 0;
+      const m = image.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, m.index) +
+        '<label data-a05-image="" ' +
+        `${curseurOccupe(style.replace(' }}', ', minHeight: "44px" }}'), 'editeur.imageOccupe')}>` +
+        `${m[2]}<input type="file" accept="image/*" onChange={editeur.onImage} ` +
+        'disabled={editeur.imageOccupe} aria-label="Ajouter une image au guide" ' +
+        'style={{ display: "none" }} /></label>' +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 9. L'ÉTIQUETTE DU BROUILLON ──────────────────────────────────────
+     *
+     * « Brouillon enregistré · il y a 4 s » est une PRISE, pas un décor : la
+     * maquette annonce l'enregistrement automatique, et l'annoncer sans le faire
+     * serait pire que de ne rien annoncer.
+     *
+     * DEUX PRISES POUR DEUX PLANCHES : l'ordinateur dessine le délai, le téléphone
+     * non. Et l'étiquette DISPARAÎT quand il n'y a rien à dire — avant le premier
+     * enregistrement, il n'y a pas de brouillon, et « Brouillon enregistré » serait
+     * faux.
+     */
+    const pastilleBrouillon =
+      /<span (style=\{\{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12\.5px", color: "#16785E"[^}]*\}\})>(<svg [^>]*><path d="m5 12 4\.5 4\.5L19 7" \/><\/svg>)Brouillon enregistré · il y a 4 s<\/span>/;
+    un(
+      pastilleBrouillon,
+      (m) =>
+        `{editeur.brouillon === "" ? null : (<span ${m[1]} role="status" data-a05-brouillon="">${m[2]}{editeur.brouillon}</span>)}`,
+    );
+
+    const texteBrouillonMobile =
+      /<span (style=\{\{ flex: "1", fontSize: "12px", color: "#16785E", fontWeight: "600" \}\})>Brouillon enregistré<\/span>/;
+    un(
+      texteBrouillonMobile,
+      (m) =>
+        `<span ${m[1]} role="status" data-a05-brouillon="">{editeur.brouillonCourt}</span>`,
+    );
+
+    /**
+     * ── 10. « PUBLIER » DIT POURQUOI IL EST ÉTEINT ───────────────────────
+     *
+     * Le porteur, exigence 2 du lot : « Le bouton “Publier” doit dire pourquoi il
+     * est éteint plutôt que de l'être en silence — le dépôt fait déjà ça sur le
+     * panneau de correction (motif obligatoire). »
+     *
+     * LES DEUX BORNES DU CORPS SONT DIFFÉRENTES, et c'est le serveur qui le dit :
+     * `guideDraftBodySchema` exige 1 caractère, `guidePublishableBodySchema` en
+     * exige 300. Un brouillon de 299 caractères s'enregistre et ne se publie pas.
+     * `editeur.motifPublier` porte la phrase que le serveur rendrait, calculée avec
+     * les MÊMES schémas (`@app/shared`) — voir `use-editeur-guide.ts`.
+     *
+     * `title` ET `aria-describedby` SERAIENT DEUX FAÇONS DE DIRE LA MÊME CHOSE :
+     * on emploie `title`, que le survol montre, ET la phrase est rendue EN CLAIR
+     * sous le bouton sur la planche d'ordinateur — non, elle ne l'est pas : la
+     * maquette ne dessine aucune place pour elle. Le `title` est donc le seul
+     * porteur, et c'est un ÉCART ASSUMÉ : un `title` ne se lit pas au doigt sur un
+     * téléphone. REMONTÉ — il manque à la planche une ligne sous « Publier ».
+     * En attendant, le geste est TENTÉ sur un bouton éteint par un `aria-disabled`
+     * plutôt que par `disabled` : le bouton reste atteignable, le clic affiche le
+     * motif en notification, et personne ne reste devant un bouton muet.
+     */
+    const publier =
+      /<button (style=\{\{ height: "4[04]px", padding: "0 (?:22|18)px", borderRadius: "1[24]px", background: "#16785E"[^}]*\}\})>Publier<\/button>/g;
+    for (;;) {
+      publier.lastIndex = 0;
+      const m = publier.exec(out);
+      if (m === null) break;
+      /**
+       * LE FOND SUIT L'ÉTAT, en reprenant la teinte que la planche dessine quand
+       * un contrôle est au repos (`#F2F5F4`, celle de « Non » sur A04) plutôt
+       * qu'en assombrissant le vert : ce dépôt n'assombrit pas les couleurs.
+       */
+      const style = m[1]
+        .replace(
+          'background: "#16785E"',
+          'background: editeur.peutPublier ? "#16785E" : "#F2F5F4"',
+        )
+        .replace('color: "#fff"', 'color: editeur.peutPublier ? "#fff" : "#5D6B66"');
+      out =
+        out.slice(0, m.index) +
+        '<button type="button" onClick={editeur.onPublier} ' +
+        'aria-disabled={!editeur.peutPublier} title={editeur.motifPublier} ' +
+        /**
+         * ╔══════════════════════════════════════════════════════════════════╗
+         * ║ LE LIBELLÉ DEVIENT UNE PRISE — « Publier », OU « Enregistrer »    ║
+         * ╚══════════════════════════════════════════════════════════════════╝
+         *
+         * La maquette écrit « Publier » sur les deux planches, et c'est encore ce
+         * que la prise rend sur `/guides/nouveau` : le dessin produit y est
+         * inchangé. Mais l'éditeur s'ouvre AUSSI sur un guide déjà paru
+         * (`/guides/:slug/modifier`), et là le mot serait faux ET sans effet —
+         * MESURÉ : `POST /guides/:id/publish` refuse un guide `PUBLISHED` en
+         * `409 CONFLICT {reason: 'ALREADY_PUBLISHED'}`.
+         *
+         * LE MOT N'EST PAS CHOISI ICI, et c'est la règle de ce fichier : un
+         * transcodeur pose du DESSIN, le produit pose les MOTS. `publierLibelle`
+         * vient de `use-editeur-guide.ts`, qui connaît le statut du guide.
+         *
+         * ⚠ LE MOTIF, LUI, GARDE LE LITTÉRAL DE LA MAQUETTE : c'est l'ancre, et
+         * la planche écrit bien « Publier ». C'est la SORTIE qui devient une
+         * interpolation — la même séparation que le titre du guide juste au-dessus.
+         */
+        `data-a05-publier="" ${curseurOccupe(style, '!editeur.peutPublier')}>{editeur.publierLibelle}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 11. « À PARTIR DE MON PARCOURS » DISPARAÎT QUAND IL N'Y EN A PAS ─
+     *
+     * Les deux planches l'annoncent, chacune à sa façon : une carte ambre sur
+     * l'ordinateur (« Une section par étape de “Mes études à Lyon” a été
+     * pré-remplie »), un bandeau orange sur le téléphone (« Pré-rempli depuis
+     * “Mes études à Lyon” »). Les deux nomment UN parcours, et ce nom est une
+     * donnée.
+     *
+     * Tant que la page n'a pas de parcours de départ — ce qui est le cas
+     * aujourd'hui, faute de geste dessiné pour en choisir un —, les deux
+     * disparaissent au lieu d'affirmer un pré-remplissage qui n'a pas eu lieu.
+     */
+    const carteParcours =
+      /<div (style=\{\{ background: "#FBE3D4", borderRadius: "22px", padding: "18px" \}\})><div (style=\{\{ fontSize: "10\.5px"[^}]*\}\})>À PARTIR DE MON PARCOURS<\/div><div (style=\{\{ fontSize: "13px"[^}]*\}\})>Une section par étape de « Mes études à Lyon » a été pré-remplie\.<\/div><\/div>/;
+    un(
+      carteParcours,
+      (m) =>
+        `{editeur.parcours === null ? null : (<div ${m[1]}><div ${m[2]}>À PARTIR DE MON PARCOURS</div>` +
+        `<div ${m[3]}>{editeur.parcours}</div></div>)}`,
+    );
+
+    const bandeauParcours =
+      /<div (style=\{\{ background: "#FBE3D4", color: "#B4581F", borderRadius: "14px"[^}]*\}\})>Pré-rempli depuis « Mes études à Lyon »<\/div>/;
+    un(
+      bandeauParcours,
+      (m) => `{editeur.parcours === null ? null : (<div ${m[1]}>{editeur.parcours}</div>)}`,
+    );
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * LA CIBLE TACTILE D'UN ROND D'ICÔNE DE 32 px, PORTÉE À 44 SANS DÉPLACER UN PIXEL.
+ *
+ * Le calcul de `cibleTactileRonde` à une autre taille, et la raison d'une seconde
+ * fonction plutôt qu'un paramètre : la première est indexée sur `width: "40px"`
+ * parce qu'elle NE DOIT PAS s'appliquer à autre chose, et l'élargir aurait fait
+ * d'un garde-fou une option. Les deux diamètres sont ceux que la maquette dessine,
+ * et ils arrivent par des chemins différents — 40 px pour les ronds de la barre
+ * haute mobile, 32 px pour le rond d'icône que les chevrons du plan et la corbeille
+ * des pages empruntent.
+ *
+ * `padding: "6px"` porte la boîte de bordure de 32 à 44 ; `margin: "-6px"` rend au
+ * voisinage les 12 px pris ; `backgroundClip: "content-box"` ne peint que les
+ * 32 px du milieu ; et `backgroundColor` remplace le raccourci `background` pour la
+ * raison que `cibleTactileRonde` a déjà mesurée — React remettrait
+ * `background-clip` à `border-box`.
+ */
+const cibleTactileRonde32 = (style) => {
+  if (!/width: "32px", height: "32px", borderRadius: "999px"/.test(style)) return style;
+  return style
+    .replace(/\bbackground: /, 'backgroundColor: ')
+    .replace(
+      ' }}',
+      ', boxSizing: "content-box", padding: "6px", margin: "-6px", backgroundClip: "content-box" }}',
+    );
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE PLAN DES PAGES D'UN GUIDE — LES GESTES DES TROIS SURFACES EMPRUNTÉES    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Un guide peut avoir plusieurs pages. […] Ajoute une section à
+ * droite en haut de "Ce guide vous a intéressé" qui va lister les pages, leur
+ * titre, et un highlight pour la page active […]. À droite des tags en haut à
+ * droite aussi des icônes chevron left/right et au milieu le nom de la page,
+ * cliquable aussi. »
+ *
+ * LE DESSIN EST EMPRUNTÉ ET LIÉ dans `tools/screens/03-accueil.mjs`, où le pourquoi
+ * de chaque emprunt est écrit. Il reste ce qu'un emprunt ne peut pas poser et
+ * qu'une donnée ne peut pas poser non plus : LES GESTES et L'ANCRAGE.
+ *
+ * ── CE QUE CETTE ADAPTATION FAIT, SURFACE PAR SURFACE ─────────────────────
+ *
+ *   1. LES RANGÉES DU PANNEAU DE DROITE deviennent de vrais liens. Elles gardent
+ *      `href="#"` jusqu'ici, et ce n'est pas un oubli : `markLinks` passe AVANT
+ *      `applyData`, donc la boucle du plan n'existe pas encore quand il tourne —
+ *      voir la liaison du panneau dans la déclaration d'écran. Le `href="#"`
+ *      restant est donc, par construction, celui du plan : la rangée du panneau de
+ *      SECTION porte déjà `href={m.href}` à ce stade.
+ *      ⚠ `<Link>` ET NON `<a>` : changer de page ne doit pas recharger la page
+ *      entière — le corps du guide, ses commentaires et son état de signet
+ *      repartiraient tous en requête. C'est la seule rangée de ce cadre qui
+ *      navigue DANS l'écran courant.
+ *   2. LES DEUX CHEVRONS deviennent des `<button>` qui appellent, et qui
+ *      S'ÉTEIGNENT aux extrémités. `disabled` ET `aria-disabled` : le premier
+ *      retire le bouton du parcours clavier, le second l'annonce. ⚠ ET LE DIRE
+ *      AUTREMENT QUE PAR LA COULEUR est une exigence : `title` porte la phrase
+ *      (« Première page » / « Dernière page »), et `opacity` la double d'un signal
+ *      visuel qui n'est pas une teinte — ce dépôt n'assombrit pas les couleurs.
+ *   3. LE NOM DE LA PAGE, AU MILIEU, devient un `<button>`. Sur 390 px il ouvre la
+ *      feuille des pages ; à 1 440 px la liste est déjà à l'écran, et la page
+ *      décide quoi faire (voir `plan.onNom`).
+ *   4. LA FEUILLE DES PAGES DE 390 px est ancrée à L'ÉCRAN et non au document, et
+ *      son voile devient sa fermeture — exactement ce que `A04_FEUILLE_ACTIONS`
+ *      fait pour la feuille du « … », et pour la raison déjà mesurée là-bas : la
+ *      maquette est une image de 844 px qui ne défile pas, et un `inset: 0` en
+ *      `absolute` couvrirait la hauteur du DOCUMENT (3 100 px relevés sur un vrai
+ *      guide).
+ *
+ * ── DEUX CONTRAINTES D'ORDRE, ET LES DEUX SONT OBLIGATOIRES ───────────────
+ *
+ * AVANT `A04_ENTETE_MOBILE` : son motif de rond est indexé sur la STRUCTURE
+ * (`<span>` dont le style commence par `width`/`height`/`borderRadius: 999px`) et
+ * sur le TRACÉ `m15 18-6-6 6-6` — c'est-à-dire exactement le chevron gauche du
+ * plan. Passé après, le chevron « page précédente » serait devenu le bouton
+ * « Retour » de la barre haute, et le vrai retour n'aurait plus eu de geste.
+ * Mesuré en lisant son motif, pas supposé.
+ *
+ * AVANT `A04_FEUILLE_ACTIONS` : les deux feuilles du bas sont empruntées à la MÊME
+ * planche, donc leur VOILE est identique à l'octet, et le motif de
+ * `A04_FEUILLE_ACTIONS` est global (`g`) — il aurait fait du voile des pages une
+ * fermeture du menu d'actions. On borne donc le travail à la RÉGION conditionnelle
+ * du plan (`{plan.feuilleOuverte ? (<>` … `</>) : null}`), qu'`applyData` vient de
+ * poser, et on passe d'abord : ce qui reste ensuite pour `A04_FEUILLE_ACTIONS` est
+ * sa propre feuille, et rien d'autre.
+ */
+const A04_PLAN = {
+  screens: ['A04'],
+  nom: 'A04_PLAN',
+  why: 'Le plan des pages répond : les rangées du panneau mènent à leur page, les chevrons avancent et s’éteignent aux extrémités, le nom ouvre la liste, et la feuille de 390 px s’ancre à l’écran.',
+  provides: ['plan'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── 1. LES RANGÉES DU PANNEAU DE DROITE ──────────────────────────────
+     *
+     * ⚠ NI UNE EXPRESSION RÉGULIÈRE SUR LE STYLE, NI UNE SUR LE CONTENU, et il
+     * faut dire pourquoi les deux échouent :
+     *
+     *   · le STYLE de la rangée du plan — `height: "44px", display: "flex"…` — est
+     *     celui de la rangée du panneau de SECTION, dont il est emprunté, ET
+     *     celui des deux entrées de la carte d'actions de la vue AUTEUR
+     *     (« Propositions reçues », « Signalements », ligne 733 de la maquette).
+     *     Un motif indexé dessus décrirait trois nœuds pour un ;
+     *   · le CONTENU `{m.label}` est aussi celui de la rangée du panneau de
+     *     section, qui boucle sur le même alias — voir `RANGEE_PANNEAU` et le
+     *     pourquoi de cet alias partagé.
+     *
+     * CE QUI DISTINGUE, et c'est structurel : la rangée du plan est la seule à
+     * porter `{m.label}` DANS un `<a href="#">`. Celle du panneau de section a
+     * déjà reçu `href={m.href}` de `markLinks`, et les deux entrées de la vue
+     * auteur ne portent pas `{m.label}`. On part donc du contenu et on remonte à
+     * sa balise ouvrante — un découpage d'index, pas un motif.
+     *
+     * Le style est REPRIS tel quel : la teinte de la rangée active est celle de la
+     * donnée (`m.bg`, `m.fg`, `m.w`), et rien n'est réécrit ici. `aria-current`
+     * dit au lecteur d'écran laquelle est lue — la couleur seule ne le dit pas.
+     */
+    let depart = 0;
+    for (;;) {
+      const label = out.indexOf('{m.label}', depart);
+      if (label < 0) break;
+      depart = label + '{m.label}'.length;
+      const ouvre = out.lastIndexOf('<a ', label);
+      if (ouvre < 0) continue;
+      const finOuvre = out.indexOf('>', ouvre);
+      if (finOuvre < 0 || finOuvre > label) continue;
+      const balise = out.slice(ouvre, finOuvre + 1);
+      if (!balise.includes('href="#"')) continue;
+      const style = /(style=\{\{[^}]*\}\})/.exec(balise);
+      if (style === null) continue;
+      const ferme = out.indexOf('</a>', label);
+      if (ferme < 0) continue;
+      const lien =
+        '<Link href={m.href} aria-current={m.actif ? "page" : undefined} ' +
+        `data-guide-page={m.slug} ${style[1].replace(' }}', ', textDecoration: "none" }}')}>` +
+        `${out.slice(finOuvre + 1, ferme)}</Link>`;
+      out = out.slice(0, ouvre) + lien + out.slice(ferme + '</a>'.length);
+      depart = ouvre + lien.length;
+      pris += 1;
+    }
+
+    /**
+     * ── 2 ET 3. LA RANGÉE DE CHEVRONS — BORNÉE À SA RÉGION ───────────────
+     *
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LE TRACÉ SEUL NE SUFFIT PAS À DÉSIGNER LE CHEVRON DU PLAN            ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ sur les cadres produits, et c'est le piège de ce lot : un motif
+     * indexé sur `m15 18-6-6 6-6` dans un rond trouve D'ABORD le CHEVRON DE
+     * RETOUR de la barre haute mobile — la maquette le dessine 26 fois dans le
+     * fichier, dont une fois dans la barre haute de chacun des deux cadres de
+     * 390 px, AVANT la ligne des étiquettes. Le premier essai a donc fait du
+     * bouton « Retour » un bouton « Page précédente », et le vrai retour s'est
+     * retrouvé promu par `A04_ENTETE_MOBILE` sur le chevron du plan. Les deux
+     * boutons avaient échangé leur geste, et le JSX compilait.
+     *
+     * Ni le diamètre ni la taille du tracé ne peuvent les distinguer sans figer
+     * une valeur de dessin, ce que ce fichier ne fait pas. CE QUI LES DISTINGUE
+     * EST LA RÉGION : la rangée du plan vit tout entière dans le conditionnel que
+     * la liaison vient de poser, et c'est la SEULE région de `plan.visible` à
+     * contenir `{plan.titre}` — celle du panneau de droite porte `{plan.libelle}`.
+     * On borne donc le travail à cette région, comme pour la feuille ci-dessous.
+     *
+     * Dedans, le NOM au milieu devient un bouton lui aussi : « au milieu le nom de
+     * la page, cliquable aussi ».
+     */
+    const MARQUE_RANG = '{plan.visible ? (<>';
+    let depuis = 0;
+    for (;;) {
+      const debutRang = out.indexOf(MARQUE_RANG, depuis);
+      if (debutRang < 0) break;
+      const finRang = out.indexOf('</>) : null}', debutRang);
+      if (finRang < 0) break;
+      depuis = debutRang + MARQUE_RANG.length;
+      if (!out.slice(debutRang, finRang).includes('{plan.titre}')) continue;
+      let rang = out.slice(debutRang, finRang);
+
+      /**
+       * LES DEUX CHEVRONS. Le motif ancre sur le TRACÉ et sur la structure du
+       * rond, jamais sur une mesure : le diamètre et la taille du tracé sont
+       * RELEVÉS (`m[2]`, `m[3]`). C'est le piège déjà payé cinq fois par ce
+       * fichier, et il vaut ici comme ailleurs.
+       */
+      const CHEVRONS = [
+        ['m15 18-6-6 6-6', 'onPrecedent', 'aPrecedent', 'Page précédente', 'Première page', 'prev'],
+        ['m9 18 6-6-6-6', 'onSuivant', 'aSuivant', 'Page suivante', 'Dernière page', 'next'],
+      ];
+      for (const [trace, geste, actif, nom, bout, repere] of CHEVRONS) {
+        const motif = new RegExp(
+          '<span (style=\\{\\{ width: "\\d+px", height: "\\d+px", borderRadius: "999px"[^}]*\\}\\})>' +
+            '(<svg width="(\\d+)" height="\\d+"[^>]*>)' +
+            `<path d="${trace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" \\/><\\/svg><\\/span>`,
+        );
+        const m = motif.exec(rang);
+        if (m === null) continue;
+        const ajout = resetBoutonManquant(m[1]);
+        const base = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+        /**
+         * L'EXTINCTION SE VOIT SANS COULEUR : `opacity` à 0,4 plutôt qu'un gris
+         * assombri — « n'assombris pas les couleurs » — et le curseur suit l'état.
+         * `title` la DIT en mots (« Première page »), parce qu'un contraste réduit
+         * n'est pas une information pour qui ne le voit pas.
+         */
+        const style = curseurOccupe(
+          cibleTactileRonde32(base).replace(' }}', `, opacity: plan.${actif} ? 1 : 0.4 }}`),
+          `!plan.${actif}`,
+        );
+        rang =
+          rang.slice(0, m.index) +
+          `<button type="button" onClick={plan.${geste}} disabled={!plan.${actif}} ` +
+          `aria-disabled={!plan.${actif}} aria-label="${nom}" ` +
+          `title={plan.${actif} ? "${nom}" : "${bout}"} data-guide-${repere}="" ` +
+          `${style}>${m[2]}<path d="${trace}" /></svg></button>` +
+          rang.slice(m.index + m[0].length);
+        pris += 1;
+      }
+
+      /**
+       * LE NOM DE LA PAGE, AU MILIEU. L'ancre est le CONTENU — `{plan.titre}` —
+       * et le style est repris tel quel : la pastille garde la paire verte que la
+       * maquette dessine sur « Mis à jour le … », la même que la rangée active du
+       * panneau.
+       */
+      const nomPage = /<span (style=\{\{ fontSize: "1[34]px"[^}]*\}\})>\{plan\.titre\}<\/span>/;
+      const mn = nomPage.exec(rang);
+      if (mn !== null) {
+        const ajout = resetBoutonManquant(mn[1]);
+        const style = ajout === '' ? mn[1] : mn[1].replace(' }}', `, ${ajout} }}`);
+        rang =
+          rang.slice(0, mn.index) +
+          '<button type="button" onClick={plan.onNom} data-guide-page-nom="" ' +
+          'aria-label="Choisir une page du guide" ' +
+          `${style.replace(' }}', ', minHeight: "44px" }}')}>{plan.titre}</button>` +
+          rang.slice(mn.index + mn[0].length);
+        pris += 1;
+      }
+
+      out = out.slice(0, debutRang) + rang + out.slice(finRang);
+      depuis = debutRang + rang.length;
+    }
+
+    /**
+     * ── 4. LA FEUILLE DES PAGES DE 390 px ────────────────────────────────
+     *
+     * LE TRAVAIL EST BORNÉ À LA RÉGION CONDITIONNELLE, et c'est ce qui le rend sûr
+     * (voir l'en-tête) : le voile et la feuille des pages sont identiques à l'octet
+     * à ceux du menu d'actions, puisque les deux sont empruntés à la même planche.
+     */
+    const MARQUE = '{plan.feuilleOuverte ? (<>';
+    const debut = out.indexOf(MARQUE);
+    if (debut >= 0) {
+      const fin = out.indexOf('</>) : null}', debut);
+      if (fin > debut) {
+        let region = out.slice(debut, fin);
+        const voile =
+          /<div style=\{\{ position: "absolute", inset: "0", background: "(rgba\(22,33,29,\.5\))" \}\}><\/div>/;
+        const mv = voile.exec(region);
+        if (mv !== null) {
+          region =
+            region.slice(0, mv.index) +
+            '<button type="button" onClick={plan.onFermerFeuille} aria-label="Fermer" ' +
+            'data-guide-pages-voile="" style={{ position: "fixed", inset: "0", ' +
+            `background: "${mv[1]}", border: "none", padding: "0", zIndex: 70, cursor: "pointer" }}></button>` +
+            region.slice(mv.index + mv[0].length);
+          pris += 1;
+        }
+        const feuille =
+          /position: "absolute", left: "0", right: "0", bottom: "0", (background: "#fff", borderRadius: "28px 28px 0 0")/;
+        const mf = feuille.exec(region);
+        if (mf !== null) {
+          region =
+            region.slice(0, mf.index) +
+            'position: "fixed", left: "0", right: "0", bottom: "0", ' +
+            `maxHeight: "80vh", overflowY: "auto", zIndex: 71, ${mf[1]}` +
+            region.slice(mf.index + mf[0].length);
+          pris += 1;
+        }
+        /**
+         * LES RANGÉES. L'ancre est le CONTENU — `{m.icon}` puis `{m.label}` — que
+         * la liaison vient de poser, et le style est recopié tel quel : l'encre
+         * suit `m.fg`, et la page lue porte en plus le tracé de la coche.
+         */
+        const rangeeFeuille =
+          /<span (style=\{\{ height: "\d+px", display: "flex"[^}]*\}\})>(<svg[^]*?<path d=\{m\.icon\} \/><\/svg>)\{m\.label\}<\/span>/g;
+        for (;;) {
+          rangeeFeuille.lastIndex = 0;
+          const mr = rangeeFeuille.exec(region);
+          if (mr === null) break;
+          const ajout = resetBoutonManquant(mr[1]);
+          const style = ajout === '' ? mr[1] : mr[1].replace(' }}', `, ${ajout} }}`);
+          region =
+            region.slice(0, mr.index) +
+            '<button type="button" onClick={m.onChoisir} ' +
+            'aria-current={m.actif ? "page" : undefined} data-guide-page={m.slug} ' +
+            `${style.replace(' }}', ', width: "100%", textAlign: "left" }}')}>` +
+            `${mr[2]}{m.label}</button>` +
+            region.slice(mr.index + mr[0].length);
+          pris += 1;
+        }
+        out = out.slice(0, debut) + region + out.slice(fin);
+      }
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A04_FEUILLE_ACTIONS = {
+  screens: ['A04'],
+  nom: 'A04_FEUILLE_ACTIONS',
+  why: 'La feuille d’actions du « … » mobile répond : son voile ferme, ses rangées agissent, et elle s’ancre à l’écran au lieu du document.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── 1. LE VOILE ──────────────────────────────────────────────────────
+     *
+     * Il est reconnu par sa TEINTE, qui est celle de la planche empruntée, et le
+     * remplacement recopie cette teinte au lieu de l'écrire : si le designer la
+     * change, c'est la sienne qui part dans le bouton.
+     */
+    const voile =
+      /<div style=\{\{ position: "absolute", inset: "0", background: "(rgba\(22,33,29,\.5\))" \}\}><\/div>/g;
+    for (;;) {
+      voile.lastIndex = 0;
+      const m = voile.exec(out);
+      if (m === null) break;
+      out =
+        out.slice(0, m.index) +
+        '<button type="button" onClick={menu.onFermer} aria-label="Fermer" ' +
+        'data-guide-menu-voile="" style={{ position: "fixed", inset: "0", ' +
+        `background: "${m[1]}", border: "none", padding: "0", zIndex: 70, cursor: "pointer" }}></button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. LA FEUILLE ────────────────────────────────────────────────────
+     *
+     * Seules les quatre déclarations d'ANCRAGE sont substituées. Le reste du style
+     * est repris par le groupe de capture, donc rien du dessin n'est réécrit.
+     */
+    const feuille = /position: "absolute", left: "0", right: "0", bottom: "0", (background: "#fff", borderRadius: "28px 28px 0 0")/g;
+    for (;;) {
+      feuille.lastIndex = 0;
+      const m = feuille.exec(out);
+      if (m === null) break;
+      out =
+        out.slice(0, m.index) +
+        'position: "fixed", left: "0", right: "0", bottom: "0", ' +
+        `maxHeight: "80vh", overflowY: "auto", zIndex: 71, ${m[1]}` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 3. LES RANGÉES ───────────────────────────────────────────────────
+     *
+     * L'ancre est le CONTENU — `{a.icon}` puis `{a.label}` —, qui n'existe que
+     * sur les rangées de cette feuille : `A04_DONNEES` les a posés, et aucune
+     * autre boucle du cadre ne les écrit. Le style est recopié tel quel, et
+     * `resetBoutonManquant` ne remplace que des valeurs de NAVIGATEUR.
+     */
+    const rangee =
+      /<span (style=\{\{ height: "\d+px", display: "flex"[^}]*\}\})>(<svg[^]*?<path d=\{a\.icon\} \/><\/svg>)\{a\.label\}<\/span>/g;
+    for (;;) {
+      rangee.lastIndex = 0;
+      const m = rangee.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, m.index) +
+        '<button type="button" onClick={a.onChoisir} data-guide-action={a.cle} ' +
+        `${style.replace(' }}', ', width: "100%", textAlign: "left" }}')}>` +
+        `${m[2]}{a.label}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « MODIFIER » ÉTAIT MORT SUR LES DEUX PLANCHES DE LA VUE AUTEUR             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ avant ce lot, sur les cadres produits :
+ *
+ *   · `auteurdesktop.generated.tsx` — un `<button>` « Modifier le guide » dans la
+ *     carte « VOUS ÊTES L'AUTEUR », SANS `onClick`, SANS `href`, SANS rôle ;
+ *   · `auteurmobile.generated.tsx` — un `<button>` « Modifier » dans la grille de
+ *     deux de la barre basse, également sans aucun geste.
+ *
+ * Un auteur ne pouvait donc JAMAIS reprendre ce qu'il avait écrit : il n'y avait
+ * ni geste sur ces boutons, ni adresse pour les recevoir. L'adresse existe
+ * maintenant — `/guides/:slug/modifier`, à côté de `corriger` et `propositions` —
+ * et ces deux boutons y mènent.
+ *
+ * ⚠ CE QUE CETTE ADAPTATION NE TOUCHE PAS, ET C'EST UN RELEVÉ, PAS UN OUBLI :
+ * le troisième « Modifier » des cadres de A04 — `<a href="#">Modifier</a>` à côté
+ * de « VOS RACCOURCIS » — N'EST PAS celui du guide. Compté sur les octets de la
+ * maquette : il figure aux lignes 47, 350, 596, 657, 707, 799, 879… c'est-à-dire
+ * sur TOUTES les planches du module 03, VUE LECTEUR COMPRISE, et il est dans le
+ * RAIL DE GAUCHE. Il modifie les RACCOURCIS du membre, pas le guide lu. Le
+ * brancher sur l'éditeur de guide aurait fait partir « modifier mes raccourcis »
+ * vers la rédaction d'un guide — depuis la page d'un guide dont on n'est pas
+ * l'auteur. Il reste donc inerte, et c'est remonté au porteur : le rail n'a pas
+ * d'écran « modifier mes raccourcis » dans cette maquette.
+ *
+ * ── UN `<Link>` ET NON UN `<button>` ────────────────────────────────────────
+ *
+ * C'est une ADRESSE, et la règle de ce fichier est écrite à côté des pastilles de
+ * portée du fil : « un `<button>` qui appellerait `router.push` perdrait le clic
+ * milieu, l'ouverture dans un onglet et l'aperçu de la destination dans la barre
+ * d'état ». `needsLink` du gabarit ajoute l'import tout seul dès qu'un `<Link`
+ * paraît dans la sortie — `auteurmobile` n'en avait aucun avant ce lot.
+ *
+ * ── LES DEUX PIÈGES DE CE DÉPÔT, ÉVITÉS ICI ─────────────────────────────────
+ *
+ *   1. AUCUNE VALEUR DE DESSIN N'EST FIGÉE, et il le FAUT : les deux boutons ne
+ *      se ressemblent pas du tout. L'ordinateur dessine `height: "46px"`,
+ *      rayon 14, fond BLANC sur encre `#0F5C48`, avec un crayon en `<svg>` ; le
+ *      téléphone dessine `height: "48px"`, rayon 14, fond `#16785E` sur encre
+ *      blanche, SANS icône. Un motif qui nommerait l'une de ces mesures ne
+ *      décrirait qu'un cadre — l'erreur que ce fichier a déjà payée cinq fois. Le
+ *      motif ancre donc sur la STRUCTURE (un `<button>` dont le contenu finit par
+ *      le mot « Modifier », avec ou sans `<svg>` devant) et RECOPIE le style.
+ *   2. LE REMPLACEMENT EST GLOBAL, par une expression régulière `g` parcourue en
+ *      boucle : `String.replace` avec un motif en chaîne ne coupe que la PREMIÈRE
+ *      occurrence, et ce dépôt a déjà payé cela sur des rangées qui se
+ *      ressemblent.
+ *
+ * ── LES QUATRE DÉCLARATIONS AJOUTÉES, ET POURQUOI SEULEMENT SI ABSENTES ─────
+ *
+ * Un `<a>` est INLINE : sans `display: "flex"`, le `height: "48px"` du bouton
+ * mobile serait ignoré et la case de la grille se serait affaissée à la hauteur
+ * d'une ligne de texte. La planche d'ordinateur, elle, DESSINE déjà ses trois
+ * déclarations de centrage — les ajouter là aussi aurait donné deux `display:`
+ * dans un même style, c'est-à-dire un `TS1117`. On ne pose donc que ce qui
+ * manque, cadre par cadre ; c'est la même prudence que `resetBoutonManquant`.
+ *
+ * `textDecoration: "none"` est la seule des quatre qu'aucune des deux planches ne
+ * dessine : un `<a>` souligne par défaut, et un bouton ne souligne pas.
+ */
+const A04_MODIFIER = {
+  screens: ['A04'],
+  nom: 'A04_MODIFIER',
+  why: 'Les deux boutons « Modifier » de la vue AUTEUR mènent à l’éditeur : c’étaient des <button> sans aucun geste, et un auteur ne pouvait jamais reprendre son guide.',
+  /**
+   * RIEN DE NOUVEAU N'EST PROMIS À LA RACINE, et c'est voulu : l'adresse vit sur
+   * `guide`, la prise que ces deux cadres destructurent déjà. Déclarer
+   * `hrefModifier` ici l'aurait fait ajouter aux PROPRIÉTÉS de `A04Data` par le
+   * gabarit — mesuré : la ligne de destructuration du cadre d'ordinateur est
+   * devenue `{ …, guide, hrefModifier, … }`, c'est-à-dire une propriété qui
+   * n'existe pas dans le type et une variable que personne ne lit. C'est la même
+   * règle que `A04_COMMENTAIRES`, qui pose `{guide.commentaires}` avec
+   * `provides: []`.
+   */
+  provides: [],
+  apply(jsx) {
+    /**
+     * `(?:<svg[^]*?<\/svg>)?` — l'icône de crayon de la planche d'ordinateur,
+     * ABSENTE sur celle du téléphone. `[^}]*` s'arrête à la première accolade
+     * fermante, c'est-à-dire à la fin du style : aucun de ces deux styles ne
+     * contient de gabarit.
+     */
+    const motif =
+      /<button (style=\{\{ [^}]*\}\})>((?:<svg[^]*?<\/svg>)?)(Modifier(?: le guide)?)<\/button>/g;
+    let out = jsx;
+    let pris = 0;
+
+    /** Ce qu'un `<a>` doit recevoir pour se dessiner comme le `<button>` qu'il remplace. */
+    const CENTRAGE = [
+      ['display', '"flex"'],
+      ['alignItems', '"center"'],
+      ['justifyContent', '"center"'],
+      ['textDecoration', '"none"'],
+    ];
+
+    for (;;) {
+      motif.lastIndex = 0;
+      const m = motif.exec(out);
+      if (m === null) break;
+      let style = m[1];
+      for (const [cle, valeur] of CENTRAGE) {
+        if (new RegExp(`\\b${cle}:`).test(style)) continue;
+        style = style.replace(' }}', `, ${cle}: ${valeur} }}`);
+      }
+      out =
+        out.slice(0, m.index) +
+        `<Link href={guide.hrefModifier} data-guide-modifier="" ${style}>` +
+        `${m[2]}${m[3]}</Link>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « SIGNALEMENTS “A CHANGÉ” » — UN NOMBRE PEINT, DANS UN LIEN QUI NE MÈNE À  ║
+ * ║ RIEN ; ET RIEN DU TOUT SUR LE TÉLÉPHONE                                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE QUE CET EN-TÊTE DISAIT, ET QUE LE PORTEUR A RETOURNÉ                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Il disait : « Il décide TOUT ce qui suit, et surtout ce qui n'est PAS fait : il
+ * n'y a aucune page de signalements à construire, aucune route de lecture à
+ * écrire, et donc aucune destination à donner au lien que la maquette dessine. »
+ *
+ * LE PORTEUR EST REVENU SUR SON ARBITRAGE : « Il faut faire ceci, l'auteur doit
+ * voir les signalements "a changé". » La page existe donc, la route de lecture
+ * aussi (`GET /guides/:id/outdated`), et la rangée a retrouvé sa destination.
+ *
+ * ── CE QUI SURVIT DE L'ARBITRAGE PRÉCÉDENT : L'ANONYMAT ────────────────────
+ *
+ * « Les signalants resteront anonymes : l'auteur ne voit que le compte » était la
+ * réponse à « faut-il NOMMER les signalants à l'auteur ? », et rien ne l'a
+ * annulée. L'auteur voit donc CE QUI a été signalé — la date, et le commentaire
+ * quand il y en a un — et jamais PAR QUI : `listOutdatedFlags` ne rend que deux
+ * colonnes, et `guideOutdatedFlagsResponseSchema` est `.strict()`.
+ *
+ * ── CE QUI ÉTAIT FAUX, MESURÉ SUR LES CADRES PRODUITS ──────────────────────
+ *
+ *   · `auteurdesktop.generated.tsx` — la carte d'actions de l'auteur portait
+ *     `<a href="#">Signalements « a changé » … 0</a>` : un `0` PEINT EN DUR,
+ *     affiché sur tous les guides de tous les auteurs, dans une rangée cliquable
+ *     qui ne menait nulle part. Les deux défauts sont du même ordre — l'écran
+ *     affirme ce qu'il ne sait pas, et promet ce qu'il n'a pas ;
+ *   · `auteurmobile.generated.tsx` — ce compte n'existait NULLE PART. Compté :
+ *     zéro occurrence de « Signalement » dans la section `MOB` de la maquette. Un
+ *     auteur de téléphone ne pouvait pas savoir que son guide était contesté,
+ *     alors que c'est lui qui peut le corriger.
+ *
+ * `guide.outdatedFlagCount` était dans `guideDetailResponseSchema` depuis le
+ * début, et `guides/from-api.ts` ne le lisait pas.
+ *
+ * ── 1 440 px : LA RANGÉE REDEVIENT UN GESTE, ET C'EST UN `<Link>` ──────────
+ *
+ * Elle avait été ramenée à un `<div>` au lot précédent, et c'était juste à ce
+ * moment-là : il n'y avait ni page, ni route, ni liste derrière. Il y a
+ * maintenant les trois, et la rangée mène à `/guides/:slug/signalements`.
+ *
+ * UN `<Link>` ET NON UN `<button>` : c'est une ADRESSE, et la règle de ce fichier
+ * est écrite à côté de `A04_MODIFIER` — « un `<button>` qui appellerait
+ * `router.push` perdrait le clic milieu, l'ouverture dans un onglet et l'aperçu
+ * de la destination dans la barre d'état ». `needsLink` du gabarit ajoute
+ * l'import tout seul.
+ *
+ * LE DESSIN NE BOUGE PAS D'UN PIXEL : le style de la rangée est repris par le
+ * groupe de capture, hauteur, rayon, retrait et écart compris — et la maquette
+ * dessinait DÉJÀ cette rangée comme un `<a>`. On lui rend sa balise, avec une
+ * destination au lieu du `href="#"`.
+ *
+ * ⚠ CE QUI RESTE SUR LA CARTE, ET QUI N'EST PAS DE CE LOT : « Propositions
+ * reçues » est toujours un `<a href="#">`, alors que sa destination existe
+ * (`/guides/:slug/propositions`). Elle n'est pas le sujet de ce lot. Compté et
+ * remonté. « Ouvrir à la communauté », elle, est traitée juste dessous par
+ * `A04_COMMUNAUTE`.
+ *
+ * ── 390 px : LE TROISIÈME COMPTEUR DE LA BARRE BASSE ───────────────────────
+ *
+ * La barre basse de la vue auteur dessine DÉJÀ une rangée de compteurs, et ses
+ * deux compteurs sont DÉJÀ branchés : `{guide.useful}` « ont trouvé utile » et
+ * `{guide.contributorCount}` « contributeurs ». Le troisième s'y ajoute DANS LA
+ * MÊME RANGÉE, avec le même dessin — nombre en `<strong style={{color:"#16211D"}}>`,
+ * mot en encre héritée. C'est la réutilisation d'un motif dessiné, pas une
+ * invention : le nœud recopié est celui du compteur voisin, par groupe de capture.
+ *
+ * ⚠ IL DISPARAÎT À ZÉRO, et c'est le motif que le dépôt emploie déjà — la pastille
+ * des propositions tombe sous `<sc-if value="{{ guide.proposals }}">` dans
+ * `A04_DONNEES`, pour ne pas peindre un rond orange vide. « 0 signalement » sur un
+ * guide que personne ne conteste est du bruit, et le porteur l'a tranché ainsi.
+ * Ici la condition est écrite en JSX (`guide.signalements > 0 ? … : null`) et non
+ * en `<sc-if>`, parce que cette rangée n'est pas un nœud de la maquette qu'on
+ * remplace : c'est un nœud QU'ON AJOUTE, ce qu'une donnée n'a pas le droit de
+ * faire.
+ *
+ * ⚠ LE MOT EST ACCORDÉ, ET L'ACCORD N'EST PAS ICI : `signalementsMot` vient de
+ * `guides/from-api.ts`, à côté du nombre qu'il accorde. Un ternaire écrit dans ce
+ * fichier aurait été la seconde implémentation d'une règle de langue, et c'est
+ * précisément ce que `phraseCommentaires` existe pour éviter.
+ *
+ * ── CE QU'IL FAUT SAVOIR, ET QUI N'EST PAS DE CE LOT ──────────────────────
+ *
+ * ⚠ CE PARAGRAPHE DISAIT « LE `comment` D'UN SIGNALEMENT N'EST LU PAR PERSONNE »,
+ * et il avait raison : la table n'était jamais PARCOURUE, seulement cherchée par
+ * `(guideId, userId)`. C'est ce que ce lot corrige — `GET /guides/:id/outdated`
+ * la parcourt, et la page `/guides/:slug/signalements` la montre à l'auteur. Le
+ * champ sert enfin à quelque chose.
+ *
+ * ⚠ CE QUI RESTE VRAI : le compte de la barre basse de 390 px reste un COMPTE. Le
+ * chemin vers la LISTE, sur le téléphone, passe par la feuille du « … » de
+ * l'auteur — voir `FEUILLE_VERSIONS_AUTEUR` dans `tools/screens/03-accueil.mjs`.
+ * Faire du compteur lui-même un lien aurait demandé de transformer un `<span>` au
+ * milieu d'une rangée de statistiques, là où la feuille offre une rangée de geste
+ * déjà dessinée.
+ */
+const A04_SIGNALEMENTS = {
+  screens: ['A04'],
+  nom: 'A04_SIGNALEMENTS',
+  why: 'Le compte des signalements « a changé » : la rangée de 1 440 px cesse d’être un lien mort autour d’un « 0 » peint, et le téléphone reçoit ce compte, qu’il n’avait nulle part.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── 1. LA RANGÉE DE 1 440 px CESSE D'ÊTRE UN LIEN ────────────────────
+     *
+     * L'ancre est le CONTENU que `A04_DONNEES` vient de poser —
+     * `{guide.signalements}` ne figure nulle part ailleurs dans le cadre — plus le
+     * libellé de la rangée. Le style part dans le `<div>` tel quel.
+     */
+    const rangee =
+      /<a href="#" (style=\{\{ height: "44px"[^}]*\}\})>(<svg[\s\S]*?<\/svg><span style=\{\{ flex: "1" \}\}>Signalements « a changé »<\/span><span style=\{\{[^}]*\}\}>\{guide\.signalements\}<\/span>)<\/a>/;
+    const mr = rangee.exec(out);
+    if (mr !== null) {
+      out =
+        out.slice(0, mr.index) +
+        `<Link href={guide.hrefSignalements} data-guide-signalements="" ${mr[1]}>` +
+        `${mr[2]}</Link>` +
+        out.slice(mr.index + mr[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. LE TROISIÈME COMPTEUR DE LA BARRE BASSE DE 390 px ─────────────
+     *
+     * L'ancre est le compteur VOISIN — celui des contributeurs, le dernier de la
+     * rangée — et le nouveau nœud recopie son dessin par groupe de capture : le
+     * `<strong>` et sa seule déclaration (`color`) viennent de la maquette, pas de
+     * ce fichier. Le `</div>` de la rangée fait partie du motif, pour que
+     * l'insertion tombe DANS la rangée et non après elle.
+     *
+     * Ce motif ne figure QUE sur `AuteurMobile` : la carte de 1 440 px écrit son
+     * compteur de contributeurs autrement (`</span><span …>contributeurs`), et les
+     * deux cadres du lecteur n'ont pas de carte d'auteur. Relevé, pas supposé.
+     */
+    const compteurs =
+      /(<span><strong (style=\{\{ color: "#16211D" \}\})>\{guide\.contributorCount\}<\/strong> contributeurs<\/span>)<\/div>/;
+    const mc = compteurs.exec(out);
+    if (mc !== null) {
+      out =
+        out.slice(0, mc.index) +
+        `${mc[1]}{guide.signalements > 0 ? (<span><strong ${mc[2]}>{guide.signalements}</strong>` +
+        ' {guide.signalementsMot}</span>) : null}</div>' +
+        out.slice(mc.index + mc[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LE BOUTON OUVRIR À LA COMMUNAUTÉ NE MARCHE PAS »                         ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, mot pour mot. MESURÉ sur les cadres produits : un `<a href="#">`
+ * mort dans la carte « VOUS ÊTES L'AUTEUR », et dessiné sur CE SEUL CADRE — zéro
+ * occurrence de « Ouvrir à la communauté » sur `desktop`, sur `mobile` et sur
+ * `auteurmobile`. Compté, pas supposé symétrique.
+ *
+ * AUCUNE ROUTE N'EXISTAIT derrière : `maintainedByCommunity` n'était écrit que
+ * par la tâche `guide.author_inactivity` (§2.5) et par l'anonymisation (§8). Elle
+ * existe maintenant — `PUT /guides/:id/community`, réservée à l'auteur, sur
+ * `loadOwned` comme le reste du module.
+ *
+ * ── UN `<button>` ET NON UN `<Link>`, CONTRAIREMENT À LA RANGÉE VOISINE ────
+ *
+ * Les deux rangées sont dessinées à l'identique, et elles ne font pas la même
+ * chose : « Signalements » MÈNE à une page, celle-ci ÉCRIT. La règle de ce
+ * fichier est écrite sur `GuideActionView` — « un `<a>` qui écrit serait un lien
+ * qui ment » — et c'est pour cela que les deux rangées jumelles reçoivent deux
+ * balises différentes. Les six déclarations ajoutées au style sont EXACTEMENT
+ * celles que `A04_ACTIONS` pose sur les trois actions du lecteur, qui sont le même
+ * cas (`<a href="#">` dessiné, geste d'écriture derrière) : rien n'est inventé ici.
+ *
+ * ── LE LIBELLÉ EST UNE DONNÉE, PARCE QUE L'ACTION A DEUX SENS ─────────────
+ *
+ * §2.5 : « Réversible si l'auteur revient et le demande. » La rangée doit donc
+ * dire CE QU'ELLE FERA — ouvrir, ou reprendre la main — et c'est `A04_DONNEES`
+ * qui pose `{guide.communauteLabel}` sur le libellé dessiné. Une adaptation qui
+ * aurait écrit les deux libellés en JSX aurait mis du texte de produit dans le
+ * transcodeur, là où il appartient à `guides/from-api.ts`.
+ *
+ * ⚠ « REPRENDRE LA MAIN » N'EST DANS AUCUNE MAQUETTE, et ce n'est pas rédigé ici :
+ * voir `from-api.ts`, qui le pose à côté du libellé dessiné qu'il remplace, et le
+ * remonte. La planche ne dessine QUE l'état « pas encore ouvert ».
+ *
+ * ⚠ « DÉPUBLIER » N'EST PROPOSÉ NULLE PART, et c'est un relevé : le mot n'apparaît
+ * dans AUCUNE maquette de `docs/template/`. La route existe (`POST /guides/:id/
+ * unpublish`), ce n'est pas la question — un geste sans dessin n'entre pas dans un
+ * écran transcodé.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « PROPOSITIONS REÇUES » — LE DERNIER LIEN MORT PROPRE AUX GUIDES           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ sur les cadres produits, avant ce lot, et sur LES DEUX PLANCHES :
+ *
+ *   · `auteurdesktop.generated.tsx` — la carte « VOUS ÊTES L'AUTEUR » portait
+ *     `<a href="#">…<span style={{flex:"1"}}>Propositions reçues</span>…</a>`,
+ *     avec sa pastille `{guide.proposals}` DÉJÀ branchée par `A04_DONNEES`. Une
+ *     rangée qui annonce le bon nombre et ne mène nulle part est pire qu'une
+ *     rangée vide : elle promet ;
+ *   · `auteurmobile.generated.tsx` — la barre basse dessine un bouton
+ *     « Propositions » avec la même pastille, et c'était un `<button>` SANS
+ *     `onClick`. Compté, pas supposé symétrique — et c'est bien la même panne.
+ *
+ * LA PAGE EXISTE depuis plusieurs lots : `/guides/:slug/propositions`
+ * (`(app)/guides/[slug]/propositions/page.tsx`), branchée sur
+ * `GET /guides/:id/proposals`. Il ne manquait que le chemin pour y aller.
+ *
+ * ── UN `<Link>` ET NON UN `<button>`, DES DEUX CÔTÉS ──────────────────────
+ *
+ * C'est une ADRESSE. La règle de ce fichier est écrite à côté d'`A04_MODIFIER` :
+ * « un `<button>` qui appellerait `router.push` perdrait le clic milieu,
+ * l'ouverture dans un onglet et l'aperçu de la destination dans la barre d'état ».
+ * À 1 440 px la maquette dessinait DÉJÀ un `<a>` : on lui rend sa balise avec une
+ * destination. À 390 px elle dessine un `<button>`, et c'est le même cas
+ * qu'`A04_MODIFIER` traite dans la MÊME grille à deux colonnes de la même barre
+ * basse — le bouton voisin « Modifier » est déjà devenu un `<Link>` par ce
+ * chemin-là, avec les mêmes quatre déclarations de centrage.
+ *
+ * ── CE QUI N'EST PAS AJOUTÉ À 390 px, ET POURQUOI ─────────────────────────
+ *
+ * ⚠ AUCUNE ENTRÉE N'EST AJOUTÉE À LA FEUILLE DU « … » DE L'AUTEUR, et c'est
+ * l'arbitrage DÉJÀ écrit sur `guideActionsAuteur` (`a04/data.ts`) : « la barre
+ * basse de `auteurmobile` porte DÉJÀ son bouton, avec sa pastille. L'ajouter ici
+ * aurait répété un bouton situé à quelques pixels au-dessus de la feuille. »
+ * C'est le bouton de cette barre basse que cette transformation branche, donc le
+ * chemin de 390 px existe — il n'en faut pas un second.
+ *
+ * ── LE DESSIN NE BOUGE PAS D'UN PIXEL ────────────────────────────────────
+ *
+ * Les deux styles partent dans le `<Link>` tels quels, par groupe de capture.
+ * Seules les quatre déclarations de centrage sont AJOUTÉES sur le bouton de
+ * 390 px, et uniquement celles qui manquent — deux `display:` dans un même style
+ * donnent un `TS1117`, et ce dépôt l'a déjà payé.
+ */
+const A04_PROPOSITIONS = {
+  screens: ['A04'],
+  nom: 'A04_PROPOSITIONS',
+  why: 'La rangée « Propositions reçues » de 1 440 px et le bouton « Propositions » de 390 px mènent enfin à la page des propositions : c’étaient un <a href="#"> et un <button> sans geste.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── 1. LA RANGÉE DE 1 440 px ─────────────────────────────────────────
+     *
+     * L'ancre est le LIBELLÉ dans sa prise de flex — « Propositions reçues » ne
+     * figure qu'une fois sur ce cadre — plus la pastille conditionnelle que
+     * `A04_DONNEES` a posée, qui fait partie du contenu rendu tel quel.
+     * `[^}]*` s'arrête à la première accolade fermante : le style de la rangée ne
+     * porte aucun gabarit.
+     */
+    const rangee =
+      /<a href="#" (style=\{\{ height: "48px"[^}]*\}\})>(<svg[\s\S]*?<\/svg><span style=\{\{ flex: "1" \}\}>Propositions reçues<\/span>[\s\S]*?)<\/a>/;
+    const mr = rangee.exec(out);
+    if (mr !== null) {
+      out =
+        out.slice(0, mr.index) +
+        `<Link href={guide.hrefPropositions} data-guide-propositions="" ${mr[1]}>` +
+        `${mr[2]}</Link>` +
+        out.slice(mr.index + mr[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. LE BOUTON DE LA BARRE BASSE DE 390 px ─────────────────────────
+     *
+     * Le libellé y est « Propositions » tout court — relevé sur le cadre, pas
+     * supposé identique à celui de l'ordinateur — et il est suivi de la pastille
+     * conditionnelle. Le motif exige cette pastille : c'est elle qui distingue CE
+     * bouton de tout autre, et `A04_DONNEES` la pose avant que cette
+     * transformation ne passe.
+     */
+    const boutonMobile =
+      /<button (style=\{\{ height: "48px"[^}]*\}\})>Propositions(\{guide\.proposals \? \([\s\S]*?\) : null\})<\/button>/;
+    const mb = boutonMobile.exec(out);
+    if (mb !== null) {
+      /** Les quatre déclarations d'`A04_MODIFIER`, pour la même raison. */
+      const CENTRAGE = [
+        ['display', '"flex"'],
+        ['alignItems', '"center"'],
+        ['justifyContent', '"center"'],
+        ['textDecoration', '"none"'],
+      ];
+      let style = mb[1];
+      for (const [cle, valeur] of CENTRAGE) {
+        if (new RegExp(`\\b${cle}:`).test(style)) continue;
+        style = style.replace(' }}', `, ${cle}: ${valeur} }}`);
+      }
+      out =
+        out.slice(0, mb.index) +
+        `<Link href={guide.hrefPropositions} data-guide-propositions="" ${style}>` +
+        `Propositions${mb[2]}</Link>` +
+        out.slice(mb.index + mb[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A04_COMMUNAUTE = {
+  screens: ['A04'],
+  nom: 'A04_COMMUNAUTE',
+  why: 'La rangée « Ouvrir à la communauté » de la carte d’auteur ÉCRIT (PUT /guides/:id/community) : c’était un <a href="#"> mort, et le porteur l’a signalé.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * L'ANCRE EST LE LIBELLÉ LIÉ que `A04_DONNEES` vient de poser —
+     * `{guide.communauteLabel}` ne figure nulle part ailleurs dans le cadre —
+     * plus la hauteur de la rangée. Le style part dans le `<button>` tel quel, par
+     * groupe de capture.
+     */
+    const rangee =
+      /<a href="#" (style=\{\{ height: "44px"[^}]*\}\})>(<svg[\s\S]*?<\/svg><span style=\{\{ flex: "1" \}\}>\{guide\.communauteLabel\}<\/span>)<\/a>/;
+    const m = rangee.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    const style = m[1].replace(
+      ' }}',
+      ', border: "none", background: "none", textAlign: "left", width: "100%", fontFamily: "inherit", cursor: "pointer" }}',
+    );
+    const out =
+      jsx.slice(0, m.index) +
+      `<button type="button" onClick={guide.onCommunaute} data-guide-communaute="" ${style}>` +
+      `${m[2]}</button>` +
+      jsx.slice(m.index + m[0].length);
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA CARTE DES PAGES DE L'ÉDITEUR — AJOUTER, RENOMMER, RETIRER               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « dans le processus de création "Créer un guide" il faut au niveau
+ * de la side bar la possibilité d'ajouter les pages ou d'en retirer, pour l'auteur
+ * bien sûr. »
+ *
+ * LE DESSIN EST EMPRUNTÉ au « MODE MODIFIER LES ÉTAPES » du parcours et LIÉ dans
+ * `tools/screens/03-accueil.mjs`, où le pourquoi de l'emprunt et ses deux écarts
+ * assumés sont écrits. Il reste les trois gestes.
+ *
+ * ── LE LIBELLÉ DE LA LIGNE EST UN CHAMP, ET C'EST LUI QUI CHOISIT LA PAGE ──
+ *
+ * C'est la décision de cette adaptation, et elle mérite sa raison. La maquette
+ * dessine un LIBELLÉ, pas un champ ; mais une page a besoin de DEUX gestes — être
+ * choisie (pour écrire dedans) et être renommée — et la planche n'offre qu'une
+ * prise. Deux contrôles côte à côte sur une ligne de 300 px auraient demandé
+ * d'inventer le second.
+ *
+ * Un `<input>` les porte tous les deux SANS rien ajouter au dessin : le FOCUS
+ * choisit la page, la FRAPPE la renomme. C'est le geste naturel — on clique sur le
+ * nom de la page pour y aller, et on peut alors le corriger — et c'est la doctrine
+ * que `A05_EDITEUR` applique déjà au titre du guide (« le littéral de la maquette
+ * devient l'invite »), appliquée à l'intertitre d'une page.
+ *
+ * ⚠ CE QUE CELA COÛTE : un lecteur d'écran annonce une zone de saisie là où la
+ * planche dessine un texte. L'`aria-label` dit ce que c'est (« Titre de la page »),
+ * et `GUIDE_PAGE_TITLE_MAX` borne la frappe — la borne vient du serveur, jamais
+ * d'un nombre écrit ici. REMONTÉ : si le porteur veut une ligne cliquable ET un
+ * crayon de renommage, il manque un contrôle à la planche.
+ *
+ * ── LA CORBEILLE NE SUPPRIME PAS, ELLE DEMANDE ────────────────────────────
+ *
+ * Retirer une page EFFACE DU TEXTE ÉCRIT. L'adaptation n'appelle donc pas la
+ * route : elle appelle `p.onRetirer`, et c'est la page qui monte
+ * `FenetreConfirmation` — la même fenêtre que « L'information a changé » du guide,
+ * et le même raisonnement (« un clic malheureux ne doit pas le déclencher »).
+ */
+const A05_PAGES = {
+  screens: ['A05'],
+  nom: 'A05_PAGES',
+  why: 'La carte des pages de l’éditeur répond : le libellé d’une ligne choisit la page et la renomme, la corbeille demande confirmation, et le lien vert ajoute une page.',
+  provides: ['editeur'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── 1. LE LIBELLÉ DE LA LIGNE ────────────────────────────────────────
+     *
+     * L'ancre est le CONTENU — `{p.titre}` n'est posé que là — et le style est
+     * repris tel quel. Les six déclarations ajoutées sont des DÉFAUTS DE
+     * NAVIGATEUR remplacés, pas des valeurs de designer surchargées : un `<input>`
+     * arrive avec sa bordure, son fond et sa police, qu'un `<span>` n'a pas.
+     */
+    const libelle = /<span (style=\{\{ flex: "1", fontSize: "1[0-9.]+px"[^}]*\}\})>\{p\.titre\}<\/span>/g;
+    for (;;) {
+      libelle.lastIndex = 0;
+      const m = libelle.exec(out);
+      if (m === null) break;
+      out =
+        out.slice(0, m.index) +
+        '<input type="text" value={p.titre} onChange={p.onTitre} onFocus={p.onChoisir} ' +
+        'aria-label="Titre de la page" maxLength={editeur.pageTitreMax} ' +
+        `data-a05-page={p.id} ${m[1].replace(
+          ' }}',
+          ', border: "none", background: "transparent", fontFamily: "inherit", ' +
+            'color: "inherit", outline: "none", minWidth: "0", padding: "0" }}',
+        )} />` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. LA CORBEILLE ──────────────────────────────────────────────────
+     *
+     * Le motif ancre sur le TRACÉ de la corbeille et sur la structure du rond,
+     * jamais sur une mesure : le diamètre et la taille du tracé sont relevés.
+     * `cibleTactileRonde32` porte la cible à 44 px sans déplacer un pixel.
+     */
+    const TRACE_CORBEILLE = 'M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13';
+    const corbeille = new RegExp(
+      '<span (style=\\{\\{ width: "\\d+px", height: "\\d+px", borderRadius: "999px"[^}]*\\}\\})>' +
+        '(<svg width="(\\d+)" height="\\d+"[^>]*>)' +
+        `<path d="${TRACE_CORBEILLE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" \\/><\\/svg><\\/span>`,
+      'g',
+    );
+    for (;;) {
+      corbeille.lastIndex = 0;
+      const m = corbeille.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const base = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, m.index) +
+        '<button type="button" onClick={p.onRetirer} data-a05-retirer={p.id} ' +
+        `aria-label="Retirer cette page" ${cibleTactileRonde32(base)}>` +
+        `${m[2]}<path d="${TRACE_CORBEILLE}" /></svg></button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 3. LE LIEN D'AJOUT ───────────────────────────────────────────────
+     *
+     * L'ancre est le contenu `{editeur.ajouterLibelle}`, posé par la liaison. La
+     * planche le dessine en `<span>` vert avec son `+` : un `<button>` à l'identique,
+     * cible portée à 44 px par `minHeight` — la maquette ne dessine pas de hauteur
+     * sur ce lien, donc rien n'est écrasé.
+     */
+    const ajouter =
+      /<span (style=\{\{ display: "flex", alignItems: "center", gap: "8px"[^}]*\}\})>(<svg[^]*?<\/svg>)\{editeur\.ajouterLibelle\}<\/span>/g;
+    for (;;) {
+      ajouter.lastIndex = 0;
+      const m = ajouter.exec(out);
+      if (m === null) break;
+      const ajout = resetBoutonManquant(m[1]);
+      const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, m.index) +
+        '<button type="button" onClick={editeur.onAjouterPage} data-a05-ajouter-page="" ' +
+        `${style.replace(' }}', ', minHeight: "44px", width: "100%", justifyContent: "flex-start" }}')}>` +
+        `${m[2]}{editeur.ajouterLibelle}</button>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « ÇA AFFICHE UNE PAGE MAIS C'EST UN MODAL QUI S'AFFICHE À DROITE »        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, mot pour mot : « Oui il faut le faire et le brancher au modal au
+ * niveau de proposer une correction. Ça affiche une page mais c'est un modal qui
+ * s'affiche à droite. Il faut être intelligent et comprendre la page. »
+ *
+ * ET LA MAQUETTE DIT LA MÊME CHOSE, dans son propre libellé de section : « 1 ·
+ * PROPOSER UNE CORRECTION — PANNEAU LATÉRAL SUR LA PAGE DU GUIDE (WEB) · FEUILLE
+ * DU BAS (MOBILE) ». Le geste, lui, est dessiné sur la planche de A04 : un passage
+ * SURLIGNÉ (`#CFE3DA`) portant l'infobulle « Proposer une correction sur ce
+ * passage ». C'est une SÉLECTION DE TEXTE, pas une entrée de menu.
+ *
+ * ── CE QUE CETTE ADAPTATION FAIT, ET CE QU'ELLE NE FAIT PAS ────────────────
+ *
+ * Elle ne déplace rien : l'extraction du voile et du panneau dans leur propre
+ * fichier est le travail de `regions:` (voir la déclaration de A06). Ici on rend
+ * VIVANT ce que la planche dessine, et c'était le blocage que l'en-tête de
+ * `corriger-screen.tsx` avait remonté mot pour mot : « le formulaire de la
+ * maquette — passage visé, remplacement, motif, source — est du balisage statique :
+ * aucun de ses champs n'a de prise, donc rien à lire au clic ».
+ *
+ * MESURÉ sur les deux cadres produits avant ce lot : zéro `<textarea>`, zéro
+ * `<input>`, zéro `onClick` dans le panneau. Le bouton « Envoyer la proposition »
+ * était un `<button>` nu, et `createProposal` existait depuis §2.4 sans appelant.
+ *
+ * ── UNE SEULE DÉCLARATION POUR LES DEUX PLANCHES, ET C'EST MESURÉ ──────────
+ *
+ * Les QUATRE blocs du formulaire sont dessinés À L'OCTET PRÈS de la même façon sur
+ * la planche de 1440 px et sur celle de 390 px — comparé, pas supposé. Une seule
+ * déclaration les prend donc toutes les deux, ce qui est exactement ce que la règle
+ * du porteur demande (« veille toujours à ce que toutes les corrections soient
+ * aussi faites sur mobile ») sans la payer en double.
+ *
+ * CE QUI DIFFÈRE, en revanche, et qui est traité séparément :
+ *   · l'ordinateur porte une CROIX de fermeture dans son en-tête, le mobile une
+ *     poignée de feuille et pas de croix ;
+ *   · l'ordinateur porte DEUX boutons — « Annuler » (50 px, `#F2F5F4`) et
+ *     « Envoyer la proposition » (50 px, `#16785E`) — le mobile un SEUL,
+ *     « Envoyer », à 52 px et 15 px de corps.
+ *
+ * C'est le piège que ce fichier a déjà payé quatre fois : un motif qui FIGE une
+ * valeur de dessin ne décrit qu'UN cadre. Les deux boutons d'envoi sont donc
+ * cherchés par leur LIBELLÉ, et leur hauteur est relevée dans le motif, jamais
+ * écrite.
+ *
+ * ── POURQUOI LE LITTÉRAL DE « REMPLACER PAR » NE DEVIENT PAS UN `placeholder` ─
+ *
+ * `FIELD_ADAPTATIONS` a pour doctrine que l'exemple dessiné devient l'invite :
+ * « 97 12 34 42 » est une FORME attendue, et la garder est honnête. Ici le littéral
+ * est « quel que soit leur pays d'origine, dès la validation du VLS-TS sur le site
+ * de l'ANEF » — ce n'est pas une forme, c'est le contenu d'UN guide. L'afficher en
+ * invite sur un guide qui parle de la CAF serait exactement le défaut que ce dépôt
+ * traque depuis « un membre ouvrant son guide sur la CAF y lisait Visale ».
+ *
+ * Le champ est donc PRÉ-REMPLI avec le passage sélectionné — ce que §2.4 décrit
+ * (« le proposant ne retouche pas le passage visé », il écrit à côté ce qu'il
+ * mettrait) et ce que la maquette dessine : son « Remplacer par » EST le passage,
+ * avec une phrase changée. L'invite tombe, l'`aria-label` reste.
+ *
+ * ── L'ACCUSÉ VIENT DE LA COLONNE « APRÈS ENVOI » DE LA MÊME MAQUETTE ───────
+ *
+ * La maquette dessine la suite de l'envoi HORS du cadre, dans une colonne
+ * d'annotation de 300 px : « Proposition envoyée à Marc K. Vous serez prévenu·e de
+ * sa réponse. » Cette colonne n'est pas dans le cadre extrait — `extractFrame` ne
+ * prend que le `div` de 1440 ou 390 px — donc l'encart est EMPRUNTÉ, au caractère
+ * près, et le garde-fou des emprunts s'applique : on vérifie qu'il est toujours
+ * dessiné dans la maquette, et on refuse de produire sinon.
+ *
+ * Il est posé juste AVANT le ressort (`flex: 1`) qui pousse les boutons en bas,
+ * c'est-à-dire au pied du formulaire : c'est le seul endroit du panneau où la
+ * maquette laisse de la place, et le dernier que l'œil lit avant d'envoyer.
+ */
+const A06_ACCUSE_SOURCE = {
+  file: 'docs/template/03 Accueil v2.dc.html',
+  pattern:
+    '<div style="background:#16211D;color:#fff;border-radius:16px;padding:14px 16px;' +
+    'font-size:13px;font-weight:600;line-height:1.5">Proposition envoyée à Marc K. ' +
+    'Vous serez prévenu·e de sa réponse.</div>',
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES TROIS RETOURS VERS LE GUIDE, SUR LES PAGES DE A06                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ sur les cadres produits : `grep -c 'Link\|onClick' a06/desktop.generated
+ * .tsx` → 0, et autant sur le mobile. Les DEUX pages de A06 — « Propositions
+ * reçues » et, depuis ce lot, « Signalements “a changé” » — sont des pages FILLES
+ * du guide, et aucune des trois affordances de retour n'en était une :
+ *
+ *   · le FIL D'ARIANE de 1 440 px — `<a href="#">` avec un chevron et le titre du
+ *     guide ;
+ *   · « Voir le guide » dans la carte « VOTRE GUIDE » de la colonne de droite —
+ *     `<a href="#">` ;
+ *   · le CHEVRON de la barre haute de 390 px — un `<span>` inerte, donc pas même
+ *     un lien mort : rien. Sur un téléphone, la page était une impasse.
+ *
+ * ── POURQUOI UNE ADAPTATION ET NON `liens` ───────────────────────────────────
+ *
+ * `liens` sait poser une destination, et il a un garde-fou qui MORD ici, à juste
+ * titre : une destination interpolée (`vers: '{{ guide.href }}'`) doit être liée
+ * par une boucle `<sc-for as="guide">` qui ENGLOBE l'élément — « une destination
+ * qui ne s'évalue pas mène AILLEURS, ce qui est pire qu'un lien mort ». Or
+ * l'adresse du guide n'est pas une entrée de boucle : c'est une prise de l'écran.
+ * `liens` ne peut donc pas la poser, et c'est le chemin qu'`A04_MODIFIER` a déjà
+ * ouvert pour exactement le même besoin — une adresse calculée sur un `<a>` ou un
+ * `<span>` hors boucle.
+ *
+ * ── UN `<Link>` DANS LES TROIS CAS ───────────────────────────────────────────
+ *
+ * C'est une ADRESSE : « un `<button>` qui appellerait `router.push` perdrait le
+ * clic milieu, l'ouverture dans un onglet et l'aperçu de la destination dans la
+ * barre d'état ». `needsLink` du gabarit ajoute l'import tout seul — aucun cadre
+ * de A06 n'avait de `<Link>` avant ce lot.
+ *
+ * ── CE QUE LES TROIS MOTIFS ANCRENT, ET CE QU'ILS NE FIGENT PAS ─────────────
+ *
+ * Chacun ancre sur la STRUCTURE et RECOPIE le style par groupe de capture : le
+ * `display: "inline-flex"` du fil d'Ariane, le `display: "inline-block"` de « Voir
+ * le guide », le rond de 40 px du chevron mobile. Aucune mesure n'est réécrite —
+ * c'est le piège que ce fichier a déjà payé cinq fois.
+ *
+ * Le CONTENU du fil d'Ariane est pris par groupe de capture lui aussi, et il le
+ * faut : sur « Propositions reçues » c'est encore le titre de la maquette, sur
+ * « Signalements » c'est `{guide.title}` que `A06_SIGNALEMENTS` vient de lier. Un
+ * motif qui nommerait l'un des deux ne décrirait qu'une page sur deux.
+ *
+ * ⚠ LE CHEVRON MOBILE REÇOIT UN NOM ACCESSIBLE, et il n'en avait aucun : la
+ * maquette ne dessine aucun mot sur ce rond. « Revenir au guide » est donc du
+ * texte de produit, et il est REMONTÉ — c'est la même situation que les quatre
+ * ronds de la barre haute de A04, dont `label` nomme les gestes pour la même
+ * raison.
+ */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'AUTEUR NE POUVAIT PAS DÉCIDER DES PROPOSITIONS QU'IL RECEVAIT            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ avant ce lot, et le chiffre est net : `grep -o "onClick"` sur
+ * `a06/desktop.generated.tsx` → ZÉRO. Les deux cadres de « Propositions reçues »
+ * chargeaient pourtant les VRAIES propositions (`fetchProposals`,
+ * `propositions?.items`), les trois appels existaient depuis des lots
+ * (`acceptProposal`, `amendProposal`, `rejectProposal`) et les trois routes aussi
+ * (`POST /proposals/:id/accept|amend|reject`, `guides.controller.ts`). Il ne
+ * manquait QUE le clic. L'auteur voyait ce qu'on lui proposait et ne pouvait rien
+ * en faire.
+ *
+ * ── CE QUE CHAQUE PLANCHE DESSINE, RELEVÉ CADRE PAR CADRE ─────────────────
+ *
+ * Rien n'est supposé symétrique ici — c'est le piège 1 du mémo, et les deux
+ * planches lui donnent raison :
+ *
+ *   · 1 440 px, PREMIÈRE carte : une rangée en flex (`gap: 8`, `marginTop: 16`)
+ *     portant TROIS boutons de 44 px, rayon 14, retrait `0 18px` — « Accepter »
+ *     (aplat `#16785E`), « Accepter en modifiant » (blanc, trait `1.5px #CFE3DA`),
+ *     « Refuser » (aplat `#F2F5F4`) ;
+ *   · 1 440 px, SECONDE carte : AUCUN bouton de décision. Elle dessine à leur
+ *     place un FORMULAIRE DE REFUS déjà ouvert — « Motif du refus * », une boîte
+ *     de 60 px de haut et deux boutons de 40 px, « Confirmer le refus » et
+ *     « Annuler ». Voir l'arbitrage ci-dessous : ce n'est pas une troisième carte,
+ *     c'est le même geste dans un autre état ;
+ *   · 390 px, PREMIÈRE carte : une GRILLE à deux colonnes (`gap: 8`,
+ *     `marginTop: 12`) portant « Accepter » et « Refuser » en 44 px rayon 12, puis
+ *     « Accepter en modifiant » SEUL, pleine largeur, 42 px rayon 12 ;
+ *   · 390 px, SECONDE carte : rien. Une pastille, un nom, un délai, une ligne de
+ *     résumé. ⚠ L'EMPLACEMENT 2 N'EST DONC PAS DÉCIDABLE SUR LE TÉLÉPHONE, et ce
+ *     n'est pas un oubli de ce lot : la planche ne dessine aucun geste là. Inventer
+ *     trois boutons serait redessiner la carte. REMONTÉ.
+ *
+ * ── LE FORMULAIRE DE REFUS DE 1 440 px : CE QU'ON EN A FAIT, ET POURQUOI ──
+ *
+ * La seconde carte de l'ordinateur laisse place, à l'endroit exact où la première
+ * met ses trois boutons, au formulaire de refus. C'est manifestement l'état
+ * « je suis en train de refuser » de la MÊME carte — un état, pas une seconde
+ * proposition.
+ *
+ * ON A REMPLACÉ CE BLOC PAR LA RANGÉE DE TROIS BOUTONS de la première carte, et
+ * il faut dire pourquoi plutôt que de le laisser deviner :
+ *
+ *   1. SANS CELA, L'EMPLACEMENT 2 N'AURAIT AUCUNE DÉCISION À 1 440 px, et le bloc
+ *      resterait un formulaire STATIQUE — « Les deux documents restent acceptés, je
+ *      préfère garder la liste courte. » peint sous une proposition réelle, c'est-à-
+ *      dire un motif de refus inventé affiché sous le nom d'un vrai membre. C'est
+ *      exactement ce que ce dépôt refuse ailleurs.
+ *   2. LE MOTIF DU REFUS EST DEMANDÉ AILLEURS, et par un composant que le dépôt a
+ *      déjà posé : `FenetreConfirmation` avec son `champ`. Il le faut de toute
+ *      façon pour 390 px, où AUCUN formulaire de refus n'est dessiné — une
+ *      mécanique à 1 440 px et une autre à 390 px aurait donné deux chemins pour
+ *      un seul geste.
+ *   3. LE DESSIN SUBSTITUÉ EST CELUI DE LA MAQUETTE, pris sur la carte voisine de
+ *      la MÊME planche — pas une rangée redessinée. C'est le même emprunt que
+ *      `CARTE_SIGNALEMENTS` fait dans cette section.
+ *
+ * ⚠ REMONTÉ, ET C'EST UN ARBITRAGE DU PORTEUR : il manque une planche qui dise ce
+ * qui DÉPLIE une carte, et ce que devient le formulaire de refus dessiné. Tant
+ * qu'elle n'existe pas, l'écran a DEUX EMPLACEMENTS et non une liste — il ne peut
+ * représenter ni 0, ni 1, ni 3 propositions correctement.
+ *
+ * ── CE QUI ÉTEINT LES BOUTONS, ET CE QUE ÇA N'EST PAS ────────────────────
+ *
+ * `decidable` — un seul booléen pour trois cas : emplacement vide, proposition
+ * déjà décidée, appel en vol. Le troisième compte : sans lui, un double clic sur
+ * « Accepter » écrirait DEUX fois dans le corps du guide. Le curseur passe par
+ * `curseurOccupe`, qui SUBSTITUE la déclaration quand la planche en dessine une et
+ * ne l'ajoute que sinon — deux `cursor` dans un même style donnent un `TS1117`, et
+ * ce dépôt l'a déjà payé. L'opacité `.55` est celle qu'emploient déjà les autres
+ * boutons qui s'éteignent de ce module (voir `A06_PANNEAU_CORRECTION`).
+ *
+ * ⚠ CE N'EST PAS UNE AUTORISATION : le front PRÉVIENT, il n'autorise pas. Les
+ * trois routes exigent `guide.write` (N2) plus `loadOwned`.
+ */
+const A06_DECISIONS = {
+  screens: ['A06'],
+  nom: 'A06_DECISIONS',
+  why: 'Les trois boutons de décision de « Propositions reçues » acceptent, amendent et refusent pour de vrai : ils étaient du dessin pur — zéro `onClick` sur les deux cadres.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * LES TROIS GESTES, PAR LEUR LIBELLÉ DESSINÉ.
+     *
+     * L'ordre est indifférent parce que le motif borne le libellé par `>` et
+     * `</button>` : `>Accepter</button>` ne peut pas attraper « Accepter en
+     * modifiant ». On l'écrit quand même du plus long au plus court, pour qu'un
+     * lecteur n'ait pas à vérifier ce point.
+     */
+    const GESTES = [
+      ['Accepter en modifiant', 'onAmender', 'amender'],
+      ['Accepter', 'onAccepter', 'accepter'],
+      ['Refuser', 'onRefuser', 'refuser'],
+    ];
+
+    /**
+     * Rend vivants les boutons d'un BLOC, pour une prise donnée. Retourne le bloc
+     * et le nombre de boutons pris : un bloc qui n'en rend aucun est une maquette
+     * qui a changé, et l'appelant refuse alors la transformation.
+     */
+    const vivifier = (bloc, prise) => {
+      let out = bloc;
+      let pris = 0;
+      for (const [libelle, geste, cle] of GESTES) {
+        const motif = new RegExp(
+          `<button (style=\\{\\{ [^}]*\\}\\})>${libelle}</button>`,
+          'g',
+        );
+        for (;;) {
+          motif.lastIndex = 0;
+          const m = motif.exec(out);
+          if (m === null) break;
+          const style = curseurOccupe(m[1], `!${prise}.decidable`).replace(
+            ' }}',
+            `, opacity: ${prise}.decidable ? "1" : ".55" }}`,
+          );
+          out =
+            out.slice(0, m.index) +
+            `<button type="button" onClick={${prise}.${geste}} ` +
+            `disabled={!${prise}.decidable} data-proposition-${cle}="" ${style}>` +
+            `${libelle}</button>` +
+            out.slice(m.index + m[0].length);
+          pris += 1;
+        }
+      }
+      return [out, pris];
+    };
+
+    /**
+     * ── LA PLANCHE DE 1 440 px ───────────────────────────────────────────
+     *
+     * On repère la rangée de trois boutons de la PREMIÈRE carte, on la copie à la
+     * place du formulaire de refus de la SECONDE, puis on vivifie les deux
+     * occurrences — la première sur l'emplacement 1, la seconde sur l'emplacement 2.
+     * `finDuDiv` compte les niveaux : les deux blocs en contiennent plusieurs, et
+     * chercher un `</div>` tomberait au milieu.
+     */
+    const ouvertureRangee = '<div style={{ display: "flex", gap: "8px", marginTop: "16px" }}><button';
+    const iRangee = jsx.indexOf(ouvertureRangee);
+    if (iRangee !== -1) {
+      const finRangee = finDuDiv(jsx, iRangee);
+      if (finRangee === -1) return { jsx, applied: false };
+      const rangee = jsx.slice(iRangee, finRangee);
+
+      /** L'ancre du formulaire de refus : son étiquette, et son astérisque rouge. */
+      const iEtiquette = jsx.indexOf('>Motif du refus <span');
+      if (iEtiquette === -1) return { jsx, applied: false };
+      const ouvertureRefus = jsx.lastIndexOf('<div style={{ marginTop: "14px"', iEtiquette);
+      if (ouvertureRefus === -1 || ouvertureRefus > iEtiquette) return { jsx, applied: false };
+      const finRefus = finDuDiv(jsx, ouvertureRefus);
+      if (finRefus === -1 || finRefus < iEtiquette) return { jsx, applied: false };
+
+      let out = jsx.slice(0, ouvertureRefus) + rangee + jsx.slice(finRefus);
+
+      /** Deux occurrences identiques : on les sépare par l'ordre du dessin. */
+      const parts = out.split(rangee);
+      if (parts.length !== 3) return { jsx, applied: false };
+      const [un, prisUn] = vivifier(rangee, 'propositionDepliee');
+      const [deux, prisDeux] = vivifier(rangee, 'propositionRepliee');
+      if (prisUn !== 3 || prisDeux !== 3) return { jsx, applied: false };
+      out = parts[0] + un + parts[1] + deux + parts[2];
+      return { jsx: out, applied: true };
+    }
+
+    /**
+     * ── LA PLANCHE DE 390 px ─────────────────────────────────────────────
+     *
+     * Les trois boutons y sont tous sur la PREMIÈRE carte — la seconde n'en
+     * dessine aucun — donc une seule prise, et pas de découpage à faire. Compté :
+     * aucun autre cadre de A06 ne porte ces libellés (les deux cadres « Corriger »
+     * et les deux cadres « Signalements » en ont zéro), donc une vivification sur
+     * tout le cadre ne peut rien attraper d'autre.
+     */
+    const [out, pris] = vivifier(jsx, 'propositionDepliee');
+    return pris === 3 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A06_RETOUR_GUIDE = {
+  screens: ['A06'],
+  nom: 'A06_RETOUR_GUIDE',
+  why: 'Les trois retours vers le guide des pages de A06 — fil d’Ariane, « Voir le guide », chevron de 390 px — mènent au guide : c’étaient deux href="#" et un <span> inerte, donc une page sans sortie sur le téléphone.',
+  /**
+   * `guide` EST DÉCLARÉE FOURNIE, et il le faut : `collectProps` lit les prises
+   * dans le DIALECTE de la maquette, et `guide.href` n'y figure pas — c'est cette
+   * adaptation qui la pose. Sans la déclaration, le cadre de 390 px référençait un
+   * `guide` qu'il ne destructurait pas (mesuré : « Cannot find name 'guide' »).
+   * `collectProps` ne retient que ce qui FIGURE dans le JSX produit, donc les
+   * cadres où l'adaptation ne trouve rien ne déclarent rien.
+   */
+  provides: ['guide'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /** ── 1. LE FIL D'ARIANE DE 1 440 px ──────────────────────────────── */
+    const ariane =
+      /<a href="#" (style=\{\{ display: "inline-flex"[^}]*\}\})>([\s\S]*?)<\/a>/;
+    const ma = ariane.exec(out);
+    if (ma !== null) {
+      out =
+        out.slice(0, ma.index) +
+        `<Link href={guide.href} data-a06-retour="" ${ma[1]}>${ma[2]}</Link>` +
+        out.slice(ma.index + ma[0].length);
+      pris += 1;
+    }
+
+    /** ── 2. « VOIR LE GUIDE » DE LA COLONNE DE DROITE ─────────────────── */
+    const voir = /<a href="#" (style=\{\{[^}]*\}\})>Voir le guide<\/a>/;
+    const mv = voir.exec(out);
+    if (mv !== null) {
+      out =
+        out.slice(0, mv.index) +
+        `<Link href={guide.href} data-a06-voir-guide="" ${mv[1]}>Voir le guide</Link>` +
+        out.slice(mv.index + mv[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 3. LE CHEVRON DE LA BARRE HAUTE DE 390 px ─────────────────────
+     *
+     * Le `<span>` est promu en `<Link>`, pas en `<button>` : voir l'en-tête. Les
+     * trois déclarations de centrage sont DÉJÀ dessinées par la maquette sur ce
+     * rond, donc on n'ajoute que `textDecoration` — un `<a>` souligne par défaut,
+     * et ce rond ne souligne pas. Poser un second `display:` aurait donné un
+     * `TS1117`, l'erreur dure que ce fichier documente.
+     */
+    const chevron =
+      /<span (style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: "#F2F5F4"[^}]*\}\})>(<svg[\s\S]*?<path d="m15 18-6-6 6-6" \/><\/svg>)<\/span>/;
+    const mc = chevron.exec(out);
+    if (mc !== null) {
+      out =
+        out.slice(0, mc.index) +
+        '<Link href={guide.href} aria-label="Revenir au guide" data-a06-retour="" ' +
+        `${mc[1].replace(' }}', ', textDecoration: "none" }}')}>${mc[2]}</Link>` +
+        out.slice(mc.index + mc[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const A06_PANNEAU_CORRECTION = {
+  screens: ['A06'],
+  nom: 'A06_PANNEAU_CORRECTION',
+  why: 'Les quatre blocs du panneau « Proposer une correction » deviennent de vrais champs, ses trois boutons répondent, et l’accusé d’envoi de la maquette apparaît.',
+  provides: ['correction'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    /**
+     * ── 1. LE PASSAGE SÉLECTIONNÉ — EN LECTURE SEULE, ET IL LE RESTE ──────
+     *
+     * §2.4 : « le passage visé est COPIÉ TEL QUEL depuis la version courante : le
+     * proposant ne le retouche pas, sinon le serveur ne pourrait plus le
+     * retrouver. » La maquette le dessine en conséquence : fond `#F2F5F4`, encre
+     * `#5D6B66` — un bloc, pas un champ. Il le reste donc, et seul son TEXTE se
+     * lie. Le borner par son style exact le distingue des trois autres blocs,
+     * qui ne portent ni ce fond ni cette encre.
+     */
+    const PASSAGE_STYLE =
+      'marginTop: "-8px", background: "#F2F5F4", borderRadius: "14px", padding: "14px", ' +
+      'fontSize: "14px", lineHeight: "1.6", color: "#5D6B66"';
+    const passage = `<div style={{ ${PASSAGE_STYLE} }}>quel que soit leur pays d'origine, dès l'obtention du VLS-TS</div>`;
+    const ip = out.indexOf(passage);
+    if (ip >= 0) {
+      out =
+        out.slice(0, ip) +
+        `<div data-correction-passage="" style={{ ${PASSAGE_STYLE} }}>{correction.passage}</div>` +
+        out.slice(ip + passage.length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. « REMPLACER PAR » ET « POURQUOI CETTE CORRECTION ? » ───────────
+     *
+     * Deux `<textarea>`, parce que les deux reçoivent des PHRASES : `replacement`
+     * accepte jusqu'à `GUIDE_BODY_MAX`, `reason` jusqu'à mille caractères avec un
+     * plancher de vingt (`GUIDE_PROPOSAL_REASON_MIN`). Un `<input>` y couperait la
+     * vue à une ligne pour un texte qui en fait cinq.
+     *
+     * `resetFiltre` fait que la maquette reste SEULE sur les propriétés qu'elle
+     * déclare : le bloc de remplacement porte `border: "1.5px solid #16785E"` et
+     * `padding: "14px"`, que le reset d'un `<textarea>` déclare aussi — et en JSX
+     * deux fois la même clé est une faute, pas une cascade. Voir l'en-tête de
+     * `AIRE_TEXTE_RESET`.
+     */
+    const AIRES = [
+      {
+        style:
+          'marginTop: "-8px", border: "1.5px solid #16785E", borderRadius: "14px", ' +
+          'padding: "14px", fontSize: "14px", lineHeight: "1.6", minHeight: "76px"',
+        texte: "quel que soit leur pays d'origine, dès la validation du VLS-TS sur le site de l'ANEF",
+        valeur: 'correction.remplacement',
+        geste: 'correction.onRemplacement',
+        label: 'Le texte que vous proposez à la place',
+        repere: 'data-correction-remplacement=""',
+        ajouts: '',
+      },
+      {
+        style:
+          'marginTop: "-8px", border: "1px solid #E6EBE9", borderRadius: "14px", ' +
+          'padding: "14px", fontSize: "14px"',
+        texte: 'La validation en ligne est obligatoire depuis 2025.',
+        valeur: 'correction.motif',
+        geste: 'correction.onMotif',
+        /**
+         * L'étoile de la maquette (`<span style="color:#B4581F">*</span>`) dit
+         * l'obligation à l'œil ; `required` et `aria-required` la disent au
+         * lecteur d'écran, qui ne voit pas la couleur.
+         */
+        label: 'Pourquoi cette correction ? (obligatoire)',
+        repere: 'data-correction-motif=""',
+        ajouts: ' required aria-required="true" minLength={20}',
+      },
+    ];
+    for (const aire of AIRES) {
+      const cible = `<div style={{ ${aire.style} }}>${aire.texte}</div>`;
+      const at = out.indexOf(cible);
+      if (at < 0) continue;
+      const champ =
+        `<textarea value={${aire.valeur}} onChange={${aire.geste}} ` +
+        `aria-label=${JSON.stringify(aire.label)} ${aire.repere}${aire.ajouts} ` +
+        `style={{ ${resetFiltre(aire.style).join(', ')}, ${aire.style} }} />`;
+      out = out.slice(0, at) + champ + out.slice(at + cible.length);
+      pris += 1;
+    }
+
+    /**
+     * ── 3. « SOURCE (FACULTATIF) » ───────────────────────────────────────
+     *
+     * Celui-ci GARDE son invite, et c'est la doctrine de `FIELD_ADAPTATIONS`
+     * appliquée là où elle vaut : « https:// » n'est pas le contenu d'un guide,
+     * c'est la FORME attendue — et `sourceUrl` est validé par `z.string().url()`,
+     * donc un membre qui tape « visale.fr » sera refusé. L'invite le lui dit
+     * avant.
+     *
+     * `type="url"` plutôt que `text` : le clavier du téléphone change, et le
+     * navigateur valide tout seul. La maquette dessine la boîte en 46 px de haut
+     * avec un retrait latéral seul — le reset ne touche donc pas à sa hauteur.
+     */
+    const SOURCE_STYLE =
+      'marginTop: "-8px", height: "46px", border: "1px solid #E6EBE9", borderRadius: "14px", ' +
+      'padding: "0 14px", display: "flex", alignItems: "center", fontSize: "13.5px", color: "#8A958F"';
+    const source = `<div style={{ ${SOURCE_STYLE} }}>https://</div>`;
+    const is = out.indexOf(source);
+    if (is >= 0) {
+      /**
+       * `color: "#8A958F"` EST LA COULEUR DE L'INVITE, pas celle de la saisie.
+       * La maquette l'écrit parce qu'elle dessine un champ VIDE ; le garder sur un
+       * `<input>` écrirait ce que le membre tape en gris clair sur blanc — 2,72:1,
+       * sous le plancher AA, et c'est précisément ce que le garde-fou de contraste
+       * compte. L'encre revient donc à celle du texte (`inherit`), et l'invite
+       * garde la sienne par `::placeholder`, que le navigateur peint en gris par
+       * défaut.
+       */
+      const styleChamp = SOURCE_STYLE.replace('color: "#8A958F"', 'color: "inherit"');
+      out =
+        out.slice(0, is) +
+        '<input type="url" inputMode="url" autoComplete="off" placeholder="https://" ' +
+        'aria-label="Une source qui appuie votre correction (facultatif)" ' +
+        `value={correction.source} onChange={correction.onSource} data-correction-source="" ` +
+        `style={{ width: "100%", boxSizing: "border-box", background: "transparent", ` +
+        `fontFamily: "inherit", outline: "none", ${styleChamp} }} />` +
+        out.slice(is + source.length);
+      pris += 1;
+    }
+
+    /**
+     * ── 4. LA CROIX DE L'EN-TÊTE, SUR L'ORDINATEUR SEUL ──────────────────
+     *
+     * La planche mobile n'en dessine pas : elle ferme la feuille par sa poignée
+     * et par le voile. Un `missed` serait donc faux ici — les deux cadres n'ont
+     * pas le même en-tête, et c'est le dessin qui décide.
+     *
+     * Le motif est celui de `A01N_COMPOSEUR`, au tracé près : c'est la même croix,
+     * dessinée par la même maquette.
+     */
+    const fermer =
+      /<span (style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: "#F2F5F4"[^}]*\}\})>(<svg[^>]*><path d="M18 6 6 18M6 6l12 12" \/><\/svg>)<\/span>/;
+    const mf = fermer.exec(out);
+    if (mf !== null) {
+      const ajout = resetBoutonManquant(mf[1]);
+      const style = ajout === '' ? mf[1] : mf[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, mf.index) +
+        '<button type="button" onClick={correction.onFermer} aria-label="Fermer" ' +
+        `data-correction-fermer="" ${style}>${mf[2]}</button>` +
+        out.slice(mf.index + mf[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 5. « ANNULER », SUR L'ORDINATEUR SEUL ────────────────────────────
+     *
+     * Le style est écrit EN ENTIER, et il le faut : « Annuler » est aussi dessiné
+     * sur la planche « Propositions reçues » du même écran — à 40 px, rayon 12,
+     * fond blanc — et un motif par libellé seul y aurait posé la fermeture du
+     * panneau sur un bouton qui refuse une proposition. Compté : une occurrence
+     * dans chaque cadre.
+     */
+    const annuler =
+      /<button (style=\{\{ height: "50px", padding: "0 20px", borderRadius: "14px", background: "#F2F5F4"[^}]*\}\})>Annuler<\/button>/;
+    const ma = annuler.exec(out);
+    if (ma !== null) {
+      out =
+        out.slice(0, ma.index) +
+        '<button type="button" onClick={correction.onFermer} data-correction-annuler="" ' +
+        `${ma[1].replace(' }}', ', cursor: "pointer" }}')}>Annuler</button>` +
+        out.slice(ma.index + ma[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 6. L'ENVOI — DEUX LIBELLÉS, DEUX HAUTEURS, UN SEUL GESTE ─────────
+     *
+     * La planche d'ordinateur écrit « Envoyer la proposition » à 50 px et 14,5 px
+     * de corps ; celle du mobile « Envoyer » à 52 px et 15 px. La hauteur et le
+     * corps sont RELEVÉS dans le motif (`5[02]px`, `1[45]`), jamais figés : c'est
+     * l'erreur que ce fichier a déjà payée quatre fois.
+     *
+     * LE MOTIF EST OBLIGATOIRE, et le bouton le dit : `disabled` tant que
+     * `peutEnvoyer` est faux, avec l'opacité `.55` employée partout ailleurs dans
+     * ce dépôt pour un contrôle éteint. Le front PRÉVIENT — c'est le serveur qui
+     * refuse, par `GUIDE_PROPOSAL_REASON_MIN` et par le niveau N2.
+     */
+    const envoyer =
+      /<button (style=\{\{ (?:flex: "1", )?height: "5[02]px", borderRadius: "14px", background: "#16785E"[^}]*\}\})>(Envoyer la proposition|Envoyer)<\/button>/;
+    const me = envoyer.exec(out);
+    if (me !== null) {
+      out =
+        out.slice(0, me.index) +
+        '<button type="button" onClick={correction.onEnvoyer} ' +
+        'disabled={!correction.peutEnvoyer} data-correction-envoyer="" ' +
+        `${me[1].replace(' }}', ', cursor: correction.peutEnvoyer ? "pointer" : "default", opacity: correction.peutEnvoyer ? "1" : ".55" }}')}>${me[2]}</button>` +
+        out.slice(me.index + me[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 7. L'ACCUSÉ D'ENVOI, EMPRUNTÉ À LA COLONNE « APRÈS ENVOI » ───────
+     *
+     * Voir l'en-tête. Le garde-fou est celui des emprunts : si la maquette ne
+     * dessine plus cet encart, on ARRÊTE la génération en le nommant plutôt que
+     * de recopier en silence un dessin qui a changé.
+     */
+    const ressort = '<div style={{ flex: "1" }}></div>';
+    const ir = out.indexOf(ressort);
+    if (ir >= 0) {
+      if (!lireSourceEmpruntee(A06_ACCUSE_SOURCE.file).includes(A06_ACCUSE_SOURCE.pattern)) {
+        throw new Error(
+          `A06 : l’accusé d’envoi « Proposition envoyée à … » ne figure plus dans ` +
+            `${A06_ACCUSE_SOURCE.file}. Mettre A06_ACCUSE_SOURCE à jour.`,
+        );
+      }
+      const accuse =
+        '{correction.accuse === null ? null : (<div role="status" data-correction-accuse="" ' +
+        'style={{ background: "#16211D", color: "#fff", borderRadius: "16px", ' +
+        'padding: "14px 16px", fontSize: "13px", fontWeight: "600", lineHeight: "1.5" }}>' +
+        '{correction.accuse}</div>)}';
+      out = out.slice(0, ir) + accuse + out.slice(ir);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « LE BOUTON ÉCRIRE UN GUIDE NE RÉPOND PAS »                               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, mot pour mot. MESURÉ : la planche d'ordinateur de A03 dessine un
+ * `<button>` vert « + Écrire un guide » en tête de la liste, et ce bouton n'a
+ * AUCUN geste — ni `onClick`, ni adresse. Il est le chemin évident vers la
+ * rédaction, depuis la page même des guides, et il ne menait nulle part.
+ *
+ * ── POURQUOI UN `<Link>` ET NON UN `<button>` AVEC `router.push` ───────────
+ *
+ * C'est une ADRESSE, `/guides/nouveau`. Un bouton qui pousse l'historique perd
+ * le clic du milieu, « ouvrir dans un nouvel onglet », et l'aperçu que le
+ * navigateur montre dans sa barre d'état. Même raisonnement que `A04_MODIFIER`,
+ * et c'est son idiome qui est repris ici — y compris les quatre déclarations de
+ * centrage qu'un `<a>` doit recevoir pour se dessiner comme le `<button>` qu'il
+ * remplace, et qui ne sont AJOUTÉES QUE SI ABSENTES (piège n° 8 : deux fois la
+ * même clé dans un style donne `TS1117`).
+ *
+ * ── BORNÉ À A03, ET C'EST LE POINT DÉLICAT ────────────────────────────────
+ *
+ * « Écrire un guide » est écrit sur CINQ cadres : `a03/desktop`, mais aussi
+ * `j01e/desktopabouti`, `j01e/mobileabouti`, `j07/desktop` et `j10/{desktop,mobile}`.
+ * Les quatre derniers sont des écrans de PARCOURS, où la phrase propose de
+ * transformer un parcours abouti en guide — c'est `POST /journeys/:id/to-guide`,
+ * une tout autre destination, qui pré-remplit une page par étape. Les envoyer
+ * sur `/guides/nouveau` leur ferait perdre le parcours dont ils partent.
+ *
+ * `screens: ['A03']` est donc une BORNE, pas une commodité. Et le motif exige la
+ * structure du bouton de A03 (le `+` de `M12 5v14M5 12h14`), là où les écrans de
+ * parcours dessinent un livre ouvert dans une carte.
+ *
+ * ── CE QUE CETTE ADAPTATION NE RÉPARE PAS, ET C'EST REMONTÉ ───────────────
+ *
+ * LA PLANCHE DE 390 px NE DESSINE AUCUN BOUTON DE CRÉATION. Mesuré : le cadre
+ * mobile de A03 n'a ni ce bouton, ni le `+` de la barre haute (`BoutonCreer` y
+ * est absent alors que la planche d'ordinateur en porte un). Au téléphone, la
+ * page des guides n'offre donc AUCUN chemin vers la rédaction — seul le `+` de
+ * la barre haute des AUTRES écrans y mène. Poser un bouton ici serait du dessin
+ * neuf : c'est l'arbitrage du porteur, et il est remonté.
+ */
+const A03_ECRIRE_UN_GUIDE = {
+  screens: ['A03'],
+  nom: 'A03_ECRIRE_UN_GUIDE',
+  why: 'Le bouton « + Écrire un guide » de la liste mène à l’éditeur — il était dessiné sans aucun geste.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * Ancré sur la STRUCTURE — le `+` de la maquette et le libellé — jamais sur
+     * une mesure. `[^}]*` s'arrête à la première accolade fermante, c'est-à-dire
+     * à la fin du style : celui-ci ne porte aucun gabarit.
+     */
+    const motif =
+      /<button (style=\{\{ [^}]*\}\})>((?:<svg[^]*?M12 5v14M5 12h14[^]*?<\/svg>)?)Écrire un guide<\/button>/g;
+
+    const CENTRAGE = [
+      ['display', '"flex"'],
+      ['alignItems', '"center"'],
+      ['justifyContent', '"center"'],
+      ['textDecoration', '"none"'],
+    ];
+
+    let out = jsx;
+    let pris = 0;
+    for (;;) {
+      motif.lastIndex = 0;
+      const m = motif.exec(out);
+      if (m === null) break;
+      let style = m[1];
+      for (const [cle, valeur] of CENTRAGE) {
+        if (new RegExp(`\\b${cle}:`).test(style)) continue;
+        style = style.replace(' }}', `, ${cle}: ${valeur} }}`);
+      }
+      out =
+        out.slice(0, m.index) +
+        `<Link href="/guides/nouveau" data-ecrire-guide="" ${style}>` +
+        `${m[2]}Écrire un guide</Link>` +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « GUIDES MANQUANTS » — UN PANNEAU BRANCHÉ SUR RIEN, ET UN BOUTON MORT      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ avant ce lot, sur le cadre produit : le panneau de la colonne de droite
+ * d'A03 dessinait « GUIDES MANQUANTS · Recherché sans résultat ce mois-ci », sa
+ * boucle `{(missing ?? []).map(…)}` — déjà une boucle, elle — et un
+ * `<button>Écrire l'un de ces guides</button>` SANS aucun geste. La boucle lisait
+ * `missing`, et `missing` était les quatre lignes d'exemple de la maquette.
+ *
+ * ── CE QUE CETTE ADAPTATION FAIT, ET CE QU'ELLE NE FAIT PAS ────────────────
+ *
+ * Elle ne touche PAS la boucle : la liaison existait déjà, et c'est l'ÉCRAN qui
+ * change de source (`useGuidesManquants`, `GET /search/zero-results`). Elle fait
+ * les deux choses qu'une donnée n'a pas le droit de faire, parce que ce sont des
+ * transformations de STRUCTURE :
+ *
+ *   1. LE PANNEAU DISPARAÎT QUAND LA LISTE EST VIDE. Sans cela, un dépôt neuf —
+ *      ou simplement un mois sans recherche infructueuse — aurait affiché un
+ *      encadré blanc portant un titre, un sous-titre et un bouton, sans une seule
+ *      ligne entre les deux : un cadre vide se lit comme un défaut d'affichage.
+ *      C'est le motif que `X01_SUGGESTIONS` emploie déjà, mot pour mot
+ *      (`{(… ?? []).length === 0 ? null : (…)}`), et `finDuDiv` compte les
+ *      niveaux plutôt que de chercher un `</div></div>` — la ligne d'exemple en
+ *      contient, et une coupe naïve tombait au milieu.
+ *
+ *      ⚠ ELLE CACHE AUSSI LE PANNEAU AVANT LA RÉPONSE, et c'est voulu : l'écran
+ *      passe `manquants ?? []`, donc `[]` tant que l'appel n'est pas revenu. Le
+ *      pourquoi est écrit sur `useGuidesManquants` — un chiffre faux affiché une
+ *      demi-seconde est lu, puis cru.
+ *
+ *   2. LE BOUTON DEVIENT UN LIEN vers `/guides/nouveau`. Même destination et même
+ *      geste que `A03_ECRIRE_UN_GUIDE` juste au-dessus, et les quatre
+ *      déclarations de centrage sont les SIENNES — un `<a>` est inline, donc sans
+ *      `display: flex` le `height: "40px"` serait ignoré et le bouton
+ *      s'affaisserait à la hauteur d'une ligne de texte.
+ *
+ * ── CE QU'ELLE NE PORTE PAS : LA REQUÊTE CHOISIE ──────────────────────────
+ *
+ * On aurait voulu que « Écrire l'un de ces guides » pré-remplisse le titre de
+ * l'éditeur avec la requête retenue. DEUX CHOSES MANQUENT, et aucune des deux ne
+ * s'invente :
+ *
+ *   · LA PLANCHE NE DESSINE AUCUNE SÉLECTION. Les lignes `{m.q}` / `{m.n}` sont
+ *     des `<div>` — pas des liens, pas des boutons, pas des cases — et le bouton
+ *     est UNIQUE pour toute la liste. Il n'y a donc pas de « requête choisie » :
+ *     en faire une demanderait de rendre chaque ligne cliquable, c'est-à-dire du
+ *     dessin neuf.
+ *   · `/guides/nouveau` NE LIT AUCUN PARAMÈTRE. Vérifié : la page ne fait que
+ *     monter `EditeurGuideEcran` en mode `{ kind: 'nouveau' }` et son en-tête dit
+ *     « elle n'a aucun paramètre d'adresse à lire ».
+ *
+ * Le bouton mène donc à l'éditeur, vide, comme son jumeau de la barre d'en-tête.
+ * REMONTÉ.
+ *
+ * ── CE QU'ELLE NE FAIT PAS NON PLUS : LE TÉLÉPHONE ───────────────────────
+ *
+ * ⚠ CE PANNEAU N'EST DESSINÉ QU'À 1 440 px. Compté sur le cadre produit : zéro
+ * occurrence de « MANQUANTS » dans `a03/mobile.generated.tsx`, et zéro lecture de
+ * `missing` dans sa ligne de destructuration. La planche de 390 px ne le dessine
+ * pas, et on ne l'invente pas — `applied: false` sur ce cadre est donc le bon
+ * résultat, et non un défaut (voir le piège 7 du mémo). REMONTÉ.
+ */
+const A03_GUIDES_MANQUANTS = {
+  screens: ['A03'],
+  nom: 'A03_GUIDES_MANQUANTS',
+  why: 'Le panneau « GUIDES MANQUANTS » disparaît quand il n’y a rien à montrer, et son bouton mène enfin à l’éditeur.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * L'ANCRE EST LE TITRE, PAS LA COQUILLE : `background: "#fff"` + rayon 22 +
+     * retrait 18 est la carte la plus courante de ce dossier (la colonne de droite
+     * d'A03 en porte déjà une seconde juste dessous). C'est « GUIDES MANQUANTS »
+     * qui désigne CE panneau, et le titre fait partie du motif pour cette raison.
+     */
+    const titre = '>GUIDES MANQUANTS</div>';
+    const iTitre = jsx.indexOf(titre);
+    if (iTitre === -1) return { jsx, applied: false };
+
+    const ouverture = jsx.lastIndexOf('<div style={{ background: "#fff"', iTitre);
+    if (ouverture === -1) return { jsx, applied: false };
+
+    const finPanneau = finDuDiv(jsx, ouverture);
+    if (finPanneau === -1) return { jsx, applied: false };
+
+    let panneau = jsx.slice(ouverture, finPanneau);
+
+    /**
+     * ── LE BOUTON DEVIENT UN LIEN ────────────────────────────────────────
+     *
+     * Le motif est ancré sur le LIBELLÉ dessiné, et `[^}]*` s'arrête à la première
+     * accolade fermante — c'est-à-dire à la fin du style, qui ne porte aucun
+     * gabarit. Le style part dans le `<Link>` tel quel : pas un pixel ne bouge.
+     */
+    const bouton = /<button (style=\{\{ [^}]*\}\})>Écrire l'un de ces guides<\/button>/;
+    const mb = bouton.exec(panneau);
+    if (mb === null) return { jsx, applied: false };
+
+    /** Les quatre déclarations d'`A03_ECRIRE_UN_GUIDE`, et pour la même raison. */
+    const CENTRAGE = [
+      ['display', '"flex"'],
+      ['alignItems', '"center"'],
+      ['justifyContent', '"center"'],
+      ['textDecoration', '"none"'],
+    ];
+    let style = mb[1];
+    for (const [cle, valeur] of CENTRAGE) {
+      if (new RegExp(`\\b${cle}:`).test(style)) continue;
+      style = style.replace(' }}', `, ${cle}: ${valeur} }}`);
+    }
+    panneau =
+      panneau.slice(0, mb.index) +
+      `<Link href="/guides/nouveau" data-manquants-ecrire="" ${style}>` +
+      `Écrire l'un de ces guides</Link>` +
+      panneau.slice(mb.index + mb[0].length);
+
+    const conditionne = `{(missing ?? []).length === 0 ? null : (${panneau})}`;
+    return { jsx: jsx.slice(0, ouverture) + conditionne + jsx.slice(finPanneau), applied: true };
+  },
+};
+
+const A03_ONGLETS_ET_FILTRES = {
+  screens: ['A03'],
+  nom: 'A03_ONGLETS_ET_FILTRES',
+  why: 'Les trois onglets de guides changent de vue, et les trois filtres filtrent — tous étaient des <span>.',
+  provides: ['guideFiltres'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    // ── 1. LES TROIS ONGLETS ──────────────────────────────────────────────
+    const onglet =
+      /<span (style=\{\{ padding: "9px 16px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", background: t\.bg, color: t\.fg \}\})>\{t\.label\}<\/span>/;
+    const mo = onglet.exec(out);
+    if (mo !== null) {
+      const ajout = resetBoutonManquant(mo[1]);
+      const style = ajout === '' ? mo[1] : mo[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, mo.index) +
+        `<button type="button" onClick={t.onPick} aria-pressed={t.on === true} ` +
+        `data-guide-onglet={t.label} ${style.replace(' }}', ', minHeight: "44px" }}')}>` +
+        '{t.label}</button>' +
+        out.slice(mo.index + mo[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 2. LES TROIS FILTRES ─────────────────────────────────────────────
+     *
+     * La boucle portait une CHAÎNE (`{f}`) — « Catégorie », « Pays », « Ville ».
+     * Elle porte maintenant un objet : son libellé, ses options et son geste. Le
+     * `<select>` se superpose à la pastille entière, transparent, pour que le
+     * dessin — chevron compris — reste celui de la maquette.
+     */
+    const filtre =
+      /<span (style=\{\{ display: "flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", fontSize: "12\.5px", fontWeight: "600" \}\})>\{f\}(<svg[^]*?<\/svg>)<\/span>/;
+    const mf = filtre.exec(out);
+    if (mf !== null) {
+      const dessin =
+        `<label ${mf[1].replace(' }}', ', position: "relative", cursor: "pointer", minHeight: "44px" }}')}>` +
+        '{f.libelle}' +
+        `${mf[2]}` +
+        '<select value={f.valeur} onChange={f.onChoisir} aria-label={f.libelle} ' +
+        'data-guide-filtre={f.cle} style={{ position: "absolute", inset: 0, opacity: 0, ' +
+        'width: "100%", height: "100%", cursor: "pointer", border: "none" }}>' +
+        '{(f.options ?? []).map((op) => (<option key={op.valeur} value={op.valeur}>{op.libelle}</option>))}' +
+        '</select></label>';
+      out = out.slice(0, mf.index) + dessin + out.slice(mf.index + mf[0].length);
+      pris += 1;
+    }
+
+    /**
+     * ── 3. LE CADRE DE 390 px NE DESSINE PAS LES MÊMES ──────────────────
+     *
+     * Le porteur, règle permanente : « veille toujours à ce que toutes les
+     * corrections soient aussi faites sur mobile ».
+     *
+     * Ses onglets sont un segment à deux états (`{t.on ? … : …}`, fond blanc
+     * contre transparent), et ses filtres sont des pastilles plus petites qui
+     * écrivent le chevron EN TEXTE (« Catégorie ▾ »). Deux dessins, deux motifs
+     * — un motif unique n'aurait attrapé qu'une planche sur deux, l'erreur que
+     * ce fichier a déjà payée trois fois.
+     */
+    const ongletMobile =
+      /<span (style=\{\{ flex: "1", textAlign: "center", padding: "8px 4px", borderRadius: "9px", fontSize: "12\.5px", fontWeight: "700", whiteSpace: "nowrap"[^}]*\}\})>\{t\.label\}<\/span>/g;
+    const mobiles = [...out.matchAll(ongletMobile)];
+    for (const m of mobiles.reverse()) {
+      const ajout = resetBoutonManquant(m[1]);
+      const style = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, m.index) +
+        /**
+         * `Boolean(t.on)` ET NON `t.on === true` : le cadre mobile dessine les
+         * deux états dans un ternaire, donc TypeScript réduit `t.on` à `true`
+         * dans une branche et à `false` dans l'autre — et refuse alors la
+         * comparaison comme « sans recouvrement ». Mesuré au compilateur.
+         */
+        `<button type="button" onClick={t.onPick} aria-pressed={Boolean(t.on)} ` +
+        `data-guide-onglet={t.label} ${style.replace(' }}', ', minHeight: "44px" }}')}>` +
+        '{t.label}</button>' +
+        out.slice(m.index + m[0].length);
+      pris += 1;
+    }
+
+    const filtreMobile =
+      /<span (style=\{\{ padding: "7px 12px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", fontSize: "12px", fontWeight: "600" \}\})>\{f\} ▾<\/span>/;
+    const mfm = filtreMobile.exec(out);
+    if (mfm !== null) {
+      const dessin =
+        `<label ${mfm[1].replace(' }}', ', position: "relative", display: "inline-flex", alignItems: "center", cursor: "pointer", minHeight: "44px" }}')}>` +
+        '{f.libelle} ▾' +
+        '<select value={f.valeur} onChange={f.onChoisir} aria-label={f.libelle} ' +
+        'data-guide-filtre={f.cle} style={{ position: "absolute", inset: 0, opacity: 0, ' +
+        'width: "100%", height: "100%", cursor: "pointer", border: "none" }}>' +
+        '{(f.options ?? []).map((op) => (<option key={op.valeur} value={op.valeur}>{op.libelle}</option>))}' +
+        '</select></label>';
+      out = out.slice(0, mfm.index) + dessin + out.slice(mfm.index + mfm[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const H01_FIL = {
+  screens: ['H01'],
+  nom: 'H01_FIL',
+  why: 'Les filtres du fil d’entraide filtrent, la demande s’ouvre et « Répondre » mène à la demande.',
+  provides: ['typesDemande'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    // ── 1. LES SIX FILTRES DE TYPE ────────────────────────────────────────
+    const pastille =
+      /<span (style=\{\{ padding: "8px 13px", borderRadius: "999px", fontSize: "12\.5px", fontWeight: "700", whiteSpace: "nowrap", background: ty\.fond, color: ty\.texte, border: `1px solid \$\{ty\.bord\}` \}\})>\{ty\.libelle\}<\/span>/;
+    const mp = pastille.exec(out);
+    if (mp !== null) {
+      const ajout = resetBoutonManquant(mp[1]);
+      const style = ajout === '' ? mp[1] : mp[1].replace(' }}', `, ${ajout} }}`);
+      out =
+        out.slice(0, mp.index) +
+        `<button type="button" onClick={ty.onChoisir} aria-pressed={ty.actif} ` +
+        /**
+         * ── UN FILTRE QUI NE PEUT RIEN FILTRER S'ÉTEINT ───────────────────────
+         *
+         * `disabled` vient de la donnée, et la raison est au SCHÉMA :
+         * `helpCanHelpQuerySchema` n'accepte que `limit` et `radiusKm`.
+         * `GET /help/can-help` N'A PAS de paramètre `type`. Dès que la portée
+         * « Vous pouvez aider » est choisie, cette rangée ne filtre plus rien — et
+         * une pastille allumée qui ne filtre rien est exactement le défaut que ce
+         * lot répare. Voir `filtresType` dans `screens/entraide/appels.ts` pour les
+         * trois sorties possibles et celle qui a été retenue.
+         *
+         * `disabled` et non `aria-disabled` : le contrôle ne doit pas seulement
+         * s'annoncer inapplicable, il doit sortir du parcours au clavier. Un
+         * `<button>` qu'on peut atteindre et qui ne répond pas est pire qu'un
+         * bouton absent.
+         */
+        `disabled={ty.desactive} ` +
+        `data-entraide-type={ty.cle} ${style.replace(' }}', ', minHeight: "44px" }}')}>` +
+        '{ty.libelle}</button>' +
+        out.slice(mp.index + mp[0].length);
+      pris += 1;
+    }
+
+    // ── 2. LE TITRE DE LA DEMANDE MÈNE À SON DÉTAIL ──────────────────────
+    const titre =
+      /<div (style=\{\{ fontSize: "16px", fontWeight: "700", letterSpacing: "-0\.2px", marginTop: "10px", color: d\.titreCouleur \}\})>\{d\.titre\}<\/div>/;
+    const mt = titre.exec(out);
+    if (mt !== null) {
+      out =
+        out.slice(0, mt.index) +
+        `<div ${mt[1]}>{d.href ? (<Link href={d.href} data-entraide-lien={d.href} ` +
+        'style={{ color: "inherit", textDecoration: "none" }}>{d.titre}</Link>) : d.titre}</div>' +
+        out.slice(mt.index + mt[0].length);
+      pris += 1;
+    }
+
+    // ── 3. « RÉPONDRE » ──────────────────────────────────────────────────
+    /**
+     * LA MAQUETTE ÉCRIT `height` DEUX FOIS sur ce bouton — 44 px puis 38 px — et
+     * le transcodeur garde la SECONDE, qui gagne en CSS. Le motif part donc du
+     * retrait, pas de la hauteur : c'est l'erreur qu'un motif trop littéral
+     * commet toujours, et elle a rendu zéro ici au premier essai.
+     */
+    const repondre =
+      /<button (style=\{\{ padding: "0 18px", borderRadius: "14px", background: d\.boutonFond[^}]*\}\})>Répondre<\/button>/;
+    const mr = repondre.exec(out);
+    if (mr !== null) {
+      out =
+        out.slice(0, mr.index) +
+        `<Link href={d.href ?? "/entraide"} data-entraide-repondre={d.href} ` +
+        `${mr[1].replace(' }}', ', textDecoration: "none" }}')}>Répondre</Link>` +
+        out.slice(mr.index + mr[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const H01_RESOLUE_MOBILE = {
+  screens: ['H01'],
+  nom: 'H01_RESOLUE_MOBILE',
+  why: 'L’encart « ça m’a aidé » d’une demande résolue existe aussi à 390 px : la planche ne le dessine qu’à 1440.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * LE PIED DE LA CARTE, et lui seul : `{d.ouverte ? (…) : null}` n'existe que
+     * dans la boucle des demandes. On pose l'encart juste après, là où le cadre
+     * d'ordinateur le dessine — à la place du pied, sous le même parent.
+     */
+    const ancre = '{d.ouverte ? (<>';
+    const at = jsx.indexOf(ancre);
+    if (at < 0) return { jsx, applied: false };
+
+    /** La fin de ce ternaire : `) : null}`, le premier qui suit. */
+    const fin = jsx.indexOf(') : null}', at);
+    if (fin < 0) return { jsx, applied: false };
+    const apres = fin + ') : null}'.length;
+
+    /**
+     * ── NE PAS DOUBLER CE QUE LA PLANCHE DESSINE DÉJÀ ──────────────────────
+     *
+     * Le cadre d'ordinateur PORTE l'encart, posé par `donnees` — on l'a mesuré :
+     * la première version l'ajoutait quand même, et la carte résolue affichait
+     * « ça m'a aidé » DEUX FOIS à 1440 px.
+     *
+     * Le repère est `{d.resolution ?`, l'interpolation que la déclaration y pose,
+     * et non l'attribut de cette adaptation : c'est le dessin de la maquette
+     * qu'on cherche, pas sa propre trace.
+     */
+    if (jsx.slice(apres, apres + 260).includes('{d.resolution ?')) {
+      return { jsx, applied: false };
+    }
+
+    const encart =
+      '{d.resolution ? (<div data-demande-resolue="" style={{ marginTop: "12px", ' +
+      'background: "#E3F0EB", borderRadius: "14px", padding: "10px 12px", ' +
+      'fontSize: "12.5px", color: "#0F5C48", fontWeight: "600" }}>{d.resolution}</div>) : null}';
+
+    return { jsx: jsx.slice(0, apres) + encart + jsx.slice(apres), applied: true };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES PASTILLES DE PORTÉE DU FIL — DEUX NATURES, UN SEUL DESSIN              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, devant la rangée défilante du cadre de 390 px : « Intègre donc. »
+ *
+ * La déclaration de `05-entraide.mjs` vient d'en faire une BOUCLE sur `portees`.
+ * Il reste à décider ce qu'est chaque pastille, et la maquette ne le dit pas : elle
+ * dessine les cinq à l'identique. Ce sont pourtant deux choses différentes, et la
+ * différence est dans l'API, pas dans le dessin :
+ *
+ *   · « Toutes » et « Vous pouvez aider » sont DEUX ROUTES — `GET /help` et
+ *     `GET /help/can-help` — et la seconde n'est pas un tri de la première : c'est
+ *     une liste calculée depuis les types d'aide déclarés au profil et les étapes
+ *     franchies. Changer de portée RECHARGE, sans quitter la page. C'est une
+ *     bascule, donc un `<button type="button">` avec `aria-pressed` : la seule
+ *     balise qui sache annoncer « enfoncé » ;
+ *   · « Mes demandes », « Mes réponses » et « Parrainage » sont des ADRESSES — les
+ *     mêmes que le panneau de gauche du cadre de 1440 px porte déjà en liens qui
+ *     marchent. Donc un `<a>`, via `next/link` : un `<button>` qui appellerait
+ *     `router.push` perdrait le clic milieu, l'ouverture dans un onglet et
+ *     l'aperçu de la destination dans la barre d'état.
+ *
+ * `p.href === null` EST LE DISCRIMINANT, et c'est un type, pas une convention :
+ * `PorteeFil` est une union où `onChoisir` n'existe QUE dans la branche
+ * `href: null`. Le ternaire ci-dessous est donc aussi ce qui laisse TypeScript
+ * vérifier qu'on ne lit pas une prise absente.
+ *
+ * ── LE MOTIF NE FIGE AUCUNE VALEUR DE DESSIN ────────────────────────────────
+ *
+ * Il part de `background: p.fond`, l'interpolation que la déclaration vient de
+ * poser, et PAS de `height: "36px"` : cette hauteur n'est écrite que par le cadre
+ * de 390 px, et un motif qui la nomme ne décrit qu'un seul cadre. Le dépôt a déjà
+ * payé ce piège sur le bouton « Répondre », dont la maquette écrit `height` deux
+ * fois — voir l'en-tête de H01_FIL.
+ *
+ * `[^<]*?` et non `[^}]*` ni `[\s\S]*?` : le style contient un gabarit
+ * `` border: `1px solid ${p.bord}` ``, donc des accolades, et un motif qui traverse
+ * les balises part d'un `<span>` bien plus haut. C'est la leçon déjà écrite dans
+ * `applyChipRow`, et elle vaut mot pour mot ici.
+ */
+const H01_PORTEES = {
+  screens: ['H01', 'H04'],
+  nom: 'H01_PORTEES',
+  why: 'Les pastilles de portée du fil deviennent de vrais contrôles : deux basculent la liste, les autres mènent où le panneau d’ordinateur mène.',
+  provides: [],
+  apply(jsx) {
+    const pastille = /<span (style=\{\{ [^<]*?background: p\.fond[^<]*?\}\})>\{p\.libelle\}<\/span>/;
+    const m = pastille.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    const ajout = resetBoutonManquant(m[1]);
+    const styleBouton = ajout === '' ? m[1] : m[1].replace(' }}', `, ${ajout} }}`);
+    /**
+     * UN `<a>` EST SOULIGNÉ PAR LE NAVIGATEUR, et la maquette ne dessine aucun
+     * soulignement sur ces pastilles. C'est le même ajout que H01_FIL fait sur
+     * « Répondre », pour la même raison.
+     */
+    const styleLien = m[1].replace(' }}', ', textDecoration: "none" }}');
+
+    const controle =
+      '{p.href === null ? (' +
+      `<button type="button" onClick={p.onChoisir} aria-pressed={p.actif} ` +
+      `data-entraide-portee={p.cle} ${styleBouton}>{p.libelle}</button>` +
+      ') : (' +
+      `<Link href={p.href} data-entraide-portee={p.cle} ${styleLien}>{p.libelle}</Link>` +
+      ')}';
+
+    return {
+      jsx: jsx.slice(0, m.index) + controle + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ÉTAT VIDE : SA PASTILLE EST UN `<div>`, ET C'EST LE SEUL CHEMIN OFFERT   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La déclaration de `05-entraide.mjs` vient de monter, dans les deux cadres de
+ * H01, l'état VIDE que la maquette dessine dans sa colonne « ÉTATS ». Son dernier
+ * élément est une pastille verte — « Publier une demande » — que la planche écrit
+ * en `<div>`. Comme les sept entrées du panneau de section, ce n'était pas un lien
+ * cassé : ce n'était pas un lien.
+ *
+ * ET C'EST L'ÉLÉMENT QUI COMPTE LE PLUS DE TOUT L'ÉCRAN DANS CE CAS. Un membre qui
+ * n'a déclaré aucun type d'aide reçoit de `GET /help/can-help` une liste vide avec
+ * `meta.reason = 'NO_CRITERIA'` : la pastille est le seul chemin vers son profil, et
+ * donc le seul moyen que cette liste cesse d'être vide. Un `<div>` ne mène nulle
+ * part, et le membre resterait devant un fil vide en concluant que la ville est
+ * calme.
+ *
+ * LE REPÈRE `data-entraide-vide` est posé sur le bloc entier, et il sert à le
+ * MESURER : le dépôt éprouve par la géométrie et les rôles, jamais par les classes
+ * CSS, et un état vide se compte comme les cartes qu'il remplace.
+ */
+const H01_ETAT_VIDE = {
+  screens: ['H01', 'H04'],
+  nom: 'H01_ETAT_VIDE',
+  why: 'L’état vide dessiné par la colonne « ÉTATS » reçoit son repère, et sa pastille devient le lien qui sort le membre de l’impasse.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    const bloc =
+      /<div (style=\{\{ textAlign: "center" \}\})><div (style=\{\{ fontSize: "14px", fontWeight: "700" \}\})>\{vide\.titre\}<\/div>/;
+    const mb = bloc.exec(out);
+    if (mb !== null) {
+      out =
+        out.slice(0, mb.index) +
+        `<div data-entraide-vide="" ${mb[1]}><div ${mb[2]}>{vide.titre}</div>` +
+        out.slice(mb.index + mb[0].length);
+      pris += 1;
+    }
+
+    const pastille =
+      /<div (style=\{\{ [^<]*?display: "inline-block"[^<]*?\}\})>\{vide\.lien\}<\/div>/;
+    const mp = pastille.exec(out);
+    if (mp !== null) {
+      out =
+        out.slice(0, mp.index) +
+        `<Link href={vide.href} data-entraide-vide-lien={vide.href} ` +
+        `${mp[1].replace(' }}', ', textDecoration: "none" }}')}>{vide.lien}</Link>` +
+        out.slice(mp.index + mp[0].length);
+      pris += 1;
+    }
+
+    return pris === 2 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ H04 · UNE SUGGESTION MÈNE À SA DEMANDE, DES DEUX CÔTÉS DE LA CARTE        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La déclaration de `05-entraide.mjs` vient de remplacer les deux cartes dessinées
+ * par une boucle sur `suggestions`. Il reste deux chemins à ouvrir, et ce sont
+ * EXACTEMENT les deux que H01_FIL a ouverts sur le fil — le titre et « Répondre ».
+ * Sans eux, la page afficherait les vraies demandes et n'en laisserait ouvrir
+ * aucune : un écran de suggestions dont on ne peut rien faire est pire qu'un écran
+ * de suggestions fausses, parce qu'il a l'air juste.
+ *
+ * ── POURQUOI UNE ADAPTATION DE PLUS, ET PAS H01_FIL ÉTENDU ──────────────────
+ *
+ * La variable de boucle n'est pas la même — `s` ici, `d` là-bas — et c'est ce qui
+ * borne chaque motif à sa liste. Étendre H01_FIL à H04 l'aurait fait travailler sur
+ * une variable qu'il ne connaît pas, et son premier bloc (les six filtres de type)
+ * aurait cherché une rangée que H04 ne dessine pas : la planche y met « Échéance »
+ * et « Récentes », deux tris que `helpCanHelpQuerySchema` n'accepte pas. Un motif
+ * trop large produit en silence exactement ce genre de dérive — c'est la leçon que
+ * `CITY_SEARCH` a déjà apprise à ce fichier.
+ *
+ * ⚠ « ÉCHÉANCE » ET « RÉCENTES » RESTENT DES DESSINS, et c'est dit plutôt que
+ * masqué : `helpCanHelpQuerySchema` n'accepte que `limit` et `radiusKm`, et le
+ * service trie « échéance proche d'abord » (§2.6) SANS option. « Échéance » est donc
+ * le seul tri qui existe, et « Récentes » n'a aucune route derrière. Les rendre
+ * cliquables demanderait un paramètre de tri côté serveur. REMONTÉ.
+ */
+const H04_SUGGESTIONS = {
+  screens: ['H04'],
+  nom: 'H04_SUGGESTIONS',
+  why: 'Une suggestion de « Vous pouvez aider » s’ouvre, et « Répondre » mène à la demande — la planche ne menait nulle part.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = 0;
+
+    const titre =
+      /<div (style=\{\{ fontSize: "16px", fontWeight: "700", letterSpacing: "-0\.2px", marginTop: "10px" \}\})>\{s\.titre\}<\/div>/;
+    const mt = titre.exec(out);
+    if (mt !== null) {
+      out =
+        out.slice(0, mt.index) +
+        `<div ${mt[1]}>{s.href ? (<Link href={s.href} data-entraide-lien={s.href} ` +
+        'style={{ color: "inherit", textDecoration: "none" }}>{s.titre}</Link>) : s.titre}</div>' +
+        out.slice(mt.index + mt[0].length);
+      pris += 1;
+    }
+
+    /**
+     * LE MOTIF PART DU RETRAIT, PAS DE LA HAUTEUR : la maquette écrit `height`
+     * DEUX FOIS sur ce bouton — 44 px puis 38 px — et le transcodeur garde la
+     * seconde, qui gagne en CSS. C'est le piège que H01_FIL a déjà payé, mot pour
+     * mot, et le fond est ici un LITTÉRAL (`#16785E`) parce que la planche ne
+     * dessine pas de variante.
+     */
+    const repondre =
+      /<button (style=\{\{ padding: "0 18px", borderRadius: "14px", background: "#16785E"[^}]*\}\})>Répondre<\/button>/;
+    const mr = repondre.exec(out);
+    if (mr !== null) {
+      out =
+        out.slice(0, mr.index) +
+        `<Link href={s.href ?? "/entraide/aider"} data-entraide-repondre={s.href} ` +
+        `${mr[1].replace(' }}', ', textDecoration: "none" }}')}>Répondre</Link>` +
+        out.slice(mr.index + mr[0].length);
+      pris += 1;
+    }
+
+    return pris === 2 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+const CARTES_VERS_DETAIL = {
+  screens: ['A03', 'E01', 'S01', 'J11'],
+  nom: 'CARTES_VERS_DETAIL',
+  why: 'Les cartes de guide, d’événement, d’annonce et de parcours mènent à leur détail — aucune ne menait nulle part.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * Chaque entrée : la boucle qui dessine les cartes, et la variable de ligne.
+     * Le `style` de la racine est relevé dans le JSX, jamais figé ici : les deux
+     * planches ne dessinent pas le même rayon ni le même retrait.
+     */
+    const CARTES = [
+      ['guides', 'g'],
+      ['evenements', 'ev'],
+      ['liste.annonces', 'a'],
+      ['actifs', 'p'],
+      ['aboutis', 'p'],
+    ];
+
+    let out = jsx;
+    let pris = 0;
+
+    for (const [liste, v] of CARTES) {
+      const ancre = `{(${liste} ?? []).map((${v}, ${v}Index) => (`;
+      const at = out.indexOf(ancre);
+      if (at < 0) continue;
+
+      /** Le `<Fragment key>` de la boucle, puis la racine de la carte. */
+      const apres = out.indexOf('>', out.indexOf('<Fragment', at)) + 1;
+      const racine = out.indexOf('<div style={{ ', apres);
+      if (racine !== apres) continue;
+      const finOuverture = out.indexOf('}}>', racine) + '}}>'.length;
+      const style = out.slice(racine + '<div style={{ '.length, finOuverture - '}}>'.length).trim();
+
+      const fin = finDuDiv(out, racine);
+      if (fin === -1) continue;
+
+      const dedans = out.slice(finOuverture, fin - '</div>'.length);
+      out =
+        out.slice(0, racine) +
+        `<CadreCliquable vers={${v}.href ?? null} style={{ ${style} }}>` +
+        dedans +
+        '</CadreCliquable>' +
+        out.slice(fin);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
 const K02_ONGLETS_CONTENU = {
   screens: ['K02'],
   nom: 'K02_ONGLETS_CONTENU',
   why: 'Le profil public montre ce que le membre a publié, en sept onglets, sur les deux planches.',
-  provides: ['contenuOnglets', 'contenus', 'contenuTitre', 'contenuVide', 'contenuEspece'],
+  provides: [
+    'contenuOnglets',
+    'contenus',
+    'contenuTitre',
+    'contenuVide',
+    'contenuEspece',
+    'contenuPublications',
+    'contenuGuides',
+    'contenuEvenements',
+    'contenuAnnonces',
+    'contenuParcours',
+  ],
   apply(jsx) {
     /**
      * ╔════════════════════════════════════════════════════════════════════╗
@@ -6632,6 +10466,59 @@ const K02_ONGLETS_CONTENU = {
      * module est un lot à part entière. Ce qui est livré est la ligne enrichie,
      * sur la grammaire dessinée. REMONTÉ au porteur.
      */
+    /**
+     * ╔════════════════════════════════════════════════════════════════════╗
+     * ║ L'ONGLET « FIL » MONTE LA VRAIE CARTE DU FIL                      ║
+     * ╚════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Sur le profil le fil d'actualité devrait s'afficher comme
+     * ceci » — la carte entière, avec sa pastille de type, son contexte, ses
+     * compteurs et sa rangée « J'ai vu · Commenter · Partager ».
+     *
+     * `CartePublication` est extraite du cadre du fil par le générateur
+     * (`composants:` dans la déclaration de A01) : c'est LA MÊME source, montée
+     * ici. La recopier aurait fait deux cartes, et la seconde aurait divergé au
+     * premier changement de maquette.
+     *
+     * CHAQUE PLANCHE MONTE LA SIENNE : le fil ne dessine pas la même carte à
+     * 1440 et à 390 px.
+     */
+    const CARTES_FIL = (cadre) =>
+      '<div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "12px 0" }}>' +
+      `{(contenuPublications ?? []).map((pub) => (<CartePublication${cadre} key={pub.postId} p={pub} />))}` +
+      '</div>';
+
+    /** Les guides du membre, dans la carte de `/guides` — même source, deux emplois. */
+    const CARTES_GUIDES = (cadre) =>
+      '<div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "12px 0" }}>' +
+      /**
+       * LA CLÉ EST `href`, PAS UN SLUG : `GuideCardView` n'en porte pas — la
+       * maquette ne dessine aucun slug, et ce dépôt refuse d'en fabriquer un à
+       * partir d'un titre. `href` est l'adresse que le serveur compose, donc
+       * unique par guide ; `title` servirait de repli si deux guides la
+       * partageaient, ce que `slug @unique` interdit en base.
+       */
+      `{(contenuGuides ?? []).map((gu) => (<CarteGuide${cadre} key={gu.href ?? gu.title} g={gu} />))}` +
+      '</div>';
+
+    /** Les événements organisés, dans la carte de `/agenda`. */
+    const CARTES_EVENEMENTS = (cadre) =>
+      '<div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "12px 0" }}>' +
+      `{(contenuEvenements ?? []).map((evp) => (<CarteEvenement${cadre} key={evp.titre} ev={evp} />))}` +
+      '</div>';
+
+    /** Les annonces, dans la carte de `/services/logement`. */
+    const CARTES_ANNONCES = (cadre) =>
+      '<div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "12px 0" }}>' +
+      `{(contenuAnnonces ?? []).map((an) => (<CarteAnnonce${cadre} key={an.titre} a={an} />))}` +
+      '</div>';
+
+    /** Ses parcours publics, dans la carte de `/parcours`. */
+    const CARTES_PARCOURS = (cadre) =>
+      '<div style={{ display: "flex", flexDirection: "column", gap: "12px", padding: "12px 0" }}>' +
+      `{(contenuParcours ?? []).map((pa, paRang) => (<CarteParcours${cadre} key={paRang} p={pa} />))}` +
+      '</div>';
+
     const GRILLE_STORIES =
       '<div style={{ display: "flex", flexWrap: "wrap", gap: "10px", padding: "12px 0" }}>' +
       '{(contenus ?? []).map((ct) => (' +
@@ -6698,7 +10585,7 @@ const K02_ONGLETS_CONTENU = {
           );
         out =
           out.slice(0, iB) +
-          `{contenuEspece === "STORY" ? (${GRILLE_STORIES}) : (<>${dedans}</>)}` +
+          `{contenuEspece === "STORY" ? (${GRILLE_STORIES}) : contenuEspece === "POST" ? (${CARTES_FIL('Desktop')}) : contenuEspece === "GUIDE" ? (${CARTES_GUIDES('Desktop')}) : contenuEspece === "EVENT" ? (${CARTES_EVENEMENTS('Desktop')}) : contenuEspece === "SERVICE" ? (${CARTES_ANNONCES('Desktop')}) : contenuEspece === "JOURNEY" ? (${CARTES_PARCOURS('Desktop')}) : (<>${dedans}</>)}` +
           out.slice(finB);
       }
       const fin = finDuDiv(out, at);
@@ -6729,7 +10616,7 @@ const K02_ONGLETS_CONTENU = {
       RANGEE +
       '<div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", ' +
       'color: "#8A958F" }}>{contenuTitre}</div>' +
-      `{contenuEspece === "STORY" ? (${GRILLE_STORIES}) : (<>` +
+      `{contenuEspece === "STORY" ? (${GRILLE_STORIES}) : contenuEspece === "POST" ? (${CARTES_FIL('Mobile')}) : contenuEspece === "GUIDE" ? (${CARTES_GUIDES('Mobile')}) : contenuEspece === "EVENT" ? (${CARTES_EVENEMENTS('Mobile')}) : contenuEspece === "SERVICE" ? (${CARTES_ANNONCES('Mobile')}) : contenuEspece === "JOURNEY" ? (${CARTES_PARCOURS('Mobile')}) : (<>` +
       '{(contenus ?? []).map((ct) => (' +
       '<a key={ct.id} href={ct.href} data-profil-contenu={ct.id} ' +
       'style={{ display: "flex", justifyContent: "space-between", alignItems: "center", ' +
@@ -10269,6 +14156,3663 @@ function adaptButtons(jsx, section) {
   return { jsx: out, applied };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   A07 ET A10 — « CRÉER UN RÉSEAU, ET LE REJOINDRE »
+
+   MESURÉ AVANT D'ÉCRIRE, sur les cadres produits : les quatre pages du module
+   Réseaux chargent de vraies données et l'API en expose trente routes, mais sur
+   les trente-trois cadres transcodés il n'y avait ZÉRO champ et ZÉRO geste. Tout
+   était dessin. Les deux écrans de ce lot sont les deux portes du module :
+
+     · A10 dessine le formulaire de création et ne pouvait rien envoyer — pas un
+       `<input>`, pas un `onClick`, et son bouton « Créer le réseau » (dessiné une
+       fois par planche) était un `<button>` nu ;
+     · A07 dessine « Rejoindre » / « Demander » / « Ouvrir » sur chaque carte de
+       « Découvrir » et ne faisait rien ; ses cartes de réseau ne menaient nulle
+       part, et « Créer un réseau d'intérêt » non plus.
+
+   ── CE QUE LA MAQUETTE NE DESSINE PAS, ET QUI EST REMONTÉ ───────────────────
+
+     · AUCUN CHOIX DE CATÉGORIE sur A10, sur aucune des deux planches — alors que
+       `createCommunitySchema` l'exige (`category`, liste FERMÉE de onze valeurs).
+       Sans lui, le formulaire ne peut pas être envoyé du tout. Le dessin est donc
+       EMPRUNTÉ à la même maquette : la pastille « Catégorie ▾ » que
+       `docs/template/03 Accueil v2.dc.html` dessine dans la planche MOB d'A03
+       (« Guides », rangée de filtres), avec son conteneur. Rien n'est inventé —
+       ni couleur, ni libellé, ni géométrie — et les onze libellés viennent de
+       `COMMUNITY_CATEGORY_LABELS`, pas de nous ;
+     · AUCUN GESTE « QUITTER » sur A07 : les cartes de « Mes réseaux » ne
+       dessinent qu'une pastille « En sourdine » et un compteur de non-lus.
+       `POST /communities/:id/leave` reste donc non branché sur cet écran, et
+       c'est la maquette qui le décide ;
+     · AUCUN « Voir » sur A07 : la seule occurrence du mot dans la section est
+       « Voir mon profil public », dans la carte du rail de gauche — un lien du
+       chrome, déjà branché. Les « Voir » du module sont dans A08T, hors lot ;
+     · la COUVERTURE (« Ajouter une couverture », les deux planches) demande un
+       `POST /media` — un autre module, et une capacité N1 distincte. Non branché.
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A10 · LA DESCRIPTION EST UNE ZONE DE TEXTE, PAS UNE LIGNE                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La planche de 1 440 px dessine un bloc de 84 px de haut portant une phrase
+ * d'exemple sur deux lignes. `FIELD_ADAPTATIONS` en aurait fait un `<input>`,
+ * c'est-à-dire une ligne unique qui défile horizontalement — le dessin promet le
+ * contraire. C'est donc un `<textarea>`, par le même appareil que les quatre
+ * zones de A14 : le reset est FILTRÉ par `resetFiltre`, pour que la maquette
+ * reste SEULE sur les propriétés qu'elle déclare (`border`, `padding`, `color`).
+ *
+ * LE CADRE DE 390 PX NE DESSINE PAS CE CHAMP, et ce n'est pas un oubli de
+ * déclaration : la planche mobile passe du nom directement à la bascule de
+ * visibilité. `description` est facultatif dans `createCommunitySchema`, donc un
+ * réseau créé depuis un téléphone part sans description — c'est ce que la
+ * maquette décide. L'adaptation ne s'applique donc qu'à un cadre sur deux, et le
+ * `missed` du journal est attendu.
+ */
+const A10_DESCRIPTION = (() => {
+  const STYLE =
+    'height: "84px", borderRadius: "14px", border: "1px solid #E6EBE9", ' +
+    'padding: "12px 14px", fontSize: "14px", lineHeight: "1.5", color: "#5D6B66"';
+  const EXEMPLE =
+    'Partager contacts, statuts juridiques et bons plans pour créer son activité.';
+  return {
+    screens: ['A10'],
+    nom: 'A10_DESCRIPTION',
+    why: 'La description du réseau devient une zone de texte — c’était un <div> portant la phrase d’exemple.',
+    provides: ['descriptionValue', 'onDescriptionChange', 'descriptionMax'],
+    apply(jsx) {
+      const cible = `<div style={{ ${STYLE} }}>${EXEMPLE}</div>`;
+      const at = jsx.indexOf(cible);
+      if (at < 0) return { jsx, applied: false };
+      const champ =
+        '<textarea value={descriptionValue} onChange={onDescriptionChange} ' +
+        `placeholder=${JSON.stringify(EXEMPLE)} maxLength={descriptionMax} ` +
+        'aria-label="Description du réseau" ' +
+        `style={{ ${resetFiltre(STYLE).join(', ')}, ${STYLE} }} />`;
+      return { jsx: jsx.slice(0, at) + champ + jsx.slice(at + cible.length), applied: true };
+    },
+  };
+})();
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A10 · LA CATÉGORIE — LE SEUL DESSIN EMPRUNTÉ DE CE LOT                    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `createCommunitySchema` exige `category`, et AUCUNE des deux planches de A10 ne
+ * dessine de quoi la choisir. Relevé, section par section : A10 dessine une
+ * couverture, un nom, une description (ordinateur seulement), une visibilité et
+ * une liste d'invitations. Rien d'autre. Sans catégorie, `POST /communities`
+ * répond `400 VALIDATION_FAILED` quoi qu'on tape : le formulaire entier était
+ * donc inenvoyable, et pas seulement incomplet.
+ *
+ * ── D'OÙ VIENT LE DESSIN, EXACTEMENT ────────────────────────────────────────
+ *
+ * De la MÊME maquette, `docs/template/03 Accueil v2.dc.html`, planche MOB (les
+ * versions mobiles), rangée de filtres de A03 « Guides » :
+ *
+ *   <div style="display:flex;gap:6px;flex-shrink:0">
+ *     <span style="padding:7px 12px;border-radius:999px;background:#fff;
+ *                  border:1px solid #E6EBE9;font-size:12px;font-weight:600">
+ *       Catégorie ▾</span>…
+ *
+ * Conteneur et pastille sont recopiés tels quels, chevron compris — c'est ce que
+ * CETTE maquette dessine quand il faut choisir une catégorie. Les ONZE libellés
+ * viennent de `COMMUNITY_CATEGORY_LABELS` (contrat partagé), pas d'ici.
+ *
+ * ── `backgroundColor` ET NON `background` ───────────────────────────────────
+ *
+ * React réécrit le raccourci `background` et remet `background-clip` à
+ * `border-box`. Une couleur de fond posée par adaptation s'écrit donc en
+ * `backgroundColor` — la pastille garde son blanc, le dessin ne bouge pas.
+ *
+ * ── LE MENU EST NATIF, TRANSPARENT, POSÉ SUR LA PASTILLE ────────────────────
+ *
+ * Le même idiome que les sélecteurs dessinés de P01 et O02 : on ne dessine
+ * AUCUNE liste, on ne choisit AUCUNE présentation, et le contrôle est réel au
+ * clavier comme au pouce. La surface cliquée est le dessin lui-même.
+ */
+const A10_CATEGORIE = (() => {
+  /**
+   * Le fragment emprunté, chevron compris, plus le menu natif par-dessus.
+   *
+   * `position: relative` est posé SUR LA PASTILLE et non sur son conteneur, pour
+   * que la surface cliquée soit la pastille elle-même : le conteneur emprunté
+   * (`display:flex`) occupe toute la largeur de la carte, et un menu calé sur lui
+   * aurait rendu cliquable une bande vide de plusieurs centaines de pixels. C'est
+   * la seule déclaration ajoutée au dessin emprunté, et elle ne déplace rien.
+   */
+  const PILULE =
+    '<div style={{ display: "flex", gap: "6px", flexShrink: "0" }}>' +
+    '<span style={{ padding: "7px 12px", borderRadius: "999px", backgroundColor: "#fff", ' +
+    'border: "1px solid #E6EBE9", fontSize: "12px", fontWeight: "600", ' +
+    'position: "relative" }}>{categorieLabel} ▾' +
+    '<select value={categorie} onChange={onCategorie} aria-label="Catégorie du réseau" ' +
+    'style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", ' +
+    'opacity: 0, cursor: "pointer", font: "inherit", border: "none", appearance: "none" }}>' +
+    '{(categorieOptions ?? []).map((c) => (<option key={c.value} value={c.value}>{c.label}</option>))}' +
+    '</select></span></div>';
+  return {
+    screens: ['A10'],
+    nom: 'A10_CATEGORIE',
+    why: 'Le choix de catégorie, exigé par `createCommunitySchema` et dessiné nulle part sur A10 : pastille empruntée à la planche MOB d’A03.',
+    provides: ['categorie', 'categorieLabel', 'categorieOptions', 'onCategorie'],
+    apply(jsx) {
+      /**
+       * ORDINATEUR — juste AVANT « Visibilité », avec l'étiquette que CE cadre
+       * emploie pour « Nom » et « Description » (12,5 px / 700, 6 px dessous).
+       * Le `marginBottom` de 8 px distingue l'étiquette de « Visibilité » des
+       * deux autres : c'est lui qui borne l'ancre à un seul endroit.
+       */
+      const visibilite =
+        '<div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "8px" }}>Visibilité</div>';
+      const iVis = jsx.indexOf(visibilite);
+      if (iVis !== -1) {
+        const bloc =
+          '<div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "6px" }}>' +
+          `Catégorie</div>${PILULE}</div>`;
+        return { jsx: jsx.slice(0, iVis) + bloc + jsx.slice(iVis), applied: true };
+      }
+      /**
+       * TÉLÉPHONE — juste avant la bascule de visibilité, et SANS étiquette : la
+       * planche de 390 px n'en écrit aucune, pas même sur le champ du nom. En
+       * ajouter une ici ferait diverger les deux planches.
+       */
+      const bascule =
+        '<div style={{ display: "flex", gap: "4px", background: "#EEF2F0", ' +
+        'borderRadius: "12px", padding: "4px", flexShrink: "0" }}>';
+      const iBas = jsx.indexOf(bascule);
+      if (iBas === -1) return { jsx, applied: false };
+      return { jsx: jsx.slice(0, iBas) + PILULE + jsx.slice(iBas), applied: true };
+    },
+  };
+})();
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A10 · « RECHERCHER PAR PSEUDO » FILTRE VRAIMENT — UN CADRE SUR DEUX        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La planche de 1 440 px dessine, au-dessus des quatre candidats, un champ
+ * arrondi de 46 px portant une loupe et le texte « Rechercher par pseudo ». En
+ * `<div>` : on ne pouvait rien y taper. Avec la liste des contacts enfin peuplée
+ * (`useContactsInvitables`), un membre qui en a cinquante devait les parcourir
+ * tous — le champ est dessiné précisément pour ça.
+ *
+ * ── LE DESSIN EST GARDÉ ENTIER, LOUPE COMPRISE ──────────────────────────────
+ *
+ * Le `<div>` extérieur reste : c'est lui qui porte le fond, le rayon et l'écart
+ * de 10 px entre la loupe et le texte. Seul le NŒUD DE TEXTE devient un
+ * `<input>`, posé à la place qu'il occupait — après la loupe — et le texte de la
+ * maquette devient son `placeholder`. Le champ ne déclare AUCUNE couleur ni
+ * aucune taille de sa propre initiative : `font: "inherit"` et
+ * `color: "inherit"` prennent les 13,5 px et le `#8A958F` du conteneur dessiné.
+ * La maquette reste donc seule à décider du dessin, et aucune clé n'est écrite
+ * deux fois dans le même style (piège 8).
+ *
+ * `flex: "1"` et `minWidth: "0"` sont les deux seules déclarations AJOUTÉES, et
+ * elles ne déplacent rien : le texte était un nœud nu dans un conteneur `flex`,
+ * donc il occupait déjà la place restante ; un `<input>` sans elles prendrait sa
+ * largeur intrinsèque de vingt caractères et laisserait un trou à droite.
+ *
+ * ⚠ LA PLANCHE DE 390 PX NE DESSINE PAS CE CHAMP — vérifié dans la maquette, pas
+ * supposé : le téléphone passe de la pastille « 3 sur 5 » et de sa barre
+ * directement aux quatre lignes de candidats. Le `missed` du journal est donc
+ * ATTENDU sur le cadre mobile (piège 7), et AUCUN champ n'y est ajouté : la
+ * planche mobile dessine bien la liste ET ses boutons « Inviter », donc on y
+ * choisit ses invités en parcourant, ce qui est jouable. Inventer une barre de
+ * recherche sur le téléphone serait dessiner à la place du porteur. REMONTÉ.
+ */
+const A10_RECHERCHE = {
+  screens: ['A10'],
+  nom: 'A10_RECHERCHE',
+  why: 'Le champ « Rechercher par pseudo » filtre la liste des candidats : c’était un <div> inerte sur la planche d’ordinateur.',
+  provides: ['rechercheValue', 'onRechercheChange'],
+  apply(jsx) {
+    /**
+     * L'ANCRE EST LA LOUPE SUIVIE DU TEXTE, et non le texte seul : « Rechercher »
+     * ouvre aussi la barre haute de cet écran (« Rechercher dans la diaspora »),
+     * et un motif sur le mot nu pourrait un jour attraper l'autre. Le style du
+     * conteneur est capturé pour être RECOPIÉ tel quel, jamais comparé — les
+     * mesures d'un cadre à l'autre ne se ressemblent pas (piège 1).
+     *
+     * `(?!<div)` dans la classe répétée est la même garde que `CITY_SEARCH`
+     * emploie : sans elle, `[\s\S]*?` traverserait la fin du champ et avalerait
+     * le `<div>` suivant.
+     */
+    const motif =
+      /(<div style=\{\{ [^}]*\}\}>(?:(?!<div)[\s\S])*?m20 20-3\.5-3\.5(?:(?!<div)[\s\S])*?<\/svg>)Rechercher par pseudo<\/div>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    /**
+     * LE MÊME RESET QUE `CITY_SEARCH`, au caractère près — et c'est délibéré :
+     * c'est l'idiome du dépôt pour « un champ posé DANS une pastille dessinée ».
+     * `font: "inherit"` et `color: "inherit"` prennent les 13,5 px et le `#8A958F`
+     * que le conteneur déclare, donc la maquette reste seule à décider du dessin ;
+     * `minWidth: "0"` évite qu'un enfant de flex refuse de rétrécir sous sa
+     * largeur de contenu (le défaut mesuré sur `X01_CHAMP_MOBILE` : 323 px dans
+     * une fenêtre de 320).
+     */
+    const champ =
+      '<input type="search" value={rechercheValue} onChange={onRechercheChange} ' +
+      'placeholder="Rechercher par pseudo" aria-label="Rechercher par pseudo" ' +
+      'autoComplete="off" ' +
+      'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+      'font: "inherit", color: "inherit", outline: "none", padding: 0 }} />';
+    return {
+      jsx: `${jsx.slice(0, m.index)}${m[1]}${champ}</div>${jsx.slice(m.index + m[0].length)}`,
+      applied: true,
+    };
+  },
+};
+
+/**
+ * A10 · LES TROIS VISIBILITÉS SE CHOISISSENT.
+ *
+ * Deux dessins pour un même geste, et c'est le piège que ce fichier paie le plus
+ * souvent : l'ordinateur dessine trois CARTES à radio (fond, bordure et pastille
+ * portés par la donnée), le téléphone une BASCULE de trois `<span>` dont l'actif
+ * porte un fond et l'inactif une couleur. Un seul motif n'aurait pris qu'une
+ * planche, et l'autre serait restée muette sans que rien ne le dise.
+ *
+ * `aria-pressed` dit l'état retenu — le même attribut que `applyChipRow` emploie
+ * déjà ici pour ce sens. Le geste porte l'INDEX, qui est ce que
+ * `useCreation.choisirVisibilite` attend ; le libellé, lui, est dans la donnée.
+ */
+const A10_VISIBILITE = {
+  screens: ['A10'],
+  nom: 'A10_VISIBILITE',
+  why: 'Les trois visibilités se choisissent : elles étaient dessinées, sur les deux planches, sans aucun geste.',
+  provides: ['onVisibilite'],
+  apply(jsx) {
+    let applique = false;
+    let out = jsx;
+
+    // ── Les CARTES de l'ordinateur ────────────────────────────────────────
+    const carte =
+      /<div (style=\{\{ [^}]*background: v\.bg, border: v\.bd[^}]*\}\})>/.exec(out);
+    if (carte !== null) {
+      const fin = finDuDiv(out, carte.index);
+      if (fin !== -1) {
+        const style = carte[1].replace(
+          ' }}',
+          `, ${resetBoutonManquant(carte[1])}, textAlign: "left", width: "100%" }}`,
+        );
+        const contenu = out.slice(carte.index + carte[0].length, fin - '</div>'.length);
+        out =
+          out.slice(0, carte.index) +
+          `<button type="button" onClick={() => onVisibilite(vIndex)} aria-pressed={v.on} ${style}>` +
+          contenu +
+          '</button>' +
+          out.slice(fin);
+        applique = true;
+      }
+    }
+
+    // ── La BASCULE du téléphone : deux variantes sous `<sc-if>` ───────────
+    /**
+     * AUCUN `width` AJOUTÉ ICI, contrairement aux cartes de l'ordinateur : ces
+     * trois `<span>` sont des ÉLÉMENTS FLEX qui déclarent déjà `flex: "1"`, donc
+     * leur `flex-basis` décide de la largeur et un `width` serait inerte — du
+     * bruit dans un style qu'on recopie verbatim. `textAlign: "center"` est, lui,
+     * dessiné par la maquette : le reset ne le touche pas.
+     */
+    const bascule = /<span (style=\{\{ flex: "1", textAlign: "center",[^}]*\}\})>\{v\.t\}<\/span>/g;
+    out = out.replace(bascule, (_tout, style) => {
+      applique = true;
+      /**
+       * ── LE FOND DU NAVIGATEUR, QUI MANQUAIT À `resetBoutonManquant` ────────
+       *
+       * MESURÉ sur le cadre produit : la variante INACTIVE de la bascule ne
+       * déclare QUE `color:#5D6B66`. Un `<button>` sans fond déclaré reçoit le
+       * `buttonface` du navigateur — un gris — là où le `<span>` dessiné était
+       * TRANSPARENT sur le `#EEF2F0` de la piste. La bascule aurait eu trois
+       * pastilles peintes au lieu d'une.
+       *
+       * `backgroundColor` et non `background` : React réécrit le raccourci et
+       * remet `background-clip` à `border-box` (piège 9). Et seulement quand la
+       * maquette n'en déclare pas — la variante ACTIVE écrit `#fff`, qui gagne.
+       */
+      const fond = /\bbackground(Color)?:/.test(style) ? '' : ', backgroundColor: "transparent"';
+      return (
+        '<button type="button" onClick={() => onVisibilite(vIndex)} aria-pressed={v.on} ' +
+        `${style.replace(' }}', `, ${resetBoutonManquant(style)}${fond} }}`)}>{v.t}</button>`
+      );
+    });
+
+    return { jsx: out, applied: applique };
+  },
+};
+
+/**
+ * A10 · « Inviter » / « Invité·e » BASCULE VRAIMENT.
+ *
+ * Les deux planches dessinent le même contrôle avec des mesures différentes —
+ * 34 px de haut contre 32, 14 px de retrait contre 12, 12,5 px de corps contre
+ * 12 — et la boucle ne porte pas le même nom (`m` sur l'ordinateur, `i` sur le
+ * téléphone). Le motif s'ancre donc sur la STRUCTURE : les deux prises de couleur
+ * du bouton suivies de son libellé, qui sont la signature du geste, et le style
+ * est recopié tel qu'il est trouvé. C'est ce qui fait tenir la même déclaration
+ * sur les deux cadres.
+ *
+ * `handle` ET NON L'INDEX : `POST /communities` attend `inviteHandles`, une liste
+ * de HANDLES. Retrouver le pseudo par le rang de la ligne se désynchroniserait au
+ * premier filtre de recherche.
+ *
+ * ⚠ CE GESTE EST BRANCHÉ SUR UNE LISTE VIDE, et c'est remonté : aucune route du
+ * module ne rend les CONTACTS du lecteur (`GET /communities/:id/members` liste
+ * les membres d'un réseau, pas les relations). Les candidats vivent dans le
+ * module `connections`. Le geste est donc juste et sans effet jusqu'à ce que
+ * cette liste arrive — ce qui est préférable à cinq noms inventés.
+ */
+const A10_INVITER = {
+  screens: ['A10'],
+  nom: 'A10_INVITER',
+  why: 'Le bouton « Inviter » d’une ligne de candidat bascule l’invitation : il était dessiné, inerte, sur les deux planches.',
+  provides: ['onInviter'],
+  apply(jsx) {
+    const motif =
+      /<span style=\{\{ ([^}]*background: ([mi])\.btnBg, color: \2\.btnFg) \}\}>\{\2\.btn\}<\/span>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const [, style, as] = m;
+    const bouton =
+      `<button type="button" onClick={() => onInviter(${as}.handle)} ` +
+      `aria-pressed={${as}.invited} ` +
+      `style={{ ${style}, ${resetBoutonManquant(style)} }}>{${as}.btn}</button>`;
+    return {
+      jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A10 · « CRÉER LE RÉSEAU » — DEUX BOUTONS, UN PAR PLANCHE                  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * LA MAQUETTE NE DESSINE QUE L'ÉTAT ÉTEINT, et c'est une information : le
+ * bouton est peint `#CFE3DA` sur `#5D8A79`, avec « Invitez encore 2 membres »
+ * juste dessous. Elle montre donc le formulaire INCOMPLET, et ne dit rien de
+ * l'autre état.
+ *
+ * Les deux couleurs de l'état ALLUMÉ sont donc EMPRUNTÉES, et à l'écran voisin du
+ * même module : A07 peint son action principale « Créer un réseau d'intérêt » en
+ * `#16785E` sur `#fff`. C'est la paire d'action primaire de cette maquette, elle
+ * est conforme AA, et aucune couleur n'est assombrie. Elles voyagent par la
+ * donnée (`creerFond`, `creerEncre`), de sorte que le cadre ne décide de rien.
+ *
+ * ── `disabled` N'AUTORISE RIEN ──────────────────────────────────────────────
+ *
+ * `creerPret` est une commodité d'écriture : la règle des cinq invitations est
+ * dans `createCommunitySchema`, et le serveur la revérifie. Éteindre le bouton
+ * évite un aller-retour dont la seule issue serait un refus — c'est de
+ * l'explication, pas de l'autorisation. La capacité `community.create` (N2), elle,
+ * est portée par `GardeNiveau` sur la page : le front PRÉVIENT, il n'ouvre pas.
+ */
+const A10_CREER = {
+  screens: ['A10'],
+  nom: 'A10_CREER',
+  why: 'Le bouton « Créer le réseau » envoie POST /communities : il était un <button> nu sur les deux planches.',
+  provides: ['onCreer', 'creerPret', 'creerFond', 'creerEncre'],
+  apply(jsx) {
+    const motif =
+      /<button style=\{\{ ([^}]*background: "#CFE3DA", color: "#5D8A79"[^}]*) \}\}>Créer le réseau<\/button>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style = m[1]
+      .replace('background: "#CFE3DA"', 'backgroundColor: creerFond')
+      .replace('color: "#5D8A79"', 'color: creerEncre');
+    const bouton =
+      '<button type="button" onClick={onCreer} disabled={!creerPret} ' +
+      `style={{ ${style}, cursor: creerPret ? "pointer" : "default" }}>Créer le réseau</button>`;
+    return {
+      jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * A10 · LA CROIX DE L'EN-TÊTE MOBILE FERME LE FORMULAIRE.
+ *
+ * Même tracé, même geste et même appareil que `A14_FERMER` : `M18 6 6 18M6 6l12 12`
+ * dessiné en `<span>`, donc ni bouton ni lien. Le cadre d'ordinateur n'en dessine
+ * aucune — la page y est une colonne de cartes, pas une feuille — d'où un
+ * `missed` attendu sur un cadre sur deux.
+ */
+const A10_FERMER = {
+  screens: ['A10'],
+  nom: 'A10_FERMER',
+  why: 'La croix de l’en-tête mobile ferme le formulaire : elle était dessinée, jamais branchée.',
+  provides: ['onFermer'],
+  apply(jsx) {
+    const pattern =
+      /<span (style=\{\{ [^}]*\}\})>(<svg[^>]*><path d="M18 6 6 18M6 6l12 12" \/><\/svg>)<\/span>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const bouton =
+      '<button type="button" onClick={onFermer} aria-label="Fermer" ' +
+      `${m[1].replace('style={{ ', `style={{ ${RESET_BOUTON_SANS_BORDURE}, padding: 0, `)}>${m[2]}</button>`;
+    return {
+      jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T · LE FORMULAIRE D'ANNONCE — QUATRE CONTRÔLES, DEUX PLANCHES          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « L'annonce : tous les champs doivent être branchés. »
+ *
+ * MESURÉ AVANT, et ce n'était PAS un simple oubli de branchement : la planche
+ * dessine QUATRE contrôles — un titre, un corps, « Épingler en haut du fil »,
+ * « Notifier les 890 membres » — et `createAnnouncementSchema` n'acceptait que
+ * `{ body }`, la table `community_announcements` ne portant ni titre ni
+ * épinglage. Deux des quatre n'avaient nulle part où s'écrire. L'écart est fermé
+ * de la base à l'écran (migration `annonce_titre_et_epinglage`) ; cette
+ * transformation est le dernier maillon.
+ *
+ * ── LES ANCRES SONT STRUCTURELLES, JAMAIS DES MESURES (PIÈGE 1) ─────────────
+ *
+ * Les deux planches ne dessinent PAS les mêmes valeurs, et c'est relevé cadre par
+ * cadre :
+ *
+ *   | contrôle          | 1 036 px                    | 390 px                 |
+ *   |-------------------|-----------------------------|------------------------|
+ *   | titre             | `height: 48px`, 14,5 px     | `height: 46px`, 14 px  |
+ *   | corps             | `minHeight: 96px`, 14 px    | `minHeight: 86px`, 13,5|
+ *   | piste des bascules| + `flexShrink: "0"`         | sans `flexShrink`      |
+ *   | « Annuler »       | dessiné                     | ABSENT                 |
+ *
+ * Aucune de ces mesures n'entre dans un motif : le titre s'ancre sur sa BORDURE
+ * VERTE (`1.5px solid #16785E`, la seule du cadre) suivie du texte d'exemple, le
+ * corps sur sa bordure grise, et chaque interrupteur sur SON LIBELLÉ — ce qui est
+ * en plus la seule façon de les distinguer l'un de l'autre, et de ne pas attraper
+ * les deux pistes de la planche « Gérer », qui en dessine exactement deux aussi
+ * (relevé : `admingerer.generated.tsx` en porte 2, autant que ce cadre-ci).
+ *
+ * ── LES DEUX ÉTATS DES BASCULES VIENNENT TOUS LES DEUX DE LA MAQUETTE ───────
+ *
+ * Rien n'est inventé ni assombri : la maquette dessine l'allumé en `#16785E` avec
+ * la pastille à `left: 23px` (dix fois dans ce fichier) ET l'éteint en `#CBD5D1`
+ * avec la pastille à `left: 3px` (trois fois). Les deux paires sont reprises
+ * telles quelles.
+ *
+ * ── CE QUI RESTE DESSINÉ, ET POURQUOI ──────────────────────────────────────
+ *
+ *   · « Jusqu'au 14 mars », sous « Épingler ». La colonne ajoutée est un
+ *     `pinned_at` — DEPUIS quand — et la planche ne dessine aucun sélecteur de
+ *     date pour choisir un JUSQU'À quand. Lier cette ligne demanderait un
+ *     contrôle que la maquette n'a pas. REMONTÉ ;
+ *   · la croix de fermeture du coin, sur la planche d'ordinateur : c'est le
+ *     `A08T_GERER_LIEN` voisin qui gère les retours de ce module, et la planche
+ *     dessine en plus un « Annuler » explicite juste en dessous, qui porte le
+ *     même geste. Deux chemins pour une même sortie suffisent ;
+ *   · le bouton « Annuler » n'existe QUE sur l'ordinateur : sur le téléphone la
+ *     feuille se referme en glissant. `onAnnuler` n'a donc aucune prise mobile,
+ *     et c'est la maquette qui en décide. REMONTÉ.
+ */
+const A08T_ANNONCE = {
+  screens: ['A08T'],
+  nom: 'A08T_ANNONCE',
+  why: 'Les quatre contrôles du formulaire d’annonce — titre, corps, épinglage, notification — deviennent vivants : ils étaient dessinés et inertes sur les deux planches.',
+  provides: ['annonce'],
+  apply(jsx) {
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA GARDE DE CADRE — PAYÉE UNE FOIS, DANS CE LOT                     ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ à la première génération : le sous-remplacement d'« Annuler » a
+     * fui sur la planche « À propos — édition », qui dessine SON propre
+     * « Annuler » au bas de l'éditeur de règles. Elle est sortie avec
+     * `onClick={annonce.onAnnuler}` sur un bouton qui n'a rien à voir — et ça
+     * compile sans un mot (piège 5 : un motif qui ne nomme qu'un cadre laisse
+     * les autres mentir, ici dans l'autre sens).
+     *
+     * On BORNE donc la transformation entière au cadre d'annonce, par le seul
+     * libellé qui n'existe que là. Relevé : « Publier l'annonce » apparaît dans
+     * EXACTEMENT deux fichiers générés, `adminannonce` et `adminannoncemobile`.
+     * Les trois autres sous-motifs sont déjà étroits, mais les garder derrière
+     * la même porte est ce qui empêche le prochain d'être large par accident.
+     */
+    if (!jsx.includes('Publier l’annonce')) return { jsx, applied: false };
+
+    let out = jsx;
+    let pris = 0;
+
+    // ── 1. LE TITRE ────────────────────────────────────────────────────────
+    //
+    // La bordure verte est la SIGNATURE du champ actif de ce cadre, et le texte
+    // d'exemple commence par les deux mêmes mots sur les deux planches —
+    // « Permanence consulaire à Lyon le 14 mars » et « Permanence consulaire le
+    // 14 mars » — donc le motif s'arrête après « consulaire ».
+    const titre =
+      /<div style=\{\{ ([^}]*border: "1\.5px solid #16785E"[^}]*) \}\}>Permanence consulaire[^<]*<\/div>/;
+    const mT = titre.exec(out);
+    if (mT !== null) {
+      const style = mT[1];
+      const champ =
+        '<input type="text" value={annonce.titreValue} onChange={annonce.onTitre} ' +
+        'placeholder="Titre de l’annonce" aria-label="Titre de l’annonce" ' +
+        'autoComplete="off" maxLength={annonce.titreMax} ' +
+        `style={{ ${resetFiltre(style).join(', ')}, ${style} }} />`;
+      out = out.slice(0, mT.index) + champ + out.slice(mT.index + mT[0].length);
+      pris += 1;
+    }
+
+    // ── 2. LE CORPS ────────────────────────────────────────────────────────
+    //
+    // Un `<textarea>` et non un `<input>` : le dessin promet plusieurs lignes
+    // (96 px de haut sur l'ordinateur, 86 sur le téléphone, avec `lineHeight`).
+    // C'est le même appareil que `A10_DESCRIPTION` et les quatre zones de A14.
+    //
+    // ⚠ LE TEXTE D'EXEMPLE PORTE UNE APOSTROPHE DROITE sur la planche
+    // d'ordinateur — « L'ambassade » — et c'est le piège 10. Le motif ne lit donc
+    // PAS le texte : il lit la bordure grise et le `minHeight`, qui sont la
+    // signature de la zone sur les deux cadres.
+    const corps =
+      /<div style=\{\{ (minHeight: "[\d.]+px", borderRadius: "14px", border: "1px solid #E6EBE9"[^}]*) \}\}>[^<]*<\/div>/;
+    const mC = corps.exec(out);
+    if (mC !== null) {
+      const style = mC[1];
+      const champ =
+        '<textarea value={annonce.corpsValue} onChange={annonce.onCorps} ' +
+        'placeholder="Votre annonce" aria-label="Corps de l’annonce" ' +
+        'maxLength={annonce.corpsMax} ' +
+        `style={{ ${resetFiltre(style).join(', ')}, ${style} }} />`;
+      out = out.slice(0, mC.index) + champ + out.slice(mC.index + mC[0].length);
+      pris += 1;
+    }
+
+    // ── 3. LES DEUX INTERRUPTEURS ──────────────────────────────────────────
+    //
+    // Chacun est trouvé PAR SON LIBELLÉ, puis c'est la PREMIÈRE piste qui suit
+    // qui est promue. C'est ce qui les distingue l'un de l'autre sans dépendre
+    // d'un ordre, et ce qui empêche d'attraper les pistes d'un autre cadre : un
+    // motif sur la piste seule prendrait les deux de la planche « Gérer ».
+    const PISTE =
+      /<span style=\{\{ width: "46px", height: "26px", borderRadius: "999px", background: "#16785E", position: "relative"[^}]*\}\}><span style=\{\{ [^}]*\}\}><\/span><\/span>/;
+    const bascule = (texte, prise, geste, etiquette) => {
+      const libelle = out.indexOf(texte);
+      if (libelle === -1) return false;
+      const reste = out.slice(libelle);
+      const m = PISTE.exec(reste);
+      if (m === null) return false;
+      const debut = libelle + m.index;
+      /**
+       * LES DEUX PAIRES SONT CELLES DE LA MAQUETTE, et la piste garde ses
+       * mesures dessinées. `flexShrink` n'est PAS recopié depuis le cadre :
+       * seule la planche d'ordinateur le dessine, et l'omettre sur les deux
+       * reviendrait à changer le mobile. Il est donc relu dans le motif.
+       */
+      const flex = /flexShrink: "0"/.test(m[0]) ? ', flexShrink: "0"' : '';
+      const bouton =
+        `<button type="button" role="switch" aria-checked={${prise}} onClick={${geste}} ` +
+        `aria-label=${JSON.stringify(etiquette)} ` +
+        'style={{ width: "46px", height: "26px", borderRadius: "999px", ' +
+        `backgroundColor: ${prise} ? "#16785E" : "#CBD5D1", position: "relative"${flex}, ` +
+        'border: "none", padding: 0, cursor: "pointer" }}>' +
+        '<span style={{ position: "absolute", top: "3px", ' +
+        `left: ${prise} ? "23px" : "3px", width: "20px", height: "20px", ` +
+        'borderRadius: "999px", background: "#fff" }}></span></button>';
+      out = out.slice(0, debut) + bouton + out.slice(debut + m[0].length);
+      return true;
+    };
+
+    /**
+     * `>Notifier les {reseau.membres}<` ET NON `>Notifier les 890 membres<` : le
+     * nombre est DÉJÀ lié par la clé `donnees` du module (voir
+     * `tools/screens/03-accueil.mjs`), donc le cadre porte l'interpolation à ce
+     * point de la chaîne. Chercher le texte de la maquette ne trouverait rien.
+     */
+    if (bascule('>Épingler en haut du fil<', 'annonce.epingler', 'annonce.onEpingler', 'Épingler en haut du fil')) {
+      pris += 1;
+    }
+    if (bascule('>Notifier les {reseau.membres}<', 'annonce.notifier', 'annonce.onNotifier', 'Notifier les membres')) {
+      pris += 1;
+    }
+
+    // ── 4. « PUBLIER L'ANNONCE » ───────────────────────────────────────────
+    //
+    // L'apostrophe est TYPOGRAPHIQUE dans ce libellé (« Publier l’annonce »), là
+    // où le texte d'exemple du corps en porte une droite. Les deux cohabitent
+    // dans la même maquette — piège 10, et c'est pour ça qu'on ne devine pas.
+    const publier = /<button style=\{\{ ([^}]*) \}\}>Publier l’annonce<\/button>/;
+    const mP = publier.exec(out);
+    if (mP !== null) {
+      /**
+       * L'ÉTEINT N'AUTORISE RIEN. Les règles sont dans `createAnnouncementSchema`
+       * (corps 1–2 000) et dans le service (deux par semaine, modérateur
+       * seulement), que le serveur applique. Éteindre évite un aller-retour dont
+       * la seule issue serait un refus — le front PRÉVIENT (mémo §5).
+       *
+       * `opacity` plutôt qu'une couleur : la maquette ne dessine QU'UN état de ce
+       * bouton, et en assombrir le vert serait toucher à une couleur du dossier.
+       */
+      /**
+       * ⚠ `curseurOccupe` ATTEND UN STYLE AVEC SON ` }}` FINAL — il SUBSTITUE
+       * dessus. Ici le motif ne capture que l'INTÉRIEUR de l'accolade, donc on
+       * lui rend la fermeture et on la retire après : sans ça, les deux
+       * `.replace(' }}', …)` ne trouvaient rien, et le bouton sortait sans
+       * curseur ni opacité — ce qui compile parfaitement et ne se voit qu'à
+       * l'écran. Mesuré sur la première génération de ce lot.
+       */
+      const style = curseurOccupe(`${mP[1]} }}`, '!annonce.pret')
+        .replace(' }}', ', opacity: annonce.pret ? "1" : ".55" }}')
+        .replace(/ \}\}$/, '');
+      const bouton =
+        '<button type="button" onClick={annonce.onPublier} disabled={!annonce.pret} ' +
+        `data-annonce-publier="" style={{ ${style} }}>Publier l’annonce</button>`;
+      out = out.slice(0, mP.index) + bouton + out.slice(mP.index + mP[0].length);
+      pris += 1;
+    }
+
+    // ── 5. « ANNULER » — PLANCHE D'ORDINATEUR SEULEMENT ────────────────────
+    const annuler = /<button style=\{\{ ([^}]*) \}\}>Annuler<\/button>/;
+    const mA = annuler.exec(out);
+    if (mA !== null) {
+      const bouton =
+        '<button type="button" onClick={annonce.onAnnuler} ' +
+        `style={{ ${mA[1]}, cursor: "pointer" }}>Annuler</button>`;
+      out = out.slice(0, mA.index) + bouton + out.slice(mA.index + mA[0].length);
+      pris += 1;
+    }
+
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * A07 · « CRÉER UN RÉSEAU D'INTÉRÊT » MÈNE À A10.
+ *
+ * La maquette le dessine en `<button>` sur la planche de 1 440 px — donc ni
+ * `href="#"` ni `<span>`, et le compteur de liens morts ne pouvait pas le voir :
+ * c'est le même angle mort que « Créer une story » sur A01.
+ *
+ * C'EST UNE DESTINATION, PAS UN GESTE : `/reseaux/nouveau` est une page, elle a
+ * une adresse, on doit pouvoir l'ouvrir dans un onglet. D'où une balise `<a>` et
+ * non un `onClick`.
+ *
+ * LES TROIS DÉCLARATIONS AJOUTÉES SONT CELLES DU NAVIGATEUR, pas du dessin : un
+ * `<button>` centre son contenu et se comporte en bloc, un `<a>` non. Sans
+ * `inline-flex` et le centrage, la pastille verte de 44 px garderait sa boîte mais
+ * son texte remonterait en haut — une dérive visible. La géométrie de la maquette
+ * (hauteur, retrait, rayon, fond, encre, corps, graisse) n'est pas touchée.
+ *
+ * LE CADRE DE 390 PX NE DESSINE AUCUN CONTRÔLE DE CRÉATION DE RÉSEAU : il porte
+ * le « + » flottant générique, déjà branché sur la feuille « Créer » du produit
+ * (`BoutonCreer`). Remonté plutôt que comblé — ajouter un bouton que la maquette
+ * ne dessine pas serait décider de l'écran à la place du porteur.
+ */
+const A07_CREER_RESEAU = {
+  screens: ['A07'],
+  nom: 'A07_CREER_RESEAU',
+  why: 'Le bouton « Créer un réseau d’intérêt » mène à /reseaux/nouveau : c’était un <button> sans geste.',
+  provides: [],
+  apply(jsx) {
+    const motif =
+      /<button style=\{\{ ([^}]*) \}\}>Créer un réseau d'intérêt<\/button>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const lien =
+      '<a href="/reseaux/nouveau" style={{ display: "inline-flex", alignItems: "center", ' +
+      `justifyContent: "center", textDecoration: "none", ${m[1]} }}>Créer un réseau d'intérêt</a>`;
+    return {
+      jsx: jsx.slice(0, m.index) + lien + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A07 · UNE CARTE DE RÉSEAU MÈNE À SON RÉSEAU                               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Les quatre cartes de « Mes réseaux » nommaient un réseau et ne l'ouvraient pas,
+ * sur les deux planches. C'est la carte ENTIÈRE qui devient le lien : elle ne
+ * contient aucun autre contrôle — une pastille « En sourdine » et un compteur de
+ * non-lus, tous deux du texte — donc rien n'est imbriqué dans l'ancre.
+ *
+ * ── `display: "contents"`, ET C'EST L'IDIOME DU DÉPÔT ───────────────────────
+ *
+ * Une ancre est en ligne par défaut. Envelopper la carte sans précaution lui
+ * retirerait son `margin-top` et sa participation à la grille — la grille de
+ * quatre colonnes de l'ordinateur, la bande défilante de 130 px du téléphone.
+ * `display: contents` fait disparaître la BOÎTE de l'ancre et laisse la carte à sa
+ * place exacte, tout en restant cliquable : c'est exactement ce que
+ * `NOM_VERS_PROFIL` fait déjà pour l'avatar d'un membre.
+ *
+ * `color: "inherit"` et `textDecoration: "none"` ne sont pas décoratifs : sans
+ * boîte, l'ancre PROPAGE quand même sa couleur de lien et son soulignement à ses
+ * descendants.
+ *
+ * L'ANCRE EST POSÉE SUR LA BOUCLE, et non sur le style de la carte : les deux
+ * planches ne dessinent pas la même carte (rayon 20 contre 18, retrait 16 contre
+ * 12, et 130 px de large sur le téléphone). Un motif sur une mesure n'aurait
+ * décrit qu'un cadre — le piège le plus payé de ce fichier.
+ */
+const A07_CARTE_MON_RESEAU = {
+  screens: ['A07'],
+  nom: 'A07_CARTE_MON_RESEAU',
+  why: 'Une carte de « Mes réseaux » ouvre son réseau : les deux planches la dessinaient sans lien.',
+  provides: [],
+  apply(jsx) {
+    const boucle = '{(myNets ?? []).map((n, nIndex) => (\n<Fragment key={nIndex}>';
+    const i = jsx.indexOf(boucle);
+    if (i === -1) return { jsx, applied: false };
+    const debut = i + boucle.length;
+    const fin = finDuDiv(jsx, debut);
+    if (fin === -1) return { jsx, applied: false };
+    const ouvre =
+      '<a href={n.href} style={{ display: "contents", color: "inherit", textDecoration: "none" }}>';
+    return {
+      jsx: jsx.slice(0, debut) + ouvre + jsx.slice(debut, fin) + '</a>' + jsx.slice(fin),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * A07 · LE NOM D'UN RÉSEAU À DÉCOUVRIR L'OUVRE.
+ *
+ * ICI L'ANCRE NE PREND QUE LE TITRE, et c'est la différence avec « Mes réseaux » :
+ * la carte de « Découvrir » contient un BOUTON — « Rejoindre », « Demander » ou
+ * « Ouvrir ». Envelopper la carte entière mettrait un contrôle dans une ancre,
+ * c'est-à-dire du balisage invalide et un clic dont l'issue dépend du pixel.
+ *
+ * Le titre reste dans son `<div>` dessiné et reçoit une ancre EN LIGNE : ni la
+ * marge, ni le corps, ni la graisse ne bougent, parce que la boîte du `<div>` est
+ * intacte. Les deux planches sont couvertes par le même motif, qui ne lit du style
+ * que ce qu'il doit recopier.
+ */
+const A07_CARTE_DECOUVRIR = {
+  screens: ['A07'],
+  nom: 'A07_CARTE_DECOUVRIR',
+  why: 'Le nom d’un réseau de « Découvrir » ouvre sa fiche : il était du texte nu sur les deux planches.',
+  provides: [],
+  apply(jsx) {
+    const motif = /<div (style=\{\{ [^}]* \}\})>\{d\.name\}<\/div>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const lien =
+      `<div ${m[1]}><a href={d.href} style={{ color: "inherit", textDecoration: "none" }}>` +
+      '{d.name}</a></div>';
+    return {
+      jsx: jsx.slice(0, m.index) + lien + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A07 · « REJOINDRE » / « DEMANDER » / « OUVRIR » — UN CONTRÔLE, TROIS MOTS ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La maquette dessine UN seul contrôle par carte, et c'est la DONNÉE qui lui donne
+ * son mot et ses deux couleurs : « Rejoindre » sur fond vert pour un réseau
+ * `PUBLIC`, « Demander » sur fond clair pour un `ON_REQUEST`, « Ouvrir » pour un
+ * réseau déjà rejoint. Les trois ne font pas la même chose — `POST
+ * /communities/:slug/join` pour les deux premiers (le serveur tranche entre
+ * `ACTIVE` et `PENDING`), une navigation pour le troisième.
+ *
+ * ── POURQUOI UN `<button>` DANS LES TROIS CAS ──────────────────────────────
+ *
+ * Parce que la maquette dessine UNE balise, et que les deux planches ne la
+ * dessinent même pas pareil : `<button>` sur l'ordinateur, `<span>` sur le
+ * téléphone. Scinder le contrôle en une ancre et un bouton selon `d.joined`
+ * changerait la boîte du cadre d'ordinateur — son style ne déclare AUCUN
+ * `display`, donc une ancre y perdrait sa hauteur de 38 px. Le geste reçoit donc
+ * `d.joined` et c'est `use-reseaux.ts` qui choisit entre rejoindre et ouvrir. Le
+ * cadre ne décide de rien, ce qui est la règle.
+ *
+ * ── CE QUE LE FRONT NE FAIT PAS ────────────────────────────────────────────
+ *
+ * Aucune lecture de niveau, aucune mise à jour optimiste. `join` répond la FICHE
+ * entière avec `myStatus`, et le seul état qui compte ensuite est celui que
+ * `GET /communities` renverra : le crochet recharge plutôt que de peindre un
+ * « Rejoint » qui pourrait être faux.
+ */
+const A07_REJOINDRE = {
+  screens: ['A07'],
+  nom: 'A07_REJOINDRE',
+  why: 'Le bouton d’une carte de « Découvrir » rejoint, demande ou ouvre le réseau : il était inerte sur les deux planches.',
+  provides: ['onRejoindre'],
+  apply(jsx) {
+    const motif =
+      /<(button|span) style=\{\{ ([^}]*background: d\.btnBg, color: d\.btnFg[^}]*) \}\}>\{d\.cta\}<\/\1>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style = m[2];
+    const ajout = resetBoutonManquant(style);
+    const bouton =
+      '<button type="button" onClick={() => onRejoindre(d.slug, d.joined)} ' +
+      `style={{ ${style}${ajout === '' ? '' : `, ${ajout}`} }}>{d.cta}</button>`;
+    return {
+      jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A09 — ON POUVAIT LIRE UN SUJET, PAS Y RÉPONDRE, NI LE MARQUER RÉSOLU      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ sur les deux cadres de A09 avant ce lot : la barre de réponse était
+ * dessinée en entier — « Répondre au sujet… » puis « Envoyer » à 1 440 px, un
+ * rond vert fléché à 390 px — et elle ne portait NI champ NI geste. La ligne
+ * d'invite était un `<div>` contenant ce texte en dur, et le bouton d'envoi
+ * n'avait aucun `onClick`. Le bouton « Marquer résolu », lui, existait sur les
+ * deux planches et ne faisait rien, alors que `use-sujet.ts` portait déjà
+ * `resoudre()` depuis le branchement du module : il manquait le fil entre les
+ * deux.
+ *
+ * ── LA ROUTE DE LA RÉPONSE N'EST PAS SOUS `/topics` ────────────────────────
+ *
+ * Il n'existe AUCUN `POST /topics/:id/replies` — vérifié route par route dans
+ * `communities.controller.ts`, qui n'a que `GET`, `PATCH` et `DELETE` sur
+ * `topics/:id`. Les réponses d'un sujet sont des `Comment` de la table
+ * polymorphe (`communities.service.ts` les lit en
+ * `{ subjectType: 'TOPIC', subjectId }`), et la seule route qui en écrit est
+ * `POST /comments`. C'est celle que la fenêtre de commentaires d'une publication
+ * appelle déjà : on l'IMITE, on ne la réinvente pas.
+ *
+ * Et c'est une capacité N0 (`comment.create`), pas N1 : aucune fenêtre de niveau
+ * ne s'ouvre ici, et en ouvrir une refuserait au front ce que le serveur accepte.
+ */
+const A09_REPONSE = {
+  screens: ['A09'],
+  nom: 'A09_REPONSE',
+  why: 'La barre de réponse du sujet reçoit son champ et son envoi : on pouvait lire, pas répondre.',
+  provides: ['reponseTexte', 'onReponseTexte', 'onEnvoyerReponse', 'reponseBloquee'],
+  apply(jsx) {
+    /**
+     * LA MÊME BOÎTE SUR LES DEUX PLANCHES, et c'est un cas rare dans ce fichier :
+     * la maquette l'écrit au caractère près de la même façon à 1 440 et à 390 px
+     * (`flex: 1; height: 44px; border-radius: 999px; background: #F2F5F4`). Un
+     * seul motif suffit donc ici — ce qui n'autorise RIEN pour les deux envois,
+     * qui sont bel et bien deux dessins différents (voir plus bas).
+     */
+    const texte = 'Répondre au sujet…';
+    const i = jsx.indexOf(texte);
+    if (i === -1) return { jsx, applied: false };
+    const debut = jsx.lastIndexOf('<div style={{', i);
+    if (debut === -1) return { jsx, applied: false };
+    // Rien d'autre ne doit s'ouvrir entre la boîte et son texte : même garde que
+    // `A01C_CHAMP`, et pour la même raison — sinon on remonte à un parent.
+    const entre = jsx.slice(debut + '<div style={{'.length, i);
+    if (entre.includes('<div') || entre.includes('</div>')) return { jsx, applied: false };
+    const styleBoite = /style=\{\{([^}]*)\}\}/.exec(jsx.slice(debut, i));
+    if (styleBoite === null) return { jsx, applied: false };
+    const fin = jsx.indexOf('</div>', i);
+    if (fin === -1) return { jsx, applied: false };
+
+    /**
+     * LA BOÎTE RESTE, le texte devient un `<input>`. `color: "#16211D"` et non la
+     * couleur de la boîte : `#8A958F` est la couleur de l'INVITE, et l'employer
+     * pour le texte saisi donnerait une saisie grise — c'est le même choix que
+     * `A01C_CHAMP`, et `check-contrast.mjs` tient la paire.
+     */
+    const champ =
+      `<div style={{ ${styleBoite[1].trim()} }}>` +
+      '<input type="text" value={reponseTexte} onChange={onReponseTexte} ' +
+      `placeholder="${texte}" aria-label="${texte}" data-sujet-reponse="" ` +
+      'style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", ' +
+      'font: "inherit", color: "#16211D", outline: "none", padding: 0 }} /></div>';
+    let out = jsx.slice(0, debut) + champ + jsx.slice(fin + '</div>'.length);
+
+    /**
+     * ── DEUX ENVOIS, UN PAR PLANCHE ────────────────────────────────────────
+     *
+     * L'ordinateur dessine un bouton vert portant le mot « Envoyer ». Le téléphone
+     * dessine un ROND VERT de 44 px avec une flèche, et c'est un `<span>` : ni
+     * cliquable au clavier, ni annoncé à un lecteur d'écran. Les deux font la même
+     * chose ; on les traite tous deux, et le rond reçoit le nom accessible que son
+     * dessin ne porte pas. Un cadre n'en a jamais les deux, donc on rend dès que
+     * l'un a pris.
+     */
+    const ordinateur =
+      /<button (style=\{\{ height: "44px", padding: "0 20px", borderRadius: "999px", background: "#16785E"[^}]*\}\})>Envoyer<\/button>/;
+    const m = ordinateur.exec(out);
+    if (m !== null) {
+      const bouton =
+        '<button type="button" onClick={onEnvoyerReponse} disabled={reponseBloquee} ' +
+        `data-sujet-envoyer="" ${m[1].replace(' }}', ', cursor: "pointer", opacity: reponseBloquee ? ".55" : "1" }}')}>Envoyer</button>`;
+      return { jsx: out.slice(0, m.index) + bouton + out.slice(m.index + m[0].length), applied: true };
+    }
+
+    const telephone =
+      /<span (style=\{\{ width: "44px", height: "44px", borderRadius: "999px", background: "#16785E"[^}]*\}\})>/;
+    const t = telephone.exec(out);
+    if (t === null) return { jsx, applied: false };
+    /**
+     * `resetBoutonManquant` POSE DÉJÀ UN `cursor`, et deux `cursor` dans un même
+     * style donnent `TS1117` (piège 8 du mémo). On ne l'ajoute donc pas à la main
+     * ici — contrairement au bouton d'ordinateur ci-dessus, qui est déjà un
+     * `<button>` et n'en reçoit aucun.
+     */
+    const ajout = resetBoutonManquant(t[1]);
+    const style = ajout === '' ? t[1] : t[1].replace(' }}', `, ${ajout} }}`);
+    const ouvre =
+      '<button type="button" onClick={onEnvoyerReponse} disabled={reponseBloquee} ' +
+      `aria-label="Envoyer" data-sujet-envoyer="" ${style.replace(' }}', ', opacity: reponseBloquee ? ".55" : "1" }}')}>`;
+    const finSpan = out.indexOf('</span>', t.index);
+    if (finSpan === -1) return { jsx, applied: false };
+    out =
+      out.slice(0, t.index) +
+      ouvre +
+      out.slice(t.index + t[0].length, finSpan) +
+      '</button>' +
+      out.slice(finSpan + '</span>'.length);
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * « MARQUER RÉSOLU » — deux boutons dessinés, deux planches, un seul geste.
+ *
+ * `PATCH /topics/:id` avec `{ status: 'RESOLVED' }`. Le bouton est MONTRÉ d'après
+ * `canResolve`, que le serveur recalcule à CHAQUE `GET /topics/:id` — « l'auteur
+ * marque résolu, un modérateur clôt ». Ce n'est pas une autorisation que le front
+ * s'accorde, c'est le droit tel que le serveur vient de le dire, et le geste part
+ * de toute façon : s'il a changé entre-temps, c'est le serveur qui refuse.
+ *
+ * ⚠ ÉTEINDRE SUR UN RÔLE N'EST PAS ÉTEINDRE SUR UN NIVEAU. `content.read` est en
+ * N0 : cacher ce bouton à un N0 serait remplacer la garde du serveur par une
+ * garde du front (mémo §5), et ce n'est pas ce qui se passe ici.
+ *
+ * ── LES DEUX DESSINS NE SE RESSEMBLENT PAS, ET C'EST LE PIÈGE 1 ───────────
+ *
+ * 1 440 px : `height: 42px; padding: 0 16px; border-radius: 14px`, dans une rangée
+ * `display: flex`. 390 px : `width: 100%; height: 42px; margin-top: 12px;
+ * border-radius: 12px`, posé seul. Un motif qui figerait l'une des deux séries de
+ * mesures ne décrirait qu'un cadre. Le motif ci-dessous s'ancre donc sur ce que
+ * les deux ont en commun — la couleur de fond et le LIBELLÉ — et reporte le style
+ * trouvé tel quel.
+ */
+const A09_RESOUDRE = {
+  screens: ['A09'],
+  nom: 'A09_RESOUDRE',
+  why: 'Le bouton « Marquer résolu » envoie `status: RESOLVED`, et ne s’affiche que si le serveur dit `canResolve`.',
+  provides: ['resoudreVisible', 'resoudreBloque', 'onResoudre'],
+  apply(jsx) {
+    const pattern =
+      /<button (style=\{\{ (?:(?!\}\}).)*background: "#16785E"(?:(?!\}\}).)*\}\})>Marquer résolu<\/button>/;
+    const m = pattern.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    /**
+     * `cursor: "pointer"` est AJOUTÉ et non substitué : la maquette n'en pose
+     * aucun sur ce bouton — vérifié sur les deux cadres — et en substituer un
+     * absent laisserait le style inchangé. `resetBoutonManquant` ne sert pas ici :
+     * l'élément est DÉJÀ un `<button>` avec `border: none` et `font: inherit`.
+     */
+    const style = m[1].replace(
+      ' }}',
+      ', cursor: "pointer", opacity: resoudreBloque ? ".55" : "1" }}',
+    );
+    const bouton =
+      '{resoudreVisible ? (<button type="button" onClick={onResoudre} disabled={resoudreBloque} ' +
+      `data-sujet-resoudre="" ${style}>Marquer résolu</button>) : null}`;
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ GÉRER ET MODÉRER UN RÉSEAU — TRENTE-TROIS CADRES DESSINÉS, ZÉRO GESTE        ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * RELEVÉ AVANT D'ÉCRIRE UNE LIGNE, sur les cadres produits de `a08/` et
+ * `a08t/` : 0 `onClick`, 0 `<button type=`, 0 champ de saisie. Les quatre pages
+ * chargeaient de vraies données, `screens/reseaux/api.ts` appelait trente
+ * routes — et rien ne les déclenchait. Tout était dessin.
+ *
+ * Les six transformations qui suivent branchent la GESTION, les MEMBRES et la
+ * MODÉRATION. Elles ne touchent pas aux gestes d'écriture (fil, sujets,
+ * annonces, sondages, album), qui sont un autre lot.
+ *
+ * ── CE QUE LA MAQUETTE DESSINE DERRIÈRE « GÉRER LE RÉSEAU » ────────────────
+ *
+ * Il fallait REGARDER avant de décider. Les sept boutons « Gérer le réseau »
+ * des planches d'ordinateur ne modifient RIEN : la planche posée juste derrière
+ * eux est « Gérer », celle du rail « VUE D'ENSEMBLE · DEMANDES D'ADHÉSION ·
+ * SIGNALEMENTS · RÔLES ET ÉQUIPE · PARAMÈTRES ». Ce sont donc des
+ * DESTINATIONS — `?onglet=gerer&vue=proprietaire`, que `reseau-screen.tsx`
+ * monte déjà — et non un `PATCH /communities/:id`. Le seul `PATCH` dessiné du
+ * module est l'« Enregistrer » de « À propos — édition ».
+ *
+ * Des LIENS, donc, pas des boutons : clic droit, nouvel onglet, annonce par un
+ * lecteur d'écran. Et on n'ajoute à leur style que ce qu'un `<a>` impose sans
+ * que la planche l'écrive — pas de soulignement, et le centrage vertical qu'un
+ * `<button>` faisait tout seul.
+ *
+ * ── LES TROIS GESTES DESSINÉS QUE L'API NE SAIT PAS FAIRE ──────────────────
+ *
+ * Remontés plutôt qu'inventés, parce qu'un demi-branchement silencieux est pire
+ * qu'un écart nommé :
+ *
+ * ⚠ CE PARAGRAPHE DISAIT QUE DEUX DE CES TROIS GESTES N'AVAIENT AUCUNE ROUTE,
+ * et il avait raison au jour où il a été écrit. Les deux routes existent
+ * désormais, et les gestes sont branchés — le paragraphe est donc corrigé
+ * plutôt que laissé à décrire un état révolu (mémo §2) :
+ *
+ *   · SOURDINE (6 boutons sur les planches membre, + 1 sur le mobile de A08) —
+ *     c'est une PRÉFÉRENCE PERSONNELLE, pas de la modération, et n'importe quel
+ *     membre la pose sur SON propre rang (§4 : « `muted` (soi-même) »). Elle
+ *     passe par `PATCH /communities/:id/members/:userId` avec `{ muted }`, que
+ *     la colonne `community_members.muted` rend possible depuis la migration
+ *     `reseaux_sourdine_inviteur_avertissement`. Branchée par `A08T_SOURDINE`.
+ *
+ *   · MASQUER et CONSERVER (2 + 2 sur « Gérer », 1 + 1 sur son mobile) — les
+ *     deux décisions d'un modérateur de réseau sur un contenu signalé (§2.4).
+ *     `GET /communities/:id/reports` et `POST /communities/:id/reports/decide`
+ *     existent, et la carte « SIGNALEMENTS · N » lit maintenant `meta.open` au
+ *     lieu d'un nombre peint. Branchées par `A08T_GERER_SIGNALEMENTS`.
+ *
+ *   · Le « MASQUER » de l'album est un troisième geste encore — masquer une
+ *     photo sélectionnée — et l'album est d'un autre lot. Il reste inerte.
+ */
+
+/** Le style d'un contrôle promu : on n'ajoute que ce que la planche n'écrit pas. */
+const gererStyleControle = (style, occupe) => {
+  const manquants = [];
+  if (!/\bfont(Family)?:/.test(style)) manquants.push('fontFamily: "inherit"');
+  if (!/\bcolor:/.test(style)) manquants.push('color: "inherit"');
+  if (!/\bborder:/.test(style)) manquants.push('border: "none"');
+  /**
+   * DEUX `cursor` DANS UN MÊME STYLE DONNENT `TS1117` : on SUBSTITUE quand la
+   * planche en dessine un, on n'ajoute que sinon. Même prudence que
+   * `resetBoutonManquant`, dont c'est le piège déjà payé.
+   */
+  const curseur =
+    occupe === null ? 'cursor: "pointer"' : `cursor: ${occupe} ? "default" : "pointer"`;
+  const base = /\bcursor:/.test(style)
+    ? style.replace(/cursor: "[^"]*"/, curseur)
+    : style.replace(' }}', `, ${curseur} }}`);
+  return manquants.length === 0 ? base : base.replace(' }}', `, ${manquants.join(', ')} }}`);
+};
+
+/**
+ * REMPLACE UNE RÉGION ENTIÈRE PAR UNE BOUCLE, en comptant les rangées.
+ *
+ * `String.replace` avec un motif en chaîne ne coupe que la PREMIÈRE occurrence,
+ * et les rangées se ressemblent beaucoup : on relève donc TOUTES les
+ * correspondances avec `exec` en boucle, on prend la première comme patron, et
+ * on découpe par index du début de la première à la fin de la dernière. Sans
+ * cela, la planche « Gérer » gardait sa seconde demande peinte en dur — Théo
+ * Adjovi, « Je cherche des Béninois dans le Nord » — à côté de la vraie.
+ */
+const gererRangeesEnBoucle = (jsx, motif, liste, variable, patronner) => {
+  const trouves = [];
+  const re = new RegExp(motif.source, 'g');
+  for (let m = re.exec(jsx); m !== null; m = re.exec(jsx)) trouves.push(m);
+  if (trouves.length === 0) return null;
+  const patron = patronner(trouves);
+  if (patron === null) return null;
+  const premier = trouves[0];
+  const dernier = trouves[trouves.length - 1];
+  const boucle =
+    `{(${liste} ?? []).map((${variable}, ${variable}Index) => (\n` +
+    `<Fragment key={${variable}Index}>${patron}</Fragment>\n))}`;
+  return jsx.slice(0, premier.index) + boucle + jsx.slice(dernier.index + dernier[0].length);
+};
+
+/**
+ * A08 — le bandeau « Propriétaire du réseau » et sa troisième action.
+ *
+ * Les trois actions sont dessinées par une BOUCLE sur `ownerActions`, un tableau
+ * de chaînes, et elles ne vont pas au même endroit : « Annonce » ouvre un
+ * formulaire, « Épingler » agit sur un sujet, « Gérer » ouvre la planche de
+ * gestion. On ne remplace donc pas le tableau par des objets porteurs d'adresse
+ * — deux de ces destinations sont des gestes d'écriture, d'un autre lot — et le
+ * cadre choisit sur le LIBELLÉ plutôt que sur un rang, qui bougerait au premier
+ * ajout.
+ *
+ * ⚠ ET IL N'Y A RIEN À FAIRE SUR LA PLANCHE DE 390 px : le cadre mobile de A08
+ * ne dessine PAS ce bandeau (compté : `ownerActions` y figure zéro fois). Ce
+ * n'est pas un oubli de ce lot, c'est la maquette. Le « Gérer » du téléphone est
+ * ailleurs — dans la rangée d'actions de « Fil — propriétaire », et il est
+ * branché par `A08T_GERER_LIEN`.
+ */
+const A08_BANDEAU_GERER = {
+  screens: ['A08'],
+  nom: 'A08_BANDEAU_GERER',
+  why: 'Les trois actions du bandeau propriétaire étaient inertes ; « Gérer » ouvre la planche de gestion.',
+  provides: ['hrefGerer'],
+  apply(jsx) {
+    const motif =
+      /<button (style=\{\{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba\(255,255,255,\.12\)", color: "#fff", border: "none", font: "inherit", fontSize: "12\.5px", fontWeight: "700" \}\})>\{o\}<\/button>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    /**
+     * UN `<a>` NE CENTRE PAS SON TEXTE COMME UN `<button>`. Les 38 px de hauteur
+     * dessinés laissaient le libellé collé en haut ; `display: flex` et
+     * `alignItems: center` ne font que rendre ce que la planche montre.
+     */
+    const lien = m[1].replace(
+      ' }}',
+      ', textDecoration: "none", display: "flex", alignItems: "center" }}',
+    );
+    const remplace =
+      `{o === 'Gérer' ? (<Link href={hrefGerer} data-reseau-gerer="" ${lien}>{o}</Link>) : ` +
+      `(<button ${m[1]}>{o}</button>)}`;
+    return { jsx: jsx.slice(0, m.index) + remplace + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * A08T — les sept boutons « Gérer le réseau », le « Gérer » du téléphone, et la
+ * flèche de retour de la planche mobile de gestion.
+ *
+ * Les trois mènent au même endroit ou en reviennent, et les trois étaient des
+ * `<button>` ou des `<span>` sans geste. Ce sont les DEUX planches : l'ordinateur
+ * porte le bouton d'en-tête, le téléphone porte la pastille « Gérer » de la
+ * rangée d'actions de « Fil — propriétaire » et la flèche de « Gérer le réseau ».
+ */
+const A08T_GERER_LIEN = {
+  screens: ['A08T'],
+  nom: 'A08T_GERER_LIEN',
+  why: 'Les sept boutons « Gérer le réseau », le « Gérer » mobile et la flèche de retour étaient inertes.',
+  provides: ['gerer'],
+  apply(jsx) {
+    let out = jsx;
+
+    // ── Les sept planches d'ordinateur ────────────────────────────────────
+    const bouton =
+      /<button (style=\{\{ height: "42px"[^}]*\}\})>(<svg(?:(?!<\/button>)[\s\S])*?<\/svg>)Gérer le réseau<\/button>/;
+    const mB = bouton.exec(out);
+    if (mB !== null) {
+      const style = mB[1].replace(' }}', ', textDecoration: "none" }}');
+      out =
+        out.slice(0, mB.index) +
+        `<Link href={gerer.hrefGerer} data-reseau-gerer="" ${style}>${mB[2]}Gérer le réseau</Link>` +
+        out.slice(mB.index + mB[0].length);
+    }
+
+    // ── La pastille « Gérer » de la rangée d'actions du téléphone ─────────
+    const pastille =
+      /<span (style=\{\{ flex: "1", height: "48px", borderRadius: "12px", background: "rgba\(255,255,255,\.12\)"[^}]*\}\})>(<svg(?:(?!<\/span>)[\s\S])*?<\/svg>)Gérer<\/span>/;
+    const mP = pastille.exec(out);
+    if (mP !== null) {
+      const style = mP[1].replace(' }}', ', textDecoration: "none" }}');
+      out =
+        out.slice(0, mP.index) +
+        `<Link href={gerer.hrefGerer} data-reseau-gerer="" ${style}>${mP[2]}Gérer</Link>` +
+        out.slice(mP.index + mP[0].length);
+    }
+
+    /**
+     * ── LA FLÈCHE DE RETOUR, ET SON NOM ACCESSIBLE ─────────────────────────
+     *
+     * La planche mobile de « Gérer » dessine un chevron dans un rond de 40 px et
+     * aucun texte. Un lien sans nom accessible est une violation de §10.6, donc
+     * on en pose un — `aria-label` — exactement comme la conversation de M01 le
+     * fait déjà pour sa flèche (« Retour aux messages »). Le mot n'est pas une
+     * invention d'interface : il ne s'affiche pas, il s'annonce.
+     *
+     * La destination est « Fil — propriétaire » : c'est la planche d'où la
+     * rangée d'actions du téléphone mène ici.
+     *
+     * ⚠ LE TITRE EST DANS LE MOTIF, et c'est délibéré : trois planches mobiles
+     * de A08T dessinent la MÊME flèche dans le même rond de 40 px — « Nouvelle
+     * annonce » et « Modifier « À propos » » ont la leur, et elles ne reviennent
+     * pas au même endroit. Un motif qui ne regarderait que la flèche les
+     * renverrait toutes les trois vers la gestion.
+     */
+    const retour =
+      /<span (style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: "#EEF2F0"[^}]*\}\})>(<svg[^>]*><path d="m15 18-6-6 6-6" \/><\/svg>)<\/span>(<(?:span|h1)[^>]*>Gérer le réseau<\/(?:span|h1)>)/;
+    const mR = retour.exec(out);
+    if (mR !== null) {
+      out =
+        out.slice(0, mR.index) +
+        `<Link href={gerer.hrefRetour} aria-label="Retour au réseau" data-gerer-retour="" ` +
+        `${mR[1].replace(' }}', ', minWidth: "44px", minHeight: "44px", textDecoration: "none", color: "inherit" }}')}>` +
+        `${mR[2]}</Link>${mR[3]}` +
+        out.slice(mR.index + mR[0].length);
+    }
+
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * A08T — ACCEPTER, REFUSER, TOUT ACCEPTER.
+ *
+ * `POST /communities/:id/requests/:userId/{accept,reject}`, et il fallait
+ * d'abord que chaque rangée SACHE QUI elle montre : les deux demandes de la
+ * planche d'ordinateur et celle du téléphone étaient peintes en dur — Yasmine
+ * Benali, Théo Adjovi — donc aucun des six boutons ne pouvait viser personne.
+ * C'est pour cela qu'ils étaient inertes, et c'est pourquoi la rangée devient
+ * une boucle sur `gerer.demandes` avant qu'on y accroche un geste.
+ *
+ * ⚠ LE MOT DE MOTIVATION N'EXISTE PAS DANS L'API. La planche écrit sous chaque
+ * demande une phrase entre guillemets ; `communityMemberSchema` a neuf champs et
+ * aucun message, et `POST /communities/:id/join` ne prend aucun corps. Le nœud
+ * ENTIER est donc lié — guillemets compris, puisque la maquette les écrit dans
+ * le même nœud de texte — et `demandeRowFrom` rend la chaîne vide : rien ne
+ * s'affiche, plutôt qu'une phrase inventée. REMONTÉ.
+ *
+ * ⚠ ET LA PASTILLE DE VÉRIFICATION RESTE DESSINÉE : le crochet vert à côté de
+ * chaque nom affirme un niveau que la liste des membres ne renvoie pas
+ * (`communityMemberSchema` n'a pas de `level`, et c'est volontaire — le niveau
+ * n'autorise rien ici). On ne l'enlève pas, on le remonte.
+ */
+const A08T_GERER_DEMANDES = {
+  screens: ['A08T'],
+  nom: 'A08T_GERER_DEMANDES',
+  why: 'Les six boutons « Accepter » / « Refuser » et le « Tout accepter » des demandes d’adhésion étaient inertes.',
+  provides: ['gerer'],
+  apply(jsx) {
+    let out = jsx;
+
+    const decision = (style, geste) =>
+      `<button type="button" onClick={() => gerer.${geste}(d.userId)} disabled={gerer.occupe} ` +
+      `data-demande-${geste === 'onAccepter' ? 'accepter' : 'refuser'}="" ` +
+      `${gererStyleControle(style, 'gerer.occupe')}>`;
+
+    const brancheBoutons = (rangee) =>
+      rangee
+        .replace(
+          /<button (style=\{\{[^}]*\}\})>Accepter<\/button>/,
+          (_, s) => `${decision(s, 'onAccepter')}Accepter</button>`,
+        )
+        .replace(
+          /<button (style=\{\{[^}]*\}\})>Refuser<\/button>/,
+          (_, s) => `${decision(s, 'onRefuser')}Refuser</button>`,
+        );
+
+    // ── La planche d'ordinateur : deux rangées, un patron ─────────────────
+    const rangeeWeb =
+      /<div style=\{\{ display: "flex", gap: "12px", alignItems: "flex-start", padding: "14px 0", borderBottom: "1px solid #F0F3F2" \}\}>[\s\S]*?>Refuser<\/button><\/div>/;
+    const web = gererRangeesEnBoucle(out, rangeeWeb, 'gerer.demandes', 'd', (trouves) =>
+      brancheBoutons(
+        trouves[0][0]
+          .replace(
+            /(<span style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: )"#[0-9A-Fa-f]{3,8}"(, color: "#fff"[^}]*\}\}>)[^<]*(<\/span>)/,
+            '$1d.bg$2{d.i}$3',
+          )
+          .replace(/(gap: "6px", fontSize: "14px", fontWeight: "700" \}\}>)[^<]*(<svg)/, '$1{d.name}$2')
+          .replace(
+            /(<span style=\{\{ fontSize: "12px", color: "#8A958F", fontWeight: "500" \}\}>)[^<]*(<\/span>)/,
+            '$1{d.sub}$2',
+          )
+          .replace(
+            /(<div style=\{\{ fontSize: "13px", color: "#16211D", marginTop: "4px", lineHeight: "1\.5" \}\}>)[^<]*(<\/div>)/,
+            '$1{d.mot}$2',
+          ),
+      ),
+    );
+    if (web !== null) out = web;
+
+    /**
+     * ── LA PLANCHE DE 390 px : UNE SEULE RANGÉE, ET DEUX CARTES JUMELLES ───
+     *
+     * Le téléphone n'en dessine qu'une, mais sa CARTE porte exactement le même
+     * style que celle des signalements juste dessous. Un motif sur la carte
+     * couperait donc la mauvaise : on part du bouton « Refuser », qui n'existe
+     * qu'ici, et on remonte à l'ouverture de SA carte.
+     */
+    const finMobile = '>Refuser</button></div></div>';
+    const carteMobile =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "20px", padding: "14px", flexShrink: "0" }}>';
+    const fin = out.indexOf(finMobile);
+    if (fin !== -1) {
+      const debut = out.lastIndexOf(carteMobile, fin);
+      if (debut !== -1) {
+        const rangee = brancheBoutons(
+          out
+            .slice(debut, fin + finMobile.length)
+            .replace(
+              /(<span style=\{\{ width: "36px", height: "36px", borderRadius: "999px", background: )"#[0-9A-Fa-f]{3,8}"(, color: "#fff"[^}]*\}\}>)[^<]*(<\/span>)/,
+              '$1d.bg$2{d.i}$3',
+            )
+            .replace(
+              /(gap: "5px", fontSize: "13\.5px", fontWeight: "700" \}\}>)[^<]*(<svg)/,
+              '$1{d.name}$2',
+            )
+            .replace(
+              /(<span style=\{\{ display: "block", fontSize: "11\.5px", color: "#8A958F" \}\}>)[^<]*(<\/span>)/,
+              '$1{d.sub}$2',
+            )
+            .replace(
+              /(<div style=\{\{ fontSize: "12\.5px", lineHeight: "1\.5", marginTop: "8px" \}\}>)[^<]*(<\/div>)/,
+              '$1{d.mot}$2',
+            ),
+        );
+        out =
+          out.slice(0, debut) +
+          `{(gerer.demandes ?? []).map((d, dIndex) => (\n<Fragment key={dIndex}>${rangee}</Fragment>\n))}` +
+          out.slice(fin + finMobile.length);
+      }
+    }
+
+    /**
+     * ── « TOUT ACCEPTER » EST UNE SUITE D'ACCEPTATIONS, PAS UNE ROUTE ──────
+     *
+     * Vérifié dans `communities.controller.ts` : il n'y a que
+     * `requests/:userId/accept`. Le hook les enchaîne en SÉRIE, et « tout » veut
+     * dire « toutes celles que la première page porte » — la route est un
+     * `pageSchema` sans total. REMONTÉ, avec le `meta.count` qui manque déjà.
+     */
+    const tout = /<span (style=\{\{ fontSize: "12\.5px", fontWeight: "700", color: "#16785E" \}\})>Tout accepter<\/span>/;
+    const mT = tout.exec(out);
+    if (mT !== null) {
+      const style = gererStyleControle(mT[1], 'gerer.occupe').replace(
+        ' }}',
+        ', background: "none", padding: 0 }}',
+      );
+      out =
+        out.slice(0, mT.index) +
+        `<button type="button" onClick={gerer.onToutAccepter} disabled={gerer.occupe} ` +
+        `data-demandes-tout-accepter="" ${style}>Tout accepter</button>` +
+        out.slice(mT.index + mT[0].length);
+    }
+
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * A08T — LA LISTE DES MEMBRES ET SON MENU : NOMMER, BANNIR.
+ *
+ * `PATCH /communities/:id/members/:userId`, avec `role` ou `status`. Comme pour
+ * les demandes, la condition d'existence du geste était que la rangée sache QUI
+ * elle montre : cinq membres peints en dur, un menu posé à côté, et aucun des
+ * deux ne savait rien de l'autre.
+ *
+ * ── CE QUI EST BRANCHÉ, ET CE QUI NE PEUT PAS L'ÊTRE ──────────────────────
+ *
+ *   · « Nommer modérateur·rice » → `role: 'MODERATOR'`. L'entrée ne s'affiche
+ *     que si le membre n'est pas DÉJÀ modérateur : nommer deux fois n'a aucun
+ *     sens, et la maquette ne dessine AUCUN libellé pour le geste inverse. La
+ *     RÉVOCATION d'un rôle reste donc non branchée, faute de mot dessiné —
+ *     REMONTÉ plutôt qu'inventé.
+ *   · « Bannir du réseau » → `status: 'BANNED'`.
+ *   · « Retirer du réseau » → LE MÊME GESTE. ⚠ CETTE LIGNE DISAIT « reste
+ *     inerte : il n'existe AUCUNE route pour retirer un membre », et c'était
+ *     vrai d'une route distincte — il n'y en a toujours pas. Mais §2.4 ne
+ *     définit qu'UN pouvoir, « retirer un membre (`BANNED` : ne peut plus
+ *     rejoindre) » : les deux libellés nomment le même acte, la spécification
+ *     tranche, et c'est la CONFIRMATION qui dit ce que les libellés ne disent
+ *     pas. REMONTÉ : au porteur de retirer l'une des deux rangées du dessin.
+ *   · « Écrire » → `FenetreEcrire`. ⚠ CETTE LIGNE DISAIT « reste inerte : c'est
+ *     la messagerie, un autre module », et le porteur a répondu : « on ne peut
+ *     pas écrire aux membres ». L'autre module n'avait rien à ajouter —
+ *     `POST /conversations/direct` prend un pseudo, et la ligne de membre le
+ *     porte depuis ce lot. Voir `A08T_MEMBRES_VUE_MEMBRE` juste en dessous, qui
+ *     branche les CINQ boutons de ligne de la vue membre par le même chemin.
+ *
+ * ── LE MENU EST UNIQUE, ET LA MAQUETTE LE POSE OÙ ELLE VEUT ───────────────
+ *
+ * ⚠ Sur la planche d'ordinateur il est dessiné `position: absolute; right: 30px;
+ * top: 240px` — c'est-à-dire à UN endroit fixe, en face de la quatrième rangée,
+ * et non dans la ligne. Il passe en `fixed` (piège de la maquette qui ne défile
+ * pas : en `absolute` il se posait à 240 px du haut d'un document de plusieurs
+ * milliers de pixels) et garde sa place dessinée. Il ne suit donc pas la rangée
+ * cliquée : le redessiner dans la ligne demanderait de réécrire la maquette.
+ * REMONTÉ.
+ */
+const A08T_GERER_MEMBRES = {
+  screens: ['A08T'],
+  nom: 'A08T_GERER_MEMBRES',
+  why: 'Les cinq rangées de membres et les quatre entrées de leur menu ne faisaient rien.',
+  provides: ['gerer'],
+  apply(jsx) {
+    let out = jsx;
+
+    /** Le patron est la rangée qui porte une PASTILLE : les deux autres n'en ont pas. */
+    const avecPastille = (trouves) => trouves.find((m) => m[0].includes('>Modérateur<')) ?? null;
+
+    const kebab = (style) =>
+      `<button type="button" onClick={() => gerer.onMenu(m.userId)} ` +
+      `aria-haspopup="menu" aria-expanded={gerer.menu === m.userId} ` +
+      `aria-label="Options du membre" data-membre-options="" ` +
+      `${gererStyleControle(style, null).replace(' }}', ', padding: 0 }}')}>`;
+
+    // ── Planche d'ordinateur : cinq rangées ───────────────────────────────
+    const rangeeWeb =
+      /<div style=\{\{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 4px", borderBottom: "1px solid #F0F3F2" \}\}>[\s\S]*?M19 12h\.01" \/><\/svg><\/span><\/div>/;
+    const web = gererRangeesEnBoucle(out, rangeeWeb, 'gerer.membres', 'm', (trouves) => {
+      const patron = avecPastille(trouves);
+      if (patron === null) return null;
+      return patron[0]
+        .replace(
+          /(<span style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: )"#[0-9A-Fa-f]{3,8}"(, color: "#fff"[^}]*\}\}>)[^<]*(<\/span>)/,
+          '$1m.bg$2{m.i}$3',
+        )
+        .replace(/(gap: "6px", fontSize: "14px", fontWeight: "700" \}\}>)[^<]*(<svg)/, '$1{m.name}$2')
+        .replace(
+          /(<div style=\{\{ fontSize: "12px", color: "#8A958F" \}\}>)[^<]*(<\/div>)/,
+          '$1{m.sub}$2',
+        )
+        /**
+         * LA PASTILLE DISPARAÎT POUR UN MEMBRE ORDINAIRE, comme sur les rangées
+         * 4 et 5 du dessin. Ses deux couleurs viennent de la donnée — relevées à
+         * l'identique sur la planche, `#0F5C48`/blanc pour le propriétaire,
+         * `#E3F0EB`/`#0F5C48` pour un modérateur. Aucune n'est assombrie.
+         */
+        .replace(
+          /<span style=\{\{ background: "#E3F0EB", color: "#0F5C48", (fontSize: "11px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px", whiteSpace: "nowrap") \}\}>Modérateur<\/span>/,
+          '{m.roleNom === \'\' ? null : (<span style={{ background: m.roleBg, color: m.roleFg, $1 }}>{m.roleNom}</span>)}',
+        )
+        .replace(
+          /<span (style=\{\{ width: "36px", height: "36px", borderRadius: "999px", background: "#F2F5F4", display: "flex", alignItems: "center", justifyContent: "center" \}\})>(<svg(?:(?!<\/span>)[\s\S])*?<\/svg>)<\/span>/,
+          (_, s, svg) => `${kebab(s)}${svg}</button>`,
+        );
+    });
+    if (web !== null) out = web;
+
+    // ── Planche d'ordinateur : le menu ────────────────────────────────────
+    const menuWeb =
+      /<div style=\{\{ position: "absolute", right: "30px", top: "240px", width: "240px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "18px", padding: "8px", display: "flex", flexDirection: "column", gap: "2px" \}\}>[\s\S]*?Bannir du réseau<\/span><\/div>/;
+    const mM = menuWeb.exec(out);
+    if (mM !== null) {
+      out =
+        out.slice(0, mM.index) +
+        gererMenuMembre(mM[0]) +
+        out.slice(mM.index + mM[0].length);
+    }
+
+    // ── Planche de 390 px : cinq rangées ──────────────────────────────────
+    const rangeeMobile =
+      /<div style=\{\{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 0", borderBottom: "1px solid #F0F3F2" \}\}>[\s\S]*?M19 12h\.01" \/><\/svg><\/div>/;
+    const mob = gererRangeesEnBoucle(out, rangeeMobile, 'gerer.membres', 'm', (trouves) => {
+      const patron = avecPastille(trouves);
+      if (patron === null) return null;
+      return patron[0]
+        .replace(
+          /(<span style=\{\{ width: "38px", height: "38px", borderRadius: "999px", background: )"#[0-9A-Fa-f]{3,8}"(, color: "#fff"[^}]*\}\}>)[^<]*(<\/span>)/,
+          '$1m.bg$2{m.i}$3',
+        )
+        .replace(
+          /(gap: "5px", fontSize: "13\.5px", fontWeight: "700" \}\}>)[^<]*(<svg)/,
+          '$1{m.name}$2',
+        )
+        .replace(
+          /(<span style=\{\{ display: "block", fontSize: "11\.5px", color: "#8A958F" \}\}>)[^<]*(<\/span>)/,
+          '$1{m.sub}$2',
+        )
+        .replace(
+          /<span style=\{\{ background: "#E3F0EB", color: "#0F5C48", (fontSize: "10\.5px", fontWeight: "700", padding: "3px 9px", borderRadius: "999px", whiteSpace: "nowrap") \}\}>Modérateur<\/span>/,
+          '{m.roleNom === \'\' ? null : (<span style={{ background: m.roleBg, color: m.roleFg, $1 }}>{m.roleNom}</span>)}',
+        )
+        /**
+         * LE CHEVRON DU TÉLÉPHONE N'A AUCUN CADRE : la planche d'ordinateur
+         * dessine son rond de 36 px, celle de 390 px pose le `<svg>` nu en bout
+         * de rangée. On l'enveloppe donc dans un bouton SANS fond ni bordure —
+         * rien de visible n'est ajouté — et on lui donne les 44 px de cible que
+         * le dépôt impose au pouce.
+         */
+        .replace(
+          /(<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="2\.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h\.01M12 12h\.01M19 12h\.01" \/><\/svg>)(<\/div>)$/,
+          (_, svg, fin) =>
+            `<button type="button" onClick={() => gerer.onMenu(m.userId)} aria-haspopup="menu" ` +
+            `aria-expanded={gerer.menu === m.userId} aria-label="Options du membre" ` +
+            `data-membre-options="" style={{ background: "none", border: "none", padding: 0, ` +
+            `color: "inherit", fontFamily: "inherit", cursor: "pointer", display: "flex", ` +
+            `alignItems: "center", justifyContent: "center", minWidth: "44px", minHeight: "44px", ` +
+            `flexShrink: "0" }}>${svg}</button>${fin}`,
+        );
+    });
+    if (mob !== null) out = mob;
+
+    // ── Planche de 390 px : le voile et la feuille basse ──────────────────
+    const feuille =
+      /<div style=\{\{ position: "absolute", inset: "0", background: "rgba\(22,33,29,\.5\)" \}\}><\/div><div style=\{\{ position: "absolute", left: "0", right: "0", bottom: "0", background: "#fff", borderRadius: "28px 28px 0 0", padding: "10px 16px 30px", display: "flex", flexDirection: "column", gap: "4px" \}\}>[\s\S]*?Bannir du réseau<\/span><\/div>/;
+    const mF = feuille.exec(out);
+    if (mF !== null) {
+      out = out.slice(0, mF.index) + gererFeuilleMembre(mF[0]) + out.slice(mF.index + mF[0].length);
+    }
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LA FENÊTRE DE CONFIRMATION N'EST PAS POSÉE ICI, ET C'EST MESURÉ         ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Emploie `components/fenetre-confirmation.tsx`. » Elle l'est
+     * — mais par `reseau-screen.tsx`, pas par le cadre.
+     *
+     * ⚠ LE CADRE L'A PORTÉE, ET ÇA NE MARCHAIT PAS. Mesuré au navigateur : posée
+     * en frère du contenu comme `A08T_GERER_SIGNALER` pose `FenetreSignalement`,
+     * elle se retrouvait EN DEUX EXEMPLAIRES — `ScreenFrames` rend les DEUX
+     * cadres et n'en masque qu'un par `display: none`, et `Modal` se PORTALISE
+     * vers `document.body`. Les deux panneaux échappaient donc au cadre masqué,
+     * s'ouvraient ensemble sur le même `gerer.bannirOuverte`, et le voile du
+     * second interceptait les clics du premier. Playwright : « subtree
+     * intercepts pointer events », cinquante-sept tentatives de clic.
+     *
+     * S'y ajoutait l'ambiguïté que l'en-tête de `Modal` nomme déjà : deux
+     * instances du même `nom` donnent deux fois le même `id` de titre, et
+     * `aria-labelledby` désigne alors le premier trouvé — peut-être celui du
+     * cadre masqué. La boîte de dialogue perdrait son nom accessible.
+     *
+     * UNE SEULE INSTANCE, DANS L'ÉCRAN, est la bonne réponse : `Modal` choisit
+     * déjà lui-même entre son dessin d'ordinateur et sa feuille de téléphone
+     * (`DESKTOP_QUERY`). La correction prend donc bien sur les deux planches —
+     * c'est `Modal` qui s'en charge, et non deux copies qui se gênent.
+     *
+     * ⚠ `A08T_GERER_SIGNALER` POSE ENCORE `FenetreSignalement` DANS LE CADRE, et
+     * il a le même défaut en puissance. Il n'est pas de ce lot ; REMONTÉ.
+     */
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08 ET A08T — LES SEPT BOUTONS « SOURDINE »                                  ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * §2.5 : « Un membre peut mettre un réseau en sourdine : plus de notifications,
+ * le réseau reste dans sa liste. » §2.1 en fait la SEULE échappatoire d'un
+ * réseau automatique : « Sortie impossible (on peut le mettre en sourdine) ».
+ *
+ * RELEVÉ sur les cadres produits, sept contrôles et pas un de vivant :
+ *   · A08 `desktop` — un `<button>` dans la rangée d'actions de l'en-tête ;
+ *   · A08 `mobile` — un `<span>` de 40 px dans la paire de pastilles ;
+ *   · A08T `fil`, `evenements`, `membres`, `album`, `apropos` — un `<button>` par
+ *     planche, c'est-à-dire les CINQ onglets de la vue MEMBRE.
+ *
+ * ⚠ LES HUIT PLANCHES DE LA VUE PROPRIÉTAIRE N'EN PORTENT PAS, et les cinq
+ * planches mobiles d'onglet non plus : compté, « Sourdine » y figure zéro fois.
+ * Ce n'est pas un oubli de ce lot, c'est la maquette — un propriétaire voit
+ * « Gérer le réseau » à cette place. CONSÉQUENCE REMONTÉE : sur un téléphone, la
+ * sourdine n'est atteignable que depuis l'écran A08 lui-même
+ * (`/reseaux/:slug`), pas depuis un onglet.
+ *
+ * ── TROIS DESSINS POUR UN GESTE, ET ON NE LES UNIFIE PAS ────────────────────
+ *
+ * Piège n° 1 du mémo : la planche de 390 px ne dessine jamais les mêmes valeurs
+ * que celle de 1 440 px. Ici c'est pire qu'une mesure — c'est une BALISE
+ * différente : un `<span>` sur le téléphone, un `<button>` ailleurs, et deux
+ * styles distincts entre A08 et A08T. On ancre donc sur le TEXTE « Sourdine »,
+ * qui est la seule chose que les trois dessins partagent, et on garde le style
+ * de chacun verbatim.
+ *
+ * ── LE LIBELLÉ BASCULE, ET LES DEUX MOTS SONT CEUX DE LA MAQUETTE ──────────
+ *
+ * « Sourdine » quand elle est éteinte — c'est le mot dessiné — et « En
+ * sourdine » quand elle est posée, qui est le mot que la MÊME maquette écrit sur
+ * la pastille des cartes de « Mes réseaux » (A07). Aucun mot n'est inventé, et
+ * aucune couleur n'est touchée : un interrupteur qui ne change rien à l'écran est
+ * un interrupteur dont on ne sait jamais l'état.
+ *
+ * `aria-pressed` porte l'état pour qui n'en lit pas le libellé (§10.6).
+ */
+const A08T_SOURDINE = {
+  screens: ['A08', 'A08T'],
+  nom: 'A08T_SOURDINE',
+  why: 'Les sept boutons « Sourdine » étaient dessinés et inertes ; §2.5 en fait la seule échappatoire d’un réseau automatique.',
+  provides: ['sourdine'],
+  apply(jsx) {
+    let out = jsx;
+    const libelle = `{sourdine.active ? "En sourdine" : "Sourdine"}`;
+    const attributs =
+      `type="button" onClick={sourdine.onBasculer} ` +
+      `disabled={sourdine.occupe || !sourdine.disponible} ` +
+      `aria-pressed={sourdine.active} data-reseau-sourdine=""`;
+
+    /**
+     * ⚠ `occupe` EST UNE EXPRESSION, PAS UN NOM DE PRISE. `gererStyleControle`
+     * l'insère tel quel dans `cursor: ${occupe} ? …` : la parenthèse est donc
+     * indispensable, sans elle la précédence de `||` donnerait
+     * `sourdine.occupe || (!sourdine.disponible ? "default" : "pointer")`,
+     * c'est-à-dire un curseur valant `true`.
+     */
+    const eteint = '(sourdine.occupe || !sourdine.disponible)';
+
+    const bouton = /<button (style=\{\{[^}]*\}\})>Sourdine<\/button>/;
+    const mB = bouton.exec(out);
+    if (mB !== null) {
+      out =
+        out.slice(0, mB.index) +
+        `<button ${attributs} ${gererStyleControle(mB[1], eteint)}>${libelle}</button>` +
+        out.slice(mB.index + mB[0].length);
+    }
+
+    /**
+     * LA PASTILLE DE 390 PX EST UN `<span>`, et elle devient un bouton de la
+     * même géométrie. La maquette la dessine `flex: 1` dans une paire, à 40 px
+     * de haut : c'est déjà la cible de 44 px du pouce à deux pixels près, et on
+     * ne la retouche pas — le dessin décide de la taille.
+     */
+    const pastille = /<span (style=\{\{[^}]*\}\})>Sourdine<\/span>/;
+    const mS = pastille.exec(out);
+    if (mS !== null) {
+      out =
+        out.slice(0, mS.index) +
+        `<button ${attributs} ${gererStyleControle(mS[1], eteint).replace(' }}', ', padding: 0 }}')}>${libelle}</button>` +
+        out.slice(mS.index + mS[0].length);
+    }
+
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — L'ONGLET « MEMBRES » DE LA VUE MEMBRE : NEUF LIGNES PEINTES EN DUR    ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : « L'onglet des membres aussi n'est pas
+ * dynamique, aussi on peut pas écrire aux membres. »
+ *
+ * MESURÉ sur les deux cadres produits de la vue MEMBRE, avant ce lot :
+ * `membres.generated.tsx` ne déstructurait que `{ reseau, sourdine }` et
+ * `membresmobile.generated.tsx` que `{ reseau }` — tout le reste était du
+ * dessin. CINQ lignes peintes à 1 036 px (Aïcha Diop, Marc Koudou, Sandra M.,
+ * Fatou Ndiaye, Kofi Boateng), QUATRE à 390 px (sans Sandra M.), et les cinq
+ * boutons « Écrire » de la planche d'ordinateur sans un `onClick`. Un membre de
+ * « Sénégalais à Paris » lisait donc les cinq mêmes inconnus que tout le monde.
+ *
+ * ── LA MÊME LISTE QUE LA VUE PROPRIÉTAIRE, PAS UNE SECONDE ────────────────
+ *
+ * `gerer.membres` et `membreAdminRowFrom` existaient déjà, pour les deux
+ * planches « ADMIN · MEMBRES » branchées par `A08T_GERER_MEMBRES`. Les quatre
+ * planches lisent donc UNE liste, par UN convertisseur. En écrire un second pour
+ * la vue membre aurait donné deux formes de la même route, qui auraient divergé
+ * au premier ajustement — c'est très exactement ce que `A08T_FIL_PUBLICATIONS` a
+ * refusé de faire avec la carte du fil, et pour la même raison.
+ *
+ * ⚠ CE QUI A DÛ CHANGER AILLEURS, et c'était la vraie cause : la liste n'était
+ * chargée que dans l'effet de `useReseau` gardé par `myRole === OWNER ||
+ * MODERATOR`. Un membre ordinaire n'en recevait jamais rien, alors que
+ * `GET /communities/:id/members` n'exige qu'`assertMember` — relevé dans
+ * `communities.service.ts`. Elle a donc son propre effet maintenant.
+ *
+ * ── DEUX VUES, DEUX DESSINS DE LIGNE — DONC DEUX DÉCLARATIONS ─────────────
+ *
+ * RELEVÉ, et c'est ce qui interdit de réemployer les motifs d'`A08T_GERER_MEMBRES` :
+ *
+ *   · la ligne du PROPRIÉTAIRE finit par la poignée « ··· » (tracé
+ *     `M5 12h.01M12 12h.01M19 12h.01`) qui ouvre le menu de rôle ;
+ *   · celle du MEMBRE finit par un bouton « Écrire » de 36 px à 1 036 px, et par
+ *     RIEN à 390 px — la planche mobile de la vue membre ne dessine aucun
+ *     contrôle sur ses lignes. On ne lui en ajoute pas : ce serait dessiner à la
+ *     place du porteur. REMONTÉ.
+ *
+ * Les deux motifs portent donc une GARDE sur le tracé de la poignée : sans elle,
+ * le motif mobile — dont la ligne n'a aucun `<div>` interne, donc dont la
+ * fermeture est la première rencontrée — attrapait AUSSI la ligne de la vue
+ * propriétaire et l'aurait remplacée par une boucle sans poignée, c'est-à-dire
+ * un menu de rôle devenu inatteignable.
+ *
+ * ── LES MESURES NE SONT PAS LES MÊMES NON PLUS (piège n° 1) ───────────────
+ *
+ * Avatar 40 px contre 38, nom 14 px contre 13,5, écart 6 px contre 5,
+ * sous-titre en `<div>` contre un `<span style="display:block">` NICHÉ dans le
+ * nom, pastille de rôle 11 px / `4px 10px` contre 10,5 px / `3px 9px`. Un seul
+ * jeu de motifs n'aurait décrit qu'un cadre sur deux.
+ *
+ * ── CE QUI RESTE DESSINÉ SUR CES DEUX PLANCHES, ET QU'ON NE COMBLE PAS ────
+ *
+ * ⚠ LA COCHE VERTE après chaque nom : `communityMemberSchema` ne porte aucun
+ * champ de vérification. On ne l'invente pas — décider qu'elle vaut « N1 » est
+ * un arbitrage produit — et on ne la retire pas. REMONTÉ.
+ * ⚠ LE CHAMP DE RECHERCHE (« Rechercher parmi N membres ») est un `<div>`, et
+ * les trois pastilles « Tous · Modérateurs · Lyon » des `<span>`.
+ * `memberListQuerySchema` porte bien `q` et `role` ; les brancher demande un
+ * état de filtre et une relance de l'appel sur les quatre planches, ce qui est
+ * un lot à soi. REMONTÉ.
+ * ⚠ LE SOUS-TITRE MOBILE affiche la forme longue (« Installée · Lyon 7e ») là où
+ * la maquette écrit la ville seule (« Lyon 7e ») : `MembreAdminRowView` n'a
+ * qu'un champ `sub`, et c'est l'écart que `memberRowFrom` documente déjà avec
+ * son `subM`. Les deux planches ADMIN ont le même, depuis leur propre lot.
+ * REMONTÉ.
+ */
+const A08T_MEMBRES_VUE_MEMBRE = {
+  screens: ['A08T'],
+  nom: 'A08T_MEMBRES_VUE_MEMBRE',
+  why: 'L’onglet « Membres » de la vue membre peignait neuf inconnus, et ses cinq boutons « Écrire » n’avaient aucun geste.',
+  provides: ['gerer'],
+  apply(jsx) {
+    let out = jsx;
+
+    /**
+     * LE PATRON EST LA LIGNE QUI PORTE UNE PASTILLE « Modérateur » : les lignes
+     * sans rôle n'en dessinent pas, et c'est `roleNom` qui en décide à
+     * l'exécution. Même choix qu'`A08T_GERER_MEMBRES`, qui doit rester le même :
+     * la pastille se substitue, elle ne s'ajoute pas.
+     */
+    const avecPastille = (trouves) => trouves.find((m) => m[0].includes('>Modérateur<')) ?? null;
+
+    /**
+     * « ÉCRIRE » — LE LIBELLÉ DESSINÉ RESTE, ET IL GAGNE UN NOM COMPLET.
+     *
+     * Cinq boutons portant tous le nom accessible « Écrire » dans une même liste
+     * ne disent pas à qui ils écrivent. `aria-label` commence donc par le mot
+     * DESSINÉ — « Écrire à Aïcha Diop » — ce qui satisfait « le libellé est dans
+     * le nom » (WCAG 2.5.3) au lieu de le contredire. Aucun texte visible ne
+     * change.
+     *
+     * ⚠ LES 36 px DESSINÉS SONT GARDÉS, contrairement à ce que `X02_FILTRES` a
+     * fait de sa rangée de 36 px. Là-bas c'était une cible du POUCE, sur la
+     * planche de 390 px, et T1 §2.3 en exige 44. Ici le bouton n'existe QUE sur
+     * la planche de 1 036 px — la vue membre de 390 px n'en dessine aucun —
+     * donc c'est une cible de POINTEUR, et le dessin décide. C'est aussi ce que
+     * `A08T_GERER_MEMBRES` a fait du rond de 36 px de sa poignée.
+     */
+    const ecrire = (rangee) =>
+      rangee.replace(
+        /<button (style=\{\{[^}]*\}\})>Écrire<\/button>/,
+        (_, style) =>
+          `<button type="button" onClick={() => gerer.onEcrire(m.userId)} ` +
+          `disabled={gerer.occupe} data-membre-ecrire="" aria-label={\`Écrire à \${m.name}\`} ` +
+          `${gererStyleControle(style, 'gerer.occupe')}>Écrire</button>`,
+      );
+
+    // ── Planche de 1 036 px : cinq lignes, chacune avec son « Écrire » ─────
+    const rangeeWeb =
+      /<div style=\{\{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 4px", borderBottom: "1px solid #F0F3F2" \}\}>(?:(?!M19 12h\.01)[\s\S])*?>Écrire<\/button><\/div>/;
+    const web = gererRangeesEnBoucle(out, rangeeWeb, 'gerer.membres', 'm', (trouves) => {
+      const patron = avecPastille(trouves);
+      if (patron === null) return null;
+      return ecrire(
+        patron[0]
+          .replace(
+            /(<span style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: )"#[0-9A-Fa-f]{3,8}"(, color: "#fff"[^}]*\}\}>)[^<]*(<\/span>)/,
+            '$1m.bg$2{m.i}$3',
+          )
+          .replace(
+            /(gap: "6px", fontSize: "14px", fontWeight: "700" \}\}>)[^<]*(<svg)/,
+            '$1{m.name}$2',
+          )
+          .replace(
+            /(<div style=\{\{ fontSize: "12px", color: "#8A958F" \}\}>)[^<]*(<\/div>)/,
+            '$1{m.sub}$2',
+          )
+          .replace(
+            /<span style=\{\{ background: "#E3F0EB", color: "#0F5C48", (fontSize: "11px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px", whiteSpace: "nowrap") \}\}>Modérateur<\/span>/,
+            '{m.roleNom === \'\' ? null : (<span style={{ background: m.roleBg, color: m.roleFg, $1 }}>{m.roleNom}</span>)}',
+          ),
+      );
+    });
+    if (web !== null) out = web;
+
+    /**
+     * ── Planche de 390 px : quatre lignes, aucun contrôle ─────────────────
+     *
+     * ⚠ LA GARDE SUR LE TRACÉ DE LA POIGNÉE EST INDISPENSABLE ICI. La ligne
+     * mobile n'a AUCUN `<div>` interne — tout y est en `<span>` — donc sa
+     * fermeture est le premier `</div>` rencontré, et le motif attraperait
+     * exactement de la même façon la ligne de la vue PROPRIÉTAIRE, poignée
+     * comprise. Le menu de rôle serait alors remplacé par une boucle qui ne
+     * l'ouvre plus : la vue propriétaire perdrait ses quatre gestes, et la
+     * génération n'aurait rien à dire.
+     */
+    const rangeeMobile =
+      /<div style=\{\{ display: "flex", alignItems: "center", gap: "10px", padding: "10px 0", borderBottom: "1px solid #F0F3F2" \}\}>(?:(?!M19 12h\.01)[\s\S])*?<\/div>/;
+    const mob = gererRangeesEnBoucle(out, rangeeMobile, 'gerer.membres', 'm', (trouves) => {
+      const patron = avecPastille(trouves);
+      if (patron === null) return null;
+      return patron[0]
+        .replace(
+          /(<span style=\{\{ width: "38px", height: "38px", borderRadius: "999px", background: )"#[0-9A-Fa-f]{3,8}"(, color: "#fff"[^}]*\}\}>)[^<]*(<\/span>)/,
+          '$1m.bg$2{m.i}$3',
+        )
+        .replace(
+          /(gap: "5px", fontSize: "13\.5px", fontWeight: "700" \}\}>)[^<]*(<svg)/,
+          '$1{m.name}$2',
+        )
+        .replace(
+          /(<span style=\{\{ display: "block", fontSize: "11\.5px", color: "#8A958F" \}\}>)[^<]*(<\/span>)/,
+          '$1{m.sub}$2',
+        )
+        .replace(
+          /<span style=\{\{ background: "#E3F0EB", color: "#0F5C48", (fontSize: "10\.5px", fontWeight: "700", padding: "3px 9px", borderRadius: "999px", whiteSpace: "nowrap") \}\}>Modérateur<\/span>/,
+          '{m.roleNom === \'\' ? null : (<span style={{ background: m.roleBg, color: m.roleFg, $1 }}>{m.roleNom}</span>)}',
+        );
+    });
+    if (mob !== null) out = mob;
+
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * Les quatre entrées du menu de membre, et ce que chacune devient.
+ *
+ * Elles sont dessinées en `<span>` : la maquette dessine une image, pas une
+ * interface. ⚠ CE TEXTE DISAIT « les deux qui agissent deviennent des boutons ;
+ * les deux qui n'ont pas de route restent des `<span>` » — et c'est périmé deux
+ * fois. « Retirer du réseau » a rejoint « Bannir » quand la spécification a
+ * tranché, et « Écrire » a reçu sa route avec ce lot. LES QUATRE AGISSENT
+ * DÉSORMAIS, et il n'en reste aucune en `<span>`.
+ */
+const PRISE_MENU = {
+  onNommerModerateur: 'nommer',
+  onBannir: 'bannir',
+  onEcrireMenu: 'ecrire',
+};
+
+const gererEntreeMenu = (entree, libelle, geste, conditionnel) => {
+  const motif = new RegExp(
+    `<span (style=\\{\\{[^}]*\\}\\})>(<svg(?:(?!<\\/span>)[\\s\\S])*?<\\/svg>)${libelle}<\\/span>`,
+  );
+  const m = motif.exec(entree);
+  if (m === null) return entree;
+  /**
+   * LA PRISE EST LUE DANS UNE TABLE, et plus déduite d'un ternaire.
+   *
+   * Le ternaire d'origine — « nommer si c'est `onNommerModerateur`, bannir
+   * sinon » — était juste avec DEUX entrées branchées. Avec trois (« Retirer du
+   * réseau » rejoint « Bannir du réseau »), « sinon » aurait rendu
+   * `data-membre-bannir` sur deux boutons différents, et un sélecteur
+   * d'épreuve aurait pris le premier venu.
+   *
+   * ⚠ ET LES DEUX ENTRÉES DE RETRAIT PARTAGENT BIEN LA PRISE `bannir`, parce que
+   * c'est le MÊME geste : §2.4 n'en définit qu'un — « retirer un membre
+   * (`BANNED` : ne peut plus rejoindre) ». La table le dit en un coup d'œil, là
+   * où le ternaire le cachait.
+   */
+  const prise = PRISE_MENU[geste] ?? geste;
+  const bouton =
+    `<button type="button" onClick={gerer.${geste}} disabled={gerer.occupe} ` +
+    `data-membre-${prise}="" ` +
+    `${gererStyleControle(m[1], 'gerer.occupe').replace(' }}', ', width: "100%", background: "none", textAlign: "left" }}')}>` +
+    `${m[2]}${libelle}</button>`;
+  const rendu = conditionnel
+    ? `{gerer.membreMenu?.nommable === true ? (${bouton}) : null}`
+    : bouton;
+  return entree.slice(0, m.index) + rendu + entree.slice(m.index + m[0].length);
+};
+
+/** Le menu d'ordinateur : il n'apparaît que lorsqu'un membre l'a ouvert. */
+const gererMenuMembre = (menu) => {
+  /**
+   * ⚠ TROIS ENTRÉES BRANCHÉES, ET DEUX D'ENTRE ELLES FONT LA MÊME CHOSE.
+   *
+   * §2.4 : « retirer un membre (`BANNED` : ne peut plus rejoindre) ». UN pouvoir,
+   * et la maquette en dessine DEUX — « Retirer du réseau » et « Bannir du
+   * réseau ». Un lot précédent avait laissé « Retirer » inerte en craignant que
+   * bannir soit plus grave ; la spécification dit que c'est le même acte, et elle
+   * tranche. Laisser l'entrée morte était le défaut, pas la prudence.
+   *
+   * C'est la CONFIRMATION qui dit la vérité que les deux libellés ne disent pas
+   * (`gerer.onBannir` ouvre `FenetreConfirmation`) : définitif, et plus jamais
+   * rejoignable. REMONTÉ : au porteur de retirer l'une des deux rangées du
+   * dessin — deux entrées pour un geste invitent à croire qu'il y en a deux.
+   *
+   * ⚠ « ÉCRIRE » N'EST PLUS INERTE, et cette note disait le contraire : « c'est
+   * la messagerie, un autre module ». Le porteur : « on ne peut pas écrire aux
+   * membres ». Le module de messagerie n'a rien de spécial à ajouter —
+   * `POST /conversations/direct` prend un pseudo, et la ligne de membre le porte
+   * depuis ce lot. L'entrée ouvre donc `FenetreEcrire`, la MÊME que le bouton
+   * « Écrire » du profil public, par les MÊMES appels
+   * (`components/ecrire.ts`) : chercher le fil existant, y aller s'il y en a un,
+   * sinon demander le premier message que la route exige.
+   */
+  const branche = gererEntreeMenu(
+    gererEntreeMenu(
+      gererEntreeMenu(
+        gererEntreeMenu(menu, 'Nommer modérateur·rice', 'onNommerModerateur', true),
+        'Écrire',
+        'onEcrireMenu',
+        false,
+      ),
+      'Retirer du réseau',
+      'onBannir',
+      false,
+    ),
+    'Bannir du réseau',
+    'onBannir',
+    false,
+  );
+  /**
+   * `absolute` EST GARDÉ, ET C'EST UN CHOIX — contre le réflexe du piège n° 6.
+   *
+   * Ce piège vise un VOILE ou une FEUILLE dessinés en `absolute` dans un cadre
+   * figé : hauts de 3 100 px sur un vrai guide, ils finissaient hors écran, et
+   * `fixed` est la bonne réponse. Ici non : le menu est une boîte de 240 px
+   * posée dans le conteneur `position: relative` qui enferme la CARTE de la
+   * liste. En `absolute` il reste dans la colonne de contenu, à la place que la
+   * planche lui donne, et il défile avec la liste. En `fixed`, ses 30 px de
+   * droite se mesureraient sur la FENÊTRE : le menu sauterait par-dessus la
+   * colonne de contexte de 300 px, c'est-à-dire ailleurs que là où il est
+   * dessiné.
+   *
+   * On n'ajoute donc que `zIndex` — sans lui, il passe SOUS les cartes
+   * suivantes, qui portent un fond blanc opaque.
+   *
+   * ⚠ ET IL NE SUIT PAS LA RANGÉE CLIQUÉE : la maquette le pose à `top: 240px`,
+   * en face de la quatrième, et c'est tout ce qu'elle dit. Le redessiner dans la
+   * ligne demanderait de sortir le menu de sa place et de le remettre dans la
+   * boucle — c'est-à-dire de réécrire la planche. REMONTÉ.
+   */
+  return `{gerer.menu === null ? null : (${branche.replace(
+    'position: "absolute"',
+    'position: "absolute", zIndex: 30',
+  )})}`;
+};
+
+/** La feuille basse du téléphone : le voile ferme, la feuille nomme le membre. */
+const gererFeuilleMembre = (bloc) => {
+  /**
+   * ⚠ LE LIBELLÉ DE LA PREMIÈRE ENTRÉE N'EST PAS LE MÊME QU'À 1 036 px : la
+   * planche d'ordinateur écrit « Nommer modérateur·rice », celle de 390 px
+   * « Nommer modératrice » — faute de place, et c'est la maquette qui l'écrit
+   * ainsi. Un seul libellé pour les deux cadres n'aurait branché qu'un cadre sur
+   * deux (piège n° 1 : la planche de 390 px ne dessine presque jamais les mêmes
+   * valeurs). « Écrire » et les deux retraits, eux, s'écrivent pareil.
+   */
+  const branche = gererEntreeMenu(
+    gererEntreeMenu(
+      gererEntreeMenu(
+        gererEntreeMenu(bloc, 'Nommer modératrice', 'onNommerModerateur', true),
+        'Écrire',
+        'onEcrireMenu',
+        false,
+      ),
+      'Retirer du réseau',
+      'onBannir',
+      false,
+    ),
+    'Bannir du réseau',
+    'onBannir',
+    false,
+  )
+    /**
+     * LE VOILE FERME LA FEUILLE. Dessiné en `<div>` muet, il laissait un membre
+     * enfermé dans un menu sans sortie : les deux entrées sans route ne font
+     * rien, et la pastille qui l'a ouvert est DERRIÈRE le voile. Il devient donc
+     * un bouton nommé — rien de visible n'est ajouté, seulement ce qu'un
+     * `<button>` impose.
+     */
+    .replace(
+      '<div style={{ position: "absolute", inset: "0", background: "rgba(22,33,29,.5)" }}></div>',
+      '<button type="button" onClick={gerer.onFermerMenu} aria-label="Fermer le menu" ' +
+        'data-membre-menu-voile="" style={{ position: "fixed", inset: "0", zIndex: 30, ' +
+        'background: "rgba(22,33,29,.5)", border: "none", padding: 0, cursor: "pointer" }}></button>',
+    )
+    /**
+     * LA FEUILLE PASSE EN `fixed`, AVEC UNE HAUTEUR BORNÉE. Ancrée en
+     * `absolute; bottom: 0` dans un cadre haut de plusieurs milliers de pixels,
+     * elle finissait sous le bas du document — c'est-à-dire invisible tant qu'on
+     * n'avait pas tout déroulé. C'est le piège n° 6 du mémo, déjà mesuré à
+     * 3 100 px sur un guide réel.
+     */
+    .replace(
+      '<div style={{ position: "absolute", left: "0", right: "0", bottom: "0", background: "#fff", borderRadius: "28px 28px 0 0", padding: "10px 16px 30px", display: "flex", flexDirection: "column", gap: "4px" }}>',
+      '<div style={{ position: "fixed", left: "0", right: "0", bottom: "0", zIndex: 31, ' +
+        'maxHeight: "calc(100vh - 48px)", overflowY: "auto", background: "#fff", ' +
+        'borderRadius: "28px 28px 0 0", padding: "10px 16px 30px", display: "flex", ' +
+        'flexDirection: "column", gap: "4px" }}>',
+    )
+    // L'en-tête de la feuille NOMME le membre : c'est la maquette qui le dessine.
+    .replace(
+      /(<span style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: )"#[0-9A-Fa-f]{3,8}"(, color: "#fff"[^}]*\}\}>)[^<]*(<\/span>)/,
+      '$1gerer.membreMenu?.bg$2{gerer.membreMenu?.i}$3',
+    )
+    .replace(
+      /(<span style=\{\{ fontSize: "15px", fontWeight: "700" \}\}>)[^<]*(<\/span>)/,
+      '$1{gerer.membreMenu?.name}$2',
+    );
+  return `{gerer.menu === null ? null : (<>${branche}</>)}`;
+};
+
+/**
+ * A08T — SIGNALER LE RÉSEAU, sur les deux planches « À propos ».
+ *
+ * `report.create` est en **N2** (`capabilities.ts`), et le front ne l'arbitre
+ * pas : on tente, le serveur refuse en `403 LEVEL_REQUIRED`, et
+ * `components/fenetre-niveau.tsx` explique. C'est `FenetreSignalement` qui porte
+ * l'appel et le niveau — la MÊME fenêtre X03 que la messagerie et les
+ * commentaires, réemployée plutôt que redessinée : X03 est dessinée dans
+ * « 09 Messages et TRANSVERSE », et le mot est dans le titre du fichier.
+ *
+ * ⚠ « CONTACTER LES MODÉRATEURS » RESTE INERTE, et il faut le dire. Le bouton est
+ * dessiné à côté, sur les deux planches (« Contacter » sur le téléphone), mais
+ * ouvrir une conversation avec les modérateurs d'un réseau n'a aucune route dans
+ * ce module : la messagerie est un autre module, et rien n'y désigne « les
+ * modérateurs de ce réseau » comme destinataire. REMONTÉ.
+ */
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — LA CARTE « SIGNALEMENTS », SES RANGÉES ET SES DEUX DÉCISIONS         ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * §2.4 : « Propriétaire et modérateurs peuvent : masquer une publication ou un
+ * sujet du réseau […]. Ils ne peuvent pas suspendre un compte — ils signalent à
+ * l'équipe. »
+ *
+ * RELEVÉ avant ce lot : la planche « Gérer » dessinait DEUX rangées peintes en
+ * dur — Joël K. et sa fausse attestation, Paul A. et son harcèlement — sous un
+ * titre « SIGNALEMENTS · 2 » dont le 2 ne venait de NULLE PART. Six boutons
+ * inertes sur l'ordinateur, deux sur le téléphone. Un propriétaire sans aucun
+ * signalement lisait donc deux accusations nominatives inventées.
+ *
+ * ── UNE RANGÉE PAR CONTENU, ET C'EST LE DESSIN QUI L'IMPOSE ────────────────
+ *
+ * La rangée écrit « 5 signalements » : elle représente UN contenu signalé cinq
+ * fois, avec UNE paire « Masquer » / « Conserver ». La route rend donc des
+ * groupes, et la décision porte sur le couple `(subjectType, subjectId)`.
+ *
+ * ── CE QUI RESTE INERTE, ET POURQUOI ON NE L'INVENTE PAS ───────────────────
+ *
+ * ⚠ « VOIR » NE MÈNE QUELQUE PART QUE POUR UN SUJET. Vérifié sur l'arborescence
+ * de `app/(app)` : il existe `/reseaux/[slug]/sujets/[id]`, et AUCUNE page de
+ * publication ni de commentaire dans tout le produit. Le bouton devient donc un
+ * `<Link>` quand `s.href` est rempli — le hook ne le remplit que pour un
+ * `TOPIC` — et reste un bouton ÉTEINT sinon. Un lien vers une page inexistante
+ * serait un 404 ; un bouton allumé qui ne fait rien est le défaut qu'on corrige.
+ * REMONTÉ : il faudrait une page de publication.
+ *
+ * ⚠ ET LA PLANCHE DE 390 PX NE DESSINE PAS « VOIR » DU TOUT — elle n'a que la
+ * grille de deux boutons. Ce n'est pas un manque de ce lot : c'est la maquette,
+ * et on ne lui ajoute pas un troisième bouton.
+ *
+ * ── « MASQUER » S'ÉTEINT SUR UN CONTENU DÉJÀ MASQUÉ ───────────────────────
+ *
+ * `s.masque` vient du serveur (`hidden`). Sans lui, un modérateur appuierait sur
+ * « Masquer » un contenu que l'équipe a déjà masqué, sans savoir qu'il ne change
+ * rien. « Conserver » reste ALLUMÉ dans ce cas, et il le faut : c'est le seul
+ * moyen de faire redescendre le compteur « SIGNALEMENTS · N » sur un contenu que
+ * l'équipe a traité de son côté.
+ */
+const A08T_GERER_SIGNALEMENTS = {
+  screens: ['A08T'],
+  nom: 'A08T_GERER_SIGNALEMENTS',
+  why: 'La carte « SIGNALEMENTS » montrait deux accusations inventées et ses huit boutons ne faisaient rien.',
+  provides: ['gerer'],
+  apply(jsx) {
+    let out = jsx;
+
+    /** Les trois boutons d'une rangée, promus d'un coup. */
+    const decisions = (rangee) =>
+      rangee
+        /**
+         * « VOIR » : un `<Link>` quand le contenu a une page, un bouton éteint
+         * sinon. Les deux branches gardent le style DESSINÉ au caractère près —
+         * `display: flex` et `alignItems: center` y sont déjà, ce qui est ce qui
+         * rend le `<Link>` possible sans rien ajouter (un `<a>` ne centre pas son
+         * texte comme un `<button>`, leçon de `A08_BANDEAU_GERER`).
+         */
+        .replace(
+          /<button (style=\{\{[^}]*\}\})>Voir<\/button>/,
+          (_, style) =>
+            `{s.href === '' ? (<button type="button" disabled data-signalement-voir="" ` +
+            /**
+             * ⚠ `cursor: "default"` EN DUR, ET PAS `gererStyleControle(style, 'true')`.
+             *
+             * Ce bouton-là est TOUJOURS éteint — on n'arrive dans cette branche
+             * que parce que `s.href` est vide. Passer la condition `'true'`
+             * produisait `cursor: true ? "default" : "pointer"`, qu'ESLint refuse
+             * à juste titre (`no-constant-condition`) : une ternaire dont la
+             * réponse est connue à l'écriture n'est pas une condition. On
+             * substitue donc le curseur que `gererStyleControle` aurait posé.
+             */
+            `${gererStyleControle(style, null).replace('cursor: "pointer"', 'cursor: "default"')}>Voir</button>) : ` +
+            `(<Link href={s.href} data-signalement-voir="" ` +
+            `${style.replace(' }}', ', textDecoration: "none" }}')}>Voir</Link>)}`,
+        )
+        .replace(
+          /<button (style=\{\{[^}]*\}\})>Masquer<\/button>/,
+          (_, style) =>
+            `<button type="button" onClick={() => gerer.onMasquer(s.subjectType, s.subjectId)} ` +
+            `disabled={gerer.occupe || s.masque} data-signalement-masquer="" ` +
+            `${gererStyleControle(style, '(gerer.occupe || s.masque)')}>Masquer</button>`,
+        )
+        .replace(
+          /<button (style=\{\{[^}]*\}\})>Conserver<\/button>/,
+          (_, style) =>
+            `<button type="button" onClick={() => gerer.onConserver(s.subjectType, s.subjectId)} ` +
+            `disabled={gerer.occupe} data-signalement-conserver="" ` +
+            `${gererStyleControle(style, 'gerer.occupe')}>Conserver</button>`,
+        );
+
+    // ── Planche d'ordinateur : deux rangées, toutes deux peintes ────────────
+    const rangeeWeb =
+      /<div style=\{\{ display: "flex", gap: "12px", alignItems: "center", padding: "14px 0", borderBottom: "1px solid #F0F3F2" \}\}><span style=\{\{ width: "38px", height: "38px", borderRadius: "12px", background: "#FBE3D4"[\s\S]*?>Conserver<\/button><\/div>/;
+    const web = gererRangeesEnBoucle(out, rangeeWeb, 'gerer.signalements', 's', (trouves) =>
+      decisions(
+        trouves[0][0]
+          .replace(
+            /(<div style=\{\{ fontSize: "13\.5px", fontWeight: "700" \}\}>)[^<]*(<\/div>)/,
+            '$1{s.titre}$2',
+          )
+          .replace(
+            /(<div style=\{\{ fontSize: "12px", color: "#5D6B66", marginTop: "2px" \}\}>)[^<]*(<\/div>)/,
+            '$1{s.sous}$2',
+          ),
+      ),
+    );
+    if (web !== null) out = web;
+
+    // ── Planche de 390 px : une seule rangée dessinée ──────────────────────
+    //
+    // ⚠ ELLE N'A NI « VOIR » NI SOUS-TITRE EN `<div>` : le sous-titre est un
+    // `<span style="display:block">` NICHÉ DANS le titre, et les deux boutons
+    // sont dans une grille `1fr 1fr`. Deux dessins, deux liaisons — piège n° 1.
+    const rangeeMobile =
+      /<div style=\{\{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "20px", padding: "14px", flexShrink: "0" \}\}><div style=\{\{ display: "flex", gap: "10px", alignItems: "center" \}\}><span style=\{\{ width: "34px", height: "34px", borderRadius: "11px", background: "#FBE3D4"[\s\S]*?>Conserver<\/button><\/div><\/div>/;
+    const mob = gererRangeesEnBoucle(out, rangeeMobile, 'gerer.signalements', 's', (trouves) =>
+      decisions(
+        trouves[0][0]
+          .replace(
+            /(<span style=\{\{ flex: "1", fontSize: "13px", fontWeight: "700", lineHeight: "1\.35" \}\}>)[^<]*(<span)/,
+            '$1{s.titre}$2',
+          )
+          .replace(
+            /(<span style=\{\{ display: "block", fontSize: "11\.5px", color: "#5D6B66", fontWeight: "500" \}\}>)[^<]*(<\/span>)/,
+            '$1{s.sous}$2',
+          ),
+      ),
+    );
+    if (mob !== null) out = mob;
+
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — LE FIL DU RÉSEAU MONTRE DE VRAIES PUBLICATIONS                       ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : « LE CONTENU DE LA PAGE EST DESSINÉ. »
+ *
+ * MESURÉ : sur `/reseaux/pays-bj?onglet=fil`, un membre de « Bénin » lisait
+ * « Aïcha Diop · Repas partagé pour les nouveaux arrivants », « Marc Koudou ·
+ * Quelqu'un a renouvelé son passeport », « Fatou Ndiaye · Acte de naissance reçu
+ * en 3 semaines » — trois publications qui n'existent dans aucune base. Ce sont
+ * les trois cartes de la maquette, transcodées telles quelles.
+ *
+ * ── LA CARTE N'EST PAS REDESSINÉE, ELLE EST RÉEMPLOYÉE ────────────────────
+ *
+ * `CartePublicationDesktop` et `CartePublicationMobile` existent déjà : le
+ * générateur les extrait du cadre du FIL (A01) par `composants:`, et le profil
+ * public les monte depuis `AJOUTS` — « le profil public est le premier », dit
+ * déjà le commentaire d'`AJOUTS`. Elles portent tout ce que la maquette de A08T
+ * ne porte pas : la réaction au bon vocabulaire, le signet, le menu d'auteur,
+ * les photos, les guides liés, et un SONDAGE VOTABLE.
+ *
+ * Recopier la carte d'A08T et la lier champ par champ aurait fait une SECONDE
+ * carte de publication, qui aurait divergé de celle du fil au premier
+ * changement — c'est très exactement ce que `K02_ONGLETS_CONTENU` a refusé de
+ * faire sur le profil, et pour la même raison.
+ *
+ * ── CE QUE LA ROUTE DONNE, ET POURQUOI CE N'EST PAS CELLE QU'ON CROIT ─────
+ *
+ * ⚠ `GET /communities/:id/feed` NE PEUT PAS NOURRIR CETTE CARTE, et
+ * `communityFeedPostSchema` le dit en toutes lettres : sept champs bruts contre
+ * seize, « manquent `typeLabel`, `counter.word`, `reaction.actionLabel`,
+ * `commentLabel`, `context`, `media`, `isAuthor`, `stepBadge`, `city`,
+ * `community` » — autrement dit tout le vocabulaire que le serveur compose. Le
+ * front n'a pas le droit de le recomposer : « le vocabulaire de réaction renvoyé
+ * correspond au type de publication » est une règle dure, et deux tables de
+ * vocabulaire divergent toujours.
+ *
+ * C'est donc `GET /feed?communityId=…` qui nourrit l'onglet — LE FIL LUI-MÊME,
+ * filtré. Mesuré sur le réseau « Bénin » avec deux publications réelles : la
+ * réponse porte `typeLabel`, `counter.word: "félicitation"`,
+ * `reaction.actionLabel: "Bravo"`, `context.text: "Lyon · à l'instant"`,
+ * `community`, `poll`, `bookmarked`, et `meta.scopeKind: "COMMUNITY"`.
+ *
+ * C'est EXACTEMENT le chemin que le profil public emploie pour son onglet
+ * « Fil » (`GET /feed?authorHandle=…`), et `feedQuerySchema` écrit pourquoi :
+ * « une route résumée ne peut pas nourrir la carte ; on filtre donc LE FIL
+ * LUI-MÊME ». Le filtre ne contourne rien — la visibilité du fil s'applique
+ * telle quelle.
+ *
+ * ── CE QUI DISPARAÎT AVEC LES TROIS CARTES, ET IL FAUT LE DIRE ────────────
+ *
+ * ⚠ LE SONDAGE DESSINÉ PAR A08T NE MONTRE QUE L'ÉTAT « VOUS AVEZ VOTÉ » : trois
+ * barres de pourcentage (58 %, 30 %, 12 %) et la ligne « 86 votes · se termine
+ * dans 3 jours · vous avez voté ». Aucune option VOTABLE n'y est dessinée —
+ * relevé sur la planche, aux deux largeurs. Il n'y avait donc rien à rendre
+ * vivant : inventer l'état votable aurait été dessiner. La carte de A01, elle,
+ * dessine les DEUX états, et c'est elle qu'on monte.
+ *
+ * ⚠ L'ASIDE DE DROITE RESTE DESSINÉE sur la planche de 1 036 px — « PROCHAIN
+ * ÉVÉNEMENT · Fête de l'indépendance · Parc de la Tête d'Or · 64 participants »
+ * et « SUJETS ÉPINGLÉS ». Elle n'est pas touchée par ce lot. REMONTÉ.
+ *
+ * ⚠ LE COMPOSEUR RESTE DESSINÉ : « Publier dans {reseau.nom}… », les quatre
+ * pastilles de type et le bouton « Publier » n'ont aucun geste. `post.create`
+ * est en N1 et le front PRÉVIENT sans autoriser (§5 du mémo) ; le brancher est
+ * un lot à lui seul — il demande le composeur entier, sondage et pièces jointes
+ * compris, que A01 porte déjà avec ses propres adaptations. REMONTÉ.
+ */
+const A08T_FIL_PUBLICATIONS = {
+  screens: ['A08T'],
+  nom: 'A08T_FIL_PUBLICATIONS',
+  why: 'Le fil du réseau montrait trois publications de maquette ; il montre les vraies, dans la carte du fil.',
+  provides: ['publications'],
+  apply(jsx) {
+    /**
+     * L'OUVERTURE DE LA PREMIÈRE CARTE, UNE PAR LARGEUR — piège n° 1. Les deux
+     * planches ne dessinent pas les mêmes mesures : rayon 22 et retrait 20 à
+     * 1 036 px, rayon 20, retrait 14 et `flexShrink` à 390. Un seul motif
+     * n'aurait décrit qu'un cadre sur deux.
+     *
+     * Le composeur porte le MÊME fond et le MÊME trait, mais un autre retrait
+     * (16 px contre 20) : les deux motifs ne peuvent donc pas l'attraper.
+     */
+    const CARTES = [
+      [
+        '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "20px" }}>',
+        'Desktop',
+      ],
+      [
+        '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "20px", padding: "14px", flexShrink: "0" }}>',
+        'Mobile',
+      ],
+    ];
+
+    for (const [ouverture, cadre] of CARTES) {
+      const debut = jsx.indexOf(ouverture);
+      if (debut === -1) continue;
+
+      /**
+       * ON CONSOMME TOUS LES FRÈRES QUI SUIVENT, ET ON LES COMPTE.
+       *
+       * Les cartes sont les DERNIERS enfants de leur colonne — composeur,
+       * annonce, puis les publications — donc « jusqu'à la fermeture du parent »
+       * les décrit exactement. Prendre le premier `</div>` venu couperait la
+       * première carte en son milieu (c'est le piège n° 3, et `finDuDiv` existe
+       * pour ça) ; s'arrêter à la première carte en laisserait deux dessinées
+       * sous les vraies.
+       *
+       * Relevé : trois cartes sur les deux planches de 1 036 px, une seule sur
+       * celles de 390 px — la maquette n'en dessine qu'une sur le téléphone.
+       */
+      let fin = debut;
+      let cartes = 0;
+      while (jsx.startsWith('<div', fin)) {
+        const suivant = finDuDiv(jsx, fin);
+        if (suivant === -1) break;
+        fin = suivant;
+        cartes += 1;
+      }
+      if (cartes === 0) continue;
+
+      /**
+       * LA CLÉ EST `postId` ET NON LE RANG : c'est ce que le profil public
+       * emploie pour la même carte, et un rang se désynchronise dès que la liste
+       * se recharge — ce qu'elle fait après chaque réaction.
+       */
+      const boucle =
+        `{(publications ?? []).map((pub) => (<CartePublication${cadre} key={pub.postId} p={pub} />))}`;
+      return { jsx: jsx.slice(0, debut) + boucle + jsx.slice(fin), applied: true };
+    }
+
+    return { jsx, applied: false };
+  },
+};
+
+/**
+ * UNE CARTE D'ÉVÉNEMENT DE RÉSEAU, LIÉE CHAMP PAR CHAMP.
+ *
+ * `patron` est la PREMIÈRE carte de la planche, et c'est délibérément celle-là :
+ * c'est la seule qui dessine les trois pastilles de contexte et l'état « déjà
+ * inscrit » du bouton. Prendre la deuxième aurait laissé « Vous y allez » et
+ * « Réservé au réseau » hors du cadre produit, donc indessinables.
+ */
+const carteEvenement = (patron, styleVert, large) => {
+  let c = patron;
+
+  // ── La pastille de date : deux couleurs, un numéro, un mois ──────────
+  //
+  // ⚠ `backgroundColor` et non `background` (piège n° 9), et la clé dessinée est
+  // SUBSTITUÉE et non doublée (piège n° 8).
+  c = c.replace(
+    /background: "#FBE3D4", color: "#B4581F"/,
+    'backgroundColor: ev.fondDate, color: ev.couleurDate',
+  );
+  c = c.replace(
+    /(<span style=\{\{ fontSize: "(?:20|18)px", fontWeight: "800", lineHeight: "1" \}\}>)[^<]*(<\/span>)/,
+    '$1{ev.numero}$2',
+  );
+  c = c.replace(
+    /(<span style=\{\{ fontSize: "(?:10|9)px", fontWeight: "700" \}\}>)[^<]*(<\/span>)/,
+    '$1{ev.mois}$2',
+  );
+
+  // ── Les pastilles de contexte ────────────────────────────────────────
+  //
+  // ⚠ DEUX DESSINS. À 1 036 px il y en a TROIS, dans une rangée `flexWrap` : le
+  // type, « Vous y allez », « Réservé au réseau ». À 390 px il n'y a que
+  // « Vous y allez », sans rangée, directement dans la colonne de texte.
+  c = c.replace(
+    /(<span style=\{\{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11px"[^}]*\}\}>)[^<]*(<\/span>)/,
+    '$1{ev.type}$2',
+  );
+  const vousYAllez =
+    /<span style=\{\{ background: "#FBE3D4", color: "#B4581F", fontSize: "1[^"]*"[^}]*\}\}>Vous y allez<\/span>/.exec(
+      c,
+    );
+  if (vousYAllez !== null) {
+    c = c.replace(vousYAllez[0], `{ev.jyVais && (${vousYAllez[0]})}`);
+  }
+  const reserve =
+    /<span style=\{\{ background: "#E3F0EB", color: "#0F5C48", fontSize: "1[^"]*"[^}]*\}\}>Réservé au réseau<\/span>/.exec(
+      c,
+    );
+  if (reserve !== null) {
+    c = c.replace(reserve[0], `{ev.reserve && (${reserve[0]})}`);
+  }
+
+  // ── Le titre, et son écart de marge entre les deux cartes dessinées ──
+  //
+  // ⚠ À 390 px, la carte qui PORTE la pastille écrit `marginTop: "5px"` et celle
+  // qui ne la porte pas `marginTop: "0px"`. Les deux valeurs sont dessinées, sur
+  // deux cartes voisines de la MÊME planche : la marge suit donc la pastille,
+  // exactement comme la couleur du bouton suit l'inscription. Sans cela, une
+  // carte sans pastille garderait un blanc de 5 px au-dessus de son titre.
+  c = c.replace(
+    /(<div style=\{\{ fontSize: "15\.5px", fontWeight: "700", marginTop: "6px" \}\}>)[^<]*(<\/div>)/,
+    '$1{ev.titre}$2',
+  );
+  c = c.replace(
+    /<div style=\{\{ fontSize: "14px", fontWeight: "700", marginTop: "(?:5|0)px" \}\}>[^<]*<\/div>/,
+    '<div style={{ fontSize: "14px", fontWeight: "700", marginTop: ev.jyVais ? "5px" : "0px" }}>{ev.titre}</div>',
+  );
+
+  // ── Le sous-titre : QUATRE GRAMMAIRES, UNE PAR CADRE (piège n° 1) ────
+  //
+  // Les trois libellés dessinés sont distincts au caractère près, et chacun dit
+  // autre chose : la planche large nomme le lieu ET la ville et compte des
+  // « participants » ; celle de 390 px ne nomme que le lieu et compte des
+  // « inscrits » ; celle du propriétaire sur 390 px ne nomme aucun lieu et
+  // ajoute « réservé au réseau ». On ne choisit pas la plus riche pour toutes :
+  // ce serait redessiner trois cadres sur quatre.
+  c = c.replace(
+    /(<div style=\{\{ fontSize: "12\.5px", color: "#5D6B66", marginTop: "2px" \}\}>)[^<]*(<\/div>)/,
+    '$1{ev.lieu} · {ev.participants} participant{ev.pluriel}$2',
+  );
+  c = c.replace(
+    /(<div style=\{\{ fontSize: "11\.5px", color: "#8A958F" \}\}>)[^·<]*· [^<]*inscrits?(<\/div>)/,
+    '$1{ev.lieuCourt} · {ev.participants} inscrit{ev.pluriel}$2',
+  );
+  c = c.replace(
+    /(<div style=\{\{ fontSize: "11\.5px", color: "#8A958F" \}\}>)\d+ inscrits? · réservé au réseau(<\/div>)/,
+    '$1{ev.participants} inscrit{ev.pluriel} · réservé au réseau$2',
+  );
+
+  // ── LE BOUTON — « Voir » quand j'y vais, « Je viens » sinon ──────────
+  const gris =
+    /<button (style=\{\{ height: "42px"[^}]*background: "#F2F5F4"[^}]*\}\})>Voir<\/button>/.exec(c);
+  if (gris !== null) {
+    if (styleVert === null) return null;
+    const voir =
+      `<Link href={ev.href} data-reseau-evenement-voir="" ` +
+      `${gris[1].replace(' }}', ', textDecoration: "none" }}')}>Voir</Link>`;
+    const jeViens =
+      `<button type="button" onClick={() => { evenements.onJeViens(ev.id); }} ` +
+      `disabled={evenements.occupe} data-reseau-jeviens="" ` +
+      `${gererStyleControle(styleVert, 'evenements.occupe')}>Je viens</button>`;
+    c = c.replace(gris[0], `{ev.jyVais ? (${voir}) : (${jeViens})}`);
+  }
+
+  /**
+   * ── LA CARTE DE 390 px DEVIENT CLIQUABLE, ET RIEN N'Y EST DESSINÉ ───────
+   *
+   * `CadreCliquable` change la NATURE du contenant — `<div>` sans adresse,
+   * `<Link>` avec — sans toucher au dessin intérieur, et il remet
+   * `textDecoration` et `color` qu'un `<a>` aurait changés. Le `display`
+   * dessiné gagne : son en-tête le dit.
+   *
+   * La planche large ne le reçoit PAS : elle porte déjà un « Voir », et une
+   * carte entièrement cliquable qui contient un lien et un bouton imbriquerait
+   * un `<a>` dans un `<a>` — ce qui n'est pas du HTML valide.
+   */
+  if (!large) {
+    const fin = c.lastIndexOf('</div>');
+    if (fin === -1) return null;
+    const ouverture = c.indexOf('>') + 1;
+    c =
+      `<CadreCliquable key={ev.id} vers={ev.href} ${c.slice('<div '.length, ouverture - 1)}>` +
+      c.slice(ouverture, fin) +
+      '</CadreCliquable>';
+    return c;
+  }
+
+  // La clé de `map()` : posée sur la racine dessinée, qui est un `<div>`.
+  return `${c.slice(0, '<div'.length)} key={ev.id}${c.slice('<div'.length)}`;
+};
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — L'ONGLET « ÉVÉNEMENTS » DU RÉSEAU : LES PASTILLES, LA LISTE, LE RSVP  ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Le contenu de l'onglet événement aussi est dessiné (événements
+ * passés et à venir). Le bouton "Je viens" et "Voir" aussi ne marchent pas. »
+ *
+ * ── CE QU'UN LOT PRÉCÉDENT A MESURÉ, ET POURQUOI IL S'EST ARRÊTÉ ───────────
+ *
+ * Il avait raison de s'arrêter : l'onglet n'avait AUCUNE ROUTE.
+ * `eventsQuerySchema` est `.strict()` et ne portait aucun filtre de réseau —
+ * `?communityId=` répondait `400 UNRECOGNIZED_KEYS` — et
+ * `GET /communities/:slug/events` n'existe pas. Brancher les trois cartes
+ * DESSINÉES aurait fait s'inscrire à des événements qui n'existent dans aucune
+ * base. Le filtre a été ajouté au schéma partagé et au `visibleWhere` du
+ * service avant ce lot de dessin ; son en-tête dit pourquoi il s'AJOUTE aux
+ * règles de visibilité au lieu d'en remplacer une.
+ *
+ * ── LES DEUX PASTILLES ÉTAIENT DEUX `<span>` INERTES ──────────────────────
+ *
+ * Et elles ne surmontaient qu'UNE liste : trois cartes, toutes à venir. Aucune
+ * liste de passés n'est dessinée. Elles deviennent donc deux boutons qui
+ * choisissent ce que LA liste montre, et le choix passe par la REQUÊTE
+ * (`?to=hier` pour les passés) et non par un tri d'écran — sans borne,
+ * `GET /events` part de MAINTENANT, donc l'écran ne reçoit aucun passé à trier.
+ *
+ * Les deux jeux de couleurs sont ceux que la maquette dessine CÔTE À CÔTE :
+ * « À venir » active (`#16785E` / `#fff` / trait `#16785E`), « Passés »
+ * inactive (`#fff` / `#16211D` / trait `#E6EBE9`). Rien n'est inventé — l'état
+ * actif d'une pastille est l'état dessiné de l'autre.
+ *
+ * ── « JE VIENS » ET « VOIR » SONT LE MÊME BOUTON, DANS SES DEUX ÉTATS ─────
+ *
+ * RELEVÉ sur la planche de 1 036 px : la première carte — celle qui porte la
+ * pastille « Vous y allez » — dessine un bouton GRIS « Voir » ; les deux
+ * autres, sans pastille, dessinent un bouton VERT « Je viens ». Aucune carte
+ * n'en dessine deux. L'état suit donc `jyVais`, et c'est ce qui fait qu'« un
+ * membre déjà inscrit ne lit pas "Je viens" » sans qu'on dessine quoi que ce
+ * soit : les deux états existent déjà, sur deux cartes voisines.
+ *
+ * « Voir » est un `<Link>` et non un bouton — clic droit, nouvel onglet,
+ * annonce par un lecteur d'écran — vers `/agenda/:id`, la page que
+ * `app/(app)/agenda/[id]/` sert déjà. Même arbitrage que le « Voir » des
+ * signalements, et le même `textDecoration: "none"` ajouté pour la seule raison
+ * qu'un `<a>` souligne là où un `<button>` ne le fait pas.
+ *
+ * ⚠ AUCUN CONTRÔLE DE NIVEAU DANS LE CADRE. `event.attend` est en N2 ; le front
+ * PRÉVIENT sans autoriser (mémo §5). On tente, le serveur refuse en
+ * `403 LEVEL_REQUIRED`, et `components/fenetre-niveau.tsx` explique — posé par
+ * l'écran, hors des deux cadres, pour la raison déjà mesurée sur
+ * `FenetreConfirmation`.
+ *
+ * ── LES QUATRE CADRES NE DESSINENT PAS LA MÊME CHOSE (piège n° 1) ─────────
+ *
+ * Compté sur les cadres produits, et c'est ce qui a décidé de chaque motif :
+ *
+ *   · `evenements` (1 036 px) — 2 pastilles, 3 cartes, 3 pastilles de contexte
+ *     sur la première (type, « Vous y allez », « Réservé au réseau »), 1 bouton
+ *     par carte, sous-titre « Mairie du 3e, Lyon · 41 participants » ;
+ *   · `adminevenements` (1 036 px) — les mêmes, plus un bouton « Créer un
+ *     événement du réseau » dans la rangée des pastilles ;
+ *   · `evenementsmobile` (390 px) — 2 pastilles, 3 cartes, AUCUN bouton de
+ *     carte, aucune pastille de type, sous-titre « Mairie du 3e · 41 inscrits » ;
+ *   · `adminevenementsmobile` (390 px) — AUCUNE pastille « À venir / Passés »,
+ *     2 cartes, aucun bouton de carte, sous-titre « 41 inscrits · réservé au
+ *     réseau ».
+ *
+ * Quatre dessins, donc quatre liaisons de sous-titre et deux motifs de carte.
+ * Un seul motif n'aurait décrit qu'un cadre.
+ *
+ * ⚠ MOBILE N'A NI « JE VIENS » NI « VOIR », ET ON NE LES INVENTE PAS. La carte
+ * reçoit seulement son ADRESSE, par `CadreCliquable`, qui ne dessine rien et
+ * rend le cadre entier cliquable — c'est ce que le porteur a demandé pour les
+ * cartes du fil (« c'est bon aussi pour les autres ? ») et ce que les cartes de
+ * guide, d'événement, d'annonce et de parcours font déjà. REMONTÉ : s'il veut un
+ * bouton sur le téléphone, c'est la maquette qui doit le dessiner.
+ *
+ * ⚠ LE « CRÉER UN ÉVÉNEMENT DU RÉSEAU » DES DEUX CADRES PROPRIÉTAIRE RESTE
+ * INERTE. `event.create` est en N1 ET porte un quota de plan, et `POST /events`
+ * attend huit champs de saisie — type, titre, ville, adresse, début, fin,
+ * capacité, couverture — que cette planche ne dessine NULLE PART. Le brancher
+ * demanderait le formulaire entier, qui est un lot à lui seul. REMONTÉ.
+ *
+ * ⚠ L'ASIDE « CE MOIS-CI · 3 · événements du réseau · 132 inscrits » RESTE
+ * DESSINÉE sur les deux planches de 1 036 px. Aucune route ne la porte : la
+ * liste filtrée ne compte que la fenêtre demandée (« à venir » ou « passés »),
+ * pas le mois civil, et « 132 inscrits » est une somme que personne ne calcule.
+ * Afficher `liste.length` à sa place serait afficher un nombre juste sous un
+ * libellé faux. REMONTÉ.
+ */
+const A08T_EVENEMENTS = {
+  screens: ['A08T'],
+  nom: 'A08T_EVENEMENTS',
+  why: 'L’onglet « Événements » montrait trois événements de maquette ; les pastilles et « Je viens » étaient inertes.',
+  provides: ['evenements'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+
+    // ── 1. LES DEUX PASTILLES DEVIENNENT DEUX BOUTONS ────────────────────
+    //
+    // ⚠ UNE REGEX `g` ET UNE FONCTION DE REMPLACEMENT : les deux pastilles ont
+    // la même forme, et `String.replace` avec un motif en chaîne n'aurait coupé
+    // que la première (piège n° 2).
+    //
+    // Le motif ne fige AUCUNE mesure : `padding` et `fontSize` diffèrent d'une
+    // largeur à l'autre (8/14 et 12,5 px à 1 036 px ; 7/13 et 12 px à 390), et
+    // c'est précisément le piège n° 1. Ce qui ancre, c'est la STRUCTURE — un
+    // `<span>` au rayon 999, en graisse 700, qui porte l'un des deux libellés.
+    const PASTILLES = {
+      'À venir': { clef: 'avenir', geste: 'onAVenir' },
+      Passés: { clef: 'passes', geste: 'onPasses' },
+    };
+    out = out.replace(
+      /<span (style=\{\{ padding: "[^"]+", borderRadius: "999px", fontSize: "[^"]+", fontWeight: "700", background: "(?:#16785E|#fff)", color: "(?:#fff|#16211D)", border: "1px solid (?:#16785E|#E6EBE9)" \}\})>(À venir|Passés)<\/span>/g,
+      (entier, style, libelle) => {
+        const p = PASTILLES[libelle];
+        if (p === undefined) return entier;
+        pris = true;
+        const actif = `evenements.onglet === "${p.clef}"`;
+        /**
+         * ⚠ `backgroundColor` ET NON `background` : React réécrit le raccourci
+         * et remet `background-clip` à `border-box` (piège n° 9). La clé
+         * dessinée est SUBSTITUÉE, pas doublée — deux clés de fond dans un même
+         * style seraient `TS1117` (piège n° 8).
+         */
+        const peint = style
+          .replace(/background: "(?:#16785E|#fff)"/, `backgroundColor: ${actif} ? "#16785E" : "#fff"`)
+          .replace(/color: "(?:#fff|#16211D)"/, `color: ${actif} ? "#fff" : "#16211D"`)
+          .replace(
+            /border: "1px solid (?:#16785E|#E6EBE9)"/,
+            `border: ${actif} ? "1px solid #16785E" : "1px solid #E6EBE9"`,
+          );
+        return (
+          `<button type="button" onClick={evenements.${p.geste}} aria-pressed={${actif}} ` +
+          `data-reseau-evenements="${p.clef}" ${gererStyleControle(peint, null)}>${libelle}</button>`
+        );
+      },
+    );
+
+    // ── 2. LA LISTE — DEUX MOTIFS DE CARTE, UN PAR LARGEUR ───────────────
+    //
+    // Les cartes sont les DERNIERS enfants de leur colonne (pastilles ou bouton
+    // de création, puis les cartes), donc « jusqu'à la fermeture du parent » les
+    // décrit exactement — même raison et même mécanisme que
+    // `A08T_FIL_PUBLICATIONS`, qui compte ses frères avec `finDuDiv`.
+    /**
+     * ⚠ L'ANCRE VA JUSQU'À LA PASTILLE DE DATE, ET CE N'EST PAS DU ZÈLE.
+     *
+     * MESURÉ sur les vingt-cinq cadres produits : l'ouverture seule
+     * (`#fff` + trait `#E6EBE9` + rayon 22 + retrait 16) figure AUSSI dans
+     * `fil`, `adminfil`, `membres` et `adminmembres` — c'est le COMPOSEUR du fil,
+     * dont l'en-tête de `A08T_FIL_PUBLICATIONS` dit déjà qu'il porte « le MÊME
+     * fond et le MÊME trait, mais un autre retrait ». Avec l'ancre courte, cette
+     * transformation aurait mangé le composeur du fil et l'aurait remplacé par
+     * une liste d'événements. Comptée avec l'ancre longue : 3 + 3 + 3 + 2, et
+     * zéro ailleurs.
+     */
+    const CARTES = [
+      {
+        ouverture:
+          '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "16px" }}>' +
+          '<div style={{ display: "flex", gap: "16px", alignItems: "center" }}>' +
+          '<div style={{ width: "62px", height: "62px", borderRadius: "18px"',
+        large: true,
+      },
+      {
+        ouverture:
+          '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "20px", padding: "12px", flexShrink: "0" }}>' +
+          '<div style={{ display: "flex", gap: "12px", alignItems: "center" }}>' +
+          '<div style={{ width: "54px", height: "54px", borderRadius: "16px"',
+        large: false,
+      },
+    ];
+
+    for (const { ouverture, large } of CARTES) {
+      /**
+       * ON RELÈVE TOUTES LES OCCURRENCES, et on découpe du début de la première
+       * à la fin de la dernière.
+       *
+       * ⚠ ET NON « tous les frères qui suivent », que `A08T_FIL_PUBLICATIONS`
+       * emploie : là-bas les cartes sont les derniers enfants de leur colonne, et
+       * ici aussi — mais un frère ajouté demain (une bande « voir plus loin »,
+       * que la planche ne dessine pas encore) serait avalé sans un mot. Ancrer
+       * sur les CARTES ne peut emporter que des cartes.
+       */
+      const indices = [];
+      for (let i = out.indexOf(ouverture); i !== -1; i = out.indexOf(ouverture, i + 1)) {
+        indices.push(i);
+      }
+      if (indices.length === 0) continue;
+
+      const debut = indices[0];
+      const fin = finDuDiv(out, indices[indices.length - 1]);
+      if (fin === -1) continue;
+
+      /**
+       * LE BOUTON VERT EST RELEVÉ AVANT LA COUPE, et dans la RÉGION ENTIÈRE : il
+       * est dessiné sur la DEUXIÈME carte, c'est-à-dire dans ce qu'on remplace.
+       * Le chercher après la coupe ne le trouverait plus, et le chercher hors de
+       * la région attraperait « Créer un événement du réseau », qui porte le même
+       * vert sur la planche du propriétaire.
+       */
+      const region = out.slice(debut, fin);
+      const vert =
+        /<button (style=\{\{ height: "42px"[^}]*background: "#16785E"[^}]*\}\})>Je viens<\/button>/.exec(
+          region,
+        );
+
+      const premiere = out.slice(debut, finDuDiv(out, debut));
+      const patron = carteEvenement(premiere, vert === null ? null : vert[1], large);
+      if (patron === null) continue;
+
+      /**
+       * LA CLÉ EST L'IDENTIFIANT DE L'ÉVÉNEMENT ET NON LE RANG : c'est ce que
+       * `A08T_FIL_PUBLICATIONS` emploie pour la même raison — la liste se
+       * recharge après chaque « Je viens », et un rang se désynchronise.
+       */
+      const boucle = `{(evenements.liste ?? []).map((ev) => (${patron}))}`;
+      out = out.slice(0, debut) + boucle + out.slice(fin);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — L'ONGLET « ALBUM » : TROIS ONGLETS PAR DÉFAUT, ET UN BOUTON QUI OUVRE ║
+ * ║ UN MENU                                                                      ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, mot pour mot : « L'album photos doit contenir ces onglets : tous,
+ * Partagés (les images partagées par les membres dans les publications dans le
+ * fil), Événements — qui sont des tabs par défaut ou des albums par défaut.
+ * Ensuite on peut ajouter un album et y ajouter des photos (les modérateurs). […]
+ * Donc les administrateurs ont seul le bouton ajouté (qui remplace le bouton
+ * ajouter une image) qui a un chevron à droite ; quand on hover alors ça
+ * affiche — quand on est dans un album créé par les modérateurs (autres que
+ * partagés et événements) — le bouton en menu de contexte Ajouter une image
+ * (désactivé dans les albums partagés et événements, qui sont des albums
+ * automatiques remplis par les publications et les images ajoutées lors de la
+ * publication des événements) et ajouter un album. »
+ *
+ * ── CE QUI ÉTAIT DESSINÉ, ET CE QUE ÇA COÛTAIT ────────────────────────────
+ *
+ * MESURÉ sur les quatre cadres produits : douze tuiles hachurées, trois
+ * pastilles peintes en dur (« Tout · Fête 2025 · Repas partagé »), une carte
+ * « ALBUMS » de colonne de droite qui annonce « Fête 2025· 48 photos », et un
+ * bouton vert sans aucun geste. Un membre de « Sénégalais à Paris » ouvrait son
+ * onglet « Album » et lisait les albums d'un autre réseau — le défaut se voyait à
+ * l'œil et aucun test ne le voyait, puisque le JSX compile.
+ *
+ * ── AUCUNE MIGRATION, ET C'EST LE RELEVÉ QUI LE DIT ───────────────────────
+ *
+ * Le modèle `Album` (`packages/db/prisma/schema/07-communities.prisma`, l. 372)
+ * porte `communityId`, `eventId?`, `title`, `createdByUserId` — et AUCUN champ
+ * de genre. Les trois onglets par défaut se dérivent donc :
+ *
+ *   · « Événements » = `eventId !== null` ;
+ *   · « Partagés »  = les médias des PUBLICATIONS du réseau (`PostMedia`, lus par
+ *     `postCardSchema.media`) — ce n'est pas un album, c'est une vue ;
+ *   · « Tout »      = l'ensemble.
+ *
+ * Et `GET /communities/:id/albums` rendait déjà tout le nécessaire — `photos[]`
+ * avec leur `url`, `photoCount`, `eventId` : ni route ni colonne n'a été ajoutée.
+ *
+ * ── LES QUATRE CADRES NE DESSINENT PAS LA MÊME CHOSE (piège n° 1) ─────────
+ *
+ * Compté sur les cadres produits, et c'est ce qui a décidé de chaque motif :
+ *
+ *   · `album` (1 036 px)         — 3 pastilles `8px 14px`/12,5 px, 12 tuiles de
+ *     150 px au rayon 14, bouton vert « Ajouter des photos », carte « ALBUMS »
+ *     de 3 rangées ;
+ *   · `adminalbum` (1 036 px)    — les mêmes, plus un voile « Masquer ·
+ *     Couverture » sur la troisième tuile ;
+ *   · `albummobile` (390 px)     — 3 pastilles `7px 12px`/12 px, 12 tuiles
+ *     carrées au rayon 10, bouton FLOTTANT de 56 px, AUCUNE carte « ALBUMS » ;
+ *   · `adminalbummobile` (390 px) — pastilles et bouton flottant EMPRUNTÉS (voir
+ *     `PASTILLES_ALBUM_MOBILE` dans `tools/screens/03-accueil.mjs`), plus une
+ *     bande de sélection et une tuile cochée.
+ *
+ * Deux motifs de pastille, deux motifs de tuile, deux motifs de bouton. Un seul
+ * de chaque n'aurait décrit qu'une largeur.
+ *
+ * ── LE MENU N'EST PAS DESSINÉ : IL EST EMPRUNTÉ ───────────────────────────
+ *
+ * Aucune planche de l'onglet « Album » ne dessine de menu de contexte. On
+ * EMPRUNTE donc celui de « ADMIN · MEMBRES — menu de rôle » (ligne 1116 de la
+ * même maquette), que ce dépôt a déjà emprunté deux fois pour la même raison
+ * (`FEUILLE_ACTIONS` et `FEUILLE_VERSIONS`, tous deux à sa feuille du bas de
+ * 390 px). Ce qui est repris, VERBATIM :
+ *
+ *   · le panneau — `width:240px`, `background:#fff`, `border:1px solid #E6EBE9`,
+ *     `border-radius:18px`, `padding:8px`, `display:flex`,
+ *     `flex-direction:column`, `gap:2px` ;
+ *   · la rangée — `height:42px`, `gap:10px`, `padding:0 12px`,
+ *     `border-radius:12px`, `font-size:13.5px`, `font-weight:600`, encre
+ *     `#16211D`, icône de 16 px en trait 1,8.
+ *
+ * ⚠ SEULE LA PLACE DU PANNEAU EST SUBSTITUÉE. La maquette l'ancre à
+ * `right:30px;top:240px` — une position de PLANCHE, choisie pour une image fixe,
+ * qui tomberait n'importe où dans un écran qui défile (piège n° 6). Sur
+ * l'ordinateur il suit son bouton (`position: absolute` dans un conteneur
+ * `relative`, `top: calc(100% + 6px)`) ; sur le téléphone il se cale sur la
+ * fenêtre juste au-dessus du bouton flottant — `bottom: 172px`, qui est
+ * l'arithmétique des mesures DESSINÉES : 108 (le bas du bouton) + 56 (sa
+ * hauteur) + 8 (l'écart que la rangée de 1 036 px dessine entre ses contrôles).
+ *
+ * ⚠ LES DEUX TRACÉS D'ICÔNE SONT RELEVÉS DANS LA MÊME MAQUETTE, jamais
+ * dessinés : l'appareil photo est celui du bouton qu'on remplace, le chevron est
+ * `m6 9 6 6 6-6` en blanc sur 13 px (ligne 136, le sélecteur de parcours du
+ * panneau vert), et le plus est `M12 5v14M5 12h14`, que cette maquette dessine
+ * trente-sept fois.
+ *
+ * ── « AU SURVOL » NE SUFFIT PAS AU DOIGT ──────────────────────────────────
+ *
+ * Le porteur demande le survol, et le survol n'existe pas sur la planche de
+ * 390 px. Le menu s'ouvre donc de DEUX façons : `onMouseEnter` sur le conteneur
+ * du bouton d'ordinateur — ce qu'il demande — et `onClick` sur le bouton,
+ * c'est-à-dire aussi au TOUCHER et à la touche Entrée. Sans le second, le menu
+ * aurait été inatteignable sur téléphone, et au clavier sur les deux largeurs.
+ * Le bouton flottant de 390 px BASCULE : un second appui referme, puisqu'il n'y
+ * a pas de voile. ⚠ REMONTÉ : sur téléphone, toucher AILLEURS ne referme pas le
+ * menu — il faudrait un voile, que la planche ne dessine pas.
+ *
+ * ── CE QUI RESTE DESSINÉ, ET IL FAUT LE DIRE ──────────────────────────────
+ *
+ * ⚠ LE VOILE « MASQUER · COUVERTURE » de `adminalbum` et la BANDE DE SÉLECTION
+ * de `adminalbummobile` DISPARAISSENT avec la boucle : ils sont posés sur une
+ * tuile du milieu du lot, et la boucle est bâtie sur la PREMIÈRE tuile. Les
+ * garder aurait voulu dire une tuile sur douze différente des autres, ce qui est
+ * du dessin de planche et non une règle. Et ils n'avaient de toute façon aucune
+ * route : « Couverture » n'a pas de colonne (le modèle `Album` n'en porte pas),
+ * et « Masquer » ne se distingue pas de la sélection. REMONTÉ — il manque une
+ * planche « une tuile et ses gestes ».
+ *
+ * ⚠ LA LÉGENDE N'EST ÉCRITE QUE SUR L'ORDINATEUR, parce que c'est là que la
+ * maquette la dessine : la tuile de 390 px est un carré vide. On ne lui ajoute
+ * pas de texte.
+ */
+const A08T_ALBUM = {
+  screens: ['A08T'],
+  nom: 'A08T_ALBUM',
+  why: 'L’onglet « Album » peignait douze tuiles hachurées, trois pastilles en dur et un bouton vert sans geste ; il porte maintenant les trois onglets par défaut, ses vraies photos, et le menu « Ajouter » du porteur.',
+  provides: ['album'],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+
+    /**
+     * ── 1. LES PASTILLES DEVIENNENT UNE BOUCLE DE BOUTONS ────────────────
+     *
+     * Le motif ne fige AUCUNE mesure : `padding` et `fontSize` diffèrent d'une
+     * largeur à l'autre (8/14 et 12,5 px à 1 036 px ; 7/12 et 12 px à 390), et
+     * c'est le piège n° 1. Ce qui ancre, c'est la STRUCTURE — un `<span>` au
+     * rayon 999, en graisse 700, portant l'un des quatre libellés dessinés.
+     *
+     * ⚠ LES LIBELLÉS SONT LA GARDE, et il en faut une : la même forme de
+     * pastille porte « À venir / Passés » sur l'onglet « Événements » et
+     * « Tous / Modérateurs / Lyon » sur l'onglet « Membres ». Compté avec cette
+     * alternation : 3 occurrences sur chacun des trois cadres qui dessinent la
+     * rangée, et zéro sur les vingt-deux autres planches.
+     *
+     * ⚠ `backgroundColor` ET NON `background` : React réécrit le raccourci et
+     * remet `background-clip` à `border-box` (piège n° 9). Les trois
+     * déclarations dessinées sont SUBSTITUÉES, pas doublées — deux clés de fond
+     * dans un même style seraient `TS1117` (piège n° 8).
+     *
+     * LA CLÉ EST `p.clef` ET NON LE RANG : la rangée se recompose dès qu'un
+     * album est créé, et un rang se désynchronise — c'est ce que
+     * `A08T_FIL_PUBLICATIONS` et `A08T_EVENEMENTS` emploient pour la même raison.
+     */
+    const pastille =
+      /<span (style=\{\{ padding: "[^"]+", borderRadius: "999px", fontSize: "[^"]+", fontWeight: "700", background: "(?:#16785E|#fff)", color: "(?:#fff|#16211D)", border: "1px solid (?:#16785E|#E6EBE9)" \}\})>(?:Tout|Fête 2025|Repas partagé|Repas)<\/span>/g;
+    const pastilles = [];
+    for (let m = pastille.exec(out); m !== null; m = pastille.exec(out)) pastilles.push(m);
+    if (pastilles.length > 0) {
+      const actif = 'album.onglet === p.clef';
+      // La PREMIÈRE pastille est celle que la maquette dessine ACTIVE : son style
+      // porte donc les trois valeurs de l'état actif, et l'autre jeu est celui de
+      // ses voisines. Rien n'est inventé — l'état actif d'une pastille est l'état
+      // dessiné de l'autre.
+      const peint = pastilles[0][1]
+        .replace(
+          /background: "(?:#16785E|#fff)"/,
+          `backgroundColor: ${actif} ? "#16785E" : "#fff"`,
+        )
+        .replace(/color: "(?:#fff|#16211D)"/, `color: ${actif} ? "#fff" : "#16211D"`)
+        .replace(
+          /border: "1px solid (?:#16785E|#E6EBE9)"/,
+          `border: ${actif} ? "1px solid #16785E" : "1px solid #E6EBE9"`,
+        );
+      const boucle =
+        '{(album.pastilles ?? []).map((p) => (' +
+        '<button type="button" key={p.clef} onClick={() => album.onPastille(p.clef)} ' +
+        `aria-pressed={${actif}} data-reseau-album={p.clef} ` +
+        `${gererStyleControle(peint, null)}>{p.libelle}</button>))}`;
+      const dernier = pastilles[pastilles.length - 1];
+      out =
+        out.slice(0, pastilles[0].index) +
+        boucle +
+        out.slice(dernier.index + dernier[0].length);
+      pris = true;
+    }
+
+    /**
+     * ── 2. LES DOUZE TUILES DEVIENNENT UNE BOUCLE ───────────────────────
+     *
+     * LA PHOTO ARRIVE EN IMAGE DE FOND, et le hachuré de la maquette RESTE
+     * écrit dessous : c'est exactement ce que `O04_AVATAR` fait du rond de
+     * portrait — « le fond `#F2F5F4` de la maquette reste écrit dessous : tant
+     * qu'aucune photo n'est choisie, rien ne change ». Ici le hachuré est ce
+     * qu'on voit le temps que l'image charge.
+     *
+     * ⚠ `background` PUIS `backgroundImage`, DANS CET ORDRE : le raccourci
+     * remet `background-image` à zéro, et dans un objet de style c'est l'ordre
+     * d'insertion qui décide. Inverser les deux effacerait la photo. (Et c'est
+     * aussi pourquoi on n'écrit pas la photo DANS le raccourci : piège n° 9.)
+     *
+     * UN NOM ACCESSIBLE : une image de fond n'en a aucun, et §10.6 en exige un.
+     * La légende quand il y en a une, « Photo de l'album » sinon — c'est la
+     * seule chose honnête qu'on ait, et c'est le même pis-aller que l'éditeur de
+     * guide consigne pour ses images. REMONTÉ : la planche ne dessine aucun
+     * champ de légende.
+     *
+     * ON COMPTE LES NIVEAUX POUR TROUVER LA FIN (`finDuDiv`), on ne cherche pas
+     * `</div></div>` : la troisième tuile de `adminalbum` porte un voile, donc
+     * un `<span>` et des `</div>` de plus (piège n° 3).
+     */
+    const TUILES = [
+      {
+        // 1 036 px : un conteneur `relative` et, dedans, le carré hachuré de 150 px.
+        ouverture: '<div style={{ position: "relative" }}><div style={{ height: "150px"',
+        legende: true,
+      },
+      {
+        // 390 px : UN SEUL `<div>`, qui porte le rayon et le hachuré lui-même.
+        ouverture:
+          '<div style={{ position: "relative", aspectRatio: "1", borderRadius: "10px"',
+        legende: false,
+      },
+    ];
+
+    for (const { ouverture, legende } of TUILES) {
+      const indices = [];
+      for (let i = out.indexOf(ouverture); i !== -1; i = out.indexOf(ouverture, i + 1)) {
+        indices.push(i);
+      }
+      if (indices.length === 0) continue;
+      const fin = finDuDiv(out, indices[indices.length - 1]);
+      if (fin === -1) continue;
+
+      const premiere = out.slice(indices[0], finDuDiv(out, indices[0]));
+      const patron = tuileAlbum(premiere, legende);
+      if (patron === null) continue;
+
+      out =
+        out.slice(0, indices[0]) +
+        `{(album.photos ?? []).map((ph) => (${patron}))}` +
+        out.slice(fin);
+      pris = true;
+    }
+
+    /**
+     * ── 3. LE BOUTON VERT DEVIENT « AJOUTER » ET SON MENU (1 036 px) ─────
+     *
+     * Le libellé change — « Ajouter des photos » devient « Ajouter » — et c'est
+     * l'arbitrage du porteur, pas une réécriture de maquette : « le bouton
+     * ajouté (qui REMPLACE le bouton ajouter une image) ». Le chevron qu'il
+     * demande est posé à sa DROITE, après le libellé, et la rangée garde son
+     * écart dessiné de 8 px.
+     *
+     * TOUT LE RESTE DU STYLE EST RECOPIÉ par le groupe de capture : hauteur,
+     * retrait, rayon, vert, graisse, `whiteSpace`. Rien du dessin n'est réécrit.
+     *
+     * LE BOUTON NE PARAÎT QUE POUR UN MODÉRATEUR, et c'est un AVERTISSEMENT et
+     * non une autorisation (mémo §5) : la règle est dans `createAlbum`, qui
+     * exige `MODERATOR_REQUIRED` depuis ce lot. Le ressort `<span flex:1>` que
+     * la maquette dessine à sa gauche garde la rangée en place quand il
+     * disparaît.
+     */
+    const bouton =
+      /<button (style=\{\{ height: "42px"[^}]*\}\})>(<svg[\s\S]*?<\/svg>)Ajouter des photos<\/button>/;
+    const mb = bouton.exec(out);
+    if (mb !== null) {
+      const style = gererStyleControle(mb[1], null);
+      const remplacement =
+        '{album.moderateur ? (<span style={{ position: "relative", display: "inline-flex" }} ' +
+        'onMouseEnter={album.onOuvrirMenu} onMouseLeave={album.onFermerMenu} ' +
+        'onKeyDown={album.onTouche}>' +
+        '<button type="button" onClick={album.onOuvrirMenu} aria-haspopup="menu" ' +
+        `aria-expanded={album.menuOuvert} data-album-ajouter="" ${style}>${mb[2]}Ajouter` +
+        CHEVRON_ALBUM +
+        '</button>' +
+        menuAlbum(
+          'position: "absolute", zIndex: 30, right: "0", top: "calc(100% + 6px)"',
+        ) +
+        '</span>) : null}';
+      out = out.slice(0, mb.index) + remplacement + out.slice(mb.index + mb[0].length);
+      pris = true;
+    }
+
+    /**
+     * ── 4. LE BOUTON FLOTTANT DEVIENT « AJOUTER » ET SON MENU (390 px) ──
+     *
+     * AUCUN CHEVRON ICI, et c'est un relevé : la planche de 390 px ne dessine
+     * aucun libellé sur ce bouton — seulement l'appareil photo dans un rond de
+     * 56 px. Y poser un chevron demanderait de redessiner le bouton. Son nom
+     * accessible dit ce que le dessin ne dit pas, et `aria-haspopup` annonce le
+     * menu.
+     *
+     * 56 px EST DÉJÀ UNE CIBLE DE POUCE (T1 §2.3 en demande 44) : rien à
+     * agrandir, contrairement aux ronds de 40 px que `markTriggers` corrige.
+     */
+    const flottant =
+      /<span (style=\{\{ position: "fixed", right: "18px", bottom: "108px"[^}]*\}\})>(<svg[\s\S]*?<\/svg>)<\/span>/;
+    const mf = flottant.exec(out);
+    if (mf !== null) {
+      const style = gererStyleControle(mf[1].replace(' }}', ', zIndex: 40, padding: 0 }}'), null);
+      const remplacement =
+        '{album.moderateur ? (<>' +
+        '<button type="button" onClick={album.onBasculer} aria-haspopup="menu" ' +
+        'aria-expanded={album.menuOuvert} aria-label="Ajouter à l’album" ' +
+        `data-album-ajouter="" ${style}>${mf[2]}</button>` +
+        menuAlbum(
+          'position: "fixed", zIndex: 41, right: "18px", bottom: "172px"',
+        ) +
+        '</>) : null}';
+      out = out.slice(0, mf.index) + remplacement + out.slice(mf.index + mf[0].length);
+      pris = true;
+    }
+
+    /**
+     * ── 5. LA CARTE « ALBUMS » DE LA COLONNE DE DROITE ──────────────────
+     *
+     * Trois rangées peintes en dur — « Fête 2025 · 48 photos », « Repas
+     * partagé · 16 photos », « Permanence 2024 · 9 photos ». Elles deviennent
+     * une boucle sur `album.vignettes`, dont tout vient de la réponse :
+     * `title`, `photoCount`, et `photos[0].url` en couverture. Rien n'a été
+     * demandé à l'API pour cela.
+     *
+     * ELLES DEVIENNENT DES BOUTONS, et c'est le seul choix cohérent : la rangée
+     * de pastilles juste à gauche porte les mêmes albums, et une liste d'albums
+     * sur laquelle on ne peut pas cliquer, à côté d'une rangée où l'on peut,
+     * ferait deux listes qui ne se comportent pas pareil. Chaque rangée
+     * sélectionne son album — donc la même chose que sa pastille.
+     *
+     * La vignette reçoit la couverture en image de fond, hachuré dessous, comme
+     * les tuiles. ⚠ ET LES DEUX PLANCHES MOBILES N'ONT PAS CETTE CARTE : compté,
+     * zéro occurrence de « ALBUMS » dans les deux cadres de 390 px. Il n'y a
+     * donc rien à corriger là, et en ajouter une serait dessiner à la place du
+     * porteur.
+     */
+    const rangee =
+      /<div style=\{\{ display: "flex", gap: "10px", alignItems: "center", marginTop: "12px" \}\}><div style=\{\{ (width: "44px", height: "44px", borderRadius: "12px", background: "repeating-linear-gradient\([^"]*\)") \}\}><\/div><div><div style=\{\{ (fontSize: "13px", fontWeight: "700") \}\}>[^<]*<\/div><div style=\{\{ (fontSize: "11\.5px", color: "#8A958F") \}\}>[^<]*<\/div><\/div><\/div>/g;
+    const rangees = [];
+    for (let m = rangee.exec(out); m !== null; m = rangee.exec(out)) rangees.push(m);
+    if (rangees.length > 0) {
+      const premiere = rangees[0];
+      const boucle =
+        '{(album.vignettes ?? []).map((v) => (' +
+        '<button type="button" key={v.id} onClick={() => album.onPastille(v.id)} ' +
+        'data-album-vignette={v.id} style={{ display: "flex", gap: "10px", ' +
+        'alignItems: "center", marginTop: "12px", width: "100%", textAlign: "left", ' +
+        'background: "none", border: "none", padding: "0", fontFamily: "inherit", ' +
+        'color: "inherit", cursor: "pointer" }}>' +
+        /**
+         * `display: "block"` SUR LA VIGNETTE, et il le faut : la maquette la
+         * dessine en `<div>`, qui est déjà en bloc ; un `<button>` ne peut pas
+         * contenir de `<div>` (HTML invalide), donc elle devient un `<span>` —
+         * et un `<span>` est INLINE, ce qui ignorerait ses 44 px. Même leçon que
+         * `A04_MODIFIER` et son `<a>` de 48 px.
+         */
+        `<span style={{ ${premiere[1]}, display: "block", backgroundImage: v.couverture === null ? "none" : \`url("\${v.couverture}")\`, ` +
+        'backgroundSize: "cover", backgroundPosition: "center", flexShrink: "0" }}></span>' +
+        `<span><span style={{ display: "block", ${premiere[2]} }}>{v.titre}</span>` +
+        `<span style={{ display: "block", ${premiere[3]} }}>{v.compte}</span></span>` +
+        '</button>))}';
+      const dernier = rangees[rangees.length - 1];
+      out =
+        out.slice(0, premiere.index) + boucle + out.slice(dernier.index + dernier[0].length);
+      pris = true;
+    }
+
+    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * LE CHEVRON DU BOUTON « AJOUTER », RELEVÉ DANS LA MÊME MAQUETTE.
+ *
+ * `m6 9 6 6 6-6` en blanc, 13 × 13, trait 2, bouts arrondis — c'est celui que la
+ * ligne 136 dessine dans le sélecteur de parcours du panneau vert foncé, donc le
+ * seul des quatre chevrons de cette maquette qui soit BLANC, c'est-à-dire le
+ * seul lisible sur le vert `#16785E` de ce bouton. Rien n'est dessiné ici.
+ */
+const CHEVRON_ALBUM =
+  '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" ' +
+  'strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>';
+
+/** Le style d'une rangée du menu, emprunté à « ADMIN · MEMBRES — menu de rôle ». */
+const RANGEE_MENU_ALBUM =
+  'height: "42px", display: "flex", alignItems: "center", gap: "10px", ' +
+  'padding: "0 12px", borderRadius: "12px", fontSize: "13.5px", fontWeight: "600"';
+
+/** L'icône d'une rangée du menu : 16 px, trait 1,8 — les mesures de la planche empruntée. */
+const iconeMenuAlbum = (trace, teinte) =>
+  `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke=${teinte} ` +
+  `strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">` +
+  `<path d="${trace}" /></svg>`;
+
+/**
+ * LE MENU À DEUX ENTRÉES, pour les deux largeurs.
+ *
+ * `placement` est la SEULE chose qui change d'une largeur à l'autre — voir le
+ * grand en-tête. Tout le reste est le panneau emprunté, au caractère près.
+ *
+ * ── « AJOUTER UNE IMAGE » EST UN `<label>`, PAS UN BOUTON ─────────────────
+ *
+ * Et c'est le chemin que A05 a déjà établi pour l'éditeur de guide : le contrôle
+ * contient un `<input type="file">` caché, et le `change` part dans la prise.
+ * Un `<button>` aurait demandé un `ref` et un `.click()`, c'est-à-dire du DOM
+ * dans une prise de planche.
+ *
+ * SON EXTINCTION EST DOUBLE, et il faut les deux : `disabled` sur l'`<input>`
+ * (c'est lui qui ouvre le choisisseur — un `<label>` ne se désactive pas) et
+ * `aria-disabled` sur le `<label>`, qui est ce qu'un lecteur d'écran annonce.
+ * L'encre éteinte est `#8A958F`, le gris que ces mêmes planches emploient déjà
+ * pour un contrôle inactif (le bouton « Réseau automatique » de leur bandeau).
+ */
+const menuAlbum = (placement) =>
+  '{album.menuOuvert ? (<div role="menu" data-album-menu="" style={{ ' +
+  placement +
+  ', width: "240px", background: "#fff", border: "1px solid #E6EBE9", ' +
+  'borderRadius: "18px", padding: "8px", display: "flex", flexDirection: "column", ' +
+  'gap: "2px" }}>' +
+  '<label data-album-image="" aria-disabled={!album.imageDisponible} style={{ ' +
+  RANGEE_MENU_ALBUM +
+  ', color: album.imageDisponible ? "#16211D" : "#8A958F", ' +
+  'cursor: album.imageDisponible ? "pointer" : "default" }}>' +
+  iconeMenuAlbum(
+    'M3 4h18v16H3zM8.5 11a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2zM21 16l-5-5-9 9',
+    '{album.imageDisponible ? "#16211D" : "#8A958F"}',
+  ) +
+  'Ajouter une image' +
+  '<input type="file" accept="image/*" onChange={album.onImage} ' +
+  'disabled={!album.imageDisponible} aria-label="Ajouter une image à l’album" ' +
+  'style={{ display: "none" }} /></label>' +
+  '<button type="button" onClick={album.onAjouterAlbum} disabled={album.occupe} ' +
+  'data-album-nouveau="" style={{ ' +
+  RANGEE_MENU_ALBUM +
+  ', color: "#16211D", cursor: album.occupe ? "default" : "pointer", ' +
+  'background: "none", border: "none", width: "100%", textAlign: "left", ' +
+  'fontFamily: "inherit" }}>' +
+  iconeMenuAlbum('M12 5v14M5 12h14', '"#16211D"') +
+  'Ajouter un album</button></div>) : null}';
+
+/**
+ * LE PATRON D'UNE TUILE, bâti sur la PREMIÈRE du lot.
+ *
+ * `legende` dit si la planche écrit un texte dans la tuile : l'ordinateur en
+ * écrit un (« Fête 2025 » sur la première, vide sur les onze autres), le
+ * téléphone n'en écrit aucun. On ne lui en ajoute pas.
+ *
+ * `null` quand le hachuré n'est pas là où on l'attend : mieux vaut laisser le
+ * dessin que produire une boucle sur un nœud qu'on n'a pas reconnu.
+ */
+function tuileAlbum(premiere, legende) {
+  const fond =
+    /background: "(repeating-linear-gradient\([^"]*\))"/.exec(premiere);
+  if (fond === null) return null;
+
+  const photo =
+    `background: "${fond[1]}", backgroundImage: \`url("\${ph.url}")\`, ` +
+    'backgroundSize: "cover", backgroundPosition: "center"';
+
+  if (!legende) {
+    // 390 px : un seul `<div>`, vidé de son contenu — il n'en a pas.
+    const ouvre = /^<div style=\{\{ ([^}]*) \}\}>/.exec(premiere);
+    if (ouvre === null) return null;
+    const style = ouvre[1].replace(
+      /background: "repeating-linear-gradient\([^"]*\)"/,
+      photo,
+    );
+    return (
+      `<div key={ph.id} role="img" aria-label={ph.legende === '' ? 'Photo de l’album' : ph.legende} ` +
+      `style={{ ${style} }}></div>`
+    );
+  }
+
+  // 1 036 px : le conteneur `relative`, puis le carré hachuré qui porte le texte.
+  const interne =
+    /^<div style=\{\{ position: "relative" \}\}><div style=\{\{ ([^}]*) \}\}>[^<]*<\/div><\/div>$/.exec(
+      premiere,
+    );
+  if (interne === null) return null;
+  const style = interne[1].replace(
+    /background: "repeating-linear-gradient\([^"]*\)"/,
+    photo,
+  );
+  return (
+    '<div key={ph.id} style={{ position: "relative" }}>' +
+    `<div role="img" aria-label={ph.legende === '' ? 'Photo de l’album' : ph.legende} ` +
+    `style={{ ${style} }}>{ph.legende}</div></div>`
+  );
+}
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — « LE TITRE EST COUPÉ » : LA COUVERTURE PASSAIT PAR-DESSUS L'EN-TÊTE   ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, capture à l'appui : « la page de fil d'actualité n'a pas de menu de
+ * gauche, LE TITRE EST COUPÉ et le contenu de la page est dessiné. »
+ *
+ * ── CE QUI EST MESURÉ, ET CE QUE LA MESURE DIT ────────────────────────────
+ *
+ * Capture d'écran prise aux DEUX largeurs sur `/reseaux/pays-bj?onglet=fil` : le
+ * mot « Bénin » est tranché horizontalement en son milieu, moitié haute cachée,
+ * et la pastille d'initiales l'est avec lui. Relevé de géométrie : le `<h1>` est
+ * à `y = 107`, haut de 33 px, `scrollHeight === clientHeight` — donc RIEN n'est
+ * coupé par un débordement ni par une hauteur figée. Ce qui le cache est posé
+ * PAR-DESSUS.
+ *
+ * ── LA CAUSE, ET ELLE EST DANS LE DESSIN ──────────────────────────────────
+ *
+ * La maquette dessine la bannière du réseau en deux frères :
+ *
+ *     <div style="height:120px;background:#CFE3DA;position:relative"></div>
+ *     <div style="…;margin-top:-30px">  ← la pastille, le titre, le résumé
+ *
+ * Le second REMONTE de 30 px pour chevaucher le premier — c'est le dessin voulu,
+ * la pastille à cheval sur la couverture. Mais le premier porte
+ * `position: relative` (sans aucun enfant positionné : un vestige), et un élément
+ * POSITIONNÉ se peint APRÈS ses frères non positionnés, quel que soit l'ordre du
+ * document. La couverture recouvre donc ce qui remonte sous elle.
+ *
+ * Le défaut est DANS LA MAQUETTE : ouverte au navigateur, la planche A08T se
+ * coupe le titre de la même façon. A08, elle, ne l'a pas — sa couverture s'écrit
+ * `height:140px;background:#CFE3DA`, sans `position`. C'est donc un écart entre
+ * deux planches du MÊME écran, et la planche saine dit laquelle a raison.
+ *
+ * ── CE QU'ON CHANGE, ET CE QU'ON NE CHANGE PAS ────────────────────────────
+ *
+ * On ne retire RIEN : le `position: relative` de la couverture reste, parce qu'on
+ * ne sait pas ce qu'il devait ancrer et qu'un autre lot y posera peut-être le
+ * bouton « changer la couverture » (la vue propriétaire l'y dessine déjà). On
+ * ajoute `position: "relative"` à la RANGÉE qui remonte : les deux frères sont
+ * alors positionnés, et c'est l'ordre du document qui tranche — la rangée gagne,
+ * comme sur A08. Aucune couleur, aucune mesure, aucun texte ne bouge.
+ *
+ * ── DEUX MARGES, PARCE QUE DEUX PLANCHES (piège n° 1) ─────────────────────
+ *
+ * La planche de 1 036 px remonte de 30 px, celle de 390 px de 28. Un motif ancré
+ * sur l'une n'aurait décrit qu'un cadre sur deux, et la correction du porteur
+ * doit prendre sur les deux. Relevé sur les cadres produits : douze rangées à
+ * `-30px`, neuf à `-28px`, vingt et une en tout.
+ *
+ * La rangée qui porte DÉJÀ un `position` est laissée telle quelle : deux clés
+ * `position` dans un même style donnent `TS1117` (piège n° 8).
+ */
+const A08T_ENTETE_AU_DESSUS = {
+  screens: ['A08T'],
+  nom: 'A08T_ENTETE_AU_DESSUS',
+  why: 'Le titre du réseau était tranché en deux par la couverture, aux DEUX largeurs — mesuré.',
+  provides: [],
+  apply(jsx) {
+    let pris = 0;
+    /**
+     * UNE REGEX `g` ET UNE FONCTION DE REMPLACEMENT : les rangées se ressemblent
+     * d'une planche à l'autre, et `String.replace` avec un motif en CHAÎNE ne
+     * couperait que la première (piège n° 2). Une seule planche n'en porte qu'une,
+     * mais le motif doit rester juste si la maquette en dessine deux.
+     */
+    const out = jsx.replace(
+      /<div style=\{\{ ([^}]*marginTop: "-(?:30|28)px"[^}]*) \}\}>/g,
+      (entier, style) => {
+        if (/\bposition:/.test(style)) return entier;
+        pris += 1;
+        return `<div style={{ ${style}, position: "relative" }}>`;
+      },
+    );
+    return pris > 0 ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — L'ANNONCE ÉPINGLÉE DU HAUT DU FIL, ET SON DÉSÉPINGLAGE                ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Arbitrage du porteur, 2026-10-11 : « Garde l'exclusivité et ajoute le
+ * désépinglage. » L'épinglage d'une annonce reste exclusif — une seule en haut
+ * du fil, le service déépingle les autres — et il manquait le chemin du retour :
+ * on ne pouvait que REMPLACER l'épinglée par une autre, en publiant, avec un
+ * budget de deux annonces par semaine (§2.3).
+ *
+ * ── LE DESSIN EXISTE, ET IL N'A PAS FALLU EMPRUNTER ───────────────────────
+ *
+ * RELEVÉ sur `03 Accueil v2.dc.html`, et c'est ce qui a décidé de la forme :
+ *
+ *   · la carte verte « ANNONCE DU RÉSEAU » est dessinée sur les DEUX planches
+ *     « Fil » — vue membre (occurrence 0) et vue propriétaire (occurrence 5) ;
+ *   · « Désépingler » figure UNE SEULE FOIS dans toute la maquette, sur la
+ *     planche de 1 036 px de la vue PROPRIÉTAIRE, en `<span>` de 32 px ;
+ *   · sur 390 px, la carte de la vue membre n'a AUCUN contrôle et celle de la
+ *     vue propriétaire porte un « … » (le tracé `M5 12h.01M12 12h.01M19 12h.01`).
+ *
+ * Le « … » est donc le contrôle du propriétaire sur cette carte, et c'est le
+ * SEUL que la maquette y dessine. ⚠ DÉCISION ASSUMÉE : il devient le bouton de
+ * désépinglage, avec le nom accessible « Désépingler l'annonce », au lieu
+ * d'ouvrir une feuille d'actions à une seule rangée. Emprunter la feuille basse
+ * de « ADMIN · MEMBRES » aurait été possible — le dépôt le fait déjà pour A04 —
+ * mais elle aurait porté UN choix, ce qui est un menu de rien. REMONTÉ : si le
+ * porteur ajoute un second geste sur cette carte, c'est la feuille qu'il faudra.
+ *
+ * ── LE TEXTE EST LIÉ EN MÊME TEMPS, ET CE N'EST PAS DU ZÈLE ───────────────
+ *
+ * La carte écrivait « Permanence consulaire à Lyon le 14 mars » en dur.
+ * Brancher le GESTE sans brancher le TEXTE aurait donné le pire des deux : un
+ * bouton qui désépingle réellement une annonce, sous un titre inventé. Les
+ * trois morceaux — auteur, titre, corps — viennent donc de l'annonce dont
+ * `pinnedAt` n'est pas nul.
+ *
+ * ⚠ ET LA CARTE DISPARAÎT QUAND RIEN N'EST ÉPINGLÉ. Sans cela, un réseau sans
+ * annonce épinglée garderait une carte verte vide en haut de son fil, avec un
+ * bouton qui n'a rien à désépingler.
+ *
+ * ⚠ SEULES LES DEUX PLANCHES PROPRIÉTAIRE SONT TRAITÉES, et il faut le dire :
+ * `gerer.annonce` n'est rempli que pour un propriétaire ou un modérateur (la
+ * route des annonces répond `403 NOT_A_MEMBER` à un passant, et le hook ne
+ * l'appelle pas pour un membre ordinaire). La carte de la vue MEMBRE garde donc
+ * le texte de la maquette — REMONTÉ : il faudrait que `GET /communities/:slug`
+ * porte l'annonce épinglée, comme il porte déjà `pinned` pour les sujets.
+ */
+const A08T_ANNONCE_EPINGLEE = {
+  screens: ['A08T'],
+  nom: 'A08T_ANNONCE_EPINGLEE',
+  why: 'La carte verte du haut du fil affichait l’annonce d’un autre réseau, et « Désépingler » ne faisait rien.',
+  provides: ['gerer'],
+  apply(jsx) {
+    let out = jsx;
+
+    // ── Planche d'ordinateur, vue propriétaire : la carte avec « Désépingler »
+    const carteWeb =
+      /<div style=\{\{ background: "#E3F0EB", borderRadius: "20px", padding: "16px 18px", display: "flex", gap: "12px" \}\}>[\s\S]*?>Désépingler<\/span><\/div>/;
+    const mW = carteWeb.exec(out);
+    if (mW !== null) {
+      const carte = mW[0]
+        .replace(
+          /(<span style=\{\{ fontSize: "11\.5px", color: "#5D6B66" \}\}>)[^<]*(<\/span>)/,
+          '$1{gerer.annonce?.auteur}$2',
+        )
+        .replace(
+          /(<div style=\{\{ fontSize: "14px", fontWeight: "700", marginTop: "4px" \}\}>)[^<]*(<\/div>)/,
+          '$1{gerer.annonce?.titre}$2',
+        )
+        .replace(
+          /(<div style=\{\{ fontSize: "13px", color: "#16211D", marginTop: "2px", lineHeight: "1\.5" \}\}>)[^<]*(<\/div>)/,
+          '$1{gerer.annonce?.corps}$2',
+        )
+        .replace(
+          /<span (style=\{\{[^}]*\}\})>Désépingler<\/span>/,
+          (_, style) =>
+            `<button type="button" onClick={gerer.onDesepingler} disabled={gerer.occupe} ` +
+            `data-annonce-desepingler="" ${gererStyleControle(style, 'gerer.occupe')}>Désépingler</button>`,
+        );
+      out =
+        out.slice(0, mW.index) +
+        `{gerer.annonce === null ? null : (${carte})}` +
+        out.slice(mW.index + mW[0].length);
+    }
+
+    // ── Planche de 390 px, vue propriétaire : la carte et son « … » ────────
+    const carteMobile =
+      /<div style=\{\{ background: "#E3F0EB", borderRadius: "18px", padding: "12px 14px", display: "flex", gap: "10px", flexShrink: "0" \}\}>[\s\S]*?<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="2\.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h\.01M12 12h\.01M19 12h\.01" \/><\/svg><\/div>/;
+    const mM = carteMobile.exec(out);
+    if (mM !== null) {
+      const carte = mM[0]
+        .replace(
+          /(<div style=\{\{ fontSize: "13\.5px", fontWeight: "700", marginTop: "3px" \}\}>)[^<]*(<\/div>)/,
+          '$1{gerer.annonce?.titre}$2',
+        )
+        /**
+         * LE « … » N'A AUCUN CADRE sur la planche de 390 px : la maquette pose le
+         * `<svg>` nu en bout de carte. On l'enveloppe donc dans un bouton SANS
+         * fond ni bordure — rien de visible n'est ajouté — avec les 44 px de
+         * cible que le dépôt impose au pouce, exactement comme
+         * `A08T_GERER_MEMBRES` le fait pour le chevron des rangées de membres.
+         */
+        .replace(
+          /(<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="2\.6" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h\.01M12 12h\.01M19 12h\.01" \/><\/svg>)(<\/div>)$/,
+          (_, svg, fin) =>
+            `<button type="button" onClick={gerer.onDesepingler} disabled={gerer.occupe} ` +
+            `aria-label="Désépingler l’annonce" data-annonce-desepingler="" ` +
+            `style={{ background: "none", border: "none", padding: 0, color: "inherit", ` +
+            `fontFamily: "inherit", cursor: gerer.occupe ? "default" : "pointer", display: "flex", ` +
+            `alignItems: "center", justifyContent: "center", minWidth: "44px", minHeight: "44px", ` +
+            `flexShrink: "0" }}>${svg}</button>${fin}`,
+        );
+      out =
+        out.slice(0, mM.index) +
+        `{gerer.annonce === null ? null : (${carte})}` +
+        out.slice(mM.index + mM[0].length);
+    }
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ ET LES DEUX PLANCHES DE LA VUE MEMBRE, QUI MENTAIENT ENCORE           ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * L'en-tête ci-dessus disait : « ⚠ SEULES LES DEUX PLANCHES PROPRIÉTAIRE
+     * SONT TRAITÉES […] la carte de la vue MEMBRE garde donc le texte de la
+     * maquette — REMONTÉ ». C'était vrai, et la raison donnée l'était aussi :
+     * `gerer.annonce` n'était rempli que pour un propriétaire ou un modérateur,
+     * parce que `use-reseau.ts` n'appelait la route des annonces que pour eux.
+     *
+     * CE N'EST PLUS LE CAS. Mesuré : `GET /communities/:id/announcements` répond
+     * `200 {"items":[],"nextCursor":null}` à un MEMBRE ordinaire — elle exige
+     * `content.read` et l'appartenance, rien de plus ; elle ne répond `403
+     * NOT_A_MEMBER` qu'à un passant. Le crochet la demande donc pour tout
+     * membre, et `gerer.annonce` est renseigné pour tout le monde.
+     *
+     * ── UNE SEULE PRISE POUR LES QUATRE PLANCHES, ET C'EST LE POINT ─────────
+     *
+     * On ne crée PAS un second champ « annonce du membre » : ce serait deux
+     * sources pour la même annonce épinglée, et la seconde divergerait. Les
+     * quatre cartes lisent `gerer.annonce`. Ce qui change entre les vues n'est
+     * pas la DONNÉE, c'est le GESTE — « Désépingler » n'est dessiné que sur les
+     * planches propriétaire, et c'est la maquette qui en décide.
+     *
+     * ── LA COUPE SE COMPTE, ELLE NE SE CHERCHE PAS (piège n° 3) ────────────
+     *
+     * Les cartes de la vue membre n'ont aucun contrôle en bout : il n'existe
+     * donc aucun motif de FIN à viser, contrairement au `>Désépingler</span>`
+     * des planches propriétaire. On part de l'ouverture et on compte les `<div>`
+     * avec `finDuDiv` — prendre le premier `</div>` venu couperait la carte au
+     * milieu de son texte.
+     */
+    for (const ouverture of [
+      // 1 036 px — même fond et même rayon que la carte propriétaire, sans bouton.
+      '<div style={{ background: "#E3F0EB", borderRadius: "20px", padding: "16px 18px", display: "flex", gap: "12px" }}>',
+      // 390 px — la maquette y raccourcit le titre de carte en « ANNONCE · ÉPINGLÉE ».
+      '<div style={{ background: "#E3F0EB", borderRadius: "18px", padding: "12px 14px", display: "flex", gap: "10px", flexShrink: "0" }}>',
+    ]) {
+      const debut = out.indexOf(ouverture);
+      // Déjà traitée au-dessus : la carte propriétaire est maintenant précédée
+      // de son `{gerer.annonce === null ? null : (`, donc elle ne se retrouve pas
+      // ici — mais si la maquette changeait, ce garde-fou le dirait plutôt que de
+      // produire une double condition.
+      if (debut === -1 || out.slice(Math.max(0, debut - 40), debut).includes('gerer.annonce')) {
+        continue;
+      }
+      const fin = finDuDiv(out, debut);
+      if (fin === -1) continue;
+      const carte = out
+        .slice(debut, fin)
+        .replace(
+          /(<span style=\{\{ fontSize: "11\.5px", color: "#5D6B66" \}\}>)[^<]*(<\/span>)/,
+          '$1{gerer.annonce?.auteur}$2',
+        )
+        .replace(
+          /(<div style=\{\{ fontSize: "14px", fontWeight: "700", marginTop: "4px" \}\}>)[^<]*(<\/div>)/,
+          '$1{gerer.annonce?.titre}$2',
+        )
+        .replace(
+          /(<div style=\{\{ fontSize: "13px", color: "#16211D", marginTop: "2px", lineHeight: "1\.5" \}\}>)[^<]*(<\/div>)/,
+          '$1{gerer.annonce?.corps}$2',
+        )
+        /**
+         * LA PLANCHE DE 390 px N'ÉCRIT QUE LE TITRE — pas d'auteur, pas de corps.
+         * C'est le même style de ligne que sur la carte propriétaire mobile, et
+         * la même liaison : le dessin décide de ce qu'il montre, pas nous.
+         */
+        .replace(
+          /(<div style=\{\{ fontSize: "13\.5px", fontWeight: "700", marginTop: "3px" \}\}>)[^<]*(<\/div>)/,
+          '$1{gerer.annonce?.titre}$2',
+        );
+      out =
+        out.slice(0, debut) +
+        `{gerer.annonce === null ? null : (${carte})}` +
+        out.slice(fin);
+    }
+
+    return out === jsx ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+const A08T_GERER_SIGNALER = {
+  screens: ['A08T'],
+  nom: 'A08T_GERER_SIGNALER',
+  why: 'Les deux boutons « Signaler le réseau » n’ouvraient rien.',
+  provides: ['gerer'],
+  apply(jsx) {
+    let out = jsx;
+    for (const libelle of ['Signaler le réseau', 'Signaler']) {
+      const motif = new RegExp(
+        `<button (style=\\{\\{[^}]*\\}\\})>(<svg[^>]*><path d="M5 21V4h12l-2 4 2 4H5" \\/><\\/svg>)${libelle}<\\/button>`,
+      );
+      const m = motif.exec(out);
+      if (m === null) continue;
+      out =
+        out.slice(0, m.index) +
+        `<button type="button" onClick={gerer.onSignaler} disabled={gerer.occupe} ` +
+        `data-reseau-signaler="" ${gererStyleControle(m[1], 'gerer.occupe')}>${m[2]}${libelle}</button>` +
+        out.slice(m.index + m[0].length);
+      break;
+    }
+    if (out === jsx) return { jsx, applied: false };
+    /**
+     * LA FENÊTRE EST POSÉE EN FRÈRE, EN FIN DE CADRE — jamais en parent.
+     *
+     * Un conteneur interposé casse le `position: sticky` de la barre haute et du
+     * rail : c'est la leçon déjà payée sur `ecran-donnees.tsx`. Et elle est posée
+     * ICI, dans le cadre généré, plutôt que dans l'écran, parce que c'est le
+     * cadre qui porte le bouton : un paramètre d'URL ne pourrait pas dire QUEL
+     * sujet, et la page des réseaux en a plusieurs.
+     */
+    return {
+      jsx: `${out}<FenetreSignalement sujet={gerer.signalement} onFermer={gerer.onFermerSignalement} />`,
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ A08T — « CONTACTER LES MODÉRATEURS », DEUX BOUTONS SANS AUCUNE ROUTE      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ : zéro `onClick` sur les deux boutons. La maquette les dessine sur la
+ * planche « À propos » du réseau, aux deux largeurs, et `07-reseaux.md` ne décrit
+ * que le chemin modérateur → membre — masquer, retirer, épingler, clore — jamais
+ * comment un membre parle à son équipe. Il n'y avait rien à brancher : la route
+ * n'existait pas, et le kind de conversation qu'elle demande n'existait pas non
+ * plus.
+ *
+ * ⚠ CE N'EST PAS « SIGNALER LE RÉSEAU », LE BOUTON DESSINÉ JUSTE À CÔTÉ.
+ * Celui-là appelle `POST /reports` : il va à l'équipe de la PLATEFORME, ouvre un
+ * dossier de modération, peut suspendre un compte, et exige L2. Celui-ci ouvre un
+ * fil de GROUPE avec les bénévoles d'UN réseau — aucun dossier, aucun pouvoir de
+ * sanction, L0 suffit. « Signaler le réseau » RESTE INERTE sur ces deux planches :
+ * ce lot ne le branche pas, et le brancher à la hâte sur la route voisine aurait
+ * confondu les deux chemins pour de bon.
+ *
+ * ── LE LIBELLÉ EST LE DISCRIMINANT, PAS LA GÉOMÉTRIE ──────────────────────
+ *
+ * Même méthode que `K02_ECRIRE`, et pour la raison du piège n° 1 : les deux
+ * planches ne dessinent PAS les mêmes mesures — 42 px de haut et 13 px de police
+ * à 1036, 40 px et 12,5 px à 390, avec un `flex: "1"` que l'ordinateur n'a pas.
+ * Un motif ancré sur un style n'aurait décrit qu'un seul des deux cadres. On part
+ * donc du TEXTE et on remonte au `<button>` qui l'ouvre.
+ *
+ * DEUX LIBELLÉS, parce que la maquette RACCOURCIT sur le téléphone : « Contacter
+ * les modérateurs » à 1036 px, « Contacter » à 390 px. Les deux sont relevés sur
+ * les cadres produits. `>Contacter</button>` ne peut pas attraper le bouton
+ * d'ordinateur — son texte ne finit pas là — et aucune autre planche de A08T ne
+ * porte le mot (compté : une occurrence par planche, sur ces deux-là seulement).
+ *
+ * ── LE NOM ACCESSIBLE DU BOUTON MOBILE EST COMPLÉTÉ ───────────────────────
+ *
+ * « Contacter » seul ne dit pas QUI l'on contacte : hors de la carte « ÉQUIPE »
+ * qui l'entoure, un lecteur d'écran annonce un bouton sans objet. On pose donc
+ * `aria-label="Contacter les modérateurs"` SUR LE CADRE MOBILE SEUL.
+ *
+ * Ce n'est pas réécrire la maquette : le texte VISIBLE ne bouge pas d'un
+ * caractère, et les mots ajoutés ne sont pas inventés — ce sont ceux que la MÊME
+ * maquette écrit sur sa planche d'ordinateur pour le MÊME bouton. La règle
+ * « label in name » (WCAG 2.5.3) est respectée, puisque le texte visible est
+ * contenu mot pour mot dans le nom accessible.
+ *
+ * ── CE QUI N'EST PAS TOUCHÉ, ET POURQUOI ──────────────────────────────────
+ *
+ * ⚠ LES 40 px DU BOUTON MOBILE RESTENT 40 px. T1 §2.3 demande 44, et
+ * `X02_FILTRES` a bien relevé une rangée de 36 à 44 — mais là des `<span>`
+ * DEVENAIENT des cibles, donc la mesure était nouvelle. Ici l'élément est déjà un
+ * `<button>` dessiné par la maquette : lui ajouter quatre pixels déplacerait la
+ * rangée que la planche compose avec « Signaler », et ce serait redessiner. L'écart
+ * est REMONTÉ plutôt que corrigé en passant.
+ *
+ * ⚠ UN SEUL `cursor` DANS LE STYLE (piège n° 8, `TS1117`). `resetBoutonManquant`
+ * en poserait un ; on retire donc le sien de la liste des manquants et on écrit le
+ * curseur CONDITIONNEL une seule fois, après avoir effacé celui que la maquette
+ * aurait pu dessiner.
+ *
+ * ── CETTE ADAPTATION N'EST TROUVÉE QUE SUR DEUX CADRES SUR VINGT-CINQ ─────
+ *
+ * La section A08T en déclare vingt-cinq, et vingt-trois ne dessinent pas ce
+ * bouton. Le journal dira donc vingt-trois fois « adaptation attendue
+ * introuvable », et c'est le sens exact du piège n° 7 : « introuvable SUR CE
+ * CADRE », jamais « inutile ». Deux applications attendues, pas plus.
+ */
+const A08T_CONTACTER_MODERATEURS = {
+  screens: ['A08T'],
+  nom: 'A08T_CONTACTER_MODERATEURS',
+  why: 'Le bouton « Contacter les modérateurs » ouvre le fil de groupe avec l’équipe du réseau — il n’avait aucun geste, et il n’est dessiné que sur les deux planches « À propos » (23 des 25 cadres de A08T ne le portent pas : « introuvable » y est normal).',
+  provides: ['onContacterModerateurs', 'contactEnCours'],
+  apply(jsx) {
+    /**
+     * Le libellé d'ordinateur D'ABORD : « Contacter » est son préfixe, et le
+     * chercher en premier reviendrait à tester un motif plus large avant un
+     * motif plus étroit. Comme les deux ne cohabitent jamais sur un même cadre,
+     * l'ordre n'est qu'une précaution — mais c'est la précaution que le piège
+     * n° 2 enseigne.
+     */
+    for (const libelle of ['Contacter les modérateurs', 'Contacter']) {
+      const fin = `>${libelle}</button>`;
+      const at = jsx.indexOf(fin);
+      if (at < 0) continue;
+
+      const debut = jsx.lastIndexOf('<button', at);
+      if (debut < 0) continue;
+      const ouvre = jsx.slice(debut, jsx.indexOf('>', debut) + 1);
+      // Déjà branché : on ne réécrit jamais un geste que la maquette ou une
+      // autre adaptation a posé.
+      if (ouvre.includes('onClick')) continue;
+
+      const ms = /style=\{\{ ([^}]*) \}\}/.exec(ouvre);
+      if (ms === null) continue;
+
+      // Un curseur DESSINÉ est effacé avant qu'on écrive le nôtre : deux
+      // `cursor` dans le même littéral donnent TS1117 (piège n° 8).
+      const base = ms[1].replace(/,?\s*cursor: "[^"]*"/, '');
+      const manquants = resetBoutonManquant(base)
+        .split(', ')
+        .filter((d) => d !== '' && !d.startsWith('cursor:'));
+
+      const style =
+        `style={{ ${base}${manquants.length === 0 ? '' : `, ${manquants.join(', ')}`}, ` +
+        'cursor: contactEnCours ? "default" : "pointer", ' +
+        'opacity: contactEnCours ? ".55" : "1" }}';
+
+      // Le nom accessible n'est complété que là où la maquette raccourcit.
+      const nom = libelle === 'Contacter' ? ' aria-label="Contacter les modérateurs"' : '';
+
+      const neuf =
+        '<button type="button" onClick={onContacterModerateurs} ' +
+        `disabled={contactEnCours} data-contacter-moderateurs=""${nom} ${style}>`;
+
+      return {
+        jsx: jsx.slice(0, debut) + neuf + jsx.slice(debut + ouvre.length),
+        applied: true,
+      };
+    }
+    return { jsx, applied: false };
+  },
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LOT « RETIRER ≠ BANNIR » ET « DÉMASQUER » — LES TROIS ADAPTATIONS          ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Elles servent trois arbitrages du porteur, et elles sont ensemble parce
+ * qu'elles se lisent ensemble :
+ *
+ *   · `A08T_LIGNE_MEMBRE` — la poignée « ··· » d'une ligne de membre ouvre
+ *     vraiment le menu, et elle dit SUR QUI ;
+ *   · `A08T_MENU_MEMBRE` — « Retirer du réseau » et « Bannir du réseau »
+ *     deviennent deux gestes DIFFÉRENTS, le premier réversible ;
+ *   · `A09_MODERATION` — les trois entrées de la carte de modération d'un sujet
+ *     cessent d'être des `href="#"` morts, et celle du masquage sait dire
+ *     « Remettre dans le réseau » quand le sujet est masqué.
+ */
+
+/** Le début du corps de boucle des lignes de membres, et sa fin. */
+const boucleMembres = (jsx) => {
+  const debut = jsx.indexOf('(membres ?? []).map(');
+  if (debut === -1) return null;
+  const fin = jsx.indexOf('))}', debut);
+  return fin === -1 ? null : { debut, fin };
+};
+
+
+
+const A09_MODERATION = {
+  screens: ['A09'],
+  nom: 'A09_MODERATION',
+  why: 'Les trois entrées de la carte « MODÉRATION » d’un sujet étaient des liens morts (href="#") : « Masquer » agit, et dit « Remettre » quand le sujet est masqué.',
+  provides: [],
+  apply(jsx) {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ RIEN NE PERMETTAIT DE REVENIR SUR UN MASQUAGE                          ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ dans le cadre produit : trois `<a href="#">` dans la carte
+     * « MODÉRATION » — le garde-fou de navigation les comptait déjà parmi les six
+     * liens morts de A09. Masquer un sujet n'était donc même pas possible depuis
+     * l'écran, et le rétablir encore moins : seule l'équipe disposait d'`UNHIDE`.
+     *
+     * UN BOUTON ET NON UN LIEN : ces trois gestes n'ont aucune adresse. C'est la
+     * même distinction que `M01_MENU` écrit pour le menu d'une conversation —
+     * « Voir le profil » mène quelque part, « Bloquer » change quelque chose.
+     *
+     * LE LIBELLÉ EST DÉJÀ UNE DONNÉE (`a.label`, d'un `<sc-for>` de la maquette) :
+     * c'est `use-sujet.ts` qui écrit « Remettre dans le réseau » sur un sujet
+     * masqué, et rien n'est redessiné ici.
+     *
+     * `disabled` SUR L'ABSENCE DE GESTE, et pas sur un droit : deux des trois
+     * entrées n'ont rien à appeler — il n'existe pas d'état « clos » dans
+     * `TopicStatus`, et « Épingler » ne dit pas lequel des trois `pin_kind`
+     * poser. Un contrôle éteint est au moins honnête ; un lien mort ne l'était
+     * pas. REMONTÉ.
+     *
+     * ⚠ LA PLANCHE DE 390 px NE DESSINE PAS CETTE CARTE : le sujet mobile
+     * s'arrête à « Marquer résolu ». Il n'y a donc aucune entrée à brancher là,
+     * et en ajouter une serait dessiner à la place du porteur. REMONTÉ.
+     */
+    const motif =
+      /<a href="#" style=\{\{ ([^}]*) \}\}>(<svg\b(?:(?!<svg)[\s\S])*?<\/svg>)\{a\.label\}<\/a>/;
+    const m = motif.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+
+    const bouton =
+      `<button type="button" onClick={a.onClick} disabled={a.onClick === undefined} ` +
+      `data-sujet-moderation="" style={{ ${m[1]}, width: "100%", background: "none", ` +
+      'border: "none", textAlign: "left", fontFamily: "inherit", ' +
+      'cursor: a.onClick === undefined ? "default" : "pointer" }}>' +
+      `${m[2]}{a.label}</button>`;
+
+    return {
+      jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length),
+      applied: true,
+    };
+  },
+};
+
 /**
  * Remplace les champs dessinés. Travaille sur le JSX complet, et non balise par
  * balise, parce qu'il faut voir le CONTENU du `<div>` pour le reconnaître.
@@ -10402,10 +17946,113 @@ function adaptFields(jsx, section) {
     M01_ENTETE,
     M01_LIGNES_CONVERSATION,
     NOM_VERS_PROFIL,
+    /**
+     * APRÈS `NOM_VERS_PROFIL`, ET C'EST OBLIGATOIRE : voir son en-tête — placée
+     * avant, elle écartait `{c.name}` de l'avatar que `NOM_VERS_PROFIL` cherche
+     * dans les 1 500 caractères précédents, et le cadre d'ordinateur de A01C
+     * perdait son lien vers le profil de l'auteur. Mesuré sur le cadre produit.
+     */
+    A01C_RETIRE,
     K02_AVATAR_PROFIL,
     K02_PROFIL_MOBILE,
     K02_RECOMMANDER,
     K02_ONGLETS_CONTENU,
+    CARTES_VERS_DETAIL,
+    H01_RESOLUE_MOBILE,
+    H01_FIL,
+    H01_PORTEES,
+    H01_ETAT_VIDE,
+    H04_SUGGESTIONS,
+    A03_ONGLETS_ET_FILTRES,
+  A03_ECRIRE_UN_GUIDE,
+  /**
+   * APRÈS `A03_ECRIRE_UN_GUIDE`, ET L'ORDRE EST UNE DÉPENDANCE RÉELLE : les deux
+   * transforment un `<button>` en `<Link href="/guides/nouveau">`, et le motif de
+   * celle-là (`Écrire un guide`, avec le `+` de la maquette) n'est PAS celui de
+   * celle-ci (`Écrire l'un de ces guides`, sans icône). Posée après, elle travaille
+   * sur un cadre où l'autre a déjà pris son bouton — donc sur un panneau que
+   * personne d'autre n'a touché.
+   */
+  A03_GUIDES_MANQUANTS,
+    A04_ACTIONS,
+    A04_CORPS,
+    /**
+     * APRÈS `A04_CORPS`, ET C'EST OBLIGATOIRE : la borne du corps du guide EST
+     * l'ouverture de l'en-tête des commentaires, sur les quatre planches. Placée
+     * avant, cette transformation en ferait un `<button>` que `A04_CORPS` ne
+     * reconnaîtrait plus — le corps de la maquette reviendrait sur tous les
+     * guides, sans la moindre erreur de compilation. Voir son en-tête.
+     */
+    A04_COMMENTAIRES,
+    /**
+     * LES DEUX TRANSFORMATIONS DE LA BARRE HAUTE MOBILE ET DE SA FEUILLE.
+     *
+     * APRÈS `A04_CORPS` et `A04_COMMENTAIRES`, et ce n'est pas indifférent :
+     * `A04_CORPS` borne le corps du guide sur l'ouverture de l'en-tête des
+     * commentaires, et la feuille d'actions est posée par l'emprunt en PREMIER
+     * ENFANT du cadre — donc AVANT la barre haute, et avant tout ce que ces deux
+     * transformations cherchent. Les faire passer plus tôt n'aurait rien cassé
+     * aujourd'hui, mais l'ordre déclaré dit ce dont elles dépendent.
+     */
+    /**
+     * AVANT `A04_ENTETE_MOBILE` ET AVANT `A04_FEUILLE_ACTIONS`, et les deux
+     * contraintes sont obligatoires : le motif de rond de la barre haute est
+     * indexé sur le tracé `m15 18-6-6 6-6`, qui est aussi celui du chevron
+     * « page précédente » ; et les deux feuilles du bas sont empruntées à la même
+     * planche, donc leurs voiles sont identiques à l'octet. Voir l'en-tête de
+     * `A04_PLAN`, où les deux sont écrites avec ce qu'elles coûteraient.
+     */
+    A04_PLAN,
+    A04_ENTETE_MOBILE,
+    A04_FEUILLE_ACTIONS,
+    /**
+     * APRÈS LES QUATRE AUTRES TRANSFORMATIONS DE A04, et ce n'est pas indifférent.
+     *
+     * Son motif est un `<button>` dont le contenu finit par « Modifier », avec un
+     * `<svg>` facultatif devant. Aucune des quatre précédentes ne PRODUIT un tel
+     * nœud — elles produisent des boutons dont le contenu est `{a.label}`,
+     * `{guide.commentaires}` ou un `<svg>` seul — donc l'ordre ne change rien au
+     * résultat aujourd'hui. Il est posé en DERNIER par prudence : si l'une d'elles
+     * venait un jour à écrire un bouton portant ce mot, c'est celle-là qui aurait
+     * été dessinée par le designer, et non ce branchement.
+     */
+    A04_MODIFIER,
+    /**
+     * APRÈS `A04_MODIFIER`, et l'ordre ne décide de rien aujourd'hui — il dit ce
+     * dont cette transformation dépend. Ses deux motifs sont indexés sur des
+     * interpolations que `A04_DONNEES` a posées (`{guide.signalements}`,
+     * `{guide.contributorCount}`), donc sur la LIAISON, pas sur une autre
+     * transformation : aucune des six précédentes ne produit ni ne détruit ces
+     * deux nœuds. Posée en dernier des transformations de A04 par la même prudence
+     * que `A04_MODIFIER` — si l'une d'elles venait un jour à réécrire la carte de
+     * l'auteur, c'est elle qui aurait été dessinée par le designer.
+     */
+    A04_SIGNALEMENTS,
+    /**
+     * APRÈS `A04_SIGNALEMENTS`, ET POUR LA MÊME RAISON QU'ELLE : ses deux motifs
+     * sont indexés sur des nœuds que `A04_DONNEES` a posés — la pastille
+     * `{guide.proposals}` à 1 440 px comme à 390 px — donc sur la LIAISON, pas sur
+     * une autre transformation. L'ordre dit seulement que les deux rangées
+     * jumelles de la carte d'auteur se lisent l'une après l'autre.
+     */
+    A04_PROPOSITIONS,
+    A04_COMMUNAUTE,
+    A05_EDITEUR,
+    /**
+     * APRÈS `A05_EDITEUR` : il transforme le titre du guide en `<input>` sur un
+     * motif indexé sur `height: "50px"`/`"48px"`, et la carte des pages n'a pas
+     * de champ à cette hauteur — l'ordre n'est donc pas une dépendance, il dit
+     * seulement que la carte des pages se lit après l'éditeur qui la porte.
+     */
+    A05_PAGES,
+    A06_PANNEAU_CORRECTION,
+    /**
+     * AVANT `A06_RETOUR_GUIDE`, et l'ordre n'est pas une dépendance : celle-là
+     * travaille sur le fil d'Ariane et sur « Voir le guide », celle-ci sur les
+     * boutons des cartes de proposition. Deux régions disjointes du même cadre.
+     */
+    A06_DECISIONS,
+    A06_RETOUR_GUIDE,
     O04_CHOIX_REFERENTIEL,
     K01_COMPETENCES_LANGUES,
     K03_ETATS_KYC,
@@ -10445,6 +18092,104 @@ function adaptFields(jsx, section) {
     K02C_DEMANDE,
     X02_FILTRES,
     X01_CHAMP_MOBILE,
+    /**
+     * EN FIN DE LISTE, ET DANS CET ORDRE : la barre de réponse de A09 d'abord, le
+     * bouton « Marquer résolu » ensuite. Les deux travaillent sur des régions
+     * disjointes du cadre — la barre du bas et la carte du sujet — donc l'ordre
+     * n'a aucune conséquence mesurable ; il est fixé pour que la lecture suive
+     * celle du mémo du lot.
+     */
+    A09_REPONSE,
+    A09_RESOUDRE,
+    /**
+     * A07 ET A10 — LES DEUX PORTES DU MODULE RÉSEAUX. Voir leur en-tête commun.
+     *
+     * `A10_DESCRIPTION` et `A10_FERMER` ne valent chacune que sur UN des deux
+     * cadres — la planche de 390 px ne dessine pas la description, celle de
+     * 1 440 px ne dessine pas la croix — donc un `missed` est attendu pour
+     * chacune, à chaque exécution, et ce n'est pas un défaut (piège 7).
+     */
+    A10_DESCRIPTION,
+    A10_CATEGORIE,
+    A10_RECHERCHE,
+    A10_VISIBILITE,
+    A10_INVITER,
+    A10_CREER,
+    A10_FERMER,
+    A07_CREER_RESEAU,
+    A07_CARTE_MON_RESEAU,
+    A07_CARTE_DECOUVRIR,
+    A07_REJOINDRE,
+    /**
+     * EN DERNIER, GROUPÉES : les six transformations de « gérer et modérer un
+     * réseau ». Voir leur en-tête commun, juste au-dessus de cette fonction.
+     */
+    A08_BANDEAU_GERER,
+    A08T_GERER_LIEN,
+    A08T_GERER_DEMANDES,
+    A08T_GERER_MEMBRES,
+    A08T_MEMBRES_VUE_MEMBRE,
+    A08T_GERER_SIGNALER,
+    A08T_SOURDINE,
+    A08T_GERER_SIGNALEMENTS,
+    /**
+     * AVANT `A08T_ANNONCE_EPINGLEE`, et l'ordre n'a aucune importance ici : les
+     * deux travaillent sur des zones disjointes de la planche — la bannière du
+     * réseau pour l'une, la carte verte du haut du fil pour l'autre. La place
+     * dit seulement qu'elle corrige l'en-tête, qui vient d'abord.
+     */
+    A08T_ENTETE_AU_DESSUS,
+    A08T_ANNONCE_EPINGLEE,
+    /**
+     * APRÈS `A08T_ANNONCE_EPINGLEE`, et l'ordre compte : les deux travaillent sur
+     * la même colonne, et celle-ci CONSOMME tous les frères qui suivent la
+     * première carte blanche. Les faire dans l'autre sens marcherait encore —
+     * l'annonce précède les cartes — mais l'ordre du DESSIN se lit mieux : la
+     * carte verte d'abord, les publications ensuite.
+     *
+     * Quatre planches sur vingt-cinq la reçoivent : « Fil » et « Fil —
+     * propriétaire », aux deux largeurs. Les vingt et une autres comptent donc
+     * un `missed` attendu à chaque exécution (piège n° 7).
+     */
+    A08T_FIL_PUBLICATIONS,
+    /**
+     * L'ONGLET « ÉVÉNEMENTS » — quatre cadres sur vingt-cinq, donc vingt et un
+     * `missed` attendus à chaque exécution (piège 7). Voir son en-tête.
+     *
+     * APRÈS `A08T_FIL_PUBLICATIONS`, et l'ordre ne compte pas : les deux
+     * travaillent sur des onglets DIFFÉRENTS, donc sur des cadres disjoints. La
+     * place dit seulement que l'onglet « Fil » vient d'abord dans la barre.
+     */
+    A08T_EVENEMENTS,
+    /**
+     * L'ONGLET « ALBUM » — quatre cadres sur vingt-cinq, donc vingt et un
+     * `missed` attendus à chaque exécution (piège 7). Voir son en-tête.
+     *
+     * APRÈS `A08T_EVENEMENTS`, et l'ordre ne compte pas : les deux travaillent
+     * sur des onglets DIFFÉRENTS, donc sur des cadres disjoints. La place dit
+     * seulement que « Événements » précède « Album » dans la barre d'onglets.
+     */
+    A08T_ALBUM,
+    /**
+     * LE FORMULAIRE D'ANNONCE — deux cadres sur vingt-cinq, donc vingt-trois
+     * `missed` attendus à chaque exécution (piège 7). Voir son en-tête.
+     */
+    A08T_ANNONCE,
+    /**
+     * EN DERNIER, et sans dépendance d'ordre : aucune autre transformation ne
+     * touche la carte « ÉQUIPE » de la planche « À propos ». La place en fin de
+     * liste dit seulement que c'est la dernière arrivée.
+     */
+    A08T_CONTACTER_MODERATEURS,
+    /**
+     * EN FIN DE LISTE — les trois adaptations du lot « retirer ≠ bannir » et
+     * « démasquer ». L'ordre compte pour les deux premières : `A08T_LIGNE_MEMBRE`
+     * travaille DANS la boucle `(membres ?? []).map(` que la clé `donnees` vient
+     * de produire, et `A08T_MENU_MEMBRE` enveloppe ensuite le menu entier dans sa
+     * condition — l'inverse ferait chercher la poignée dans un panneau déjà
+     * emballé.
+     */
+    A09_MODERATION,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -11411,7 +19156,7 @@ function adaptFrame(jsx, section, modal = false) {
    * Le titre DÉCLARÉ est un repli, et il est promu ailleurs : une seule fois, après
    * `adaptFields` et `adaptButtons`, par `promoteTitle`. Il était promu ICI pour
    * `heading` et LÀ-BAS pour `title` — deux positions dans le pipeline pour la même
-   * opération. Le déplacement a été mesuré : les 250 cadres sortent identiques,
+   * opération. Le déplacement a été mesuré : les cadres sortent identiques,
    * octet pour octet.
    */
   const fromMarkup = promoteFirstHeading(adapted);
@@ -11643,6 +19388,21 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
 const DU_MODULE_MEMBRE = new Set(['PastilleMembre', 'CarteMembre', 'RondMoi']);
 
 const AJOUTS = {
+  /**
+   * LES DEUX CARTES DE PUBLICATION, extraites du cadre du fil par `composants:`.
+   * Elles entrent dans `AJOUTS` pour que tout cadre qui les monte reçoive son
+   * import — le profil public est le premier.
+   */
+  CartePublicationDesktop: '@/screens/a01/cartepublication-desktop.generated',
+  CartePublicationMobile: '@/screens/a01/cartepublication-mobile.generated',
+  CarteGuideDesktop: '@/screens/a03/carteguide-desktop.generated',
+  CarteGuideMobile: '@/screens/a03/carteguide-mobile.generated',
+  CarteEvenementDesktop: '@/screens/e01/carteevenement-desktop.generated',
+  CarteEvenementMobile: '@/screens/e01/carteevenement-mobile.generated',
+  CarteAnnonceDesktop: '@/screens/s01/carteannonce-desktop.generated',
+  CarteAnnonceMobile: '@/screens/s01/carteannonce-mobile.generated',
+  CarteParcoursDesktop: '@/screens/j11/carteparcours-desktop.generated',
+  CarteParcoursMobile: '@/screens/j11/carteparcours-mobile.generated',
   ClavierEmojis: '@/components/clavier-emojis',
   CadreCliquable: '@/components/cadre-cliquable',
   CarrouselPhotos: '@/components/carrousel-photos',
@@ -11650,6 +19410,15 @@ const AJOUTS = {
   RailSurvol: '@/components/rail/survol',
   ApercuStory: '@/components/apercu-story',
   RubanStories: '@/components/ruban-stories',
+  /**
+   * LA FENÊTRE DE SIGNALEMENT, réemployée par le cadre « À propos » du réseau.
+   *
+   * Elle n'est pas posée par l'écran mais par le CADRE : `A08T_GERER_SIGNALER`
+   * l'ajoute en frère du contenu, parce que c'est le cadre qui porte le bouton.
+   * Un paramètre d'URL — le mécanisme `?feuille=signaler` de la messagerie — ne
+   * pourrait pas dire QUEL sujet, et la page d'un réseau en a plusieurs.
+   */
+  FenetreSignalement: '@/components/fenetre-signalement',
 };
 
 const HEADER = (
@@ -11680,8 +19449,17 @@ ${needsFragment ? "import { Fragment } from 'react';\n" : ''}${needsLink ? "impo
           ? ''
           : `import { ${barre.filter((n) => DU_MODULE_MEMBRE.has(n)).join(', ')} } from '@/components/barre-haute/membre';\n`
       }`
-}${ajouts.map((n) => `import { ${n} } from '${AJOUTS[n]}';\n`).join('')}import type { ${dataType} } from '${dataModule}';
-
+}${ajouts.map((n) => `import { ${n} } from '${AJOUTS[n]}';\n`).join('')}${
+  /**
+   * `dataType === null` : le fichier produit ne nomme AUCUN type. Le seul cas
+   * aujourd'hui est une région extraite sans prise — la barre haute de A08, dont
+   * les quatre contrôles sont des composants et dont aucune valeur ne vient de la
+   * donnée. Importer un type qu'on ne nomme pas est refusé par le lint, et le
+   * passer quand même ferait échouer la vérification sur un fichier GÉNÉRÉ, donc
+   * à un endroit où personne ne peut le corriger à la main.
+   */
+  dataType === null ? '' : `import type { ${dataType} } from '${dataModule}';\n`
+}
 `;
 
 /**
@@ -12802,7 +20580,7 @@ const GARDE_TESTS = [
  * CE CAS EXISTE À CAUSE D'UN FAUX VERT MESURÉ, et il faut dire lequel.
  *
  * Un harnais de mutation a rendu VERT parce que la génération avait ÉCHOUÉ : le
- * harnais ne relisait pas le code de retour, donc les 250 cadres n'avaient pas
+ * harnais ne relisait pas le code de retour, donc les cadres n'avaient pas
  * bougé, et les tests lisaient les fichiers d'AVANT la mutation. Le vert disait
  * « le générateur a tenu », pas « le test garde ». C'est la pire forme de
  * résultat : un test qui ne tourne pas n'est ni vert ni rouge.
@@ -12870,7 +20648,15 @@ const CHAINE_TESTS = [
         rmSync(tmp, { recursive: true, force: true });
       }
     },
-    expect: '250 cadres, 0 écart',
+    /**
+     * 252 ET NON 250 : les deux cadres « Signalements » de A06 sont déclarés sur la
+     * MÊME occurrence de maquette que « Propositions reçues » — la planche est lue
+     * une seconde fois, et retournée vers les signalements par `donnees`. Le compte
+     * de cadres PRODUITS monte donc de deux sans qu'aucune planche s'ajoute au
+     * dossier. Voir le grand en-tête « LA MAQUETTE NE DESSINE AUCUNE PAGE DE
+     * SIGNALEMENTS » dans `tools/screens/03-accueil.mjs`.
+     */
+    expect: '252 cadres, 0 écart',
   },
 ];
 
@@ -13455,6 +21241,430 @@ ${shelled}
     mkdirSync(resolve(OUT_ROOT, screen.out), { recursive: true });
     const path = resolve(OUT_ROOT, screen.out, `${frame.name.toLowerCase()}.generated.tsx`);
     writeFileSync(path, body, 'utf8');
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ EXTRAIRE UNE CARTE DE SON CADRE — `composants`                        ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur, capture à l'appui : « Sur le profil le fil d'actualité devrait
+     * s'afficher comme ceci. Pareil pour les autres, ils doivent prendre leur
+     * design respectif. »
+     *
+     * LE PROBLÈME ÉTAIT DE STRUCTURE, pas de volonté : la carte d'une
+     * publication est dessinée DANS le cadre du fil, au milieu d'une boucle. Il
+     * n'existait aucun composant à monter ailleurs, et la recopier à la main
+     * aurait créé une seconde carte qui aurait divergé au premier changement de
+     * maquette.
+     *
+     * `composants` sort donc le CORPS de la boucle dans son propre fichier
+     * généré. Une seule source, deux emplois : le cadre d'origine continue de la
+     * dessiner en place, et n'importe quel écran peut maintenant la monter.
+     *
+     * ── CE QUI REND L'EXTRACTION SÛRE ───────────────────────────────────────
+     *
+     * Le corps ne doit référencer QUE sa variable de boucle. Si le dessin lisait
+     * une prise du cadre — un gestionnaire, un libellé de page — la carte
+     * extraite ne compilerait pas ailleurs. On vérifie donc, et on ARRÊTE la
+     * génération en nommant la variable fautive plutôt que d'écrire un fichier
+     * qui ne compile pas. Mesuré sur la carte de publication : le corps ne lit
+     * que `p` (et ses propres boucles internes).
+     */
+    for (const composant of screen.composants ?? []) {
+      if (!(composant.cadres ?? []).includes(frame.name)) continue;
+      const ancre = `{(${composant.depuis} ?? []).map((${composant.as}, ${composant.as}Index) => (`;
+      const iAncre = shelled.indexOf(ancre);
+      if (iAncre < 0) {
+        throw new Error(
+          `${screen.section} ${frame.name} : le composant « ${composant.nom} » ne trouve pas la ` +
+            `boucle « ${composant.depuis} ». Si la déclaration d’écran a changé de nom de liste, ` +
+            'mettre « composants » à jour.',
+        );
+      }
+      /**
+       * ── LA FERMETURE SE COMPTE, ELLE NE SE CHERCHE PAS ────────────────────
+       *
+       * La carte d'une publication boucle elle-même — options de sondage,
+       * étiquettes, guides liés. Prendre le PREMIER `))}` venu coupait donc la
+       * carte au milieu de sa première boucle interne : mesuré, le fichier
+       * produit avait un `<article>` et un fragment sans fermeture, et c'est le
+       * compilateur qui l'a dit.
+       *
+       * On compte : chaque `.map((` ouvre un cran, chaque `))}` en referme un,
+       * et la fermeture qui ramène à zéro est la nôtre.
+       */
+      const debutCorps = iAncre + ancre.length;
+      let profondeur = 1;
+      let curseur = debutCorps;
+      let finCorps = -1;
+      while (profondeur > 0) {
+        const ouvre = shelled.indexOf('.map((', curseur);
+        const ferme = shelled.indexOf('))}', curseur);
+        if (ferme < 0) break;
+        if (ouvre >= 0 && ouvre < ferme) {
+          profondeur += 1;
+          curseur = ouvre + '.map(('.length;
+          continue;
+        }
+        profondeur -= 1;
+        curseur = ferme + '))}'.length;
+        if (profondeur === 0) finCorps = ferme;
+      }
+      if (finCorps < 0) {
+        throw new Error(
+          `${screen.section} ${frame.name} : la boucle « ${composant.depuis} » ne se referme pas.`,
+        );
+      }
+
+      /**
+       * LE `<Fragment key>` DE LA BOUCLE TOMBE : il n'a de sens que dans une
+       * liste, et la carte extraite est rendue une fois. Celui qui la monte pose
+       * sa propre clé.
+       */
+      const corps = shelled
+        .slice(debutCorps, finCorps)
+        .replace(/^\s*<Fragment key=\{[^}]*\}>/, '')
+        .replace(/<\/Fragment>\s*$/, '')
+        .trim();
+
+      /**
+       * LES VARIABLES DES BOUCLES INTERNES NE COMPTENT PAS : la carte d'une
+       * publication boucle elle-même sur ses options de sondage (`o`), ses
+       * étiquettes (`t`) et ses guides liés (`g`). Elles sont déclarées DANS le
+       * corps, donc elles ne viennent pas du cadre. On relève les noms que le
+       * corps déclare lui-même — `(x, xIndex) =>` — et on les retire, leur
+       * index avec.
+       */
+      const internes = new Set(
+        [...corps.matchAll(/\(([a-zA-Z][a-zA-Z0-9]*), ([a-zA-Z][a-zA-Z0-9]*)\) =>/g)].flatMap(
+          (m) => [m[1], m[2]],
+        ),
+      );
+      const dehors = [...corps.matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)[.\s}?]/g)]
+        .map((m) => m[1])
+        .filter(
+          (n) =>
+            n !== composant.as &&
+            n !== 'Fragment' &&
+            !internes.has(n) &&
+            n !== `${composant.as}Index`,
+        );
+      if (dehors.length > 0) {
+        throw new Error(
+          `${screen.section} ${frame.name} : le composant « ${composant.nom} » lit « ${[...new Set(dehors)].join(', ')} », ` +
+            `qui ne vient pas de sa ligne (« ${composant.as} »). Une carte extraite ne peut lire ` +
+            'que sa propre donnée, sinon elle ne compile pas là où on la monte.',
+        );
+      }
+
+      const nomComposant = `${composant.nom}${frame.name}`;
+      const barreC = [
+        'BoutonCreer',
+        'ChampRecherche',
+        'LienMessages',
+        'LienNotifications',
+        'PastilleMembre',
+        'CarteMembre',
+        'RondMoi',
+      ].filter((n) => corps.includes(`<${n}`));
+      const ajoutsC = Object.keys(AJOUTS).filter((n) => corps.includes(`<${n}`));
+      const corpsComposant = `${HEADER(
+        frame.section ?? screen.section,
+        frame.width,
+        screen.file,
+        composant.module ?? screen.dataModule,
+        composant.type,
+        corps.includes('<Fragment'),
+        corps.includes('<Link'),
+        barreC,
+        ajoutsC,
+      )}export function ${nomComposant}({ ${composant.as} }: { readonly ${composant.as}: ${composant.type} }) {
+  return (
+    <>
+${corps}
+    </>
+  );
+}
+`;
+      const cheminC = resolve(
+        OUT_ROOT,
+        screen.out,
+        `${composant.nom.toLowerCase()}-${frame.name.toLowerCase()}.generated.tsx`,
+      );
+      writeFileSync(cheminC, corpsComposant, 'utf8');
+      console.log(
+        `      Composant extrait : ${nomComposant} → ${cheminC.replace(OUT_ROOT + '/', '')} (${corps.length} caractères)`,
+      );
+    }
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ EXTRAIRE UNE RÉGION DE SON CADRE — `regions`                          ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Ça affiche une page mais c'est un modal qui s'affiche à
+     * droite. Il faut être intelligent et comprendre la page. »
+     *
+     * ── POURQUOI `composants` NE POUVAIT PAS LE FAIRE ───────────────────────
+     *
+     * `composants` extrait LE CORPS D'UNE BOUCLE : son ancre est
+     * `{(liste ?? []).map((x, xIndex) => (`, et son garde-fou vérifie que le corps
+     * ne lit QUE la variable de boucle. Le voile et le panneau « Proposer une
+     * correction » ne sont pas dans une boucle — ce sont DEUX FRÈRES, posés à la
+     * fin de la colonne de contenu. Il n'y avait donc aucune ancre, et aucun
+     * mécanisme pour sortir cette région de son cadre.
+     *
+     * `regions` est le même marché que `composants`, sur une autre forme de
+     * découpe : UNE SEULE SOURCE, DEUX EMPLOIS. Le cadre d'origine continue de
+     * dessiner son panneau — `/guides/:slug/corriger` reste une page complète,
+     * adresse partageable — et le fichier extrait peut être monté PAR-DESSUS la
+     * page du guide (A04), qui est l'endroit où la maquette dit que le geste vit.
+     *
+     * ── LA FERMETURE SE COMPTE, ELLE NE SE CHERCHE PAS ──────────────────────
+     *
+     * C'est le piège déjà payé par `composants` (son en-tête le raconte) et par
+     * `A04_CORPS` : prendre le premier `</div>` venu coupe la région au milieu
+     * d'elle-même, et le fichier produit sort avec des balises sans fermeture —
+     * ce que seul le compilateur dit, et tard.
+     *
+     * On parcourt donc les BALISES, une par une : une ouverture creuse d'un cran,
+     * une fermeture en remonte un, une balise auto-fermante ne bouge pas. Chaque
+     * retour à zéro termine un FRÈRE, et la région s'arrête au frère numéro
+     * `freres`. Le compte final est revérifié — autant d'ouvertures que de
+     * fermetures — et la génération s'arrête en nommant la région sinon.
+     *
+     * ── `ajustements` : CE QU'UNE IMAGE DE TAILLE FIXE NE PEUT PAS DIRE ─────
+     *
+     * La maquette est une image de 1440 × 960 px : son panneau y est
+     * `position: absolute` dans un cadre qui ne défile pas. Posé sur une VRAIE
+     * page de guide, qui défile sur plusieurs milliers de pixels, ce même panneau
+     * part vers le haut dès le premier tour de molette — et le voile ne couvre que
+     * la hauteur du document, pas celle de l'écran.
+     *
+     * C'est la même famille d'écart que `FRAME_ADAPTATIONS` corrige depuis le
+     * début (« tout ce qui dépasse y est coupé, puisque rien ne défile dans une
+     * image »), et elle se paie du même prix : chaque ajustement est une PAIRE
+     * VERBATIM, vérifiée présente — la génération s'arrête si la maquette a changé
+     * — et lue dans le journal à chaque exécution. Le cadre d'origine, lui, ne
+     * reçoit aucun ajustement : il garde le dessin de la planche, au caractère
+     * près.
+     */
+    for (const region of screen.regions ?? []) {
+      if (!(region.cadres ?? []).includes(frame.name)) continue;
+
+      const at = shelled.indexOf(region.debut);
+      if (at < 0) {
+        throw new Error(
+          `${screen.section} ${frame.name} : la région « ${region.nom} » ne trouve pas son ` +
+            `ouverture « ${region.debut.slice(0, 90)}… ». Si la maquette a changé, mettre ` +
+            '« regions » à jour dans sa déclaration d’écran.',
+        );
+      }
+
+      /**
+       * UNE BALISE, ET RIEN QUI RESSEMBLE À UNE BALISE. Le motif exige une lettre
+       * après le `<`, ce qui écarte `<=` dans une expression et `<>` d'un fragment
+       * — un fragment ne porte pas de clé ici, et aucune région déclarée n'en
+       * contient. S'il en arrivait un, le bilan final tomberait faux et la
+       * génération le dirait : c'est le garde-fou, pas la chance.
+       */
+      const balises = /<(\/?)[a-zA-Z][^>]*?(\/?)>/g;
+      balises.lastIndex = at;
+      let profondeur = 0;
+      let freres = 0;
+      let finRegion = -1;
+      for (let m = balises.exec(shelled); m !== null; m = balises.exec(shelled)) {
+        if (m[1] === '/') profondeur -= 1;
+        else if (m[2] !== '/') profondeur += 1;
+        if (profondeur < 0) break;
+        if (profondeur === 0) {
+          freres += 1;
+          if (freres === region.freres) {
+            finRegion = m.index + m[0].length;
+            break;
+          }
+        }
+      }
+      if (finRegion < 0) {
+        throw new Error(
+          `${screen.section} ${frame.name} : la région « ${region.nom} » n’a pas trouvé ses ` +
+            `${String(region.freres)} frère(s) : les balises ne se referment pas. Une coupe de ` +
+            'région COMPTE ses ouvertures et ses fermetures — elle ne cherche pas un « </div> ».',
+        );
+      }
+
+      let coupe = shelled.slice(at, finRegion);
+      const ouvertes = (coupe.match(/<(?!\/)[a-zA-Z]/g) ?? []).length;
+      /**
+       * ⚠ `</>` N'EST PAS UNE BALISE AUTO-FERMANTE, et le bilan le comptait comme
+       * telle. Le défaut est arrivé exactement comme son commentaire d'origine
+       * l'annonçait — « aucune région déclarée n'en contient ; s'il en arrivait
+       * un, le bilan final tomberait faux » : le menu de gauche de A08 contient
+       * `{m.count ? (<>…</>) : null}`, c'est-à-dire un FRAGMENT COURT.
+       *
+       * Les deux formes du fragment sont ignorées des deux côtés — `<>` n'a pas
+       * de lettre après le chevron, donc il n'entre pas dans `ouvertes` — et le
+       * bilan reste donc juste : ce qu'on ne compte nulle part ne déséquilibre
+       * rien. Il suffit de ne pas compter `</>` comme une fermeture de balise, ce
+       * que `(?<!<)` fait : dans `</>` le `/>` est précédé d'un chevron ouvrant,
+       * dans `<path />` ou `<path/>` il ne l'est jamais.
+       */
+      const fermees =
+        (coupe.match(/<\/[a-zA-Z]/g) ?? []).length + (coupe.match(/(?<!<)\/>/g) ?? []).length;
+      if (ouvertes !== fermees) {
+        throw new Error(
+          `${screen.section} ${frame.name} : la région « ${region.nom} » est DÉSÉQUILIBRÉE — ` +
+            `${String(ouvertes)} ouverture(s) pour ${String(fermees)} fermeture(s). Le fichier ` +
+            'produit ne compilerait pas.',
+        );
+      }
+
+      /** Les ajustements, en paires verbatim, vérifiées présentes. */
+      for (const [de, vers] of region.ajustements ?? []) {
+        if (!coupe.includes(de)) {
+          throw new Error(
+            `${screen.section} ${frame.name} : la région « ${region.nom} » déclare un ajustement ` +
+              `sur « ${de.slice(0, 90)}… », qui n’y est pas dessiné. Mettre « ajustements » à jour.`,
+          );
+        }
+        coupe = coupe.split(de).join(vers);
+      }
+
+      /**
+       * LA RÉGION NE DOIT LIRE QUE SA PROPRE DONNÉE, exactement comme une carte
+       * extraite par `composants` : si elle lisait une prise du cadre — le rail, le
+       * titre de la page — le fichier produit ne compilerait pas là où on le monte.
+       * On relève les identifiants que la coupe lit et on refuse ce qui n'est pas
+       * `region.as`, plutôt que d'écrire un fichier qui casse à l'import.
+       */
+      const internes = new Set(
+        [...coupe.matchAll(/\(([a-zA-Z][a-zA-Z0-9]*), ([a-zA-Z][a-zA-Z0-9]*)\) =>/g)].flatMap(
+          (m) => [m[1], m[2]],
+        ),
+      );
+      /**
+       * ╔════════════════════════════════════════════════════════════════════╗
+       * ║ `prises` — UNE RÉGION QUI LIT PLUSIEURS DONNÉES DU CADRE           ║
+       * ╚════════════════════════════════════════════════════════════════════╝
+       *
+       * `as` décrit le cas d'origine : une région qui ne lit QU'UNE valeur, et
+       * la reçoit sous son propre nom (le panneau de correction de A06 et son
+       * `correction`). C'est le cas simple, et il reste le défaut.
+       *
+       * LE MENU DE GAUCHE DE A08 N'ENTRE PAS DANS CE MOULE. Il lit TROIS listes
+       * du cadre — `rail`, `panelReseaux`, `shortcuts` — parce que la maquette
+       * les dessine côte à côte dans la même colonne. Les réunir en une seule
+       * prise voudrait dire inventer une forme de donnée que ni la maquette ni
+       * `A08Data` ne portent.
+       *
+       * `prises` nomme donc les prises à déstructurer, et la région prend tout
+       * le contrat du cadre — exactement comme un cadre entier : `(props: T)`
+       * puis `const { … } = props`. Une liste VIDE est permise et dit quelque
+       * chose : la barre haute ne lit AUCUNE donnée (ses quatre contrôles sont
+       * des composants), donc sa fonction ne prend aucun paramètre — et son
+       * fichier n'importe alors aucun type, sinon le lint refuserait l'import.
+       */
+      const prises = region.prises;
+      const connus = new Set(prises ?? [region.as]);
+      /**
+       * ⚠ LE GARDE-FOU NE VOYAIT PAS LES BOUCLES, ET C'EST UN TROU PAYÉ ICI.
+       *
+       * Il ne relevait que `{nom.`, `{nom}`, `{nom ` et `{nom?` — jamais
+       * `{(nom ?? []).map(`, qui est très exactement la forme sous laquelle le
+       * générateur écrit TOUTES ses listes. Une région qui boucle sur une liste
+       * du cadre passait donc le contrôle sans un mot et produisait un fichier
+       * qui référence un identifiant inexistant : ça ne compile pas, et le
+       * message du compilateur ne nomme pas la région.
+       */
+      const dehors = [
+        ...[...coupe.matchAll(/\{([a-zA-Z][a-zA-Z0-9]*)[.\s}?]/g)].map((m) => m[1]),
+        ...[...coupe.matchAll(/\{\(([a-zA-Z][a-zA-Z0-9]*) \?\?/g)].map((m) => m[1]),
+      ].filter((n) => !connus.has(n) && n !== 'Fragment' && !internes.has(n));
+      if (dehors.length > 0) {
+        throw new Error(
+          `${screen.section} ${frame.name} : la région « ${region.nom} » lit ` +
+            `« ${[...new Set(dehors)].join(', ')} », qui ne vient pas de sa prise ` +
+            `(« ${[...connus].join(', ')} »). Une région extraite ne peut lire que sa propre donnée.`,
+        );
+      }
+      /**
+       * ET L'INVERSE SE VÉRIFIE AUSSI : une prise déclarée que la coupe ne lit
+       * pas laisserait une variable déstructurée sans emploi, que `no-unused-vars`
+       * refuse — et la génération réussirait quand même. On le dit ici, où le nom
+       * de la région est connu, plutôt qu'au lint, où il ne l'est plus.
+       */
+      for (const prise of prises ?? []) {
+        if (!new RegExp(`\\{\\(?${prise}\\b`).test(coupe)) {
+          throw new Error(
+            `${screen.section} ${frame.name} : la région « ${region.nom} » déclare la prise ` +
+              `« ${prise} », qu’elle ne lit nulle part. Une prise inemployée est refusée par le lint.`,
+          );
+        }
+      }
+
+      const nomRegion = `${screen.section}${region.nom}${frame.name}`;
+      const barreR = [
+        'BoutonCreer',
+        'ChampRecherche',
+        'LienMessages',
+        'LienNotifications',
+        'PastilleMembre',
+        'CarteMembre',
+        'RondMoi',
+      ].filter((n) => coupe.includes(`<${n}`));
+      const ajoutsR = Object.keys(AJOUTS).filter((n) => coupe.includes(`<${n}`));
+      /**
+       * TROIS SIGNATURES, UNE PAR FORME DE RÉGION, et c'est `prises` qui tranche :
+       *
+       *   · pas de `prises` — le cas d'origine : une seule donnée, sous son nom ;
+       *   · `prises` non vide — tout le contrat du cadre, déstructuré comme un
+       *     cadre entier le fait (`const { … } = props`) ;
+       *   · `prises: []` — aucune donnée, donc AUCUN paramètre et AUCUN import de
+       *     type : un type importé et jamais nommé est refusé par le lint.
+       */
+      const signature =
+        prises === undefined
+          ? `({ ${region.as} }: { readonly ${region.as}: ${region.type} })`
+          : prises.length === 0
+            ? '()'
+            : `(props: ${region.type})`;
+      const preambule =
+        prises === undefined || prises.length === 0
+          ? ''
+          : `  const { ${[...prises].sort().join(', ')} } = props;\n\n`;
+      const corpsRegion = `${HEADER(
+        frame.section ?? screen.section,
+        frame.width,
+        screen.file,
+        region.module ?? screen.dataModule,
+        prises !== undefined && prises.length === 0 ? null : region.type,
+        coupe.includes('<Fragment'),
+        coupe.includes('<Link'),
+        barreR,
+        ajoutsR,
+      )}export function ${nomRegion}${signature} {
+${preambule}  return (
+    <>
+${coupe}
+    </>
+  );
+}
+`;
+      const cheminR = resolve(
+        OUT_ROOT,
+        screen.out,
+        `${region.nom.toLowerCase()}-${frame.name.toLowerCase()}.generated.tsx`,
+      );
+      writeFileSync(cheminR, corpsRegion, 'utf8');
+      console.log(
+        `      Région extraite : ${nomRegion} → ${cheminR.replace(OUT_ROOT + '/', '')} ` +
+          `(${String(region.freres)} frère(s), ${String(coupe.length)} caractères, ` +
+          `${String((region.ajustements ?? []).length)} ajustement(s)) : ${region.why}`,
+      );
+      for (const [de, vers] of region.ajustements ?? []) {
+        console.log(`        Ajustement : « ${de} » → « ${vers} »`);
+      }
+    }
     // La section d'origine est dite quand ce n'est pas celle de l'écran : les cadres
     // mobiles de huit écrans vivent dans les planches MOB et MOB2.
     const origin = frame.section === undefined ? '' : ` [section ${frame.section} n° ${(frame.occurrence ?? 0) + 1}]`;

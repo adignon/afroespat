@@ -13,6 +13,7 @@ import {
   type CommunityCreationGate,
   type CommunityErrorCode,
   type CommunityListQuery,
+  type CreateAnnouncement,
   type CreateCommunity,
   type CreatePoll,
   type CreateTopic,
@@ -21,6 +22,7 @@ import {
   type Page,
   TOPIC_ARCHIVE_AFTER_DAYS,
   TOPIC_EDIT_WINDOW_MINUTES,
+  TOPIC_UNHIDE_WINDOW_DAYS,
   type TopicListQuery,
   type UpdateCommunity,
   type UpdateMember,
@@ -33,6 +35,16 @@ import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
+/**
+ * LA MESSAGERIE EST APPELÉE, PAS RÉIMPLÉMENTÉE.
+ *
+ * Un seul geste de ce module ouvre une conversation — « Contacter les
+ * modérateurs » — et il la DÉLÈGUE : la forme d'un fil, ses membres, son
+ * idempotence appartiennent au module 08. Le sens de la dépendance est le bon et
+ * ne boucle pas : `MessagingService` dépend de `ConnectionsService`, qui ne
+ * dépend d'aucun des deux (vérifié dans son constructeur).
+ */
+import { MessagingService } from '../messaging/messaging.service';
 
 /**
  * Réseaux (communautés) — 07-reseaux.md.
@@ -98,7 +110,20 @@ const COMMUNITY_SELECT = {
   createdAt: true,
 } as const;
 
-type Membership = { id: string; role: string; status: string; joinedAt: Date | null };
+/**
+ * `muted` EST DANS LA MEMBERSHIP PARCE QUE `load()` LA CHARGE DÉJÀ.
+ *
+ * Toute route du module passe par `load()`, qui lit la ligne d'adhésion du
+ * lecteur ; ajouter la colonne au `select` ne coûte aucune requête, et c'est ce
+ * qui permet à `detail()` de rendre `myMuted` sans en faire une seconde.
+ */
+type Membership = {
+  id: string;
+  role: string;
+  status: string;
+  joinedAt: Date | null;
+  muted: boolean;
+};
 
 /** Ce que `load()` rend : le réseau, et la place du lecteur dedans. */
 interface Access {
@@ -116,6 +141,7 @@ export class CommunitiesService {
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
     private readonly visibility: VisibilityService,
+    private readonly messaging: MessagingService,
   ) {}
 
   private fail(code: CommunityErrorCode, details?: Record<string, unknown>): never {
@@ -208,7 +234,7 @@ export class CommunitiesService {
   private async membershipOf(communityId: string, userId: string): Promise<Membership | null> {
     return this.prisma.communityMember.findUnique({
       where: { communityId_userId: { communityId, userId } },
-      select: { id: true, role: true, status: true, joinedAt: true },
+      select: { id: true, role: true, status: true, joinedAt: true, muted: true },
     });
   }
 
@@ -473,7 +499,22 @@ export class CommunitiesService {
   private async touch(tx: Prisma.TransactionClient, communityId: string): Promise<void> {
     await tx.community.update({
       where: { id: communityId },
-      data: { lastActivityAt: new Date() },
+      /**
+       * `warningSentAt` EST EFFACÉ PAR TOUTE ACTIVITÉ, et c'est la moitié du
+       * mécanisme d'avertissement (§2.2, §7).
+       *
+       * L'horodatage sert à ne prévenir QU'UNE FOIS par endormissement — la
+       * tâche est quotidienne, et sans mémoire elle enverrait le même
+       * avertissement les quinze jours qui séparent le 45e du 60e. Mais s'il
+       * n'était jamais effacé, un réseau qui reprend vie puis se rendort deux
+       * mois plus tard ne serait PLUS JAMAIS prévenu : il serait archivé sans
+       * préavis, ce que §2.2 promet justement d'éviter.
+       *
+       * Il est donc remis à `null` exactement là où `lastActivityAt` repart :
+       * les deux colonnes décrivent le même endormissement, elles doivent être
+       * réinitialisées ensemble ou pas du tout.
+       */
+      data: { lastActivityAt: new Date(), warningSentAt: null },
     });
   }
 
@@ -497,6 +538,8 @@ export class CommunitiesService {
       select: {
         role: true,
         joinedAt: true,
+        /** §2.5 — la pastille « En sourdine » des cartes de « Mes réseaux ». */
+        muted: true,
         community: { select: COMMUNITY_SELECT },
       },
     });
@@ -551,6 +594,7 @@ export class CommunitiesService {
         ...this.publicShape(m.community),
         myRole: m.role,
         joinedAt: m.joinedAt,
+        muted: m.muted,
       })),
       invitations: invitations.map((i) => this.publicShape(i.community)),
       pendingRequests: pending.map((p) => this.publicShape(p.community)),
@@ -666,6 +710,18 @@ export class CommunitiesService {
         community.status === 'ACTIVE' &&
         (community.visibility === 'PUBLIC' || community.visibility === 'ON_REQUEST'),
       canLeave: isMember && !AUTO_KINDS.includes(community.kind as 'CITY' | 'COUNTRY'),
+      /**
+       * MA sourdine (§2.5). `false` pour un passant, et ce n'est pas un défaut
+       * de forme : la question « ce réseau me notifie-t-il ? » a toujours une
+       * réponse, là où « quel est mon rôle ? » n'en a pas. Voir
+       * `communityDetailResponseSchema`.
+       *
+       * ⚠ ELLE EST LUE MÊME POUR UN MEMBRE NON ACTIF (`INVITED`, `PENDING`) :
+       * `membership?.muted` et non `isMember && …`. Un invité qui met le réseau
+       * en sourdine avant d'accepter garde sa préférence, et la lui cacher
+       * rallumerait le bouton à ses yeux sans rien changer en base.
+       */
+      myMuted: membership?.muted ?? false,
       counters: { members: community.memberCount, topics: topicCount, announcements: announcementCount },
       pinned,
     };
@@ -778,6 +834,14 @@ export class CommunitiesService {
           userId: i.id,
           role: 'MEMBER' as const,
           status: 'INVITED' as const,
+          /**
+           * QUI A INVITÉ — §3, `community_members.invited_by_user_id`.
+           *
+           * C'est le CRÉATEUR, et c'est le seul endroit du module où l'inviteur
+           * est connu sans ambiguïté : §2.2 exige cinq invitations À LA
+           * CRÉATION, et il n'y a qu'une personne pour les envoyer.
+           */
+          invitedByUserId: userId,
         })),
         skipDuplicates: true,
       });
@@ -961,6 +1025,15 @@ export class CommunitiesService {
           userId: t.id,
           role: 'MEMBER' as const,
           status: 'INVITED' as const,
+          /**
+           * L'APPELANT, et non le propriétaire du réseau (§3).
+           *
+           * Sur un réseau `PUBLIC` ou `ON_REQUEST`, N'IMPORTE QUEL membre invite
+           * — `assertMember`, pas `assertModerator`. La colonne doit donc porter
+           * celui qui a tapé le handle : écrire le propriétaire ferait dire au
+           * journal qu'il a invité des gens qu'il n'a jamais nommés.
+           */
+          invitedByUserId: userId,
         })),
         skipDuplicates: true,
       });
@@ -1084,30 +1157,221 @@ export class CommunitiesService {
     } satisfies Page<unknown>;
   }
 
+  // ══ POST /communities/:id/moderators-conversation ═════════════════════════
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « CONTACTER LES MODÉRATEURS » — LE SEUL POINT D'ENTRÉE DE CE MODULE      ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Les deux boutons de la planche « À propos » (A08T, 1036 px et 390 px)
+   * n'avaient AUCUNE route : §2.4 décrit ce que les modérateurs font AU membre —
+   * masquer, retirer, épingler, clore — et jamais comment un membre leur parle.
+   *
+   * CE N'EST PAS UN SIGNALEMENT, et c'est la distinction à tenir : la planche
+   * dessine « Signaler le réseau » JUSTE À CÔTÉ, et `POST /reports` (13 §8.1) le
+   * sert déjà. Celui-là va à l'équipe de la PLATEFORME, ouvre un
+   * `moderation_case`, peut suspendre un compte, et exige `report.create` (L2).
+   * Celui-ci va aux bénévoles d'UN réseau, n'ouvre aucun dossier, ne confère
+   * aucun pouvoir de sanction, et se contente de `content.read` (L0) — demander
+   * une règle à l'équipe de son réseau de ville ne doit rien exiger.
+   *
+   * ── CE QUE CE MODULE FAIT, ET CE QU'IL DÉLÈGUE ───────────────────────────
+   *
+   * Il fait ce que lui seul sait faire : appliquer la visibilité du §2.2 par
+   * `load()` — « toute route de ce module passe par ici, c'est volontairement la
+   * seule porte » —, exiger l'adhésion ACTIVE, refuser un réseau archivé, et
+   * LIRE L'ÉQUIPE. La conversation, elle, appartient à la messagerie : c'est
+   * `MessagingService.ensureCommunityModerationConversation` qui la crée, la
+   * retrouve et resynchronise ses membres. Recopier ici la moindre ligne de
+   * messagerie donnerait deux endroits où un fil de modération peut naître.
+   *
+   * ── L'ADHÉSION ACTIVE EST EXIGÉE, ET C'EST UN ARBITRAGE ──────────────────
+   *
+   * `assertMember` et non « n'importe quel lecteur de la fiche ». §2.3 réserve le
+   * contenu d'un réseau à ses membres, et un fil avec l'équipe EST du contenu de
+   * réseau. Un candidat `PENDING` ou un passant qui a un problème avec le réseau
+   * a déjà `POST /reports`, qui ne demande aucune adhésion. Le refus est le
+   * `403 NOT_A_MEMBER` que l'écran sait déjà lire (`contenuFerme`).
+   *
+   * ── UN RÉSEAU ARCHIVÉ EST EN LECTURE SEULE ───────────────────────────────
+   *
+   * `assertWritable`, comme pour un sujet ou une annonce (§2.2). Ouvrir un fil
+   * avec l'équipe d'un réseau archivé demanderait une réponse à des bénévoles
+   * que l'archivage a précisément libérés.
+   *
+   * ── LA BORNE : `@RateLimit` ET AUCUN QUOTA MÉTIER ────────────────────────
+   *
+   * Choisi en connaissance de cause, et l'en-tête de `@RateLimit` donne le
+   * critère : la limite de débit protège la minute, un quota métier compte des
+   * LIGNES CRÉÉES. Or ce geste est IDEMPOTENT par construction — un seul fil par
+   * (réseau, demandeur), tenu par un index unique en base — donc le rejouer ne
+   * crée aucune ligne, et il n'y a rien à compter. Ce qu'un quota journalier
+   * aurait borné, l'unicité le borne déjà, et mieux : exactement.
+   *
+   * Ce qui reste à protéger est la RAFALE — un bouton martelé, ou un script qui
+   * parcourt les réseaux d'un membre — et c'est le rôle du décorateur. Le FLOOD,
+   * lui, est déjà tenu là où il se produit : les messages passent par
+   * `sendMessage` et ses 60 par minute (§5.3).
+   */
+  async openModeratorsConversation(idOrSlug: string, userId: string) {
+    const access = await this.load(idOrSlug, userId);
+    this.assertMember(access);
+    this.assertWritable(access);
+
+    /**
+     * LE PROPRIÉTAIRE **ET** LES MODÉRATEURS, en une requête — et `status:
+     * 'ACTIVE'` sur les deux.
+     *
+     * Un modérateur `PENDING` ou `BANNED` n'est pas un modérateur : la colonne
+     * `role` survit au changement de `status`, donc filtrer sur le rôle seul
+     * aurait mis dans le fil quelqu'un que le réseau a retiré. C'est le même
+     * filtre que `members()` applique.
+     *
+     * `user: { deletedAt: null }` : §11 supprime le compte, pas la ligne
+     * d'adhésion tout de suite. Un compte supprimé dans la liste aurait donné un
+     * destinataire qui ne lira jamais — et `recipients` l'aurait compté.
+     */
+    const equipe = await this.prisma.communityMember.findMany({
+      where: {
+        communityId: access.community.id,
+        status: 'ACTIVE',
+        role: { in: ['OWNER', 'MODERATOR'] },
+        user: { deletedAt: null },
+      },
+      select: { userId: true },
+    });
+
+    return this.messaging.ensureCommunityModerationConversation({
+      communityId: access.community.id,
+      communityName: access.community.name,
+      requesterUserId: userId,
+      teamUserIds: equipe.map((m) => m.userId),
+    });
+  }
+
   // ══ PATCH /communities/:id/members/:userId (§2.4, §4) ═════════════════════
 
   /**
-   * Rôle et bannissement. Toute action est journalisée avec
-   * `actor_type = MEMBER` (§2.4) : un modérateur bénévole n'est pas l'équipe, et
-   * le journal doit le dire.
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA SOURDINE — §2.5, ET LES QUATRE DÉCISIONS QU'ELLE A DEMANDÉES         ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * NOTE — `muted` de §4 n'est PAS traité ici : la colonne
-   * `community_members.muted` que §3 annonce « ajoutée » n'existe pas dans le
-   * schéma, qui est figé. Voir le rapport.
+   * « Un membre peut mettre un réseau en sourdine : plus de notifications, le
+   * réseau reste dans sa liste. » C'est tout ce que la spécification dit, et
+   * chacune des quatre décisions ci-dessous comble un silence :
+   *
+   * 1. SUR SON PROPRE RANG SEULEMENT (`MUTE_SELF_ONLY`). §4 écrit « `muted`
+   *    (soi-même) » et c'est sans appel : aucun rôle ne donne le droit de faire
+   *    taire un réseau pour quelqu'un d'autre. Un propriétaire qui le pourrait
+   *    aurait un moyen de couper les notifications d'un membre sans le bannir
+   *    ni le prévenir — c'est-à-dire de l'exclure en silence, ce que §2.4 ne lui
+   *    donne pas.
+   *
+   * 2. AUCUNE LIGNE D'AUDIT. §2.4 exige la trace de « toute action de
+   *    MODÉRATION de réseau » ; se choisir le silence n'en est pas une. Une
+   *    ligne par bascule remplirait un journal conservé cinq ans de réglages
+   *    personnels, et noierait les bannissements qu'on y cherche.
+   *
+   * 3. AUCUN `assertWritable`. On met en sourdine un réseau ARCHIVÉ : il reste
+   *    dans sa liste (§2.2 : « lecture seule »), et la lecture seule porte sur
+   *    son CONTENU, pas sur les préférences de notification de ses membres. Le
+   *    refuser enfermerait le membre dans les notifications d'un réseau mort.
+   *
+   * 4. TOUT STATUT D'ADHÉSION SUFFIT, pas seulement `ACTIVE`. Un `INVITED` reçoit
+   *    déjà des notifications du réseau — c'est même ce qu'est une invitation —
+   *    et doit donc pouvoir les couper. `assertMember` l'aurait refusé ; on
+   *    exige seulement une LIGNE d'adhésion, parce que c'est elle qui porte la
+   *    colonne.
+   *
+   * ⚠ EN REVANCHE, PAS DE LIGNE = 404. Mettre en sourdine un réseau qu'on n'a
+   * pas rejoint n'a nulle part où s'écrire, et créer une adhésion fantôme pour
+   * l'occasion mettrait dans `community_members` des lignes que personne n'a
+   * demandées — qui compteraient dans la liste des membres.
    */
-  async updateMember(
-    idOrSlug: string,
+  private async setMuted(
+    access: Access,
     actorId: string,
     targetUserId: string,
-    patch: UpdateMember,
+    muted: boolean,
   ) {
-    const access = await this.load(idOrSlug, actorId);
-    const actor = this.assertModerator(access);
-    this.assertWritable(access);
+    if (targetUserId !== actorId) this.fail('MUTE_SELF_ONLY');
 
+    const membership = access.membership;
+    if (membership === null) throw ApiError.notFound();
+
+    // Idempotent : reposer la même valeur ne touche pas `updated_at` pour rien.
+    if (membership.muted !== muted) {
+      await this.prisma.communityMember.update({
+        where: { id: membership.id },
+        data: { muted },
+      });
+    }
+
+    return { userId: targetUserId, role: membership.role, status: membership.status, muted };
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ RÔLE, BANNISSEMENT — ET LA SOURDINE, QUI N'EST PAS DU MÊME ORDRE        ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Toute action de MODÉRATION est journalisée avec `actor_type = MEMBER`
+   * (§2.4) : un modérateur bénévole n'est pas l'équipe, et le journal doit le
+   * dire.
+   *
+   * ── LES DEUX GESTES DE CETTE ROUTE, ET POURQUOI ILS NE SE MÊLENT PAS ──────
+   *
+   * §4 met les trois champs dans la même ligne du tableau — « `role`, `status`
+   * (BANNED), `muted` (soi-même) » — donc la route est partagée. Elle porte
+   * pourtant DEUX gestes de nature différente, et le service les sépare AVANT
+   * la garde de modération :
+   *
+   *   · `muted` est une PRÉFÉRENCE PERSONNELLE (§2.5). N'IMPORTE QUEL membre la
+   *     pose, et seulement sur SON propre rang. Il n'y a rien à journaliser :
+   *     personne n'exerce de pouvoir sur personne, et une ligne d'`audit_logs`
+   *     par silence choisi noierait les vraies actions de modération dans un
+   *     journal conservé cinq ans.
+   *   · `role` et `status` sont de la MODÉRATION. Modérateur exigé, propriétaire
+   *     pour les rôles, et ligne d'audit obligatoire.
+   *
+   * ⚠ `assertModerator` NE PEUT DONC PLUS ÊTRE LA PREMIÈRE LIGNE. Il l'était, et
+   * c'est ce qui aurait rendu la sourdine inatteignable pour un membre
+   * ordinaire — c'est-à-dire pour la quasi-totalité de ceux qu'elle concerne.
+   *
+   * ⚠ UN CORPS QUI MÊLE LES DEUX EST REFUSÉ (`MUTE_ALONE`) plutôt que départagé.
+   * Deux raisons, et la seconde est la vraie : les deux gestes n'ont pas le même
+   * acteur légitime, et une seule requête ne peut pas produire une ligne d'audit
+   * honnête quand elle est à la fois un acte de modération et un réglage
+   * personnel. Mieux vaut un refus lisible qu'une trace qui mentirait.
+   /**
+   * ║ LA CIBLE D'UN GESTE DE MODÉRATION, ET LES TROIS REFUS QUI LA PROTÈGENT   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Extraite de `updateMember` quand « retirer » est devenu un geste distinct du
+   * bannissement : les deux routes doivent appliquer EXACTEMENT les mêmes refus,
+   * et deux copies de trois `if` divergent toujours. La première version de ce
+   * lot avait justement oublié `OWNER_IMMUTABLE` sur la route de retrait — le
+   * propriétaire se serait retiré lui-même du réseau qu'il est seul à pouvoir
+   * modérer, ce que `leave()` refuse déjà pour la même raison (§2.2).
+   *
+   * `assertModerator` et `assertWritable` restent chez l'appelant : ils portent
+   * sur le RÉSEAU, pas sur la cible, et `load()` doit les avoir faits avant.
+   */
+  private async moderationTarget(
+    access: Access,
+    actor: Membership,
+    targetUserId: string,
+  ): Promise<{ id: string; role: string; status: string; muted: boolean }> {
     const target = await this.prisma.communityMember.findUnique({
       where: { communityId_userId: { communityId: access.community.id, userId: targetUserId } },
-      select: { id: true, role: true, status: true },
+      /**
+       * `muted` EST LU ICI parce que `updateMember` en a besoin, et qu'il partage
+       * cette cible avec le retrait et le bannissement depuis l'extraction. Le
+       * retirer du `select` a cassé la bascule de sourdine à la fusion : deux lots
+       * avaient touché cette méthode sans se voir, et c'est le typage qui l'a dit.
+       */
+      select: { id: true, role: true, status: true, muted: true },
     });
     if (target === null) throw ApiError.notFound();
 
@@ -1120,6 +1384,111 @@ export class CommunitiesService {
     if (target.role === 'MODERATOR' && actor.role !== 'OWNER') {
       throw ApiError.transverse('FORBIDDEN', { reason: 'OWNER_REQUIRED' });
     }
+    return target;
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ RETIRER — L'ADHÉSION DISPARAÎT, ET LA PERSONNE PEUT REVENIR              ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * ARBITRAGE DU PORTEUR, mot pour mot : « Retirer, il peut rejoindre à nouveau.
+   * Mais banni, il ne peut plus rejoindre. »
+   *
+   * La maquette dessinait DEUX entrées dans le menu d'une ligne de membre —
+   * « Retirer du réseau » et « Bannir du réseau » — et un lot précédent les avait
+   * branchées toutes les deux sur le bannissement, parce que §2.4 ne décrit que
+   * celui-là (« retirer un membre (`BANNED` : ne peut plus rejoindre) »). La
+   * maquette avait raison ; c'est la spécification qui est incomplète.
+   *
+   * ── CE GESTE IMITE `leave()`, IL NE L'INVENTE PAS ──────────────────────────
+   *
+   * `leave()` passe par `removeMembership(…, 'community.member_left')`, qui
+   * SUPPRIME la ligne — par opposition au bannissement, qui la garde en `BANNED`
+   * puisque c'est elle qui interdit de revenir. Retirer fait donc exactement ce
+   * que `leave` fait, par la main d'un modérateur : même méthode, même
+   * événement, et `self: true` en moins — remplacé par `byUserId`, qui dit qui a
+   * agi. Un consommateur de `community.member_left` n'a ainsi rien de nouveau à
+   * apprendre.
+   *
+   * ── ⚠ SUR UN RÉSEAU DE VILLE OU DE PAYS, LE RETRAIT NE TIENT PAS ──────────
+   *
+   * Et il faut le dire plutôt que de le laisser découvrir : `syncAutoMemberships`
+   * RECALCULE l'adhésion d'un membre à son réseau de ville et de pays à chaque
+   * `GET /communities`, et n'épargne que les BANNIS. Un membre retiré d'un réseau
+   * automatique y revient donc au prochain chargement de sa liste — ce qui est
+   * cohérent avec §2.1 (« on ne quitte pas un réseau automatique : l'adhésion est
+   * une conséquence du profil ») mais rend le geste sans effet durable là. Sur un
+   * réseau automatique, seul le bannissement écarte vraiment. REMONTÉ.
+   *
+   * On ne REFUSE pas pour autant : rien dans l'arbitrage ne le demande, et un
+   * modérateur de réseau de ville a le droit du §2.4. Il voit simplement la
+   * personne revenir, ce qui est la vérité de ce réseau-là.
+   */
+  async removeMember(idOrSlug: string, actorId: string, targetUserId: string): Promise<void> {
+    const access = await this.load(idOrSlug, actorId);
+    const actor = this.assertModerator(access);
+    this.assertWritable(access);
+
+    const target = await this.moderationTarget(access, actor, targetUserId);
+
+    await this.removeMembership(access.community.id, targetUserId, 'community.member_left', {
+      byUserId: actorId,
+    });
+
+    /**
+     * SA PROPRE LIGNE D'AUDIT, et c'est §2.4 qui l'exige : « toute action de
+     * modération de réseau est journalisée ». Deux gestes aux conséquences
+     * opposées — l'un réversible, l'autre non — qui s'écriraient
+     * `community.member_banned` tous les deux rendraient le journal incapable de
+     * dire lequel a eu lieu. C'est précisément ce qu'un journal conservé cinq ans
+     * sert à savoir.
+     *
+     * HORS TRANSACTION, comme le bannissement juste en dessous : la ligne
+     * d'adhésion vient d'être SUPPRIMÉE par `removeMembership`, et `targetId`
+     * désigne une ligne qui n'existe plus. Écrire dans la même transaction ne
+     * changerait rien à cela — `audit_logs` n'a pas de clé étrangère vers
+     * `community_members` — et imposerait de démonter `removeMembership`.
+     */
+    await this.audit.record(this.prisma, {
+      actor: { type: 'MEMBER', id: actorId },
+      action: 'community.member_removed',
+      targetType: 'community_member',
+      targetId: target.id,
+      metadata: { communityId: access.community.id, userId: targetUserId, reversible: true },
+    });
+  }
+
+  /**
+   * Rôle et bannissement. Toute action est journalisée avec
+   * `actor_type = MEMBER` (§2.4) : un modérateur bénévole n'est pas l'équipe, et
+   * le journal doit le dire.
+   *
+   * RETIRER N'EST PLUS ICI : voir `removeMember` et son en-tête. `status` ne
+   * porte donc que deux valeurs, `ACTIVE` et `BANNED`.
+   *
+   * NOTE — `muted` de §4 n'est PAS traité ici : la colonne
+   * `community_members.muted` que §3 annonce « ajoutée » n'existe pas dans le
+   * schéma, qui est figé. Voir le rapport.
+   */
+  async updateMember(
+    idOrSlug: string,
+    actorId: string,
+    targetUserId: string,
+    patch: UpdateMember,
+  ) {
+    const access = await this.load(idOrSlug, actorId);
+
+    if (patch.muted !== undefined) {
+      if (patch.role !== undefined || patch.status !== undefined) this.fail('MUTE_ALONE');
+      return this.setMuted(access, actorId, targetUserId, patch.muted);
+    }
+
+    const actor = this.assertModerator(access);
+    this.assertWritable(access);
+
+    const target = await this.moderationTarget(access, actor, targetUserId);
+
     if (patch.role !== undefined && actor.role !== 'OWNER') {
       throw ApiError.transverse('FORBIDDEN', { reason: 'OWNER_REQUIRED' });
     }
@@ -1133,9 +1502,18 @@ export class CommunitiesService {
         action: 'community.member_banned',
         targetType: 'community_member',
         targetId: target.id,
-        metadata: { communityId: access.community.id, userId: targetUserId },
+        // `reversible: false` fait pendant au `true` de `community.member_removed` :
+        // les deux gestes se lisent côte à côte dans le journal, et la différence
+        // que le porteur a tranchée y est écrite plutôt que déduite du nom.
+        metadata: { communityId: access.community.id, userId: targetUserId, reversible: false },
       });
-      return { userId: targetUserId, role: 'MEMBER', status: 'BANNED' };
+      /**
+       * `muted` EST CELUI D'AVANT LE BANNISSEMENT, et il est servi quand même :
+       * la réponse décrit l'état APRÈS, et la sourdine n'a pas bougé. Le
+       * bannissement ne la touche pas — `removeMembership` ne lit pas cette
+       * colonne — et affirmer `false` serait inventer un changement.
+       */
+      return { userId: targetUserId, role: 'MEMBER', status: 'BANNED', muted: target.muted };
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -1165,7 +1543,12 @@ export class CommunitiesService {
     });
 
     const after = await this.membershipOf(access.community.id, targetUserId);
-    return { userId: targetUserId, role: after?.role ?? null, status: after?.status ?? null };
+    return {
+      userId: targetUserId,
+      role: after?.role ?? null,
+      status: after?.status ?? null,
+      muted: after?.muted ?? false,
+    };
   }
 
   // ══ POST /communities/:id/transfer (§2.2, §4) ═════════════════════════════
@@ -1337,10 +1720,26 @@ export class CommunitiesService {
    * Le sujet est chargé DEPUIS son réseau (`load`) et non directement : sans
    * cela, un sujet d'un réseau `INVITE_ONLY` serait lisible par son identifiant,
    * et la règle dure du §9 tomberait par la porte de derrière.
+   *
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ UN SUJET MASQUÉ EST RENDU — AUX MODÉRATEURS DU RÉSEAU, ET À EUX SEULS    ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le filtre `deletedAt: null` était ici, et il fermait la seule porte par
+   * laquelle revenir sur une erreur de clic : le modérateur qui venait de masquer
+   * recevait un `404` sur la page même où il avait cliqué. L'arbitrage du porteur
+   * — « il peut remettre dans les sept jours » — n'aurait eu aucun écran.
+   *
+   * Le filtre est donc déplacé APRÈS la garde de rôle. Pour tout le monde sauf un
+   * modérateur ou le propriétaire, un sujet masqué reste un `404`, exactement
+   * comme avant — y compris pour SON AUTEUR : rendre le contenu masqué à qui
+   * n'a pas le pouvoir de le rétablir ne sert à rien et montre ce que la
+   * modération a retiré. La LISTE (`topics()`), elle, ne change pas : elle
+   * continue de ne rendre que les sujets visibles.
    */
   async topic(topicId: string, userId: string) {
     const topic = await this.prisma.topic.findFirst({
-      where: { id: topicId, deletedAt: null },
+      where: { id: topicId },
       select: {
         id: true,
         communityId: true,
@@ -1351,6 +1750,7 @@ export class CommunitiesService {
         replyCount: true,
         lastReplyAt: true,
         createdAt: true,
+        deletedAt: true,
         authorUserId: true,
         author: { select: { id: true, handle: true, displayName: true } },
       },
@@ -1359,6 +1759,13 @@ export class CommunitiesService {
 
     const access = await this.load(topic.communityId, userId);
     const membership = this.assertMember(access);
+    if (
+      topic.deletedAt !== null &&
+      membership.role !== 'OWNER' &&
+      membership.role !== 'MODERATOR'
+    ) {
+      throw ApiError.notFound();
+    }
 
     // Un sujet écrit par un membre séparé n'existe PAS pour ce lecteur, dans les
     // deux sens (§6, `user.blocked`). 404 et non 403 : T4 §3.
@@ -1385,16 +1792,184 @@ export class CommunitiesService {
     });
 
     const isModerator = membership.role === 'OWNER' || membership.role === 'MODERATOR';
+
+    /**
+     * ── `deletedAt` NE SORT PAS, IL EST TRADUIT ───────────────────────────────
+     *
+     * `topicDetailResponseSchema` est `.strict()` : un champ de plus fait échouer
+     * la validation CÔTÉ FRONT, sur une réponse parfaitement correcte. La date de
+     * masquage est donc retirée de l'étalement et rendue sous trois noms que
+     * l'écran sait lire — ce qui vaut mieux de toute façon, puisque la fenêtre de
+     * sept jours est un calcul de serveur et non une date brute à comparer dans
+     * le navigateur.
+     *
+     * `unhideUntil` n'est pas `canUnhide` : la date se lit même quand le rôle ne
+     * permet pas le geste, et c'est elle qui permet d'écrire « jusqu'au … ».
+     */
+    const { deletedAt, ...visible } = topic;
+    const unhideUntil =
+      deletedAt === null
+        ? null
+        : new Date(deletedAt.getTime() + TOPIC_UNHIDE_WINDOW_DAYS * DAY_MS);
+
     return {
-      ...topic,
+      ...visible,
       community: { id: access.community.id, slug: access.community.slug, name: access.community.name },
       canResolve: topic.authorUserId === userId || isModerator,
       canPin: isModerator,
       canEdit:
         topic.authorUserId === userId &&
         Date.now() - topic.createdAt.getTime() < TOPIC_EDIT_WINDOW_MINUTES * 60_000,
+      hidden: deletedAt !== null,
+      /**
+       * CALCULÉ À CHAQUE LECTURE, comme `canEdit` : la fenêtre se referme pendant
+       * qu'on regarde la page.
+       *
+       * ⚠ IL PEUT ÊTRE OPTIMISTE, ET C'EST ASSUMÉ : il ne sait pas si c'est
+       * l'AUTEUR qui a retiré son propre sujet, ce que `restoreTopic` refuse
+       * (voir son en-tête). Le savoir ici coûterait une lecture du journal
+       * d'audit à chaque affichage d'un sujet, et le dépôt a une doctrine pour
+       * ce cas : le front PRÉVIENT, il n'autorise pas — le geste est tenté, et
+       * c'est le serveur qui refuse.
+       */
+      canUnhide:
+        isModerator &&
+        unhideUntil !== null &&
+        unhideUntil.getTime() > Date.now() &&
+        access.community.status !== 'ARCHIVED',
+      unhideUntil,
       replies,
     };
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ REMETTRE UN SUJET MASQUÉ — SEPT JOURS, PUIS L'ÉQUIPE                     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * ARBITRAGE DU PORTEUR : « le modérateur qui a masqué peut remettre dans les
+   * sept jours. Au-delà, seule l'équipe. »
+   *
+   * Avant ce lot, masquer était sans retour du côté réseau : seule l'équipe
+   * disposait de `ModerationActionType.UNHIDE` (module 13), c'est-à-dire d'un
+   * dossier de modération ouvert à la main. Un clic de travers sur « Masquer »
+   * n'avait aucun remède à l'échelle du réseau.
+   *
+   * ── LA DATE VIENT DE L'OBJET, PAS DU JOURNAL, ET VOICI POURQUOI ────────────
+   *
+   * Les deux candidats étaient `topics.deleted_at` et la ligne d'audit
+   * `community.topic_hidden`. C'est `deleted_at` qui est retenu :
+   *
+   *   · c'est la valeur qui FAIT le masquage — tant qu'elle est posée, le sujet
+   *     est hors des listes ; il n'y a donc aucun écart possible entre l'état et
+   *     la date qui le borne ;
+   *   · elle est écrite dans la MÊME transaction que la ligne d'audit
+   *     (`deleteTopic`), donc rien n'est perdu en la préférant ;
+   *   · le journal est en AJOUT SEUL : un sujet masqué, remis, puis masqué de
+   *     nouveau y porte PLUSIEURS lignes `community.topic_hidden`, et il faudrait
+   *     choisir la bonne. `deleted_at` ne porte que le dernier masquage, qui est
+   *     exactement celui dont on compte les sept jours.
+   *
+   * ── LE JOURNAL SERT QUAND MÊME, POUR UNE AUTRE QUESTION ───────────────────
+   *
+   * `deleteTopic` est ouvert à l'AUTEUR autant qu'aux modérateurs (« l'auteur
+   * peut aussi retirer le sien »). Rétablir le retrait d'un auteur par-dessus sa
+   * volonté serait republier ce qu'il a retiré — ce n'est pas une erreur de clic
+   * de modération, et l'arbitrage ne parle pas de ça. On lit donc la DERNIÈRE
+   * ligne de masquage, dont la métadonnée `byModerator` dit en quelle qualité le
+   * geste a été fait, et on refuse quand ce n'était PAS un acte de modération.
+   *
+   * ⚠ ET NON PAS « quand c'est l'auteur », ce qu'une première version faisait :
+   * MESURÉ à l'épreuve, un propriétaire qui ouvre un sujet puis le masque par
+   * erreur recevait `403` — c'est-à-dire exactement l'erreur de clic que
+   * l'arbitrage veut rattraper, refusée par la garde censée le servir.
+   * `byModerator` distingue les deux cas que l'identité de l'acteur confond :
+   * `deleteTopic` l'écrit depuis le rôle réel du moment.
+   *
+   * ── CE QUI N'EST PAS FAIT, ET QUI SE VOIT ────────────────────────────────
+   *
+   * Un modérateur qui masque puis QUITTE la page ne retrouve plus le sujet : la
+   * liste des sujets ne rend pas les masqués, et il n'existe aucune route pour
+   * les énumérer. La fenêtre de sept jours ne sert donc en pratique qu'à qui est
+   * resté sur la page — ce qui couvre l'erreur de clic, mais pas le remords du
+   * lendemain. Il faudrait un `GET /communities/:id/topics?hidden=true` réservé
+   * aux modérateurs. REMONTÉ.
+   */
+  async restoreTopic(topicId: string, userId: string) {
+    const topic = await this.prisma.topic.findUnique({
+      where: { id: topicId },
+      select: { id: true, communityId: true, authorUserId: true, deletedAt: true },
+    });
+    if (topic === null) throw ApiError.notFound();
+
+    const access = await this.load(topic.communityId, userId);
+    this.assertModerator(access);
+    this.assertWritable(access);
+
+    /**
+     * IDEMPOTENT quand le sujet est déjà visible : remettre deux fois rend le
+     * même état, et c'est un cas qui arrive pour de bon — deux onglets ouverts,
+     * ou un double clic sur une liaison lente. Aucune ligne d'audit n'est écrite
+     * dans ce cas : le journal dit ce qui a eu lieu, et il n'a rien eu lieu.
+     */
+    if (topic.deletedAt === null) return this.topic(topic.id, userId);
+
+    /**
+     * RECOPIÉE DANS UNE CONSTANTE, et ce n'est pas du style : le rétrécissement
+     * de type que le test ci-dessus obtient ne survit pas à la fermeture
+     * asynchrone de la transaction — TypeScript ne peut pas savoir que rien ne
+     * réassigne `topic` entre-temps, et il a raison de le dire (TS18047).
+     */
+    const masqueLe = topic.deletedAt;
+
+    const limite = masqueLe.getTime() + TOPIC_UNHIDE_WINDOW_DAYS * DAY_MS;
+    if (limite <= Date.now()) {
+      this.fail('UNHIDE_WINDOW_CLOSED', {
+        days: TOPIC_UNHIDE_WINDOW_DAYS,
+        hiddenAt: masqueLe.toISOString(),
+      });
+    }
+
+    const masquage = await this.prisma.auditLog.findFirst({
+      where: { action: 'community.topic_hidden', targetType: 'topic', targetId: topic.id },
+      orderBy: { createdAt: 'desc' },
+      select: { metadata: true },
+    });
+    /**
+     * `byModerator` ABSENT laisse passer, et c'est un choix : un masquage sans
+     * ligne d'audit ne devrait pas exister — `deleteTopic` l'écrit dans la MÊME
+     * transaction — mais si une voie future posait `deleted_at` sans journaliser,
+     * refuser le rétablissement rendrait ce contenu irrécupérable côté réseau.
+     * Entre les deux risques, celui d'un sujet remis par erreur se répare d'un
+     * clic ; celui d'un sujet bloqué masqué ne se répare pas.
+     */
+    const parModerateur =
+      masquage === null || typeof masquage.metadata !== 'object' || masquage.metadata === null
+        ? null
+        : (masquage.metadata as Record<string, unknown>)['byModerator'];
+    if (parModerateur === false) {
+      throw ApiError.transverse('FORBIDDEN', { reason: 'AUTHOR_WITHDREW' });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.topic.update({ where: { id: topic.id }, data: { deletedAt: null } });
+      // TRACÉE COMME LE MASQUAGE L'EST — même forme, même `targetType`, même
+      // `actor_type = MEMBER` (§2.4). Le journal porte alors la paire complète :
+      // qui a masqué, qui a remis, et quand.
+      await this.audit.record(tx, {
+        actor: { type: 'MEMBER', id: userId },
+        action: 'community.topic_restored',
+        targetType: 'topic',
+        targetId: topic.id,
+        metadata: {
+          communityId: topic.communityId,
+          hiddenAt: masqueLe.toISOString(),
+          windowDays: TOPIC_UNHIDE_WINDOW_DAYS,
+        },
+      });
+    });
+
+    return this.topic(topic.id, userId);
   }
 
   /**
@@ -1490,7 +2065,13 @@ export class CommunitiesService {
     return this.topic(topic.id, userId);
   }
 
-  /** §2.4 : masquer un sujet du réseau. L'auteur peut aussi retirer le sien. */
+  /**
+   * §2.4 : masquer un sujet du réseau. L'auteur peut aussi retirer le sien.
+   *
+   * RÉVERSIBLE PENDANT SEPT JOURS depuis ce lot, par un modérateur du réseau et
+   * à sa seule main — voir `restoreTopic`. `deletedAt` est la date dont ces sept
+   * jours sont comptés, et c'est pour ça qu'elle est posée ici et pas ailleurs.
+   */
   async deleteTopic(topicId: string, userId: string): Promise<void> {
     const topic = await this.prisma.topic.findFirst({
       where: { id: topicId, deletedAt: null },
@@ -1540,7 +2121,20 @@ export class CommunitiesService {
       take: query.limit + 1,
       select: {
         id: true,
+        /**
+         * LES TROIS CHAMPS QUE LA PLANCHE DESSINE ET QUE CETTE ROUTE TAISAIT.
+         *
+         * `title` et `pinnedAt` sont les deux colonnes ajoutées par ce lot ;
+         * `notifiedAt` existait déjà dans la table et n'était simplement pas
+         * sélectionné, donc l'écran ne pouvait pas dire si la notification était
+         * partie. Les trois sont dans `announcementSchema`, qui est `.strict()` :
+         * ils ne peuvent pas manquer de la charge sans la faire refuser côté
+         * front, ce qui est exactement la garde qu'on veut ici.
+         */
+        title: true,
         body: true,
+        pinnedAt: true,
+        notifiedAt: true,
         createdAt: true,
         author: { select: { id: true, handle: true, displayName: true } },
       },
@@ -1551,13 +2145,63 @@ export class CommunitiesService {
   }
 
   /**
-   * Annonce du propriétaire ou d'un modérateur (§2.3).
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ ANNONCE DU PROPRIÉTAIRE OU D'UN MODÉRATEUR — LES QUATRE CONTRÔLES       ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * « 2 par semaine maximum » est une limite PAR RÉSEAU et non par auteur : le
-   * but est de ne pas noyer les membres de notifications, et deux modérateurs qui
-   * annoncent chacun deux fois feraient quatre notifications.
+   * Le porteur : « L'annonce : tous les champs doivent être branchés. » La planche
+   * en dessine QUATRE — titre, corps, « Épingler en haut du fil », « Notifier les
+   * 890 membres » — et ce service n'en écrivait qu'un. Les trois autres n'avaient
+   * nulle part où aller : ce n'était pas un branchement d'écran manquant mais un
+   * écart de contrat, fermé par la migration `annonce_titre_et_epinglage`.
+   *
+   * ── « 2 PAR SEMAINE MAXIMUM » RESTE UN COMPTE DE LIGNES, PAS UN @RateLimit ──
+   *
+   * `@RateLimit` existe et il ne convient pas ici, et son propre en-tête le dit :
+   * « La journée n'est PAS proposée. Les quotas journaliers des spécifications
+   * […] sont des règles MÉTIER : elles doivent survivre à un redémarrage de
+   * Redis, être lisibles par le membre, et compter des objets créés — pas des
+   * requêtes reçues. » La semaine est a fortiori hors de sa portée (`minute` ou
+   * `hour`), et le budget y est compté PAR APPELANT là où §2.3 borne le RÉSEAU :
+   * deux modérateurs qui annoncent chacun deux fois feraient quatre
+   * notifications, et c'est précisément ce que la règle empêche. Le compte de
+   * lignes sur sept jours est donc gardé tel quel.
+   *
+   * ── L'ÉPINGLAGE EST EXCLUSIF, ET C'EST UNE DÉCISION ────────────────────────
+   *
+   * La spécification ne tranche pas : §2.3 borne les SUJETS épinglés à cinq et ne
+   * dit rien des annonces. La planche, elle, écrit « Épingler en haut du fil » —
+   * UN emplacement, au singulier, et elle ne dessine AUCUN geste pour déépingler.
+   * Non exclusif, les annonces épinglées s'accumuleraient sans aucun moyen d'en
+   * retirer une : le dessin ne donnerait jamais ce qu'il promet. Exclusif, la
+   * nouvelle remplace la précédente, ce qui est auto-nettoyant et ne demande
+   * aucun contrôle que la maquette ne dessine pas.
+   *
+   * Tenu par le SERVICE et non par un index unique partiel : un index ferait
+   * ÉCHOUER la seconde annonce épinglée au lieu de remplacer la première.
+   *
+   * ── LA SOURDINE EST TENUE, ET ELLE NE L'EST PAS ICI ───────────────────────
+   *
+   * §2.3 veut prévenir « tous les membres NON EN SOURDINE ». Ce service ne filtre
+   * toujours rien, et c'est juste : il émet un événement, et c'est
+   * `notifications.events.ts` (`onCommunityAnnouncement`) qui choisit les
+   * destinataires — 00 §3.3 interdit l'appel direct d'un module à un autre.
+   *
+   * ⚠ CET EN-TÊTE DISAIT LE CONTRAIRE, et il avait raison au moment où il a été
+   * écrit : `community_members.muted` n'existait pas, le filtre était
+   * impossible, et « Notifier » réveillait tout le monde. La colonne est arrivée
+   * avec la migration `reseaux_sourdine_inviteur_avertissement`, le filtre est
+   * posé dans `onCommunityAnnouncement` (où il écarte AUSSI les `PENDING`, les
+   * `INVITED` et les bannis), et le paragraphe est corrigé plutôt que laissé à
+   * défendre un état révolu.
+   *
+   * ⚠ RESTE UN ÉCART DE MAQUETTE, remonté : la planche de 1 036 px écrit sous
+   * l'interrupteur « Une seule notification, même pour les membres en
+   * sourdine. » C'est maintenant FAUX — les membres en sourdine ne reçoivent
+   * rien, comme §2.3 l'exige. La phrase est du DESSIN ; la corriger serait
+   * réécrire la maquette, ce qui est interdit. C'est au porteur de la retoucher.
    */
-  async createAnnouncement(idOrSlug: string, userId: string, body: string) {
+  async createAnnouncement(idOrSlug: string, userId: string, input: CreateAnnouncement) {
     const access = await this.load(idOrSlug, userId);
     this.assertModerator(access);
     this.assertWritable(access);
@@ -1571,21 +2215,174 @@ export class CommunitiesService {
     }
 
     const id = newId();
+    /**
+     * UN SEUL INSTANT POUR LES DEUX HORODATAGES ET POUR LA RÉPONSE.
+     *
+     * `new Date()` appelé trois fois rendrait trois instants à quelques
+     * millisecondes d'écart, et la réponse ne dirait alors pas exactement ce que
+     * la ligne porte. Ce n'est pas visible à l'œil ; c'est visible dans un test
+     * qui compare la réponse à la relecture, et c'est ce test qui a raison.
+     */
+    const maintenant = new Date();
+    const pinnedAt = input.pinned ? maintenant : null;
+    const notifiedAt = input.notify ? maintenant : null;
+
     await this.prisma.$transaction(async (tx) => {
+      /**
+       * DÉÉPINGLER AVANT D'ÉPINGLER, dans la MÊME transaction. Hors transaction,
+       * un lecteur tombant entre les deux écritures verrait zéro annonce
+       * épinglée — ou deux, selon l'ordre.
+       */
+      if (pinnedAt !== null) {
+        await tx.communityAnnouncement.updateMany({
+          where: { communityId: access.community.id, pinnedAt: { not: null } },
+          data: { pinnedAt: null },
+        });
+      }
       await tx.communityAnnouncement.create({
-        data: { id, communityId: access.community.id, authorUserId: userId, body },
+        data: {
+          id,
+          communityId: access.community.id,
+          authorUserId: userId,
+          ...(input.title === undefined ? {} : { title: input.title }),
+          body: input.body,
+          pinnedAt,
+          notifiedAt,
+        },
       });
       await this.touch(tx, access.community.id);
-      await this.outbox.emit(tx, {
-        type: 'community.announcement_published',
-        aggregateId: id,
-        // `notifications` doit prévenir « tous les membres non en sourdine »
-        // (§2.3). La sourdine n'est pas stockable aujourd'hui — voir le rapport.
-        payload: { communityId: access.community.id, announcementId: id, authorUserId: userId },
+      /**
+       * L'ÉVÉNEMENT NE PART QUE SI « Notifier » EST DEMANDÉ.
+       *
+       * C'est tout le sens de l'interrupteur : une annonce non notifiée s'écrit
+       * dans la liste du réseau et ne réveille personne. Émettre quand même, en
+       * laissant `notifications` filtrer, serait un interrupteur décoratif.
+       */
+      if (notifiedAt !== null) {
+        await this.outbox.emit(tx, {
+          type: 'community.announcement_published',
+          aggregateId: id,
+          payload: { communityId: access.community.id, announcementId: id, authorUserId: userId },
+        });
+      }
+    });
+
+    return {
+      id,
+      title: input.title ?? null,
+      body: input.body,
+      pinnedAt,
+      notifiedAt,
+      createdAt: maintenant,
+    };
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ ÉPINGLER ET DÉSÉPINGLER UNE ANNONCE DÉJÀ PUBLIÉE                        ║
+   * ║ `PATCH /communities/:id/announcements/:announcementId`                   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * ── LE MANQUE, ET L'ARBITRAGE DU 2026-10-11 ───────────────────────────────
+   *
+   * `createAnnouncement` pose l'épinglage et le tient EXCLUSIF. Le porteur a
+   * confirmé que l'exclusivité reste. Mais il n'existait aucun chemin pour
+   * revenir à « aucune annonce épinglée » : on ne pouvait que remplacer
+   * l'épinglée par une autre, en publiant une annonce — et le budget est de deux
+   * par semaine (§2.3). « Épingler en haut du fil » était donc une porte à sens
+   * unique, et une annonce périmée y restait.
+   *
+   * ⚠ LA MAQUETTE NE DESSINE AUCUN GESTE DE DÉSÉPINGLAGE. Relevé sur les octets
+   * de `03 Accueil v2.dc.html` : « Désépingler » 0 fois, « Retirer l'épinglage »
+   * 0 fois ; l'interrupteur « Épingler en haut du fil » n'existe que dans le
+   * formulaire de CRÉATION. Le dessin du geste est remonté au rapport ; la route
+   * existe de toute façon, parce qu'une accumulation sans issue est plus grave
+   * qu'un bouton manquant.
+   *
+   * ── L'EXCLUSIVITÉ VAUT ICI AUSSI, ET C'EST LE POINT ──────────────────────
+   *
+   * Épingler une ANCIENNE annonce déépingle la courante, dans la même
+   * transaction. Sans cela, la règle tiendrait à la création et nulle part
+   * ailleurs : deux annonces épinglées seraient atteignables par le chemin le
+   * plus évident — en épingler une seconde depuis la liste.
+   *
+   * ── LES TROIS GARDES, ET POURQUOI CHACUNE ─────────────────────────────────
+   *
+   *   · `assertModerator` — même porte que la création (§2.3 : « Propriétaire et
+   *     modérateurs »). Épingler est un acte éditorial sur le haut du fil d'un
+   *     réseau ; ce n'est pas au membre qui a écrit l'annonce d'en décider, et
+   *     l'auteur N'EST PAS exempté : un modérateur destitué ne doit pas garder
+   *     la main sur son annonce épinglée.
+   *   · `assertWritable` — un réseau archivé est en lecture seule (§2.2).
+   *   · l'annonce doit appartenir à CE réseau. Sans ce `where`, un modérateur
+   *     d'un réseau pourrait épingler l'annonce d'un autre : l'identifiant de
+   *     l'annonce suffirait, et c'est exactement le genre de fuite entre réseaux
+   *     que ce module passe son temps à refermer.
+   *
+   * ── UNE LIGNE D'AUDIT, PARCE QUE §2.4 LA DEMANDE ─────────────────────────
+   *
+   * « Toute action de modération de réseau est journalisée (`audit_logs`,
+   * `actor_type = MEMBER`). » Épingler est dans la liste de §2.4 (« épingler »),
+   * au même titre que masquer et bannir.
+   *
+   * ⚠ AUCUN `touch()` : épingler n'est pas de l'activité au sens de §2.2
+   * (« publication, sujet, réponse, événement »). Un modérateur qui désépingle
+   * une annonce périmée dans un réseau mort ne doit pas le réveiller pour quinze
+   * jours de plus — sans quoi on aurait un moyen d'empêcher l'archivage sans
+   * rien y publier.
+   */
+  async setAnnouncementPinned(
+    idOrSlug: string,
+    announcementId: string,
+    userId: string,
+    pinned: boolean,
+  ) {
+    const access = await this.load(idOrSlug, userId);
+    this.assertModerator(access);
+    this.assertWritable(access);
+
+    const annonce = await this.prisma.communityAnnouncement.findFirst({
+      where: { id: announcementId, communityId: access.community.id },
+      select: { id: true, pinnedAt: true },
+    });
+    if (annonce === null) throw ApiError.notFound();
+
+    // Idempotent : reposer le même état n'écrit rien et ne journalise rien. Une
+    // ligne d'audit par clic sans effet remplirait le journal de non-actions.
+    if ((annonce.pinnedAt !== null) === pinned) {
+      return { id: annonce.id, pinnedAt: annonce.pinnedAt };
+    }
+
+    const pinnedAt = pinned ? new Date() : null;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (pinned) {
+        // DÉÉPINGLER LES AUTRES D'ABORD, dans la MÊME transaction — exactement
+        // comme `createAnnouncement`. Hors transaction, un lecteur tombant
+        // entre les deux écritures verrait deux annonces épinglées.
+        await tx.communityAnnouncement.updateMany({
+          where: {
+            communityId: access.community.id,
+            pinnedAt: { not: null },
+            id: { not: annonce.id },
+          },
+          data: { pinnedAt: null },
+        });
+      }
+      await tx.communityAnnouncement.update({
+        where: { id: annonce.id },
+        data: { pinnedAt },
+      });
+      await this.audit.record(tx, {
+        actor: { type: 'MEMBER', id: userId },
+        action: pinned ? 'community.announcement_pinned' : 'community.announcement_unpinned',
+        targetType: 'community_announcement',
+        targetId: annonce.id,
+        metadata: { communityId: access.community.id },
       });
     });
 
-    return { id, body, createdAt: new Date() };
+    return { id: annonce.id, pinnedAt };
   }
 
   // ══ Sondages (§2.3, §4) ═══════════════════════════════════════════════════
@@ -1998,13 +2795,42 @@ export class CommunitiesService {
     };
   }
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CRÉER UN ALBUM EST RÉSERVÉ AU PROPRIÉTAIRE ET AUX MODÉRATEURS            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * ⚠ CETTE LIGNE ÉTAIT `assertMember`, ET LE DIRE EST LA MOITIÉ DE LA
+   * CORRECTION : n'importe quel membre actif pouvait créer autant d'albums qu'il
+   * voulait dans un réseau dont il n'est que membre. §2.3 ne tranchait pas — il
+   * ne nomme que deux règles, « tout membre ajoute (L1) » pour une PHOTO et
+   * « propriétaire et modérateurs suppriment » — et le silence a été lu comme
+   * une permission.
+   *
+   * ARBITRAGE DU PORTEUR, 2026-10-11, mot pour mot : « les administrateurs ont
+   * seul le bouton ajouté […] et ajouter un album ». L'écran ne montre donc ce
+   * geste qu'au propriétaire et aux modérateurs — mais LE FRONT PRÉVIENT, IL
+   * N'AUTORISE PAS (00 §5) : un bouton caché n'est pas une règle, et sans cette
+   * ligne la route restait ouverte à tout membre qui l'appelle directement.
+   *
+   * `assertModerator` ET NON `assertOwner` : « les administrateurs » au pluriel,
+   * et c'est la même porte que l'annonce, l'épinglage et le masquage — toutes
+   * les décisions de contenu du réseau passent par `MODERATOR_REQUIRED`.
+   *
+   * ⚠ `addPhoto` N'EST PAS TOUCHÉE, et c'est délibéré : §2.3 écrit en toutes
+   * lettres « tout membre ajoute (L1) », et `post.create` est la capacité que le
+   * contrôleur déclare. Le dessin ne donne le bouton qu'aux modérateurs ; la
+   * RÈGLE, elle, reste celle de la spécification. REMONTÉ : le porteur voudra
+   * peut-être trancher aussi celle-là, et c'est un mot de sa part, pas une
+   * déduction de ce service.
+   */
   async createAlbum(
     idOrSlug: string,
     userId: string,
     input: { title: string; eventId?: string | undefined },
   ) {
     const access = await this.load(idOrSlug, userId);
-    this.assertMember(access);
+    this.assertModerator(access);
     this.assertWritable(access);
 
     if (input.eventId !== undefined) {
@@ -2154,6 +2980,429 @@ export class CommunitiesService {
     };
   }
 
+  // ══ LA FILE DE SIGNALEMENTS D'UN RÉSEAU (§2.4) ════════════════════════════
+  //
+  // ╔═════════════════════════════════════════════════════════════════════════╗
+  // ║ LE LIEN ENTRE UN SIGNALEMENT ET UN RÉSEAU N'EXISTE PAS EN COLONNE       ║
+  // ╚═════════════════════════════════════════════════════════════════════════╝
+  //
+  // MESURÉ avant d'écrire une ligne. `reports` (`13-moderation.prisma`) porte
+  // `reporter_user_id`, `subject_type`, `subject_id`, `reason`, `details`,
+  // `status`, `case_id` — et AUCUN `community_id`. `ReportSubjectType` nomme
+  // douze sujets et aucun n'est « réseau ». Aucune route du dépôt ne lisait ces
+  // lignes côté membre : `moderation.controller.ts` n'expose que `POST /reports`,
+  // `GET /me/sanctions`, `POST /sanctions/:id/appeal` et `GET /scam-alerts`.
+  //
+  // LE LIEN EXISTE DONC, MAIS EN DÉRIVATION — et c'est ce qui a été retenu
+  // plutôt que d'ajouter une colonne :
+  //
+  //   · `POST`    → `posts.community_id` (nullable : null = fil global) ;
+  //   · `TOPIC`   → `topics.community_id` (non nullable) ;
+  //   · `COMMENT` → `comments.subject_type` / `subject_id` remonte au POST ou au
+  //                 TOPIC, puis la règle ci-dessus. `comments` n'a pas non plus
+  //                 de `community_id`, et une réponse de sujet EST un
+  //                 commentaire de sujet (§2.3).
+  //
+  // Les neuf autres genres ne sont jamais dans un réseau : ils sont absents de
+  // cette file par construction, pas filtrés par prudence.
+  //
+  // ⚠ POURQUOI PAS UNE COLONNE `reports.community_id` : elle serait écrite au
+  // moment du signalement, donc FIGÉE — et un post déplacé vers un sujet
+  // (`post.moved_to_topic`, §6) changerait de réseau sans qu'elle suive. La
+  // dérivation dit toujours où le contenu est AUJOURD'HUI, ce qui est la seule
+  // question que pose un modérateur. REMONTÉ : si la file devenait longue, c'est
+  // une vue matérialisée qu'il faudrait, pas une colonne.
+
+  /**
+   * `GET /communities/:id/reports` — UNE RANGÉE PAR CONTENU, pas par signalement.
+   *
+   * La planche « Gérer » écrit « Demande d'argent · 5 signalements » sur UNE
+   * rangée, avec UNE paire « Masquer » / « Conserver ». Cinq rangées identiques
+   * auraient donné cinq paires de boutons dont le premier clic rendrait les
+   * quatre autres sans objet. Le regroupement est la forme de la DÉCISION, qui
+   * porte sur un contenu et non sur l'acte d'un signaleur.
+   *
+   * ── POURQUOI DU SQL BRUT, ALORS QUE TOUT LE MODULE EST EN PRISMA ─────────
+   *
+   * Parce que la jointure est POLYMORPHE : `reports.subject_id` pointe trois
+   * tables selon `subject_type`, et Prisma ne sait pas joindre là-dessus. Les
+   * deux solutions en Prisma auraient été pires :
+   *
+   *   · lire TOUS les posts, sujets et commentaires du réseau puis chercher
+   *     leurs identifiants dans `reports` — c'est-à-dire charger le contenu
+   *     entier d'un réseau de 890 membres pour en retenir deux lignes ;
+   *   · lire tous les signalements ouverts de la plateforme puis les filtrer en
+   *     mémoire — une lecture qui grossit avec le trafic global, pas avec ce
+   *     réseau.
+   *
+   * La requête PART DE `reports` avec `status IN ('NEW','ATTACHED')`, qui est
+   * indexé (`reports_status_idx`), et rattache chaque ligne par `LEFT JOIN`. Le
+   * `COALESCE` des quatre `community_id` possibles est le lien dérivé décrit
+   * ci-dessus, écrit une seule fois.
+   *
+   * ── CE QUE LA REQUÊTE NE SERT PAS, ET C'EST UNE GARDE ────────────────────
+   *
+   * ⚠ NI `reporter_user_id`, NI `details`. 13 §… : le signaleur n'est jamais
+   * révélé, et `details` est du texte libre écrit par un membre sur un autre.
+   * Un modérateur bénévole n'a besoin ni de l'un ni de l'autre pour choisir
+   * entre masquer et conserver, et les servir ferait voyager une accusation
+   * nominale de plus. `count` dit combien ils sont ; rien ne dit qui.
+   *
+   * `extrait` est tronqué À 160 CARACTÈRES EN SQL : la rangée dessine une seule
+   * ligne, et faire voyager dix mille caractères de publication pour en afficher
+   * cent soixante finit toujours par être affiché quelque part.
+   *
+   * ⚠ PIÈGE PAYÉ EN ÉCRIVANT CETTE MÉTHODE : les commentaires SQL du gabarit
+   * ci-dessous ne peuvent pas porter d'accent grave. `$queryRaw` prend un
+   * TEMPLATE LITERAL, et le premier accent grave d'un commentaire le termine —
+   * TypeScript rend alors six erreurs de syntaxe à des lignes qui n'ont rien à
+   * voir (`TS1005`, `TS1443`). Le style du dépôt cite les colonnes entre accents
+   * graves ; dans un `$queryRaw`, il faut s'en passer.
+   */
+  async reports(idOrSlug: string, userId: string) {
+    const access = await this.load(idOrSlug, userId);
+    this.assertModerator(access);
+
+    const rows = await this.prisma.$queryRaw<
+      {
+        subjectType: string;
+        subjectId: string;
+        count: number;
+        reason: string;
+        lastReportedAt: Date;
+        authorUserId: string | null;
+        extrait: string;
+        hidden: boolean;
+        escalated: boolean;
+      }[]
+    >`
+      SELECT
+        r.subject_type::text                                        AS "subjectType",
+        r.subject_id                                                AS "subjectId",
+        COUNT(*)::int                                               AS "count",
+        -- Le motif du signalement le PLUS RÉCENT du groupe : c'est lui qui a
+        -- fait remonter la rangée dans la file, donc celui que le modérateur
+        -- voit arriver. La rangée n'en dessine qu'un.
+        (ARRAY_AGG(r.reason::text ORDER BY r.created_at DESC))[1]   AS "reason",
+        MAX(r.created_at)                                           AS "lastReportedAt",
+        COALESCE(p.author_user_id, t.author_user_id, c.author_user_id) AS "authorUserId",
+        COALESCE(
+          LEFT(p.body, 160),
+          -- Pour un SUJET c'est le TITRE et non le corps : la planche écrit
+          -- « Commentaire de Paul A. dans « Double nationalité » », c'est-à-dire
+          -- le titre. Un sujet a les deux ; son corps n'identifie rien.
+          t.title,
+          LEFT(c.body, 160),
+          ''
+        )                                                           AS "extrait",
+        -- DÉJÀ MASQUÉ ? Trois tables, trois façons de le dire, et il faut les
+        -- trois : un posts.status vaut HIDDEN ou REMOVED, un topics.status
+        -- ne porte pas ces valeurs (OPEN / RESOLVED / ARCHIVED) et son masquage
+        -- se lit sur deleted_at — c'est ce que deleteTopic écrit.
+        (
+          COALESCE(p.status::text IN ('HIDDEN', 'REMOVED'), FALSE)
+          OR COALESCE(c.status::text IN ('HIDDEN', 'REMOVED'), FALSE)
+          OR p.deleted_at IS NOT NULL
+          OR t.deleted_at IS NOT NULL
+          OR c.deleted_at IS NOT NULL
+        )                                                           AS "hidden",
+        -- « transmis à la modération de la plateforme » : un dossier d'équipe
+        -- non résolu existe sur ce contenu. La planche l'écrit sous la première
+        -- rangée et pas sous la seconde — les deux valeurs sont dessinées.
+        EXISTS (
+          SELECT 1 FROM moderation_cases mc
+          WHERE mc.subject_type = r.subject_type
+            AND mc.subject_id = r.subject_id
+            AND mc.status::text <> 'RESOLVED'
+        )                                                           AS "escalated"
+      FROM reports r
+      LEFT JOIN posts    p  ON r.subject_type::text = 'POST'    AND p.id  = r.subject_id
+      LEFT JOIN topics   t  ON r.subject_type::text = 'TOPIC'   AND t.id  = r.subject_id
+      LEFT JOIN comments c  ON r.subject_type::text = 'COMMENT' AND c.id  = r.subject_id
+      LEFT JOIN posts    cp ON c.subject_type::text = 'POST'    AND cp.id = c.subject_id
+      LEFT JOIN topics   ct ON c.subject_type::text = 'TOPIC'   AND ct.id = c.subject_id
+      WHERE r.status::text IN ('NEW', 'ATTACHED')
+        AND r.subject_type::text IN ('POST', 'TOPIC', 'COMMENT')
+        AND COALESCE(p.community_id, t.community_id, cp.community_id, ct.community_id)
+            = ${access.community.id}::uuid
+      GROUP BY
+        r.subject_type, r.subject_id,
+        p.author_user_id, t.author_user_id, c.author_user_id,
+        p.body, t.title, c.body,
+        p.status, c.status, p.deleted_at, t.deleted_at, c.deleted_at
+      ORDER BY MAX(r.created_at) DESC
+      LIMIT 50
+    `;
+
+    /**
+     * LES AUTEURS EN UN SEUL APPEL, et non une jointure de plus.
+     *
+     * `users` porte des colonnes chiffrées et une règle de visibilité (blocages)
+     * que `VisibilityService` applique ; les lire en SQL brut contournerait les
+     * deux. On remonte donc les identifiants et on les résout par Prisma, qui
+     * est la seule porte de ce module vers un profil.
+     */
+    const authorIds = [
+      ...new Set(rows.map((r) => r.authorUserId).filter((id): id is string => id !== null)),
+    ];
+    const authors =
+      authorIds.length === 0
+        ? []
+        : await this.prisma.user.findMany({
+            where: { id: { in: authorIds } },
+            select: { id: true, handle: true, displayName: true },
+          });
+    const parHandle = new Map(authors.map((a) => [a.id, a]));
+
+    return {
+      items: rows.map((r) => ({
+        subjectType: r.subjectType as 'POST' | 'COMMENT' | 'TOPIC',
+        subjectId: r.subjectId,
+        reason: r.reason,
+        count: r.count,
+        author: r.authorUserId === null ? null : parHandle.get(r.authorUserId) ?? null,
+        extrait: r.extrait,
+        hidden: r.hidden,
+        escalated: r.escalated,
+        lastReportedAt: r.lastReportedAt,
+      })),
+      /**
+       * `nextCursor` TOUJOURS NUL, et dit plutôt que sous-entendu : le
+       * regroupement se fait en SQL et un curseur sur une agrégation exigerait
+       * une clé de tri stable qu'aucune colonne ne porte. L'écran ne doit donc
+       * pas dessiner un « charger la suite » qui ne chargerait jamais rien.
+       */
+      nextCursor: null,
+      /**
+       * LE NOMBRE QUE LA PLANCHE AFFICHE TROIS FOIS — « SIGNALEMENTS · 2 », la
+       * tuile « 2 signalements ouverts », la pastille du rail. Compté par le
+       * serveur, et c'est tout l'objet de ce `meta` : `items.length` sur une page
+       * bornée à cinquante serait un compte FAUX affiché comme un compte, ce que
+       * cette maquette a déjà payé quatre fois sur « DEMANDES D'ADHÉSION · 4 ».
+       *
+       * Il compte des CONTENUS et non des signalements : c'est ce que la rangée
+       * représente, et « 2 » sur la planche désigne bien deux contenus.
+       */
+      meta: { open: rows.length },
+    };
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « MASQUER » ET « CONSERVER » — LES DEUX DÉCISIONS, ET RIEN DE PLUS      ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * `POST /communities/:id/reports/decide`.
+   *
+   * ⚠ LA LIMITE DE POUVOIR EST DANS CE QUE CETTE MÉTHODE NE SAIT PAS FAIRE.
+   * §2.4 : « Ils ne peuvent pas suspendre un compte — ils SIGNALENT à l'équipe. »
+   * Il n'y a donc ici aucun chemin vers `users`, aucune sanction, aucun
+   * `ModerationAction` — seulement deux écritures sur du CONTENU. Un modérateur
+   * bénévole qui veut qu'un COMPTE soit traité passe par
+   * `ModerationService.reportAsVolunteerModerator`, qui existe et escalade la
+   * priorité (13 §6). Cette méthode ne lui donne rien de plus.
+   *
+   * ── « MASQUER » : CE QUI EXISTAIT DÉJÀ, ET CE QUI MANQUAIT ───────────────
+   *
+   * Vérifié avant d'écrire : masquer un SUJET était faisable
+   * (`deleteTopic`, `PATCH /topics/:id`), masquer une PUBLICATION du réseau ne
+   * l'était pas. `FeedService.deletePost` exige l'AUTEUR (`ownedPost`), et
+   * `handleContentHidden` n'est qu'un consommateur d'événement du module 13 —
+   * aucune route membre ne l'atteint. Les commentaires n'avaient rien non plus.
+   * Les trois sont donc écrits ici, du même geste.
+   *
+   * ── MASQUER, JAMAIS SUPPRIMER (13 §2) ───────────────────────────────────
+   *
+   * « Le pipeline masque, il ne supprime jamais. » Un post passe
+   * `status = HIDDEN` + `moderationStatus = FLAGGED` — exactement ce que
+   * `FeedService.handleContentHidden` écrit quand l'équipe décide, et c'est
+   * voulu : deux façons de masquer la même chose divergeraient, et les listes du
+   * fil filtrent déjà `status = PUBLISHED`. Un sujet passe par `deletedAt`,
+   * parce que `TopicStatus` ne porte pas `HIDDEN` et que c'est ce que
+   * `deleteTopic` écrit déjà.
+   *
+   * ── LES DEUX DÉCISIONS CLOSENT LES SIGNALEMENTS, ET PAS DU MÊME MOT ──────
+   *
+   *   · `HIDE`  → `RESOLVED` : le signalement a abouti ;
+   *   · `KEEP`  → `DISMISSED` : il est classé sans suite.
+   *
+   * ⚠ ET CE MOT A UNE CONSÉQUENCE AILLEURS, qu'il faut connaître : §3 du module
+   * 13 rétrograde les signalements d'un membre dont « 10 signalements consécutifs
+   * sont classés DISMISSED » (`ModerationService.dismissedStreak`). Un
+   * modérateur de réseau qui conserve un contenu pèse donc sur la réputation du
+   * signaleur. C'est le mécanisme voulu — un signalement abusif doit coûter —
+   * mais il est écrit ici pour que personne ne le découvre par surprise.
+   *
+   * ⚠ LE DOSSIER D'ÉQUIPE N'EST PAS TOUCHÉ. Si l'équipe a ouvert un
+   * `ModerationCase` sur ce contenu (`escalated`), elle garde la main : un
+   * modérateur bénévole ne clôt pas un dossier d'équipe, et §2.4 ne lui en donne
+   * pas le droit. Il masque le contenu DANS SON RÉSEAU, et la décision de
+   * l'équipe reste à venir.
+   */
+  async decideReport(
+    idOrSlug: string,
+    userId: string,
+    input: { subjectType: 'POST' | 'COMMENT' | 'TOPIC'; subjectId: string; decision: 'HIDE' | 'KEEP' },
+  ) {
+    const access = await this.load(idOrSlug, userId);
+    this.assertModerator(access);
+    this.assertWritable(access);
+
+    /**
+     * LE CONTENU DOIT APPARTENIR À CE RÉSEAU, et c'est vérifié AVANT tout le
+     * reste. Sans ce contrôle, un modérateur d'un réseau quelconque pourrait
+     * masquer la publication d'un autre réseau — ou du fil global — en envoyant
+     * son identifiant. C'est la même fuite entre réseaux que `load()` referme
+     * sur la lecture, et elle doit être refermée sur l'écriture.
+     */
+    const dansLeReseau = await this.subjectInCommunity(
+      input.subjectType,
+      input.subjectId,
+      access.community.id,
+    );
+    if (!dansLeReseau) this.fail('REPORT_NOT_IN_COMMUNITY');
+
+    const ouverts = await this.prisma.report.findMany({
+      where: {
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        status: { in: ['NEW', 'ATTACHED'] },
+      },
+      select: { id: true },
+    });
+    /**
+     * `premier` plutôt que `ouverts[0]` dans la ligne d'audit : avec
+     * `noUncheckedIndexedAccess`, un accès par index rend `T | undefined`, et
+     * `exactOptionalPropertyTypes` interdit de passer cet `undefined` à un
+     * `targetId?: string`. La garde ci-dessous le prouve au compilateur une fois
+     * pour toutes, au lieu d'un `!` qui mentirait.
+     */
+    const premier = ouverts[0];
+    if (premier === undefined) this.fail('REPORT_ALREADY_DECIDED');
+
+    let hidden = false;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (input.decision === 'HIDE') {
+        if (input.subjectType === 'POST') {
+          await tx.post.updateMany({
+            where: { id: input.subjectId },
+            data: { status: 'HIDDEN', moderationStatus: 'FLAGGED' },
+          });
+        } else if (input.subjectType === 'COMMENT') {
+          // `comments` n'a PAS de `moderation_status` (schéma figé) : le masquage
+          // s'y lit uniquement sur `status`. Déjà relevé par `FeedService`.
+          await tx.comment.updateMany({
+            where: { id: input.subjectId },
+            data: { status: 'HIDDEN' },
+          });
+        } else {
+          await tx.topic.updateMany({
+            where: { id: input.subjectId, deletedAt: null },
+            data: { deletedAt: new Date() },
+          });
+        }
+        hidden = true;
+      }
+
+      await tx.report.updateMany({
+        where: { id: { in: ouverts.map((r) => r.id) } },
+        data: { status: input.decision === 'HIDE' ? 'RESOLVED' : 'DISMISSED' },
+      });
+
+      // §2.4, dernière phrase : « Toute action de modération de réseau est
+      // journalisée (`audit_logs`, `actor_type = MEMBER`). » Les DEUX décisions
+      // le sont, y compris « Conserver » : classer cinq signalements sans suite
+      // est un acte de modération, et c'est celui qu'on voudra pouvoir relire le
+      // jour où le contenu conservé posera problème.
+      await this.audit.record(tx, {
+        actor: { type: 'MEMBER', id: userId },
+        action: input.decision === 'HIDE' ? 'community.report_hidden' : 'community.report_kept',
+        targetType: 'report',
+        targetId: premier.id,
+        metadata: {
+          communityId: access.community.id,
+          subjectType: input.subjectType,
+          subjectId: input.subjectId,
+          reports: ouverts.length,
+        },
+      });
+
+      if (input.decision === 'HIDE') {
+        /**
+         * L'ÉVÉNEMENT EST ÉMIS POUR LES AUTRES MODULES, pas pour appliquer le
+         * masquage — celui-ci vient d'être écrit juste au-dessus, dans la même
+         * transaction. `search` doit désindexer, et un consommateur qui
+         * rejouerait `handleContentHidden` reposerait les mêmes valeurs
+         * (idempotent par construction, dit son en-tête).
+         */
+        await this.outbox.emit(tx, {
+          type: 'moderation.content_hidden',
+          aggregateId: input.subjectId,
+          payload: {
+            subjectType: input.subjectType,
+            subjectId: input.subjectId,
+            byUserId: userId,
+            communityId: access.community.id,
+            source: 'COMMUNITY_MODERATOR',
+          },
+        });
+      }
+    });
+
+    return {
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      decision: input.decision,
+      closed: ouverts.length,
+      hidden,
+    };
+  }
+
+  /**
+   * Le contenu signalé appartient-il à CE réseau ?
+   *
+   * C'est la dérivation décrite en tête de section, écrite en Prisma plutôt
+   * qu'en SQL parce qu'elle ne regarde qu'UNE ligne : la jointure polymorphe qui
+   * justifiait le SQL brut de `reports()` n'a pas lieu d'être ici.
+   *
+   * ⚠ UN CONTENU DÉJÀ MASQUÉ RESTE « DANS LE RÉSEAU ». On ne filtre ni
+   * `deletedAt` ni `status` : « Conserver » doit rester possible sur un contenu
+   * que l'équipe vient de masquer — sinon ses signalements resteraient ouverts
+   * pour toujours dans la file du réseau, et le compteur « SIGNALEMENTS · N »
+   * ne redescendrait jamais.
+   */
+  private async subjectInCommunity(
+    subjectType: 'POST' | 'COMMENT' | 'TOPIC',
+    subjectId: string,
+    communityId: string,
+  ): Promise<boolean> {
+    if (subjectType === 'POST') {
+      const post = await this.prisma.post.findFirst({
+        where: { id: subjectId, communityId },
+        select: { id: true },
+      });
+      return post !== null;
+    }
+    if (subjectType === 'TOPIC') {
+      const topic = await this.prisma.topic.findFirst({
+        where: { id: subjectId, communityId },
+        select: { id: true },
+      });
+      return topic !== null;
+    }
+
+    const comment = await this.prisma.comment.findUnique({
+      where: { id: subjectId },
+      select: { subjectType: true, subjectId: true },
+    });
+    if (comment === null) return false;
+    // Un commentaire de STORY ou de tout autre sujet n'est jamais dans un
+    // réseau : la récursion s'arrête aux deux seuls genres qui en portent un.
+    if (comment.subjectType !== 'POST' && comment.subjectType !== 'TOPIC') return false;
+    return this.subjectInCommunity(comment.subjectType, comment.subjectId, communityId);
+  }
+
   // ══ POST /communities/:id/reactivate (§2.2, §4) ═══════════════════════════
 
   async reactivate(idOrSlug: string, userId: string) {
@@ -2169,7 +3418,16 @@ export class CommunitiesService {
         where: { id: access.community.id },
         // `lastActivityAt` remis à maintenant : sans cela, la tâche
         // d'archivage rendormirait le réseau à son prochain passage.
-        data: { status: 'ACTIVE', archivedAt: null, lastActivityAt: new Date() },
+        //
+        // `warningSentAt` remis à null pour la même raison, et ce n'est pas du
+        // zèle : sans cela, un réseau réactivé puis rendormi serait archivé
+        // SANS AVERTISSEMENT — la tâche croirait l'avoir déjà envoyé.
+        data: {
+          status: 'ACTIVE',
+          archivedAt: null,
+          lastActivityAt: new Date(),
+          warningSentAt: null,
+        },
       });
       await this.audit.record(tx, {
         actor: { type: 'MEMBER', id: userId },
@@ -2228,20 +3486,99 @@ export class CommunitiesService {
       });
     }
 
-    // L'avertissement à 45 jours est IDENTIFIÉ mais pas notifié : §3 prévoit
-    // `communities.warning_sent_at` pour ne prévenir qu'une fois, et cette
-    // colonne n'existe pas dans le schéma figé. Sans elle, la tâche quotidienne
-    // enverrait le même avertissement quinze jours de suite. Voir le rapport.
-    const warned = await this.prisma.community.findMany({
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ L'AVERTISSEMENT À 45 JOURS — IL ÉTAIT IDENTIFIÉ, IL EST MAINTENANT     ║
+     * ║ ENVOYÉ                                                                 ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * §2.2 : « Le propriétaire reçoit un avertissement à 45 jours. » §7 le met
+     * dans CETTE tâche : « quotidienne — avertissement à 45 jours, archivage à
+     * 60 ». Cette moitié ne faisait rien : elle relevait la liste et la rendait,
+     * et personne n'était prévenu. La cause était nommée ici même —
+     * `communities.warning_sent_at` manquait — et la colonne existe désormais
+     * (migration `reseaux_sourdine_inviteur_avertissement`).
+     *
+     * ── `warningSentAt: null` EST LA MOITIÉ DU FILTRE, PAS UNE PRÉCAUTION ───
+     *
+     * La tâche passe CHAQUE JOUR, et la fenêtre d'avertissement dure QUINZE
+     * jours (du 45e au 60e). Sans ce filtre, le propriétaire recevrait le même
+     * avertissement quinze fois — et §2.3 vient justement de nous apprendre
+     * qu'on ne noie pas les membres de notifications. L'horodatage est écrit
+     * dans la même transaction que l'émission : les deux vivent ou meurent
+     * ensemble, et un plantage entre les deux ferait au pire un avertissement
+     * de plus, jamais un avertissement perdu.
+     *
+     * Il est remis à `null` par `touch()` et par `reactivate()` : un réseau qui
+     * reprend puis se rendort est prévenu de nouveau. Voir leur note.
+     *
+     * ── UN ÉVÉNEMENT, PAS UN APPEL À `notifications` ────────────────────────
+     *
+     * 00 §3.3 interdit l'appel direct d'un module à un autre. On émet donc
+     * `community.archive_warning` et c'est `notifications` qui prévient — le
+     * même chemin que `community.archived` juste au-dessus. ⚠ L'ABONNEMENT EST
+     * À POSER dans `event-subscriptions.service.ts` et le gestionnaire dans
+     * `notifications.events.ts` : sans eux l'événement part au relais et
+     * personne ne le lit. C'est fait dans ce lot ; dit ici pour que la prochaine
+     * lecture n'ait pas à le chercher.
+     *
+     * ── UNE LIGNE D'AUDIT, `actor_type = SYSTEM` ────────────────────────────
+     *
+     * Comme l'archivage juste au-dessus : ce n'est l'action de personne, c'est
+     * celle de la tâche. Elle dit QUAND le propriétaire a été prévenu, ce qui
+     * est la seule défense contre « je n'ai jamais reçu d'avertissement » le
+     * jour où un réseau est archivé.
+     */
+    const toWarn = await this.prisma.community.findMany({
       where: {
         kind: 'INTEREST',
         status: 'ACTIVE',
         lastActivityAt: { lt: warnBefore, gte: archiveBefore },
+        warningSentAt: null,
       },
-      select: { id: true },
+      select: { id: true, slug: true, createdByUserId: true, lastActivityAt: true },
     });
 
-    return { archived: stale.map((c) => c.id), warned: warned.map((c) => c.id) };
+    for (const community of toWarn) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.community.update({
+          where: { id: community.id },
+          data: { warningSentAt: now },
+        });
+        await this.audit.record(tx, {
+          actor: { type: 'SYSTEM' },
+          action: 'community.archive_warned',
+          targetType: 'community',
+          targetId: community.id,
+          metadata: {
+            days: COMMUNITY_ARCHIVE_WARNING_AFTER_DAYS,
+            archiveAfterDays: COMMUNITY_ARCHIVE_AFTER_DAYS,
+          },
+        });
+        await this.outbox.emit(tx, {
+          type: 'community.archive_warning',
+          aggregateId: community.id,
+          payload: {
+            communityId: community.id,
+            slug: community.slug,
+            ownerUserId: community.createdByUserId,
+            /**
+             * LE NOMBRE DE JOURS QUI RESTENT, et non la date d'archivage : c'est
+             * la phrase que `notifications` écrira (« il sera archivé dans N
+             * jours »), et la calculer là-bas obligerait ce module à y exporter
+             * ses deux seuils.
+             */
+            daysLeft: Math.max(
+              0,
+              COMMUNITY_ARCHIVE_AFTER_DAYS -
+                Math.floor((now.getTime() - community.lastActivityAt.getTime()) / DAY_MS),
+            ),
+          },
+        });
+      });
+    }
+
+    return { archived: stale.map((c) => c.id), warned: toWarn.map((c) => c.id) };
   }
 
   /** `community.topic_archive` — quotidienne : 90 jours sans réponse (§2.3, §7). */

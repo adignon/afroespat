@@ -1,31 +1,28 @@
-'use client';
-
-import { ScreenFrames } from '@/screens/frames';
-import { A05Desktop } from '@/screens/a05/desktop.generated';
-import { A05Mobile } from '@/screens/a05/mobile.generated';
-import { mdTools, rules, type A05Data } from '@/screens/a05/data';
-import { GardeNiveau } from '@/components/garde-niveau';
+import { EditeurGuideEcran } from '@/screens/guides/editeur-guide-ecran';
 
 /**
- * A05 — l'éditeur de guide. `/guides/nouveau`
+ * A05 — l'éditeur de guide, ÉCRITURE D'UN GUIDE NEUF. `/guides/nouveau`
  *
- * `direction="column"` : la maquette met `flex-direction: column` dans le conteneur
- * du cadre, que le générateur retire parce qu'il portait aussi la taille fixe. C'est
- * le SEUL cadre d'ordinateur de cette maquette en colonne — tous les autres ont le
- * rail à gauche — et sans cette bascule la barre d'outils se retrouve à côté du
- * corps du guide au lieu d'être au-dessus.
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE QUI A CHANGÉ ICI, ET CE QUI N'A PAS CHANGÉ DU TOUT                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Cette page portait tout l'écran : une trentaine de prises reliant
+ * `use-editeur-guide` aux deux cadres transcodés, plus les deux aperçus et la
+ * fenêtre de confirmation du retrait d'une page. Depuis que l'éditeur s'ouvre
+ * AUSSI sur un guide existant (`/guides/:slug/modifier`), ce corps est descendu
+ * dans `screens/guides/editeur-guide-ecran.tsx` : les deux adresses montent LE
+ * MÊME écran, et une copie serait devenue fausse au premier changement de l'une.
+ *
+ * ⚠ LE COMPORTEMENT DE CETTE ADRESSE EST INCHANGÉ, et c'est la non-régression la
+ * plus importante du lot : `{ kind: 'nouveau' }` est le mode par défaut du
+ * crochet, les deux effets ajoutés pour la reprise sortent à leur première ligne
+ * dans ce mode, et le dessin est le même objet transcodé. Rien n'est conditionné
+ * ici : la page ne fait plus que nommer son mode.
+ *
+ * Elle reste un composant CLIENT par ce qu'elle monte — `EditeurGuideEcran` porte
+ * son propre `'use client'` —, et elle n'a aucun paramètre d'adresse à lire.
  */
 export default function NouveauGuidePage() {
-  const data: A05Data = { mdTools, rules };
-  return (
-    <>
-    <ScreenFrames
-      screen="A05"
-      direction="column"
-      desktop={<A05Desktop {...data} />}
-      mobile={<A05Mobile {...data} />}
-    />
-      <GardeNiveau capacite="guide.write" />
-    </>
-  );
+  return <EditeurGuideEcran mode={{ kind: 'nouveau' }} />;
 }

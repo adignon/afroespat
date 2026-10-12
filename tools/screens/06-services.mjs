@@ -900,6 +900,22 @@ export const screens = [
    */
   page$({
     section: 'S01',
+    /**
+     * LA CARTE SORT DE SON CADRE — voir `composants` sur A01 pour le pourquoi.
+     *
+     * Le porteur : « pour tous les tabs il reprend le design des éléments
+     * présentés de la façon dont ils sont présentés sur les pages d'origine ».
+     * Le profil public monte donc CETTE carte-ci, pas une copie.
+     */
+    composants: [
+      {
+        nom: 'CarteAnnonce',
+        depuis: 'liste.annonces',
+        as: 'a',
+        type: 'CarteAnnonce',
+        cadres: ['Desktop', 'Mobile'],
+      },
+    ],
     out: 's01',
     type: 'S01Data',
     frames: [

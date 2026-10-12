@@ -35,7 +35,24 @@ export function CadreCliquable({ vers, style, children }: {
   return (
     <Link
       href={vers}
-      style={{ ...style, display: 'block', textDecoration: 'none', color: 'inherit' }}
+      style={{
+        ...style,
+        /**
+         * ── LE `display` DESSINÉ GAGNE ────────────────────────────────────
+         *
+         * `block` était posé en dur, et c'était juste tant que ce composant ne
+         * servait qu'aux cartes de recherche, qui n'en déclarent pas. Les cartes
+         * de guide, d'événement, d'annonce et de parcours, elles, sont des
+         * colonnes ou des rangées `flex` : leur imposer `block` écraserait la
+         * mise en page que la maquette a dessinée.
+         *
+         * `block` reste le repli, parce qu'un `<a>` est inline par défaut et
+         * qu'une carte inline s'effondre sur son contenu.
+         */
+        display: style.display ?? 'block',
+        textDecoration: 'none',
+        color: 'inherit',
+      }}
       data-cadre-cliquable={vers}
     >
       {children}

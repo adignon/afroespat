@@ -438,25 +438,147 @@ const PASTILLE_FILTRE = (fond, couleur, bord, texte) =>
 const ACTIVE = ['#16785E', '#fff', '#16785E'];
 const INACTIVE = ['#fff', '#16211D', '#E6EBE9'];
 
-const filtresDuFil = (actif) => {
-  const etat = (nom) => (nom === actif ? ACTIVE : INACTIVE);
-  return [
-    {
-      noeud: PASTILLE_FILTRE(...etat('toutes'), 'Toutes · 41'),
-      devient: PASTILLE_FILTRE(...etat('toutes'), 'Toutes · {{ compteurs.ouvertes }}'),
-      fois: 1,
-      frames: ['Mobile'],
-      why: 'La pastille « Toutes » du cadre mobile porte le même `meta.open` de `GET /help` que la pastille du rail d’ordinateur.',
-    },
-    {
-      noeud: PASTILLE_FILTRE(...etat('aider'), 'Vous pouvez aider · 4'),
-      devient: PASTILLE_FILTRE(...etat('aider'), 'Vous pouvez aider · {{ compteurs.pouvezAider }}'),
-      fois: 1,
-      frames: ['Mobile'],
-      why: 'La pastille « Vous pouvez aider » du cadre mobile compte les suggestions de `GET /help/can-help` — le même nombre que le rail.',
-    },
-  ];
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES SIX FILTRES DU FIL D'ENTRAIDE ÉTAIENT SIX DESSINS                     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Rends aussi la page, les filtres etc. dynamique. »
+ *
+ * « Tout · Démarches · Service · Trajet · Matériel · Autre » sont des `<span>` —
+ * zéro geste, et « Tout » peint en vert pour tout le monde. `helpListQuerySchema`
+ * accepte pourtant `type` depuis le premier jour : il ne manquait que la boucle
+ * et le clic.
+ *
+ * Le gabarit est la pastille d'onglet du produit, celle des enregistrés et des
+ * filtres de notification — mêmes six valeurs, mêmes deux variantes.
+ */
+const PASTILLE_TYPE_H01 = (fond, encre, trait, libelle) =>
+  '<span style="padding:8px 13px;border-radius:999px;font-size:12.5px;font-weight:700;' +
+  `white-space:nowrap;background:${fond};color:${encre};border:1px solid ${trait}">${libelle}</span>`;
+
+const TYPES_DESSINES = ['Démarches', 'Service', 'Trajet', 'Matériel', 'Autre'];
+
+const FILTRES_TYPE_H01 = {
+  noeud:
+    PASTILLE_TYPE_H01('#16785E', '#fff', '#16785E', 'Tout') +
+    TYPES_DESSINES.map((t) => PASTILLE_TYPE_H01('#fff', '#16211D', '#E6EBE9', t)).join(''),
+  devient:
+    '<sc-for list="{{ typesDemande }}" as="ty">' +
+    PASTILLE_TYPE_H01('{{ ty.fond }}', '{{ ty.texte }}', '{{ ty.bord }}', '{{ ty.libelle }}') +
+    '</sc-for>',
+  fois: 1,
+  frames: ['Desktop'],
+  why: 'Les six filtres de type du fil d’entraide — `helpListQuerySchema.type` les accepte, et aucun n’était cliquable.',
 };
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA MÊME RANGÉE DE TYPES À 390 px — ELLE ÉTAIT RESTÉE UN DESSIN             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur l'a redemandé plusieurs fois : CHAQUE CORRECTION PREND SUR LES DEUX
+ * PLANCHES. Le lot précédent a rendu les six filtres de type cliquables à 1440 px
+ * et a laissé la rangée de 390 px en `<span>` — « Tout » peint en vert pour tout le
+ * monde, et quatre pastilles qui ne filtrent rien. C'est exactement le défaut que
+ * ce lot répare sur les pastilles de portée ; le réparer d'un côté seulement en
+ * aurait laissé un second juste à côté.
+ *
+ * ── ÉCART CONSIGNÉ : LA PLANCHE DE 390 px N'EN DESSINE QUE CINQ ─────────────
+ *
+ * Elle écrit « Tout · Démarches · Service · Trajet · Matériel » et S'ARRÊTE LÀ —
+ * « Autre » n'y est pas, compté sur les octets. La boucle, elle, rend les SIX
+ * valeurs que `TYPES_FIL` porte, parce que c'est une seule liste de données pour
+ * les deux cadres et que `HELP_REQUEST_TYPES` en compte cinq plus « Tout ».
+ *
+ * La conséquence est dite plutôt que masquée : à 390 px, une sixième pastille
+ * « Autre » apparaît là où la planche n'en dessine que cinq. La rangée est en
+ * `flex-wrap`, donc elle passe à la ligne sans rien déplacer. L'autre choix aurait
+ * été de BORNER la boucle mobile à cinq types, c'est-à-dire de rendre « Autre »
+ * injoignable au téléphone — un type de demande que le serveur accepte et que la
+ * moitié des membres ne pourrait pas filtrer. Entre une pastille de plus que la
+ * planche et un filtre inatteignable, on prend la pastille. REMONTÉ au porteur.
+ */
+const FILTRES_TYPE_H01_MOBILE = {
+  noeud:
+    PASTILLE_TYPE_H01('#16785E', '#fff', '#16785E', 'Tout') +
+    TYPES_DESSINES.slice(0, 4)
+      .map((t) => PASTILLE_TYPE_H01('#fff', '#16211D', '#E6EBE9', t))
+      .join(''),
+  devient: FILTRES_TYPE_H01.devient,
+  fois: 1,
+  frames: ['Mobile'],
+  why: 'Les filtres de type du cadre de 390 px — ils étaient restés des <span>, « Tout » peint en vert pour tout le monde. La boucle rend les SIX valeurs là où la planche en dessine cinq : « Autre » serait sinon injoignable au téléphone.',
+};
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES CINQ PASTILLES DE PORTÉE ÉTAIENT DEUX NOMBRES JUSTES SOUS DES SPANS    ║
+ * ║ MORTS                                                                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Intègre donc. »
+ *
+ * CE QUE LA VERSION PRÉCÉDENTE DE CETTE FABRIQUE FAISAIT, et pourquoi ce n'était
+ * qu'une moitié : elle déclarait DEUX ancres — la première et la deuxième pastille —
+ * pour y poser `compteurs.ouvertes` et `compteurs.pouvezAider`. Les nombres
+ * devenaient donc vrais, et le `<span>` qui les portait restait un `<span>`. C'est
+ * le pire des deux états : un nombre juste sous un contrôle mort donne à croire
+ * que la pastille fonctionne, et le porteur a cliqué dessus.
+ *
+ * LA RANGÉE DEVIENT DONC UNE BOUCLE, d'un seul coup, pour ses cinq pastilles — le
+ * même remontage que `FILTRES_TYPE_H01` fait un cran plus bas dans le même écran,
+ * et c'est le vocabulaire que cette planche parle déjà. Les deux compteurs ne
+ * disparaissent pas : ils entrent dans le LIBELLÉ (« Toutes · 41 »), composé dans
+ * `entraide/appels.ts` à partir des mêmes `meta.open` et longueur de
+ * `GET /help/can-help`. Un compteur dans un libellé est une donnée exactement
+ * comme un compteur dans son propre nœud ; ce qui change, c'est qu'il voyage
+ * maintenant avec la prise qui le rend cliquable.
+ *
+ * ── DEUX CADRES, DEUX LONGUEURS DE RANGÉE, ET C'EST COMPTÉ ──────────────────
+ *
+ * H01 en dessine CINQ (« Toutes », « Vous pouvez aider », « Mes demandes »,
+ * « Mes réponses », « Parrainage ») dans une rangée qui défile ; H04 n'en dessine
+ * que TROIS, et s'arrête à « Mes demandes ». Relevé sur les octets de la maquette,
+ * pas supposé — et `fois: 1` le recompte à chaque génération : une ancre de cinq
+ * pastilles posée sur H04 ne s'y trouve pas et ARRÊTE la génération.
+ *
+ * LA PASTILLE TEINTÉE N'EST PAS LA MÊME NON PLUS : H01 teinte « Toutes », H04
+ * teinte « Vous pouvez aider ». Le fond, la couleur et la bordure font partie de
+ * l'ancre, donc l'argument `actif` ne décore rien — il décide des octets cherchés.
+ *
+ * ── LES TROIS DERNIÈRES PASTILLES NE PORTENT AUCUN NOMBRE ───────────────────
+ *
+ * Et c'est la maquette qui le décide : « Mes demandes », « Mes réponses » et
+ * « Parrainage » sont dessinées sans compteur. H09 et H10 en comptent bien un dans
+ * leur sous-titre d'ordinateur ; l'écrire ici demanderait d'ajouter du dessin que
+ * la planche ne fait pas.
+ */
+const PORTEES_DESSINEES = [
+  ['toutes', 'Toutes · 41'],
+  ['aider', 'Vous pouvez aider · 4'],
+  ['mes-demandes', 'Mes demandes'],
+  ['mes-reponses', 'Mes réponses'],
+  ['parrainage', 'Parrainage'],
+];
+
+const porteesDuFil = (actif, combien) => ({
+  noeud: PORTEES_DESSINEES.slice(0, combien)
+    .map(([cle, texte]) => PASTILLE_FILTRE(...(cle === actif ? ACTIVE : INACTIVE), texte))
+    .join(''),
+  devient:
+    '<sc-for list="{{ portees }}" as="p">' +
+    PASTILLE_FILTRE('{{ p.fond }}', '{{ p.texte }}', '{{ p.bord }}', '{{ p.libelle }}') +
+    '</sc-for>',
+  fois: 1,
+  frames: ['Mobile'],
+  why:
+    `Les ${String(combien)} pastilles de PORTÉE du cadre de 390 px, en une boucle : « Toutes » lit ` +
+    '`GET /help`, « Vous pouvez aider » lit `GET /help/can-help`, et les autres mènent aux mêmes ' +
+    'adresses que le panneau de gauche du cadre de 1440 px. Les deux compteurs (`meta.open` et la ' +
+    'longueur de `can-help`) entrent dans le libellé. Elles étaient des <span> : pas des liens ' +
+    'cassés, PAS des contrôles.',
+});
 
 /**
  * ─── H02 · UNE RÉPONSE À UNE DEMANDE, ÉCRITE UNE FOIS ───────────────────────
@@ -526,6 +648,315 @@ const PASTILLE_A_MARQUER =
 /** Les six sections dont le cadre mobile dessine la barre d'onglets basse. */
 const BARRE_BASSE_ENTRAIDE = new Set(['H01', 'H04', 'H05', 'H07', 'H09', 'H10']);
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ H01 · LE FIL D'ENTRAIDE ÉTAIT TROIS CARTES ÉCRITES EN DUR                 ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Corrige l'entraide. »
+ *
+ * MESURÉ : ZÉRO boucle dans les deux cadres de H01, et le composant ne lisait
+ * que `compteurs`, `moi`, `reputation` et `ville`. Les trois demandes —
+ * « Accompagner un RDV préfecture jeudi », « Un lit et une table pour
+ * l'installation », « Covoiturage Lyon → Grenoble samedi » — étaient le dessin
+ * de la maquette, servi à tout le monde. C'est le même défaut que les contacts
+ * de K05, et il se corrige de la même façon : par déclaration.
+ *
+ * ── LA MAQUETTE DESSINE TROIS ÉTATS, PAS TROIS DEMANDES ─────────────────────
+ *
+ * C'est ce qui rend la boucle délicate, et c'est aussi ce qui la rend juste :
+ *
+ *   1. UNE DEMANDE ORDINAIRE — fond blanc, trait gris, pastille de catégorie,
+ *      auteur, « N réponses », bouton « Répondre » ;
+ *   2. UNE DEMANDE ISSUE D'UN PARCOURS — fond `#FFFBF8`, trait terre cuite de
+ *      1,5 px, pastille « Depuis un parcours » EN PLUS, et une ligne d'étape
+ *      (« Étape 7 · Logement · parcours Études »). Le bouton reprend la teinte ;
+ *   3. UNE DEMANDE RÉSOLUE — fond `#F6F8F7`, pastilles grises, titre grisé,
+ *      AUCUN bouton, et à la place l'encart vert « … a été marquée "ça m'a
+ *      aidé" — contact créé ».
+ *
+ * Les trois tiennent dans UN gabarit : ce qui change de couleur est une donnée,
+ * ce qui apparaît ou disparaît est un `<sc-if>`. Les écrire en trois boucles
+ * aurait figé l'ordre que la maquette donne à ses exemples.
+ *
+ * ── CE QUE LE SERVEUR DONNE, ET CE QU'IL NE DONNE PAS ───────────────────────
+ *
+ * `GET /help` rend le titre, la catégorie, l'état, l'auteur et le nombre de
+ * réponses. ⚠ IL NE REND PAS la provenance « parcours » sous la forme que la
+ * maquette dessine : `helpRequestCardSchema` porte `journeyStepTitle`, mais pas
+ * le NOM du parcours (« parcours Études »). La ligne d'étape est donc composée
+ * de ce qui existe, et le manque est REMONTÉ plutôt que comblé.
+ */
+const PASTILLE_H01 = (fond, encre, texte) =>
+  `<span style="background:${fond};color:${encre};font-size:11px;font-weight:700;` +
+  `padding:4px 10px;border-radius:999px;white-space:nowrap">${texte}</span>`;
+
+const SIGNET_H01 =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" ' +
+  'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>';
+
+const COCHE_H01 =
+  '<svg width="12" height="12" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10"/>' +
+  '<path d="m8 12 3 3 5-6" stroke="#fff" stroke-width="2.2" fill="none"/></svg>';
+
+/** Le pied d'une demande ouverte : auteur, niveau, nombre de réponses, « Répondre ». */
+const PIED_DEMANDE = (fondAvatar, initiales, auteur, phase, reponses, fondBouton) =>
+  '<div style="display:flex;align-items:center;gap:10px;margin-top:14px">' +
+  `<span style="width:28px;height:28px;border-radius:999px;background:${fondAvatar};color:#fff;` +
+  'font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;' +
+  `flex-shrink:0;">${initiales}</span>` +
+  `<span style="font-size:12.5px;font-weight:700">${auteur}</span>${COCHE_H01}` +
+  `<span style="font-size:12px;color:#8A958F">${phase}</span><span style="flex:1"></span>` +
+  `<span style="font-size:12.5px;color:#5D6B66">${reponses}</span>` +
+  '<button style="height:44px;padding:0 18px;border-radius:14px;background:' +
+  `${fondBouton};color:#fff;border:none;font:inherit;font-size:13.5px;font-weight:700;` +
+  'display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;' +
+  'flex-shrink:0;height:38px">Répondre</button></div>';
+
+/**
+ * UNE CARTE DE DEMANDE, telle que la maquette la dessine trois fois.
+ *
+ * Tout ce qui varie est un paramètre ; `avant` et `apres` portent les blocs que
+ * seules certaines variantes montrent — la pastille « Depuis un parcours », la
+ * ligne d'étape, le pied ou l'encart de résolution.
+ */
+const CARTE_DEMANDE = ({
+  fond,
+  trait,
+  avantCategorie = '',
+  pastilleFond,
+  pastilleEncre,
+  categorie,
+  /** La pastille d'ÉTAT — « Résolue » — que seule la variante close porte. */
+  apresCategorie = '',
+  delai,
+  etape = '',
+  titreCouleur,
+  titre,
+  extrait,
+  pied,
+}) =>
+  `<div style="background:${fond};border:${trait};border-radius:22px;padding:18px;flex-shrink:0">` +
+  '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
+  avantCategorie +
+  PASTILLE_H01(pastilleFond, pastilleEncre, categorie) +
+  apresCategorie +
+  '<span style="flex:1"></span>' +
+  `<span style="font-size:12px;color:#8A958F">${delai}</span>${SIGNET_H01}</div>` +
+  etape +
+  '<div style="font-size:16px;font-weight:700;letter-spacing:-0.2px;margin-top:10px;' +
+  `${titreCouleur}">${titre}</div>` +
+  '<p style="margin:6px 0 0;font-size:13.5px;line-height:1.55;color:#5D6B66;' +
+  'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' +
+  `${extrait}</p>` +
+  pied +
+  '</div>';
+
+/** La ligne « Étape 7 · Logement · parcours Études », que seule la variante parcours porte. */
+const LIGNE_ETAPE = (texte) =>
+  `<div style="font-size:12px;font-weight:700;color:#B4581F;margin-top:8px">${texte}</div>`;
+
+/** L'encart vert d'une demande résolue — il remplace le pied. */
+const ENCART_RESOLUE = (texte) =>
+  '<div style="margin-top:12px;background:#E3F0EB;border-radius:14px;padding:10px 12px;' +
+  `font-size:12.5px;color:#0F5C48;font-weight:600">${texte}</div>`;
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ÉTAT VIDE — LA MAQUETTE LE DESSINE, ET AUCUN CADRE NE LE MONTAIT        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * TROUVÉ EN CHERCHANT, ET C'EST LE POINT : `GET /help/can-help` rend une liste
+ * VIDE avec `meta.reason = 'NO_CRITERIA'` au membre qui n'a déclaré aucun type
+ * d'aide et franchi aucune étape. Un fil vide sans un mot lui apprend le
+ * contraire de ce qu'il faut faire — il conclurait que la ville est calme, et
+ * n'irait jamais remplir son profil.
+ *
+ * On n'a RIEN eu à dessiner. H01 range, à côté de ses deux cadres, une colonne
+ * « ÉTATS » de 320 px où la maquette dessine CHARGEMENT, VIDE et ERREUR. Son
+ * état VIDE porte exactement trois choses :
+ *
+ *   · un titre de 14 px en 700 — « Aucune demande ouverte à Lyon » ;
+ *   · une phrase de 12,5 px en `#5D6B66` — « Vous avez besoin d'un coup de main ? » ;
+ *   · une pastille verte `#16785E` — « Publier une demande ».
+ *
+ * ── POURQUOI C'EST UN `motifs` ET PAS UN `noeud` ────────────────────────────
+ *
+ * Cette colonne est DEHORS : le générateur ne transcode que les conteneurs de
+ * 1440 et de 390 px, et la colonne d'états est leur sœur, pas leur contenu. Le
+ * dessin est donc réemployé par `motifs`, avec son `from` — c'est le mécanisme
+ * prévu pour un fragment dessiné ailleurs dans la maquette, et le DEUXIÈME
+ * contrôle refuse de produire le jour où le designer retire cet état.
+ *
+ * ── LES QUATRE TEXTES NE SONT PAS DANS LA PLANCHE, ET CE SONT DES DONNÉES ───
+ *
+ * La maquette n'écrit qu'un des quatre cas. Les trois autres — la portée
+ * « Vous pouvez aider » sans critère, la même avec critères mais sans
+ * correspondance, le fil filtré sur un type sans résultat — se composent dans
+ * `entraide/appels.ts` (voir `videDuFil`). Ce sont des DONNÉES, au même titre
+ * que « Demande issue d'un parcours » : aucune n'est ajoutée au dessin, toutes
+ * passent par l'unique interpolation que la planche porte déjà.
+ *
+ * LA PASTILLE DEVIENT UN VRAI LIEN, et la maquette l'écrit en `<div>` — comme
+ * elle écrivait les sept entrées du panneau de section. Ce n'était pas un lien
+ * cassé : ce n'était pas un lien. La promotion est faite par l'adaptation
+ * `H01_PORTEES`, qui est le mécanisme prévu pour ça.
+ */
+const SOURCE_ENTRAIDE = 'docs/template/05 Entraide.dc.html';
+
+const VIDE_OUVERTURE =
+  '<div style="text-align:center"><div style="font-size:14px;font-weight:700">';
+const VIDE_PHRASE = '</div><div style="font-size:12.5px;color:#5D6B66;margin-top:4px">';
+const VIDE_PASTILLE =
+  '</div><div style="margin-top:10px;display:inline-block;background:#16785E;color:#fff;' +
+  'font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:999px">';
+const VIDE_FERMETURE = '</div></div>';
+
+const ETAT_VIDE =
+  '<sc-if value="{{ vide }}">' +
+  VIDE_OUVERTURE +
+  '{{ vide.titre }}' +
+  VIDE_PHRASE +
+  '{{ vide.phrase }}' +
+  VIDE_PASTILLE +
+  '{{ vide.lien }}' +
+  VIDE_FERMETURE +
+  '</sc-if>';
+
+/**
+ * Les quatre fragments du dessin, DANS L'ORDRE où la colonne d'états les écrit.
+ *
+ * Ils sont déclarés APRÈS les motifs de la carte dans chaque entrée, et l'ordre
+ * compte : `fragmentsDeDessin` retire chaque motif avec `String.replace`, qui ne
+ * coupe que la PREMIÈRE occurrence. `</div></div>` figure dans la carte autant
+ * que dans l'état vide — il n'est juste pour ce dernier que parce que l'état vide
+ * est écrit AVANT la boucle dans `devient`, et que les trois fragments qui le
+ * précèdent ont déjà été retirés. Le dépôt a déjà payé ce piège une fois.
+ */
+const MOTIFS_VIDE = [VIDE_OUVERTURE, VIDE_PHRASE, VIDE_PASTILLE, VIDE_FERMETURE].map(
+  (pattern) => ({ from: SOURCE_ENTRAIDE, pattern }),
+);
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ H04 · LES DEUX SUGGESTIONS ÉTAIENT DEUX CARTES SERVIES À TOUT LE MONDE    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur, sur la cohérence des deux planches : « si les deux divergent,
+ * aligne-les. »
+ *
+ * MESURÉ AU NAVIGATEUR, aux deux largeurs, après que la portée « Vous pouvez
+ * aider » du fil a commencé à lire la vraie route : `GET /help/can-help` rendait
+ * SEPT suggestions au membre de mesure, le fil en affichait sept à 390 px, et
+ * `/entraide/aider` affichait « Dossier Visale refusé, que faire ? » et « Relire
+ * une lettre de motivation » — les deux cartes de la planche, à 1440 ET à 390.
+ * Le lot qui a rendu la pastille vivante venait donc d'ÉLARGIR l'écart : la même
+ * liste, deux réponses différentes selon le chemin pris.
+ *
+ * ── CE QUI BLOQUAIT, ET CE QUI LE DÉBLOQUE ──────────────────────────────────
+ *
+ * La raison écrite jusqu'ici — dans `app/(app)/entraide/aider/page.tsx` — était
+ * exacte sur le fait et trop large sur la conclusion : « les deux cartes portent
+ * chacune une pastille de MOTIF que l'API ne renvoie pas ». C'est vrai —
+ * `helpCardSchema` ne porte que `fromJourney` — mais le `where` du service dit
+ * davantage que le schéma :
+ *
+ *   · `fromJourney === false` ⇒ `originJourneyStep` est nul ⇒ le critère « étape
+ *     franchie » NE PEUT PAS avoir joué, donc la correspondance vient des TYPES
+ *     D'AIDE DÉCLARÉS. « Correspond à vos types d'aide » — les mots de la
+ *     planche — est alors DÉMONTRÉ, pas supposé ;
+ *   · `fromJourney === true` reste ambigu : la demande a pu correspondre par son
+ *     type autant que par sa définition d'étape. On n'écrit donc PAS « Vous avez
+ *     franchi l'étape Logement », qui nommerait une étape que la réponse ne
+ *     contient pas. On écrit « Demande issue d'un parcours » — la même phrase que
+ *     `ligneDemande` emploie déjà pour le même manque, à un seul endroit du
+ *     module.
+ *
+ * ⚠ CE QUE LA PLANCHE PERD : son « Vous avez franchi l'étape Logement ». REMONTÉ.
+ * Le combler demanderait que `GET /help/can-help` dise POURQUOI chaque demande
+ * correspond — un champ `matchedBy` dans `helpCardSchema`, ou un `meta` par ligne.
+ * C'est une décision de porteur, pas une déduction de front.
+ *
+ * ── UNE SEULE DÉCLARATION POUR LES DEUX CADRES, ET C'EST COMPTÉ ─────────────
+ *
+ * Les deux cartes sont dessinées OCTET POUR OCTET à l'identique à 1440 et à 390 px
+ * — relevé, pas supposé : la paire figure exactement une fois dans chaque cadre.
+ * D'où l'absence de clé `frames`, et `fois: 1` qui le recompte à chaque
+ * génération. H04 est donc le second cadre mobile de ce module à lire ses données,
+ * après H02.
+ */
+const MOTIF_SUGGESTION = (texte) =>
+  '<span style="background:#FBE3D4;color:#B4581F;font-size:11px;font-weight:700;' +
+  `padding:4px 10px;border-radius:999px;white-space:nowrap">${texte}</span>`;
+
+const CARTE_SUGGESTION = ({ categorie, motif, delai, titre, extrait, pied }) =>
+  CARTE_DEMANDE({
+    fond: '#fff',
+    trait: '1px solid #E6EBE9',
+    pastilleFond: '#E3F0EB',
+    pastilleEncre: '#0F5C48',
+    categorie,
+    apresCategorie: MOTIF_SUGGESTION(motif),
+    delai,
+    titreCouleur: '',
+    titre,
+    extrait,
+    pied,
+  });
+
+/**
+ * LE FOND DE LA PASTILLE DE CATÉGORIE RESTE UNE DONNÉE, et le bouton NON.
+ *
+ * La planche de H04 ne dessine QUE des demandes ouvertes — `can-help` ne rend que
+ * `status: 'OPEN'`, et c'est le service qui le garantit, pas une convention. Les
+ * deux teintes grises de la variante résolue n'ont donc rien à faire ici, et le
+ * bouton « Répondre » garde le `#16785E` que la planche écrit sur les deux cartes :
+ * en faire une donnée réclamerait une variante que ni la planche ni la route ne
+ * produisent.
+ */
+const SUGGESTIONS_H04 = {
+  noeud:
+    CARTE_SUGGESTION({
+      categorie: 'Démarches',
+      motif: 'Vous avez franchi l’étape Logement',
+      delai: 'échéance dans 2 j',
+      titre: 'Dossier Visale refusé, que faire ?',
+      extrait: 'On me demande un document que je n’ai pas.',
+      pied: PIED_DEMANDE('#B4581F', 'YB', 'Yasmine B.', 'Arrivée', '0 réponses', '#16785E'),
+    }) +
+    CARTE_SUGGESTION({
+      categorie: 'Service',
+      motif: 'Correspond à vos types d’aide',
+      delai: 'échéance dans 5 j',
+      titre: 'Relire une lettre de motivation',
+      extrait: 'Candidature en alternance, en français.',
+      pied: PIED_DEMANDE('#0F5C48', 'TA', 'Théo A.', 'Arrivé', '1 réponses', '#16785E'),
+    }),
+  devient:
+    ETAT_VIDE +
+    '<sc-for list="{{ suggestions }}" as="s">' +
+    CARTE_SUGGESTION({
+      categorie: '{{ s.categorie }}',
+      motif: '{{ s.motif }}',
+      delai: '{{ s.delai }}',
+      titre: '{{ s.titre }}',
+      extrait: '{{ s.extrait }}',
+      pied: PIED_DEMANDE(
+        '{{ s.auteurFond }}',
+        '{{ s.auteurInitiales }}',
+        '{{ s.auteur }}',
+        '{{ s.auteurPhase }}',
+        '{{ s.reponses }}',
+        '#16785E',
+      ),
+    }) +
+    '</sc-for>',
+  motifs: [...MOTIFS_VIDE],
+  fois: 1,
+  why: 'Les suggestions de `GET /help/can-help` (§2.6) — les deux cartes étaient le dessin de la planche, servi à tout le monde aux DEUX largeurs, alors que la portée « Vous pouvez aider » du fil lisait déjà la vraie route.',
+};
+
 export const screens = [
   /**
    * ── H01 · /entraide — le fil ───────────────────────────────────────────────
@@ -541,6 +972,240 @@ export const screens = [
     donnees: [
       ...bandeau(),
       ...colonneReputation(),
+      /**
+       * ╔══════════════════════════════════════════════════════════════════════╗
+       * ║ LES TROIS DEMANDES DESSINÉES DEVIENNENT LA LISTE                    ║
+       * ╚══════════════════════════════════════════════════════════════════════╝
+       *
+       * Voir l'en-tête de `CARTE_DEMANDE` pour les trois états que la maquette
+       * dessine et pour ce que le serveur ne donne pas.
+       */
+      {
+        noeud:
+          CARTE_DEMANDE({
+            fond: '#fff',
+            trait: '1px solid #E6EBE9',
+            pastilleFond: '#E3F0EB',
+            pastilleEncre: '#0F5C48',
+            categorie: 'Démarches',
+            delai: '35 min',
+            titreCouleur: '',
+            titre: 'Accompagner un RDV préfecture jeudi',
+            extrait:
+              'Première convocation, je cherche quelqu’un qui connaît la procédure pour m’accompagner au guichet.',
+            pied: PIED_DEMANDE('#2FA37D', 'FN', 'Fatou N.', 'Installée', '3 réponses', '#16785E'),
+          }) +
+          CARTE_DEMANDE({
+            fond: '#FFFBF8',
+            trait: '1.5px solid #E0733A',
+            avantCategorie: PASTILLE_H01('#E0733A', '#fff', 'Depuis un parcours'),
+            pastilleFond: '#E3F0EB',
+            pastilleEncre: '#0F5C48',
+            categorie: 'Matériel',
+            delai: '2 h',
+            etape: LIGNE_ETAPE('Étape 7 · Logement · parcours Études'),
+            titreCouleur: '',
+            titre: 'Un lit et une table pour l’installation',
+            extrait:
+              'Demande issue de mon parcours. Récupération possible en camionnette samedi.',
+            pied: PIED_DEMANDE('#E0733A', 'KB', 'Kofi B.', 'Arrivé', '1 réponses', '#E0733A'),
+          }) +
+          CARTE_DEMANDE({
+            fond: '#F6F8F7',
+            trait: '1px solid #E6EBE9',
+            pastilleFond: '#EDF1EF',
+            pastilleEncre: '#8A958F',
+            categorie: 'Trajet',
+            avantCategorie: '',
+            apresCategorie: PASTILLE_H01('#EDF1EF', '#5D6B66', 'Résolue'),
+            delai: 'hier',
+            titreCouleur: 'color:#5D6B66',
+            titre: 'Covoiturage Lyon → Grenoble samedi',
+            extrait: '',
+            pied: ENCART_RESOLUE('Sandra M. a été marquée « ça m’a aidé » — contact créé'),
+          }),
+        devient:
+          ETAT_VIDE +
+          '<sc-for list="{{ demandes }}" as="d">' +
+          CARTE_DEMANDE({
+            fond: '{{ d.fond }}',
+            trait: '{{ d.trait }}',
+            avantCategorie:
+              '<sc-if value="{{ d.deParcours }}">' +
+              PASTILLE_H01('#E0733A', '#fff', 'Depuis un parcours') +
+              '</sc-if>',
+            pastilleFond: '{{ d.categorieFond }}',
+            pastilleEncre: '{{ d.categorieEncre }}',
+            categorie: '{{ d.categorie }}',
+            apresCategorie:
+              '<sc-if value="{{ d.etat }}">' +
+              PASTILLE_H01('#EDF1EF', '#5D6B66', '{{ d.etat }}') +
+              '</sc-if>',
+            delai: '{{ d.delai }}',
+            etape: '<sc-if value="{{ d.etape }}">' + LIGNE_ETAPE('{{ d.etape }}') + '</sc-if>',
+            titreCouleur: 'color:{{ d.titreCouleur }}',
+            titre: '{{ d.titre }}',
+            extrait: '{{ d.extrait }}',
+            pied:
+              '<sc-if value="{{ d.ouverte }}">' +
+              PIED_DEMANDE(
+                '{{ d.auteurFond }}',
+                '{{ d.auteurInitiales }}',
+                '{{ d.auteur }}',
+                '{{ d.auteurPhase }}',
+                '{{ d.reponses }}',
+                '{{ d.boutonFond }}',
+              ) +
+              '</sc-if><sc-if value="{{ d.resolution }}">' +
+              ENCART_RESOLUE('{{ d.resolution }}') +
+              '</sc-if>',
+          }) +
+          '</sc-for>',
+        /**
+         * ╔══════════════════════════════════════════════════════════════════╗
+         * ║ DEUX MOTIFS, PARCE QU'UN GABARIT NE SE LIT PAS EN UNE PASSE      ║
+         * ╚══════════════════════════════════════════════════════════════════╝
+         *
+         * Le troisième contrôle de `donnees` parcourt `noeud` AVEC UN SEUL
+         * CURSEUR : chaque fragment de `devient` doit s'y trouver APRÈS le
+         * précédent. C'est ce qui garantit qu'une donnée n'invente pas de dessin.
+         *
+         * Ici les trois variantes sont dessinées L'UNE APRÈS L'AUTRE, et le
+         * gabarit les réunit : la pastille « Résolue » n'existe que dans la
+         * TROISIÈME carte, la ligne d'étape que dans la DEUXIÈME. Le curseur
+         * sautait donc à la troisième pour la pastille, puis ne retrouvait plus
+         * la ligne d'étape — restée derrière lui.
+         *
+         * Les déclarer en `motifs` les retire du parcours sans rien relâcher :
+         * le DEUXIÈME contrôle vérifie qu'ils sont bien dessinés dans ce cadre,
+         * et la génération s'arrête si le designer les retire. On échange un
+         * ordre que la maquette n'a pas contre une présence qu'elle garantit.
+         */
+        motifs: [
+          '<span style="background:#E0733A;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Depuis un parcours</span>',
+          '<span style="background:#EDF1EF;color:#5D6B66;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">',
+          '<div style="font-size:12px;font-weight:700;color:#B4581F;margin-top:8px">',
+          'margin-top:10px;color:',
+          ...MOTIFS_VIDE,
+        ],
+        fois: 1,
+        frames: ['Desktop'],
+        why: 'Les demandes d’entraide, de `GET /help` — les trois cartes étaient le dessin de la maquette, servi à tout le monde.',
+      },
+      {
+        noeud:
+          CARTE_DEMANDE({
+            fond: '#fff',
+            trait: '1px solid #E6EBE9',
+            pastilleFond: '#E3F0EB',
+            pastilleEncre: '#0F5C48',
+            categorie: 'Démarches',
+            delai: '35 min',
+            titreCouleur: '',
+            titre: 'Accompagner un RDV préfecture jeudi',
+            extrait:
+              'Première convocation, je cherche quelqu’un qui connaît la procédure pour m’accompagner au guichet.',
+            pied: PIED_DEMANDE('#2FA37D', 'FN', 'Fatou N.', 'Installée', '3 réponses', '#16785E'),
+          }) +
+          CARTE_DEMANDE({
+            fond: '#FFFBF8',
+            trait: '1.5px solid #E0733A',
+            avantCategorie: PASTILLE_H01('#E0733A', '#fff', 'Depuis un parcours'),
+            pastilleFond: '#E3F0EB',
+            pastilleEncre: '#0F5C48',
+            categorie: 'Matériel',
+            delai: '2 h',
+            etape: LIGNE_ETAPE('Étape 7 · Logement · parcours Études'),
+            titreCouleur: '',
+            titre: 'Un lit et une table pour l’installation',
+            extrait:
+              'Demande issue de mon parcours. Récupération possible en camionnette samedi.',
+            pied: PIED_DEMANDE('#E0733A', 'KB', 'Kofi B.', 'Arrivé', '1 réponses', '#E0733A'),
+          }),
+        devient:
+          ETAT_VIDE +
+          '<sc-for list="{{ demandes }}" as="d">' +
+          CARTE_DEMANDE({
+            fond: '{{ d.fond }}',
+            trait: '{{ d.trait }}',
+            avantCategorie:
+              '<sc-if value="{{ d.deParcours }}">' +
+              PASTILLE_H01('#E0733A', '#fff', 'Depuis un parcours') +
+              '</sc-if>',
+            pastilleFond: '{{ d.categorieFond }}',
+            pastilleEncre: '{{ d.categorieEncre }}',
+            categorie: '{{ d.categorie }}',
+            apresCategorie:
+              '<sc-if value="{{ d.etat }}">' +
+              PASTILLE_H01('#EDF1EF', '#5D6B66', '{{ d.etat }}') +
+              '</sc-if>',
+            delai: '{{ d.delai }}',
+            etape: '<sc-if value="{{ d.etape }}">' + LIGNE_ETAPE('{{ d.etape }}') + '</sc-if>',
+            titreCouleur: 'color:{{ d.titreCouleur }}',
+            titre: '{{ d.titre }}',
+            extrait: '{{ d.extrait }}',
+            pied:
+              '<sc-if value="{{ d.ouverte }}">' +
+              PIED_DEMANDE(
+                '{{ d.auteurFond }}',
+                '{{ d.auteurInitiales }}',
+                '{{ d.auteur }}',
+                '{{ d.auteurPhase }}',
+                '{{ d.reponses }}',
+                '{{ d.boutonFond }}',
+              ) +
+              '</sc-if>',
+          }) +
+          '</sc-for>',
+        /**
+         * ╔══════════════════════════════════════════════════════════════════╗
+         * ║ DEUX MOTIFS, PARCE QU'UN GABARIT NE SE LIT PAS EN UNE PASSE      ║
+         * ╚══════════════════════════════════════════════════════════════════╝
+         *
+         * Le troisième contrôle de `donnees` parcourt `noeud` AVEC UN SEUL
+         * CURSEUR : chaque fragment de `devient` doit s'y trouver APRÈS le
+         * précédent. C'est ce qui garantit qu'une donnée n'invente pas de dessin.
+         *
+         * Ici les trois variantes sont dessinées L'UNE APRÈS L'AUTRE, et le
+         * gabarit les réunit : la pastille « Résolue » n'existe que dans la
+         * TROISIÈME carte, la ligne d'étape que dans la DEUXIÈME. Le curseur
+         * sautait donc à la troisième pour la pastille, puis ne retrouvait plus
+         * la ligne d'étape — restée derrière lui.
+         *
+         * Les déclarer en `motifs` les retire du parcours sans rien relâcher :
+         * le DEUXIÈME contrôle vérifie qu'ils sont bien dessinés dans ce cadre,
+         * et la génération s'arrête si le designer les retire. On échange un
+         * ordre que la maquette n'a pas contre une présence qu'elle garantit.
+         */
+        /**
+         * ── CE QUE LE CADRE DE 390 px NE DESSINE PAS ──────────────────────
+         *
+         * Il ne montre que DEUX demandes : une ordinaire et une issue d'un
+         * parcours. De la variante RÉSOLUE il ne dessine que les COULEURS —
+         * pastille grise, titre grisé — qui sont ici déclarées `from`, puisque
+         * seul le cadre d'ordinateur les écrit.
+         *
+         * L'ENCART « ça m'a aidé », lui, ne passe PAS par `donnees` : il
+         * ajouterait au gabarit une fermeture que ce cadre n'a pas à offrir, et
+         * le troisième contrôle a raison de la refuser. Il est posé par
+         * l'adaptation `H01_RESOLUE_MOBILE`, qui est le mécanisme prévu pour un
+         * dessin présent sur une planche et absent de l'autre.
+         */
+        motifs: [
+          '<span style="background:#E0733A;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">Depuis un parcours</span>',
+          '<div style="font-size:12px;font-weight:700;color:#B4581F;margin-top:8px">',
+          {
+            from: 'docs/template/05 Entraide.dc.html',
+            pattern:
+              '<span style="background:#EDF1EF;color:#5D6B66;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">',
+          },
+          { from: 'docs/template/05 Entraide.dc.html', pattern: 'margin-top:10px;color:' },
+          ...MOTIFS_VIDE,
+        ],
+        fois: 1,
+        frames: ['Mobile'],
+        why: 'Les demandes d’entraide sur le cadre de 390 px — le porteur veut chaque correction sur les deux planches. Il n’en dessine que DEUX (il n’y a pas de demande résolue à 390 px), d’où un `noeud` plus court et la variante résolue EMPRUNTÉE au cadre d’ordinateur de la même maquette.',
+      },
       {
         noeud: SOUS_TITRE('41 demandes ouvertes à Lyon · 178 résolues ce mois-ci'),
         devient: SOUS_TITRE(
@@ -550,7 +1215,9 @@ export const screens = [
         frames: ['Desktop'],
         why: 'Les deux compteurs de ville du `meta` de `GET /help` (`open`, `resolvedThisMonth`) et le nom de la ville.',
       },
-      ...filtresDuFil('toutes'),
+      FILTRES_TYPE_H01,
+      FILTRES_TYPE_H01_MOBILE,
+      porteesDuFil('toutes', 5),
       bandeauSecurite('Aucun versement entre membres pour une démarche.'),
     ],
   },
@@ -840,7 +1507,17 @@ export const screens = [
         frames: ['Desktop'],
         why: 'Le nombre de demandes suggérées, compté sur `GET /help/can-help` (§2.6).',
       },
-      ...filtresDuFil('aider'),
+      /**
+       * LES TROIS PASTILLES DE PORTÉE DE H04, et pourquoi elles deviennent des
+       * contrôles ici aussi.
+       *
+       * H04 EST LA MÊME RANGÉE, à trois pastilles au lieu de cinq. La laisser en
+       * `<span>` aurait créé, à deux routes de distance, le défaut exact que ce lot
+       * répare : le membre qui tape « Vous pouvez aider » sur H01 arrive sur une
+       * page où la rangée redevient un dessin, et où « Toutes » ne le ramène pas.
+       */
+      porteesDuFil('aider', 3),
+      SUGGESTIONS_H04,
     ],
   },
 

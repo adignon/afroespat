@@ -50,12 +50,59 @@ import { Modal } from '@/components/modal';
  * Ni Échap, ni le piège de tabulation, ni le retour du focus : c'est `Modal` qui
  * les porte, pour les huit fenêtres transcodées comme pour celle-ci. Ce fichier
  * n'est que la COQUE qu'on lui donne à rendre.
+ *
+ * ── `champ` : UN MOT DE L'AUTEUR DU GESTE, ET POURQUOI IL EST ICI ──────────
+ *
+ * Mesuré : « L'information a changé » envoyait TOUJOURS un commentaire vide,
+ * alors que `guideOutdatedFlagSchema` en accepte un (1 à 500 caractères,
+ * facultatif) et que `flagOutdated(guideId, comment?)` le prend déjà. Or c'est la
+ * seule information utile du geste : « à vérifier » dit qu'il y a un problème, le
+ * commentaire dit LEQUEL — l'auteur du guide ne peut pas corriger un reproche
+ * qu'il ne connaît pas.
+ *
+ * DEUX CHEMINS ÉTAIENT POSSIBLES, ET VOICI CELUI QU'ON N'A PAS PRIS : employer
+ * X03, la feuille de signalement (`components/fenetre-signalement.tsx`). Elle
+ * porte déjà un champ libre, mais elle porte AUSSI ses six motifs OBLIGATOIRES
+ * (`ReportReason`) et son encart « la conversation sera visible des
+ * modérateurs ». Or le signalement d'obsolescence est DISTINCT du signalement
+ * d'abus — le dit le service, le dit §2.6, et le dit le libellé même du geste :
+ * il dit que le contenu a VIEILLI, pas qu'il est FAUTIF. Demander « arnaque /
+ * harcèlement / indésirable » pour dire « le prix a changé » aurait fait mentir
+ * l'écran sur la nature du geste, et aurait rendu obligatoire un choix que la
+ * route n'accepte pas.
+ *
+ * LA GÉOMÉTRIE DU CHAMP EST CELLE DE X03, RELEVÉE VERBATIM, pas redessinée : le
+ * bloc « Détails (facultatif) » de sa planche, c'est-à-dire l'étiquette 12,5 px /
+ * 700 avec 6 px de marge basse, puis le `<textarea>` à `minHeight: 48px`, rayon
+ * 14, trait `1.5px solid #16785E`, retrait `13px 14px`, 14 px / 1.5,
+ * `resize: vertical`. Les deux fenêtres partagent déjà le même châssis — voile,
+ * panneau blanc à rayon 28 et retrait 24, `data-fenetre-contenu` qui défile — et
+ * le champ s'y pose donc sans un pixel inventé.
+ *
+ * ⚠ CE PARAGRAPHE DISAIT « FACULTATIF CÔTÉ SERVEUR, DONC FACULTATIF À L'ÉCRAN :
+ * rien ne bloque la confirmation sur un champ vide », et c'était vrai du seul
+ * appelant qu'il avait. Le REFUS D'UNE PROPOSITION est arrivé depuis, et son motif
+ * est OBLIGATOIRE : `rejectProposalSchema` exige `reason` trimé, de 10 à 1 000
+ * caractères. D'où `champ.min`.
+ *
+ * `min` EST FACULTATIF, et son absence garde l'ancien comportement au caractère
+ * près : rien ne bloque, et c'est l'appelant qui omet la clé quand le champ est
+ * vide (le schéma est `.strict()`, et une chaîne vide serait REFUSÉE par `min(1)`).
+ * Quand `min` est là, le bouton de confirmation s'éteint tant que la valeur TRIMÉE
+ * n'y arrive pas — trimée parce que c'est ce que fait le schéma du serveur, et
+ * qu'un bouton allumé sur trois espaces promettrait un `400`.
+ *
+ * ⚠ « ANNULER » NE S'ÉTEINT JAMAIS AVEC LUI. C'est pour cela que ce n'est pas
+ * `occupe` qui porte la règle : `occupe` éteint LES DEUX boutons — ce qui est juste
+ * pendant un appel — et aurait enfermé le membre dans une fenêtre dont la croix de
+ * 40 px est la seule sortie.
  */
 export function FenetreConfirmation({
   ouverte,
   titre,
   question,
   precision,
+  champ,
   libelleConfirmer,
   onConfirmer,
   onAnnuler,
@@ -68,6 +115,26 @@ export function FenetreConfirmation({
   readonly question: string;
   /** L'encart gris : ce qu'on ne pourra pas défaire. Absent, rien n'est dessiné. */
   readonly precision?: string;
+  /**
+   * UN CHAMP LIBRE, FACULTATIF. Absent, rien n'est dessiné — les huit autres
+   * fenêtres de confirmation du dépôt n'en veulent pas et ne changent pas.
+   *
+   * `max` vient du SCHÉMA de la route, jamais d'un nombre écrit ici : voir
+   * `OBSOLETE_COMMENTAIRE_MAX` dans `screens/guides/api.ts`, qui le LIT sur
+   * `guideOutdatedFlagSchema`. Une borne recopiée est une borne qui divergera.
+   */
+  readonly champ?: {
+    readonly libelle: string;
+    readonly valeur: string;
+    readonly onChange: (valeur: string) => void;
+    readonly max: number;
+    /**
+     * LE PLANCHER DE LA ROUTE, quand elle en a un. Voir l'en-tête : absent, rien
+     * ne bloque. La valeur vient du SCHÉMA de la route, jamais d'un nombre écrit
+     * dans un écran.
+     */
+    readonly min?: number;
+  };
   readonly libelleConfirmer: string;
   readonly onConfirmer: () => void;
   readonly onAnnuler: () => void;
@@ -77,6 +144,18 @@ export function FenetreConfirmation({
   readonly nom?: string;
 }) {
   const titreId = `${nom.toLowerCase()}-titre`;
+
+  /**
+   * Le champ atteint-il son plancher ? Vrai quand il n'y en a pas — l'absence de
+   * `min` ne bloque rien, c'est la non-régression des huit autres fenêtres.
+   *
+   * ⚠ `trim()` AVANT DE COMPTER, parce que le schéma du serveur trime avant de
+   * compter (`z.string().trim().min(10)`). Sans cela, dix espaces allumeraient le
+   * bouton et la route répondrait `400`.
+   */
+  const champSuffisant =
+    champ === undefined || champ.min === undefined || champ.valeur.trim().length >= champ.min;
+  const peutConfirmer = !occupe && champSuffisant;
 
   const panneau = (
     <>
@@ -164,6 +243,40 @@ export function FenetreConfirmation({
           }}
         >
           <div style={{ fontSize: '13px', lineHeight: '1.55', color: '#16211D' }}>{question}</div>
+          {champ === undefined ? null : (
+            <div style={{ flexShrink: 0 }}>
+              <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '6px' }}>
+                {champ.libelle}
+              </div>
+              <textarea
+                value={champ.valeur}
+                onChange={(e) => {
+                  champ.onChange(e.target.value);
+                }}
+                placeholder={champ.libelle}
+                aria-label={champ.libelle}
+                rows={3}
+                maxLength={champ.max}
+                disabled={occupe}
+                data-confirmation-champ=""
+                style={{
+                  minHeight: '48px',
+                  borderRadius: '14px',
+                  border: '1.5px solid #16785E',
+                  background: '#fff',
+                  padding: '13px 14px',
+                  fontSize: '14px',
+                  lineHeight: '1.5',
+                  width: '100%',
+                  boxSizing: 'border-box',
+                  resize: 'vertical',
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                  color: '#16211D',
+                }}
+              />
+            </div>
+          )}
           {precision === undefined ? null : (
             <div
               style={{
@@ -193,14 +306,14 @@ export function FenetreConfirmation({
           <button
             type="button"
             onClick={onConfirmer}
-            disabled={occupe}
+            disabled={!peutConfirmer}
             data-confirmation-confirmer=""
             style={{
               ...BOUTON,
-              background: occupe ? '#8A958F' : '#16211D',
+              background: peutConfirmer ? '#16211D' : '#8A958F',
               color: '#fff',
               flex: '1',
-              cursor: occupe ? 'default' : 'pointer',
+              cursor: peutConfirmer ? 'pointer' : 'default',
             }}
           >
             {libelleConfirmer}

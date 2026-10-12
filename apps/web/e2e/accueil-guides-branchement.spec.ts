@@ -1,6 +1,6 @@
-import { createHmac } from 'node:crypto';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { connecter, type Membre } from './session';
+import { monterEnL2 } from './niveau';
 
 /**
  * EXERCICE AU NAVIGATEUR du branchement de A01G et A06.
@@ -22,52 +22,56 @@ import { connecter, type Membre } from './session';
  */
 
 const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
-const SECRET = process.env['DIDIT_WEBHOOK_SECRET'] ?? 'dev-didit-webhook-secret-change-me';
 
 interface MembreL1 extends Membre {
   readonly jeton: string;
 }
 
-/** Porte un membre à L1 par la porte réelle : session KYC + webhook signé. */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA MONTÉE EN NIVEAU VIENT DE `e2e/niveau.ts`, ELLE N'EST PLUS RECOPIÉE     ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Ce fichier portait QUARANTE LIGNES de montée en niveau écrites à la main : la
+ * session KYC, le webhook signé en HMAC, un second `POST /auth/otp/request` pour
+ * reprendre un jeton frais, le dépôt d'un numéro français et sa confirmation,
+ * puis un `POST /auth/refresh`. `e2e/niveau.ts` porte exactement cela depuis le
+ * lot précédent — `monterEnL1` puis `monterEnL2` — et `AMORCAGE-AGENT.md` §4 nomme
+ * cette recopie comme la redécouverte à ne plus repayer.
+ *
+ * ⚠ ET LA RECOPIE COÛTAIT UNE DEMANDE D'OTP DE PLUS PAR MEMBRE, ce qui est la
+ * ressource la plus rare du dépôt : elle reprenait son jeton par un `otp/request`
+ * + `otp/verify` là où `monterEnL1` le reprend par `POST /auth/refresh`, qui ne
+ * consomme rien. Deux membres par exécution, donc DEUX demandes rendues au budget
+ * horaire (dix par heure et par IP).
+ *
+ * `monterEnL2` POSE AUSSI LE COOKIE dans le contexte qu'on lui donne, et vérifie
+ * que le membre est bien arrivé en L2 (`isDestination` et `level`) — ce que ce
+ * fichier faisait par un `expect` à la fin, et qui vit maintenant là où la montée
+ * est écrite.
+ *
+ * ── POURQUOI CE DÉCOR VA JUSQU'À N2 ────────────────────────────────────────
+ *
+ * Le porteur a rangé `guide.write` avec « tout le reste », donc en N2 :
+ * l'identité vérifiée NE SUFFIT PLUS pour rédiger un guide. Ce décor en crée un.
+ * Le NOM de l'interface (`MembreL1`) est resté celui d'avant la refonte ; il est
+ * conservé pour ne pas élargir ce lot à un renommage, et ce commentaire est là
+ * pour que personne ne croie que le membre s'arrête à L1.
+ */
 async function connecterL1(
   context: BrowserContext,
   request: APIRequestContext,
   profil: { readonly displayName?: string } = {},
 ): Promise<MembreL1> {
   const membre = await connecter(context, request, profil);
+  const { accessToken } = await monterEnL2(context, request, membre.accessToken);
 
-  const session = await request.post(`${API}/me/kyc/session`, {
-    headers: { authorization: `Bearer ${membre.accessToken}` },
+  const me = await request.get(`${API}/me`, {
+    headers: { authorization: `Bearer ${accessToken}` },
   });
-  if (!session.ok()) throw new Error(`kyc/session ${session.status()} : ${await session.text()}`);
-  const { sessionId } = (await session.json()) as { sessionId: string };
-
-  const corps = JSON.stringify({ sessionId, status: 'APPROVED', isAdult: true });
-  const hook = await request.post(`${API}/webhooks/didit`, {
-    headers: {
-      'content-type': 'application/json',
-      'x-signature': createHmac('sha256', SECRET).update(Buffer.from(corps, 'utf8')).digest('hex'),
-    },
-    data: corps,
-  });
-  if (!hook.ok()) throw new Error(`webhooks/didit ${hook.status()} : ${await hook.text()}`);
-
-  // Le jeton PORTE les droits : périmé par la promotion, il faut en reprendre un.
-  const demande = await request.post(`${API}/auth/otp/request`, {
-    data: { phone: membre.phone, countryIso2: 'BJ', captchaToken: 'fake', acceptTerms: true },
-  });
-  if (!demande.ok()) throw new Error(`otp/request ${demande.status()} : ${await demande.text()}`);
-  const { challengeId } = (await demande.json()) as { challengeId: string };
-  const verif = await request.post(`${API}/auth/otp/verify`, {
-    data: { challengeId, code: process.env['SMS_FAKE_FIXED_CODE'] ?? '123456' },
-  });
-  if (!verif.ok()) throw new Error(`otp/verify ${verif.status()} : ${await verif.text()}`);
-  const { accessToken } = (await verif.json()) as { accessToken: string };
-
-  const me = await request.get(`${API}/me`, { headers: { authorization: `Bearer ${accessToken}` } });
   const niveau = ((await me.json()) as { user: { verificationLevel: string } }).user
     .verificationLevel;
-  expect(niveau, 'le membre devait être porté à L1').toBe('L1');
+  expect(niveau, 'le membre devait être porté à L2 — `guide.write` l’exige').toBe('L2');
 
   return { ...membre, jeton: accessToken };
 }

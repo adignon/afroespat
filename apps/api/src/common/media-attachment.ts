@@ -75,6 +75,18 @@ export const ATTACHABLE_KINDS = {
   message: ['MESSAGE'],
 
   /**
+   * 05 §2.1 : une image citée dans le CORPS d'un guide.
+   *
+   * `GUIDE` et rien d'autre, alors que le corps est du texte libre où n'importe
+   * quelle clé de stockage peut être collée. C'est précisément pourquoi le genre
+   * entre dans la clause `where` : un justificatif d'activité (`PROOF`, « jamais
+   * affiché ») ou une archive RGPD (`EXPORT`) cité dans un guide doit être
+   * INTROUVABLE, pas « refusé parce que c'est un justificatif » — la seconde
+   * réponse confirmerait à qui tient la clé ce qu'elle désigne.
+   */
+  guide: ['GUIDE'],
+
+  /**
    * 09 §3.1 : la couverture d'un événement.
    *
    * REMONTÉ — l'énumération de 00 §6.3 ne contient pas de `COMMUNITY_COVER`, si

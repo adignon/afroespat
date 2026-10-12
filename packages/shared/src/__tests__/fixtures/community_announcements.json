@@ -1,13 +1,29 @@
 {
   "items": [
     {
-      "id": "01a0f3b8-c959-7000-9d27-13959990daf8",
-      "body": "Une annonce de mesure.",
-      "createdAt": "2026-09-30T19:09:28.794Z",
+      "id": "01a12a8a-4806-7000-abfa-61fc2800ddea",
+      "title": null,
+      "body": "Sans titre, épinglée, et sans notification.",
+      "pinnedAt": "2026-10-11T10:37:47.910Z",
+      "notifiedAt": null,
+      "createdAt": "2026-10-11T10:37:47.912Z",
       "author": {
-        "id": "01a0f3b8-c47d-7000-9fc0-d2e8d9796e69",
-        "handle": "m01a0f3b8c47d70009fc0d2e8d9796",
-        "displayName": ""
+        "id": "01a12a8a-452e-7000-ad25-46c1bd6a4d34",
+        "handle": "m-46c1bd6a4d34",
+        "displayName": "Membre de Mesure"
+      }
+    },
+    {
+      "id": "01a12a8a-47f7-7000-afd5-230bc4c6e524",
+      "title": "Permanence consulaire à Lyon le 14 mars",
+      "body": "L’ambassade tient une permanence passeports. Inscription obligatoire avant le 7 mars.",
+      "pinnedAt": null,
+      "notifiedAt": "2026-10-11T10:37:47.895Z",
+      "createdAt": "2026-10-11T10:37:47.898Z",
+      "author": {
+        "id": "01a12a8a-452e-7000-ad25-46c1bd6a4d34",
+        "handle": "m-46c1bd6a4d34",
+        "displayName": "Membre de Mesure"
       }
     }
   ],

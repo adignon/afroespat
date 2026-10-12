@@ -22,7 +22,7 @@ import { panel, rail, shortcuts } from '../a01/data';
 export { panel, rail, shortcuts };
 
 /** Le panneau de section, entrée « Guides & Démarches » active (rang 1). */
-export const panelGuides = panel(1);
+export const panelGuides = panel('Guides & Démarches');
 
 // ─── Constantes de maquette que l'API ne remplit pas ────────────────────────
 
@@ -101,16 +101,61 @@ export const guideTabs = guideTabsFor(0, () => {});
  * aucune option. Les remplir demanderait les référentiels (module 02) et un cadre
  * qui sache les ouvrir — ni l'un ni l'autre n'est dans ce lot. Remonté.
  */
-export const guideFilters = ['Catégorie', 'Pays', 'Ville'];
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES TROIS FILTRES ÉTAIENT TROIS MOTS                                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Mais aussi la page de guide, tout y est dessiné aussi » puis
+ * « rends aussi la page, les filtres etc. dynamique ».
+ *
+ * « Catégorie », « Pays », « Ville » étaient des CHAÎNES posées dans un `<span>`
+ * à chevron. `guideListQuerySchema` accepte pourtant `category`, `countryId` et
+ * `cityId` depuis le premier jour : il ne manquait que le contrôle.
+ *
+ * LES TROIS GARDENT LEURS LIBELLÉS, et c'est ce que la planche écrit : la
+ * pastille dit ce qu'elle filtre, pas ce qui est retenu. Le choix courant vit
+ * dans `valeur`.
+ */
+export interface FiltreGuide {
+  readonly cle: string;
+  readonly libelle: string;
+  readonly valeur: string;
+  readonly options: readonly { readonly valeur: string; readonly libelle: string }[];
+  readonly onChoisir: (event: { target: { value: string } }) => void;
+}
+
+/** Les trois libellés de la maquette, dans son ordre. */
+export const guideFilters: readonly FiltreGuide[] = ['Catégorie', 'Pays', 'Ville'].map(
+  (libelle) => ({
+    cle: libelle,
+    libelle,
+    valeur: '',
+    options: [{ valeur: '', libelle }],
+    onChoisir: () => undefined,
+  }),
+);
 
 /**
- * « Recherché sans résultat ce mois-ci ».
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ « Recherché sans résultat ce mois-ci » — CE QUI A CHANGÉ, ET CE QUI RESTE ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
  *
- * AUCUNE ROUTE NE LE DONNE. Le module de recherche (11) journalise bien les
- * requêtes, mais rien dans 05 §4 ni dans `GET /guides` n'expose les recherches
- * infructueuses. Les valeurs de la maquette restent donc ici, telles quelles, et
- * le manque est remonté au rapport de lot — on ne fabrique pas un chiffre qui
- * a l'air mesuré.
+ * CET EN-TÊTE DISAIT « AUCUNE ROUTE NE LE DONNE », et il avait raison : le module
+ * de recherche journalisait les requêtes infructueuses depuis le début
+ * (`SearchZeroResult`, alimenté par `POST /search/zero`) et rien ne les exposait.
+ * `GET /search/zero-results` existe maintenant, et c'est `useGuidesManquants` qui
+ * le lit — le panneau d'A03 ne sert plus ces quatre lignes.
+ *
+ * ELLES RESTENT ICI, ET POUR UNE SEULE RAISON : ce sont les valeurs de la
+ * MAQUETTE, et ce fichier est le dessin de la planche. Elles ne sont plus passées
+ * par `guides-screen.tsx` — l'écran passe `manquants ?? []`, donc le panneau se
+ * cache tant que la réponse n'est pas là. Les garder documente ce que la planche
+ * dessine ; les supprimer effacerait la référence sans rien gagner.
+ *
+ * ⚠ CE QUE CE PANNEAU N'A TOUJOURS PAS, et ce n'est pas un oubli : un dessin à
+ * 390 px. Compté : zéro occurrence de « MANQUANTS » dans `a03/mobile.generated.tsx`.
+ * La planche du téléphone ne le dessine pas, et on ne l'invente pas. REMONTÉ.
  */
 export const missing: readonly MissingQueryView[] = [
   { q: 'CAF étudiant étranger', n: '64' },
@@ -235,7 +280,7 @@ export interface A03Data {
   panelGuides: typeof panelGuides;
   shortcuts: typeof shortcuts;
   guideTabs: ReturnType<typeof guideTabsFor>;
-  guideFilters: readonly string[];
+  guideFilters: readonly FiltreGuide[];
   guides: readonly GuideCardView[];
   missing: readonly MissingQueryView[];
 }

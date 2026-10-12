@@ -17,6 +17,7 @@
   "myStatus": "ACTIVE",
   "canJoin": false,
   "canLeave": true,
+  "myMuted": false,
   "counters": {
     "members": 1,
     "topics": 1,

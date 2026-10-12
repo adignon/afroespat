@@ -5,13 +5,14 @@
 // extérieur, lui, est fluide : la maquette le fige à 1440 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
+import Link from 'next/link';
 import { BoutonCreer, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import type { A08Data } from './data';
 
 export function A08Desktop(props: A08Data) {
-  const { netTabs, ownerActions, panelReseaux, rail, reseau, shortcuts, topics } = props;
+  const { hrefGerer, netTabs, ownerActions, panelReseaux, rail, reseau, shortcuts, sourdine, topics } = props;
 
   return (
     <>
@@ -54,14 +55,14 @@ export function A08Desktop(props: A08Data) {
             <span style={{ width: "76px", height: "76px", borderRadius: "22px", background: "#E0733A", border: "4px solid #fff", color: "#fff", fontSize: "20px", fontWeight: "800", display: "flex", alignItems: "center", justifyContent: "center" }}>{reseau.initiales}</span>
             <div style={{ flex: "1", paddingBottom: "4px" }}><h1 style={{ margin: "0", fontSize: "24px", fontWeight: "800", letterSpacing: "-0.7px" }}>{reseau.nom}</h1><div style={{ fontSize: "13px", color: "#5D6B66", marginTop: "2px" }}>{reseau.resume}</div></div>
             <button style={{ height: "42px", padding: "0 16px", borderRadius: "14px", background: "#F2F5F4", color: "#8A958F", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700" }}>Réseau automatique</button>
-            <button style={{ height: "42px", padding: "0 16px", borderRadius: "14px", background: "#F2F5F4", color: "#16211D", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700" }}>Sourdine</button>
+            <button type="button" onClick={sourdine.onBasculer} disabled={sourdine.occupe || !sourdine.disponible} aria-pressed={sourdine.active} data-reseau-sourdine="" style={{ height: "42px", padding: "0 16px", borderRadius: "14px", background: "#F2F5F4", color: "#16211D", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700", cursor: (sourdine.occupe || !sourdine.disponible) ? "default" : "pointer" }}>{sourdine.active ? "En sourdine" : "Sourdine"}</button>
           </div>
           <div style={{ display: "flex", gap: "4px", padding: "0 20px", borderTop: "1px solid #EAEEEC" }}>{(netTabs ?? []).map((t, tIndex) => (
 <Fragment key={tIndex}><a href={t.href} style={{ textDecoration: "none", cursor: "pointer", height: "50px", display: "flex", alignItems: "center", padding: "0 14px", fontSize: "13.5px", fontWeight: t.w, color: t.fg, borderBottom: `2.5px solid ${t.bd}` }}>{t.label}</a></Fragment>
 ))}</div>
         </div>
         <div style={{ background: "#0F5C48", borderRadius: "18px", padding: "10px 12px 10px 20px", display: "flex", alignItems: "center", gap: "10px", color: "#fff" }}><span style={{ fontSize: "12.5px", fontWeight: "700", flex: "1" }}>Propriétaire du réseau</span>{(ownerActions ?? []).map((o, oIndex) => (
-<Fragment key={oIndex}><button style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700" }}>{o}</button></Fragment>
+<Fragment key={oIndex}>{o === 'Gérer' ? (<Link href={hrefGerer} data-reseau-gerer="" style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", textDecoration: "none", display: "flex", alignItems: "center" }}>{o}</Link>) : (<button style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700" }}>{o}</button>)}</Fragment>
 ))}</div>
         <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}>
           {(topics ?? []).map((t, tIndex) => (

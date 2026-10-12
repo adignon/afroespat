@@ -135,7 +135,7 @@ export interface MediaKindPolicy {
 }
 
 /**
- * La table complète des dix genres de `MediaKind`, y compris les deux qu'un
+ * La table complète des ONZE genres de `MediaKind`, y compris les trois qu'un
  * membre ne peut pas envoyer.
  *
  * ELLE EST COMPLÈTE EXPRÈS : `Record<MediaKind, …>` fait que l'ajout d'un genre
@@ -154,6 +154,31 @@ export const MEDIA_KIND_POLICIES: Readonly<Record<MediaKind, MediaKindPolicy>> =
   /** 04 §2.1 : « jusqu'à 4 images », capacité `post.create` (L1). */
   POST: {
     capability: 'post.create',
+    mimes: MEDIA_IMAGE_MIMES,
+    maxBytes: MEDIA_MAX_IMAGE_BYTES,
+    memberUploadable: true,
+  },
+  /**
+   * 05 §2.1 : une image DANS LE CORPS d'un guide. La maquette l'écrit —
+   * l'éditeur A05 mobile pose `![Capture](…)` et porte un bouton image, le
+   * lecteur A04 ordinateur dessine la `<figure>` qui l'affiche.
+   *
+   * LA CAPACITÉ EST `guide.write` (L2), ET NON `post.create` (L1), et ce n'est
+   * pas un durcissement gratuit : le geste qui dépose cette image EST l'écriture
+   * d'un guide. Déclarer `post.create` ouvrirait la porte de côté que l'en-tête
+   * de ce fichier décrit pour `HOUSING` — un membre L1 déposerait l'image, la
+   * route `POST /guides` refuserait ensuite, et le fichier serait tout de même
+   * écrit dans le seau, scanné, payé, puis orphelin. La capacité du genre doit
+   * être celle de la route qui ATTACHE le média, pas celle de la plus permissive
+   * des routes qui l'acceptent.
+   *
+   * ⚠ CE QUE ÇA COÛTE, DIT PLUTÔT QUE TU : `guide.vote` est passé en L0 le
+   * 2026-10-10, mais `guide.write` reste L2 — un lecteur N0 peut donc voter sur
+   * un guide illustré et ne peut pas en illustrer un. C'est voulu : écrire reste
+   * l'acte qui engage, voter est un retour.
+   */
+  GUIDE: {
+    capability: 'guide.write',
     mimes: MEDIA_IMAGE_MIMES,
     maxBytes: MEDIA_MAX_IMAGE_BYTES,
     memberUploadable: true,

@@ -124,6 +124,8 @@ describe('notifications (12)', () => {
   const createdUsers: string[] = [];
   const createdPosts: string[] = [];
   const createdAlerts: string[] = [];
+  /** Les réseaux créés par le test de la sourdine — supprimés en fin de suite. */
+  const createdCommunities: string[] = [];
 
   let originCountryId: string;
   let cityId: string;
@@ -241,6 +243,14 @@ describe('notifications (12)', () => {
   afterAll(async () => {
     if (createdAlerts.length > 0) {
       await prisma.savedAlert.deleteMany({ where: { id: { in: createdAlerts } } });
+    }
+    // Les adhésions et les annonces partent en cascade avec le réseau
+    // (`onDelete: Cascade` sur les deux), donc un seul `deleteMany` suffit —
+    // mais il doit passer AVANT la suppression des comptes, sinon la cascade
+    // des utilisateurs emporte les adhésions et laisse le réseau orphelin dans
+    // la découverte de la base locale.
+    if (createdCommunities.length > 0) {
+      await prisma.community.deleteMany({ where: { id: { in: createdCommunities } } });
     }
     if (createdPosts.length > 0) {
       await prisma.postReaction.deleteMany({ where: { postId: { in: createdPosts } } });
@@ -942,6 +952,100 @@ describe('notifications (12)', () => {
 
       const updated = await notifications.updatePreferences(user, { quietHours: null });
       expect(updated.quietHours).toBeNull();
+    });
+  });
+
+  // ══ RÈGLE 07 §2.3 · « notification à tous les membres NON EN SOURDINE » ═══
+
+  describe('rule: une annonce de réseau ne réveille pas un membre en sourdine (07 §2.3)', () => {
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ CE CAS EST LA RAISON D'ÊTRE DE `community_members.muted`               ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * 07 §2.3 : « Annonces […] notification à tous les membres NON EN
+     * SOURDINE. » 07 §6 le redit dans le tableau des événements.
+     *
+     * Le lot qui a branché l'interrupteur « Notifier » a dit explicitement qu'il
+     * ne POUVAIT pas filtrer — la colonne n'était pas dans le schéma — et il
+     * avait raison. Elle existe depuis la migration
+     * `reseaux_sourdine_inviteur_avertissement` ; ce cas est ce qui empêche le
+     * filtre de disparaître en silence.
+     *
+     * ── QUATRE MEMBRES, PARCE QUE LE `WHERE` A QUATRE CLAUSES ──────────────
+     *
+     * L'auteur (exclu : on ne se notifie pas), un membre ACTIF non en sourdine
+     * (le SEUL destinataire attendu), un membre ACTIF en sourdine, et un BANNI.
+     * Les deux derniers couvrent les deux moitiés de la correction : la sourdine
+     * demandée par §2.3, et le statut — le `where` ne regardait AUCUN des deux,
+     * et une annonce réveillait donc jusqu'aux membres que §2.4 venait de
+     * retirer du réseau.
+     *
+     * ⚠ ON PASSE PAR `emit()`, c'est-à-dire par le REGISTRE réel. Appeler
+     * `events.onCommunityAnnouncement` à la main prouverait que le gestionnaire
+     * filtre, pas qu'il est branché.
+     */
+    it('notifie le membre actif, et ni celui en sourdine ni le banni', async () => {
+      const auteur = await awakeMember();
+      const ecoute = await awakeMember();
+      const sourd = await awakeMember();
+      const banni = await awakeMember();
+
+      const communityId = newId();
+      await prisma.community.create({
+        data: {
+          id: communityId,
+          kind: 'INTEREST',
+          name: `Sourdine ${run}`,
+          slug: `sourdine-${run}-${newId().slice(-6)}`,
+          category: 'cuisine',
+          visibility: 'PUBLIC',
+          createdByUserId: auteur,
+          status: 'ACTIVE',
+          memberCount: 3,
+          lastActivityAt: new Date(),
+        },
+      });
+      createdCommunities.push(communityId);
+
+      await prisma.communityMember.createMany({
+        data: [
+          { id: newId(), communityId, userId: auteur, role: 'OWNER', status: 'ACTIVE', joinedAt: new Date() },
+          { id: newId(), communityId, userId: ecoute, role: 'MEMBER', status: 'ACTIVE', joinedAt: new Date() },
+          // Celui qui a demandé le silence (§2.5).
+          { id: newId(), communityId, userId: sourd, role: 'MEMBER', status: 'ACTIVE', joinedAt: new Date(), muted: true },
+          // Et celui que §2.4 a retiré : il ne doit plus rien recevoir du réseau.
+          { id: newId(), communityId, userId: banni, role: 'MEMBER', status: 'BANNED' },
+        ],
+      });
+
+      const announcementId = newId();
+      await prisma.communityAnnouncement.create({
+        data: {
+          id: announcementId,
+          communityId,
+          authorUserId: auteur,
+          title: 'Permanence consulaire',
+          body: 'Inscription obligatoire avant le 7 mars.',
+          notifiedAt: new Date(),
+        },
+      });
+
+      await emit('community.announcement_published', announcementId, {
+        communityId,
+        announcementId,
+        authorUserId: auteur,
+      });
+
+      const recues = async (userId: string) =>
+        (await notificationsOf(userId)).filter((n) => n.type === 'community.announcement');
+
+      expect(await recues(ecoute)).toHaveLength(1);
+      expect(await recues(sourd)).toHaveLength(0);
+      expect(await recues(banni)).toHaveLength(0);
+      // L'auteur ne se notifie pas lui-même : c'était déjà le cas, et un
+      // attendu qui ne nomme que le champ du jour laisse régresser les autres.
+      expect(await recues(auteur)).toHaveLength(0);
     });
   });
 });

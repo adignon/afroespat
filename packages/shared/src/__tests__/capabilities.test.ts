@@ -61,29 +61,54 @@ describe('matrice des capacités (§7.3)', () => {
   });
 
   /**
-   * ⚠ DEUX EXCEPTIONS À « TOUT LE RESTE », et elles sont voulues : signaler et
-   * contester une sanction sont des DROITS, pas des fonctionnalités. Les ranger
-   * en L2 fermerait l'alerte aux comptes les plus exposés (13 §1) et rendrait
-   * une sanction incontestable. ÉCART REMONTÉ au porteur.
+   * « TOUT LE RESTE » A DEUX EXCEPTIONS : LA LECTURE, ET LE VOTE D'UTILITÉ.
+   *
+   * `report.create` et `sanction.appeal` y échappaient — je l'avais signalé et
+   * argumenté — et le porteur a tranché le 2026-10-09 : « corrige ceci ». Ce que
+   * leur passage en N2 coûte est écrit sur elles dans la table ; ce cas, lui, se
+   * contente de FIGER la liste, pour qu'un déplacement futur se voie.
+   *
+   * ⚠ `guide.vote` A QUITTÉ CETTE LISTE le 2026-10-10 — le porteur : « "Ce guide
+   * vous a-t-il aidé ?" Ceci peut être voté même avec N0 ». C'est LE CAS QUI A
+   * ÉTÉ CORRIGÉ, pas la règle : le vote est en L0 dans `capabilities.ts`, avec
+   * son coût écrit sur lui, et ce test ne faisait que répéter l'ancien
+   * rangement. Un cas qui survit à l'arbitrage qu'il fige est un cas qui
+   * empêche l'arbitrage.
    */
-  it('« tout le reste » exige N2, sauf la lecture, le signalement et la contestation', () => {
+  it('« tout le reste » exige N2 — la lecture et le vote d’utilité exceptés', () => {
     const l2 = CAPABILITY_KEYS.filter((k) => CAPABILITIES[k].minLevel === 'L2');
     expect(l2.sort()).toEqual([
       'community.create',
       'event.attend',
       'event.create',
       'guide.propose_revision',
-      'guide.vote',
       'guide.write',
       'housing.publish',
       'job.publish',
       'mentor.become',
       'pro.contact',
       'pro.register',
+      'report.create',
+      'sanction.appeal',
     ]);
-    for (const droit of ['content.read', 'report.create', 'sanction.appeal'] as const) {
-      expect(levelSatisfies('L0', droit), droit).toBe(true);
-    }
+    expect(levelSatisfies('L0', 'content.read')).toBe(true);
+    // L'autre exception, nommée pour qu'un retour à L2 fasse tomber CE cas et
+    // pas seulement la liste ci-dessus.
+    expect(levelSatisfies('L0', 'guide.vote')).toBe(true);
+  });
+
+  /**
+   * ⚠ CE QUE LA DÉCISION COÛTE, FIGÉ ICI PARCE QUE CE N'EST PAS UN DÉTAIL.
+   *
+   * Un compte non vérifié ne peut plus signaler une arnaque (13 §1 : c'est la
+   * cible privilégiée), et un membre sanctionné avant N2 ne peut plus contester
+   * (13 §4.3). Si l'un des deux redevient ouvert un jour, ce cas tombera — et
+   * c'est exactement ce qu'on veut : la décision se relit.
+   */
+  it('un compte N0 ne peut ni signaler ni contester — conséquence assumée', () => {
+    expect(levelSatisfies('L0', 'report.create')).toBe(false);
+    expect(levelSatisfies('L1', 'report.create')).toBe(false);
+    expect(levelSatisfies('L0', 'sanction.appeal')).toBe(false);
   });
 
   // RÈGLE DURE 14 §2 — rien de ce qui relève de l'aide n'est jamais payant.

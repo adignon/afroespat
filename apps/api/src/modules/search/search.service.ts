@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma, newId } from '@app/db';
 import {
@@ -11,6 +12,7 @@ import {
   SEARCH_TOPIC_REPLIES_INDEXED,
   SEARCH_TYPE_LABELS_FR,
   SEARCH_ZERO_CTA_FR,
+  SEARCH_ZERO_MIN_DISTINCT_SEEKERS,
   SEARCH_ZERO_PROMPT_FR,
   SUGGEST_CACHE_TTL_MS,
   SUGGEST_MAX_RESULTS,
@@ -19,6 +21,7 @@ import {
   type SearchState,
   type SearchSubjectType,
   hasMeaningfulTerms,
+  joinGuidePageBodies,
   normalizeQuery,
 } from '@app/shared';
 import { buildPage, decodeCursor } from '../../common/cursor';
@@ -772,20 +775,73 @@ export class SearchService {
   // ══ Recherche infructueuse (§2.4) ═════════════════════════════════════════
 
   /**
+   * Le PSEUDONYME d'un chercheur, pour une requête donnée.
+   *
+   * HMAC-SHA256 sous une sous-clé dérivée du secret applicatif par un libellé —
+   * la même construction que le lien de désabonnement des notifications
+   * (`signUnsubscribe`), reprise plutôt que réinventée. Deux propriétés voulues :
+   *
+   *   · LA REQUÊTE ENTRE DANS LE CONDENSAT. Le même membre porte donc un
+   *     pseudonyme DIFFÉRENT sur chaque requête, et les lignes de
+   *     `search_zero_result_seekers` ne se recollent pas en profil de recherche.
+   *     C'est ce qui distingue un pseudonyme d'un identifiant déguisé.
+   *   · LE SECRET N'EST PAS EN BASE. Une fuite de la base seule ne remonte à
+   *     personne ; il faut les deux.
+   *
+   * Ce n'est PAS une protection contre qui détient le secret ET la liste des
+   * membres : l'espace des identifiants est énumérable, comme pour
+   * `phoneFingerprint`, et c'est dit là-bas dans les mêmes termes. Ce que la
+   * construction garantit, c'est qu'on peut COMPTER des personnes sans en NOMMER
+   * aucune, et c'est tout ce que le seuil demande.
+   */
+  private seekerPseudonym(queryNormalized: string, userId: string): string {
+    const key = createHmac('sha256', this.cursorSecret).update('search:zero-seeker').digest();
+    return createHmac('sha256', key).update(`${queryNormalized}|${userId}`).digest('hex');
+  }
+
+  /**
    * `POST /search/zero`.
    *
    * RÈGLE DURE (§2.4) : « requête normalisée, ville, jour — SANS identifiant de
-   * membre ». Cette méthode ne reçoit donc aucun `userId`, et le schéma zod n'en a
-   * pas non plus : ce qu'un type ne peut pas transporter ne peut pas fuir en base.
+   * membre ». `search_zero_results` n'a donc toujours AUCUNE colonne de membre, et
+   * le schéma zod du corps n'en porte aucune : ce qu'un type ne peut pas
+   * transporter ne peut pas fuir en base, et un client ne peut pas se faire passer
+   * pour un autre chercheur.
+   *
+   * ─── POURQUOI UN `userId` ARRIVE MAINTENANT, ET D'OÙ ────────────────────────
+   *
+   * Arbitrage du porteur : le panneau des « guides manquants » n'affiche qu'une
+   * requête cherchée par PLUSIEURS PERSONNES DISTINCTES. Or `count` compte les
+   * RECHERCHES — mesuré : trois appels du MÊME membre donnent une ligne à
+   * `count: 3`. Un seuil posé sur `count` aurait donc été franchi par une personne
+   * seule, et le but de l'arbitrage manqué.
+   *
+   * Compter des personnes demande une ligne par personne, donc une table — et
+   * l'identité, le temps du calcul d'un pseudonyme. Elle vient du JETON, par le
+   * contrôleur, et jamais du corps de la requête : c'est la différence entre « le
+   * serveur sait qui appelle » et « le client déclare qui il est ». Rien de cette
+   * identité n'est écrit : seul le HMAC de `seekerPseudonym` l'est.
    *
    * LE VERROU, et pourquoi un `upsert` Prisma ne suffit pas : la contrainte
    * `@@unique([queryNormalized, cityId, occurredOn])` porte sur une colonne
    * NULLABLE, et PostgreSQL considère deux NULL comme distincts. Un `upsert` sur
    * une recherche sans ville ne trouverait donc jamais la ligne de la veille et en
    * insérerait une par appel — le compteur resterait à 1 et l'agrégat produit
-   * serait faux. Le verrou consultatif rend l'incrément sûr sans colonne nouvelle.
+   * serait faux. Le verrou consultatif rend l'incrément sûr sans colonne nouvelle,
+   * et il couvre maintenant les DEUX écritures : le compteur de recherches et la
+   * ligne de pseudonyme ont le même périmètre (requête, ville, jour), donc le même
+   * verrou les sérialise toutes deux.
+   *
+   * CE QUE LA RÉPONSE NE DIT PAS. Ni le nombre de personnes, ni le franchissement
+   * du seuil : la route est appelée par n'importe quel membre après un écran vide,
+   * et lui rendre « vous êtes le troisième à chercher ceci » serait publier
+   * l'agrégat à l'endroit où il est le moins contrôlé. Elle garde donc exactement
+   * la forme d'avant, `{ recorded, count }`.
    */
-  async recordZeroResult(input: { q: string; cityId?: string | undefined }): Promise<{ recorded: boolean; count: number }> {
+  async recordZeroResult(
+    userId: string,
+    input: { q: string; cityId?: string | undefined },
+  ): Promise<{ recorded: boolean; count: number }> {
     const queryNormalized = normalizeQuery(input.q);
 
     // §2.4 : « après suppression des mots vides ». « de la » ne dit rien d'un
@@ -796,8 +852,27 @@ export class SearchService {
     occurredOn.setUTCHours(0, 0, 0, 0);
     const cityId = input.cityId ?? null;
 
+    const seekerHash = this.seekerPseudonym(queryNormalized, userId);
+
     return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`zero:${queryNormalized}:${cityId ?? ''}:${occurredOn.toISOString()}`}, 0))`;
+
+      /**
+       * Le pseudonyme d'abord, et dédoublonné à la main pour la raison déjà écrite
+       * plus haut : l'unicité de la table porte sur `city_id`, qui est nullable, et
+       * deux NULL ne s'y reconnaissent pas. Sans ce `findFirst`, un membre qui
+       * cherche dix fois sans ville inscrirait dix lignes — `COUNT(DISTINCT)` les
+       * recollerait, mais la table grossirait pour rien.
+       */
+      const seen = await tx.searchZeroResultSeeker.findFirst({
+        where: { queryNormalized, cityId, occurredOn, seekerHash },
+        select: { id: true },
+      });
+      if (seen === null) {
+        await tx.searchZeroResultSeeker.create({
+          data: { id: newId(), queryNormalized, cityId, occurredOn, seekerHash },
+        });
+      }
 
       const existing = await tx.searchZeroResult.findFirst({
         where: { queryNormalized, cityId, occurredOn },
@@ -820,24 +895,96 @@ export class SearchService {
     });
   }
 
-  /** `/v1/admin/search/zero-results` — top requêtes sans résultat (§3). */
+  /**
+   * Top des requêtes restées sans résultat, agrégé par requête normalisée.
+   *
+   * ⚠ CE COMMENTAIRE DISAIT « `/v1/admin/search/zero-results` (§3) », et c'était
+   * devenu faux : la route admin n'existe toujours pas (aucune garde de RÔLE dans
+   * l'application), mais cette méthode est désormais SERVIE — par
+   * `GET /search/zero-results`, en lecture membre, pour le panneau « GUIDES
+   * MANQUANTS » d'A03. Voir `search.controller.ts` et
+   * `searchZeroResultRowSchema`.
+   *
+   * ⚠ `cityId` FILTRE SUR L'ÉGALITÉ, donc une ville EXCLUT les lignes sans ville —
+   * et `recordZeroResult` écrit `null` dès que le chercheur n'a pas choisi de
+   * filtre de ville. C'est mesuré, c'est voulu pour un outil de revue par ville, et
+   * c'est la raison pour laquelle le panneau d'A03 ne passe pas de ville.
+   /**
+   * `/v1/admin/search/zero-results` — les requêtes sans résultat (§3).
+   *
+   * ─── LE SEUIL DE PERSONNES DISTINCTES, ET CE QU'IL REMPLACE ─────────────────
+   *
+   * Arbitrage du porteur : « n'afficher qu'une requête cherchée par PLUSIEURS
+   * PERSONNES DISTINCTES ». Le classement partait de `SUM(count)`, c'est-à-dire du
+   * nombre de RECHERCHES ; il part maintenant du nombre de PERSONNES, et
+   * `SEARCH_ZERO_MIN_DISTINCT_SEEKERS` en est le plancher.
+   *
+   * CE QUE LE SEUIL FAIT TOMBER, sans lire une seule fois le texte de la requête :
+   * « docteur awa diallo lyon » ou « rappeler 0612345678 » sont le fait d'un membre
+   * et d'un seul, et n'atteignent jamais trois personnes. L'alternative — deviner
+   * un nom ou un numéro dans une requête libre — se trompe dans les deux sens et se
+   * trompe en silence.
+   *
+   * POURQUOI DU SQL BRUT ICI. `COUNT(DISTINCT …)` n'existe pas dans le `groupBy`
+   * de Prisma, et c'est précisément l'opération dont tout dépend : agréger côté
+   * TypeScript voudrait dire rapatrier une ligne par personne et par jour pour
+   * toutes les requêtes de la fenêtre, puis compter — le travail que la base fait
+   * avec son index.
+   *
+   * DEUX REQUÊTES ET NON UNE JOINTURE : la première décide QUI passe le seuil, la
+   * seconde ne somme les recherches que pour ces quelques requêtes. Une jointure
+   * aurait sommé `count` sur toutes, pour n'en garder que `limit`.
+   */
   async zeroResults(query: { weeks: number; cityId?: string | undefined; limit: number }) {
     const since = new Date(Date.now() - query.weeks * 7 * 86_400_000);
     since.setUTCHours(0, 0, 0, 0);
+    // `undefined` ne peut pas être lié à un paramètre SQL ; `null` l'est, et c'est
+    // lui qui fait basculer la condition en « toutes les villes ».
+    const cityFilter = query.cityId ?? null;
 
-    const rows = await this.prisma.searchZeroResult.groupBy({
+    const passing = await this.prisma.$queryRaw<{ query_normalized: string; seekers: number }[]>`
+      SELECT query_normalized, COUNT(DISTINCT seeker_hash)::int AS seekers
+      FROM search_zero_result_seekers
+      WHERE occurred_on >= ${since}::date
+        AND (${cityFilter}::uuid IS NULL OR city_id = ${cityFilter}::uuid)
+      GROUP BY query_normalized
+      HAVING COUNT(DISTINCT seeker_hash) >= ${SEARCH_ZERO_MIN_DISTINCT_SEEKERS}
+      ORDER BY seekers DESC, query_normalized ASC
+      LIMIT ${query.limit}
+    `;
+
+    /**
+     * Le panneau DISPARAÎT quand il ne reste rien, et c'est ici que ça se décide :
+     * une liste vide est la réponse normale d'une semaine calme, pas un incident.
+     * On sort tout de suite plutôt que d'envoyer un `IN ()` vide à la base.
+     */
+    if (passing.length === 0) return { items: [], nextCursor: null };
+
+    const queries = passing.map((row) => row.query_normalized);
+    const searches = await this.prisma.searchZeroResult.groupBy({
       by: ['queryNormalized'],
       where: {
+        queryNormalized: { in: queries },
         occurredOn: { gte: since },
         ...(query.cityId === undefined ? {} : { cityId: query.cityId }),
       },
       _sum: { count: true },
-      orderBy: { _sum: { count: 'desc' } },
-      take: query.limit,
     });
+    const countByQuery = new Map(searches.map((row) => [row.queryNormalized, row._sum.count ?? 0]));
 
     return {
-      items: rows.map((r) => ({ query: r.queryNormalized, count: r._sum.count ?? 0 })),
+      /**
+       * `count` garde son sens — des RECHERCHES — et `seekers` dit le nombre de
+       * PERSONNES. Les deux sont rendus parce que ce sont deux faits différents, et
+       * que les confondre est exactement l'erreur que ce lot a corrigée. L'ordre est
+       * celui des personnes : c'est le nombre de personnes qui dit qu'un guide
+       * manque, pas le nombre de fois qu'on l'a cherché.
+       */
+      items: passing.map((row) => ({
+        query: row.query_normalized,
+        count: countByQuery.get(row.query_normalized) ?? 0,
+        seekers: row.seekers,
+      })),
       nextCursor: null,
     };
   }
@@ -1044,7 +1191,30 @@ export class SearchService {
             title: true,
             cityId: true,
             originCountryId: true,
-            currentVersion: { select: { body: true } },
+            /**
+             * ╔══════════════════════════════════════════════════════════════════╗
+             * ║ L'INDEX PORTE LE CORPS DE TOUTES LES PAGES                        ║
+             * ╚══════════════════════════════════════════════════════════════════╝
+             *
+             * Il lisait `guide.currentVersion.body`, c'est-à-dire la version
+             * courante DU GUIDE. Depuis les pages (05 `GuidePage`), cette colonne
+             * ne reflète plus que la PREMIÈRE page : un guide de cinq pages
+             * n'aurait été cherchable que par sa première, et les quatre autres —
+             * donc l'essentiel d'une longue démarche — auraient été INTROUVABLES
+             * sans que rien ne l'explique. Ce n'est pas un ajout : c'est la
+             * régression que les pages auraient causée ici.
+             *
+             * Les pages retirées sont exclues : leur texte n'est plus lisible, et
+             * l'indexer mènerait un chercheur vers une page qu'aucune route ne
+             * rend. L'ordre de `position` est celui de la lecture — il ne change
+             * rien au classement plein texte, mais il rend l'extrait affiché
+             * cohérent avec le guide.
+             */
+            pages: {
+              where: { deletedAt: null },
+              orderBy: { position: 'asc' },
+              select: { currentVersion: { select: { body: true } } },
+            },
           },
         });
         if (guide === null) return null;
@@ -1052,7 +1222,9 @@ export class SearchService {
           subjectType,
           subjectId: guide.id,
           title: guide.title,
-          bodyText: guide.currentVersion?.body ?? '',
+          bodyText: joinGuidePageBodies(
+            guide.pages.map((page) => page.currentVersion?.body ?? ''),
+          ),
           cityId: guide.cityId,
           countryId: guide.originCountryId,
           communityId: null,

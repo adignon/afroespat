@@ -101,13 +101,40 @@ const ROUTES = [
     h1: 'Obtenir la garantie Visale sans CDI',
     h1Mobile: 'Obtenir la garantie Visale sans CDI',
   },
-  // Le cadre mobile de l'éditeur met le nom du BROUILLON là où l'ordinateur écrit
-  // « Nouveau guide ». Deux titres différents, comme la maquette les dessine.
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ A05 — LA PLANCHE DE 390 px N'A PLUS DE `<h1>`, ET C'EST LE BON ÉTAT     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * CE CAS ATTENDAIT `h1Mobile: 'Mon arrivée étudiante à Lyon'`, avec ce
+   * commentaire : « Le cadre mobile de l'éditeur met le nom du BROUILLON là où
+   * l'ordinateur écrit “Nouveau guide”. Deux titres différents, comme la maquette
+   * les dessine. »
+   *
+   * CE QUE LA MESURE A MONTRÉ, et pourquoi l'attente change : ce texte n'était pas
+   * un titre, c'était LE CONTENU D'UNE BOÎTE DE SAISIE — 48 px de haut, bord vert
+   * de 1,5 px, celui que cette maquette dessine sur un champ actif. Tant que
+   * l'éditeur était une image, la différence ne se voyait pas ; depuis que
+   * `A05_EDITEUR` en fait un `<input>` (le porteur : « Les pages Écrire un guide
+   * est finalisé ? »), un `<h1>` autour d'un champ vide serait un titre SANS
+   * TEXTE — ce qu'axe relève en `empty-heading`, c'est-à-dire pire que pas de
+   * titre.
+   *
+   * `null` DIT DONC LA VÉRITÉ : la maquette n'écrit aucun titre sur cette planche
+   * hors du champ lui-même. C'est le même cas que `/admin` et `/admin/membres`,
+   * épinglés de la même façon dans `e2e/administration.spec.ts` —
+   * `page-has-heading-one` est une règle « best-practice » d'axe-core, hors des
+   * étiquettes WCAG retenues par `e2e/a11y.spec.ts`. Le jour où la maquette donne
+   * un titre à cette planche, c'est ce `null` qui tombe.
+   *
+   * LE CADRE D'ORDINATEUR, lui, garde le sien : « Nouveau guide », que la maquette
+   * écrit bien en 16 px au-dessus de la grille des champs.
+   */
   {
     path: '/guides/nouveau',
     screen: 'A05',
     h1: 'Nouveau guide',
-    h1Mobile: 'Mon arrivée étudiante à Lyon',
+    h1Mobile: null,
   },
   {
     path: '/guides/visale-sans-cdi/propositions',

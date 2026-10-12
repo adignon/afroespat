@@ -890,7 +890,19 @@ export class EventsService {
 
     const where = await this.visibleWhere(viewerId, cityIds, query, window);
 
-    const scope = `events:${query.scope}:${query.date ?? ''}:${query.from ?? ''}:${query.to ?? ''}:${query.cityId ?? ''}:${query.radiusKm}:${query.type ?? ''}`;
+    /**
+     * ⚠ `communityId` ET `authorHandle` SONT DANS LA PORTÉE DU CURSEUR.
+     *
+     * Le curseur est SIGNÉ sur cette chaîne : deux listes qui ne portent pas les
+     * mêmes filtres ne peuvent donc pas se passer un curseur. Sans eux, le
+     * curseur de la page 2 de l'onglet « Événements » d'un réseau serait valide
+     * sur le fil global — même borne de tri, autre ensemble — et la page 2
+     * tomberait au milieu d'une liste qui n'est pas la sienne.
+     *
+     * `authorHandle` y manquait depuis son lot : corrigé ici, puisque c'est la
+     * même ligne et le même défaut.
+     */
+    const scope = `events:${query.scope}:${query.date ?? ''}:${query.from ?? ''}:${query.to ?? ''}:${query.cityId ?? ''}:${query.radiusKm}:${query.type ?? ''}:${query.authorHandle ?? ''}:${query.communityId ?? ''}`;
     const after =
       query.cursor === undefined ? null : decodeCursor(query.cursor, this.cursorSecret, scope);
 
@@ -1187,7 +1199,14 @@ export class EventsService {
   private async visibleWhere(
     viewerId: string | null,
     cityIds: string[] | null,
-    query: { scope: 'all' | 'mine' | 'organized'; type?: string | undefined },
+    query: {
+      scope: 'all' | 'mine' | 'organized';
+      type?: string | undefined;
+      /** L'onglet « Événements » d'un profil public. */
+      authorHandle?: string | undefined;
+      /** L'onglet « Événements » d'un RÉSEAU (A08). */
+      communityId?: string | undefined;
+    },
     window: { from: Date; to: Date },
   ): Promise<Prisma.EventWhereInput> {
     const separated = await this.visibility.separatedFrom(viewerId);
@@ -1215,6 +1234,37 @@ export class EventsService {
       if (viewerId === null) throw ApiError.transverse('UNAUTHENTICATED');
       and.push({ attendees: { some: { userId: viewerId, status: { in: ['GOING', 'MAYBE', 'WAITLIST'] } } } });
     }
+
+    /**
+     * LES ÉLÉMENTS D'UN MEMBRE — l'onglet correspondant de son profil public.
+     *
+     * Le filtre s'AJOUTE aux clauses de visibilité qui précèdent : demander
+     * l'auteur ne montre ni un retrait, ni un contenu d'un membre dont on est
+     * séparé, ni ce qu'on ne verrait pas autrement.
+     */
+    if (query.authorHandle !== undefined) {
+      and.push({ organizer: { handle: query.authorHandle } });
+    }
+
+    /**
+     * LES ÉVÉNEMENTS D'UN RÉSEAU — l'onglet « Événements » de A08.
+     *
+     * Même formule qu'`authorHandle` juste au-dessus : le filtre s'AJOUTE aux
+     * clauses qui précèdent, il n'en remplace aucune. La PREMIÈRE de ces clauses
+     * est la règle dure §10 — `communityId: null` OU l'un de MES réseaux — donc
+     * demander un réseau dont on n'est pas membre ne rend rien, sans qu'il y ait
+     * un seul contrôle de plus à écrire ici.
+     *
+     * ⚠ NE PAS LE TRANSFORMER EN `assertCommunityMember` COMME LE FAIT LE FIL :
+     * `GET /feed?communityId=` doit vérifier l'appartenance parce qu'il
+     * REMPLACE sa clause de réseau. Ici elle reste, et un refus explicite
+     * CONFIRMERAIT l'existence d'un réseau `INVITE_ONLY` que le dépôt masque
+     * partout ailleurs par un 404.
+     */
+    if (query.communityId !== undefined) {
+      and.push({ communityId: query.communityId });
+    }
+
     if (query.scope === 'organized') {
       if (viewerId === null) throw ApiError.transverse('UNAUTHENTICATED');
       and.push({ organizerUserId: viewerId });
@@ -1272,9 +1322,33 @@ export class EventsService {
     );
   }
 
-  /** Les villes du périmètre demandé : ville explicite + rayon, sinon la mienne. */
+  /**
+   * Les villes du périmètre demandé : ville explicite + rayon, sinon la mienne.
+   *
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ UN FILTRE DE RÉSEAU NE BORNE PAS À LA VILLE DU LECTEUR — DÉCISION        ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * `null` veut dire « aucune borne de ville », et c'est ce que `communityId`
+   * reçoit. La raison est la même que celle déjà écrite dans `visibleWhere` pour
+   * mes participations — « un événement auquel je suis inscrit à 400 km reste le
+   * mien » — appliquée à l'appartenance plutôt qu'au RSVP : un événement de MON
+   * réseau est le mien, où qu'il se tienne.
+   *
+   * Et sans cela l'onglet mentirait par omission, de la façon la plus trompeuse
+   * possible : « Béninois en France » est un réseau de PAYS, ses membres sont à
+   * Paris, Lyon, Marseille, et un membre parisien aurait lu « aucun événement »
+   * d'un réseau qui en annonce trois à Lyon. Un onglet qui montre une PARTIE des
+   * événements du réseau sans dire laquelle est pire qu'un onglet vide.
+   *
+   * ⚠ LE RAYON ET LA VILLE RESTENT ACCEPTÉS dans la requête : ils ne sont
+   * simplement pas appliqués quand un réseau est demandé. Les retirer du schéma
+   * ferait un `400` sur `?communityId=…&radiusKm=30`, alors que `radiusKm` a une
+   * valeur PAR DÉFAUT et part donc de tout client qui recopie la requête.
+   */
   private async scopeCityIds(query: EventsQuery, viewerId: string | null): Promise<string[] | null> {
     if (query.scope !== 'all') return null;
+    if (query.communityId !== undefined) return null;
     return this.nearbyCityIds(viewerId, query.cityId ?? null, query.radiusKm);
   }
 

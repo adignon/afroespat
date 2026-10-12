@@ -60,17 +60,21 @@
  *
  *   · `unread` sur « Mes réseaux » — aucun compteur de non-lus n'existe, ni en
  *     base ni dans aucune réponse ;
- *   · `muted` — la colonne `community_members.muted` que §3 annonce « ajoutée »
- *     n'existe pas dans le schéma, qui est figé. Le service le dit lui-même ;
  *   · le compteur de vues d'un sujet — interdit (`00` §49), et `.strict()` le
  *     refuserait à la frontière si on l'ajoutait ;
  *   · l'avatar d'un auteur de sujet — l'auteur n'a que trois champs ici
  *     (`id`, `handle`, `displayName`), sans `avatarUrl`.
  *
- * `unread` et `muted` sont donc posés à `null` et `false` — la maquette les
- * exige sur les quatre entrées pour que `n.muted` reste accessible sur l'union —
- * et ils sont REMONTÉS au rapport de lot. Les remplir d'un nombre inventé
- * mettrait à l'écran une pastille qui ne bougerait jamais.
+ * `unread` est donc posé à `null` — la maquette l'exige sur les quatre entrées
+ * pour que la prise reste accessible sur l'union — et il est REMONTÉ au rapport
+ * de lot. Le remplir d'un nombre inventé mettrait à l'écran une pastille qui ne
+ * bougerait jamais.
+ *
+ * ⚠ `muted` ÉTAIT DANS CETTE LISTE, ET IL N'Y EST PLUS. Il y figurait à juste
+ * titre : la colonne `community_members.muted` que §3 annonce « ajoutée »
+ * n'était pas dans le schéma. Elle y est depuis la migration
+ * `reseaux_sourdine_inviteur_avertissement`, `myCommunitySchema` porte le champ,
+ * et `myNetFrom` le LIT — la pastille « En sourdine » de A07 dit donc la vérité.
  *
  * ── LES COULEURS ───────────────────────────────────────────────────────────
  *
@@ -81,8 +85,11 @@
  * et « Découvrir ». Aucune couleur n'est assombrie (T1 §1.2).
  */
 import type {
+  Album,
   Announcement,
   CommunityDetailResponse,
+  EventCardResponse,
+  CommunityReport,
   CommunityFeedPost,
   CommunityMember,
   CommunityPublic,
@@ -90,21 +97,41 @@ import type {
   MyCommunity,
   PinnedTopic,
   Poll,
+  PostCard,
+  TopicDetailResponse,
   TopicListItem,
   TopicReply,
 } from '@app/shared';
 import { CHAT, PIN, initials, tint } from './chrome';
 import type { DiscoverView, MyNetView } from '../a07/data';
 import { topicRowTint, type TopicRowView } from '../a08/data';
-import type { CommentRowView } from '../a09/data';
+import type { CommentRowView, SujetTeteView } from '../a09/data';
 import type { InviteeView } from '../a10/data';
 import {
   APPARTENANCE,
   GENRE,
   ROLE,
   VISIBILITE,
+  type AlbumPastilleView,
+  type AlbumVignetteView,
+  type DemandeRowView,
+  type EvenementReseauView,
+  type PhotoAlbumView,
+  type MembreAdminRowView,
+  type SignalementRowView,
   type ReseauEnteteView,
 } from '../a08t/data';
+/**
+ * LES FORMATEURS DE DATE ET LA TABLE DES TYPES, EMPRUNTÉS À L'AGENDA.
+ *
+ * `screens/agenda/data.ts` est le module de l'écran d'ORIGINE de cette donnée :
+ * `GET /events` nourrit E01 depuis le premier jour, et `TYPES_FR` y porte déjà
+ * l'écart signalé au porteur sur les huit valeurs de `EventType`. Recopier ici
+ * une seconde table de libellés, ou un second formateur de mois, ferait deux
+ * sources pour la même phrase — et la seule chose dont on est sûr, c'est qu'un
+ * jour les deux divergeront.
+ */
+import { abbrMois, numeroJour, pluriel, TYPES_FR } from '../agenda/data';
 
 // ═══ Ce que la garde impose à l'écran ══════════════════════════════════════
 
@@ -144,12 +171,29 @@ function membersLabel(n: number): string {
 const KIND_LABEL = { CITY: 'Ville', COUNTRY: 'Pays', INTEREST: 'Intérêt' } as const;
 
 /**
+ * L'adresse d'un réseau, composée EN UN SEUL ENDROIT.
+ *
+ * `/reseaux/:slug` est la route de A08 (`app/(app)/reseaux/[slug]`). Elle est
+ * écrite ici et non dans les cadres : un cadre transcodé ne calcule rien, et
+ * deux copies de la même route divergent au premier renommage. `slug` vient du
+ * serveur et est déjà sûr pour une URL, mais on l'échappe quand même — c'est la
+ * même discipline que `api.ts` applique à ses chemins.
+ */
+const hrefReseau = (slug: string): string => `/reseaux/${encodeURIComponent(slug)}`;
+
+/**
  * Une entrée de « Mes réseaux ».
  *
- * `unread` et `muted` sont OMIS de l'API et posés ici à `null` / `false` : voir
- * l'en-tête. Ils sont écrits sur toutes les entrées, y compris les valeurs
- * neutres, parce que quatre formes d'objet différentes rendraient `n.muted`
- * inaccessible sur l'union — c'est la note que la maquette porte elle-même.
+ * `unread` est OMIS de l'API et posé ici à `null` : voir l'en-tête. Il est écrit
+ * sur toutes les entrées, y compris la valeur neutre, parce que quatre formes
+ * d'objet différentes rendraient la prise inaccessible sur l'union — c'est la
+ * note que la maquette porte elle-même.
+ *
+ * `muted` VIENT MAINTENANT DU SERVEUR (§2.5, `myCommunitySchema.muted`). Il était
+ * posé à `false` en dur, ce qui donnait une pastille « En sourdine » que RIEN ne
+ * pouvait allumer : un membre qui mettait un réseau en sourdine ne pouvait plus
+ * savoir lequel. §2.5 dit « le réseau reste dans sa liste » — c'est donc dans la
+ * liste qu'il faut pouvoir lire qu'il est silencieux.
  */
 export function myNetFrom(c: MyCommunity): MyNetView {
   return {
@@ -158,7 +202,8 @@ export function myNetFrom(c: MyCommunity): MyNetView {
     bg: tint(c.slug),
     members: membersLabel(c.memberCount),
     unread: null,
-    muted: false,
+    muted: c.muted,
+    href: hrefReseau(c.slug),
   };
 }
 
@@ -197,6 +242,7 @@ export function discoverFrom(c: DiscoverCommunity): DiscoverView {
     btnFg: c.joined || demande ? '#0F5C48' : '#fff',
     slug: c.slug,
     joined: c.joined,
+    href: hrefReseau(c.slug),
   };
 }
 
@@ -346,6 +392,43 @@ export function repliesFrom(replies: readonly TopicReply[]): readonly CommentRow
   });
 }
 
+/**
+ * LA TÊTE D'UN SUJET — titre, corps, auteur, état, fil d'Ariane.
+ *
+ * Elle n'existait pas : `A09Data` ne portait que `comments`, et tout le haut de
+ * la page était un littéral du transcodage. Voir `a09/data.ts` pour ce qui était
+ * mesuré à l'écran, et pour les deux morceaux que la maquette dessine sans que
+ * l'API les porte (la phase et la ville de l'auteur).
+ *
+ * `etatBg` / `etatFg` viennent de `topicRowTint`, la MÊME table que les lignes de
+ * sujets de A08 : le même `status` ne peut pas prendre deux couleurs selon
+ * l'écran qui le montre.
+ *
+ * `reseauHref` emploie le SLUG que le serveur renvoie dans `community`, et non
+ * celui de l'URL : les deux coïncident presque toujours, mais la route accepte
+ * aussi un identifiant (voir l'en-tête d'`api.ts`), et le fil d'Ariane doit
+ * mener à l'adresse canonique.
+ */
+export function sujetTeteFrom(t: TopicDetailResponse): SujetTeteView {
+  const nom = t.author.displayName === '' ? `@${t.author.handle}` : t.author.displayName;
+  const etat = TOPIC_STATE[t.status];
+  const teinte = topicRowTint(t.pinKind !== 'NONE', etat);
+  return {
+    titre: t.title,
+    corps: t.body,
+    etat,
+    etatBg: teinte.stBg,
+    etatFg: teinte.stFg,
+    epingle: t.pinKind !== 'NONE',
+    auteurI: initials(nom),
+    auteurNom: nom,
+    auteurBg: tint(t.author.handle),
+    auteurQuand: ago(t.createdAt),
+    reseauNom: t.community.name,
+    reseauHref: `/reseaux/${t.community.slug}`,
+  };
+}
+
 // ═══ A10 · les invités ═════════════════════════════════════════════════════
 
 /**
@@ -422,15 +505,54 @@ export function feedPostFrom(p: CommunityFeedPost) {
   };
 }
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ ⚠ CE CONVERTISSEUR N'EST BRANCHÉ SUR AUCUN CADRE — C'EST                   ║
+ * ║   `membreAdminRowFrom` QUI SERT LES QUATRE PLANCHES « MEMBRES »            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Son en-tête disait « et ce convertisseur est enfin branché ». COMPTÉ :
+ * `memberRowFrom` figure UNE fois dans tout le dépôt — ici, à sa déclaration.
+ * Aucun cadre, aucun crochet, aucun test ne l'appelle. Le lot qui l'a écrit a
+ * finalement branché les lignes de membres par `membreAdminRowFrom`, juste en
+ * dessous, et l'en-tête a survécu à la décision qu'il décrivait — ce que le
+ * mémo §2 nomme « un piège pour le prochain lecteur ».
+ *
+ * IL EST GARDÉ, PAS SUPPRIMÉ, et c'est un choix mesuré : il porte DEUX choses
+ * que `membreAdminRowFrom` n'a pas, et les deux correspondent à du dessin réel.
+ *
+ *   · `subM` — « Lyon 7e » seul, le sous-titre que la planche de 390 px écrit
+ *     là où celle de 1 036 px écrit « Installée · Lyon 7e ». ⚠ ÉCART ASSUMÉ ET
+ *     REMONTÉ : les quatre cadres lisent aujourd'hui `sub`, donc le téléphone
+ *     affiche la forme longue. Un champ de plus sur `MembreAdminRowView` et une
+ *     liaison de plus sur les deux cadres mobiles le corrigeraient ;
+ *   · `profil` — `/@handle`, l'adresse que `NOM_VERS_PROFIL` transforme en lien
+ *     dès que le nom cesse d'être un littéral. Aucune des quatre planches
+ *     « Membres » ne le fait encore : les noms y sont du texte, pas des liens.
+ *     REMONTÉ — c'est la demande du porteur « partout où le nom est affiché ».
+ *
+ * Qui branche l'un des deux : relever le champ sur `MembreAdminRowView` plutôt
+ * que d'appeler ce convertisseur-ci, sinon la liste aura DEUX formes.
+ */
 export function memberRowFrom(m: CommunityMember) {
   const nom = m.displayName === '' ? `@${m.handle}` : m.displayName;
+  const phase = PHASE_LABEL[m.phase] ?? m.phase;
   return {
+    userId: m.userId,
+    /**
+     * `NOM_VERS_PROFIL` change le nom ET l'avatar d'une ligne en liens dès qu'ils
+     * cessent d'être des littéraux — c'est la demande du porteur, « partout où le
+     * nom est affiché ». Le cadre produit lit donc `m.profil`, et `/@handle` est
+     * l'adresse que tout le dépôt emploie pour un profil public.
+     */
+    profil: `/@${m.handle}`,
     i: initials(nom),
     name: nom,
     bg: tint(m.handle),
-    sub: m.city === null ? (PHASE_LABEL[m.phase] ?? m.phase) : m.city.name,
-    role: m.role,
-    userId: m.userId,
+    sub: m.city === null ? phase : `${phase} · ${m.city.name}`,
+    subM: m.city === null ? phase : m.city.name,
+    proprietaire: m.role === 'OWNER',
+    moderateur: m.role === 'MODERATOR',
   };
 }
 
@@ -507,7 +629,26 @@ function resumeReseau(c: CommunityDetailResponse): string {
   const role = c.myRole;
   return [membersLabel(c.memberCount), GENRE[c.kind], role === null ? null : APPARTENANCE[role]]
     .filter((m): m is string => m !== null && m !== '')
-    .join(' · ');
+    .join(' \u00b7 ');
+}
+
+/**
+ * LA MÊME LIGNE SANS LE GENRE — la planche de 390 px de A08, et elle seule.
+ *
+ * Elle dessine « 890 membres \u00b7 vous \u00eates membre » : DEUX morceaux, l\u2019appartenance
+ * tout de suite apr\u00e8s le compte, sans « r\u00e9seau de pays » entre les deux. Ce n\u2019est
+ * pas un raccourci qu\u2019on s\u2019autorise \u2014 c\u2019est ce que la maquette \u00e9crit, et lui servir
+ * `resume` y ajouterait un mot qu\u2019elle ne porte pas.
+ *
+ * Le filtre est le m\u00eame que celui de `resumeReseau`, pour la m\u00eame raison : un
+ * passant n\u2019a pas d\u2019appartenance, et le s\u00e9parateur ne doit pas rester seul en
+ * bout de ligne.
+ */
+function resumeCourtReseau(c: CommunityDetailResponse): string {
+  const role = c.myRole;
+  return [membersLabel(c.memberCount), role === null ? null : APPARTENANCE[role]]
+    .filter((m): m is string => m !== null && m !== '')
+    .join(' \u00b7 ');
 }
 
 /**
@@ -554,6 +695,7 @@ export function enteteReseauFrom(
      */
     creeEn: c.createdAt.slice(0, 4),
     resume: resumeReseau(c),
+    resumeCourt: resumeCourtReseau(c),
     resumeProprietaire: resumeProprietaireReseau(c, compteurs.moderateurs),
     monAppartenance: role === null ? '' : APPARTENANCE[role],
     monRole: role === null ? '' : ROLE[role],
@@ -565,4 +707,412 @@ export function enteteReseauFrom(
     moderateurs: compteurs.moderateurs,
     demandes: compteurs.demandes,
   };
+}
+
+// ═══ LA GESTION ET LA MODÉRATION DU RÉSEAU (A08T, vue propriétaire) ════════
+
+/**
+ * Une DEMANDE D'ADHÉSION, telle que la planche « Gérer » la dessine.
+ *
+ * La source est `GET /communities/:id/members?pending=true`, c'est-à-dire des
+ * `communityMemberSchema` ordinaires : neuf champs, et PAS un de plus. La FORME
+ * est déclarée dans `a08t/data.ts`, avec la note sur le champ que l'API ne
+ * porte pas — et là plutôt qu'ici pour ne pas rendre réciproque le cycle de
+ * modules que ce fichier a déjà vers celui-là.
+ *
+ * `sub` reprend la forme que la planche dessine (« Prépare son départ ·
+ * Cotonou ») : phase, puis ville. Les mots de phase viennent de `PHASE_LABEL`,
+ * la table déjà employée par `inviteeFrom` — une seconde table divergerait au
+ * premier ajout d'enum.
+ */
+export function demandeRowFrom(m: CommunityMember): DemandeRowView {
+  const nom = m.displayName === '' ? `@${m.handle}` : m.displayName;
+  const phase = PHASE_LABEL[m.phase] ?? m.phase;
+  return {
+    userId: m.userId,
+    i: initials(nom),
+    bg: tint(m.handle),
+    name: nom,
+    sub: m.city === null ? phase : `${phase} · ${m.city.name}`,
+    mot: '',
+  };
+}
+
+/**
+ * Une LIGNE DE MEMBRE de l'onglet « Membres » — LES QUATRE PLANCHES.
+ *
+ * ⚠ IL DISAIT « de la planche « Membres — propriétaire » », et ce n'est plus
+ * vrai : depuis ce lot, les deux planches de la vue MEMBRE lisent la même liste,
+ * par la même fonction. Elles peignaient leurs cinq et quatre lignes en dur.
+ *
+ * Trois des cinq lignes dessinées portent une pastille de rôle et deux n'en
+ * portent pas : c'est `role` qui en décide, et non le rang dans la liste. Les
+ * deux couleurs de pastille sont relevées À L'IDENTIQUE sur la planche —
+ * `#0F5C48` sur encre blanche pour « Propriétaire », `#E3F0EB` / `#0F5C48` pour
+ * « Modérateur ». Aucune n'est assombrie, et aucune n'est inventée : un
+ * `MEMBER` n'a pas de pastille, exactement comme les lignes 4 et 5 du dessin.
+ *
+ * Ses deux drapeaux — `nommable`, et le vide de `roleNom` — sont documentés avec
+ * la forme, dans `a08t/data.ts`.
+ */
+const ROLE_PASTILLE = {
+  OWNER: { nom: 'Propriétaire', bg: '#0F5C48', fg: '#fff' },
+  MODERATOR: { nom: 'Modérateur', bg: '#E3F0EB', fg: '#0F5C48' },
+  MEMBER: { nom: '', bg: 'transparent', fg: 'inherit' },
+} as const;
+
+export function membreAdminRowFrom(m: CommunityMember): MembreAdminRowView {
+  const nom = m.displayName === '' ? `@${m.handle}` : m.displayName;
+  const pastille = ROLE_PASTILLE[m.role];
+  const phase = PHASE_LABEL[m.phase] ?? m.phase;
+  return {
+    userId: m.userId,
+    /**
+     * LE PSEUDO VOYAGE AVEC LA LIGNE, parce que « Écrire » en a besoin et que
+     * `userId` ne le donne pas : `POST /conversations/direct` prend `toHandle`.
+     * Le chercher plus tard demanderait un appel de plus par ligne — la route
+     * des membres le rend déjà.
+     */
+    handle: m.handle,
+    i: initials(nom),
+    bg: tint(m.handle),
+    name: nom,
+    /**
+     * LA FORME LONGUE, « phase · ville », qui est celle de la planche
+     * d'ordinateur (« Installée · Lyon 7e »). Celle de 390 px n'écrit que la
+     * ville ; un seul champ ne peut pas porter les deux formes, et c'est la
+     * planche d'ordinateur qui porte la liste entière. L'API ne descend de
+     * toute façon pas à l'arrondissement — on dit ce qu'on sait.
+     */
+    sub: m.city === null ? phase : `${phase} · ${m.city.name}`,
+    roleNom: pastille.nom,
+    roleBg: pastille.bg,
+    roleFg: pastille.fg,
+    nommable: m.role === 'MEMBER',
+  };
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ UNE RANGÉE DE LA CARTE « SIGNALEMENTS » — ET SES DEUX PHRASES COMPOSÉES    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La planche écrit, sur deux lignes :
+ *
+ *     Publication de Joël K. · « Vends attestation d’hébergement »
+ *     Demande d’argent · 5 signalements · transmis à la modération de la plateforme
+ *
+ * Les deux sont COMPOSÉES ICI, séparateurs compris, et pour la raison déjà
+ * établie par `resume` sur A08 : les points médians sont du DESSIN, et un
+ * morceau manquant les laisserait orphelins. Ici cela arrive vraiment — un
+ * contenu dont l'auteur a supprimé son compte n'a plus de nom (`author` est
+ * nullable côté serveur), et un contenu non escaladé n'a pas de troisième
+ * morceau. On joint donc ce qui existe.
+ *
+ * ── LE GENRE EN MOT, ET POURQUOI CE SONT CES TROIS MOTS ───────────────────
+ *
+ * « Publication », « Commentaire », « Sujet ». Les deux premiers sont ceux que
+ * la planche écrit elle-même (« Publication de Joël K. », « Commentaire de Paul
+ * A. ») ; le troisième suit la même grammaire et c'est le mot que tout le module
+ * emploie pour un `topic`. Aucun mot nouveau n'est inventé.
+ *
+ * ── LE MOTIF VIENT DU SERVEUR EN `enum`, ET LA TABLE EST ICI ──────────────
+ *
+ * `ReportReason` porte des symboles (`MONEY_REQUEST`), la planche écrit des mots
+ * (« Demande d'argent »). La table est côté écran parce que c'est du LIBELLÉ, et
+ * `00` §5 le dit : « le back ne fabrique pas de texte ». Un motif inconnu
+ * retombe sur son symbole plutôt que sur une chaîne vide — mieux vaut
+ * « HARASSMENT » affiché que rien du tout, et cela se voit tout de suite.
+ */
+const MOTIF_LABEL: Record<string, string> = {
+  SCAM: 'Arnaque',
+  MONEY_REQUEST: 'Demande d’argent',
+  HARASSMENT: 'Harcèlement',
+  SPAM: 'Indésirable',
+  INAPPROPRIATE: 'Contenu inapproprié',
+  SELF_HARM: 'Mise en danger',
+  OTHER: 'Autre',
+};
+
+const GENRE_SIGNALE: Record<'POST' | 'COMMENT' | 'TOPIC', string> = {
+  POST: 'Publication',
+  COMMENT: 'Commentaire',
+  TOPIC: 'Sujet',
+};
+
+/**
+ * Le NOM ABRÉGÉ que la planche écrit : « Joël K. », « Paul A. ».
+ *
+ * Relevé sur la maquette, pas inventé : les deux rangées de la carte écrivent le
+ * prénom suivi de l'initiale du nom. Un nom d'un seul mot reste tel quel, et un
+ * nom affiché vide retombe sur le handle — c'est la même règle que
+ * `demandeRowFrom` et `membreAdminRowFrom` appliquent déjà.
+ */
+function nomAbrege(handle: string, displayName: string): string {
+  const nom = displayName.trim();
+  if (nom === '') return `@${handle}`;
+  const mots = nom.split(/\s+/);
+  const premier = mots[0] ?? nom;
+  const suivant = mots[1];
+  return suivant === undefined ? premier : `${premier} ${suivant.slice(0, 1)}.`;
+}
+
+export function signalementRowFrom(r: CommunityReport): SignalementRowView {
+  const genre = GENRE_SIGNALE[r.subjectType];
+  const auteur = r.author === null ? null : nomAbrege(r.author.handle, r.author.displayName);
+  const extrait = r.extrait.trim();
+
+  const titre = [
+    auteur === null ? genre : `${genre} de ${auteur}`,
+    extrait === '' ? null : `« ${extrait} »`,
+  ]
+    .filter((m): m is string => m !== null)
+    .join(' · ');
+
+  const sous = [
+    MOTIF_LABEL[r.reason] ?? r.reason,
+    `${r.count} signalement${r.count > 1 ? 's' : ''}`,
+    r.escalated ? 'transmis à la modération de la plateforme' : null,
+    r.hidden ? 'déjà masqué' : null,
+  ]
+    .filter((m): m is string => m !== null)
+    .join(' · ');
+
+  return {
+    subjectType: r.subjectType,
+    subjectId: r.subjectId,
+    titre,
+    sous,
+    /**
+     * ⚠ SEUL UN SUJET A UNE PAGE. Vérifié sur l'arborescence de `app/(app)` : il
+     * existe `/reseaux/[slug]/sujets/[id]`, et AUCUNE page de publication ni de
+     * commentaire dans tout le produit. « Voir » n'a donc nulle part où aller
+     * pour deux des trois genres, et le bouton s'éteint au lieu de mener à un
+     * 404. REMONTÉ : il faudrait une page de publication.
+     *
+     * ⚠ ET LE SLUG N'EST PAS CONNU D'ICI — la rangée vient de la file, pas de la
+     * fiche. L'adresse est donc composée par le HOOK, qui l'a. On laisse `''` et
+     * `use-reseau.ts` la remplit : voir son appel.
+     */
+    href: '',
+    masque: r.hidden,
+  };
+}
+
+// ═══ L'onglet « Événements » d'un réseau ═══════════════════════════════════
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES DEUX PAIRES DE COULEURS DE LA PASTILLE DE DATE, RELEVÉES SUR LA PLANCHE  ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La maquette dessine la pastille de la première carte — celle qui porte
+ * « Vous y allez » — en terre cuite sur sable (`#FBE3D4` / `#B4581F`), et celles
+ * des deux autres en vert sur vert (`#E3F0EB` / `#0F5C48`). Relevé identique sur
+ * les quatre cadres de l'onglet, aux deux largeurs.
+ *
+ * C'est la MÊME paire que l'agenda emploie pour la même distinction
+ * (`DATE_JY_VAIS` / `DATE_AUTRE` dans `screens/agenda/data.ts`) — la couleur ne
+ * se décide donc pas ici, elle se lit sur deux maquettes qui s'accordent. La
+ * couleur du TEXTE, elle, n'existe que sur cette maquette : la pastille de
+ * l'agenda n'en déclare pas.
+ */
+const DATE_JY_VAIS = { fond: '#FBE3D4', couleur: '#B4581F' } as const;
+const DATE_AUTRE = { fond: '#E3F0EB', couleur: '#0F5C48' } as const;
+
+/**
+ * Une carte de l'onglet « Événements » d'un réseau, depuis `GET /events`.
+ *
+ * ── CE QUI VIENT DE L'AGENDA, ET POURQUOI ────────────────────────────────────
+ *
+ * `numeroJour`, `abbrMois`, `TYPES_FR` et `pluriel` sont IMPORTÉS de
+ * `screens/agenda/data.ts`, qui est le module de l'écran d'origine de cette
+ * donnée. Un mois écrit de deux façons dans la même application, ou deux tables
+ * de libellés de type, divergent toujours — et `TYPES_FR` porte déjà l'écart
+ * signalé au porteur sur les huit valeurs de `EventType`.
+ *
+ * ── LE JOUR EST CELUI DE LA VILLE DE L'ÉVÉNEMENT ─────────────────────────────
+ *
+ * `localDate` est calculé par le SERVEUR dans le fuseau de la ville (§3.5), et ce
+ * fichier ne le recalcule jamais : un événement de 23 h se rangerait un jour trop
+ * tôt ou trop tard selon le fuseau du navigateur.
+ */
+export function evenementReseauFrom(e: EventCardResponse): EvenementReseauView {
+  const jyVais = e.myStatus === 'GOING' || e.myStatus === 'WAITLIST';
+  const date = jyVais ? DATE_JY_VAIS : DATE_AUTRE;
+  return {
+    id: e.id,
+    numero: numeroJour(e.localDate),
+    mois: abbrMois(e.localDate),
+    fondDate: date.fond,
+    couleurDate: date.couleur,
+    type: TYPES_FR[e.type] ?? e.type,
+    jyVais,
+    reserve: e.communityId !== null,
+    titre: e.title,
+    lieu: e.venueName === null ? e.city.name : `${e.venueName}, ${e.city.name}`,
+    lieuCourt: e.venueName ?? e.city.name,
+    participants: e.attendeeCount,
+    pluriel: pluriel(e.attendeeCount),
+    /** `/agenda/:id` — la page que `app/(app)/agenda/[id]/` sert déjà. */
+    href: `/agenda/${e.id}`,
+  };
+}
+
+export function evenementsReseauFrom(
+  items: readonly EventCardResponse[],
+): readonly EvenementReseauView[] {
+  return items.map(evenementReseauFrom);
+}
+
+// ══ L'ONGLET « ALBUM » (§2.3) ═══════════════════════════════════════════════
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES TROIS ONGLETS PAR DÉFAUT SE DÉRIVENT — AUCUNE COLONNE N'A ÉTÉ AJOUTÉE   ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ AVANT D'ÉCRIRE UNE LIGNE, et c'est ce qui a décidé qu'il n'y aurait pas
+ * de migration : le modèle `Album` (`packages/db/prisma/schema/07-communities.prisma`,
+ * l. 372) porte `communityId`, `eventId?`, `title`, `createdByUserId` — et AUCUN
+ * champ de genre. Les trois onglets que le porteur demande tiennent donc sur ce
+ * qui existe :
+ *
+ *   · « Événements » = `eventId !== null`. C'est ce que le service écrit déjà
+ *     dans `albumSchema.eventId`, donc rien à ajouter côté API non plus ;
+ *   · « Partagés »  = les images des PUBLICATIONS du réseau, qui ne sont pas des
+ *     albums du tout : elles vivent dans `PostMedia` et arrivent par
+ *     `postCardSchema.media`. C'est une VUE, pas une ligne d'`albums` ;
+ *   · « Tout »      = l'ensemble.
+ *
+ * ⚠ LE LIBELLÉ EST « Tout », PAS « Tous » : c'est le mot que la maquette dessine
+ * sur les trois cadres qui portent cette rangée (1 036 px vue membre, 1 036 px
+ * vue propriétaire, 390 px vue membre). Le porteur a écrit « tous » ; on
+ * transcode le dessin au lieu de le réécrire, et c'est REMONTÉ.
+ */
+export const ALBUM_TOUT = 'tout';
+export const ALBUM_PARTAGES = 'partages';
+export const ALBUM_EVENEMENTS = 'evenements';
+
+const ALBUM_PASTILLES_PAR_DEFAUT: readonly AlbumPastilleView[] = [
+  { clef: ALBUM_TOUT, libelle: 'Tout' },
+  { clef: ALBUM_PARTAGES, libelle: 'Partagés' },
+  { clef: ALBUM_EVENEMENTS, libelle: 'Événements' },
+];
+
+/**
+ * Les pastilles : les trois par défaut, puis UN ALBUM DE MODÉRATEUR par
+ * pastille.
+ *
+ * ⚠ LES ALBUMS D'ÉVÉNEMENT N'ONT PAS LEUR PASTILLE, et c'est le porteur qui le
+ * dit : ils sont « des albums automatiques remplis par […] les images ajoutées
+ * lors de la publication des événements », et l'onglet « Événements » les montre
+ * tous ensemble. Leur donner en plus une pastille chacune ferait lire deux fois
+ * la même photo dans deux onglets voisins — et la rangée de pastilles, que la
+ * maquette dessine en trois éléments, deviendrait une liste sans fin sur un
+ * réseau qui annonce vingt événements.
+ */
+export function albumPastillesFrom(albums: readonly Album[]): readonly AlbumPastilleView[] {
+  return [
+    ...ALBUM_PASTILLES_PAR_DEFAUT,
+    ...albums.filter((a) => a.eventId === null).map((a) => ({ clef: a.id, libelle: a.title })),
+  ];
+}
+
+/**
+ * Les tuiles d'UN album.
+ *
+ * `p.url === null` EST FILTRÉ, et le schéma dit pourquoi : « `null` tant que
+ * l'image est en traitement ». Une tuile sans adresse afficherait le hachuré de
+ * la maquette à la place d'une photo — c'est-à-dire un trou qui se lit comme un
+ * défaut d'affichage. Mieux vaut douze tuiles de moins qu'une tuile qui mente.
+ * REMONTÉ : le pipeline média ne tourne pas encore, donc ce filtre est celui
+ * qui décide de ce qui s'affiche aujourd'hui.
+ */
+function tuilesDe(a: Album): readonly PhotoAlbumView[] {
+  const vues: PhotoAlbumView[] = [];
+  for (const p of a.photos) {
+    if (p.url === null) continue;
+    vues.push({ id: p.id, url: p.url, legende: p.caption ?? '' });
+  }
+  return vues;
+}
+
+/**
+ * « Partagés » — les images des publications du fil du réseau.
+ *
+ * ⚠ ON NE PASSE PAS PAR `GET /communities/:id/feed`, et c'est la même raison que
+ * pour l'onglet « Fil » (voir `A08TData.publications`) :
+ * `communityFeedPostSchema` ne porte que sept champs bruts, SANS `media`. C'est
+ * donc `GET /feed?communityId=…` qu'on lit, dont `postCardSchema.media` rend
+ * `{ id, position, url }` — l'`url` y est une chaîne, jamais `null`, parce que
+ * le service du fil ne met en carte que les médias prêts.
+ *
+ * `position` DÉCIDE DE L'ORDRE DANS UNE PUBLICATION : une publication porte
+ * jusqu'à quatre images (§2.4), et leur ordre est celui que l'auteur a choisi.
+ * L'ordre ENTRE publications est celui du fil, c'est-à-dire du plus récent au
+ * plus ancien — le même que la grille d'un album.
+ *
+ * `legende` RESTE VIDE : une publication n'a pas de légende par image, elle a un
+ * corps. Y mettre l'extrait du texte écrirait un paragraphe dans une tuile de
+ * 150 px. REMONTÉ : la maquette ne dessine de texte que sur la première tuile.
+ */
+export function photosPartageesFrom(posts: readonly PostCard[]): readonly PhotoAlbumView[] {
+  const vues: PhotoAlbumView[] = [];
+  for (const p of posts) {
+    for (const m of [...p.media].sort((a, b) => a.position - b.position)) {
+      vues.push({ id: m.id, url: m.url, legende: '' });
+    }
+  }
+  return vues;
+}
+
+/**
+ * La grille de l'onglet choisi.
+ *
+ * `partagees` est passée toute faite plutôt que recalculée ici : le crochet la
+ * tient d'un appel distinct (`GET /feed?communityId=`), et la recalculer à
+ * chaque bascule de pastille demanderait de garder les publications brutes dans
+ * l'état pour rien.
+ */
+export function albumPhotosFrom(
+  albums: readonly Album[],
+  partagees: readonly PhotoAlbumView[],
+  onglet: string,
+): readonly PhotoAlbumView[] {
+  if (onglet === ALBUM_PARTAGES) return partagees;
+  if (onglet === ALBUM_EVENEMENTS) {
+    return albums.filter((a) => a.eventId !== null).flatMap(tuilesDe);
+  }
+  if (onglet === ALBUM_TOUT) return [...albums.flatMap(tuilesDe), ...partagees];
+  const un = albums.find((a) => a.id === onglet);
+  return un === undefined ? [] : tuilesDe(un);
+}
+
+/**
+ * Les rangées de la carte « ALBUMS » de la colonne de droite.
+ *
+ * ⚠ LES ALBUMS D'ÉVÉNEMENT EN SONT ABSENTS, pour la même raison que leurs
+ * pastilles : l'onglet « Événements » les montre tous ensemble, et la carte en
+ * listerait un par événement du réseau — trois rangées dessinées, vingt
+ * possibles.
+ *
+ * `photoCount` ET `photos[0].url` VIENNENT DU SERVEUR, tous les deux : rien à
+ * compter ici, rien à deviner. `photos` est trié du plus récent au plus ancien
+ * par le service (`orderBy: { createdAt: 'desc' }`), donc la couverture est la
+ * DERNIÈRE photo ajoutée — c'est ce que le service rend, et choisir autrement
+ * demanderait une colonne de couverture, qui n'existe pas. REMONTÉ.
+ */
+export function albumVignettesFrom(albums: readonly Album[]): readonly AlbumVignetteView[] {
+  return albums
+    .filter((a) => a.eventId === null)
+    .map((a) => ({
+      id: a.id,
+      titre: a.title,
+      compte:
+        a.photoCount === 0
+          ? 'Aucune photo'
+          : `${a.photoCount} photo${a.photoCount > 1 ? 's' : ''}`,
+      couverture: a.photos.find((p) => p.url !== null)?.url ?? null,
+    }));
 }

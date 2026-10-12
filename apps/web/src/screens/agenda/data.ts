@@ -117,6 +117,17 @@ export interface PanneauAgenda {
 
 /** Une carte d'événement du jour (E01), aux deux largeurs. */
 export interface CarteEvenement {
+  /**
+   * L'ADRESSE DU DÉTAIL, ou absente.
+   *
+   * Le porteur, après avoir vu les gestes revenir sur la carte du fil : « c'est
+   * bon aussi pour les autres ? » Non : mesuré au navigateur, ces cartes ne
+   * menaient nulle part, même sur leur propre page. Elles portent maintenant
+   * leur adresse, et `CadreCliquable` rend un `<div>` quand elle manque — ce qui
+   * est le cas des cartes DESSINÉES par la maquette, qui n'ont pas d'identifiant.
+   */
+  readonly href?: string;
+
   readonly fondDate: string;
   readonly numero: string;
   readonly abbr: string;
@@ -312,8 +323,14 @@ const PALETTE_AVATARS = ['#2FA37D', '#E0733A', '#0F5C48', '#B4581F'] as const;
 /** La maquette empile QUATRE ronds : trois avatars, puis le compteur du reste. */
 const AVATARS_MONTRES = 3;
 
-/** Les cinq types d'événement que les maquettes nomment (09 §3.1 et T5 E03). */
-const TYPES_FR: Record<string, string> = {
+/**
+ * Les cinq types d'événement que les maquettes nomment (09 §3.1 et T5 E03).
+ *
+ * EXPORTÉE depuis le lot de l'onglet « Événements » d'un réseau (A08T), qui
+ * dessine la même pastille de type sur ses quatre cadres. Une seconde table y
+ * aurait nommé « Pique-nique » autrement dès la première relecture.
+ */
+export const TYPES_FR: Record<string, string> = {
   PICNIC: 'Pique-nique',
   SPORT: 'Sport',
   CV_WORKSHOP: 'Atelier',
@@ -364,6 +381,37 @@ export const abbrJour = (jourCivil: string): string =>
 /** « 21 » — le numéro du jour dans le mois. */
 export const numeroJour = (jourCivil: string): string =>
   fmt({ day: 'numeric' }, 'UTC').format(midiUtc(jourCivil));
+
+/**
+ * « MARS », « AOÛT » — le MOIS en capitales, sous le numéro du jour.
+ *
+ * ── POURQUOI UN SECOND ABRÉGÉ, À CÔTÉ DE `abbrJour` ───────────────────────
+ *
+ * Les pastilles de date ne portent pas tous la même chose : celle de l'agenda
+ * (E01) écrit le JOUR DE LA SEMAINE sous le numéro — « 21 / SAM » —, celle de
+ * l'onglet « Événements » d'un réseau (A08T) écrit le MOIS — « 14 / MARS ».
+ * Relevé sur les quatre cadres de l'onglet, aux deux largeurs : jamais un
+ * abrégé de jour.
+ *
+ * ── `month: 'short'` ET NON `'long'`, MESURÉ ─────────────────────────────
+ *
+ * La maquette ne dessine que « MARS » et « AOÛT », deux mois dont la forme
+ * courte et la forme longue sont IDENTIQUES en français : le dessin ne tranche
+ * donc pas. Ce qui tranche est la place — 10 px de haut dans une pastille de
+ * 62 px (54 à 390 px) — et `'long'` y mettrait « SEPTEMBRE », qui déborde.
+ * `'short'` rend « sept. », d'où le point retiré, exactement comme `abbrJour`
+ * retire celui de « sam. ».
+ *
+ * ⚠ PAS DE `.slice(0, 3)` ICI, et c'est la différence avec `abbrJour` : « JUIL »
+ * et « SEPT » sont lisibles, « JUI » et « SEP » le sont moins, et rien dans la
+ * maquette ne demande trois caractères — les deux mois qu'elle dessine en font
+ * quatre.
+ */
+export const abbrMois = (jourCivil: string): string =>
+  fmt({ month: 'short' }, 'UTC')
+    .format(midiUtc(jourCivil))
+    .replace('.', '')
+    .toUpperCase();
 
 /** « Samedi 21 septembre » — le titre du jour sélectionné (§3.5). */
 export const jourLong = (jourCivil: string): string =>
@@ -571,6 +619,8 @@ export function construireCarte(
 ): CarteEvenement {
   const jyVais = carte.myStatus === 'GOING' || carte.myStatus === 'WAITLIST';
   return {
+    /** `/agenda/:id` — la route que `app/(app)/agenda/[id]/` sert. */
+    href: `/agenda/${carte.id}`,
     fondDate: jyVais ? DATE_JY_VAIS : DATE_AUTRE,
     numero: numeroJour(carte.localDate),
     abbr: abbrJour(carte.localDate),

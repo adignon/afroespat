@@ -10,6 +10,13 @@ import { GuideScreen } from './guide-screen';
  * `?vue=auteur` change la VUE, pas la ressource — c'est le même guide, lu par
  * deux personnes différentes, donc la même URL.
  *
+ * ── CETTE ADRESSE EST CELLE DE LA PREMIÈRE PAGE, ET ELLE LE RESTE ───────────
+ *
+ * Depuis que les guides ont des pages, `pageSlug` est OMIS ici : c'est le SERVEUR
+ * qui choisit la première page quand `?page=` est absent, et c'est ce qui garantit
+ * que tous les liens partagés avant la fonctionnalité continuent d'ouvrir le
+ * guide. Les autres pages vivent sous `p/[pageSlug]/page.tsx`, à côté.
+ *
  * LE SLUG EST PASSÉ AU COMPOSANT, ce qu'il n'était pas : la page affichait le
  * guide de la maquette quelle que soit l'adresse demandée. C'est LUI la clé de
  * lecture, et §2.1 le fige à la publication — « jamais modifié » — précisément

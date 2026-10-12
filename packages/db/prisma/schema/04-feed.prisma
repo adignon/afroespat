@@ -37,10 +37,24 @@ enum ReactionKind {
   LIKE
 }
 
+/// Les contenus commentables (§2.5).
+///
+/// `GUIDE_PAGE` ajoutée : depuis que le corps d'un guide vit dans ses PAGES
+/// (05 `GuidePage`), un commentaire porte sur LA PAGE qu'on lisait — c'est la
+/// décision du porteur, et c'est aussi la seule lecture qui rende le fil utile :
+/// une question posée sur l'étape « prendre rendez-vous » n'a rien à faire sous
+/// l'étape « retirer le titre ».
+///
+/// `GUIDE` est CONSERVÉE — on ne retire jamais une valeur d'énumération, les
+/// lignes anciennes la portent. Mais PLUS AUCUN commentaire ne s'y attache :
+/// `FeedService.assertSubjectVisible` refuse désormais `GUIDE` en 404, et la
+/// reprise de données a déplacé les 69 lignes existantes vers la page 1 de leur
+/// guide (migration `guide_pages_reprise`).
 enum CommentSubjectType {
   POST
   TOPIC
   GUIDE
+  GUIDE_PAGE
   EVENT
 }
 
@@ -245,9 +259,9 @@ model Story {
   stepDefinitionId String? @map("step_definition_id") @db.Uuid
 
   /// Sujet (conseil, information) ou catégorie de découverte (lieu, produit, sortie).
-  category   String?
+  category      String?
   /// Découverte : lieu · Information : guichet ou lieu concerné.
-  placeLabel String? @map("place_label")
+  placeLabel    String? @map("place_label")
   /// Le sujet écrit à la main quand `category = 'AUTRE'`. Le porteur : « au niveau
   /// du sujet, Autre doit permettre de saisir dans un champ ». Distinct de
   /// `category`, qui reste l'ÉNUMÉRATION : mélanger les deux ferait d'un sujet
@@ -283,6 +297,9 @@ model Story {
   views     StoryView[]
   cityTips  CityTip[]
 
+  /// Les messages partis DE cette story (voir `Message.storyId`).
+  messages Message[]
+
   @@index([authorUserId])
   @@index([type])
   @@index([cityId])
@@ -292,9 +309,6 @@ model Story {
   @@index([score])
   @@index([status])
   @@map("stories")
-
-  /// Les messages partis DE cette story (voir `Message.storyId`).
-  messages Message[]
 }
 
 model StoryReaction {

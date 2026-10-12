@@ -394,18 +394,32 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
    * LA RÈGLE QUI NE TIENT PAS AU SEUL DÉCORATEUR.
    *
    * La route déclare `post.create` (L1), qui est le plancher honnête des genres
-   * qu'elle accepte. Mais 10 §2.1 fait du logement « L2 SANS EXCEPTION » et
-   * 10 §4.1 fait de la fiche pro un L2. Sans le contrôle par genre dans le
-   * service, un L1 déposerait la photo (écrite dans le seau), et seul
-   * `POST /housing` refuserait ensuite — trop tard.
+   * qu'elle accepte. Mais la politique de CHAQUE genre peut exiger davantage, et
+   * sans le contrôle par genre dans le service un L1 déposerait la photo (écrite
+   * dans le seau) : seul `POST /housing` refuserait ensuite — trop tard.
+   *
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CE CAS LISTAIT QUATRE GENRES « L1 ». IL N'EN RESTE QUE TROIS             ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Il gelait `EVENT_COVER` parmi les genres qu'un L1 envoie, et il avait raison
+   * quand `event.create` valait L1. La refonte des niveaux du porteur
+   * (2026-10-09) range « faire tout le reste » en N2, et créer un événement en
+   * fait partie : la couverture suit la capacité de la route qui l'attachera,
+   * comme `HOUSING` et `PROOF` le font depuis toujours. `GUIDE`, arrivé avec les
+   * images dans le corps des guides, demande `guide.write` — N2 lui aussi.
+   *
+   * CE N'EST DONC PAS LA RÈGLE QUI EST CORRIGÉE ICI, C'EST LE CAS : il figeait un
+   * arbitrage que le porteur a remplacé, et un test qui survit à l'arbitrage qu'il
+   * décrit transforme chaque décision du porteur en échec rouge.
    *
    * MUTATION TÉMOIN — désactiver `levelSatisfies(...)` dans le service fait passer
-   * les deux premières attentes de 403 à 201.
+   * les quatre premières attentes de 403 à 201.
    */
-  it('[10 §2.1, §4.1] un L1 ne peut envoyer ni photo de logement ni justificatif, mais peut tout le reste', async () => {
+  it('[10 §2.1, §4.1] un L1 n’envoie que les trois genres de son niveau — logement, justificatif, couverture et image de guide sont en L2', async () => {
     const { token, id } = await membre('L1');
 
-    for (const kind of ['HOUSING', 'PROOF'] as const) {
+    for (const kind of ['HOUSING', 'PROOF', 'EVENT_COVER', 'GUIDE'] as const) {
       const res = await envoyer(token, kind, jpegAvecExif(), 'photo.jpg', 'image/jpeg');
       expect(res.status, `${kind} accepté en L1`).toBe(403);
       const body = res.body as ErrorBody;
@@ -418,8 +432,8 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
     // Aucun octet, aucune ligne : le refus coûte zéro écriture.
     expect(await prisma.mediaAsset.count({ where: { ownerUserId: id } })).toBe(0);
 
-    // Et les genres L1 passent, eux.
-    for (const kind of ['POST', 'MESSAGE', 'ALBUM', 'EVENT_COVER'] as const) {
+    // Et les trois genres qui RESTENT en L1 passent, eux.
+    for (const kind of ['POST', 'MESSAGE', 'ALBUM'] as const) {
       const ok = await envoyer(token, kind, jpegAvecExif(), 'photo.jpg', 'image/jpeg');
       expect(ok.status, `${kind} refusé en L1`).toBe(201);
     }
@@ -427,25 +441,45 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
 
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
-   * ║ CE CAS DISAIT L'INVERSE — ÉCART ASSUMÉ AVEC 04 §2.4                     ║
+   * ║ CE CAS A DIT LES DEUX CHOSES TOUR À TOUR, ET VOICI POURQUOI              ║
    * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * Il gelait « le plancher de `POST /media` est L1 » : la route porte
-   * `post.create`, qui valait L1. Le porteur, après avoir vu la photo refusée dans
-   * le composeur de story : « Autorise pour tout le monde la possibilité de publier
-   * des stories AVEC TOUT CE QUI VA AVEC. » La photo passe par cette route ; la
-   * décision est écrite sur `post.create` dans `capabilities.ts`.
+   * ÉTAT 1 — il gelait « le plancher de `POST /media` est L1 », parce que la route
+   * porte `post.create` et que `post.create` valait L1.
    *
-   * Ce qui est gelé ici maintenant : l'envoi PASSE pour un compte non vérifié, et
-   * TOUT LE RESTE DE LA ROUTE tient — c'est lui qui retient désormais, puisque le
-   * niveau ne retient plus. L'EXIF est retiré, le genre est contrôlé, et le
-   * portrait reste ouvert comme il l'a toujours été (01 §4.2).
+   * ÉTAT 2 — le porteur, après avoir vu la photo refusée dans le composeur de
+   * story : « Autorise pour tout le monde la possibilité de publier des stories
+   * AVEC TOUT CE QUI VA AVEC. » `post.create` est passée en L0, et ce cas a été
+   * retourné : l'envoi passait pour un compte non vérifié.
+   *
+   * ÉTAT 3, celui-ci — la refonte des niveaux (2026-10-09) range explicitement
+   * « publier dans le fil d'actualité et stories » en N1. L'instruction la plus
+   * récente l'emporte, `post.create` est revenue en L1, et la CONSÉQUENCE est
+   * écrite dans `capabilities.ts` : « un L0 ne peut plus déposer d'image ». C'est
+   * exactement ce que ce cas mesure maintenant.
+   *
+   * CE QUI NE BOUGE PAS D'UN ÉTAT À L'AUTRE, et c'est la raison de garder ce cas
+   * plutôt que de le supprimer : LE PORTRAIT. `PUT /me/avatar` est à
+   * `content.read` (L0), parce que 01 §4.2 ne fait pas du portrait une récompense
+   * de vérification. Un compte à un SMS a donc un visage, et pas de photo dans le
+   * fil — et le jour où quelqu'un fermera l'avatar « par cohérence », ce cas
+   * tombera.
+   *
+   * ⚠ CE QUE ÇA COÛTE, ET CE N'EST PAS RIEN : le refus arrive sur la route
+   * MÉDIA, donc AVANT le composeur. Le front doit éteindre le bouton d'image dès
+   * L0 (`lib/capacites.ts` lit la même table) ; sans cela le membre choisit un
+   * fichier, attend l'envoi, et reçoit un 403 — le pire moment pour l'apprendre.
    */
-  it('un L0 envoie un média, EXIF retiré — et pose toujours son portrait', async () => {
+  it('un L0 ne dépose pas d’image — mais pose toujours son portrait', async () => {
     const { token } = await membre('L0');
 
     const envoi = await envoyer(token, 'POST', jpegAvecExif(), 'photo.jpg', 'image/jpeg');
-    expect(envoi.status, JSON.stringify(envoi.body)).toBe(201);
+    expect(envoi.status, JSON.stringify(envoi.body)).toBe(403);
+    const body = envoi.body as ErrorBody;
+    expect(body.error.code).toBe('LEVEL_REQUIRED');
+    expect(body.error.details?.capability).toBe('post.create');
+    expect(body.error.details?.requiredLevel).toBe('L1');
+    expect(body.error.details?.currentLevel).toBe('L0');
 
     // `PUT /me/avatar` est à `content.read` (L0) : 01 §4.2 ne fait pas du
     // portrait une récompense de vérification.
@@ -470,11 +504,20 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
       expect((res.body as ErrorBody).error.code).toBe('VALIDATION_FAILED');
     }
 
-    // Et la liste acceptée est bien celle de la politique, sans AVATAR.
+    /**
+     * Et la liste acceptée est bien celle de la politique, sans AVATAR.
+     *
+     * `GUIDE` S'Y EST AJOUTÉ : les guides portent désormais des images dans leur
+     * corps (05 §2.1, table `guide_media`), et la politique du genre demande
+     * `guide.write` (L2) — voir `MEDIA_KIND_POLICIES`. Ce cas liste les genres
+     * envoyables à la main EXPRÈS : l'ajout d'un genre à `MediaKind` doit obliger
+     * quelqu'un à venir dire ici qu'un membre a le droit de l'envoyer.
+     */
     expect([...MEDIA_MEMBER_UPLOADABLE_KINDS].sort()).toEqual([
       'ALBUM',
       'AVATAR',
       'EVENT_COVER',
+      'GUIDE',
       'HOUSING',
       'MESSAGE',
       'POST',

@@ -31,6 +31,7 @@ import {
   commentMutationResponseSchema,
   commentsResponseSchema,
   createCommentSchema,
+  type CommentSubjectType,
   createPostSchema,
   updatePostSchema,
   pollDetailResponseSchema,
@@ -94,6 +95,16 @@ export interface FeedFilters {
   readonly cityId?: string;
   readonly communityId?: string;
   readonly cursor?: string;
+  /**
+   * LES PUBLICATIONS D'UN MEMBRE — l'onglet « Fil » de son profil public.
+   *
+   * Le profil montre la CARTE du fil, pas une ligne de titre : seule cette route
+   * sert `postCardSchema` entier. Le filtre s'ajoute aux règles de visibilité du
+   * fil, il n'en remplace aucune.
+   */
+  readonly authorHandle?: string;
+  /** La route borne elle-même ; on demande moins pour un onglet de profil. */
+  readonly limit?: number;
 }
 
 /**
@@ -115,7 +126,11 @@ function query(filters: Readonly<Record<string, string | undefined>>): string {
 // ── Lectures ────────────────────────────────────────────────────────────────
 
 export function fetchFeed(filters: FeedFilters = {}, signal?: AbortSignal): Promise<FeedResponse> {
-  return memberApi.get(`/feed${query({ ...filters })}`, feedResponseSchema, opts(signal));
+  return memberApi.get(
+    `/feed${query({ ...filters, limit: filters.limit === undefined ? undefined : String(filters.limit) })}`,
+    feedResponseSchema,
+    opts(signal),
+  );
 }
 
 /** §2.7 : les quatre blocs de la colonne droite, tous calculés par le serveur. */
@@ -148,10 +163,28 @@ export function fetchPost(id: string, signal?: AbortSignal): Promise<PostDetailR
 
 /**
  * Les commentaires d'un sujet. `subjectType` est POLYMORPHE (§2.5) : la même route
- * sert les publications, les sujets de réseau, les guides et les événements.
+ * sert les publications, les sujets de réseau, les PAGES de guide et les événements.
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE TYPE VIENT DE L'ÉNUMÉRATION PARTAGÉE, IL N'EST PLUS RECOPIÉ             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Il valait `'POST' | 'TOPIC' | 'GUIDE' | 'EVENT'`, écrit à la main — une SECONDE
+ * SOURCE pour une énumération que `packages/shared` tient déjà
+ * (`CommentSubjectType`, dérivée du schéma Prisma). Et elle a divergé : le lot des
+ * pages a ajouté `GUIDE_PAGE`, que le serveur accepte depuis, et cette union-ci
+ * ne le connaissait pas — un commentaire de page ne pouvait pas être demandé
+ * depuis le front, avec pour seul symptôme une erreur de compilation au premier
+ * appelant.
+ *
+ * `GUIDE` Y RESTE, et ce n'est pas par prudence : l'énumération le porte toujours,
+ * parce que les commentaires déjà écrits sur un guide existent en base. Les
+ * ÉCRIRE et les LIRE sur ce sujet répond désormais `404` côté serveur — un
+ * commentaire s'attache à une PAGE — et c'est au `subjectType` que l'appelant
+ * passe de le dire, pas à ce type-ci.
  */
 export function fetchComments(
-  subjectType: 'POST' | 'TOPIC' | 'GUIDE' | 'EVENT',
+  subjectType: CommentSubjectType,
   subjectId: string,
   cursor?: string,
   signal?: AbortSignal,

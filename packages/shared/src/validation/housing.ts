@@ -265,6 +265,16 @@ export const housingQuerySchema = cursorQuerySchema
     sort: housingSortSchema.default('date'),
     /** `mine` est l'écran « Mes annonces » : l'auteur y voit aussi ses annonces en pause. */
     scope: housingScopeSchema.default('all'),
+    /**
+     * LES ÉLÉMENTS D'UN MEMBRE — l'onglet correspondant de son profil public.
+     *
+     * Le porteur : « pour tous les tabs il reprend le design des éléments
+     * présentés de la façon dont ils sont présentés sur les pages d'origine ».
+     * La carte se dessine à partir du schéma ENTIER de cette route ; une route
+     * résumée ne peut pas la nourrir. Le filtre s'ajoute aux règles de
+     * visibilité existantes, il n'en remplace aucune.
+     */
+    authorHandle: handleSchema.optional(),
   })
   .strict();
 

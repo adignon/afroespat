@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  albumsResponseSchema,
   communitiesResponseSchema,
   communityDetailResponseSchema,
   communityMembersResponseSchema,
@@ -10,12 +11,16 @@ import {
   topicsResponseSchema,
 } from '@app/shared';
 import {
+  albumPastillesFrom,
+  albumPhotosFrom,
+  albumVignettesFrom,
   communityIsOpen,
   countersAreVisible,
   discoversFrom,
   inviteeFrom,
   myNetsFrom,
   pinnedRowsFrom,
+  photosPartageesFrom,
   pollFrom,
   repliesFrom,
   topicRowsFrom,
@@ -324,5 +329,145 @@ describe('les convertisseurs posent toutes les prises que le JSX transcodé lit'
     expect(invite.btn).toBe('Invité·e');
     expect(invite.btnBg).not.toBe(ligne.btnBg);
     expect(invite.btnFg).not.toBe(ligne.btnFg);
+  });
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES TROIS ONGLETS PAR DÉFAUT DE L'ALBUM SE DÉRIVENT — ET C'EST CE QUI    ║
+   * ║ TIENT SANS COLONNE EN BASE                                               ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La charge est FAÇONNÉE ici et non relevée, et il faut le dire :
+   * `packages/shared/src/__tests__/fixtures/` n'a pas de fixture d'albums — la
+   * route n'avait jamais été appelée par un écran. Elle est donc PARSÉE par
+   * `albumsResponseSchema` avant d'entrer dans les convertisseurs, ce qui garde
+   * la moitié utile de la discipline de ce fichier : si le schéma change, ce cas
+   * tombe. REMONTÉ : il manque une fixture relevée pour cette route.
+   *
+   * CE QUE CE CAS GARDE : que « Événements » tient sur `eventId !== null`, que
+   * « Tout » réunit albums ET images de publications, et qu'un album d'événement
+   * n'a PAS sa propre pastille — sans quoi la rangée de trois éléments que la
+   * maquette dessine deviendrait une liste sans fin.
+   */
+  const chargeAlbums = () =>
+    albumsResponseSchema.parse({
+      items: [
+        {
+          id: '11111111-1111-4111-8111-111111111111',
+          title: 'Repas partagé',
+          eventId: null,
+          createdAt: '2026-10-01T10:00:00.000Z',
+          createdBy: { id: '33333333-3333-4333-8333-333333333333', handle: 'aicha', displayName: 'Aïcha Diop' },
+          photoCount: 2,
+          photos: [
+            {
+              id: 'aaaaaaaa-1111-4111-8111-111111111111',
+              caption: 'Le buffet',
+              uploadedBy: { id: '33333333-3333-4333-8333-333333333333', handle: 'aicha' },
+              createdAt: '2026-10-01T11:00:00.000Z',
+              url: '/media/a/1.jpg',
+            },
+            {
+              id: 'aaaaaaaa-2222-4222-8222-222222222222',
+              caption: null,
+              uploadedBy: { id: '33333333-3333-4333-8333-333333333333', handle: 'aicha' },
+              createdAt: '2026-10-01T11:05:00.000Z',
+              // En TRAITEMENT : pas d'adresse, donc pas de tuile — une tuile sans
+              // adresse montrerait le hachuré de la maquette, c'est-à-dire un trou.
+              url: null,
+            },
+          ],
+        },
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          title: 'Album de la permanence',
+          eventId: '44444444-4444-4444-8444-444444444444',
+          createdAt: '2026-09-01T10:00:00.000Z',
+          createdBy: { id: '33333333-3333-4333-8333-333333333333', handle: 'aicha', displayName: 'Aïcha Diop' },
+          photoCount: 1,
+          photos: [
+            {
+              id: 'bbbbbbbb-1111-4111-8111-111111111111',
+              caption: null,
+              uploadedBy: { id: '33333333-3333-4333-8333-333333333333', handle: 'aicha' },
+              createdAt: '2026-09-01T11:00:00.000Z',
+              url: '/media/b/1.jpg',
+            },
+          ],
+        },
+      ],
+      nextCursor: null,
+    });
+
+  it('dérive les trois onglets de l’album, et ne donne de pastille qu’aux albums libres', () => {
+    const albums = chargeAlbums().items;
+    const pastilles = albumPastillesFrom(albums);
+
+    expect(pastilles.map((p) => p.clef)).toEqual([
+      'tout',
+      'partages',
+      'evenements',
+      '11111111-1111-4111-8111-111111111111',
+    ]);
+    // Le mot DESSINÉ est « Tout » — le porteur a écrit « tous ». On transcode.
+    expect(pastilles[0]!.libelle).toBe('Tout');
+    expect(pastilles[3]!.libelle).toBe('Repas partagé');
+  });
+
+  it('range chaque photo dans le bon onglet, et saute celles qui n’ont pas d’adresse', () => {
+    const albums = chargeAlbums().items;
+    const partagees = [{ id: 'cccccccc-1111-4111-8111-111111111111', url: '/media/c/1.jpg', legende: '' }];
+
+    // « Événements » : seulement l'album dont `eventId` n'est pas nul.
+    expect(albumPhotosFrom(albums, partagees, 'evenements').map((p) => p.url)).toEqual([
+      '/media/b/1.jpg',
+    ]);
+
+    // « Partagés » n'est PAS un album : c'est la vue des médias de publications.
+    expect(albumPhotosFrom(albums, partagees, 'partages').map((p) => p.url)).toEqual([
+      '/media/c/1.jpg',
+    ]);
+
+    // « Tout » réunit les deux — et la photo sans adresse ne paraît nulle part.
+    expect(albumPhotosFrom(albums, partagees, 'tout').map((p) => p.url)).toEqual([
+      '/media/a/1.jpg',
+      '/media/b/1.jpg',
+      '/media/c/1.jpg',
+    ]);
+
+    // Un album nommé ne rend que SES photos, légende comprise.
+    const un = albumPhotosFrom(albums, partagees, '11111111-1111-4111-8111-111111111111');
+    expect(un).toHaveLength(1);
+    expect(un[0]!.legende).toBe('Le buffet');
+
+    // Une clé inconnue — un album supprimé entre deux chargements — ne jette pas.
+    expect(albumPhotosFrom(albums, partagees, 'disparu')).toEqual([]);
+  });
+
+  it('compose les vignettes de la carte « ALBUMS » depuis la réponse seule', () => {
+    const vignettes = albumVignettesFrom(chargeAlbums().items);
+    // L'album d'ÉVÉNEMENT n'y figure pas : l'onglet « Événements » les montre tous.
+    expect(vignettes).toHaveLength(1);
+    expect(vignettes[0]!.titre).toBe('Repas partagé');
+    // `photoCount` vient du serveur — il compte AUSSI la photo en traitement.
+    expect(vignettes[0]!.compte).toBe('2 photos');
+    // La couverture est la première photo QUI A UNE ADRESSE.
+    expect(vignettes[0]!.couverture).toBe('/media/a/1.jpg');
+  });
+
+  it('les images d’une publication sortent dans l’ordre que l’auteur a choisi', () => {
+    const photos = photosPartageesFrom([
+      {
+        media: [
+          { id: 'dddddddd-2222-4222-8222-222222222222', position: 2, url: '/media/d/2.jpg' },
+          { id: 'dddddddd-1111-4111-8111-111111111111', position: 1, url: '/media/d/1.jpg' },
+        ],
+      },
+      { media: [] },
+    ] as unknown as Parameters<typeof photosPartageesFrom>[0]);
+
+    expect(photos.map((p) => p.url)).toEqual(['/media/d/1.jpg', '/media/d/2.jpg']);
+    // Une publication n'a pas de légende PAR IMAGE : elle a un corps. Rien d'écrit.
+    expect(photos.every((p) => p.legende === '')).toBe(true);
   });
 });

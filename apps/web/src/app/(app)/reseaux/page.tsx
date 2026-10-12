@@ -19,10 +19,23 @@ import { useReseaux } from '@/screens/reseaux/use-reseaux';
  * compteur. C'est ce qui permet à la page d'être rendue côté serveur avec du
  * texte réel (le rail, le panneau, les filtres) plutôt que d'être servie vide,
  * sans pour autant afficher un réseau qui n'existe pas.
+ *
+ * ── UN REFUS N'EFFACE PLUS LA PAGE, ET C'EST CE LOT QUI LE RÉVÈLE ──────────
+ *
+ * La condition était `pret && echec === null`, et elle se tenait tant que le seul
+ * échec possible était celui du CHARGEMENT : dans ce cas `data` porte déjà des
+ * listes vides, donc retomber sur le repli ne changeait rien.
+ *
+ * Depuis que « Rejoindre » existe, `echec` peut aussi porter le refus d'un GESTE
+ * — un `403 LEVEL_REQUIRED`, un `429`. Avec l'ancienne condition, cliquer
+ * « Rejoindre » et se faire refuser faisait DISPARAÎTRE les réseaux déjà chargés,
+ * et le message s'affichait sous une page vide. On garde donc les données et on
+ * affiche le refus à côté : c'est ce que fait déjà `use-reseaux`, qui recharge au
+ * lieu de peindre un état supposé.
  */
 export default function ReseauxPage() {
   const { data, pret, echec, seuilPhrase } = useReseaux();
-  const props = pret && echec === null ? data : a07Fallback;
+  const props = pret ? data : a07Fallback;
 
   return (
     <>

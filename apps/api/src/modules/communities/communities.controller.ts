@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   addAlbumPhotoSchema,
   communityListQuerySchema,
+  communityReportDecisionSchema,
   createAlbumSchema,
   createAnnouncementSchema,
   createCommunitySchema,
@@ -14,6 +15,7 @@ import {
   pollVoteSchema,
   topicListQuerySchema,
   transferCommunitySchema,
+  updateAnnouncementSchema,
   updateCommunitySchema,
   updateMemberSchema,
   updateTopicSchema,
@@ -21,7 +23,7 @@ import {
 } from '@app/shared';
 import { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
-import { RequiresCapability } from '../../common/capability.decorator';
+import { RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { zodPipe } from '../../common/zod.pipe';
 import { CommunitiesService } from './communities.service';
 
@@ -163,6 +165,49 @@ export class CommunitiesController {
     return this.communities.decideRequest(id, auth.userId, userId, 'reject');
   }
 
+  // ── Contacter l'équipe du réseau ──────────────────────────────────────────
+
+  /**
+   * « Contacter les modérateurs » — les deux boutons de la planche « À propos »
+   * (A08T, 1036 px et 390 px) n'avaient aucune route.
+   *
+   * ⚠ CE N'EST PAS `POST /reports`, ET LA PLANCHE DESSINE LES DEUX CÔTE À CÔTE.
+   * « Signaler le réseau » va à l'équipe de la PLATEFORME (13 §8.1), ouvre un
+   * `moderation_case`, peut suspendre un compte, et exige `report.create` (L2).
+   * Celle-ci ouvre un fil de GROUPE avec les bénévoles d'UN réseau : aucun
+   * dossier, aucun pouvoir de sanction, et `content.read` (L0) suffit — demander
+   * une règle à l'équipe de son réseau de ville ne doit rien exiger. Les
+   * confondre donnerait à une question de voisinage le poids d'une procédure, et
+   * enverrait un vrai abus à trois bénévoles au lieu de ceux qui peuvent agir.
+   *
+   * `content.read` et non `message.send` : la capacité L1 de la messagerie garde
+   * l'OUVERTURE d'une conversation DIRECT (§5.2), et le §5.2 autorise justement
+   * le L0 à écrire « dans les conversations dont il fait partie ». Ce fil-là est
+   * une conversation de groupe, comme JOURNEY et MENTORSHIP, et c'est le même
+   * raisonnement que `POST /conversations/:id/messages` — voir l'en-tête de
+   * `MessagingController`.
+   *
+   * ⚠ AUCUN CORPS DE REQUÊTE, contrairement à `POST /conversations/direct` qui
+   * exige un `firstMessage`. La maquette ne dessine aucun formulaire : un bouton,
+   * et rien d'autre. On ne lui en invente pas un. Le fil naît VIDE — comme naît
+   * une conversation de parcours — et le membre écrit dedans ensuite.
+   *
+   * `@RateLimit(10)` et AUCUN quota journalier : le geste est idempotent par
+   * construction (un fil par réseau et par demandeur, tenu par un index unique),
+   * donc il n'y a aucune ligne à compter. Le raisonnement complet est sur
+   * `CommunitiesService.openModeratorsConversation`.
+   */
+  @Post('communities/:id/moderators-conversation')
+  @HttpCode(201)
+  @RequiresCapability('content.read')
+  @RateLimit(10)
+  @ApiOperation({
+    summary: 'Ouvrir — ou rouvrir — le fil de groupe avec le propriétaire et les modérateurs',
+  })
+  async moderatorsConversation(@Auth() auth: AuthContext, @Param('id') id: string) {
+    return this.communities.openModeratorsConversation(id, auth.userId);
+  }
+
   // ── Membres ───────────────────────────────────────────────────────────────
 
   @Get('communities/:id/members')
@@ -176,9 +221,23 @@ export class CommunitiesController {
     return this.communities.members(id, auth.userId, query);
   }
 
+  /**
+   * ── TROIS CHAMPS, DEUX GESTES, UNE SEULE CAPACITÉ ─────────────────────────
+   *
+   * §4 met `role`, `status` et `muted` dans la même ligne du tableau, donc la
+   * route est partagée. Elle porte pourtant deux gestes que le SERVICE sépare :
+   * la modération (modérateur exigé, ligne d'audit) et la sourdine du §2.5
+   * (n'importe quel membre, sur son PROPRE rang, sans audit).
+   *
+   * `content.read` (L0) reste la bonne capacité pour les deux : un modérateur
+   * bénévole n'est pas nécessairement vérifié L1 (voir l'en-tête du
+   * contrôleur), et mettre en sourdine le réseau de sa ville ne doit rien
+   * exiger — c'est la seule échappatoire d'un membre à un réseau qu'il ne peut
+   * pas quitter (§2.1 : « Impossible (on peut le mettre en sourdine) »).
+   */
   @Patch('communities/:id/members/:userId')
   @RequiresCapability('content.read')
-  @ApiOperation({ summary: 'Rôle ou bannissement (propriétaire, modérateur)' })
+  @ApiOperation({ summary: 'Rôle, bannissement (modérateur) ou sourdine (soi-même)' })
   async updateMember(
     @Auth() auth: AuthContext,
     @Param('id') id: string,
@@ -186,6 +245,34 @@ export class CommunitiesController {
     @Body(zodPipe(updateMemberSchema)) body: z.infer<typeof updateMemberSchema>,
   ) {
     return this.communities.updateMember(id, auth.userId, userId, body);
+  }
+
+  /**
+   * RETIRER — le geste RÉVERSIBLE, et il n'est pas le bannissement.
+   *
+   * Le porteur : « Retirer, il peut rejoindre à nouveau. Mais banni, il ne peut
+   * plus rejoindre. » Deux conséquences opposées méritent deux gestes, et §4 n'en
+   * décrivait qu'un.
+   *
+   * `DELETE` et non un `PATCH` de plus : ce que la route fait, c'est effacer
+   * l'adhésion — la même chose que `POST /leave` pour soi-même. Le verbe le dit,
+   * et un `status: 'REMOVED'` serait une valeur que `CommunityMemberStatus`
+   * n'a pas.
+   *
+   * `204` comme `leave` : il n'y a plus d'état d'adhésion à renvoyer. Le
+   * bannissement, lui, rend `{ status: 'BANNED' }`, parce que sa ligne existe
+   * encore.
+   */
+  @Delete('communities/:id/members/:userId')
+  @HttpCode(204)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Retirer un membre — il pourra rejoindre à nouveau' })
+  async removeMember(
+    @Auth() auth: AuthContext,
+    @Param('id') id: string,
+    @Param('userId', zodPipe(uuidSchema)) userId: string,
+  ): Promise<void> {
+    await this.communities.removeMember(id, auth.userId, userId);
   }
 
   @Post('communities/:id/transfer')
@@ -266,6 +353,31 @@ export class CommunitiesController {
     await this.communities.deleteTopic(id, auth.userId);
   }
 
+  /**
+   * REMETTRE un sujet masqué — sept jours, puis l'équipe seule.
+   *
+   * Arbitrage du porteur. Réservée au propriétaire et aux modérateurs DU RÉSEAU,
+   * et bornée à sept jours après le masquage, que le service compte sur
+   * `topics.deleted_at`.
+   *
+   * `POST` sur une sous-ressource plutôt qu'un `PATCH /topics/:id` : `updateTopic`
+   * départage déjà trois droits différents dans un seul corps (statut, épinglage,
+   * titre), et y ajouter un quatrième aux conditions encore différentes rendrait
+   * ses refus illisibles. C'est la forme que `POST /communities/:id/reactivate`
+   * emploie déjà pour la même sorte de geste : défaire un retrait.
+   *
+   * ⚠ LA LIMITE DE POUVOIR DU §2.4 TIENT : cette route agit sur un CONTENU et
+   * jamais sur un compte. Un modérateur de réseau ne lève aucune sanction de
+   * membre — il ne peut ni suspendre ni réinstaller, il signale à l'équipe.
+   */
+  @Post('topics/:id/restore')
+  @HttpCode(200)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Remettre un sujet masqué (modérateur, 7 jours)' })
+  async restoreTopic(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.communities.restoreTopic(id, auth.userId);
+  }
+
   // ── Annonces ──────────────────────────────────────────────────────────────
 
   @Get('communities/:id/announcements')
@@ -288,7 +400,101 @@ export class CommunitiesController {
     @Param('id') id: string,
     @Body(zodPipe(createAnnouncementSchema)) body: z.infer<typeof createAnnouncementSchema>,
   ) {
-    return this.communities.createAnnouncement(id, auth.userId, body.body);
+    /**
+     * LE CORPS ENTIER DESCEND, et non plus `body.body` seul.
+     *
+     * `createAnnouncementSchema` porte maintenant les QUATRE contrôles de la
+     * planche — titre, corps, épinglage, notification — et `zodPipe` a déjà
+     * appliqué les deux défauts (`pinned: false`, `notify: true`). Extraire un
+     * seul champ ici reviendrait à jeter les trois autres après les avoir
+     * validés, ce qui est exactement l'écart que ce lot ferme.
+     */
+    return this.communities.createAnnouncement(id, auth.userId, body);
+  }
+
+  /**
+   * ÉPINGLER OU DÉSÉPINGLER UNE ANNONCE DÉJÀ PUBLIÉE — arbitrage du 2026-10-11.
+   *
+   * L'épinglage reste EXCLUSIF (une seule annonce en haut du fil), et il
+   * manquait le chemin du retour : sans cette route, on ne pouvait que remplacer
+   * l'épinglée par une autre en publiant — avec un budget de deux annonces par
+   * semaine (§2.3). « Épingler en haut du fil » était une porte à sens unique.
+   *
+   * `content.read` et non `post.create` : on ne publie rien ici, on déplace un
+   * épinglage. La garde réelle est `assertModerator` dans le service, comme pour
+   * la création.
+   *
+   * ⚠ LA MAQUETTE NE DESSINE AUCUN GESTE DE DÉSÉPINGLAGE — relevé : zéro
+   * occurrence de « Désépingler » dans `03 Accueil v2.dc.html`. Remonté au
+   * rapport ; la route existe parce qu'une accumulation sans issue est plus
+   * grave qu'un bouton manquant.
+   */
+  @Patch('communities/:id/announcements/:announcementId')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Épingler ou désépingler une annonce (propriétaire, modérateur)' })
+  async updateAnnouncement(
+    @Auth() auth: AuthContext,
+    @Param('id') id: string,
+    @Param('announcementId', zodPipe(uuidSchema)) announcementId: string,
+    @Body(zodPipe(updateAnnouncementSchema)) body: z.infer<typeof updateAnnouncementSchema>,
+  ) {
+    return this.communities.setAnnouncementPinned(id, announcementId, auth.userId, body.pinned);
+  }
+
+  // ── Signalements du réseau (§2.4) ─────────────────────────────────────────
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA FILE DE SIGNALEMENTS D'UN RÉSEAU — ELLE N'EXISTAIT NULLE PART        ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * §2.4 donne au propriétaire et aux modérateurs le pouvoir de « masquer une
+   * publication ou un sujet du réseau », et la planche « Gérer » dessine la carte
+   * « SIGNALEMENTS · 2 » avec ses deux décisions. Aucune route ne lisait les
+   * signalements côté membre : `moderation.controller.ts` n'expose que
+   * `POST /reports`, `GET /me/sanctions`, `POST /sanctions/:id/appeal` et
+   * `GET /scam-alerts`. Le nombre affiché par la carte ne venait de nulle part.
+   *
+   * ⚠ ELLE VIT DANS CE CONTRÔLEUR ET NON DANS CELUI DE LA MODÉRATION, et c'est
+   * une décision. La garde n'est pas un rôle d'équipe : c'est « être propriétaire
+   * ou modérateur DE CE RÉSEAU », ce que seul `CommunitiesService.load()` sait
+   * établir. Déclarer la route dans le module 13 l'obligerait à importer la garde
+   * du 07, ou à la réécrire — et une seconde garde d'accès à un réseau est
+   * exactement ce que l'en-tête de ce contrôleur dit de ne jamais faire.
+   *
+   * `content.read` (L0) comme le reste du module : un modérateur bénévole n'est
+   * pas nécessairement vérifié L1.
+   */
+  @Get('communities/:id/reports')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Les contenus signalés du réseau (propriétaire, modérateur)' })
+  async reports(@Auth() auth: AuthContext, @Param('id') id: string) {
+    return this.communities.reports(id, auth.userId);
+  }
+
+  /**
+   * « Masquer » et « Conserver » — les DEUX seules décisions (§2.4).
+   *
+   * ⚠ LA CIBLE EST DANS LE CORPS et non dans l'URL, parce qu'elle est à DEUX
+   * morceaux : la décision porte sur le COUPLE `(subjectType, subjectId)`, pas
+   * sur un signalement. Un `/reports/:reportId/decide` aurait désigné UN des
+   * cinq signalements d'un même contenu pour une décision qui clôt les cinq.
+   *
+   * ⚠ ET CE QUE CETTE ROUTE NE FAIT PAS EST LA RÈGLE : §2.4 — « Ils ne peuvent
+   * pas suspendre un compte — ils signalent à l'équipe. » Aucune sanction, aucun
+   * chemin vers `users` ; deux écritures sur du CONTENU.
+   */
+  @Post('communities/:id/reports/decide')
+  @HttpCode(200)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Masquer ou conserver un contenu signalé du réseau' })
+  async decideReport(
+    @Auth() auth: AuthContext,
+    @Param('id') id: string,
+    @Body(zodPipe(communityReportDecisionSchema))
+    body: z.infer<typeof communityReportDecisionSchema>,
+  ) {
+    return this.communities.decideReport(id, auth.userId, body);
   }
 
   // ── Sondages ──────────────────────────────────────────────────────────────

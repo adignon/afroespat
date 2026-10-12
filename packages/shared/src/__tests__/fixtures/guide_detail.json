@@ -1,1 +1,71 @@
-{"guide":{"id":"aaaaaaaa-0000-4000-8000-000000000001","slug":"ouvrir-un-compte-bancaire-en-arrivant-en-france","title":"Ouvrir un compte bancaire en arrivant en France","category":"ARRIVAL","scope":"UNIVERSAL","status":"PUBLISHED","lastContentUpdateAt":"2026-08-21T19:15:07.903Z","helpfulCount":31,"freshnessScore":31,"maintainedByCommunity":false,"author":{"handle":"m01a0f10cfb77700096cb29786687f","displayName":"Amina Diallo","verificationLevel":"L1"},"country":null,"city":{"id":"01a0e1b0-0420-7000-b2af-53fb07c030c3","name":"Nantes"},"banners":[],"originCountryId":null,"outdatedFlagCount":0,"unpublishDeadlineAt":null,"createdAt":"2026-08-21T19:15:07.903Z","isAuthor":false},"currentVersion":{"id":"bbbbbbbb-0000-4000-8000-000000000001","version":1,"body":"## Les pieces a reunir\n\nVoici la demarche telle que je l ai vecue, etape par etape, avec les pieces demandees et les delais constates. Le guichet ouvre tot le matin et la file s allonge vite : venez avant l ouverture. Prevoyez deux photocopies de chaque piece, la salle n a pas de photocopieur. Comptez trois semaines entre le depot du dossier et la reponse ecrite, parfois davantage en periode de rentree.\n\n### Le rendez-vous\n\nPrenez rendez-vous en ligne, les creneaux partent vite.","summary":null,"createdAt":"2026-08-21T19:15:07.903Z","createdBy":{"handle":"m01a0f10cfb77700096cb29786687f","displayName":"Amina Diallo"}},"contributors":[{"acceptedCount":2,"firstAt":"2026-09-10T19:15:07.903Z","user":{"handle":"m01a0f10dd6867000b3c91290b7242","displayName":"Amina Diallo"}}],"myVote":null,"myOutdatedFlag":null}
+{
+  "guide": {
+    "id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "slug": "ouvrir-un-compte-bancaire-en-arrivant-en-france",
+    "title": "Ouvrir un compte bancaire en arrivant en France",
+    "category": "ARRIVAL",
+    "scope": "UNIVERSAL",
+    "status": "PUBLISHED",
+    "lastContentUpdateAt": "2026-08-21T19:15:07.903Z",
+    "helpfulCount": 31,
+    "freshnessScore": 31,
+    "maintainedByCommunity": false,
+    "author": {
+      "handle": "m01a0f10cfb77700096cb29786687f",
+      "displayName": "Amina Diallo",
+      "verificationLevel": "L1"
+    },
+    "country": null,
+    "city": {
+      "id": "01a0e1b0-0420-7000-b2af-53fb07c030c3",
+      "name": "Nantes"
+    },
+    "banners": [],
+    "originCountryId": null,
+    "outdatedFlagCount": 0,
+    "commentCount": 1,
+    "unpublishDeadlineAt": null,
+    "createdAt": "2026-08-21T19:15:07.903Z",
+    "isAuthor": false,
+    "pageCount": 1
+  },
+  "pages": [
+    {
+      "id": "cccccccc-0000-4000-8000-000000000001",
+      "position": 1,
+      "title": "Ouvrir un compte bancaire en arrivant en France",
+      "slug": "ouvrir-un-compte-bancaire-en-arrivant-en-france",
+      "commentCount": 1
+    }
+  ],
+  "currentPage": {
+    "id": "cccccccc-0000-4000-8000-000000000001",
+    "position": 1,
+    "title": "Ouvrir un compte bancaire en arrivant en France",
+    "slug": "ouvrir-un-compte-bancaire-en-arrivant-en-france",
+    "commentCount": 1
+  },
+  "currentVersion": {
+    "id": "bbbbbbbb-0000-4000-8000-000000000001",
+    "version": 1,
+    "body": "## Les pieces a reunir\n\nVoici la demarche telle que je l ai vecue, etape par etape, avec les pieces demandees et les delais constates. Le guichet ouvre tot le matin et la file s allonge vite : venez avant l ouverture. Prevoyez deux photocopies de chaque piece, la salle n a pas de photocopieur. Comptez trois semaines entre le depot du dossier et la reponse ecrite, parfois davantage en periode de rentree.\n\n### Le rendez-vous\n\nPrenez rendez-vous en ligne, les creneaux partent vite.",
+    "summary": null,
+    "createdAt": "2026-08-21T19:15:07.903Z",
+    "createdBy": {
+      "handle": "m01a0f10cfb77700096cb29786687f",
+      "displayName": "Amina Diallo"
+    }
+  },
+  "contributors": [
+    {
+      "acceptedCount": 2,
+      "firstAt": "2026-09-10T19:15:07.903Z",
+      "user": {
+        "handle": "m01a0f10dd6867000b3c91290b7242",
+        "displayName": "Amina Diallo"
+      }
+    }
+  ],
+  "myVote": null,
+  "myOutdatedFlag": null
+}

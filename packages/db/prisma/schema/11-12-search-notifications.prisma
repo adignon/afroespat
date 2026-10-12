@@ -101,6 +101,49 @@ model SearchZeroResult {
   @@map("search_zero_results")
 }
 
+/// Qui a cherché, en PSEUDONYME — pour compter des PERSONNES et non des recherches.
+///
+/// POURQUOI CETTE TABLE EXISTE. `search_zero_results.count` compte les RECHERCHES :
+/// un seul membre qui cherche trois fois y inscrit `count: 3`. Le panneau des
+/// « guides manquants » ne doit afficher qu'une requête cherchée par PLUSIEURS
+/// PERSONNES DISTINCTES (arbitrage du porteur), et ce fait n'était nulle part —
+/// aucune colonne de `search_zero_results` ne pouvait le porter, puisqu'il y faut
+/// une ligne par personne.
+///
+/// CE QU'ELLE NE CONTIENT PAS, ET C'EST LA RÈGLE DURE DU §2.4 : aucun identifiant
+/// de membre. `seeker_hash` est un HMAC-SHA256 de `queryNormalized | userId` sous
+/// une sous-clé dérivée du secret applicatif — la même construction que le lien de
+/// désabonnement des notifications. Deux conséquences voulues :
+///   · la requête ENTRE dans le condensat, donc le même membre porte un pseudonyme
+///     DIFFÉRENT sur chaque requête : ces lignes ne se recollent pas en profil ;
+///   · le secret n'est pas en base, donc une fuite de la base seule ne remonte à
+///     personne.
+///
+/// `city_id` est une colonne SANS clé étrangère, délibérément : la déclarer en
+/// relation imposerait une liste de retour sur `City`, dans un autre fichier de
+/// schéma que ce lot n'a pas à toucher, et une ville supprimée ne laisse ici qu'un
+/// pseudonyme orphelin — qui ne désigne rien et ne fausse aucun comptage, puisque
+/// le filtre par ville ne retrouvera plus ces lignes.
+model SearchZeroResultSeeker {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  queryNormalized String   @map("query_normalized")
+  cityId          String?  @map("city_id") @db.Uuid
+  occurredOn      DateTime @map("occurred_on") @db.Date
+  /// HMAC, jamais un identifiant. 64 caractères hexadécimaux.
+  seekerHash      String   @map("seeker_hash")
+
+  /// L'unicité porte sur une colonne NULLABLE (`city_id`), et PostgreSQL tient deux
+  /// NULL pour distincts : elle ne suffit donc PAS à dédupliquer une recherche sans
+  /// ville. C'est `recordZeroResult` qui dédoublonne, sous le verrou consultatif
+  /// qu'il pose déjà sur (requête, ville, jour) — exactement comme pour le compteur.
+  /// La contrainte reste utile pour tous les cas AVEC ville, et comme garde-fou.
+  @@unique([queryNormalized, cityId, occurredOn, seekerHash])
+  @@index([queryNormalized, occurredOn])
+  @@map("search_zero_result_seekers")
+}
+
 /// Notification in-app. Table en ajout seul.
 model Notification {
   id        String   @id @db.Uuid

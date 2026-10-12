@@ -2631,6 +2631,22 @@ export const screens = [
    */
   screen({
     section: 'J11',
+    /**
+     * LA CARTE SORT DE SON CADRE — voir `composants` sur A01 pour le pourquoi.
+     *
+     * Le porteur : « pour tous les tabs il reprend le design des éléments
+     * présentés de la façon dont ils sont présentés sur les pages d'origine ».
+     * Le profil public monte donc CETTE carte-ci, pas une copie.
+     */
+    composants: [
+      {
+        nom: 'CarteParcours',
+        depuis: 'actifs',
+        as: 'p',
+        type: 'CarteParcours',
+        cadres: ['Desktop', 'Mobile'],
+      },
+    ],
     out: 'j11',
     liensPlus: [...barreBasse(['Mobile', 'MobileVide']), NOUVEAU_PARCOURS(['Desktop']), VOIR_TOUS_PUBLICS(['Desktop'])],
     dataType: 'J11Data',

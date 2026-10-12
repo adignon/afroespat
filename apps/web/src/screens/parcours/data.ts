@@ -386,6 +386,17 @@ export interface FichePublique {
 
 /** Une carte de « Mes parcours » (J11). */
 export interface CarteParcours {
+  /**
+   * L'ADRESSE DU DÉTAIL, ou absente.
+   *
+   * Le porteur, après avoir vu les gestes revenir sur la carte du fil : « c'est
+   * bon aussi pour les autres ? » Non : mesuré au navigateur, ces cartes ne
+   * menaient nulle part, même sur leur propre page. Elles portent maintenant
+   * leur adresse, et `CadreCliquable` rend un `<div>` quand elle manque — ce qui
+   * est le cas des cartes DESSINÉES par la maquette, qui n'ont pas d'identifiant.
+   */
+  readonly href?: string;
+
   readonly type: string;
   readonly actif: boolean;
   readonly enPause: boolean;

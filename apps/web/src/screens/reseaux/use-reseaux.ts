@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import type { CommunitiesResponse } from '@app/shared';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
 import { fetchCommunities, joinCommunity, type CommunityFilters } from './api';
@@ -58,6 +59,7 @@ export interface ReseauxEtat {
 }
 
 export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): ReseauxEtat {
+  const router = useRouter();
   const [reponse, setReponse] = useState<CommunitiesResponse | null>(null);
   const [chargement, setChargement] = useState(true);
   const [pret, setPret] = useState(false);
@@ -143,6 +145,29 @@ export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): Rese
     }
   }, []);
 
+  /**
+   * LE GESTE DU BOUTON D'UNE CARTE DE « DÉCOUVRIR » — trois mots, deux issues.
+   *
+   * Le cadre ne sait pas quoi faire d'« Ouvrir » : c'est ici qu'on tranche, parce
+   * que c'est ici qu'on a le routeur et le rechargement. « Rejoindre » et
+   * « Demander » passent par la MÊME route, et c'est le serveur qui décide de
+   * l'état obtenu — voir `rejoindre` juste au-dessus.
+   *
+   * Le `void` est explicite : `onClick` attend un gestionnaire SYNCHRONE, et lui
+   * passer une promesse laisserait un rejet non traité (`no-misused-promises`).
+   * Les refus sont déjà portés par `echec`, que la page affiche.
+   */
+  const ouvrirOuRejoindre = useCallback(
+    (slug: string, joined: boolean) => {
+      if (joined) {
+        router.push(`/reseaux/${encodeURIComponent(slug)}`);
+        return;
+      }
+      void rejoindre(slug);
+    },
+    [rejoindre, router],
+  );
+
   const data: A07Data = useMemo(
     () => ({
       rail,
@@ -151,8 +176,9 @@ export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): Rese
       netFilters: netFiltersFor(kindFilter),
       myNets,
       discover,
+      onRejoindre: ouvrirOuRejoindre,
     }),
-    [myNets, discover, kindFilter],
+    [myNets, discover, kindFilter, ouvrirOuRejoindre],
   );
 
   return {

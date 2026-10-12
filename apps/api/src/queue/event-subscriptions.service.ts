@@ -510,6 +510,13 @@ export function registerNotificationSubscriptions(
   registry.on('community.archived', 'notifications', async (job) => {
     await events.onCommunityArchived(job.aggregateId, job.payload);
   });
+  // L'avertissement à 45 jours (§2.2). Sans cet abonnement, la tâche déposerait
+  // l'événement au relais et PERSONNE ne le lirait — l'avertissement serait
+  // écrit en base (`warning_sent_at`) sans jamais atteindre le propriétaire,
+  // c'est-à-dire pire que de ne rien faire.
+  registry.on('community.archive_warning', 'notifications', async (job) => {
+    await events.onCommunityArchiveWarning(job.aggregateId, job.payload);
+  });
 
   // ── 09 Agenda ─────────────────────────────────────────────────────────────
   //
@@ -666,6 +673,12 @@ export function registerSearchSubscriptions(
     'guide.restored',
     'guide.version_created',
     'guide.proposal_accepted',
+    // Le retrait d'une page RÉTRÉCIT le document indexé : l'index porte le corps
+    // de toutes les pages du guide. Sans cet abonnement, le texte d'une page
+    // retirée resterait cherchable et mènerait vers une page qu'aucune route ne
+    // rend. L'ajout d'une page remplie passe par `guide.version_created`, déjà
+    // dans cette liste.
+    'guide.page_removed',
   ] as const;
   for (const type of guideEvents) {
     registry.on(type, 'search', async (job) => {

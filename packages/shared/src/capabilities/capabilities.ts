@@ -67,17 +67,25 @@ export interface CapabilityDefinition {
  *     alors qu'une décision T4 l'avait ouvert à L0 pour « créer le lien avant
  *     l'avion ».
  *
- * ── DEUX CAPACITÉS NE SUIVENT PAS « TOUT LE RESTE », ET IL FAUT LE DIRE ─────
+ * ── « TOUT LE RESTE » N'A PLUS AUCUNE EXCEPTION ─────────────────────────────
  *
- * `report.create` et `sanction.appeal` restent L0. Ce ne sont pas des
- * fonctionnalités, ce sont des DROITS : signaler une arnaque et contester une
- * sanction. 13 §1 est explicite — « un pré-départ non encore vérifié est la cible
- * privilégiée des arnaques » — et les passer en L2 fermerait l'alerte à ceux qui
- * en ont le plus besoin, tout en laissant une sanction incontestable à un compte
- * qui ne peut plus monter de niveau. L'énumération du porteur liste ce qu'on
- * PEUT FAIRE, pas ce qu'on a le droit de défendre. ÉCART REMONTÉ.
+ * `report.create` et `sanction.appeal` étaient les deux seules à y échapper. Je
+ * l'avais signalé et argumenté — ce sont des recours, pas des fonctionnalités —
+ * et le porteur a tranché : « corrige ceci ». Elles sont en L2, et ce que ça
+ * coûte est écrit sur elles, dans la table, pour qu'on puisse y revenir.
  *
- * `content.read` reste L0 de même : sans lecture il n'y a pas d'application.
+ * `content.read` reste L0 : sans lecture il n'y a pas d'application, et aucun des
+ * trois niveaux n'aurait de sens.
+ *
+ * ── PUIS LE PORTEUR A SORTI `guide.vote` DE « TOUT LE RESTE » — 2026-10-10 ──
+ *
+ * « "Ce guide vous a-t-il aidé ?" Ceci peut être voté même avec N0. »
+ *
+ * Cet en-tête affirmait, la veille, que `content.read` était la SEULE exception
+ * restante. Elle ne l'est plus, et la phrase a été corrigée plutôt que gardée :
+ * une documentation qui survit à l'arbitrage qu'elle décrit est ce qui fait qu'on
+ * cherche une règle dans le code au lieu de la lire ici. Le pourquoi et le coût du
+ * mouvement sont écrits SUR la capacité, dans la table.
  *
  * ── LE FRONT PRÉVIENT, LE SERVEUR REFUSE ───────────────────────────────────
  *
@@ -112,6 +120,26 @@ export const CAPABILITIES = {
 
   // ── Interactions de base — L0 ─────────────────────────────────────────────
   'comment.create': { minLevel: 'L0', planLimit: null, labelFr: 'commenter et réagir' },
+  /**
+   * N0 : « "Ce guide vous a-t-il aidé ?" Ceci peut être voté même avec N0 »
+   * (porteur, 2026-10-10). ⚠ RENVERSE LE RANGEMENT DU 2026-10-09, qui la laissait
+   * tomber dans « faire tout le reste » — donc en N2.
+   *
+   * CE QUE CE VOTE EST, ET CE QU'IL N'EST PAS. Il n'écrit rien que personne ne
+   * lise : il alimente `helpfulCount`, donc `freshnessScore` (§2.3), donc l'ordre
+   * des guides. C'est la SEULE boucle de retour qu'un lecteur ait sur un guide, et
+   * un lecteur est exactement ce qu'un N0 est. Le fermer demandait au nouvel
+   * arrivant — celui que le guide vise — de se taire sur son utilité jusqu'à
+   * produire un justificatif de domicile.
+   *
+   * CE QUE ÇA COÛTE, ÉCRIT POUR QU'ON PUISSE REVENIR DESSUS : la note de
+   * fraîcheur devient poussable par des comptes à un SMS. Trois choses la
+   * retiennent, et aucune n'est le niveau — `@@unique([guideId, userId])` en base
+   * (un vote par membre et par guide), la réputation qui n'est créditée qu'à
+   * l'AUTEUR du guide, et le coefficient de §2.3 qui fait fondre un score ancien.
+   * Revenir en arrière tient en un mot : `minLevel: 'L2'`.
+   */
+  'guide.vote': { minLevel: 'L0', planLimit: null, labelFr: 'voter « ça m’a aidé »' },
   /** Une QUESTION d'entraide est ouverte dès L0 : demander de l'aide n'attend pas. */
   'help.ask': { minLevel: 'L0', planLimit: null, labelFr: 'publier une question d’entraide' },
   /**
@@ -123,16 +151,34 @@ export const CAPABILITIES = {
    */
   'mentorship.request': { minLevel: 'L1', planLimit: null, labelFr: 'demander un parrain' },
   /**
-   * Signaler (13 §3) est ouvert dès L0 et ne sera JAMAIS payant.
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ SIGNALER ET CONTESTER PASSENT EN N2 — DÉCISION DU PORTEUR, 2026-10-09   ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * Un pré-départ non encore vérifié est la cible privilégiée des arnaques
-   * (13 §1) : exiger L1 pour signaler reviendrait à fermer l'alerte à ceux qui en
-   * ont le plus besoin, et à laisser l'arnaque vivre le temps d'une vérification
-   * d'identité.
+   * Ces deux capacités étaient les SEULES à ne pas suivre « N2 : faire tout le
+   * reste ». Je l'avais signalé et argumenté ; le porteur a tranché : « corrige
+   * ceci : report.create et sanction.appeal ». Elles rejoignent donc la règle.
+   *
+   * ── CE QUE ÇA CHANGE, ÉCRIT POUR QU'ON PUISSE Y REVENIR ──────────────────
+   *
+   * 1. SIGNALER DEMANDE MAINTENANT N2, c'est-à-dire une identité vérifiée ET un
+   *    numéro de destination. 13 §1 dit qu'« un pré-départ non encore vérifié est
+   *    la cible privilégiée des arnaques » : ce sont donc précisément les comptes
+   *    les plus exposés qui ne peuvent plus alerter, et une arnaque vit le temps
+   *    que sa victime franchisse deux marches de vérification.
+   *
+   * 2. CONTESTER UNE SANCTION DEMANDE N2. Un membre sanctionné AVANT d'atteindre
+   *    N2 ne peut plus contester — et selon la sanction, il ne peut pas non plus
+   *    monter de niveau. 13 §4.3 prévoit la contestation comme un recours ; elle
+   *    devient inatteignable pour ceux-là.
+   *
+   * Revenir en arrière tient en deux mots : `minLevel: 'L0'` sur chacune.
+   *
+   * ⚠ LE SIGNALEMENT N'EST JAMAIS PAYANT, et ça n'a pas bougé : `planLimit:
+   * null` sur les deux, et la règle dure 14 §2 le vérifie par test.
    */
-  'report.create': { minLevel: 'L0', planLimit: null, labelFr: 'signaler un contenu ou un profil' },
-  /** Contester une sanction (13 §4.3). Un droit, donc jamais conditionné. */
-  'sanction.appeal': { minLevel: 'L0', planLimit: null, labelFr: 'contester une sanction' },
+  'report.create': { minLevel: 'L2', planLimit: null, labelFr: 'signaler un contenu ou un profil' },
+  'sanction.appeal': { minLevel: 'L2', planLimit: null, labelFr: 'contester une sanction' },
 
   // ── Publication — exige une identité vérifiée (L1) ────────────────────────
   /**
@@ -177,7 +223,6 @@ export const CAPABILITIES = {
   'help.offer': { minLevel: 'L1', planLimit: null, labelFr: 'publier une offre d’entraide' },
   // ── « Faire tout le reste » — N2 ──────────────────────────────────────────
   'guide.write': { minLevel: 'L2', planLimit: null, labelFr: 'rédiger un guide' },
-  'guide.vote': { minLevel: 'L2', planLimit: null, labelFr: 'voter « ça m’a aidé »' },
   'guide.propose_revision': {
     minLevel: 'L2',
     planLimit: null,

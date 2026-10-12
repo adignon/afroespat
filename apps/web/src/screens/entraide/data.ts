@@ -139,11 +139,22 @@ export interface MembreDessine {
 /**
  * ─── CE QUI N'EST PAS LIÉ, ET POURQUOI ──────────────────────────────────────
  *
- * Les quatre LISTES de ce module — le fil (H01), les suggestions (H04), mes
- * demandes (H09), mes réponses (H10) — ne sont pas liées, et ce n'est pas un
- * renoncement : c'est ce que la maquette DESSINE qui l'interdit en l'état.
+ * ⚠ CE PARAGRAPHE A ÉTÉ DÉPASSÉ DEUX FOIS, et il reste écrit en entier parce que
+ * son RAISONNEMENT vaut encore pour ce qui reste. L'état au jour de ce lot :
  *
- * Ses trois cartes de H01 ne sont pas la même carte avec d'autres textes. Elles
+ *   · le fil (H01) EST lié, aux deux largeurs, avec ses trois variantes sous
+ *     `<sc-if>` et sa rangée de filtres de type cliquable ;
+ *   · les suggestions (H04) SONT liées, aux deux largeurs, depuis le lot des
+ *     pastilles de portée — voir `ligneSuggestion` dans `appels.ts`, et l'écart de
+ *     motif qui y reste remonté ;
+ *   · mes demandes (H09) et mes réponses (H10) ne le sont qu'en partie : H10 porte
+ *     sa liste mobile, H09 n'a que ses deux compteurs.
+ *
+ * Ce qui suit est donc la raison pour laquelle il a fallu DÉCLARER ces listes
+ * variante par variante au lieu de les monter d'un coup, et pourquoi le même
+ * travail reste à faire sur H05 et H09.
+ *
+ * Les trois cartes de H01 ne sont pas la même carte avec d'autres textes. Elles
  * diffèrent par leur fond (`#fff`, `#FFFBF8`, `#F6F8F7`), par leur bordure
  * (`1px solid #E6EBE9` contre `1.5px solid #E0733A`), par la couleur de leur titre,
  * par la présence d'une pastille « Depuis un parcours » et d'une ligne d'étape, et
@@ -163,6 +174,7 @@ export interface MembreDessine {
  * `<sc-for>` ; rien n'a été vérifié sur un `<sc-for>` imbriqué, et le vérifier
  * fait partie du même travail.
  *
- * Les quatre listes sont donc REMONTÉES, avec ce qu'il faut pour les faire : les
- * schémas de réponse existent, les fixtures sont relevées, les routes répondent.
+ * Ce qui reste — H05 et la liste de H09 — est donc REMONTÉ, avec ce qu'il faut pour
+ * le faire : les schémas de réponse existent, les fixtures sont relevées, les
+ * routes répondent.
  */

@@ -11,15 +11,21 @@ import {
 import type {
   GuideDetailResponse,
   GuideListResponse,
+  GuideOutdatedResponse,
   GuideProposalsResponse,
   GuideVersionsResponse,
 } from '@app/shared';
 import {
+  acceptProposal,
+  amendProposal,
   fetchGuide,
   fetchGuides,
   fetchProposals,
+  rejectProposal,
   fetchVersions,
   flagOutdated,
+  removeOutdatedFlag,
+  setCommunityMaintenance,
   unvoteGuide,
   voteGuide,
 } from './api';
@@ -27,6 +33,8 @@ import {
   contributorsFrom,
   guideCardsFrom,
   guideHeadFrom,
+  guidePlanFrom,
+  PLAN_AVANT_REPONSE,
   propositionFrom,
   versionsFrom,
 } from './from-api';
@@ -129,7 +137,23 @@ export interface ListeEtat {
  * 2 à vérifier), pas la valeur de l'API. La traduction est ici, en un seul
  * endroit, parce que le bandeau transcodé pose ces rangs et rien d'autre.
  */
-export function useGuides(tab: number, actif: boolean = true) {
+export function useGuides(
+  tab: number,
+  actif: boolean = true,
+  /**
+   * LES TROIS FILTRES DE LA PLANCHE — catégorie, pays, ville.
+   *
+   * Le porteur : « rends aussi la page, les filtres etc. dynamique ». Ils
+   * étaient des `<span>` ; `guideListQuerySchema` les accepte depuis le premier
+   * jour. Ils entrent dans les dépendances de `charger`, donc en changer refait
+   * la requête — comme l'onglet.
+   */
+  filtres: {
+    readonly category?: string;
+    readonly countryId?: string;
+    readonly cityId?: string;
+  } = {},
+) {
   const [etat, setEtat] = useState<ListeEtat>({
     pret: false,
     chargement: true,
@@ -148,6 +172,13 @@ export function useGuides(tab: number, actif: boolean = true) {
   const reprise = useRef<Promise<boolean> | null>(null);
 
   const onglet = TAB_PAR_RANG[tab] ?? 'helpful';
+  /**
+   * LES TROIS VALEURS SONT DÉPLIÉES, et non l'objet : un littéral passé en prise
+   * change d'identité à chaque rendu, et `charger` se refabriquerait en boucle.
+   */
+  const category = filtres.category ?? '';
+  const countryId = filtres.countryId ?? '';
+  const cityId = filtres.cityId ?? '';
 
   const charger = useCallback(
     async (signal: AbortSignal): Promise<void> => {
@@ -162,7 +193,15 @@ export function useGuides(tab: number, actif: boolean = true) {
           await reprise.current;
         }
 
-        const page = await fetchGuides({ tab: onglet }, signal);
+        const page = await fetchGuides(
+          {
+            tab: onglet,
+            ...(category === '' ? {} : { category }),
+            ...(countryId === '' ? {} : { countryId }),
+            ...(cityId === '' ? {} : { cityId }),
+          },
+          signal,
+        );
         if (signal.aborted) return;
         setEtat({ pret: true, chargement: false, echec: null, page });
       } catch (error) {
@@ -170,7 +209,7 @@ export function useGuides(tab: number, actif: boolean = true) {
         setEtat({ pret: true, chargement: false, echec: echecDe(error), page: null });
       }
     },
-    [onglet],
+    [category, cityId, countryId, onglet],
   );
 
   /**
@@ -225,7 +264,32 @@ export interface GuideEtat {
  *
  * L'historique, lui, prend le slug : il part donc EN PARALLÈLE du détail.
  */
-export function useGuide(slug: string) {
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ `pageSlug` — LA PAGE LUE, ET CE QU'ELLE CHANGE DANS CE CROCHET             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Un guide peut avoir plusieurs pages. Les commentaires concernent
+ * donc une page du guide. »
+ *
+ * ELLE ENTRE DANS LES DÉPENDANCES DE `charger`, donc changer de page REFAIT la
+ * requête — comme changer d'onglet sur la liste. C'est obligatoire et pas une
+ * commodité : `currentVersion` (le corps), `guide.commentCount` (le compte de la
+ * page lue) et `currentPage.id` (le sujet des commentaires) viennent TOUS les
+ * trois de `GET /guides/:slug?page=…`. Garder la réponse d'une autre page
+ * afficherait le corps d'une page sous le titre d'une autre.
+ *
+ * ⚠ `undefined` ET NON LA CHAÎNE VIDE : le paramètre est omis de l'adresse quand
+ * il n'y a pas de page demandée, et c'est ce qui rend `/guides/:slug` identique à
+ * ce qu'il était avant les pages. Un `?page=` nu donnerait un `400`.
+ *
+ * L'HISTORIQUE, lui, NE DÉPEND PAS DE LA PAGE : `GET /guides/:slug/versions` prend
+ * le slug du guide et rend ses versions — toutes pages confondues. Il est donc
+ * rejoué inutilement à chaque changement de page, et c'est un ÉCART ASSUMÉ : le
+ * séparer demanderait un second crochet, et la requête est servie par la même
+ * route que le détail. REMONTÉ.
+ */
+export function useGuide(slug: string, pageSlug?: string) {
   const [etat, setEtat] = useState<GuideEtat>({
     pret: false,
     chargement: true,
@@ -251,7 +315,7 @@ export function useGuide(slug: string) {
          * encart latéral.
          */
         const [detail, versions] = await Promise.allSettled([
-          fetchGuide(slug, signal),
+          fetchGuide(slug, pageSlug, signal),
           fetchVersions(slug, signal),
         ]);
 
@@ -288,7 +352,7 @@ export function useGuide(slug: string) {
         setEtat((p) => ({ ...p, pret: true, chargement: false, echec: echecDe(error) }));
       }
     },
-    [slug],
+    [slug, pageSlug],
   );
 
   useEffect(() => {
@@ -337,6 +401,71 @@ export function useGuide(slug: string) {
     [etat.detail],
   );
 
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ APRÈS UN SIGNALEMENT D'OBSOLESCENCE, ON RELIT LE GUIDE                 ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * ── CE QUE CE BLOC FAISAIT, ET POURQUOI ÇA NE SUFFISAIT PLUS ────────────
+   *
+   * Il recalait DEUX champs sur la réponse de la route — `outdatedFlagCount` et
+   * `status` — et c'est tout ce que `guideOutdatedResponseSchema` porte. Mesuré :
+   * l'état gardait alors un `status: 'FLAGGED'` à côté d'un `banners` vide, d'un
+   * `unpublishDeadlineAt` resté `null` et d'un `myOutdatedFlag` resté `null`.
+   * Autrement dit, les trois choses que l'écran a maintenant à montrer — le
+   * bandeau, l'échéance de dépublication et la BASCULE « retirer » — étaient
+   * toutes les trois absentes de la réponse, chacune pour une bonne raison : la
+   * route répond ce qu'elle a changé, pas le guide entier.
+   *
+   * ── POURQUOI UNE RELECTURE, ET PAS TROIS RÈGLES RECOMPOSÉES ─────────────
+   *
+   * On aurait pu, à partir du `status` renvoyé, POSER le bandeau
+   * `OUTDATED_REPORTED` et CALCULER l'échéance à trente jours. Ce sont exactement
+   * les deux règles que le serveur tient (`bannersFor`, `GUIDE_UNPUBLISH_DELAY_
+   * DAYS`), et le dépôt en interdit la seconde implémentation — « deux
+   * implémentations de la même règle divergent toujours », ce que `guideCardFrom`
+   * et `texteBandeau` répètent chacun pour sa part. Le `myOutdatedFlag`, lui,
+   * n'était même pas recomposable : son `id` est un `uuid` que la réponse ne donne
+   * pas, et en inventer un aurait mis une valeur fausse dans un état que l'écran
+   * lit.
+   *
+   * UN `GET` DE PLUS EST LE PRIX, ET IL EST PETIT : le geste n'arrive qu'UNE FOIS
+   * par membre et par guide (§2.6, contrainte d'unicité en base), donc cette
+   * relecture n'est pas dans un chemin répété.
+   *
+   * ── LE REPLI, QUAND LA RELECTURE ÉCHOUE ─────────────────────────────────
+   *
+   * L'ÉCRITURE A RÉUSSI : on ne la présente pas comme un échec. On recale alors
+   * les deux champs que la réponse porte, comme avant.
+   *
+   * ⚠ ET L'ÉCART EST NOMMÉ : sur ce repli, `myOutdatedFlag` reste celui de la
+   * dernière lecture, donc le libellé de l'action peut encore dire « Signaler »
+   * après un signalement accepté. Un second envoi ne passe pas pour autant —
+   * c'est le SERVEUR qui refuse en `ALREADY_FLAGGED` (§2.6), et c'est lui qui doit
+   * refuser : le front prévient, il n'autorise pas.
+   */
+  const recalerApresObsolescence = useCallback(
+    async (reponse: GuideOutdatedResponse): Promise<void> => {
+      const frais = await fetchGuide(slug, pageSlug).catch(() => null);
+      setEtat((p) => {
+        if (p.detail === null) return p;
+        if (frais !== null) return { ...p, detail: frais };
+        return {
+          ...p,
+          detail: {
+            ...p.detail,
+            guide: {
+              ...p.detail.guide,
+              outdatedFlagCount: reponse.outdatedFlagCount,
+              status: reponse.status,
+            },
+          },
+        };
+      });
+    },
+    [slug, pageSlug],
+  );
+
   /** « L'information a changé » (§2.6). Distinct du signalement d'abus. */
   const signalerObsolete = useCallback(
     async (comment?: string): Promise<GuideEchec | null> => {
@@ -344,27 +473,179 @@ export function useGuide(slug: string) {
       if (detail === null) return null;
       try {
         const r = await flagOutdated(detail.guide.id, comment);
-        setEtat((p) =>
-          p.detail === null
-            ? p
-            : {
-                ...p,
-                detail: {
-                  ...p.detail,
-                  guide: {
-                    ...p.detail.guide,
-                    outdatedFlagCount: r.outdatedFlagCount,
-                    status: r.status,
-                  },
-                },
-              },
-        );
+        await recalerApresObsolescence(r);
         return null;
       } catch (error) {
         return echecDe(error);
       }
     },
-    [etat.detail],
+    [etat.detail, recalerApresObsolescence],
+  );
+
+  /**
+   * RETIRER SON SIGNALEMENT — `DELETE /guides/:id/outdated`.
+   *
+   * Mesuré avant ce lot : la route et son appel (`removeOutdatedFlag`) existaient,
+   * `GET /guides/:slug` rendait déjà `myOutdatedFlag`, ce crochet en dérivait déjà
+   * `aSignale`, et AUCUN cadre ne lisait rien de tout cela. Un membre qui s'était
+   * trompé — trois signalements suffisent à ouvrir une dépublication — ne pouvait
+   * pas se défaire.
+   *
+   * C'est la MÊME entrée d'écran que « L'information a changé », en bascule, et
+   * non une quatrième action : le service le dit pour le serveur (« §2.6 ne dit
+   * pas ce qu'un retrait produit […] un signalement posé par erreur doit pouvoir
+   * être défait »), et la maquette ne dessine pas d'entrée de plus.
+   */
+  const retirerSignalement = useCallback(async (): Promise<GuideEchec | null> => {
+    const detail = etat.detail;
+    if (detail === null) return null;
+    try {
+      const r = await removeOutdatedFlag(detail.guide.id);
+      await recalerApresObsolescence(r);
+      return null;
+    } catch (error) {
+      return echecDe(error);
+    }
+  }, [etat.detail, recalerApresObsolescence]);
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ « OUVRIR À LA COMMUNAUTÉ », ET REPRENDRE LA MAIN                       ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « le bouton ouvrir à la communauté ne marche pas. » MESURÉ : un
+   * `<a href="#">` mort sur le seul cadre `auteurdesktop` (zéro occurrence sur
+   * `desktop`, `mobile` et `auteurmobile`), et aucune route derrière.
+   *
+   * UNE SEULE FONCTION POUR LES DEUX SENS, parce que la route n'en a qu'un
+   * chemin : §2.5 veut le geste « réversible », et `PUT` avec `{ maintained }`
+   * porte l'intention dans la valeur. Deux fonctions auraient été deux endroits
+   * où recaler l'état.
+   *
+   * ── ON RELIT LE GUIDE, ET IL LE FAUT ───────────────────────────────────
+   *
+   * La route répond `{ maintainedByCommunity }` — ce qu'elle a changé, et rien de
+   * plus. Or l'écran montre AUSSI le bandeau « Maintenu par la communauté », que
+   * le SERVEUR compose (`bannersFor`, §2.3 et §2.6) et dont le front n'a pas le
+   * droit de tenir une seconde implémentation : un guide peut être maintenu par
+   * la communauté ET périmé, et dans ce cas c'est l'avertissement qui s'affiche.
+   * Poser le bandeau à partir du booléen aurait donc affiché le bandeau VERT sur
+   * un guide que trois membres signalent. C'est le même arbitrage, et la même
+   * relecture, que `recalerApresObsolescence` écrit au long.
+   *
+   * LE REPLI, QUAND LA RELECTURE ÉCHOUE : l'écriture a réussi, on ne la présente
+   * pas comme un échec. On recale le seul champ que la réponse porte. ⚠ L'ÉCART
+   * EST NOMMÉ : sur ce repli, `banners` reste celui de la dernière lecture, donc
+   * le bandeau peut mettre un instant à paraître.
+   */
+  const basculerCommunaute = useCallback(
+    async (maintained: boolean): Promise<GuideEchec | null> => {
+      const detail = etat.detail;
+      if (detail === null) return null;
+      try {
+        const r = await setCommunityMaintenance(detail.guide.id, maintained);
+        const frais = await fetchGuide(slug, pageSlug).catch(() => null);
+        setEtat((p) => {
+          if (p.detail === null) return p;
+          if (frais !== null) return { ...p, detail: frais };
+          return {
+            ...p,
+            detail: {
+              ...p.detail,
+              guide: { ...p.detail.guide, maintainedByCommunity: r.maintainedByCommunity },
+            },
+          };
+        });
+        return null;
+      } catch (error) {
+        return echecDe(error);
+      }
+    },
+    [etat.detail, slug, pageSlug],
+  );
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ DÉCIDER D'UNE PROPOSITION — ACCEPTER, AMENDER, REFUSER                 ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * MESURÉ avant ce lot : les trois appels existaient (`acceptProposal`,
+   * `amendProposal`, `rejectProposal`), les trois routes aussi, la page chargeait
+   * les vraies propositions — et `grep -o "onClick"` sur le cadre de 1 440 px
+   * rendait ZÉRO. Rien, dans tout le front, n'appelait ces trois fonctions.
+   *
+   * ── UNE SEULE FONCTION POUR TROIS DÉCISIONS ─────────────────────────────
+   *
+   * Parce que les trois font la même chose du point de vue de l'état : elles
+   * décident d'une proposition, puis l'écran doit être relu. Trois fonctions
+   * auraient été trois endroits où recaler le même état, et c'est l'arbitrage que
+   * `basculerCommunaute` écrit déjà pour ses deux sens. L'union discriminée porte
+   * ce que chaque décision demande de plus — le remplacement amendé, le motif du
+   * refus — et le type empêche d'appeler `REJECT` sans motif.
+   *
+   * ── ON RELIT LE GUIDE *ET* LA LISTE, ET IL LE FAUT ──────────────────────
+   *
+   * La route rend `proposalView` — la proposition décidée, et rien d'autre
+   * (`guideProposalDetailSchema`). Or une acceptation ÉCRIT DANS LE GUIDE : §2.4
+   * crée une nouvelle version, crédite le proposant comme contributeur et déplace
+   * `lastContentUpdateAt`. Recaler la seule proposition aurait laissé à l'écran un
+   * corps, un compte de contributeurs et une date d'avant la décision — donc un
+   * guide qui ne porte pas le remplacement qu'on vient d'accepter.
+   *
+   * Les deux relectures partent ENSEMBLE (`Promise.all`) : elles ne dépendent pas
+   * l'une de l'autre, l'identifiant du guide est déjà connu.
+   *
+   * LE REPLI, QUAND UNE RELECTURE ÉCHOUE : l'écriture a RÉUSSI, on ne la présente
+   * pas comme un échec — on garde ce qu'on avait pour la partie qui n'est pas
+   * revenue. ⚠ L'ÉCART EST NOMMÉ : sur ce repli, la liste peut encore montrer la
+   * proposition comme en attente. Un second envoi ne passerait pas pour autant —
+   * c'est le SERVEUR qui refuse une proposition déjà décidée.
+   *
+   * ── `decisionEnVol` : UN SEUL APPEL À LA FOIS, ET C'EST LE POINT ────────
+   *
+   * Il porte l'IDENTIFIANT de la proposition en cours, pas un booléen : l'écran a
+   * DEUX emplacements, et c'est lui qui dit lequel des deux attend. Sans ce verrou,
+   * un double clic sur « Accepter » enverrait deux écritures dans le corps du
+   * guide — la seule des trois décisions qui ne soit pas idempotente à
+   * l'affichage.
+   */
+  const [decisionEnVol, setDecisionEnVol] = useState<string | null>(null);
+
+  const deciderProposition = useCallback(
+    async (
+      proposalId: string,
+      decision:
+        | { readonly kind: 'ACCEPT' }
+        | { readonly kind: 'AMEND'; readonly replacement: string }
+        | { readonly kind: 'REJECT'; readonly reason: string },
+    ): Promise<GuideEchec | null> => {
+      const detail = etat.detail;
+      if (detail === null) return null;
+      /** Un appel en vol : on ne part pas deux fois. Voir l'en-tête. */
+      if (decisionEnVol !== null) return null;
+      setDecisionEnVol(proposalId);
+      try {
+        if (decision.kind === 'ACCEPT') await acceptProposal(proposalId);
+        else if (decision.kind === 'AMEND') await amendProposal(proposalId, decision.replacement);
+        else await rejectProposal(proposalId, decision.reason);
+
+        const [frais, liste] = await Promise.all([
+          fetchGuide(slug, pageSlug).catch(() => null),
+          fetchProposals(detail.guide.id).catch(() => null),
+        ]);
+        setEtat((p) => ({
+          ...p,
+          detail: frais ?? p.detail,
+          propositions: liste ?? p.propositions,
+        }));
+        return null;
+      } catch (error) {
+        return echecDe(error);
+      } finally {
+        setDecisionEnVol(null);
+      }
+    },
+    [etat.detail, slug, pageSlug, decisionEnVol],
   );
 
   const donnees = useMemo(
@@ -387,16 +668,50 @@ export function useGuide(slug: string) {
                   ).length,
             ),
       versionRows: etat.versions === null ? [] : versionsFrom(etat.versions),
+      /**
+       * LE PLAN DES PAGES. `PLAN_AVANT_REPONSE` tant que le détail n'est pas là —
+       * `visible: false`, donc ni panneau, ni chevrons, ni feuille : avant la
+       * réponse on ne sait pas combien le guide a de pages, et une navigation qui
+       * ne mène nulle part n'est pas un espace réservé.
+       *
+       * ⚠ IL NE PORTE PAS SES GESTES : ils demandent le routeur et l'état
+       * d'ouverture de la feuille, qui vivent dans la page. Voir `guidePlanFrom`.
+       */
+      plan: etat.detail === null ? PLAN_AVANT_REPONSE : guidePlanFrom(etat.detail),
       propositionsVues:
         etat.propositions === null ? [] : etat.propositions.items.map((p) => propositionFrom(p)),
       /** §5 — l'écran de l'AUTEUR, décidé par le serveur à chaque requête. */
       isAuthor: etat.detail?.guide.isAuthor ?? false,
       monVote: etat.detail?.myVote ?? null,
+      /**
+       * ⚠ CE BOOLÉEN A ÉTÉ DÉFINI SANS JAMAIS ÊTRE LU, et c'était le défaut :
+       * `grep -rn aSignale apps/web/src` ne trouvait que cette ligne. A04 le lit
+       * maintenant, et c'est lui qui fait la BASCULE de l'entrée « L'information a
+       * changé » vers « Retirer mon signalement », sur les deux planches.
+       *
+       * `undefined` ET `null` comptent tous deux pour « non » : `null` est la
+       * réponse du serveur quand le lecteur n'a rien signalé OU qu'il n'y a pas de
+       * lecteur (la route est `@PublicRead()`), `undefined` est l'absence de
+       * détail avant la réponse. Dans les deux cas l'entrée garde le libellé de la
+       * maquette : proposer « retirer » à qui n'a rien signalé serait pire que
+       * d'attendre un aller-retour.
+       */
       aSignale: etat.detail?.myOutdatedFlag !== null && etat.detail?.myOutdatedFlag !== undefined,
       bandeaux: etat.detail?.guide.banners ?? [],
     }),
     [etat.detail, etat.versions, etat.propositions],
   );
 
-  return { ...etat, ...donnees, voter, signalerObsolete };
+  return {
+    ...etat,
+    ...donnees,
+    voter,
+    signalerObsolete,
+    retirerSignalement,
+    basculerCommunaute,
+    /** §2.4 — les trois décisions de l'auteur sur une proposition reçue. */
+    deciderProposition,
+    /** L'identifiant de la proposition dont la décision est en vol, ou `null`. */
+    decisionEnVol,
+  };
 }

@@ -778,6 +778,17 @@ export default function FeedPage() {
             setReponse({ id, nom });
           },
           (id) => {
+            /**
+             * ── SIGNALER DEMANDE N2 DEPUIS LE 2026-10-09 ──────────────────
+             *
+             * Le porteur a rangé `report.create` avec « tout le reste ». Un
+             * membre qui n'y est pas voit l'invitation à monter plutôt qu'un
+             * formulaire qui finirait en 403 après avoir écrit son motif.
+             */
+            if (!peut('report.create')) {
+              setNiveauRefuse('report.create');
+              return;
+            }
             setSignalement({ type: 'COMMENT', id });
           },
         );
@@ -841,6 +852,14 @@ export default function FeedPage() {
      */
     commentairesCompte:
       publicationCommentee === null ? '' : `· ${String(publicationCommentee.commentCount)}`,
+    /**
+     * L'ÉTAT VIDE — « Soyez la première personne à réagir. »
+     *
+     * « CHARGÉ ET VIDE », et pas « vide » : `commentaires.fil` est `null` pendant
+     * la requête. Sans cette garde, la carte clignoterait à chaque ouverture,
+     * y compris sur une publication qui a huit commentaires.
+     */
+    filVide: commentaires.fil !== null && thread.length === 0,
     triCommentaires: commentaires.tri,
     triLibelle: commentaires.tri === 'RELEVANT' ? 'Pertinents' : 'Récents',
     onTriCommentaires: (valeur?: CommentSort): void => {

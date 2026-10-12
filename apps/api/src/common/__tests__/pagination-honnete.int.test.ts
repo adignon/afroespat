@@ -5,6 +5,8 @@ import { AuditService } from '../audit.service';
 import { OutboxService } from '../outbox.service';
 import { ReferentialsService } from '../../modules/referentials/referentials.service';
 import { CommunitiesService } from '../../modules/communities/communities.service';
+import { ConnectionsService } from '../../modules/connections/connections.service';
+import { MessagingService } from '../../modules/messaging/messaging.service';
 import { BillingService } from '../../modules/billing/billing.service';
 import { PlanService } from '../../modules/billing/plan.service';
 import { PartnersService } from '../../modules/partners/partners.service';
@@ -87,7 +89,27 @@ describe('pagination honnête : aucune route ne tronque en silence (§5.3)', () 
     const audit = new AuditService(prisma);
     const visibility = new VisibilityService(prisma);
     const bookmarks = new BookmarksService(prisma);
-    const communities = new CommunitiesService(prisma, outbox, audit, visibility);
+    /**
+     * `MessagingService` EN SIXIÈME ARGUMENT — il a été ajouté au constructeur
+     * de `CommunitiesService` pour « Contacter les modérateurs », le seul geste
+     * du module réseaux qui ouvre une conversation. Ce test ne l'emploie pas :
+     * il monte `CommunitiesService` uniquement pour le passer à
+     * `ReferentialsService`, et aucun de ses cas ne touche la messagerie.
+     */
+    const communities = new CommunitiesService(
+      prisma,
+      outbox,
+      audit,
+      visibility,
+      new MessagingService(
+        prisma,
+        new CryptoService(),
+        outbox,
+        audit,
+        visibility,
+        new ConnectionsService(prisma, outbox, audit, visibility),
+      ),
+    );
     void bookmarks;
     ref = new ReferentialsService(prisma, audit, outbox, communities);
 

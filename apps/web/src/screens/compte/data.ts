@@ -70,6 +70,12 @@
  * est écrite dans `lib/api/session.ts`. On tente l'action, et c'est le serveur qui
  * répond `403 LEVEL_REQUIRED` avec de quoi afficher l'invitation du §7.3.
  */
+import type { FeedPostView } from '../a01/data';
+import type { GuideCardView } from '../a03/data';
+import type { CarteEvenement } from '../agenda/data';
+import type { CarteAnnonce } from '../s01/data';
+import type { CarteParcours } from '../parcours/data';
+
 export interface Bandeau {
   readonly nom: string;
   readonly initiales: string;
@@ -247,6 +253,31 @@ export interface K02Data {
   readonly contenus?: readonly CarteContenu[];
   /** `'STORY'` fait dessiner des aperçus côte à côte plutôt que des lignes. */
   readonly contenuEspece?: string;
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES VRAIES CARTES DU FIL, SUR LE PROFIL                                 ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur, capture à l'appui : « Sur le profil le fil d'actualité devrait
+   * s'afficher comme ceci. Pareil pour les autres, ils doivent prendre leur
+   * design respectif. C'est ce que j'ai demandé. »
+   *
+   * Il avait raison et j'avais contourné : une ligne de titre n'est pas la
+   * carte. `CartePublication` est maintenant EXTRAITE du cadre du fil par le
+   * générateur (`composants:`), donc montable ici — une seule source, deux
+   * emplois — et ces cartes viennent de `GET /feed?authorHandle=…`, c'est-à-dire
+   * de la même route, du même schéma et de la même composition que la page
+   * d'accueil.
+   */
+  readonly contenuPublications?: readonly FeedPostView[];
+  /** Les guides du membre, dans la carte de `/guides`. */
+  readonly contenuGuides?: readonly GuideCardView[];
+  /** Ses événements organisés, dans la carte de `/agenda`. */
+  readonly contenuEvenements?: readonly CarteEvenement[];
+  /** Ses annonces, dans la carte de `/services/logement`. */
+  readonly contenuAnnonces?: readonly CarteAnnonce[];
+  /** Ses parcours publics, dans la carte de `/parcours`. */
+  readonly contenuParcours?: readonly CarteParcours[];
   /** Le titre de la carte, qui suit l'onglet : « GUIDES », « STORIES »… */
   readonly contenuTitre?: string;
   readonly contenuVide?: boolean;

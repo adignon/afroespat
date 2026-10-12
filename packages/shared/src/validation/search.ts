@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { SearchSubjectType } from '../enums/generated.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import { cursorQuerySchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Recherche — 11-recherche.md.
@@ -170,6 +170,45 @@ export const searchZeroSchema = z.object({
 export const searchReindexSchema = z.object({
   type: searchSubjectTypeSchema,
 });
+
+/**
+ * ─── LE SEUIL DE PERSONNES DISTINCTES DES « GUIDES MANQUANTS » ───────────────
+ *
+ * Arbitrage du porteur : « n'afficher qu'une requête cherchée par PLUSIEURS
+ * PERSONNES DISTINCTES ». Le panneau des guides manquants expose du texte écrit
+ * par des membres ; le seuil est ce qui le rend montrable.
+ *
+ * CE QUI A ÉTÉ MESURÉ, ET POURQUOI AUCUNE HEURISTIQUE DE TEXTE N'EST EMPLOYÉE.
+ * `normalizeQuery` ne retire que les accents et la ponctuation : lettres et
+ * chiffres SURVIVENT. « Docteur Awa Diallo Lyon » devient « docteur awa diallo
+ * lyon » et « rappeler 0612345678 » devient « rappeler 0612345678 » — l'un et
+ * l'autre affichables tels quels. Chercher à reconnaître un nom ou un numéro dans
+ * une requête libre, c'est écrire un filtre qui se trompe dans les deux sens, et
+ * qui se trompe silencieusement. Le seuil, lui, ne lit pas le texte : une
+ * recherche nominative est presque toujours le fait d'UNE personne, et elle tombe
+ * d'elle-même.
+ *
+ * POURQUOI TROIS, ET PAS DEUX.
+ *
+ *   · « Plusieurs » commence littéralement à deux, mais deux ne sépare pas assez :
+ *     il suffit d'un membre et d'un proche cherchant la même personne pour qu'une
+ *     requête nominative passe. Trois demande une coïncidence qui ne se produit
+ *     plus par hasard.
+ *   · Le dépôt juge DÉJÀ à trois ce qui cesse d'être un avis isolé :
+ *     `GUIDE_OUTDATED_FLAG_THRESHOLD` (trois signalements font basculer un guide),
+ *     `GUIDE_PENDING_PROPOSAL_LIMIT`, `GUIDE_DAILY_PUBLISH_LIMIT`. Reprendre le
+ *     même nombre évite d'introduire un quatrième seuil à expliquer.
+ *   · Et c'est le seuil de petite cellule habituel pour publier un agrégat : à
+ *     trois personnes, l'agrégat ne désigne plus personne.
+ *
+ * CE QUE CE SEUIL COMPTE — DES PERSONNES, PAS DES RECHERCHES.
+ * `search_zero_results.count` compte les RECHERCHES : un seul membre qui cherche
+ * trois fois y inscrit `count: 3`, et il aurait franchi un seuil posé sur `count`.
+ * Mesuré sur le service avant l'arbitrage, trois appels du même membre donnaient
+ * bien une ligne à `count: 3`. Le comptage des personnes distinctes vit donc dans
+ * `search_zero_result_seekers`, en pseudonymes — voir `recordZeroResult`.
+ */
+export const SEARCH_ZERO_MIN_DISTINCT_SEEKERS = 3;
 
 export const zeroResultsQuerySchema = z.object({
   /** Semaines en arrière ; 1 = la semaine en cours. */
@@ -389,3 +428,93 @@ export const SEARCH_TYPE_LABELS_FR: Record<string, string> = {
   CITY: 'Villes',
   PRO: 'Professionnels',
 };
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ `GET /search/zero-results` — « GUIDES MANQUANTS », EN LECTURE MEMBRE         ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ avant ce lot : le panneau « GUIDES MANQUANTS · Recherché sans résultat ce
+ * mois-ci » de la colonne de droite d'A03 affichait les QUATRE lignes d'exemple de
+ * la maquette (`missing`, dans `apps/web/src/screens/a03/data.ts`). Tout existait
+ * sauf la route :
+ *
+ *   · le modèle `SearchZeroResult` (`11-12-search-notifications.prisma`), unique
+ *     sur `(queryNormalized, cityId, occurredOn)` ;
+ *   · son ALIMENTATION — `recordZeroResult`, appelée par `POST /search/zero` ;
+ *   · l'AGRÉGAT — `searchService.zeroResults({ weeks, cityId, limit })`, un
+ *     `groupBy` déjà trié par somme décroissante ;
+ *   · et AUCUNE route : `grep -rn zeroResults …/*.controller.ts` ne trouvait qu'un
+ *     commentaire disant que `/v1/admin/search/zero-results` « attend le module 15 ».
+ *
+ * ── POURQUOI UNE ROUTE MEMBRE, ET NON L'ADMIN QUI ATTEND LE MODULE 15 ─────────
+ *
+ * Parce que ce ne sont pas les mêmes données. La route admin de §3 a été laissée
+ * de côté pour une raison écrite dans `search.controller.ts` : `AuthGuard` ne
+ * connaît que les capacités de MEMBRE, et exposer la RÉINDEXATION derrière
+ * `content.read` donnerait à n'importe qui de quoi saturer la base. L'agrégat des
+ * recherches sans résultat, lui, ne porte aucun de ces deux risques : il est en
+ * lecture seule, borné par `limit`, et il ne nomme personne — §2.4 interdit au
+ * modèle de transporter un identifiant de membre (« requête normalisée, ville,
+ * jour — sans identifiant de membre »), donc la réponse ne peut pas en porter un.
+ * `content.read` est en N0 (`capabilities.ts`), et c'est le bon niveau : c'est une
+ * liste de recherches, pas un contenu de membre.
+ *
+ * ⚠ CE QUE `query` PORTE, ET CE N'EST PAS UNE DÉCISION DE CODE ───────────────
+ *
+ * `queryNormalized` EST DU TEXTE ÉCRIT PAR DES MEMBRES, et `normalizeQuery` (plus
+ * haut dans ce fichier) ne fait que trois choses : décomposition Unicode pour
+ * retirer les accents, passage en minuscules, et remplacement de tout ce qui n'est
+ * pas `[a-z0-9]` par une espace. Autrement dit : **les lettres et les chiffres
+ * survivent**. Une recherche « Docteur Awa Diallo Lyon » reste « docteur awa diallo
+ * lyon », et « rappeler 0612345678 » reste « rappeler 0612345678 ». Rien dans
+ * `recordZeroResult` ne filtre un nom propre ni une suite de chiffres — le seul
+ * filtre est `hasMeaningfulTerms`, qui retire les MOTS VIDES et rien d'autre.
+ *
+ * Afficher cet agrégat à tout membre peut donc, en théorie, exposer le nom d'une
+ * personne ou un numéro tapés par quelqu'un d'autre dans une barre de recherche.
+ * C'EST UN ARBITRAGE DU PORTEUR, pas une décision de code, et il est REMONTÉ : le
+ * code ne masque rien de son propre chef, parce que masquer « ce qui ressemble à un
+ * nom » demanderait une heuristique qui se tromperait dans les deux sens.
+ */
+export const searchZeroResultRowSchema = z
+  .object({
+    /** La requête NORMALISÉE — voir l'avertissement ci-dessus. */
+    query: z.string(),
+    /** La somme des occurrences sur la fenêtre demandée. */
+    count: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type SearchZeroResultRow = z.infer<typeof searchZeroResultRowSchema>;
+
+/**
+ * `.strict()` ET PAS `pageSchema` NU : le service rend `{ items, nextCursor }` et
+ * rien d'autre — `nextCursor` y est écrit `null` en dur, parce qu'un `groupBy`
+ * borné par `take` ne pagine pas. Le `meta` facultatif de `pageSchema` reste
+ * déclaré, et `.strict()` refuse tout le reste : une clé ajoutée au service sans
+ * être déclarée ici fait échouer l'appel côté front, ce qui est exactement le
+ * signal qu'on veut.
+ */
+export const zeroResultsResponseSchema = pageSchema(searchZeroResultRowSchema).strict();
+
+export type ZeroResultsResponse = z.infer<typeof zeroResultsResponseSchema>;
+
+/**
+ * « CE MOIS-CI », EN SEMAINES — parce que c'est l'unité que le service prend.
+ *
+ * La maquette écrit « Recherché sans résultat ce mois-ci » ; `zeroResults` ne
+ * connaît que `weeks` (1 à 12, `zeroResultsQuerySchema` juste au-dessus). Quatre
+ * semaines est la lecture la plus proche du mot dessiné, et la constante est ici
+ * — et non dans l'écran — pour la même raison que toutes les bornes de ce
+ * paquet : une valeur recopiée dans un composant est une seconde source.
+ */
+export const SEARCH_ZERO_RESULTS_PANEL_WEEKS = 4;
+
+/**
+ * Le nombre de lignes que le panneau d'A03 dessine : QUATRE, comptées sur la
+ * planche de 1 440 px. La liste est pourtant une boucle (`<sc-for>`), donc le
+ * cadre en afficherait autant qu'on lui en donne — mais la colonne fait 300 px de
+ * large et la maquette en dessine quatre. On en demande quatre.
+ */
+export const SEARCH_ZERO_RESULTS_PANEL_LIMIT = 4;

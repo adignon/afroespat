@@ -192,6 +192,52 @@ export const eventsQuerySchema = cursorQuerySchema
     cityId: uuidSchema.optional(),
     radiusKm: z.coerce.number().int().min(0).max(200).default(DEFAULT_RADIUS_KM),
     type: z.enum(EventType).optional(),
+    /**
+     * LES ÉLÉMENTS D'UN MEMBRE — l'onglet correspondant de son profil public.
+     *
+     * Le porteur : « pour tous les tabs il reprend le design des éléments
+     * présentés de la façon dont ils sont présentés sur les pages d'origine ».
+     * La carte se dessine à partir du schéma ENTIER de cette route ; une route
+     * résumée ne peut pas la nourrir. Le filtre s'ajoute aux règles de
+     * visibilité existantes, il n'en remplace aucune.
+     */
+    authorHandle: handleSchema.optional(),
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════════╗
+     * ║ LES ÉVÉNEMENTS D'UN RÉSEAU — L'ONGLET « ÉVÉNEMENTS » DE A08              ║
+     * ╚══════════════════════════════════════════════════════════════════════════╝
+     *
+     * Le porteur : « Le contenu de l'onglet événement aussi est dessiné
+     * (événements passés et à venir). Le bouton "Je viens" et "Voir" aussi ne
+     * marchent pas. »
+     *
+     * MESURÉ avant ce lot, et c'est ce qui a décidé de la forme : ce schéma
+     * étant `.strict()`, `GET /events?communityId=…` répondait
+     * `400 UNRECOGNIZED_KEYS`, et `GET /communities/:slug/events` n'existe pas —
+     * le contrôleur des réseaux déclare trente-quatre routes, aucune
+     * d'événement. L'écran n'avait donc AUCUNE route pour cet onglet.
+     *
+     * ── POURQUOI PAS UN FILTRE CÔTÉ ÉCRAN ────────────────────────────────────
+     *
+     * Parce qu'il serait faux ET incomplet : `GET /events` sans filtre borne à la
+     * ville du lecteur plus un rayon (§3.5), donc la réponse ne contient même pas
+     * tous les événements du réseau à trier. Un réseau de PAYS a des membres et
+     * des événements dans plusieurs villes.
+     *
+     * ── LE FILTRE S'AJOUTE AUX RÈGLES, IL N'EN REMPLACE AUCUNE ───────────────
+     *
+     * Même formule qu'`authorHandle` juste au-dessus, et pour la même raison : la
+     * règle dure §10 — « un événement de réseau n'existe que pour ses membres » —
+     * reste la première clause du `visibleWhere`. Demander un réseau dont on
+     * n'est pas membre ne rend donc RIEN, et un événement privé reste privé.
+     *
+     * ⚠ C'EST L'INVERSE DU FIL, et l'écart est volontaire : `GET /feed?communityId=`
+     * REMPLACE sa clause de réseau (`communityId: null` par défaut), ce qui
+     * l'oblige à vérifier l'appartenance AVANT la requête — sans quoi un
+     * identifiant de réseau deviendrait une clé de lecture universelle. Ici la
+     * clause de visibilité n'est pas remplacée : il n'y a rien à garder en plus.
+     */
+    communityId: uuidSchema.optional(),
   })
   .strict()
   .refine((v) => v.date === undefined || (v.from === undefined && v.to === undefined), {

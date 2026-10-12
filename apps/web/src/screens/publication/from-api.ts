@@ -31,7 +31,7 @@
  * `likes` sur un commentaire n'existe nulle part — aucune réaction de commentaire,
  * ni en base ni dans aucune réponse. Remonté ; la prise de A01C reste vide.
  */
-import type { CommentThread } from '@app/shared';
+import type { CommentRow } from '@app/shared';
 import { rondDe } from '@/lib/avatar';
 import { avatarColor, initials } from '../accueil/from-api';
 import type { CommentA02View, RelGuideView } from '../a02/data';
@@ -52,9 +52,27 @@ export interface CommentaireA02 extends CommentA02View {
  * `canReply` suit la PROFONDEUR, pas un droit : on répond à une racine, jamais à
  * une réponse (`DEPTH_EXCEEDED`, mesuré 422). Ce n'est donc pas une permission
  * qu'on préjuge — c'est la forme du fil.
+ *
+ * ── LES EMPLACEMENTS RETIRÉS SONT ÉCARTÉS ICI, ET C'EST UN ÉCART ASSUMÉ ─────
+ *
+ * ⚠ `GET /comments` rend désormais une UNION : un commentaire, ou l'emplacement
+ * `{ removed: true }` qu'un retrait de modération laisse. A01C le DESSINE — sa
+ * colonne « ÉTATS » porte le bloc gris « Ce commentaire a été retiré par la
+ * modération. » — et A02 NE LE DESSINE PAS : sa planche n'a aucune colonne d'états
+ * et aucun bloc de ce genre, vérifié sur ses deux cadres.
+ *
+ * On FILTRE donc, plutôt que d'inventer un bloc que personne n'a dessiné. Le prix
+ * est réel et il est REMONTÉ : le même fil montre un emplacement dans la feuille
+ * A01C et rien sur la page `/publications/:id`. Le combler demande que le designer
+ * dessine l'état sur A02, ou un arbitrage du porteur pour y emprunter celui de
+ * A01C — et un emprunt de dessin entre deux planches est un lot de transcodage,
+ * pas une décision de convertisseur.
  */
-export function commentairesA02From(items: readonly CommentThread[]): readonly CommentaireA02[] {
-  return items.flatMap((racine) => [
+export function commentairesA02From(items: readonly CommentRow[]): readonly CommentaireA02[] {
+  return items.flatMap((racine) =>
+    'removed' in racine
+      ? []
+      : [
     {
       ...rondDe(racine.author, initials, avatarColor),
       name: racine.author.displayName,
@@ -68,19 +86,26 @@ export function commentairesA02From(items: readonly CommentThread[]): readonly C
       commentId: racine.id,
       canEdit: racine.canEdit,
     },
-    ...racine.replies.map((r) => ({
-      ...rondDe(r.author, initials, avatarColor),
-      name: r.author.displayName,
-      text: r.body,
-      time: r.relativeTime,
-      indent: '48px',
-      indentM: '34px',
-      canReply: false,
-      guide: null,
-      commentId: r.id,
-      canEdit: r.canEdit,
-    })),
-  ]);
+    ...racine.replies.flatMap((r) =>
+      'removed' in r
+        ? []
+        : [
+            {
+              ...rondDe(r.author, initials, avatarColor),
+              name: r.author.displayName,
+              text: r.body,
+              time: r.relativeTime,
+              indent: '48px',
+              indentM: '34px',
+              canReply: false,
+              guide: null,
+              commentId: r.id,
+              canEdit: r.canEdit,
+            },
+          ],
+    ),
+        ],
+  );
 }
 
 /**

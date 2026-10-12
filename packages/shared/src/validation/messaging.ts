@@ -63,6 +63,27 @@ export const MESSAGING_ERROR_CODES = {
   CONVERSATION_LIMIT: 429,
   /** Écrire dans une conversation qu'on a quittée, ou qu'un blocage a fermée. */
   CONVERSATION_CLOSED: 409,
+  /**
+   * « Contacter les modérateurs » SUR UN RÉSEAU QUI N'EN A AUCUN À JOINDRE.
+   *
+   * 409 et non 404 : le réseau existe, le demandeur en est membre, et c'est
+   * l'ÉTAT du réseau qui empêche le geste — exactement ce qu'un conflit dit.
+   * Un 404 ferait croire que le bouton pointe vers une route absente.
+   *
+   * Deux situations, et toutes deux sont réelles :
+   *
+   *   · un réseau AUTOMATIQUE de ville ou de pays n'a PAS de propriétaire
+   *     (07 §2.1 : « pas de créateur ; modérateurs = bénévoles nommés par
+   *     l'équipe ») et peut n'avoir encore reçu aucun bénévole. Il n'y a alors
+   *     personne à qui écrire, et c'est `POST /reports` — qui va à l'équipe de
+   *     la PLATEFORME — qui est le bon chemin ;
+   *   · le demandeur EST le seul de l'équipe. Ouvrir un fil où il serait seul
+   *     lui donnerait un carnet de notes déguisé en conversation.
+   *
+   * Le `details.reason` distingue les deux, pour que l'écran puisse proposer le
+   * signalement dans le premier cas et se taire dans le second.
+   */
+  NO_MODERATORS_TO_CONTACT: 409,
 } as const;
 
 export type MessagingErrorCode = keyof typeof MESSAGING_ERROR_CODES;
@@ -73,6 +94,8 @@ export const MESSAGING_ERROR_MESSAGES: Record<MessagingErrorCode, string> = {
   MESSAGE_RATE_LIMIT: 'Vous envoyez trop de messages. Patientez un instant.',
   CONVERSATION_LIMIT: 'Vous avez ouvert trop de nouvelles conversations aujourd’hui.',
   CONVERSATION_CLOSED: 'Cette conversation est fermée.',
+  NO_MODERATORS_TO_CONTACT:
+    'Ce réseau n’a aucun modérateur à contacter pour le moment. Pour un contenu ou un comportement qui pose problème, employez « Signaler ».',
 };
 
 // ── Écriture ────────────────────────────────────────────────────────────────
@@ -113,6 +136,75 @@ export const createDirectConversationSchema = z
   .strict();
 
 export type CreateDirectConversation = z.infer<typeof createDirectConversationSchema>;
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « CONTACTER LES MODÉRATEURS » — ET CE N'EST PAS UN SIGNALEMENT             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `POST /communities/:id/moderators-conversation` ouvre — ou ROUVRE — le fil de
+ * groupe entre un membre et l'équipe de SON réseau : le propriétaire et les
+ * modérateurs actifs, plus le demandeur.
+ *
+ * ── LA DISTINCTION À NE JAMAIS PERDRE ─────────────────────────────────────
+ *
+ * `POST /reports` (13-moderation §8.1) existe déjà et va À L'ÉQUIPE DE LA
+ * PLATEFORME : il ouvre un `moderation_case`, il est tracé, il peut aboutir à
+ * une suspension de compte, et il exige `report.create` (L2). Ceci va aux
+ * BÉNÉVOLES D'UN SEUL RÉSEAU, n'ouvre aucun dossier, ne confère aucun pouvoir de
+ * sanction, et se contente de `content.read` (L0) — parce que demander une règle
+ * à l'équipe de son réseau de ville ne doit rien exiger. Les confondre
+ * donnerait à une question de voisinage le poids d'une procédure, et
+ * inversement : un vrai abus finirait dans un fil que trois bénévoles peuvent
+ * lire au lieu d'arriver chez ceux qui peuvent agir.
+ *
+ * ── CE QUE LE PORTEUR A TRANCHÉ ───────────────────────────────────────────
+ *
+ * Entre un message au propriétaire SEUL — livrable tout de suite, sans toucher à
+ * la messagerie — et une conversation de GROUPE avec le propriétaire et les
+ * modérateurs : « fais le bon ». Donc le groupe, pour une réponse collective et
+ * traçable qui ne dépend pas de la disponibilité d'une seule personne.
+ *
+ * ── AUCUN CORPS DE REQUÊTE, ET C'EST UN ÉCART ASSUMÉ ──────────────────────
+ *
+ * `POST /conversations/direct` exige un `firstMessage` : §5.2 fait du premier
+ * message la DEMANDE elle-même, et une conversation directe vide n'existe pas.
+ * Ici la maquette ne dessine AUCUN formulaire — un bouton, rien d'autre — et on
+ * ne lui en invente pas un. Le fil naît donc VIDE, comme naît une conversation
+ * JOURNEY (§5.1, « à la création du parcours »), et le membre écrit dedans par
+ * `POST /conversations/:id/messages`. Le front n'a donc rien à envoyer : la
+ * route ne porte pas de schéma de requête, seulement cette réponse.
+ */
+export const moderatorsConversationResponseSchema = z
+  .object({
+    /** Le fil à ouvrir : `/messages/<conversationId>`. */
+    conversationId: uuidSchema,
+    /**
+     * Vrai à la PREMIÈRE ouverture, faux quand on rouvre la sienne.
+     *
+     * L'IDEMPOTENCE EST OBSERVABLE, et c'est pour cela que ce champ existe : un
+     * second clic rend le MÊME `conversationId` avec `created: false`. Sans ce
+     * drapeau l'écran ne pourrait pas distinguer « votre demande est partie » de
+     * « vous reprenez une conversation en cours », et il dirait donc l'un des
+     * deux à tort.
+     */
+    created: z.boolean(),
+    /**
+     * Combien de personnes de l'équipe liront : propriétaire et modérateurs
+     * actifs, le demandeur NON COMPRIS. Toujours au moins 1 — à zéro la route
+     * refuse par `NO_MODERATORS_TO_CONTACT`.
+     *
+     * Ce n'est pas une fuite : la liste de l'équipe est déjà lisible de tout
+     * membre par `GET /communities/:id/members?role=MODERATOR`, et la carte
+     * « ÉQUIPE » de la planche « À propos » la dessine nommément.
+     */
+    recipients: z.number().int().positive(),
+  })
+  .strict();
+
+export type ModeratorsConversationResponse = z.infer<
+  typeof moderatorsConversationResponseSchema
+>;
 
 /** `POST /conversations/:id/messages` (§7.3). */
 /**
@@ -256,10 +348,18 @@ export const conversationMemberSchema = z
 /**
  * Une conversation de `GET /conversations` (§7.3).
  *
- * `title` n'est renseigné que pour une conversation de PARCOURS (§8, « nommée par
- * le titre du parcours ») : pour une conversation directe le serveur rend `null`,
- * et c'est au front de la nommer par son interlocuteur — ce que la maquette M01
- * dessine d'ailleurs (« Sandra M. », « Kofi Boateng »).
+ * `title` est renseigné pour les deux conversations que le serveur sait NOMMER :
+ * celle de PARCOURS (§8, « nommée par le titre du parcours ») et celle de
+ * MODÉRATION D'UN RÉSEAU, nommée par le nom du réseau. Pour une conversation
+ * directe il rend `null`, et c'est au front de la nommer par son interlocuteur —
+ * ce que la maquette M01 dessine d'ailleurs (« Sandra M. », « Kofi Boateng »).
+ *
+ * LE NOM DU RÉSEAU SEUL, SANS MOT AJOUTÉ. « Modération · Béninois en France »
+ * serait plus clair et serait du TEXTE D'INTERFACE INVENTÉ : ce fichier note
+ * déjà qu'aucune table du dépôt ne donne le mot français d'un `kind`, et qu'en
+ * fabriquer un a été signalé au porteur plutôt que deviné. La règle du §8 est
+ * reprise telle quelle — une conversation de groupe porte le nom de l'objet
+ * qu'elle sert.
  *
  * `pendingForMe` et `awaitingReply` sont les DEUX FACES du §5.2 (« premier message
  * = demande de conversation »), et le serveur les dérive tous les deux. L'écran ne

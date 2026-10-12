@@ -1098,6 +1098,8 @@ function carteDe(item: JourneyListItem): CarteParcours {
         : `Dernière activité ${ilYA(item.lastActivityAt)} · ${item.currentStep.title}`;
 
   return {
+    /** `/parcours/:id` — la route que `app/(app)/parcours/[id]/` sert. */
+    href: `/parcours/${item.id}`,
     type: typeCourt(item.template.code, item.template.nameFr).toUpperCase(),
     actif: !enPause && !abouti,
     enPause,

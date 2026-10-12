@@ -14,7 +14,7 @@ import {
   VerificationLevel,
 } from '../enums/generated.js';
 import { STORY_TYPE_VOCABULARY } from '../constants/post-types.js';
-import { cursorQuerySchema, pageSchema, uuidSchema } from './pagination.js';
+import { cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
 import { createPollSchema, postPollSchema } from './communities.js';
 
 /**
@@ -577,6 +577,25 @@ export const feedQuerySchema = cursorQuerySchema.extend({
   /** Phase de l'AUTEUR (§2.3) : cibler les pré-départ, ou les installés. */
   phase: z.enum(['PRE_DEPARTURE', 'RECENT_ARRIVAL', 'SETTLED']).optional(),
   communityId: uuidSchema.optional(),
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LES PUBLICATIONS D'UN MEMBRE — L'ONGLET « FIL » DE SON PROFIL            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur, capture à l'appui : « Sur le profil, le fil d'actualité devrait
+   * s'afficher comme ceci » — la CARTE du fil, pas une ligne de titre.
+   *
+   * La carte se dessine à partir de `postCardSchema` : auteur, pastille de type,
+   * contexte, corps, photos, sondage, compteurs, réaction, signet. Une route
+   * résumée ne peut pas la nourrir. On filtre donc LE FIL LUI-MÊME par auteur,
+   * ce qui donne au profil exactement ce que la page d'accueil reçoit — même
+   * route, même schéma, même composition.
+   *
+   * ⚠ LE FILTRE NE CONTOURNE RIEN : la visibilité du fil s'applique telle quelle
+   * — publication retirée, auteur bloqué, réseau privé dont on n'est pas membre.
+   * Demander l'auteur ne donne pas accès à ce qu'on ne verrait pas autrement.
+   */
+  authorHandle: handleSchema.optional(),
 });
 
 export type FeedQuery = z.infer<typeof feedQuerySchema>;
@@ -840,15 +859,89 @@ const commentCardSchema = z
  * récursif inviterait un écran à dessiner un troisième niveau qui ne peut pas
  * exister.
  */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « COMMENTAIRE MASQUÉ » — UN EMPLACEMENT QUI NE DIT QU'UNE SEULE CHOSE      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « "AUCUN COMMENTAIRE · Soyez la première personne à réagir" :
+ * extrais. fais le reste aussi. » — « le reste » comprend la troisième carte de la
+ * colonne « ÉTATS » de A01C, qui dessine un bloc gris portant « Ce commentaire a
+ * été retiré par la modération. »
+ *
+ * ── CE QUE CE SCHÉMA NE PORTE PAS, ET C'EST TOUT LE SUJET ───────────────────
+ *
+ * UN SEUL CHAMP, et il est un littéral. Pas de corps, pas d'auteur, pas de date,
+ * PAS MÊME D'IDENTIFIANT. Chacun de ces quatre a été écarté pour une raison
+ * nommée, et non par économie :
+ *
+ *   · `body` et `author` sont l'objet même du retrait : les servir annulerait la
+ *     modération ;
+ *   · `createdAt` / `relativeTime` datent le message. Croisée avec ce qu'un
+ *     lecteur sait par ailleurs — qui écrivait à ce moment-là, sous quelle
+ *     publication — une heure désigne souvent une personne. L'EMPLACEMENT NE DOIT
+ *     RIEN RÉVÉLER PAR DÉDUCTION, pas seulement rien dire directement ;
+ *   · `id` est précisément ce qui permettrait de le RETROUVER. Aucune route ne
+ *     rend un commentaire par identifiant aujourd'hui, mais un schéma qui le
+ *     publie aurait déjà fait le travail du jour où l'une en rendra un. Les clés
+ *     React du fil sont des RANGS (`cIndex` dans le JSX transcodé), donc rien ne
+ *     le réclame côté écran ;
+ *   · `parentCommentId` serait redondant — la réponse est déjà IMBRIQUÉE sous sa
+ *     racine (voir `commentThreadSchema`) — et il nommerait le fil auquel un
+ *     message retiré répondait.
+ *
+ * ── CE QUI DEVIENT UN EMPLACEMENT, ET CE QUI RESTE INVISIBLE ────────────────
+ *
+ * `commentModeratedWhere` (`apps/api/src/common/comment-visibility.ts`) porte le
+ * partage, et il est étroit EXPRÈS : seul `status = HIDDEN` avec `deleted_at` nul
+ * — c'est-à-dire l'exacte signature de `moderation.hide` — devient un emplacement.
+ * Restent INVISIBLES, sans trace : le commentaire que son auteur a supprimé, celui
+ * d'un compte supprimé, et celui d'un membre séparé du lecteur par un BLOCAGE.
+ * Ce dernier est une RÈGLE DURE (08 §4, « 404 et jamais 403 ») : un emplacement
+ * visible apprendrait au lecteur l'existence de quelqu'un qu'un blocage doit lui
+ * faire oublier, et transformerait le fil en détecteur de blocage.
+ *
+ * ── UNE UNION SIMPLE, PAS UNE UNION DISCRIMINÉE ─────────────────────────────
+ *
+ * `z.discriminatedUnion` exigerait un `removed: z.literal(false)` sur
+ * `commentCardSchema`, donc un champ de plus sur CHAQUE commentaire de CHAQUE
+ * réponse — un changement de charge utile pour un gain de typage. `z.union` suffit
+ * parce que les deux formes sont `.strict()` et disjointes : `{ removed: true }`
+ * n'a ni `body` ni `author`, et une vraie carte porte sept clés que
+ * `commentRemovedSchema` refuse. Côté écran, `'removed' in ligne` suffit à
+ * trancher, et TypeScript le sait.
+ */
+export const commentRemovedSchema = z.object({ removed: z.literal(true) }).strict();
+
+export type CommentRemoved = z.infer<typeof commentRemovedSchema>;
+
 export const commentThreadSchema = commentCardSchema.extend({
-  replies: z.array(commentCardSchema),
+  /**
+   * UNE RÉPONSE PEUT ÊTRE UN EMPLACEMENT, et la réciproque est fausse : une
+   * racine retirée n'emporte PAS ses réponses dans la liste. Voir
+   * `FeedService.commentPage`, qui écrit pourquoi — une réponse paraphrase souvent
+   * ce qu'elle répond, et la montrer sous un emplacement laisserait reconstituer
+   * par déduction le texte que le retrait a ôté.
+   */
+  replies: z.array(z.union([commentCardSchema, commentRemovedSchema])),
 });
 
 export type CommentThread = z.infer<typeof commentThreadSchema>;
 
+/**
+ * UNE LIGNE DE FIL : un commentaire avec ses réponses, OU un emplacement retiré.
+ *
+ * Le type que tout écran de commentaires consomme désormais. Le nommer plutôt que
+ * d'écrire l'union à trois endroits a un effet qu'on veut : le jour où une
+ * quatrième forme apparaîtra, `tsc` nommera les écrans qui ne la traitent pas.
+ */
+export const commentRowSchema = z.union([commentThreadSchema, commentRemovedSchema]);
+
+export type CommentRow = z.infer<typeof commentRowSchema>;
+
 /** `GET /comments` — PAS de `meta` sur cette route. */
 export const commentsResponseSchema = z.object({
-  items: z.array(commentThreadSchema),
+  items: z.array(commentRowSchema),
   nextCursor: z.string().nullable(),
 });
 

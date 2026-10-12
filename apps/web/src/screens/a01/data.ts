@@ -63,7 +63,11 @@ const RAIL_ITEMS: readonly (readonly [string, string, string])[] = [
  * A11/A12 (`/villes…`). Or `T5 §0` range Guides & Démarches, Réseaux,
  * Parrainage, Villes & Membres et Événements dans le PANNEAU D'ACCUEIL : ces
  * pages SONT atteintes par l'entrée « Accueil », et c'est le PANNEAU qui dit
- * ensuite laquelle — `panelGuides`, `panelReseaux`, `panelVilles`. L'écran annonce
+ * ensuite laquelle — `panelGuides`, `panelReseaux`, `panelVilles`.
+ * (⚠ Le panneau ne porte plus que QUATRE de ces entrées : Parrainage, Fil
+ * d'entraide et Événements en ont été retirés le 2026-10-11 — voir `PANEL_ITEMS`.
+ * Le raisonnement sur l'entrée allumée ne change pas : les écrans concernés sont
+ * ceux des guides, des réseaux et des villes, tous encore dans le panneau.) L'écran annonce
  * donc « Accueil › Réseaux », ce qui est juste.
  *
  * Les 52 autres cadres membre n'emploient PAS cette donnée : leur rail est écrit
@@ -92,14 +96,43 @@ export const rail = RAIL_ITEMS.map(([label, icon, href], i) => ({
  * RÈGLE (§10.1) : ici les compteurs sont des NOUVEAUTÉS depuis la dernière
  * visite ; dans les panneaux de section, ce sont des totaux.
  */
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ TROIS ENTRÉES RETIRÉES — LE PORTEUR, 2026-10-11                           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * « Retire parrainage, fil d'entraide et événements du sous-menu d'Accueil.
+ *  C'est déjà dans entraide et événements. »
+ *
+ * Et c'est vérifiable : le RAIL porte « Entraide » et « Agenda », donc le fil
+ * d'entraide et les événements avaient deux chemins. Le parrainage, lui, vit dans
+ * le panneau de section de l'ENTRAIDE, qui lui donne ses trois entrées (trouver un
+ * parrain, mes parrainages, devenir parrain) — une quatrième porte depuis
+ * l'accueil ne menait pas ailleurs.
+ *
+ * ⚠ ÉCART ASSUMÉ AVEC `T5 §0`, qui range les sept dans le panneau d'accueil.
+ * L'arbitrage du porteur est postérieur et l'emporte. La maquette dessine
+ * toujours sept pastilles (`hint-placeholder-count="7"`) : c'est un indice de
+ * remplissage, pas une contrainte — la boucle rend ce que la donnée contient.
+ *
+ * ── ET L'ENTRÉE ACTIVE SE DÉSIGNE DÉSORMAIS PAR SON NOM ───────────────────
+ *
+ * `panel()` prenait un INDICE : `panel(1)` pour les guides, `panel(3)` pour les
+ * réseaux, `panel(5)` pour les villes. Retirer trois entrées décalait donc
+ * silencieusement les deux dernières — les réseaux auraient allumé « Villes &
+ * Membres », et les villes auraient allumé une entrée qui n'existe plus. Aucun
+ * typage, aucun test et aucune génération n'aurait bronché : c'est exactement la
+ * famille d'erreur qui ne se voit qu'à l'écran, sur un écran qu'on ne regarde pas
+ * ce jour-là.
+ *
+ * Le repère est donc le LIBELLÉ, et un libellé inconnu LÈVE au lieu de n'allumer
+ * rien. Le prochain retrait sera sans danger.
+ */
 const PANEL_ITEMS: readonly (readonly [string, string, number | null, string])[] = [
   ["Fil d'actualité", I.feed, null, '/accueil'],
   ['Guides & Démarches', I.book, null, '/guides'],
-  ["Fil d'entraide", I.heart, 12, '/entraide'],
   ['Réseaux', I.net, null, '/reseaux'],
-  ['Parrainage', I.mentor, null, '/parrainage'],
   ['Villes & Membres', I.city, null, '/villes'],
-  ['Événements', I.cal, 3, '/agenda'],
 ];
 
 /**
@@ -107,22 +140,44 @@ const PANEL_ITEMS: readonly (readonly [string, string, number | null, string])[]
  * les pose par `href={m.href}` — même mécanisme que le rail, pour la même raison :
  * la maquette n'écrit qu'UNE entrée dans `<sc-for as="m">`.
  *
- * « Fil d'actualité » mène à `/accueil` et « Événements » à `/agenda`, c'est-à-dire
- * aux mêmes pages que deux entrées du rail. Ce n'est pas un doublon à corriger :
- * `T5 §0` range bien ces deux-là dans le panneau d'accueil ET dans le rail.
+ * ⚠ CE PARAGRAPHE DÉFENDAIT LE DOUBLON QUE LE PORTEUR VIENT DE RETIRER.
+ *
+ * Il disait : « "Fil d'actualité" mène à /accueil et "Événements" à /agenda,
+ * c'est-à-dire aux mêmes pages que deux entrées du rail. Ce n'est pas un doublon à
+ * corriger : T5 §0 range bien ces deux-là dans le panneau d'accueil ET dans le
+ * rail. » L'argument était juste sur la spécification et faux sur l'usage — le
+ * porteur, 2026-10-11 : « c'est déjà dans entraide et événements ».
+ *
+ * CE QUI RESTE VRAI : « Fil d'actualité » mène toujours à `/accueil`, la page que
+ * l'entrée « Accueil » du rail ouvre déjà. Celui-là n'est pas un doublon de
+ * navigation mais le repère de la section — c'est l'entrée allumée quand on est
+ * sur le fil, et la retirer laisserait le panneau sans origine.
  */
-export const panel = (active: number) =>
-  PANEL_ITEMS.map(([label, icon, count, href], i) => ({
+/** Les libellés que `panel()` accepte — dérivés de la liste, jamais recopiés. */
+export type PanelLabel = (typeof PANEL_ITEMS)[number][0];
+
+export const panel = (actif: PanelLabel) => {
+  /**
+   * UN LIBELLÉ INCONNU LÈVE, et c'est le point de tout ce changement : un indice
+   * faux n'allumait rien et personne ne le voyait. Le type l'attrape déjà à la
+   * compilation ; ce contrôle attrape le cas où la liste est modifiée sans que
+   * l'appelant le soit, dans un fichier que `tsc` n'a pas encore revu.
+   */
+  if (!PANEL_ITEMS.some(([label]) => label === actif)) {
+    throw new Error(`panel() : « ${actif} » n'est pas une entrée du panneau d'accueil.`);
+  }
+  return PANEL_ITEMS.map(([label, icon, count, href]) => ({
     label,
     icon,
     count,
     href,
-    bg: i === active ? '#E3F0EB' : 'transparent',
-    fg: i === active ? '#0F5C48' : '#16211D',
-    w: i === active ? 700 : 500,
+    bg: label === actif ? '#E3F0EB' : 'transparent',
+    fg: label === actif ? '#0F5C48' : '#16211D',
+    w: label === actif ? 700 : 500,
   }));
+};
 
-export const panelFil = panel(0);
+export const panelFil = panel("Fil d'actualité");
 
 export const shortcuts = [
   { name: 'Lyon & Rhône', sub: '1 400 membres', i: 'LY', bg: '#16785E' },
@@ -434,14 +489,20 @@ export const online: readonly PersonView[] = [
  * liens cassés — CE N'ÉTAIENT PAS DES LIENS. Sur un téléphone, c'était toute la
  * navigation de section qui ne répondait pas, et c'est ce que le porteur a touché.
  */
+/**
+ * LES MÊMES QUATRE QUE `PANEL_ITEMS`, et pour la même raison — voir son en-tête.
+ *
+ * Le porteur demande le retrait « du sous-menu d'Accueil » ; ce sous-menu a DEUX
+ * formes, le panneau de 1 440 px et cette barre d'onglets de 390 px. Ne corriger
+ * que la première aurait laissé au téléphone les trois portes qu'on vient de
+ * fermer sur l'ordinateur — c'est la règle permanente du porteur : « veille
+ * toujours à ce que toutes les corrections soient aussi faites sur mobile ».
+ */
 const M_TABS: readonly (readonly [string, number | null, string])[] = [
   ["Fil d'actualité", null, '/accueil'],
   ['Guides', null, '/guides'],
-  ['Entraide', 12, '/entraide'],
   ['Réseaux', null, '/reseaux'],
-  ['Parrainage', null, '/parrainage'],
   ['Villes', null, '/villes'],
-  ['Événements', 3, '/agenda'],
 ];
 
 export const mTabs = M_TABS.map(([label, count, href], i) => ({
@@ -735,6 +796,34 @@ export interface FeedPostView {
   readonly postId?: string;
   /**
    * ╔═════════════════════════════════════════════════════════════════════╗
+   * ║ LE COMPTEUR DE COMMENTAIRES — POSÉ LUI AUSSI, ET PAS DESSINÉ         ║
+   * ╚═════════════════════════════════════════════════════════════════════╝
+   *
+   * ⚠ DÉFAUT MESURÉ QUE CE CHAMP CORRIGE : la feuille de commentaires ouverte
+   * depuis la page PROFIL n'affichait NI carte de sujet NI compteur. Le dessin
+   * de la carte de fil a été extrait vers `CartesFilVivantes` ; la feuille
+   * qu'elle monte lisait son compteur sur `usePublication().post`, que
+   * `avecPublication: false` laisse `null` POUR TOUJOURS. La planche de A01C
+   * dessine pourtant les deux, et la page profil avait déjà tout le reste sous
+   * la main — nom, initiales, teinte, type, extrait — SAUF ce nombre.
+   *
+   * IL N'EST PAS DESSINÉ PAR LE CADRE : aucun des deux cadres de A01 ne le lit.
+   * Il voyage avec la carte pour la même raison que `postId` juste au-dessus —
+   * la fenêtre que la carte ouvre en a besoin, et le transporter à côté, dans un
+   * second tableau indexé par rang, se désynchroniserait au premier filtre.
+   *
+   * ⚠ CE N'EST PAS `n`. `n` est `counter.displayCount`, qui vaut le nombre de
+   * RÉACTIONS sur une victoire et le nombre de COMMENTAIRES sur une question —
+   * relevé dans `feed.service.ts`. Écrire « Commentaires · 12 » depuis `n` sur
+   * une publication de type VICTORY afficherait son nombre de bravos.
+   *
+   * FACULTATIF : les cartes d'exemple de ce fichier sont des DESSINS. Absent, le
+   * titre de la feuille reste « Commentaires » sans nombre — ce qu'il doit faire
+   * plutôt que d'écrire « · 0 » sur un fil qu'on n'a pas compté.
+   */
+  readonly commentCount?: number;
+  /**
+   * ╔═════════════════════════════════════════════════════════════════════╗
    * ║ LE SIGNET ET LE MENU DE L'AUTEUR                                       ║
    * ╚═════════════════════════════════════════════════════════════════════╝
    *
@@ -1025,6 +1114,32 @@ export interface CommentView {
    * promettre une fenêtre qui ne s'ouvrirait pas.
    */
   readonly onSignaler?: () => void;
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ « COMMENTAIRE MASQUÉ » — LA LIGNE ENTIÈRE DEVIENT UN BLOC GRIS         ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « fais le reste aussi. » La colonne « ÉTATS » de A01C dessine,
+   * en troisième carte, un bloc `#F2F5F4` portant « Ce commentaire a été retiré
+   * par la modération. » Cette prise l'allume.
+   *
+   * ELLE REMPLACE LA LIGNE, elle ne s'y ajoute pas : le cadre transcodé rend
+   * `{c.retire ? <bloc gris> : <la ligne>}`, donc ni l'avatar, ni le nom, ni la
+   * bulle, ni le pied ne sont posés. Garder le rond d'initiales aurait nommé
+   * l'auteur que le retrait a ôté — ce qui est exactement ce que
+   * `commentRemovedSchema` (`packages/shared`) refuse de servir.
+   *
+   * FACULTATIVE, comme les quatre prises ci-dessus : les commentaires de ce
+   * fichier sont des DESSINS, et aucun n'est retiré. Absente, le cadre rend la
+   * ligne — c'est-à-dire le dessin d'avant ce lot, à l'identique.
+   *
+   * ⚠ SEULE LA MODÉRATION allume cette prise. La suppression par l'auteur, le
+   * compte supprimé et le BLOCAGE ne produisent AUCUN emplacement : le serveur
+   * ne les envoie pas, et `common/comment-visibility.ts` écrit pourquoi — pour
+   * le blocage, c'est une règle dure (08 §4), un emplacement visible ferait du
+   * fil un détecteur de blocage.
+   */
+  readonly retire?: boolean;
 }
 
 /** Un des trois contrôles du bas du composeur, dans son apparence du moment. */

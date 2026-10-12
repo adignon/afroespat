@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
-import { SEARCH_NEVER_INDEXED, SearchSubjectType, normalizeQuery } from '@app/shared';
+import {
+  SEARCH_NEVER_INDEXED,
+  SEARCH_ZERO_MIN_DISTINCT_SEEKERS,
+  SearchSubjectType,
+  normalizeQuery,
+} from '@app/shared';
 import { PrismaService } from '../../../common/prisma.service';
 import { VisibilityService } from '../../../common/visibility.service';
 import { EventHandlerRegistry, type DomainEventJob } from '../../../queue/event-handlers';
@@ -219,6 +224,11 @@ describe('recherche (11)', () => {
       await prisma.searchZeroResult.deleteMany({ where: { id: { in: createdZero } } });
     }
     await prisma.searchZeroResult.deleteMany({ where: { queryNormalized: { contains: tag } } });
+    // Les pseudonymes portent la MÊME requête normalisée que le compteur : le marqueur
+    // du fichier suffit à les retrouver, et aucune autre table n'y renvoie.
+    await prisma.searchZeroResultSeeker.deleteMany({
+      where: { queryNormalized: { contains: tag } },
+    });
     if (createdTopics.length > 0) await prisma.topic.deleteMany({ where: { id: { in: createdTopics } } });
     if (createdPosts.length > 0) await prisma.post.deleteMany({ where: { id: { in: createdPosts } } });
     if (createdHelp.length > 0) {
@@ -469,9 +479,12 @@ describe('recherche (11)', () => {
     it('n’enregistre que requête normalisée, ville et jour, et incrémente au lieu de dupliquer', async () => {
       const q = `Introuvable ${tag}`;
 
-      const first = await search.recordZeroResult({ q });
-      const second = await search.recordZeroResult({ q });
-      const third = await search.recordZeroResult({ q });
+      // UN SEUL membre, trois recherches. C'est tout le relevé qui a motivé
+      // l'arbitrage : le compteur monte à trois pour une personne seule.
+      const seul = await member();
+      const first = await search.recordZeroResult(seul, { q });
+      const second = await search.recordZeroResult(seul, { q });
+      const third = await search.recordZeroResult(seul, { q });
 
       expect(first.count).toBe(1);
       expect(second.count).toBe(2);
@@ -505,9 +518,10 @@ describe('recherche (11)', () => {
 
     it('la ville sépare les lignes, sans jamais les confondre avec l’absence de ville', async () => {
       const q = `Rienici ${tag}`;
-      await search.recordZeroResult({ q });
-      await search.recordZeroResult({ q, cityId });
-      await search.recordZeroResult({ q, cityId });
+      const qui = await member();
+      await search.recordZeroResult(qui, { q });
+      await search.recordZeroResult(qui, { q, cityId });
+      await search.recordZeroResult(qui, { q, cityId });
 
       const rows = await prisma.searchZeroResult.findMany({
         where: { queryNormalized: normalizeQuery(q) },
@@ -522,9 +536,14 @@ describe('recherche (11)', () => {
     });
 
     it('une requête faite de mots vides n’est pas enregistrée (§2.4)', async () => {
-      const result = await search.recordZeroResult({ q: 'de la' });
+      const result = await search.recordZeroResult(await member(), { q: 'de la' });
       expect(result.recorded).toBe(false);
       expect(await prisma.searchZeroResult.count({ where: { queryNormalized: 'de la' } })).toBe(0);
+      // Et pas de pseudonyme non plus : une requête non enregistrée ne doit rien
+      // laisser derrière elle, pas même une ligne qui dit que quelqu'un a cherché.
+      expect(
+        await prisma.searchZeroResultSeeker.count({ where: { queryNormalized: 'de la' } }),
+      ).toBe(0);
     });
 
     it('l’état vide porte la proposition « Posez la question à la communauté ? »', async () => {
@@ -538,6 +557,116 @@ describe('recherche (11)', () => {
       expect((page.meta as { zeroResult?: { prompt: string } }).zeroResult?.prompt).toBe(
         'Aucun résultat. Posez la question à la communauté ?',
       );
+    });
+
+    // ══ ARBITRAGE DU PORTEUR — un seuil de PERSONNES DISTINCTES ═════════════
+
+    /**
+     * LE RELEVÉ QUI A MOTIVÉ L'ARBITRAGE, ET SA CORRECTION, DANS UN SEUL TEST.
+     *
+     * `count` compte les RECHERCHES : un membre seul qui cherche trois fois y
+     * inscrit `count: 3`. Un seuil posé sur `count` l'aurait donc laissé passer, et
+     * c'est exactement ce que l'arbitrage veut empêcher — une recherche nominative
+     * est presque toujours le fait d'une personne seule.
+     *
+     * LE CONTRE-EXEMPLE EST DANS LE TEST, et il est indispensable : la requête
+     * d'une personne seule doit être ABSENTE, puis la MÊME requête doit apparaître
+     * dès que le seuil est atteint. Sans le second temps, un `zeroResults` qui ne
+     * rendrait jamais rien satisferait le premier.
+     */
+    it('[ARBITRAGE] n’affiche pas une requête cherchée par une seule personne, quel que soit `count`', async () => {
+      const q = `Nominatif ${tag} Lyon`;
+      const normalisee = normalizeQuery(q);
+      const seul = await member();
+
+      // Trois recherches, UNE personne.
+      for (let i = 0; i < 3; i += 1) await search.recordZeroResult(seul, { q });
+
+      const ligne = await prisma.searchZeroResult.findFirstOrThrow({
+        where: { queryNormalized: normalisee },
+        select: { count: true },
+      });
+      // Le relevé : le compteur de RECHERCHES est à trois…
+      expect(ligne.count).toBe(3);
+      // …et le nombre de PERSONNES est à un. Les deux faits sont distincts, et
+      // les confondre est le défaut que ce lot a corrigé.
+      expect(
+        await prisma.searchZeroResultSeeker.count({ where: { queryNormalized: normalisee } }),
+      ).toBe(1);
+
+      const avant = await search.zeroResults({ weeks: 1, limit: 50 });
+      expect(avant.items.map((i) => i.query)).not.toContain(normalisee);
+
+      // On complète jusqu'au seuil, avec des membres DISTINCTS.
+      for (let i = 1; i < SEARCH_ZERO_MIN_DISTINCT_SEEKERS; i += 1) {
+        await search.recordZeroResult(await member(), { q });
+      }
+
+      const apres = await search.zeroResults({ weeks: 1, limit: 50 });
+      const trouvee = apres.items.find((i) => i.query === normalisee);
+      expect(trouvee).toBeDefined();
+      expect(trouvee?.seekers).toBe(SEARCH_ZERO_MIN_DISTINCT_SEEKERS);
+      // `count` garde son sens : trois recherches du premier membre, plus une par
+      // membre ajouté.
+      expect(trouvee?.count).toBe(3 + (SEARCH_ZERO_MIN_DISTINCT_SEEKERS - 1));
+    });
+
+    /**
+     * LA TABLE DES PSEUDONYMES NE PORTE AUCUN IDENTIFIANT DE MEMBRE, et on le
+     * vérifie sur les COLONNES — une ligne sans membre pourrait n'être qu'un oubli
+     * d'écriture, une colonne absente ne peut rien porter.
+     *
+     * ET LES PSEUDONYMES NE SE RECOLLENT PAS EN PROFIL : la requête entre dans le
+     * condensat, donc le MÊME membre porte deux pseudonymes différents sur deux
+     * requêtes différentes. C'est ce qui distingue un pseudonyme d'un identifiant
+     * déguisé, et c'est la seule assertion qui le dit.
+     */
+    it('[RÈGLE DURE] les pseudonymes ne nomment personne et ne se recollent pas entre requêtes', async () => {
+      const colonnes = await prisma.$queryRawUnsafe<{ column_name: string }[]>(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'search_zero_result_seekers'`,
+      );
+      const noms = colonnes.map((c) => c.column_name);
+      expect(noms).toEqual(
+        expect.arrayContaining(['query_normalized', 'city_id', 'occurred_on', 'seeker_hash']),
+      );
+      expect(noms.some((n) => n.includes('user'))).toBe(false);
+      expect(noms.some((n) => n.includes('member'))).toBe(false);
+
+      const qui = await member();
+      const unQ = `Premiere ${tag} requete`;
+      const autreQ = `Seconde ${tag} requete`;
+      await search.recordZeroResult(qui, { q: unQ });
+      await search.recordZeroResult(qui, { q: autreQ });
+
+      const un = await prisma.searchZeroResultSeeker.findFirstOrThrow({
+        where: { queryNormalized: normalizeQuery(unQ) },
+        select: { seekerHash: true },
+      });
+      const autre = await prisma.searchZeroResultSeeker.findFirstOrThrow({
+        where: { queryNormalized: normalizeQuery(autreQ) },
+        select: { seekerHash: true },
+      });
+      expect(un.seekerHash).not.toBe(autre.seekerHash);
+      // Un HMAC-SHA256 en hexadécimal, et surtout pas l'identifiant du membre.
+      expect(un.seekerHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(un.seekerHash).not.toContain(qui);
+    });
+
+    /**
+     * LE PANNEAU DISPARAÎT QUAND IL NE RESTE RIEN. Une fenêtre sans aucune requête
+     * au seuil rend une liste VIDE — et non la liste complète, ni une erreur. C'est
+     * la réponse normale d'une semaine calme, et c'est le cas que le seuil rend
+     * fréquent.
+     */
+    it('[ARBITRAGE] rend une liste vide quand aucune requête n’atteint le seuil', async () => {
+      const seul = await member();
+      await search.recordZeroResult(seul, { q: `Isolee ${tag} ${Date.now()}` });
+
+      // Une ville sans aucun chercheur : le filtre ne peut rien trouver, et c'est
+      // la forme vide qu'on éprouve — `items: []`, `nextCursor: null`.
+      const vide = await search.zeroResults({ weeks: 1, cityId: otherCityId, limit: 50 });
+      expect(vide.items).toEqual([]);
+      expect(vide.nextCursor).toBeNull();
     });
   });
 

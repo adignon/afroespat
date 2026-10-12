@@ -387,6 +387,8 @@ export async function chargerS01(): Promise<S01Data> {
 
 function carteAnnonce(a: HousingCardView, rang: number): CarteAnnonce {
   return {
+    /** `/services/logement/:id` — la route que `app/(app)/services/logement/[id]/` sert. */
+    href: `/services/logement/${a.id}`,
     genre: LOGEMENTS_FR[a.kind],
     titre: a.title,
     prix: loyer(a),

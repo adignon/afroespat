@@ -116,14 +116,42 @@ const LIAISONS: readonly Liaison[] = [
     nePlus: ['Payer 2 600 F'],
   },
   // ── Entraide ──────────────────────────────────────────────────────────────
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE COMPTEUR N'A PAS DISPARU : IL A CHANGÉ DE CHEMIN                     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Ces deux entrées exigeaient `{compteurs.ouvertes}` et
+   * `{compteurs.pouvezAider}` dans le JSX, et elles avaient raison tant que la
+   * rangée de pastilles était cinq `<span>` morts avec deux nombres interpolés
+   * dedans.
+   *
+   * Elle est devenue une BOUCLE — le porteur voulait que ces pastilles filtrent
+   * (« Intègre donc ») — et une pastille qui répond a besoin d'une clé, d'un
+   * état actif, d'une destination et d'un geste. La rangée est donc une liste de
+   * `PorteeFil`, et le nombre entre dans le LIBELLÉ : `porteesDuFil` compose
+   * « Toutes · 9 » par `p.libelle(compteurs)`. Le cadre lit `{p.libelle}`, et il
+   * ne peut plus nommer `compteurs` — il ne sait même plus qu'il en existe.
+   *
+   * ── CE QUI SERAIT L'ERREUR, ET POURQUOI IL Y A UN SECOND TEST ─────────────
+   *
+   * Corriger CES DEUX LIGNES et s'arrêter là perdrait la couverture au lieu de
+   * la déplacer : on vérifierait que le cadre lit une liste, sans que personne ne
+   * vérifie plus que le NOMBRE y arrive. C'est exactement l'angle mort qui laisse
+   * une pastille afficher « Toutes · 0 » sur une ville qui a quarante demandes.
+   *
+   * Le nombre est donc éprouvé LÀ OÙ IL VIT MAINTENANT, dans
+   * `entraide/__tests__/portees.test.ts` — qui n'existait pas, parce que jusqu'ici
+   * ce fichier-ci suffisait.
+   */
   {
     fichier: 'h01/mobile.generated.tsx',
-    lit: ['{compteurs.ouvertes}', '{compteurs.pouvezAider}'],
+    lit: ['(portees ?? [])', '{p.libelle}'],
     nePlus: ['Toutes · 41', 'Vous pouvez aider · 4'],
   },
   {
     fichier: 'h04/mobile.generated.tsx',
-    lit: ['{compteurs.ouvertes}', '{compteurs.pouvezAider}'],
+    lit: ['(portees ?? [])', '{p.libelle}'],
     nePlus: ['Toutes · 41', 'Vous pouvez aider · 4'],
   },
   { fichier: 'h05/mobile.generated.tsx', lit: ['{ville}'], nePlus: ['>Lyon<'] },

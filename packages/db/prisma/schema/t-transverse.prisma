@@ -7,6 +7,12 @@
 enum MediaKind {
   AVATAR
   POST
+  /// Image DANS LE CORPS d'un guide (05 §2.1). L'éditeur A05 de la maquette
+  /// écrit `![Capture](/media/<clé>)` dans sa zone de texte et porte un bouton
+  /// image : le corps d'un guide est donc du Markdown AVEC images, et une image
+  /// de guide n'est pas une image de publication — elle n'est ni déposée par le
+  /// même geste, ni ouverte par la même capacité (voir `MEDIA_KIND_POLICIES`).
+  GUIDE
   HOUSING
   EVENT_COVER
   ALBUM
@@ -93,6 +99,8 @@ model MediaAsset {
   avatarOfUsers    User[]         @relation("UserAvatar")
   dataExports      DataExport[]   @relation("DataExportAsset")
   postMedia        PostMedia[]
+  /// Les images citées dans le corps d'un guide. Voir `GuideMedia`.
+  guideMedia       GuideMedia[]
   storyBackgrounds Story[]        @relation("StoryBackground")
   communityCovers  Community[]    @relation("CommunityCover")
   albumPhotos      AlbumPhoto[]

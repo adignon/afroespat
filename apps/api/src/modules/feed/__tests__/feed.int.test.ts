@@ -22,6 +22,8 @@ import { AuthService } from '../../auth/auth.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { createPollSchema } from '@app/shared';
 import { CommunitiesService } from '../../communities/communities.service';
+import { ConnectionsService } from '../../connections/connections.service';
+import { MessagingService } from '../../messaging/messaging.service';
 import { FeedService, type FeedActor } from '../feed.service';
 import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 
@@ -105,6 +107,26 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
 
   let counter = 0;
   const nextPhone = (): string => numeroDEpreuve(counter++);
+
+  /**
+   * UNE LIGNE DE FIL QUI DOIT ÊTRE LISIBLE, et le test le dit au lieu de le
+   * supposer.
+   *
+   * `commentPage` rend désormais une UNION : un commentaire, ou l'emplacement
+   * `{ removed: true }` qu'un retrait de modération laisse. Les cas qui lisent
+   * `.id` ou `.replies` parlent tous d'un commentaire qu'ils viennent de créer :
+   * cette fonction porte l'assertion à l'endroit où elle a un sens, et un
+   * emplacement qui apparaîtrait là ÉCHOUERAIT le test en le nommant, plutôt que
+   * de lever un `TypeError` trente lignes plus bas.
+   */
+  function lisible<T extends object>(ligne: T | { removed: true } | undefined): T {
+    expect(ligne, 'la ligne attendue manque dans le fil').toBeDefined();
+    expect(
+      ligne !== undefined && 'removed' in ligne,
+      'cette ligne devait être un commentaire lisible, pas un emplacement retiré',
+    ).toBe(false);
+    return ligne as T;
+  }
 
   /**
    * Un membre neuf. Le NIVEAU est porté par l'acteur, comme le jeton le porte —
@@ -235,17 +257,49 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
   const publishedGuide = () => guideAvecStatut('PUBLISHED');
   const draftGuide = () => guideAvecStatut('DRAFT');
 
+  /**
+   * LA PAGE 1 D'UN GUIDE — le sujet d'un commentaire depuis que les guides ont
+   * des pages (05 `GuidePage`).
+   *
+   * Écrite en base plutôt que par `GuidesService` : ce fichier éprouve le module
+   * 04, et monter le service des guides ici pour obtenir un identifiant de page
+   * aurait fait dépendre les tests du fil de la publication d'un guide.
+   */
+  async function pageDeGuide(guideId: string): Promise<string> {
+    const id = newId();
+    const page = await prisma.guidePage.create({
+      data: { id, guideId, position: 1, title: `Page ${id.slice(-8)}`, slug: `page-${id.slice(-8)}` },
+    });
+    return page.id;
+  }
+
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
 
     const outbox = new OutboxService(prisma);
     feed = new FeedService(prisma, outbox, new AuditService(prisma), new VisibilityService(prisma));
+    /**
+     * `MessagingService` EN SIXIÈME ARGUMENT — ajouté au constructeur de
+     * `CommunitiesService` pour « Contacter les modérateurs ». Ce test ne s'en
+     * sert pas : il monte le module réseaux pour créer les réseaux où ses
+     * publications atterrissent.
+     */
+    const auditFeed = new AuditService(prisma);
+    const visibilityFeed = new VisibilityService(prisma);
     communities = new CommunitiesService(
       prisma,
       outbox,
-      new AuditService(prisma),
-      new VisibilityService(prisma),
+      auditFeed,
+      visibilityFeed,
+      new MessagingService(
+        prisma,
+        new CryptoService(),
+        outbox,
+        auditFeed,
+        visibilityFeed,
+        new ConnectionsService(prisma, outbox, auditFeed, visibilityFeed),
+      ),
     );
     auth = new AuthService(
       prisma,
@@ -462,37 +516,56 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
 
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
-   * ║ CE CAS DISAIT L'INVERSE — ÉCART ASSUMÉ AVEC §2.4                        ║
+   * ║ CE CAS A ÉTÉ RETOURNÉ DEUX FOIS. IL REVIENT À §2.4, ET VOICI LA TRACE    ║
    * ╚══════════════════════════════════════════════════════════════════════════╝
    *
-   * Il gelait « un L0 ne peut pas publier », qui est §2.4 mot pour mot : « Capacité
-   * `post.create` (L1). Un L0 voit le composeur grisé avec l'invitation à monter de
-   * niveau. »
+   * ÉTAT 1 — il gelait §2.4 mot pour mot : « Capacité `post.create` (L1). Un L0
+   * voit le composeur grisé avec l'invitation à monter de niveau. »
    *
-   * Le porteur : « Autorise pour tout le monde la possibilité de publier des
-   * stories avec tout ce qui va avec. » La décision, ce qu'elle ouvre et ce qu'elle
-   * coûte sont écrits sur `post.create` dans `capabilities.ts`.
+   * ÉTAT 2 — le porteur, après avoir vu la photo refusée dans le composeur de
+   * story : « Autorise pour tout le monde la possibilité de publier des stories
+   * avec tout ce qui va avec. » `post.create` est passée en L0 et ce cas a été
+   * retourné : le composeur était ouvert, `canPost` valait `true`.
    *
-   * Il gèle maintenant que le composeur est OUVERT — `canPost` compris, parce que
-   * c'est lui qui grise le bouton à l'écran — et il garde intacte l'autre moitié,
-   * celle qui n'a jamais dépendu du niveau : commenter et réagir.
+   * ÉTAT 3, celui-ci — la refonte des niveaux (2026-10-09) range explicitement
+   * « publier dans le fil d'actualité et stories » en N1 : « N1 : publier dans le
+   * fil d'actualité et stories, répondre à l'entraide, demander un parrain. »
+   * L'instruction la plus récente l'emporte, `post.create` est revenue en L1, et
+   * §2.4 se retrouve dit par la table plutôt que contredit par elle.
+   *
+   * ── CE QUE CE VA-ET-VIENT ENSEIGNE, ET QUI VAUT PLUS QUE LE CAS ───────────
+   *
+   * Ce test n'a jamais été faux : il a été JUSTE TROIS FOIS, sur trois règles
+   * différentes. C'est ce qu'on attend d'un test de règle — qu'il tombe le jour où
+   * la règle change, bruyamment, au lieu de laisser le code dériver en silence.
+   * Ce qu'il faut tenir, c'est l'en-tête : sans la trace des trois états, le
+   * prochain lecteur croit lire une règle intemporelle.
+   *
+   * ── L'AUTRE MOITIÉ N'A JAMAIS BOUGÉ, ET C'EST ELLE QU'ON PROTÈGE ──────────
+   *
+   * COMMENTER ET RÉAGIR. `comment.create` est en L0 dans les trois états — la
+   * liste du porteur l'y range elle aussi (« N0 : commenter des publications »).
+   * Le piège serait de fermer le commentaire « par symétrie » le jour où on ferme
+   * la publication : les deux moitiés sont ici dans le MÊME cas exprès, pour que
+   * ce geste-là casse quelque chose.
    */
-  it('rule: un L0 publie, commente et réagit (écart §2.4 assumé)', async () => {
+  it('rule: un L0 commente et réagit, mais ne publie pas (§2.4)', async () => {
     const pre = await newMember('L0');
     const settled = await newMember('L1');
     // La prémisse : le membre est bien L0, sinon le test ne prouve rien.
     expect(pre.level).toBe('L0');
 
-    const publie = await feed.createPost(pre, post());
-    expect(publie.post.id).toBeDefined();
+    await expect(feed.createPost(pre, post())).rejects.toThrow();
 
-    // Et l'API le DIT à l'écran : `canPost` est ce qui grise le composeur.
+    // Et l'API le DIT à l'écran : `canPost` est ce qui grise le composeur. Sans
+    // cette attente, le serveur refuserait pendant que le bouton reste allumé —
+    // le membre écrirait son texte avant d'apprendre qu'il ne peut pas l'envoyer.
     const list = await feed.feed(pre, feedQuerySchema.parse({}));
-    expect(list.meta.canPost).toBe(true);
+    expect(list.meta.canPost).toBe(false);
 
-    // Une story non plus n'est plus refusée : §2.6 emploie la MÊME capacité.
-    const racontee = await feed.createStory(pre, story());
-    expect(racontee.story.id).toBeDefined();
+    // La story tombe avec : §2.6 emploie la MÊME capacité, et la liste du porteur
+    // nomme les deux d'un seul souffle (« le fil d'actualité ET stories »).
+    await expect(feed.createStory(pre, story())).rejects.toThrow();
 
     // Et il COMMENTE et RÉAGIT — l'autre moitié de la règle, qui n'a jamais
     // dépendu du niveau et que l'on casse en ajoutant un contrôle « par symétrie ».
@@ -507,7 +580,8 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     expect(reacted.kind).toBe('SUPPORT');
     expect(reacted.reactionCount).toBe(1);
 
-    // Et le même texte publié par un L1 passe : c'est bien le NIVEAU qui refusait.
+    // Et le même texte publié par un L1 passe : c'est bien le NIVEAU qui refusait,
+    // et non le texte, la ville ou le type.
     expect((await feed.createPost(settled, post())).post.id).toBeDefined();
     expect((await feed.feed(settled, feedQuerySchema.parse({}))).meta.canPost).toBe(true);
   }, TEST_TIMEOUT_MS);
@@ -1446,6 +1520,93 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     ).rejects.toMatchObject({ code: 'EDIT_WINDOW_CLOSED' });
   }, TEST_TIMEOUT_MS);
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE SUJET D'UN COMMENTAIRE DE GUIDE EST LA PAGE, PLUS LE GUIDE            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Décision du porteur : « Les commentaires concernent donc une page du guide. »
+   * Deux choses se mesurent ici, et la seconde est celle qui compte :
+   *
+   *   · `GUIDE_PAGE` est ACCEPTÉ, et la visibilité reste celle du GUIDE — une
+   *     page n'a pas de `status`, la publication est d'un bloc ;
+   *   · `GUIDE` est REFUSÉ en 404. Sans ce refus, un client resté en arrière
+   *     continuerait de poser des commentaires que plus aucun écran ne montre, et
+   *     qu'aucun compteur ne compte : ils disparaîtraient en silence.
+   */
+  it('n’accepte un commentaire de guide que sur une PAGE, jamais sur le guide (05 §2)', async () => {
+    const lecteur = await newMember('L0');
+    const guideId = await publishedGuide();
+    const pageId = await pageDeGuide(guideId);
+
+    const cree = await feed.createComment(lecteur, {
+      subjectType: 'GUIDE_PAGE',
+      subjectId: pageId,
+      body: 'Une question sur cette étape précise de la démarche.',
+    });
+    expect(cree.comment.id).toBeTruthy();
+    const ligne = await prisma.comment.findUniqueOrThrow({ where: { id: cree.comment.id } });
+    expect(ligne.subjectType).toBe('GUIDE_PAGE');
+    expect(ligne.subjectId).toBe(pageId);
+
+    // Et le fil de cette page le rend. `'id' in item` : la liste est une UNION
+    // (un commentaire, ou un emplacement retiré), et un emplacement n'a pas d'id.
+    const fil = await feed.comments(lecteur, {
+      subjectType: 'GUIDE_PAGE',
+      subjectId: pageId,
+      sort: 'RECENT',
+      limit: 20,
+    });
+    expect(
+      fil.items.flatMap((item) => ('id' in item ? [item.id] : [])),
+    ).toContain(cree.comment.id);
+
+    // LE GUIDE, LUI, N'EST PLUS UN SUJET — ni en écriture…
+    await expect(
+      feed.createComment(lecteur, {
+        subjectType: 'GUIDE',
+        subjectId: guideId,
+        body: 'Un commentaire posé sur le guide, comme avant les pages.',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    // …ni en lecture : « liste vide » laisserait croire à un fil muet.
+    await expect(
+      feed.comments(lecteur, {
+        subjectType: 'GUIDE',
+        subjectId: guideId,
+        sort: 'RECENT',
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    // Un guide NON PUBLIÉ ne se commente pas davantage par sa page : la
+    // visibilité est celle du guide, et la page n'en a pas qui lui soit propre.
+    const brouillon = await draftGuide();
+    const pageBrouillon = await pageDeGuide(brouillon);
+    await expect(
+      feed.createComment(lecteur, {
+        subjectType: 'GUIDE_PAGE',
+        subjectId: pageBrouillon,
+        body: 'Un commentaire sur la page d’un brouillon.',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    // Une page RETIRÉE non plus — son corps n'est plus lu par personne.
+    await prisma.guidePage.update({
+      where: { id: pageId },
+      data: { deletedAt: new Date(), position: -1 },
+    });
+    await expect(
+      feed.createComment(lecteur, {
+        subjectType: 'GUIDE_PAGE',
+        subjectId: pageId,
+        body: 'Un commentaire sur une page retirée.',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    await prisma.comment.deleteMany({ where: { subjectId: pageId } });
+  }, TEST_TIMEOUT_MS);
+
   // ══ §2.5 : une seule profondeur, et le compteur qui suit ══════════════════
 
   it('n’accepte qu’une profondeur de réponse et tient `comment_count` (§2.5)', async () => {
@@ -1805,6 +1966,125 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     await expect(feed.handleContentHidden({ nothing: true })).resolves.toMatchObject({
       hidden: 0,
     });
+  }, TEST_TIMEOUT_MS);
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ UN COMMENTAIRE RETIRÉ LAISSE UN EMPLACEMENT — ET RIEN D'AUTRE            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « fais le reste aussi. » La colonne « ÉTATS » de A01C dessine
+   * « Ce commentaire a été retiré par la modération. » ; jusqu'ici le commentaire
+   * masqué ne quittait jamais le serveur et disparaissait sans trace.
+   *
+   * C'EST UN CHANGEMENT DE PRODUIT, donc le cas garde D'ABORD ce qu'il ne révèle
+   * PAS. Les quatre disparitions ont des empreintes différentes et ce test les
+   * sépare une par une — c'est le cœur du lot, pas un détail de couverture :
+   *
+   *   · MODÉRATION (`status = HIDDEN`) → emplacement visible ;
+   *   · SUPPRESSION PAR L'AUTEUR (`deleted_at` + `REMOVED`) → aucune trace ;
+   *   · BLOCAGE → aucune trace. RÈGLE DURE 08 §4 : un emplacement visible
+   *     apprendrait au lecteur l'existence de quelqu'un qu'un blocage doit lui
+   *     faire oublier, et ferait du fil un détecteur de blocage ;
+   *   · les RÉPONSES d'une racine retirée → aucune trace, parce qu'une réponse
+   *     paraphrase souvent ce qu'elle répond.
+   */
+  it('un commentaire RETIRÉ par la modération laisse un emplacement nu ; supprimé ou bloqué, rien', async () => {
+    const auteur = await newMember('L1');
+    const lecteur = await newMember('L1');
+    const bloque = await newMember('L1');
+
+    const publication = await feed.createPost(auteur, post({ body: 'Un fil à quatre voix.' }));
+    const sujet = { subjectType: 'POST' as const, subjectId: publication.post.id };
+
+    const modere = await feed.createComment(lecteur, { ...sujet, body: 'Le commentaire que la modération retirera.' });
+    const garde = await feed.createComment(lecteur, { ...sujet, body: 'Le commentaire qui reste lisible.' });
+    const supprime = await feed.createComment(lecteur, { ...sujet, body: 'Le commentaire que son auteur retirera.' });
+    const duBloque = await feed.createComment(bloque, { ...sujet, body: 'Le commentaire de celui qui sera bloqué.' });
+
+    // Une RÉPONSE sous la racine qui sera retirée, et une sous celle qui reste :
+    // sans les deux, on ne saurait pas si la première disparaît pour la bonne
+    // raison ou parce que les réponses ont cessé de sortir.
+    const sousModere = await feed.createComment(auteur, {
+      ...sujet,
+      body: 'Une réponse sous la racine qui sera retirée.',
+      parentCommentId: modere.comment.id,
+    });
+    const reponseModeree = await feed.createComment(auteur, {
+      ...sujet,
+      body: 'Une réponse qui sera elle-même retirée.',
+      parentCommentId: garde.comment.id,
+    });
+
+    // PRÉMISSE : les six sont visibles avant quoi que ce soit, sinon tout ce qui
+    // suit passerait sur une liste déjà vide.
+    const avant = await feed.comments(lecteur, { ...sujet, limit: 20, sort: 'RECENT' });
+    const idsDe = (page: Awaited<ReturnType<typeof feed.comments>>): string[] =>
+      page.items.flatMap((r) =>
+        'removed' in r ? [] : [r.id, ...r.replies.flatMap((x) => ('removed' in x ? [] : [x.id]))],
+      );
+    for (const attendu of [modere, garde, supprime, duBloque]) {
+      expect(idsDe(avant)).toContain(attendu.comment.id);
+    }
+    expect(idsDe(avant)).toContain(sousModere.comment.id);
+    expect(idsDe(avant)).toContain(reponseModeree.comment.id);
+
+    // ── LES QUATRE DISPARITIONS, CHACUNE PAR SON CHEMIN RÉEL ───────────────
+    await feed.handleContentHidden({ subjectType: 'COMMENT', subjectId: modere.comment.id });
+    await feed.handleContentHidden({
+      subjectType: 'COMMENT',
+      subjectId: reponseModeree.comment.id,
+    });
+    await feed.deleteComment(lecteur, supprime.comment.id);
+    await prisma.block.create({
+      data: { id: newId(), blockerUserId: lecteur.userId, blockedUserId: bloque.userId },
+    });
+
+    const apres = await feed.comments(lecteur, { ...sujet, limit: 20, sort: 'RECENT' });
+
+    // DEUX emplacements, pas plus : la racine modérée et la réponse modérée. Le
+    // commentaire supprimé et celui du membre bloqué n'en laissent AUCUN.
+    const emplacementsRacine = apres.items.filter((r) => 'removed' in r);
+    const emplacementsReponse = apres.items.flatMap((r) =>
+      'removed' in r ? [] : r.replies.filter((x) => 'removed' in x),
+    );
+    expect(emplacementsRacine, 'la racine retirée doit laisser UN emplacement').toHaveLength(1);
+    expect(emplacementsReponse, 'la réponse retirée doit laisser UN emplacement').toHaveLength(1);
+
+    // L'EMPLACEMENT NE PORTE QU'UNE CLÉ. Ni corps, ni auteur, ni date, ni
+    // identifiant : c'est le contrat de `commentRemovedSchema`, et c'est ce qui
+    // fait qu'il ne révèle rien ni directement ni par déduction.
+    for (const vide of [...emplacementsRacine, ...emplacementsReponse]) {
+      expect(Object.keys(vide)).toEqual(['removed']);
+    }
+
+    // LA RACINE RETIRÉE N'EMPORTE PAS SA RÉPONSE DANS LA LISTE : elle n'y est plus
+    // du tout, ni lisible ni en emplacement.
+    expect(idsDe(apres)).not.toContain(sousModere.comment.id);
+    expect(
+      apres.items.flatMap((r) => ('removed' in r ? [] : r.replies)),
+      'une racine retirée ne rend aucune réponse',
+    ).toHaveLength(1);
+
+    // LE COMMENTAIRE LISIBLE EST TOUJOURS LÀ — sans lui, tout ce qui précède
+    // serait satisfait par un service qui aurait cessé de rendre des commentaires.
+    expect(idsDe(apres)).toEqual([garde.comment.id]);
+
+    // ── LE TÉMOIN DU BLOCAGE, PAR LE CHEMIN DE LA FILE ────────────────────
+    //
+    // `handleUserBlocked` rejoue le filtre et LÈVE si quoi que ce soit du membre
+    // bloqué traverse encore. Il lit maintenant la clause des LIGNES — celle qui
+    // retient aussi les emplacements — donc un emplacement qui fuirait le ferait
+    // échouer. C'est le garde-fou de la règle dure, pas une redite.
+    await expect(
+      feed.handleUserBlocked({ blockerUserId: lecteur.userId, blockedUserId: bloque.userId }),
+    ).resolves.toMatchObject({ checked: 2 });
+
+    // ET LE COMMENTAIRE DU MEMBRE BLOQUÉ RESTE VISIBLE À UN TIERS, retiré ou non :
+    // le blocage est une relation entre deux personnes, pas une sanction.
+    expect(
+      idsDe(await feed.comments(auteur, { ...sujet, limit: 20, sort: 'RECENT' })),
+    ).toContain(duBloque.comment.id);
   }, TEST_TIMEOUT_MS);
 
   it('recalcule le score des conseils de l’étape sur `journey.step_completed` (§6)', async () => {
@@ -2427,20 +2707,22 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
 
     const pertinents = await feed.comments(lecteur, { ...sujet, limit: 20, sort: 'RELEVANT' });
     expect(
-      pertinents.items[0]?.id,
+      lisible(pertinents.items[0]).id,
       'le fil le plus répondu doit venir en tête de « Pertinents »',
     ).toBe(premier.comment.id);
 
     const recents = await feed.comments(lecteur, { ...sujet, limit: 20, sort: 'RECENT' });
-    expect(recents.items[0]?.id, '« Récents » doit commencer par le plus neuf').toBe(
+    expect(lisible(recents.items[0]).id, '« Récents » doit commencer par le plus neuf').toBe(
       dernier.comment.id,
     );
-    expect(recents.items.at(-1)?.id, 'et finir par le plus ancien').toBe(premier.comment.id);
+    expect(lisible(recents.items.at(-1)).id, 'et finir par le plus ancien').toBe(
+      premier.comment.id,
+    );
 
     // LES RÉPONSES RESTENT SOUS LEUR RACINE dans les deux ordres : §2.5 ne connaît
     // qu'une profondeur, et paginer un mélange couperait un fil en deux.
-    expect(pertinents.items[0]?.replies).toHaveLength(2);
-    expect(recents.items.at(-1)?.replies).toHaveLength(2);
+    expect(lisible(pertinents.items[0]).replies).toHaveLength(2);
+    expect(lisible(recents.items.at(-1)).replies).toHaveLength(2);
 
     // ── LE CURSEUR EST LIÉ À SON TRI ────────────────────────────────────────
     //
@@ -2465,8 +2747,8 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
       sort: 'RELEVANT',
       cursor: page1.nextCursor as string,
     });
-    expect(page2.items[0]?.id, 'la deuxième page ne doit pas répéter la première').not.toBe(
-      page1.items[0]?.id,
+    expect(lisible(page2.items[0]).id, 'la deuxième page ne doit pas répéter la première').not.toBe(
+      lisible(page1.items[0]).id,
     );
   });
 

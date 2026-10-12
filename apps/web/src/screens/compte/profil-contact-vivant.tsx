@@ -5,12 +5,19 @@ import { useRouter } from 'next/navigation';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { FenetreEcrire } from '@/components/fenetre-ecrire';
+/**
+ * LES DEUX APPELS DE « ÉCRIRE » SONT PARTAGÉS AVEC L'ONGLET « MEMBRES » D'UN
+ * RÉSEAU, et ils vivent donc dans `components/ecrire.ts`.
+ *
+ * Ils étaient écrits ici, et c'était juste tant que ce bouton n'existait qu'au
+ * profil. Il est maintenant dessiné six fois de plus sur les quatre planches de
+ * A08T, et le savoir qu'il porte est du CONTRAT — `firstMessage` obligatoire,
+ * route unique par paire, pseudo sans arobase dans la charge. Recopié, il aurait
+ * divergé, et le symptôme aurait été un 400 affiché comme une panne.
+ */
+import { conversationAvec, ouvrirConversation } from '@/components/ecrire';
 import { ApiError, memberApi } from '@/lib/api/index';
-import {
-  CONNECTION_MESSAGE_MIN,
-  conversationSchema,
-  conversationsResponseSchema,
-} from '@app/shared';
+import { CONNECTION_MESSAGE_MIN } from '@app/shared';
 import { z } from 'zod';
 import type { K02Data, MotifDemande } from './data';
 
@@ -74,17 +81,13 @@ export function ProfilContactVivant({
 
   const onEcrire = useCallback(() => {
     setEnVol(true);
-    memberApi
-      .get('/conversations?limit=50', conversationsResponseSchema)
-      .then((page) => {
-        const existante = page.items.find((c) =>
-          c.members.some((m) => m.handle === handle),
-        );
-        if (existante === undefined) {
+    conversationAvec(handle)
+      .then((existante) => {
+        if (existante === null) {
           setEcrire(true);
           return;
         }
-        router.push(`/messages/${existante.id}`);
+        router.push(`/messages/${existante}`);
       })
       .catch((cause: unknown) => {
         /**
@@ -103,13 +106,10 @@ export function ProfilContactVivant({
   const onEnvoyerPremier = useCallback(
     (message: string) => {
       setEnVol(true);
-      memberApi
-        .post('/conversations/direct', conversationSchema, {
-          body: { toHandle: handle, firstMessage: message },
-        })
-        .then((conversation) => {
+      ouvrirConversation(handle, message)
+        .then((conversationId) => {
           setEcrire(false);
-          router.push(`/messages/${conversation.id}`);
+          router.push(`/messages/${conversationId}`);
         })
         .catch((cause: unknown) => {
           notifyError(

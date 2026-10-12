@@ -44,6 +44,17 @@ export interface S01Data {
  * faire — et « Gratuit » n'est pas un nombre.
  */
 export interface CarteAnnonce {
+  /**
+   * L'ADRESSE DU DÉTAIL, ou absente.
+   *
+   * Le porteur, après avoir vu les gestes revenir sur la carte du fil : « c'est
+   * bon aussi pour les autres ? » Non : mesuré au navigateur, ces cartes ne
+   * menaient nulle part, même sur leur propre page. Elles portent maintenant
+   * leur adresse, et `CadreCliquable` rend un `<div>` quand elle manque — ce qui
+   * est le cas des cartes DESSINÉES par la maquette, qui n'ont pas d'identifiant.
+   */
+  readonly href?: string;
+
   /** Le kind (§2.1) dans les mots de la maquette : « Location », « Colocation »… */
   readonly genre: string;
   readonly titre: string;

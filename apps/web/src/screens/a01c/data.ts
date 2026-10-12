@@ -91,6 +91,39 @@ export interface A01CData {
   commentairesCompte: string;
 
   /**
+   * ╔═══════════════════════════════════════════════════════════════════════╗
+   * ║ L'ÉTAT VIDE — « Soyez la première personne à réagir. »                ║
+   * ╚═══════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « "AUCUN COMMENTAIRE · Soyez la première personne à réagir" :
+   * extrais. »
+   *
+   * La maquette le dessine dans la colonne « ÉTATS » de A01C, hors des deux
+   * cadres. Jusqu'ici une feuille ouverte sur un guide ou une publication sans
+   * commentaire montrait une zone VIDE entre la carte du sujet et le champ de
+   * saisie : rien ne disait au lecteur qu'il pouvait être le premier.
+   *
+   * ⚠ « VIDE » VEUT DIRE « CHARGÉ ET VIDE », jamais « pas encore chargé ». Les
+   * deux appelants l'écrivent `fil !== null && thread.length === 0` : pendant la
+   * requête, `fil` est `null` et la carte ne s'affiche pas. Lui donner
+   * `thread.length === 0` tout court ferait clignoter « Soyez la première
+   * personne à réagir » sur chaque ouverture, y compris sur un fil de douze
+   * commentaires — c'est-à-dire une affirmation fausse pendant un tiers de
+   * seconde.
+   *
+   * ⚠ UN FIL QUI NE CONTIENT QU'UN EMPLACEMENT RETIRÉ N'EST PAS VIDE. `thread`
+   * porte les emplacements comme des lignes, donc sa longueur vaut 1 et la carte
+   * ne s'affiche pas — ce qui est juste : il y a bien eu un commentaire, et le
+   * lecteur n'est pas la première personne à réagir.
+   *
+   * L'ÉTIQUETTE « AUCUN COMMENTAIRE » DE LA MAQUETTE N'EST PAS TRANSCODÉE : c'est
+   * de la documentation, et la preuve est la carte voisine, coiffée de
+   * « NIVEAU L0 ». L'arbitrage est écrit au-dessus de `A01C_DONNEES` dans
+   * `tools/screens/03-accueil.mjs`.
+   */
+  filVide: boolean;
+
+  /**
    * LE TRI, ET SON LIBELLÉ.
    *
    * `triCommentaires` porte la valeur (`RELEVANT` / `RECENT`) : c'est elle qui dit

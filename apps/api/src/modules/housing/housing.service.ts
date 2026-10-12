@@ -575,6 +575,18 @@ export class HousingService {
       if (separated.length > 0) conditions.push({ authorUserId: { notIn: separated } });
     }
 
+
+    /**
+     * LES ÉLÉMENTS D'UN MEMBRE — l'onglet correspondant de son profil public.
+     *
+     * Le filtre s'AJOUTE aux clauses de visibilité qui précèdent : demander
+     * l'auteur ne montre ni un retrait, ni un contenu d'un membre dont on est
+     * séparé, ni ce qu'on ne verrait pas autrement.
+     */
+    if (query.authorHandle !== undefined) {
+      conditions.push({ author: { handle: query.authorHandle } });
+    }
+
     if (query.kind !== undefined) conditions.push({ kind: query.kind });
 
     const cityIds = await this.nearbyCityIds(query.cityId, query.radiusKm);

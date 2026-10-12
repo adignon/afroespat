@@ -1,6 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Module 05 — Guides et Démarches  ·  6 tables
-// Versions, votes d'utilité, propositions de mise à jour, fraîcheur, obsolescence.
+// Module 05 — Guides et Démarches  ·  8 tables
+// Versions, votes d'utilité, propositions de mise à jour, fraîcheur, obsolescence,
+// les images du corps (`guide_media`) et les PAGES d'un guide (`guide_pages`) —
+// voir les modèles `GuideMedia` et `GuidePage`, chacun avec son en-tête.
 //
 // À la suppression d'un compte, les guides sont ANONYMISÉS, pas supprimés
 // (décision T4 : mémoire collective, conforme si non réidentifiable).
@@ -63,6 +65,25 @@ model Guide {
   originCountryId String? @map("origin_country_id") @db.Uuid
   cityId          String? @map("city_id") @db.Uuid
 
+  /// ⚠ DÉPRÉCIÉE au profit de `GuidePage.currentVersionId` — voir `GuidePage`.
+  ///
+  /// Depuis que le corps vit dans les PAGES, la version courante d'un guide n'a
+  /// plus de sens à elle seule : un guide de trois pages a trois versions
+  /// courantes. Cette colonne est CONSERVÉE et tenue à jour sur la PREMIÈRE page
+  /// (`GuidesService.syncGuideCurrentVersion`), pour trois raisons mesurées :
+  ///
+  ///   1. `GET /guides/:slug/versions` rend `meta.currentVersionId` et l'écran
+  ///      A04 s'en sert pour marquer la ligne courante de l'historique ;
+  ///   2. la contrainte `guides_current_version_id_fkey` existe en base, et la
+  ///      retirer serait un `DROP CONSTRAINT` — interdit ici ;
+  ///   3. un guide à UNE page doit répondre exactement comme avant.
+  ///
+  /// POUR LA RETIRER UN JOUR : il faudra (a) rendre `meta.currentVersionId` un
+  /// tableau par page ou le déplacer sur `currentPage`, (b) vérifier qu'aucune
+  /// tâche ni aucun module ne la lit (mesuré ce jour : seuls `guides.service.ts`
+  /// et `search.service.ts` le faisaient, et `search` lit désormais les pages),
+  /// puis (c) une migration qui supprime la contrainte PUIS la colonne. Les trois
+  /// étapes sont destructrices : elles demandent l'accord du porteur.
   currentVersionId String?     @map("current_version_id") @db.Uuid
   status           GuideStatus
 
@@ -80,7 +101,29 @@ model Guide {
   /// vidé dans cette colonne par la tâche horaire `guide.view_count_flush`.
   /// N'est JAMAIS exposé à personne, sur aucune route (règle dure 00 §1.2) : il ne
   /// sert qu'au pilotage interne. Voir le rapport du lot pour son unique lecteur.
-  viewCount           Int       @default(0) @map("view_count")
+  viewCount Int @default(0) @map("view_count")
+
+  /// Compteur d'écritures de CONTENU — le jeton d'écriture concurrente de §2.7.
+  ///
+  /// Arbitrage du porteur : « le serveur refuse une écriture qui ne part pas de la
+  /// version courante ». `PATCH /guides/:id` reçoit la révision dont le client
+  /// part (`baseRevision`) et l'incrémente en même temps qu'il écrit le corps, dans
+  /// la MÊME instruction : `UPDATE … WHERE id = … AND revision = base`. Zéro ligne
+  /// touchée veut dire qu'un autre éditeur est passé entre-temps, et l'écriture est
+  /// refusée (`EDITED_ELSEWHERE`).
+  ///
+  /// POURQUOI UNE COLONNE NEUVE, alors que trois champs ressemblaient à un jeton.
+  /// Mesuré sur deux enregistrements successifs d'un brouillon : `updated_at` ne
+  /// bouge pas (le chemin « brouillon » n'écrit que `guide_versions.body`, et
+  /// `guide.update` n'est appelé que si le reste du correctif n'est pas vide),
+  /// `current_version_id` ne bouge pas, et `guide_versions.version` reste à 1 —
+  /// la version 1 d'un brouillon est modifiée SUR PLACE. Les trois relevés
+  /// d'horodatage étaient identiques à la milliseconde : aucun état observable ne
+  /// distinguait les deux écritures.
+  ///
+  /// Elle compte le CORPS et lui seul : voir `updateGuideSchema`, qui dit pourquoi
+  /// le titre, la catégorie et la portée restent hors garde.
+  revision            Int       @default(0)
 
   outdatedFlagCount   Int       @default(0) @map("outdated_flag_count")
   /// Fixée à 3 signalements ; dépublication si dépassée (tâche quotidienne).
@@ -91,7 +134,11 @@ model Guide {
   city           City?         @relation(fields: [cityId], references: [id], onDelete: SetNull)
   currentVersion GuideVersion? @relation("GuideCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
+  /// Les pages du guide, dans l'ordre de `position`. Voir `GuidePage`.
+  pages           GuidePage[]
   versions        GuideVersion[]          @relation("GuideVersions")
+  /// Les images citées dans le corps de l'une de ses pages. Voir `GuideMedia`.
+  media           GuideMedia[]
   votes           GuideVote[]
   proposals       GuideRevisionProposal[]
   contributors    GuideContributor[]
@@ -110,12 +157,168 @@ model Guide {
   @@map("guides")
 }
 
+/// Une image attachée à un guide — le pendant de `PostMedia` (04) pour le corps
+/// d'un guide, et le même patron parce que c'est le même besoin : « un média
+/// rattaché à un contenu ».
+///
+/// ═══ POURQUOI CETTE TABLE EXISTE ═══════════════════════════════════════════
+///
+/// Les guides REFUSAIENT toute image, et le motif écrit dans
+/// `restrictedMarkdownIssue` était juste : « les guides n'ont pas de table de
+/// médias : une image ne pourrait être qu'un lien externe, hors du pipeline
+/// média (antivirus, EXIF) qu'exige 00 §8.2 ». La maquette, elle, dessine
+/// l'inverse — l'éditeur A05 mobile écrit `![Capture](image-1.jpg)` et porte un
+/// bouton image, et le lecteur A04 ordinateur dessine une `<figure>` de 220 px
+/// avec sa légende. Le manque n'était donc pas la permission, c'était LA TABLE.
+///
+/// Sans elle, un média cité dans le corps n'a AUCUN lien en base, et trois
+/// garanties tombent d'un coup :
+///
+///   1. RIEN NE DIT QU'IL A ÉTÉ SCANNÉ. Une URL dans du texte est du texte :
+///      `media_assets.status` (`READY`, `REJECTED`) n'est jamais consulté, donc
+///      un fichier refusé par l'antivirus resterait affiché par son adresse ;
+///   2. RIEN NE DIT QU'IL APPARTIENT À L'AUTEUR. La clé de stockage vaut
+///      autorisation de lecture (16 octets d'aléa) : collée dans un guide, elle
+///      republierait le média d'un tiers sous la signature de quelqu'un d'autre ;
+///   3. RIEN NE LE RETIENT. Aucun nettoyage ne peut distinguer un média orphelin
+///      d'un média employé s'il n'existe pas de ligne qui l'emploie — l'image
+///      disparaîtrait un jour SOUS le guide, sans que rien ne l'explique.
+///
+/// ═══ CE QUE LA TABLE NE PORTE PAS ══════════════════════════════════════════
+///
+/// Pas de légende : la maquette la compose de l'ALT du Markdown (« Capture ») et
+/// du nom de l'auteur de la version, tous deux déjà en base. La dupliquer ici
+/// créerait une seconde vérité pour le même texte.
+///
+/// Pas de `@@unique([guideId, mediaAssetId])`, comme `PostMedia` n'en a pas : le
+/// même visuel peut légitimement être cité deux fois dans un long guide. La
+/// synchronisation du service déduplique par clé et numérote `position` dans
+/// l'ordre de PREMIÈRE apparition dans le corps — cet ordre est celui que le
+/// lecteur voit, et il ne peut pas se déduire des identifiants.
+///
+/// `onDelete: Cascade` des deux côtés, comme `PostMedia` : la ligne ne survit ni
+/// au guide, ni à l'actif média.
+model GuideMedia {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  guideId      String @map("guide_id") @db.Uuid
+  mediaAssetId String @map("media_asset_id") @db.Uuid
+  position     Int
+
+  guide      Guide      @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+
+  @@index([guideId])
+  @@map("guide_media")
+}
+
+/// Une PAGE d'un guide.
+///
+/// ═══ POURQUOI CETTE TABLE EXISTE ═══════════════════════════════════════════
+///
+/// Le porteur : « Je veux ajouter une fonctionnalité de page dans les guides. Un
+/// guide peut avoir plusieurs pages. Les commentaires concernent donc une page du
+/// guide, et c'est le total qui est affiché sur la page de listing des guides. »
+///
+/// Jusqu'ici un guide était UN corps : `Guide.currentVersionId` →
+/// `GuideVersion.body`. Une démarche longue — un titre de séjour, une
+/// inscription universitaire — tenait donc dans un seul mur de texte de 20 000
+/// caractères, et le fil de commentaires qui le suivait mélangeait les questions
+/// de la première étape avec celles de la dernière. La page est l'unité de
+/// LECTURE et l'unité de CONVERSATION : la chaîne de versions descend du guide
+/// vers la page, et `comments.subject_type = 'GUIDE_PAGE'` s'y accroche.
+///
+/// ═══ CE QUE LA TABLE NE PORTE PAS ══════════════════════════════════════════
+///
+/// PAS DE `status`, et c'est la décision du porteur : « publication D'UN BLOC —
+/// on publie le guide, toutes ses pages ensemble. Le statut reste sur le GUIDE,
+/// il ne descend pas sur la page. Le lecteur ne tombe jamais sur un guide à
+/// trous. » Une page brouillon dans un guide publié n'existe donc pas, et ce
+/// n'est pas un manque : c'est la garantie qu'un lien partagé mène à un guide
+/// complet. `POST /guides/:id/publish` publie le GUIDE.
+///
+/// PAS DE COMPTEUR DE COMMENTAIRES. Il dépend du LECTEUR (les blocages ne sont
+/// pas les mêmes pour tous, 08 §4) : une colonne dénormalisée serait fausse pour
+/// quelqu'un. Il est calculé à chaque lecture — voir
+/// `GuidesService.pageCommentCounts`.
+///
+/// PAS DE VOTE, PAS DE SIGNALEMENT, PAS DE CONTRIBUTEUR, PAS DE
+/// `last_content_update_at`, PAS DE `freshness_score` : on vote sur un GUIDE, pas
+/// sur une page, et la fraîcheur est celle de la démarche entière.
+/// `guides.last_content_update_at` bouge dès qu'UNE page change.
+///
+/// ═══ LES DEUX UNICITÉS ═════════════════════════════════════════════════════
+///
+/// `(guide_id, slug)` parce que la page se désigne par son slug dans l'URL
+/// (`GET /guides/:slug?page=<slug de page>`) : deux pages de même slug rendraient
+/// l'adresse ambiguë. `(guide_id, position)` parce que l'ordre des pages est ce
+/// que le lecteur suit, et qu'une égalité de position laisserait l'ordre au
+/// hasard du plan de requête.
+///
+/// ⚠ CONSÉQUENCE SUR LE DÉPLACEMENT : `(guide_id, position)` n'est pas
+/// différable, donc PostgreSQL vérifie l'unicité ligne à ligne. Un décalage
+/// `position = position + 1` échouerait au premier chevauchement. La renumérotation
+/// passe donc par des positions NÉGATIVES temporaires — voir
+/// `GuidesService.renumberPages`.
+///
+/// ═══ LA SUPPRESSION EST LOGIQUE ════════════════════════════════════════════
+///
+/// `deletedAt`, et non un `DELETE` : `guide_versions` est en AJOUT SEUL (§2.7 :
+/// « jamais de suppression d'historique ») et les versions d'une page partent en
+/// cascade avec elle. Une page retirée garde donc ses versions et ses
+/// commentaires ; elle quitte seulement la liste des pages et sa `position` passe
+/// en négatif pour libérer la place. C'est aussi pourquoi son slug reste pris :
+/// recréer une page de même titre obtient un slug suffixé.
+model GuidePage {
+  id        String    @id @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz
+
+  guideId  String @map("guide_id") @db.Uuid
+  /// 1 pour la première page. Négative sur une page retirée (voir l'en-tête).
+  position Int
+  title    String
+  /// Dérivé du titre par `slugifyGuideTitle`, suffixé en cas de conflit dans le
+  /// guide. JAMAIS recalculé : il voyage dans les liens partagés.
+  slug     String
+
+  /// La version courante de CETTE page. `null` sur une page créée sans corps.
+  currentVersionId String? @map("current_version_id") @db.Uuid
+
+  guide          Guide         @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  currentVersion GuideVersion? @relation("GuidePageCurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  versions GuideVersion[] @relation("GuidePageVersions")
+
+  @@unique([guideId, slug])
+  @@unique([guideId, position])
+  @@index([guideId])
+  @@map("guide_pages")
+}
+
 /// Historique intégral du contenu. Table en ajout seul.
 model GuideVersion {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
+  /// CONSERVÉ malgré l'arrivée de `pageId` : il porte les listes
+  /// (`GET /guides/:slug/versions` rend l'historique du GUIDE, pas d'une page) et
+  /// les propositions (`guide_revision_proposals.guide_id`). Le retirer obligerait
+  /// à joindre `guide_pages` pour toute requête d'historique, et rendrait
+  /// l'unicité `(guide_id, version)` impossible à garder.
   guideId String  @map("guide_id") @db.Uuid
+  /// La page dont ce corps est une version. NULLABLE, et c'est un CONSTAT :
+  /// la reprise de données renseigne toutes les lignes existantes, mais la poser
+  /// NOT NULL demanderait un `ALTER COLUMN` — opération interdite sur cette base
+  /// (AMORCAGE-AGENT §1). Le service l'écrit toujours ; aucune ligne neuve ne
+  /// naît sans page.
+  pageId  String? @map("page_id") @db.Uuid
+  /// Numérotée par GUIDE et non par page : l'historique public du §2.7 est celui
+  /// de la démarche entière, et `(guide_id, version)` reste l'unicité qui
+  /// l'ordonne. La version 7 d'un guide est donc la 7ᵉ écriture, sur n'importe
+  /// laquelle de ses pages.
   version Int
   body    String
   /// Résumé des changements.
@@ -125,14 +328,17 @@ model GuideVersion {
   sourceProposalId String? @map("source_proposal_id") @db.Uuid
 
   guide          Guide                  @relation("GuideVersions", fields: [guideId], references: [id], onDelete: Cascade)
+  page           GuidePage?             @relation("GuidePageVersions", fields: [pageId], references: [id], onDelete: Cascade)
   createdBy      User?                  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
   sourceProposal GuideRevisionProposal? @relation("ProposalResultingVersion", fields: [sourceProposalId], references: [id], onDelete: SetNull)
 
   currentOfGuides  Guide[]                 @relation("GuideCurrentVersion")
+  currentOfPages   GuidePage[]             @relation("GuidePageCurrentVersion")
   proposalsBasedOn GuideRevisionProposal[] @relation("ProposalBaseVersion")
 
   @@unique([guideId, version])
   @@index([guideId])
+  @@index([pageId])
   @@map("guide_versions")
 }
 

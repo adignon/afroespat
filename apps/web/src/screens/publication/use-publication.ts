@@ -8,11 +8,11 @@ import { commentairesA02From } from './from-api';
 import { echecDe, type FilEchec } from './echec';
 
 /**
- * L'ÉTAT DE `/publications/:id`, ET CELUI DE LA FENÊTRE DE COMMENTAIRES DU FIL.
+ * L'ÉTAT DE `/publications/:id`, ET CELUI DE TOUTE FENÊTRE DE COMMENTAIRES.
  *
  * Un seul crochet pour les deux, et ce n'est pas une économie : A02 et A01C
- * montrent LE MÊME fil de commentaires d'une publication, par la même route
- * (`GET /comments?subjectType=POST&subjectId=…`). Deux crochets, ce serait deux
+ * montrent LE MÊME fil de commentaires, par la même route
+ * (`GET /comments?subjectType=…&subjectId=…`). Deux crochets, ce serait deux
  * endroits où décider si un `429` se rejoue — et ils divergeraient.
  *
  * ── LES APPELS NE SONT PAS LES MÊMES SELON L'ÉCRAN ────────────────────────
@@ -22,6 +22,46 @@ import { echecDe, type FilEchec } from './echec';
  * derrière la fenêtre. `avecPublication` dit lequel, et il n'est pas là pour
  * économiser un appel : ouvrir une fenêtre de commentaires ne doit pas recharger
  * la publication que le membre regarde déjà.
+ *
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ CE CROCHET PORTAIT UN `postId`. IL PORTE MAINTENANT UN SUJET.              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Comment commenter un guide, c'est pas dans les design ? » — puis
+ * son arbitrage : EMPRUNTER A01C AU GUIDE, « c'est un dessin de la même maquette,
+ * et le même geste que sur le fil ».
+ *
+ * CE QUI BLOQUAIT, et c'était le SEUL endroit : `subjectType: 'POST'` était FIGÉ
+ * dans `commenter()`. La lecture, elle, passait déjà par `fetchComments`, dont le
+ * premier paramètre est polymorphe depuis le premier jour (`POST · TOPIC · GUIDE ·
+ * EVENT`, ce que `GET /comments` résume lui-même dans son sommaire). Autrement
+ * dit : on pouvait LIRE les commentaires d'un guide et pas en ÉCRIRE, et rien ne
+ * le disait.
+ *
+ * ── CE QU'UN GUIDE N'A PAS, ET QU'IL FAUT NOMMER ─────────────────────────────
+ *
+ * `avecPublication` N'A AUCUN ÉQUIVALENT HORS DU TYPE `POST`. Il sert à prendre
+ * `GET /posts/:id`, qui rend la carte ET les vingt premiers commentaires en une
+ * requête. Il n'existe pas de route qui rende un guide AVEC son fil : le détail du
+ * guide vient de `GET /guides/:slug` (que `useGuide` charge déjà, pour la page
+ * elle-même), et le fil de `GET /comments`. Un sujet non-`POST` lit donc TOUJOURS
+ * par `GET /comments`, et `etat.post` reste `null` — ce qui est juste et non un
+ * manque : la carte du sujet d'un guide se compose de ce que `useGuide` a en main.
+ *
+ * `avecPublication` est donc IGNORÉ quand le sujet n'est pas une publication,
+ * plutôt que de lever : un appelant qui le passerait par copier-coller obtiendrait
+ * un `GET /posts/<id de guide>` en `404`, c'est-à-dire un écran vide pour une
+ * étourderie. Le journal du réseau montrerait l'appel ; ici, il n'a pas lieu.
+ *
+ * ── LE SUJET SE DÉPLIE, ET CE N'EST PAS DU STYLE ─────────────────────────────
+ *
+ * `charger` dépend du sujet. Un OBJET passé en prise change d'identité à chaque
+ * rendu de l'appelant — `usePublication({ subjectType: 'GUIDE_PAGE', subjectId: id })`
+ * est un littéral neuf à chaque fois — donc `charger` se refabriquerait, l'effet
+ * repartirait, et la requête tournerait en boucle jusqu'à ce que le serveur
+ * limite. Les DEUX VALEURS entrent donc seules dans les dépendances, jamais
+ * l'objet. C'est la même discipline que `useGuides` s'impose pour ses trois
+ * filtres, et elle est écrite là-bas pour la même raison.
  *
  * ── CE QU'IL NE FAIT PAS ──────────────────────────────────────────────────
  *
@@ -44,7 +84,37 @@ export interface PublicationEtat {
   readonly post: PostDetailResponse['post'] | null;
 }
 
-export function usePublication(postId: string | null, avecPublication: boolean) {
+/**
+ * CE QU'ON COMMENTE. Les quatre valeurs sont celles de `GET /comments` et de
+ * `createCommentSchema` — on ne réécrit pas l'énumération, on la reprend de
+ * `fetchComments`, qui la tient de l'API.
+ */
+export type SujetCommente = {
+  readonly subjectType: Parameters<typeof fetchComments>[0];
+  readonly subjectId: string;
+};
+
+/**
+ * `usePublication(sujet, avecPublication)`.
+ *
+ * `sujet` ACCEPTE UNE CHAÎNE, et c'est de la compatibilité, pas de la complaisance :
+ * les deux appelants historiques — la page d'une publication (A02) et la fenêtre de
+ * commentaires du fil — passent un identifiant de PUBLICATION, et c'est ce qu'ils
+ * veulent dire. Une chaîne est donc lue comme `{ subjectType: 'POST', subjectId }`,
+ * exactement l'ancien comportement, sans qu'aucun de ces appelants ne change d'une
+ * ligne. Un sujet d'un AUTRE type s'écrit en entier, et le compilateur l'exige.
+ */
+export function usePublication(
+  sujet: SujetCommente | string | null,
+  avecPublication: boolean,
+) {
+  /**
+   * LES DEUX VALEURS DU SUJET, DÉPLIÉES — voir l'en-tête. Elles sont des chaînes,
+   * donc comparables par `===` dans les dépendances de `charger` ; l'objet, lui,
+   * n'y entre jamais.
+   */
+  const subjectType = sujet === null ? null : typeof sujet === 'string' ? 'POST' : sujet.subjectType;
+  const subjectId = sujet === null ? null : typeof sujet === 'string' ? sujet : sujet.subjectId;
   /**
    * LE TRI DES DEUX ONGLETS — « Pertinents » / « Récents » de la planche A01C.
    *
@@ -78,7 +148,7 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
 
   const charger = useCallback(
     async (signal: AbortSignal): Promise<void> => {
-      if (postId === null) {
+      if (subjectId === null || subjectType === null) {
         setEtat({ pret: true, chargement: false, echec: null, post: null });
         setFil(null);
         return;
@@ -90,15 +160,21 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
           await reprise.current;
         }
 
-        if (avecPublication) {
-          const detail = await fetchPost(postId, signal);
+        /**
+         * `GET /posts/:id` N'EST DEMANDÉ QUE POUR UNE PUBLICATION. Voir l'en-tête :
+         * aucune autre route ne rend un sujet AVEC son fil, et appeler celle-ci
+         * avec l'identifiant d'un guide rendrait `404` — donc un écran vide pour
+         * un `avecPublication` passé par étourderie.
+         */
+        if (avecPublication && subjectType === 'POST') {
+          const detail = await fetchPost(subjectId, signal);
           if (signal.aborted) return;
           setEtat({ pret: true, chargement: false, echec: null, post: detail.post });
           setFil(detail.comments);
           return;
         }
 
-        const comments = await fetchComments('POST', postId, undefined, signal, tri);
+        const comments = await fetchComments(subjectType, subjectId, undefined, signal, tri);
         if (signal.aborted) return;
         setEtat({ pret: true, chargement: false, echec: null, post: null });
         setFil(comments);
@@ -108,7 +184,7 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
         setEtat({ pret: true, chargement: false, echec: echecDe(error), post: null });
       }
     },
-    [postId, avecPublication, tri],
+    [subjectType, subjectId, avecPublication, tri],
   );
 
   useEffect(() => {
@@ -133,11 +209,22 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
    */
   const commenter = useCallback(
     async (body: string, parentCommentId?: string): Promise<FilEchec | null> => {
-      if (postId === null) return null;
+      if (subjectId === null || subjectType === null) return null;
       try {
         const { comment } = await createComment({
-          subjectType: 'POST',
-          subjectId: postId,
+          /**
+           * ╔════════════════════════════════════════════════════════════════╗
+           * ║ C'ÉTAIT LE SEUL `'POST'` FIGÉ DE TOUTE LA CHAÎNE               ║
+           * ╚════════════════════════════════════════════════════════════════╝
+           *
+           * La lecture était polymorphe (`fetchComments` prend le type), l'API
+           * l'est (`POST /comments` accepte `POST · TOPIC · GUIDE · EVENT`), le
+           * schéma l'est (`createCommentSchema`). Seule cette ligne décidait, pour
+           * tout le front, qu'on ne commente que des publications — et elle le
+           * décidait en silence : un guide affichait son fil et refusait l'envoi.
+           */
+          subjectType,
+          subjectId,
           body,
           ...(parentCommentId === undefined ? {} : { parentCommentId }),
         });
@@ -161,8 +248,16 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
           if (parent === null) return { ...courant, items: [...courant.items, comment] };
           return {
             ...courant,
+            /**
+             * `'removed' in racine` AVANT `racine.id`, et ce n'est pas une
+             * précaution de typage : une ligne du fil peut être l'emplacement
+             * `{ removed: true }` qu'un retrait de modération laisse, et il n'a
+             * NI identifiant NI réponses. On ne peut donc pas répondre dessous —
+             * le cadre n'y dessine aucun « Répondre », et le serveur ne rend pas
+             * son identifiant — et le sauter est le seul comportement juste.
+             */
             items: courant.items.map((racine) =>
-              racine.id === parent
+              !('removed' in racine) && racine.id === parent
                 ? { ...racine, replies: [...racine.replies, comment] }
                 : racine,
             ),
@@ -173,7 +268,7 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
         return echecDe(error);
       }
     },
-    [postId],
+    [subjectType, subjectId],
   );
 
   /**
@@ -190,10 +285,11 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
    * celui du fil — c'est lui qui dit s'il reste quelque chose après.
    */
   const chargerSuite = useCallback(async (): Promise<FilEchec | null> => {
-    if (postId === null || fil === null || fil.nextCursor === null || suiteEnCours) return null;
+    if (subjectId === null || subjectType === null) return null;
+    if (fil === null || fil.nextCursor === null || suiteEnCours) return null;
     setSuiteEnCours(true);
     try {
-      const suite = await fetchComments('POST', postId, fil.nextCursor, undefined, tri);
+      const suite = await fetchComments(subjectType, subjectId, fil.nextCursor, undefined, tri);
       setFil((courant) =>
         courant === null
           ? suite
@@ -205,7 +301,7 @@ export function usePublication(postId: string | null, avecPublication: boolean) 
     } finally {
       setSuiteEnCours(false);
     }
-  }, [fil, postId, suiteEnCours, tri]);
+  }, [fil, subjectType, subjectId, suiteEnCours, tri]);
 
   const commentaires = useMemo(
     () => (fil === null ? [] : commentairesA02From(fil.items)),

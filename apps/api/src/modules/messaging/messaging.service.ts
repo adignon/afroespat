@@ -142,6 +142,16 @@ export class MessagingService {
           select: { userId: true, leftAt: true, isMuted: true, user: { select: MEMBER_SELECT } },
         },
         journey: { select: { title: true } },
+        /**
+         * LE NOM DU RÉSEAU VIENT AVEC LA CONVERSATION, dans la même requête.
+         *
+         * Il n'est PAS recopié dans la ligne de conversation à l'ouverture du
+         * fil : `PATCH /communities/:id` accepte `name`, donc un réseau se
+         * renomme, et un titre figé au premier clic aurait vieilli en silence.
+         * Une jointure ne coûte rien de plus ; un aller-retour par conversation
+         * en coûterait vingt par page.
+         */
+        community: { select: { name: true } },
       },
     });
 
@@ -176,10 +186,26 @@ export class MessagingService {
       items.push({
         id: conversation.id,
         kind: conversation.kind,
-        // §8 : « Conversation de parcours nommée par le titre du parcours
-        // (visible de ses membres seuls) ». Nous SOMMES membre : la liste ne
-        // renvoie que mes conversations.
-        title: conversation.kind === 'JOURNEY' ? conversation.journey?.title ?? null : null,
+        /**
+         * §8 : « Conversation de parcours nommée par le titre du parcours
+         * (visible de ses membres seuls) ». Nous SOMMES membre : la liste ne
+         * renvoie que mes conversations.
+         *
+         * LA MÊME RÈGLE VAUT POUR LE FIL DE MODÉRATION, nommé par le nom du
+         * réseau : sans titre, l'écran l'aurait nommé par la liste de ses
+         * membres (« Aïcha Diop, Marc Koudou, Sandra M. »), ce qui ne dit pas
+         * DE QUOI il s'agit — c'est `nomDeConversation`, côté front, qui retombe
+         * là-dessus quand `title` est nul. Le nom du réseau seul, sans mot
+         * ajouté : inventer « Modération · … » serait écrire du texte
+         * d'interface, et ce dépôt a déjà refusé de fabriquer le mot français
+         * d'un `kind`.
+         */
+        title:
+          conversation.kind === 'JOURNEY'
+            ? conversation.journey?.title ?? null
+            : conversation.kind === 'COMMUNITY_MODERATION'
+              ? conversation.community?.name ?? null
+              : null,
         members: others.map((m) => ({
           userId: m.userId,
           handle: m.user.handle,
@@ -697,37 +723,237 @@ export class MessagingService {
         });
       }
 
-      const current = await tx.conversationMember.findMany({
-        where: { conversationId },
-        select: { userId: true, leftAt: true },
-      });
-      const currentById = new Map(current.map((m) => [m.userId, m]));
-
-      for (const userId of expected) {
-        const row = currentById.get(userId);
-        if (row === undefined) {
-          await tx.conversationMember.create({
-            data: { conversationId, userId, joinedAt: now },
-          });
-        } else if (row.leftAt !== null) {
-          await tx.conversationMember.update({
-            where: { conversationId_userId: { conversationId, userId } },
-            data: { leftAt: null },
-          });
-        }
-      }
-
-      for (const row of current) {
-        if (!expected.has(row.userId) && row.leftAt === null) {
-          await tx.conversationMember.update({
-            where: { conversationId_userId: { conversationId, userId: row.userId } },
-            data: { leftAt: now },
-          });
-        }
-      }
+      /**
+       * Le recalcul des membres vit maintenant dans `syncMembres`, parce que le
+       * fil de modération d'un réseau en a besoin MOT POUR MOT — ajouter les
+       * manquants, faire revenir les sortis, faire sortir ceux qui ne sont plus
+       * attendus. Les deux boucles étaient écrites ici en ligne ; deux copies
+       * auraient divergé au premier ajustement, et c'est une divergence qui ne
+       * se voit qu'en regardant les membres d'une conversation.
+       */
+      await this.syncMembres(tx, conversationId, expected, now);
 
       return conversationId;
     });
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « CONTACTER LES MODÉRATEURS » — LE FIL DE GROUPE D'UN RÉSEAU             ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Les deux boutons de la planche « À propos » de A08T (1036 px et 390 px)
+   * n'avaient AUCUNE route : `07-reseaux.md` décrit le chemin modérateur →
+   * membre — masquer, retirer, épingler, clore — et jamais l'inverse.
+   *
+   * CE N'EST PAS UN SIGNALEMENT, et c'est la confusion à ne pas faire :
+   * `POST /reports` va à l'équipe de la PLATEFORME, ouvre un `moderation_case`
+   * et peut suspendre un compte (L2). Ceci va aux bénévoles d'UN réseau, n'ouvre
+   * aucun dossier et n'a aucun pouvoir de sanction. Le détail de l'arbitrage est
+   * sur `moderatorsConversationResponseSchema`, dans `@app/shared`.
+   *
+   * ── POURQUOI UN QUATRIÈME KIND, ET NON L'UN DES TROIS ─────────────────────
+   *
+   * MESURÉ, pas supposé. `DIRECT` est à DEUX membres et « unique par paire »
+   * (§5.1) : elle aurait désigné un seul modérateur, et elle serait entrée en
+   * COLLISION avec la conversation privée que le demandeur et ce modérateur ont
+   * peut-être déjà — `findDirectBetween` rend la même ligne. `JOURNEY` et
+   * `MENTORSHIP` portent chacune une clé étrangère vers un parcours ou un
+   * parrainage, qui n'existent pas ici. Aucun des trois ne convenait.
+   *
+   * ── IDEMPOTENTE, PAR CONSTRUCTION ────────────────────────────────────────
+   *
+   * « Un membre qui clique deux fois ne doit pas ouvrir deux conversations. »
+   * La recherche se fait sur le COUPLE (réseau, demandeur), que les deux
+   * nouvelles colonnes portent — et `@@unique([communityId, openedByUserId])`
+   * attrape la course des deux clics simultanés, que la recherche seule laisse
+   * passer. `openedByUserId` est indispensable et non du confort : un
+   * modérateur appartient à TOUS les fils de son réseau, donc chercher « la
+   * conversation de ce réseau dont je suis membre » lui rendrait celle d'un
+   * autre demandeur.
+   *
+   * ── LES MEMBRES SONT RECALCULÉS À CHAQUE OUVERTURE ───────────────────────
+   *
+   * Même forme que `syncJourneyConversation`, et pour une raison qui se voit :
+   * l'équipe d'un réseau CHANGE. Un modérateur nommé après l'ouverture du fil
+   * doit pouvoir le lire — sinon la réponse collective dépend de la composition
+   * de l'équipe au jour du premier clic — et un modérateur destitué doit en
+   * sortir. Le retrait pose `left_at` et n'efface rien : il a lu ces messages,
+   * et le fil reste cohérent pour les autres.
+   *
+   * LE DEMANDEUR NE SORT JAMAIS : il est toujours dans `attendus`. Et si c'est
+   * lui qui est destitué de l'équipe entre deux clics, il garde SON fil — c'est
+   * le fil du demandeur, pas celui de l'équipe.
+   *
+   * ── CE QUE CETTE MÉTHODE NE FAIT PAS, ET POURQUOI ────────────────────────
+   *
+   * ⚠ AUCUN MESSAGE SYSTÈME n'annonce l'ouverture. §6 déclare `messages.kind`
+   * avec une valeur `SYSTEM`, la colonne n'existe pas dans le schéma figé, et le
+   * kind est DÉDUIT (`kindOf`) : un message système écrit aujourd'hui serait
+   * indistinguable d'un message du membre. Le fil naît donc VIDE, comme naît
+   * une conversation JOURNEY.
+   *
+   * ⚠ AUCUN ÉVÉNEMENT DE DOMAINE n'est émis, et aucune notification ne part :
+   * `message.sent` est produit par `sendMessage`, c'est-à-dire au PREMIER
+   * message réel — qui est ce que l'équipe doit lire. Émettre quelque chose à
+   * l'ouverture notifierait trois bénévoles d'un fil vide. REMONTÉ : il n'existe
+   * aucun `conversation.created` dans `DomainEventType`, et en inventer un sans
+   * consommateur refarait `user.onboarded_location`, dont personne n'a écouté
+   * l'événement pendant des mois.
+   */
+  async ensureCommunityModerationConversation(input: {
+    readonly communityId: string;
+    readonly communityName: string;
+    readonly requesterUserId: string;
+    /**
+     * Le propriétaire et les modérateurs ACTIFS, tels que le module réseaux les
+     * lit — BRUTS : le demandeur peut y figurer, et des doublons sont permis.
+     * C'est ici que la liste est nettoyée, parce que c'est ici que se décide le
+     * refus et qu'il doit en nommer la raison.
+     */
+    readonly teamUserIds: readonly string[];
+  }): Promise<{ conversationId: string; created: boolean; recipients: number }> {
+    const brute = [...new Set(input.teamUserIds)];
+    const sansMoi = brute.filter((id) => id !== input.requesterUserId);
+
+    /**
+     * ── LES MEMBRES SÉPARÉS DU DEMANDEUR SONT ÉCARTÉS ────────────────────────
+     *
+     * §4, effet de LECTURE : « les deux ne se voient plus ». Un modérateur que
+     * le demandeur a bloqué — ou qui l'a bloqué — n'a rien à faire dans un fil
+     * que ce demandeur ouvre.
+     *
+     * ET CE N'EST PAS QUE DE LA DOCTRINE : sans ce filtre, un réseau à UN SEUL
+     * modérateur séparé du demandeur produisait un fil à DEUX membres, et
+     * `sendMessage` refuse d'écrire dans une conversation à deux entre deux
+     * membres séparés (`BLOCKED_RELATIONSHIP`, la règle du §5.2). Le bouton
+     * aurait ouvert un fil où le membre ne pouvait pas écrire — un cul-de-sac
+     * qui ne se voit qu'après avoir cliqué sur « Envoyer ».
+     */
+    const separes = new Set(await this.visibility.separatedFrom(input.requesterUserId));
+    const equipe = sansMoi.filter((id) => !separes.has(id));
+
+    if (equipe.length === 0) {
+      /**
+       * TROIS RAISONS, ET L'ÉCRAN NE DIT PAS LA MÊME CHOSE POUR LES TROIS :
+       *
+       *   · `NO_TEAM` — le réseau n'a NI propriétaire NI modérateur. C'est le
+       *     cas réel des réseaux AUTOMATIQUES de ville et de pays (07 §2.1 :
+       *     « pas de créateur ; modérateurs = bénévoles nommés par l'équipe »)
+       *     tant qu'aucun bénévole n'a été nommé. Il n'y a personne à joindre, et
+       *     `POST /reports` — qui va à l'équipe de la PLATEFORME — est le bon
+       *     chemin : c'est ce que le message d'erreur propose ;
+       *   · `ONLY_ME` — le demandeur EST toute l'équipe. Un propriétaire sans
+       *     modérateur qui clique sur le bouton de son propre réseau est dans ce
+       *     cas, et il arrive pour de bon : la planche « À propos » de la vue
+       *     propriétaire n'existe PAS sur mobile, donc un propriétaire sur
+       *     téléphone voit la planche MEMBRE, bouton compris. Ouvrir un fil où
+       *     il serait seul lui donnerait un carnet de notes déguisé ;
+       *   · `SEPARATED` — il reste une équipe, mais le demandeur est séparé de
+       *     tous. On ne nomme personne : dire « votre seul modérateur vous a
+       *     bloqué » trahirait un blocage, que §4 ne notifie JAMAIS.
+       */
+      const raison = brute.length === 0 ? 'NO_TEAM' : sansMoi.length === 0 ? 'ONLY_ME' : 'SEPARATED';
+      this.fail('NO_MODERATORS_TO_CONTACT', { reason: raison });
+    }
+
+    const attendus = new Set<string>([input.requesterUserId, ...equipe]);
+    const now = new Date();
+
+    const existante = await this.prisma.conversation.findFirst({
+      where: {
+        kind: 'COMMUNITY_MODERATION',
+        communityId: input.communityId,
+        openedByUserId: input.requesterUserId,
+      },
+      select: { id: true },
+    });
+
+    if (existante !== null) {
+      /**
+       * RIEN À METTRE À JOUR SUR LA CONVERSATION ELLE-MÊME, et il faut le dire :
+       * son NOM n'est pas stocké. `PATCH /communities/:id` accepte `name`, donc
+       * un réseau se renomme — et `listConversations` lit `community.name` à la
+       * lecture plutôt que de recopier le nom dans la ligne. Un titre figé au
+       * premier clic aurait vieilli en silence.
+       */
+      await this.prisma.$transaction((tx) => this.syncMembres(tx, existante.id, attendus, now));
+      return { conversationId: existante.id, created: false, recipients: equipe.length };
+    }
+
+    const conversationId = newId();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.conversation.create({
+        data: {
+          id: conversationId,
+          kind: 'COMMUNITY_MODERATION',
+          communityId: input.communityId,
+          openedByUserId: input.requesterUserId,
+          /**
+           * `lastMessageAt` RESTE NUL — le fil n'a pas de message.
+           *
+           * `openDirect` le pose à `now` parce qu'il crée un message dans la
+           * même transaction. Le poser ici ferait remonter en tête de
+           * `GET /conversations` un fil dont `lastMessagePreview` vaut `null` :
+           * la liste afficherait une ligne vide au-dessus de conversations
+           * vivantes. Un fil sans message n'a pas de dernière activité.
+           */
+        },
+      });
+      await tx.conversationMember.createMany({
+        data: [...attendus].map((userId) => ({ conversationId, userId, joinedAt: now })),
+        skipDuplicates: true,
+      });
+    });
+
+    this.logger.log(
+      `Fil de modération ouvert sur « ${input.communityName} » : ${equipe.length} destinataire(s)`,
+    );
+    return { conversationId, created: true, recipients: equipe.length };
+  }
+
+  /**
+   * Met les membres d'une conversation de groupe en accord avec ce qu'on attend.
+   *
+   * EXTRAIT de `syncJourneyConversation`, dont le corps faisait exactement ceci
+   * — ajouter les manquants, faire revenir ceux qui étaient sortis, faire sortir
+   * ceux qui ne sont plus attendus. Le fil de modération en a besoin mot pour
+   * mot : une équipe de réseau change comme change l'équipe d'un parcours.
+   *
+   * Idempotent : rejoué sur un état déjà juste, il n'écrit rien.
+   */
+  private async syncMembres(
+    tx: Prisma.TransactionClient,
+    conversationId: string,
+    attendus: ReadonlySet<string>,
+    now: Date,
+  ): Promise<void> {
+    const actuels = await tx.conversationMember.findMany({
+      where: { conversationId },
+      select: { userId: true, leftAt: true },
+    });
+    const parId = new Map(actuels.map((m) => [m.userId, m]));
+
+    for (const userId of attendus) {
+      const ligne = parId.get(userId);
+      if (ligne === undefined) {
+        await tx.conversationMember.create({ data: { conversationId, userId, joinedAt: now } });
+      } else if (ligne.leftAt !== null) {
+        await tx.conversationMember.update({
+          where: { conversationId_userId: { conversationId, userId } },
+          data: { leftAt: null },
+        });
+      }
+    }
+
+    for (const ligne of actuels) {
+      if (!attendus.has(ligne.userId) && ligne.leftAt === null) {
+        await tx.conversationMember.update({
+          where: { conversationId_userId: { conversationId, userId: ligne.userId } },
+          data: { leftAt: now },
+        });
+      }
+    }
   }
 
   // ── Consommateurs d'événements ────────────────────────────────────────────

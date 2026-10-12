@@ -49,6 +49,27 @@ enum ConversationKind {
   DIRECT
   JOURNEY
   MENTORSHIP
+  /// Un membre écrit à l'ÉQUIPE DE SON RÉSEAU — propriétaire et modérateurs actifs.
+  ///
+  /// 07-reseaux.md ne décrit que le chemin modérateur → membre ; les deux boutons
+  /// « Contacter les modérateurs » de la planche « À propos » (A08T, 1036 px et
+  /// 390 px) n'avaient donc aucune route. Le porteur a tranché entre un message au
+  /// propriétaire seul et une conversation de GROUPE : « fais le bon » — une
+  /// réponse collective et traçable, qui ne dépend pas de la disponibilité d'une
+  /// seule personne.
+  ///
+  /// CE N'EST PAS UN SIGNALEMENT. `POST /reports` (13-moderation) va à l'équipe de
+  /// la PLATEFORME, ouvre un `moderation_case` et peut suspendre un compte ; ceci
+  /// va aux bénévoles d'UN réseau, ne crée aucun dossier, et n'a aucun pouvoir de
+  /// sanction. Les confondre donnerait à un désaccord de voisinage le poids d'une
+  /// procédure — et inversement.
+  ///
+  /// Les trois autres kinds ne pouvaient pas servir, et c'est MESURÉ, pas supposé :
+  /// `DIRECT` est à DEUX et unique par paire (§5.1) — elle aurait désigné un seul
+  /// modérateur et serait entrée en collision avec la conversation privée que les
+  /// deux ont peut-être déjà ; `JOURNEY` et `MENTORSHIP` portent chacune une clé
+  /// étrangère obligatoire vers un parcours ou un parrainage qui n'existe pas ici.
+  COMMUNITY_MODERATION
 }
 
 /// Profil de parrain. Niveau L2 requis (présence sur le territoire).
@@ -214,17 +235,50 @@ model Conversation {
   kind          ConversationKind
   journeyId     String?          @map("journey_id") @db.Uuid
   mentorshipId  String?          @map("mentorship_id") @db.Uuid
+  /// Le réseau dont on contacte l'équipe. Renseigné pour COMMUNITY_MODERATION seul.
+  communityId   String?          @map("community_id") @db.Uuid
+  /// QUI a ouvert le fil — le demandeur, et non l'un des modérateurs.
+  ///
+  /// SANS CETTE COLONNE L'IDEMPOTENCE EST INEXPRIMABLE, et c'est la raison
+  /// d'être du couple unique ci-dessous. « Le fil de ce membre sur ce réseau » ne
+  /// peut pas se chercher par la liste des membres : un modérateur appartient à
+  /// TOUS les fils de son réseau, donc chercher « la conversation de ce réseau
+  /// dont je suis membre » lui rendrait celle d'un autre demandeur — et son
+  /// second clic l'aurait fait écrire dans le fil de quelqu'un d'autre.
+  ///
+  /// `onDelete: SetNull` et non `Cascade` : §11 anonymise, et un compte supprimé
+  /// ne doit pas emporter un échange que l'équipe du réseau a peut-être à garder.
+  /// Le couple unique s'en trouve relâché — deux lignes à `NULL` ne se heurtent
+  /// pas en PostgreSQL — ce qui est exactement voulu : un compte supprimé ne doit
+  /// pas bloquer le fil d'un autre.
+  openedByUserId String?         @map("opened_by_user_id") @db.Uuid
   lastMessageAt DateTime?        @map("last_message_at") @db.Timestamptz
 
-  journey    Journey?    @relation("ConversationJourney", fields: [journeyId], references: [id], onDelete: SetNull)
-  mentorship Mentorship? @relation("ConversationMentorship", fields: [mentorshipId], references: [id], onDelete: SetNull)
+  journey      Journey?    @relation("ConversationJourney", fields: [journeyId], references: [id], onDelete: SetNull)
+  mentorship   Mentorship? @relation("ConversationMentorship", fields: [mentorshipId], references: [id], onDelete: SetNull)
+  community    Community?  @relation("ConversationCommunity", fields: [communityId], references: [id], onDelete: Cascade)
+  openedBy     User?       @relation("ConversationOpenedBy", fields: [openedByUserId], references: [id], onDelete: SetNull)
 
   members           ConversationMember[]
   messages          Message[]
   journeysAsGroup   Journey[]            @relation("JourneyGroupConversation")
   mentorshipsAsMain Mentorship[]         @relation("MentorshipConversation")
 
+  /**
+   * L'IDEMPOTENCE, POSÉE EN BASE ET PAS SEULEMENT DANS LE SERVICE.
+   *
+   * « Un membre qui clique deux fois ne doit pas ouvrir deux conversations. » Le
+   * service cherche d'abord, et c'est ce chemin que l'on emprunte ; mais deux
+   * clics SIMULTANÉS passent tous les deux la recherche avant que l'un n'ait
+   * créé — et la seule chose qui attrape cette course est la contrainte.
+   *
+   * Les deux colonnes sont nulles sur toutes les autres conversations, et
+   * PostgreSQL considère deux `NULL` comme distincts : la contrainte ne pèse donc
+   * que sur les conversations de modération, sans index partiel à maintenir.
+   */
+  @@unique([communityId, openedByUserId])
   @@index([lastMessageAt])
+  @@index([communityId])
   @@map("conversations")
 }
 

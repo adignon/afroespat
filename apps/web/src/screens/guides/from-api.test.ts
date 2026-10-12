@@ -13,6 +13,10 @@ import {
   delaiAvantEscalade,
   guideCardFrom,
   guideCardsFrom,
+  guideHeadFrom,
+  guidePlanFrom,
+  hrefPageGuide,
+  PLAN_AVANT_REPONSE,
   updatedLabel,
   versionsFrom,
 } from './from-api';
@@ -156,6 +160,178 @@ describe('§2.3 — le bandeau « À vérifier » vient du SERVEUR', () => {
       lastContentUpdateAt: '2015-01-01T00:00:00.000Z',
     };
     expect(guideCardFrom(vieilli, MAINTENANT).verify).toBe(false);
+  });
+});
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « À VÉRIFIER » PORTE SON NOMBRE DE MOIS, ET IL VIENT DU SERVEUR            ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « fais le reste aussi. » Le bandeau n'affichait que « À vérifier »
+ * alors que `bannersFor()` pousse `{ kind: 'TO_VERIFY', months }` — relevé sur la
+ * charge réelle de `guides_list.json`, qui porte `months: 30`.
+ *
+ * LES TROIS CAS SONT GARDÉS : le nombre affiché, l'absence de nombre, et le
+ * TÉMOIN qui prouve que le nombre n'est pas recalculé d'une date.
+ */
+describe('§2.3 — le bandeau « À vérifier » porte le nombre de mois du SERVEUR', () => {
+  /** Un détail dont le bandeau est celui qu'on veut éprouver, et rien d'autre. */
+  const avecBandeau = (banners: GuideListItemView['banners']) =>
+    guideHeadFrom({ ...detail, guide: { ...detail.guide, banners } }, 0, MAINTENANT);
+
+  it('écrit la tournure du schéma, avec le nombre que le serveur envoie', () => {
+    expect(avecBandeau([{ kind: 'TO_VERIFY', months: 30 }]).avertissementTexte).toBe(
+      'À vérifier — dernière mise à jour il y a 30 mois',
+    );
+    // « mois » est INVARIABLE : le singulier s'écrit du même mot, et aucune
+    // bascule de pluriel ne doit apparaître.
+    expect(avecBandeau([{ kind: 'TO_VERIFY', months: 1 }]).avertissementTexte).toBe(
+      'À vérifier — dernière mise à jour il y a 1 mois',
+    );
+  });
+
+  /**
+   * `months` est `.optional()` et non `.nullable()` dans `guideBannerSchema` —
+   * relevé sur la charge. Un `TO_VERIFY` sans nombre est donc une forme VALIDE du
+   * contrat, et elle ne doit pas écrire « il y a undefined mois ».
+   */
+  it('retombe sur « À vérifier » tout court quand le serveur n’envoie pas de nombre', () => {
+    expect(avecBandeau([{ kind: 'TO_VERIFY' }]).avertissementTexte).toBe('À vérifier');
+  });
+
+  /**
+   * `OUTDATED_REPORTED` ne reçoit PAS `months`, et il n'en veut pas : il parle de
+   * signalements, pas d'âge. Sa phrase ne doit pas avoir changé d'un caractère.
+   */
+  it('laisse « des membres signalent » sans nombre', () => {
+    expect(avecBandeau([{ kind: 'OUTDATED_REPORTED' }]).avertissementTexte).toBe(
+      'Des membres signalent que cette information a changé',
+    );
+  });
+
+  /**
+   * MUTATION TÉMOIN — le nombre n'est pas déduit de `lastContentUpdateAt`.
+   *
+   * On rajeunit la date du guide de plusieurs années en gardant `months: 30`. Si
+   * un calcul d'âge s'était glissé dans le convertisseur, le nombre affiché
+   * changerait. Il doit rester 30, parce que c'est le serveur qui compte.
+   */
+  it('TÉMOIN : rajeunir la date ne change pas le nombre de mois affiché', () => {
+    const rajeuni = guideHeadFrom(
+      {
+        ...detail,
+        guide: {
+          ...detail.guide,
+          lastContentUpdateAt: '2026-09-20T00:00:00.000Z',
+          banners: [{ kind: 'TO_VERIFY', months: 30 }],
+        },
+      },
+      0,
+      MAINTENANT,
+    );
+    expect(rajeuni.avertissementTexte).toBe('À vérifier — dernière mise à jour il y a 30 mois');
+  });
+});
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ §2.6 — L'ÉCHÉANCE DE DÉPUBLICATION, ET LES DEUX PHRASES DE SON DÉPASSEMENT ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * POURQUOI CE BLOC EXISTE : le dépassement de l'échéance NE SE MESURE PAS AU
+ * NAVIGATEUR par le chemin du produit. `flagOutdated` pose l'échéance à
+ * `now + GUIDE_UNPUBLISH_DELAY_DAYS` (30 jours), et la faire passer demanderait
+ * soit d'attendre un mois, soit d'écrire en base — ce que le mémo du dépôt
+ * interdit (« monte le décor par les VRAIES routes du produit »). C'est donc la
+ * COMPOSITION qu'on éprouve ici, à l'endroit où elle est écrite.
+ *
+ * Les deux phrases sont l'ARBITRAGE DU PORTEUR, mot pour mot. Un test qui les
+ * garde empêche qu'un lot suivant les « améliore » sans l'avoir demandé — et
+ * surtout qu'il les INTERVERTISSE, ce qui annoncerait une fatalité à celui qui
+ * peut encore agir.
+ *
+ * La fixture porte `unpublishDeadlineAt: null` et `isAuthor: false` : les deux
+ * champs sont donc posés sur la copie, et leur valeur de départ est ce qui rend ce
+ * bloc nécessaire — sans échéance, aucun de ces cas ne se produit.
+ */
+describe('§2.6 — l’échéance de dépublication dit qui doit faire quoi', () => {
+  const avecEcheance = (echeance: string | null, auteur: boolean) =>
+    guideHeadFrom(
+      {
+        ...detail,
+        guide: {
+          ...detail.guide,
+          banners: [{ kind: 'OUTDATED_REPORTED' }],
+          unpublishDeadlineAt: echeance,
+          isAuthor: auteur,
+        },
+      },
+      0,
+      MAINTENANT,
+    ).avertissementTexte;
+
+  /** AVANT l'échéance, les deux lecteurs lisent la MÊME consigne datée. */
+  it('avant l’échéance, la date est écrite — et la même pour les deux', () => {
+    const attendu =
+      'Des membres signalent que cette information a changé — à corriger avant le 9 nov., puis dépublication';
+    expect(avecEcheance('2026-11-09T00:00:00.000Z', false)).toBe(attendu);
+    expect(avecEcheance('2026-11-09T00:00:00.000Z', true)).toBe(attendu);
+  });
+
+  /**
+   * APRÈS l'échéance, les deux phrases DIVERGENT, et c'est tout l'objet du lot :
+   * le lecteur reçoit un avertissement, l'auteur une consigne. Avant, la clause
+   * disparaissait purement et simplement — l'écran était muet au moment le plus
+   * utile, la tâche de dépublication passant une fois par jour.
+   */
+  it('après l’échéance, le LECTEUR est averti du retrait', () => {
+    expect(avecEcheance('2026-09-01T00:00:00.000Z', false)).toBe(
+      'Des membres signalent que cette information a changé — délai de correction dépassé, ce guide va être retiré',
+    );
+  });
+
+  it('après l’échéance, l’AUTEUR reçoit une consigne, pas une fatalité', () => {
+    expect(avecEcheance('2026-09-01T00:00:00.000Z', true)).toBe(
+      'Des membres signalent que cette information a changé — le délai est dépassé, corrigez maintenant pour éviter le retrait',
+    );
+  });
+
+  /**
+   * TÉMOIN — `null` est le cas NORMAL et il n'ajoute rien, pour personne. La très
+   * grande majorité des guides n'a jamais atteint le seuil des trois signalements,
+   * et une clause qui s'afficherait là serait visible sur presque tout le produit.
+   */
+  it('TÉMOIN : sans échéance, aucune clause — ni au lecteur ni à l’auteur', () => {
+    expect(avecEcheance(null, false)).toBe(
+      'Des membres signalent que cette information a changé',
+    );
+    expect(avecEcheance(null, true)).toBe('Des membres signalent que cette information a changé');
+  });
+});
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ §2.6 — LE COMPTE DES SIGNALEMENTS, ET RIEN QUE LE COMPTE                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * ARBITRAGE DU PORTEUR : « Les signalants resteront anonymes : l'auteur ne voit
+ * que le compte. Pas des commentaires et autres. »
+ *
+ * Le nombre vient de `outdatedFlagCount`, que la carte d'auteur peignait en dur à
+ * « 0 ». L'accord du mot est gardé ici parce qu'il décide d'un AFFICHAGE : « 1
+ * signalement » au singulier est la seule forme juste, et un `s` de trop se lit.
+ */
+describe('§2.6 — le compte des signalements « a changé » et l’accord de son mot', () => {
+  const avecCompte = (n: number) =>
+    guideHeadFrom({ ...detail, guide: { ...detail.guide, outdatedFlagCount: n } }, 0, MAINTENANT);
+
+  it('porte le compte du serveur, et accorde le mot', () => {
+    expect(avecCompte(0).signalements).toBe(0);
+    expect(avecCompte(0).signalementsMot).toBe('signalements');
+    expect(avecCompte(1).signalementsMot).toBe('signalement');
+    expect(avecCompte(3).signalements).toBe(3);
+    expect(avecCompte(3).signalementsMot).toBe('signalements');
   });
 });
 
@@ -345,5 +521,203 @@ describe('témoins — ce qui ne décide de rien ne change rien', () => {
     const g = liste.items[0] as GuideListItemView;
     const avant = guideCardFrom(g, MAINTENANT).updated;
     expect(guideCardFrom({ ...g, helpfulCount: 9999 }, MAINTENANT).updated).toBe(avant);
+  });
+});
+
+// ─── 5. Le plan des pages ───────────────────────────────────────────────────
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE GUIDE À TROIS PAGES EST CONSTRUIT, PUIS REPASSÉ PAR LE SCHÉMA           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La charge relevée n'a qu'UNE page — les fixtures datent d'avant la
+ * fonctionnalité, et c'est très bien : elles éprouvent le cas de compatibilité.
+ * Pour le reste, on MUTE la charge et on la REPASSE PAR LE SCHÉMA, exactement
+ * comme les mutations témoins de ce fichier : un objet littéral écrit à la main ne
+ * prouverait que la cohérence de son auteur avec lui-même, et `.strict()` ne
+ * dirait rien d'un champ oublié.
+ */
+function detailAPages(
+  pages: readonly { readonly position: number; readonly title: string; readonly slug: string; readonly commentCount: number }[],
+  luePosition: number,
+) {
+  const brut = charge('guide_detail') as Record<string, unknown>;
+  const complet = pages.map((p, i) => ({
+    id: `cccccccc-0000-4000-8000-00000000000${String(i + 1)}`,
+    position: p.position,
+    title: p.title,
+    slug: p.slug,
+    commentCount: p.commentCount,
+  }));
+  const lue = complet.find((p) => p.position === luePosition);
+  return guideDetailResponseSchema.parse({
+    ...brut,
+    pages: complet,
+    currentPage: lue,
+    guide: {
+      ...(brut['guide'] as Record<string, unknown>),
+      pageCount: complet.length,
+      commentCount: lue?.commentCount ?? 0,
+    },
+  });
+}
+
+const TROIS = [
+  { position: 1, title: 'Le dossier', slug: 'le-dossier', commentCount: 4 },
+  { position: 2, title: 'Le rendez-vous', slug: 'le-rendez-vous', commentCount: 0 },
+  { position: 3, title: 'Ce qui m’a surpris', slug: 'ce-qui-m-a-surpris', commentCount: 1 },
+] as const;
+
+describe('le plan des pages — ce que le porteur a demandé', () => {
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CES DEUX CAS GELAIENT LE TITRE. LE PORTEUR A DEMANDÉ LE NUMÉRO           ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * « Au niveau du bouton prev et next des pages guide il faut plutôt mettre le
+   * numéro de la page. Aussi au niveau de section qui liste les pages à droite,
+   * c'est le numéro tu mets au début. »
+   *
+   * Les deux cas étaient JUSTES sur la forme précédente — ils disaient que la
+   * pastille du milieu porte le titre de la page lue, et que les rangées portent
+   * les titres nus. Ils sont corrigés, pas assouplis : chacun gèle maintenant la
+   * forme NOUVELLE, assez précisément pour tomber si elle rechange.
+   */
+  it('un guide d’UNE page n’a pas de plan : rien ne se dessine', () => {
+    const plan = guidePlanFrom(detail);
+    expect(detail.pages).toHaveLength(1);
+    expect(plan.visible).toBe(false);
+    /**
+     * La pastille reste composée : c'est le `<sc-if>` du cadre qui la cache, pas
+     * une valeur vide. Et elle dit « 1 sur 1 » — le numérateur et le dénominateur
+     * sont comptés sur la MÊME liste, donc ils ne peuvent pas diverger.
+     */
+    expect(plan.titre).toBe('1 sur 1');
+  });
+
+  it('un guide de trois pages les liste dans l’ordre, NUMÉROTÉES', () => {
+    const plan = guidePlanFrom(detailAPages(TROIS, 1));
+    expect(plan.visible).toBe(true);
+    expect(plan.pages.map((p) => p.label)).toEqual([
+      '1. Le dossier',
+      '2. Le rendez-vous',
+      '3. Ce qui m’a surpris',
+    ]);
+  });
+
+  /**
+   * LA PASTILLE SUIT LA PAGE LUE, et c'est tout son intérêt : entre deux flèches,
+   * elle répond à « où suis-je, et combien en reste-t-il ? ». Le titre, lui, est
+   * déjà le premier mot du corps juste en dessous.
+   *
+   * MUTATION TÉMOIN — écrire `position` au lieu du rang fait tomber le dernier
+   * cas de ce fichier (voir plus bas : une page retirée garde sa place dans la
+   * numérotation de la base).
+   */
+  it('la pastille du milieu dit le rang de la page lue, sur le nombre de pages', () => {
+    expect(guidePlanFrom(detailAPages(TROIS, 1)).titre).toBe('1 sur 3');
+    expect(guidePlanFrom(detailAPages(TROIS, 2)).titre).toBe('2 sur 3');
+    expect(guidePlanFrom(detailAPages(TROIS, 3)).titre).toBe('3 sur 3');
+  });
+
+  it('LA PAGE LUE PORTE LA TEINTE ACTIVE DU PANNEAU DE SECTION, et elle seule', () => {
+    const plan = guidePlanFrom(detailAPages(TROIS, 2));
+    expect(plan.pages.map((p) => p.actif)).toEqual([false, true, false]);
+    /** Les trois valeurs sont celles de `panel(active)` — aucune n'est inventée. */
+    expect(plan.pages[1]).toMatchObject({ bg: '#E3F0EB', fg: '#0F5C48', w: 700 });
+    expect(plan.pages[0]).toMatchObject({ bg: 'transparent', fg: '#16211D', w: 500 });
+  });
+
+  it('LA PAGE LUE SE DIT AUSSI PAR SON TRACÉ, pas seulement par sa couleur', () => {
+    const plan = guidePlanFrom(detailAPages(TROIS, 3));
+    /** La coche sur la page lue, la liste de lignes sur les autres. */
+    expect(plan.pages[2]?.icon).toBe('m5 12 4.5 4.5L19 7');
+    expect(plan.pages[0]?.icon).toBe('M4 6h16M7 12h10M5 18h14');
+  });
+
+  it('la pastille de compteur DISPARAÎT à zéro, et porte le compte sinon', () => {
+    const plan = guidePlanFrom(detailAPages(TROIS, 1));
+    expect(plan.pages.map((p) => p.count)).toEqual(['4', false, '1']);
+  });
+
+  it('LA PREMIÈRE PAGE GARDE L’ADRESSE DU GUIDE — les liens partagés ne cassent pas', () => {
+    const plan = guidePlanFrom(detailAPages(TROIS, 1));
+    expect(plan.pages[0]?.href).toBe('/guides/ouvrir-un-compte-bancaire-en-arrivant-en-france');
+    expect(plan.pages[1]?.href).toBe(
+      '/guides/ouvrir-un-compte-bancaire-en-arrivant-en-france/p/le-rendez-vous',
+    );
+  });
+
+  it('le segment /p/ ne peut pas collisionner avec « corriger » ni « propositions »', () => {
+    expect(hrefPageGuide('mon-guide', { position: 2, slug: 'corriger' })).toBe(
+      '/guides/mon-guide/p/corriger',
+    );
+    expect(hrefPageGuide('mon-guide', { position: 2, slug: 'propositions' })).toBe(
+      '/guides/mon-guide/p/propositions',
+    );
+  });
+
+  it('les extrémités s’annoncent : pas de précédent en 1, pas de suivant en dernier', () => {
+    const premiere = guidePlanFrom(detailAPages(TROIS, 1));
+    expect([premiere.aPrecedent, premiere.aSuivant]).toEqual([false, true]);
+    expect(premiere.hrefPrecedent).toBeNull();
+    const milieu = guidePlanFrom(detailAPages(TROIS, 2));
+    expect([milieu.aPrecedent, milieu.aSuivant]).toEqual([true, true]);
+    const derniere = guidePlanFrom(detailAPages(TROIS, 3));
+    expect([derniere.aPrecedent, derniere.aSuivant]).toEqual([true, false]);
+    expect(derniere.hrefSuivant).toBeNull();
+  });
+
+  it('les deux chevrons mènent aux pages VOISINES, pas aux extrémités', () => {
+    const plan = guidePlanFrom(detailAPages(TROIS, 2));
+    expect(plan.hrefPrecedent).toBe('/guides/ouvrir-un-compte-bancaire-en-arrivant-en-france');
+    expect(plan.hrefSuivant).toBe(
+      '/guides/ouvrir-un-compte-bancaire-en-arrivant-en-france/p/ce-qui-m-a-surpris',
+    );
+  });
+
+  it('AVANT LA RÉPONSE, le plan ne dessine rien et n’affirme rien', () => {
+    expect(PLAN_AVANT_REPONSE.visible).toBe(false);
+    expect(PLAN_AVANT_REPONSE.pages).toEqual([]);
+    expect(PLAN_AVANT_REPONSE.titre).toBe('');
+    expect([PLAN_AVANT_REPONSE.aPrecedent, PLAN_AVANT_REPONSE.aSuivant]).toEqual([false, false]);
+  });
+
+  it('TÉMOIN : changer le compte de commentaires ne change pas l’ordre des pages', () => {
+    const avant = guidePlanFrom(detailAPages(TROIS, 1)).pages.map((p) => p.slug);
+    const apres = guidePlanFrom(
+      detailAPages(
+        TROIS.map((p) => ({ ...p, commentCount: 99 })),
+        1,
+      ),
+    ).pages.map((p) => p.slug);
+    expect(apres).toEqual(avant);
+  });
+});
+
+describe('la liste des guides annonce LE TOTAL, pas le compte de la page lue', () => {
+  /**
+   * Le porteur : « c'est LE TOTAL qui est affiché sur la page de listing des
+   * guides. » La carte de A03 n'a AUCUNE prise dédiée (relevé sur ses octets),
+   * donc les deux nombres allongent la phrase que le front compose déjà.
+   */
+  it('le nombre de pages et le total des commentaires entrent dans l’accroche', () => {
+    const g = liste.items[0] as GuideListItemView;
+    const carte = guideCardFrom({ ...g, pageCount: 4, commentCount: 12 }, MAINTENANT);
+    expect(carte.excerpt).toBe('Arrivée · Universel · 4 pages · 12 commentaires');
+  });
+
+  it('ILS DISPARAISSENT QUAND ILS NE DISENT RIEN : une page, aucun commentaire', () => {
+    const g = liste.items[0] as GuideListItemView;
+    const carte = guideCardFrom({ ...g, pageCount: 1, commentCount: 0 }, MAINTENANT);
+    expect(carte.excerpt).toBe('Arrivée · Universel');
+  });
+
+  it('un seul commentaire s’écrit au singulier', () => {
+    const g = liste.items[0] as GuideListItemView;
+    expect(guideCardFrom({ ...g, pageCount: 2, commentCount: 1 }, MAINTENANT).excerpt).toBe(
+      'Arrivée · Universel · 2 pages · 1 commentaire',
+    );
   });
 });

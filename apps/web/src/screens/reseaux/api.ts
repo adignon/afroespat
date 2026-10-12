@@ -31,38 +31,53 @@
  *
  * AUCUNE GESTION DE JETON. Le socle le porte, le rafraîchit une fois et rejoue.
  *
- * AUCUNE DÉCISION SUR LE NIVEAU. Pas de `if (level === 'L1')` avant de créer un
- * réseau : on TENTE, et le serveur répond `403 LEVEL_REQUIRED`. Mesuré, mot pour
- * mot, sur `POST /communities` avec un compte L0 :
+ * AUCUNE DÉCISION SUR LE NIVEAU. Pas de `if (level === 'L2')` avant de créer un
+ * réseau : on TENTE, et le serveur répond `403 LEVEL_REQUIRED`. Ce bloc annonçait
+ * `requiredLevel: "L1"` — périmé depuis la refonte des niveaux : la table fait
+ * foi, et elle dit `community.create → minLevel 'L2'`.
  *
  *     { "error": { "code": "LEVEL_REQUIRED",
  *                  "details": { "capability": "community.create",
- *                               "requiredLevel": "L1", "currentLevel": "L0",
+ *                               "requiredLevel": "L2", "currentLevel": "L0",
  *                               "labelFr": "créer un réseau" } } }
  *
  * C'est exactement de quoi afficher l'INVITATION de §7.3 — et c'est pourquoi on
  * n'a pas besoin de lire le niveau pour savoir s'il faut la montrer.
  */
 import {
+  addAlbumPhotoSchema,
   albumsResponseSchema,
   announcementsResponseSchema,
+  communityReportDecisionResponseSchema,
+  communityReportDecisionSchema,
+  communityReportsResponseSchema,
   communitiesResponseSchema,
   communityDetailResponseSchema,
   communityFeedResponseSchema,
   communityMapResponseSchema,
   communityMembersResponseSchema,
+  eventsResponseSchema,
+  rsvpSchema,
+  createAlbumResponseSchema,
+  createAlbumSchema,
   createAnnouncementResponseSchema,
+  createAnnouncementSchema,
   createCommunitySchema,
   createTopicSchema,
   inviteMembersResponseSchema,
   inviteMembersSchema,
+  mediaAssetSchema,
   memberMutationResponseSchema,
+  moderatorsConversationResponseSchema,
   pollDetailResponseSchema,
   pollsResponseSchema,
   requestDecisionResponseSchema,
   topicDetailResponseSchema,
   topicsResponseSchema,
+  transferCommunitySchema,
   updateCommunitySchema,
+  updateAnnouncementResponseSchema,
+  updateAnnouncementSchema,
   updateMemberSchema,
   updateTopicSchema,
   type AlbumsResponse,
@@ -72,16 +87,25 @@ import {
   type CommunityFeedResponse,
   type CommunityMapResponse,
   type CommunityMembersResponse,
+  type CommunityReportDecision,
+  type CommunityReportDecisionResponse,
+  type CommunityReportsResponse,
+  type CreateAnnouncement,
+  type CreateAnnouncementResponse,
   type CreateCommunity,
   type CreateTopic,
+  type EventsResponse,
   type InviteMembers,
   type InviteMembersResponse,
+  type MediaAssetView,
   type MemberMutationResponse,
+  type ModeratorsConversationResponse,
   type PollDetailResponse,
   type PollsResponse,
   type TopicDetailResponse,
   type TopicsResponse,
   type UpdateCommunity,
+  type UpdateAnnouncementResponse,
   type UpdateMember,
   type UpdateTopic,
 } from '@app/shared';
@@ -93,6 +117,14 @@ import {
  * résolution préfère le fichier au dossier. `voidResponse` n'y figure pas.
  */
 import { memberApi, voidResponse } from '@/lib/api/index';
+/**
+ * `z.unknown()` POUR LA SEULE ROUTE DONT LA RÉPONSE N'EST PAS LUE — le RSVP.
+ *
+ * Voir l'en-tête de `rsvpEvent` : `packages/shared` n'expose aucun schéma de
+ * réponse pour `PUT /events/:id/rsvp`, et en inventer un ici serait une seconde
+ * source (00 §4). On recharge la liste à la place.
+ */
+import { z } from 'zod';
 
 /**
  * Les options d'appel, construites SANS clé absente.
@@ -248,6 +280,70 @@ export function fetchAlbums(idOrSlug: string, signal?: AbortSignal): Promise<Alb
   );
 }
 
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ `POST /communities/:id/albums` — CRÉER UN ALBUM                          ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « Ensuite on peut ajouter un album et y ajouter des photos (les
+ * modérateurs). »
+ *
+ * `eventId` N'EST PAS ENVOYÉ, et c'est un relevé : la planche ne dessine aucun
+ * choisisseur d'événement, et un album créé par un modérateur est précisément
+ * celui qui N'EST PAS automatique — les albums d'événement, eux, naissent avec
+ * leur événement. Lier l'un à un événement depuis ce bouton inventerait un
+ * contrôle. REMONTÉ.
+ */
+export function createAlbum(
+  idOrSlug: string,
+  title: string,
+): Promise<z.infer<typeof createAlbumResponseSchema>> {
+  return memberApi.post(
+    `/communities/${encodeURIComponent(idOrSlug)}/albums`,
+    createAlbumResponseSchema,
+    { body: createAlbumSchema.parse({ title }) },
+  );
+}
+
+/**
+ * `POST /albums/:id/photos` — accrocher une image DÉJÀ DÉPOSÉE à un album.
+ *
+ * DEUX APPELS, ET DANS CET ORDRE : `uploadAlbumImage` d'abord (`POST /media`
+ * avec `kind=ALBUM`), celui-ci ensuite avec l'identifiant rendu. Le service
+ * vérifie que l'image appartient à celui qui la pose ET que son genre est
+ * `ALBUM` — relevé dans `addPhoto` : `kind: 'ALBUM', status: 'READY',
+ * ownerUserId: userId`. Un média déposé avec un autre genre tomberait sur le
+ * même `404` qu'un identifiant inconnu.
+ *
+ * `caption` N'EST PAS ENVOYÉE : la planche ne dessine aucun champ de légende —
+ * exactement le même manque que l'éditeur de guide consigne pour ses images.
+ * REMONTÉ.
+ */
+export function addAlbumPhoto(albumId: string, mediaAssetId: string): Promise<unknown> {
+  return memberApi.post(`/albums/${encodeURIComponent(albumId)}/photos`, z.unknown(), {
+    body: addAlbumPhotoSchema.parse({ mediaAssetId }),
+  });
+}
+
+/**
+ * `POST /media` avec `kind=ALBUM` — le dépôt, avant l'accrochage.
+ *
+ * ⚠ `kind: 'ALBUM'` N'EST PAS UN DÉFAUT : `MEDIA_KIND_POLICIES.ALBUM` le
+ * déclare `memberUploadable` avec la capacité `post.create`, et `addPhoto`
+ * refuse tout autre genre. C'est le même chemin que `deposerImage` de
+ * l'éditeur de guide, qui envoie `kind=GUIDE` pour la même raison — imité, pas
+ * réinventé.
+ *
+ * `FormData` ET NON JSON : la route est multipart (`@UseInterceptors(FileInterceptor)`),
+ * et `kind` y arrive en champ texte du MÊME corps.
+ */
+export function uploadAlbumImage(fichier: File): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', fichier);
+  corps.append('kind', 'ALBUM');
+  return memberApi.post('/media', mediaAssetSchema, { body: corps });
+}
+
 export function fetchCommunityMap(
   idOrSlug: string,
   signal?: AbortSignal,
@@ -289,6 +385,18 @@ export function updateTopic(topicId: string, patch: UpdateTopic): Promise<TopicD
 
 export function deleteTopic(topicId: string): Promise<void> {
   return memberApi.del(`/topics/${topicId}`, voidResponse);
+}
+
+/**
+ * REMETTRE un sujet masqué. Sept jours après le masquage, le serveur refuse
+ * (`UNHIDE_WINDOW_CLOSED`) : au-delà, seule l'équipe peut.
+ *
+ * La réponse est le sujet ENTIER remis à jour — avec `hidden`, `canUnhide` et ses
+ * trois `can*` recalculés — comme `PATCH /topics/:id`. On la range telle quelle
+ * plutôt que de corriger à la main l'état qu'on avait.
+ */
+export function restoreTopic(topicId: string): Promise<TopicDetailResponse> {
+  return memberApi.post(`/topics/${topicId}/restore`, topicDetailResponseSchema);
 }
 
 export function createTopic(idOrSlug: string, input: CreateTopic): Promise<TopicDetailResponse> {
@@ -348,6 +456,32 @@ export function joinCommunity(idOrSlug: string): Promise<CommunityDetailResponse
   );
 }
 
+/**
+ * « CONTACTER LES MODÉRATEURS » — ouvre, ou ROUVRE, le fil de groupe.
+ *
+ * AUCUN CORPS, et c'est l'écart notable avec `POST /conversations/direct`, qui
+ * exige un `firstMessage` : la planche « À propos » ne dessine aucun formulaire,
+ * seulement un bouton. Le fil naît donc vide — comme naît une conversation de
+ * parcours — et le membre écrit dedans sur `/messages/:id`.
+ *
+ * IDEMPOTENT, et la réponse le dit : un second appel rend le MÊME
+ * `conversationId` avec `created: false`. L'écran n'a donc rien à mémoriser
+ * pour éviter les doublons — c'est le serveur qui tient l'unicité, par un index
+ * sur (réseau, demandeur).
+ *
+ * ⚠ CE N'EST PAS `POST /reports`, que le bouton voisin « Signaler le réseau »
+ * sert : celui-là va à l'équipe de la PLATEFORME et ouvre un dossier de
+ * modération. Celui-ci parle aux bénévoles d'UN réseau.
+ */
+export function openModeratorsConversation(
+  idOrSlug: string,
+): Promise<ModeratorsConversationResponse> {
+  return memberApi.post(
+    `/communities/${encodeURIComponent(idOrSlug)}/moderators-conversation`,
+    moderatorsConversationResponseSchema,
+  );
+}
+
 export function leaveCommunity(idOrSlug: string): Promise<void> {
   return memberApi.post(`/communities/${encodeURIComponent(idOrSlug)}/leave`, voidResponse);
 }
@@ -375,6 +509,43 @@ export function updateMember(
   );
 }
 
+/**
+ * LA SOURDINE — §2.5, par la MÊME route que le rôle et le bannissement.
+ *
+ * `PATCH /communities/:id/members/:userId` avec `{ muted }`, et l'identifiant
+ * passé est CELUI DU LECTEUR : §4 écrit « `muted` (soi-même) », et le serveur
+ * refuse tout autre rang en `403 MUTE_SELF_ONLY`. L'appelant doit donc lui
+ * donner son propre identifiant, et c'est pourquoi ce raccourci existe plutôt
+ * qu'un `updateMember(slug, moi, { muted })` écrit à la main dans le hook : le
+ * nom de la fonction dit la règle.
+ *
+ * ⚠ `muted` NE VOYAGE JAMAIS AVEC `role` NI `status` : le serveur refuse le
+ * mélange (`422 MUTE_ALONE`), parce que les deux gestes n'ont ni le même acteur
+ * légitime ni la même nature. Ce raccourci ne passe que `muted`.
+ */
+export function setCommunityMuted(
+  idOrSlug: string,
+  myUserId: string,
+  muted: boolean,
+): Promise<MemberMutationResponse> {
+  return updateMember(idOrSlug, myUserId, { muted });
+}
+
+/**
+ * RETIRER un membre — et ce n'est PAS `updateMember({ status: 'BANNED' })`.
+ *
+ * Le porteur : « Retirer, il peut rejoindre à nouveau. Mais banni, il ne peut
+ * plus rejoindre. » L'adhésion DISPARAÎT, donc il n'y a aucun état d'adhésion à
+ * renvoyer : la route répond `204`, comme `POST /leave`, et c'est pour cela
+ * qu'elle rend `void` là où le bannissement rend `{ status: 'BANNED' }`.
+ */
+export function removeMember(idOrSlug: string, userId: string): Promise<void> {
+  return memberApi.del(
+    `/communities/${encodeURIComponent(idOrSlug)}/members/${userId}`,
+    voidResponse,
+  );
+}
+
 export function decideRequest(idOrSlug: string, userId: string, decision: 'accept' | 'reject') {
   return memberApi.post(
     `/communities/${encodeURIComponent(idOrSlug)}/requests/${userId}/${decision}`,
@@ -382,11 +553,105 @@ export function decideRequest(idOrSlug: string, userId: string, decision: 'accep
   );
 }
 
-export function createAnnouncement(idOrSlug: string, body: string) {
+/**
+ * `POST /communities/:id/announcements` — LES QUATRE CHAMPS, VALIDÉS ICI.
+ *
+ * Elle ne prenait qu'un `body: string`, et c'était juste tant que le schéma
+ * partagé n'acceptait que ça. La planche dessine QUATRE contrôles — titre, corps,
+ * épinglage, notification — et `createAnnouncementSchema` les porte depuis ce
+ * lot : l'appel passe donc le corps entier.
+ *
+ * `createAnnouncementSchema.parse` avant l'envoi, pour la même raison que
+ * `createCommunity` : il fait échouer ICI, avec le nom du champ, ce qui échouerait
+ * sinon en `400` anonyme — et il APPLIQUE les deux défauts (`pinned: false`,
+ * `notify: true`), qui sont ceux de l'API. Deux défauts recopiés côté front
+ * finiraient par diverger des siens.
+ */
+export function createAnnouncement(
+  idOrSlug: string,
+  input: CreateAnnouncement,
+): Promise<CreateAnnouncementResponse> {
   return memberApi.post(
     `/communities/${encodeURIComponent(idOrSlug)}/announcements`,
     createAnnouncementResponseSchema,
-    { body: { body } },
+    { body: createAnnouncementSchema.parse(input) },
+  );
+}
+
+/**
+ * ÉPINGLER OU DÉSÉPINGLER UNE ANNONCE — arbitrage du 2026-10-11.
+ *
+ * `PATCH /communities/:id/announcements/:announcementId` avec `{ pinned }`.
+ * L'épinglage reste EXCLUSIF — épingler une annonce déépingle la courante, côté
+ * serveur — et c'est le DÉSÉPINGLAGE qui manquait : sans lui, on ne pouvait que
+ * remplacer l'épinglée par une autre, en publiant, avec un budget de deux
+ * annonces par semaine.
+ *
+ * La réponse ne porte que `{ id, pinnedAt }` : le seul fait que la requête
+ * change. Renvoyer `title` et `body` inchangés inviterait l'écran à les
+ * réécrire depuis une réponse qui ne les décide pas.
+ */
+export function setAnnouncementPinned(
+  idOrSlug: string,
+  announcementId: string,
+  pinned: boolean,
+): Promise<UpdateAnnouncementResponse> {
+  return memberApi.patch(
+    `/communities/${encodeURIComponent(idOrSlug)}/announcements/${announcementId}`,
+    updateAnnouncementResponseSchema,
+    { body: updateAnnouncementSchema.parse({ pinned }) },
+  );
+}
+
+/**
+ * LA FILE DE SIGNALEMENTS DU RÉSEAU — §2.4, et elle n'existait nulle part.
+ *
+ * `GET /communities/:id/reports`. UNE RANGÉE PAR CONTENU et non par
+ * signalement : la planche « Gérer » écrit « Demande d'argent · 5
+ * signalements » sur une seule rangée, avec une seule paire de boutons.
+ *
+ * ⚠ `meta.open` EST LE NOMBRE À AFFICHER, jamais `items.length` : la carte
+ * « SIGNALEMENTS · 2 », la tuile « 2 signalements ouverts » et la pastille du
+ * rail disent toutes trois ce nombre, et la réponse est bornée à cinquante
+ * rangées. C'est le défaut déjà payé quatre fois sur cette maquette avec
+ * « DEMANDES D'ADHÉSION · 4 ».
+ *
+ * ⚠ ELLE RÉPOND `403 MODERATOR_REQUIRED` À UN MEMBRE ORDINAIRE : le hook ne
+ * l'appelle que si le lecteur est propriétaire ou modérateur, non pour remplacer
+ * la garde du serveur mais pour ne pas provoquer un refus à chaque visite.
+ */
+export function fetchCommunityReports(
+  idOrSlug: string,
+  signal?: AbortSignal,
+): Promise<CommunityReportsResponse> {
+  return memberApi.get(
+    `/communities/${encodeURIComponent(idOrSlug)}/reports`,
+    communityReportsResponseSchema,
+    opts(signal),
+  );
+}
+
+/**
+ * « Masquer » et « Conserver » — les DEUX décisions de §2.4, et rien de plus.
+ *
+ * ⚠ LA CIBLE EST DANS LE CORPS, pas dans l'URL : la décision porte sur le
+ * COUPLE `(subjectType, subjectId)` et clôt TOUS les signalements ouverts de ce
+ * contenu. Une URL par signalement aurait désigné l'un des cinq pour une
+ * décision qui les clôt tous.
+ *
+ * `communityReportDecisionSchema.parse` avant l'envoi : il fait échouer ici,
+ * avec le nom du champ, ce qui échouerait sinon en `400` anonyme — et son enum à
+ * deux valeurs est la limite de pouvoir elle-même (§2.4 : « Ils ne peuvent pas
+ * suspendre un compte »).
+ */
+export function decideCommunityReport(
+  idOrSlug: string,
+  input: CommunityReportDecision,
+): Promise<CommunityReportDecisionResponse> {
+  return memberApi.post(
+    `/communities/${encodeURIComponent(idOrSlug)}/reports/decide`,
+    communityReportDecisionResponseSchema,
+    { body: communityReportDecisionSchema.parse(input) },
   );
 }
 
@@ -407,4 +672,129 @@ export function votePoll(pollId: string, optionIds: readonly string[]): Promise<
 
 export function closePoll(pollId: string): Promise<PollDetailResponse> {
   return memberApi.post(`/polls/${pollId}/close`, pollDetailResponseSchema);
+}
+
+// ── Les deux gestes LOURDS du propriétaire ─────────────────────────────────
+
+/**
+ * `POST /communities/:id/transfer` et `POST /communities/:id/reactivate`.
+ *
+ * ⚠ CES DEUX ROUTES MANQUAIENT À CE FICHIER, et son en-tête affirmait pourtant
+ * que « toutes celles qui suivent existent dans `communities.controller.ts` ».
+ * C'était vrai dans ce sens-là ; l'inverse ne l'était pas — le contrôleur en
+ * porte deux que le front n'appelait pas. Relevé dans
+ * `communities.controller.ts` (`transfer()` ligne 191, `reactivate()` ligne 393)
+ * et dans le service : les DEUX finissent par `return this.detail(...)`, donc la
+ * réponse est la fiche ENTIÈRE, exactement comme `join`. C'est pourquoi elles
+ * partagent `communityDetailResponseSchema` et non un schéma de leur cru.
+ *
+ * `transferCommunitySchema` valide le corps ICI, avant l'envoi, pour la même
+ * raison que `createCommunity` : un identifiant mal formé échoue avec le nom du
+ * champ plutôt qu'en `400` anonyme. Le service refuse en plus le transfert vers
+ * soi-même (`SELF_TRANSFER`) et vers un non-membre (`404`) — deux règles qu'on
+ * ne recopie pas côté front : on tente, il tranche.
+ *
+ * ⚠ AUCUNE DES DEUX N'EST DESSINÉE sur A08 ni sur les vingt-cinq planches
+ * d'onglet de A08T — vérifié en comptant les octets de la maquette : ni
+ * « Transférer », ni « Réactiver », ni « Archiver » n'y figurent une seule fois.
+ * Elles sont donc écrites, et appelables par `useReseau`, mais aucun cadre ne
+ * les déclenche. REMONTÉ : il manque la planche.
+ */
+export function transferCommunity(
+  idOrSlug: string,
+  toUserId: string,
+): Promise<CommunityDetailResponse> {
+  return memberApi.post(
+    `/communities/${encodeURIComponent(idOrSlug)}/transfer`,
+    communityDetailResponseSchema,
+    { body: transferCommunitySchema.parse({ toUserId }) },
+  );
+}
+
+export function reactivateCommunity(idOrSlug: string): Promise<CommunityDetailResponse> {
+  return memberApi.post(
+    `/communities/${encodeURIComponent(idOrSlug)}/reactivate`,
+    communityDetailResponseSchema,
+  );
+}
+
+// ── A08T · l'onglet « Événements » du réseau ────────────────────────────────
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES ÉVÉNEMENTS DU RÉSEAU VIENNENT DE `GET /events`, FILTRÉ                   ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * ⚠ ET NON DE `GET /communities/:id/events`, QUI N'EXISTE PAS. Mesuré avant ce
+ * lot : `communities.controller.ts` déclare trente-quatre routes et aucune
+ * d'événement, et `GET /events?communityId=…` répondait `400 UNRECOGNIZED_KEYS`
+ * parce qu'`eventsQuerySchema` est `.strict()`. Le lot a donc ajouté
+ * `communityId` au schéma et au `visibleWhere` du service, et c'est cette route
+ * — LA MÊME que l'agenda — qui nourrit l'onglet.
+ *
+ * C'est le même chemin que le FIL du réseau (`GET /feed?communityId=…`) et que
+ * l'onglet « Fil » d'un profil public (`?authorHandle=`), pour la raison que
+ * `eventsQuerySchema` écrit : la carte se dessine à partir du schéma ENTIER de
+ * cette route, et le filtre s'ajoute aux règles de visibilité sans en remplacer
+ * aucune.
+ *
+ * ── LES DEUX PASTILLES SONT DANS LA REQUÊTE, PAS DANS L'ÉCRAN ────────────────
+ *
+ * « Passés » envoie `to` = HIER, « À venir » n'envoie aucune borne. La frontière
+ * est donc le DÉBUT D'AUJOURD'HUI, et les deux listes ne se recouvrent pas :
+ * sans borne, `windowOf` part de MAINTENANT côté serveur, donc un événement de
+ * ce matin déjà commencé ne serait dans AUCUNE des deux si « Passés » s'arrêtait
+ * à avant-hier. Trier côté écran était impossible : la réponse sans borne ne
+ * contient aucun événement passé.
+ *
+ * ⚠ `to` SANS `from` REGARDE 62 JOURS EN ARRIÈRE, et c'est le serveur qui le
+ * décide (`windowOf` : `Date.now() - 62 * 86_400_000`). L'onglet « Passés » ne
+ * montre donc pas l'histoire entière du réseau. REMONTÉ : la planche ne dessine
+ * aucun « voir plus loin », et le curseur de la route pagine dans le TEMPS, pas
+ * en arrière.
+ */
+export function fetchCommunityEvents(
+  communityId: string,
+  filters: { readonly to?: string; readonly limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<EventsResponse> {
+  return memberApi.get(
+    `/events${query({
+      communityId,
+      ...(filters.to === undefined ? {} : { to: filters.to }),
+      ...(filters.limit === undefined ? {} : { limit: String(filters.limit) }),
+    })}`,
+    eventsResponseSchema,
+    opts(signal),
+  );
+}
+
+/**
+ * « JE VIENS » — `PUT /events/:id/rsvp`, capacité `event.attend`, N2.
+ *
+ * ⚠ AUCUN CONTRÔLE DE NIVEAU AVANT L'APPEL : le front PRÉVIENT, il n'autorise
+ * pas (00 §5). On tente, le serveur répond `403 LEVEL_REQUIRED` avec de quoi
+ * écrire l'invitation de §7.3, et `components/fenetre-niveau.tsx` l'explique.
+ *
+ * ── LA RÉPONSE N'EST PAS LUE, ET C'EST ASSUMÉ ───────────────────────────────
+ *
+ * Le service rend `{ status, waitlistPosition, attendeeCount }` — trois champs
+ * qui ne suffisent pas à redessiner la carte : la pastille « Vous y allez », la
+ * couleur de la pastille de date et le libellé du bouton se lisent tous sur
+ * `myStatus`, que seule la LISTE porte. `packages/shared` n'expose d'ailleurs
+ * aucun schéma de réponse pour cette route, et en inventer un ici serait une
+ * seconde source (00 §4). On recharge donc la liste, ce qui est aussi ce qui
+ * remet `attendeeCount` à jour pour tout le monde.
+ *
+ * ⚠ CONSÉQUENCE CONSIGNÉE : quand l'événement est COMPLET, le serveur répond
+ * `WAITLIST` et non `GOING` (§3.2). La liste rechargée le dit — `myStatus:
+ * 'WAITLIST'` allume la même pastille « Vous y allez » que `GOING` — mais la
+ * maquette de cet onglet ne dessine AUCUN mot pour la file d'attente. REMONTÉ :
+ * un membre en file lit « Vous y allez » comme un inscrit. La fiche de
+ * l'événement, elle, le dit.
+ */
+export function rsvpEvent(eventId: string): Promise<unknown> {
+  return memberApi.put(`/events/${encodeURIComponent(eventId)}/rsvp`, z.unknown(), {
+    body: rsvpSchema.parse({ status: 'GOING' }),
+  });
 }

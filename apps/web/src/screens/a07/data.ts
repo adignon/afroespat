@@ -53,6 +53,15 @@ export interface MyNetView {
   readonly members: string;
   readonly unread: number | null;
   readonly muted: boolean;
+  /**
+   * L'ADRESSE DU RÉSEAU — `/reseaux/:slug`.
+   *
+   * La carte ENTIÈRE est un lien vers elle (`A07_CARTE_MON_RESEAU`). Elle voyage
+   * avec la ligne plutôt que d'être recomposée dans le cadre : le JSX transcodé
+   * ne calcule rien, et un slug transporté à côté dans un tableau indexé par rang
+   * se désynchroniserait au premier filtre.
+   */
+  readonly href: string;
 }
 
 /**
@@ -92,6 +101,8 @@ export interface DiscoverView {
   readonly btnFg: string;
   readonly slug: string;
   readonly joined: boolean;
+  /** L'adresse de la fiche — `/reseaux/:slug`. Le TITRE de la carte y mène. */
+  readonly href: string;
 }
 
 // ─── Repli de la maquette, jusqu'à ce que l'API réponde ────────────────────
@@ -120,6 +131,23 @@ export interface A07Data {
   netFilters: typeof netFilters;
   myNets: readonly MyNetView[];
   discover: readonly DiscoverView[];
+  /**
+   * ── LE GESTE DU BOUTON D'UNE CARTE DE « DÉCOUVRIR » ──────────────────────
+   *
+   * La maquette dessine UN contrôle par carte, et c'est la donnée qui lui donne
+   * son mot : « Rejoindre », « Demander » ou « Ouvrir ». Les trois ne font pas la
+   * même chose, et c'est pourquoi le geste reçoit `joined` en plus du `slug` :
+   *
+   *   · non rejoint → `POST /communities/:slug/join`, et c'est LE SERVEUR qui
+   *     tranche entre `ACTIVE` (réseau public) et `PENDING` (sur demande). Le
+   *     front n'a pas deux appels à choisir, il en a un ;
+   *   · déjà rejoint → on OUVRE la fiche. Envoyer `join` serait un appel
+   *     idempotent qui ne changerait rien, et l'écran aurait l'air cassé.
+   *
+   * Le cadre transcodé ne décide donc de rien : il passe ce qu'il sait de la
+   * carte, et `use-reseaux.ts` choisit.
+   */
+  onRejoindre: (slug: string, joined: boolean) => void;
 }
 
 export const shortcuts: readonly { name: string; sub: string; i: string; bg: string }[] = [];
@@ -131,4 +159,11 @@ export const a07Fallback: A07Data = {
   netFilters,
   myNets,
   discover,
+  /**
+   * LE REPLI NE PEUT RIEN REJOINDRE, et le dire ainsi est honnête : il ne porte
+   * AUCUN réseau (`myNets` et `discover` sont vides), donc aucun bouton de
+   * découverte n'est rendu et ce geste n'est jamais atteignable. Il existe pour
+   * satisfaire la forme que les deux cadres reçoivent, pas pour agir.
+   */
+  onRejoindre: () => {},
 };
