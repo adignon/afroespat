@@ -1650,6 +1650,52 @@ export function dedoublerStyles(jsx) {
   }
 }
 
+/**
+ * ── « CONTACTER LES MODÉRATEURS » : MASQUÉ LÀ OÙ IL NE PEUT PAS ABOUTIR ─────
+ *
+ * Le porteur, à la question « le masquer ou l'expliquer pour un non-membre ? » :
+ * « Masque. » Le bouton est branché par `A08T_CONTACTER_MODERATEURS` (dans
+ * `generate-screens.mjs`, qui passe AVANT ce lot) ; on ne fait ici que
+ * l'envelopper dans `apropos.contacterVisible`, calculé par `use-reseau.ts` —
+ * membre ACTIF, et au moins une autre personne dans l'équipe.
+ *
+ * On repère le bouton par sa balise `data-contacter-moderateurs`, que
+ * l'adaptation d'origine pose sur les DEUX planches « À propos » (1036 px et
+ * 390 px), et on enveloppe l'élément ENTIER (`finElement`) : couper sur le
+ * libellé laisserait l'icône ou le texte dehors selon la planche. Le voisin
+ * « Signaler le réseau » reste en place ; dans une rangée flexible, il prend
+ * alors la largeur que le bouton libère, sans rien redessiner.
+ */
+const RV_CONTACTER = {
+  screens: ['A08T'],
+  nom: 'RV_CONTACTER',
+  why: 'Le porteur : « Masque » — « Contacter les modérateurs » ne paraît que pour un membre ACTIF d’un réseau dont l’équipe compte quelqu’un d’autre que lui (sinon la route refuse à coup sûr : NOT_A_MEMBER, NO_TEAM, ONLY_ME). Présent sur les deux seules planches qui dessinent ce bouton.',
+  provides: ['apropos'],
+  apply(jsx) {
+    let out = jsx;
+    let applied = false;
+    let depuis = 0;
+    for (;;) {
+      const marque = out.indexOf('data-contacter-moderateurs=""', depuis);
+      if (marque < 0) break;
+      const debut = out.lastIndexOf('<button', marque);
+      const fin = debut < 0 ? -1 : finElement(out, debut);
+      if (fin < 0) break;
+      // Déjà enveloppé (relance du générateur sur sa propre sortie) : on passe.
+      if (out.slice(Math.max(0, debut - 40), debut).includes('apropos.contacterVisible')) {
+        depuis = fin;
+        continue;
+      }
+      const element = out.slice(debut, fin);
+      const neuf = `{apropos.contacterVisible ? (${element}) : null}`;
+      out = out.slice(0, debut) + neuf + out.slice(fin);
+      depuis = debut + neuf.length;
+      applied = true;
+    }
+    return { jsx: out, applied };
+  },
+};
+
 const SANS_DOUBLONS = (adaptation) => ({
   ...adaptation,
   apply(jsx) {
@@ -1672,6 +1718,7 @@ export const ADAPTATIONS_RESEAU_VIVANT = [
   RV_ALBUM_VIDE,
   RV_ALBUM_OUVERT,
   RV_APROPOS,
+  RV_CONTACTER,
   RV_EDITION,
   RV_GERER,
   RV_SUJET_VIDE,

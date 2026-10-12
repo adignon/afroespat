@@ -2118,6 +2118,35 @@ export function useReseau(
       }),
       hrefModifier: '?onglet=a-propos-edition',
       modifiable: equipe,
+      /**
+       * « CONTACTER LES MODÉRATEURS » N'EST MONTRÉ QUE LÀ OÙ IL PEUT ABOUTIR.
+       *
+       * Le porteur : « Masque. » `POST /communities/:id/moderators-conversation`
+       * refuse dans quatre cas, et la fiche en porte trois — on ne propose donc
+       * pas un geste dont le refus est certain :
+       *
+       *   · `403 NOT_A_MEMBER` — un passant, un invité, un candidat `PENDING` :
+       *     la route exige l'adhésion ACTIVE (`assertMember`), d'où `myStatus` ;
+       *   · `409 NO_MODERATORS_TO_CONTACT`, raison `NO_TEAM` — un réseau
+       *     automatique sans bénévole nommé : `team` est vide ;
+       *   · même code, raison `ONLY_ME` — le propriétaire seul de son équipe :
+       *     `team` ne compte personne d'autre que moi.
+       *
+       * Le quatrième, `SEPARATED` (je suis séparé de toute l'équipe par un
+       * blocage), NE SE LIT PAS dans la fiche, et c'est voulu : §4 ne notifie
+       * jamais un blocage. Le bouton reste alors, et le refus s'affiche sous la
+       * carte (`contactEchec`).
+       *
+       * Ce n'est qu'un AVERTISSEMENT, pas une autorisation (mémo §5) : le serveur
+       * tranche toujours. `moiId` encore inconnu compte comme « quelqu'un
+       * d'autre » — au pire, le propriétaire seul voit le bouton le temps que
+       * `/me` réponde, ce qui vaut mieux que de le cacher à tous les membres si
+       * `/me` échoue.
+       */
+      contacterVisible:
+        reseau !== null &&
+        reseau.myStatus === 'ACTIVE' &&
+        reseau.team.some((q) => q.userId !== moiId),
       edition: {
         description: descriptionCourante,
         onDescription: (event) => {
@@ -2173,6 +2202,7 @@ export function useReseau(
     editionEnVol,
     enregistrerAPropos,
     equipe,
+    moiId,
     onglet.reseau,
     prevenir,
     reglesCourantes,

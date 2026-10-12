@@ -233,6 +233,11 @@ export interface AProposReseauView {
   readonly hrefModifier: string;
   /** L'équipe du réseau : les deux « Modifier » paraissent. */
   readonly modifiable: boolean;
+  /**
+   * « Contacter les modérateurs » paraît-il ? Le porteur : « Masque » — le bouton
+   * ne s'affiche que là où la route peut aboutir. Voir `use-reseau.ts`, au calcul.
+   */
+  readonly contacterVisible: boolean;
   readonly edition: EditionAProposView;
 }
 
@@ -441,6 +446,7 @@ export const aproposVide: AProposReseauView = {
   equipe: [],
   hrefModifier: '?onglet=a-propos-edition',
   modifiable: false,
+  contacterVisible: false,
   edition: editionVide,
 };
 
