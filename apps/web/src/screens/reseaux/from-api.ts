@@ -668,6 +668,16 @@ function resumeCourtReseau(c: CommunityDetailResponse): string {
  */
 function resumeProprietaireReseau(c: CommunityDetailResponse, moderateurs: number): string {
   const base = `${membersLabel(c.memberCount)} · ${GENRE[c.kind]}`;
+  /**
+   * LES MÊMES PLANCHES SERVENT AU MODÉRATEUR, et « vous gérez ce réseau avec 1
+   * modérateur » lui parlait de lui-même. Il « modère », et l'on ne compte que
+   * les AUTRES modérateurs — `moderateurs` le compte, lui.
+   */
+  if (c.myRole === 'MODERATOR') {
+    const autres = Math.max(0, moderateurs - 1);
+    if (autres === 0) return `${base} · vous modérez ce réseau`;
+    return `${base} · vous modérez ce réseau avec ${autres} ${autres === 1 ? 'autre modérateur' : 'autres modérateurs'}`;
+  }
   if (moderateurs <= 0) return base;
   const mot = moderateurs === 1 ? 'modérateur' : 'modérateurs';
   return `${base} · vous gérez ce réseau avec ${moderateurs} ${mot}`;

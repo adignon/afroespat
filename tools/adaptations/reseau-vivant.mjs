@@ -178,10 +178,15 @@ export const RV_ENTETE = {
     }
 
     // 5. La pastille « Propriétaire » à côté du nom : le rôle RÉEL (un modérateur
-    //    lisait « Propriétaire »).
+    //    lisait « Propriétaire »). On la reconnaît à SON DESSIN — la pastille vert
+    //    foncé à texte blanc, la seule de ce genre sur ces planches — et non à sa
+    //    position après le nom : à ce stade le nom n'est ni un `<h1>` (la
+    //    promotion vient après) ni encore `{reseau.nom}`. Mesuré : l'ancien motif,
+    //    ancré sur `<h1>{reseau.nom}</h1>`, ne trouvait rien, et les sept planches
+    //    propriétaire d'ordinateur disaient « Propriétaire » à un modérateur.
     const badge = remplacerUn(
       out,
-      /(<h1 [^>]*>\{reseau\.nom\}<\/h1><span style=\{\{[^}]*\}\}>)Propriétaire(<\/span>)/,
+      /(<span style=\{\{ background: "#0F5C48", color: "#fff"[^}]*\}\}>)Propriétaire(<\/span>)/,
       (m) => `${m[1]}{actions.badge}${m[2]}`,
     );
     if (badge !== null) {
@@ -386,10 +391,12 @@ export const RV_COMPOSEUR = {
           `<button type="button" title="${libelle}" aria-label="${libelle}" onClick={${geste}} style={{ ${nu(style)} }}>${svg}</button>`,
       );
     };
-    icone('M4 20V10M10 20V4M16 20v-7M22 20H2', 'composeur.onIndisponible', 'Créer un sondage');
+    // Le sondage et le guide ouvrent les fenêtres de l'accueil (A01S, A01G) —
+    // voir `useSondageGuides`. Ils disaient « pas encore ici » au premier lot.
+    icone('M4 20V10M10 20V4M16 20v-7M22 20H2', 'composeur.onSondage', 'Créer un sondage');
     icone(
       'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
-      'composeur.onIndisponible',
+      'composeur.onGuide',
       'Lier un guide',
     );
     icone(
@@ -1807,6 +1814,25 @@ const RV_A10_COUVERTURE = {
   },
 };
 
+/**
+ * ── A01G : « LIER 2 GUIDES » DIT LE VRAI NOMBRE ──────────────────────────────
+ *
+ * Le bouton de la fenêtre « Lier un guide » écrivait « Lier 2 guides » en dur,
+ * quelle que soit la sélection — sur l'accueil comme, depuis ce lot, dans le
+ * composeur d'un réseau. Il lit `lierLibelle` (« Lier un guide », « Lier 1
+ * guide », « Lier 3 guides »), composé par celui qui nourrit la fenêtre.
+ */
+const RV_A01G_LIBELLE = {
+  screens: ['A01G'],
+  nom: 'RV_A01G_LIBELLE',
+  why: 'Le bouton « Lier 2 guides » de A01G dit le nombre de guides réellement cochés (`lierLibelle`).',
+  provides: ['lierLibelle'],
+  apply(jsx) {
+    const r = remplacerUn(jsx, /(data-guide-lier="" style=\{\{[^}]*\}\}>)Lier 2 guides(<\/button>)/, (m) => `${m[1]}{lierLibelle}${m[2]}`);
+    return r === null ? { jsx, applied: false } : { jsx: r, applied: true };
+  },
+};
+
 const SANS_DOUBLONS = (adaptation) => ({
   ...adaptation,
   apply(jsx) {
@@ -1832,6 +1858,7 @@ export const ADAPTATIONS_RESEAU_VIVANT = [
   RV_CONTACTER,
   RV_COUVERTURE,
   RV_A10_COUVERTURE,
+  RV_A01G_LIBELLE,
   RV_EDITION,
   RV_GERER,
   RV_SUJET_VIDE,

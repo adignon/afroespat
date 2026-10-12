@@ -1,3 +1,7 @@
+import type { A01SData } from '../a01/data';
+import type { A01GData } from '../a01g/data';
+import type { FenetrePiece } from '../reseaux/use-sondage-guides';
+
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ LES PRISES DU LOT « RÉSEAU VIVANT » — CE QUE LES VINGT-CINQ PLANCHES        ║
@@ -132,11 +136,12 @@ export interface OutilsReseauView {
  * fait de la publication une publication DU RÉSEAU (§2.3, visible de ses
  * membres seuls).
  *
- * ⚠ LE SONDAGE ET LE GUIDE NE SONT PAS REPRIS ICI. Leurs deux icônes ouvrent,
- * sur l'accueil, deux fenêtres (A01S, A01G) dont l'état vit dans la page de
- * l'accueil et nulle part ailleurs. Les monter ici demanderait de déplacer cet
- * état dans un crochet partagé — un lot à part. REMONTÉ : les deux icônes
- * restent visibles, et un clic dit pourquoi elles ne servent pas encore ici.
+ * LE SONDAGE ET LE GUIDE SONT REPRIS. Le porteur : « le publicateur des
+ * réseaux doit supporter les sondages et guides ». Leurs deux icônes ouvrent les
+ * fenêtres de l'accueil (A01S, A01G), dont l'état vit désormais dans un crochet
+ * réutilisable (`reseaux/use-sondage-guides.ts`) ; le sondage et les guides
+ * partent avec la publication (`poll`, `guideIds`), et le serveur applique au
+ * sondage le réglage « Sondages ouverts aux membres ».
  */
 export interface ComposeurReseauView {
   readonly texte: string;
@@ -149,9 +154,24 @@ export interface ComposeurReseauView {
     readonly onPick: () => void;
   }[];
   readonly onAjouterImage: () => void;
-  /** « 2 images » — vide quand aucune n'est jointe. */
+  /**
+   * LE RÉSUMÉ DES PIÈCES JOINTES — « 2 images · sondage · 1 guide lié » ; vide
+   * quand rien n'est joint. Le nom est resté celui du premier lot, qui ne
+   * joignait que des images.
+   */
   readonly images: string;
-  readonly onIndisponible: () => void;
+  /** « Créer un sondage » : ouvre A01S — ou prévient si les sondages sont réservés à l'équipe. */
+  readonly onSondage: () => void;
+  /** « Lier un guide » : ouvre A01G. */
+  readonly onGuide: () => void;
+  /**
+   * LES DEUX FENÊTRES DE L'ACCUEIL, nourries ici. Montées UNE fois par
+   * `reseau-screen.tsx`, hors des deux cadres — voir `useSondageGuides`.
+   */
+  readonly fenetre: FenetrePiece;
+  readonly sondageFenetre: A01SData;
+  readonly guidesFenetre: A01GData;
+  readonly onFermerFenetre: () => void;
   readonly bloque: boolean;
   readonly onPublier: () => void;
   /**
@@ -402,13 +422,46 @@ export const outilsVides: OutilsReseauView = {
   onEvenement: () => {},
 };
 
+/** Les deux fenêtres AU REPOS — le composeur vide, avant que le crochet ne les nourrisse. */
+const SONDAGE_AU_REPOS: A01SData = {
+  sondageQuestion: '',
+  onSondageQuestion: () => {},
+  sondageOptions: [],
+  onAjouterOption: () => {},
+  sondageDurees: [],
+  sondageMultiple: false,
+  onSondageMultiple: () => {},
+  sondageApresVote: true,
+  onSondageApresVote: () => {},
+  sondageAnonyme: true,
+  onSondageAnonyme: () => {},
+  onValiderSondage: () => {},
+  onAnnulerSondage: () => {},
+  sondageBloque: true,
+};
+const GUIDES_AU_REPOS: A01GData = {
+  guideRecherche: '',
+  onGuideRecherche: () => {},
+  guidesSuggeres: [],
+  guidesTrouves: [],
+  onLierGuides: () => {},
+  onAnnulerGuides: () => {},
+  lierBloque: true,
+  lierLibelle: 'Lier un guide',
+};
+
 export const composeurVide: ComposeurReseauView = {
   texte: '',
   onTexte: () => {},
   types: [],
   onAjouterImage: () => {},
   images: '',
-  onIndisponible: () => {},
+  onSondage: () => {},
+  onGuide: () => {},
+  fenetre: null,
+  sondageFenetre: SONDAGE_AU_REPOS,
+  guidesFenetre: GUIDES_AU_REPOS,
+  onFermerFenetre: () => {},
   bloque: true,
   onPublier: () => {},
   enAttente: false,

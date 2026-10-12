@@ -198,7 +198,7 @@ export class ConnectionsService {
     });
     if (target === null || !this.isVisible(target)) throw ApiError.notFound();
     await this.visibility.assertVisible(viewerId, target.id);
-    if (target.id === viewerId) return { count: 0, handles: [] };
+    if (target.id === viewerId) return { count: 0, handles: [], sharedCommunities: 0 };
 
     const key = `${viewerId}:${target.id}`;
     const cached = this.mutualCache.get(key);
@@ -221,7 +221,28 @@ export class ConnectionsService {
             select: { handle: true },
           });
 
-    const value = { count: shared.length, handles: sample.map((u) => u.handle) };
+    /**
+     * LES RÉSEAUX EN COMMUN — « Connectée à 3 de vos contacts · 2 réseaux en
+     * commun », que le profil écrivait en dur. Même principe que les contacts :
+     * on compte le RECOUVREMENT avec mes propres réseaux (adhésions ACTIVES des
+     * deux côtés, réseau ACTIF), jamais l'étendue de ses adhésions à lui.
+     */
+    const mesReseaux = await this.prisma.communityMember.findMany({
+      where: { userId: viewerId, status: 'ACTIVE', community: { status: 'ACTIVE' } },
+      select: { communityId: true },
+    });
+    const sharedCommunities =
+      mesReseaux.length === 0
+        ? 0
+        : await this.prisma.communityMember.count({
+            where: {
+              userId: target.id,
+              status: 'ACTIVE',
+              communityId: { in: mesReseaux.map((r) => r.communityId) },
+            },
+          });
+
+    const value = { count: shared.length, handles: sample.map((u) => u.handle), sharedCommunities };
     this.mutualCache.set(key, { at: Date.now(), value });
     return value;
   }

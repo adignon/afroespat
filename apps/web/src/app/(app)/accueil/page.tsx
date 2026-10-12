@@ -11,6 +11,7 @@ import { A01PDesktop } from '@/screens/a01p/desktop.generated';
 import { A01PMobile } from '@/screens/a01p/mobile.generated';
 import { A01GDesktop } from '@/screens/a01g/desktop.generated';
 import { A01GMobile } from '@/screens/a01g/mobile.generated';
+import { libelleLierGuides } from '@/screens/a01g/data';
 import { A01SDesktop } from '@/screens/a01s/desktop.generated';
 import { A01SMobile } from '@/screens/a01s/mobile.generated';
 import {
@@ -1475,6 +1476,7 @@ export default function FeedPage() {
       setOpen(null);
     },
     lierBloque: guidesChoisis.length === 0,
+    lierLibelle: libelleLierGuides(guidesChoisis.length),
   };
 
   return (

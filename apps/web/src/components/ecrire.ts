@@ -1,6 +1,6 @@
 'use client';
 
-import { conversationSchema, conversationsResponseSchema } from '@app/shared';
+import { conversationsResponseSchema, openDirectConversationResponseSchema } from '@app/shared';
 import { memberApi } from '@/lib/api/index';
 
 /**
@@ -63,10 +63,19 @@ export async function conversationAvec(pseudo: string): Promise<string | null> {
 
 /** Ouvre le fil direct et rend son identifiant. Le message est OBLIGATOIRE. */
 export async function ouvrirConversation(pseudo: string, premierMessage: string): Promise<string> {
-  const conversation = await memberApi.post('/conversations/direct', conversationSchema, {
-    body: { toHandle: handleNu(pseudo), firstMessage: premierMessage },
-  });
-  return conversation.id;
+  /**
+   * `openDirectConversationResponseSchema` et NON `conversationSchema` : la route
+   * rend `{ conversationId, messageId, pending }`. L'ancien schéma refusait cette
+   * réponse valide — le message était créé, l'écran annonçait un échec.
+   */
+  const reponse = await memberApi.post(
+    '/conversations/direct',
+    openDirectConversationResponseSchema,
+    {
+      body: { toHandle: handleNu(pseudo), firstMessage: premierMessage },
+    },
+  );
+  return reponse.conversationId;
 }
 
 /**

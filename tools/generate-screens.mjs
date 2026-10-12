@@ -14,6 +14,7 @@ import {
   ADAPTATIONS_RESEAU_VIVANT,
   AJOUTS_RESEAU_VIVANT,
 } from './adaptations/reseau-vivant.mjs';
+import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18215,6 +18216,13 @@ function adaptFields(jsx, section) {
      * signalements, la fenêtre de signalement posée par `A08T_GERER_SIGNALER`.
      */
     ...ADAPTATIONS_RESEAU_VIVANT,
+    /**
+     * PUIS LE LOT « PROFIL VIVANT » (`tools/adaptations/profil-vivant.mjs`) — K02,
+     * le profil d'un autre membre. Après tout le reste pour la même raison : ses
+     * motifs lisent des cadres déjà branchés (`data-modal-open="K02C"`,
+     * `onRecommander`). Il emprunte `MenuRond` au registre du lot réseau.
+     */
+    ...ADAPTATIONS_PROFIL_VIVANT,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.

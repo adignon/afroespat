@@ -67,7 +67,13 @@ export function MenuRond({
         aria-expanded={ancre !== null}
         aria-label={libelle}
         onClick={basculer}
-        style={{ ...rondStyle, border: 'none', padding: 0, font: 'inherit', cursor: 'pointer' }}
+        data-menu-rond=""
+        /*
+          Les remises à zéro D'ABORD, le style dessiné ENSUITE : le « ··· » du
+          profil (K02) dessine `padding: "0 14px"` et une `fontSize` — posés
+          avant, ils étaient écrasés et le bouton se réduisait à son icône.
+        */
+        style={{ border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', ...rondStyle }}
       >
         {children}
       </button>
@@ -112,6 +118,7 @@ export function MenuRond({
                 key={e.label}
                 type="button"
                 role="menuitem"
+                data-menu-rond-entree={e.label}
                 disabled={e.onClick === undefined}
                 onClick={() => {
                   setAncre(null);

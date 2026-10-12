@@ -41,6 +41,21 @@ export const MUTUAL_CONNECTIONS_CACHE_MS = 60 * 60 * 1000;
 /** §3.2 : le nombre de handles renvoyés avec « Connecté·e à N de vos contacts ». */
 export const MUTUAL_CONNECTIONS_SAMPLE = 5;
 
+/**
+ * `GET /users/:handle/mutual-connections` — ce que MES contacts et MES réseaux
+ * ont en commun avec le membre regardé (§3.2). Jamais l'étendue de SON réseau.
+ */
+export const mutualConnectionsResponseSchema = z
+  .object({
+    count: z.number().int().nonnegative(),
+    handles: z.array(z.string()),
+    /** Les réseaux où nous sommes tous deux membres actifs. */
+    sharedCommunities: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type MutualConnectionsResponse = z.infer<typeof mutualConnectionsResponseSchema>;
+
 // ── Codes d'erreur propres aux contacts (§7.2) ───────────────────────────────
 
 /**

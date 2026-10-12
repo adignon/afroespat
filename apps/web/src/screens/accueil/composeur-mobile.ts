@@ -13,7 +13,7 @@ import { accueilData } from './props';
 import { draftTypesFor } from './data';
 import type { AccueilData } from './data';
 import type { A01SData } from '../a01/data';
-import type { A01GData } from '../a01g/data';
+import { libelleLierGuides, type A01GData } from '../a01g/data';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -347,6 +347,7 @@ export function useComposeurMobile(): {
           ? []
           : guidesLiablesDe(guides.page, guidesChoisis, basculerGuide),
     lierBloque: guidesChoisis.length === 0,
+    lierLibelle: libelleLierGuides(guidesChoisis.length),
     onLierGuides: () => {
       setGuidesLies(guidesChoisis);
       setFenetre(null);

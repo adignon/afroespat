@@ -7,6 +7,7 @@ import { ApiError } from '@/lib/api/index';
 import { createPost, uploadPostImage } from '../accueil/api';
 import { postTypesFor } from '../a01/data';
 import type { ComposeurReseauView } from '../a08t/vivant';
+import { useSondageGuides } from './use-sondage-guides';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -31,6 +32,12 @@ import type { ComposeurReseauView } from '../a08t/vivant';
 export function useComposeurReseau(
   communityId: string | null,
   onPublie: () => void,
+  /**
+   * Le sondage m'est-il ouvert ici ? `pollsOpenToMembers`, ou je suis de
+   * l'équipe. Faux, l'icône PRÉVIENT au lieu d'ouvrir une fenêtre que le serveur
+   * refuserait (`POLLS_RESTRICTED`) — elle n'autorise rien : le serveur tranche.
+   */
+  sondagesOuverts = true,
 ): ComposeurReseauView {
   const [texte, setTexte] = useState('');
   const [type, setType] = useState(0);
@@ -72,11 +79,19 @@ export function useComposeurReseau(
     choix.click();
   }, []);
 
-  const onIndisponible = useCallback(() => {
-    notifyError(
-      'Le sondage et le guide lié se joignent depuis le fil d’accueil pour le moment ; dans un réseau, publiez le texte et les images.',
-    );
-  }, []);
+  /**
+   * LE SONDAGE ET LES GUIDES LIÉS — les fenêtres A01S et A01G de l'accueil, avec
+   * leur état dans `useSondageGuides`. Le porteur : « le publicateur des réseaux
+   * doit supporter les sondages et guides ».
+   */
+  const pieces = useSondageGuides();
+  const onSondage = useCallback(() => {
+    if (!sondagesOuverts) {
+      notifyError('Dans ce réseau, les sondages sont réservés à l’équipe.');
+      return;
+    }
+    pieces.ouvrirSondage();
+  }, [pieces, sondagesOuverts]);
 
   const corps = texte.trim();
   const bloque = corps === '' || envoi || communityId === null;
@@ -89,10 +104,12 @@ export function useComposeurReseau(
       body: corps,
       communityId,
       ...(images.length === 0 ? {} : { mediaIds: images.map((im) => im.id) }),
+      ...pieces.piece(),
     })
       .then((publiee) => {
         setTexte('');
         setImages([]);
+        pieces.vider();
         const attend = publiee.post.awaitingApproval;
         setEnAttente(attend);
         notifySuccess(
@@ -110,7 +127,7 @@ export function useComposeurReseau(
       .finally(() => {
         setEnvoi(false);
       });
-  }, [bloque, communityId, corps, images, onPublie, type]);
+  }, [bloque, communityId, corps, images, onPublie, pieces, type]);
 
   const types = useMemo(() => postTypesFor(type, setType), [type]);
 
@@ -119,9 +136,18 @@ export function useComposeurReseau(
     onTexte,
     types,
     onAjouterImage,
-    images:
-      images.length === 0 ? '' : images.length === 1 ? '1 image' : `${String(images.length)} images`,
-    onIndisponible,
+    images: [
+      ...(images.length === 0
+        ? []
+        : [images.length === 1 ? '1 image' : `${String(images.length)} images`]),
+      ...pieces.resume,
+    ].join(' · '),
+    onSondage,
+    onGuide: pieces.ouvrirGuides,
+    fenetre: pieces.fenetre,
+    sondageFenetre: pieces.sondageFenetre,
+    guidesFenetre: pieces.guidesFenetre,
+    onFermerFenetre: pieces.fermer,
     bloque,
     onPublier,
     enAttente,

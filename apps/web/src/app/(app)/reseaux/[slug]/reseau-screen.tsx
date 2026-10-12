@@ -1,5 +1,10 @@
 'use client';
 
+import { Modal } from '@/components/modal';
+import { A01SDesktop } from '@/screens/a01s/desktop.generated';
+import { A01SMobile } from '@/screens/a01s/mobile.generated';
+import { A01GDesktop } from '@/screens/a01g/desktop.generated';
+import { A01GMobile } from '@/screens/a01g/mobile.generated';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -326,6 +331,7 @@ export function ReseauScreen({
     onFermerContenuSignale,
     champCouverture,
     onFichierCouverture,
+    composeur,
   } = useReseau(reseauSlug, rangDemande, section);
 
   /**
@@ -597,6 +603,27 @@ export function ReseauScreen({
   const nomReseau = reseau?.name ?? 'ce réseau';
   const fenetresVivantes = (
     <>
+      {/*
+        « Créer un sondage » et « Lier un guide » du composeur du fil — les
+        fenêtres de l'accueil (A01S, A01G), mêmes cadres générés, nourries par
+        `useSondageGuides`. Une fois chacune, hors des deux cadres.
+      */}
+      <Modal
+        open={composeur.fenetre === 'A01S'}
+        onClose={composeur.onFermerFenetre}
+        titleId="a01s-titre"
+        name="A01S"
+        desktop={<A01SDesktop {...composeur.sondageFenetre} />}
+        mobile={<A01SMobile {...composeur.sondageFenetre} />}
+      />
+      <Modal
+        open={composeur.fenetre === 'A01G'}
+        onClose={composeur.onFermerFenetre}
+        titleId="a01g-titre"
+        name="A01G"
+        desktop={<A01GDesktop {...composeur.guidesFenetre} />}
+        mobile={<A01GMobile {...composeur.guidesFenetre} />}
+      />
       {/*
         L'UNIQUE SÉLECTEUR DE COUVERTURE. Hors des deux cadres : un champ par
         cadre en aurait fait deux, et « Changer la couverture » (bandeau à

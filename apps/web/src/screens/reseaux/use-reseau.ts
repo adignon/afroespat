@@ -102,6 +102,7 @@ import {
   type AProposReseauView,
   type ActionsReseauView,
   type ColonneReseauView,
+  type ComposeurReseauView,
   type FiltreMembresView,
   type OutilsReseauView,
   type PilotageReseauView,
@@ -292,6 +293,8 @@ export interface ReseauEtat {
   readonly onFermerContenuSignale: () => void;
   /** L'unique sélecteur de couverture, posé par l'écran hors des cadres. */
   readonly champCouverture: RefObject<HTMLInputElement | null>;
+  /** Le composeur du fil, pour ses deux fenêtres (sondage, guides) montées par l'écran. */
+  readonly composeur: ComposeurReseauView;
   readonly onFichierCouverture: (e: {
     target: { files: FileList | null; value: string };
   }) => void;
@@ -1968,9 +1971,14 @@ export function useReseau(
   );
 
   // ── Le composeur du fil ─────────────────────────────────────────────────────
-  const composeur = useComposeurReseau(membreActif ? (reseau?.id ?? null) : null, () => {
-    setTick((t) => t + 1);
-  });
+  const composeur = useComposeurReseau(
+    membreActif ? (reseau?.id ?? null) : null,
+    () => {
+      setTick((t) => t + 1);
+    },
+    // « Sondages ouverts aux membres » (Gérer), ou l'équipe : la même règle que le serveur.
+    equipe || (reseau?.settings.pollsOpenToMembers ?? true),
+  );
 
   // ── Les colonnes de droite : le prochain événement et le mois ──────────────
   const [prochain, setProchain] = useState<ColonneReseauView['prochain']>(null);
@@ -2527,6 +2535,7 @@ export function useReseau(
     },
     champCouverture,
     onFichierCouverture,
+    composeur,
     membre,
     contenuFerme,
     compteursFiables: membre,

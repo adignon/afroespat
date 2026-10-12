@@ -66,4 +66,15 @@ export interface A01GData {
   onAnnulerGuides: () => void;
   /** Éteint tant qu'aucun guide n'est choisi. */
   lierBloque: boolean;
+  /**
+   * Le libellé du bouton — « Lier un guide », « Lier 1 guide », « Lier 3
+   * guides ». La maquette écrivait « Lier 2 guides » en dur. Voir `libelleLierGuides`.
+   */
+  lierLibelle: string;
+}
+
+/** « Lier un guide » sans sélection, puis le nombre de guides cochés. */
+export function libelleLierGuides(n: number): string {
+  if (n <= 0) return 'Lier un guide';
+  return n === 1 ? 'Lier 1 guide' : `Lier ${String(n)} guides`;
 }
