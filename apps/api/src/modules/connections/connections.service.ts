@@ -380,19 +380,25 @@ export class ConnectionsService {
   /**
    * `POST /connection-requests` (§7.2) — l'origine `MANUAL` de §3.1.
    *
-   * Quatre contrôles, dans cet ordre : blocage, même ville, contact déjà là,
-   * quotas. L'ordre est délibéré — un membre qui démarche hors de sa ville doit
-   * lire `SAME_CITY_REQUIRED` avant de voir son quota journalier entamé.
+   * Trois contrôles, dans cet ordre : blocage, contact déjà là, quotas.
    *
-   * « Même ville ou même ville cible » (§3.1) se résout en UNE comparaison :
-   * `users.city_id` est documentée « ville de résidence, OU ville cible si
-   * pré-départ ». Deux colonnes auraient permis quatre combinaisons ; il n'y en a
-   * qu'une, et c'est celle-là.
+   * ── LA CONDITION DE VILLE EST LEVÉE, PAR DÉCISION DU PORTEUR ─────────────
+   *
+   * 08 §3.1 (et le test « RÈGLE DURE §12 ») réservait la demande `MANUAL` à un
+   * membre de la même ville — ou de la même ville cible —, et refusait le reste
+   * par `SAME_CITY_REQUIRED`. Le porteur, après l'avoir rencontré à l'usage :
+   * « corrige et permet à tout le monde d'être ajouté ». Le contrôle est donc
+   * retiré, et le code d'erreur avec lui. `docs/` étant en lecture seule, la
+   * spécification n'est PAS mise à jour ici : l'écart est à y reporter.
+   *
+   * Ce qui protège encore de la prospection : le message obligatoire (20 à 500
+   * caractères, schéma partagé), le blocage dans les deux sens (404), et les
+   * quotas de demandes juste en dessous — ceux-là ne bougent pas.
    */
   async request(fromUserId: string, input: CreateConnectionRequest) {
     const target = await this.prisma.user.findUnique({
       where: { handle: input.toHandle },
-      select: { id: true, deletedAt: true, status: true, cityId: true },
+      select: { id: true, deletedAt: true, status: true },
     });
     if (target === null || !this.isVisible(target)) throw ApiError.notFound();
     if (target.id === fromUserId) {
@@ -400,14 +406,6 @@ export class ConnectionsService {
     }
     // 404 et jamais 403 (T4 §3) : révéler le blocage en dirait déjà trop.
     await this.visibility.assertVisible(fromUserId, target.id);
-
-    const me = await this.prisma.user.findUniqueOrThrow({
-      where: { id: fromUserId },
-      select: { cityId: true },
-    });
-    if (me.cityId === null || target.cityId === null || me.cityId !== target.cityId) {
-      this.fail('SAME_CITY_REQUIRED');
-    }
 
     if (await this.areConnected(fromUserId, target.id)) this.fail('ALREADY_CONNECTED');
 
@@ -516,7 +514,8 @@ export class ConnectionsService {
    * Pas de `connection_requests` : la suggestion n'en a jamais créé. On vérifie
    * que le fondement existe TOUJOURS — deux présences cochées, une contribution —
    * puis on crée le contact. Sans cette vérification, la route deviendrait un
-   * « ajouter n'importe qui » qui contournerait `SAME_CITY_REQUIRED`.
+   * « ajouter n'importe qui » SANS demande : le contact naîtrait d'un coup, sans
+   * le message ni l'acceptation que `request()` impose.
    */
   async acceptSuggestion(userId: string, origin: ConnectionSuggestionOrigin, handle: string) {
     const target = await this.prisma.user.findUnique({
