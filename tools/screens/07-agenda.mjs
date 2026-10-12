@@ -961,6 +961,39 @@ export const screens = [
     out: 'e03',
     dataType: 'E03Data',
     frames: both('Créer un événement', 'Créer un événement'),
+    /**
+     * LA CARTE DU FORMULAIRE, EXTRAITE — pour la fenêtre « Créer un événement du
+     * réseau » de l'onglet « Événements » (A08T).
+     *
+     * Le porteur : « [un bouton] qui affiche la page Créer un événement (qui est
+     * actuellement dessinée) en modal ». La page entière porte le rail, la barre
+     * haute et l'encart de quota : la monter dans une fenêtre en ferait une page
+     * dans la page. La RÉGION ne prend que la carte du formulaire (1 440 px), ou
+     * le contenu et la barre « Publier » (390 px) — la même source au caractère
+     * près, branchée une seule fois par `RV_E03_FORMULAIRE`.
+     */
+    regions: [
+      {
+        nom: 'Formulaire',
+        cadres: ['Desktop'],
+        prises: ['formulaire'],
+        type: 'E03Data',
+        freres: 1,
+        why: 'La carte du formulaire de E03, montée dans la fenêtre « Créer un événement du réseau ».',
+        debut:
+          '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "24px", flexShrink: "0" }}>',
+      },
+      {
+        nom: 'Formulaire',
+        cadres: ['Mobile'],
+        prises: ['formulaire', 'panneau'],
+        type: 'E03Data',
+        freres: 2,
+        why: 'Le contenu du formulaire de E03 et sa barre « Publier », montés dans la feuille « Créer un événement du réseau ».',
+        debut:
+          '<div style={{ flexGrow: "1", overflow: "visible", padding: "12px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>',
+      },
+    ],
     donnees: [
       ...panneau(),
       {

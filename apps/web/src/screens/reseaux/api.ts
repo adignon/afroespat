@@ -57,6 +57,9 @@ import {
   communityMapResponseSchema,
   communityMembersResponseSchema,
   eventsResponseSchema,
+  pendingPostDecisionResponseSchema,
+  pendingPostDecisionSchema,
+  pendingPostsResponseSchema,
   rsvpSchema,
   createAlbumResponseSchema,
   createAlbumSchema,
@@ -100,6 +103,8 @@ import {
   type MediaAssetView,
   type MemberMutationResponse,
   type ModeratorsConversationResponse,
+  type PendingPostDecisionResponse,
+  type PendingPostsResponse,
   type PollDetailResponse,
   type PollsResponse,
   type TopicDetailResponse,
@@ -755,12 +760,13 @@ export function reactivateCommunity(idOrSlug: string): Promise<CommunityDetailRe
  */
 export function fetchCommunityEvents(
   communityId: string,
-  filters: { readonly to?: string; readonly limit?: number } = {},
+  filters: { readonly from?: string; readonly to?: string; readonly limit?: number } = {},
   signal?: AbortSignal,
 ): Promise<EventsResponse> {
   return memberApi.get(
     `/events${query({
       communityId,
+      ...(filters.from === undefined ? {} : { from: filters.from }),
       ...(filters.to === undefined ? {} : { to: filters.to }),
       ...(filters.limit === undefined ? {} : { limit: String(filters.limit) }),
     })}`,
@@ -797,4 +803,34 @@ export function rsvpEvent(eventId: string): Promise<unknown> {
   return memberApi.put(`/events/${encodeURIComponent(eventId)}/rsvp`, z.unknown(), {
     body: rsvpSchema.parse({ status: 'GOING' }),
   });
+}
+
+// ── La file de validation — « Validation des nouvelles publications » ──────
+
+/**
+ * `GET /communities/:id/pending-posts` — les publications qui attendent l'équipe.
+ * `403 MODERATOR_REQUIRED` pour un membre ordinaire : l'écran ne l'appelle que
+ * pour l'équipe, pour ne pas provoquer un refus certain à chaque visite.
+ */
+export function fetchPendingPosts(
+  idOrSlug: string,
+  signal?: AbortSignal,
+): Promise<PendingPostsResponse> {
+  return memberApi.get(
+    `/communities/${encodeURIComponent(idOrSlug)}/pending-posts${query({ limit: '50' })}`,
+    pendingPostsResponseSchema,
+    opts(signal),
+  );
+}
+
+export function decidePendingPost(
+  idOrSlug: string,
+  postId: string,
+  decision: 'APPROVE' | 'REJECT',
+): Promise<PendingPostDecisionResponse> {
+  return memberApi.post(
+    `/communities/${encodeURIComponent(idOrSlug)}/pending-posts/${encodeURIComponent(postId)}/decide`,
+    pendingPostDecisionResponseSchema,
+    { body: pendingPostDecisionSchema.parse({ decision }) },
+  );
 }

@@ -698,6 +698,7 @@ export const ReportSubjectType = [
   'EVENT',
   'MESSAGE',
   'USER',
+  'COMMUNITY',
 ] as const;
 export type ReportSubjectType = (typeof ReportSubjectType)[number];
 

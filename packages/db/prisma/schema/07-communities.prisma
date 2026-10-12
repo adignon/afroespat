@@ -101,6 +101,29 @@ model Community {
   /// après le premier.
   warningSentAt DateTime? @map("warning_sent_at") @db.Timestamptz
 
+  /// ── LES TROIS INTERRUPTEURS DE LA CARTE « PARAMÈTRES » DE « GÉRER » ──────
+  ///
+  /// Le porteur : « les paramètres et leur réel application dans le réseau ».
+  /// La planche les dessinait sans qu'aucune colonne ne les porte ; chacun est
+  /// maintenant APPLIQUÉ par le serveur, pas seulement affiché :
+  ///
+  ///   · `postsRequireApproval` — la première publication d'un membre ordinaire
+  ///     attend la validation d'un modérateur (`Post.awaitingApproval`) ;
+  ///   · `pollsOpenToMembers`  — faux = seule l'équipe crée des sondages, dans le
+  ///     fil comme par `POST /communities/:id/polls` ;
+  ///   · `albumOpenToMembers`  — faux = seule l'équipe ajoute des photos.
+  ///
+  /// Les DÉFAUTS sont ceux que la planche dessine — validation éteinte, les deux
+  /// autres allumés — et ce sont aussi ceux du comportement d'avant la colonne :
+  /// la migration ne change rien aux réseaux existants.
+  postsRequireApproval Boolean @default(false) @map("posts_require_approval")
+  pollsOpenToMembers   Boolean @default(true) @map("polls_open_to_members")
+  albumOpenToMembers   Boolean @default(true) @map("album_open_to_members")
+
+  /// Les « Règles du réseau » de l'onglet « À propos » — au plus huit, dans
+  /// l'ordre où le propriétaire les range (la planche d'édition écrit « 4 SUR 8 »).
+  rules String[] @default([])
+
   city       City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
   country    Country?    @relation(fields: [countryId], references: [id], onDelete: SetNull)
   createdBy  User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)

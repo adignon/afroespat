@@ -98,7 +98,7 @@ export default function NouveauReseauPage() {
        */}
       {aucun && (
         <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
-          Vous n’avez encore aucun contact à inviter. Un réseau d’intérêt demande cinq invitations.
+          Vous n’avez encore aucun contact : tapez le pseudo exact d’un membre pour l’inviter. Un réseau d’intérêt demande cinq invitations.
         </p>
       )}
       {echec !== null && (

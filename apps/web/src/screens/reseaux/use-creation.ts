@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   COMMUNITY_CATEGORY_LABELS,
   COMMUNITY_MIN_INVITES,
@@ -9,8 +9,11 @@ import {
   type CommunityCategory,
   type CommunityDetailResponse,
   type CommunityVisibility,
+  handleSchema,
+  publicProfileResponseSchema,
 } from '@app/shared';
-import { sansAccent } from '../accueil/from-api';
+import { memberApi } from '@/lib/api/index';
+import { avatarColor, initials, sansAccent } from '../accueil/from-api';
 import { createCommunity } from './api';
 import { echecDe, type ReseauEchec } from './echec';
 import { panelReseaux, rail } from './chrome';
@@ -143,6 +146,67 @@ export function useCreation(
   );
 
   /**
+   * ╔══════════════════════════════════════════════════════════════════════╗
+   * ║ « RECHERCHER PAR PSEUDO » — AU-DELÀ DES CONTACTS                      ║
+   * ╚══════════════════════════════════════════════════════════════════════╝
+   *
+   * Le champ ne filtrait QUE les contacts : un membre sans contact ne pouvait
+   * inviter personne, et le réseau ne se créait jamais (cinq invités exigés).
+   * Le porteur : « La création de réseau est dessinée aussi. »
+   *
+   * Un pseudo EXACT tapé dans le champ — avec ou sans « @ » — est maintenant
+   * cherché par `GET /users/:handle`, la route du profil public. C'est la seule
+   * recherche de personne qui ne fasse pas un ANNUAIRE : il faut connaître le
+   * pseudo, comme pour écrire à quelqu'un. Le serveur accepte d'inviter tout
+   * membre actif (`createCommunity` résout les pseudos lui-même et dit ceux
+   * qu'il n'a pas trouvés).
+   *
+   * Les personnes ainsi trouvées RESTENT dans la liste une fois la recherche
+   * effacée : sinon une invitée disparaîtrait de l'écran tout en restant
+   * comptée dans « 3 sur 5 ».
+   */
+  const [trouves, setTrouves] = useState<readonly InviteeView[]>([]);
+  useEffect(() => {
+    const brut = recherche.trim().replace(/^@/, '').toLowerCase();
+    if (!handleSchema.safeParse(brut).success) return;
+    if (candidats.some((c) => c.handle.toLowerCase() === brut)) return;
+    if (trouves.some((c) => c.handle.toLowerCase() === brut)) return;
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      void memberApi
+        .get(`/users/${encodeURIComponent(brut)}`, publicProfileResponseSchema, {
+          signal: ac.signal,
+        })
+        .then((p) => {
+          setTrouves((liste) =>
+            liste.some((c) => c.handle === p.handle)
+              ? liste
+              : [
+                  ...liste,
+                  {
+                    profil: `/@${p.handle}`,
+                    i: initials(p.displayName),
+                    name: p.displayName,
+                    sub: `@${p.handle}`,
+                    bg: avatarColor(p.handle),
+                    invited: false,
+                    btn: 'Inviter',
+                    btnBg: '#16785E',
+                    btnFg: '#fff',
+                    handle: p.handle,
+                  },
+                ],
+          );
+        })
+        .catch(() => undefined);
+    }, 350);
+    return () => {
+      window.clearTimeout(t);
+      ac.abort();
+    };
+  }, [recherche, candidats, trouves]);
+
+  /**
    * LA RECHERCHE PORTE SUR LE PSEUDO **ET** SUR LE NOM.
    *
    * Le libellé de la planche ne promet que le pseudo — « Rechercher par
@@ -157,11 +221,12 @@ export function useCreation(
    */
   const invitees: readonly InviteeView[] = useMemo(() => {
     const pris = new Set(handles);
-    const nu = sansAccent(recherche.trim());
+    const nu = sansAccent(recherche.trim().replace(/^@/, ''));
+    const tous = [...candidats, ...trouves];
     const retenus =
       nu === ''
-        ? candidats
-        : candidats.filter(
+        ? tous
+        : tous.filter(
             (c) => sansAccent(c.handle).includes(nu) || sansAccent(c.name).includes(nu),
           );
     return retenus.map((c) => {
@@ -174,7 +239,7 @@ export function useCreation(
         btnFg: invited ? '#0F5C48' : '#fff',
       };
     });
-  }, [candidats, handles, recherche]);
+  }, [candidats, trouves, handles, recherche]);
 
   const basculer = useCallback((handle: string) => {
     setChoisis((c) => (c.includes(handle) ? c.filter((h) => h !== handle) : [...c, handle]));

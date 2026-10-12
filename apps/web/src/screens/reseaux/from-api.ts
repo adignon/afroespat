@@ -317,6 +317,8 @@ export function topicRowFrom(t: TopicListItem): TopicRowView {
     pinned: epingle,
     ...topicRowTint(epingle, state),
     topicId: t.id,
+    // Le slug du réseau n'est pas dans la rangée : `useReseau` compose l'adresse.
+    href: '',
   };
 }
 
@@ -344,6 +346,7 @@ export function pinnedRowsFrom(pinned: readonly PinnedTopic[]): readonly TopicRo
       pinned: true,
       ...topicRowTint(true, state),
       topicId: p.id,
+      href: '',
     };
   });
 }
@@ -789,6 +792,7 @@ export function membreAdminRowFrom(m: CommunityMember): MembreAdminRowView {
     roleBg: pastille.bg,
     roleFg: pastille.fg,
     nommable: m.role === 'MEMBER',
+    revocable: m.role === 'MODERATOR',
   };
 }
 

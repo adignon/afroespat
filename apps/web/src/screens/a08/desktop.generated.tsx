@@ -9,10 +9,12 @@ import Link from 'next/link';
 import { BoutonCreer, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
+import { ActionsReseau } from '@/components/actions-reseau';
+import { EtatVide } from '@/components/etat-vide';
 import type { A08Data } from './data';
 
 export function A08Desktop(props: A08Data) {
-  const { hrefGerer, netTabs, ownerActions, panelReseaux, rail, reseau, shortcuts, sourdine, topics } = props;
+  const { actions, hrefGerer, netTabs, outils, ownerActions, panelReseaux, rail, reseau, shortcuts, sujets, topics } = props;
 
   return (
     <>
@@ -54,25 +56,24 @@ export function A08Desktop(props: A08Data) {
           <div style={{ padding: "0 24px 18px", display: "flex", alignItems: "flex-end", gap: "16px", marginTop: "-32px" }}>
             <span style={{ width: "76px", height: "76px", borderRadius: "22px", background: "#E0733A", border: "4px solid #fff", color: "#fff", fontSize: "20px", fontWeight: "800", display: "flex", alignItems: "center", justifyContent: "center" }}>{reseau.initiales}</span>
             <div style={{ flex: "1", paddingBottom: "4px" }}><h1 style={{ margin: "0", fontSize: "24px", fontWeight: "800", letterSpacing: "-0.7px" }}>{reseau.nom}</h1><div style={{ fontSize: "13px", color: "#5D6B66", marginTop: "2px" }}>{reseau.resume}</div></div>
-            <button style={{ height: "42px", padding: "0 16px", borderRadius: "14px", background: "#F2F5F4", color: "#8A958F", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700" }}>Réseau automatique</button>
-            <button type="button" onClick={sourdine.onBasculer} disabled={sourdine.occupe || !sourdine.disponible} aria-pressed={sourdine.active} data-reseau-sourdine="" style={{ height: "42px", padding: "0 16px", borderRadius: "14px", background: "#F2F5F4", color: "#16211D", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700", cursor: (sourdine.occupe || !sourdine.disponible) ? "default" : "pointer" }}>{sourdine.active ? "En sourdine" : "Sourdine"}</button>
+            <ActionsReseau actions={actions} />
           </div>
           <div style={{ display: "flex", gap: "4px", padding: "0 20px", borderTop: "1px solid #EAEEEC" }}>{(netTabs ?? []).map((t, tIndex) => (
 <Fragment key={tIndex}><a href={t.href} style={{ textDecoration: "none", cursor: "pointer", height: "50px", display: "flex", alignItems: "center", padding: "0 14px", fontSize: "13.5px", fontWeight: t.w, color: t.fg, borderBottom: `2.5px solid ${t.bd}` }}>{t.label}</a></Fragment>
 ))}</div>
         </div>
-        <div style={{ background: "#0F5C48", borderRadius: "18px", padding: "10px 12px 10px 20px", display: "flex", alignItems: "center", gap: "10px", color: "#fff" }}><span style={{ fontSize: "12.5px", fontWeight: "700", flex: "1" }}>Propriétaire du réseau</span>{(ownerActions ?? []).map((o, oIndex) => (
-<Fragment key={oIndex}>{o === 'Gérer' ? (<Link href={hrefGerer} data-reseau-gerer="" style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", textDecoration: "none", display: "flex", alignItems: "center" }}>{o}</Link>) : (<button style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700" }}>{o}</button>)}</Fragment>
-))}</div>
-        <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}>
+        {outils.visibles ? (<div style={{ background: "#0F5C48", borderRadius: "18px", padding: "10px 12px 10px 20px", display: "flex", alignItems: "center", gap: "10px", color: "#fff" }}><span style={{ fontSize: "12.5px", fontWeight: "700", flex: "1" }}>{outils.libelle}</span>{(ownerActions ?? []).map((o, oIndex) => (
+<Fragment key={oIndex}>{o === 'Gérer' ? (<Link href={hrefGerer} data-reseau-gerer="" style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", textDecoration: "none", display: "flex", alignItems: "center" }}>{o}</Link>) : (o === 'Annonce' ? (<Link href={outils.hrefAnnonce} data-reseau-annonce="" style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", textDecoration: "none", display: "flex", alignItems: "center" }}>{o}</Link>) : (<button type="button" onClick={outils.onEpingler} data-reseau-epingler="" style={{ height: "38px", padding: "0 14px", borderRadius: "12px", background: "rgba(255,255,255,.12)", color: "#fff", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", cursor: "pointer" }}>{o}</button>))}</Fragment>
+))}</div>) : null}
+        <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}>{sujets.nouveauVisible ? (<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px 6px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>SUJETS</div><button type="button" onClick={sujets.onNouveau} data-sujet-nouveau="" style={{ fontSize: "12.5px", fontWeight: "700", color: "#16785E", fontFamily: "inherit", border: "none", background: "none", padding: 0, cursor: "pointer" }}>Nouveau sujet</button></div>) : null}
           {(topics ?? []).map((t, tIndex) => (
-<Fragment key={tIndex}><div style={{ display: "flex", alignItems: "center", gap: "14px", padding: "14px 14px", borderRadius: "16px", background: t.bg }}>
+<Fragment key={tIndex}><Link href={t.href} data-sujet-lien="" style={{ textDecoration: "none", color: "inherit", display: "flex", alignItems: "center", gap: "14px", padding: "14px 14px", borderRadius: "16px", background: t.bg }}>
               <span style={{ width: "38px", height: "38px", borderRadius: "12px", background: t.iconBg, color: t.iconFg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={t.icon} /></svg></span>
               <div style={{ flex: "1", minWidth: "0" }}><div style={{ fontSize: "14.5px", fontWeight: "700", letterSpacing: "-0.2px" }}>{t.title}</div><div style={{ fontSize: "12px", color: "#8A958F", marginTop: "2px" }}>{t.last}</div></div>
               <span style={{ fontSize: "11.5px", fontWeight: "700", padding: "5px 11px", borderRadius: "999px", background: t.stBg, color: t.stFg }}>{t.state}</span>
               <span style={{ width: "90px", textAlign: "right", fontSize: "12.5px", color: "#5D6B66" }}><strong style={{ color: "#16211D" }}>{t.n}</strong> réponses</span>
-            </div></Fragment>
-))}
+            </Link></Fragment>
+))}{(topics ?? []).length === 0 ? (<EtatVide texte={sujets.vide} />) : null}
         </div>
       </div>
     </div>

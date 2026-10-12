@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { BoutonCreer, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
+import { EtatVide } from '@/components/etat-vide';
 import type { A09Data } from './data';
 
 export function A09Desktop(props: A09Data) {
@@ -59,12 +60,12 @@ export function A09Desktop(props: A09Data) {
       </div>
       <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "20px 22px", display: "flex", flexDirection: "column", gap: "16px" }}>{(comments ?? []).map((c, cIndex) => (
 <Fragment key={cIndex}><div style={{ display: "flex", gap: "12px", paddingLeft: c.indent }}>{c.profil ? (<Link href={c.profil} data-avatar-profil="" aria-label={`Voir le profil de ${c.name}`} style={{ display: "contents", color: "inherit", textDecoration: "none" }}><span style={{ width: "34px", height: "34px", borderRadius: "999px", background: c.bg, color: "#fff", fontSize: "10.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{c.i}</span></Link>) : (<span style={{ width: "34px", height: "34px", borderRadius: "999px", background: c.bg, color: "#fff", fontSize: "10.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{c.i}</span>)}<div style={{ background: "#F6F8F7", borderRadius: "16px", padding: "12px 14px", flex: "1" }}><div style={{ fontSize: "13.5px", fontWeight: "700" }}>{c.profil ? (<Link href={c.profil} data-nom-profil="" style={{ color: "inherit", textDecoration: "none" }}>{c.name}</Link>) : c.name}</div><div style={{ fontSize: "13.5px", lineHeight: "1.55", marginTop: "3px" }}>{c.text}</div></div></div></Fragment>
-))}</div>
+))}{(comments ?? []).length === 0 ? (<EtatVide texte="Aucune réponse pour le moment : soyez la première personne à répondre." />) : null}</div>
     </main>
     <aside style={{ width: "300px", display: "flex", flexDirection: "column", gap: "12px" }}>
-      <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "10px 12px 4px" }}>MODÉRATION</div>{(modActions ?? []).map((a, aIndex) => (
+      {(modActions ?? []).length === 0 ? null : (<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "10px 12px 4px" }}>MODÉRATION</div>{(modActions ?? []).map((a, aIndex) => (
 <Fragment key={aIndex}><button type="button" onClick={a.onClick} disabled={a.onClick === undefined} data-sujet-moderation="" style={{ height: "44px", display: "flex", alignItems: "center", gap: "10px", padding: "0 12px", borderRadius: "14px", fontSize: "13.5px", fontWeight: "600", color: "#16211D", width: "100%", background: "none", border: "none", textAlign: "left", fontFamily: "inherit", cursor: a.onClick === undefined ? "default" : "pointer" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={a.icon} /></svg>{a.label}</button></Fragment>
-))}</div>
+))}</div>)}
     </aside>
     <div style={{ position: "absolute", left: "0", bottom: "24px", width: "660px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "10px", display: "flex", gap: "10px", alignItems: "center" }}><div style={{ flex: "1", height: "44px", borderRadius: "999px", background: "#F2F5F4", padding: "0 16px", display: "flex", alignItems: "center", fontSize: "13.5px", color: "#8A958F" }}><input type="text" value={reponseTexte} onChange={onReponseTexte} placeholder="Répondre au sujet…" aria-label="Répondre au sujet…" data-sujet-reponse="" style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", font: "inherit", color: "#16211D", outline: "none", padding: 0 }} /></div><button type="button" onClick={onEnvoyerReponse} disabled={reponseBloquee} data-sujet-envoyer="" style={{ height: "44px", padding: "0 20px", borderRadius: "999px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "13.5px", fontWeight: "700", cursor: "pointer", opacity: reponseBloquee ? ".55" : "1" }}>Envoyer</button></div>
   </div></div>

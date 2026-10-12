@@ -12,11 +12,22 @@ import type {
   TopicsResponse,
 } from '@app/shared';
 import { fetchMe, hasAccessToken, resumeSession } from '@/lib/api/index';
-import { albumTitleSchema } from '@app/shared';
+import {
+  COMMUNITY_CATEGORY_LABELS,
+  COMMUNITY_MAX_PINNED_TOPICS,
+  COMMUNITY_MAX_RULES,
+  albumTitleSchema,
+  communityDescriptionSchema,
+  type CommunityCategory,
+  type PendingPost,
+} from '@app/shared';
 import {
   addAlbumPhoto,
   createAlbum,
+  createAnnouncement,
+  createTopic,
   decideCommunityReport,
+  decidePendingPost,
   decideRequest,
   fetchAlbums,
   fetchAnnouncements,
@@ -25,16 +36,20 @@ import {
   fetchCommunityReports,
   fetchMembers,
   fetchPendingMembers,
+  fetchPendingPosts,
   fetchTopics,
   joinCommunity,
   leaveCommunity,
   openModeratorsConversation,
   reactivateCommunity,
+  removeMember,
   rsvpEvent,
   setAnnouncementPinned,
   setCommunityMuted,
   transferCommunity,
+  updateCommunity,
   updateMember,
+  updateTopic,
   uploadAlbumImage,
 } from './api';
 import {
@@ -70,12 +85,29 @@ import { useEcrireMembre, type EcrireMembreEtat } from './use-ecrire-membre';
 import {
   netTabsFor,
   panelReseaux,
+  initials,
   rail,
   RANG_ONGLET_ALBUM,
   RANG_ONGLET_EVENEMENTS,
   RANG_ONGLET_FIL,
   RANG_ONGLET_MEMBRES,
+  tint,
 } from './chrome';
+import { useComposeurReseau } from './use-composeur-reseau';
+import type { ContenuSignale, SujetEpinglable } from '@/components/fenetres-reseau';
+import {
+  actionsVides,
+  sujetsVides,
+  type AProposReseauView,
+  type ActionsReseauView,
+  type ColonneReseauView,
+  type FiltreMembresView,
+  type OutilsReseauView,
+  type PilotageReseauView,
+  type SectionGestion,
+  type SujetsReseauView,
+  type VidesReseauView,
+} from '../a08t/vivant';
 /**
  * LA ROUTE DU FIL ET SON CONVERTISSEUR VIENNENT DU MODULE DU FIL, jamais d’une
  * copie : la carte montée par les planches « Fil » EST celle de A01, donc sa
@@ -231,9 +263,40 @@ export interface ReseauEtat {
    * les bandes d'état vide HORS des deux cadres.
    */
   readonly album: AlbumReseauView;
+  // ── Le lot « réseau vivant » : l'état des fenêtres posées par l'écran ──────
+  /** La confirmation ouverte par l'en-tête : la sourdine ou le départ. */
+  readonly confirmation: 'sourdine' | 'quitter' | null;
+  readonly onConfirmer: () => void;
+  readonly onAnnulerConfirmation: () => void;
+  readonly fenetreSujet: {
+    readonly ouverte: boolean;
+    readonly occupe: boolean;
+    readonly onCreer: (titre: string, corps: string) => void;
+    readonly onFermer: () => void;
+  };
+  readonly fenetreEpingler: {
+    readonly ouverte: boolean;
+    readonly sujets: readonly SujetEpinglable[];
+    readonly max: number;
+    readonly occupe: boolean;
+    readonly onBasculer: (id: string, epingler: boolean) => void;
+    readonly onFermer: () => void;
+  };
+  readonly fenetreEvenement: {
+    readonly ouverte: boolean;
+    readonly onFermer: () => void;
+    readonly onCree: () => void;
+  };
+  readonly contenuSignale: ContenuSignale | null;
+  readonly onFermerContenuSignale: () => void;
 }
 
-export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
+export function useReseau(
+  slug: string,
+  ongletActif = 1,
+  /** L'entrée du rail de « Gérer » (`?section=`) — voir `PilotageReseauView`. */
+  section: SectionGestion = 'ensemble',
+): ReseauEtat {
   const [reseau, setReseau] = useState<CommunityDetailResponse | null>(null);
   const [sujets, setSujets] = useState<TopicsResponse | null>(null);
   const [contenuFerme, setContenuFerme] = useState(false);
@@ -355,6 +418,8 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
    * pas l'une de l'autre.
    */
   const [demandes, setDemandes] = useState<readonly CommunityMember[]>([]);
+  /** Les publications qui attendent la validation de l'équipe. */
+  const [enAttente, setEnAttente] = useState<readonly PendingPost[]>([]);
   /**
    * ⚠ LA LISTE DES MEMBRES A SON PROPRE EFFET, HORS DE LA GARDE DE RÔLE.
    *
@@ -426,6 +491,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
     const role = reseau?.myRole;
     if (reseau === null || (role !== 'OWNER' && role !== 'MODERATOR')) {
       setCompteurs({ moderateurs: 0, demandes: 0 });
+      setEnAttente([]);
       setDemandes([]);
       setSignalements([]);
       setOuverts(0);
@@ -434,12 +500,17 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
     const ac = new AbortController();
     let vivant = true;
     void (async () => {
-      const [mods, attente, files] = await Promise.allSettled([
+      const [mods, attente, files, publicationsEnAttente] = await Promise.allSettled([
         fetchMembers(slug, { role: 'MODERATOR' }, ac.signal),
         fetchPendingMembers(slug, undefined, ac.signal),
         fetchCommunityReports(slug, ac.signal),
+        // La file de validation (« Validation des nouvelles publications »).
+        fetchPendingPosts(slug, ac.signal),
       ]);
       if (!vivant) return;
+      setEnAttente(
+        publicationsEnAttente.status === 'fulfilled' ? publicationsEnAttente.value.items : [],
+      );
 
       /**
        * UN ÉCHEC SUR L'UN DES QUATRE NE CASSE PAS LA PAGE — `allSettled`, comme
@@ -513,6 +584,28 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
    * dessine aucun « voir la suite », et `GET /communities/:id/members` pagine
    * par curseur. Au-delà de la première page, l'onglet ne montre pas tout.
    */
+  /**
+   * ── LA RECHERCHE ET LE FILTRE DE L'ONGLET « MEMBRES » ────────────────────
+   *
+   * Le porteur : « la recherche ne marche pas […] Aussi les filtres. »
+   * `memberListQuerySchema` porte `q` (pseudo OU nom affiché, voir le service)
+   * et `role`. La saisie est DIFFÉRÉE de 300 ms : une requête par frappe
+   * enverrait sept appels pour « Aïcha D », et les réponses pourraient
+   * revenir dans le désordre — l'`AbortController` de l'effet annule la
+   * précédente, mais seulement si elle n'est pas déjà arrivée.
+   */
+  const [rechercheMembres, setRechercheMembres] = useState('');
+  const [rechercheDifferee, setRechercheDifferee] = useState('');
+  const [seulsModerateurs, setSeulsModerateurs] = useState(false);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setRechercheDifferee(rechercheMembres.trim());
+    }, 300);
+    return () => {
+      window.clearTimeout(t);
+    };
+  }, [rechercheMembres]);
+
   useEffect(() => {
     const actif = reseau !== null && reseau.myStatus === 'ACTIVE';
     if (!actif || ongletActif !== RANG_ONGLET_MEMBRES) {
@@ -523,7 +616,14 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
     let vivant = true;
     void (async () => {
       try {
-        const tous = await fetchMembers(slug, {}, ac.signal);
+        const tous = await fetchMembers(
+          slug,
+          {
+            ...(rechercheDifferee === '' ? {} : { q: rechercheDifferee.slice(0, 40) }),
+            ...(seulsModerateurs ? { role: 'MODERATOR' as const } : {}),
+          },
+          ac.signal,
+        );
         if (vivant) setMembres(tous.items);
       } catch {
         /**
@@ -539,7 +639,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       vivant = false;
       ac.abort();
     };
-  }, [slug, reseau, ongletActif, tick]);
+  }, [slug, reseau, ongletActif, tick, rechercheDifferee, seulsModerateurs]);
 
   /**
    * ╔═══════════════════════════════════════════════════════════════════════╗
@@ -587,7 +687,14 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
    * la perdre ne justifie pas de faire disparaître le fil — ni l'inverse.
    */
   useEffect(() => {
-    const membreDuReseau = reseau !== null && reseau.myRole !== null;
+    /**
+     * ⚠ `myStatus === 'ACTIVE'` ET NON `myRole !== null` — c'était la garde des
+     * trois effets de contenu (fil, événements, album), et elle laissait passer
+     * une demande en ATTENTE : `myRole` y vaut déjà `MEMBER`. MESURÉ au
+     * navigateur après « Demander à rejoindre » : `GET /feed?communityId=` en
+     * 404 et `GET /communities/:id/announcements` en 403, deux fois chacun.
+     */
+    const membreDuReseau = reseau !== null && reseau.myStatus === 'ACTIVE';
     if (!membreDuReseau || ongletActif !== RANG_ONGLET_FIL) {
       setPublications([]);
       setEpinglee(null);
@@ -658,7 +765,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
    * `/events/calendar` rend `meta.timeZone`, cette route pourrait le faire aussi.
    */
   useEffect(() => {
-    const membreDuReseau = reseau !== null && reseau.myRole !== null;
+    const membreDuReseau = reseau !== null && reseau.myStatus === 'ACTIVE';
     if (!membreDuReseau || ongletActif !== RANG_ONGLET_EVENEMENTS) {
       setEvenements([]);
       setEvenementsPrets(false);
@@ -827,7 +934,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
   const [albumTick, setAlbumTick] = useState(0);
 
   useEffect(() => {
-    const membreDuReseau = reseau !== null && reseau.myRole !== null;
+    const membreDuReseau = reseau !== null && reseau.myStatus === 'ACTIVE';
     if (!membreDuReseau || ongletActif !== RANG_ONGLET_ALBUM) {
       setAlbums([]);
       setPartagees([]);
@@ -1010,6 +1117,15 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
   );
 
   const moderateur = reseau?.myRole === 'OWNER' || reseau?.myRole === 'MODERATOR';
+  /**
+   * LE BOUTON « AJOUTER » DE L'ALBUM : l'équipe, ou tout membre actif quand le
+   * réseau a allumé « Album ouvert aux membres » (Gérer · Paramètres). Le
+   * serveur tient la même règle (`ALBUM_RESTRICTED`) : ceci ne fait qu'éviter
+   * de proposer un geste certain d'être refusé.
+   */
+  const ajoutPhotosOuvert =
+    moderateur ||
+    (reseau?.myStatus === 'ACTIVE' && reseau.settings.albumOpenToMembers);
 
   const vueAlbum: AlbumReseauView = useMemo(
     () => ({
@@ -1022,7 +1138,8 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       },
       photos: photosAlbum,
       prete: albumPret,
-      moderateur,
+      moderateur: ajoutPhotosOuvert,
+      peutCreerAlbum: moderateur,
       menuOuvert: albumMenu,
       /**
        * OUVRE, SANS BASCULER — voir sa note dans `a08t/data.ts` : une bascule sur
@@ -1081,6 +1198,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       photosAlbum,
       albumPret,
       moderateur,
+      ajoutPhotosOuvert,
       albumMenu,
       albumEnVol,
       albumEchec,
@@ -1115,6 +1233,8 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
    * question définitive.
    */
   const [aBannir, setABannir] = useState<string | null>(null);
+  /** Le membre dont le RETRAIT (et non le bannissement) attend confirmation. */
+  const [aRetirer, setARetirer] = useState<string | null>(null);
   const [signalement, setSignalement] = useState<{
     readonly type: string;
     readonly id: string;
@@ -1233,6 +1353,10 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
         if (menu === null) return;
         void geste(() => updateMember(slug, menu, { role: 'MODERATOR' }));
       },
+      onRevoquerModerateur: () => {
+        if (menu === null) return;
+        void geste(() => updateMember(slug, menu, { role: 'MEMBER' }));
+      },
       /**
        * LES DEUX PRISES DE « ÉCRIRE » VIENNENT DU CROCHET VOISIN, telles
        * quelles : la fenêtre, la recherche du fil existant et la navigation
@@ -1265,6 +1389,26 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       onBannir: () => {
         if (menu === null) return;
         setABannir(menu);
+      },
+      /**
+       * « RETIRER DU RÉSEAU » — `DELETE /communities/:id/members/:userId`. La
+       * personne peut redemander à rejoindre, ce qui la distingue du
+       * bannissement (arbitrage du porteur, voir `GestionReseauView.onRetirer`).
+       */
+      onRetirer: () => {
+        if (menu === null) return;
+        setARetirer(menu);
+      },
+      retirerOuverte: aRetirer !== null,
+      retirerNom: membresVues.find((m) => m.userId === aRetirer)?.name ?? '',
+      onConfirmerRetirer: () => {
+        if (aRetirer === null) return;
+        const cible = aRetirer;
+        setARetirer(null);
+        void geste(() => removeMember(slug, cible));
+      },
+      onAnnulerRetirer: () => {
+        setARetirer(null);
       },
       bannirOuverte: aBannir !== null,
       /**
@@ -1368,6 +1512,7 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
     menu,
     signalement,
     aBannir,
+    aRetirer,
     geste,
     slug,
     ecrire.onEcrire,
@@ -1526,6 +1671,12 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       reseau === null
         ? a08tFallback
         : {
+            /**
+             * Les prises du lot « réseau vivant » partent du repli, et
+             * `ongletVivant` (plus bas) les remplace par les vraies : elles
+             * dépendent de `rejoindre` et `quitter`, déclarés après ce memo.
+             */
+            ...a08tFallback,
             reseau: enteteReseauFrom(reseau, compteurs),
             sourdine,
             notifierSourdine: NOTIFIER_SOURDINE,
@@ -1584,6 +1735,10 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       ownerActions,
       hrefGerer,
       topics,
+      // Remplacés par `dataVivante`, plus bas — voir la note de `onglet`.
+      actions: actionsVides,
+      outils: a08tFallback.outils,
+      sujets: sujetsVides,
     }),
     [topics, ongletActif, onglet, sourdine],
   );
@@ -1609,6 +1764,592 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
       setEchec(echecDe(e));
     }
   }, [slug]);
+
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ LE LOT « RÉSEAU VIVANT » — CE QUE LES PLANCHES LISENT EN PLUS              ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Voir `screens/a08t/vivant.ts` pour chaque contrat. Ce bloc vient APRÈS
+   * `rejoindre` et `quitter` parce que les actions de l'en-tête les appellent :
+   * un `useMemo` placé plus haut les lirait avant leur déclaration (zone morte
+   * temporelle — une `ReferenceError` au premier rendu, pas à la compilation).
+   */
+  const routeur = router;
+  const equipe = reseau?.myRole === 'OWNER' || reseau?.myRole === 'MODERATOR';
+  const proprietaire = reseau?.myRole === 'OWNER';
+  const membreActif = reseau?.myStatus === 'ACTIVE';
+  const base = `/reseaux/${encodeURIComponent(slug)}`;
+
+  // ── Les confirmations de l'en-tête : la sourdine et le départ ──────────────
+  const [confirmation, setConfirmation] = useState<'sourdine' | 'quitter' | null>(null);
+  const [actionEnVol, setActionEnVol] = useState(false);
+
+  const actions: ActionsReseauView = useMemo(() => {
+    if (reseau === null) return actionsVides;
+    const etat: ActionsReseauView['etat'] =
+      reseau.myStatus === 'ACTIVE'
+        ? 'membre'
+        : reseau.myStatus === 'PENDING'
+          ? 'attente'
+          : reseau.myStatus === 'INVITED'
+            ? 'invite'
+            : reseau.canJoin
+              ? reseau.visibility === 'ON_REQUEST'
+                ? 'demande'
+                : 'passant'
+              : 'ferme';
+    return {
+      etat,
+      equipe,
+      hrefGerer: `?onglet=gerer`,
+      occupe: actionEnVol || sourdine.occupe,
+      ongletsFermes: etat !== 'membre',
+      badge:
+        reseau.myRole === 'OWNER' ? 'Propriétaire' : reseau.myRole === 'MODERATOR' ? 'Modérateur' : '',
+      onRejoindre: () => {
+        setActionEnVol(true);
+        void rejoindre().finally(() => {
+          setActionEnVol(false);
+        });
+      },
+      sourdineActive: reseau.myMuted,
+      onSourdine: () => {
+        setConfirmation('sourdine');
+      },
+      peutQuitter: reseau.canLeave && reseau.myRole !== 'OWNER',
+      onQuitter: () => {
+        setConfirmation('quitter');
+      },
+    };
+  }, [reseau, equipe, actionEnVol, sourdine.occupe, rejoindre]);
+
+  const confirmer = useCallback(() => {
+    const quoi = confirmation;
+    setConfirmation(null);
+    if (quoi === 'sourdine') {
+      sourdine.onBasculer();
+      return;
+    }
+    if (quoi === 'quitter') {
+      setActionEnVol(true);
+      void quitter().finally(() => {
+        setActionEnVol(false);
+        // On a quitté : la vue retombe sur « À propos », le seul onglet ouvert
+        // à qui n'est plus membre.
+        routeur.push(`${base}?onglet=a-propos`);
+      });
+    }
+  }, [base, confirmation, quitter, routeur, sourdine]);
+
+  // ── La fenêtre « Nouveau sujet » ────────────────────────────────────────────
+  const [sujetOuvert, setSujetOuvert] = useState(false);
+  const [sujetEnVol, setSujetEnVol] = useState(false);
+  const creerSujet = useCallback(
+    (titre: string, corps: string) => {
+      setSujetEnVol(true);
+      void createTopic(slug, { title: titre, body: corps })
+        .then((cree) => {
+          setSujetOuvert(false);
+          routeur.push(`${base}/sujets/${cree.id}`);
+        })
+        .catch((e: unknown) => {
+          setEchec(echecDe(e));
+        })
+        .finally(() => {
+          setSujetEnVol(false);
+        });
+    },
+    [base, routeur, slug],
+  );
+
+  const vueSujets: SujetsReseauView = useMemo(
+    () => ({
+      vide: contenuFerme
+        ? 'Rejoignez ce réseau pour lire et ouvrir ses sujets.'
+        : 'Aucun sujet dans ce réseau pour le moment : ouvrez le premier.',
+      nouveauVisible: membreActif,
+      onNouveau: () => {
+        setSujetOuvert(true);
+      },
+    }),
+    [contenuFerme, membreActif],
+  );
+
+  // ── « Épingler » : la fenêtre des sujets à épingler en tête ────────────────
+  const [epinglerOuvert, setEpinglerOuvert] = useState(false);
+  const [epinglerEnVol, setEpinglerEnVol] = useState(false);
+  const sujetsEpinglables: readonly SujetEpinglable[] = useMemo(
+    () =>
+      (sujets?.items ?? []).map((t) => ({ id: t.id, titre: t.title, epingle: t.pinKind !== 'NONE' })),
+    [sujets],
+  );
+  const basculerEpingle = useCallback((id: string, epingler: boolean) => {
+    setEpinglerEnVol(true);
+    void updateTopic(id, { pinKind: epingler ? 'RESOURCE' : 'NONE' })
+      .then(() => {
+        setTick((t) => t + 1);
+      })
+      .catch((e: unknown) => {
+        setEchec(echecDe(e));
+      })
+      .finally(() => {
+        setEpinglerEnVol(false);
+      });
+  }, []);
+
+  // ── « Créer un événement du réseau » : la fenêtre E03 ──────────────────────
+  const [evenementOuvert, setEvenementOuvert] = useState(false);
+
+  const outils: OutilsReseauView = useMemo(
+    () => ({
+      visibles: equipe,
+      libelle: proprietaire ? 'Propriétaire du réseau' : 'Modération du réseau',
+      titre: proprietaire ? 'Outils du propriétaire' : 'Outils de modération',
+      hrefAnnonce: '?onglet=annonce',
+      onEpingler: () => {
+        setEpinglerOuvert(true);
+      },
+      onEvenement: () => {
+        setEvenementOuvert(true);
+      },
+    }),
+    [equipe, proprietaire],
+  );
+
+  // ── Le composeur du fil ─────────────────────────────────────────────────────
+  const composeur = useComposeurReseau(membreActif ? (reseau?.id ?? null) : null, () => {
+    setTick((t) => t + 1);
+  });
+
+  // ── Les colonnes de droite : le prochain événement et le mois ──────────────
+  const [prochain, setProchain] = useState<ColonneReseauView['prochain']>(null);
+  const [mois, setMois] = useState<{ nombre: number; inscrits: number } | null>(null);
+  useEffect(() => {
+    const surColonne = ongletActif === RANG_ONGLET_FIL || ongletActif === RANG_ONGLET_EVENEMENTS;
+    if (reseau === null || reseau.myStatus !== 'ACTIVE' || !surColonne) {
+      setProchain(null);
+      setMois(null);
+      return;
+    }
+    const ac = new AbortController();
+    const maintenant = new Date();
+    const premier = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1);
+    const dernier = new Date(maintenant.getFullYear(), maintenant.getMonth() + 1, 0);
+    void (async () => {
+      const [aVenir, duMois] = await Promise.allSettled([
+        fetchCommunityEvents(reseau.id, { limit: 1 }, ac.signal),
+        fetchCommunityEvents(
+          reseau.id,
+          {
+            from: premier.toLocaleDateString('sv-SE'),
+            to: dernier.toLocaleDateString('sv-SE'),
+            limit: 50,
+          },
+          ac.signal,
+        ),
+      ]);
+      if (ac.signal.aborted) return;
+      const premierEvenement =
+        aVenir.status === 'fulfilled' ? evenementsReseauFrom(aVenir.value.items)[0] : undefined;
+      setProchain(
+        premierEvenement === undefined
+          ? null
+          : {
+              numero: premierEvenement.numero,
+              mois: premierEvenement.mois,
+              titre: premierEvenement.titre,
+              sous: `${premierEvenement.lieuCourt} · ${String(premierEvenement.participants)} participant${premierEvenement.pluriel}`,
+              href: premierEvenement.href,
+            },
+      );
+      if (duMois.status === 'fulfilled') {
+        const liste = evenementsReseauFrom(duMois.value.items);
+        setMois({
+          nombre: liste.length,
+          inscrits: liste.reduce((somme, e) => somme + e.participants, 0),
+        });
+      } else {
+        setMois(null);
+      }
+    })();
+    return () => {
+      ac.abort();
+    };
+  }, [reseau, ongletActif, tick]);
+
+  const colonne: ColonneReseauView = useMemo(
+    () => ({
+      prochain,
+      epingles: (reseau?.pinned ?? []).map((p) => ({ titre: p.title, href: `${base}/sujets/${p.id}` })),
+      moisNombre: mois === null ? '—' : String(mois.nombre),
+      moisSous:
+        mois === null
+          ? ''
+          : `événement${mois.nombre > 1 ? 's' : ''} du réseau · ${String(mois.inscrits)} inscrit${mois.inscrits > 1 ? 's' : ''}`,
+    }),
+    [base, mois, prochain, reseau],
+  );
+
+  // ── Les états vides ─────────────────────────────────────────────────────────
+  const vides: VidesReseauView = useMemo(
+    () => ({
+      fil: 'Aucune publication dans ce réseau pour le moment : lancez la conversation.',
+      evenements:
+        vueEvenements.onglet === 'passes'
+          ? 'Aucun événement passé dans ce réseau.'
+          : 'Aucun événement à venir dans ce réseau.',
+      membres:
+        rechercheDifferee === '' && !seulsModerateurs
+          ? 'Aucun membre à afficher pour le moment.'
+          : 'Aucun membre ne correspond à cette recherche.',
+      album:
+        vueAlbum.onglet === ALBUM_PARTAGES
+          ? 'Aucune image partagée dans les publications de ce réseau.'
+          : vueAlbum.onglet === ALBUM_EVENEMENTS
+            ? 'Aucune photo d’événement dans ce réseau.'
+            : vueAlbum.onglet === ALBUM_TOUT
+              ? 'Aucune photo dans ce réseau pour le moment.'
+              : 'Cet album n’a encore aucune photo.',
+    }),
+    [vueEvenements.onglet, vueAlbum.onglet, rechercheDifferee, seulsModerateurs],
+  );
+
+  // ── La recherche et les filtres des membres ─────────────────────────────────
+  const filtreMembres: FiltreMembresView = useMemo(
+    () => ({
+      q: rechercheMembres,
+      onQ: (event) => {
+        setRechercheMembres(event.target.value);
+      },
+      moderateurs: seulsModerateurs,
+      onTous: () => {
+        setSeulsModerateurs(false);
+      },
+      onModerateurs: () => {
+        setSeulsModerateurs(true);
+      },
+      // Les deux états d'une pastille, tels que la maquette les dessine sur la
+      // rangée « Tous · Modérateurs » : vert plein actif, blanc liseré inactif.
+      tousBg: seulsModerateurs ? '#fff' : '#16785E',
+      tousFg: seulsModerateurs ? '#16211D' : '#fff',
+      tousBd: seulsModerateurs ? '#E6EBE9' : '#16785E',
+      modBg: seulsModerateurs ? '#16785E' : '#fff',
+      modFg: seulsModerateurs ? '#fff' : '#16211D',
+      modBd: seulsModerateurs ? '#16785E' : '#E6EBE9',
+    }),
+    [rechercheMembres, seulsModerateurs],
+  );
+
+  // ── « À propos » : règles, équipe, et l'édition ─────────────────────────────
+  const [brouillonDescription, setBrouillonDescription] = useState<string | null>(null);
+  const [brouillonRegles, setBrouillonRegles] = useState<readonly string[] | null>(null);
+  const [prevenir, setPrevenir] = useState(true);
+  const [editionEnVol, setEditionEnVol] = useState(false);
+  const descriptionCourante = brouillonDescription ?? reseau?.description ?? '';
+  const reglesCourantes = brouillonRegles ?? reseau?.rules ?? [];
+  const reglesModifiees =
+    brouillonRegles !== null &&
+    JSON.stringify(brouillonRegles.map((r) => r.trim()).filter((r) => r !== '')) !==
+      JSON.stringify(reseau?.rules ?? []);
+  const descriptionModifiee =
+    brouillonDescription !== null && brouillonDescription.trim() !== (reseau?.description ?? '');
+
+  const enregistrerAPropos = useCallback(() => {
+    if (reseau === null) return;
+    const regles = (brouillonRegles ?? reseau.rules).map((r) => r.trim()).filter((r) => r !== '');
+    const description = (brouillonDescription ?? reseau.description ?? '').trim();
+    setEditionEnVol(true);
+    void (async () => {
+      try {
+        const apres = await updateCommunity(slug, {
+          ...(descriptionModifiee ? { description: description === '' ? null : description } : {}),
+          ...(reglesModifiees ? { rules: regles } : {}),
+        });
+        setReseau(apres);
+        if (reglesModifiees && prevenir && regles.length > 0) {
+          try {
+            await createAnnouncement(slug, {
+              title: 'Les règles du réseau ont changé',
+              body: regles.map((r, i) => `${String(i + 1)}. ${r}`).join('\n'),
+              pinned: false,
+              notify: true,
+            });
+          } catch (e) {
+            // Les règles SONT enregistrées : seul l'avis a échoué (souvent la
+            // limite de deux annonces par semaine). On le dit sans défaire.
+            setEchec(echecDe(e));
+          }
+        }
+        setBrouillonDescription(null);
+        setBrouillonRegles(null);
+        routeur.push(`${base}?onglet=a-propos`);
+      } catch (e) {
+        setEchec(echecDe(e));
+      } finally {
+        setEditionEnVol(false);
+      }
+    })();
+  }, [
+    base,
+    brouillonDescription,
+    brouillonRegles,
+    descriptionModifiee,
+    prevenir,
+    reglesModifiees,
+    reseau,
+    routeur,
+    slug,
+  ]);
+
+  const apropos: AProposReseauView = useMemo(() => {
+    const automatique = reseau !== null && reseau.kind !== 'INTEREST';
+    return {
+      regles: (reseau?.rules ?? []).map((texte, i) => ({ n: String(i + 1), texte })),
+      equipe: (reseau?.team ?? []).map((q) => {
+        const nom = q.displayName === '' ? `@${q.handle}` : q.displayName;
+        return {
+          i: initials(nom),
+          bg: tint(q.handle),
+          nom,
+          role: q.role === 'OWNER' ? 'Propriétaire' : 'Modérateur',
+        };
+      }),
+      hrefModifier: '?onglet=a-propos-edition',
+      modifiable: equipe,
+      edition: {
+        description: descriptionCourante,
+        onDescription: (event) => {
+          setBrouillonDescription(event.target.value);
+        },
+        longueur: descriptionCourante.length,
+        descriptionMax: communityDescriptionSchema.maxLength ?? 500,
+        regles: reglesCourantes.map((texte, i) => ({
+          n: String(i + 1),
+          texte,
+          onTexte: (event) => {
+            const neuves = [...reglesCourantes];
+            neuves[i] = event.target.value;
+            setBrouillonRegles(neuves);
+          },
+          onRetirer: () => {
+            setBrouillonRegles(reglesCourantes.filter((_, j) => j !== i));
+          },
+        })),
+        reglesMax: COMMUNITY_MAX_RULES,
+        reglesCompte: `${String(reglesCourantes.length)} SUR ${String(COMMUNITY_MAX_RULES)}`,
+        onAjouterRegle: () => {
+          if (reglesCourantes.length >= COMMUNITY_MAX_RULES) return;
+          setBrouillonRegles([...reglesCourantes, '']);
+        },
+        peutAjouter: reglesCourantes.length < COMMUNITY_MAX_RULES,
+        modifie: descriptionModifiee || reglesModifiees,
+        prevenir,
+        onPrevenir: () => {
+          setPrevenir((p) => !p);
+        },
+        occupe: editionEnVol,
+        onEnregistrer: enregistrerAPropos,
+        onAnnuler: () => {
+          setBrouillonDescription(null);
+          setBrouillonRegles(null);
+          routeur.push(`${base}?onglet=a-propos`);
+        },
+        automatique,
+        categorie:
+          reseau === null
+            ? ''
+            : reseau.kind === 'INTEREST' && reseau.category !== null
+              ? (COMMUNITY_CATEGORY_LABELS[reseau.category as CommunityCategory] ?? reseau.category)
+              : onglet.reseau.genreCourt,
+        visibilite: onglet.reseau.visibilite,
+      },
+    };
+  }, [
+    base,
+    descriptionCourante,
+    descriptionModifiee,
+    editionEnVol,
+    enregistrerAPropos,
+    equipe,
+    onglet.reseau,
+    prevenir,
+    reglesCourantes,
+    reglesModifiees,
+    reseau,
+    routeur,
+  ]);
+
+  // ── « Gérer » : sections, file de validation, paramètres ───────────────────
+  const [contenuSignale, setContenuSignale] = useState<ContenuSignale | null>(null);
+  const [parametresEnVol, setParametresEnVol] = useState(false);
+  const changerParametres = useCallback(
+    (patch: Parameters<typeof updateCommunity>[1]) => {
+      setParametresEnVol(true);
+      void updateCommunity(slug, patch)
+        .then((apres) => {
+          setReseau(apres);
+        })
+        .catch((e: unknown) => {
+          setEchec(echecDe(e));
+        })
+        .finally(() => {
+          setParametresEnVol(false);
+        });
+    },
+    [slug],
+  );
+
+  const pilotage: PilotageReseauView = useMemo(() => {
+    const ensemble = section === 'ensemble';
+    const automatique = reseau !== null && reseau.kind !== 'INTEREST';
+    const visibilite = reseau?.visibility ?? 'PUBLIC';
+    const SOUS: Record<string, string> = {
+      PUBLIC: 'Tout membre peut voir et rejoindre.',
+      ON_REQUEST: 'Les membres demandent à rejoindre, vous acceptez.',
+      INVITE_ONLY: 'Invisible dans Découvrir et dans la recherche. Accès par invitation seulement.',
+    };
+    return {
+      section,
+      hrefSection: (s) => `?onglet=gerer&section=${s}`,
+      // Les deux états d'une entrée du rail, relevés sur la planche : l'active
+      // en `#E3F0EB` / `#0F5C48` graisse 700, les autres transparentes en 500.
+      railBg: (s) => (s === section ? '#E3F0EB' : 'transparent'),
+      railFg: (s) => (s === section ? '#0F5C48' : '#16211D'),
+      railPoids: (s) => (s === section ? '700' : '500'),
+      voirPlusDemandes: ensemble && demandes.length > 3,
+      voirPlusSignalements: ensemble && signalements.length > 3,
+      bornerDemandes: ensemble ? 3 : demandes.length,
+      bornerSignalements: ensemble ? 3 : signalements.length,
+      montrer: (carte) =>
+        carte === 'tuiles'
+          ? ensemble
+          : carte === 'attente'
+            ? (ensemble || section === 'demandes') &&
+              (enAttente.length > 0 || reseau?.settings.postsRequireApproval === true)
+            : ensemble || section === carte,
+      tuiles: {
+        nouveaux:
+          reseau?.stats === null || reseau?.stats === undefined
+            ? ''
+            : `+${String(reseau.stats.joinedThisMonth)} ce mois`,
+        actifs:
+          reseau?.stats === null || reseau?.stats === undefined || reseau.memberCount === 0
+            ? '—'
+            : `${String(Math.round((reseau.stats.activeLast30Days / reseau.memberCount) * 100))} %`,
+      },
+      onVoirSignalement: (subjectType, subjectId) => {
+        const brut = signalements.find(
+          (r) => r.subjectType === subjectType && r.subjectId === subjectId,
+        );
+        const vue = gerer.signalements.find(
+          (r) => r.subjectType === subjectType && r.subjectId === subjectId,
+        );
+        if (brut === undefined || vue === undefined) return;
+        setContenuSignale({
+          subjectType,
+          subjectId,
+          titre: vue.titre,
+          sous: vue.sous,
+          extrait: brut.extrait,
+          href: vue.href,
+          masque: vue.masque,
+        });
+      },
+      enAttente: enAttente.map((p) => {
+        const nom = p.author.displayName === '' ? `@${p.author.handle}` : p.author.displayName;
+        return {
+          postId: p.postId,
+          i: initials(nom),
+          bg: tint(p.author.handle),
+          nom,
+          sous: `${p.type} · ${new Date(p.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`,
+          extrait: p.body.length > 280 ? `${p.body.slice(0, 280)}…` : p.body,
+        };
+      }),
+      onValider: (postId) => {
+        void geste(() => decidePendingPost(slug, postId, 'APPROVE'));
+      },
+      onRefuserPublication: (postId) => {
+        void geste(() => decidePendingPost(slug, postId, 'REJECT'));
+      },
+      parametres: {
+        validation: reseau?.settings.postsRequireApproval ?? false,
+        sondages: reseau?.settings.pollsOpenToMembers ?? true,
+        album: reseau?.settings.albumOpenToMembers ?? true,
+        onValidation: () => {
+          changerParametres({ postsRequireApproval: !(reseau?.settings.postsRequireApproval ?? false) });
+        },
+        onSondages: () => {
+          changerParametres({ pollsOpenToMembers: !(reseau?.settings.pollsOpenToMembers ?? true) });
+        },
+        onAlbum: () => {
+          changerParametres({ albumOpenToMembers: !(reseau?.settings.albumOpenToMembers ?? true) });
+        },
+        visibilite: onglet.reseau.visibilite,
+        visibiliteSous: automatique
+          ? 'Réseau automatique : toujours public.'
+          : (SOUS[visibilite] ?? ''),
+        visibiliteFixe: automatique || !proprietaire,
+        visibiliteValeur: visibilite,
+        visibilites: [
+          { valeur: 'PUBLIC', libelle: 'Public' },
+          { valeur: 'ON_REQUEST', libelle: 'Sur demande' },
+          { valeur: 'INVITE_ONLY', libelle: 'Privé' },
+        ],
+        onVisibilite: (event) => {
+          const v = event.target.value;
+          if (v !== 'PUBLIC' && v !== 'ON_REQUEST' && v !== 'INVITE_ONLY') return;
+          if (v === visibilite) return;
+          changerParametres({ visibility: v });
+        },
+        occupe: parametresEnVol,
+      },
+    };
+  }, [
+    section,
+    reseau,
+    demandes.length,
+    signalements,
+    enAttente,
+    gerer.signalements,
+    geste,
+    slug,
+    changerParametres,
+    onglet.reseau.visibilite,
+    proprietaire,
+    parametresEnVol,
+  ]);
+
+  const ongletVivant: A08TData = useMemo(
+    () => ({
+      ...onglet,
+      actions,
+      outils,
+      composeur,
+      colonne,
+      filtreMembres,
+      apropos,
+      pilotage,
+      vides,
+    }),
+    [onglet, actions, outils, composeur, colonne, filtreMembres, apropos, pilotage, vides],
+  );
+
+  const dataVivante: A08Data = useMemo(
+    () => ({
+      ...data,
+      netTabs: actions.ongletsFermes
+        ? data.netTabs.filter((t) => t.href.includes('a-propos'))
+        : data.netTabs,
+      topics: data.topics.map((t) => ({ ...t, href: `${base}/sujets/${t.topicId}` })),
+      actions,
+      outils,
+      sujets: vueSujets,
+    }),
+    [data, actions, outils, vueSujets, base],
+  );
 
   /**
    * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -1662,8 +2403,49 @@ export function useReseau(slug: string, ongletActif = 1): ReseauEtat {
     echec,
     reseau,
     sujets,
-    data,
-    onglet,
+    data: dataVivante,
+    onglet: ongletVivant,
+    /**
+     * LES FENÊTRES DU LOT « RÉSEAU VIVANT », pour que l'écran en pose UNE
+     * SEULE de chaque, hors des deux cadres — la leçon `ScreenFrames` + portail.
+     */
+    confirmation,
+    onConfirmer: confirmer,
+    onAnnulerConfirmation: () => {
+      setConfirmation(null);
+    },
+    fenetreSujet: {
+      ouverte: sujetOuvert,
+      occupe: sujetEnVol,
+      onCreer: creerSujet,
+      onFermer: () => {
+        setSujetOuvert(false);
+      },
+    },
+    fenetreEpingler: {
+      ouverte: epinglerOuvert,
+      sujets: sujetsEpinglables,
+      max: COMMUNITY_MAX_PINNED_TOPICS,
+      occupe: epinglerEnVol,
+      onBasculer: basculerEpingle,
+      onFermer: () => {
+        setEpinglerOuvert(false);
+      },
+    },
+    fenetreEvenement: {
+      ouverte: evenementOuvert,
+      onFermer: () => {
+        setEvenementOuvert(false);
+      },
+      onCree: () => {
+        setEvenementOuvert(false);
+        setTick((t) => t + 1);
+      },
+    },
+    contenuSignale,
+    onFermerContenuSignale: () => {
+      setContenuSignale(null);
+    },
     membre,
     contenuFerme,
     compteursFiables: membre,

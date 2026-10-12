@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { TopicDetailResponse } from '@app/shared';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
-import { deleteTopic, fetchTopic, updateTopic } from './api';
+import { deleteTopic, fetchTopic, restoreTopic, updateTopic } from './api';
 /**
  * `POST /comments` VIENT DU MODULE ACCUEIL, ET CE N'EST PAS UN EMPRUNT HASARDEUX.
  *
@@ -237,13 +237,87 @@ export function useSujet(topicId: string): SujetEtat {
     void patch({ status: 'RESOLVED' }).finally(() => setResolutionEnCours(false));
   }, [patch, resolutionEnCours]);
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════╗
+   * ║ LA CARTE « MODÉRATION » — CALCULÉE, ET POUR L'ÉQUIPE SEULEMENT        ║
+   * ╚══════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « La vue détails des sujets aussi n'est pas faite. » La carte
+   * lisait la constante `modActions` de `a09/data.ts` — trois entrées SANS
+   * geste — et elle était montrée à TOUT lecteur, membre ordinaire compris.
+   *
+   * Elle suit maintenant `canPin`, que le serveur calcule (propriétaire ou
+   * modérateur du réseau) : vide pour les autres, et l'adaptation
+   * `RV_SUJET_MODERATION` retire alors la carte. Chaque entrée a son geste :
+   *
+   *   · « Épingler » / « Désépingler » — `pinKind` RESSOURCE ou rien ; §2.3
+   *     borne à cinq, et le refus `PIN_LIMIT` s'affiche tel quel ;
+   *   · « Clore le sujet » — `RESOLVED` : `ARCHIVED` est réservé à la tâche
+   *     d'archivage (le service répond `SYSTEM_ONLY`), et clore une question
+   *     est ce que « résolu » veut dire ici ;
+   *   · « Masquer » / « Remettre » — `DELETE /topics/:id` et sa restauration,
+   *     dans la fenêtre de sept jours que le serveur tient (`canUnhide`).
+   */
+  const actionsModeration = useMemo(() => {
+    if (sujet === null || !sujet.canPin) return [] as typeof modActions;
+    const [epingle, clore, oeil] = modActions;
+    return [
+      {
+        label: sujet.pinKind === 'NONE' ? 'Épingler' : 'Désépingler',
+        icon: epingle?.icon ?? '',
+        onClick: () => {
+          void patch({ pinKind: sujet.pinKind === 'NONE' ? 'RESOURCE' : 'NONE' });
+        },
+      },
+      {
+        label: 'Clore le sujet',
+        icon: clore?.icon ?? '',
+        onClick:
+          sujet.status === 'OPEN'
+            ? () => {
+                void patch({ status: 'RESOLVED' });
+              }
+            : undefined,
+      },
+      sujet.hidden
+        ? {
+            label: 'Remettre',
+            icon: oeil?.icon ?? '',
+            onClick: sujet.canUnhide
+              ? () => {
+                  void restoreTopic(topicId)
+                    .then((t) => {
+                      setSujet(t);
+                    })
+                    .catch((e: unknown) => {
+                      setEchec(echecDe(e));
+                    });
+                }
+              : undefined,
+          }
+        : {
+            label: 'Masquer',
+            icon: oeil?.icon ?? '',
+            onClick: () => {
+              void deleteTopic(topicId)
+                .then(() => {
+                  setTick((t) => t + 1);
+                })
+                .catch((e: unknown) => {
+                  setEchec(echecDe(e));
+                });
+            },
+          },
+    ];
+  }, [patch, sujet, topicId]);
+
   const data: A09Data = useMemo(
     () => ({
       rail,
       shortcuts,
       panelReseaux,
       comments,
-      modActions,
+      modActions: actionsModeration,
       sujet: tete,
       reponseTexte,
       onReponseTexte: (event: { target: { value: string } }) => setReponseTexte(event.target.value),
@@ -253,7 +327,17 @@ export function useSujet(topicId: string): SujetEtat {
       resoudreBloque: resolutionEnCours || sujet === null || sujet.status !== 'OPEN',
       onResoudre,
     }),
-    [comments, envoiEnCours, onEnvoyerReponse, onResoudre, reponseTexte, resolutionEnCours, sujet, tete],
+    [
+      actionsModeration,
+      comments,
+      envoiEnCours,
+      onEnvoyerReponse,
+      onResoudre,
+      reponseTexte,
+      resolutionEnCours,
+      sujet,
+      tete,
+    ],
   );
 
   return {

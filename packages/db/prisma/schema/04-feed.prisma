@@ -120,6 +120,13 @@ model Post {
   status           ContentStatus
   moderationStatus ModerationStatus @map("moderation_status")
 
+  /// VRAI = la publication attend la validation d'un modérateur du réseau
+  /// (`Community.postsRequireApproval`). Elle n'est lue que par son auteur et par
+  /// l'équipe du réseau ; elle n'entre dans aucun fil et ne notifie personne
+  /// tant qu'elle n'est pas validée. Distincte de `status` : `HIDDEN` est une
+  /// décision de MODÉRATION, ceci n'est qu'une attente.
+  awaitingApproval Boolean @default(false) @map("awaiting_approval")
+
   reactionCount Int @default(0) @map("reaction_count")
   commentCount  Int @default(0) @map("comment_count")
   // Aucun view_count : règle dure §1.2 — aucun compteur de vues, pour personne.
