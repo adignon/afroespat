@@ -25,6 +25,11 @@ enum ReportSubjectType {
   EVENT
   MESSAGE
   USER
+  /// Un réseau entier — « Signaler le réseau » de l'onglet « À propos ». Son
+  /// « auteur » est son créateur (`createdByUserId`), nul pour un réseau
+  /// automatique : le dossier part alors sans auteur, comme un signalement de
+  /// contenu dont l'auteur a supprimé son compte.
+  COMMUNITY
 }
 
 enum ReportReason {

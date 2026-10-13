@@ -33,6 +33,7 @@ import {
   type E04Data,
   type EtatBouton,
   type PanneauAgenda,
+  formulaireVide,
 } from './data';
 
 /**
@@ -301,7 +302,14 @@ export async function chargerE02(id: string): Promise<E02Data> {
  */
 export async function chargerE03(): Promise<E03Data> {
   const socle = await chargerSocle(null);
-  return { moi: socle.moi, panneau: socle.panneau, ville: await maVille(socle.handle) };
+  // Le formulaire est vide ici : son état vit dans `useFormulaireEvenement`, que
+  // la page fusionne par-dessus — un chargeur ne tient pas d'état de saisie.
+  return {
+    moi: socle.moi,
+    panneau: socle.panneau,
+    ville: await maVille(socle.handle),
+    formulaire: formulaireVide,
+  };
 }
 
 // ─── E04 · /agenda/:id/presence ──────────────────────────────────────────────
@@ -438,6 +446,7 @@ export const SQUELETTE_E03: E03Data = {
   moi: SQUELETTE_E01.moi,
   panneau: SQUELETTE_E01.panneau,
   ville: '',
+  formulaire: formulaireVide,
 };
 
 export const SQUELETTE_E04: E04Data = {

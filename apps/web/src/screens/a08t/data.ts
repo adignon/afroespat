@@ -58,6 +58,24 @@ import {
  * même contrat au même endroit (`screens/compte/data.ts`).
  */
 import type { FeedPostView } from '../a01/data';
+import {
+  actionsVides,
+  aproposVide,
+  colonneVide,
+  composeurVide,
+  filtreMembresVide,
+  outilsVides,
+  pilotageVide,
+  videsVides,
+  type AProposReseauView,
+  type ActionsReseauView,
+  type ColonneReseauView,
+  type ComposeurReseauView,
+  type FiltreMembresView,
+  type OutilsReseauView,
+  type PilotageReseauView,
+  type VidesReseauView,
+} from './vivant';
 
 export { CHAT, I, PIN, netTabsFor, panel, panelReseaux, rail, tab } from '../reseaux/chrome';
 
@@ -141,6 +159,13 @@ export interface MembreAdminRowView {
   readonly roleBg: string;
   readonly roleFg: string;
   readonly nommable: boolean;
+  /**
+   * L'entrée « Retirer le rôle de modérateur » a-t-elle un sens ? Vrai sur un
+   * MODÉRATEUR, et seulement là — le geste inverse de `nommable`, que la
+   * maquette ne dessinait pas (l'en-tête ci-dessus le remontait). Le serveur
+   * reste seul juge : `updateMember` refuse ce que le lecteur ne peut pas faire.
+   */
+  readonly revocable: boolean;
 }
 
 /**
@@ -248,6 +273,17 @@ export interface ReseauEnteteView {
   readonly monRole: string;
   /** « Public » · « Sur demande » · « Privé », de `visibility`. */
   readonly visibilite: string;
+  /**
+   * L'adresse ABSOLUE de la couverture (`coverUrl` passé par `urlMedia`), ou
+   * `null`. Le bandeau la pose en `backgroundImage` PAR-DESSUS sa teinte
+   * dessinée (`#CFE3DA`) : sans couverture, c'est exactement la maquette.
+   */
+  readonly couverture: string | null;
+  /**
+   * L'adresse ABSOLUE du logo (`logoUrl` par `urlMedia`), ou `null` : le carré
+   * garde alors ses initiales, comme la maquette le dessine.
+   */
+  readonly logo: string | null;
   /** `description`, qui est NULLABLE : les réseaux automatiques n'en ont pas. */
   readonly description: string;
   /**
@@ -446,6 +482,8 @@ export interface GestionReseauView {
    * donc l'état du menu là où il vit, dans le hook.
    */
   readonly onNommerModerateur: () => void;
+  /** Le geste inverse : `role: MEMBER` sur un modérateur. Voir `revocable`. */
+  readonly onRevoquerModerateur: () => void;
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
    * ║ « ÉCRIRE » — DEUX PRISES POUR UN GESTE, PARCE QUE DEUX DESSINS            ║
@@ -494,6 +532,20 @@ export interface GestionReseauView {
    * brancher la première aurait laissé un contrôle mort, ce qui est pire.
    */
   readonly onBannir: () => void;
+  /**
+   * « RETIRER DU RÉSEAU » — et ce n'est PLUS le bannissement.
+   *
+   * Le porteur a tranché (relevé sur `BANNED_FROM_COMMUNITY`) : « Retirer, il
+   * peut rejoindre à nouveau. Mais banni, il ne peut plus rejoindre. » Retirer
+   * appelle donc `DELETE /communities/:id/members/:userId` — la ligne disparaît
+   * et la personne peut redemander —, et passe lui aussi par une confirmation,
+   * parce qu'il fait sortir quelqu'un du réseau.
+   */
+  readonly onRetirer: () => void;
+  readonly retirerOuverte: boolean;
+  readonly retirerNom: string;
+  readonly onConfirmerRetirer: () => void;
+  readonly onAnnulerRetirer: () => void;
   /**
    * ── LA CONFIRMATION, ET POURQUOI LE RETRAIT EST LE SEUL GESTE QUI EN A UNE ──
    *
@@ -802,6 +854,13 @@ export interface PhotoAlbumView {
   readonly url: string;
   /** La légende, ou la chaîne vide. Voir l'en-tête. */
   readonly legende: string;
+  /**
+   * L'ALBUM de la photo — présent pour une photo d'album seulement. Les images
+   * « Partagés » (celles des publications) n'en ont pas : elles ne se
+   * sélectionnent pas, car « Couverture » et « Masquer » n'ont de sens que dans
+   * un album.
+   */
+  readonly albumId?: string;
 }
 
 /**
@@ -905,6 +964,13 @@ export interface AlbumReseauView {
    * bouton évite de proposer un geste qui finirait en refus.
    */
   readonly moderateur: boolean;
+  /**
+   * « Ajouter un album » paraît-il ? L'équipe seulement — même quand l'album est
+   * ouvert aux membres, `moderateur` (ci-dessus) ne parle plus que du bouton
+   * « Ajouter » : depuis le paramètre « Album ouvert aux membres », un membre
+   * peut garnir un album existant, pas en créer un.
+   */
+  readonly peutCreerAlbum: boolean;
   readonly menuOuvert: boolean;
   /**
    * OUVRE, et n'est PAS une bascule — c'est ce que le bouton d'ordinateur lit au
@@ -965,10 +1031,35 @@ export interface AlbumReseauView {
   /** Les bornes du serveur, lues sur `albumTitleSchema`. Jamais recopiées. */
   readonly titreMin: number;
   readonly titreMax: number;
+  // ── La sélection d'une photo (équipe) : « Couverture » et « Masquer » ────
+  /**
+   * La photo sélectionnée, ou `null`. La planche de 390 px dessinait la barre
+   * « 1 photo sélectionnée · Couverture · Masquer » EN PERMANENCE, inerte. Elle
+   * n'apparaît plus qu'avec une sélection : un membre de l'équipe touche une
+   * photo d'album pour la sélectionner, la touche à nouveau pour la relâcher.
+   */
+  readonly selection: string | null;
+  /** L'ÉQUIPE seule sélectionne : pour un membre, une tuile reste une image. */
+  readonly selectionnable: boolean;
+  readonly onSelectionner: (photoId: string) => void;
+  /** « Couverture » — ou « Retirer la couverture » si c'est déjà elle. */
+  readonly couvertureLibelle: string;
+  readonly onCouvertureAlbum: () => void;
+  /** « Masquer » — retire la photo de l'album, après confirmation. */
+  readonly onMasquerPhoto: () => void;
 }
 
 export interface A08TData {
   readonly reseau: ReseauEnteteView;
+  // ── Le lot « réseau vivant » — voir `./vivant.ts` ───────────────────────
+  readonly actions: ActionsReseauView;
+  readonly outils: OutilsReseauView;
+  readonly composeur: ComposeurReseauView;
+  readonly colonne: ColonneReseauView;
+  readonly filtreMembres: FiltreMembresView;
+  readonly apropos: AProposReseauView;
+  readonly pilotage: PilotageReseauView;
+  readonly vides: VidesReseauView;
   /**
    * LE COMPOSEUR D'ANNONCE, sur les vingt-cinq planches pour la même raison que
    * `gerer` : `reseau-screen.tsx` passe le MÊME objet à toutes, et les planches
@@ -1182,6 +1273,8 @@ export const enteteVide: ReseauEnteteView = {
   monAppartenance: '—',
   monRole: '—',
   visibilite: '',
+  couverture: null,
+  logo: null,
   description: '',
   descriptionLongueur: 0,
   moderateurs: 0,
@@ -1218,9 +1311,15 @@ const gestionVide: GestionReseauView = {
   onRefuser: () => {},
   onToutAccepter: () => {},
   onNommerModerateur: () => {},
+  onRevoquerModerateur: () => {},
   onEcrire: () => {},
   onEcrireMenu: () => {},
   onBannir: () => {},
+  onRetirer: () => {},
+  retirerOuverte: false,
+  retirerNom: '',
+  onConfirmerRetirer: () => {},
+  onAnnulerRetirer: () => {},
   bannirOuverte: false,
   bannirNom: '',
   onConfirmerBannir: () => {},
@@ -1332,6 +1431,7 @@ const albumVide: AlbumReseauView = {
   photos: [],
   prete: false,
   moderateur: false,
+  peutCreerAlbum: false,
   menuOuvert: false,
   onOuvrirMenu: () => {},
   onBasculer: () => {},
@@ -1347,6 +1447,12 @@ const albumVide: AlbumReseauView = {
   onFermerAlbum: () => {},
   titreMin: 0,
   titreMax: 0,
+  selection: null,
+  selectionnable: false,
+  onSelectionner: () => {},
+  couvertureLibelle: 'Couverture',
+  onCouvertureAlbum: () => {},
+  onMasquerPhoto: () => {},
 };
 
 export { albumVide };
@@ -1370,6 +1476,14 @@ export const NOTIFIER_SOURDINE = 'Les membres en sourdine ne sont pas notifiés.
 
 export const a08tFallback: A08TData = {
   reseau: enteteVide,
+  actions: actionsVides,
+  outils: outilsVides,
+  composeur: composeurVide,
+  colonne: colonneVide,
+  filtreMembres: filtreMembresVide,
+  apropos: aproposVide,
+  pilotage: pilotageVide,
+  vides: videsVides,
   notifierSourdine: NOTIFIER_SOURDINE,
   annonce: annonceVide,
   gerer: gestionVide,

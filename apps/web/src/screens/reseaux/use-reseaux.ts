@@ -177,8 +177,9 @@ export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): Rese
       myNets,
       discover,
       onRejoindre: ouvrirOuRejoindre,
+      seuil: seuilPhrase,
     }),
-    [myNets, discover, kindFilter, ouvrirOuRejoindre],
+    [myNets, discover, kindFilter, ouvrirOuRejoindre, seuilPhrase],
   );
 
   return {

@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { newId, type Prisma } from '@app/db';
 import {
+  COMMUNITY_ERROR_CODES,
+  COMMUNITY_ERROR_MESSAGES,
   FEED_ERROR_CODES,
   FEED_ERROR_MESSAGES,
   FEED_LIMITS,
@@ -29,6 +31,7 @@ import {
   type FeedQuery,
   type MoveToTopic,
   type MyStoriesQuery,
+  type PendingPostDecision,
   type PostType,
   type StoriesQuery,
   type StoryDiscoveryCategory,
@@ -499,6 +502,8 @@ export class FeedService {
     if (post.status !== 'PUBLISHED' && !isAuthor) throw ApiError.notFound();
     if (post.status === 'REMOVED') throw ApiError.notFound();
     if (post.moderationStatus === 'FLAGGED' && !isAuthor) throw ApiError.notFound();
+    // En attente de validation : son auteur seul la lit, comme dans les fils.
+    if (post.awaitingApproval && !isAuthor) throw ApiError.notFound();
     await this.visibility.assertVisible(actor.userId, post.authorUserId);
     if (!isVisibleAuthor(post.author)) throw ApiError.notFound();
     if (post.communityId !== null) await this.assertCommunityMember(actor.userId, post.communityId);
@@ -1014,7 +1019,23 @@ export class FeedService {
     await this.assertPostQuota(actor.userId);
 
     const communityId = input.communityId;
-    if (communityId !== undefined) await this.assertCommunityMember(actor.userId, communityId);
+    /**
+     * LES PARAMÈTRES DU RÉSEAU S'APPLIQUENT ICI, et pas seulement dans
+     * `CommunitiesService` : le fil d'un réseau s'écrit par CETTE route. Deux
+     * interrupteurs de « Gérer » y mordent — les sondages et la validation.
+     */
+    let enAttente = false;
+    if (communityId !== undefined) {
+      const regles = await this.communityPostRules(actor.userId, communityId);
+      if (input.poll !== undefined && !regles.pollsAllowed) {
+        throw new ApiError(
+          'POLLS_RESTRICTED',
+          COMMUNITY_ERROR_MESSAGES.POLLS_RESTRICTED,
+          COMMUNITY_ERROR_CODES.POLLS_RESTRICTED,
+        );
+      }
+      enAttente = regles.needsApproval;
+    }
 
     const { journeyId, journeyStepId } = await this.resolveJourneyContext(
       actor.userId,
@@ -1042,6 +1063,7 @@ export class FeedService {
           body: input.body,
           status: 'PUBLISHED',
           moderationStatus: 'PENDING',
+          awaitingApproval: enAttente,
           ...(me.cityId === null ? {} : { cityId: me.cityId }),
           ...(communityId === undefined ? {} : { communityId }),
           ...(journeyId === undefined ? {} : { journeyId }),
@@ -1117,23 +1139,247 @@ export class FeedService {
         });
       }
 
-      await this.outbox.emit(tx, {
-        type: 'post.published',
-        aggregateId: id,
-        payload: {
-          authorUserId: actor.userId,
-          type: input.type,
-          ...(communityId === undefined ? {} : { communityId }),
-          ...(journeyStepId === undefined ? {} : { journeyStepId }),
-          mediaCount: mediaIds.length,
-          // RÈGLE DURE (13 §2) : le consommateur « moderation (analyse) » de §6
-          // reçoit le texte MASQUÉ, jamais le corps brut.
-          ...this.moderationPayload(input.body),
-        },
-      });
+      /**
+       * UNE PUBLICATION EN ATTENTE N'EST PAS PUBLIÉE : `post.published` part à
+       * sa VALIDATION (`decidePendingPost`). L'émettre ici aurait notifié les
+       * membres d'un texte qu'aucun d'eux ne peut lire, et lancé la modération
+       * sur un contenu que l'équipe du réseau n'a pas encore vu.
+       */
+      if (!enAttente) {
+        await this.outbox.emit(tx, {
+          type: 'post.published',
+          aggregateId: id,
+          payload: {
+            authorUserId: actor.userId,
+            type: input.type,
+            ...(communityId === undefined ? {} : { communityId }),
+            ...(journeyStepId === undefined ? {} : { journeyStepId }),
+            mediaCount: mediaIds.length,
+            // RÈGLE DURE (13 §2) : le consommateur « moderation (analyse) » de §6
+            // reçoit le texte MASQUÉ, jamais le corps brut.
+            ...this.moderationPayload(input.body),
+          },
+        });
+      }
     });
 
     return this.postDetail(actor, id);
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════╗
+   * ║ CE QUE LES PARAMÈTRES D'UN RÉSEAU PERMETTENT À CET AUTEUR            ║
+   * ╚══════════════════════════════════════════════════════════════════════╝
+   *
+   * Vérifie l'adhésion ACTIVE (même refus que `assertCommunityMember`), puis
+   * lit les deux interrupteurs de « Gérer » qui concernent une publication.
+   *
+   * ── QUELLES PUBLICATIONS ATTENDENT ───────────────────────────────────────
+   *
+   * Le porteur : « la validation dépend des paramètres du réseau. Deux options :
+   * valider toutes les publications, valider X publications pour chaque
+   * membre. » D'où `postsApprovalScope` :
+   *
+   *   · `ALL` — toute publication d'un membre ordinaire attend ;
+   *   · `FIRST_POSTS` — elle attend tant que le membre a MOINS de
+   *     `postsApprovalCount` publications déjà validées dans ce réseau.
+   *
+   * Une publication antérieure à l'interrupteur compte comme validée : un
+   * membre qui publiait déjà n'a pas à refaire ses preuves parce qu'on vient
+   * d'allumer la règle. L'équipe ne passe jamais par la validation.
+   */
+  private async communityPostRules(
+    userId: string,
+    communityId: string,
+  ): Promise<{ readonly pollsAllowed: boolean; readonly needsApproval: boolean }> {
+    const adhesion = await this.prisma.communityMember.findFirst({
+      where: { communityId, userId, status: 'ACTIVE' },
+      select: {
+        role: true,
+        community: {
+          select: {
+            pollsOpenToMembers: true,
+            postsRequireApproval: true,
+            postsApprovalScope: true,
+            postsApprovalCount: true,
+          },
+        },
+      },
+    });
+    if (adhesion === null) throw ApiError.notFound();
+    const equipe = adhesion.role === 'OWNER' || adhesion.role === 'MODERATOR';
+    if (equipe) return { pollsAllowed: true, needsApproval: false };
+
+    let needsApproval = false;
+    const c = adhesion.community;
+    if (c.postsRequireApproval) {
+      if (c.postsApprovalScope === 'ALL') {
+        needsApproval = true;
+      } else {
+        // `take` borne le décompte au seuil : on n'a besoin de savoir que s'il
+        // est ATTEINT, pas combien de publications ce membre a au total.
+        const validees = await this.prisma.post.count({
+          where: {
+            communityId,
+            authorUserId: userId,
+            awaitingApproval: false,
+            status: 'PUBLISHED',
+            deletedAt: null,
+          },
+          take: c.postsApprovalCount,
+        });
+        needsApproval = validees < c.postsApprovalCount;
+      }
+    }
+    return { pollsAllowed: adhesion.community.pollsOpenToMembers, needsApproval };
+  }
+
+  // ══ GET /communities/:id/pending-posts — la file de validation ═══════════════
+
+  /**
+   * L'équipe du réseau assure la validation ; un membre ordinaire reçoit le
+   * même `403 MODERATOR_REQUIRED` que sur la file de signalements. Le réseau
+   * est accepté par son identifiant OU son slug, comme toutes les routes du
+   * module 07.
+   */
+  private async moderatedCommunity(userId: string, idOrSlug: string): Promise<string> {
+    const uuid = /^[0-9a-f-]{36}$/i.test(idOrSlug) ? idOrSlug : null;
+    const community = await this.prisma.community.findFirst({
+      where: uuid === null ? { slug: idOrSlug } : { OR: [{ id: uuid }, { slug: idOrSlug }] },
+      select: { id: true },
+    });
+    if (community === null) throw ApiError.notFound();
+    const adhesion = await this.prisma.communityMember.findFirst({
+      where: { communityId: community.id, userId, status: 'ACTIVE' },
+      select: { role: true },
+    });
+    if (adhesion === null) {
+      throw ApiError.transverse('FORBIDDEN', { reason: 'NOT_A_MEMBER', communityId: community.id });
+    }
+    if (adhesion.role !== 'OWNER' && adhesion.role !== 'MODERATOR') {
+      throw ApiError.transverse('FORBIDDEN', { reason: 'MODERATOR_REQUIRED' });
+    }
+    return community.id;
+  }
+
+  async pendingPosts(
+    actor: FeedActor,
+    idOrSlug: string,
+    query: { readonly cursor?: string | undefined; readonly limit: number },
+  ) {
+    const communityId = await this.moderatedCommunity(actor.userId, idOrSlug);
+    const scope = `pending-posts:${communityId}`;
+    const rows = await this.prisma.post.findMany({
+      where: this.withIdCursor<Prisma.PostWhereInput>(
+        [
+          { communityId },
+          { awaitingApproval: true },
+          { status: 'PUBLISHED' },
+          { deletedAt: null },
+          { author: { deletedAt: null } },
+        ],
+        query.cursor,
+        scope,
+      ),
+      orderBy: { id: 'desc' },
+      take: query.limit + 1,
+      select: {
+        id: true,
+        type: true,
+        body: true,
+        createdAt: true,
+        author: {
+          select: {
+            id: true,
+            handle: true,
+            displayName: true,
+            avatarAsset: { select: { storageKey: true } },
+          },
+        },
+      },
+    });
+    const page = buildPage(rows, query.limit, scope, this.cursorSecret);
+    return {
+      items: page.items.map((r) => ({
+        postId: r.id,
+        type: POST_TYPE_VOCABULARY[r.type].label,
+        body: r.body,
+        createdAt: r.createdAt,
+        author: {
+          userId: r.author.id,
+          handle: r.author.handle,
+          displayName: r.author.displayName,
+          avatarUrl:
+            r.author.avatarAsset === null ? null : `/media/${r.author.avatarAsset.storageKey}`,
+        },
+      })),
+      nextCursor: page.nextCursor,
+    };
+  }
+
+  /**
+   * « Valider » publie la publication — c'est À CET INSTANT que
+   * `post.published` part, avec la même charge que `createPost` ; « Refuser »
+   * la retire (`REMOVED`), sans notification aux membres. Les deux sont
+   * journalisés.
+   */
+  async decidePendingPost(
+    actor: FeedActor,
+    idOrSlug: string,
+    postId: string,
+    input: PendingPostDecision,
+  ) {
+    const communityId = await this.moderatedCommunity(actor.userId, idOrSlug);
+    const post = await this.prisma.post.findFirst({
+      where: { id: postId, communityId, deletedAt: null },
+      select: {
+        id: true,
+        type: true,
+        body: true,
+        authorUserId: true,
+        awaitingApproval: true,
+        journeyStepId: true,
+        status: true,
+        _count: { select: { media: true } },
+      },
+    });
+    if (post === null) throw ApiError.notFound();
+    if (!post.awaitingApproval || post.status !== 'PUBLISHED') {
+      throw new ApiError(
+        'POST_NOT_PENDING',
+        COMMUNITY_ERROR_MESSAGES.POST_NOT_PENDING,
+        COMMUNITY_ERROR_CODES.POST_NOT_PENDING,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (input.decision === 'APPROVE') {
+        await tx.post.update({ where: { id: post.id }, data: { awaitingApproval: false } });
+        await this.outbox.emit(tx, {
+          type: 'post.published',
+          aggregateId: post.id,
+          payload: {
+            authorUserId: post.authorUserId,
+            type: post.type,
+            communityId,
+            ...(post.journeyStepId === null ? {} : { journeyStepId: post.journeyStepId }),
+            mediaCount: post._count.media,
+            ...this.moderationPayload(post.body),
+          },
+        });
+      } else {
+        await tx.post.update({ where: { id: post.id }, data: { status: 'REMOVED' } });
+      }
+      await this.audit.record(tx, {
+        actor: { type: 'MEMBER', id: actor.userId },
+        action: input.decision === 'APPROVE' ? 'community.post_approved' : 'community.post_rejected',
+        targetType: 'post',
+        targetId: post.id,
+        metadata: { communityId },
+      });
+    });
+
+    return { postId: post.id, decision: input.decision };
   }
 
   /**
@@ -2347,6 +2593,13 @@ export class FeedService {
       // `moderation.content_hidden` (§6) se lit ici aussi : un contenu FLAGGED
       // sort des listes même si son `status` n'a pas encore suivi.
       { moderationStatus: { not: 'FLAGGED' } },
+      /**
+       * UNE PUBLICATION EN ATTENTE DE VALIDATION n'est lue que par son AUTEUR
+       * (« Validation des nouvelles publications », Gérer · Paramètres). Les
+       * modérateurs la voient dans la file de « Gérer », pas dans le fil : la
+       * mêler au fil l'aurait montrée comme publiée à celui qui doit la juger.
+       */
+      { OR: [{ awaitingApproval: false }, { authorUserId: viewerId }] },
       ...(separated.length === 0 ? [] : [{ authorUserId: { notIn: separated } }]),
       {
         author: {
@@ -3260,6 +3513,7 @@ export class FeedService {
         createdAt: row.createdAt,
         author: this.summary(row.author),
         isAuthor: row.authorUserId === viewerId,
+        awaitingApproval: row.awaitingApproval ?? false,
         city: row.city,
         community: row.community,
         media: row.media.map((m) => ({
@@ -3825,6 +4079,11 @@ type PostRow = {
   body: string;
   createdAt: Date;
   authorUserId: string;
+  /**
+   * Optionnel parce que deux chemins composent un `PostRow` par `select` et non
+   * par `include` ; un champ absent vaut « publiée » (`false`).
+   */
+  awaitingApproval?: boolean;
   reactionCount: number;
   commentCount: number;
   author: AuthorRow;

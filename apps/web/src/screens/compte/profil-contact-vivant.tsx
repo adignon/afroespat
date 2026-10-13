@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { FenetreEcrire } from '@/components/fenetre-ecrire';
+import { FenetreSignalement } from '@/components/fenetre-signalement';
 /**
  * LES DEUX APPELS DE « ÉCRIRE » SONT PARTAGÉS AVEC L'ONGLET « MEMBRES » D'UN
  * RÉSEAU, et ils vivent donc dans `components/ecrire.ts`.
@@ -16,10 +17,10 @@ import { FenetreEcrire } from '@/components/fenetre-ecrire';
  * divergé, et le symptôme aurait été un 400 affiché comme une panne.
  */
 import { conversationAvec, ouvrirConversation } from '@/components/ecrire';
-import { ApiError, memberApi } from '@/lib/api/index';
+import { ApiError, memberApi, voidResponse } from '@/lib/api/index';
 import { CONNECTION_MESSAGE_MIN } from '@app/shared';
 import { z } from 'zod';
-import type { K02Data, MotifDemande } from './data';
+import type { ContactProfilView, EntreeOptionProfil, K02Data, MotifDemande } from './data';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -71,6 +72,14 @@ export function ProfilContactVivant({
   const [enVol, setEnVol] = useState(false);
   const [ecrire, setEcrire] = useState(false);
   const [confirmation, setConfirmation] = useState(false);
+  /**
+   * LA RELATION, TELLE QUE LE SERVEUR L'A DITE PUIS TELLE QUE MES GESTES L'ONT
+   * CHANGÉE. Le profil n'est pas rechargé après une demande : on avance l'état
+   * nous-même (« envoyée », « contact »), ce que la prochaine lecture confirmera.
+   */
+  const [relation, setRelation] = useState<ContactProfilView['etat'] | null>(null);
+  const [aConfirmer, setAConfirmer] = useState<'bloquer' | 'retirer' | null>(null);
+  const [signaler, setSignaler] = useState(false);
 
   /**
    * LE PSEUDO PORTE L'AROBASE DANS L'URL (`/@fatou`), jamais dans la charge :
@@ -133,6 +142,7 @@ export function ProfilContactVivant({
         notifySuccess(`Votre demande est partie à ${donnees.membre.prenom}.`);
         setTexte('');
         setMotif(null);
+        setRelation('envoyee');
         onFermerAjout();
       })
       .catch((cause: unknown) => {
@@ -182,6 +192,124 @@ export function ProfilContactVivant({
       });
   }, [donnees.membre.prenom, handle]);
 
+  /**
+   * ── LE BOUTON « AJOUTER AUX CONTACTS », SELON LA RELATION ─────────────────
+   *
+   * `relation` vient de `GET /users/:handle` (champ ajouté pour ce bouton) ; un
+   * profil anonyme ou ancien la rend `null`, et l'on retombe sur « aucune » — le
+   * serveur refusera de toute façon un doublon (`REQUEST_PENDING`).
+   */
+  const etat: ContactProfilView['etat'] =
+    relation ??
+    (donnees.relation?.status === 'CONNECTED'
+      ? 'contact'
+      : donnees.relation?.status === 'REQUEST_SENT'
+        ? 'envoyee'
+        : donnees.relation?.status === 'REQUEST_RECEIVED'
+          ? 'recue'
+          : donnees.relation?.status === 'SELF'
+            ? 'soi'
+            : 'aucune');
+  const demandeRecue = donnees.relation?.requestId ?? null;
+
+  const accepter = useCallback(() => {
+    if (demandeRecue === null) return;
+    setEnVol(true);
+    memberApi
+      .post(`/connection-requests/${encodeURIComponent(demandeRecue)}/accept`, z.unknown(), {
+        body: {},
+      })
+      .then(() => {
+        notifySuccess(`${donnees.membre.prenom} fait maintenant partie de vos contacts.`);
+        setRelation('contact');
+      })
+      .catch((cause: unknown) => {
+        notifyError(
+          cause instanceof ApiError ? cause.displayMessage : 'La demande n’a pas pu être acceptée.',
+        );
+      })
+      .finally(() => {
+        setEnVol(false);
+      });
+  }, [demandeRecue, donnees.membre.prenom]);
+
+  const LIBELLES: Record<ContactProfilView['etat'], readonly [string, string]> = {
+    aucune: ['Ajouter aux contacts', 'Ajouter'],
+    envoyee: ['Demande envoyée', 'Envoyée'],
+    recue: ['Accepter la demande', 'Accepter'],
+    contact: ['Dans vos contacts', 'Contact'],
+    soi: ['Votre profil', 'Vous'],
+  };
+  const contact: ContactProfilView = {
+    etat,
+    libelle: LIBELLES[etat][0],
+    libelleCourt: LIBELLES[etat][1],
+    inactif: enVol || etat === 'envoyee' || etat === 'contact' || etat === 'soi',
+    onAction: etat === 'recue' ? accepter : () => undefined,
+  };
+
+  /**
+   * ── LE MENU « ··· » ────────────────────────────────────────────────────────
+   *
+   * Le porteur : « le bouton d'option fait quoi ? » Rien : un `<button>` sans
+   * geste. Il porte maintenant ce qu'un profil d'un autre membre appelle :
+   *
+   *   · « Retirer des contacts » — si nous le sommes (`DELETE /me/connections/:id`) ;
+   *   · « Signaler » — `POST /reports`, genre `USER`, la fenêtre partagée ;
+   *   · « Bloquer » — `POST /blocks`, après confirmation : le profil devient
+   *     introuvable pour les deux (08 §4.4), donc on quitte la page.
+   *
+   * Sur mon propre profil, le menu est vide et `MenuRond` rend le rond inerte.
+   */
+  const userId = donnees.membre.userId;
+  const options: readonly EntreeOptionProfil[] =
+    etat === 'soi'
+      ? []
+      : [
+          ...(etat === 'contact' && userId !== null
+            ? [{ label: 'Retirer des contacts', onClick: () => setAConfirmer('retirer') }]
+            : []),
+          ...(userId === null
+            ? []
+            : [{ label: `Signaler ${donnees.membre.prenom}`, onClick: () => setSignaler(true) }]),
+          { label: `Bloquer ${donnees.membre.prenom}`, onClick: () => setAConfirmer('bloquer') },
+        ];
+  /** À 390 px, « Recommander » n'est pas dessiné : il rejoint le menu, en tête. */
+  const optionsMobile: readonly EntreeOptionProfil[] =
+    etat === 'soi'
+      ? []
+      : [
+          { label: `Recommander ${donnees.membre.prenom}`, onClick: () => setConfirmation(true) },
+          ...options,
+        ];
+
+  const confirmerOption = useCallback(() => {
+    const quoi = aConfirmer;
+    if (quoi === null) return;
+    setEnVol(true);
+    const appel =
+      quoi === 'bloquer'
+        ? memberApi.post('/blocks', z.unknown(), { body: { handle } })
+        : memberApi.del(`/me/connections/${encodeURIComponent(userId ?? '')}`, voidResponse);
+    appel
+      .then(() => {
+        setAConfirmer(null);
+        if (quoi === 'bloquer') {
+          notifySuccess(`${donnees.membre.prenom} est bloqué·e. Vous ne vous verrez plus.`);
+          router.push('/accueil');
+          return;
+        }
+        notifySuccess(`${donnees.membre.prenom} ne fait plus partie de vos contacts.`);
+        setRelation('aucune');
+      })
+      .catch((cause: unknown) => {
+        notifyError(cause instanceof ApiError ? cause.displayMessage : 'L’action n’a pas abouti.');
+      })
+      .finally(() => {
+        setEnVol(false);
+      });
+  }, [aConfirmer, donnees.membre.prenom, handle, router, userId]);
+
   const motifs: readonly MotifDemande[] = MOTIFS_DESSINES.map((libelle) => {
     const actif = motif === libelle;
     return {
@@ -209,6 +337,9 @@ export function ProfilContactVivant({
     demandeBloque: enVol || texte.trim().length < CONNECTION_MESSAGE_MIN,
     onRecommander,
     recommandeBloque: enVol,
+    contact,
+    options,
+    optionsMobile,
   };
 
   return (
@@ -226,6 +357,35 @@ export function ProfilContactVivant({
           setConfirmation(false);
         }}
         nom="RECOMMANDATION"
+      />
+      <FenetreConfirmation
+        ouverte={aConfirmer !== null}
+        titre={
+          aConfirmer === 'bloquer'
+            ? `Bloquer ${donnees.membre.prenom} ?`
+            : `Retirer ${donnees.membre.prenom} de vos contacts ?`
+        }
+        question={
+          aConfirmer === 'bloquer'
+            ? `Vous ne verrez plus ${donnees.membre.prenom}, et ${donnees.membre.prenom} ne vous verra plus : ni profil, ni messages, ni publications.`
+            : `${donnees.membre.prenom} ne sera pas prévenu·e. Vous pourrez lui renvoyer une demande plus tard.`
+        }
+        precision={
+          aConfirmer === 'bloquer' ? 'Vous pourrez le débloquer depuis Compte › Contacts.' : ''
+        }
+        libelleConfirmer={aConfirmer === 'bloquer' ? 'Bloquer' : 'Retirer'}
+        occupe={enVol}
+        onConfirmer={confirmerOption}
+        onAnnuler={() => {
+          setAConfirmer(null);
+        }}
+        nom="PROFIL-OPTION"
+      />
+      <FenetreSignalement
+        sujet={signaler && userId !== null ? { type: 'USER', id: userId } : null}
+        onFermer={() => {
+          setSignaler(false);
+        }}
       />
       <FenetreEcrire
         ouverte={ecrire}

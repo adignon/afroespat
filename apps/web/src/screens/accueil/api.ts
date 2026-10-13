@@ -63,7 +63,7 @@ import {
   type StoryDetailResponse,
   type StoryVotesResponse,
   createDirectConversationSchema,
-  uuidSchema,
+  openDirectConversationResponseSchema,
 } from '@app/shared';
 /**
  * `@/lib/api/index` ET NON `@/lib/api`.
@@ -457,13 +457,8 @@ export function ecrireAAuteur(
    */
   return memberApi.post(
     '/conversations/direct',
-    z
-      .object({
-        conversationId: uuidSchema,
-        messageId: uuidSchema,
-        pending: z.boolean(),
-      })
-      .strict(),
+    // Le même schéma que « Écrire » sur le profil, désormais partagé.
+    openDirectConversationResponseSchema,
     {
       body: createDirectConversationSchema.parse({
         toHandle,

@@ -201,6 +201,21 @@ export interface A10Data {
    */
   nomMax: number;
 
+  // ── La couverture : « Ajouter une couverture », sur les deux planches ──────
+  /**
+   * L'adresse ABSOLUE de l'image déposée, pour l'aperçu dans la zone pointillée,
+   * ou `null` tant que rien n'est choisi. Le porteur : « Ajouter une couverture
+   * ne marche pas ? » — la zone était un `<div>` inerte.
+   */
+  couvertureUrl: string | null;
+  /** Le dépôt est en cours : la zone dit « Envoi… » et ne se rouvre pas. */
+  couvertureOccupee: boolean;
+  onCouverture: (event: { target: { files: FileList | null; value: string } }) => void;
+  /** Le logo, sur le même modèle : aperçu, envoi en cours, choix du fichier. */
+  logoUrl: string | null;
+  logoOccupe: boolean;
+  onLogo: (event: { target: { files: FileList | null; value: string } }) => void;
+
   // ── La description : la planche de 390 px ne la dessine pas ───────────────
   descriptionValue: string;
   onDescriptionChange: (event: { readonly target: { readonly value: string } }) => void;
@@ -300,6 +315,12 @@ export const a10Fallback: A10Data = {
   invitees,
   nomValue: '',
   onNomChange: () => {},
+  couvertureUrl: null,
+  couvertureOccupee: false,
+  onCouverture: () => {},
+  logoUrl: null,
+  logoOccupe: false,
+  onLogo: () => {},
   nomMax: communityNameSchema.maxLength ?? 0,
   descriptionValue: '',
   onDescriptionChange: () => {},

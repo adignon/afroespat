@@ -23,7 +23,8 @@ import { ConnectionsService } from './connections.service';
  * `mutual-connections`, qui compte MES contacts et non les siens.
  *
  * `connection.request` est L1 : une demande manuelle est un démarchage potentiel,
- * et §3.1 la borne par la ville, un message obligatoire et deux quotas. La
+ * et §3.1 la borne par un message obligatoire et deux quotas (la condition de
+ * ville a été levée par le porteur — voir `ConnectionsService.request`). La
  * LECTURE de mes propres contacts, elle, n'a pas à exiger L1 — d'où
  * `content.read` sur les routes de consultation.
  */

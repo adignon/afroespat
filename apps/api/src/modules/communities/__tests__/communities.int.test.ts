@@ -36,6 +36,8 @@ import { numeroDEpreuve } from '../../../common/__tests__/numeros';
 describe('réseaux (07 §2, §9)', () => {
   let prisma: PrismaService;
   let communities: CommunitiesService;
+  /** Gardé à part pour relire la LISTE des conversations (titre du fil d'équipe). */
+  let messaging: MessagingService;
   let users: UsersService;
   let auth: AuthService;
   const sms = new FakeSmsProvider();
@@ -122,20 +124,15 @@ describe('réseaux (07 §2, §9)', () => {
      * conversation. Le monter ici n'ajoute aucune dépendance de test — ses
      * quatre collaborateurs sont déjà debout juste au-dessus.
      */
-    communities = new CommunitiesService(
+    messaging = new MessagingService(
       prisma,
+      crypto,
       outbox,
       audit,
       visibility,
-      new MessagingService(
-        prisma,
-        crypto,
-        outbox,
-        audit,
-        visibility,
-        new ConnectionsService(prisma, outbox, audit, visibility),
-      ),
+      new ConnectionsService(prisma, outbox, audit, visibility),
     );
+    communities = new CommunitiesService(prisma, outbox, audit, visibility, messaging);
     // `ConsentsService` a été ajouté au tronc commun après l'écriture de ce
     // module : les consentements de l'inscription s'écrivent dans la transaction
     // de création du compte (01 §5).
@@ -2401,6 +2398,69 @@ describe('réseaux (07 §2, §9)', () => {
     }
   });
 
+  /**
+   * La photo de couverture d'un album (§2.6, `PATCH /albums/:id`). L'équipe la
+   * choisit parmi les photos de CET album ; un membre ordinaire ne le peut pas ;
+   * une photo d'un autre album est introuvable ; `null` revient à la plus récente.
+   * Retirer la photo de couverture remet la couverture à nul : le retrait est un
+   * `deletedAt`, la clé étrangère ne le ferait pas d'elle-même.
+   */
+  it('laisse l’équipe choisir la couverture d’un album, et l’oublie quand la photo part', async () => {
+    const owner = await newMember();
+    const community = await createInterest(owner);
+    const member = await newMember();
+    await communities.join(community.id, member);
+
+    const album = await communities.createAlbum(community.id, owner, { title: 'Pique-nique' });
+    const autre = await communities.createAlbum(community.id, owner, { title: 'Autre' });
+    const assets = await Promise.all(
+      [0, 1, 2].map(() =>
+        prisma.mediaAsset.create({
+          data: {
+            id: newId(),
+            ownerUserId: owner,
+            kind: 'ALBUM',
+            storageKey: `test/${newId()}.jpg`,
+            mime: 'image/jpeg',
+            sizeBytes: BigInt(1024),
+            status: 'READY',
+          },
+        }),
+      ),
+    );
+    try {
+      const [a0, a1, a2] = assets as [(typeof assets)[0], (typeof assets)[0], (typeof assets)[0]];
+      const premiere = await communities.addPhoto(album.id, owner, { mediaAssetId: a0.id });
+      await communities.addPhoto(album.id, owner, { mediaAssetId: a1.id });
+      const ailleurs = await communities.addPhoto(autre.id, owner, { mediaAssetId: a2.id });
+
+      const lire = async () =>
+        (await communities.albums(community.id, owner)).items.find((a) => a.id === album.id);
+
+      expect((await lire())?.coverPhotoId).toBeNull();
+
+      await expect(
+        communities.setAlbumCover(album.id, member, premiere.id),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        communities.setAlbumCover(album.id, owner, ailleurs.id),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+      await communities.setAlbumCover(album.id, owner, premiere.id);
+      expect((await lire())?.coverPhotoId).toBe(premiere.id);
+
+      await communities.setAlbumCover(album.id, owner, null);
+      expect((await lire())?.coverPhotoId).toBeNull();
+
+      await communities.setAlbumCover(album.id, owner, premiere.id);
+      await communities.deletePhoto(album.id, premiere.id, owner);
+      expect((await lire())?.coverPhotoId).toBeNull();
+    } finally {
+      await prisma.albumPhoto.deleteMany({ where: { albumId: { in: [album.id, autre.id] } } });
+      await prisma.mediaAsset.deleteMany({ where: { id: { in: assets.map((a) => a.id) } } });
+    }
+  });
+
   // ══ Événements de domaine (§6) ═══════════════════════════════════════════
 
   it('émet les événements du §6 dans la transaction qui les cause', async () => {
@@ -2450,6 +2510,73 @@ describe('réseaux (07 §2, §9)', () => {
     expect(after.lastActivityAt.getTime()).toBeGreaterThan(longAgo.getTime());
   });
 
+  // ══ La couverture : un média du PROPRIÉTAIRE, prêt, et rendu en `coverUrl` ══
+  //
+  // `create` et `update` recopiaient `coverAssetId` sans rien vérifier : le
+  // média d'un autre membre, ou un justificatif (`PROOF`, « jamais affiché »),
+  // pouvait devenir le bandeau d'un réseau. C'est le contrôle des couvertures
+  // d'événement (`assertOwnedCover`), appliqué ici.
+
+  it('n’accepte pour couverture qu’un média EVENT_COVER du propriétaire, et rend son adresse', async () => {
+    const owner = await newMember();
+    const autre = await newMember();
+    const media = async (proprio: string, kind: 'EVENT_COVER' | 'PROOF', status: 'READY' | 'PENDING' = 'READY') =>
+      (
+        await prisma.mediaAsset.create({
+          data: {
+            id: newId(),
+            ownerUserId: proprio,
+            kind,
+            storageKey: `test/reseau-couverture/${newId()}.jpg`,
+            mime: 'image/jpeg',
+            sizeBytes: BigInt(4096),
+            status,
+            exifStripped: true,
+          },
+        })
+      ).id;
+    const mienne = await media(owner, 'EVENT_COVER');
+    const etrangere = await media(autre, 'EVENT_COVER');
+    const justificatif = await media(owner, 'PROOF');
+    const enCours = await media(owner, 'EVENT_COVER', 'PENDING');
+    const community = await createInterest(owner);
+    try {
+      // Étrangère ou d'un autre genre : 404, indistinguable d'un média absent.
+      await expect(communities.update(community.id, owner, { coverAssetId: etrangere })).rejects.toMatchObject({
+        status: 404,
+      });
+      await expect(communities.update(community.id, owner, { coverAssetId: justificatif })).rejects.toMatchObject({
+        status: 404,
+      });
+      // Encore en analyse : une erreur de validation, le membre sait qu'il existe.
+      await expect(communities.update(community.id, owner, { coverAssetId: enCours })).rejects.toMatchObject({
+        status: 400,
+      });
+
+      const apres = await communities.update(community.id, owner, { coverAssetId: mienne });
+      expect(apres.coverAssetId).toBe(mienne);
+      expect(apres.coverUrl).toMatch(/^\/media\/test\/reseau-couverture\//);
+
+      // Retirer la couverture reste possible : `null` ne passe pas par le contrôle.
+      const sans = await communities.update(community.id, owner, { coverAssetId: null });
+      expect(sans.coverUrl).toBeNull();
+
+      // Le LOGO suit exactement la même règle.
+      await expect(communities.update(community.id, owner, { logoAssetId: etrangere })).rejects.toMatchObject({
+        status: 404,
+      });
+      const logo = await communities.update(community.id, owner, { logoAssetId: mienne });
+      expect(logo.logoAssetId).toBe(mienne);
+      expect(logo.logoUrl).toMatch(/^\/media\/test\/reseau-couverture\//);
+    } finally {
+      await prisma.community.update({
+        where: { id: community.id },
+        data: { coverAssetId: null, logoAssetId: null },
+      });
+      await prisma.mediaAsset.deleteMany({ where: { id: { in: [mienne, etrangere, justificatif, enCours] } } });
+    }
+  });
+
   // ══ « Contacter les modérateurs » — le fil de groupe (08 §5.1) ═════════════
   //
   // CE N'EST PAS UN SIGNALEMENT, et les cas ci-dessous le figent : la route
@@ -2494,6 +2621,25 @@ describe('réseaux (07 §2, §9)', () => {
     expect(new Set(fil.members.filter((m) => m.leftAt === null).map((m) => m.userId))).toEqual(
       new Set([demandeur, owner, moderateur]),
     );
+  });
+
+  it('nomme le fil par le réseau, suivi pour l’équipe du nom du membre qui écrit', async () => {
+    const owner = await newMember();
+    const community = await createInterest(owner);
+    const demandeur = await newMember();
+    await communities.join(community.id, demandeur);
+    await prisma.user.update({ where: { id: demandeur }, data: { displayName: 'Aïcha Diop' } });
+
+    const { conversationId } = await communities.openModeratorsConversation(community.id, demandeur);
+    const titreDe = async (lecteur: string) =>
+      (await messaging.listConversations(lecteur, { limit: 50 })).items.find((c) => c.id === conversationId)
+        ?.title;
+
+    // Le porteur : « OUI ajoute » — un modérateur contacté par plusieurs membres
+    // voyait autant de lignes au même nom. Le membre, lui, n'a qu'un fil par
+    // réseau : son propre nom n'y apprendrait rien.
+    expect(await titreDe(owner)).toBe(`${community.name} · Aïcha Diop`);
+    expect(await titreDe(demandeur)).toBe(community.name);
   });
 
   it('est idempotente : un second appel rouvre LE MÊME fil', async () => {

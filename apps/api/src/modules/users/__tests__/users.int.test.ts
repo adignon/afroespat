@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditService } from '../../../common/audit.service';
 import { CryptoService } from '../../../common/crypto.service';
@@ -419,6 +418,46 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     }
     expect(JSON.stringify(profile)).not.toContain('phoneEncrypted');
     expect(profile.handle).toBe(handle);
+  });
+
+  /**
+   * `relation` — ce que le bouton « Ajouter aux contacts » du profil lit. Le
+   * porteur : « même quand la demande est envoyée, le bouton affiche toujours
+   * “Envoyer une demande” ». La relation est vue DES DEUX CÔTÉS d'une demande en
+   * attente, puis disparaît pour un anonyme.
+   */
+  it('rend ma relation avec le membre : soi, aucune, demande envoyée ou reçue', async () => {
+    const moi = await newMember();
+    const lui = await newMember();
+    const monPseudo = `relmoi${counter}`;
+    const sonPseudo = `rellui${counter}`;
+    await users.updateMe(moi, { handle: monPseudo });
+    await users.updateMe(lui, { handle: sonPseudo });
+    await users.updateProfile(lui, { isPublic: true });
+
+    expect((await users.publicProfile(monPseudo, moi)).relation).toEqual({ status: 'SELF', requestId: null });
+    expect((await users.publicProfile(sonPseudo, moi)).relation).toEqual({ status: 'NONE', requestId: null });
+    expect((await users.publicProfile(sonPseudo, null)).relation).toBeNull();
+
+    const demande = await prisma.connectionRequest.create({
+      data: {
+        id: newId(),
+        fromUserId: moi,
+        toUserId: lui,
+        message: 'Bonjour, on se croise souvent au marché.',
+        status: 'PENDING',
+      },
+    });
+    expect((await users.publicProfile(sonPseudo, moi)).relation).toEqual({
+      status: 'REQUEST_SENT',
+      requestId: null,
+    });
+    await users.updateProfile(moi, { isPublic: true });
+    expect((await users.publicProfile(monPseudo, lui)).relation).toEqual({
+      status: 'REQUEST_RECEIVED',
+      requestId: demande.id,
+    });
+    await prisma.connectionRequest.delete({ where: { id: demande.id } });
   });
 
   it('cache un profil non public à un visiteur anonyme', async () => {

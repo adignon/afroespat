@@ -28,6 +28,7 @@ import {
 } from './from-api';
 import { echecDe } from './echec';
 import { ApiError } from '../../lib/api/index';
+import { urlMedia } from '../../lib/api/base';
 
 /**
  * LE BRANCHEMENT DES RÉSEAUX, ÉPROUVÉ SUR DES CHARGES RÉELLES.
@@ -420,7 +421,7 @@ describe('les convertisseurs posent toutes les prises que le JSX transcodé lit'
 
     // « Événements » : seulement l'album dont `eventId` n'est pas nul.
     expect(albumPhotosFrom(albums, partagees, 'evenements').map((p) => p.url)).toEqual([
-      '/media/b/1.jpg',
+      urlMedia('/media/b/1.jpg'),
     ]);
 
     // « Partagés » n'est PAS un album : c'est la vue des médias de publications.
@@ -430,8 +431,8 @@ describe('les convertisseurs posent toutes les prises que le JSX transcodé lit'
 
     // « Tout » réunit les deux — et la photo sans adresse ne paraît nulle part.
     expect(albumPhotosFrom(albums, partagees, 'tout').map((p) => p.url)).toEqual([
-      '/media/a/1.jpg',
-      '/media/b/1.jpg',
+      urlMedia('/media/a/1.jpg'),
+      urlMedia('/media/b/1.jpg'),
       '/media/c/1.jpg',
     ]);
 
@@ -452,7 +453,7 @@ describe('les convertisseurs posent toutes les prises que le JSX transcodé lit'
     // `photoCount` vient du serveur — il compte AUSSI la photo en traitement.
     expect(vignettes[0]!.compte).toBe('2 photos');
     // La couverture est la première photo QUI A UNE ADRESSE.
-    expect(vignettes[0]!.couverture).toBe('/media/a/1.jpg');
+    expect(vignettes[0]!.couverture).toBe(urlMedia('/media/a/1.jpg'));
   });
 
   it('les images d’une publication sortent dans l’ordre que l’auteur a choisi', () => {
@@ -466,7 +467,7 @@ describe('les convertisseurs posent toutes les prises que le JSX transcodé lit'
       { media: [] },
     ] as unknown as Parameters<typeof photosPartageesFrom>[0]);
 
-    expect(photos.map((p) => p.url)).toEqual(['/media/d/1.jpg', '/media/d/2.jpg']);
+    expect(photos.map((p) => p.url)).toEqual(['/media/d/1.jpg', '/media/d/2.jpg'].map(urlMedia));
     // Une publication n'a pas de légende PAR IMAGE : elle a un corps. Rien d'écrit.
     expect(photos.every((p) => p.legende === '')).toBe(true);
   });

@@ -9,6 +9,8 @@ import Link from 'next/link';
 import { BoutonCreer, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
+import { EtatVide } from '@/components/etat-vide';
+import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import type { A09Data } from './data';
 
 export function A09Desktop(props: A09Data) {
@@ -25,11 +27,7 @@ export function A09Desktop(props: A09Data) {
 ))}<div style={{ flex: "1", minHeight: "12px" }}></div><a href="#" style={{ height: "48px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", color: "#CFE3DA" }} aria-label="Réglages"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 7h8M17 7h3M4 17h3M12 17h8" /><circle cx="15" cy="7" r="2.2" /><circle cx="9.5" cy="17" r="2.2" /></svg></a></RailSurvol>
         <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px", display: "flex", alignItems: "center", gap: "11px" }}><CarteMembre styleAvatar={{ width: "44px", height: "44px", borderRadius: "999px", background: "#B4581F", color: "#fff", fontSize: "13px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }} styleNom={{ display: "block", fontWeight: "700", fontSize: "14px", letterSpacing: "-0.2px" }} styleLien={{ display: "block", fontSize: "12px", color: "#5D6B66" }} libelle="Voir mon profil public" /></div>
-          <div style={{ background: "#0F5C48", borderRadius: "22px", padding: "18px", color: "#fff" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}><div style={{ minWidth: "0" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#A9CDBF" }}>MON PARCOURS</div><div style={{ fontSize: "14.5px", fontWeight: "700", marginTop: "5px", letterSpacing: "-0.2px" }}>Mes études à Lyon</div></div><span style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.8px" }}>58%</span></div>
-            <div style={{ height: "8px", borderRadius: "999px", background: "rgba(255,255,255,.18)", marginTop: "14px", overflow: "hidden" }}><div style={{ width: "58%", height: "100%", background: "#E0733A", borderRadius: "999px" }}></div></div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", gap: "8px" }}><span style={{ fontSize: "12.5px", color: "#F0C3A4", fontWeight: "600" }}>Étape 7 : Logement</span><a href="#" style={{ background: "#fff", color: "#0F5C48", fontWeight: "700", fontSize: "12.5px", padding: "7px 14px", borderRadius: "999px" }}>Continuer</a></div>
-          </div>
+          <CarteMonParcours />
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px" }}>
             <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "0 6px 8px" }}>COMMUNAUTÉ</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>{(panelReseaux ?? []).map((m, mIndex) => (
@@ -59,12 +57,12 @@ export function A09Desktop(props: A09Data) {
       </div>
       <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "20px 22px", display: "flex", flexDirection: "column", gap: "16px" }}>{(comments ?? []).map((c, cIndex) => (
 <Fragment key={cIndex}><div style={{ display: "flex", gap: "12px", paddingLeft: c.indent }}>{c.profil ? (<Link href={c.profil} data-avatar-profil="" aria-label={`Voir le profil de ${c.name}`} style={{ display: "contents", color: "inherit", textDecoration: "none" }}><span style={{ width: "34px", height: "34px", borderRadius: "999px", background: c.bg, color: "#fff", fontSize: "10.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{c.i}</span></Link>) : (<span style={{ width: "34px", height: "34px", borderRadius: "999px", background: c.bg, color: "#fff", fontSize: "10.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{c.i}</span>)}<div style={{ background: "#F6F8F7", borderRadius: "16px", padding: "12px 14px", flex: "1" }}><div style={{ fontSize: "13.5px", fontWeight: "700" }}>{c.profil ? (<Link href={c.profil} data-nom-profil="" style={{ color: "inherit", textDecoration: "none" }}>{c.name}</Link>) : c.name}</div><div style={{ fontSize: "13.5px", lineHeight: "1.55", marginTop: "3px" }}>{c.text}</div></div></div></Fragment>
-))}</div>
+))}{(comments ?? []).length === 0 ? (<EtatVide texte="Aucune réponse pour le moment : soyez la première personne à répondre." />) : null}</div>
     </main>
     <aside style={{ width: "300px", display: "flex", flexDirection: "column", gap: "12px" }}>
-      <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "10px 12px 4px" }}>MODÉRATION</div>{(modActions ?? []).map((a, aIndex) => (
+      {(modActions ?? []).length === 0 ? null : (<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "10px 12px 4px" }}>MODÉRATION</div>{(modActions ?? []).map((a, aIndex) => (
 <Fragment key={aIndex}><button type="button" onClick={a.onClick} disabled={a.onClick === undefined} data-sujet-moderation="" style={{ height: "44px", display: "flex", alignItems: "center", gap: "10px", padding: "0 12px", borderRadius: "14px", fontSize: "13.5px", fontWeight: "600", color: "#16211D", width: "100%", background: "none", border: "none", textAlign: "left", fontFamily: "inherit", cursor: a.onClick === undefined ? "default" : "pointer" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={a.icon} /></svg>{a.label}</button></Fragment>
-))}</div>
+))}</div>)}
     </aside>
     <div style={{ position: "absolute", left: "0", bottom: "24px", width: "660px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "10px", display: "flex", gap: "10px", alignItems: "center" }}><div style={{ flex: "1", height: "44px", borderRadius: "999px", background: "#F2F5F4", padding: "0 16px", display: "flex", alignItems: "center", fontSize: "13.5px", color: "#8A958F" }}><input type="text" value={reponseTexte} onChange={onReponseTexte} placeholder="Répondre au sujet…" aria-label="Répondre au sujet…" data-sujet-reponse="" style={{ flex: "1", minWidth: "0", border: "none", background: "transparent", font: "inherit", color: "#16211D", outline: "none", padding: 0 }} /></div><button type="button" onClick={onEnvoyerReponse} disabled={reponseBloquee} data-sujet-envoyer="" style={{ height: "44px", padding: "0 20px", borderRadius: "999px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "13.5px", fontWeight: "700", cursor: "pointer", opacity: reponseBloquee ? ".55" : "1" }}>Envoyer</button></div>
   </div></div>

@@ -1,11 +1,8 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FEED_LIMITS, POLL_OPTIONS_MAX, PostType as POST_TYPES } from '@app/shared';
-import { useGuides } from '@/screens/guides/use-guides';
-import { useRechercheGuides } from '@/screens/guides/use-recherche-guides';
-import { guidesLiablesDe } from '@/screens/guides/from-api';
+import { FEED_LIMITS, PostType as POST_TYPES } from '@app/shared';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { ApiError } from '@/lib/api/index';
 import { createPost, uploadPostImage } from './api';
@@ -14,6 +11,7 @@ import { draftTypesFor } from './data';
 import type { AccueilData } from './data';
 import type { A01SData } from '../a01/data';
 import type { A01GData } from '../a01g/data';
+import { useSondageGuides } from '../a01/use-sondage-guides';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -41,10 +39,10 @@ import type { A01GData } from '../a01g/data';
  * ── LE SONDAGE ET LES GUIDES LIÉS SONT LÀ AUSSI ───────────────────────────
  *
  * Le porteur : « Sondage et guides liés : sur mobile ça ne marche pas aussi. »
- * Les deux fenêtres (A01S, A01G) sont maintenant montées par cette page, avec
- * leur état ici. Les bornes et les listes viennent des mêmes sources que sur le
- * fil — `POLL_OPTIONS_MAX` de `@app/shared`, `useGuides` et
- * `useRechercheGuides` du module Guides — et rien n'est recopié.
+ * Les deux fenêtres (A01S, A01G) sont montées par cette page ; leur état et leurs
+ * règles viennent de `useSondageGuides` (`screens/a01/use-sondage-guides.ts`),
+ * la logique UNIQUE du sondage et des guides liés, partagée avec le fil
+ * d'accueil et le fil d'un réseau. Rien n'est recopié.
  */
 export function useComposeurMobile(): {
   readonly donnees: AccueilData;
@@ -61,58 +59,12 @@ export function useComposeurMobile(): {
   const [fenetre, setFenetre] = useState<'A01S' | 'A01G' | null>(null);
 
   /**
-   * LE SONDAGE EN DEUX ÉTATS, comme sur le fil : le BROUILLON qu'on remplit dans
-   * la fenêtre, et le sondage VALIDÉ qui est attaché à la publication. Les
-   * confondre voudrait dire qu'ouvrir la fenêtre et la fermer sans valider
-   * attacherait un sondage vide.
+   * LE SONDAGE ET LES GUIDES LIÉS — l'état et les deux fenêtres viennent de
+   * `useSondageGuides`, la logique UNIQUE que partagent le fil d'accueil, cette
+   * page et le fil d'un réseau. La page garde la main sur la fenêtre ouverte
+   * (`fenetre`), d'où le contrôle passé au crochet.
    */
-  const [brouillonSondage, setBrouillonSondage] = useState<{
-    question: string;
-    options: readonly string[];
-    jours: number;
-  }>({ question: '', options: ['', ''], jours: 3 });
-  const [sondageMultiple, setSondageMultiple] = useState(false);
-  /** Les deux défauts sont ceux du fil : résultats masqués avant vote, anonyme. */
-  const [sondageApresVote, setSondageApresVote] = useState(true);
-  const [sondageAnonyme, setSondageAnonyme] = useState(true);
-  const [sondage, setSondage] = useState<{
-    question: string;
-    options: readonly string[];
-    jours: number;
-    multiple: boolean;
-    apresVote: boolean;
-    anonyme: boolean;
-  } | null>(null);
-
-  const [guideRecherche, setGuideRecherche] = useState('');
-  const [guidesChoisis, setGuidesChoisis] = useState<readonly string[]>([]);
-  const [guidesLies, setGuidesLies] = useState<readonly string[]>([]);
-  const guides = useGuides(0, fenetre === 'A01G');
-  const rechercheGuides = useRechercheGuides(guideRecherche);
-
-  /**
-   * LE TITRE D'UN GUIDE LIÉ vient de la liste que la fenêtre a chargée : la
-   * sélection ne porte que des identifiants. Sans la liste, on écrit « Guide
-   * lié » plutôt que l'identifiant, qui ne dirait rien.
-   */
-  const guidesParId = useMemo(() => {
-    const table = new Map<string, string>();
-    for (const g of guides.page?.items ?? []) table.set(g.id, g.title);
-    return table;
-  }, [guides.page]);
-
-  const majBrouillon = useCallback(
-    (patch: Partial<{ question: string; options: readonly string[]; jours: number }>): void => {
-      setBrouillonSondage((courant) => ({ ...courant, ...patch }));
-    },
-    [],
-  );
-
-  const basculerGuide = useCallback((id: string): void => {
-    setGuidesChoisis((courant) =>
-      courant.includes(id) ? courant.filter((x) => x !== id) : [...courant, id],
-    );
-  }, []);
+  const pieces = useSondageGuides({ fenetre, setFenetre });
 
   const onAjouterImage = useCallback((): void => {
     const choix = document.createElement('input');
@@ -149,24 +101,8 @@ export function useComposeurMobile(): {
       type: POST_TYPES[type] ?? 'DISCUSSION',
       body: corps,
       ...(images.length === 0 ? {} : { mediaIds: images.map((im) => im.id) }),
-      /**
-       * `closesAt` EST CALCULÉ À L'ENVOI, pas au moment où l'on choisit la
-       * durée : « 3 jours » veut dire trois jours à partir de la publication, et
-       * un composeur peut rester ouvert. Même règle que sur le fil.
-       */
-      ...(sondage === null
-        ? {}
-        : {
-            poll: {
-              question: sondage.question,
-              options: [...sondage.options],
-              isMultiple: sondage.multiple,
-              resultsAfterVote: sondage.apresVote,
-              isAnonymous: sondage.anonyme,
-              closesAt: new Date(Date.now() + sondage.jours * 86_400_000),
-            },
-          }),
-      ...(guidesLies.length === 0 ? {} : { guideIds: [...guidesLies] }),
+      // Le sondage et les guides liés, `closesAt` calculé à l'envoi : voir `useSondageGuides`.
+      ...pieces.piece(),
     })
       .then(() => {
         notifySuccess('Publication envoyée.');
@@ -180,7 +116,7 @@ export function useComposeurMobile(): {
       .finally(() => {
         setEnvoi(false);
       });
-  }, [envoi, guidesLies, images, router, sondage, texte, type]);
+  }, [envoi, images, pieces, router, texte, type]);
 
   /**
    * LE SOCLE RESTE `accueilData()` — le cadre lit aussi le rail, la barre basse
@@ -211,154 +147,34 @@ export function useComposeurMobile(): {
 
     // ── La carte de sondage du composeur ──
     composeurSondage:
-      sondage === null
+      pieces.sondage === null
         ? null
         : {
-            question: sondage.question,
-            options: sondage.options,
-            /**
-             * LA LIGNE DE RÉGLAGES EST COMPOSÉE, jamais l'exemple de la
-             * maquette : elle dit ce que le sondage FERA.
-             */
-            meta: [
-              sondage.jours === 1 ? '1 jour' : `${String(sondage.jours)} jours`,
-              sondage.apresVote ? 'résultats après le vote' : 'résultats visibles',
-              sondage.anonyme ? 'anonyme' : 'votes visibles',
-            ].join(' · '),
+            question: pieces.sondage.question,
+            options: pieces.sondage.options,
+            /** La ligne de réglages dit ce que le sondage FERA — la même qu'au fil. */
+            meta: pieces.sondageMeta,
             onModifier: () => {
               setFenetre('A01S');
             },
-            onRetirer: () => {
-              setSondage(null);
-            },
+            onRetirer: pieces.retirerSondage,
           },
-    composeurGuides: guidesLies.map((id) => ({
-      titre: guidesParId.get(id) ?? 'Guide lié',
-      retirer: `Retirer ${guidesParId.get(id) ?? 'ce guide'}`,
+    composeurGuides: pieces.guidesLies.map((id) => ({
+      titre: pieces.titreGuide(id),
+      retirer: `Retirer ${pieces.titreGuide(id)}`,
       onRetirer: () => {
-        setGuidesLies((courant) => courant.filter((x) => x !== id));
-        setGuidesChoisis((courant) => courant.filter((x) => x !== id));
+        pieces.retirerGuide(id);
       },
     })),
-    composeurSondageCompte: sondage === null ? '0' : '1',
-    composeurGuidesCompte: String(guidesLies.length),
+    composeurSondageCompte: pieces.sondage === null ? '0' : '1',
+    composeurGuidesCompte: String(pieces.guidesLies.length),
   };
 
-  /** Ce que la fenêtre « Créer un sondage » lit — et rien d'autre (`A01SData`). */
-  const fenetreSondage: A01SData = {
-    sondageQuestion: brouillonSondage.question,
-    onSondageQuestion: (event: { target: { value: string } }) => {
-      majBrouillon({ question: event.target.value });
-    },
-    sondageOptions: brouillonSondage.options.map((texteOption, i) => ({
-      texte: texteOption,
-      onTexte: (event: { target: { value: string } }): void => {
-        majBrouillon({
-          options: brouillonSondage.options.map((o, j) => (j === i ? event.target.value : o)),
-        });
-      },
-      onRetirer: (): void => {
-        majBrouillon({ options: brouillonSondage.options.filter((_, j) => j !== i) });
-      },
-      /** En dessous de deux réponses, ce n'est plus un sondage : la croix part. */
-      retirable: brouillonSondage.options.length > 2,
-    })),
-    /**
-     * LE PLAFOND EST CELUI DU SERVEUR (`POLL_OPTIONS_MAX`), pas celui que la
-     * planche écrit (« 2 à 5 ») : c'est le serveur qui refuse. Écart REMONTÉ.
-     */
-    onAjouterOption: () => {
-      majBrouillon({
-        options:
-          brouillonSondage.options.length >= POLL_OPTIONS_MAX
-            ? brouillonSondage.options
-            : [...brouillonSondage.options, ''],
-      });
-    },
-    sondageDurees: [1, 3, 7, 14].map((jours) => ({
-      label: jours === 1 ? '1 jour' : `${String(jours)} jours`,
-      on: brouillonSondage.jours === jours,
-      bg: brouillonSondage.jours === jours ? '#fff' : 'transparent',
-      fg: brouillonSondage.jours === jours ? '#0F5C48' : '#5D6B66',
-      onPick: (): void => {
-        majBrouillon({ jours });
-      },
-    })),
-    sondageMultiple,
-    onSondageMultiple: () => {
-      setSondageMultiple((v) => !v);
-    },
-    sondageApresVote,
-    onSondageApresVote: () => {
-      setSondageApresVote((v) => !v);
-    },
-    sondageAnonyme,
-    onSondageAnonyme: () => {
-      setSondageAnonyme((v) => !v);
-    },
-    sondageBloque:
-      brouillonSondage.question.trim() === '' ||
-      brouillonSondage.options.map((o) => o.trim()).filter((o) => o !== '').length < 2,
-    onValiderSondage: () => {
-      const question = brouillonSondage.question.trim();
-      const reponses = brouillonSondage.options.map((o) => o.trim()).filter((o) => o !== '');
-      if (question === '' || reponses.length < 2) return;
-      setSondage({
-        question,
-        options: reponses,
-        jours: brouillonSondage.jours,
-        multiple: sondageMultiple,
-        apresVote: sondageApresVote,
-        anonyme: sondageAnonyme,
-      });
-      setFenetre(null);
-      notifySuccess('Sondage ajouté à votre publication.');
-    },
-    onAnnulerSondage: () => {
-      setFenetre(null);
-    },
+  return {
+    donnees,
+    fenetreSondage: pieces.sondageFenetre,
+    fenetreGuides: pieces.guidesFenetre,
+    fenetre,
+    setFenetre,
   };
-
-  /** Ce que la fenêtre « Lier un guide » lit (`A01GData`). */
-  const fenetreGuides: A01GData = {
-    guideRecherche,
-    onGuideRecherche: (event: { target: { value: string } }) => {
-      setGuideRecherche(event.target.value);
-    },
-    guidesSuggeres: [],
-    /**
-     * LA RECHERCHE REMPLACE LA LISTE, elle ne s'y ajoute pas : mêler les deux
-     * montrerait des guides qui ne répondent pas à ce qu'on vient de taper.
-     * `resultats === null` veut dire « on ne cherche pas » — moins de deux
-     * caractères, la borne du serveur.
-     */
-    guidesTrouves:
-      rechercheGuides.resultats !== null
-        ? rechercheGuides.resultats.map((g) => ({
-            titre: g.titre,
-            meta: g.meta,
-            guideId: g.id,
-            choisi: guidesChoisis.includes(g.id),
-            onPick: (): void => {
-              basculerGuide(g.id);
-            },
-          }))
-        : guides.page === null
-          ? []
-          : guidesLiablesDe(guides.page, guidesChoisis, basculerGuide),
-    lierBloque: guidesChoisis.length === 0,
-    onLierGuides: () => {
-      setGuidesLies(guidesChoisis);
-      setFenetre(null);
-      notifySuccess(
-        `${String(guidesChoisis.length)} guide${guidesChoisis.length > 1 ? 's' : ''} lié${guidesChoisis.length > 1 ? 's' : ''} à votre publication.`,
-      );
-    },
-    onAnnulerGuides: () => {
-      setGuidesChoisis(guidesLies);
-      setFenetre(null);
-    },
-  };
-
-  return { donnees, fenetreSondage, fenetreGuides, fenetre, setFenetre };
 }

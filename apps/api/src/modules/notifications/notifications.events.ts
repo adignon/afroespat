@@ -6,6 +6,7 @@ import {
   REPORT_RESOLVED_NOTICE,
   groupedTitle,
   messagePushTitle,
+  moderationMessagePushTitle,
 } from '@app/shared';
 import { PrismaService } from '../../common/prisma.service';
 import { NotificationsService } from './notifications.service';
@@ -250,7 +251,21 @@ export class NotificationEventsService {
     if (messageId === null || conversationId === null || sender === null || recipients.length === 0) return;
 
     const senderName = await this.displayName(sender);
-    const title = messagePushTitle(senderName);
+    /**
+     * UN FIL DE MODÉRATION DE RÉSEAU DIT DE QUEL RÉSEAU IL S'AGIT — voir
+     * `moderationMessagePushTitle`. Une lecture de plus, sur la clé primaire,
+     * et seulement le nom : la charge de `message.sent` ne porte ni le genre
+     * de la conversation ni son réseau, et l'y ajouter toucherait les deux
+     * émetteurs de la messagerie pour un seul consommateur.
+     */
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { kind: true, community: { select: { name: true } } },
+    });
+    const reseau =
+      conversation?.kind === 'COMMUNITY_MODERATION' ? (conversation.community?.name ?? null) : null;
+    const title =
+      reseau === null ? messagePushTitle(senderName) : moderationMessagePushTitle(senderName, reseau);
 
     await this.notifications.deliverMany(
       recipients

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, newId } from '@app/db';
 import {
+  CONNECTION_REQUEST_EXPIRY_MS,
   AUTH_ERROR_CODES,
   AUTH_ERROR_MESSAGES,
   MEMBER_CONTENT_TYPES,
@@ -821,6 +822,7 @@ export class UsersService {
     }
 
     return {
+      userId: user.id,
       handle: user.handle,
       displayName: user.displayName,
       avatarUrl: user.avatarAsset === null ? null : `/media/${user.avatarAsset.storageKey}`,
@@ -845,7 +847,51 @@ export class UsersService {
               mentorshipsCompleted: user.stats.mentorshipsCompleted,
               eventsOrganized: user.stats.eventsOrganized,
             },
+      relation: viewerId === null ? null : await this.relationAvec(viewerId, user.id),
     };
+  }
+
+  /**
+   * Ma relation avec un membre, pour le bouton « Ajouter aux contacts » du profil
+   * — voir `relation` dans `publicProfileResponseSchema`.
+   *
+   * Les deux lectures sont celles de `ConnectionsService` (`areConnected`, la
+   * recherche de demande en attente de `request`), sur la paire ORDONNÉE en base
+   * (`user_a_id < user_b_id`) et la même fenêtre d'expiration : une demande plus
+   * vieille que `CONNECTION_REQUEST_EXPIRY_MS` n'est plus « en attente », et le
+   * bouton se rouvre — exactement ce que la route accepterait.
+   */
+  private async relationAvec(
+    viewerId: string,
+    otherId: string,
+  ): Promise<{
+    status: 'SELF' | 'CONNECTED' | 'REQUEST_SENT' | 'REQUEST_RECEIVED' | 'NONE';
+    requestId: string | null;
+  }> {
+    if (viewerId === otherId) return { status: 'SELF', requestId: null };
+    const [userAId, userBId] = viewerId < otherId ? [viewerId, otherId] : [otherId, viewerId];
+    const contact = await this.prisma.connection.findUnique({
+      where: { userAId_userBId: { userAId, userBId } },
+      select: { removedAt: true },
+    });
+    if (contact !== null && contact.removedAt === null) return { status: 'CONNECTED', requestId: null };
+
+    const demande = await this.prisma.connectionRequest.findFirst({
+      where: {
+        status: 'PENDING',
+        createdAt: { gte: new Date(Date.now() - CONNECTION_REQUEST_EXPIRY_MS) },
+        OR: [
+          { fromUserId: viewerId, toUserId: otherId },
+          { fromUserId: otherId, toUserId: viewerId },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, fromUserId: true },
+    });
+    if (demande === null) return { status: 'NONE', requestId: null };
+    return demande.fromUserId === viewerId
+      ? { status: 'REQUEST_SENT', requestId: null }
+      : { status: 'REQUEST_RECEIVED', requestId: demande.id };
   }
 
   // ── Outils ────────────────────────────────────────────────────────────────

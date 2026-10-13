@@ -719,7 +719,11 @@ export function registerSearchSubscriptions(
   // Un réseau archivé ou réactivé change la visibilité de TOUS ses sujets et
   // événements : la cascade est portée ici, parce qu'aucun événement ne concerne les
   // sujets eux-mêmes.
-  for (const type of ['community.archived', 'community.reactivated'] as const) {
+  for (const type of [
+    'community.archived',
+    'community.reactivated',
+    'community.visibility_changed',
+  ] as const) {
     registry.on(type, 'search', async (job) => {
       await search.reindexCommunityChildren(job.aggregateId);
     });

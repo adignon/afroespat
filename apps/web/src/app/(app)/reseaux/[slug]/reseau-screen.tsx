@@ -1,5 +1,10 @@
 'use client';
 
+import { Modal } from '@/components/modal';
+import { A01SDesktop } from '@/screens/a01s/desktop.generated';
+import { A01SMobile } from '@/screens/a01s/mobile.generated';
+import { A01GDesktop } from '@/screens/a01g/desktop.generated';
+import { A01GMobile } from '@/screens/a01g/mobile.generated';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -58,6 +63,19 @@ import { FenetreAlbum } from '@/components/fenetre-album';
  */
 import { FenetreNiveau } from '@/components/fenetre-niveau';
 import { CartesFilVivantes } from '@/screens/accueil/cartes-fil-vivantes';
+/**
+ * LES FENÊTRES DU LOT « RÉSEAU VIVANT » — une instance de chaque, hors des deux
+ * cadres (la leçon `ScreenFrames` + portail, mesurée sur `FenetreConfirmation`).
+ */
+import { FenetreSignalement } from '@/components/fenetre-signalement';
+import { FenetreEvenement } from '@/components/fenetre-evenement';
+import {
+  FenetreContenuSignale,
+  FenetreEpingler,
+  FenetreSujet,
+} from '@/components/fenetres-reseau';
+import { topicBodySchema, topicTitleSchema } from '@app/shared';
+import type { SectionGestion } from '@/screens/a08t/vivant';
 
 /**
  * A08 et ses treize onglets. `/reseaux/:slug`
@@ -276,17 +294,19 @@ const ZONE_CONTENU: React.CSSProperties = {
  * Modérateurs · Lyon » des `<span>` —, alors que `memberListQuerySchema` porte
  * `q` et `role`. REMONTÉ.
  */
+/** Les onglets que la maquette ne dessine QUE pour l'équipe. */
+const ONGLETS_EQUIPE = new Set(['gerer', 'annonce', 'a-propos-edition']);
+
 export function ReseauScreen({
   onglet,
-  owner,
+  section,
   slug: reseauSlug,
 }: {
   readonly onglet: string;
-  readonly owner: boolean;
+  readonly section: SectionGestion;
   readonly slug: string;
 }) {
-  const slug = onglet;
-  const rang = Math.max(0, SLUGS.indexOf(slug as (typeof SLUGS)[number]));
+  const rangDemande = Math.max(0, SLUGS.indexOf(onglet as (typeof SLUGS)[number]));
 
   const {
     data,
@@ -300,9 +320,52 @@ export function ReseauScreen({
     contactEchec,
     ecrire,
     evenements,
-    evenementsPrets,
     album,
-  } = useReseau(reseauSlug, rang);
+    confirmation,
+    onConfirmer,
+    onAnnulerConfirmation,
+    fenetreSujet,
+    fenetreEpingler,
+    fenetreEvenement,
+    contenuSignale,
+    onFermerContenuSignale,
+    champCouverture,
+    onFichierCouverture,
+    composeur,
+    photoARetirer,
+    onConfirmerRetraitPhoto,
+    onAnnulerRetraitPhoto,
+  } = useReseau(reseauSlug, rangDemande, section);
+
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LA VUE DE L'ÉQUIPE VIENT DU RÔLE, PLUS DE L'ADRESSE                      ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le porteur : « Uniquement un modérateur. » `?vue=proprietaire` décidait seul
+   * des planches de l'équipe : n'importe quel membre qui suivait un lien
+   * « Gérer » — ou tapait l'adresse — recevait la bande « Propriétaire du
+   * réseau », ses outils et la vue de gestion, et la page d'un réseau dont on
+   * n'était même pas membre montrait les outils d'un propriétaire. Le serveur
+   * refusait déjà chacun de ces gestes (`MODERATOR_REQUIRED`) : c'est
+   * l'AFFICHAGE qui mentait. La vue suit maintenant `myRole` de la fiche.
+   *
+   * ⚠ CE N'EST PAS UNE AUTORISATION (mémo §5) : un membre qui forcerait la vue
+   * verrait des boutons dont chaque geste reste refusé par le serveur.
+   */
+  const equipe = reseau?.myRole === 'OWNER' || reseau?.myRole === 'MODERATOR';
+
+  /**
+   * QUI N'EST PAS MEMBRE NE VOIT QUE « À PROPOS » — le porteur : « Quand on
+   * n'est pas encore membre d'un réseau uniquement afficher l'onglet À
+   * propos. » Les liens des autres onglets disparaissent des cadres
+   * (`RV_ONGLETS_FERMES`), et une adresse qui en vise un retombe ici.
+   */
+  const slug = (() => {
+    if (pret && enteteOnglet.actions.ongletsFermes) return 'a-propos';
+    if (pret && !equipe && ONGLETS_EQUIPE.has(onglet)) return 'fil';
+    return onglet;
+  })();
 
   const router = useRouter();
 
@@ -337,7 +400,7 @@ export function ReseauScreen({
    * croix d'A10 — `router.back()`.
    */
   const versLeFil = useCallback(() => {
-    router.push(`/reseaux/${encodeURIComponent(reseauSlug)}?onglet=fil&vue=proprietaire`);
+    router.push(`/reseaux/${encodeURIComponent(reseauSlug)}?onglet=fil`);
   }, [reseauSlug, router]);
 
   const surAnnulation = useCallback(() => {
@@ -346,14 +409,18 @@ export function ReseauScreen({
 
   const { annonce } = useAnnonce(reseauSlug, versLeFil, surAnnulation);
 
-  const table = owner ? PROPRIETAIRE : MEMBRE;
+  const table = equipe ? PROPRIETAIRE : MEMBRE;
   // Un onglet inconnu — ou réservé au propriétaire quand on ne l'est pas — retombe
   // sur « Sujets », qui est ce que la maquette montre par défaut.
   const tab = table[slug] ?? MEMBRE[slug];
 
   // L'onglet « Sujets » en vue membre EST le cadre complet de A08, rail compris :
   // il n'a pas de coque de planche à reconstituer.
-  const plain = (slug === 'sujets' || tab === undefined) && !owner;
+  // ⚠ POUR TOUT LE MONDE, ÉQUIPE COMPRISE : A08 dessine lui-même la bande de
+  // l'équipe (`RV_BANDE_EQUIPE`), et un propriétaire sur « Sujets » recevait
+  // jusqu'ici un écran VIDE — `tab` y est indéfini et le `return null` plus bas
+  // l'attendait.
+  const plain = slug === 'sujets' || tab === undefined;
 
   const a08 = pret && echec === null ? data : a08Fallback;
 
@@ -456,15 +523,15 @@ export function ReseauScreen({
   const confirmationRetrait = (
     <FenetreConfirmation
       ouverte={gerer.bannirOuverte}
-      nom="RETIRER-MEMBRE"
-      titre="Retirer du réseau"
+      nom="BANNIR-MEMBRE"
+      titre="Bannir du réseau"
       question={
         gerer.bannirNom === ''
-          ? 'Retirer ce membre du réseau ?'
-          : `Retirer ${gerer.bannirNom} du réseau ?`
+          ? 'Bannir ce membre du réseau ?'
+          : `Bannir ${gerer.bannirNom} du réseau ?`
       }
       precision="C’est définitif : la personne ne pourra plus rejoindre ce réseau, et elle ne sera pas prévenue du motif."
-      libelleConfirmer="Retirer du réseau"
+      libelleConfirmer="Bannir du réseau"
       onConfirmer={gerer.onConfirmerBannir}
       onAnnuler={gerer.onAnnulerBannir}
       occupe={gerer.occupe}
@@ -508,6 +575,170 @@ export function ReseauScreen({
     />
   );
 
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ LES FENÊTRES DU LOT « RÉSEAU VIVANT » — UNE INSTANCE CHACUNE             ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Même raison que `confirmationRetrait` et `fenetreEcrire` juste au-dessus :
+   * `ScreenFrames` rend les DEUX cadres et `Modal` se portalise ; une copie par
+   * cadre en ouvrirait deux, dont le voile de la masquée volerait les clics.
+   *
+   * ⚠ `FenetreSignalement` ÉTAIT DANS LES CADRES « À PROPOS », c'est-à-dire
+   * en double — et c'est exactement ce défaut : le porteur, « même le modal de
+   * signalement ne marche pas ». `RV_APROPOS` l'en retire ; elle vit ici.
+   *
+   * ── LES DEUX CONFIRMATIONS DE L'EN-TÊTE ─────────────────────────────────
+   *
+   * Le porteur : « Le bouton mettre le groupe en sourdine ne demande pas
+   * confirmation. » La sourdine et le départ passent par `FenetreConfirmation`,
+   * comme le bannissement. Les phrases disent ce que §2.5 et §2.2 disent du
+   * geste : la sourdine coupe les notifications et garde le réseau dans la
+   * liste ; le départ ferme le contenu, et l'on peut redemander.
+   *
+   * ── « RETIRER » N'EST PLUS « BANNIR » ───────────────────────────────────
+   *
+   * Arbitrage du porteur, relevé sur `BANNED_FROM_COMMUNITY` : « Retirer, il
+   * peut rejoindre à nouveau. Mais banni, il ne peut plus rejoindre. » Les deux
+   * entrées du menu de rôle ont donc chacune leur confirmation, et la phrase dit
+   * la différence.
+   */
+  const nomReseau = reseau?.name ?? 'ce réseau';
+  const fenetresVivantes = (
+    <>
+      {/* « Masquer » une photo de l'album : un retrait, donc une confirmation. */}
+      <FenetreConfirmation
+        ouverte={photoARetirer}
+        titre="Retirer cette photo de l’album ?"
+        question="Elle disparaîtra de l’album pour tous les membres du réseau."
+        precision=""
+        libelleConfirmer="Retirer la photo"
+        occupe={false}
+        onConfirmer={onConfirmerRetraitPhoto}
+        onAnnuler={onAnnulerRetraitPhoto}
+        nom="ALBUM-PHOTO"
+      />
+      {/*
+        « Créer un sondage » et « Lier un guide » du composeur du fil — les
+        fenêtres de l'accueil (A01S, A01G), mêmes cadres générés, nourries par
+        `useSondageGuides`. Une fois chacune, hors des deux cadres.
+      */}
+      <Modal
+        open={composeur.fenetre === 'A01S'}
+        onClose={composeur.onFermerFenetre}
+        titleId="a01s-titre"
+        name="A01S"
+        desktop={<A01SDesktop {...composeur.sondageFenetre} />}
+        mobile={<A01SMobile {...composeur.sondageFenetre} />}
+      />
+      <Modal
+        open={composeur.fenetre === 'A01G'}
+        onClose={composeur.onFermerFenetre}
+        titleId="a01g-titre"
+        name="A01G"
+        desktop={<A01GDesktop {...composeur.guidesFenetre} />}
+        mobile={<A01GMobile {...composeur.guidesFenetre} />}
+      />
+      {/*
+        L'UNIQUE SÉLECTEUR DE COUVERTURE. Hors des deux cadres : un champ par
+        cadre en aurait fait deux, et « Changer la couverture » (bandeau à
+        1036 px, menu du rond à 390 px) n'en ouvre qu'un. Caché mais présent dans
+        l'arbre, pour que `click()` l'ouvre ; `accept` borne aux images, le
+        serveur restant juge du type réel.
+      */}
+      <input
+        ref={champCouverture}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={onFichierCouverture}
+        data-reseau-couverture-fichier=""
+      />
+      <FenetreSignalement sujet={gerer.signalement} onFermer={gerer.onFermerSignalement} />
+      <FenetreConfirmation
+        ouverte={gerer.retirerOuverte}
+        nom="RETIRER-MEMBRE"
+        titre="Retirer du réseau"
+        question={
+          gerer.retirerNom === ''
+            ? 'Retirer ce membre du réseau ?'
+            : `Retirer ${gerer.retirerNom} du réseau ?`
+        }
+        precision="La personne quitte le réseau. Elle pourra demander à le rejoindre de nouveau : pour l’en empêcher, choisissez « Bannir du réseau »."
+        libelleConfirmer="Retirer du réseau"
+        onConfirmer={gerer.onConfirmerRetirer}
+        onAnnuler={gerer.onAnnulerRetirer}
+        occupe={gerer.occupe}
+      />
+      <FenetreConfirmation
+        ouverte={confirmation === 'sourdine'}
+        nom="SOURDINE"
+        titre={reseau?.myMuted === true ? 'Réactiver les notifications' : 'Mettre en sourdine'}
+        question={
+          reseau?.myMuted === true
+            ? `Recevoir de nouveau les notifications de ${nomReseau} ?`
+            : `Mettre ${nomReseau} en sourdine ?`
+        }
+        precision={
+          reseau?.myMuted === true
+            ? 'Les nouvelles publications, les annonces et les événements du réseau vous seront de nouveau signalés.'
+            : 'Vous ne recevrez plus de notifications de ce réseau. Il reste dans votre liste, et vous pouvez réactiver les notifications à tout moment.'
+        }
+        libelleConfirmer={reseau?.myMuted === true ? 'Réactiver' : 'Mettre en sourdine'}
+        onConfirmer={onConfirmer}
+        onAnnuler={onAnnulerConfirmation}
+      />
+      <FenetreConfirmation
+        ouverte={confirmation === 'quitter'}
+        nom="QUITTER-RESEAU"
+        titre="Quitter le réseau"
+        question={`Quitter ${nomReseau} ?`}
+        precision={
+          reseau?.visibility === 'INVITE_ONLY'
+            ? 'Vous ne verrez plus son fil ni ses sujets. Ce réseau est privé : il faudra une nouvelle invitation pour y revenir.'
+            : 'Vous ne verrez plus son fil ni ses sujets. Vous pourrez le rejoindre de nouveau depuis sa page.'
+        }
+        libelleConfirmer="Quitter le réseau"
+        onConfirmer={onConfirmer}
+        onAnnuler={onAnnulerConfirmation}
+      />
+      <FenetreSujet
+        ouverte={fenetreSujet.ouverte}
+        titreMin={topicTitleSchema.minLength ?? 0}
+        titreMax={topicTitleSchema.maxLength ?? 200}
+        corpsMax={topicBodySchema.maxLength ?? 5000}
+        occupe={fenetreSujet.occupe}
+        onCreer={fenetreSujet.onCreer}
+        onFermer={fenetreSujet.onFermer}
+      />
+      <FenetreEpingler
+        ouverte={fenetreEpingler.ouverte}
+        sujets={fenetreEpingler.sujets}
+        max={fenetreEpingler.max}
+        occupe={fenetreEpingler.occupe}
+        onBasculer={fenetreEpingler.onBasculer}
+        onFermer={fenetreEpingler.onFermer}
+      />
+      <FenetreContenuSignale
+        contenu={contenuSignale}
+        occupe={gerer.occupe}
+        onMasquer={gerer.onMasquer}
+        onConserver={gerer.onConserver}
+        onFermer={onFermerContenuSignale}
+      />
+      {reseau === null ? null : (
+        <FenetreEvenement
+          ouverte={fenetreEvenement.ouverte}
+          reseauId={reseau.id}
+          onFermer={fenetreEvenement.onFermer}
+          onCree={fenetreEvenement.onCree}
+        />
+      )}
+    </>
+  );
+
   const attente =
     !pret ? (
       <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
@@ -540,7 +771,16 @@ export function ReseauScreen({
    * d'un caractère — il nomme les sujets ET les membres, qui sont fermés tous les
    * deux.
    */
-  const invitation = contenuFerme ? (
+  /**
+   * ⚠ ELLE N'EST PLUS MONTRÉE QUE SI L'EN-TÊTE NE DIT RIEN. Depuis le lot
+   * « réseau vivant », un passant ne voit que l'onglet « À propos », et
+   * l'en-tête lui porte « Rejoindre », « Demander à rejoindre », « Accepter
+   * l'invitation » ou « Demande envoyée » : répéter la phrase en bas de page,
+   * sous le rail, la plaçait loin de tout (mesuré : y = 1 023 à 1 440 px). Elle
+   * reste pour le seul cas que l'en-tête ne nomme pas — un réseau fermé, ni
+   * rejoignable ni membre (banni, archivé).
+   */
+  const invitation = contenuFerme && enteteOnglet.actions.etat === 'ferme' ? (
     <p role="status" style={{ padding: '12px 24px', color: '#16211D', fontSize: '14px' }}>
       {reseau?.canJoin === true
         ? 'Rejoignez ce réseau pour voir ses sujets et ses membres.'
@@ -562,6 +802,7 @@ export function ReseauScreen({
         />
         {confirmationRetrait}
         {fenetreEcrire}
+        {fenetresVivantes}
         {invitation}
         {echec !== null && !membre && (
           <p role="status" style={{ padding: '0 24px 12px', color: '#B4581F', fontSize: '13px' }}>
@@ -656,96 +897,13 @@ export function ReseauScreen({
         )}
       </CartesFilVivantes>
       {/**
-       * LE FIL VIDE SE DIT, ET IL SE DIT HORS DU CADRE.
-       *
-       * La maquette ne dessine AUCUN état vide pour cet onglet — ses trois cartes
-       * sont toujours là. En inventer un dans le cadre généré serait redessiner ;
-       * on emploie donc la même bande `role="status"` que cette page pose déjà pour
-       * l'attente et pour le contenu fermé, avec ses mesures (le gris `#5D6B66` et
-       * les 13 px de la bande d'attente, juste en dessous).
-       *
-       * `pret` ET `membre` : un fil vide pendant le chargement dirait « aucune
-       * publication » d'un réseau qui en a, et un passant reçoit déjà l'invitation
-       * à rejoindre — lui dire que le fil est vide serait lui apprendre quelque
-       * chose que le serveur a justement refusé de dire.
-       *
-       * FRÈRE DANS LE FRAGMENT, comme `attente` : un conteneur interposé casse le
-       * `position: sticky` du menu de gauche et de la barre haute.
+       * ⚠ LES QUATRE BANDES D'ÉTAT VIDE QUI ÉTAIENT ICI — fil, membres,
+       * événements, album — sont parties DANS les cadres (`EtatVide`, posé par
+       * les adaptations du lot « réseau vivant »). MESURÉ à 1 440 px : la bande
+       * du fil vide tombait à y = 1 009, sous le rail, loin de la carte vide
+       * qu'elle commentait. Le porteur : « Si vide il faut aussi afficher un
+       * message pour toutes les sections. »
        */}
-      {slug === 'fil' && pret && membre && ongletAvecAnnonce.publications.length === 0 && (
-        <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
-          Aucune publication dans ce réseau pour le moment.
-        </p>
-      )}
-      {/**
-       * LA LISTE DE MEMBRES VIDE SE DIT, ET ELLE SE DIT HORS DU CADRE.
-       *
-       * La maquette ne dessine AUCUN état vide pour cet onglet — ses cinq lignes
-       * sont toujours là. En inventer un dans le cadre généré serait redessiner ;
-       * on emploie donc la MÊME bande `role="status"` que le fil juste au-dessus,
-       * avec ses mesures (le gris `#5D6B66`, les 13 px, le retrait de 24) et sa
-       * grammaire. Rien n'est emprunté à une autre maquette.
-       *
-       * ⚠ ET CE N'EST PAS UN CAS THÉORIQUE, même si un réseau a toujours au moins
-       * son propriétaire : `useReseau` avale l'échec de cette route pour ne pas
-       * casser la page — l'en-tête, la barre d'onglets et le contexte restent
-       * parfaitement lisibles — et sans cette bande l'onglet serait alors
-       * silencieusement muet.
-       *
-       * `pret` ET `membre` : une liste vide pendant le chargement dirait « aucun
-       * membre » d'un réseau qui en a, et un passant reçoit déjà l'invitation à
-       * rejoindre — lui dire que la liste est vide serait lui apprendre quelque
-       * chose que le serveur a justement refusé de dire.
-       */}
-      {slug === 'membres' && pret && membre && gerer.membres.length === 0 && (
-        <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
-          Aucun membre à afficher pour le moment.
-        </p>
-      )}
-      {/**
-       * ╔═══════════════════════════════════════════════════════════════════════╗
-       * ║ L'ONGLET « ÉVÉNEMENTS » VIDE SE DIT, ET IL SE DIT HORS DU CADRE       ║
-       * ╚═══════════════════════════════════════════════════════════════════════╝
-       *
-       * La maquette ne dessine AUCUN état vide pour cet onglet — ses trois cartes
-       * sont toujours là, et toutes à venir. En inventer un dans le cadre généré
-       * serait redessiner ; on RÉEMPLOIE donc la MÊME bande `role="status"` que le
-       * fil et la liste des membres juste au-dessus, avec ses mesures (le gris
-       * `#5D6B66`, les 13 px, le retrait de 24) et sa grammaire. Rien n'est
-       * emprunté à une autre maquette, et rien n'est neuf.
-       *
-       * ⚠ ET C'EST LE CAS ORDINAIRE, pas un cas de bord : la plupart des réseaux
-       * n'annoncent aucun événement, et « Passés » est vide sur tout réseau créé
-       * depuis moins de deux mois. Sans cette bande, l'onglet serait
-       * silencieusement muet — trois cartes disparues et pas un mot.
-       *
-       * LA PHRASE DIT LAQUELLE DES DEUX LISTES EST VIDE, parce que les deux
-       * pastilles sont maintenant vivantes : « aucun événement » sous la pastille
-       * « Passés » laisserait croire que le réseau n'en a jamais eu, alors qu'il
-       * en a peut-être trois la semaine prochaine.
-       *
-       * `evenementsPrets` ET `membre` : une liste vide pendant le chargement
-       * dirait « aucun événement » d'un réseau qui en a, et un passant reçoit déjà
-       * l'invitation à rejoindre — lui dire que la liste est vide serait lui
-       * apprendre quelque chose que le serveur a justement refusé de dire.
-       *
-       * `evenementsPrets` et NON `pret` : `pret` parle de la FICHE du réseau, qui
-       * est déjà là quand on ouvre cet onglet. La bande doit attendre la LISTE.
-       *
-       * FRÈRE DANS LE FRAGMENT, comme `attente` : un conteneur interposé casse le
-       * `position: sticky` du menu de gauche et de la barre haute.
-       */}
-      {slug === 'evenements' &&
-        evenementsPrets &&
-        membre &&
-        evenements.echec === null &&
-        evenements.liste.length === 0 && (
-          <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
-            {evenements.onglet === 'passes'
-              ? 'Aucun événement passé dans ce réseau.'
-              : 'Aucun événement à venir dans ce réseau.'}
-          </p>
-        )}
       {/**
        * LE REFUS DU GESTE OU DE LA LISTE, ET LUI SEUL.
        *
@@ -775,53 +933,6 @@ export function ReseauScreen({
        * Elle n'est PAS rendue sur la branche `plain` : la seule capacité que cette
        * page tente est `event.attend`, et son bouton vit sur une planche d'onglet.
        */}
-      {/**
-       * ╔═══════════════════════════════════════════════════════════════════════╗
-       * ║ L'ONGLET « ALBUM » VIDE SE DIT, ET IL SE DIT HORS DU CADRE             ║
-       * ╚═══════════════════════════════════════════════════════════════════════╝
-       *
-       * La maquette ne dessine AUCUN état vide pour cet onglet — ses douze tuiles
-       * hachurées sont toujours là. En inventer un dans le cadre généré serait
-       * redessiner ; on RÉEMPLOIE donc la MÊME bande `role="status"` que le fil,
-       * la liste des membres et les événements juste au-dessus, avec ses mesures
-       * (le gris `#5D6B66`, les 13 px, le retrait de 24) et sa grammaire. Rien
-       * n'est emprunté à une autre maquette, et rien n'est neuf.
-       *
-       * ⚠ ET C'EST LE CAS ORDINAIRE, pas un cas de bord : la plupart des réseaux
-       * n'ont aucun album, et « Partagés » est vide sur tout réseau dont personne
-       * n'a encore publié d'image. Sans cette bande, l'onglet serait
-       * silencieusement muet — douze tuiles disparues et pas un mot.
-       *
-       * LA PHRASE DIT LAQUELLE DES VUES EST VIDE, parce que les pastilles sont
-       * maintenant vivantes : « aucune photo » sous « Partagés » laisserait croire
-       * que le réseau n'a aucun album, alors qu'il en a peut-être trois.
-       *
-       * `album.prete` ET `membre` : une grille vide pendant le chargement dirait
-       * « aucune photo » d'un réseau qui en a, et un passant reçoit déjà
-       * l'invitation à rejoindre — lui dire que l'album est vide serait lui
-       * apprendre quelque chose que le serveur a justement refusé de dire.
-       *
-       * `album.prete` et NON `pret` : `pret` parle de la FICHE du réseau, qui est
-       * déjà là quand on ouvre cet onglet. La bande doit attendre les ALBUMS.
-       *
-       * FRÈRE DANS LE FRAGMENT, comme `attente` : un conteneur interposé casse le
-       * `position: sticky` du menu de gauche et de la barre haute.
-       */}
-      {slug === 'album' &&
-        album.prete &&
-        membre &&
-        album.echec === null &&
-        album.photos.length === 0 && (
-          <p role="status" style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>
-            {album.onglet === 'partages'
-              ? 'Aucune image partagée dans les publications de ce réseau.'
-              : album.onglet === 'evenements'
-                ? 'Aucune photo d’événement dans ce réseau.'
-                : album.onglet === 'tout'
-                  ? 'Aucune photo dans ce réseau pour le moment.'
-                  : 'Cet album n’a encore aucune photo.'}
-          </p>
-        )}
       {/**
        * LE REFUS DU GESTE OU DE LA LISTE, ET LUI SEUL.
        *
@@ -866,6 +977,19 @@ export function ReseauScreen({
       {invitation}
       {confirmationRetrait}
       {fenetreEcrire}
+      {fenetresVivantes}
+      {/**
+       * LE REFUS D'UN GESTE DU LOT « RÉSEAU VIVANT » — un paramètre, une
+       * visibilité, des règles, un épinglage, un sujet. `useReseau` les range
+       * dans `echec`, que seule la branche « Sujets » montrait : sur une planche
+       * d'onglet, un refus du serveur aurait été silencieux. Le terre cuite et
+       * les 13 px sont ceux des autres bandes de refus de cette page.
+       */}
+      {pret && echec !== null && (
+        <p role="alert" style={{ padding: '0 24px 12px', color: '#B4581F', fontSize: '13px' }}>
+          {echec.message}
+        </p>
+      )}
       {/**
        * LE REFUS DE « CONTACTER LES MODÉRATEURS », ET LUI SEUL.
        *

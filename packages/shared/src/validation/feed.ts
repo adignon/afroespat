@@ -739,6 +739,16 @@ export const postCardSchema = z
     createdAt: z.string().datetime(),
     author: memberSummarySchema,
     isAuthor: z.boolean(),
+    /**
+     * La publication attend la validation d'un modérateur du réseau
+     * (« Validation des nouvelles publications »). Seul son AUTEUR la reçoit
+     * dans un fil tant qu'elle attend — `postVisibilityWhere` l'écarte pour
+     * tous les autres —, et l'écran le lui dit sur la carte.
+     *
+     * `.default(false)` : les réponses enregistrées avant ce champ, et les
+     * fixtures des tests, restent lisibles.
+     */
+    awaitingApproval: z.boolean().default(false),
     city: cityRefSchema.nullable(),
     community: z.object({ id: uuidSchema, name: z.string(), slug: z.string() }).nullable(),
     /** §2.4 : quatre images au plus, et c'est le SERVEUR qui le garantit. */

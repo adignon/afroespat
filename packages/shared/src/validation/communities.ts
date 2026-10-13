@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CommunityPostApprovalScope,
   CommunityKind,
   CommunityMemberRole,
   CommunityMemberStatus,
@@ -55,6 +56,21 @@ export const COMMUNITY_ANNOUNCEMENTS_PER_WEEK = 2;
 export const COMMUNITY_MAX_PINNED_TOPICS = 5;
 /** Fenêtre de correction du titre et du corps d'un sujet par son auteur (§4). */
 export const TOPIC_EDIT_WINDOW_MINUTES = 15;
+
+/**
+ * LES RÈGLES DU RÉSEAU — l'onglet « À propos » en dessine trois, et sa planche
+ * d'édition écrit « RÈGLES DU RÉSEAU · 4 SUR 8 ». Le plafond de huit est donc
+ * celui du dessin, et il est ICI pour que le compteur de l'écran et le refus du
+ * serveur disent le même nombre.
+ */
+/**
+ * Le plus grand « X » de « valider les X premières publications de chaque
+ * membre ». Au-delà, autant valider toutes les publications (`ALL`).
+ */
+export const COMMUNITY_MAX_APPROVAL_COUNT = 20;
+
+export const COMMUNITY_MAX_RULES = 8;
+export const communityRuleSchema = z.string().trim().min(3).max(200);
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -163,11 +179,17 @@ export const COMMUNITY_ERROR_CODES = {
   REPORT_NOT_IN_COMMUNITY: 404,
   /** Le signalement est déjà clos : la décision a déjà été prise (§2.4). */
   REPORT_ALREADY_DECIDED: 409,
-   /**
+  /**
    * Le masquage d'un sujet a plus de sept jours : seule l'équipe peut encore le
    * rétablir (arbitrage du porteur, `TOPIC_UNHIDE_WINDOW_DAYS`).
    */
   UNHIDE_WINDOW_CLOSED: 422,
+  /** « Autoriser les sondages par tous les membres » est éteint (Gérer · Paramètres). */
+  POLLS_RESTRICTED: 403,
+  /** « Album ouvert aux membres » est éteint (Gérer · Paramètres). */
+  ALBUM_RESTRICTED: 403,
+  /** La publication n'attend aucune validation, ou a déjà été décidée. */
+  POST_NOT_PENDING: 409,
 } as const;
 
 export type CommunityErrorCode = keyof typeof COMMUNITY_ERROR_CODES;
@@ -180,20 +202,26 @@ export const COMMUNITY_ERROR_MESSAGES: Record<CommunityErrorCode, string> = {
   CITY_THRESHOLD: 'Les réseaux d’intérêt ne sont pas encore ouverts dans votre ville.',
   NOT_ENOUGH_INVITES: 'Invitez au moins 5 membres pour créer un réseau.',
   INVITE_ONLY: 'Ce réseau se rejoint uniquement sur invitation.',
-  AUTO_COMMUNITY: 'Ce réseau est le vôtre par votre ville ou votre pays : vous ne pouvez pas le quitter, mais vous pouvez le mettre en sourdine.',
+  AUTO_COMMUNITY:
+    'Ce réseau est le vôtre par votre ville ou votre pays : vous ne pouvez pas le quitter, mais vous pouvez le mettre en sourdine.',
   ANNOUNCEMENT_LIMIT: 'Deux annonces par semaine au maximum.',
   POLL_CLOSED: 'Ce sondage est clos.',
   COMMUNITY_ARCHIVED: 'Ce réseau est archivé : il reste en lecture seule.',
   PIN_LIMIT: 'Cinq épinglés au maximum. Retirez-en un avant d’en ajouter.',
   OWNER_MUST_TRANSFER: 'Transférez la propriété du réseau avant de le quitter.',
   BANNED_FROM_COMMUNITY: 'Vous ne pouvez plus rejoindre ce réseau.',
-  MUTE_SELF_ONLY: 'La sourdine est une préférence personnelle : elle ne se pose que sur son propre rang.',
+  MUTE_SELF_ONLY:
+    'La sourdine est une préférence personnelle : elle ne se pose que sur son propre rang.',
   MUTE_ALONE: 'La sourdine se change seule, sans toucher au rôle ni au statut du membre.',
   REPORT_NOT_IN_COMMUNITY: 'Ce signalement ne vise aucun contenu de ce réseau.',
   REPORT_ALREADY_DECIDED: 'Ce signalement a déjà été traité.',
   // Le nombre de jours arrive dans `details` : le front compose la phrase, le
   // back ne fabrique pas de texte avec des trous (même règle que CITY_THRESHOLD).
-  UNHIDE_WINDOW_CLOSED: 'Ce masquage est trop ancien : seule l’équipe peut encore remettre ce contenu.',
+  UNHIDE_WINDOW_CLOSED:
+    'Ce masquage est trop ancien : seule l’équipe peut encore remettre ce contenu.',
+  POLLS_RESTRICTED: 'Dans ce réseau, seuls les modérateurs créent des sondages.',
+  ALBUM_RESTRICTED: 'Dans ce réseau, seuls les modérateurs ajoutent des photos aux albums.',
+  POST_NOT_PENDING: 'Cette publication n’attend plus de validation.',
 };
 
 // ── Champs (§2.2, §2.3) ─────────────────────────────────────────────────────
@@ -254,6 +282,8 @@ export const createCommunitySchema = z.object({
   category: communityCategorySchema,
   visibility: communityVisibilitySchema.default('PUBLIC'),
   coverAssetId: uuidSchema.optional(),
+  /** Le logo — même règle que la couverture : un média `EVENT_COVER` du créateur. */
+  logoAssetId: uuidSchema.optional(),
   inviteHandles: z
     .array(handleSchema)
     .max(COMMUNITY_MAX_INVITES)
@@ -272,6 +302,29 @@ export const updateCommunitySchema = z
     category: communityCategorySchema.optional(),
     visibility: communityVisibilitySchema.optional(),
     coverAssetId: uuidSchema.nullable().optional(),
+    /** Le logo du réseau, réservé au propriétaire comme la couverture ; `null` le retire. */
+    logoAssetId: uuidSchema.nullable().optional(),
+    /**
+     * LES RÈGLES ET LES TROIS PARAMÈTRES DE « GÉRER ».
+     *
+     * Ils sont ouverts aux MODÉRATEURS, là où le nom, la catégorie, la
+     * visibilité et la couverture restent au propriétaire : un réseau
+     * automatique n'a PAS de propriétaire (§2.1, ses bénévoles sont des
+     * modérateurs), et sans cela personne ne pourrait jamais y écrire ses
+     * règles. C'est le service qui fait la différence ; le schéma ne porte que
+     * les formes.
+     */
+    rules: z.array(communityRuleSchema).max(COMMUNITY_MAX_RULES).optional(),
+    postsRequireApproval: z.boolean().optional(),
+    /**
+     * QUELLES PUBLICATIONS ATTENDENT, quand la validation est allumée : toutes
+     * (`ALL`), ou les `postsApprovalCount` premières de chaque membre
+     * (`FIRST_POSTS`). Voir `Community.postsApprovalScope` dans le schéma Prisma.
+     */
+    postsApprovalScope: z.enum(CommunityPostApprovalScope).optional(),
+    postsApprovalCount: z.number().int().min(1).max(COMMUNITY_MAX_APPROVAL_COUNT).optional(),
+    pollsOpenToMembers: z.boolean().optional(),
+    albumOpenToMembers: z.boolean().optional(),
   })
   .refine((patch) => Object.keys(patch).length > 0, { message: 'Aucune modification.' });
 
@@ -619,6 +672,15 @@ export const communityPublicSchema = z
     countryId: uuidSchema.nullable(),
     memberCount: z.number().int(),
     coverAssetId: uuidSchema.nullable(),
+    /**
+     * `/media/<clé>` de la couverture, ou `null` — le bandeau du réseau s'en
+     * sert. Un DÉFAUT et non un champ exigé, pour la même raison que `rules` :
+     * les charges relevées avant ce champ ne le portent pas.
+     */
+    coverUrl: z.string().nullable().default(null),
+    /** Le logo : identifiant et adresse `/media/<clé>`, `null` = les initiales. */
+    logoAssetId: uuidSchema.nullable().default(null),
+    logoUrl: z.string().nullable().default(null),
     lastActivityAt: z.string().datetime(),
     createdAt: z.string().datetime(),
   })
@@ -684,6 +746,75 @@ export const communityDetailResponseSchema = communityPublicSchema
      * « Sourdine » à distinguer trois états pour un interrupteur qui en a deux.
      */
     myMuted: z.boolean(),
+    /**
+     * LES RÈGLES ET LES PARAMÈTRES — publics, comme la description : un passant
+     * doit pouvoir lire les règles d'un réseau AVANT de le rejoindre, et savoir
+     * si ses publications passeront par un modérateur.
+     */
+    /**
+     * DES DÉFAUTS, ET NON DES CHAMPS EXIGÉS : les charges relevées sur l'API
+     * avant ce lot (`packages/shared/src/__tests__/fixtures/community_detail_*`)
+     * ne les portent pas, et elles sont relevées octet pour octet — on ne les
+     * retouche pas. Les défauts sont ceux d'un réseau tel que la migration le
+     * crée : aucune règle, rien en validation, sondages et album ouverts, pas de
+     * pilotage, équipe inconnue. L'API, elle, les envoie toujours.
+     */
+    rules: z.array(z.string()).default([]),
+    settings: z
+      .object({
+        postsRequireApproval: z.boolean(),
+        /** Défauts : ceux de la migration — la première publication de chaque membre. */
+        postsApprovalScope: z.enum(CommunityPostApprovalScope).default('FIRST_POSTS'),
+        postsApprovalCount: z.number().int().default(1),
+        pollsOpenToMembers: z.boolean(),
+        albumOpenToMembers: z.boolean(),
+      })
+      .strict()
+      .default({
+        postsRequireApproval: false,
+        postsApprovalScope: 'FIRST_POSTS',
+        postsApprovalCount: 1,
+        pollsOpenToMembers: true,
+        albumOpenToMembers: true,
+      }),
+    /**
+     * LES DEUX TUILES DE « GÉRER » — « +34 ce mois » et « 61 % actifs sur 30
+     * jours », dessinées en dur. Rendues à l'ÉQUIPE seulement (`null` pour tout
+     * autre lecteur) : un taux d'activité est une donnée de pilotage, pas une
+     * information publique.
+     *
+     *   · `joinedThisMonth` — adhésions ACTIVES dont `joinedAt` tombe dans le
+     *     mois civil en cours (UTC) ;
+     *   · `activeLast30Days` — membres actifs ayant publié dans le fil du réseau
+     *     ou ouvert un sujet ces trente derniers jours.
+     */
+    stats: z
+      .object({
+        joinedThisMonth: z.number().int(),
+        activeLast30Days: z.number().int(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
+    /**
+     * L'ÉQUIPE — le propriétaire et les modérateurs ACTIFS, pour la carte
+     * « ÉQUIPE » de l'onglet « À propos ». Publique pour la même raison que les
+     * règles : « Contacter les modérateurs » est proposé à un passant, et il
+     * doit savoir qui il contacte. Bornée par le service.
+     */
+    team: z
+      .array(
+        z
+          .object({
+            userId: uuidSchema,
+            handle: z.string(),
+            displayName: z.string(),
+            avatarUrl: z.string().nullable(),
+            role: z.enum(CommunityMemberRole),
+          })
+          .strict(),
+      )
+      .default([]),
     counters: z
       .object({
         members: z.number().int(),
@@ -892,7 +1023,14 @@ export const communityMemberSchema = z
     city: communityCityRefSchema.nullable(),
     role: z.enum(CommunityMemberRole),
     status: z.enum(CommunityMemberStatus),
-    joinedAt: z.string().datetime(),
+    /**
+     * NUL pour une demande en ATTENTE (`?pending=true`) : on n'a pas encore
+     * rejoint. Le schéma l'exigeait non nul, alors que le service rend
+     * `joinedAt: null` sur chaque ligne `PENDING` — MESURÉ : toute la page de
+     * demandes échouait à la validation côté écran, et la carte « Demandes
+     * d'adhésion » de « Gérer » restait à zéro sur un réseau qui en avait.
+     */
+    joinedAt: z.string().datetime().nullable(),
   })
   .strict();
 
@@ -1193,10 +1331,24 @@ export const albumSchema = z
     createdBy: communityAuthorSchema,
     photoCount: z.number().int(),
     photos: z.array(albumPhotoSchema),
+    /**
+     * La photo de couverture choisie par l'équipe — `null` : la plus récente. Un
+     * DÉFAUT pour les charges relevées avant ce champ.
+     */
+    coverPhotoId: uuidSchema.nullable().default(null),
   })
   .strict();
 
 export type Album = z.infer<typeof albumSchema>;
+
+/**
+ * `PATCH /albums/:id` — choisir la photo de COUVERTURE (« Couverture » de la
+ * barre de sélection de l'album), ou revenir à la plus récente avec `null`.
+ * L'équipe du réseau seule.
+ */
+export const setAlbumCoverSchema = z.object({ coverPhotoId: uuidSchema.nullable() }).strict();
+
+export type SetAlbumCover = z.infer<typeof setAlbumCoverSchema>;
 
 /**
  * `GET /communities/:id/albums`.
@@ -1425,6 +1577,58 @@ export const communityReportDecisionResponseSchema = z
   })
   .strict();
 
-export type CommunityReportDecisionResponse = z.infer<
-  typeof communityReportDecisionResponseSchema
->;
+export type CommunityReportDecisionResponse = z.infer<typeof communityReportDecisionResponseSchema>;
+
+// ── §2.4 — LES PUBLICATIONS QUI ATTENDENT LA VALIDATION D'UN MODÉRATEUR ─────
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « VALIDATION DES NOUVELLES PUBLICATIONS » — L'INTERRUPTEUR APPLIQUÉ        ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La planche « Gérer » écrit : « Les publications des nouveaux membres passent
+ * par un modérateur. » « NOUVEAU » EST DÉFINI ICI, et c'est un arbitrage remonté :
+ * un membre ordinaire dont AUCUNE publication n'a encore été validée dans ce
+ * réseau. Sa première publication attend ; dès qu'un modérateur en valide une,
+ * il est tenu pour connu et publie directement. C'est la seule définition qui ne
+ * demande ni un délai arbitraire, ni une seconde colonne d'« ancienneté ».
+ *
+ * L'équipe (propriétaire, modérateurs) n'attend jamais.
+ */
+export const pendingPostSchema = z
+  .object({
+    postId: uuidSchema,
+    type: z.string(),
+    body: z.string(),
+    createdAt: z.string().datetime(),
+    author: z
+      .object({
+        userId: uuidSchema,
+        handle: z.string(),
+        displayName: z.string(),
+        avatarUrl: z.string().nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type PendingPost = z.infer<typeof pendingPostSchema>;
+
+export const pendingPostsResponseSchema = pageSchema(pendingPostSchema);
+
+export type PendingPostsResponse = z.infer<typeof pendingPostsResponseSchema>;
+
+export const pendingPostDecisionSchema = z
+  .object({ decision: z.enum(['APPROVE', 'REJECT']) })
+  .strict();
+
+export type PendingPostDecision = z.infer<typeof pendingPostDecisionSchema>;
+
+export const pendingPostDecisionResponseSchema = z
+  .object({
+    postId: uuidSchema,
+    decision: z.enum(['APPROVE', 'REJECT']),
+  })
+  .strict();
+
+export type PendingPostDecisionResponse = z.infer<typeof pendingPostDecisionResponseSchema>;

@@ -19,7 +19,9 @@ import {
   createStorySchema,
   feedQuerySchema,
   moveToTopicSchema,
+  cursorQuerySchema,
   myStoriesQuerySchema,
+  pendingPostDecisionSchema,
   storiesQuerySchema,
   storyReactionSchema,
   updateCommentSchema,
@@ -418,5 +420,48 @@ export class MyStoriesController {
     @Query(zodPipe(myStoriesQuerySchema)) query: z.infer<typeof myStoriesQuerySchema>,
   ) {
     return this.feed.myStories(actorOf(auth), query);
+  }
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA FILE DE VALIDATION D'UN RÉSEAU — « Validation des nouvelles publications »║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le chemin est celui du module 07 (`/communities/:id/…`), le service celui du
+ * fil : c'est `FeedService` qui possède les publications, leur visibilité et
+ * l'événement `post.published` que la validation déclenche. Recopier ces trois
+ * règles dans `CommunitiesService` en aurait fait deux vérités.
+ *
+ * `content.read` comme les autres gestes de modération du module 07 : la garde
+ * réelle est le RÔLE dans le réseau (`MODERATOR_REQUIRED`), tenue par le service.
+ */
+@ApiTags('communities')
+@Controller('communities')
+export class CommunityPendingPostsController {
+  constructor(private readonly feed: FeedService) {}
+
+  @Get(':id/pending-posts')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Les publications qui attendent la validation de l’équipe du réseau' })
+  async list(
+    @Auth() auth: AuthContext,
+    @Param('id') id: string,
+    @Query(zodPipe(cursorQuerySchema)) query: z.infer<typeof cursorQuerySchema>,
+  ) {
+    return this.feed.pendingPosts(actorOf(auth), id, query);
+  }
+
+  @Post(':id/pending-posts/:postId/decide')
+  @HttpCode(200)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Valider ou refuser une publication en attente' })
+  async decide(
+    @Auth() auth: AuthContext,
+    @Param('id') id: string,
+    @Param('postId', zodPipe(uuidSchema)) postId: string,
+    @Body(zodPipe(pendingPostDecisionSchema)) body: z.infer<typeof pendingPostDecisionSchema>,
+  ) {
+    return this.feed.decidePendingPost(actorOf(auth), id, postId, body);
   }
 }

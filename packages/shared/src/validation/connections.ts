@@ -41,10 +41,28 @@ export const MUTUAL_CONNECTIONS_CACHE_MS = 60 * 60 * 1000;
 /** §3.2 : le nombre de handles renvoyés avec « Connecté·e à N de vos contacts ». */
 export const MUTUAL_CONNECTIONS_SAMPLE = 5;
 
+/**
+ * `GET /users/:handle/mutual-connections` — ce que MES contacts et MES réseaux
+ * ont en commun avec le membre regardé (§3.2). Jamais l'étendue de SON réseau.
+ */
+export const mutualConnectionsResponseSchema = z
+  .object({
+    count: z.number().int().nonnegative(),
+    handles: z.array(z.string()),
+    /** Les réseaux où nous sommes tous deux membres actifs. */
+    sharedCommunities: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type MutualConnectionsResponse = z.infer<typeof mutualConnectionsResponseSchema>;
+
 // ── Codes d'erreur propres aux contacts (§7.2) ───────────────────────────────
 
+/**
+ * `SAME_CITY_REQUIRED` (422) n'existe plus : le porteur a levé la condition de
+ * ville sur les demandes de contact — voir `ConnectionsService.request`.
+ */
 export const CONNECTION_ERROR_CODES = {
-  SAME_CITY_REQUIRED: 422,
   REQUEST_LIMIT: 429,
   ALREADY_CONNECTED: 409,
   /** Une demande est déjà en attente entre ces deux membres, dans un sens ou l'autre. */
@@ -54,8 +72,6 @@ export const CONNECTION_ERROR_CODES = {
 export type ConnectionErrorCode = keyof typeof CONNECTION_ERROR_CODES;
 
 export const CONNECTION_ERROR_MESSAGES: Record<ConnectionErrorCode, string> = {
-  SAME_CITY_REQUIRED:
-    'Une demande de contact ne peut être adressée qu’à un membre de votre ville ou de votre ville cible.',
   REQUEST_LIMIT: 'Vous avez envoyé trop de demandes de contact. Réessayez demain.',
   ALREADY_CONNECTED: 'Ce membre fait déjà partie de vos contacts.',
   REQUEST_PENDING: 'Une demande de contact est déjà en attente avec ce membre.',

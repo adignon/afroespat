@@ -195,16 +195,27 @@ export class MessagingService {
          * réseau : sans titre, l'écran l'aurait nommé par la liste de ses
          * membres (« Aïcha Diop, Marc Koudou, Sandra M. »), ce qui ne dit pas
          * DE QUOI il s'agit — c'est `nomDeConversation`, côté front, qui retombe
-         * là-dessus quand `title` est nul. Le nom du réseau seul, sans mot
-         * ajouté : inventer « Modération · … » serait écrire du texte
-         * d'interface, et ce dépôt a déjà refusé de fabriquer le mot français
-         * d'un `kind`.
+         * là-dessus quand `title` est nul.
+         *
+         * ── CÔTÉ ÉQUIPE, LE NOM DU MEMBRE QUI A ÉCRIT S'AJOUTE ─────────────
+         *
+         * Le porteur, à la question « plusieurs fils portent le même nom » :
+         * « OUI ajoute ». Un modérateur contacté par trois membres voyait trois
+         * lignes « Cuisine béninoise », que seul l'aperçu du dernier message
+         * distinguait. Pour TOUT AUTRE lecteur que celui qui a ouvert le fil
+         * (`openedByUserId`), le titre devient « Cuisine béninoise · Aïcha
+         * Diop ». Le membre qui a écrit, lui, garde le nom du réseau seul : il
+         * n'a qu'un fil par réseau, et son propre nom n'y apprendrait rien.
+         *
+         * Le nom vient des MEMBRES déjà chargés, pas d'une requête de plus. Si
+         * le membre n'y est plus (compte supprimé, sorti du fil), on retombe
+         * sur le nom du réseau seul plutôt que d'écrire un nom périmé.
          */
         title:
           conversation.kind === 'JOURNEY'
             ? conversation.journey?.title ?? null
             : conversation.kind === 'COMMUNITY_MODERATION'
-              ? conversation.community?.name ?? null
+              ? this.titreModeration(conversation, userId)
               : null,
         members: others.map((m) => ({
           userId: m.userId,
@@ -910,6 +921,35 @@ export class MessagingService {
       `Fil de modération ouvert sur « ${input.communityName} » : ${equipe.length} destinataire(s)`,
     );
     return { conversationId, created: true, recipients: equipe.length };
+  }
+
+  /**
+   * Le titre d'un fil « Contacter les modérateurs » pour `lecteurId` — voir le
+   * commentaire de `listConversations` : le nom du réseau, suivi, pour l'équipe,
+   * du nom du membre qui a ouvert le fil.
+   */
+  private titreModeration(
+    conversation: {
+      readonly openedByUserId: string | null;
+      readonly community: { readonly name: string } | null;
+      readonly members: readonly {
+        readonly userId: string;
+        readonly leftAt: Date | null;
+        readonly user: { readonly displayName: string; readonly handle: string; readonly deletedAt: Date | null };
+      }[];
+    },
+    lecteurId: string,
+  ): string | null {
+    const reseau = conversation.community?.name ?? null;
+    if (reseau === null) return null;
+    const auteur = conversation.openedByUserId;
+    if (auteur === null || auteur === lecteurId) return reseau;
+    const membre = conversation.members.find(
+      (m) => m.userId === auteur && m.leftAt === null && m.user.deletedAt === null,
+    );
+    if (membre === undefined) return reseau;
+    const nom = membre.user.displayName.trim() === '' ? `@${membre.user.handle}` : membre.user.displayName.trim();
+    return `${reseau} · ${nom}`;
   }
 
   /**

@@ -294,6 +294,23 @@ export function messagePushTitle(senderDisplayName: string): string {
   return `Nouveau message de ${senderDisplayName}`;
 }
 
+/**
+ * LA MÊME RÈGLE, POUR UN FIL « CONTACTER LES MODÉRATEURS ».
+ *
+ * Le porteur : « Oui » au nom du réseau dans la notification. Sans lui, un
+ * modérateur recevait « Nouveau message de Sandra » sans savoir que Sandra
+ * écrivait à l'équipe de SON réseau — ni de quel réseau, s'il en anime
+ * plusieurs. Le même titre sert au membre qui reçoit la réponse : c'est bien
+ * « les modérateurs de ce réseau » qui lui répondent.
+ *
+ * Le nom du réseau n'est PAS du contenu de message : c'est le nom public d'un
+ * réseau dont le destinataire est membre. La règle dure du §2.4 tient donc —
+ * le corps du message n'est, ici non plus, pas un paramètre.
+ */
+export function moderationMessagePushTitle(senderDisplayName: string, communityName: string): string {
+  return `${messagePushTitle(senderDisplayName)} · Modérateurs de ${communityName}`;
+}
+
 /** Charge utile minimale du §2.4 : titre, corps court, lien. */
 export const PUSH_BODY_MAX = 120;
 

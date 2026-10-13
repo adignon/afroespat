@@ -8,6 +8,7 @@ import {
   groupingRuleFor,
   isWithinQuietHours,
   messagePushTitle,
+  moderationMessagePushTitle,
 } from '@app/shared';
 import { PrismaService } from '../../../common/prisma.service';
 import { EventHandlerRegistry, type DomainEventJob } from '../../../queue/event-handlers';
@@ -604,6 +605,40 @@ describe('notifications (12)', () => {
       expect(pushJob?.title).toMatch(/^Nouveau message de /);
       expect(pushJob?.body).toBe('');
       expect(JSON.stringify(pushJob)).not.toContain('4711');
+    });
+  });
+
+  describe('un fil « Contacter les modérateurs » nomme son réseau', () => {
+    it('ajoute « · Modérateurs de <réseau> », et le corps reste absent', async () => {
+      const sender = await member();
+      const recipient = await awakeMember();
+      // Un réseau existant suffit (le relevé de départ en sème) : seul son NOM
+      // est lu, et le fil est retiré à la fin du test.
+      const reseau = await prisma.community.findFirstOrThrow({ select: { id: true, name: true } });
+      const conversationId = newId();
+      await prisma.conversation.create({
+        data: { id: conversationId, kind: 'COMMUNITY_MODERATION', communityId: reseau.id, openedByUserId: sender },
+      });
+      try {
+        const messageId = newId();
+        await emit('message.sent', messageId, {
+          messageId,
+          conversationId,
+          kind: 'COMMUNITY_MODERATION',
+          senderUserId: sender,
+          body: SECRET_BODY,
+          recipientUserIds: [recipient],
+        });
+
+        const rows = await notificationsOf(recipient);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.title).toBe(moderationMessagePushTitle(await name(sender), reseau.name));
+        expect(rows[0]?.title).toMatch(/^Nouveau message de .+ · Modérateurs de /);
+        expect(rows[0]?.body).toBeNull();
+        expect(JSON.stringify(rows[0])).not.toContain('4711');
+      } finally {
+        await prisma.conversation.delete({ where: { id: conversationId } });
+      }
     });
   });
 
