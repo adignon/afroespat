@@ -829,6 +829,41 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     ).resolves.toMatchObject({ checked: 2 });
   }, TEST_TIMEOUT_MS);
 
+  // ══ La validation des publications d'un réseau : deux modes ═══════════════
+  //
+  // Le porteur : « valider toutes les publications, valider X publications pour
+  // chaque membre ». `FIRST_POSTS` laisse passer un membre dès qu'il a
+  // `postsApprovalCount` publications validées ; `ALL` retient toujours.
+
+  it('FIRST_POSTS retient les N premières publications d’un membre, ALL les retient toutes', async () => {
+    const author = await newMember();
+    const community = await newCommunity([author.userId]);
+    const dans = (body: string) => post({ body, communityId: community.id });
+
+    await prisma.community.update({
+      where: { id: community.id },
+      data: { postsRequireApproval: true, postsApprovalScope: 'FIRST_POSTS', postsApprovalCount: 2 },
+    });
+    const p1 = await feed.createPost(author, dans('Première publication dans ce réseau.'));
+    expect(p1.post.awaitingApproval).toBe(true);
+    await prisma.post.update({ where: { id: p1.post.id }, data: { awaitingApproval: false } });
+    const p2 = await feed.createPost(author, dans('Deuxième publication dans ce réseau.'));
+    // Une seule validée sur deux exigées : elle attend encore.
+    expect(p2.post.awaitingApproval).toBe(true);
+    await prisma.post.update({ where: { id: p2.post.id }, data: { awaitingApproval: false } });
+    const p3 = await feed.createPost(author, dans('Troisième publication dans ce réseau.'));
+    expect(p3.post.awaitingApproval).toBe(false);
+
+    await prisma.community.update({ where: { id: community.id }, data: { postsApprovalScope: 'ALL' } });
+    const p4 = await feed.createPost(author, dans('Quatrième publication dans ce réseau.'));
+    expect(p4.post.awaitingApproval).toBe(true);
+
+    // L'interrupteur éteint, plus rien n'attend, quel que soit le mode.
+    await prisma.community.update({ where: { id: community.id }, data: { postsRequireApproval: false } });
+    const p5 = await feed.createPost(author, dans('Cinquième publication dans ce réseau.'));
+    expect(p5.post.awaitingApproval).toBe(false);
+  }, TEST_TIMEOUT_MS);
+
   // ══ RÈGLE DURE : le déplacement vers un réseau n'est jamais automatique ════
 
   it('rule: le déplacement vers un réseau n’est jamais automatique', async () => {

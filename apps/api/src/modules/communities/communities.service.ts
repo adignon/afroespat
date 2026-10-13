@@ -85,12 +85,16 @@ type CommunityRow = Prisma.CommunityGetPayload<{
     createdByUserId: true;
     coverAssetId: true;
     coverAsset: { select: { storageKey: true; deletedAt: true } };
+    logoAssetId: true;
+    logoAsset: { select: { storageKey: true; deletedAt: true } };
     memberCount: true;
     status: true;
     lastActivityAt: true;
     archivedAt: true;
     createdAt: true;
     postsRequireApproval: true;
+    postsApprovalScope: true;
+    postsApprovalCount: true;
     pollsOpenToMembers: true;
     albumOpenToMembers: true;
     rules: true;
@@ -115,12 +119,17 @@ const COMMUNITY_SELECT = {
    * route `/media/<clé>` attend la CLÉ, qui porte un segment aléatoire.
    */
   coverAsset: { select: { storageKey: true, deletedAt: true } },
+  /** Le logo, même lecture que la couverture : sa clé compose `logoUrl`. */
+  logoAssetId: true,
+  logoAsset: { select: { storageKey: true, deletedAt: true } },
   memberCount: true,
   status: true,
   lastActivityAt: true,
   archivedAt: true,
   createdAt: true,
   postsRequireApproval: true,
+  postsApprovalScope: true,
+  postsApprovalCount: true,
   pollsOpenToMembers: true,
   albumOpenToMembers: true,
   rules: true,
@@ -680,7 +689,7 @@ export class CommunitiesService {
   }
 
   /**
-   * LA COUVERTURE D'UN RÉSEAU EST UN MÉDIA DE SON PROPRIÉTAIRE, PRÊT.
+   * LA COUVERTURE — ET LE LOGO — D'UN RÉSEAU SONT DES MÉDIAS DE SON PROPRIÉTAIRE, PRÊTS.
    *
    * `create` et `update` recopiaient `coverAssetId` tel quel : n'importe quel
    * identifiant de média passait — celui d'un autre membre, ou un justificatif
@@ -729,6 +738,11 @@ export class CommunitiesService {
         c.coverAsset === null || c.coverAsset.deletedAt !== null
           ? null
           : `/media/${c.coverAsset.storageKey}`,
+      logoAssetId: c.logoAssetId,
+      logoUrl:
+        c.logoAsset === null || c.logoAsset.deletedAt !== null
+          ? null
+          : `/media/${c.logoAsset.storageKey}`,
       lastActivityAt: c.lastActivityAt,
       createdAt: c.createdAt,
     };
@@ -777,6 +791,8 @@ export class CommunitiesService {
       rules: community.rules,
       settings: {
         postsRequireApproval: community.postsRequireApproval,
+        postsApprovalScope: community.postsApprovalScope,
+        postsApprovalCount: community.postsApprovalCount,
         pollsOpenToMembers: community.pollsOpenToMembers,
         albumOpenToMembers: community.albumOpenToMembers,
       },
@@ -937,6 +953,7 @@ export class CommunitiesService {
 
     const id = newId();
     if (input.coverAssetId !== undefined) await this.assertOwnedCover(userId, input.coverAssetId);
+    if (input.logoAssetId !== undefined) await this.assertOwnedCover(userId, input.logoAssetId);
     const slug = await this.uniqueSlug(input.name);
 
     await this.prisma.$transaction(async (tx) => {
@@ -951,6 +968,7 @@ export class CommunitiesService {
           visibility: input.visibility,
           createdByUserId: userId,
           coverAssetId: input.coverAssetId ?? null,
+          logoAssetId: input.logoAssetId ?? null,
           // « Le réseau est créé en ACTIVE » (§2.2) : aucun état d'attente, le
           // créateur n'a pas à revenir vérifier que son réseau s'est ouvert.
           status: 'ACTIVE',
@@ -1070,12 +1088,16 @@ export class CommunitiesService {
       patch.name !== undefined ||
       patch.category !== undefined ||
       patch.visibility !== undefined ||
-      patch.coverAssetId !== undefined;
+      patch.coverAssetId !== undefined ||
+      patch.logoAssetId !== undefined;
     if (fondateur) this.assertOwner(access);
     else this.assertModerator(access);
     this.assertWritable(access);
     if (patch.coverAssetId !== undefined && patch.coverAssetId !== null) {
       await this.assertOwnedCover(userId, patch.coverAssetId);
+    }
+    if (patch.logoAssetId !== undefined && patch.logoAssetId !== null) {
+      await this.assertOwnedCover(userId, patch.logoAssetId);
     }
 
     const automatique = AUTO_KINDS.includes(access.community.kind as 'CITY' | 'COUNTRY');
@@ -1092,6 +1114,9 @@ export class CommunitiesService {
     if (patch.category !== undefined) data.category = patch.category;
     if (patch.visibility !== undefined) data.visibility = patch.visibility;
     if (patch.coverAssetId !== undefined) data.coverAssetId = patch.coverAssetId;
+    if (patch.logoAssetId !== undefined) data.logoAssetId = patch.logoAssetId;
+    if (patch.postsApprovalScope !== undefined) data.postsApprovalScope = patch.postsApprovalScope;
+    if (patch.postsApprovalCount !== undefined) data.postsApprovalCount = patch.postsApprovalCount;
     if (patch.rules !== undefined) data.rules = patch.rules;
     if (patch.postsRequireApproval !== undefined) {
       data.postsRequireApproval = patch.postsRequireApproval;
@@ -2972,6 +2997,7 @@ export class CommunitiesService {
         title: true,
         eventId: true,
         createdAt: true,
+        coverPhotoId: true,
         createdBy: { select: { id: true, handle: true, displayName: true } },
         photos: {
           where: {
@@ -2999,6 +3025,10 @@ export class CommunitiesService {
         createdAt: a.createdAt,
         createdBy: a.createdBy,
         photoCount: a.photos.length,
+        // Une couverture que le lecteur ne voit pas (photo d'un membre séparé de
+        // lui) ne lui est pas désignée : l'album retombe sur la plus récente.
+        coverPhotoId:
+          a.coverPhotoId !== null && a.photos.some((p) => p.id === a.coverPhotoId) ? a.coverPhotoId : null,
         photos: a.photos.map((p) => ({
           id: p.id,
           caption: p.caption,
@@ -3144,6 +3174,33 @@ export class CommunitiesService {
   }
 
   /** « Propriétaire et modérateurs suppriment » (§2.3) — et celui qui a posé. */
+  /**
+   * `PATCH /albums/:id` — la photo de couverture d'un album.
+   *
+   * L'ÉQUIPE seule (propriétaire, modérateurs), comme la création d'un album :
+   * la couverture représente l'album à tous les membres. La photo doit
+   * appartenir à CET album et ne pas être retirée (404 sinon, indistinguable
+   * d'une photo absente). `null` revient à la plus récente.
+   */
+  async setAlbumCover(albumId: string, userId: string, coverPhotoId: string | null): Promise<void> {
+    const album = await this.prisma.album.findUnique({
+      where: { id: albumId },
+      select: { id: true, communityId: true },
+    });
+    if (album === null) throw ApiError.notFound();
+    const access = await this.load(album.communityId, userId);
+    this.assertModerator(access);
+    this.assertWritable(access);
+    if (coverPhotoId !== null) {
+      const photo = await this.prisma.albumPhoto.findFirst({
+        where: { id: coverPhotoId, albumId, deletedAt: null },
+        select: { id: true },
+      });
+      if (photo === null) throw ApiError.notFound();
+    }
+    await this.prisma.album.update({ where: { id: albumId }, data: { coverPhotoId } });
+  }
+
   async deletePhoto(albumId: string, photoId: string, userId: string): Promise<void> {
     const photo = await this.prisma.albumPhoto.findFirst({
       where: { id: photoId, albumId, deletedAt: null },
@@ -3160,6 +3217,9 @@ export class CommunitiesService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.albumPhoto.update({ where: { id: photo.id }, data: { deletedAt: new Date() } });
+      // Un retrait est un `deletedAt`, pas une suppression : la clé étrangère ne
+      // remet donc pas la couverture à nul d'elle-même. On le fait ici.
+      await tx.album.updateMany({ where: { id: albumId, coverPhotoId: photo.id }, data: { coverPhotoId: null } });
       if (isModerator && photo.uploadedByUserId !== userId) {
         await this.audit.record(tx, {
           actor: { type: 'MEMBER', id: userId },

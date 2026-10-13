@@ -15,6 +15,7 @@ import { fetchMe, hasAccessToken, resumeSession } from '@/lib/api/index';
 import {
   COMMUNITY_CATEGORY_LABELS,
   COMMUNITY_MAX_PINNED_TOPICS,
+  COMMUNITY_MAX_APPROVAL_COUNT,
   COMMUNITY_MAX_RULES,
   albumTitleSchema,
   communityDescriptionSchema,
@@ -51,6 +52,8 @@ import {
   updateMember,
   updateTopic,
   uploadAlbumImage,
+  setAlbumCover,
+  deleteAlbumPhoto,
   uploadCommunityCover,
 } from './api';
 import {
@@ -295,6 +298,10 @@ export interface ReseauEtat {
   readonly champCouverture: RefObject<HTMLInputElement | null>;
   /** Le composeur du fil, pour ses deux fenêtres (sondage, guides) montées par l'écran. */
   readonly composeur: ComposeurReseauView;
+  /** La photo d'album à retirer, en attente de confirmation (`null` = fenêtre fermée). */
+  readonly photoARetirer: boolean;
+  readonly onConfirmerRetraitPhoto: () => void;
+  readonly onAnnulerRetraitPhoto: () => void;
   readonly onFichierCouverture: (e: {
     target: { files: FileList | null; value: string };
   }) => void;
@@ -1136,6 +1143,58 @@ export function useReseau(
     moderateur ||
     (reseau?.myStatus === 'ACTIVE' && reseau.settings.albumOpenToMembers);
 
+  /**
+   * ── LA SÉLECTION D'UNE PHOTO : « COUVERTURE » ET « MASQUER » ──────────────
+   *
+   * La barre de 390 px (« 1 photo sélectionnée · Couverture · Masquer ») était
+   * dessinée en permanence et inerte. Un membre de l'ÉQUIPE sélectionne une
+   * photo d'album en la touchant ; la barre apparaît, et ses deux gestes
+   * appellent `PATCH /albums/:id` (la couverture de l'album) et
+   * `DELETE /albums/:id/photos/:photoId` (après confirmation, montée par
+   * l'écran). La sélection retombe d'elle-même si la photo quitte la liste
+   * (changement d'onglet, retrait).
+   */
+  const [photoChoisie, setPhotoChoisie] = useState<string | null>(null);
+  const [photoARetirer, setPhotoARetirer] = useState<{ albumId: string; photoId: string } | null>(null);
+  const choisie = photosAlbum.find((p) => p.id === photoChoisie && p.albumId !== undefined) ?? null;
+  const estCouverture =
+    choisie !== null && albums.find((a) => a.id === choisie.albumId)?.coverPhotoId === choisie.id;
+  const changerCouvertureAlbum = useCallback(() => {
+    if (choisie === null || choisie.albumId === undefined) return;
+    setAlbumEnVol(true);
+    setAlbumEchec(null);
+    void setAlbumCover(choisie.albumId, estCouverture ? null : choisie.id)
+      .then(() => {
+        setAlbumTick((n) => n + 1);
+        setPhotoChoisie(null);
+      })
+      .catch((cause: unknown) => {
+        setAlbumEchec(echecDe(cause).message);
+      })
+      .finally(() => {
+        setAlbumEnVol(false);
+      });
+  }, [choisie, estCouverture]);
+  const retirerPhoto = useCallback(() => {
+    const cible = photoARetirer;
+    if (cible === null) return;
+    setAlbumEnVol(true);
+    setAlbumEchec(null);
+    void deleteAlbumPhoto(cible.albumId, cible.photoId)
+      .then(() => {
+        setPhotoARetirer(null);
+        setPhotoChoisie(null);
+        setAlbumTick((n) => n + 1);
+      })
+      .catch((cause: unknown) => {
+        setPhotoARetirer(null);
+        setAlbumEchec(echecDe(cause).message);
+      })
+      .finally(() => {
+        setAlbumEnVol(false);
+      });
+  }, [photoARetirer]);
+
   const vueAlbum: AlbumReseauView = useMemo(
     () => ({
       pastilles,
@@ -1199,8 +1258,23 @@ export function useReseau(
        */
       titreMin: albumTitleSchema.minLength ?? 0,
       titreMax: albumTitleSchema.maxLength ?? 0,
+      selection: choisie?.id ?? null,
+      selectionnable: moderateur,
+      onSelectionner: (photoId: string) => {
+        if (!moderateur) return;
+        setPhotoChoisie((courante) => (courante === photoId ? null : photoId));
+      },
+      couvertureLibelle: estCouverture ? 'Retirer la couverture' : 'Couverture',
+      onCouvertureAlbum: changerCouvertureAlbum,
+      onMasquerPhoto: () => {
+        if (choisie === null || choisie.albumId === undefined) return;
+        setPhotoARetirer({ albumId: choisie.albumId, photoId: choisie.id });
+      },
     }),
     [
+      choisie,
+      estCouverture,
+      changerCouvertureAlbum,
       pastilles,
       vignettes,
       albumOnglet,
@@ -1810,6 +1884,12 @@ export function useReseau(
    * mobile « cliquent » tous deux.
    */
   const champCouverture = useRef<HTMLInputElement | null>(null);
+  /**
+   * QUELLE IMAGE LE SÉLECTEUR VA CHANGER — la couverture ou le logo. Un seul
+   * `<input type="file">` sert aux deux : on note la cible juste avant de
+   * l'ouvrir, et `onFichierCouverture` la relit au retour du choix.
+   */
+  const cibleImage = useRef<'couverture' | 'logo'>('couverture');
   const [couvertureOccupee, setCouvertureOccupee] = useState(false);
   const onFichierCouverture = useCallback(
     (e: { target: { files: FileList | null; value: string } }): void => {
@@ -1819,7 +1899,12 @@ export function useReseau(
       if (fichier === undefined || slug === '') return;
       setCouvertureOccupee(true);
       void uploadCommunityCover(fichier)
-        .then((media) => updateCommunity(slug, { coverAssetId: media.id }))
+        .then((media) =>
+          updateCommunity(
+            slug,
+            cibleImage.current === 'logo' ? { logoAssetId: media.id } : { coverAssetId: media.id },
+          ),
+        )
         .then((apres) => {
           setReseau(apres);
         })
@@ -1872,6 +1957,11 @@ export function useReseau(
       peutChangerCouverture: reseau.myRole === 'OWNER' && reseau.myStatus === 'ACTIVE',
       couvertureOccupee,
       onChangerCouverture: () => {
+        cibleImage.current = 'couverture';
+        champCouverture.current?.click();
+      },
+      onChangerLogo: () => {
+        cibleImage.current = 'logo';
         champCouverture.current?.click();
       },
     };
@@ -2106,6 +2196,56 @@ export function useReseau(
   const [editionEnVol, setEditionEnVol] = useState(false);
   const descriptionCourante = brouillonDescription ?? reseau?.description ?? '';
   const reglesCourantes = brouillonRegles ?? reseau?.rules ?? [];
+
+  /**
+   * ── LE GLISSER-DÉPOSER DES RÈGLES ─────────────────────────────────────────
+   *
+   * Le porteur : « Ordre des règles : permettre leur glisser et déposer ».
+   * `saisir` démarre au `pointerdown` de la poignée et suit le pointeur sur la
+   * FENÊTRE : la ligne survolée (`data-apropos-regle-ligne`, lue par
+   * `elementFromPoint`) devient la place de la règle, qu'on y déplace aussitôt.
+   * Le brouillon change donc pendant le geste — c'est ce qui le rend visible —
+   * et `reglesRef` sert à lire l'ordre COURANT depuis les écouteurs, qui ont été
+   * posés avec l'ordre de départ.
+   */
+  const [glisse, setGlisse] = useState<number | null>(null);
+  const reglesRef = useRef<readonly string[]>(reglesCourantes);
+  reglesRef.current = reglesCourantes;
+  const deplacerRegle = useCallback((de: number, vers: number) => {
+    const liste = [...reglesRef.current];
+    if (vers < 0 || vers >= liste.length || de === vers) return;
+    const [regle] = liste.splice(de, 1);
+    if (regle === undefined) return;
+    liste.splice(vers, 0, regle);
+    setBrouillonRegles(liste);
+  }, []);
+  const saisirRegle = useCallback(
+    (index: number, event: { preventDefault: () => void }) => {
+      event.preventDefault();
+      let courant = index;
+      setGlisse(index);
+      const bouger = (ev: PointerEvent): void => {
+        const ligne = document
+          .elementFromPoint(ev.clientX, ev.clientY)
+          ?.closest('[data-apropos-regle-ligne]');
+        const vers = Number(ligne?.getAttribute('data-apropos-regle-ligne'));
+        if (ligne === null || ligne === undefined || !Number.isInteger(vers) || vers === courant) return;
+        deplacerRegle(courant, vers);
+        courant = vers;
+        setGlisse(vers);
+      };
+      const lacher = (): void => {
+        window.removeEventListener('pointermove', bouger);
+        window.removeEventListener('pointerup', lacher);
+        window.removeEventListener('pointercancel', lacher);
+        setGlisse(null);
+      };
+      window.addEventListener('pointermove', bouger);
+      window.addEventListener('pointerup', lacher);
+      window.addEventListener('pointercancel', lacher);
+    },
+    [deplacerRegle],
+  );
   const reglesModifiees =
     brouillonRegles !== null &&
     JSON.stringify(brouillonRegles.map((r) => r.trim()).filter((r) => r !== '')) !==
@@ -2222,6 +2362,15 @@ export function useReseau(
           onRetirer: () => {
             setBrouillonRegles(reglesCourantes.filter((_, j) => j !== i));
           },
+          onPoignee: (event) => {
+            saisirRegle(i, event);
+          },
+          onClavier: (event) => {
+            if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            deplacerRegle(i, event.key === 'ArrowUp' ? i - 1 : i + 1);
+          },
+          deplacee: glisse === i,
         })),
         reglesMax: COMMUNITY_MAX_RULES,
         reglesCompte: `${String(reglesCourantes.length)} SUR ${String(COMMUNITY_MAX_RULES)}`,
@@ -2254,11 +2403,13 @@ export function useReseau(
     };
   }, [
     base,
+    deplacerRegle,
     descriptionCourante,
     descriptionModifiee,
     editionEnVol,
     enregistrerAPropos,
     equipe,
+    glisse,
     moiId,
     onglet.reseau,
     prevenir,
@@ -2266,6 +2417,7 @@ export function useReseau(
     reglesModifiees,
     reseau,
     routeur,
+    saisirRegle,
   ]);
 
   // ── « Gérer » : sections, file de validation, paramètres ───────────────────
@@ -2288,6 +2440,8 @@ export function useReseau(
     [slug],
   );
 
+  const portee = reseau?.settings.postsApprovalScope ?? 'FIRST_POSTS';
+  const nombre = reseau?.settings.postsApprovalCount ?? 1;
   const pilotage: PilotageReseauView = useMemo(() => {
     const ensemble = section === 'ensemble';
     const automatique = reseau !== null && reseau.kind !== 'INTEREST';
@@ -2363,6 +2517,28 @@ export function useReseau(
       },
       parametres: {
         validation: reseau?.settings.postsRequireApproval ?? false,
+        validationPortee: portee,
+        validationNombre: nombre,
+        validationNombreMax: COMMUNITY_MAX_APPROVAL_COUNT,
+        /**
+         * LA RÈGLE EN CLAIR, sous l'interrupteur — la maquette écrivait « Les
+         * publications des nouveaux membres passent par un modérateur. », qui ne
+         * dit plus juste dès qu'on choisit « toutes » ou « les 3 premières ».
+         */
+        validationSous: !(reseau?.settings.postsRequireApproval ?? false)
+          ? 'Les publications paraissent sans attendre un modérateur.'
+          : portee === 'ALL'
+            ? 'Toutes les publications des membres passent par un modérateur.'
+            : nombre === 1
+              ? 'La première publication de chaque membre passe par un modérateur.'
+              : `Les ${String(nombre)} premières publications de chaque membre passent par un modérateur.`,
+        onPortee: (p) => {
+          if (p !== portee) changerParametres({ postsApprovalScope: p });
+        },
+        onNombre: (delta) => {
+          const n = Math.min(COMMUNITY_MAX_APPROVAL_COUNT, Math.max(1, nombre + delta));
+          if (n !== nombre) changerParametres({ postsApprovalCount: n });
+        },
         sondages: reseau?.settings.pollsOpenToMembers ?? true,
         album: reseau?.settings.albumOpenToMembers ?? true,
         onValidation: () => {
@@ -2536,6 +2712,11 @@ export function useReseau(
     champCouverture,
     onFichierCouverture,
     composeur,
+    photoARetirer: photoARetirer !== null,
+    onConfirmerRetraitPhoto: retirerPhoto,
+    onAnnulerRetraitPhoto: () => {
+      setPhotoARetirer(null);
+    },
     membre,
     contenuFerme,
     compteursFiables: membre,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import {
+  CommunityPostApprovalScope,
   CommunityKind,
   CommunityMemberRole,
   CommunityMemberStatus,
@@ -62,6 +63,12 @@ export const TOPIC_EDIT_WINDOW_MINUTES = 15;
  * celui du dessin, et il est ICI pour que le compteur de l'écran et le refus du
  * serveur disent le même nombre.
  */
+/**
+ * Le plus grand « X » de « valider les X premières publications de chaque
+ * membre ». Au-delà, autant valider toutes les publications (`ALL`).
+ */
+export const COMMUNITY_MAX_APPROVAL_COUNT = 20;
+
 export const COMMUNITY_MAX_RULES = 8;
 export const communityRuleSchema = z.string().trim().min(3).max(200);
 
@@ -275,6 +282,8 @@ export const createCommunitySchema = z.object({
   category: communityCategorySchema,
   visibility: communityVisibilitySchema.default('PUBLIC'),
   coverAssetId: uuidSchema.optional(),
+  /** Le logo — même règle que la couverture : un média `EVENT_COVER` du créateur. */
+  logoAssetId: uuidSchema.optional(),
   inviteHandles: z
     .array(handleSchema)
     .max(COMMUNITY_MAX_INVITES)
@@ -293,6 +302,8 @@ export const updateCommunitySchema = z
     category: communityCategorySchema.optional(),
     visibility: communityVisibilitySchema.optional(),
     coverAssetId: uuidSchema.nullable().optional(),
+    /** Le logo du réseau, réservé au propriétaire comme la couverture ; `null` le retire. */
+    logoAssetId: uuidSchema.nullable().optional(),
     /**
      * LES RÈGLES ET LES TROIS PARAMÈTRES DE « GÉRER ».
      *
@@ -305,6 +316,13 @@ export const updateCommunitySchema = z
      */
     rules: z.array(communityRuleSchema).max(COMMUNITY_MAX_RULES).optional(),
     postsRequireApproval: z.boolean().optional(),
+    /**
+     * QUELLES PUBLICATIONS ATTENDENT, quand la validation est allumée : toutes
+     * (`ALL`), ou les `postsApprovalCount` premières de chaque membre
+     * (`FIRST_POSTS`). Voir `Community.postsApprovalScope` dans le schéma Prisma.
+     */
+    postsApprovalScope: z.enum(CommunityPostApprovalScope).optional(),
+    postsApprovalCount: z.number().int().min(1).max(COMMUNITY_MAX_APPROVAL_COUNT).optional(),
     pollsOpenToMembers: z.boolean().optional(),
     albumOpenToMembers: z.boolean().optional(),
   })
@@ -660,6 +678,9 @@ export const communityPublicSchema = z
      * les charges relevées avant ce champ ne le portent pas.
      */
     coverUrl: z.string().nullable().default(null),
+    /** Le logo : identifiant et adresse `/media/<clé>`, `null` = les initiales. */
+    logoAssetId: uuidSchema.nullable().default(null),
+    logoUrl: z.string().nullable().default(null),
     lastActivityAt: z.string().datetime(),
     createdAt: z.string().datetime(),
   })
@@ -742,11 +763,20 @@ export const communityDetailResponseSchema = communityPublicSchema
     settings: z
       .object({
         postsRequireApproval: z.boolean(),
+        /** Défauts : ceux de la migration — la première publication de chaque membre. */
+        postsApprovalScope: z.enum(CommunityPostApprovalScope).default('FIRST_POSTS'),
+        postsApprovalCount: z.number().int().default(1),
         pollsOpenToMembers: z.boolean(),
         albumOpenToMembers: z.boolean(),
       })
       .strict()
-      .default({ postsRequireApproval: false, pollsOpenToMembers: true, albumOpenToMembers: true }),
+      .default({
+        postsRequireApproval: false,
+        postsApprovalScope: 'FIRST_POSTS',
+        postsApprovalCount: 1,
+        pollsOpenToMembers: true,
+        albumOpenToMembers: true,
+      }),
     /**
      * LES DEUX TUILES DE « GÉRER » — « +34 ce mois » et « 61 % actifs sur 30
      * jours », dessinées en dur. Rendues à l'ÉQUIPE seulement (`null` pour tout
@@ -1301,10 +1331,24 @@ export const albumSchema = z
     createdBy: communityAuthorSchema,
     photoCount: z.number().int(),
     photos: z.array(albumPhotoSchema),
+    /**
+     * La photo de couverture choisie par l'équipe — `null` : la plus récente. Un
+     * DÉFAUT pour les charges relevées avant ce champ.
+     */
+    coverPhotoId: uuidSchema.nullable().default(null),
   })
   .strict();
 
 export type Album = z.infer<typeof albumSchema>;
+
+/**
+ * `PATCH /albums/:id` — choisir la photo de COUVERTURE (« Couverture » de la
+ * barre de sélection de l'album), ou revenir à la plus récente avec `null`.
+ * L'équipe du réseau seule.
+ */
+export const setAlbumCoverSchema = z.object({ coverPhotoId: uuidSchema.nullable() }).strict();
+
+export type SetAlbumCover = z.infer<typeof setAlbumCoverSchema>;
 
 /**
  * `GET /communities/:id/albums`.

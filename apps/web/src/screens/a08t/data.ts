@@ -279,6 +279,11 @@ export interface ReseauEnteteView {
    * dessinée (`#CFE3DA`) : sans couverture, c'est exactement la maquette.
    */
   readonly couverture: string | null;
+  /**
+   * L'adresse ABSOLUE du logo (`logoUrl` par `urlMedia`), ou `null` : le carré
+   * garde alors ses initiales, comme la maquette le dessine.
+   */
+  readonly logo: string | null;
   /** `description`, qui est NULLABLE : les réseaux automatiques n'en ont pas. */
   readonly description: string;
   /**
@@ -849,6 +854,13 @@ export interface PhotoAlbumView {
   readonly url: string;
   /** La légende, ou la chaîne vide. Voir l'en-tête. */
   readonly legende: string;
+  /**
+   * L'ALBUM de la photo — présent pour une photo d'album seulement. Les images
+   * « Partagés » (celles des publications) n'en ont pas : elles ne se
+   * sélectionnent pas, car « Couverture » et « Masquer » n'ont de sens que dans
+   * un album.
+   */
+  readonly albumId?: string;
 }
 
 /**
@@ -1019,6 +1031,22 @@ export interface AlbumReseauView {
   /** Les bornes du serveur, lues sur `albumTitleSchema`. Jamais recopiées. */
   readonly titreMin: number;
   readonly titreMax: number;
+  // ── La sélection d'une photo (équipe) : « Couverture » et « Masquer » ────
+  /**
+   * La photo sélectionnée, ou `null`. La planche de 390 px dessinait la barre
+   * « 1 photo sélectionnée · Couverture · Masquer » EN PERMANENCE, inerte. Elle
+   * n'apparaît plus qu'avec une sélection : un membre de l'équipe touche une
+   * photo d'album pour la sélectionner, la touche à nouveau pour la relâcher.
+   */
+  readonly selection: string | null;
+  /** L'ÉQUIPE seule sélectionne : pour un membre, une tuile reste une image. */
+  readonly selectionnable: boolean;
+  readonly onSelectionner: (photoId: string) => void;
+  /** « Couverture » — ou « Retirer la couverture » si c'est déjà elle. */
+  readonly couvertureLibelle: string;
+  readonly onCouvertureAlbum: () => void;
+  /** « Masquer » — retire la photo de l'album, après confirmation. */
+  readonly onMasquerPhoto: () => void;
 }
 
 export interface A08TData {
@@ -1246,6 +1274,7 @@ export const enteteVide: ReseauEnteteView = {
   monRole: '—',
   visibilite: '',
   couverture: null,
+  logo: null,
   description: '',
   descriptionLongueur: 0,
   moderateurs: 0,
@@ -1418,6 +1447,12 @@ const albumVide: AlbumReseauView = {
   onFermerAlbum: () => {},
   titreMin: 0,
   titreMax: 0,
+  selection: null,
+  selectionnable: false,
+  onSelectionner: () => {},
+  couvertureLibelle: 'Couverture',
+  onCouvertureAlbum: () => {},
+  onMasquerPhoto: () => {},
 };
 
 export { albumVide };

@@ -70,6 +70,7 @@ import {
   inviteMembersResponseSchema,
   inviteMembersSchema,
   mediaAssetSchema,
+  setAlbumCoverSchema,
   memberMutationResponseSchema,
   moderatorsConversationResponseSchema,
   pollDetailResponseSchema,
@@ -324,6 +325,21 @@ export function createAlbum(
  * exactement le même manque que l'éditeur de guide consigne pour ses images.
  * REMONTÉ.
  */
+/** `PATCH /albums/:id` — la photo de couverture d'un album (`null` : la plus récente). */
+export function setAlbumCover(albumId: string, coverPhotoId: string | null): Promise<void> {
+  return memberApi.patch(`/albums/${encodeURIComponent(albumId)}`, voidResponse, {
+    body: setAlbumCoverSchema.parse({ coverPhotoId }),
+  });
+}
+
+/** `DELETE /albums/:id/photos/:photoId` — retirer une photo (auteur ou équipe). */
+export function deleteAlbumPhoto(albumId: string, photoId: string): Promise<void> {
+  return memberApi.del(
+    `/albums/${encodeURIComponent(albumId)}/photos/${encodeURIComponent(photoId)}`,
+    voidResponse,
+  );
+}
+
 export function addAlbumPhoto(albumId: string, mediaAssetId: string): Promise<unknown> {
   return memberApi.post(`/albums/${encodeURIComponent(albumId)}/photos`, z.unknown(), {
     body: addAlbumPhotoSchema.parse({ mediaAssetId }),

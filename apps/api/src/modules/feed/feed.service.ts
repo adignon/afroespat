@@ -1174,10 +1174,19 @@ export class FeedService {
    * Vérifie l'adhésion ACTIVE (même refus que `assertCommunityMember`), puis
    * lit les deux interrupteurs de « Gérer » qui concernent une publication.
    *
-   * « NOUVEAU MEMBRE » — voir `pendingPostSchema` : un membre ordinaire dont
-   * aucune publication n'a encore été validée dans ce réseau. Une publication
-   * antérieure à l'interrupteur compte comme validée : un membre qui publiait
-   * déjà n'est pas « nouveau » parce qu'on vient d'allumer la règle.
+   * ── QUELLES PUBLICATIONS ATTENDENT ───────────────────────────────────────
+   *
+   * Le porteur : « la validation dépend des paramètres du réseau. Deux options :
+   * valider toutes les publications, valider X publications pour chaque
+   * membre. » D'où `postsApprovalScope` :
+   *
+   *   · `ALL` — toute publication d'un membre ordinaire attend ;
+   *   · `FIRST_POSTS` — elle attend tant que le membre a MOINS de
+   *     `postsApprovalCount` publications déjà validées dans ce réseau.
+   *
+   * Une publication antérieure à l'interrupteur compte comme validée : un
+   * membre qui publiait déjà n'a pas à refaire ses preuves parce qu'on vient
+   * d'allumer la règle. L'équipe ne passe jamais par la validation.
    */
   private async communityPostRules(
     userId: string,
@@ -1187,7 +1196,14 @@ export class FeedService {
       where: { communityId, userId, status: 'ACTIVE' },
       select: {
         role: true,
-        community: { select: { pollsOpenToMembers: true, postsRequireApproval: true } },
+        community: {
+          select: {
+            pollsOpenToMembers: true,
+            postsRequireApproval: true,
+            postsApprovalScope: true,
+            postsApprovalCount: true,
+          },
+        },
       },
     });
     if (adhesion === null) throw ApiError.notFound();
@@ -1195,18 +1211,25 @@ export class FeedService {
     if (equipe) return { pollsAllowed: true, needsApproval: false };
 
     let needsApproval = false;
-    if (adhesion.community.postsRequireApproval) {
-      const dejaValidee = await this.prisma.post.findFirst({
-        where: {
-          communityId,
-          authorUserId: userId,
-          awaitingApproval: false,
-          status: 'PUBLISHED',
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      needsApproval = dejaValidee === null;
+    const c = adhesion.community;
+    if (c.postsRequireApproval) {
+      if (c.postsApprovalScope === 'ALL') {
+        needsApproval = true;
+      } else {
+        // `take` borne le décompte au seuil : on n'a besoin de savoir que s'il
+        // est ATTEINT, pas combien de publications ce membre a au total.
+        const validees = await this.prisma.post.count({
+          where: {
+            communityId,
+            authorUserId: userId,
+            awaitingApproval: false,
+            status: 'PUBLISHED',
+            deletedAt: null,
+          },
+          take: c.postsApprovalCount,
+        });
+        needsApproval = validees < c.postsApprovalCount;
+      }
     }
     return { pollsAllowed: adhesion.community.pollsOpenToMembers, needsApproval };
   }

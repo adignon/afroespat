@@ -211,6 +211,10 @@ export interface A10Data {
   /** Le dépôt est en cours : la zone dit « Envoi… » et ne se rouvre pas. */
   couvertureOccupee: boolean;
   onCouverture: (event: { target: { files: FileList | null; value: string } }) => void;
+  /** Le logo, sur le même modèle : aperçu, envoi en cours, choix du fichier. */
+  logoUrl: string | null;
+  logoOccupe: boolean;
+  onLogo: (event: { target: { files: FileList | null; value: string } }) => void;
 
   // ── La description : la planche de 390 px ne la dessine pas ───────────────
   descriptionValue: string;
@@ -314,6 +318,9 @@ export const a10Fallback: A10Data = {
   couvertureUrl: null,
   couvertureOccupee: false,
   onCouverture: () => {},
+  logoUrl: null,
+  logoOccupe: false,
+  onLogo: () => {},
   nomMax: communityNameSchema.maxLength ?? 0,
   descriptionValue: '',
   onDescriptionChange: () => {},

@@ -427,6 +427,7 @@ export function feedPostFrom(p: PostCard): FeedPostCarte {
     ...(p.guides.length === 0 ? {} : { guides: p.guides.map((g) => ({ slug: g.slug, title: g.title })) }),
     /** Ce que l'écran doit rouvrir : le détail, les commentaires, la réaction. */
     postId: p.id,
+    enAttente: p.awaitingApproval,
     isAuthor: p.isAuthor,
     /** « Enregistrer » : l'état vient du SERVEUR, jamais d'une bascule locale. */
     enregistre: p.bookmarked,

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } fr
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   addAlbumPhotoSchema,
+  setAlbumCoverSchema,
   communityListQuerySchema,
   communityReportDecisionSchema,
   createAlbumSchema,
@@ -573,6 +574,18 @@ export class CommunitiesController {
     @Body(zodPipe(addAlbumPhotoSchema)) body: z.infer<typeof addAlbumPhotoSchema>,
   ) {
     return this.communities.addPhoto(id, auth.userId, body);
+  }
+
+  @Patch('albums/:id')
+  @HttpCode(204)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Choisir la photo de couverture d’un album (équipe du réseau)' })
+  async setAlbumCover(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(setAlbumCoverSchema)) body: z.infer<typeof setAlbumCoverSchema>,
+  ): Promise<void> {
+    await this.communities.setAlbumCover(id, auth.userId, body.coverPhotoId);
   }
 
   @Delete('albums/:id/photos/:photoId')

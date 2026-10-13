@@ -147,26 +147,39 @@ export function useCreation(
    */
   const [couverture, setCouverture] = useState<{ id: string; url: string } | null>(null);
   const [couvertureOccupee, setCouvertureOccupee] = useState(false);
-  const onCouverture = useCallback(
-    (e: { target: { files: FileList | null; value: string } }): void => {
-      const fichier = e.target.files?.[0];
-      e.target.value = '';
-      if (fichier === undefined) return;
-      setCouvertureOccupee(true);
-      setEchec(null);
-      void uploadCommunityCover(fichier)
-        .then((media) => {
-          setCouverture({ id: media.id, url: urlMedia(media.url) });
-        })
-        .catch((cause: unknown) => {
-          setEchec(echecDe(cause));
-        })
-        .finally(() => {
-          setCouvertureOccupee(false);
-        });
-    },
+  /** Le LOGO, même parcours que la couverture : déposé dès le choix, rattaché à la création. */
+  const [logo, setLogo] = useState<{ id: string; url: string } | null>(null);
+  const [logoOccupe, setLogoOccupe] = useState(false);
+  /**
+   * Le dépôt d'une image, commun aux deux zones : elles ne diffèrent que par
+   * l'état qu'elles remplissent.
+   */
+  const deposer = useCallback(
+    (
+      poser: (v: { id: string; url: string }) => void,
+      occuper: (v: boolean) => void,
+    ) =>
+      (e: { target: { files: FileList | null; value: string } }): void => {
+        const fichier = e.target.files?.[0];
+        e.target.value = '';
+        if (fichier === undefined) return;
+        occuper(true);
+        setEchec(null);
+        void uploadCommunityCover(fichier)
+          .then((media) => {
+            poser({ id: media.id, url: urlMedia(media.url) });
+          })
+          .catch((cause: unknown) => {
+            setEchec(echecDe(cause));
+          })
+          .finally(() => {
+            occuper(false);
+          });
+      },
     [],
   );
+  const onCouverture = useMemo(() => deposer(setCouverture, setCouvertureOccupee), [deposer]);
+  const onLogo = useMemo(() => deposer(setLogo, setLogoOccupe), [deposer]);
 
   /** DÉDOUBLONNÉ et en minuscules, comme le schéma partagé le fait avant de compter. */
   const handles = useMemo(
@@ -304,6 +317,7 @@ export function useCreation(
         visibility: visibilite,
         inviteHandles: handles,
         ...(couverture === null ? {} : { coverAssetId: couverture.id }),
+        ...(logo === null ? {} : { logoAssetId: logo.id }),
       });
       setCree(reseau);
       apresCreation?.(reseau);
@@ -312,7 +326,7 @@ export function useCreation(
     } finally {
       setEnvoi(false);
     }
-  }, [apresCreation, categorie, couverture, description, handles, nom, visibiliteIndex]);
+  }, [apresCreation, categorie, couverture, description, handles, logo, nom, visibiliteIndex]);
 
   /**
    * CE QU'IL RESTE À FAIRE, EN UNE PHRASE QUI PEUT DISPARAÎTRE.
@@ -339,6 +353,9 @@ export function useCreation(
       couvertureUrl: couverture?.url ?? null,
       couvertureOccupee,
       onCouverture,
+      logoUrl: logo?.url ?? null,
+      logoOccupe,
+      onLogo,
       nomMax: communityNameSchema.maxLength ?? 0,
       descriptionValue: description,
       onDescriptionChange: (e) => setDescription(e.target.value),
@@ -369,12 +386,15 @@ export function useCreation(
       },
       onFermer: () => surFermeture?.(),
       /**
-       * Une couverture EN COURS de dépôt retient « Créer » : partir avant serait
-       * créer le réseau sans l'image que le membre vient de choisir.
+       * Une couverture — ou un logo — EN COURS de dépôt retient « Créer » :
+       * partir avant serait créer le réseau sans l'image que le membre vient de
+       * choisir.
        */
-      creerPret: complet && !envoi && !couvertureOccupee,
-      creerFond: complet && !envoi && !couvertureOccupee ? CREER_ALLUME.fond : CREER_INACTIF.fond,
-      creerEncre: complet && !envoi && !couvertureOccupee ? CREER_ALLUME.encre : CREER_INACTIF.encre,
+      creerPret: complet && !envoi && !couvertureOccupee && !logoOccupe,
+      creerFond:
+        complet && !envoi && !couvertureOccupee && !logoOccupe ? CREER_ALLUME.fond : CREER_INACTIF.fond,
+      creerEncre:
+        complet && !envoi && !couvertureOccupee && !logoOccupe ? CREER_ALLUME.encre : CREER_INACTIF.encre,
       invitesTexte: `${handles.length} sur ${COMMUNITY_MIN_INVITES}`,
       invitesBarre: `${Math.round((Math.min(handles.length, COMMUNITY_MIN_INVITES) / COMMUNITY_MIN_INVITES) * 100)}%`,
       invitesReste: reste === '' ? '' : `${reste} pour créer le réseau.`,
@@ -387,6 +407,9 @@ export function useCreation(
       couverture,
       couvertureOccupee,
       description,
+      logo,
+      logoOccupe,
+      onLogo,
       envoi,
       onCouverture,
       handles.length,

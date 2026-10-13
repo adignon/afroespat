@@ -11,6 +11,7 @@ import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { ActionsReseau } from '@/components/actions-reseau';
 import { EtatVide } from '@/components/etat-vide';
+import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import type { A08Data } from './data';
 
 export function A08Desktop(props: A08Data) {
@@ -28,11 +29,7 @@ export function A08Desktop(props: A08Data) {
 ))}<div style={{ flex: "1", minHeight: "12px" }}></div><a href="#" style={{ height: "48px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", color: "#CFE3DA" }} aria-label="Réglages"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 7h8M17 7h3M4 17h3M12 17h8" /><circle cx="15" cy="7" r="2.2" /><circle cx="9.5" cy="17" r="2.2" /></svg></a></RailSurvol>
         <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px", display: "flex", alignItems: "center", gap: "11px" }}><CarteMembre styleAvatar={{ width: "44px", height: "44px", borderRadius: "999px", background: "#B4581F", color: "#fff", fontSize: "13px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }} styleNom={{ display: "block", fontWeight: "700", fontSize: "14px", letterSpacing: "-0.2px" }} styleLien={{ display: "block", fontSize: "12px", color: "#5D6B66" }} libelle="Voir mon profil public" /></div>
-          <div style={{ background: "#0F5C48", borderRadius: "22px", padding: "18px", color: "#fff" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}><div style={{ minWidth: "0" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#A9CDBF" }}>MON PARCOURS</div><div style={{ fontSize: "14.5px", fontWeight: "700", marginTop: "5px", letterSpacing: "-0.2px" }}>Mes études à Lyon</div></div><span style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.8px" }}>58%</span></div>
-            <div style={{ height: "8px", borderRadius: "999px", background: "rgba(255,255,255,.18)", marginTop: "14px", overflow: "hidden" }}><div style={{ width: "58%", height: "100%", background: "#E0733A", borderRadius: "999px" }}></div></div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", gap: "8px" }}><span style={{ fontSize: "12.5px", color: "#F0C3A4", fontWeight: "600" }}>Étape 7 : Logement</span><a href="#" style={{ background: "#fff", color: "#0F5C48", fontWeight: "700", fontSize: "12.5px", padding: "7px 14px", borderRadius: "999px" }}>Continuer</a></div>
-          </div>
+          <CarteMonParcours />
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px" }}>
             <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "0 6px 8px" }}>COMMUNAUTÉ</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>{(panelReseaux ?? []).map((m, mIndex) => (
@@ -54,7 +51,7 @@ export function A08Desktop(props: A08Data) {
         <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", overflow: "hidden" }}>
           <div style={{ height: "140px", background: "#CFE3DA", backgroundImage: reseau.couverture === null ? "none" : `url("${reseau.couverture}")`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
           <div style={{ padding: "0 24px 18px", display: "flex", alignItems: "flex-end", gap: "16px", marginTop: "-32px" }}>
-            <span style={{ width: "76px", height: "76px", borderRadius: "22px", background: "#E0733A", border: "4px solid #fff", color: "#fff", fontSize: "20px", fontWeight: "800", display: "flex", alignItems: "center", justifyContent: "center" }}>{reseau.initiales}</span>
+            <span style={{ position: "relative", display: "inline-flex", flexShrink: "0" }}><span style={{ width: "76px", height: "76px", borderRadius: "22px", background: "#E0733A", border: "4px solid #fff", color: "#fff", fontSize: "20px", fontWeight: "800", display: "flex", alignItems: "center", justifyContent: "center", backgroundImage: reseau.logo === null ? "none" : `url("${reseau.logo}")`, backgroundSize: "cover", backgroundPosition: "center" }}>{reseau.logo === null ? reseau.initiales : null}</span>{actions.peutChangerCouverture ? (<button type="button" onClick={actions.onChangerLogo} disabled={actions.couvertureOccupee} aria-label="Changer le logo" data-reseau-changer-logo="" style={{ position: "absolute", right: "-6px", bottom: "-6px", width: "28px", height: "28px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", justifyContent: "center", padding: "0", cursor: actions.couvertureOccupee ? "default" : "pointer" }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" /></svg></button>) : null}</span>
             <div style={{ flex: "1", paddingBottom: "4px" }}><h1 style={{ margin: "0", fontSize: "24px", fontWeight: "800", letterSpacing: "-0.7px" }}>{reseau.nom}</h1><div style={{ fontSize: "13px", color: "#5D6B66", marginTop: "2px" }}>{reseau.resume}</div></div>
             <ActionsReseau actions={actions} />
           </div>

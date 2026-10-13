@@ -198,14 +198,28 @@ const hrefReseau = (slug: string): string => `/reseaux/${encodeURIComponent(slug
  */
 export function myNetFrom(c: MyCommunity): MyNetView {
   return {
-    i: initials(c.name),
+    // Avec un logo, le carré montre l'image et tait ses initiales.
+    i: c.logoUrl === null ? initials(c.name) : '',
     name: c.name,
-    bg: tint(c.slug),
+    bg: fondImage(c.logoUrl, tint(c.slug)),
     members: membersLabel(c.memberCount),
     unread: null,
     muted: c.muted,
     href: hrefReseau(c.slug),
   };
+}
+
+/**
+ * UNE IMAGE PAR-DESSUS SA TEINTE, en une valeur CSS de fond.
+ *
+ * Les cartes de A07 peignent `background: n.bg` (le carré de « Mes réseaux ») et
+ * `background: d.cover` (le bandeau de « Découvrir ») : ces prises SONT des
+ * valeurs de fond. Y mettre `url(…) center / cover no-repeat, <teinte>` affiche
+ * le logo ou la couverture sans toucher au dessin ; sans image, la teinte seule,
+ * comme la maquette. Le porteur : « la couverture n'apparaît pas sur les cartes ».
+ */
+function fondImage(url: string | null, teinte: string): string {
+  return url === null ? teinte : `url("${urlMedia(url)}") center / cover no-repeat, ${teinte}`;
 }
 
 export function myNetsFrom(items: readonly MyCommunity[]): readonly MyNetView[] {
@@ -238,7 +252,7 @@ export function discoverFrom(c: DiscoverCommunity): DiscoverView {
     desc: c.description ?? '',
     members: membersLabel(c.memberCount),
     cta: c.joined ? 'Ouvrir' : demande ? 'Demander' : 'Rejoindre',
-    cover: tint(c.slug),
+    cover: fondImage(c.coverUrl, tint(c.slug)),
     btnBg: c.joined || demande ? '#F2F5F4' : '#16785E',
     btnFg: c.joined || demande ? '#0F5C48' : '#fff',
     slug: c.slug,
@@ -588,7 +602,10 @@ export function pollFrom(p: Poll) {
 
 /** Le nom d'un réseau, en pastille — employé par l'en-tête de A08. */
 export function communityBadge(c: CommunityPublic): { readonly i: string; readonly bg: string } {
-  return { i: initials(c.name), bg: tint(c.slug) };
+  return {
+    i: c.logoUrl === null ? initials(c.name) : '',
+    bg: fondImage(c.logoUrl, tint(c.slug)),
+  };
 }
 
 // ═══ A08T · l'en-tête que les vingt-cinq planches d'onglet lisent ══════════
@@ -715,6 +732,7 @@ export function enteteReseauFrom(
     monRole: role === null ? '' : ROLE[role],
     visibilite: VISIBILITE[c.visibility],
     couverture: c.coverUrl === null ? null : urlMedia(c.coverUrl),
+    logo: c.logoUrl === null ? null : urlMedia(c.logoUrl),
     /** NULLABLE côté serveur : les réseaux automatiques de ville et de pays n'en ont pas. */
     description: c.description ?? '',
     /** Compté sur le texte même : `Array.from` pour ne pas couper un caractère combiné en deux. */
@@ -1049,7 +1067,8 @@ function tuilesDe(a: Album): readonly PhotoAlbumView[] {
   const vues: PhotoAlbumView[] = [];
   for (const p of a.photos) {
     if (p.url === null) continue;
-    vues.push({ id: p.id, url: p.url, legende: p.caption ?? '' });
+    // `urlMedia` : l'API rend `/media/<clé>`, RELATIVE à l'API et non à la page.
+    vues.push({ id: p.id, url: urlMedia(p.url), legende: p.caption ?? '', albumId: a.id });
   }
   return vues;
 }
@@ -1077,7 +1096,7 @@ export function photosPartageesFrom(posts: readonly PostCard[]): readonly PhotoA
   const vues: PhotoAlbumView[] = [];
   for (const p of posts) {
     for (const m of [...p.media].sort((a, b) => a.position - b.position)) {
-      vues.push({ id: m.id, url: m.url, legende: '' });
+      vues.push({ id: m.id, url: urlMedia(m.url), legende: '' });
     }
   }
   return vues;
@@ -1115,9 +1134,10 @@ export function albumPhotosFrom(
  *
  * `photoCount` ET `photos[0].url` VIENNENT DU SERVEUR, tous les deux : rien à
  * compter ici, rien à deviner. `photos` est trié du plus récent au plus ancien
- * par le service (`orderBy: { createdAt: 'desc' }`), donc la couverture est la
- * DERNIÈRE photo ajoutée — c'est ce que le service rend, et choisir autrement
- * demanderait une colonne de couverture, qui n'existe pas. REMONTÉ.
+ * par le service (`orderBy: { createdAt: 'desc' }`). La couverture est celle
+ * que l'équipe a CHOISIE (`coverPhotoId`, `PATCH /albums/:id`) ; à défaut, la
+ * DERNIÈRE photo ajoutée. Les deux adresses passent par `urlMedia`, comme les
+ * tuiles : `/media/<clé>` est relative à l'API.
  */
 export function albumVignettesFrom(albums: readonly Album[]): readonly AlbumVignetteView[] {
   return albums
@@ -1129,6 +1149,12 @@ export function albumVignettesFrom(albums: readonly Album[]): readonly AlbumVign
         a.photoCount === 0
           ? 'Aucune photo'
           : `${a.photoCount} photo${a.photoCount > 1 ? 's' : ''}`,
-      couverture: a.photos.find((p) => p.url !== null)?.url ?? null,
+      // La couverture CHOISIE par l'équipe d'abord (`coverPhotoId`), sinon la plus récente.
+      couverture: ((url) => (url === null ? null : urlMedia(url)))(
+        (a.coverPhotoId === null ? undefined : a.photos.find((p) => p.id === a.coverPhotoId && p.url !== null))
+          ?.url ??
+          a.photos.find((p) => p.url !== null)?.url ??
+          null,
+      ),
     }));
 }

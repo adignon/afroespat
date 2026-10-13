@@ -7,7 +7,7 @@ import { ApiError } from '@/lib/api/index';
 import { createPost, uploadPostImage } from '../accueil/api';
 import { postTypesFor } from '../a01/data';
 import type { ComposeurReseauView } from '../a08t/vivant';
-import { useSondageGuides } from './use-sondage-guides';
+import { useSondageGuides } from '../a01/use-sondage-guides';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗

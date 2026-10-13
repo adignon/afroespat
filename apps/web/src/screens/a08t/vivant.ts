@@ -1,6 +1,6 @@
 import type { A01SData } from '../a01/data';
 import type { A01GData } from '../a01g/data';
-import type { FenetrePiece } from '../reseaux/use-sondage-guides';
+import type { FenetrePiece } from '../a01/use-sondage-guides';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -97,6 +97,13 @@ export interface ActionsReseauView {
   readonly couvertureOccupee: boolean;
   /** Ouvre le sélecteur de fichier — l'unique `<input type="file">` de l'écran. */
   readonly onChangerCouverture: () => void;
+  /**
+   * « CHANGER LE LOGO » — le même sélecteur, pour le carré qui portait les
+   * initiales. Même règle que la couverture (le propriétaire seul), donc même
+   * `peutChangerCouverture` et même `couvertureOccupee` : un seul envoi d'image
+   * à la fois sur l'en-tête.
+   */
+  readonly onChangerLogo: () => void;
 }
 
 /**
@@ -139,7 +146,7 @@ export interface OutilsReseauView {
  * LE SONDAGE ET LE GUIDE SONT REPRIS. Le porteur : « le publicateur des
  * réseaux doit supporter les sondages et guides ». Leurs deux icônes ouvrent les
  * fenêtres de l'accueil (A01S, A01G), dont l'état vit désormais dans un crochet
- * réutilisable (`reseaux/use-sondage-guides.ts`) ; le sondage et les guides
+ * réutilisable (`a01/use-sondage-guides.ts`) ; le sondage et les guides
  * partent avec la publication (`poll`, `guideIds`), et le serveur applique au
  * sondage le réglage « Sondages ouverts aux membres ».
  */
@@ -283,6 +290,17 @@ export interface EditionAProposView {
     readonly texte: string;
     readonly onTexte: (event: { readonly target: { readonly value: string } }) => void;
     readonly onRetirer: () => void;
+    /**
+     * LE GLISSER-DÉPOSER — la planche dessine une poignée « ⋮⋮ » et écrit
+     * « Glissez pour réordonner ». `onPoignee` démarre le déplacement au
+     * pointeur (souris ET doigt : des événements `pointer`, pas le glisser-
+     * déposer HTML, qui ne marche pas au toucher) ; `onClavier` fait monter ou
+     * descendre la règle avec ↑ et ↓, pour qui ne se sert pas d'un pointeur.
+     */
+    readonly onPoignee: (event: { preventDefault: () => void }) => void;
+    readonly onClavier: (event: { key: string; preventDefault: () => void }) => void;
+    /** La règle en cours de déplacement : elle s'estompe. */
+    readonly deplacee: boolean;
   }[];
   readonly reglesMax: number;
   /** « 4 SUR 8 » — composé ici, la planche l'écrit en capitales. */
@@ -366,6 +384,17 @@ export interface PilotageReseauView {
   // ── Les trois interrupteurs et la visibilité ─────────────────────────────
   readonly parametres: {
     readonly validation: boolean;
+    /**
+     * LA PORTÉE DE LA VALIDATION — toutes les publications (`ALL`), ou les
+     * `validationNombre` premières de chaque membre (`FIRST_POSTS`). Voir
+     * `Community.postsApprovalScope`. Le sous-titre de la rangée la dit en clair.
+     */
+    readonly validationPortee: 'ALL' | 'FIRST_POSTS';
+    readonly validationNombre: number;
+    readonly validationNombreMax: number;
+    readonly validationSous: string;
+    readonly onPortee: (portee: 'ALL' | 'FIRST_POSTS') => void;
+    readonly onNombre: (delta: number) => void;
     readonly sondages: boolean;
     readonly album: boolean;
     readonly onValidation: () => void;
@@ -411,6 +440,7 @@ export const actionsVides: ActionsReseauView = {
   peutChangerCouverture: false,
   couvertureOccupee: false,
   onChangerCouverture: () => {},
+  onChangerLogo: () => {},
 };
 
 export const outilsVides: OutilsReseauView = {
@@ -536,6 +566,12 @@ export const pilotageVide: PilotageReseauView = {
   onRefuserPublication: () => {},
   parametres: {
     validation: false,
+    validationPortee: 'FIRST_POSTS',
+    validationNombre: 1,
+    validationNombreMax: 20,
+    validationSous: '',
+    onPortee: () => {},
+    onNombre: () => {},
     sondages: true,
     album: true,
     onValidation: () => {},

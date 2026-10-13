@@ -75,6 +75,11 @@ model Community {
   visibility      CommunityVisibility
   createdByUserId String?             @map("created_by_user_id") @db.Uuid
   coverAssetId    String?             @map("cover_asset_id") @db.Uuid
+  /// Le LOGO du réseau — l'image du carré qui portait jusqu'ici les seules
+  /// initiales. Le porteur : « le logo et la photo de couverture doivent pouvoir
+  /// être changés ». Un média `EVENT_COVER` du PROPRIÉTAIRE, comme la couverture
+  /// (`communities.service.ts`, `assertOwnedCover`) ; nul = les initiales.
+  logoAssetId     String?             @map("logo_asset_id") @db.Uuid
 
   memberCount Int             @default(0) @map("member_count")
   status      CommunityStatus
@@ -107,8 +112,9 @@ model Community {
   /// La planche les dessinait sans qu'aucune colonne ne les porte ; chacun est
   /// maintenant APPLIQUÉ par le serveur, pas seulement affiché :
   ///
-  ///   · `postsRequireApproval` — la première publication d'un membre ordinaire
-  ///     attend la validation d'un modérateur (`Post.awaitingApproval`) ;
+  ///   · `postsRequireApproval` — la validation est ALLUMÉE : une publication
+  ///     d'un membre ordinaire attend un modérateur (`Post.awaitingApproval`).
+  ///     LESQUELLES, c'est `postsApprovalScope` qui le dit (voir plus bas) ;
   ///   · `pollsOpenToMembers`  — faux = seule l'équipe crée des sondages, dans le
   ///     fil comme par `POST /communities/:id/polls` ;
   ///   · `albumOpenToMembers`  — faux = seule l'équipe ajoute des photos.
@@ -116,9 +122,25 @@ model Community {
   /// Les DÉFAUTS sont ceux que la planche dessine — validation éteinte, les deux
   /// autres allumés — et ce sont aussi ceux du comportement d'avant la colonne :
   /// la migration ne change rien aux réseaux existants.
-  postsRequireApproval Boolean @default(false) @map("posts_require_approval")
-  pollsOpenToMembers   Boolean @default(true) @map("polls_open_to_members")
-  albumOpenToMembers   Boolean @default(true) @map("album_open_to_members")
+  postsRequireApproval Boolean                    @default(false) @map("posts_require_approval")
+  /// ── QUELLES PUBLICATIONS PASSENT PAR LA VALIDATION ─────────────────────────
+  ///
+  /// Le porteur : « la validation de la publication dépend des paramètres du
+  /// réseau. Deux options : valider toutes les publications, valider X
+  /// publications pour chaque membre. »
+  ///
+  ///   · `ALL`         — toute publication d'un membre ordinaire attend ;
+  ///   · `FIRST_POSTS` — seules ses `postsApprovalCount` PREMIÈRES publications
+  ///     attendent ; au-delà, on lui fait confiance.
+  ///
+  /// `FIRST_POSTS` et 1 sont les défauts, parce que c'est EXACTEMENT ce que
+  /// faisait l'interrupteur seul avant ce lot (« la première publication d'un
+  /// nouveau membre ») : la migration ne change rien aux réseaux déjà réglés.
+  /// L'équipe (propriétaire, modérateurs) ne passe jamais par la validation.
+  postsApprovalScope   CommunityPostApprovalScope @default(FIRST_POSTS) @map("posts_approval_scope")
+  postsApprovalCount   Int                        @default(1) @map("posts_approval_count")
+  pollsOpenToMembers   Boolean                    @default(true) @map("polls_open_to_members")
+  albumOpenToMembers   Boolean                    @default(true) @map("album_open_to_members")
 
   /// Les « Règles du réseau » de l'onglet « À propos » — au plus huit, dans
   /// l'ordre où le propriétaire les range (la planche d'édition écrit « 4 SUR 8 »).
@@ -128,18 +150,19 @@ model Community {
   country    Country?    @relation(fields: [countryId], references: [id], onDelete: SetNull)
   createdBy  User?       @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
   coverAsset MediaAsset? @relation("CommunityCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  logoAsset  MediaAsset? @relation("CommunityLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
 
-  members         CommunityMember[]
-  topics          Topic[]
-  announcements   CommunityAnnouncement[]
-  polls           Poll[]
-  albums          Album[]
-  posts           Post[]
-  events          Event[]
-  searchDocuments SearchDocument[]
+  members                 CommunityMember[]
+  topics                  Topic[]
+  announcements           CommunityAnnouncement[]
+  polls                   Poll[]
+  albums                  Album[]
+  posts                   Post[]
+  events                  Event[]
+  searchDocuments         SearchDocument[]
   /// Les fils « Contacter les modérateurs » ouverts sur ce réseau (08 §5.1).
   /// Un par demandeur ; le modèle vit dans `08-mentorship-messaging.prisma`.
-  moderationConversations Conversation[] @relation("ConversationCommunity")
+  moderationConversations Conversation[]          @relation("ConversationCommunity")
 
   @@index([kind])
   @@index([cityId])
@@ -322,7 +345,7 @@ model Poll {
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   /// Null quand le sondage est celui d'une publication.
-  communityId String? @map("community_id") @db.Uuid
+  communityId  String?   @map("community_id") @db.Uuid
   /// Null quand le sondage est celui d'un réseau. `@unique` : « un seul par
   /// publication », règle que la maquette énonce en toutes lettres.
   postId       String?   @unique @map("post_id") @db.Uuid
@@ -401,11 +424,18 @@ model Album {
   eventId         String? @map("event_id") @db.Uuid
   title           String
   createdByUserId String  @map("created_by_user_id") @db.Uuid
+  /// LA PHOTO DE COUVERTURE de l'album, choisie par l'équipe (« Couverture » de
+  /// la barre de sélection de l'album). Nulle = la photo la plus récente, comme
+  /// avant cette colonne. Une photo retirée ou supprimée la remet à nul.
+  coverPhotoId    String? @map("cover_photo_id") @db.Uuid
 
-  community Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  event     Event?       @relation(fields: [eventId], references: [id], onDelete: SetNull)
-  createdBy User         @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
-  photos    AlbumPhoto[]
+  community  Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  event      Event?       @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  createdBy  User         @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  /// Les deux liens entre `Album` et `AlbumPhoto` sont NOMMÉS : Prisma l'exige
+  /// dès qu'il y en a deux. Nommer le premier ne change rien en base.
+  photos     AlbumPhoto[] @relation("AlbumPhotos")
+  coverPhoto AlbumPhoto?  @relation("AlbumCover", fields: [coverPhotoId], references: [id], onDelete: SetNull)
 
   @@index([communityId])
   @@map("albums")
@@ -422,10 +452,18 @@ model AlbumPhoto {
   uploadedByUserId String  @map("uploaded_by_user_id") @db.Uuid
   caption          String?
 
-  album      Album      @relation(fields: [albumId], references: [id], onDelete: Cascade)
+  album      Album      @relation("AlbumPhotos", fields: [albumId], references: [id], onDelete: Cascade)
   mediaAsset MediaAsset @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
   uploadedBy User       @relation(fields: [uploadedByUserId], references: [id], onDelete: Cascade)
+  coverOf    Album[]    @relation("AlbumCover")
 
   @@index([albumId])
   @@map("album_photos")
+}
+
+/// Quelles publications d'un membre ordinaire attendent la validation, quand
+/// `Community.postsRequireApproval` est allumé — voir ce champ.
+enum CommunityPostApprovalScope {
+  ALL
+  FIRST_POSTS
 }

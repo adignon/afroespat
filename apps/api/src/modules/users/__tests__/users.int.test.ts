@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AuditService } from '../../../common/audit.service';
 import { CryptoService } from '../../../common/crypto.service';

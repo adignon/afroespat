@@ -795,6 +795,13 @@ export interface FeedPostView {
    */
   readonly postId?: string;
   /**
+   * « EN ATTENTE DE VALIDATION » — la publication d'un réseau qui attend un
+   * modérateur (`awaitingApproval`). Le serveur ne la montre qu'à son AUTEUR ;
+   * le porteur a demandé qu'elle porte un tag, pour que l'auteur sache pourquoi
+   * les autres ne la voient pas encore.
+   */
+  readonly enAttente?: boolean;
+  /**
    * ╔═════════════════════════════════════════════════════════════════════╗
    * ║ LE COMPTEUR DE COMMENTAIRES — POSÉ LUI AUSSI, ET PAS DESSINÉ         ║
    * ╚═════════════════════════════════════════════════════════════════════╝

@@ -332,6 +332,9 @@ export function ReseauScreen({
     champCouverture,
     onFichierCouverture,
     composeur,
+    photoARetirer,
+    onConfirmerRetraitPhoto,
+    onAnnulerRetraitPhoto,
   } = useReseau(reseauSlug, rangDemande, section);
 
   /**
@@ -603,6 +606,18 @@ export function ReseauScreen({
   const nomReseau = reseau?.name ?? 'ce réseau';
   const fenetresVivantes = (
     <>
+      {/* « Masquer » une photo de l'album : un retrait, donc une confirmation. */}
+      <FenetreConfirmation
+        ouverte={photoARetirer}
+        titre="Retirer cette photo de l’album ?"
+        question="Elle disparaîtra de l’album pour tous les membres du réseau."
+        precision=""
+        libelleConfirmer="Retirer la photo"
+        occupe={false}
+        onConfirmer={onConfirmerRetraitPhoto}
+        onAnnuler={onAnnulerRetraitPhoto}
+        nom="ALBUM-PHOTO"
+      />
       {/*
         « Créer un sondage » et « Lier un guide » du composeur du fil — les
         fenêtres de l'accueil (A01S, A01G), mêmes cadres générés, nourries par

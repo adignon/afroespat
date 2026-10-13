@@ -399,6 +399,22 @@ function Menu({
             {actions.couvertureOccupee ? 'Envoi de la couverture…' : 'Changer la couverture'}
           </button>
         ) : null}
+        {avecPorte && actions.peutChangerCouverture ? (
+          <button
+            type="button"
+            role="menuitem"
+            disabled={actions.couvertureOccupee}
+            onClick={() => {
+              onFermer();
+              actions.onChangerLogo();
+            }}
+            data-reseau-changer-logo=""
+            style={ENTREE}
+          >
+            <Icone d={IMAGE} />
+            Changer le logo
+          </button>
+        ) : null}
         {membre ? (
           <button
             type="button"

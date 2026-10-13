@@ -34,7 +34,7 @@ import { useReseaux } from '@/screens/reseaux/use-reseaux';
  * lieu de peindre un état supposé.
  */
 export default function ReseauxPage() {
-  const { data, pret, echec, seuilPhrase } = useReseaux();
+  const { data, pret, echec } = useReseaux();
   const props = pret ? data : a07Fallback;
 
   return (
@@ -67,9 +67,11 @@ export default function ReseauxPage() {
             : `Pour ${echec.levelRequired.labelFr}, vérifiez votre compte.`}
         </p>
       )}
-      {seuilPhrase !== null && (
-        <p style={{ padding: '0 24px 12px', color: '#5D6B66', fontSize: '13px' }}>{seuilPhrase}</p>
-      )}
+      {/*
+        La phrase du seuil s'affiche maintenant DANS la planche, à la place de la
+        note « Variante sous le seuil » qu'elle dessinait en dur (`data.seuil`).
+        Elle n'est plus répétée ici.
+      */}
     </>
   );
 }

@@ -59,7 +59,7 @@ Prolongation : les deux peuvent prolonger de 90 jours, une fois.
 | `MENTORSHIP` | Événement `mentorship.ended` motif COMPLETED | Automatique |
 | `EVENT` | Les deux ont `checked_in = true` au même événement → **suggestion** (pas de création) | Sur acceptation |
 | `GUIDE` | Proposition acceptée → **suggestion** entre auteur et contributeur | Sur acceptation |
-| `MANUAL` | `connection_requests` : L1, **même ville ou même ville cible**, message obligatoire 20–500 caractères | Sur acceptation |
+| `MANUAL` | `connection_requests` : L1, **tout membre** (la condition de même ville ou de ville cible est levée à la demande du porteur, octobre 2026), message obligatoire 20–500 caractères | Sur acceptation |
 
 Une suggestion est une notification « Ajouter X à vos contacts ? » ; accepter crée la `connection`. Une demande manuelle expire à 30 jours. Pas plus de 10 demandes manuelles envoyées par jour, 3 vers le même membre sur 30 jours.
 
@@ -148,10 +148,10 @@ Pas de recherche dans les messages en V1.
 |---|---|---|
 | GET | `/me/connections` | Mes contacts |
 | DELETE | `/me/connections/:userId` | Retrait |
-| POST | `/connection-requests` | `toHandle`, `message` — `SAME_CITY_REQUIRED`, `REQUEST_LIMIT` |
+| POST | `/connection-requests` | `toHandle`, `message` — `REQUEST_LIMIT` (plus de `SAME_CITY_REQUIRED`) |
 | POST | `/connection-requests/:id/accept` · `/decline` | |
 | GET | `/me/connection-suggestions` | Suggestions EVENT / GUIDE |
-| GET | `/users/:handle/mutual-connections` | 2ᵉ degré |
+| GET | `/users/:handle/mutual-connections` | 2ᵉ degré, avec les réseaux partagés (`sharedCommunities`) ; le profil public d'un autre membre porte aussi `relation` (contact, demande envoyée, demande reçue, aucune) |
 | POST | `/blocks` · DELETE `/blocks/:userId` · GET `/me/blocks` | |
 
 ### 7.3 Messagerie
@@ -208,5 +208,5 @@ Profil parrain : supprimé ; parrainages actifs → `ENDED` motif ADMIN avec not
 - `rule: un L0 peut demander un parrain mais ne peut pas ouvrir de conversation directe`
 - `rule: le blocage retire contact, parrainage, appartenance au parcours et ferme la conversation directe en une transaction`
 - `rule: le nombre de contacts n'est jamais renvoyé sur le profil d'un autre membre`
-- `rule: la demande de contact manuelle exige la même ville et un message`
+- `rule: la demande de contact manuelle exige un message, pas la même ville`
 - `rule: un premier message non accepté n'autorise pas de second message`

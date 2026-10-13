@@ -1,7 +1,7 @@
 // GÉNÉRÉ depuis packages/db/prisma/schema/*.prisma — ne pas modifier à la main.
 // Régénérer : pnpm --filter @app/shared generate
 //
-// 95 enums, 16 fichiers de schéma.
+// 96 enums, 16 fichiers de schéma.
 
 /** Module 13-moderation. */
 export const AiVerdict = [
@@ -125,6 +125,13 @@ export const CommunityMemberStatus = [
   'BANNED',
 ] as const;
 export type CommunityMemberStatus = (typeof CommunityMemberStatus)[number];
+
+/** Module 07-communities. */
+export const CommunityPostApprovalScope = [
+  'ALL',
+  'FIRST_POSTS',
+] as const;
+export type CommunityPostApprovalScope = (typeof CommunityPostApprovalScope)[number];
 
 /** Module 07-communities. */
 export const CommunityStatus = [
@@ -891,6 +898,7 @@ export const ALL_ENUMS = {
   CommunityKind,
   CommunityMemberRole,
   CommunityMemberStatus,
+  CommunityPostApprovalScope,
   CommunityStatus,
   CommunityVisibility,
   ConnectionOrigin,

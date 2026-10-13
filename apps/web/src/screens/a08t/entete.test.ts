@@ -70,6 +70,8 @@ const RESEAU: CommunityDetailResponse = {
   memberCount: 890,
   coverAssetId: null,
   coverUrl: null,
+  logoAssetId: null,
+  logoUrl: null,
   lastActivityAt: '2026-09-01T10:00:00.000Z',
   createdAt: '2025-01-01T10:00:00.000Z',
   myRole: 'MEMBER',
@@ -80,7 +82,7 @@ const RESEAU: CommunityDetailResponse = {
   canLeave: true,
   /** Ajoutés au contrat par le lot « réseau vivant » (2026-10-12). */
   rules: [],
-  settings: { postsRequireApproval: false, pollsOpenToMembers: true, albumOpenToMembers: true },
+  settings: { postsRequireApproval: false, postsApprovalScope: 'FIRST_POSTS', postsApprovalCount: 1, pollsOpenToMembers: true, albumOpenToMembers: true },
   stats: null,
   team: [],
   counters: { members: 7, topics: 3, announcements: 1 },

@@ -1078,7 +1078,7 @@ export const RV_EDITION = {
         ligne = ligne.replace(
           /<div style=\{\{ (flex: "1", minHeight: "[0-9]+px", borderRadius: "1[0-9]px", border: "1px solid #E6EBE9"[^}]*) \}\}>[^<]*<\/div>/,
           (_, style) =>
-            `<input type="text" value={r.texte} onChange={r.onTexte} aria-label={\`Règle \${r.n}\`} data-apropos-regle="" style={{ ${style}, minWidth: "0", font: "inherit", color: "#16211D", outline: "none", background: "#fff", boxSizing: "border-box" }} />`,
+            `<input type="text" value={r.texte} onChange={r.onTexte} aria-label={\`Règle \${r.n}\`} data-apropos-regle="" style={{ font: "inherit", ${style}, minWidth: "0", color: "#16211D", outline: "none", background: "#fff", boxSizing: "border-box" }} />`,
         );
         // Le téléphone écrit la règle dans un <span> bordé, pas dans un <div>.
         ligne = ligne.replace(
@@ -1788,7 +1788,7 @@ const RV_A10_COUVERTURE = {
   screens: ['A10'],
   nom: 'RV_A10_COUVERTURE',
   why: 'La zone « Ajouter une couverture » de la création de réseau ouvre le sélecteur de fichier, affiche l’image déposée et propose de la changer — sur les deux planches.',
-  provides: ['couvertureUrl', 'couvertureOccupee', 'onCouverture'],
+  provides: ['couvertureUrl', 'couvertureOccupee', 'onCouverture', 'logoUrl', 'logoOccupe', 'onLogo'],
   apply(jsx) {
     const r = remplacerUn(
       jsx,
@@ -1806,7 +1806,18 @@ const RV_A10_COUVERTURE = {
           'disabled={couvertureOccupee} onChange={onCouverture} data-creation-couverture-fichier="" />' +
           '{couvertureOccupee ? "Envoi de la couverture…" : couvertureUrl === null ? "Ajouter une couverture" : ' +
           '(<span style={{ padding: "6px 12px", borderRadius: "12px", background: "rgba(255,255,255,.92)", color: "#16211D" }}>Changer la couverture</span>)}' +
-          '</label>'
+          '</label>' +
+          /**
+           * PUIS LE LOGO, que la maquette ne dessine pas : une rangée sous la
+           * couverture — un carré pointillé de 56 px, dans le dessin de la zone
+           * du dessus, et son libellé. Même mécanique (un `<label>` qui porte son
+           * `<input type="file">`), même dépôt immédiat, même aperçu.
+           */
+          '<label style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "13px", fontWeight: "700", color: "#5D6B66", cursor: logoOccupe ? "default" : "pointer" }} data-creation-logo="">' +
+          '<input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={logoOccupe} onChange={onLogo} data-creation-logo-fichier="" />' +
+          '<span style={{ width: "56px", height: "56px", borderRadius: "16px", border: "1.5px dashed #CBD5D1", background: "#FAFBFB", ' +
+          'backgroundImage: logoUrl === null ? "none" : `url("${logoUrl}")`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: "0" }}></span>' +
+          '{logoOccupe ? "Envoi du logo…" : logoUrl === null ? "Ajouter un logo" : "Changer le logo"}</label>'
         );
       },
     );
@@ -1833,6 +1844,384 @@ const RV_A01G_LIBELLE = {
   },
 };
 
+/**
+ * ── LE LOGO DU RÉSEAU : LE CARRÉ D'INITIALES L'AFFICHE, LE PROPRIÉTAIRE LE CHANGE
+ *
+ * Le porteur : « le logo et la photo de couverture doivent pouvoir être
+ * changés ». Toutes les planches (A08T, A08) peignent un carré orange portant
+ * `{reseau.initiales}` (72-76 px à l'ordinateur, 58 px au téléphone). On
+ * garde son dessin et on lui ajoute `backgroundImage` depuis `reseau.logo` ;
+ * les initiales ne s'écrivent que sans logo.
+ *
+ * Pour le PROPRIÉTAIRE (`actions.peutChangerCouverture`, la même règle que la
+ * couverture), une pastille ronde à icône d'appareil photo se pose au coin du
+ * carré et ouvre l'unique sélecteur de l'écran (`actions.onChangerLogo`). Rien
+ * de cela n'est dessiné : c'est un AJOUT, validé par le porteur avec les autres.
+ * Au téléphone, le menu du rond porte aussi « Changer le logo ».
+ */
+const APPAREIL =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" /></svg>';
+
+const RV_LOGO = {
+  screens: ['A08T', 'A08'],
+  nom: 'RV_LOGO',
+  why: 'Le carré d’initiales affiche le logo du réseau (`reseau.logo`) et, pour le propriétaire, porte une pastille « appareil photo » qui ouvre le sélecteur.',
+  provides: ['reseau', 'actions'],
+  apply(jsx) {
+    if (jsx.includes('data-reseau-changer-logo')) return { jsx, applied: false };
+    const m = /<span style=\{\{ ([^}]*) \}\}>\{reseau\.initiales\}<\/span>/.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const style =
+      m[1] +
+      ', backgroundImage: reseau.logo === null ? "none" : `url("${reseau.logo}")`, backgroundSize: "cover", backgroundPosition: "center"';
+    const pastille =
+      '{actions.peutChangerCouverture ? (<button type="button" onClick={actions.onChangerLogo} ' +
+      'disabled={actions.couvertureOccupee} aria-label="Changer le logo" data-reseau-changer-logo="" ' +
+      'style={{ position: "absolute", right: "-6px", bottom: "-6px", width: "28px", height: "28px", borderRadius: "999px", ' +
+      'background: "#fff", border: "1px solid #E6EBE9", display: "flex", alignItems: "center", justifyContent: "center", ' +
+      `padding: "0", cursor: actions.couvertureOccupee ? "default" : "pointer" }}>${APPAREIL}</button>) : null}`;
+    const neuf =
+      '<span style={{ position: "relative", display: "inline-flex", flexShrink: "0" }}>' +
+      `<span style={{ ${style} }}>{reseau.logo === null ? reseau.initiales : null}</span>${pastille}</span>`;
+    return { jsx: jsx.slice(0, m.index) + neuf + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ── « GÉRER » : LA PORTÉE DE LA VALIDATION, ET LES PARAMÈTRES AU TÉLÉPHONE ───
+ *
+ * Le porteur : « la validation de la publication dépend des paramètres du
+ * réseau. Deux options : valider toutes les publications, valider X
+ * publications pour chaque membre. »
+ *
+ *   · 1036 px — sous la rangée « Validation des nouvelles publications », le
+ *     choix `PorteeValidation` (deux pastilles et un compteur), et le sous-titre
+ *     dessiné devient `validationSous`, qui dit la règle réellement appliquée.
+ *   · 390 px — la pastille « Paramètres » menait à une section vide : la carte
+ *     entière (`ParametresReseauMobile`) s'y pose, sous la même condition que
+ *     l'ordinateur (`pilotage.montrer("parametres")`).
+ */
+const RV_GERER_PORTEE = {
+  screens: ['A08T'],
+  nom: 'RV_GERER_PORTEE',
+  why: 'Sous l’interrupteur « Validation », le choix « toutes les publications » / « les N premières de chaque membre », et un sous-titre qui dit la règle appliquée.',
+  provides: ['pilotage'],
+  apply(jsx) {
+    if (jsx.includes('<PorteeValidation')) return { jsx, applied: false };
+    const sous = '>Les publications des nouveaux membres passent par un modérateur.<';
+    if (!jsx.includes(sous) || !jsx.includes('data-gerer-parametre="validation"')) return { jsx, applied: false };
+    let out = jsx.replace(sous, '>{pilotage.parametres.validationSous}<');
+    const bouton = out.indexOf('data-gerer-parametre="validation"');
+    const titre = out.lastIndexOf('>Validation des nouvelles publications</div>', bouton);
+    const colonne = out.lastIndexOf('<div style={{ flex: "1" }}>', titre);
+    const rangee = out.lastIndexOf('<div style={{', colonne - 1);
+    const fin = finElement(out, rangee);
+    if (fin < 0) return { jsx, applied: false };
+    out = out.slice(0, fin) + '<PorteeValidation p={pilotage.parametres} />' + out.slice(fin);
+    return { jsx: out, applied: true };
+  },
+};
+
+const RV_GERER_PARAMETRES_MOBILE = {
+  screens: ['A08T'],
+  nom: 'RV_GERER_PARAMETRES_MOBILE',
+  why: 'À 390 px, la section « Paramètres » de « Gérer » montre enfin les réglages (validation et sa portée, sondages, album, visibilité) — la planche n’y dessinait rien.',
+  provides: ['pilotage'],
+  apply(jsx) {
+    if (jsx.includes('<ParametresReseauMobile')) return { jsx, applied: false };
+    // Le téléphone seul : la pastille « Paramètres » de sa rangée de sections.
+    if (!jsx.includes('data-gerer-section="parametres"') || jsx.includes('data-gerer-parametre="validation"')) {
+      return { jsx, applied: false };
+    }
+    const marque = 'data-gerer-voir-plus="signalements"';
+    const at = jsx.indexOf(marque);
+    if (at < 0) return { jsx, applied: false };
+    // Après la fin du bloc des signalements : `…Voir plus</Link>) : null}</>) : null}`.
+    const finBloc = jsx.indexOf('</>) : null}', at);
+    if (finBloc < 0) return { jsx, applied: false };
+    const pos = finBloc + '</>) : null}'.length;
+    const ajout = '{pilotage.montrer("parametres") ? (<ParametresReseauMobile p={pilotage.parametres} />) : null}';
+    return { jsx: jsx.slice(0, pos) + ajout + jsx.slice(pos), applied: true };
+  },
+};
+
+/**
+ * ── LA CARTE DU FIL : LE TAG « EN ATTENTE DE VALIDATION » ────────────────────
+ *
+ * Le porteur : « Publication en attente de validation : ajoute un tag aussi ».
+ * Une publication de réseau qui attend un modérateur n'est montrée qu'à son
+ * auteur (le serveur la cache à tous les autres) ; elle portait le même dessin
+ * qu'une publication parue, et l'auteur ne pouvait pas savoir pourquoi personne
+ * ne réagissait. Le tag se pose juste après la pastille de type, aux deux
+ * largeurs, dans la teinte « Suggéré » de A01G (orange doux — une attente, pas
+ * une erreur).
+ */
+const RV_CARTE_EN_ATTENTE = {
+  screens: ['A01'],
+  nom: 'RV_CARTE_EN_ATTENTE',
+  why: 'Une publication de réseau qui attend un modérateur porte le tag « En attente de validation » (`p.enAttente`), juste après sa pastille de type.',
+  // `p` est la variable de BOUCLE de la carte (ou la prise de sa région), jamais
+  // une prise du cadre : l'annoncer la ferait déstructurer de `props`.
+  provides: [],
+  apply(jsx) {
+    if (!jsx.includes('{p.type}</span>') || jsx.includes('data-carte-en-attente')) return { jsx, applied: false };
+    const tag =
+      '{p.enAttente ? (<span style={{ background: "#FBE3D4", color: "#B4581F", fontSize: "10.5px", fontWeight: "700", ' +
+      'padding: "3px 9px", borderRadius: "999px", whiteSpace: "nowrap" }} data-carte-en-attente="">En attente de validation</span>) : null}';
+    return { jsx: jsx.split('{p.type}</span>').join(`{p.type}</span>${tag}`), applied: true };
+  },
+};
+
+/**
+ * ── LES RÈGLES SE RÉORDONNENT AU GLISSER-DÉPOSER ─────────────────────────────
+ *
+ * La planche d'édition dessine, devant chaque règle, une poignée « ⋮⋮ » et
+ * écrit « Glissez pour réordonner » — sans rien qui glisse. La ligne porte
+ * maintenant son rang (`data-apropos-regle-ligne`, que `use-reseau.ts` lit sous
+ * le pointeur) et s'estompe pendant le déplacement ; la poignée démarre le
+ * geste (`r.onPoignee`, événements `pointer` : souris et doigt), prend le focus
+ * et répond à ↑ / ↓ (`r.onClavier`). `touchAction: "none"` empêche le
+ * téléphone de faire défiler la page au lieu de déplacer la règle.
+ */
+const RV_REGLES_GLISSER = {
+  screens: ['A08T'],
+  nom: 'RV_REGLES_GLISSER',
+  why: 'La poignée « ⋮⋮ » des règles (planche d’édition, 1036 et 390 px) les réordonne au glisser-déposer, souris ou doigt, et au clavier (↑ ↓).',
+  provides: ['apropos'],
+  apply(jsx) {
+    const debutBoucle = jsx.indexOf('(apropos.edition.regles ?? []).map((r, rIndex) => (<Fragment key={rIndex}>');
+    if (debutBoucle < 0 || jsx.includes('data-apropos-regle-ligne')) return { jsx, applied: false };
+    const ouvreLigne = jsx.indexOf('<div style={{', debutBoucle);
+    const finOuvre = jsx.indexOf('}}>', ouvreLigne);
+    const styleLigne = jsx.slice(ouvreLigne + '<div style={{ '.length, finOuvre).trim();
+    const ligne =
+      `<div style={{ ${styleLigne}, opacity: r.deplacee ? ".45" : "1" }} data-apropos-regle-ligne={rIndex}>`;
+    let out = jsx.slice(0, ouvreLigne) + ligne + jsx.slice(finOuvre + 3);
+    const poigneeDessinee = '<span style={{ color: "#B7C0BC", display: "flex" }}>';
+    const at = out.indexOf(poigneeDessinee, ouvreLigne);
+    if (at < 0) return { jsx, applied: false };
+    const poignee =
+      '<span role="button" tabIndex={0} aria-label={`Déplacer la règle ${r.n} (flèches haut et bas)`} ' +
+      'onPointerDown={r.onPoignee} onKeyDown={r.onClavier} data-apropos-regle-poignee="" ' +
+      'style={{ color: "#B7C0BC", display: "flex", cursor: "grab", touchAction: "none" }}>';
+    out = out.slice(0, at) + poignee + out.slice(at + poigneeDessinee.length);
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ── UNE ERREUR DE LA MAQUETTE : « MES NOTIFICATIONS » AU-DESSUS DE « À PROPOS »
+ *
+ * La colonne de droite de l'onglet « À propos » titre « MES NOTIFICATIONS » une
+ * carte qui porte la description, la visibilité et le genre du réseau — la carte
+ * « À PROPOS » des autres onglets, mot pour mot. Le porteur : « Corrige ». Le
+ * titre ne change que s'il est suivi de `{reseau.description}`, pour ne jamais
+ * toucher une vraie carte de notifications.
+ */
+const RV_TITRE_APROPOS = {
+  screens: ['A08T'],
+  nom: 'RV_TITRE_APROPOS',
+  why: 'La carte de droite de l’onglet « À propos » s’appelle « À PROPOS » (la maquette écrivait « MES NOTIFICATIONS » au-dessus de la description du réseau).',
+  provides: [],
+  apply(jsx) {
+    const r = remplacerUn(
+      jsx,
+      /(<div style=\{\{[^}]*\}\}>)MES NOTIFICATIONS(<\/div><div style=\{\{[^}]*\}\}>\{reseau\.description\})/,
+      (m) => `${m[1]}À PROPOS${m[2]}`,
+    );
+    return r === null ? { jsx, applied: false } : { jsx: r, applied: true };
+  },
+};
+
+/**
+ * ── LE ROND « ‹ » DES PLANCHES DE TÉLÉPHONE RAMÈNE EN ARRIÈRE ────────────────
+ *
+ * Toutes les planches de 390 px d'un réseau (onglets, sujets, détail d'un
+ * sujet) dessinent un rond « ‹ » en haut à gauche — un `<span>` inerte. Il
+ * devient un lien, dans son dessin : vers la LISTE DES RÉSEAUX depuis un
+ * réseau, vers le RÉSEAU depuis un sujet (`sujet.reseauHref`, la destination du
+ * fil d'Ariane de l'ordinateur). « Gérer » a déjà son retour (`gerer.hrefRetour`)
+ * et n'est pas touché ; le cadre d'ordinateur de A09, qui porte le chevron dans
+ * son fil d'Ariane, non plus.
+ */
+const RV_RETOUR_MOBILE = {
+  screens: ['A08T', 'A08', 'A09'],
+  nom: 'RV_RETOUR_MOBILE',
+  why: 'Le rond « ‹ » des planches de téléphone d’un réseau ramène à la liste des réseaux, ou au réseau depuis un sujet — c’était un `<span>` inerte.',
+  provides: [],
+  apply(jsx) {
+    if (jsx.includes('{sujet.reseauHref}') || jsx.includes('data-reseau-retour')) return { jsx, applied: false };
+    const m = /<span style=\{\{ ([^}]*) \}\}>(<svg [^>]*><path d="m15 18-6-6 6-6" \/><\/svg>)<\/span>/.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const vers = jsx.includes('{sujet.reseauNom}') ? '{sujet.reseauHref}' : '"/reseaux"';
+    const lien =
+      `<Link href=${vers} aria-label="Retour" data-reseau-retour="" ` +
+      `style={{ ${m[1]}, color: "inherit", textDecoration: "none" }}>${m[2]}</Link>`;
+    return { jsx: jsx.slice(0, m.index) + lien + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ── A07 : LA NOTE « VARIANTE SOUS LE SEUIL » DEVIENT LA VRAIE PHRASE ─────────
+ *
+ * La planche des réseaux affichait, à tout le monde, une NOTE de maquette :
+ * « Variante sous le seuil : Les réseaux d'intérêt ouvrent à partir de 50
+ * membres à Lyon (34 aujourd'hui). » L'encadré garde son dessin, perd la note
+ * (« Variante sous le seuil : » documentait la maquette, il ne s'adresse à
+ * personne) et porte `seuil`, composé depuis `creationGate` ; il disparaît
+ * quand la création est ouverte.
+ */
+const RV_A07_SEUIL = {
+  screens: ['A07'],
+  nom: 'RV_A07_SEUIL',
+  why: 'L’encadré du seuil de création de A07 dit le vrai seuil, la vraie ville et le vrai compte (`seuil`), et seulement sous le seuil — la planche y écrivait une note de maquette.',
+  provides: ['seuil'],
+  apply(jsx) {
+    const m = /<div style=\{\{ ([^}]*) \}\}><strong style=\{\{[^}]*\}\}>Variante sous le seuil :<\/strong>[^<]*<\/div>/.exec(jsx);
+    if (m === null) {
+      /**
+       * LE TÉLÉPHONE NE DESSINE PAS CET ENCADRÉ — et la phrase n'est plus
+       * répétée hors des cadres. On le pose juste avant le titre « DÉCOUVRIR »,
+       * dans le dessin de l'ordinateur resserré à 390 px.
+       */
+      if (jsx.includes('data-reseaux-seuil')) return { jsx, applied: false };
+      const titre = jsx.indexOf('>DÉCOUVRIR</div>');
+      if (titre < 0) return { jsx, applied: false };
+      const debut = jsx.lastIndexOf('<div style={{', titre);
+      const boite =
+        '{seuil === null ? null : (<div style={{ background: "#F2F5F4", borderRadius: "16px", padding: "12px 14px", fontSize: "12.5px", color: "#5D6B66", flexShrink: "0" }} data-reseaux-seuil="">{seuil}</div>)}';
+      return { jsx: jsx.slice(0, debut) + boite + jsx.slice(debut), applied: true };
+    }
+    const neuf = `{seuil === null ? null : (<div style={{ ${m[1]} }} data-reseaux-seuil="">{seuil}</div>)}`;
+    return { jsx: jsx.slice(0, m.index) + neuf + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+/**
+ * ── LA CARTE « MON PARCOURS » DE LA COLONNE DE GAUCHE, PARTOUT ───────────────
+ *
+ * Relevée parmi les défauts du module réseaux, mais dessinée À L'IDENTIQUE sur
+ * la colonne de gauche d'une trentaine d'écrans d'ordinateur : « Mes études à
+ * Lyon · 58 % · Étape 7 : Logement », et « Continuer » vers `#`. La carte
+ * entière (le bloc vert `#0F5C48` qui commence par « MON PARCOURS ») cède la
+ * place à `CarteMonParcours`, qui la redessine valeur pour valeur avec le vrai
+ * parcours du membre (`GET /journeys`). Déclarée pour TOUS les écrans : la
+ * corriger sur les seuls écrans réseaux aurait laissé la même fausse donnée
+ * sur l'accueil, les guides ou l'entraide.
+ */
+const RV_CARTE_PARCOURS = {
+  screens: ['*'],
+  nom: 'RV_CARTE_PARCOURS',
+  why: 'La carte « MON PARCOURS » de la colonne de gauche montre le vrai parcours du membre (`CarteMonParcours`, `GET /journeys`) — elle écrivait « Mes études à Lyon · 58 % » en dur sur une trentaine d’écrans.',
+  provides: [],
+  apply(jsx) {
+    const ouvre = '<div style={{ background: "#0F5C48", borderRadius: "22px", padding: "18px", color: "#fff" }}>';
+    const at = jsx.indexOf(ouvre);
+    if (at < 0 || !jsx.slice(at, at + 600).includes('>MON PARCOURS<')) return { jsx, applied: false };
+    const fin = finElement(jsx, at);
+    if (fin < 0) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, at) + '<CarteMonParcours />' + jsx.slice(fin), applied: true };
+  },
+};
+
+/**
+ * ── LA FENÊTRE « ANNONCE » : « JUSQU'AU 14 MARS » ÉTAIT FAUX ─────────────────
+ *
+ * Sous « Épingler en haut du fil », la planche écrivait une date en dur. Une
+ * annonce épinglée n'a PAS d'échéance : l'épinglage est exclusif (le service
+ * désépingle les autres, `createAnnouncementSchema.pinned`), et il dure jusqu'à
+ * ce qu'une autre annonce prenne la place ou qu'on la désépingle. Le
+ * sous-titre dit maintenant cette règle-là.
+ */
+const RV_ANNONCE_EPINGLE = {
+  screens: ['A08T'],
+  nom: 'RV_ANNONCE_EPINGLE',
+  why: 'Sous « Épingler en haut du fil », la fenêtre Annonce dit la vraie règle (jusqu’à la prochaine annonce épinglée) au lieu d’une date en dur.',
+  provides: [],
+  apply(jsx) {
+    if (!jsx.includes('>Jusqu’au 14 mars<')) return { jsx, applied: false };
+    return {
+      jsx: jsx.split('>Jusqu’au 14 mars<').join('>Jusqu’à ce qu’une autre annonce soit épinglée<'),
+      applied: true,
+    };
+  },
+};
+
+/**
+ * ── L'ALBUM : SÉLECTIONNER UNE PHOTO, PUIS « COUVERTURE » OU « MASQUER » ─────
+ *
+ * La planche d'album de 390 px (vue de l'équipe) dessinait la barre « 1 photo
+ * sélectionnée · Couverture · Masquer » EN PERMANENCE, trois `<span>` inertes,
+ * sans qu'aucune photo ne soit sélectionnable. Trois gestes, aux deux largeurs
+ * de la vue de l'équipe :
+ *
+ *   · une TUILE de photo d'album (pas une image « Partagés ») se sélectionne au
+ *     toucher, et porte alors un contour vert ;
+ *   · la BARRE n'apparaît qu'avec une sélection, dans son dessin de 390 px — et
+ *     à 1036 px, où rien n'était dessiné, la même barre se pose au-dessus de la
+ *     grille ;
+ *   · « Couverture » choisit la photo de couverture de l'album (« Retirer la
+ *     couverture » si c'est déjà elle), « Masquer » la retire après
+ *     confirmation.
+ *
+ * `font: "inherit"` vient EN PREMIER dans le style des deux boutons : posé
+ * après `fontSize`, ce raccourci remettait la taille du parent (16 px).
+ */
+const BARRE_SELECTION =
+  '{album.selection === null ? null : (<div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#16211D", color: "#fff", borderRadius: "14px", padding: "10px 12px", flexShrink: "0" }} data-album-selection="">' +
+  '<span style={{ flex: "1", fontSize: "13px", fontWeight: "700" }}>1 photo sélectionnée</span>' +
+  '<button type="button" onClick={album.onCouvertureAlbum} disabled={album.occupe} data-album-couverture="" style={{ font: "inherit", fontSize: "12.5px", fontWeight: "700", color: "#fff", background: "none", border: "none", padding: "0", cursor: "pointer" }}>{album.couvertureLibelle}</button>' +
+  '<button type="button" onClick={album.onMasquerPhoto} disabled={album.occupe} data-album-masquer="" style={{ font: "inherit", fontSize: "12.5px", fontWeight: "700", marginLeft: "10px", color: "#fff", background: "none", border: "none", padding: "0", cursor: "pointer" }}>Masquer</button>' +
+  '</div>)}';
+
+const RV_ALBUM_SELECTION = {
+  screens: ['A08T'],
+  nom: 'RV_ALBUM_SELECTION',
+  why: 'Dans l’album (vue de l’équipe, 1036 et 390 px), une photo d’album se sélectionne au toucher ; la barre « 1 photo sélectionnée · Couverture · Masquer » n’apparaît qu’alors, et ses deux gestes marchent.',
+  provides: ['album'],
+  apply(jsx) {
+    if (jsx.includes('data-album-selection')) return { jsx, applied: false };
+    // La vue de l'ÉQUIPE seule : celle qui porte le menu « Ajouter à l'album ».
+    if (!jsx.includes('data-album-ajouter=""')) return { jsx, applied: false };
+    let out = jsx;
+    let applied = false;
+
+    const barre = /<div style=\{\{[^}]*\}\}><span style=\{\{[^}]*\}\}>1 photo sélectionnée<\/span><span style=\{\{[^}]*\}\}>Couverture<\/span><span style=\{\{[^}]*\}\}>Masquer<\/span><\/div>/.exec(out);
+    if (barre !== null) {
+      out = out.slice(0, barre.index) + BARRE_SELECTION + out.slice(barre.index + barre[0].length);
+      applied = true;
+    } else {
+      // 1036 px : la barre se pose juste avant la grille de photos.
+      const boucle = out.indexOf('{(album.photos ?? []).map((ph) => (');
+      if (boucle > 0) {
+        const grille = out.lastIndexOf('<div style={{', boucle);
+        out = out.slice(0, grille) + BARRE_SELECTION + out.slice(grille);
+        applied = true;
+      }
+    }
+
+    // Les tuiles : `role="img"` + `aria-label`, sélectionnables quand elles
+    // appartiennent à un album. Le style se capture jusqu'au `}}>` (non gourmand)
+    // et non par `[^}]*` : il porte un gabarit `url("${ph.url}")`, dont les
+    // accolades arrêtaient le motif.
+    const tuile = /<div (key=\{ph\.id\} )?role="img" aria-label=\{ph\.legende === '' \? 'Photo de l’album' : ph\.legende\} style=\{\{ ([\s\S]*?) \}\}>/;
+    const t = tuile.exec(out);
+    if (t !== null) {
+      const remplacement =
+        `<div ${t[1] ?? ''}role={!album.selectionnable || ph.albumId === undefined ? "img" : "button"} ` +
+        "aria-label={ph.legende === '' ? 'Photo de l’album' : ph.legende} " +
+        'aria-pressed={!album.selectionnable || ph.albumId === undefined ? undefined : album.selection === ph.id} ' +
+        'tabIndex={!album.selectionnable || ph.albumId === undefined ? undefined : 0} ' +
+        'onClick={!album.selectionnable || ph.albumId === undefined ? undefined : () => album.onSelectionner(ph.id)} ' +
+        'data-album-photo="" ' +
+        `style={{ ${t[2]}, cursor: !album.selectionnable || ph.albumId === undefined ? "default" : "pointer", outline: album.selection === ph.id ? "3px solid #16785E" : "none", outlineOffset: "2px" }}>`;
+      out = out.slice(0, t.index) + remplacement + out.slice(t.index + t[0].length);
+      applied = true;
+    }
+    return { jsx: out, applied };
+  },
+};
+
 const SANS_DOUBLONS = (adaptation) => ({
   ...adaptation,
   apply(jsx) {
@@ -1842,7 +2231,11 @@ const SANS_DOUBLONS = (adaptation) => ({
 });
 
 export const ADAPTATIONS_RESEAU_VIVANT = [
+  RV_CARTE_PARCOURS,
   RV_ENTETE,
+  RV_ANNONCE_EPINGLE,
+  RV_A07_SEUIL,
+  RV_RETOUR_MOBILE,
   RV_ONGLETS_FERMES,
   RV_BANDE_EQUIPE,
   RV_SUJETS,
@@ -1854,13 +2247,20 @@ export const ADAPTATIONS_RESEAU_VIVANT = [
   RV_MEMBRES,
   RV_ALBUM_VIDE,
   RV_ALBUM_OUVERT,
+  RV_ALBUM_SELECTION,
   RV_APROPOS,
+  RV_TITRE_APROPOS,
   RV_CONTACTER,
   RV_COUVERTURE,
+  RV_LOGO,
   RV_A10_COUVERTURE,
   RV_A01G_LIBELLE,
   RV_EDITION,
+  RV_REGLES_GLISSER,
   RV_GERER,
+  RV_GERER_PORTEE,
+  RV_CARTE_EN_ATTENTE,
+  RV_GERER_PARAMETRES_MOBILE,
   RV_SUJET_VIDE,
   RV_SUJET_MODERATION,
   RV_E03_FORMULAIRE,
@@ -1871,4 +2271,7 @@ export const AJOUTS_RESEAU_VIVANT = {
   ActionsReseau: '@/components/actions-reseau',
   EtatVide: '@/components/etat-vide',
   MenuRond: '@/components/menu-rond',
+  CarteMonParcours: '@/components/carte-mon-parcours',
+  PorteeValidation: '@/components/parametres-reseau',
+  ParametresReseauMobile: '@/components/parametres-reseau',
 };

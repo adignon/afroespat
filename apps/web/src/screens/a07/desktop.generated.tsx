@@ -8,10 +8,11 @@ import { Fragment } from 'react';
 import { BoutonCreer, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
+import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import type { A07Data } from './data';
 
 export function A07Desktop(props: A07Data) {
-  const { discover, myNets, netFilters, onRejoindre, panelReseaux, rail, shortcuts } = props;
+  const { discover, myNets, netFilters, onRejoindre, panelReseaux, rail, seuil, shortcuts } = props;
 
   return (
     <>
@@ -25,11 +26,7 @@ export function A07Desktop(props: A07Data) {
 ))}<div style={{ flex: "1", minHeight: "12px" }}></div><a href="#" style={{ height: "48px", borderRadius: "16px", display: "flex", alignItems: "center", justifyContent: "center", color: "#CFE3DA" }} aria-label="Réglages"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><path d="M4 7h8M17 7h3M4 17h3M12 17h8" /><circle cx="15" cy="7" r="2.2" /><circle cx="9.5" cy="17" r="2.2" /></svg></a></RailSurvol>
         <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "12px" }}>
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px", display: "flex", alignItems: "center", gap: "11px" }}><CarteMembre styleAvatar={{ width: "44px", height: "44px", borderRadius: "999px", background: "#B4581F", color: "#fff", fontSize: "13px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }} styleNom={{ display: "block", fontWeight: "700", fontSize: "14px", letterSpacing: "-0.2px" }} styleLien={{ display: "block", fontSize: "12px", color: "#5D6B66" }} libelle="Voir mon profil public" /></div>
-          <div style={{ background: "#0F5C48", borderRadius: "22px", padding: "18px", color: "#fff" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}><div style={{ minWidth: "0" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#A9CDBF" }}>MON PARCOURS</div><div style={{ fontSize: "14.5px", fontWeight: "700", marginTop: "5px", letterSpacing: "-0.2px" }}>Mes études à Lyon</div></div><span style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.8px" }}>58%</span></div>
-            <div style={{ height: "8px", borderRadius: "999px", background: "rgba(255,255,255,.18)", marginTop: "14px", overflow: "hidden" }}><div style={{ width: "58%", height: "100%", background: "#E0733A", borderRadius: "999px" }}></div></div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", gap: "8px" }}><span style={{ fontSize: "12.5px", color: "#F0C3A4", fontWeight: "600" }}>Étape 7 : Logement</span><a href="#" style={{ background: "#fff", color: "#0F5C48", fontWeight: "700", fontSize: "12.5px", padding: "7px 14px", borderRadius: "999px" }}>Continuer</a></div>
-          </div>
+          <CarteMonParcours />
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px" }}>
             <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "0 6px 8px" }}>COMMUNAUTÉ</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>{(panelReseaux ?? []).map((m, mIndex) => (
@@ -59,7 +56,7 @@ export function A07Desktop(props: A07Data) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "14px" }}>{(discover ?? []).map((d, dIndex) => (
 <Fragment key={dIndex}><div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "10px" }}><div style={{ height: "110px", borderRadius: "16px", background: d.cover }}></div><div style={{ padding: "14px 8px 8px" }}><div style={{ display: "flex", gap: "6px" }}><span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px" }}>{d.cat}</span></div><div style={{ fontSize: "15px", fontWeight: "700", marginTop: "10px", letterSpacing: "-0.2px" }}><a href={d.href} style={{ color: "inherit", textDecoration: "none" }}>{d.name}</a></div><div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px", lineHeight: "1.5" }}>{d.desc}</div><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px" }}><span style={{ fontSize: "12px", color: "#8A958F" }}>{d.members}</span><button type="button" onClick={() => onRejoindre(d.slug, d.joined)} style={{ height: "38px", padding: "0 16px", borderRadius: "999px", background: d.btnBg, color: d.btnFg, border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", cursor: "pointer" }}>{d.cta}</button></div></div></div></Fragment>
 ))}</div>
-        <div style={{ background: "#F2F5F4", borderRadius: "18px", padding: "14px 18px", fontSize: "13px", color: "#5D6B66" }}><strong style={{ color: "#16211D" }}>Variante sous le seuil :</strong> Les réseaux d'intérêt ouvrent à partir de 50 membres à Lyon (34 aujourd'hui).</div>
+        {seuil === null ? null : (<div style={{ background: "#F2F5F4", borderRadius: "18px", padding: "14px 18px", fontSize: "13px", color: "#5D6B66" }} data-reseaux-seuil="">{seuil}</div>)}
       </div>
     </div>
   

@@ -2398,6 +2398,69 @@ describe('réseaux (07 §2, §9)', () => {
     }
   });
 
+  /**
+   * La photo de couverture d'un album (§2.6, `PATCH /albums/:id`). L'équipe la
+   * choisit parmi les photos de CET album ; un membre ordinaire ne le peut pas ;
+   * une photo d'un autre album est introuvable ; `null` revient à la plus récente.
+   * Retirer la photo de couverture remet la couverture à nul : le retrait est un
+   * `deletedAt`, la clé étrangère ne le ferait pas d'elle-même.
+   */
+  it('laisse l’équipe choisir la couverture d’un album, et l’oublie quand la photo part', async () => {
+    const owner = await newMember();
+    const community = await createInterest(owner);
+    const member = await newMember();
+    await communities.join(community.id, member);
+
+    const album = await communities.createAlbum(community.id, owner, { title: 'Pique-nique' });
+    const autre = await communities.createAlbum(community.id, owner, { title: 'Autre' });
+    const assets = await Promise.all(
+      [0, 1, 2].map(() =>
+        prisma.mediaAsset.create({
+          data: {
+            id: newId(),
+            ownerUserId: owner,
+            kind: 'ALBUM',
+            storageKey: `test/${newId()}.jpg`,
+            mime: 'image/jpeg',
+            sizeBytes: BigInt(1024),
+            status: 'READY',
+          },
+        }),
+      ),
+    );
+    try {
+      const [a0, a1, a2] = assets as [(typeof assets)[0], (typeof assets)[0], (typeof assets)[0]];
+      const premiere = await communities.addPhoto(album.id, owner, { mediaAssetId: a0.id });
+      await communities.addPhoto(album.id, owner, { mediaAssetId: a1.id });
+      const ailleurs = await communities.addPhoto(autre.id, owner, { mediaAssetId: a2.id });
+
+      const lire = async () =>
+        (await communities.albums(community.id, owner)).items.find((a) => a.id === album.id);
+
+      expect((await lire())?.coverPhotoId).toBeNull();
+
+      await expect(
+        communities.setAlbumCover(album.id, member, premiere.id),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN' });
+      await expect(
+        communities.setAlbumCover(album.id, owner, ailleurs.id),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+      await communities.setAlbumCover(album.id, owner, premiere.id);
+      expect((await lire())?.coverPhotoId).toBe(premiere.id);
+
+      await communities.setAlbumCover(album.id, owner, null);
+      expect((await lire())?.coverPhotoId).toBeNull();
+
+      await communities.setAlbumCover(album.id, owner, premiere.id);
+      await communities.deletePhoto(album.id, premiere.id, owner);
+      expect((await lire())?.coverPhotoId).toBeNull();
+    } finally {
+      await prisma.albumPhoto.deleteMany({ where: { albumId: { in: [album.id, autre.id] } } });
+      await prisma.mediaAsset.deleteMany({ where: { id: { in: assets.map((a) => a.id) } } });
+    }
+  });
+
   // ══ Événements de domaine (§6) ═══════════════════════════════════════════
 
   it('émet les événements du §6 dans la transaction qui les cause', async () => {
@@ -2497,8 +2560,19 @@ describe('réseaux (07 §2, §9)', () => {
       // Retirer la couverture reste possible : `null` ne passe pas par le contrôle.
       const sans = await communities.update(community.id, owner, { coverAssetId: null });
       expect(sans.coverUrl).toBeNull();
+
+      // Le LOGO suit exactement la même règle.
+      await expect(communities.update(community.id, owner, { logoAssetId: etrangere })).rejects.toMatchObject({
+        status: 404,
+      });
+      const logo = await communities.update(community.id, owner, { logoAssetId: mienne });
+      expect(logo.logoAssetId).toBe(mienne);
+      expect(logo.logoUrl).toMatch(/^\/media\/test\/reseau-couverture\//);
     } finally {
-      await prisma.community.update({ where: { id: community.id }, data: { coverAssetId: null } });
+      await prisma.community.update({
+        where: { id: community.id },
+        data: { coverAssetId: null, logoAssetId: null },
+      });
       await prisma.mediaAsset.deleteMany({ where: { id: { in: [mienne, etrangere, justificatif, enCours] } } });
     }
   });
