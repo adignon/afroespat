@@ -138,6 +138,27 @@ export const createDirectConversationSchema = z
 export type CreateDirectConversation = z.infer<typeof createDirectConversationSchema>;
 
 /**
+ * LA RÉPONSE DE `POST /conversations/direct` — relevée sur `messaging.service.ts`
+ * (`openDirect`), et partagée pour qu'il n'y en ait plus deux lectures.
+ *
+ * Elle n'est PAS une `conversationSchema` : la route ne rend que les deux
+ * identifiants créés et `pending` (le premier message est une DEMANDE tant que la
+ * relation est froide, §5.2). Le profil la lisait comme une conversation entière ;
+ * le schéma refusait donc une réponse valide, le message partait quand même, et
+ * l'écran affichait « Le message n'a pas pu partir. » — chaque nouvel essai
+ * envoyait un message de plus.
+ */
+export const openDirectConversationResponseSchema = z
+  .object({
+    conversationId: uuidSchema,
+    messageId: uuidSchema,
+    pending: z.boolean(),
+  })
+  .strict();
+
+export type OpenDirectConversationResponse = z.infer<typeof openDirectConversationResponseSchema>;
+
+/**
  * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ « CONTACTER LES MODÉRATEURS » — ET CE N'EST PAS UN SIGNALEMENT             ║
  * ╚════════════════════════════════════════════════════════════════════════════╝

@@ -57,6 +57,9 @@ import {
   communityMapResponseSchema,
   communityMembersResponseSchema,
   eventsResponseSchema,
+  pendingPostDecisionResponseSchema,
+  pendingPostDecisionSchema,
+  pendingPostsResponseSchema,
   rsvpSchema,
   createAlbumResponseSchema,
   createAlbumSchema,
@@ -67,6 +70,7 @@ import {
   inviteMembersResponseSchema,
   inviteMembersSchema,
   mediaAssetSchema,
+  setAlbumCoverSchema,
   memberMutationResponseSchema,
   moderatorsConversationResponseSchema,
   pollDetailResponseSchema,
@@ -100,6 +104,8 @@ import {
   type MediaAssetView,
   type MemberMutationResponse,
   type ModeratorsConversationResponse,
+  type PendingPostDecisionResponse,
+  type PendingPostsResponse,
   type PollDetailResponse,
   type PollsResponse,
   type TopicDetailResponse,
@@ -319,6 +325,21 @@ export function createAlbum(
  * exactement le même manque que l'éditeur de guide consigne pour ses images.
  * REMONTÉ.
  */
+/** `PATCH /albums/:id` — la photo de couverture d'un album (`null` : la plus récente). */
+export function setAlbumCover(albumId: string, coverPhotoId: string | null): Promise<void> {
+  return memberApi.patch(`/albums/${encodeURIComponent(albumId)}`, voidResponse, {
+    body: setAlbumCoverSchema.parse({ coverPhotoId }),
+  });
+}
+
+/** `DELETE /albums/:id/photos/:photoId` — retirer une photo (auteur ou équipe). */
+export function deleteAlbumPhoto(albumId: string, photoId: string): Promise<void> {
+  return memberApi.del(
+    `/albums/${encodeURIComponent(albumId)}/photos/${encodeURIComponent(photoId)}`,
+    voidResponse,
+  );
+}
+
 export function addAlbumPhoto(albumId: string, mediaAssetId: string): Promise<unknown> {
   return memberApi.post(`/albums/${encodeURIComponent(albumId)}/photos`, z.unknown(), {
     body: addAlbumPhotoSchema.parse({ mediaAssetId }),
@@ -337,6 +358,21 @@ export function addAlbumPhoto(albumId: string, mediaAssetId: string): Promise<un
  * `FormData` ET NON JSON : la route est multipart (`@UseInterceptors(FileInterceptor)`),
  * et `kind` y arrive en champ texte du MÊME corps.
  */
+/**
+ * LA COUVERTURE D'UN RÉSEAU, déposée AVANT d'être rattachée.
+ *
+ * Genre `EVENT_COVER` : l'énumération de 00 §6.3 n'a pas de `COMMUNITY_COVER`,
+ * et le serveur n'accepte pour couverture de réseau que ce genre-là
+ * (`communities.service.ts`, `assertOwnedCover`). Sert à la création (A10) comme
+ * au « Changer la couverture » du bandeau.
+ */
+export function uploadCommunityCover(fichier: File): Promise<MediaAssetView> {
+  const corps = new FormData();
+  corps.append('file', fichier);
+  corps.append('kind', 'EVENT_COVER');
+  return memberApi.post('/media', mediaAssetSchema, { body: corps });
+}
+
 export function uploadAlbumImage(fichier: File): Promise<MediaAssetView> {
   const corps = new FormData();
   corps.append('file', fichier);
@@ -755,12 +791,13 @@ export function reactivateCommunity(idOrSlug: string): Promise<CommunityDetailRe
  */
 export function fetchCommunityEvents(
   communityId: string,
-  filters: { readonly to?: string; readonly limit?: number } = {},
+  filters: { readonly from?: string; readonly to?: string; readonly limit?: number } = {},
   signal?: AbortSignal,
 ): Promise<EventsResponse> {
   return memberApi.get(
     `/events${query({
       communityId,
+      ...(filters.from === undefined ? {} : { from: filters.from }),
       ...(filters.to === undefined ? {} : { to: filters.to }),
       ...(filters.limit === undefined ? {} : { limit: String(filters.limit) }),
     })}`,
@@ -797,4 +834,34 @@ export function rsvpEvent(eventId: string): Promise<unknown> {
   return memberApi.put(`/events/${encodeURIComponent(eventId)}/rsvp`, z.unknown(), {
     body: rsvpSchema.parse({ status: 'GOING' }),
   });
+}
+
+// ── La file de validation — « Validation des nouvelles publications » ──────
+
+/**
+ * `GET /communities/:id/pending-posts` — les publications qui attendent l'équipe.
+ * `403 MODERATOR_REQUIRED` pour un membre ordinaire : l'écran ne l'appelle que
+ * pour l'équipe, pour ne pas provoquer un refus certain à chaque visite.
+ */
+export function fetchPendingPosts(
+  idOrSlug: string,
+  signal?: AbortSignal,
+): Promise<PendingPostsResponse> {
+  return memberApi.get(
+    `/communities/${encodeURIComponent(idOrSlug)}/pending-posts${query({ limit: '50' })}`,
+    pendingPostsResponseSchema,
+    opts(signal),
+  );
+}
+
+export function decidePendingPost(
+  idOrSlug: string,
+  postId: string,
+  decision: 'APPROVE' | 'REJECT',
+): Promise<PendingPostDecisionResponse> {
+  return memberApi.post(
+    `/communities/${encodeURIComponent(idOrSlug)}/pending-posts/${encodeURIComponent(postId)}/decide`,
+    pendingPostDecisionResponseSchema,
+    { body: pendingPostDecisionSchema.parse({ decision }) },
+  );
 }

@@ -219,6 +219,10 @@ export type DomainEventType =
   // `notifications` (`onCommunityArchiveWarning`).
   | 'community.archive_warning'
   | 'community.reactivated'
+  // La visibilité d'un réseau a changé (« Gérer · Paramètres · Visibilité ») :
+  // la recherche réindexe ses sujets et ses événements, comme sur l'archivage,
+  // pour qu'un réseau passé « Sur invitation » ne laisse plus rien filtrer.
+  | 'community.visibility_changed'
   | 'community.member_joined'
   | 'community.member_left'
   | 'community.member_banned'

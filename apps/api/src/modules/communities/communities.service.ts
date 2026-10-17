@@ -31,6 +31,7 @@ import {
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
+import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
@@ -83,11 +84,20 @@ type CommunityRow = Prisma.CommunityGetPayload<{
     visibility: true;
     createdByUserId: true;
     coverAssetId: true;
+    coverAsset: { select: { storageKey: true; deletedAt: true } };
+    logoAssetId: true;
+    logoAsset: { select: { storageKey: true; deletedAt: true } };
     memberCount: true;
     status: true;
     lastActivityAt: true;
     archivedAt: true;
     createdAt: true;
+    postsRequireApproval: true;
+    postsApprovalScope: true;
+    postsApprovalCount: true;
+    pollsOpenToMembers: true;
+    albumOpenToMembers: true;
+    rules: true;
   };
 }>;
 
@@ -103,11 +113,26 @@ const COMMUNITY_SELECT = {
   visibility: true,
   createdByUserId: true,
   coverAssetId: true,
+  /**
+   * LA CLÉ DE STOCKAGE DE LA COUVERTURE, pour composer `coverUrl` — voir
+   * `publicShape`. L'identifiant seul (`coverAssetId`) ne s'affiche pas : la
+   * route `/media/<clé>` attend la CLÉ, qui porte un segment aléatoire.
+   */
+  coverAsset: { select: { storageKey: true, deletedAt: true } },
+  /** Le logo, même lecture que la couverture : sa clé compose `logoUrl`. */
+  logoAssetId: true,
+  logoAsset: { select: { storageKey: true, deletedAt: true } },
   memberCount: true,
   status: true,
   lastActivityAt: true,
   archivedAt: true,
   createdAt: true,
+  postsRequireApproval: true,
+  postsApprovalScope: true,
+  postsApprovalCount: true,
+  pollsOpenToMembers: true,
+  albumOpenToMembers: true,
+  rules: true,
 } as const;
 
 /**
@@ -663,6 +688,31 @@ export class CommunitiesService {
     return COMMUNITY_CITY_THRESHOLD_DEFAULT;
   }
 
+  /**
+   * LA COUVERTURE — ET LE LOGO — D'UN RÉSEAU SONT DES MÉDIAS DE SON PROPRIÉTAIRE, PRÊTS.
+   *
+   * `create` et `update` recopiaient `coverAssetId` tel quel : n'importe quel
+   * identifiant de média passait — celui d'un autre membre, ou un justificatif
+   * (`PROOF`, « jamais affiché ») qu'on aurait ainsi exposé en bandeau. C'est
+   * exactement le trou que `events.service.ts` a refermé pour ses couvertures,
+   * et c'est le même contrôle : `ownedAttachableWhere('eventCover', …)`, car
+   * l'énumération de 00 §6.3 n'a pas de `COMMUNITY_COVER` et le réseau emprunte
+   * `EVENT_COVER` (voir `media-attachment.ts`).
+   *
+   * 404 pour un média étranger ou d'un autre genre (indistinguable d'un média
+   * absent), 400 `MEDIA_NOT_READY` pour un fichier encore en analyse.
+   */
+  private async assertOwnedCover(userId: string, coverAssetId: string): Promise<void> {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id: coverAssetId, ...ownedAttachableWhere('eventCover', userId) },
+      select: { status: true },
+    });
+    if (asset === null) throw ApiError.notFound();
+    if (asset.status !== REQUIRED_MEDIA_STATUS) {
+      throw ApiError.validation([{ path: 'coverAssetId', code: 'MEDIA_NOT_READY' }]);
+    }
+  }
+
   private publicShape(c: CommunityRow) {
     return {
       id: c.id,
@@ -677,6 +727,22 @@ export class CommunitiesService {
       countryId: c.countryId,
       memberCount: c.memberCount,
       coverAssetId: c.coverAssetId,
+      /**
+       * L'ADRESSE DE LA COUVERTURE, `/media/<clé>` — la forme que rendent déjà
+       * les événements (`events.service.ts`, `mediaUrl`) et la messagerie. Sans
+       * elle, le bandeau du réseau ne pouvait rien afficher : la fiche ne portait
+       * que l'identifiant. Un média supprimé rend `null`, et le bandeau retombe
+       * sur sa teinte dessinée plutôt que sur une image cassée.
+       */
+      coverUrl:
+        c.coverAsset === null || c.coverAsset.deletedAt !== null
+          ? null
+          : `/media/${c.coverAsset.storageKey}`,
+      logoAssetId: c.logoAssetId,
+      logoUrl:
+        c.logoAsset === null || c.logoAsset.deletedAt !== null
+          ? null
+          : `/media/${c.logoAsset.storageKey}`,
       lastActivityAt: c.lastActivityAt,
       createdAt: c.createdAt,
     };
@@ -722,9 +788,101 @@ export class CommunitiesService {
        * rallumerait le bouton à ses yeux sans rien changer en base.
        */
       myMuted: membership?.muted ?? false,
+      rules: community.rules,
+      settings: {
+        postsRequireApproval: community.postsRequireApproval,
+        postsApprovalScope: community.postsApprovalScope,
+        postsApprovalCount: community.postsApprovalCount,
+        pollsOpenToMembers: community.pollsOpenToMembers,
+        albumOpenToMembers: community.albumOpenToMembers,
+      },
+      team: await this.team(community.id, userId),
+      stats:
+        isMember && (membership.role === 'OWNER' || membership.role === 'MODERATOR')
+          ? await this.stats(community.id)
+          : null,
       counters: { members: community.memberCount, topics: topicCount, announcements: announcementCount },
       pinned,
     };
+  }
+
+  /**
+   * LES DEUX TUILES DE « GÉRER », pour l'équipe — voir `communityDetailResponseSchema.stats`.
+   *
+   * L'activité est comptée sur les deux écritures qui FONT la vie d'un réseau :
+   * une publication dans son fil, un sujet ouvert. Les commentaires et les
+   * réactions n'y sont pas — elles se comptent mal par réseau (un commentaire
+   * vise une publication, pas un réseau) et la tuile dit « actifs », pas
+   * « présents ».
+   */
+  private async stats(communityId: string) {
+    const maintenant = new Date();
+    const debutMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1));
+    const il30Jours = new Date(maintenant.getTime() - 30 * 86_400_000);
+    const [joinedThisMonth, auteurs, ouvreurs] = await Promise.all([
+      this.prisma.communityMember.count({
+        where: { communityId, status: 'ACTIVE', joinedAt: { gte: debutMois } },
+      }),
+      this.prisma.post.findMany({
+        where: { communityId, createdAt: { gte: il30Jours }, deletedAt: null },
+        select: { authorUserId: true },
+        distinct: ['authorUserId'],
+      }),
+      this.prisma.topic.findMany({
+        where: { communityId, createdAt: { gte: il30Jours }, deletedAt: null },
+        select: { authorUserId: true },
+        distinct: ['authorUserId'],
+      }),
+    ]);
+    const actifs = new Set([...auteurs, ...ouvreurs].map((r) => r.authorUserId));
+    const membres = await this.prisma.communityMember.count({
+      where: { communityId, status: 'ACTIVE', userId: { in: [...actifs] } },
+    });
+    return { joinedThisMonth, activeLast30Days: membres };
+  }
+
+  /**
+   * L'ÉQUIPE DU RÉSEAU — propriétaire puis modérateurs, ACTIFS seulement.
+   *
+   * Pour la carte « ÉQUIPE » de l'onglet « À propos », que la planche dessine
+   * pour TOUT lecteur, passant compris : c'est elle qui dit à qui « Contacter
+   * les modérateurs » écrit. Les comptes séparés du lecteur (blocage) en sont
+   * retirés, comme partout ailleurs dans ce module.
+   *
+   * BORNÉE à douze : la planche en dessine trois, et une équipe plus nombreuse
+   * se lit dans l'onglet « Membres », filtre « Modérateurs ».
+   */
+  private async team(communityId: string, viewerId: string) {
+    const separated = await this.visibility.separatedFrom(viewerId);
+    const rows = await this.prisma.communityMember.findMany({
+      where: {
+        communityId,
+        status: 'ACTIVE',
+        role: { in: ['OWNER', 'MODERATOR'] },
+        user: { deletedAt: null },
+        ...(separated.length === 0 ? {} : { userId: { notIn: separated } }),
+      },
+      orderBy: [{ role: 'asc' }, { joinedAt: 'asc' }],
+      take: 12,
+      select: {
+        role: true,
+        user: {
+          select: {
+            id: true,
+            handle: true,
+            displayName: true,
+            avatarAsset: { select: { storageKey: true } },
+          },
+        },
+      },
+    });
+    return rows.map((m) => ({
+      userId: m.user.id,
+      handle: m.user.handle,
+      displayName: m.user.displayName,
+      avatarUrl: m.user.avatarAsset === null ? null : `/media/${m.user.avatarAsset.storageKey}`,
+      role: m.role,
+    }));
   }
 
   private async pinnedTopics(communityId: string, viewerId: string) {
@@ -794,6 +952,8 @@ export class CommunitiesService {
     }
 
     const id = newId();
+    if (input.coverAssetId !== undefined) await this.assertOwnedCover(userId, input.coverAssetId);
+    if (input.logoAssetId !== undefined) await this.assertOwnedCover(userId, input.logoAssetId);
     const slug = await this.uniqueSlug(input.name);
 
     await this.prisma.$transaction(async (tx) => {
@@ -808,6 +968,7 @@ export class CommunitiesService {
           visibility: input.visibility,
           createdByUserId: userId,
           coverAssetId: input.coverAssetId ?? null,
+          logoAssetId: input.logoAssetId ?? null,
           // « Le réseau est créé en ACTIVE » (§2.2) : aucun état d'attente, le
           // créateur n'a pas à revenir vérifier que son réseau s'est ouvert.
           status: 'ACTIVE',
@@ -894,27 +1055,77 @@ export class CommunitiesService {
 
   // ══ PATCH /communities/:id (§4) ════════════════════════════════════════════
 
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════╗
+   * ║ DEUX CERCLES D'ÉCRITURE — LE PROPRIÉTAIRE, ET L'ÉQUIPE                 ║
+   * ╚════════════════════════════════════════════════════════════════════════╝
+   *
+   * Ce qui FAIT le réseau — son nom, sa catégorie, sa visibilité, sa
+   * couverture — reste au propriétaire (§2.2). Ce qui le FAIT VIVRE — sa
+   * description, ses règles, les trois interrupteurs de « Gérer » — est ouvert
+   * aux modérateurs : le porteur l'a demandé (« À propos vu modérateur : les
+   * champs ne sont pas modifiables »), et un réseau AUTOMATIQUE n'a pas de
+   * propriétaire du tout (§2.1) — sans cela personne n'y écrirait jamais rien.
+   *
+   * ── UN RÉSEAU AUTOMATIQUE REFUSE LES CHAMPS QUI LE DÉFINISSENT ───────────
+   *
+   * Il refusait TOUT, y compris sa description. La planche d'édition l'écrit
+   * pourtant : « Catégorie et visibilité sont fixées pour un réseau
+   * automatique de pays » — c'est-à-dire que le RESTE ne l'est pas. Le refus
+   * `AUTO_COMMUNITY_IMMUTABLE` ne porte donc plus que sur le nom, la catégorie
+   * et la visibilité, qui sont dérivés de la ville ou du pays.
+   *
+   * ── LA VISIBILITÉ CHANGE CE QUE LA RECHERCHE A LE DROIT DE MONTRER ───────
+   *
+   * Un réseau passé « Sur invitation » ne doit plus laisser filtrer ses sujets
+   * ni ses événements (§9, règle dure) ; un réseau rouvert doit réapparaître.
+   * La cascade est celle de l'archivage — `reindexCommunityChildren` — portée
+   * par un événement d'outbox dans la MÊME transaction que l'écriture.
+   */
   async update(idOrSlug: string, userId: string, patch: UpdateCommunity) {
     const access = await this.load(idOrSlug, userId);
-    this.assertOwner(access);
+    const fondateur =
+      patch.name !== undefined ||
+      patch.category !== undefined ||
+      patch.visibility !== undefined ||
+      patch.coverAssetId !== undefined ||
+      patch.logoAssetId !== undefined;
+    if (fondateur) this.assertOwner(access);
+    else this.assertModerator(access);
     this.assertWritable(access);
+    if (patch.coverAssetId !== undefined && patch.coverAssetId !== null) {
+      await this.assertOwnedCover(userId, patch.coverAssetId);
+    }
+    if (patch.logoAssetId !== undefined && patch.logoAssetId !== null) {
+      await this.assertOwnedCover(userId, patch.logoAssetId);
+    }
 
-    if (AUTO_KINDS.includes(access.community.kind as 'CITY' | 'COUNTRY')) {
-      // Un réseau de ville tient son nom du référentiel (02) : le renommer ici
-      // le désynchroniserait de la ville qu'il représente.
+    const automatique = AUTO_KINDS.includes(access.community.kind as 'CITY' | 'COUNTRY');
+    if (
+      automatique &&
+      (patch.name !== undefined || patch.category !== undefined || patch.visibility !== undefined)
+    ) {
       throw ApiError.transverse('FORBIDDEN', { reason: 'AUTO_COMMUNITY_IMMUTABLE' });
     }
 
-    // `Unchecked` plutôt que `CommunityUpdateInput` : la version vérifiée ne
-    // connaît que la RELATION `coverAsset`, et poser une clé étrangère à `null`
-    // par un `disconnect` pour une simple photo de couverture est plus de code
-    // pour le même effet.
     const data: Prisma.CommunityUncheckedUpdateInput = {};
     if (patch.name !== undefined) data.name = patch.name;
     if (patch.description !== undefined) data.description = patch.description;
     if (patch.category !== undefined) data.category = patch.category;
     if (patch.visibility !== undefined) data.visibility = patch.visibility;
     if (patch.coverAssetId !== undefined) data.coverAssetId = patch.coverAssetId;
+    if (patch.logoAssetId !== undefined) data.logoAssetId = patch.logoAssetId;
+    if (patch.postsApprovalScope !== undefined) data.postsApprovalScope = patch.postsApprovalScope;
+    if (patch.postsApprovalCount !== undefined) data.postsApprovalCount = patch.postsApprovalCount;
+    if (patch.rules !== undefined) data.rules = patch.rules;
+    if (patch.postsRequireApproval !== undefined) {
+      data.postsRequireApproval = patch.postsRequireApproval;
+    }
+    if (patch.pollsOpenToMembers !== undefined) data.pollsOpenToMembers = patch.pollsOpenToMembers;
+    if (patch.albumOpenToMembers !== undefined) data.albumOpenToMembers = patch.albumOpenToMembers;
+
+    const visibiliteChangee =
+      patch.visibility !== undefined && patch.visibility !== access.community.visibility;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.community.update({ where: { id: access.community.id }, data });
@@ -925,6 +1136,13 @@ export class CommunitiesService {
         targetId: access.community.id,
         metadata: { fields: Object.keys(data) },
       });
+      if (visibiliteChangee) {
+        await this.outbox.emit(tx, {
+          type: 'community.visibility_changed',
+          aggregateId: access.community.id,
+          payload: { from: access.community.visibility, to: patch.visibility },
+        });
+      }
     });
 
     return this.detail(access.community.id, userId);
@@ -1111,7 +1329,21 @@ export class CommunitiesService {
         ...(after === null ? {} : { id: { lt: after.id } }),
         user: {
           deletedAt: null,
-          ...(query.q === undefined ? {} : { handle: { contains: query.q, mode: 'insensitive' } }),
+          /**
+           * LE PSEUDO OU LE NOM AFFICHÉ. §2.3 écrit « recherche par handle »,
+           * mais l'onglet « Membres » n'affiche QUE des noms — « Aïcha Diop »,
+           * jamais « @aicha-d » — et le porteur tapait ce qu'il voyait : « la
+           * recherche ne marche pas ». Chercher dans les deux colonnes rend le
+           * champ fidèle à ce que la liste montre.
+           */
+          ...(query.q === undefined
+            ? {}
+            : {
+                OR: [
+                  { handle: { contains: query.q, mode: 'insensitive' as const } },
+                  { displayName: { contains: query.q, mode: 'insensitive' as const } },
+                ],
+              }),
         },
       },
       // Tri sur le SEUL identifiant, et pas « rôle puis identifiant » : le
@@ -2522,8 +2754,19 @@ export class CommunitiesService {
 
   async createPoll(idOrSlug: string, userId: string, input: CreatePoll) {
     const access = await this.load(idOrSlug, userId);
-    this.assertMember(access);
+    const membership = this.assertMember(access);
     this.assertWritable(access);
+
+    // « Autoriser les sondages par tous les membres » — éteint, l'équipe seule.
+    // La même règle est tenue sur un sondage joint à une publication du fil du
+    // réseau (`FeedService.createPost`) : deux portes, une règle.
+    if (
+      !access.community.pollsOpenToMembers &&
+      membership.role !== 'OWNER' &&
+      membership.role !== 'MODERATOR'
+    ) {
+      this.fail('POLLS_RESTRICTED');
+    }
 
     if (input.closesAt !== undefined && input.closesAt.getTime() <= Date.now()) {
       throw ApiError.validation([{ path: 'closesAt', code: 'TOO_SMALL' }]);
@@ -2754,6 +2997,7 @@ export class CommunitiesService {
         title: true,
         eventId: true,
         createdAt: true,
+        coverPhotoId: true,
         createdBy: { select: { id: true, handle: true, displayName: true } },
         photos: {
           where: {
@@ -2781,6 +3025,10 @@ export class CommunitiesService {
         createdAt: a.createdAt,
         createdBy: a.createdBy,
         photoCount: a.photos.length,
+        // Une couverture que le lecteur ne voit pas (photo d'un membre séparé de
+        // lui) ne lui est pas désignée : l'album retombe sur la plus récente.
+        coverPhotoId:
+          a.coverPhotoId !== null && a.photos.some((p) => p.id === a.coverPhotoId) ? a.coverPhotoId : null,
         photos: a.photos.map((p) => ({
           id: p.id,
           caption: p.caption,
@@ -2873,8 +3121,22 @@ export class CommunitiesService {
     if (album === null) throw ApiError.notFound();
 
     const access = await this.load(album.communityId, userId);
-    this.assertMember(access);
+    const membership = this.assertMember(access);
     this.assertWritable(access);
+
+    /**
+     * « ALBUM OUVERT AUX MEMBRES » — l'interrupteur de « Gérer », appliqué ici.
+     * Éteint, seule l'équipe ajoute des photos ; allumé (le défaut, et ce que la
+     * planche dessine), tout membre actif peut garnir un album DÉJÀ créé — la
+     * création d'un album reste à l'équipe dans les deux cas (`createAlbum`).
+     */
+    if (
+      !access.community.albumOpenToMembers &&
+      membership.role !== 'OWNER' &&
+      membership.role !== 'MODERATOR'
+    ) {
+      this.fail('ALBUM_RESTRICTED');
+    }
 
     // L'image doit appartenir à celui qui la pose : sans ce contrôle, un membre
     // pourrait afficher dans un album n'importe quelle image de la plateforme en
@@ -2912,6 +3174,33 @@ export class CommunitiesService {
   }
 
   /** « Propriétaire et modérateurs suppriment » (§2.3) — et celui qui a posé. */
+  /**
+   * `PATCH /albums/:id` — la photo de couverture d'un album.
+   *
+   * L'ÉQUIPE seule (propriétaire, modérateurs), comme la création d'un album :
+   * la couverture représente l'album à tous les membres. La photo doit
+   * appartenir à CET album et ne pas être retirée (404 sinon, indistinguable
+   * d'une photo absente). `null` revient à la plus récente.
+   */
+  async setAlbumCover(albumId: string, userId: string, coverPhotoId: string | null): Promise<void> {
+    const album = await this.prisma.album.findUnique({
+      where: { id: albumId },
+      select: { id: true, communityId: true },
+    });
+    if (album === null) throw ApiError.notFound();
+    const access = await this.load(album.communityId, userId);
+    this.assertModerator(access);
+    this.assertWritable(access);
+    if (coverPhotoId !== null) {
+      const photo = await this.prisma.albumPhoto.findFirst({
+        where: { id: coverPhotoId, albumId, deletedAt: null },
+        select: { id: true },
+      });
+      if (photo === null) throw ApiError.notFound();
+    }
+    await this.prisma.album.update({ where: { id: albumId }, data: { coverPhotoId } });
+  }
+
   async deletePhoto(albumId: string, photoId: string, userId: string): Promise<void> {
     const photo = await this.prisma.albumPhoto.findFirst({
       where: { id: photoId, albumId, deletedAt: null },
@@ -2928,6 +3217,9 @@ export class CommunitiesService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.albumPhoto.update({ where: { id: photo.id }, data: { deletedAt: new Date() } });
+      // Un retrait est un `deletedAt`, pas une suppression : la clé étrangère ne
+      // remet donc pas la couverture à nul d'elle-même. On le fait ici.
+      await tx.album.updateMany({ where: { id: albumId, coverPhotoId: photo.id }, data: { coverPhotoId: null } });
       if (isModerator && photo.uploadedByUserId !== userId) {
         await this.audit.record(tx, {
           actor: { type: 'MEMBER', id: userId },

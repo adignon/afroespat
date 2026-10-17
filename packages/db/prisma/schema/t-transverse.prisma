@@ -103,6 +103,7 @@ model MediaAsset {
   guideMedia       GuideMedia[]
   storyBackgrounds Story[]        @relation("StoryBackground")
   communityCovers  Community[]    @relation("CommunityCover")
+  communityLogos   Community[]    @relation("CommunityLogo")
   albumPhotos      AlbumPhoto[]
   messages         Message[]
   eventCovers      Event[]        @relation("EventCover")

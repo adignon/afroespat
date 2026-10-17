@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScreenFrames } from '@/screens/frames';
 import { Modal } from '@/components/modal';
 import { A01Desktop } from '@/screens/a01/desktop.generated';
@@ -11,6 +11,7 @@ import { A01PDesktop } from '@/screens/a01p/desktop.generated';
 import { A01PMobile } from '@/screens/a01p/mobile.generated';
 import { A01GDesktop } from '@/screens/a01g/desktop.generated';
 import { A01GMobile } from '@/screens/a01g/mobile.generated';
+import { useSondageGuides } from '@/screens/a01/use-sondage-guides';
 import { A01SDesktop } from '@/screens/a01s/desktop.generated';
 import { A01SMobile } from '@/screens/a01s/mobile.generated';
 import {
@@ -25,10 +26,7 @@ import {
 import { shareContactsDe, shareButtonFor } from '@/screens/a01p/data';
 import { shareOut as SORTIES } from '@/screens/a01/data';
 import { useMesReseaux } from '@/screens/accueil/use-mes-reseaux';
-import { useGuides } from '@/screens/guides/use-guides';
-import { useRechercheGuides } from '@/screens/guides/use-recherche-guides';
-import { guidesLiablesDe } from '@/screens/guides/from-api';
-import { FEED_LIMITS, POLL_OPTIONS_MAX, PostType as POST_TYPES } from '@app/shared';
+import { FEED_LIMITS, PostType as POST_TYPES } from '@app/shared';
 import { ApiError } from '@/lib/api/index';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
@@ -151,25 +149,11 @@ export default function FeedPage() {
   /**
    * ── L'ORDRE DES DÉCLARATIONS N'EST PAS DÉCORATIF ──────────────────────────
    *
-   * `onPublier` lit le sondage et les guides liés : ils se déclarent donc AVANT
-   * lui. `tsc` l'a dit — « Block-scoped variable used before its declaration » —
-   * et c'est exactement ce qu'on attend d'un type : le composeur, son sondage et
-   * ses guides sont UN état, et il doit se lire d'un seul tenant.
-   */
-  const [sondage, setSondage] = useState<{
-    question: string;
-    options: readonly string[];
-    jours: number;
-    multiple: boolean;
-    apresVote: boolean;
-    anonyme: boolean;
-  } | null>(null);
-  /**
-   * DÉCLARÉ ICI, ET NON PLUS BAS. `onValiderSondage` et « Lier un guide » lisent
-   * `edition` pour savoir dans QUEL brouillon écrire, et les deux sont déclarés
-   * au-dessus. Une `const` lue avant sa ligne n'est pas `undefined` : c'est une
-   * erreur d'exécution — le même piège que `guidesParId` avait déjà coûté une
-   * page blanche sur cet écran.
+   * `edition` se déclare AVANT `useSondageGuides` (juste en dessous), parce que
+   * ses deux rappels lisent `edition` pour savoir dans QUEL brouillon écrire ;
+   * et le crochet se déclare avant `onPublier` et `data`, qui le lisent. Une
+   * `const` lue avant sa ligne n'est pas `undefined` : c'est une erreur
+   * d'exécution — ce piège avait déjà coûté une page blanche sur cet écran.
    */
   /**
    * ╔═══════════════════════════════════════════════════════════════════════╗
@@ -209,6 +193,64 @@ export default function FeedPage() {
     } | null;
   } | null>(null);
   const [editionEnCours, setEditionEnCours] = useState(false);
+
+  /**
+   * ╔═══════════════════════════════════════════════════════════════════════╗
+   * ║ LE SONDAGE ET LES GUIDES LIÉS — `useSondageGuides`, LA LOGIQUE UNIQUE    ║
+   * ╚═══════════════════════════════════════════════════════════════════════╝
+   *
+   * Cette page portait sa propre copie de l'état des fenêtres A01S et A01G ; le
+   * composeur mobile et celui d'un réseau en portaient deux autres. Le porteur :
+   * « réunis-les ». Le crochet garde le brouillon, le sondage retenu, la
+   * sélection des guides et les prises des deux fenêtres ; cette page ne garde
+   * que ce qui lui est propre :
+   *
+   *   · la FENÊTRE OUVERTE — `open` porte aussi A01C et A01P, d'où le contrôle
+   *     passé au crochet ;
+   *   · la MODIFICATION d'une publication — valider un sondage ou lier des guides
+   *     écrit alors dans le brouillon d'édition (`edition`), pas dans le
+   *     composeur. Sans ce branchement, modifier une publication aurait posé le
+   *     sondage sur la publication SUIVANTE.
+   */
+  const pieces = useSondageGuides({
+    fenetre: open === 'A01S' || open === 'A01G' ? open : null,
+    setFenetre: setOpen,
+    surValiderSondage: (retenu) => {
+      if (edition === null) return false;
+      setEdition((e) =>
+        e === null
+          ? null
+          : {
+              ...e,
+              sondage: { question: retenu.question, options: retenu.options, retirable: true },
+              sondageRetire: false,
+              sondageNeuf: {
+                question: retenu.question,
+                options: retenu.options,
+                isMultiple: retenu.multiple,
+                resultsAfterVote: retenu.apresVote,
+                isAnonymous: retenu.anonyme,
+              },
+            },
+      );
+      return true;
+    },
+    surLierGuides: (ids, titreConnu) => {
+      if (edition === null) return false;
+      setEdition((e) =>
+        e === null
+          ? null
+          : {
+              ...e,
+              guides: ids.map((id) => ({
+                id,
+                titre: titreConnu(id) ?? e.guides.find((g) => g.id === id)?.titre ?? 'Guide lié',
+              })),
+            },
+      );
+      return true;
+    },
+  });
   /**
    * LA PUBLICATION DONT ON DEMANDE LA SUPPRESSION, ou `null`.
    *
@@ -226,18 +268,6 @@ export default function FeedPage() {
    */
   const [signalement, setSignalement] = useState<{ type: string; id: string } | null>(null);
   const [suppressionEnCours, setSuppressionEnCours] = useState(false);
-
-  const [sondageBrouillon, setSondageBrouillon] = useState<{
-    question: string;
-    options: readonly string[];
-    jours: number;
-  }>({ question: '', options: ['', ''], jours: 3 });
-  const [sondageMultiple, setSondageMultiple] = useState(false);
-  /** Les deux défauts sont l'ancien comportement : masqué avant vote, anonyme. */
-  const [sondageApresVote, setSondageApresVote] = useState(true);
-  const [sondageAnonyme, setSondageAnonyme] = useState(true);
-  const [guidesChoisis, setGuidesChoisis] = useState<readonly string[]>([]);
-  const [guidesLies, setGuidesLies] = useState<readonly string[]>([]);
 
   const [composeurTexte, setComposeurTexte] = useState('');
   const { peut } = useCapacites();
@@ -328,24 +358,9 @@ export default function FeedPage() {
         type: POST_TYPES[postType] ?? 'DISCUSSION',
         body: corps,
         ...(imagesJointes.length === 0 ? {} : { mediaIds: imagesJointes.map((im) => im.id) }),
-        /**
-         * LE SONDAGE PART AVEC LA PUBLICATION. `closesAt` est calculé à l'ENVOI,
-         * pas au moment où l'on choisit la durée : « 3 jours » veut dire trois
-         * jours à partir de la publication, et un composeur peut rester ouvert.
-         */
-        ...(sondage === null
-          ? {}
-          : {
-              poll: {
-                question: sondage.question,
-                options: [...sondage.options],
-                isMultiple: sondage.multiple,
-                resultsAfterVote: sondage.apresVote,
-                isAnonymous: sondage.anonyme,
-                closesAt: new Date(Date.now() + sondage.jours * 86_400_000),
-              },
-            }),
-        ...(guidesLies.length === 0 ? {} : { guideIds: [...guidesLies] }),
+        // Le sondage et les guides liés partent avec la publication ; `closesAt`
+        // est calculé À L'ENVOI (« 3 jours » = à partir de la publication).
+        ...pieces.piece(),
       })
       .then((echec) => {
         if (echec !== null) {
@@ -354,106 +369,12 @@ export default function FeedPage() {
         }
         setComposeurTexte('');
         setImagesJointes([]);
-        setSondage(null);
-        setSondageBrouillon({ question: '', options: ['', ''], jours: 3 });
-        setSondageMultiple(false);
-        setSondageApresVote(true);
-        setSondageAnonyme(true);
-        setGuidesLies([]);
+        pieces.vider();
         notifySuccess('Publication envoyée.');
       })
       .finally(() => setEnvoiEnCours(false));
-  }, [composeurTexte, envoiEnCours, fil, guidesLies, imagesJointes, peut, postType, sondage]);
+  }, [composeurTexte, envoiEnCours, fil, imagesJointes, peut, pieces, postType]);
 
-  /**
-   * ╔══════════════════════════════════════════════════════════════════════════╗
-   * ║ LE SONDAGE QU'ON COMPOSE — IL VIT SUR LE COMPOSEUR, PAS SUR LE SERVEUR  ║
-   * ╚══════════════════════════════════════════════════════════════════════════╝
-   *
-   * La fenêtre le COMPOSE ; « Publier » l'envoie, dans la même transaction que la
-   * publication. Deux appels laisseraient une publication dont la maquette promet
-   * un sondage et qui n'en a pas — et `PATCH /posts/:id` ne porte que le corps,
-   * donc rien ne rattraperait cet état.
-   *
-   * LES BORNES SONT CELLES DU MODULE 07 : question de 5 à 200 caractères, 2 à 8
-   * réponses. Elles sont lues dans `createPollSchema`, pas recopiées — la planche
-   * écrit « 2 à 5 » sous le titre « Options », ce qui est un écart avec le schéma
-   * du serveur ; on suit le SERVEUR, qui est ce qui refuse, et c'est REMONTÉ.
-   */
-
-  const majBrouillon = useCallback(
-    (patch: Partial<{ question: string; options: readonly string[]; jours: number }>): void =>
-      setSondageBrouillon((courant) => ({ ...courant, ...patch })),
-    [],
-  );
-
-  const sondageOptions = sondageBrouillon.options.map((texte, i) => ({
-    texte,
-    onTexte: (event: { target: { value: string } }): void =>
-      majBrouillon({
-        options: sondageBrouillon.options.map((o, j) => (j === i ? event.target.value : o)),
-      }),
-    onRetirer: (): void =>
-      majBrouillon({ options: sondageBrouillon.options.filter((_, j) => j !== i) }),
-    /** En dessous de deux réponses, ce n'est plus un sondage : la croix disparaît. */
-    retirable: sondageBrouillon.options.length > 2,
-  }));
-
-  /** Les quatre durées dessinées. L'allumée reprend le vert plein de la planche. */
-  const sondageDurees = [1, 3, 7, 14].map((jours) => ({
-    label: jours === 1 ? '1 jour' : `${String(jours)} jours`,
-    on: sondageBrouillon.jours === jours,
-    bg: sondageBrouillon.jours === jours ? '#fff' : 'transparent',
-    fg: sondageBrouillon.jours === jours ? '#0F5C48' : '#5D6B66',
-    onPick: (): void => majBrouillon({ jours }),
-  }));
-
-  const reponsesUtiles = sondageBrouillon.options.map((o) => o.trim()).filter((o) => o !== '');
-
-  const onValiderSondage = useCallback((): void => {
-    const question = sondageBrouillon.question.trim();
-    const reponses = sondageBrouillon.options.map((o) => o.trim()).filter((o) => o !== '');
-    if (question === '' || reponses.length < 2) return;
-    /**
-     * LA FENÊTRE DE MODIFICATION EST SERVIE EN PREMIER, quand elle est ouverte.
-     * La même fenêtre de sondage sert les deux composeurs ; sans ce branchement,
-     * modifier une publication aurait rempli le composeur du fil — un sondage posé
-     * sur la publication SUIVANTE, et rien sur celle qu'on modifiait.
-     */
-    if (edition !== null) {
-      setEdition((e) =>
-        e === null
-          ? null
-          : {
-              ...e,
-              sondage: { question, options: reponses, retirable: true },
-              sondageRetire: false,
-              sondageNeuf: {
-                question,
-                options: reponses,
-                isMultiple: sondageMultiple,
-                resultsAfterVote: sondageApresVote,
-                isAnonymous: sondageAnonyme,
-              },
-            },
-      );
-      setOpen(null);
-      notifySuccess('Sondage ajouté à votre publication.');
-      return;
-    }
-    setSondage({
-      question,
-      options: reponses,
-      jours: sondageBrouillon.jours,
-      multiple: sondageMultiple,
-      apresVote: sondageApresVote,
-      anonyme: sondageAnonyme,
-    });
-    setOpen(null);
-    notifySuccess('Sondage ajouté à votre publication.');
-  }, [edition, sondageAnonyme, sondageApresVote, sondageBrouillon, sondageMultiple]);
-
-  const onAnnulerSondage = useCallback((): void => setOpen(null), []);
 
   /**
    * ── LE COMMENTAIRE DE LA FENÊTRE A01C ─────────────────────────────────────
@@ -585,34 +506,6 @@ export default function FeedPage() {
 
   const close = useCallback((): void => setOpen(null), []);
 
-  /**
-   * CES DEUX-CI SONT DÉCLARÉS ICI, et non dans la section « LIER UN GUIDE » plus
-   * bas, parce que `data` les lit : `composeurGuides` a besoin du titre de chaque
-   * guide lié. Une `const` lue avant sa ligne de déclaration n'est pas `undefined`
-   * mais une erreur d'exécution — mesurée dans le navigateur :
-   * « ReferenceError: Cannot access 'eD' before initialization », page blanche.
-   * `tsc` ne l'avait pas vue : la lecture se fait dans un objet littéral, pas dans
-   * une fonction, et le contrôle de zone morte temporelle de TypeScript ne va pas
-   * jusque-là.
-   */
-  const guides = useGuides(0, open === 'A01G');
-  const [guideRecherche, setGuideRecherche] = useState('');
-  const rechercheGuides = useRechercheGuides(guideRecherche);
-
-  /**
-   * LE TITRE D'UN GUIDE LIÉ, pour son étiquette dans le composeur.
-   *
-   * La sélection ne porte que des identifiants ; le titre vient de la liste que la
-   * fenêtre a chargée. Si elle n'a pas été rouverte depuis, le titre manque — on
-   * écrit alors « Guide lié » plutôt que l'identifiant, qui ne dirait rien. Le
-   * serveur, lui, rend bien le titre sur la publication une fois publiée.
-   */
-  const guidesParId = useMemo(() => {
-    const table = new Map<string, string>();
-    for (const g of guides.page?.items ?? []) table.set(g.id, g.title);
-    return table;
-  }, [guides.page]);
-
   const data = {
     // ── Dessin : la maquette, inchangée ──
     rail,
@@ -626,35 +519,10 @@ export default function FeedPage() {
     onPublier,
     publierBloque: composeurTexte.trim() === '' || envoiEnCours,
     onAjouterImage,
-    // ── La fenêtre de sondage ──
-    sondageQuestion: sondageBrouillon.question,
-    onSondageQuestion: (event: { target: { value: string } }) =>
-      majBrouillon({ question: event.target.value }),
-    sondageOptions,
-    /**
-     * ── LE NOMBRE DE RÉPONSES EST BORNÉ, ET IL NE L'ÉTAIT PAS ──────────────
-     *
-     * Rien n'empêchait d'en ajouter dix : le serveur en refuse plus de huit
-     * (`createPollSchema`), donc le onzième clic préparait un refus que le membre
-     * n'aurait découvert qu'en publiant. Le bouton ne fait plus rien au plafond,
-     * ce qui est visible — la liste cesse de grandir.
-     */
-    onAjouterOption: () =>
-      majBrouillon({
-        options:
-          sondageBrouillon.options.length >= POLL_OPTIONS_MAX
-            ? sondageBrouillon.options
-            : [...sondageBrouillon.options, ''],
-      }),
-    sondageDurees,
-    sondageMultiple,
-    onSondageMultiple: () => setSondageMultiple((v) => !v),
-    sondageApresVote,
-    onSondageApresVote: () => setSondageApresVote((v) => !v),
-    sondageAnonyme,
-    onSondageAnonyme: () => setSondageAnonyme((v) => !v),
+    // ── La fenêtre de sondage : ses prises viennent de `useSondageGuides` ──
+    ...pieces.sondageFenetre,
     // ── Le composeur GARNI, tel que la planche A01·S le dessine ──
-    composeurGarni: imagesJointes.length > 0 || sondage !== null || guidesLies.length > 0,
+    composeurGarni: imagesJointes.length > 0 || pieces.sondage !== null || pieces.guidesLies.length > 0,
     composeurImages: imagesJointes.map((im, rang) => ({
       /**
        * L'IMAGE DÉPOSÉE, ET NON LE HACHURAGE. La planche dessine un rectangle rayé
@@ -672,38 +540,30 @@ export default function FeedPage() {
     composeurImagesCompte: `${String(imagesJointes.length)} / ${String(FEED_LIMITS.postMediaMax)}`,
     composeurAjoutBloque: imagesJointes.length >= FEED_LIMITS.postMediaMax,
     composeurSondage:
-      sondage === null
+      pieces.sondage === null
         ? null
         : {
-            question: sondage.question,
-            options: sondage.options,
-            /**
-             * LA LIGNE GRISE EST COMPOSÉE DES RÉGLAGES RÉELS, pas du texte de la
-             * planche : « 3 jours · résultats après le vote · anonyme » y est un
-             * exemple. Elle dit ce que le sondage FERA.
-             */
-            meta: [
-              sondage.jours === 1 ? '1 jour' : `${String(sondage.jours)} jours`,
-              sondage.apresVote ? 'résultats après le vote' : 'résultats visibles tout de suite',
-              sondage.anonyme ? 'anonyme' : 'votants nommés',
-              ...(sondage.multiple ? ['plusieurs réponses'] : []),
-            ].join(' · '),
+            question: pieces.sondage.question,
+            options: pieces.sondage.options,
+            /** La ligne grise dit ce que le sondage FERA — composée par le crochet. */
+            meta: pieces.sondageMeta,
             onModifier: () => setOpen('A01S'),
-            onRetirer: () => setSondage(null),
+            onRetirer: pieces.retirerSondage,
           },
-    composeurGuides: guidesLies.map((id) => ({
-      titre: guidesParId.get(id) ?? 'Guide lié',
-      retirer: `Retirer ${guidesParId.get(id) ?? 'ce guide'}`,
+    composeurGuides: pieces.guidesLies.map((id) => ({
+      titre: pieces.titreGuide(id),
+      retirer: `Retirer ${pieces.titreGuide(id)}`,
       onRetirer: () => {
-        setGuidesLies((c) => c.filter((x) => x !== id));
-        setGuidesChoisis((c) => c.filter((x) => x !== id));
+        pieces.retirerGuide(id);
       },
     })),
     composeurPastilles: {
-      sondage: pastilleDe(sondage === null ? 0 : 1, 'Sondage', 'Créer un sondage'),
+      sondage: pastilleDe(pieces.sondage === null ? 0 : 1, 'Sondage', 'Créer un sondage'),
       guides: pastilleDe(
-        guidesLies.length,
-        guidesLies.length === 1 ? '1 guide lié' : `${String(guidesLies.length)} guides liés`,
+        pieces.guidesLies.length,
+        pieces.guidesLies.length === 1
+          ? '1 guide lié'
+          : `${String(pieces.guidesLies.length)} guides liés`,
         'Lier un guide',
       ),
       images: pastilleDe(
@@ -712,9 +572,6 @@ export default function FeedPage() {
         'Ajouter une image',
       ),
     },
-    onValiderSondage,
-    onAnnulerSondage,
-    sondageBloque: sondageBrouillon.question.trim() === '' || reponsesUtiles.length < 2,
     mTabs,
     mBottom,
     // ── Donnée : l'API ──
@@ -1094,16 +951,13 @@ export default function FeedPage() {
   const onSondageEdition = (): void => {
     if (edition === null) return;
     const actuel = edition.sondageRetire ? null : edition.sondage;
-    majBrouillon({
-      question: actuel?.question ?? '',
-      options: actuel === null ? ['', ''] : [...actuel.options],
-    });
+    pieces.semerSondage(actuel?.question ?? '', actuel === null ? [] : actuel.options);
     setOpen('A01S');
   };
 
   const onGuidesEdition = (): void => {
     if (edition === null) return;
-    setGuidesChoisis(edition.guides.map((g) => g.id));
+    pieces.semerGuides(edition.guides.map((g) => g.id));
     setOpen('A01G');
   };
 
@@ -1359,123 +1213,16 @@ export default function FeedPage() {
   };
 
   /**
-   * LA FENÊTRE « LIER UN GUIDE ».
+   * LA FENÊTRE « LIER UN GUIDE » — ses prises viennent de `useSondageGuides`.
    *
-   * Les RÉSULTATS sont de vrais guides — `GET /guides`, par `useGuides` — et la
-   * requête ne part QUE lorsque la fenêtre s'ouvre (`actif`), parce qu'un panneau
-   * que le membre n'ouvre pas n'a aucune raison de coûter un appel à chaque
-   * affichage du fil.
-   *
-   * Les SUGGÉRÉS arrivent VIDES, et c'est mesuré, pas oublié : aucune route ne rend
-   * des guides « suggérés pour cette publication ». Les remplir des mêmes cartes
-   * que les résultats afficherait chaque guide deux fois, dont une sous une pastille
-   * « Suggéré » que rien ne justifie. Une section vide sous son titre se voit ; une
-   * fausse suggestion, non. REMONTÉ au rapport de lot.
-   *
-   * Ce qui n'est PAS branché non plus, et ne peut pas l'être : L'ENVOI. La sélection
-   * ne va nulle part — `createPostSchema` est `.strict()` et n'a pas de `guideIds`,
-   * donc `POST /posts` refuserait un guide lié. Les cases à cocher et « Lier 2
-   * guides » restent du dessin.
+   * Les RÉSULTATS sont de vrais guides (`GET /guides`), chargés seulement quand la
+   * fenêtre s'ouvre ; la recherche remplace la liste. Les SUGGÉRÉS arrivent VIDES :
+   * aucune route ne rend de guides « suggérés pour cette publication ». La
+   * sélection part avec la publication (`guideIds`), dans la même transaction —
+   * ou, depuis la fenêtre de modification, dans le brouillon d'édition.
    */
-  /**
-   * ╔══════════════════════════════════════════════════════════════════════════╗
-   * ║ LES GUIDES LIÉS — LA SÉLECTION N'ALLAIT NULLE PART                      ║
-   * ╚══════════════════════════════════════════════════════════════════════════╝
-   *
-   * La fenêtre cherchait DÉJÀ dans de vrais guides. Ce qui manquait était en
-   * dessous : `createPostSchema` n'avait pas de `guideIds` et `posts` aucune
-   * relation vers un guide. Les deux existent depuis la migration
-   * `20261007040000_sondage_et_guides_sur_publication`.
-   *
-   * COMME LE SONDAGE, la sélection vit sur le COMPOSEUR : c'est « Publier » qui
-   * l'envoie, dans la même transaction que la publication.
-   *
-   * `guidesChoisis` est le brouillon de la fenêtre ; `guidesLies` est ce qui est
-   * validé. Les séparer permet d'annuler sans perdre ce qui était déjà lié.
-   */
-
-  const basculerGuide = useCallback((id: string): void => {
-    setGuidesChoisis((courant) =>
-      courant.includes(id)
-        ? courant.filter((x) => x !== id)
-        : // « Jusqu'à 3 » : la borne de la maquette, tenue ici AUSSI pour que le
-          // quatrième clic ne fasse rien plutôt que d'être écarté en silence
-          // par le serveur.
-          courant.length >= FEED_LIMITS.postGuidesMax
-          ? courant
-          : [...courant, id],
-    );
-  }, []);
-
-  const lierGuide = {
-    guidesSuggeres: [],
-    guideRecherche,
-    onGuideRecherche: (event: { target: { value: string } }): void => {
-      setGuideRecherche(event.target.value);
-    },
-    /**
-     * ╔══════════════════════════════════════════════════════════════════════════╗
-     * ║ LA RECHERCHE REMPLACE LA LISTE, ELLE NE S'Y AJOUTE PAS                  ║
-     * ╚══════════════════════════════════════════════════════════════════════════╝
-     *
-     * `resultats === null` veut dire « on ne cherche pas » — moins de deux
-     * caractères, la borne du serveur. La liste du moment reste alors affichée,
-     * ce qui est l'état de départ de la fenêtre.
-     *
-     * Dès qu'on cherche, c'est le RÉSULTAT qui s'affiche, même vide : mêler les
-     * deux montrerait des guides qui ne correspondent pas à ce qu'on vient de
-     * taper, et on ne saurait plus lesquels sont la réponse.
-     *
-     * LA SÉLECTION SURVIT à la recherche : `guidesChoisis` ne porte que des
-     * identifiants, et un guide coché reste coché qu'il figure ou non dans le
-     * résultat courant.
-     */
-    guidesTrouves:
-      rechercheGuides.resultats !== null
-        ? rechercheGuides.resultats.map((g) => ({
-            titre: g.titre,
-            meta: g.meta,
-            guideId: g.id,
-            choisi: guidesChoisis.includes(g.id),
-            onPick: (): void => {
-              basculerGuide(g.id);
-            },
-          }))
-        : guides.page === null
-          ? []
-          : guidesLiablesDe(guides.page, guidesChoisis, basculerGuide),
-    onLierGuides: (): void => {
-      /** Même raison que pour le sondage : la fenêtre sert les deux composeurs. */
-      if (edition !== null) {
-        setEdition((e) =>
-          e === null
-            ? null
-            : {
-                ...e,
-                guides: guidesChoisis.map((id) => ({
-                  id,
-                  titre: guidesParId.get(id) ?? e.guides.find((g) => g.id === id)?.titre ?? 'Guide lié',
-                })),
-              },
-        );
-        setOpen(null);
-        notifySuccess(
-          `${String(guidesChoisis.length)} guide${guidesChoisis.length > 1 ? 's' : ''} lié${guidesChoisis.length > 1 ? 's' : ''} à votre publication.`,
-        );
-        return;
-      }
-      setGuidesLies(guidesChoisis);
-      setOpen(null);
-      notifySuccess(
-        `${String(guidesChoisis.length)} guide${guidesChoisis.length > 1 ? 's' : ''} lié${guidesChoisis.length > 1 ? 's' : ''} à votre publication.`,
-      );
-    },
-    onAnnulerGuides: (): void => {
-      setGuidesChoisis(guidesLies);
-      setOpen(null);
-    },
-    lierBloque: guidesChoisis.length === 0,
-  };
+  /** « Lier un guide » : les prises de A01G viennent de `useSondageGuides`. */
+  const lierGuide = pieces.guidesFenetre;
 
   return (
     <div onClick={onOpen}>

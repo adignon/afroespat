@@ -24,6 +24,14 @@ import {
   type ReseauEnteteView,
   type SourdineView,
 } from '../a08t/data';
+import {
+  actionsVides,
+  outilsVides,
+  sujetsVides,
+  type ActionsReseauView,
+  type OutilsReseauView,
+  type SujetsReseauView,
+} from '../a08t/vivant';
 
 /**
  * Une ligne de sujet.
@@ -69,6 +77,11 @@ export interface TopicRowView {
   readonly stBg: string;
   readonly stFg: string;
   readonly topicId: string;
+  /**
+   * `/reseaux/:slug/sujets/:id` — la page A09, à laquelle RIEN ne menait : les
+   * rangées étaient des `<div>`. Composée par le crochet, qui connaît le slug.
+   */
+  readonly href: string;
 }
 
 /**
@@ -147,8 +160,17 @@ export interface A08Data {
    * Le type vient de `a08t/data.ts` et n'est pas redéclaré : c'est la MÊME prise,
    * remplie par le MÊME hook, et les six planches d'onglet la lisent aussi. Deux
    * déclarations de la même forme divergeraient au premier champ ajouté.
+   *
+   * ⚠ LE BOUTON N'EST PLUS LU PAR LES CADRES : depuis le lot « réseau vivant »,
+   * la sourdine vit dans le menu « Options » de l'en-tête (`actions`), et elle y
+   * est CONFIRMÉE. La prise reste parce que `useReseau` la calcule et que
+   * `actions` l'appelle — un état, un chemin.
    */
   sourdine: SourdineView;
+  /** Le lot « réseau vivant » : l'en-tête, la bande de l'équipe, la liste de sujets. */
+  actions: ActionsReseauView;
+  outils: OutilsReseauView;
+  sujets: SujetsReseauView;
 }
 
 export const shortcuts: readonly { name: string; sub: string; i: string; bg: string }[] = [];
@@ -163,4 +185,7 @@ export const a08Fallback: A08Data = {
   ownerActions,
   hrefGerer,
   topics,
+  actions: actionsVides,
+  outils: outilsVides,
+  sujets: sujetsVides,
 };

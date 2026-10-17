@@ -413,6 +413,14 @@ export const onboardingAdvanceSchema = z.object({
  */
 export const publicProfileResponseSchema = z
   .object({
+    /**
+     * L'IDENTIFIANT du membre. Le profil s'en passait ; « Signaler » (`POST
+     * /reports`, `subjectType: 'USER'`) et « Retirer des contacts » (`DELETE
+     * /me/connections/:userId`) le demandent tous deux. Ce n'est pas une donnée
+     * d'identité — la liste des membres d'un réseau le rend déjà. Un DÉFAUT pour
+     * la charge relevée avant ce champ.
+     */
+    userId: uuidSchema.nullable().default(null),
     handle: handleSchema,
     displayName: z.string(),
     avatarUrl: z.string().nullable(),
@@ -437,6 +445,32 @@ export const publicProfileResponseSchema = z
         eventsOrganized: z.number().int(),
       })
       .nullable(),
+    /**
+     * MA RELATION AVEC CE MEMBRE — `null` pour un lecteur anonyme.
+     *
+     * Le porteur : « même quand la demande est envoyée, le bouton affiche
+     * toujours “Envoyer une demande” ». Le profil ne disait rien de la relation,
+     * donc « Ajouter aux contacts » s'offrait à un contact comme à un inconnu.
+     *
+     *   · `SELF` — c'est mon propre profil ;
+     *   · `CONNECTED` — nous sommes en contact ;
+     *   · `REQUEST_SENT` — j'ai une demande en attente vers lui ;
+     *   · `REQUEST_RECEIVED` — il m'a envoyé une demande, `requestId` la nomme
+     *     pour que je l'accepte d'ici ;
+     *   · `NONE` — rien.
+     *
+     * C'est une donnée DU LECTEUR, pas du membre regardé : elle n'apprend rien
+     * sur son réseau à lui (la règle dure de 08 §3.2 tient). Un DÉFAUT et non un
+     * champ exigé : la charge relevée avant ce champ ne le porte pas.
+     */
+    relation: z
+      .object({
+        status: z.enum(['SELF', 'CONNECTED', 'REQUEST_SENT', 'REQUEST_RECEIVED', 'NONE']),
+        requestId: uuidSchema.nullable(),
+      })
+      .strict()
+      .nullable()
+      .default(null),
   })
   /**
    * `.strict()` — UN CHAMP DE PLUS SUR UNE ROUTE D'IDENTITÉ DOIT ARRÊTER.

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   COMMUNITY_CATEGORY_LABELS,
   COMMUNITY_MIN_INVITES,
@@ -9,9 +9,13 @@ import {
   type CommunityCategory,
   type CommunityDetailResponse,
   type CommunityVisibility,
+  handleSchema,
+  publicProfileResponseSchema,
 } from '@app/shared';
-import { sansAccent } from '../accueil/from-api';
-import { createCommunity } from './api';
+import { memberApi } from '@/lib/api/index';
+import { avatarColor, initials, sansAccent } from '../accueil/from-api';
+import { urlMedia } from '../../lib/api/base';
+import { createCommunity, uploadCommunityCover } from './api';
 import { echecDe, type ReseauEchec } from './echec';
 import { panelReseaux, rail } from './chrome';
 import type { A10Data, InviteeView } from '../a10/data';
@@ -135,12 +139,114 @@ export function useCreation(
   const [echec, setEchec] = useState<ReseauEchec | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [cree, setCree] = useState<CommunityDetailResponse | null>(null);
+  /**
+   * LA COUVERTURE CHOISIE — déposée DÈS le choix (`POST /media`, genre
+   * `EVENT_COVER`), rattachée à la création par `coverAssetId`. Déposer tout de
+   * suite donne l'aperçu, et fait échouer un fichier refusé (type, taille,
+   * antivirus) au moment où le membre le choisit, pas au clic « Créer ».
+   */
+  const [couverture, setCouverture] = useState<{ id: string; url: string } | null>(null);
+  const [couvertureOccupee, setCouvertureOccupee] = useState(false);
+  /** Le LOGO, même parcours que la couverture : déposé dès le choix, rattaché à la création. */
+  const [logo, setLogo] = useState<{ id: string; url: string } | null>(null);
+  const [logoOccupe, setLogoOccupe] = useState(false);
+  /**
+   * Le dépôt d'une image, commun aux deux zones : elles ne diffèrent que par
+   * l'état qu'elles remplissent.
+   */
+  const deposer = useCallback(
+    (
+      poser: (v: { id: string; url: string }) => void,
+      occuper: (v: boolean) => void,
+    ) =>
+      (e: { target: { files: FileList | null; value: string } }): void => {
+        const fichier = e.target.files?.[0];
+        e.target.value = '';
+        if (fichier === undefined) return;
+        occuper(true);
+        setEchec(null);
+        void uploadCommunityCover(fichier)
+          .then((media) => {
+            poser({ id: media.id, url: urlMedia(media.url) });
+          })
+          .catch((cause: unknown) => {
+            setEchec(echecDe(cause));
+          })
+          .finally(() => {
+            occuper(false);
+          });
+      },
+    [],
+  );
+  const onCouverture = useMemo(() => deposer(setCouverture, setCouvertureOccupee), [deposer]);
+  const onLogo = useMemo(() => deposer(setLogo, setLogoOccupe), [deposer]);
 
   /** DÉDOUBLONNÉ et en minuscules, comme le schéma partagé le fait avant de compter. */
   const handles = useMemo(
     () => [...new Set(choisis.map((h) => h.toLowerCase()))],
     [choisis],
   );
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════╗
+   * ║ « RECHERCHER PAR PSEUDO » — AU-DELÀ DES CONTACTS                      ║
+   * ╚══════════════════════════════════════════════════════════════════════╝
+   *
+   * Le champ ne filtrait QUE les contacts : un membre sans contact ne pouvait
+   * inviter personne, et le réseau ne se créait jamais (cinq invités exigés).
+   * Le porteur : « La création de réseau est dessinée aussi. »
+   *
+   * Un pseudo EXACT tapé dans le champ — avec ou sans « @ » — est maintenant
+   * cherché par `GET /users/:handle`, la route du profil public. C'est la seule
+   * recherche de personne qui ne fasse pas un ANNUAIRE : il faut connaître le
+   * pseudo, comme pour écrire à quelqu'un. Le serveur accepte d'inviter tout
+   * membre actif (`createCommunity` résout les pseudos lui-même et dit ceux
+   * qu'il n'a pas trouvés).
+   *
+   * Les personnes ainsi trouvées RESTENT dans la liste une fois la recherche
+   * effacée : sinon une invitée disparaîtrait de l'écran tout en restant
+   * comptée dans « 3 sur 5 ».
+   */
+  const [trouves, setTrouves] = useState<readonly InviteeView[]>([]);
+  useEffect(() => {
+    const brut = recherche.trim().replace(/^@/, '').toLowerCase();
+    if (!handleSchema.safeParse(brut).success) return;
+    if (candidats.some((c) => c.handle.toLowerCase() === brut)) return;
+    if (trouves.some((c) => c.handle.toLowerCase() === brut)) return;
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      void memberApi
+        .get(`/users/${encodeURIComponent(brut)}`, publicProfileResponseSchema, {
+          signal: ac.signal,
+        })
+        .then((p) => {
+          setTrouves((liste) =>
+            liste.some((c) => c.handle === p.handle)
+              ? liste
+              : [
+                  ...liste,
+                  {
+                    profil: `/@${p.handle}`,
+                    i: initials(p.displayName),
+                    name: p.displayName,
+                    sub: `@${p.handle}`,
+                    bg: avatarColor(p.handle),
+                    invited: false,
+                    btn: 'Inviter',
+                    btnBg: '#16785E',
+                    btnFg: '#fff',
+                    handle: p.handle,
+                  },
+                ],
+          );
+        })
+        .catch(() => undefined);
+    }, 350);
+    return () => {
+      window.clearTimeout(t);
+      ac.abort();
+    };
+  }, [recherche, candidats, trouves]);
 
   /**
    * LA RECHERCHE PORTE SUR LE PSEUDO **ET** SUR LE NOM.
@@ -157,11 +263,12 @@ export function useCreation(
    */
   const invitees: readonly InviteeView[] = useMemo(() => {
     const pris = new Set(handles);
-    const nu = sansAccent(recherche.trim());
+    const nu = sansAccent(recherche.trim().replace(/^@/, ''));
+    const tous = [...candidats, ...trouves];
     const retenus =
       nu === ''
-        ? candidats
-        : candidats.filter(
+        ? tous
+        : tous.filter(
             (c) => sansAccent(c.handle).includes(nu) || sansAccent(c.name).includes(nu),
           );
     return retenus.map((c) => {
@@ -174,7 +281,7 @@ export function useCreation(
         btnFg: invited ? '#0F5C48' : '#fff',
       };
     });
-  }, [candidats, handles, recherche]);
+  }, [candidats, trouves, handles, recherche]);
 
   const basculer = useCallback((handle: string) => {
     setChoisis((c) => (c.includes(handle) ? c.filter((h) => h !== handle) : [...c, handle]));
@@ -209,6 +316,8 @@ export function useCreation(
         category: categorie,
         visibility: visibilite,
         inviteHandles: handles,
+        ...(couverture === null ? {} : { coverAssetId: couverture.id }),
+        ...(logo === null ? {} : { logoAssetId: logo.id }),
       });
       setCree(reseau);
       apresCreation?.(reseau);
@@ -217,7 +326,7 @@ export function useCreation(
     } finally {
       setEnvoi(false);
     }
-  }, [apresCreation, categorie, description, handles, nom, visibiliteIndex]);
+  }, [apresCreation, categorie, couverture, description, handles, logo, nom, visibiliteIndex]);
 
   /**
    * CE QU'IL RESTE À FAIRE, EN UNE PHRASE QUI PEUT DISPARAÎTRE.
@@ -241,6 +350,12 @@ export function useCreation(
       invitees,
       nomValue: nom,
       onNomChange: (e) => setNom(e.target.value),
+      couvertureUrl: couverture?.url ?? null,
+      couvertureOccupee,
+      onCouverture,
+      logoUrl: logo?.url ?? null,
+      logoOccupe,
+      onLogo,
       nomMax: communityNameSchema.maxLength ?? 0,
       descriptionValue: description,
       onDescriptionChange: (e) => setDescription(e.target.value),
@@ -270,9 +385,16 @@ export function useCreation(
         void soumettre();
       },
       onFermer: () => surFermeture?.(),
-      creerPret: complet && !envoi,
-      creerFond: complet && !envoi ? CREER_ALLUME.fond : CREER_INACTIF.fond,
-      creerEncre: complet && !envoi ? CREER_ALLUME.encre : CREER_INACTIF.encre,
+      /**
+       * Une couverture — ou un logo — EN COURS de dépôt retient « Créer » :
+       * partir avant serait créer le réseau sans l'image que le membre vient de
+       * choisir.
+       */
+      creerPret: complet && !envoi && !couvertureOccupee && !logoOccupe,
+      creerFond:
+        complet && !envoi && !couvertureOccupee && !logoOccupe ? CREER_ALLUME.fond : CREER_INACTIF.fond,
+      creerEncre:
+        complet && !envoi && !couvertureOccupee && !logoOccupe ? CREER_ALLUME.encre : CREER_INACTIF.encre,
       invitesTexte: `${handles.length} sur ${COMMUNITY_MIN_INVITES}`,
       invitesBarre: `${Math.round((Math.min(handles.length, COMMUNITY_MIN_INVITES) / COMMUNITY_MIN_INVITES) * 100)}%`,
       invitesReste: reste === '' ? '' : `${reste} pour créer le réseau.`,
@@ -282,8 +404,14 @@ export function useCreation(
       basculer,
       categorie,
       complet,
+      couverture,
+      couvertureOccupee,
       description,
+      logo,
+      logoOccupe,
+      onLogo,
       envoi,
+      onCouverture,
       handles.length,
       invitees,
       nom,

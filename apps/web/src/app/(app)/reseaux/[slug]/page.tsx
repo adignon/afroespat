@@ -4,8 +4,8 @@ import { ReseauScreen } from './reseau-screen';
  * A08 et ses onglets. `/reseaux/:slug`
  *
  * Composant SERVEUR, pour la raison écrite dans `(app)/villes/page.tsx`.
- * `?onglet=` choisit la planche A08T, `?vue=proprietaire` bascule en vue
- * propriétaire — deux états du même réseau, donc la même URL.
+ * `?onglet=` choisit la planche A08T. La vue de l'équipe ne vient plus de
+ * l'adresse mais du rôle — voir plus bas.
  *
  * Le `slug` de la route descend jusqu'au client : c'est lui qui identifie le
  * réseau auprès de l'API. La fiche accepte indifféremment un slug ou un
@@ -46,11 +46,26 @@ export default async function Page({
    * COMPLET de A08 — la maquette dessine son onglet « Sujets » avec le rail — et
    * rien de cela ne change : seule la valeur par DÉFAUT bouge.
    */
+  /**
+   * ⚠ `?vue=proprietaire` N'EST PLUS LU. Il décidait SEUL des planches de
+   * l'équipe — n'importe qui, en le tapant, recevait la vue de gestion. La vue
+   * suit maintenant le rôle que la fiche du réseau porte (`myRole`), dans
+   * `reseau-screen.tsx`. Les liens qui l'écrivent encore restent valides : le
+   * paramètre est ignoré.
+   *
+   * `?section=` choisit l'entrée du rail de « Gérer » — « Vue d'ensemble »,
+   * « Demandes d'adhésion », « Signalements », « Paramètres ».
+   */
+  const section = query['section'];
   return (
     <ReseauScreen
       slug={slug}
       onglet={typeof onglet === 'string' ? onglet : 'fil'}
-      owner={query['vue'] === 'proprietaire'}
+      section={
+        section === 'demandes' || section === 'signalements' || section === 'parametres'
+          ? section
+          : 'ensemble'
+      }
     />
   );
 }

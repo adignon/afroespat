@@ -18,6 +18,8 @@ import {
   notificationPreferencesResponseSchema,
   plansResponseSchema,
   publicProfileResponseSchema,
+  mutualConnectionsResponseSchema,
+  type MutualConnectionsResponse,
   type BookmarkState,
   type BookmarkSubjectType,
   type MemberContentType,
@@ -29,7 +31,7 @@ import {
   type SanctionType,
   HELP_TYPE_LABELS,
 } from '@app/shared';
-import { ApiError, fetchMe, memberApi } from '@/lib/api/index';
+import { ApiError, fetchMe, hasAccessToken, memberApi, resumeSession } from '@/lib/api/index';
 import { fetchFeed } from '@/screens/accueil/api';
 import { feedPostsFrom } from '@/screens/accueil/from-api';
 import { fetchGuides } from '@/screens/guides/api';
@@ -118,6 +120,7 @@ import type {
   OngletEnregistres,
   PastilleNiveau,
 } from './data';
+import { CONTACT_AU_REPOS } from './data';
 
 /**
  * LES APPELS DES ÉCRANS K01 À K10 — un chargeur par écran, et rien d'autre.
@@ -501,6 +504,18 @@ export async function chargerK02(
   onglet: MemberContentType = 'GUIDE',
   onChoisir: (cle: MemberContentType) => void = () => undefined,
 ): Promise<K02Data> {
+  /**
+   * LA SESSION D'ABORD, AVANT LES NEUF APPELS.
+   *
+   * Sur un chargement direct (lien partagé, rechargement), le jeton d'accès n'est
+   * pas encore en mémoire : les appels partaient ANONYMES. Pour `/me`, le `401`
+   * déclenche un rafraîchissement et une relance ; mais `GET /users/:handle`
+   * rend `404` à un anonyme quand le profil n'est pas public — un refus que
+   * rien ne relance. Mesuré : le profil d'un membre affichait « Ce contenu
+   * n'existe pas » au premier chargement, et marchait en y revenant par le menu.
+   * Même reprise que la page d'un réseau (`use-reseau.ts`).
+   */
+  if (!hasAccessToken()) await resumeSession();
   const [
     me,
     membre,
@@ -511,6 +526,7 @@ export async function chargerK02(
     evenements,
     annonces,
     parcours,
+    commun,
   ] = await Promise.all([
     fetchMe(),
     memberApi.get(`/users/${encodeURIComponent(pseudo)}`, publicProfileResponseSchema),
@@ -594,11 +610,25 @@ export async function chargerK02(
           .then((page) => page.items.map(carteParcoursPublic))
           .catch(() => [])
       : Promise.resolve([]),
+    /**
+     * CE QUE NOUS AVONS EN COMMUN — contacts et réseaux. `null` en cas d'échec :
+     * la ligne se tait plutôt que d'affirmer « 0 en commun ».
+     */
+    memberApi
+      .get(
+        `/users/${encodeURIComponent(sansArobase(pseudo))}/mutual-connections`,
+        mutualConnectionsResponseSchema,
+      )
+      .catch(() => null),
   ]);
 
   return {
     moi: bandeauDe(me, demandes),
-    membre: vueMembre(membre),
+    membre: vueMembre(membre, commun),
+    relation: membre.relation,
+    contact: CONTACT_AU_REPOS,
+    options: [],
+    optionsMobile: [],
     contenuOnglets: ongletsContenu(onglet, contenu.meta.parType, onChoisir),
     contenus: contenu.items.map((c) => ({
       id: c.id,
@@ -638,7 +668,10 @@ export async function chargerK02(
   };
 }
 
-function vueMembre(m: PublicProfileResponse): K02Data['membre'] {
+function vueMembre(
+  m: PublicProfileResponse,
+  commun: MutualConnectionsResponse | null,
+): K02Data['membre'] {
   return {
     nom: m.displayName,
     /** Le titre de la fenêtre d'ajout aux contacts : « Ajouter Fatou aux contacts ». */
@@ -651,7 +684,8 @@ function vueMembre(m: PublicProfileResponse): K02Data['membre'] {
     ville: m.city?.name ?? '—',
     pays: m.country.nameFr,
     depuis: String(new Date(m.memberSince).getFullYear()),
-    bio: m.bio ?? '—',
+    // Vide et non « — » : le téléphone ne dessine la bio que si elle existe.
+    bio: m.bio ?? '',
     aides: enumeration(m.helpTypes.map((h) => AIDES_FR[h])),
     entraides: m.stats?.helpValidatedCount ?? 0,
     /**
@@ -662,7 +696,28 @@ function vueMembre(m: PublicProfileResponse): K02Data['membre'] {
     guides: m.stats?.guideHelpfulVotes ?? 0,
     parrainages: m.stats?.mentorshipsCompleted ?? 0,
     evenements: m.stats?.eventsOrganized ?? 0,
+    etiquettes: [...m.skills.map((c) => c.nameFr), ...m.languages.map((l) => l.nameFr)],
+    disponible: m.availableToHelp,
+    commun: ligneEnCommun(commun),
+    userId: m.userId,
   };
+}
+
+/**
+ * « Connecté·e à 3 de vos contacts · 2 réseaux en commun » — chaque moitié
+ * n'apparaît que si son nombre est non nul, et la chaîne est VIDE sans rien en
+ * commun (la ligne disparaît). `null` : la route a faibli, on n'affirme rien.
+ */
+function ligneEnCommun(commun: MutualConnectionsResponse | null): string {
+  if (commun === null) return '';
+  const morceaux: string[] = [];
+  if (commun.count > 0) morceaux.push(`Connecté·e à ${commun.count} de vos contacts`);
+  if (commun.sharedCommunities > 0) {
+    morceaux.push(
+      `${commun.sharedCommunities} ${commun.sharedCommunities === 1 ? 'réseau' : 'réseaux'} en commun`,
+    );
+  }
+  return morceaux.join(' · ');
 }
 
 // ─── K03 · /compte/verification ──────────────────────────────────────────────
@@ -1443,7 +1498,14 @@ export const SQUELETTE_K02: K02Data = {
     guides: 0,
     parrainages: 0,
     evenements: 0,
+    etiquettes: [],
+    disponible: false,
+    commun: '',
+    userId: null,
   },
+  contact: CONTACT_AU_REPOS,
+  options: [],
+  optionsMobile: [],
 };
 
 export const SQUELETTE_K03: K03Data = {

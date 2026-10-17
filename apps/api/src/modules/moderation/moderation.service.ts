@@ -109,7 +109,7 @@ export interface ModerationCheckInput {
 
 export type SubjectType =
   | 'POST' | 'COMMENT' | 'TOPIC' | 'GUIDE' | 'HELP_REQUEST' | 'HELP_RESPONSE'
-  | 'HOUSING' | 'JOB' | 'PRO' | 'EVENT' | 'MESSAGE' | 'USER';
+  | 'HOUSING' | 'JOB' | 'PRO' | 'EVENT' | 'MESSAGE' | 'USER' | 'COMMUNITY';
 
 /**
  * Ce que `check()` rend. `blocked` est redondant avec `verdict` : c'est
@@ -804,6 +804,15 @@ export class ModerationService {
           select: { senderUserId: true },
         });
         return row?.senderUserId ?? null;
+      }
+      case 'COMMUNITY': {
+        // « Signaler le réseau » : le créateur répond du réseau qu'il a ouvert.
+        // Un réseau automatique n'en a pas — le dossier part sans auteur.
+        const row = await this.prisma.community.findUnique({
+          where: { id: subjectId },
+          select: { createdByUserId: true },
+        });
+        return row?.createdByUserId ?? null;
       }
       default:
         return null;

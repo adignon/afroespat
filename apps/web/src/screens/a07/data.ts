@@ -148,6 +148,15 @@ export interface A07Data {
    * carte, et `use-reseaux.ts` choisit.
    */
   onRejoindre: (slug: string, joined: boolean) => void;
+  /**
+   * LA PHRASE DU SEUIL DE CRÉATION, ou `null` quand on peut créer.
+   *
+   * La planche écrivait en dur « Variante sous le seuil : Les réseaux d'intérêt
+   * ouvrent à partir de 50 membres à Lyon (34 aujourd'hui). » — une NOTE de
+   * maquette, montrée à tout le monde. Elle vient maintenant de `creationGate`
+   * (seuil, ville et compte réels) et ne paraît que sous le seuil.
+   */
+  seuil: string | null;
 }
 
 export const shortcuts: readonly { name: string; sub: string; i: string; bg: string }[] = [];
@@ -166,4 +175,5 @@ export const a07Fallback: A07Data = {
    * satisfaire la forme que les deux cadres reçoivent, pas pour agir.
    */
   onRejoindre: () => {},
+  seuil: null,
 };

@@ -243,7 +243,113 @@ export interface E03Data {
   readonly moi: MoiAgenda;
   readonly panneau: PanneauAgenda;
   readonly ville: string;
+  /**
+   * LE FORMULAIRE, BRANCHÉ. Voir `FormulaireEvenementView`. Le porteur : « Créer
+   * un événement (qui est actuellement dessiné) » — les dix champs étaient des
+   * `<div>`, « Publier l'événement » un bouton sans geste.
+   */
+  readonly formulaire: FormulaireEvenementView;
 }
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE FORMULAIRE DE « CRÉER UN ÉVÉNEMENT » — E03 ET LA FENÊTRE DU RÉSEAU       ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * UN SEUL CONTRAT POUR DEUX PORTES : la page `/agenda/nouveau` et la fenêtre que
+ * l'onglet « Événements » d'un réseau ouvre (« Créer un événement du réseau »).
+ * Le porteur : « On peut faire le contrôleur des événements et le réutiliser en
+ * précisant le réseau id si dans un réseau. » `POST /events` porte DÉJÀ
+ * `communityId` (`createEventSchema`) et le service vérifie l'adhésion : il n'y
+ * avait rien à ajouter côté serveur, seulement à donner des champs à la planche.
+ *
+ * ── LES TYPES : LES HUIT DE `EventType`, PAS LES CINQ DESSINÉS ─────────────
+ *
+ * La maquette dessine cinq pastilles (Rencontre, Atelier, Sport, Fête,
+ * Démarches) qui ne recouvrent pas les huit valeurs du serveur, et l'en-tête de
+ * `07-agenda.mjs` le relevait déjà. La rangée lit donc les huit, dans les mots
+ * de `TYPES_FR` — les mots que l'agenda emploie déjà sur ses cartes. Aucun
+ * libellé n'est inventé, aucune correspondance devinée.
+ *
+ * ── LES DATES SONT SAISIES EN HEURE LOCALE DU NAVIGATEUR ──────────────────
+ *
+ * `datetime-local` rend « 2026-10-21T12:00 », sans fuseau. Le serveur attend un
+ * instant avec décalage (`instantSchema`) : la conversion se fait par
+ * `new Date(…)`, c'est-à-dire dans le fuseau du navigateur — celui de la
+ * personne qui organise, ce qui est le sens d'une heure saisie à la main.
+ */
+export interface FormulaireEvenementView {
+  readonly types: readonly {
+    readonly label: string;
+    readonly bg: string;
+    readonly fg: string;
+    readonly bd: string;
+    readonly onPick: () => void;
+  }[];
+  readonly titre: string;
+  readonly onTitre: (event: { readonly target: { readonly value: string } }) => void;
+  readonly description: string;
+  readonly onDescription: (event: { readonly target: { readonly value: string } }) => void;
+  /** Les villes ouvertes, et celle qui est choisie — ma ville par défaut. */
+  readonly villes: readonly { readonly id: string; readonly nom: string }[];
+  readonly villeId: string;
+  readonly onVille: (event: { readonly target: { readonly value: string } }) => void;
+  readonly lieu: string;
+  readonly onLieu: (event: { readonly target: { readonly value: string } }) => void;
+  readonly adresse: string;
+  readonly onAdresse: (event: { readonly target: { readonly value: string } }) => void;
+  readonly debut: string;
+  readonly onDebut: (event: { readonly target: { readonly value: string } }) => void;
+  readonly fin: string;
+  readonly onFin: (event: { readonly target: { readonly value: string } }) => void;
+  readonly capacite: string;
+  readonly onCapacite: (event: { readonly target: { readonly value: string } }) => void;
+  /** Mes réseaux ; `''` = ouvert à tous. FIGÉ quand on vient d'un réseau. */
+  readonly reseaux: readonly { readonly id: string; readonly nom: string }[];
+  readonly reseauId: string;
+  readonly onReseau: (event: { readonly target: { readonly value: string } }) => void;
+  readonly reseauFige: boolean;
+  /** « Ajouter une couverture » — le nom du fichier déposé, ou `''`. */
+  readonly couverture: string;
+  readonly onCouverture: (e: { target: { files: FileList | null; value: string } }) => void;
+  readonly bloque: boolean;
+  readonly onPublier: () => void;
+  /** Le refus du serveur, déjà en français — `TOO_SOON`, `TOO_FAR`, le quota. */
+  readonly echec: string;
+}
+
+const RIEN = (): void => {};
+
+/** Le formulaire inerte, pour les squelettes : tous les gestes sont sans effet. */
+export const formulaireVide: FormulaireEvenementView = {
+  types: [],
+  titre: '',
+  onTitre: RIEN,
+  description: '',
+  onDescription: RIEN,
+  villes: [],
+  villeId: '',
+  onVille: RIEN,
+  lieu: '',
+  onLieu: RIEN,
+  adresse: '',
+  onAdresse: RIEN,
+  debut: '',
+  onDebut: RIEN,
+  fin: '',
+  onFin: RIEN,
+  capacite: '',
+  onCapacite: RIEN,
+  reseaux: [],
+  reseauId: '',
+  onReseau: RIEN,
+  reseauFige: false,
+  couverture: '',
+  onCouverture: RIEN,
+  bloque: true,
+  onPublier: RIEN,
+  echec: '',
+};
 
 /**
  * Une ligne de la feuille de présence (E04).

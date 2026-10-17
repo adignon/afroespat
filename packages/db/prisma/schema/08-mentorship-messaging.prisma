@@ -185,7 +185,7 @@ model Connection {
   @@map("connections")
 }
 
-/// Demande manuelle de contact : motif obligatoire, même ville.
+/// Demande manuelle de contact : motif obligatoire. (La condition de « même ville » a été levée par le porteur — voir `ConnectionsService.request`.)
 model ConnectionRequest {
   id        String   @id @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz

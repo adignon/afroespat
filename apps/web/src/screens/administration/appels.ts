@@ -624,6 +624,7 @@ const SUJET_FR: Record<ReportSubjectType, string> = {
   EVENT: 'Événement',
   MESSAGE: 'Message',
   USER: 'Membre',
+  COMMUNITY: 'Réseau',
 };
 
 /**

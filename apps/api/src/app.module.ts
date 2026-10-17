@@ -19,6 +19,7 @@ import { ConsentsController } from './modules/consents/consents.controller';
 import { ConsentsService } from './modules/consents/consents.service';
 import {
   CommentsController,
+  CommunityPendingPostsController,
   FeedController,
   MyStoriesController,
   PostsController,
@@ -152,6 +153,7 @@ import {
     ReferentialsController,
     SearchController, NotificationsController, NotificationSettingsController,
     FeedController, PostsController, CommentsController, StoriesController, MyStoriesController,
+    CommunityPendingPostsController,
     MentorshipController, ConnectionsController, MessagingController, JourneysController,
     // Module 14 — les revenus. Le contrôleur membre porte aussi les deux webhooks
     // entrants (T4 §8), qui n'ont pas de membre et se déclarent `@SignedWebhook()`.

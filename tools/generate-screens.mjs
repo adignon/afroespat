@@ -10,6 +10,11 @@
  * Les fichiers produits portent `.generated.tsx` et ne se modifient pas à la main.
  */
 import { spawnSync } from 'node:child_process';
+import {
+  ADAPTATIONS_RESEAU_VIVANT,
+  AJOUTS_RESEAU_VIVANT,
+} from './adaptations/reseau-vivant.mjs';
+import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -16391,6 +16396,17 @@ const A08T_FIL_PUBLICATIONS = {
   provides: ['publications'],
   apply(jsx) {
     /**
+     * ⚠ SEULS LES CADRES QUI PORTENT LE COMPOSEUR SONT DES FILS — et sans cette
+     * garde, la carte blanche de 390 px se trouvait AUSSI sur « À propos » et
+     * sur « Gérer ». MESURÉ sur les cadres générés : la planche mobile
+     * « À propos » ne montrait plus ni sa description, ni ses règles, ni son
+     * équipe (ses cartes avaient été remplacées par la boucle des publications,
+     * vide), et celle de « Gérer » peignait des publications à la place des
+     * demandes d'adhésion. Le composeur (« Publier dans … ») est ce qui fait un
+     * fil ; les deux autres cadres comptent donc un `missed` attendu (piège 7).
+     */
+    if (!jsx.includes('>Publier dans ')) return { jsx, applied: false };
+    /**
      * L'OUVERTURE DE LA PREMIÈRE CARTE, UNE PAR LARGEUR — piège n° 1. Les deux
      * planches ne dessinent pas les mêmes mesures : rayon 22 et retrait 20 à
      * 1 036 px, rayon 20, retrait 14 et `flexShrink` à 390. Un seul motif
@@ -18190,6 +18206,23 @@ function adaptFields(jsx, section) {
      * emballé.
      */
     A09_MODERATION,
+    /**
+     * EN TOUT DERNIER — LE LOT « RÉSEAU VIVANT » (`tools/adaptations/reseau-vivant.mjs`).
+     *
+     * L'ordre compte et c'est pour cela qu'elles ferment la liste : leurs motifs
+     * sont écrits contre le JSX que les adaptations du module réseaux viennent de
+     * produire — la sourdine (`A08T_SOURDINE`), le lien « Gérer »
+     * (`A08T_GERER_LIEN`), les boucles de demandes, de membres et de
+     * signalements, la fenêtre de signalement posée par `A08T_GERER_SIGNALER`.
+     */
+    ...ADAPTATIONS_RESEAU_VIVANT,
+    /**
+     * PUIS LE LOT « PROFIL VIVANT » (`tools/adaptations/profil-vivant.mjs`) — K02,
+     * le profil d'un autre membre. Après tout le reste pour la même raison : ses
+     * motifs lisent des cadres déjà branchés (`data-modal-open="K02C"`,
+     * `onRecommander`). Il emprunte `MenuRond` au registre du lot réseau.
+     */
+    ...ADAPTATIONS_PROFIL_VIVANT,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -19291,6 +19324,26 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
     loopVars.add(`${m[1]}Index`);
   }
 
+  /**
+   * ── UN NOM SE CHERCHE DANS LE CODE, PAS DANS LA PROSE ───────────────────────
+   *
+   * Le test de survie ci-dessous lisait TOUT le JSX produit, textes compris. Or
+   * un mot français peut porter le nom d'une prise : le formulaire de E03 écrit
+   * « Choisir une ville » à l'endroit même où la maquette affichait `{{ ville }}`
+   * — la donnée était partie, le mot restait, et le cadre déclarait `ville` sans
+   * l'employer (mesuré : `no-unused-vars` sur e03/desktop.generated.tsx).
+   *
+   * On retire donc, pour CE test seulement, les chaînes entre guillemets droits
+   * et les textes JSX sans accolade (`>texte<`), ainsi que les NOMS d'attributs
+   * `data-…` et `aria-…` — `\b` voit un mot dans `data-evenement-ville`, et c'est
+   * lui, mesuré, qui retenait `ville`. Les gabarits entre accents
+   * graves restent : ils portent des `${…}` qui, eux, sont du code.
+   */
+  const codeSeul = producedJsx
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""')
+    .replace(/>[^<>{}]*</g, '><')
+    .replace(/\b(?:data|aria)-[\w-]+/g, '');
+
   const names = new Set();
   for (const m of frameHtml.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) {
     // La RACINE de l'expression : `r.hours` dépend de `r`, `seg(1)` de `seg`.
@@ -19309,7 +19362,7 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
      * le même commentaire : « on ne retient que ce qui figure réellement dans le
      * JSX produit ». Elle manquait ici.
      */
-    if (!new RegExp(`\\b${root}\\b`).test(producedJsx)) continue;
+    if (!new RegExp(`\\b${root}\\b`).test(codeSeul)) continue;
     names.add(root);
   }
 
@@ -19321,7 +19374,7 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
     // donc que ce qui figure réellement dans le JSX produit, sinon le composant
     // déclare une variable qu'il n'emploie pas, et le lint la refuse.
     for (const provided of field.provides ?? []) {
-      if (new RegExp(`\\b${provided}\\b`).test(producedJsx)) names.add(provided);
+      if (new RegExp(`\\b${provided}\\b`).test(codeSeul)) names.add(provided);
     }
     /**
      * ── TOUS LES IDENTIFIANTS DE L'EXPRESSION, PAS SEULEMENT LE PREMIER ────
@@ -19346,7 +19399,15 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
        * et `A14Data` ne les a pas.
        */
       for (const m of accolade[1].matchAll(/(?<![.\w$])[A-Za-z_$][\w$]*/g)) {
-        if (!loopVars.has(m[0]) && !JS_GLOBALS.has(m[0])) names.add(m[0]);
+        /**
+         * Et, comme pour les deux lectures du dessus, SEULEMENT si le nom survit
+         * dans le code produit : une adaptation de champ compte comme appliquée
+         * même quand une adaptation PLUS TARDIVE a réécrit son élément. Mesuré
+         * sur E03 — le `<select>` de ville du lot réseau remplace celui du champ
+         * d'origine, et `ville` restait déclarée sans emploi.
+         */
+        if (loopVars.has(m[0]) || JS_GLOBALS.has(m[0])) continue;
+        if (new RegExp(`\\b${m[0]}\\b`).test(codeSeul)) names.add(m[0]);
       }
     }
   }
@@ -19419,6 +19480,8 @@ const AJOUTS = {
    * pourrait pas dire QUEL sujet, et la page d'un réseau en a plusieurs.
    */
   FenetreSignalement: '@/components/fenetre-signalement',
+  /** Le lot « réseau vivant » — voir `tools/adaptations/reseau-vivant.mjs`. */
+  ...AJOUTS_RESEAU_VIVANT,
 };
 
 const HEADER = (

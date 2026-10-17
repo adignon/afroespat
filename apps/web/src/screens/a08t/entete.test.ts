@@ -69,6 +69,9 @@ const RESEAU: CommunityDetailResponse = {
   countryId: '22222222-2222-4222-8222-222222222222',
   memberCount: 890,
   coverAssetId: null,
+  coverUrl: null,
+  logoAssetId: null,
+  logoUrl: null,
   lastActivityAt: '2026-09-01T10:00:00.000Z',
   createdAt: '2025-01-01T10:00:00.000Z',
   myRole: 'MEMBER',
@@ -77,6 +80,11 @@ const RESEAU: CommunityDetailResponse = {
   /** §2.5 — ajouté au contrat par le lot « sourdine » (2026-10-11). */
   myMuted: false,
   canLeave: true,
+  /** Ajoutés au contrat par le lot « réseau vivant » (2026-10-12). */
+  rules: [],
+  settings: { postsRequireApproval: false, postsApprovalScope: 'FIRST_POSTS', postsApprovalCount: 1, pollsOpenToMembers: true, albumOpenToMembers: true },
+  stats: null,
+  team: [],
   counters: { members: 7, topics: 3, announcements: 1 },
   pinned: [],
 };

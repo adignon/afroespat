@@ -94,28 +94,25 @@ describe('contacts (08 §3)', () => {
   // ── §3.1 Demande manuelle ─────────────────────────────────────────────────
 
   /**
-   * RÈGLE DURE (§12) : « la demande de contact manuelle exige la même ville et un
-   * message ».
+   * LA CONDITION DE VILLE EST LEVÉE (décision du porteur, contre 08 §3.1 / §12).
    *
-   * Le message est porté par le schéma zod (20 à 500 caractères) ; la ville est une
-   * règle de service, et c'est celle-ci que le test protège.
-   *
-   * MUTATION éprouvée : en retirant le contrôle `me.cityId !== target.cityId` de
-   * `request()`, ce test tombe seul.
+   * Ce test remplace « exige la même ville — SAME_CITY_REQUIRED » : le porteur a
+   * demandé que « tout le monde » puisse être ajouté. Il fige le nouveau
+   * comportement — une demande vers une AUTRE ville, ou depuis un membre SANS
+   * ville, aboutit — pour qu'un retour silencieux de l'ancienne règle se voie.
+   * Le message, lui, reste obligatoire : c'est le schéma qui le tient.
    */
-  it('[RÈGLE DURE §12] exige la même ville — SAME_CITY_REQUIRED', async () => {
+  it('accepte une demande vers un membre d’une autre ville, ou sans ville', async () => {
     const from = await member();
-    const to = await member({ cityId: otherCityId });
+    const ailleurs = await member({ cityId: otherCityId });
+    const demande = await connections.request(from.id, { toHandle: ailleurs.handle, message: MESSAGE });
+    expect(demande).toBeDefined();
 
+    const nulle = await member({ cityId: null });
+    const autre = await member();
     await expect(
-      connections.request(from.id, { toHandle: to.handle, message: MESSAGE }),
-    ).rejects.toMatchObject({ code: 'SAME_CITY_REQUIRED' });
-
-    // Et sans ville du tout : on ne peut pas prétendre partager une ville absente.
-    const nowhere = await member({ cityId: null });
-    await expect(
-      connections.request(nowhere.id, { toHandle: to.handle, message: MESSAGE }),
-    ).rejects.toMatchObject({ code: 'SAME_CITY_REQUIRED' });
+      connections.request(nulle.id, { toHandle: autre.handle, message: MESSAGE }),
+    ).resolves.toBeDefined();
   });
 
   it('crée la demande dans la même ville, et émet `connection.requested`', async () => {

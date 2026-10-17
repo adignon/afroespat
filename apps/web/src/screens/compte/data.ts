@@ -70,6 +70,7 @@
  * est écrite dans `lib/api/session.ts`. On tente l'action, et c'est le serveur qui
  * répond `403 LEVEL_REQUIRED` avec de quoi afficher l'invitation du §7.3.
  */
+import type { PublicProfileResponse } from '@app/shared';
 import type { FeedPostView } from '../a01/data';
 import type { GuideCardView } from '../a03/data';
 import type { CarteEvenement } from '../agenda/data';
@@ -189,6 +190,36 @@ export interface K01Data {
 export type K01Lecture = Omit<K01Data, 'edition'>;
 
 /** K02 — le profil public d'un autre membre (`GET /users/{pseudo}`). */
+/** Le bouton de contact du profil visité — voir `K02Data.contact`. */
+export interface ContactProfilView {
+  readonly etat: 'aucune' | 'envoyee' | 'recue' | 'contact' | 'soi';
+  /** « Ajouter aux contacts » · « Demande envoyée » · « Accepter la demande » · « Dans vos contacts ». */
+  readonly libelle: string;
+  /** La forme courte du bouton mobile : « Ajouter » · « Envoyée » · « Accepter » · « Contact ». */
+  readonly libelleCourt: string;
+  readonly inactif: boolean;
+  readonly onAction: () => void;
+}
+
+/**
+ * Le bouton AU REPOS — squelette et lecture du serveur, avant que
+ * `ProfilContactVivant` n'y attache la relation et son geste. « aucune » montre
+ * le bouton de la maquette tel qu'il est dessiné.
+ */
+export const CONTACT_AU_REPOS: ContactProfilView = {
+  etat: 'aucune',
+  libelle: 'Ajouter aux contacts',
+  libelleCourt: 'Ajouter',
+  inactif: false,
+  onAction: () => undefined,
+};
+
+/** Une entrée du menu « ··· » du profil visité (la forme de `MenuRond`). */
+export interface EntreeOptionProfil {
+  readonly label: string;
+  readonly onClick?: (() => void) | undefined;
+}
+
 export interface K02Data {
   readonly moi: Bandeau;
   readonly membre: {
@@ -232,7 +263,38 @@ export interface K02Data {
     readonly guides: number;
     readonly parrainages: number;
     readonly evenements: number;
+    /**
+     * LES ÉTIQUETTES DU PROFIL — compétences PUIS langues, de `skills` et
+     * `languages`. La maquette écrivait « RH · CAF · Français · Wolof » en dur,
+     * servi à tous les membres.
+     */
+    readonly etiquettes: readonly string[];
+    /** `availableToHelp` : la pastille « Disponible pour aider » n'existe que s'il est vrai. */
+    readonly disponible: boolean;
+    /**
+     * « Connecté·e à 3 de vos contacts · 2 réseaux en commun », composé depuis
+     * `GET /users/:handle/mutual-connections` — chaîne VIDE quand il n'y a rien en
+     * commun, et la ligne disparaît alors. La maquette l'écrivait en dur.
+     */
+    readonly commun: string;
+    /** L'identifiant, pour « Signaler » et « Retirer des contacts ». `null` sur le squelette. */
+    readonly userId: string | null;
   };
+  /**
+   * LE BOUTON « AJOUTER AUX CONTACTS », SELON MA RELATION AVEC CE MEMBRE.
+   *
+   * Le porteur : « même quand la demande est envoyée, le bouton affiche toujours
+   * “Envoyer une demande” ». `etat` vient de `relation` (profil public) :
+   * `aucune` ouvre la fenêtre de la maquette ; `envoyee` et `contact` sont
+   * éteints ; `recue` accepte la demande qu'il m'a faite.
+   */
+  readonly contact: ContactProfilView;
+  /** `relation` du profil public, que `ProfilContactVivant` traduit en `contact`. */
+  readonly relation?: PublicProfileResponse['relation'];
+  /** Les entrées du menu « ··· » (ordinateur) — signaler, bloquer, retirer. */
+  readonly options: readonly EntreeOptionProfil[];
+  /** Les mêmes, précédées de « Recommander » : le téléphone ne dessine pas ce bouton. */
+  readonly optionsMobile: readonly EntreeOptionProfil[];
   /** « Recommander » — `POST /recommendations/members`. */
   readonly onRecommander?: () => void;
   readonly recommandeBloque?: boolean;

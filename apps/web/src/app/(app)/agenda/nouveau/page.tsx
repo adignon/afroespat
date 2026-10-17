@@ -1,6 +1,8 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { SQUELETTE_E03, chargerE03 } from '@/screens/agenda/appels';
+import { useFormulaireEvenement } from '@/screens/agenda/use-formulaire-evenement';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { E03Desktop } from '@/screens/e03/desktop.generated';
@@ -24,18 +26,25 @@ import { GardeNiveau } from '@/components/garde-niveau';
  * géolocalisée » que la maquette écrit — la règle dure de 09 §3.1. Elle n'est pas
  * liée : c'est du texte de RÈGLE, vrai pour tout le monde et en tout temps.
  *
- * CET ÉCRAN NE PEUT PAS ENCORE CRÉER, et il faut le dire plutôt que de le laisser
- * croire : la maquette dessine ses champs en `<div>`, pas en `<input>`. `POST
- * /events` et `createEventSchema` sont prêts — bornes de §3.1 comprises, titre
- * 5–120, début ≥ +2 h, ≤ 6 mois, adresse obligatoire — et attendent des contrôles
- * de saisie que la maquette ne dessine nulle part. Le sélecteur « Réservé à un
- * réseau » est le cas le plus net : `GET /communities` sait lister mes réseaux, la
- * maquette dessine une ligne fermée. Remonté au porteur.
+ * ⚠ CE PARAGRAPHE DISAIT « CET ÉCRAN NE PEUT PAS ENCORE CRÉER », ET CE N'EST PLUS
+ * VRAI. Les champs dessinés en `<div>` sont devenus leurs contrôles par
+ * `RV_E03_FORMULAIRE` (`tools/adaptations/reseau-vivant.mjs`), et l'état du
+ * formulaire vit dans `useFormulaireEvenement` — le même crochet que la fenêtre
+ * « Créer un événement du réseau » de l'onglet « Événements » d'un réseau. La
+ * ligne « Réservé à un réseau » liste mes réseaux (`GET /communities`, `mine`).
+ * Les bornes de §3.1 restent celles du serveur : son refus s'affiche tel quel.
  *
  * `charger` EST UNE FONCTION DE MODULE, donc stable : cet écran n'a aucun
  * paramètre de route, et il n'a pas besoin de `useCallback`.
  */
 export default function NewEventPage() {
+  const router = useRouter();
+  const formulaire = useFormulaireEvenement({
+    actif: true,
+    onCree: (id) => {
+      router.push(`/agenda/${id}`);
+    },
+  });
   return (
     <>
     <EcranDonnees
@@ -48,8 +57,8 @@ export default function NewEventPage() {
       {(donnees) => (
         <ScreenFrames
           screen="E03"
-          desktop={<E03Desktop {...donnees} />}
-          mobile={<E03Mobile {...donnees} />}
+          desktop={<E03Desktop {...donnees} formulaire={formulaire} />}
+          mobile={<E03Mobile {...donnees} formulaire={formulaire} />}
         />
       )}
     </EcranDonnees>
