@@ -248,9 +248,8 @@ const H06_FICHE = {
         n += 1;
       }
     }
-    const bouton = out.indexOf('<button style={{', out.indexOf('Demander comme'));
     const debut = out.lastIndexOf('<button', out.indexOf('Demander comme'));
-    if (debut >= 0 && bouton >= 0) {
+    if (debut >= 0) {
       const fin = finElement(out, debut);
       const ms = /style=\{\{ ([^}]*) \}\}/.exec(out.slice(debut, out.indexOf('>', debut) + 1));
       if (fin > 0 && ms !== null) {
