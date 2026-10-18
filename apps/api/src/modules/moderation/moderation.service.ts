@@ -825,6 +825,120 @@ export class ModerationService {
   // ════════════════════════════════════════════════════════════════════════
 
   /**
+   * Ce que l'ÉCRAN D'ÉQUIPE a besoin de lire pour décider : un extrait du contenu visé,
+   * le nom de l'auteur, le nom du modérateur assigné et le nombre de signalements.
+   *
+   * La file ne rendait que des UUID (« aucune route d'équipe ne joint le contenu visé
+   * au dossier » : D04 et D05 le disaient). Les noms sont ceux d'AFFICHAGE, jamais un
+   * numéro (15 §3.1). L'extrait est tronqué à 160 caractères dans la liste ; le détail
+   * rend le texte entier. Un message privé n'est PAS déchiffré ici : « ne permet de
+   * lire une conversation privée hors d'un dossier qui la joint » (15 §3.1), et la clé
+   * appartient au module messagerie — l'extrait dit seulement « Message privé ».
+   */
+  private async subjectText(type: string, id: string): Promise<{ title: string | null; text: string | null }> {
+    const cut = (v: string | null | undefined) => (v === null || v === undefined ? null : v);
+    switch (type) {
+      case 'POST': {
+        const r = await this.prisma.post.findUnique({ where: { id }, select: { body: true } });
+        return { title: null, text: cut(r?.body) };
+      }
+      case 'COMMENT': {
+        const r = await this.prisma.comment.findUnique({ where: { id }, select: { body: true } });
+        return { title: null, text: cut(r?.body) };
+      }
+      case 'TOPIC': {
+        const r = await this.prisma.topic.findUnique({ where: { id }, select: { title: true, body: true } });
+        return { title: r?.title ?? null, text: cut(r?.body) };
+      }
+      case 'GUIDE': {
+        const r = await this.prisma.guide.findUnique({ where: { id }, select: { title: true } });
+        return { title: r?.title ?? null, text: null };
+      }
+      case 'HELP_REQUEST': {
+        const r = await this.prisma.helpRequest.findUnique({ where: { id }, select: { title: true, body: true } });
+        return { title: r?.title ?? null, text: cut(r?.body) };
+      }
+      case 'HELP_RESPONSE': {
+        const r = await this.prisma.helpResponse.findUnique({ where: { id }, select: { body: true } });
+        return { title: null, text: cut(r?.body) };
+      }
+      case 'HOUSING': {
+        const r = await this.prisma.housingListing.findUnique({ where: { id }, select: { title: true } });
+        return { title: r?.title ?? null, text: null };
+      }
+      case 'JOB': {
+        const r = await this.prisma.jobListing.findUnique({ where: { id }, select: { title: true } });
+        return { title: r?.title ?? null, text: null };
+      }
+      case 'PRO': {
+        const r = await this.prisma.proProfile.findUnique({ where: { id }, select: { businessName: true, description: true } });
+        return { title: r?.businessName ?? null, text: cut(r?.description) };
+      }
+      case 'EVENT': {
+        const r = await this.prisma.event.findUnique({ where: { id }, select: { title: true, description: true } });
+        return { title: r?.title ?? null, text: cut(r?.description) };
+      }
+      case 'COMMUNITY': {
+        const r = await this.prisma.community.findUnique({ where: { id }, select: { name: true, description: true } });
+        return { title: r?.name ?? null, text: cut(r?.description) };
+      }
+      case 'USER': {
+        const r = await this.prisma.user.findUnique({ where: { id }, select: { displayName: true } });
+        return { title: r?.displayName ?? null, text: null };
+      }
+      case 'MESSAGE':
+        return { title: 'Message privé', text: null };
+      default:
+        return { title: null, text: null };
+    }
+  }
+
+  private async enrichCases(
+    rows: readonly {
+      id: string;
+      subjectType: string;
+      subjectId: string;
+      subjectAuthorUserId: string | null;
+      assignedStaffId: string | null;
+    }[],
+    full: boolean,
+  ) {
+    const userIds = [...new Set(rows.flatMap((r) => (r.subjectAuthorUserId === null ? [] : [r.subjectAuthorUserId])))];
+    const staffIds = [...new Set(rows.flatMap((r) => (r.assignedStaffId === null ? [] : [r.assignedStaffId])))];
+    const [users, staff, counts] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, handle: true, displayName: true, createdAt: true, city: { select: { name: true } } },
+      }),
+      this.prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, displayName: true } }),
+      this.prisma.report.groupBy({ by: ['caseId'], where: { caseId: { in: rows.map((r) => r.id) } }, _count: { _all: true } }),
+    ]);
+    const userBy = new Map(users.map((u) => [u.id, u]));
+    const staffBy = new Map(staff.map((u) => [u.id, u.displayName]));
+    const countBy = new Map(counts.map((c) => [c.caseId, c._count._all]));
+    const out = new Map<string, {
+      title: string | null; excerpt: string | null; authorName: string | null; authorHandle: string | null;
+      authorCity: string | null; authorSince: Date | null; assignedName: string | null; reportCount: number;
+    }>();
+    for (const r of rows) {
+      const subject = await this.subjectText(r.subjectType, r.subjectId);
+      const author = r.subjectAuthorUserId === null ? undefined : userBy.get(r.subjectAuthorUserId);
+      const text = subject.text;
+      out.set(r.id, {
+        title: subject.title,
+        excerpt: text === null ? null : full || text.length <= 160 ? text : `${text.slice(0, 157)}…`,
+        authorName: author?.displayName ?? null,
+        authorHandle: author?.handle ?? null,
+        authorCity: author?.city?.name ?? null,
+        authorSince: author?.createdAt ?? null,
+        assignedName: r.assignedStaffId === null ? null : (staffBy.get(r.assignedStaffId) ?? null),
+        reportCount: countBy.get(r.id) ?? 0,
+      });
+    }
+    return out;
+  }
+
+  /**
    * `GET /admin/moderation/cases` (§8.2). File unique, « triée par priorité puis
    * `sla_due_at` » (§4.1).
    *
@@ -875,8 +989,10 @@ export class ModerationService {
       this.cursorSecret,
       (row) => `${row.priority}|${row.slaDueAt.getTime()}`,
     );
+    const enriched = await this.enrichCases(page.items, false);
     return {
       items: page.items.map((row) => ({
+        ...enriched.get(row.id),
         id: row.id,
         createdAt: row.createdAt,
         subjectType: row.subjectType,
@@ -975,7 +1091,9 @@ export class ModerationService {
     const conversation =
       found.subjectType === 'MESSAGE' ? await this.conversationOf(found.subjectId) : null;
 
+    const enriched = (await this.enrichCases([found], true)).get(found.id);
     return {
+      ...enriched,
       id: found.id,
       createdAt: found.createdAt,
       subjectType: found.subjectType,

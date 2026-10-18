@@ -432,6 +432,12 @@ export class StaffAuthService {
    * panne d'envoi ne doit JAMAIS changer la réponse à la tentative de connexion :
    * elle est consignée et on continue.
    */
+  /** Le nom d'affichage d'un compte équipe — pour la barre de l'application d'équipe. */
+  async displayNameOf(staffId: string): Promise<string> {
+    const row = await this.prisma.staffUser.findUnique({ where: { id: staffId }, select: { displayName: true } });
+    return row?.displayName ?? '';
+  }
+
   private async notifyLock(staffId: string, failures: number): Promise<void> {
     try {
       const [target, admins] = await Promise.all([
