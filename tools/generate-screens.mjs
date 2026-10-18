@@ -24,6 +24,7 @@ import {
   AJOUTS_EXPLOITATION_VIVANTE,
 } from './adaptations/exploitation-vivante.mjs';
 import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
+import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/chrome-gauche-vivant.mjs';
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
 import {
   ADAPTATIONS_PARCOURS_VIVANT,
@@ -18246,6 +18247,8 @@ function adaptFields(jsx, section) {
     // Lot A « tout gratuit » : en dernier, ses motifs lisent du JSX déjà branché.
     ...ADAPTATIONS_GRATUIT_VIVANT,
     ...ADAPTATIONS_PARCOURS_VIVANT,
+    // La colonne de gauche vivante : raccourcis et barre d'avancement.
+    ...ADAPTATIONS_CHROME_GAUCHE,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19516,6 +19519,7 @@ const AJOUTS = {
   ...AJOUTS_EXPLOITATION_VIVANTE,
   ...AJOUTS_GRATUIT_VIVANT,
   ...AJOUTS_PARCOURS_VIVANT,
+  ...AJOUTS_CHROME_GAUCHE,
 };
 
 const HEADER = (

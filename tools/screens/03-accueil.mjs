@@ -6561,7 +6561,7 @@ export const screens = [
       {
         nom: 'ChromeGauche',
         cadres: ['Desktop'],
-        prises: ['rail', 'panelReseaux', 'shortcuts'],
+        prises: ['rail', 'panelReseaux'],
         type: 'A08Data',
         freres: 1,
         why: 'Le menu de gauche de A08, monté autour des vingt-cinq planches d’onglet — la maquette dit « menu de gauche identique à A08 », et c’est donc un emprunt, pas un dessin.',

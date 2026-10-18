@@ -10,10 +10,11 @@ import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
+import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
 import type { A06Data } from './data';
 
 export function A06Desktop(props: A06Data) {
-  const { guide, panelGuides, propositionDepliee, propositionRepliee, propositionsCompte, rail, shortcuts } = props;
+  const { guide, panelGuides, propositionDepliee, propositionRepliee, propositionsCompte, rail } = props;
 
   return (
     <>
@@ -35,10 +36,8 @@ export function A06Desktop(props: A06Data) {
 ))}</div>
           </div>
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px 8px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VOS RACCOURCIS</span><a href="#" style={{ fontSize: "12px", fontWeight: "700" }}>Modifier</a></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>{(shortcuts ?? []).map((s, sIndex) => (
-<Fragment key={sIndex}><a href="#" style={{ height: "50px", display: "flex", alignItems: "center", gap: "11px", padding: "0 8px", borderRadius: "14px", color: "#16211D" }}><span style={{ width: "32px", height: "32px", borderRadius: "10px", background: s.bg, color: "#fff", fontSize: "10px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{s.i}</span><span style={{ minWidth: "0" }}><span style={{ display: "block", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span><span style={{ display: "block", fontSize: "11px", color: "#8A958F" }}>{s.sub}</span></span></a></Fragment>
-))}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px 8px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VOS RACCOURCIS</span><a href="/reseaux" style={{ fontSize: "12px", fontWeight: "700" }}>Modifier</a></div>
+            <RaccourcisReseaux />
           </div>
         </div>
       </div>
