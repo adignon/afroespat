@@ -42,6 +42,29 @@ import { cursorQuerySchema, uuidSchema } from './pagination.js';
  *    `maxActiveJourneys: null` (autant de parcours qu'il veut).
  */
 
+// ── L'interrupteur « tout gratuit » (lot A) ─────────────────────────────────
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ TOUT EST GRATUIT POUR LE MOMENT — UN SEUL INTERRUPTEUR                      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « On va laisser les paiements. Tout sera gratuit pour le moment. »
+ *
+ * `system_settings.monetisation_active`, FAUX par défaut (clé absente = faux).
+ * Éteint, TOUS les membres ont les droits Premium : quotas de parcours,
+ * d'événements, de contacts pro, offres sponsorisées, alertes (`PLAN_REQUIRED`).
+ * Allumé, les plans s'appliquent comme avant — rien du code de paiement, de
+ * facturation ni des quotas n'est supprimé.
+ *
+ * Réglage et non constante partagée : le rallumer ne doit pas demander un
+ * déploiement (SUPER_ADMIN, `PUT /admin/settings/monetisation_active`). Le serveur
+ * le lit (`common/monetisation.ts`) et le dit au front par `GET /me`
+ * (`monetisationActive`), qui n'affiche alors aucune incitation à payer.
+ */
+export const MONETISATION_SETTING_KEY = 'monetisation_active';
+export const MONETISATION_ACTIVE_DEFAULT = false;
+
 // ── Prix (§3) ───────────────────────────────────────────────────────────────
 
 /** §1 et §3 : « Premium membre (4 €/mois) ». */

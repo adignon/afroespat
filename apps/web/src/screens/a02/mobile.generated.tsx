@@ -13,6 +13,7 @@ export function A02Mobile(props: A02Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
     <div style={{ padding: "52px 16px 12px", display: "flex", alignItems: "center", gap: "10px", background: "#fff", borderBottom: "1px solid #E6EBE9" }}><span style={{ width: "40px", height: "40px", borderRadius: "999px", background: "#F2F5F4", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg></span><span style={{ fontSize: "16px", fontWeight: "700" }}>Question</span></div>

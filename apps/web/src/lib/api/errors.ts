@@ -274,5 +274,7 @@ export function isApiFailure(value: unknown): value is ApiFailure {
  */
 export function displayMessageFor(error: unknown): string {
   if (isApiFailure(error)) return error.displayMessage;
+  // Le captcha (Turnstile) échoue côté navigateur, avant tout appel : son message est déjà écrit pour le membre.
+  if (error instanceof Error && error.name === 'CaptchaError') return error.message;
   return 'Une erreur est survenue. Réessayez dans un instant.';
 }

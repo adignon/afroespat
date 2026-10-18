@@ -16,6 +16,7 @@ import {
   type MentorshipReviewInput,
   type MentorsQuery,
   type MyMentorshipsQuery,
+  type VerificationLevel,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
@@ -42,16 +43,21 @@ import { MessagingService } from '../messaging/messaging.service';
  *     réponses, la conversation MENTORSHIP est surveillée par la modération IA en
  *     priorité 1 sur `MONEY_REQUEST`.
  *
- * COLONNES ABSENTES. §6 déclare « Ajoutée » `mentorships.extended_once` et
- * `mentorships.expires_at` ; ni l'une ni l'autre n'existe dans le schéma figé, ni
- * en base. Les deux sont DÉDUITES, et la déduction est exacte :
+ * DEUX COLONNES « AJOUTÉES » PAR §6, ET ENFIN POSÉES. `mentorships.extended_once`
+ * (booléen) et `mentorships.expires_at` (la demande expire à 7 jours) étaient
+ * DÉDUITES quand le schéma ne les portait pas — « déjà prolongé » se lisait sur
+ * `ends_at > accepted_at + 90 jours`, « demande expirée » sur `created_at + 7 j`.
+ * La déduction était exacte, mais elle interdisait deux choses : changer la durée
+ * de l'expiration sans réécrire l'historique (les anciennes lignes auraient changé
+ * d'état d'un coup), et filtrer en SQL sur l'échéance (la tâche
+ * `mentorship.expire_requests` balayait sur `created_at`). La migration
+ * `20261017040000_entraide_parrainage` ajoute les deux colonnes et reprend
+ * l'existant avec EXACTEMENT la déduction qu'elle remplace, donc aucun état visible
+ * ne change au passage.
  *
- *   · « déjà prolongé » ⟺ `ends_at > accepted_at + 90 jours`, puisque la seule
- *     écriture qui déplace `ends_at` est la prolongation, et qu'elle n'ajoute que
- *     90 jours ;
- *   · « demande expirée » ⟺ `created_at + 7 jours < maintenant`, appliqué à la
- *     LECTURE autant qu'à la tâche, pour qu'une demande périmée soit inacceptable
- *     même avant le passage de `mentorship.expire_requests`.
+ * Une ligne écrite SANS `expires_at` (un script, un jeu d'essai) reste lisible : le
+ * repli est `created_at + 7 jours`, et c'est `expiryWindow()` qui le porte — à un
+ * seul endroit.
  */
 
 /**
@@ -95,6 +101,31 @@ const MENTOR_SELECT = {
 } satisfies Prisma.MentorProfileSelect;
 
 type MentorRow = Prisma.MentorProfileGetPayload<{ select: typeof MENTOR_SELECT }>;
+
+/**
+ * Les demandes en attente ENCORE VALIDES à l'instant `now` : `expires_at` dans le
+ * futur, ou — pour une ligne qui n'en porte pas — `created_at` de moins de 7 jours.
+ */
+function stillPending(now: Date): Prisma.MentorshipWhereInput {
+  return {
+    status: 'REQUESTED',
+    OR: [
+      { expiresAt: { gt: now } },
+      { expiresAt: null, createdAt: { gte: new Date(now.getTime() - MENTORSHIP_REQUEST_EXPIRY_MS) } },
+    ],
+  };
+}
+
+/** Les demandes en attente DÉPASSÉES à l'instant `now` — le complément exact de `stillPending`. */
+function pendingExpired(now: Date): Prisma.MentorshipWhereInput {
+  return {
+    status: 'REQUESTED',
+    OR: [
+      { expiresAt: { lte: now } },
+      { expiresAt: null, createdAt: { lt: new Date(now.getTime() - MENTORSHIP_REQUEST_EXPIRY_MS) } },
+    ],
+  };
+}
 
 @Injectable()
 export class MentorshipService {
@@ -202,6 +233,40 @@ export class MentorshipService {
     });
 
     return { ...this.card(profile), meta: this.meta() };
+  }
+
+  /**
+   * `GET /me/mentor-profile` — MON profil (ou `null`) et LE DIAGNOSTIC des trois
+   * conditions de §2.1.
+   *
+   * Le diagnostic existait sous la forme d'un refus : `PUT` répondait
+   * `MENTOR_NOT_ELIGIBLE` sans dire laquelle des conditions manquait, et l'écran
+   * « Devenir parrain » dessinait trois pastilles qu'il ne pouvait pas remplir. Le
+   * serveur les évalue, le front les montre — et le `PUT` les applique de toute
+   * façon, donc ce diagnostic ne peut pas ouvrir une porte.
+   *
+   * Le NIVEAU vient du jeton, comme pour l'entraide : le niveau est dérivé de deux
+   * faits (KYC, numéro vérifié) et le garde le recalcule dès qu'un jeton est
+   * périmé ; le relire en base ici serait une seconde source. L1 = identité
+   * vérifiée, L2 = en plus un numéro d'un pays de destination.
+   */
+  async myProfile(userId: string, level: VerificationLevel) {
+    const [profile, experience] = await Promise.all([
+      this.prisma.mentorProfile.findUnique({ where: { userId }, select: MENTOR_SELECT }),
+      this.experienceOf(userId),
+    ]);
+    const identity = level === 'L1' || level === 'L2';
+    const phone = level === 'L2';
+    return {
+      profile: profile === null ? null : this.card(profile),
+      eligibility: {
+        eligible: identity && phone && experience.ok,
+        identity,
+        phone,
+        experience,
+      },
+      meta: this.meta(),
+    };
   }
 
   /**
@@ -365,10 +430,7 @@ export class MentorshipService {
 
     const stateFilter: Prisma.MentorshipWhereInput =
       query.state === 'pending'
-        ? {
-            status: 'REQUESTED',
-            createdAt: { gte: new Date(Date.now() - MENTORSHIP_REQUEST_EXPIRY_MS) },
-          }
+        ? stillPending(new Date())
         : query.state === 'active'
           ? { status: 'ACTIVE' }
           : query.state === 'past'
@@ -413,9 +475,10 @@ export class MentorshipService {
           endedAt: row.endedAt,
           expiresAt:
             row.status === 'REQUESTED'
-              ? new Date(row.createdAt.getTime() + MENTORSHIP_REQUEST_EXPIRY_MS)
+              ? (row.expiresAt ?? new Date(row.createdAt.getTime() + MENTORSHIP_REQUEST_EXPIRY_MS))
               : null,
-          extended: this.isExtended(row),
+          extended: row.extendedOnce,
+          canExtend: row.status === 'ACTIVE' && !row.extendedOnce,
           canReview: this.reviewWindowOpen(row) && mine === undefined,
           myReview: mine ?? null,
           theirReview: bothIn || windowOver ? (theirs ?? null) : null,
@@ -465,11 +528,7 @@ export class MentorshipService {
     // §2.2 : « Une seule demande REQUESTED à la fois » par membre. La demande
     // périmée ne compte pas, même si la tâche ne l'a pas encore balayée.
     const pending = await this.prisma.mentorship.findFirst({
-      where: {
-        menteeUserId,
-        status: 'REQUESTED',
-        createdAt: { gte: new Date(Date.now() - MENTORSHIP_REQUEST_EXPIRY_MS) },
-      },
+      where: { menteeUserId, ...stillPending(new Date()) },
       select: { id: true },
     });
     if (pending !== null) this.fail('PENDING_REQUEST_EXISTS');
@@ -486,6 +545,7 @@ export class MentorshipService {
 
     const id = newId();
     const now = new Date();
+    const expiresAt = new Date(now.getTime() + MENTORSHIP_REQUEST_EXPIRY_MS);
     await this.prisma.$transaction(async (tx) => {
       await tx.mentorship.create({
         data: {
@@ -495,6 +555,7 @@ export class MentorshipService {
           journeyId: input.journeyId ?? null,
           status: 'REQUESTED',
           requestMessage: input.message,
+          expiresAt,
         },
       });
       await this.audit.record(tx, {
@@ -518,7 +579,7 @@ export class MentorshipService {
     return {
       id,
       status: 'REQUESTED' as const,
-      expiresAt: new Date(now.getTime() + MENTORSHIP_REQUEST_EXPIRY_MS),
+      expiresAt,
       meta: this.meta(),
     };
   }
@@ -675,25 +736,25 @@ export class MentorshipService {
   /**
    * `POST /mentorships/:id/extend` (§7.1) — « Par l'un des deux », une fois (§2.4).
    *
-   * `mentorships.extended_once` (§6) n'existe pas : « déjà prolongé » se lit sur
-   * `ends_at > accepted_at + 90 jours`. La déduction est exacte parce que la
-   * prolongation est la SEULE écriture qui déplace `ends_at`, et qu'elle n'ajoute
-   * que 90 jours.
+   * `mentorships.extended_once` (§6) dit « déjà prolongé ». Elle est posée dans la
+   * MÊME écriture que le déplacement de `ends_at`, sous la condition
+   * `extended_once = false` : deux prolongations concurrentes ne peuvent pas
+   * ajouter 180 jours, et c'est la base qui le garantit, pas une relecture.
    */
   async extend(mentorshipId: string, userId: string) {
     const mentorship = await this.partyTo(mentorshipId, userId);
     if (mentorship.status !== 'ACTIVE') this.fail('MENTORSHIP_STATE');
-    if (this.isExtended(mentorship)) this.fail('ALREADY_EXTENDED');
+    if (mentorship.extendedOnce) this.fail('ALREADY_EXTENDED');
 
     const base = mentorship.endsAt ?? mentorship.acceptedAt ?? new Date();
     const endsAt = new Date(base.getTime() + MENTORSHIP_DURATION_MS);
 
     await this.prisma.$transaction(async (tx) => {
       const moved = await tx.mentorship.updateMany({
-        where: { id: mentorshipId, status: 'ACTIVE', endsAt: mentorship.endsAt },
-        data: { endsAt },
+        where: { id: mentorshipId, status: 'ACTIVE', extendedOnce: false },
+        data: { endsAt, extendedOnce: true },
       });
-      // Le `endsAt` attendu dans le `where` sert de verrou optimiste : deux
+      // `extendedOnce: false` dans le `where` sert de verrou optimiste : deux
       // prolongations concurrentes ne peuvent pas ajouter 180 jours.
       if (moved.count === 0) this.fail('ALREADY_EXTENDED');
       await this.outbox.emit(tx, {
@@ -784,9 +845,8 @@ export class MentorshipService {
    * une autre », ce que `CANCELLED` produit.
    */
   async expireRequests(now = new Date()): Promise<number> {
-    const cutoff = new Date(now.getTime() - MENTORSHIP_REQUEST_EXPIRY_MS);
     const { count } = await this.prisma.mentorship.updateMany({
-      where: { status: 'REQUESTED', createdAt: { lt: cutoff } },
+      where: pendingExpired(now),
       data: { status: 'CANCELLED', endedAt: now },
     });
     if (count > 0) this.logger.log(`${count} demande(s) de parrainage expirée(s) (§10)`);
@@ -1101,10 +1161,19 @@ export class MentorshipService {
 
   /** §2.1, éligibilité : un parcours COMPLETED, ou SETTLED depuis 12 mois. */
   private async assertEligible(userId: string): Promise<void> {
-    const completed = await this.prisma.journey.count({
+    if (!(await this.experienceOf(userId)).ok) this.fail('MENTOR_NOT_ELIGIBLE');
+  }
+
+  /**
+   * La troisième condition de §2.1, DÉTAILLÉE : combien de parcours terminés, et
+   * l'installation depuis 12 mois. `assertEligible` et le diagnostic de
+   * `myProfile` lisent la même fonction — deux évaluations de la même règle
+   * finiraient par diverger, et l'écran dirait « éligible » avant un refus.
+   */
+  private async experienceOf(userId: string) {
+    const completedJourneys = await this.prisma.journey.count({
       where: { ownerUserId: userId, status: 'COMPLETED', deletedAt: null },
     });
-    if (completed > 0) return;
 
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
@@ -1112,15 +1181,12 @@ export class MentorshipService {
     });
     const twelveMonthsAgo = new Date();
     twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - MENTOR_SETTLED_MONTHS);
-
-    if (
+    const settledForMonths =
       user.phase === 'SETTLED' &&
       user.arrivalDate !== null &&
-      user.arrivalDate <= twelveMonthsAgo
-    ) {
-      return;
-    }
-    this.fail('MENTOR_NOT_ELIGIBLE');
+      user.arrivalDate <= twelveMonthsAgo;
+
+    return { ok: completedJourneys > 0 || settledForMonths, completedJourneys, settledForMonths };
   }
 
   /** Les types de parcours déclarés doivent exister : un identifiant inventé ne filtre rien. */
@@ -1149,17 +1215,6 @@ export class MentorshipService {
     return profile.avgRating === null ? 0 : Number(profile.avgRating);
   }
 
-  /** §2.4 : prolongé une seule fois. Déduit — la colonne `extended_once` n'existe pas. */
-  private isExtended(mentorship: { acceptedAt: Date | null; endsAt: Date | null }): boolean {
-    if (mentorship.acceptedAt === null || mentorship.endsAt === null) return false;
-    // Une marge d'une minute absorbe la latence entre `acceptedAt` et le calcul de
-    // `endsAt` : sans elle, un parrainage accepté puis relu serait « prolongé ».
-    return (
-      mentorship.endsAt.getTime() - mentorship.acceptedAt.getTime() >
-      MENTORSHIP_DURATION_MS + 60_000
-    );
-  }
-
   private reviewWindowOpen(mentorship: {
     status: string;
     endReason: string | null;
@@ -1181,14 +1236,15 @@ export class MentorshipService {
         journeyId: true,
         status: true,
         createdAt: true,
+        expiresAt: true,
       },
     });
     if (mentorship === null || mentorship.mentorUserId !== mentorUserId) throw ApiError.notFound();
     if (mentorship.status !== 'REQUESTED') this.fail('MENTORSHIP_STATE');
     // Périmée : elle n'existe plus, même avant le passage de la tâche (§2.2).
-    if (mentorship.createdAt.getTime() + MENTORSHIP_REQUEST_EXPIRY_MS < Date.now()) {
-      this.fail('MENTORSHIP_STATE');
-    }
+    const expiry =
+      mentorship.expiresAt ?? new Date(mentorship.createdAt.getTime() + MENTORSHIP_REQUEST_EXPIRY_MS);
+    if (expiry.getTime() < Date.now()) this.fail('MENTORSHIP_STATE');
     return mentorship;
   }
 
@@ -1205,6 +1261,7 @@ export class MentorshipService {
         acceptedAt: true,
         endsAt: true,
         endedAt: true,
+        extendedOnce: true,
       },
     });
     if (

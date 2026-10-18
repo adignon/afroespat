@@ -1,5 +1,6 @@
 'use client';
 
+import { useChargeur } from '@/lib/entraide-recharge';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { SQUELETTE_H03, chargerH03 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
@@ -27,10 +28,11 @@ import { GardeNiveau } from '@/components/garde-niveau';
  * tente, et c'est le serveur qui répond `403 LEVEL_REQUIRED`.
  */
 export default function HelpComposePage() {
+  const charger = useChargeur(chargerH03);
   return (
     <>
     <EcranDonnees
-      charger={chargerH03}
+      charger={charger}
       /*
        * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
        * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre

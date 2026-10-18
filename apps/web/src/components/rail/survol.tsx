@@ -6,6 +6,83 @@ import { MENUS_RAIL } from './menus';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE VOLET SE POSE SUR LA CARTE DE MENU DE LA PAGE                           ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « le menu hover […] doit s'aligner sur la liste du menu dans la
+ * page ».
+ *
+ * MESURÉ : le volet s'ouvrait à la hauteur de l'ICÔNE survolée, à 8 px du rail et
+ * sur 236 px. La carte de menu de la page — « COMMUNAUTÉ », « MON PARCOURS »… —
+ * est, elle, à 12 px du rail, sur 264 px, et à sa propre hauteur : le volet ne
+ * tombait jamais sur elle, et ses entrées étaient décalées de quelques pixels à
+ * la verticale comme à l'horizontale.
+ *
+ * Le volet est maintenant posé SUR cette carte : même bord gauche, même largeur,
+ * même haut. Ses entrées (rangées de 44 px, 2 px d'écart, titre sur la même
+ * ligne) retombent exactement sur celles de la page.
+ *
+ * ── COMMENT ON TROUVE LA CARTE ───────────────────────────────────────────
+ *
+ * Le rail est suivi de la colonne de contexte (`nextElementSibling`). Sa carte de
+ * menu est la première qui porte au moins trois liens : la carte du membre en a un,
+ * « Mon parcours » un, la liste de navigation quatre ou plus. On mesure sa position
+ * au moment du survol — la page défile, la colonne est collante — et non à la
+ * génération. Sans carte de ce genre (la page de recherche, dont la colonne porte
+ * des filtres), le volet prend la première carte de la colonne ; sans colonne, il
+ * retombe sur l'ancien placement, à la hauteur de l'icône.
+ */
+function caler(
+  rail: HTMLElement,
+  icone: HTMLElement,
+): {
+  readonly haut: number;
+  readonly ecart: number;
+  readonly largeur: number;
+  readonly intervalle: number;
+  readonly hauteur: number;
+} {
+  const colonne = rail.nextElementSibling;
+  if (colonne instanceof HTMLElement) {
+    const cartes = Array.from(colonne.children).filter(
+      (c): c is HTMLElement => c instanceof HTMLElement,
+    );
+    const menu = cartes.find((c) => c.querySelectorAll('a[href], button').length >= 3) ?? cartes[0];
+    if (menu !== undefined) {
+      const r = rail.getBoundingClientRect();
+      const m = menu.getBoundingClientRect();
+      if (m.width > 0) {
+        /**
+         * L'INTERVALLE ENTRE LES RANGÉES SE MESURE AUSSI. Les cartes de navigation de
+         * l'accueil, des guides ou des réseaux espacent leurs rangées de 2 px ; celles
+         * du module Parcours — des boutons, non des liens — les empilent sans espace.
+         * Poser 2 px fixes décalait la quatrième rangée de 6 px sur ces pages.
+         */
+        const rangees = Array.from(menu.querySelectorAll<HTMLElement>('a[href], button'));
+        const [a, b] = rangees;
+        const intervalle =
+          a !== undefined && b !== undefined
+            ? Math.max(
+                0,
+                Math.round(b.getBoundingClientRect().top - a.getBoundingClientRect().bottom),
+              )
+            : 2;
+        return {
+          haut: Math.round(m.top - r.top),
+          ecart: Math.max(0, Math.round(m.left - r.right)),
+          largeur: Math.round(m.width),
+          intervalle,
+          // Au moins la hauteur de la carte recouverte : sinon sa dernière rangée dépasse sous le volet.
+          hauteur: Math.round(m.height),
+        };
+      }
+    }
+  }
+  return { haut: icone.offsetTop, ecart: 8, largeur: 236, intervalle: 2, hauteur: 0 };
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ LE RAIL DÉPLIE SON MENU AU SURVOL                                          ║
  * ╚════════════════════════════════════════════════════════════════════════════╝
  *
@@ -51,11 +128,21 @@ import { MENUS_RAIL } from './menus';
  * avant que la première entrée du menu soit atteinte, ce qui est exactement le
  * défaut qu'on vient d'éviter pour la souris.
  */
-export function RailSurvol({ style, children }: {
+export function RailSurvol({
+  style,
+  children,
+}: {
   readonly style: CSSProperties;
   readonly children: ReactNode;
 }) {
-  const [ouvert, setOuvert] = useState<{ readonly rubrique: string; readonly haut: number } | null>(null);
+  const [ouvert, setOuvert] = useState<{
+    readonly rubrique: string;
+    readonly haut: number;
+    readonly ecart: number;
+    readonly largeur: number;
+    readonly intervalle: number;
+    readonly hauteur: number;
+  } | null>(null);
   const nav = useRef<HTMLElement | null>(null);
 
   /** La rubrique sous le pointeur, ou rien si ce n'est pas une entrée connue. */
@@ -126,7 +213,7 @@ export function RailSurvol({ style, children }: {
       setOuvert(null);
       return;
     }
-    setOuvert({ rubrique, haut: (lien as HTMLElement).offsetTop });
+    setOuvert({ rubrique, ...caler(nav.current, lien) });
   };
 
   const menu = ouvert === null ? undefined : MENUS_RAIL[ouvert.rubrique];
@@ -152,13 +239,16 @@ export function RailSurvol({ style, children }: {
             position: 'absolute',
             left: '100%',
             top: `${String(ouvert.haut)}px`,
-            paddingLeft: '8px',
+            // Le pont entre le rail et la carte : un retrait du conteneur, pas une marge.
+            paddingLeft: `${String(ouvert.ecart)}px`,
             zIndex: 40,
           }}
         >
           <div
             style={{
-              width: '236px',
+              width: `${String(ouvert.largeur)}px`,
+              boxSizing: 'border-box',
+              minHeight: ouvert.hauteur === 0 ? undefined : `${String(ouvert.hauteur)}px`,
               background: '#fff',
               border: '1px solid #E6EBE9',
               borderRadius: '22px',
@@ -185,41 +275,49 @@ export function RailSurvol({ style, children }: {
                 {menu.titre}
               </div>
             </div>
-            {menu.entrees.map((e) => (
-              <Link
-                key={e.href}
-                href={e.href}
-                style={{
-                  height: '44px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '11px',
-                  padding: '0 12px',
-                  borderRadius: '14px',
-                  background: 'transparent',
-                  color: '#16211D',
-                  fontWeight: 500,
-                  fontSize: '13.5px',
-                  textDecoration: 'none',
-                }}
-              >
-                <svg
-                  width="17"
-                  height="17"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                  style={{ flexShrink: 0 }}
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: `${String(ouvert.intervalle)}px`,
+              }}
+            >
+              {menu.entrees.map((e) => (
+                <Link
+                  key={e.href}
+                  href={e.href}
+                  style={{
+                    height: '44px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '11px',
+                    padding: '0 12px',
+                    borderRadius: '14px',
+                    background: 'transparent',
+                    color: '#16211D',
+                    fontWeight: 500,
+                    fontSize: '13.5px',
+                    textDecoration: 'none',
+                  }}
                 >
-                  <path d={e.trace} />
-                </svg>
-                <span style={{ flex: 1 }}>{e.libelle}</span>
-              </Link>
-            ))}
+                  <svg
+                    width="17"
+                    height="17"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                    style={{ flexShrink: 0 }}
+                  >
+                    <path d={e.trace} />
+                  </svg>
+                  <span style={{ flex: 1 }}>{e.libelle}</span>
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
       )}

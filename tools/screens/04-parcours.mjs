@@ -2556,10 +2556,10 @@ export const screens = [
    * « Plein écran calme » : cette planche d'ordinateur n'a ni rail ni `<main>`,
    * contrairement aux autres. Le générateur pose donc le repère lui-même.
    *
-   * BRANCHÉ SUR `GET /journeys/:id`. « 9 aides reçues » n'est PAS lié : aucune
-   * route de parcours ne compte les aides reçues — `GET /journeys/:id/activities`
-   * porte un type `HELP_RECEIVED`, mais le journal est paginé et son total n'est
-   * pas rendu. Signalé plutôt que deviné.
+   * BRANCHÉ SUR `GET /journeys/:id`. « 9 aides reçues » est lié depuis le lot
+   * « parcours vivant » : `journey.helpReceivedCount`, le nombre d'activités
+   * `HELP_RECEIVED` du journal, que le détail rend désormais (il n'y avait pas de
+   * total quand le journal seul le portait, paginé).
    */
   screen({
     section: 'J10',
@@ -2595,6 +2595,12 @@ export const screens = [
         devient: '>{{ parcours.franchies }} / {{ parcours.total }}<',
         frames: ['Desktop'],
         why: '`doneCount` sur `totalCount` — hors étapes facultatives (§3.2).',
+      },
+      {
+        noeud: '>9<',
+        devient: '>{{ parcours.aides }}<',
+        frames: ['Desktop', 'Mobile'],
+        why: 'Le nombre d’aides reçues (`journey.helpReceivedCount`) — écrit « 9 » en dur dans la maquette.',
       },
       {
         noeud: '>Mes études à Lyon · abouti<',

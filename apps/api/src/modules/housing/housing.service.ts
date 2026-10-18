@@ -35,6 +35,7 @@ import {
   levelRequiredDetails,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { planEffectif } from '../../common/monetisation';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { OutboxService } from '../../common/outbox.service';
@@ -1171,7 +1172,8 @@ export class HousingService {
       where: { id: userId },
       select: { plan: true },
     });
-    return user.plan;
+    // LOT A : « tout gratuit » — PREMIUM pour tous tant que les plans ne sont pas appliqués.
+    return planEffectif(this.prisma, user.plan);
   }
 
   private async assertPremium(userId: string): Promise<void> {

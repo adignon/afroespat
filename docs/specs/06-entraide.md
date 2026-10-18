@@ -74,8 +74,8 @@ Une OFFER a le même cycle, mais la clôture est « Offre pourvue » (par l'aute
 
 | Table | Précision |
 |---|---|
-| `help_requests.reopened_at` | **Ajoutée** |
-| `help_requests.archived_at` | **Ajoutée** |
+| `help_requests.reopened_at` | **Ajoutée** — livrée (migration `20261017040000`), posée par `POST /help/:id/reopen` |
+| `help_requests.archived_at` | **Ajoutée** — livrée, posée par la tâche `help.archive` (les lignes archivées avant la migration reçoivent `updated_at`) |
 | `help_requests.city_radius_km` | Non stockée : filtre de requête |
 
 ---
@@ -95,7 +95,10 @@ Une OFFER a le même cycle, mais la clôture est « Offre pourvue » (par l'aute
 | POST | `/help/:id/resolve` | Sans réponse marquée | |
 | POST | `/help/:id/reopen` | Dans les 7 jours | `REOPEN_WINDOW_CLOSED` |
 | POST | `/help/:id/private-reply` | Ouvre ou récupère la conversation directe | `LEVEL_REQUIRED` |
+| PATCH | `/help/:id/responses/:rid` | **Livrée** — modifier SA réponse, tant que la demande est ouverte et qu'elle n'est pas marquée « ça m'a aidé » | `NOT_AUTHOR`, `REQUEST_CLOSED`, `CONTENT_BLOCKED` |
 | DELETE | `/help/:id` · `/help/:id/responses/:rid` | Suppression logique | |
+
+**Livré avec les écrans (lot « entraide vivante »)** : la carte de liste porte `journeyStep` (« Étape 7 · Logement · parcours Études », jamais le titre personnel) et `reopenedAt` ; le détail porte `canEdit` / `canReopen` (le serveur décide, le front éteint les boutons), `isMine` / `canEdit` par réponse, et `journeyContext.own` (identifiants du parcours, pour l'auteur seul) qui permet « Marquer l'étape comme franchie ». Les réponses passent par la modération (`help_request.responded` → `HELP_RESPONSE`) et le texte modifié repasse par les règles locales de `@app/shared`.
 
 Limites : 5 demandes par jour, 30 réponses par heure.
 
@@ -109,7 +112,8 @@ Limites : 5 demandes par jour, 30 réponses par heure.
 | Liste | Titre, sous-titre compteurs (« 41 ouvertes à Lyon · 178 résolues ce mois-ci »), bouton « Publier une demande », chips de type + ville + état, cartes. Colonne droite : règle de la plateforme (terre cuite), « Vous pouvez aider », « Ma réputation » |
 | Carte | Pastilles (type, « Depuis un parcours », « Résolue »), horodatage, titre, corps tronqué, auteur + badge + phase, compteur de réponses, bouton Répondre. Résolue : fond grisé, encart « X a été marqué·e "ça m'a aidé" — contact créé » |
 | Détail | Demande, contexte de parcours, réponses, actions de l'auteur (marquer, résoudre, modifier), « Répondre en privé » |
-| Composeur | Kind (Demande / Offre), type, titre, corps, ville, échéance ; rappel Services ; règle de la plateforme |
+| Composeur | Kind (Demande / Offre), type, titre, corps, ville, échéance ; rappel Services ; règle de la plateforme. **Livré** : champs réels (bornes de `createHelpSchema`), ville du membre préremplie, `?etape=` pour une demande issue d'un parcours, refus du serveur (`LEVEL_REQUIRED` en fenêtre de niveau, `USE_SERVICES`, `CONTENT_BLOCKED`) |
+| Bandeau anti-paiement | « Signaler » ouvre la fenêtre de signalement (`POST /reports`) : sujet précis sur le détail (la demande), sinon le membre dont on donne le pseudo |
 
 ---
 

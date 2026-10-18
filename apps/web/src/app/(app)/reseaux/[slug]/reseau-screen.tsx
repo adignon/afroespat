@@ -883,8 +883,16 @@ export function ReseauScreen({
               <>
                 <A08ChromeGaucheDesktop {...a08} />
                 <div style={COLONNE_DROITE}>
+                  {/*
+                   * LA BARRE HAUTE EST L'EN-TÊTE GLOBAL : un `<header>` fixe sur toute
+                   * la largeur, hors du flux. Elle ne tient plus les 64 px que la rangée
+                   * de la colonne occupait ; l'espace est posé ici, sous la barre, pour
+                   * que la planche d'onglet commence où elle commençait.
+                   */}
                   <A08BarreHauteDesktop />
-                  <div style={ZONE_CONTENU}>
+                  <div style={{ height: '64px', flexShrink: 0 }} />
+                  {/* Le contenu du réseau : la seule zone bornée de la page (`globals.css`). */}
+                  <div data-zone="contenu" style={ZONE_CONTENU}>
                     <div style={BOARD}>
                       {tab.desktop({ ...ongletAvecAnnonce, publications: cartes })}
                     </div>

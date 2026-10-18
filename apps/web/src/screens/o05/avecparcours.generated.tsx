@@ -12,6 +12,7 @@ export function O05AvecParcours(props: O05Data) {
   return (
     <>
       <div style={{ background: "#F6F8F7", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ width: "520px" }}>

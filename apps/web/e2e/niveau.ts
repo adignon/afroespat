@@ -179,7 +179,9 @@ export async function monterEnL2(
   const { accessToken: jetonL1 } = await monterEnL1(context, request, accessTokenActuel);
   const auth = { authorization: `Bearer ${jetonL1}` };
 
-  const numero = `+336${String(Math.floor(Math.random() * 1e8)).padStart(8, '0')}`;
+  // `+3361…` : préfixe mobile valide dans tous les cas. Avec `+336` suivi de huit chiffres
+  // au hasard, un numéro sur sept est refusé par libphonenumber (63 9x, 69 0-4…).
+  const numero = `+3361${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`;
   const depot = await request.post(`${API}/me/phones`, {
     headers: auth,
     // `countryIso2: 'FR'` — un pays de DESTINATION actif. Voir l'en-tête.

@@ -5,10 +5,8 @@ import { useParams } from 'next/navigation';
 import { VUE_NEUTRE, chargerJ05 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
-import { plancheBlocage } from '@/screens/parcours/modales';
 import { J05Desktop } from '@/screens/j05/desktop.generated';
 import { J05Mobile } from '@/screens/j05/mobile.generated';
-import { J05MobileInvitation } from '@/screens/j05invitation/mobileinvitation.generated';
 
 /**
  * J05 — l'équipe du parcours. `/parcours/:id/equipe`.
@@ -55,10 +53,6 @@ export default function Page() {
       contexte={contexte}
       desktop={(d) => <J05Desktop {...d} />}
       mobile={(d) => <J05Mobile {...d} />}
-      modales={(d, volet) => ({
-        J03: plancheBlocage(volet, d),
-        J05I: { mobile: <J05MobileInvitation {...d} /> },
-      })}
     />
   );
 }

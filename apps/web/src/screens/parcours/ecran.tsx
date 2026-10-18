@@ -9,6 +9,7 @@ import { LevelInvitation } from '@/components/level-invitation';
 import { ScreenFrames } from '@/screens/frames';
 import { MODALES, VOLETS_BLOCAGE, type NomModale, type ParcoursData } from './data';
 import { useParcoursApi, type ContexteParcours } from './use-parcours-api';
+import { FEUILLE_DE_MODALE, ouvrirFeuille } from '@/components/parcours/feuilles-store';
 
 export type { ContexteParcours };
 
@@ -204,23 +205,18 @@ export function useParcours(
       const bouton = cible.closest('[data-modal-open]');
       if (bouton === null) return;
       const nom = bouton.getAttribute('data-modal-open');
-      if (nom !== null && nom in MODALES) {
+      /**
+       * LES FEUILLES DU MODULE SONT DES COMPOSANTS (`components/parcours/feuilles.tsx`),
+       * plus des planches transcodées. Le déclencheur dessiné par la maquette (la carte
+       * « Je suis bloqué·e » du panneau, par exemple) ouvre la feuille du même nom :
+       * « Je suis bloqué·e » crée alors son brouillon sur l'étape en cours, §3.5 premier
+       * temps — rien n'est publié, `Publier` n'existe que sur le dernier volet.
+       */
+      const feuille = nom === null ? undefined : FEUILLE_DE_MODALE[nom];
+      if (feuille !== undefined) ouvrirFeuille(feuille);
+      else if (nom !== null && nom in MODALES) {
         setOuverte(nom as NomModale);
         setVolet(0);
-        /**
-         * OUVRIR « JE SUIS BLOQUÉ·E » CRÉE LE BROUILLON (§3.5, premier temps).
-         *
-         * C'est le flux du dossier, pas une optimisation : la route
-         * `POST /journeys/:id/steps/:stepId/blocker` « crée le BROUILLON et rend
-         * le texte pré-rempli ». Elle ne publie rien — la seule route qui promeut
-         * est `POST /blockers/:id/publish`, et ce lot ne l'appelle pas.
-         *
-         * Le brouillon sert à ce que « Annuler » ait quelque chose à annuler :
-         * §3.5 veut un brouillon `CANCELLED`, et sans création il n'y aurait rien
-         * en base à passer dans cet état — « Annuler » n'aurait été qu'une
-         * fermeture de fenêtre déguisée en décision.
-         */
-        if (nom === 'J03') api.ouvrirBlocage();
       }
     },
     [api],

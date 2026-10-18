@@ -13,6 +13,7 @@ export function A14MobilePhoto(props: A14Data) {
   return (
     <>
       <div style={{ background: photoFond, color: "#fff", display: "flex", flexDirection: "column", padding: "48px 16px 26px", position: "relative", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
       {assombri ? (<><div style={{ position: "absolute", left: "0", right: "0", bottom: "0", height: "60%", background: "linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.72))" }}></div></>) : null}

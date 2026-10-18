@@ -27,6 +27,8 @@ import {
 } from './housing.js';
 import {
   BILLING_YEAR_PRICES_SETTING_KEY,
+  MONETISATION_ACTIVE_DEFAULT,
+  MONETISATION_SETTING_KEY,
   PLAN_YEAR_PRICES_DEFAULT,
   yearPricesSchema,
 } from './billing.js';
@@ -406,6 +408,13 @@ export const SETTINGS_REGISTRY = {
     defaultValue: PLAN_YEAR_PRICES_DEFAULT,
     role: STAFF_SCOPES.staffAdmin,
     description: 'Prix annuels en centimes d’euro, par plan (14 §3).',
+  },
+  [MONETISATION_SETTING_KEY]: {
+    schema: z.boolean(),
+    defaultValue: MONETISATION_ACTIVE_DEFAULT,
+    role: STAFF_SCOPES.staffAdmin,
+    description:
+      'Faux : tout est gratuit, tous les membres ont les droits Premium. Vrai : les plans s’appliquent (14).',
   },
   admin_allowed_cidrs: {
     schema: z.array(cidrSchema).max(200),

@@ -33,6 +33,7 @@ import {
   type Page,
   type ScamAlertWrite,
   type ScamAlertsQuery,
+  STAFF_SCOPES,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
@@ -852,7 +853,7 @@ export class ModerationService {
    * deux modules sur quatre ; le test `combinaison de filtres` est ici pour ça.
    */
   async listCases(staff: StaffContext, query: CasesQuery): Promise<Page<unknown>> {
-    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    this.assertRole(staff, STAFF_SCOPES.moderation);
     const now = new Date();
 
     const and: Prisma.ModerationCaseWhereInput[] = [];
@@ -964,7 +965,7 @@ export class ModerationService {
    * ne demande aucune migration.
    */
   async caseDetail(staff: StaffContext, caseId: string) {
-    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    this.assertRole(staff, STAFF_SCOPES.moderation);
 
     const found = await this.prisma.moderationCase.findUnique({
       where: { id: caseId },
@@ -1053,7 +1054,7 @@ export class ModerationService {
 
   /** §8.2 : `GET /users/:id/moderation-history` — sanctions et dossiers. */
   async userModerationHistory(staff: StaffContext, userId: string) {
-    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    this.assertRole(staff, STAFF_SCOPES.moderation);
     return this.authorHistory(userId, null);
   }
 
@@ -1094,7 +1095,7 @@ export class ModerationService {
    * `appeal_reviewer_staff_id` du §7 (absente du schéma) n'est pas nécessaire.
    */
   async assignCase(staff: StaffContext, caseId: string) {
-    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    this.assertRole(staff, STAFF_SCOPES.moderation);
 
     const found = await this.prisma.moderationCase.findUnique({
       where: { id: caseId },
@@ -1128,7 +1129,7 @@ export class ModerationService {
 
   /** `POST /cases/:id/release` (§8.2) : le dossier revient en file. */
   async releaseCase(staff: StaffContext, caseId: string) {
-    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    this.assertRole(staff, STAFF_SCOPES.moderation);
     const found = await this.prisma.moderationCase.findUnique({
       where: { id: caseId },
       select: { assignedStaffId: true, status: true },
@@ -1202,7 +1203,7 @@ export class ModerationService {
   async act(staff: StaffContext, caseId: string, input: CaseAction) {
     this.assertRole(
       staff,
-      input.action === 'BAN_USER' ? ['SUPER_ADMIN'] : ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN'],
+      input.action === 'BAN_USER' ? ['SUPER_ADMIN'] : STAFF_SCOPES.moderation,
       input.action === 'BAN_USER' ? 'BAN_REQUIRES_SUPER_ADMIN' : 'OUT_OF_SCOPE',
     );
 
@@ -2150,7 +2151,7 @@ export class ModerationService {
 
   /** `GET /admin/moderation/stats` (§8.2) : délai moyen, file, respect du SLA. */
   async stats(staff: StaffContext, now: Date = new Date()) {
-    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    this.assertRole(staff, STAFF_SCOPES.moderation);
 
     const byPriority = await this.prisma.moderationCase.groupBy({
       by: ['priority'],

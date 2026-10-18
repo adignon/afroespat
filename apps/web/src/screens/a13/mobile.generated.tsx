@@ -14,6 +14,7 @@ export function A13Mobile(props: A13Data) {
   return (
     <>
       <div style={{ flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
         <div data-story-fond="" style={{ position: "relative", width: "100%", height: "100%", minHeight: "100vh", background: st.bg, color: "#fff", display: "flex", flexDirection: "column", overflow: "hidden" }}>

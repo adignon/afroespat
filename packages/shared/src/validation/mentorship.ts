@@ -342,9 +342,18 @@ export const myMentorshipsResponseSchema = z
           acceptedAt: z.string().datetime().nullable(),
           endsAt: z.string().datetime().nullable(),
           endedAt: z.string().datetime().nullable(),
-          /** §2.2 : calculé pour une demande en attente, `null` sinon. */
+          /**
+           * §2.2 / §6 : la colonne `mentorships.expires_at` pour une demande en
+           * attente (created_at + 7 jours), `null` sinon.
+           */
           expiresAt: z.string().datetime().nullable(),
+          /** §6 : la colonne `mentorships.extended_once`. */
           extended: z.boolean(),
+          /**
+           * Décidé par le SERVEUR : actif, pas déjà prolongé. Le front éteint le
+           * bouton « Prolonger » sur ce drapeau, il ne recalcule pas les 90 jours.
+           */
+          canExtend: z.boolean(),
           canReview: z.boolean(),
           myReview: mentorshipOwnReviewSchema.nullable(),
           theirReview: mentorshipOwnReviewSchema.nullable(),
@@ -361,6 +370,48 @@ export const myMentorshipsResponseSchema = z
   .strict();
 
 export type MyMentorshipsResponse = z.infer<typeof myMentorshipsResponseSchema>;
+
+/**
+ * `GET /me/mentor-profile` — MON profil de parrain (s'il existe) et LE DIAGNOSTIC
+ * D'ÉLIGIBILITÉ de §2.1.
+ *
+ * Il manquait une route qui dise LESQUELLES des trois conditions manquent :
+ * `PUT /me/mentor-profile` répond `MENTOR_NOT_ELIGIBLE` sans détail, et l'écran
+ * « Devenir parrain » dessine trois conditions qu'il ne pouvait pas évaluer. Le
+ * serveur les évalue ; le front les montre.
+ *
+ *   · `identity`   — identité vérifiée (niveau L1 au moins) ;
+ *   · `phone`      — numéro d'un pays de destination vérifié (niveau L2) ;
+ *   · `experience` — un parcours terminé, OU SETTLED depuis 12 mois.
+ *
+ * `eligible` est la conjonction des trois : le PUT l'applique de toute façon.
+ */
+export const mentorEligibilitySchema = z
+  .object({
+    eligible: z.boolean(),
+    identity: z.boolean(),
+    phone: z.boolean(),
+    experience: z
+      .object({
+        ok: z.boolean(),
+        completedJourneys: z.number().int().min(0),
+        settledForMonths: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type MentorEligibility = z.infer<typeof mentorEligibilitySchema>;
+
+export const myMentorProfileResponseSchema = z
+  .object({
+    profile: mentorCardSchema.nullable(),
+    eligibility: mentorEligibilitySchema,
+    meta: mentorshipMetaSchema,
+  })
+  .strict();
+
+export type MyMentorProfileResponse = z.infer<typeof myMentorProfileResponseSchema>;
 
 /** `PUT /me/mentor-profile` (§7.1) : la fiche telle qu'elle vient d'être posée. */
 export const mentorProfileResponseSchema = mentorCardSchema.extend({

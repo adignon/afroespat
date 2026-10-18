@@ -6561,12 +6561,12 @@ export const screens = [
       {
         nom: 'ChromeGauche',
         cadres: ['Desktop'],
-        prises: ['rail', 'panelReseaux', 'shortcuts'],
+        prises: ['rail', 'panelReseaux'],
         type: 'A08Data',
         freres: 1,
         why: 'Le menu de gauche de A08, monté autour des vingt-cinq planches d’onglet — la maquette dit « menu de gauche identique à A08 », et c’est donc un emprunt, pas un dessin.',
         debut:
-          '<div style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>',
+          '<div data-zone="gauche" style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>',
       },
       {
         nom: 'BarreHaute',
@@ -6582,8 +6582,14 @@ export const screens = [
         type: 'A08Data',
         freres: 1,
         why: 'La barre haute de A08 — recherche, créer, messages, notifications, pastille — montée au-dessus des planches d’onglet, qui ne la dessinent pas.',
-        debut:
-          '<div style={{ height: "64px", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0", position: "sticky", top: "0", zIndex: 20, background: "#F6F8F7" }}>',
+        /**
+         * LA BARRE EST MAINTENANT L'EN-TÊTE GLOBAL (`adaptations/entete-global.mjs`) :
+         * un `<header>` fixe sur toute la largeur — logo, recherche centrée, contrôles —
+         * et non plus la rangée de 64 px de la colonne de droite. La région en prend
+         * donc l'élément entier. Elle ne laisse plus de place dans le flux : l'écran qui
+         * la monte (`reseau-screen.tsx`) pose lui-même l'espace de 64 px sous la barre.
+         */
+        debut: '<header data-entete-globale="" ',
       },
     ],
   },

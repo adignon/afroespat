@@ -285,18 +285,33 @@ export function useEditionProfil(): {
     if (form.aide !== depart.aide) profil['availableToHelp'] = form.aide;
     if (form.visible !== depart.visible) profil['isPublic'] = form.visible;
 
-    const envois: Promise<unknown>[] = [];
-    if (Object.keys(identite).length > 0) {
-      envois.push(
-        memberApi.patch('/me', meResponseSchema, { body: updateMeSchema.parse(identite) }),
-      );
+    /**
+     * LE FRONT PRÉVIENT AVEC LES SCHÉMAS PARTAGÉS, le serveur décide. `parse` levait
+     * une `ZodError` non rattrapée dans ce gestionnaire (bouton figé en « envoi »,
+     * aucun message) dès qu'un pseudo ou une date ne passait pas : `safeParse` rend
+     * le premier message du schéma — pseudo (chiffre en tête, moins de 3
+     * caractères, séparateur final, majuscules), date d'arrivée dans le futur,
+     * départ dans le passé, fuseau inconnu.
+     */
+    const identiteValide = Object.keys(identite).length > 0 ? updateMeSchema.safeParse(identite) : null;
+    if (identiteValide !== null && !identiteValide.success) {
+      notifyError(identiteValide.error.issues[0]?.message ?? 'Une information est invalide.');
+      setEnvoi(false);
+      return;
     }
-    if (Object.keys(profil).length > 0) {
-      envois.push(
-        memberApi.patch('/me/profile', meResponseSchema, {
-          body: updateProfileSchema.parse(profil),
-        }),
-      );
+    const profilValide = Object.keys(profil).length > 0 ? updateProfileSchema.safeParse(profil) : null;
+    if (profilValide !== null && !profilValide.success) {
+      notifyError(profilValide.error.issues[0]?.message ?? 'Une information est invalide.');
+      setEnvoi(false);
+      return;
+    }
+
+    const envois: Promise<unknown>[] = [];
+    if (identiteValide !== null && identiteValide.success) {
+      envois.push(memberApi.patch('/me', meResponseSchema, { body: identiteValide.data }));
+    }
+    if (profilValide !== null && profilValide.success) {
+      envois.push(memberApi.patch('/me/profile', meResponseSchema, { body: profilValide.data }));
     }
 
     if (envois.length === 0) {

@@ -4,14 +4,17 @@ import {
   notificationListQuerySchema,
   notificationPreferencesSchema,
   notificationReadSchema,
+  addEmailSchema,
   pushSubscriptionSchema,
+  verifyEmailSchema,
   unsubscribeQuerySchema,
   uuidSchema,
 } from '@app/shared';
 import type { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
-import { PublicRead, RequiresCapability } from '../../common/capability.decorator';
+import { PublicRead, RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { zodPipe } from '../../common/zod.pipe';
+import { EmailAddressService } from './email-address.service';
 import { NotificationsService } from './notifications.service';
 
 /**
@@ -66,16 +69,17 @@ export class NotificationsController {
  * `@Controller()` sans préfixe, comme `UsersController` : les routes `/me/...` de
  * modules différents cohabitent ainsi sans qu'un module s'approprie le préfixe.
  *
- * MANQUENT, et c'est une dépendance non satisfaite et non un oubli : `POST /me/email`
- * et `POST /me/email/verify`. §3 annonce `users.email` « ajoutée au module 01 » et
- * la colonne n'existe pas dans le schéma figé — aucune table ne peut porter
- * l'adresse. Exposer deux routes qui échoueraient toujours serait pire que leur
- * absence : le front croirait la chaîne branchée. Voir le rapport.
+ * L'ADRESSE EMAIL (`/me/email`) vit ici aussi : 12 §4 la range avec les réglages de
+ * notification. Elle est chiffrée comme le téléphone et ne sort jamais en clair
+ * (`EmailAddressService`).
  */
 @ApiTags('notifications')
 @Controller()
 export class NotificationSettingsController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly emails: EmailAddressService,
+  ) {}
 
   @Get('me/notification-preferences')
   @RequiresCapability('content.read')
@@ -102,6 +106,54 @@ export class NotificationSettingsController {
    * front a demandé ; ce qu'il garantit, c'est qu'aucun push ne part sans une
    * ligne créée ici.
    */
+  // ── Adresse email (12 §3) ─────────────────────────────────────────────────
+
+  @Get('me/email')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Mon adresse email, masquée, et la vérification en cours' })
+  async emailState(@Auth() auth: AuthContext) {
+    return this.emails.state(auth.userId);
+  }
+
+  @Post('me/email')
+  @HttpCode(200)
+  @RateLimit(10, 'hour')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Ajouter ou changer l’adresse : envoie un code de vérification' })
+  async addEmail(
+    @Auth() auth: AuthContext,
+    @Body(zodPipe(addEmailSchema)) body: z.infer<typeof addEmailSchema>,
+  ) {
+    return this.emails.start(auth.userId, body.email);
+  }
+
+  @Post('me/email/verify')
+  @HttpCode(200)
+  @RateLimit(20, 'hour')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Confirmer l’adresse avec le code reçu' })
+  async verifyEmail(
+    @Auth() auth: AuthContext,
+    @Body(zodPipe(verifyEmailSchema)) body: z.infer<typeof verifyEmailSchema>,
+  ) {
+    return this.emails.verify(auth.userId, body.code);
+  }
+
+  @Delete('me/email')
+  @HttpCode(204)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Retirer l’adresse : le canal email s’éteint' })
+  async removeEmail(@Auth() auth: AuthContext): Promise<void> {
+    await this.emails.remove(auth.userId);
+  }
+
+  @Get('me/push-subscriptions')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Clé publique VAPID et appareils abonnés (§2.4)' })
+  async pushState(@Auth() auth: AuthContext) {
+    return this.notifications.listPushSubscriptions(auth.userId);
+  }
+
   @Post('me/push-subscriptions')
   @HttpCode(201)
   @RequiresCapability('content.read')

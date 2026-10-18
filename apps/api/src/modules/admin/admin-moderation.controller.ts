@@ -5,6 +5,7 @@ import {
   casesQuerySchema,
   moderationThresholdsSchema,
   scamAlertWriteSchema,
+  STAFF_SCOPES,
   uuidSchema,
 } from '@app/shared';
 import type { z } from 'zod';
@@ -51,7 +52,7 @@ export class AdminModerationController {
   // ── La file (§8.2) ────────────────────────────────────────────────────────
 
   @Get('cases')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
   @ApiOperation({ summary: 'File de modération, filtrable par statut, priorité, assignation, SLA' })
   async cases(
     @Staff() staff: StaffUser,
@@ -61,21 +62,21 @@ export class AdminModerationController {
   }
 
   @Get('cases/:id')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
   @ApiOperation({ summary: 'Dossier complet : signalements, analyses IA, historique de l’auteur' })
   async caseDetail(@Staff() staff: StaffUser, @Param('id', zodPipe(uuidSchema)) id: string) {
     return this.moderation.caseDetail(staffContext(staff), id);
   }
 
   @Post('cases/:id/assign')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
   @ApiOperation({ summary: 'S’assigne un dossier (refusé sur une contestation déjà tranchée par soi)' })
   async assign(@Staff() staff: StaffUser, @Param('id', zodPipe(uuidSchema)) id: string) {
     return this.moderation.assignCase(staffContext(staff), id);
   }
 
   @Post('cases/:id/release')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
   @ApiOperation({ summary: 'Rend le dossier à la file' })
   async release(@Staff() staff: StaffUser, @Param('id', zodPipe(uuidSchema)) id: string) {
     return this.moderation.releaseCase(staffContext(staff), id);
@@ -91,7 +92,7 @@ export class AdminModerationController {
    * trois rôles et laisser le service trancher est la seule répartition juste.
    */
   @Post('cases/:id/actions')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
   @ApiOperation({ summary: 'Agit sur un dossier ; le bannissement exige SUPER_ADMIN' })
   async act(
     @Staff() staff: StaffUser,
@@ -102,14 +103,14 @@ export class AdminModerationController {
   }
 
   @Get('users/:id/history')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
   @ApiOperation({ summary: 'Historique de modération d’un membre : sanctions et dossiers' })
   async history(@Staff() staff: StaffUser, @Param('id', zodPipe(uuidSchema)) id: string) {
     return this.moderation.userModerationHistory(staffContext(staff), id);
   }
 
   @Get('stats')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation)
   @ApiOperation({ summary: 'File par priorité, dossiers en retard, délai moyen, respect du SLA' })
   async stats(@Staff() staff: StaffUser) {
     return this.moderation.stats(staffContext(staff));
@@ -144,7 +145,7 @@ export class AdminModerationController {
    * portes ne peuvent pas accepter des valeurs différentes.
    */
   @Get('settings')
-  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @RequiresStaffRole(...STAFF_SCOPES.moderation, 'CONTENT_ADMIN')
   @ApiOperation({ summary: 'Seuils de modération effectifs (défauts du code si non réglés)' })
   async thresholds() {
     return this.moderation.thresholds();

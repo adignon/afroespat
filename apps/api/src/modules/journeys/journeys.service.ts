@@ -9,8 +9,12 @@ import {
   JOURNEY_INACTIVITY_DAYS,
   JOURNEY_MAX_MEMBERS,
   JOURNEY_REMINDER_DAYS,
+  MENTORSHIP_MESSAGE_MIN,
   PUBLIC_JOURNEYS_MAX_LIMIT,
+  SETTLEMENT_TEMPLATE_CODE,
+  SETTLEMENT_VARIANTS,
   STEP_RISK_MESSAGE,
+  levelSatisfies,
   renderBlockerTemplate,
   type AddJourneyMember,
   type CreateJourney,
@@ -30,6 +34,7 @@ import {
   type VerificationLevel,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { planEffectif } from '../../common/monetisation';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { CryptoService } from '../../common/crypto.service';
@@ -40,6 +45,9 @@ import { loadEnv } from '../../config/env';
 import { ConsentsService } from '../consents/consents.service';
 import { FeedService } from '../feed/feed.service';
 import { HelpService } from '../help/help.service';
+import { HousingService } from '../housing/housing.service';
+import { JobsService } from '../jobs/jobs.service';
+import { MentorshipService } from '../mentorship/mentorship.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -75,6 +83,12 @@ import { NotificationsService } from '../notifications/notifications.service';
  *    employé partout est « arrêté », pas « échoué ».
  */
 
+/** 10 §2.1 : la description d'une annonce de logement fait au moins 50 caractères. */
+const HOUSING_DESCRIPTION_MIN = 50;
+
+/** §9 : ce que devient le message d'une correction de modèle dont l'auteur est parti. */
+const ANONYMISED_CORRECTION = '[Message supprimé avec le compte]';
+
 /** Le membre qui agit. Le NIVEAU voyage : la victoire partagée est une publication (L1). */
 export interface JourneyActor {
   readonly userId: string;
@@ -83,6 +97,24 @@ export interface JourneyActor {
 
 /** Ce qu'un lecteur est autorisé à voir d'un parcours (§3.4). */
 type ViewerRole = 'OWNER' | 'SUPPORTER' | 'OBSERVER';
+
+/** « N membres de la ville ont franchi cette étape » : l'agrégat et trois avatars publics. */
+export interface PeersView {
+  readonly count: number;
+  readonly cityName: string;
+  readonly sample: readonly {
+    readonly handle: string;
+    readonly displayName: string | null;
+    readonly avatarKey: string | null;
+  }[];
+}
+
+/** §2.3 : l'alerte « échéance trop proche » d'une étape. */
+export interface DeadlineAlert {
+  readonly dependsOnStepId: string;
+  readonly dependsOnTitle: string;
+  readonly indicativeDays: number;
+}
 
 const STEP_SELECT = {
   id: true,
@@ -113,6 +145,7 @@ const STEP_SELECT = {
       isMajorMilestone: true,
       isRisky: true,
       riskMessage: true,
+      guide: { select: { slug: true, title: true, helpfulCount: true, status: true, deletedAt: true } },
     },
   },
 } as const satisfies Prisma.JourneyStepSelect;
@@ -143,6 +176,12 @@ export class JourneysService {
     private readonly feed: FeedService,
     private readonly messaging: MessagingService,
     private readonly notifications: NotificationsService,
+    // Les trois cibles de « Je suis bloqué » dont la publication publique s'ajoute à
+    // l'entraide (§3.5). Le parcours ORCHESTRE : chacune applique SES règles
+    // (niveau, quota, modération), ce module ne les recopie pas.
+    private readonly housing: HousingService,
+    private readonly jobs: JobsService,
+    private readonly mentorship: MentorshipService,
   ) {
     this.cursorSecret = loadEnv().CURSOR_SECRET;
   }
@@ -434,6 +473,29 @@ export class JourneysService {
     const version = this.pickVersion(template.versions, me.originCountryId);
     if (version === null) this.fail('TEMPLATE_UNAVAILABLE');
 
+    /**
+     * ── LA VARIANTE DE « RÉGULARISER MA SITUATION » (T3 A.2) ─────────────────
+     *
+     * Elle n'existe que pour ce type : la refuser ailleurs vaut mieux que de
+     * l'ignorer, car le membre croirait avoir choisi un parcours de « changement de
+     * statut » dans un parcours d'Études. Le choix REMPLACE la définition de la
+     * première étape (REGULARIZATION, composée par la version publiée) : le titre,
+     * la description et la checklist copiés sont ceux de la définition choisie.
+     */
+    if (input.variant !== undefined && template.code !== SETTLEMENT_TEMPLATE_CODE) {
+      throw ApiError.validation([{ path: 'variant', code: 'VARIANT_NOT_APPLICABLE' }]);
+    }
+    const chosenVariant =
+      input.variant === undefined || input.variant === 'REGULARIZATION' ? null : input.variant;
+    const variantDefinition =
+      chosenVariant === null
+        ? null
+        : await this.prisma.stepDefinition.findUnique({
+            where: { code: chosenVariant },
+            select: { id: true, nameFr: true, description: true, documentChecklist: true },
+          });
+    if (chosenVariant !== null && variantDefinition === null) this.fail('TEMPLATE_UNAVAILABLE');
+
     const templateSteps = await this.prisma.templateStep.findMany({
       where: { templateVersionId: version.id },
       orderBy: { position: 'asc' },
@@ -444,7 +506,7 @@ export class JourneysService {
         daysBeforeArrival: true,
         overrides: true,
         stepDefinition: {
-          select: { id: true, nameFr: true, description: true, documentChecklist: true },
+          select: { id: true, code: true, nameFr: true, description: true, documentChecklist: true },
         },
       },
     });
@@ -455,7 +517,7 @@ export class JourneysService {
     const now = new Date();
 
     await this.prisma.$transaction(async (tx) => {
-      await this.assertJourneyQuota(tx, actor.userId, me.plan);
+      await this.assertJourneyQuota(tx, actor.userId, await planEffectif(tx, me.plan));
 
       await tx.journey.create({
         data: {
@@ -479,8 +541,13 @@ export class JourneysService {
         // §2.1 : la version « assemble et ordonne des définitions » et peut les
         // surcharger localement (`template_steps.overrides`, T3 A.3 pour la
         // déclinaison Bénin). La surcharge l'emporte, la définition sert de repli.
-        const overrides = readOverrides(step.overrides);
-        const description = overrides.description ?? step.stepDefinition.description;
+        const isVariantSlot =
+          variantDefinition !== null && step.stepDefinition.code === 'REGULARIZATION';
+        // La surcharge d'une version n'a de sens que pour SA définition : celle de la
+        // variante choisie prend le nom et la description de la définition elle-même.
+        const overrides = isVariantSlot ? {} : readOverrides(step.overrides);
+        const definition = isVariantSlot ? variantDefinition : step.stepDefinition;
+        const description = overrides.description ?? definition.description;
         const stepId = newId();
         const dueDate =
           targetArrivalDate === null || step.daysBeforeArrival === null
@@ -492,8 +559,8 @@ export class JourneysService {
             id: stepId,
             journeyId,
             templateStepId: step.id,
-            stepDefinitionId: step.stepDefinition.id,
-            title: overrides.name ?? step.stepDefinition.nameFr,
+            stepDefinitionId: definition.id,
+            title: overrides.name ?? definition.nameFr,
             ...(description === null ? {} : { description }),
             position: step.position,
             status: 'TODO',
@@ -505,7 +572,7 @@ export class JourneysService {
 
         // §3.3 : la checklist est COPIÉE, puis modifiable. La copie est ce qui
         // permet au membre d'ajouter ses propres lignes sans toucher au modèle.
-        const labels = step.stepDefinition.documentChecklist;
+        const labels = definition.documentChecklist;
         if (labels.length > 0) {
           await tx.journeyStepChecklistItem.createMany({
             data: labels.map((label, index) => ({
@@ -704,6 +771,19 @@ export class JourneysService {
       .filter((s) => s.status !== 'DONE' && s.dueDate !== null)
       .sort((a, b) => (a.dueDate as Date).getTime() - (b.dueDate as Date).getTime())[0];
 
+    // Le propriétaire seul : la migration est SON geste, et le compte d'aides
+    // reçues vient d'un journal qu'un accompagnant ne lit pas (§3.4).
+    const newerVersion = role === 'OWNER' ? await this.newerVersionFor(journey) : null;
+    const helpReceivedCount =
+      role === 'OWNER'
+        ? await this.prisma.journeyActivity.count({ where: { journeyId, type: 'HELP_RECEIVED' } })
+        : 0;
+    const peers = role === 'OWNER' ? await this.peersOnCurrentStep(userId, journey, steps) : null;
+    const alerts: Map<string, DeadlineAlert> =
+      role === 'OWNER'
+        ? await this.deadlineAlerts(journey.templateVersionId, steps)
+        : new Map<string, DeadlineAlert>();
+
     return {
       journey: {
         id: journey.id,
@@ -725,10 +805,25 @@ export class JourneysService {
         totalCount: nonOptional.length,
         nextDueDate: nextDue?.dueDate ?? null,
         inactivityPromptSentAt: journey.inactivityPromptSentAt,
+        // §3.9 : « Où en êtes-vous ? » attend une réponse tant que le membre n'a rien
+        // fait depuis la relance. Répondre (même « je continue ») est une activité.
+        inactivityPromptPending:
+          role === 'OWNER' &&
+          journey.status === 'ACTIVE' &&
+          journey.inactivityPromptSentAt !== null &&
+          journey.lastActivityAt <= journey.inactivityPromptSentAt,
+        newerVersion,
+        helpReceivedCount,
       },
       viewerRole: role,
       steps: steps.map((step) =>
-        this.stepView(step, role, checklists.filter((c) => c.journeyStepId === step.id)),
+        this.stepView(
+          step,
+          role,
+          checklists.filter((c) => c.journeyStepId === step.id),
+          alerts.get(step.id) ?? null,
+          peers !== null && peers.stepId === step.id ? peers.view : null,
+        ),
       ),
       members: members.map((member) => ({
         userId: member.userId,
@@ -753,6 +848,8 @@ export class JourneysService {
     step: StepRow,
     role: ViewerRole,
     checklist: readonly { id: string; label: string; position: number; isChecked: boolean; checkedAt: Date | null }[],
+    deadlineAlert: DeadlineAlert | null = null,
+    peers: PeersView | null = null,
   ) {
     const definition = step.stepDefinition;
     const base = {
@@ -770,6 +867,19 @@ export class JourneysService {
       stepDefinitionCode: definition?.code ?? null,
       category: definition?.category ?? null,
       guideId: definition?.guideId ?? null,
+      // T3 A.1 : le guide lié, quand il est publié. « Guide à venir » sinon — c'est
+      // l'écran qui le dit, il n'y a rien à inventer ici.
+      guide:
+        definition?.guide !== undefined &&
+        definition.guide !== null &&
+        definition.guide.status === 'PUBLISHED' &&
+        definition.guide.deletedAt === null
+          ? {
+              slug: definition.guide.slug,
+              title: definition.guide.title,
+              helpfulCount: definition.guide.helpfulCount,
+            }
+          : null,
       blockerTarget: definition?.blockerTarget ?? 'HELP',
       isMajorMilestone: definition?.isMajorMilestone ?? false,
       isRisky: definition?.isRisky ?? false,
@@ -792,7 +902,154 @@ export class JourneysService {
         isChecked: item.isChecked,
         checkedAt: item.checkedAt,
       })),
+      deadlineAlert,
+      peers,
     };
+  }
+
+  /**
+   * « N membres de Lyon ont franchi cette étape » (§6, page parcours) — pour l'ÉTAPE
+   * EN COURS seulement, et seulement au propriétaire.
+   *
+   * C'est un AGRÉGAT : le nombre de parcours d'autres membres, de la même ville de
+   * destination, où l'étape de même définition est franchie. Les avatars, eux, ne
+   * viennent que des parcours PUBLICS non arrêtés — §3.7 : un parcours privé ne
+   * s'expose jamais, même par un avatar. Les membres dont on est séparé (dans les deux
+   * sens) sont exclus du nombre comme de la liste.
+   */
+  private async peersOnCurrentStep(
+    userId: string,
+    journey: { currentStepId: string | null; destinationCityId: string; destinationCity: { name: string } },
+    steps: readonly StepRow[],
+  ): Promise<{ stepId: string; view: PeersView } | null> {
+    const current = steps.find((s) => s.id === journey.currentStepId);
+    if (current === undefined || current.stepDefinitionId === null) return null;
+    const separated = await this.visibility.separatedFrom(userId);
+    const rows = await this.prisma.journeyStep.findMany({
+      where: {
+        stepDefinitionId: current.stepDefinitionId,
+        status: 'DONE',
+        journey: {
+          deletedAt: null,
+          destinationCityId: journey.destinationCityId,
+          ownerUserId: { not: userId, ...(separated.length === 0 ? {} : { notIn: separated }) },
+          owner: { deletedAt: null, status: 'ACTIVE' },
+        },
+      },
+      orderBy: { completedAt: 'desc' },
+      take: 200,
+      select: {
+        journeyId: true,
+        journey: { select: { visibility: true, status: true, owner: { select: MEMBER_USER_SELECT } } },
+      },
+    });
+    const distinct = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) if (!distinct.has(row.journeyId)) distinct.set(row.journeyId, row);
+    const sample = [...distinct.values()]
+      .filter((r) => r.journey.visibility === 'PUBLIC' && ['ACTIVE', 'COMPLETED'].includes(r.journey.status))
+      .slice(0, 3)
+      .map((r) => ({
+        handle: r.journey.owner.handle,
+        displayName: r.journey.owner.displayName,
+        avatarKey: r.journey.owner.avatarAsset?.storageKey ?? null,
+      }));
+    return {
+      stepId: current.id,
+      view: { count: distinct.size, cityName: journey.destinationCity.name, sample },
+    };
+  }
+
+  /**
+   * §2.2 — « La procédure a évolué » : la version publiée courante du modèle, quand
+   * ce n'est pas celle que le parcours suit.
+   *
+   * La résolution est celle de `create()` et de `templates()` (`pickVersion` sur les
+   * versions publiées du type, pour le pays d'ORIGINE du parcours) : trois
+   * résolutions indépendantes finiraient par diverger, et le membre se verrait
+   * proposer une migration vers une version que `POST /journeys/:id/migrate`
+   * refuserait en `ALREADY_CURRENT`.
+   */
+  private async newerVersionFor(journey: {
+    templateVersionId: string;
+    templateVersion: { templateId: string };
+    originCountry: { id: string };
+  }): Promise<{ id: string; version: number; changelog: string | null } | null> {
+    const resolved = await this.currentPublishedVersion(
+      journey.templateVersion.templateId,
+      journey.originCountry.id,
+    );
+    if (resolved === null || resolved.id === journey.templateVersionId) return null;
+    return { id: resolved.id, version: resolved.version, changelog: resolved.changelog };
+  }
+
+  private async currentPublishedVersion(templateId: string, originCountryId: string) {
+    const versions = await this.prisma.journeyTemplateVersion.findMany({
+      where: {
+        templateId,
+        status: 'PUBLISHED',
+        OR: [{ originCountryId: null }, { originCountryId }],
+      },
+      select: { id: true, version: true, originCountryId: true, changelog: true },
+    });
+    return this.pickVersion(versions, originCountryId);
+  }
+
+  /**
+   * §2.3 — l'alerte d'incompatibilité d'échéances.
+   *
+   * « Si une étape A dépend de B et que `due_date(A) < due_date(B) + durée
+   * indicative de B`, l'interface affiche “Cette échéance est trop proche : B prend
+   * en général N jours”. Pas de blocage, une alerte. »
+   *
+   * Les dépendances sont celles de la VERSION que suit le parcours
+   * (`step_dependencies`, qui n'avait jusqu'ici aucun lecteur) ; elles ne
+   * concernent que les étapes issues du modèle — une étape ajoutée par le membre
+   * n'a pas de `template_step_id`. Une étape déjà franchie n'alerte plus, et une
+   * dépendance déjà franchie non plus : l'alerte porte sur un retard à venir.
+   *
+   * Retourne une table `id d'étape → alerte`, vide si le modèle n'a aucune
+   * dépendance. S'il y en a plusieurs sur la même étape, la plus contraignante (le
+   * plus grand dépassement) l'emporte.
+   */
+  private async deadlineAlerts(
+    templateVersionId: string,
+    steps: readonly StepRow[],
+  ): Promise<Map<string, DeadlineAlert>> {
+    const out = new Map<string, DeadlineAlert>();
+    const dependencies = await this.prisma.stepDependency.findMany({
+      where: { templateVersionId },
+      select: { stepId: true, dependsOnStepId: true },
+    });
+    if (dependencies.length === 0) return out;
+
+    const byTemplateStep = new Map<string, StepRow>();
+    for (const step of steps) {
+      if (step.templateStepId !== null) byTemplateStep.set(step.templateStepId, step);
+    }
+
+    const worst = new Map<string, number>();
+    for (const dependency of dependencies) {
+      const dependent = byTemplateStep.get(dependency.stepId);
+      const prerequisite = byTemplateStep.get(dependency.dependsOnStepId);
+      if (dependent === undefined || prerequisite === undefined) continue;
+      if (dependent.status === 'DONE' || prerequisite.status === 'DONE') continue;
+      if (dependent.dueDate === null || prerequisite.dueDate === null) continue;
+      const days = prerequisite.stepDefinition?.defaultDurationDays ?? null;
+      if (days === null) continue;
+
+      const earliest = prerequisite.dueDate.getTime() + days * 86_400_000;
+      const overshoot = earliest - dependent.dueDate.getTime();
+      if (overshoot <= 0) continue;
+      if (overshoot > (worst.get(dependent.id) ?? 0)) {
+        worst.set(dependent.id, overshoot);
+        out.set(dependent.id, {
+          dependsOnStepId: prerequisite.id,
+          dependsOnTitle: prerequisite.title,
+          indicativeDays: days,
+        });
+      }
+    }
+    return out;
   }
 
   /**
@@ -1089,7 +1346,23 @@ export class JourneysService {
         patch.targetArrivalDate === null ? null : new Date(patch.targetArrivalDate);
     }
 
+    // « Reprendre » un parcours arrêté ou terminé le fait redevenir ACTIVE, donc le
+    // refait entrer dans le compte du plan gratuit (§3.1 : seuls ACTIVE et PAUSED
+    // comptent). Sans ce contrôle, la limite d'un parcours actif se contournerait en
+    // arrêtant le premier, en en ouvrant un second, puis en reprenant le premier.
+    const reactivates =
+      patch.status === 'ACTIVE' && journey.status !== 'ACTIVE' && journey.status !== 'PAUSED';
+    const plan = reactivates
+      ? (
+          await this.prisma.user.findUniqueOrThrow({
+            where: { id: userId },
+            select: { plan: true },
+          })
+        ).plan
+      : null;
+
     await this.prisma.$transaction(async (tx) => {
+      if (plan !== null) await this.assertJourneyQuota(tx, userId, plan);
       await tx.journey.update({ where: { id: journeyId }, data: { ...data, lastActivityAt: new Date() } });
 
       // §3.7 : le passage en PUBLIC « enregistre le consentement
@@ -1224,6 +1497,240 @@ export class JourneysService {
       },
     });
     return { id, status: 'PENDING' as const, meta: this.meta() };
+  }
+
+  /**
+   * `POST /journeys/:id/migrate` (§2.2, §5.1) — « La procédure a évolué ».
+   *
+   * « Un membre peut MIGRER manuellement son parcours : les étapes de même
+   * `step_definition` gardent leur état, les nouvelles arrivent en `TODO`, les
+   * supprimées sont conservées en `is_custom = true`. »
+   *
+   * ── LA RÈGLE DURE QUE CE GESTE NE CONTREDIT PAS ──────────────────────────────
+   *
+   * « Publier une version ne modifie jamais un `journey` existant » (§2.2). Publier
+   * ne touche donc rien ; c'est CET appel, explicite et fait par le propriétaire,
+   * qui déplace un parcours. Aucune tâche ni aucun consommateur ne l'appelle.
+   *
+   * ── CE QUI EST CONSERVÉ, ET COMMENT ───────────────────────────────────────
+   *
+   *   · une étape du modèle retrouvée dans la nouvelle version (même définition —
+   *     les trois variantes de SETTLEMENT sont une seule et même case) garde son
+   *     état, ses dates, ses notes et sa checklist ; elle est rattachée à la
+   *     nouvelle ligne de version (`template_step_id`), donc son rétro-planning et
+   *     ses dépendances suivent la nouvelle composition ;
+   *   · une étape du modèle ABSENTE de la nouvelle version devient personnelle
+   *     (`is_custom`, plus de `template_step_id`) : le membre a peut-être travaillé
+   *     dessus, la supprimer effacerait son historique ;
+   *   · une étape de la nouvelle version qui manquait arrive en `TODO`, avec sa
+   *     checklist copiée et son échéance rétro-planifiée ;
+   *   · une étape ajoutée par le membre ne bouge pas, hors de sa position.
+   *
+   * L'ORDRE est celui de la nouvelle version, puis viennent les étapes personnelles
+   * dans leur ordre relatif d'avant. `(journey_id, position)` est unique : les
+   * positions sont d'abord libérées (négatives) puis réécrites, comme `reorderSteps`.
+   *
+   * Un parcours arrêté (`ABANDONED`) ou archivé ne migre pas : §3.9 propose de le
+   * reprendre d'abord.
+   */
+  async migrate(userId: string, journeyId: string) {
+    const journey = await this.prisma.journey.findFirst({
+      where: { id: journeyId, ownerUserId: userId, deletedAt: null },
+      select: {
+        id: true,
+        status: true,
+        targetArrivalDate: true,
+        originCountryId: true,
+        templateVersionId: true,
+        templateVersion: { select: { version: true, templateId: true } },
+      },
+    });
+    if (journey === null) throw ApiError.notFound();
+    if (journey.status === 'ABANDONED' || journey.status === 'ARCHIVED') {
+      this.fail('JOURNEY_STATE', { status: journey.status });
+    }
+
+    const target = await this.currentPublishedVersion(
+      journey.templateVersion.templateId,
+      journey.originCountryId,
+    );
+    if (target === null) this.fail('TEMPLATE_UNAVAILABLE');
+    if (target.id === journey.templateVersionId) this.fail('ALREADY_CURRENT');
+
+    const newSteps = await this.prisma.templateStep.findMany({
+      where: { templateVersionId: target.id },
+      orderBy: { position: 'asc' },
+      select: {
+        id: true,
+        position: true,
+        daysBeforeArrival: true,
+        overrides: true,
+        stepDefinition: {
+          select: { id: true, code: true, nameFr: true, description: true, documentChecklist: true },
+        },
+      },
+    });
+    const current = await this.prisma.journeyStep.findMany({
+      where: { journeyId },
+      orderBy: { position: 'asc' },
+      select: {
+        id: true,
+        isCustom: true,
+        templateStepId: true,
+        stepDefinition: { select: { code: true } },
+      },
+    });
+
+    // Les trois définitions de « Régulariser » occupent la MÊME case du modèle.
+    const slot = (code: string | undefined): string | null =>
+      code === undefined
+        ? null
+        : (SETTLEMENT_VARIANTS as readonly string[]).includes(code)
+          ? 'REGULARIZATION'
+          : code;
+
+    type Placed =
+      | { kind: 'kept'; stepId: string; templateStepId: string }
+      | { kind: 'added'; template: (typeof newSteps)[number] }
+      | { kind: 'left'; stepId: string; madeCustom: boolean };
+
+    const claimed = new Set<string>();
+    const placed: Placed[] = [];
+    for (const template of newSteps) {
+      const key = slot(template.stepDefinition.code);
+      const match = current.find(
+        (step) =>
+          !claimed.has(step.id) &&
+          !step.isCustom &&
+          step.templateStepId !== null &&
+          slot(step.stepDefinition?.code) === key,
+      );
+      if (match === undefined) {
+        placed.push({ kind: 'added', template });
+      } else {
+        claimed.add(match.id);
+        placed.push({ kind: 'kept', stepId: match.id, templateStepId: template.id });
+      }
+    }
+    let madeCustom = 0;
+    for (const step of current) {
+      if (claimed.has(step.id)) continue;
+      const fromTemplate = !step.isCustom && step.templateStepId !== null;
+      if (fromTemplate) madeCustom += 1;
+      placed.push({ kind: 'left', stepId: step.id, madeCustom: fromTemplate });
+    }
+
+    const kept = placed.filter((p) => p.kind === 'kept').length;
+    const added = placed.filter((p) => p.kind === 'added').length;
+    const now = new Date();
+    const arrival = journey.targetArrivalDate;
+
+    await this.prisma.$transaction(async (tx) => {
+      // 1. Libérer toutes les positions.
+      for (const [index, step] of current.entries()) {
+        await tx.journeyStep.update({ where: { id: step.id }, data: { position: -(index + 1) } });
+      }
+      // 2. Réécrire dans l'ordre final.
+      for (const [index, entry] of placed.entries()) {
+        const position = index + 1;
+        if (entry.kind === 'kept') {
+          await tx.journeyStep.update({
+            where: { id: entry.stepId },
+            data: { position, templateStepId: entry.templateStepId },
+          });
+        } else if (entry.kind === 'left') {
+          await tx.journeyStep.update({
+            where: { id: entry.stepId },
+            data: {
+              position,
+              ...(entry.madeCustom ? { isCustom: true, templateStepId: null } : {}),
+            },
+          });
+        } else {
+          const template = entry.template;
+          const overrides = readOverrides(template.overrides);
+          const description = overrides.description ?? template.stepDefinition.description;
+          const stepId = newId();
+          const dueDate =
+            arrival === null || template.daysBeforeArrival === null
+              ? null
+              : minusDays(arrival, template.daysBeforeArrival);
+          await tx.journeyStep.create({
+            data: {
+              id: stepId,
+              journeyId,
+              templateStepId: template.id,
+              stepDefinitionId: template.stepDefinition.id,
+              title: overrides.name ?? template.stepDefinition.nameFr,
+              ...(description === null ? {} : { description }),
+              position,
+              status: 'TODO',
+              ...(dueDate === null ? {} : { dueDate }),
+              dueDateManual: false,
+              isCustom: false,
+            },
+          });
+          const labels = template.stepDefinition.documentChecklist;
+          if (labels.length > 0) {
+            await tx.journeyStepChecklistItem.createMany({
+              data: labels.map((label, i) => ({
+                id: newId(),
+                journeyStepId: stepId,
+                label,
+                position: i + 1,
+                isChecked: false,
+              })),
+            });
+          }
+        }
+      }
+
+      await tx.journey.update({
+        where: { id: journeyId },
+        data: {
+          templateVersionId: target.id,
+          migratedFromVersionId: journey.templateVersionId,
+          lastActivityAt: now,
+        },
+      });
+      // Les étapes rattachées à la nouvelle version reprennent SON rétro-planning ;
+      // une échéance saisie à la main n'est jamais écrasée (§2.3).
+      await this.applyRetroPlanning(tx, journeyId, arrival);
+
+      await this.logActivity(tx, {
+        journeyId,
+        actorUserId: userId,
+        type: 'TEMPLATE_MIGRATED',
+        payload: {
+          fromVersion: journey.templateVersion.version,
+          toVersion: target.version,
+          kept,
+          added,
+          madeCustom,
+        },
+      });
+      await this.audit.record(tx, {
+        actor: { type: 'MEMBER', id: userId },
+        action: 'journey.migrated',
+        targetType: 'journey',
+        targetId: journeyId,
+        metadata: { fromVersionId: journey.templateVersionId, toVersionId: target.id },
+      });
+    });
+
+    await this.recomputeState(journeyId);
+    const detail = await this.detail(userId, journeyId);
+    return {
+      ...detail,
+      migration: {
+        fromVersion: journey.templateVersion.version,
+        toVersion: target.version,
+        kept,
+        added,
+        madeCustom,
+        changelog: target.changelog,
+      },
+    };
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -1600,7 +2107,7 @@ export class JourneysService {
 
   /** `POST /journeys/:id/members` (§3.4) : invitation par handle. */
   async addMember(userId: string, journeyId: string, input: AddJourneyMember) {
-    await this.assertOwned(userId, journeyId);
+    const journey = await this.assertOwned(userId, journeyId);
 
     const invited = await this.prisma.user.findUnique({
       where: { handle: input.userHandle },
@@ -1631,6 +2138,10 @@ export class JourneysService {
       if (count >= JOURNEY_MAX_MEMBERS) this.fail('MAX_MEMBERS', { max: JOURNEY_MAX_MEMBERS });
     }
 
+    // Faux seulement quand l'invité fait DÉJÀ partie de l'équipe : changer son rôle
+    // n'est pas une invitation, et le notifier de nouveau serait du bruit.
+    const invitedNow = existing === null || existing.status !== 'ACTIVE';
+
     if (existing === null) {
       await this.prisma.journeyMember.create({
         data: {
@@ -1655,7 +2166,110 @@ export class JourneysService {
       });
     }
 
+    if (invitedNow) await this.notifyInvitation(userId, invited.id, journeyId, journey, input.role);
+
     return this.detail(userId, journeyId);
+  }
+
+  /**
+   * §3.4 — « Le membre invité reçoit une notification et accepte ou refuse. »
+   *
+   * Le titre PERSONNEL du parcours ne part pas (§3.7) : l'invité apprend qui
+   * l'invite, pour quel type de parcours et dans quelle ville. La notification mène
+   * à `/parcours/invitations`, où il accepte ou refuse — il ne peut pas encore ouvrir
+   * le parcours lui-même (`loadForViewer` exige une appartenance ACTIVE).
+   *
+   * Un échec d'envoi n'annule PAS l'invitation : elle est écrite, l'invité la voit
+   * dans sa liste. Perdre l'invitation parce que la file de notifications est
+   * indisponible serait pire que de ne pas prévenir.
+   */
+  private async notifyInvitation(
+    inviterId: string,
+    inviteeId: string,
+    journeyId: string,
+    journey: { templateName: string; destinationCityName: string },
+    role: 'OBSERVER' | 'SUPPORTER',
+  ): Promise<void> {
+    try {
+      const inviter = await this.prisma.user.findUnique({
+        where: { id: inviterId },
+        select: { handle: true, displayName: true },
+      });
+      const name =
+        inviter === null
+          ? 'Un membre'
+          : inviter.displayName !== null && inviter.displayName.trim() !== ''
+            ? inviter.displayName
+            : `@${inviter.handle}`;
+      await this.notifications.deliver({
+        userId: inviteeId,
+        category: 'JOURNEY_TEAM',
+        type: 'journey.invitation',
+        title: `${name} vous invite à rejoindre son équipe`,
+        body:
+          `Parcours « ${journey.templateName} » à ${journey.destinationCityName} · ` +
+          (role === 'SUPPORTER' ? 'accompagnant·e' : 'observateur·rice'),
+        refType: 'JOURNEY',
+        refId: journeyId,
+        url: '/parcours',
+      });
+    } catch (cause) {
+      this.logger.warn(
+        `Invitation de parcours ${journeyId} : notification non envoyée (${
+          cause instanceof Error ? cause.message : String(cause)
+        })`,
+      );
+    }
+  }
+
+  /**
+   * `GET /journeys/invitations` (§3.4) — les invitations qui attendent MA réponse.
+   *
+   * Déclarée avant `journeys/:id` (le contrôleur le dit) : `invitations` n'est pas un
+   * identifiant. Les parcours de membres dont je suis séparé n'apparaissent pas, pour
+   * la raison de `loadForViewer` : un blocage rend le parcours introuvable.
+   */
+  async invitations(userId: string) {
+    const separated = await this.visibility.separatedFrom(userId);
+    const rows = await this.prisma.journeyMember.findMany({
+      where: {
+        userId,
+        status: 'INVITED',
+        removedAt: null,
+        journey: {
+          deletedAt: null,
+          status: { in: ['ACTIVE', 'PAUSED', 'COMPLETED'] },
+          ...(separated.length === 0 ? {} : { ownerUserId: { notIn: separated } }),
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        journeyId: true,
+        role: true,
+        createdAt: true,
+        invitedBy: { select: { handle: true, displayName: true } },
+        journey: {
+          select: {
+            destinationCity: { select: { id: true, name: true } },
+            templateVersion: {
+              select: { template: { select: { code: true, nameFr: true, icon: true } } },
+            },
+          },
+        },
+      },
+    });
+    return {
+      items: rows.map((row) => ({
+        journeyId: row.journeyId,
+        role: row.role,
+        invitedAt: row.createdAt,
+        template: row.journey.templateVersion.template,
+        destinationCity: row.journey.destinationCity,
+        invitedBy: row.invitedBy,
+      })),
+      meta: this.meta(),
+    };
   }
 
   /**
@@ -1674,6 +2288,7 @@ export class JourneysService {
     if (invitation.status === 'ACTIVE') return this.detail(userId, journeyId);
 
     const now = new Date();
+    let joined = false;
     await this.prisma.$transaction(async (tx) => {
       const moved = await tx.journeyMember.updateMany({
         where: { journeyId, userId, status: 'INVITED' },
@@ -1682,6 +2297,7 @@ export class JourneysService {
       // Conditionné au statut : deux acceptations concurrentes n'écrivent qu'une
       // activité et n'émettent qu'un événement.
       if (moved.count === 0) return;
+      joined = true;
 
       await this.logActivity(tx, {
         journeyId,
@@ -1696,7 +2312,45 @@ export class JourneysService {
       });
     });
 
+    if (joined) await this.notifyAcceptance(userId, journeyId);
+
     return this.detail(userId, journeyId);
+  }
+
+  /** Le propriétaire apprend que son invitation a été acceptée (jamais un refus). */
+  private async notifyAcceptance(inviteeId: string, journeyId: string): Promise<void> {
+    try {
+      const [journey, invitee] = await Promise.all([
+        this.prisma.journey.findUnique({
+          where: { id: journeyId },
+          select: { ownerUserId: true },
+        }),
+        this.prisma.user.findUnique({
+          where: { id: inviteeId },
+          select: { handle: true, displayName: true },
+        }),
+      ]);
+      if (journey === null || invitee === null) return;
+      const name =
+        invitee.displayName !== null && invitee.displayName.trim() !== ''
+          ? invitee.displayName
+          : `@${invitee.handle}`;
+      await this.notifications.deliver({
+        userId: journey.ownerUserId,
+        category: 'JOURNEY_TEAM',
+        type: 'journey.invitation_accepted',
+        title: `${name} a rejoint votre équipe`,
+        refType: 'JOURNEY',
+        refId: journeyId,
+        url: `/parcours/${journeyId}/equipe`,
+      });
+    } catch (cause) {
+      this.logger.warn(
+        `Acceptation d’invitation ${journeyId} : notification non envoyée (${
+          cause instanceof Error ? cause.message : String(cause)
+        })`,
+      );
+    }
   }
 
   /**
@@ -1882,12 +2536,13 @@ export class JourneysService {
       // L'entraide applique SES règles — modération, quota, ville fusionnée,
       // échéance héritée de l'étape (06 §2.5). Les recopier ici les ferait
       // diverger.
+      const title = this.requireTitle(input);
       const created = await this.help.create(
         { userId: actor.userId, level: actor.level },
         {
           kind: 'REQUEST',
           type: input.helpType ?? 'PAPERWORK',
-          title: input.title as string,
+          title,
           body: input.text,
           cityId: input.cityId ?? blocker.journey.destinationCityId,
           originJourneyStepId: blocker.journeyStepId,
@@ -1895,11 +2550,90 @@ export class JourneysService {
       );
       refType = 'help_request';
       refId = created.request.id;
+    } else if (blocker.target === 'HOUSING') {
+      /**
+       * §3.5 : « `housing_listings` de type SEEKING ». L'annonce de RECHERCHE est la
+       * seule que ce flux sait écrire (pas de prix, pas de photo) ; le texte du
+       * membre devient la description telle quelle. `HousingService.create` garde SES
+       * règles : niveau L2, trois annonces actives au plus, score de risque. Une
+       * annonce retenue en vérification EXISTE (`LISTING_UNDER_REVIEW` n'est levé
+       * qu'après son écriture) : le brouillon est alors promu vers elle plutôt que
+       * laissé publiable, ce qui créerait un doublon au second essai.
+       */
+      const title = this.requireTitle(input);
+      if (input.text.length < HOUSING_DESCRIPTION_MIN) {
+        throw ApiError.validation([
+          { path: 'text', code: 'TOO_SHORT_FOR_TARGET', message: `Au moins ${HOUSING_DESCRIPTION_MIN} caractères pour une annonce de recherche.` },
+        ]);
+      }
+      try {
+        const listing = await this.housing.create(actor.userId, {
+          kind: input.housingKind ?? 'SEEKING_HOUSING',
+          title,
+          description: input.text,
+          cityId: input.cityId ?? blocker.journey.destinationCityId,
+          photoAssetIds: [],
+        });
+        refType = 'housing_listing';
+        refId = listing.id;
+      } catch (cause) {
+        const held =
+          cause instanceof ApiError && cause.code === 'LISTING_UNDER_REVIEW'
+            ? cause.details?.['listingId']
+            : undefined;
+        if (typeof held !== 'string') throw cause;
+        refType = 'housing_listing';
+        refId = held;
+      }
+    } else if (blocker.target === 'JOBS') {
+      /**
+       * §3.5 : « `job_seeker_profiles` mis à jour ». Un membre n'a QU'UN profil de
+       * recherche (clé = son identifiant) : le blocage le crée ou le remplace, et la
+       * référence publiée est donc l'identifiant du membre. Capacité `post.create`
+       * (L1), comme `PUT /me/job-seeker-profile`.
+       */
+      if (!levelSatisfies(actor.level, 'post.create')) {
+        throw ApiError.levelRequired('post.create', actor.level);
+      }
+      const headline = this.requireTitle(input, 5, 140);
+      const profile = await this.jobs.putJobSeekerProfile(actor.userId, {
+        headline,
+        sectors: input.sectors ?? [],
+        contractTypes: input.contractTypes ?? [],
+        isVisible: true,
+      });
+      void profile;
+      refType = 'job_seeker_profile';
+      refId = actor.userId;
+    } else if (blocker.target === 'MENTORSHIP') {
+      /**
+       * §3.5 : « `mentorships` REQUESTED ». Le parrain est CHOISI par le membre (08
+       * §2.2) : le brouillon ne devine personne. `MentorshipService.request` garde
+       * ses règles — niveau L1, parrain disponible, une seule demande en attente,
+       * blocage — et rattache la demande à ce parcours, ce qui fera du parrain un
+       * accompagnant à l'acceptation.
+       */
+      if (!levelSatisfies(actor.level, 'mentorship.request')) {
+        throw ApiError.levelRequired('mentorship.request', actor.level);
+      }
+      if (input.mentorHandle === undefined) {
+        throw ApiError.validation([{ path: 'mentorHandle', code: 'REQUIRED_FOR_TARGET' }]);
+      }
+      if (input.text.length < MENTORSHIP_MESSAGE_MIN) {
+        throw ApiError.validation([
+          { path: 'text', code: 'TOO_SHORT_FOR_TARGET', message: `Au moins ${MENTORSHIP_MESSAGE_MIN} caractères pour une demande de parrainage.` },
+        ]);
+      }
+      const requested = await this.mentorship.request(actor.userId, {
+        mentorHandle: input.mentorHandle,
+        message: input.text,
+        journeyId: blocker.journeyId,
+      });
+      refType = 'mentorship';
+      refId = requested.id;
     } else {
-      // HOUSING, JOBS et MENTORSHIP : la publication publique demande des champs
-      // que le flux de blocage ne recueille pas (annonce de logement complète,
-      // profil de recherche, choix d'un parrain). Non livré, et dit franchement
-      // plutôt que publié à moitié.
+      // `NONE` : l'étape ne propose pas de blocage. Le brouillon n'aurait pas pu être
+      // créé (`BLOCKER_NOT_AVAILABLE`) ; si une ligne l'avait été, elle ne se publie pas.
       this.fail('BLOCKER_TARGET_UNSUPPORTED', { target: blocker.target });
     }
 
@@ -2070,6 +2804,69 @@ export class JourneysService {
   // ══════════════════════════════════════════════════════════════════════════
   // Consommateurs d'événements (§7)
   // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * `user.deleted` — le gestionnaire de suppression du module 03 (§9).
+   *
+   * « Supprime PHYSIQUEMENT les `journeys` du membre et tout leur contenu (étapes,
+   * checklist, activités, blocages, notes). Retire le membre des `journey_members`
+   * d'autres parcours. Les `template_correction_proposals` sont anonymisées. »
+   *
+   * ── CE QUE LA CASCADE FAIT, ET CE QU'ELLE LAISSE ─────────────────────────────
+   *
+   * Supprimer la ligne `journeys` emporte ses étapes, sa checklist, son journal, ses
+   * blocages et son équipe (clés étrangères en cascade) — les NOTES, chiffrées,
+   * vivent sur `journey_steps` et partent avec. Les objets que le parcours a fait
+   * naître ailleurs (publication de victoire, demande d'entraide, parrainage,
+   * conversation) gardent leur référence à NULL (`SET NULL`) : ils relèvent de leur
+   * propre module, qui a son propre gestionnaire. Ce module ne supprime pas ce qui
+   * n'est pas à lui.
+   *
+   * ── POURQUOI « ANONYMISER » ET NON SUPPRIMER LES CORRECTIONS ─────────────────
+   *
+   * `template_correction_proposals.user_id` est NOT NULL, et la ligne `users` reste
+   * (le module 01 l'anonymise, 01 §8 : elle sert de clé étrangère aux contenus
+   * anonymisés). La correction proposée est un apport au MODÈLE, utile à l'équipe
+   * même si son auteur est parti : on la garde, on en efface le MESSAGE (qui peut
+   * porter des détails personnels de dossier) et le rattachement ne mène plus qu'à un
+   * compte anonymisé. Une proposition encore `PENDING` est écartée plutôt que laissée
+   * dans la file sans texte.
+   *
+   * ── IDEMPOTENT, parce que la file livre « au moins une fois » ────────────────
+   *
+   * Chaque écriture est un `deleteMany` ou un `updateMany` : un rejeu ne trouve plus
+   * rien à faire et rend des compteurs à zéro.
+   */
+  async handleUserDeleted(
+    userId: string,
+  ): Promise<{ journeys: number; memberships: number; proposals: number; activities: number }> {
+    return this.prisma.$transaction(async (tx) => {
+      const journeys = await tx.journey.deleteMany({ where: { ownerUserId: userId } });
+      const memberships = await tx.journeyMember.deleteMany({
+        where: { OR: [{ userId }, { invitedByUserId: userId }] },
+      });
+      // Le journal des parcours d'AUTRES où ce membre a agi (il a rejoint, il a
+      // franchi une étape en tant que parrain…) perd son auteur, il ne perd pas la ligne.
+      const activities = await tx.journeyActivity.updateMany({
+        where: { actorUserId: userId },
+        data: { actorUserId: null },
+      });
+      const proposals = await tx.templateCorrectionProposal.updateMany({
+        where: { userId, NOT: { message: ANONYMISED_CORRECTION } },
+        data: { message: ANONYMISED_CORRECTION },
+      });
+      await tx.templateCorrectionProposal.updateMany({
+        where: { userId, status: 'PENDING' },
+        data: { status: 'REJECTED' },
+      });
+      return {
+        journeys: journeys.count,
+        memberships: memberships.count,
+        proposals: proposals.count,
+        activities: activities.count,
+      };
+    });
+  }
 
   /**
    * `mentorship.accepted` → le parrain devient SUPPORTER (§3.4, 08 §2.3).
@@ -2452,6 +3249,22 @@ export class JourneysService {
     return { scanned: journeys.length, changed };
   }
 
+  /**
+   * Le titre d'une publication PUBLIQUE de blocage. Le schéma de corps ne peut pas
+   * l'exiger (un parrainage n'en a pas) : c'est la CIBLE du brouillon, connue du
+   * seul serveur, qui décide.
+   */
+  private requireTitle(input: PublishBlocker, min = 10, max = 120): string {
+    const title = input.title;
+    if (title === undefined) {
+      throw ApiError.validation([{ path: 'title', code: 'REQUIRED_FOR_TARGET' }]);
+    }
+    if (title.length < min || title.length > max) {
+      throw ApiError.validation([{ path: 'title', code: 'LENGTH_FOR_TARGET' }]);
+    }
+    return title;
+  }
+
   private async assertOwned(userId: string, journeyId: string) {
     const journey = await this.prisma.journey.findFirst({
       where: { id: journeyId, ownerUserId: userId, deletedAt: null },
@@ -2495,10 +3308,17 @@ export class JourneysService {
         completedAt: true,
         groupConversationId: true,
         inactivityPromptSentAt: true,
+        lastActivityAt: true,
+        destinationCityId: true,
         ownerUserId: true,
+        templateVersionId: true,
         owner: { select: MEMBER_USER_SELECT },
         templateVersion: {
-          select: { version: true, template: { select: { code: true, nameFr: true, icon: true } } },
+          select: {
+            version: true,
+            templateId: true,
+            template: { select: { code: true, nameFr: true, icon: true } },
+          },
         },
         destinationCity: { select: { id: true, name: true } },
         originCountry: { select: { id: true, iso2: true, nameFr: true } },
@@ -2619,7 +3439,16 @@ export class JourneysService {
     tx: Prisma.TransactionClient,
     entry: {
       journeyId: string;
-      type: 'STEP_STARTED' | 'STEP_DONE' | 'STEP_PAUSED' | 'BLOCKER_PUBLISHED' | 'HELP_RECEIVED' | 'MEMBER_JOINED' | 'MILESTONE_SHARED' | 'NOTE';
+      type:
+        | 'STEP_STARTED'
+        | 'STEP_DONE'
+        | 'STEP_PAUSED'
+        | 'BLOCKER_PUBLISHED'
+        | 'HELP_RECEIVED'
+        | 'MEMBER_JOINED'
+        | 'MILESTONE_SHARED'
+        | 'NOTE'
+        | 'TEMPLATE_MIGRATED';
       actorUserId?: string;
       stepId?: string;
       refType?: string;

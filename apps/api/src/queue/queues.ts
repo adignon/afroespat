@@ -18,9 +18,9 @@ export const QUEUES = {
   MODERATION: 'moderation',
   /** Mise à jour de search_documents. */
   SEARCH_INDEX: 'search-index',
-  /** Redimensionnement, suppression EXIF, antivirus. */
+  /** Vignettes (worker). Antivirus et retrait EXIF restent synchrones dans POST /media — voir media.consumer.ts. */
   MEDIA: 'media',
-  /** Les 22 tâches planifiées de §9.3. */
+  /** Les tâches planifiées de §9.3 (la liste vit dans `task-registrations.service.ts`, elle a dépassé les 22 du premier jet). */
   SCHEDULED: 'scheduled',
 } as const;
 

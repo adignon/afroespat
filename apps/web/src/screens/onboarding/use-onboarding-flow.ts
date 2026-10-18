@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { handleSchema, type LevelRequiredDetailsParsed } from '@app/shared';
+import {
+  analyserNumero,
+  handleSchema,
+  messageRefusNumero,
+  type LevelRequiredDetailsParsed,
+} from '@app/shared';
 import {
   ApiError,
   displayMessageFor,
@@ -19,12 +24,13 @@ import {
   updateProfile,
   verifyOtp,
 } from '@/lib/api';
+import { obtenirJetonCaptcha } from '@/lib/captcha';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { createJourney, listJourneyTemplates } from '@/screens/parcours/api';
 import {
   type CityChoice,
   type CountryChoice,
-  finalHandle,
+  refusPseudo,
   helpTypeCodes,
   occupationCode,
   type OnboardingState,
@@ -445,6 +451,14 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         return;
       }
 
+      // Le MÊME contrôle que le serveur (pays réel du numéro, mobile) et le MÊME
+      // message : le bouton n'est plus grisé, il explique.
+      const analyse = analyserNumero(phone, latest.current?.countryIso2 ?? 'BJ');
+      if (!analyse.ok) {
+        notifyError(messageRefusNumero(analyse.code));
+        return;
+      }
+
       // §5 : la case est obligatoire. On le dit ICI plutôt que de laisser l'API
       // refuser : le membre verrait sinon un message générique sans savoir quoi
       // corriger. L'API le vérifie aussi — un écran n'est pas une garantie.
@@ -457,10 +471,9 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       const challenge = await requestOtp({
         phone,
         countryIso2,
-        // Turnstile en production ; le fournisseur fictif accepte n'importe quoi
-        // en développement, et `loadEnv` refuse le démarrage s'il reste fictif
-        // en production.
-        captchaToken: 'dev',
+        // Turnstile (`lib/captcha.ts`) : jeton à usage unique tiré MAINTENANT. Sans
+        // clé de site, le jeton de test officiel de Cloudflare.
+        captchaToken: await obtenirJetonCaptcha(),
         purpose: 'SIGNUP',
         acceptTerms: true,
       });
@@ -530,7 +543,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         const challenge = await requestOtp({
           phone,
           countryIso2: sessionStorage.getItem(COUNTRY_KEY) ?? 'BJ',
-          captchaToken: 'dev',
+          captchaToken: await obtenirJetonCaptcha(),
           purpose: 'SIGNUP',
           acceptTerms: true,
         });
@@ -768,8 +781,15 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         const identity: Record<string, unknown> = {};
         if (state.displayName.trim().length >= 2)
           identity['displayName'] = state.displayName.trim();
-        const handle = finalHandle(state.handle);
-        if (handle.length >= 3) identity['handle'] = handle;
+        // Le front PRÉVIENT avec la règle du schéma partagé (chiffre en tête, moins de
+        // 3 caractères, séparateur final, majuscules) au lieu de corriger ou d'ignorer
+        // en silence ; le serveur DÉCIDE ensuite.
+        const refus = refusPseudo(state.handle);
+        if (refus !== null) {
+          notifyError(refus);
+          return;
+        }
+        if (state.handle !== '') identity['handle'] = state.handle;
         if (Object.keys(identity).length > 0) await updateMe(identity);
 
         await updateProfile({

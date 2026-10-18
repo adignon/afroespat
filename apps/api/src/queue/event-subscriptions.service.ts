@@ -178,6 +178,12 @@ export class EventSubscriptionsService implements OnModuleInit {
       await this.housing.handleUserDeleted(job.aggregateId);
     });
 
+    // 03 §9 : les parcours du membre sont supprimés, ses places d'équipe retirées, ses
+    // corrections de modèle anonymisées.
+    this.registry.on('user.deleted', 'journeys', async (job) => {
+      await this.journeys.handleUserDeleted(job.aggregateId);
+    });
+
     this.registry.on('user.deleted', 'jobs', async (job) => {
       await this.jobs.handleUserDeleted(job.aggregateId);
     });

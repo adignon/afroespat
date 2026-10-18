@@ -557,9 +557,25 @@ export const addEmailSchema = z.object({
   email: z.string().email().max(254).toLowerCase(),
 });
 
+/**
+ * `POST /me/email/verify` — un code à six chiffres reçu par email, saisi dans
+ * l'application. Le « lien » du premier jet de 12 §3 est remplacé par un code :
+ * la route exige déjà la session du membre, et un code se saisit sur le même écran
+ * que l'adresse, sans quitter l'application (le lien rouvrait un onglet et perdait
+ * le contexte, surtout sur mobile).
+ */
 export const verifyEmailSchema = z.object({
-  token: z.string().min(16).max(512),
+  code: z.string().regex(/^\d{6}$/),
 });
+
+/** `GET /me/email` et réponses des routes d'écriture : jamais l'adresse en clair. */
+export const emailStateSchema = z.object({
+  /** Adresse enregistrée (masquée) — `null` si aucune. */
+  email: z.object({ masked: z.string(), verified: z.boolean() }).nullable(),
+  /** Adresse en attente de vérification (masquée) — `null` si aucune. */
+  pending: z.object({ masked: z.string(), expiresAt: z.string(), resendAvailableAt: z.string() }).nullable(),
+});
+export type EmailState = z.infer<typeof emailStateSchema>;
 
 /** `GET /unsubscribe?token` — route PUBLIQUE, sans connexion (§4 et §8). */
 export const unsubscribeQuerySchema = z.object({

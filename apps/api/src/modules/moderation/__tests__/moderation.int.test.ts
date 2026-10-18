@@ -881,6 +881,39 @@ describe('modération (13)', () => {
       ).rejects.toMatchObject({ code: 'OUT_OF_SCOPE' });
     });
 
+    /**
+     * LOT A — CONTENT_ADMIN ne modère pas (spec 13 §2.2, `STAFF_SCOPES.moderation`).
+     *
+     * Le service et le contrôleur listaient MODERATOR, CONTENT_ADMIN et SUPER_ADMIN
+     * à la main : la file, les actions et les suspensions s'ouvraient à un rôle que
+     * la matrice exclut. Les deux lisent désormais `STAFF_SCOPES.moderation`.
+     */
+    it('refuse la file, le dossier, l’historique et les actions à CONTENT_ADMIN', async () => {
+      const caseId = await moderation.openCase({
+        subjectType: 'POST',
+        subjectId: newId(),
+        subjectAuthorUserId: null,
+        source: 'AI',
+        priority: 3,
+      });
+      const refus = { code: 'OUT_OF_SCOPE' };
+      await expect(
+        moderation.listCases(contentAdmin, { limit: 20, assigned: 'any' }),
+      ).rejects.toMatchObject(refus);
+      await expect(moderation.caseDetail(contentAdmin, caseId)).rejects.toMatchObject(refus);
+      await expect(moderation.assignCase(contentAdmin, caseId)).rejects.toMatchObject(refus);
+      await expect(moderation.releaseCase(contentAdmin, caseId)).rejects.toMatchObject(refus);
+      await expect(moderation.stats(contentAdmin)).rejects.toMatchObject(refus);
+      await expect(
+        moderation.act(contentAdmin, caseId, { action: 'HIDE', reason: 'Masquage.' }),
+      ).rejects.toMatchObject(refus);
+      await expect(
+        moderation.userModerationHistory(contentAdmin, newId()),
+      ).rejects.toMatchObject(refus);
+      // Le modérateur, lui, passe la garde.
+      await expect(moderation.caseDetail(moderatorA, caseId)).resolves.toBeDefined();
+    });
+
     it('refuse toute action d’un rôle SUPPORT, qui ne modère pas', async () => {
       const caseId = await moderation.openCase({
         subjectType: 'POST',

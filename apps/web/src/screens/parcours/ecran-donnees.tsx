@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
 import { BandeAttente, BandeEchec, useDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranParcours, useParcours, type PlancheModale } from './ecran';
 import type { NomModale, ParcoursData } from './data';
 import type { ContexteParcours } from './use-parcours-api';
+import { FeuillesParcours } from '@/components/parcours/feuilles';
+import { EVT_MAJ_PANNEAU } from '@/components/parcours/donnees';
 
 /**
  * LA COQUILLE QUI CHARGE, POUR LES DOUZE ÉCRANS DE PARCOURS.
@@ -182,10 +184,26 @@ function Chargement<T>({
    * `refreshOnce` est partagé en vol, donc douze pages montées ensemble ne lancent
    * qu'une rotation.
    */
+  /**
+   * ── LE PANNEAU SE RECHARGE SANS CLIGNOTER (lot « parcours vivant ») ───────────
+   *
+   * Un geste des vues (franchir une étape, inviter, renommer…) change ce que le panneau
+   * de gauche affiche : avancement, étape en cours, compteur d'équipe. Il prévient par
+   * `parcours:maj` ; `version` entre dans les dépendances de `lire`, donc `useDonnees`
+   * relit — et, comme il ne repasse PAS à l'attente quand `charger` change, le cadre
+   * reste affiché pendant la relecture.
+   */
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    const quandMaj = () => setVersion((n) => n + 1);
+    window.addEventListener(EVT_MAJ_PANNEAU, quandMaj);
+    return () => window.removeEventListener(EVT_MAJ_PANNEAU, quandMaj);
+  }, []);
   const lire = useCallback(async () => {
     if (!hasAccessToken()) await resumeSession();
+    void version;
     return charger();
-  }, [charger]);
+  }, [charger, version]);
 
   const etat = useDonnees(lire);
   const vue = useParcours(modaleInitiale, contexte);
@@ -235,6 +253,7 @@ function Chargement<T>({
         niveauRequis={vue.niveauRequis}
         oublierNiveauRequis={vue.oublierNiveauRequis}
       />
+      <FeuillesParcours />
       {etat.phase === 'attente' ? (
         <BandeAttente texte="Chargement de votre parcours…" />
       ) : null}

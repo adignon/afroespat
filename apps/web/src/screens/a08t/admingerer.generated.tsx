@@ -16,6 +16,7 @@ export function A08TAdminGerer(props: A08TData) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", overflow: "hidden" }}>
   <div style={{ height: "120px", background: "#CFE3DA", position: "relative", backgroundImage: reseau.couverture === null ? "none" : `url("${reseau.couverture}")`, backgroundSize: "cover", backgroundPosition: "center" }}>{actions.peutChangerCouverture ? (<button type="button" onClick={actions.onChangerCouverture} disabled={actions.couvertureOccupee} data-reseau-changer-couverture="" style={{ border: "none", font: "inherit", position: "absolute", right: "14px", top: "14px", height: "36px", padding: "0 12px", borderRadius: "12px", background: "rgba(255,255,255,.9)", display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", fontWeight: "700", color: "#16211D", cursor: actions.couvertureOccupee ? "default" : "pointer", opacity: actions.couvertureOccupee ? ".6" : "1" }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4h18v16H3zM8.5 11a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2zM21 16l-5-5-9 9" /></svg>{actions.couvertureOccupee ? "Envoi de la couverture…" : "Changer la couverture"}</button>) : null}</div>
