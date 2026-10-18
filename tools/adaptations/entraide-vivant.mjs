@@ -334,19 +334,61 @@ const H08_FORMULAIRE = regionVivante('H08', 'FormulaireParrain', 'H08 : le diagn
 const H09_LISTE = regionVivante('H09', 'MesDemandes', 'H09 : mes demandes (`GET /help/mine`) avec voir, modifier, clôturer, rouvrir, supprimer.');
 const H10_LISTE = regionVivante('H10', 'MesReponses', 'H10 : mes réponses (`GET /help/my-responses`) avec voir, écrire à, modifier, supprimer.');
 
-/** Le bouton « Publier une demande » de H09, dessiné `<button>` sans geste, devient un lien. */
-const H09_PUBLIER = {
-  screens: ['H09'],
-  nom: 'H09_PUBLIER',
-  why: 'Le bouton « Publier une demande » de H09 mène au composeur (`/entraide/nouveau`) au lieu de n’être qu’un dessin.',
+/**
+ * Les boutons dessinés `<button>` dont le seul geste est d'ALLER quelque part
+ * deviennent des liens (clic droit, nouvel onglet, lecteur d'écran : ce sont des
+ * liens) : « Publier une demande » (H01, H09 → le composeur) et « Voir les
+ * conditions » (H05 → « Devenir parrain »).
+ */
+const boutonEnLien = (screens, nom, texte, vers) => ({
+  screens,
+  nom,
+  why: `Le bouton « ${texte} » mène à ${vers} : il était dessiné sans geste.`,
   provides: [],
   apply(jsx) {
-    const fin = jsx.indexOf('Publier une demande</button>');
+    const marque = `${texte}</button>`;
+    const fin = jsx.indexOf(marque);
     if (fin < 0) return { jsx, applied: false };
     const debut = jsx.lastIndexOf('<button', fin);
-    const ouvre = jsx.slice(debut, jsx.indexOf('>', debut) + 1).replace('<button style={{', '<a href="/entraide/nouveau" style={{ textDecoration: "none", ');
-    const corps = jsx.slice(jsx.indexOf('>', debut) + 1, fin) + 'Publier une demande';
-    return { jsx: jsx.slice(0, debut) + ouvre.replace(/>$/, '>') + corps + '</a>' + jsx.slice(fin + 'Publier une demande</button>'.length), applied: true };
+    const finOuvre = jsx.indexOf('>', debut) + 1;
+    const ouvre = jsx.slice(debut, finOuvre).replace('<button style={{', `<a href="${vers}" style={{ textDecoration: "none", `);
+    return {
+      jsx: jsx.slice(0, debut) + ouvre + jsx.slice(finOuvre, fin) + texte + '</a>' + jsx.slice(fin + marque.length),
+      applied: true,
+    };
+  },
+});
+const H01_PUBLIER = boutonEnLien(['H01', 'H09'], 'H_PUBLIER', 'Publier une demande', '/entraide/nouveau');
+const H05_CONDITIONS = boutonEnLien(['H05'], 'H05_CONDITIONS', 'Voir les conditions', '/parrainage/devenir');
+
+/** H03 (ordinateur) : l'encart « OFFRE · NIVEAU L0 » ne s'affiche qu'à qui ne peut pas encore proposer. */
+const H03_ENCART = {
+  screens: ['H03'],
+  nom: 'H03_ENCART',
+  why: 'H03 : l’encart « OFFRE · NIVEAU L0 » suit le niveau réel (`help.offer`) et son bouton mène à la vérification d’identité.',
+  provides: [],
+  apply(jsx) {
+    const lib = jsx.indexOf('OFFRE · NIVEAU L0');
+    if (lib < 0) return { jsx, applied: false };
+    const debut = jsx.lastIndexOf('<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px"', lib);
+    const fin = debut < 0 ? -1 : finElement(jsx, debut);
+    if (fin < 0) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, debut) + '<EncartOffre />' + jsx.slice(fin), applied: true };
+  },
+};
+
+/** H08 (téléphone) : le « Activer » de la barre du bas doublait le bouton du formulaire. */
+const H08_PIED = {
+  screens: ['H08'],
+  nom: 'H08_PIED',
+  why: 'H08 (390 px) : la barre « Activer » du bas était un bouton sans geste ; le formulaire porte son propre bouton « Activer mon profil de parrain ».',
+  provides: [],
+  apply(jsx) {
+    const pied = '<div style={{ flexShrink: "0", background: "#fff", borderTop: "1px solid #E6EBE9", padding: "12px 16px 28px", display: "flex", gap: "8px" }}><button';
+    const i = jsx.indexOf(pied);
+    if (i < 0) return { jsx, applied: false };
+    const fin = finElement(jsx, i);
+    return fin < 0 ? { jsx, applied: false } : { jsx: jsx.slice(0, i) + jsx.slice(fin), applied: true };
   },
 };
 
@@ -357,7 +399,10 @@ export const ADAPTATIONS_ENTRAIDE_VIVANT = [
   H03_FORMULAIRE,
   H02_GESTES,
   H06_FICHE,
-  H09_PUBLIER,
+  H01_PUBLIER,
+  H03_ENCART,
+  H05_CONDITIONS,
+  H08_PIED,
   H05_LISTE,
   H07_LISTE,
   H08_FORMULAIRE,
@@ -369,6 +414,7 @@ export const ADAPTATIONS_ENTRAIDE_VIVANT = [
 export const AJOUTS_ENTRAIDE_VIVANT = {
   SignalerArgent: '@/components/entraide/signaler-argent',
   FormulaireDemande: '@/components/entraide/formulaire-demande',
+  EncartOffre: '@/components/entraide/encart-offre',
   EnteteDemande: '@/components/entraide/demande-vivante',
   MenuDemande: '@/components/entraide/demande-vivante',
   ActionsAuteur: '@/components/entraide/demande-vivante',
