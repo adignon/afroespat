@@ -265,6 +265,52 @@ export class ConnectionsService {
     return { items };
   }
 
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ ÉMETTRE `connection.suggested` — LE CATALOGUE LE PROMETTAIT (08 §7)        ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * §7 liste `connection.suggested` parmi les événements du module, et §3.1 dit
+   * qu'« une suggestion est une notification "Ajouter X à vos contacts ?" ». Les
+   * suggestions étaient CALCULÉES à la lecture (`suggestions()`), mais l'événement
+   * n'était émis par personne : le membre ne l'apprenait que s'il ouvrait la page
+   * Contacts. Ce chemin le pousse.
+   *
+   * Appelée par les gestionnaires de `event.checked_in` et de
+   * `guide.proposal_accepted`. Elle RELIT `suggestions()` plutôt que de recopier ses
+   * règles (blocage, contact existant, compte masqué) : une seule définition d'une
+   * suggestion valable. Un événement par SENS — A apprend B et B apprend A — car
+   * l'autre moitié n'est pas forcément dans la charge (le déjà-pointé d'un
+   * événement ne l'est pas). Idempotente : le dédoublonnage de la notification
+   * (même membre, même type, même objet) absorbe un rejeu.
+   */
+  async emitSuggestions(
+    userIds: readonly string[],
+    origin: ConnectionSuggestionOrigin,
+    refId: string,
+  ): Promise<number> {
+    let emitted = 0;
+    for (const userId of userIds) {
+      const { items } = await this.suggestions(userId);
+      for (const item of items.filter((i) => i.origin === origin && i.refId === refId)) {
+        await this.prisma.$transaction(async (tx) => {
+          for (const [to, about] of [
+            [userId, item.user.id],
+            [item.user.id, userId],
+          ] as const) {
+            await this.outbox.emit(tx, {
+              type: 'connection.suggested',
+              aggregateId: to,
+              payload: { userId: to, suggestedUserId: about, origin, refId },
+            });
+            emitted += 1;
+          }
+        });
+      }
+    }
+    return emitted;
+  }
+
   /** §3.1 : « Les deux ont `checked_in = true` au même événement → suggestion ». */
   private async eventSuggestions(
     userId: string,

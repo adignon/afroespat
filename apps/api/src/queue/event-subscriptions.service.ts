@@ -181,6 +181,23 @@ export class EventSubscriptionsService implements OnModuleInit {
       }
     });
 
+    // 08 §3.1 : deux présents au même événement, un auteur et son contributeur →
+    // « Ajouter X à vos contacts ? ». Voir `ConnectionsService.emitSuggestions`.
+    this.registry.on('event.checked_in', 'connections', async (job) => {
+      const userIds = (job.payload as { userIds?: unknown } | null)?.userIds;
+      if (!Array.isArray(userIds)) return;
+      await this.connections.emitSuggestions(
+        userIds.filter((u): u is string => typeof u === 'string'),
+        'EVENT',
+        job.aggregateId,
+      );
+    });
+    this.registry.on('guide.proposal_accepted', 'connections', async (job) => {
+      const p = job.payload as { guideId?: unknown; proposerUserId?: unknown } | null;
+      if (typeof p?.guideId !== 'string' || typeof p.proposerUserId !== 'string') return;
+      await this.connections.emitSuggestions([p.proposerUserId], 'GUIDE', p.guideId);
+    });
+
     this.registry.on('user.deleted', 'help', async (job) => {
       await this.help.handleUserDeleted(job.aggregateId);
     });
@@ -511,6 +528,9 @@ export function registerNotificationSubscriptions(
   });
   registry.on('connection.requested', 'notifications', async (job) => {
     await events.onConnectionRequested(job.payload);
+  });
+  registry.on('connection.suggested', 'notifications', async (job) => {
+    await events.onConnectionSuggested(job.payload);
   });
 
   // ── 04 Fil — le regroupement du §2.3 ──────────────────────────────────────

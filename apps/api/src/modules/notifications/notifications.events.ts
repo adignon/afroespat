@@ -305,6 +305,30 @@ export class NotificationEventsService {
     });
   }
 
+  /**
+   * « Ajouter X à vos contacts ? » (08 §3.1). `SOCIAL`, in-app seulement. La ligne
+   * mène au PROFIL de X, où le bouton « Ajouter » vit. `refId` est X : une seconde
+   * suggestion du même membre (autre événement) est absorbée comme doublon plutôt
+   * que de remplir la cloche.
+   */
+  async onConnectionSuggested(payload: unknown): Promise<void> {
+    const to = readString(payload, 'userId');
+    const about = readString(payload, 'suggestedUserId');
+    if (to === null || about === null || to === about) return;
+
+    const row = await this.prisma.user.findUnique({ where: { id: about }, select: { handle: true } });
+    if (row === null) return;
+    await this.notifications.deliver({
+      userId: to,
+      category: 'SOCIAL',
+      type: 'social.connection_suggested',
+      title: `Ajouter ${await this.displayName(about)} à vos contacts ?`,
+      refType: 'USER',
+      refId: about,
+      url: `/${row.handle}`,
+    });
+  }
+
   // ══ Fil (04) — le regroupement du §2.3 ════════════════════════════════════
 
   /**
