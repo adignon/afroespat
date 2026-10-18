@@ -17,6 +17,9 @@ import { ConnectionsService } from '../../connections/connections.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { FeedService } from '../../feed/feed.service';
 import { HelpService } from '../../help/help.service';
+import { HousingService } from '../../housing/housing.service';
+import { JobsService } from '../../jobs/jobs.service';
+import { MentorshipService } from '../../mentorship/mentorship.service';
 import { MessagingService } from '../../messaging/messaging.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { JourneysService, type JourneyActor } from '../journeys.service';
@@ -139,6 +142,9 @@ describe('modèles amorcés (T3 partie A) vus du service', () => {
       new FeedService(prisma, outbox, audit, visibility),
       messaging,
       new NotificationsService(prisma, new FakeEmailProvider(), new FakePushProvider()),
+      new HousingService(prisma, outbox, audit, visibility),
+      new JobsService(prisma, outbox, audit, visibility),
+      new MentorshipService(prisma, outbox, audit, visibility, messaging),
     );
     auth = new AuthService(
       prisma,
