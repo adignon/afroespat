@@ -154,7 +154,11 @@ const LIAISONS: readonly Liaison[] = [
     lit: ['(portees ?? [])', '{p.libelle}'],
     nePlus: ['Toutes · 41', 'Vous pouvez aider · 4'],
   },
-  { fichier: 'h05/mobile.generated.tsx', lit: ['{ville}'], nePlus: ['>Lyon<'] },
+  // Lot D : `h05/mobile.generated.tsx` n'est plus dans cette table. Sa rangée de
+  // filtres (dont « Lyon ») est le composant `ListeParrains`, qui charge ses villes : le
+  // cadre ne lit plus aucune propriété (le générateur écrit `_props`), ce que cette
+  // table interdit. La preuve que « Lyon » n'est plus dessiné en dur est dans
+  // `entraide-vivant.test.ts`.
   // ── Services ──────────────────────────────────────────────────────────────
   {
     fichier: 's02contact/desktopcontact.generated.tsx',

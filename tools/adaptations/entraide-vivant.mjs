@@ -303,7 +303,15 @@ function regionPrincipale(jsx, comp) {
     const corps = enfants.filter(([d]) => jsx.slice(d, jsx.indexOf('>', d)).includes('flexGrow: "1"'));
     if (corps.length === 0) return null;
     const [d, f] = corps[corps.length - 1];
-    return jsx.slice(0, d) + `<${comp} variante="mobile" />` + jsx.slice(f);
+    // Le conteneur garde le dessin du corps de la planche (retrait 12/16 px, colonne,
+    // écart 12) : sans lui, les cartes toucheraient les bords de l'écran.
+    const corpsDessine = jsx.slice(d, jsx.indexOf('>', d) + 1);
+    const padding = /padding: "([^"]*)"/.exec(corpsDessine)?.[1] ?? '12px 16px';
+    return (
+      jsx.slice(0, d) +
+      `<div style={{ flexGrow: "1", padding: "${padding}", display: "flex", flexDirection: "column", gap: "12px", minWidth: "0" }}><${comp} variante="mobile" /></div>` +
+      jsx.slice(f)
+    );
   }
   const [, f] = enfants[0];
   return jsx.slice(0, f) + `<${comp} variante="bureau" />` + jsx.slice(fermeture);

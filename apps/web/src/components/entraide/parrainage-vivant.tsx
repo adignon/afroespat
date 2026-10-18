@@ -549,7 +549,7 @@ function CarteParrainage({ p, mobile }: { readonly p: Parrainage; readonly mobil
               {nom}
             </Link>
           )}
-          <span style={{ display: 'block', fontSize: '12px', color: '#8A958F' }}>{p.role === 'mentee' ? 'Parraine' : 'Filleul·e'}</span>
+          <span style={{ display: 'block', fontSize: '12px', color: '#8A958F' }}>{p.role === 'mentee' ? 'Votre parrain' : 'Votre filleul·e'}</span>
         </span>
       </div>
       <div style={{ marginTop: '10px' }}>{sous}</div>

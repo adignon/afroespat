@@ -546,12 +546,19 @@ const CATEGORIE_CLOSE = { fond: '#EDF1EF', encre: '#8A958F' };
 /**
  * UNE DEMANDE, DANS L'UNE DES TROIS VARIANTES DESSINÉES.
  *
- * ⚠ ÉCART CONSIGNÉ : la maquette écrit « Étape 7 · Logement · parcours Études ».
- * `helpCardSchema` porte `fromJourney` (un booléen) mais ni le numéro d'étape,
- * ni son titre, ni le NOM du parcours — vérifié au schéma, pas supposé. La ligne
- * d'étape dit donc « Demande issue d'un parcours », ce qui est vrai, plutôt que
- * de composer trois informations qu'on n'a pas. REMONTÉ au porteur.
+ * LA LIGNE D'ÉTAPE (§2.5) : « Étape 7 · Logement · parcours Études ». Elle était
+ * remplacée par « Demande issue d'un parcours » faute de donnée : `helpCardSchema`
+ * ne portait que `fromJourney`. La carte porte maintenant `journeyStep` (rang, nom
+ * de l'étape, TYPE de parcours — jamais le titre personnel), et la ligne est
+ * composée par `ligneParcours`.
  */
+/** « Étape 7 · Logement · parcours Études », ou le repli sûr quand la carte n'a pas d'étape. */
+export function ligneParcours(d: Pick<HelpCard, 'journeyStep'>): string {
+  const e = d.journeyStep;
+  if (e === null) return 'Demande issue d’un parcours';
+  return `Étape ${String(e.stepNumber)} · ${e.stepName} · parcours ${e.journeyTypeName}`;
+}
+
 function ligneDemande(d: HelpCard, rang: number): LigneDemande {
   const close = d.status !== 'OPEN';
   const parcours = d.fromJourney;
@@ -566,7 +573,7 @@ function ligneDemande(d: HelpCard, rang: number): LigneDemande {
     categorieEncre: categorie.encre,
     etat: close ? 'Résolue' : '',
     delai: ageCourt(d.createdAt),
-    etape: parcours && !close ? 'Demande issue d’un parcours' : '',
+    etape: parcours && !close ? ligneParcours(d) : '',
     titre: d.title,
     titreCouleur: close ? '#5D6B66' : '#16211D',
     extrait: d.excerpt,
@@ -988,7 +995,7 @@ function ligneSuggestion(d: HelpCard, rang: number): LigneSuggestion {
   const nom = d.author.displayName;
   return {
     categorie: CATEGORIES_FR[d.type] ?? d.type,
-    motif: d.fromJourney ? 'Demande issue d’un parcours' : 'Correspond à vos types d’aide',
+    motif: d.fromJourney ? ligneParcours(d) : 'Correspond à vos types d’aide',
     delai: echeanceCourte(d.dueDate, d.createdAt),
     titre: d.title,
     extrait: d.excerpt,
