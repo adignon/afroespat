@@ -30,6 +30,9 @@ enum ReportSubjectType {
   /// automatique : le dossier part alors sans auteur, comme un signalement de
   /// contenu dont l'auteur a supprimé son compte.
   COMMUNITY
+  /// 09 §2.3 : une contribution de fiche ville (bon plan, produit, budget,
+  /// témoignage) est « signalable ». Son auteur est `city_tips.author_user_id`.
+  CITY_TIP
 }
 
 enum ReportReason {

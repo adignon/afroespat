@@ -108,6 +108,11 @@ model HousingListing {
   viewCount    Int @default(0) @map("view_count")
   contactCount Int @default(0) @map("contact_count")
 
+  /// 10 §2.3 et §5 : « L'auteur peut masquer son annonce à un membre (blocage
+  /// léger local, sans blocage global). » Lu par la liste ET le détail : pour un
+  /// membre de cette liste, l'annonce n'existe pas (404), comme pour un bloqué.
+  hiddenFromUserIds String[] @default([]) @map("hidden_from_user_ids") @db.Uuid
+
   author User @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
   city   City @relation(fields: [cityId], references: [id], onDelete: Restrict)
 

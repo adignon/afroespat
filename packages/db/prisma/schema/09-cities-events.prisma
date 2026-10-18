@@ -61,6 +61,13 @@ model CityTip {
   helpfulCount Int           @default(0) @map("helpful_count")
   status       ContentStatus
 
+  /// 09 §2.3 et §4 — un « produit du pays » (SHOP) : nom et adresse en texte
+  /// libre, JAMAIS géocodés (même règle que les événements, T4).
+  venueName   String? @map("venue_name")
+  addressText String? @map("address_text")
+
+  votes CityTipVote[]
+
   city        City   @relation(fields: [cityId], references: [id], onDelete: Cascade)
   author      User?  @relation(fields: [authorUserId], references: [id], onDelete: SetNull)
   sourceStory Story? @relation(fields: [sourceStoryId], references: [id], onDelete: SetNull)
@@ -69,6 +76,24 @@ model CityTip {
   @@index([authorUserId])
   @@index([kind])
   @@map("city_tips")
+}
+
+/// 09 §2.3 et §4 : le vote « utile », un par membre et par contribution.
+/// `city_tips.helpful_count` en est le compteur dénormalisé, tenu dans la même
+/// transaction que l'insertion ou la suppression du vote.
+model CityTipVote {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  cityTipId String @map("city_tip_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  cityTip CityTip @relation(fields: [cityTipId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([cityTipId, userId])
+  @@index([userId])
+  @@map("city_tip_votes")
 }
 
 /// Événement physique local. Création exigeant L1 ; 1 par mois en plan gratuit.
@@ -98,6 +123,12 @@ model Event {
   status        EventStatus
 
   coverAssetId   String?   @map("cover_asset_id") @db.Uuid
+
+  /// 09 §3.4 et §4 : l'instant et le motif (facultatif) de l'annulation. C'est
+  /// `cancelled_at` qui borne les sept jours de visibilité « barrée », et non
+  /// `updated_at`, que n'importe quelle écriture déplace.
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz
+  cancelReason String?   @map("cancel_reason")
   /// Tâche event.reminders toutes les 15 min.
   reminderSentAt DateTime? @map("reminder_sent_at") @db.Timestamptz
 
