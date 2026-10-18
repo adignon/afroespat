@@ -26,6 +26,7 @@ import {
   TIME_ZONE_BY_COUNTRY_ISO2,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { planEffectif } from '../../common/monetisation';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
@@ -244,7 +245,7 @@ export class EventsService {
     const eventId = newId();
 
     const created = await this.prisma.$transaction(async (tx) => {
-      await this.consumeMonthlyQuota(tx, organizerUserId, organizer.plan);
+      await this.consumeMonthlyQuota(tx, organizerUserId, await planEffectif(tx, organizer.plan));
 
       const event = await tx.event.create({
         data: {
@@ -380,6 +381,7 @@ export class EventsService {
     if (patch.title !== undefined) data.title = patch.title;
     if (patch.description !== undefined) data.description = patch.description;
     if (patch.type !== undefined) data.type = patch.type;
+    // La capacité est contrôlée DANS la transaction (verrou de ligne) : voir plus bas.
     if (patch.capacity !== undefined) data.capacity = patch.capacity;
     if (patch.coverAssetId !== undefined) {
       await this.assertOwnedCover(organizerUserId, patch.coverAssetId);
@@ -425,14 +427,59 @@ export class EventsService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.event.update({ where: { id: eventId }, data, select: EVENT_SELECT });
+      /**
+       * ╔════════════════════════════════════════════════════════════════════╗
+       * ║ LA CAPACITÉ NE DESCEND PAS SOUS LES INSCRITS, ET MONTER LIBÈRE LA FILE ║
+       * ╚════════════════════════════════════════════════════════════════════╝
+       *
+       * Deux défauts : `capacity` s'écrivait sans regarder `attendee_count`
+       * (capacité 5 pour 8 inscrits : un événement « complet » à 160 %, et la
+       * prochaine désinscription ne promouvait plus personne), et AUGMENTER la
+       * capacité ne faisait pas entrer la liste d'attente — les places libérées
+       * restaient vides jusqu'à la prochaine désinscription.
+       *
+       * Le verrou `FOR UPDATE` est le même que celui de `rsvp` : une inscription
+       * concurrente ne peut pas passer entre la lecture du compteur et l'écriture.
+       */
+      let promus: string[] = [];
+      if (patch.capacity !== undefined) {
+        const verrou = await tx.$queryRaw<{ attendee_count: number }[]>`
+          SELECT attendee_count FROM events WHERE id = ${eventId}::uuid FOR UPDATE`;
+        const inscrits = Number(verrou[0]?.attendee_count ?? 0);
+        if (patch.capacity < inscrits) {
+          this.fail('CAPACITY_BELOW_ATTENDEES', { attendeeCount: inscrits, capacity: patch.capacity });
+        }
+      }
+
+      let row = await tx.event.update({ where: { id: eventId }, data, select: EVENT_SELECT });
+
+      if (patch.capacity !== undefined) {
+        // Une place libre = un promu, dans l'ordre d'arrivée ; on s'arrête quand la
+        // file est vide ou que la capacité est de nouveau atteinte.
+        for (;;) {
+          const promu = await this.promoteWaitlist(tx, eventId);
+          if (promu === null) break;
+          promus = [...promus, promu];
+        }
+        for (const userId of promus) {
+          await this.outbox.emit(tx, {
+            type: 'event.rsvp_changed',
+            aggregateId: eventId,
+            payload: { userId, from: 'WAITLIST', to: 'GOING', promotedUserId: userId },
+          });
+        }
+        // Le compteur a bougé : la carte rendue doit refléter les promus.
+        if (promus.length > 0) {
+          row = await tx.event.findUniqueOrThrow({ where: { id: eventId }, select: EVENT_SELECT });
+        }
+      }
 
       await this.audit.record(tx, {
         actor: { type: 'MEMBER', id: organizerUserId },
         action: 'event.updated',
         targetType: 'event',
         targetId: eventId,
-        metadata: { fields: Object.keys(data) },
+        metadata: { fields: Object.keys(data), waitlistPromoted: promus.length },
       });
 
       await this.outbox.emit(tx, {

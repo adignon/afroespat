@@ -37,3 +37,21 @@ export function numeroDEpreuve(rang?: number): string {
   const suite = String((rang ?? interne++) % 100).padStart(2, '0');
   return `019${processus}${instant}${suite}`;
 }
+
+/**
+ * Un MOBILE français valide et nouveau (lot A).
+ *
+ * `numeroDEpreuve` rend `019…`, qui est valide pour le Bénin ET, en forme, pour la
+ * France (`+33 1 90…`) — mais c'est une LIGNE FIXE française, que le serveur
+ * refuse désormais (`PHONE_NOT_MOBILE`, aucun SMS ne part vers un fixe). Les
+ * épreuves qui inscrivent un membre avec le pays « FR » prennent donc celui-ci :
+ * `06` suivi de huit chiffres, de la même façon unique (processus, instant, rang).
+ */
+export function numeroFrancaisDEpreuve(rang?: number): string {
+  const processus = String(process.pid % 100).padStart(2, '0');
+  const instant = String(Date.now()).slice(-3);
+  const suite = String((rang ?? interne++) % 100).padStart(2, '0');
+  // « 061 » : un préfixe mobile valide dans tous les cas, quels que soient les
+  // chiffres qui suivent.
+  return `061${processus}${instant}${suite}`;
+}

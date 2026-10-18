@@ -15,6 +15,7 @@
     "migrate": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
     "migrate:status": "prisma migrate status",
+    "migrate:drift": "prisma migrate diff --from-url \"$DATABASE_URL\" --to-schema-datamodel prisma/schema --exit-code",
     "validate": "prisma validate",
     "format": "prisma format",
     "studio": "prisma studio",

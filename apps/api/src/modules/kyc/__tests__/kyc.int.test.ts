@@ -388,7 +388,7 @@ describe('vérification d’identité (01 §2.3, §2.4, §4.3)', () => {
 
     const now = Math.floor(Date.now() / 1000);
     // Un message d'il y a une heure (rejeu) et un message « du futur » : refusés.
-    expect((await send(now - 3600).expect(401)).body.error.code).toBe('WEBHOOK_SIGNATURE_INVALID');
+    expect(((await send(now - 3600).expect(401)).body as { error: { code: string } }).error.code).toBe('WEBHOOK_SIGNATURE_INVALID');
     await send(now + 3600).expect(401);
     await send(Number.NaN).expect(401);
     expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).not.toBe('APPROVED');

@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function P01Desktop(props: OnboardingVals) {
-  const { busy, consentAccepted, consentBg, consentBorder, consentCheck, countryFlag, countryOuvert, dialCode, onCountryOuvrir, onPhoneChange, onSubmit, onToggleConsent, paysIndicatifSelecteur, phoneBordure, phoneExemple, phoneValide, phoneValue, reassure } = props;
+  const { busy, consentAccepted, consentBg, consentBorder, consentCheck, countryFlag, countryOuvert, dialCode, onCountryOuvrir, onPhoneChange, onSubmit, onToggleConsent, paysIndicatifSelecteur, phoneBordure, phoneExemple, phoneValue, reassure } = props;
 
   return (
     <>
@@ -25,7 +25,7 @@ export function P01Desktop(props: OnboardingVals) {
           </div>
           <p style={{ margin: "12px 0 0", fontSize: "12.5px", color: "#5D6B66", lineHeight: "1.55" }}>Nous vous envoyons un code par SMS. Votre numéro n'est jamais affiché aux autres membres.</p>
           <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", marginTop: "20px" }}><button type="button" role="checkbox" aria-checked={consentAccepted} onClick={onToggleConsent} aria-label="J’accepte les conditions d’utilisation et la politique de confidentialité" style={{ width: "44px", height: "44px", padding: "0", border: "none", background: "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0", margin: "-11px", cursor: "pointer" }}><span aria-hidden="true" style={{ width: "22px", height: "22px", borderRadius: "7px", background: consentBg, border: consentBorder, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={consentCheck} strokeWidth="3" strokeLinecap="round"><path d="m5 12 4.5 4.5L19 7" /></svg></span></button><span style={{ fontSize: "13px", lineHeight: "1.5" }}>J'accepte les <a href="#" style={{ fontWeight: "700" }}>conditions d'utilisation</a> et la <a href="/p/confidentialite" style={{ fontWeight: "700" }}>politique de confidentialité</a>.</span></div>
-          <button style={{ width: "100%", height: "52px", marginTop: "22px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700", cursor: "pointer" }} onClick={onSubmit} disabled={busy || !phoneValide}>Recevoir le code</button>
+          <button style={{ width: "100%", height: "52px", marginTop: "22px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700", cursor: "pointer" }} onClick={onSubmit} disabled={busy}>Recevoir le code</button>
         </div>
         <div style={{ width: "420px", display: "flex", flexDirection: "column", gap: "10px" }}>
           {(reassure ?? []).map((r, rIndex) => (

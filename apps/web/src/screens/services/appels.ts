@@ -308,7 +308,7 @@ async function moiEtQuotas(): Promise<{ moi: Moi; quotas: Quotas }> {
     fetchMe(),
     memberApi.get('/me/subscription', mySubscriptionResponseSchema),
   ]);
-  return { moi: moiDe(me), quotas: quotasDe(abonnement) };
+  return { moi: moiDe(me), quotas: quotasDe(abonnement, !me.monetisationActive) };
 }
 
 function moiDe(me: MeResponse): Moi {
@@ -331,7 +331,7 @@ function moiDe(me: MeResponse): Moi {
  * On affiche alors zéro sur le plafond GRATUIT du §4.4 — qui est la vérité pour un
  * membre sans compteur — plutôt qu'un tiret qui laisserait croire à une panne.
  */
-function quotasDe(abonnement: MySubscriptionResponse): Quotas {
+function quotasDe(abonnement: MySubscriptionResponse, gratuit: boolean): Quotas {
   const compteur = abonnement.usage.items.find((u) => u.metric === 'PRO_CONTACTS');
   const utilises = compteur?.used ?? 0;
   const plafond = compteur === undefined ? FREE_PRO_CONTACTS_PER_MONTH : compteur.limit;
@@ -344,6 +344,7 @@ function quotasDe(abonnement: MySubscriptionResponse): Quotas {
         ? '0%'
         : `${Math.min(100, Math.round((utilises / plafond) * 100))}%`,
     reinitialise: jourMoisEcrit(abonnement.usage.resetsAt),
+    gratuit,
   };
 }
 
@@ -961,6 +962,7 @@ export const SQUELETTE_S01: S01Data = {
     plafondPro: String(FREE_PRO_CONTACTS_PER_MONTH),
     barre: '0%',
     reinitialise: '',
+    gratuit: true,
   },
   liste: { total: 0, ville: '', bandeau: HOUSING_SAFETY_BANNER, annonces: [] },
 };
@@ -991,6 +993,7 @@ const SOCLE_SERVICES = {
     plafondPro: String(FREE_PRO_CONTACTS_PER_MONTH),
     barre: '0%',
     reinitialise: '',
+    gratuit: true,
   },
 } as const;
 

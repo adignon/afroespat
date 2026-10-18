@@ -7,7 +7,7 @@ import { ProviderError } from '../../../providers/http';
 import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
 import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../auth.service';
-import { numeroDEpreuve } from '../../../common/__tests__/numeros';
+import { numeroDEpreuve, numeroFrancaisDEpreuve } from '../../../common/__tests__/numeros';
 import { enFormatInternational } from '@app/shared';
 
 /**
@@ -104,7 +104,7 @@ describe('authentification (01 §2.1)', () => {
     });
     const service = (sender: { send: () => Promise<{ providerRef: string }> }) =>
       new AuthService(prisma, crypto, new OutboxService(prisma), new TokenService(), new ConsentsService(prisma),
-        sender as never, new FakeCaptchaProvider());
+        sender, new FakeCaptchaProvider());
 
     it('une panne transitoire est réessayée UNE fois, et le code part', async () => {
       const appels = { n: 0 };
@@ -218,7 +218,7 @@ describe('authentification (01 §2.1)', () => {
    * suffirait pas — `true` partout et `false` partout passent chacun la moitié.
    */
   it('pose `is_destination` sur un numéro de pays DESTINATION, à l’inscription', async () => {
-    const { userId } = await signIn(nextPhone(), 'FR');
+    const { userId } = await signIn(numeroFrancaisDEpreuve(counter++), 'FR');
 
     const stored = await prisma.phoneNumber.findFirstOrThrow({
       where: { userId },
@@ -355,6 +355,76 @@ describe('authentification (01 §2.1)', () => {
         code: 'SESSION_REVOKED',
       });
     });
+  });
+
+  // ── Lot A : le pays réel du numéro, la ligne fixe, le but du défi ────────
+
+  describe('numéro : pays réel et type de ligne (lot A)', () => {
+    const demander = (phone: string, iso2: string) =>
+      auth.requestOtp({
+        phone,
+        countryIso2: iso2,
+        captchaToken: 'test',
+        purpose: 'SIGNUP',
+        ip: undefined,
+      });
+
+    it('refuse un numéro béninois saisi avec la France (contournement de L2)', async () => {
+      const before = sms.sentCount();
+      await expect(demander('+2290190000000', 'FR')).rejects.toMatchObject({
+        code: 'PHONE_COUNTRY_MISMATCH',
+      });
+      expect(sms.sentCount()).toBe(before);
+    });
+
+    it('refuse un numéro français saisi avec le Bénin', async () => {
+      await expect(demander('+33612345678', 'BJ')).rejects.toMatchObject({
+        code: 'PHONE_COUNTRY_MISMATCH',
+      });
+    });
+
+    it('refuse une ligne fixe, sans envoyer de SMS', async () => {
+      const before = sms.sentCount();
+      await expect(demander('01 45 67 89 01', 'FR')).rejects.toMatchObject({
+        code: 'PHONE_NOT_MOBILE',
+      });
+      expect(sms.sentCount()).toBe(before);
+    });
+
+    it('accepte un mobile français national ou international', async () => {
+      const n = numeroFrancaisDEpreuve(counter++);
+      await expect(demander(n, 'FR')).resolves.toHaveProperty('challengeId');
+    });
+  });
+
+  describe('verifyOtp ne valide que les défis de connexion (lot A)', () => {
+    it.each(['ADD_PHONE', 'DELETE_ACCOUNT'] as const)(
+      'refuse un défi %s',
+      async (purpose) => {
+        const phone = nextPhone();
+        const { challengeId } = await auth.requestOtp({
+          phone,
+          countryIso2: 'BJ',
+          captchaToken: 'test',
+          purpose,
+          ip: undefined,
+        });
+        await expect(
+          auth.verifyOtp({
+            challengeId,
+            code: sms.lastCodeSent() as string,
+            ip: undefined,
+            userAgent: undefined,
+          }),
+        ).rejects.toMatchObject({ code: 'OTP_PURPOSE_MISMATCH' });
+        // Aucun compte n'a été créé par ce détour.
+        expect(
+          await prisma.phoneNumber.count({
+            where: { phoneHmac: crypto.phoneFingerprint(enFormatInternational(phone, 'BJ') ?? '') },
+          }),
+        ).toBe(0);
+      },
+    );
   });
 
   // ── Le pays fermé, avant tout envoi ───────────────────────────────────────

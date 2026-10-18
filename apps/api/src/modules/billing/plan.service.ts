@@ -1,3 +1,4 @@
+import { monetisationActive } from '../../common/monetisation';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@app/db';
 import {
@@ -64,7 +65,13 @@ export class PlanService {
    */
   async limitsFor(userId: string): Promise<PlanLimits> {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { plan: true } });
-    return this.limitsOf(user?.plan ?? 'FREE');
+    const reel = await this.limitsOf(user?.plan ?? 'FREE');
+    if (await monetisationActive(this.prisma)) return reel;
+    // LOT A : « tout gratuit » — les droits de PREMIUM pour tous. Une seule
+    // exception, `hidePartners` : ce n'est pas un droit de plus mais la
+    // disparition des encarts partenaires, une recette que le porteur n'a pas
+    // demandé de supprimer. Elle suit le plan RÉEL (donc : encarts visibles).
+    return { ...(await this.limitsOf('PREMIUM')), hidePartners: reel.hidePartners };
   }
 
   /** Les limites d'un code de plan, depuis `plans.limits`. */
