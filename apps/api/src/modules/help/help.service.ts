@@ -326,6 +326,7 @@ export class HelpService {
             id: true,
             title: true,
             position: true,
+            status: true,
             dueDate: true,
             stepDefinition: { select: { nameFr: true } },
             journey: {
@@ -333,6 +334,7 @@ export class HelpService {
               // le type de parcours, « jamais le titre personnel » (règle dure
               // 04 §2). Ne pas le lire est plus sûr que penser à ne pas l'écrire.
               select: {
+                id: true,
                 templateVersion: { select: { template: { select: { nameFr: true } } } },
               },
             },
@@ -371,7 +373,7 @@ export class HelpService {
           request.status === 'RESOLVED' &&
           this.reopenWindowOpen(request.resolvedAt ?? request.updatedAt),
       },
-      journeyContext: this.journeyContext(request.originJourneyStep),
+      journeyContext: this.journeyContext(request.originJourneyStep, isAuthor),
       responses: responses
         .filter((r) => this.isVisibleAuthor(r.author))
         .map((r) => ({
@@ -1386,11 +1388,14 @@ export class HelpService {
    */
   private journeyContext(
     step: {
+      id: string;
       title: string;
+      status: string;
       dueDate: Date | null;
       stepDefinition: { nameFr: string } | null;
-      journey: { templateVersion: { template: { nameFr: string } } };
+      journey: { id: string; templateVersion: { template: { nameFr: string } } };
     } | null,
+    isAuthor: boolean,
   ) {
     if (step === null) return null;
     const dueDate = step.dueDate;
@@ -1402,6 +1407,10 @@ export class HelpService {
         dueDate === null
           ? null
           : Math.ceil((dueDate.getTime() - Date.now()) / 86_400_000),
+      // Les identifiants du parcours personnel ne sortent que pour son auteur.
+      own: isAuthor
+        ? { journeyId: step.journey.id, stepId: step.id, stepDone: step.status === 'DONE' }
+        : null,
     };
   }
 }

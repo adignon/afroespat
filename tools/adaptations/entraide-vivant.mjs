@@ -26,22 +26,31 @@ const TOUS_H = ['H01', 'H02', 'H03', 'H04', 'H05', 'H06', 'H07', 'H08', 'H09', '
  * H06 passent leur sujet (la demande, le parrain) par `signalement`, les autres
  * demandent d'abord quel membre.
  */
-const SIGNALER = {
-  screens: TOUS_H,
-  nom: 'H_SIGNALER',
+const signalerPour = (screens, nom, sujet, provides) => ({
+  screens,
+  nom,
   why: 'Le « Signaler » du bandeau anti-paiement (§2.7) ouvre la fenêtre de signalement (`POST /reports`) au lieu d’être un lien `href="#"` mort.',
-  provides: ['signalement'],
+  provides,
   apply(jsx) {
     const motif = /<a href="#" style=\{\{ ([^}]*) \}\}>Signaler<\/a>/g;
     let compte = 0;
     const out = jsx.replace(motif, (_t, style) => {
       compte += 1;
-      const sujet = /\bsignalement\b/.test(jsx.split('<a href="#"')[0] ?? '') ? '' : '';
-      return `<SignalerArgent style={{ ${style} }}${sujet} />`;
+      return `<SignalerArgent style={{ ${style} }}${sujet === null ? '' : ` sujet={${sujet}}`} />`;
     });
     return { jsx: out, applied: compte > 0 };
   },
-};
+});
+
+/** H02 et H06 ont un sujet précis (la demande, le parrain) ; les autres demandent QUI. */
+const SIGNALER = signalerPour(
+  ['H01', 'H03', 'H04', 'H05', 'H07', 'H08', 'H09', 'H10'],
+  'H_SIGNALER',
+  null,
+  [],
+);
+const SIGNALER_H02 = signalerPour(['H02'], 'H02_SIGNALER', 'action.signalement', ['action']);
+const SIGNALER_H06 = signalerPour(['H06'], 'H06_SIGNALER', 'parrain.signalement', ['parrain']);
 
 /**
  * ── 2. H03 · LE COMPOSEUR A DE VRAIS CHAMPS ─────────────────────────────────
@@ -89,10 +98,185 @@ const H03_FORMULAIRE = {
   },
 };
 
-export const ADAPTATIONS_ENTRAIDE_VIVANT = [SIGNALER, H03_FORMULAIRE];
+/**
+ * ── 3. H02 · LES GESTES DE LA DEMANDE ───────────────────────────────────────
+ *
+ * Huit remplacements, tous sous condition (chaque région ne s'affiche que pour
+ * celui à qui elle s'adresse). Voir `components/entraide/demande-vivante.tsx`.
+ */
+function remplacerElement(jsx, debutMotif, neuf) {
+  const i = jsx.indexOf(debutMotif);
+  if (i < 0) return null;
+  const fin = finElement(jsx, i);
+  if (fin < 0) return null;
+  return jsx.slice(0, i) + neuf + jsx.slice(fin);
+}
+
+const H02_GESTES = {
+  screens: ['H02'],
+  nom: 'H02_GESTES',
+  why: 'H02 : pastilles et menu, actions de l’auteur (modifier, résoudre, rouvrir, supprimer), réponse et réponse privée, « ça m’a aidé », modifier/supprimer sa réponse, après-résolution — au lieu de pastilles et boutons dessinés sans geste.',
+  provides: ['action', 'demande'],
+  apply(jsx) {
+    let out = jsx;
+    let n = 0;
+    const essai = (r) => {
+      if (r !== null) {
+        out = r;
+        n += 1;
+      }
+    };
+    // Carte de la demande : le trait orange n'est que pour une demande issue d'un parcours.
+    for (const [rayon, retrait] of [['22px', '22px'], ['20px', '16px']]) {
+      const vieux = `<div style={{ background: "#FFFBF8", border: "1.5px solid #E0733A", borderRadius: "${rayon}", padding: "${retrait}"`;
+      if (out.includes(vieux)) {
+        out = out.replace(
+          vieux,
+          `<div style={{ background: action.deParcours ? "#FFFBF8" : "#fff", border: action.deParcours ? "1.5px solid #E0733A" : "1px solid #E6EBE9", borderRadius: "${rayon}", padding: "${retrait}"`,
+        );
+        n += 1;
+      }
+    }
+    // Pastilles + « ··· » (ordinateur).
+    {
+      const d = '<div style={{ display: "flex", gap: "6px" }}><span style={{ background: "#E0733A"';
+      essai(remplacerElement(out, d, '<EnteteDemande action={action} />'));
+    }
+    // Pastille seule (téléphone), puis le rond « ··· » de la barre haute en menu.
+    {
+      const m = /<span style=\{\{ background: "#E0733A"[^}]*\}\}>Depuis un parcours<\/span>/.exec(out);
+      if (m !== null && !out.includes('<EnteteDemande')) {
+        out = out.slice(0, m.index) + '<EnteteDemande action={action} sansMenu />' + out.slice(m.index + m[0].length);
+        n += 1;
+        const rond = /<span style=\{\{ (width: "40px", height: "40px", borderRadius: "999px", background: "#EEF2F0"[^}]*)\}\}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h\.01M12 12h\.01M19 12h\.01" \/><\/svg><\/span>/.exec(out);
+        if (rond !== null) {
+          out =
+            out.slice(0, rond.index) +
+            `<MenuDemande action={action} rondStyle={{ ${rond[1]} }} />` +
+            out.slice(rond.index + rond[0].length);
+          n += 1;
+        }
+      }
+    }
+    // Actions de l'auteur (ordinateur).
+    {
+      const d = '<div style={{ display: "flex", gap: "8px", marginTop: "14px" }}><button style={{ height: "44px"';
+      essai(remplacerElement(out, d, '<ActionsAuteur action={action} />'));
+    }
+    // Compteur de réponses.
+    if (out.includes('{demande.nbReponses} RÉPONSES · VUE AUTEUR')) {
+      out = out.replace(
+        '{demande.nbReponses} RÉPONSES · VUE AUTEUR',
+        '{demande.nbReponses} {demande.nbReponses > 1 ? "RÉPONSES" : "RÉPONSE"}{action.estAuteur ? " · VUE AUTEUR" : ""}',
+      );
+      n += 1;
+    }
+    // Pastilles de chaque réponse.
+    {
+      const debut = out.indexOf('{r.marquee ? (<>');
+      const finMotif = 'Ça m’a aidé</span></>) : null}';
+      const second = debut < 0 ? -1 : out.indexOf(finMotif, out.indexOf(finMotif, debut) + 1);
+      if (debut >= 0 && second > debut) {
+        out = out.slice(0, debut) + '<ActionsReponse reponse={r.action} />' + out.slice(second + finMotif.length);
+        n += 1;
+      }
+    }
+    // Typo de la planche mobile : « 0 14pxpx ».
+    out = out.replace('padding: "0 14pxpx"', 'padding: "0 14px"');
+    // Après résolution (ordinateur).
+    essai(remplacerElement(out, '<div style={{ background: "#E3F0EB", borderRadius: "22px", padding: "18px 20px" }}><div style={{ fontSize: "10.5px"', '<ApresResolution action={action} />'));
+    // Colonne de droite : répondre.
+    {
+      const lib = out.indexOf('VUE D’UN AUTRE MEMBRE');
+      if (lib >= 0) {
+        const debut = out.lastIndexOf('<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px"', lib);
+        const fin = debut < 0 ? -1 : finElement(out, debut);
+        if (fin > 0) {
+          out = out.slice(0, debut) + '<RepondreDemande action={action} />' + out.slice(fin);
+          n += 1;
+        }
+      }
+    }
+    // Barre du bas (téléphone) + après résolution posé avant elle.
+    {
+      const pied = '<div style={{ flexShrink: "0", background: "#fff", borderTop: "1px solid #E6EBE9", padding: "12px 16px 28px", display: "flex", gap: "8px" }}><div style={{ flex: "1", height: "44px"';
+      const i = out.indexOf(pied);
+      if (i >= 0) {
+        const fin = finElement(out, i);
+        const corpsFerme = out.lastIndexOf('</div>', i);
+        out =
+          out.slice(0, corpsFerme) +
+          '<ApresResolution action={action} />' +
+          out.slice(corpsFerme, i) +
+          '<BarreReponse action={action} />' +
+          out.slice(fin);
+        n += 1;
+      }
+    }
+    return { jsx: out, applied: n > 0 };
+  },
+};
+
+/**
+ * ── 4. H06 · LA FICHE D'UN PARRAIN ──────────────────────────────────────────
+ *
+ * Les quatre pastilles « Études · Logement · Français · Fon » étaient écrites en dur
+ * pour tous les parrains : elles deviennent les types de parcours que CE parrain
+ * connaît (la rangée disparaît s'il n'en a déclaré aucun). « Demander comme
+ * parrain » ouvre la feuille de demande.
+ */
+const H06_FICHE = {
+  screens: ['H06'],
+  nom: 'H06_FICHE',
+  why: 'H06 : les types de parcours du parrain remplacent les pastilles en dur, et « Demander comme parrain » ouvre la feuille de demande (`POST /mentorships`).',
+  provides: ['parrain'],
+  apply(jsx) {
+    let out = jsx;
+    let n = 0;
+    const premier = out.indexOf('>Études</span>');
+    if (premier >= 0) {
+      const span = out.lastIndexOf('<span style={{', premier);
+      const style = /style=\{\{ ([^}]*) \}\}/.exec(out.slice(span, premier + 1))[1];
+      const conteneur = out.lastIndexOf('<div style={{', span);
+      const fin = finElement(out, conteneur);
+      const ouvre = out.slice(conteneur, out.indexOf('>', conteneur) + 1);
+      if (fin > 0) {
+        out =
+          out.slice(0, conteneur) +
+          `{parrain.types.length > 0 ? (${ouvre}{parrain.types.map((t) => (<span key={t} style={{ ${style} }}>{t}</span>))}</div>) : null}` +
+          out.slice(fin);
+        n += 1;
+      }
+    }
+    const bouton = out.indexOf('<button style={{', out.indexOf('Demander comme'));
+    const debut = out.lastIndexOf('<button', out.indexOf('Demander comme'));
+    if (debut >= 0 && bouton >= 0) {
+      const fin = finElement(out, debut);
+      const ms = /style=\{\{ ([^}]*) \}\}/.exec(out.slice(debut, out.indexOf('>', debut) + 1));
+      if (fin > 0 && ms !== null) {
+        out =
+          out.slice(0, debut) +
+          `<BoutonDemander handle={parrain.handle} nom={parrain.nom} complet={parrain.complet} libelle={\`Demander comme \${parrain.appellation}\`} style={{ ${ms[1]} }} />` +
+          out.slice(fin);
+        n += 1;
+      }
+    }
+    return { jsx: out, applied: n > 0 };
+  },
+};
+
+export const ADAPTATIONS_ENTRAIDE_VIVANT = [SIGNALER, SIGNALER_H02, SIGNALER_H06, H03_FORMULAIRE, H02_GESTES, H06_FICHE];
 
 /** Les composants que ces adaptations posent, pour le registre d'imports. */
 export const AJOUTS_ENTRAIDE_VIVANT = {
   SignalerArgent: '@/components/entraide/signaler-argent',
   FormulaireDemande: '@/components/entraide/formulaire-demande',
+  EnteteDemande: '@/components/entraide/demande-vivante',
+  MenuDemande: '@/components/entraide/demande-vivante',
+  ActionsAuteur: '@/components/entraide/demande-vivante',
+  ActionsReponse: '@/components/entraide/demande-vivante',
+  ApresResolution: '@/components/entraide/demande-vivante',
+  RepondreDemande: '@/components/entraide/demande-vivante',
+  BarreReponse: '@/components/entraide/demande-vivante',
+  BoutonDemander: '@/components/entraide/parrainage-vivant',
 };

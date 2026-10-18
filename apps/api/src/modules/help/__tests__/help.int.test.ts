@@ -1102,6 +1102,15 @@ describe('fil d’entraide (06 §2, §4, §9)', () => {
     expect(created.journeyContext?.stepName).toBe('Logement');
     expect(created.journeyContext?.journeyTypeName).toBe('Études');
     expect(created.journeyContext?.dueInDays).toBeGreaterThan(0);
+    // Les identifiants du parcours PERSONNEL ne sortent que pour son auteur : le
+    // bouton « Marquer l'étape comme franchie » (§2.4) en a besoin, pas les autres.
+    expect(created.journeyContext?.own).toEqual({
+      journeyId: journey.id,
+      stepId: step.id,
+      stepDone: false,
+    });
+    const reader = await newMember();
+    expect((await help.detail(reader, created.request.id)).journeyContext?.own).toBeNull();
     expect(JSON.stringify(created)).not.toContain(personalTitle);
 
     // La CARTE de liste porte la même ligne d'étape (« Étape 1 · Logement · parcours

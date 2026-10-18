@@ -524,6 +524,20 @@ export const helpJourneyContextSchema = z
     journeyTypeName: z.string(),
     dueDate: z.string().datetime().nullable(),
     dueInDays: z.number().int().nullable(),
+    /**
+     * L'étape et le parcours EUX-MÊMES — pour l'AUTEUR SEUL (`null` pour tout autre
+     * lecteur). §2.4 : à la résolution, le parcours propose de marquer l'étape
+     * franchie ; le bouton a besoin des deux identifiants. Ils ne sont pas rendus
+     * aux autres membres : ce sont ceux d'un parcours personnel.
+     */
+    own: z
+      .object({
+        journeyId: uuidSchema,
+        stepId: uuidSchema,
+        stepDone: z.boolean(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 

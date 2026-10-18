@@ -1,6 +1,8 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
+import { Modal } from '@/components/modal';
+import { PanneauFenetre } from '@/components/panneau-fenetre';
 
 /**
  * AJOUT — les pièces de formulaire de l'entraide et du parrainage.
@@ -184,5 +186,43 @@ export function Compteur({ n, min, max }: { readonly n: number; readonly min: nu
     >
       {n} / {max}
     </div>
+  );
+}
+
+/**
+ * Une feuille de saisie : fenêtre centrée à 1440 px, feuille du bas à 390 px — les
+ * deux formes que `PanneauFenetre` dessine déjà pour les autres fenêtres du dépôt.
+ * `nom` désigne la planche pour les épreuves ; `titreId` est dérivé de lui.
+ */
+export function Feuille({
+  ouverte,
+  onFermer,
+  nom,
+  titre,
+  actions,
+  children,
+}: {
+  readonly ouverte: boolean;
+  readonly onFermer: () => void;
+  readonly nom: string;
+  readonly titre: string;
+  readonly actions?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  const titreId = `${nom.toLowerCase()}-titre`;
+  const panneau = (mobile: boolean) => (
+    <PanneauFenetre titreId={titreId} titre={titre} feuille={mobile} largeur="480px" actions={actions}>
+      {children}
+    </PanneauFenetre>
+  );
+  return (
+    <Modal
+      open={ouverte}
+      onClose={onFermer}
+      titleId={titreId}
+      name={nom}
+      desktop={panneau(false)}
+      mobile={panneau(true)}
+    />
   );
 }

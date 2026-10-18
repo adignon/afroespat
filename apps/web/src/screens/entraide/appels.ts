@@ -7,6 +7,7 @@ import {
   helpListResponseSchema,
   helpMineResponseSchema,
   helpMyResponsesResponseSchema,
+  journeyTemplatesResponseSchema,
   mentorCardResponseSchema,
   myMentorshipsResponseSchema,
   publicProfileResponseSchema,
@@ -782,8 +783,40 @@ export async function chargerH02(id: string): Promise<H02Data> {
   ]);
 
   const parcours = detail.journeyContext;
+  const requete = detail.request;
+  const marqueeId = requete.resolvedByResponseId;
+  const aidant =
+    marqueeId === null
+      ? null
+      : (detail.responses.find((r) => r.id === marqueeId)?.author.displayName ?? null);
   return {
     ...bandeau,
+    action: {
+      id: requete.id,
+      kind: requete.kind,
+      statut: requete.status,
+      estAuteur: requete.isAuthor,
+      peutModifier: requete.canEdit,
+      peutRouvrir: requete.canReopen,
+      titre: requete.title,
+      corps: requete.body,
+      type: requete.type,
+      categorie: CATEGORIES_FR[requete.type],
+      // `dueDate` est un horodatage complet : le champ de date veut AAAA-MM-JJ.
+      echeance: requete.dueDate === null ? '' : requete.dueDate.slice(0, 10),
+      deParcours: requete.fromJourney,
+      parcours:
+        detail.journeyContext?.own == null
+          ? null
+          : {
+              journeyId: detail.journeyContext.own.journeyId,
+              stepId: detail.journeyContext.own.stepId,
+              fait: detail.journeyContext.own.stepDone,
+              etape: detail.journeyContext.stepName,
+            },
+      signalement: { type: 'HELP_REQUEST', id: requete.id },
+      aidant,
+    },
     demande: {
       titre: detail.request.title,
       corps: detail.request.body,
@@ -817,7 +850,11 @@ export async function chargerH02(id: string): Promise<H02Data> {
         parcours === null
           ? null
           : {
-              etape: parcours.stepName,
+              // « Étape 7 · Logement » : le rang vient de la carte (`journeyStep`).
+              etape:
+                detail.request.journeyStep === null
+                  ? parcours.stepName
+                  : `${String(detail.request.journeyStep.stepNumber)} · ${parcours.stepName}`,
               type: parcours.journeyTypeName,
               jours: parcours.dueInDays ?? 0,
             },
@@ -831,6 +868,16 @@ export async function chargerH02(id: string): Promise<H02Data> {
         corps: r.body,
         marquee: r.markedHelpful,
         peutMarquer: r.canMarkHelpful,
+        action: {
+          id: r.id,
+          demandeId: requete.id,
+          corps: r.body,
+          marquee: r.markedHelpful,
+          peutMarquer: r.canMarkHelpful,
+          estMienne: r.isMine,
+          peutModifier: r.canEdit,
+          signalement: { type: 'HELP_RESPONSE', id: r.id },
+        },
       }),
     ),
   };
@@ -1003,14 +1050,24 @@ export const chargerH04 = async (): Promise<H04Data> => {
  * déduire d'un prénom est précisément ce qu'on refuse de faire.
  */
 export async function chargerH06(handle: string): Promise<H06Data> {
-  const [bandeau, fiche] = await Promise.all([
+  const [bandeau, fiche, modeles] = await Promise.all([
     bandeauSeul(),
     memberApi.get(`/mentors/${encodeURIComponent(handle)}`, mentorCardResponseSchema),
+    // Les identifiants de types de parcours de la fiche, nommés. Un échec ne fait pas
+    // tomber la fiche : les pastilles disparaissent, c'est tout.
+    memberApi.get('/journey-templates', journeyTemplatesResponseSchema).catch(() => null),
   ]);
+  const nomsTypes = (modeles?.items ?? [])
+    .filter((t) => fiche.journeyTemplateIds.includes(t.id))
+    .map((t) => t.nameFr);
 
   return {
     ...bandeau,
     parrain: {
+      handle: fiche.handle,
+      signalement: { type: 'USER', id: fiche.userId },
+      complet: fiche.availability !== 'AVAILABLE',
+      types: nomsTypes,
       nom: fiche.displayName,
       initiales: initialesDe(fiche.displayName),
       dispo: fiche.availability === 'AVAILABLE' ? DISPO_LIBRE : DISPO_COMPLET,
@@ -1229,6 +1286,23 @@ export const SQUELETTE_H10: H10Data = {
  */
 export const SQUELETTE_H02: H02Data = {
   ...SQUELETTE_BANDEAU,
+  action: {
+    id: '',
+    kind: 'REQUEST',
+    statut: 'OPEN',
+    estAuteur: false,
+    peutModifier: false,
+    peutRouvrir: false,
+    titre: '',
+    corps: '',
+    type: 'OTHER',
+    categorie: '',
+    echeance: '',
+    deParcours: false,
+    parcours: null,
+    signalement: { type: 'HELP_REQUEST', id: '' },
+    aidant: null,
+  },
   demande: {
     titre: '—',
     corps: '',
@@ -1244,6 +1318,10 @@ export const SQUELETTE_H02: H02Data = {
 export const SQUELETTE_H06: H06Data = {
   ...SQUELETTE_BANDEAU,
   parrain: {
+    handle: '',
+    signalement: { type: 'USER', id: '' },
+    complet: false,
+    types: [],
     nom: '—',
     initiales: '',
     dispo: { libelle: '—', fond: '#E3F0EB', texte: '#0F5C48' },

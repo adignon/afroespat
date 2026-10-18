@@ -26,6 +26,12 @@ export interface EvaluationVisible {
 
 export interface H06Data extends BandeauEntraide {
   readonly parrain: {
+    readonly handle: string;
+    /** Le sujet du signalement (`USER`) : « Si on vous demande de l'argent, signalez ». */
+    readonly signalement: { readonly type: string; readonly id: string };
+    readonly complet: boolean;
+    /** Les NOMS des types de parcours que le parrain connaît (`journeyTemplateIds` résolus). */
+    readonly types: readonly string[];
     readonly nom: string;
     readonly initiales: string;
     readonly dispo: PastilleDispo;
