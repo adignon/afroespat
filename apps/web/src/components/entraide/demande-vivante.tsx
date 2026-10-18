@@ -342,7 +342,7 @@ export function ActionsReponse({ reponse }: { readonly reponse: ActionReponse })
             );
           }}
           style={eteint(
-            { display: 'inline-flex', alignItems: 'center', gap: '6px', border: '1.5px solid #CFE3DA', background: '#fff', color: '#0F5C48', fontSize: '12px', fontWeight: 700, padding: '5px 12px', borderRadius: '999px', font: 'inherit', cursor: 'pointer' },
+            { font: 'inherit', display: 'inline-flex', alignItems: 'center', gap: '6px', border: '1.5px solid #CFE3DA', background: '#fff', color: '#0F5C48', fontSize: '12px', fontWeight: 700, padding: '5px 12px', borderRadius: '999px', cursor: 'pointer' },
             occupe,
           )}
         >
@@ -471,9 +471,11 @@ export function RepondreDemande({ action }: { readonly action: ActionDemande }) 
   const [touche, setTouche] = useState(false);
   if (action.estAuteur) return null;
 
+  /** Le squelette (`id: ''`) dessine le cadre avant la donnée : rien n'y est envoyable. */
+  const pret = action.id !== '';
   const clos = action.statut !== 'OPEN';
   const valide =
-    texte.trim().length >= HELP_LIMITS.responseBodyMin && texte.trim().length <= HELP_LIMITS.responseBodyMax;
+    pret && texte.trim().length >= HELP_LIMITS.responseBodyMin && texte.trim().length <= HELP_LIMITS.responseBodyMax;
 
   const repondre = async (): Promise<void> => {
     setTouche(true);
@@ -525,14 +527,14 @@ export function RepondreDemande({ action }: { readonly action: ActionDemande }) 
         {clos ? null : (
           <button
             type="button"
-            disabled={occupe}
+            disabled={occupe || !pret}
             onClick={() => void repondre()}
             style={eteint({ ...BOUTON_PLEIN, flex: 1, height: '40px' }, occupe || !valide)}
           >
             Répondre
           </button>
         )}
-        <button type="button" disabled={occupe} onClick={enPrive} style={eteint({ ...BOUTON_DISCRET, height: '40px', flex: clos ? 1 : undefined }, occupe)}>
+        <button type="button" disabled={occupe || !pret} onClick={enPrive} style={eteint({ ...BOUTON_DISCRET, height: '40px', flex: clos ? 1 : undefined }, occupe)}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3" />
           </svg>
@@ -550,8 +552,9 @@ export function BarreReponse({ action }: { readonly action: ActionDemande }) {
   const router = useRouter();
   const { lancer, occupe, fenetre } = useGeste();
   const [texte, setTexte] = useState('');
+  const pret = action.id !== '';
   const valide =
-    texte.trim().length >= HELP_LIMITS.responseBodyMin && texte.trim().length <= HELP_LIMITS.responseBodyMax;
+    pret && texte.trim().length >= HELP_LIMITS.responseBodyMin && texte.trim().length <= HELP_LIMITS.responseBodyMax;
   const clos = action.statut !== 'OPEN';
 
   return (
@@ -593,7 +596,7 @@ export function BarreReponse({ action }: { readonly action: ActionDemande }) {
         <button
           type="button"
           aria-label="Répondre en privé"
-          disabled={occupe}
+          disabled={occupe || !pret}
           onClick={() => {
             void lancer(
               async () => {
