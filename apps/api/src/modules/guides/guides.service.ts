@@ -1957,6 +1957,12 @@ export class GuidesService {
       | { kind: 'ACCEPT' }
       | { kind: 'AMEND'; replacement: string }
       | { kind: 'REJECT'; reason: string },
+    /**
+     * L'ÉQUIPE décide à la place du créateur — 05 §2.4 : passé le délai de 14 jours,
+     * la proposition est `ESCALATED` et « l'équipe accepte ou refuse ». Sans ce
+     * paramètre le comportement est celui d'avant (créateur seul, `PENDING` seule).
+     */
+    staffId?: string,
   ) {
     const proposal = await this.prisma.guideRevisionProposal.findUnique({
       where: { id: proposalId },
@@ -1981,8 +1987,14 @@ export class GuidesService {
     if (proposal === null) throw ApiError.notFound();
     // 403 NOT_AUTHOR, et non 404 : le guide est public, la proposition aussi
     // dès qu'elle est acceptée. C'est §4 qui nomme ce code.
-    if (proposal.guide.authorUserId !== userId) this.fail('NOT_AUTHOR');
-    if (proposal.status !== 'PENDING') this.fail('ALREADY_DECIDED', { status: proposal.status });
+    if (staffId === undefined && proposal.guide.authorUserId !== userId) this.fail('NOT_AUTHOR');
+    if (
+      staffId === undefined
+        ? proposal.status !== 'PENDING'
+        : proposal.status !== 'ESCALATED' && proposal.status !== 'PENDING'
+    ) {
+      this.fail('ALREADY_DECIDED', { status: proposal.status });
+    }
 
     const now = new Date();
 
@@ -1992,7 +2004,7 @@ export class GuidesService {
           where: { id: proposalId },
           data: {
             status: 'REJECTED',
-            reviewerUserId: userId,
+            ...(staffId === undefined ? { reviewerUserId: userId } : { reviewerStaffId: staffId }),
             rejectReason: decision.reason,
             decidedAt: now,
           },
@@ -2098,7 +2110,11 @@ export class GuidesService {
 
       await tx.guideRevisionProposal.update({
         where: { id: proposalId },
-        data: { status, reviewerUserId: userId, decidedAt: now },
+        data: {
+          status,
+          ...(staffId === undefined ? { reviewerUserId: userId } : { reviewerStaffId: staffId }),
+          decidedAt: now,
+        },
       });
 
       // §2.6 : « une proposition acceptée pendant le délai : retour à

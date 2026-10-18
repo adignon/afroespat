@@ -1581,6 +1581,34 @@ export class ModerationService {
     return { items: page.items, nextCursor: page.nextCursor };
   }
 
+  /** Toutes les alertes pour l'équipe : actives, à venir, expirées, retirées. */
+  async listScamAlertsForStaff() {
+    const rows = await this.prisma.scamAlert.findMany({
+      orderBy: { id: 'desc' },
+      take: 100,
+      select: {
+        id: true, title: true, body: true, severity: true, cityId: true, countryId: true,
+        isPinned: true, publishedAt: true, expiresAt: true, relatedCaseId: true,
+        city: { select: { name: true } },
+        country: { select: { nameFr: true } },
+      },
+    });
+    const now = Date.now();
+    return {
+      items: rows.map(({ city, country, ...a }) => ({
+        ...a,
+        cityName: city?.name ?? null,
+        countryName: country?.nameFr ?? null,
+        state:
+          a.publishedAt === null || a.publishedAt.getTime() > now
+            ? 'draft'
+            : a.expiresAt !== null && a.expiresAt.getTime() <= now
+              ? 'ended'
+              : 'active',
+      })),
+    };
+  }
+
   /** §8.2 : CRUD des alertes, rôle `CONTENT_ADMIN`. */
   async createScamAlert(staff: StaffContext, input: ScamAlertWrite) {
     this.assertRole(staff, ['CONTENT_ADMIN', 'SUPER_ADMIN']);

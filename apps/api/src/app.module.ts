@@ -72,6 +72,10 @@ import { AdminModerationController } from './modules/admin/admin-moderation.cont
 import { AdminService } from './modules/admin/admin.service';
 import { AdminContentController, PublicContentController } from './modules/admin/admin-content.controller';
 import { AdminContentService } from './modules/admin/admin-content.service';
+import { AdminJourneysController } from './modules/admin/admin-journeys.controller';
+import { AdminJourneysService } from './modules/admin/admin-journeys.service';
+import { AdminGuidesController } from './modules/admin/admin-guides.controller';
+import { AdminGuidesService } from './modules/admin/admin-guides.service';
 import { AdminMemberController } from './modules/admin/admin-member.controller';
 import { AdminMemberActionsService } from './modules/admin/admin-member-actions.service';
 import { StaffAuthController } from './modules/admin/staff-auth.controller';
@@ -155,7 +159,7 @@ import {
   ],
   controllers: [HealthController, PlacesController, BookmarksController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
-    StaffAuthController, AdminController, AdminModerationController, AdminContentController, PublicContentController, AdminMemberController,
+    StaffAuthController, AdminController, AdminModerationController, AdminContentController, PublicContentController, AdminMemberController, AdminJourneysController, AdminGuidesController,
     // Module 02 — les référentiels, tenus par CONTENT_ADMIN (§4.2).
     ReferentialsController,
     SearchController, NotificationsController, NotificationSettingsController,
@@ -215,6 +219,8 @@ import {
     AdminService,
     AdminContentService,
     AdminMemberActionsService,
+    AdminJourneysService,
+    AdminGuidesService,
     ReferentialsService,
     SearchService,
     NotificationsService,

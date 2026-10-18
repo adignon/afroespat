@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId, type Prisma } from '@app/db';
 import {
   ADMIN_ERROR_CODES,
@@ -20,6 +20,7 @@ import { AuditService } from '../../common/audit.service';
 import { CryptoService, type Sealed } from '../../common/crypto.service';
 import { PrismaService } from '../../common/prisma.service';
 import { loadEnv } from '../../config/env';
+import { EMAIL_PROVIDER, type EmailProvider } from '../../providers/providers';
 import { hashStaffPassword, needsRehash, verifyStaffPassword } from './staff-password';
 import { generateTotpSecret, totpUri, verifyTotp } from './totp';
 
@@ -112,6 +113,7 @@ export class StaffAuthService {
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
     private readonly audit: AuditService,
+    @Inject(EMAIL_PROVIDER) private readonly email: EmailProvider,
   ) {
     const env = loadEnv();
     this.challengeKey = createHmac('sha256', env.JWT_ACCESS_SECRET).update(CHALLENGE_LABEL).digest();
@@ -408,10 +410,8 @@ export class StaffAuthService {
     });
     if (failures < STAFF_MAX_FAILED_ATTEMPTS) return;
 
-    // §9 : événement `staff.locked`, consommateur « notifications équipe ». La
-    // notification email aux SUPER_ADMIN du §2.1 n'est PAS envoyée : elle demande
-    // le module de notifications, qui n'est pas livré. La trace est écrite pour
-    // qu'elle ne soit pas perdue, et le manque est signalé dans le rapport.
+    // §9 : `staff.locked`. La trace d'audit est écrite ici, puis `notifyLock`
+    // prévient les SUPER_ADMIN par e-mail (§2.1).
     await this.audit.record(this.prisma, {
       actor: { type: 'SYSTEM' },
       action: AUDIT_ACTIONS.staffLocked,
@@ -419,7 +419,35 @@ export class StaffAuthService {
       targetId: staffId,
       metadata: { failures, windowMinutes: STAFF_LOCKOUT_MINUTES },
     });
+    await this.notifyLock(staffId, failures);
     fail('STAFF_LOCKED', { retryAfterMinutes: STAFF_LOCKOUT_MINUTES });
+  }
+
+  /**
+   * §2.1 : « verrouillage 15 minutes ; notification email à l'équipe SUPER_ADMIN ».
+   *
+   * Par le port e-mail existant (`EMAIL_PROVIDER`) vers les SUPER_ADMIN actifs. Le
+   * compte visé est désigné par son NOM D'AFFICHAGE, jamais par son adresse : le
+   * message part vers plusieurs boîtes, et une adresse n'a pas à y circuler. Une
+   * panne d'envoi ne doit JAMAIS changer la réponse à la tentative de connexion :
+   * elle est consignée et on continue.
+   */
+  private async notifyLock(staffId: string, failures: number): Promise<void> {
+    try {
+      const [target, admins] = await Promise.all([
+        this.prisma.staffUser.findUnique({ where: { id: staffId }, select: { displayName: true } }),
+        this.prisma.staffUser.findMany({ where: { role: 'SUPER_ADMIN', isActive: true }, select: { email: true } }),
+      ]);
+      for (const admin of admins) {
+        await this.email.send(admin.email, 'staff.locked', {
+          displayName: target?.displayName ?? '',
+          failures,
+          lockoutMinutes: STAFF_LOCKOUT_MINUTES,
+        });
+      }
+    } catch (error) {
+      this.logger.error(`Notification de verrouillage non envoyée : ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** La trace d'un échec. Le motif reste GÉNÉRIQUE côté réponse, précis côté journal. */

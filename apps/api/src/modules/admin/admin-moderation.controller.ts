@@ -146,6 +146,18 @@ export class AdminModerationController {
 
   // ── Alertes arnaques (§5) ─────────────────────────────────────────────────
 
+  /**
+   * La lecture côté ÉQUIPE : toutes les alertes, y compris retirées, expirées ou pas
+   * encore publiées — l'écran D11 en a besoin pour les éditer, alors que
+   * `GET /scam-alerts` (membres) ne rend que les actives.
+   */
+  @Get('scam-alerts')
+  @RequiresStaffRole(...STAFF_SCOPES.dashboard)
+  @ApiOperation({ summary: 'Toutes les alertes arnaques, actives ou non' })
+  async scamAlerts() {
+    return this.moderation.listScamAlertsForStaff();
+  }
+
   @Post('scam-alerts')
   @RequiresStaffRole('CONTENT_ADMIN', 'SUPER_ADMIN')
   @ApiOperation({ summary: 'Publie une alerte arnaque, globale ou ciblée ville/pays' })
