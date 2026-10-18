@@ -206,6 +206,8 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
       // `story.expired` pour oublier le cache des guichets d'une ville. Un blocage
       // ne publie ni ne fait expirer de story — inerte ici.
       inert(),
+      // Le module 09 (agenda), abonné à `user.deleted` : un blocage n'y touche pas.
+      inert(),
       inert(),
     ).onModuleInit();
 

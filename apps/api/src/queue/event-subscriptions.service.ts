@@ -3,6 +3,7 @@ import { CitiesService } from '../modules/cities/cities.service';
 import { CommunitiesService } from '../modules/communities/communities.service';
 import { GuidesService } from '../modules/guides/guides.service';
 import { HelpService } from '../modules/help/help.service';
+import { EventsService } from '../modules/events/events.service';
 import { HousingService } from '../modules/housing/housing.service';
 import { JobsService } from '../modules/jobs/jobs.service';
 import { ConnectionsService } from '../modules/connections/connections.service';
@@ -62,6 +63,7 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly billing: BillingService,
     private readonly dataExports: DataExportService,
     private readonly cities: CitiesService,
+    private readonly events: EventsService,
     private readonly realtime: RealtimeRelayService,
   ) {}
 
@@ -169,6 +171,17 @@ export class EventSubscriptionsService implements OnModuleInit {
 
     this.registry.on('user.deleted', 'guides', async (job) => {
       await this.guides.handleUserDeleted(job.aggregateId);
+    });
+
+    // 09 §9 : les événements à venir du membre sont annulés (inscrits prévenus),
+    // ses RSVP supprimés ; ses présences passées restent (indicateur d'impact).
+    this.registry.on('user.deleted', 'events', async (job) => {
+      await this.events.handleUserDeleted(job.aggregateId);
+    });
+
+    // 09 §9 : ses contributions de fiche ville restent anonymisées, ses votes partent.
+    this.registry.on('user.deleted', 'cities', async (job) => {
+      await this.cities.handleUserDeleted(job.aggregateId);
     });
 
     this.registry.on('user.deleted', 'housing', async (job) => {

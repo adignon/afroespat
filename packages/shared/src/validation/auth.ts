@@ -198,6 +198,8 @@ export const updateProfileSchema = z
     skillIds: z.array(uuidSchema).max(10).optional(),
     /** Profil visible hors connexion. Par défaut non — l'option la plus protectrice. */
     isPublic: z.boolean().optional(),
+    /** 09 §2.4 : apparaître dans « Nouveaux arrivants » de la fiche ville (défaut vrai). */
+    showAsNewcomer: z.boolean().optional(),
   })
   .strict();
 
@@ -311,6 +313,7 @@ export const meResponseSchema = z.object({
       availableToHelp: z.boolean(),
       helpTypes: z.array(z.enum(HelpType)),
       isPublic: z.boolean(),
+      showAsNewcomer: z.boolean(),
     })
     .nullable(),
   phones: z.array(

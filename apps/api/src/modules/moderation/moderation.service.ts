@@ -110,7 +110,7 @@ export interface ModerationCheckInput {
 
 export type SubjectType =
   | 'POST' | 'COMMENT' | 'TOPIC' | 'GUIDE' | 'HELP_REQUEST' | 'HELP_RESPONSE'
-  | 'HOUSING' | 'JOB' | 'PRO' | 'EVENT' | 'MESSAGE' | 'USER' | 'COMMUNITY';
+  | 'HOUSING' | 'JOB' | 'PRO' | 'EVENT' | 'MESSAGE' | 'USER' | 'COMMUNITY' | 'CITY_TIP';
 
 /**
  * Ce que `check()` rend. `blocked` est redondant avec `verdict` : c'est
@@ -814,6 +814,15 @@ export class ModerationService {
           select: { createdByUserId: true },
         });
         return row?.createdByUserId ?? null;
+      }
+      case 'CITY_TIP': {
+        // 09 §2.3 : une contribution de fiche ville est signalable ; son auteur
+        // (peut-être effacé : `SetOnDelete`) répond de ce qu'il a écrit.
+        const row = await this.prisma.cityTip.findUnique({
+          where: { id: subjectId },
+          select: { authorUserId: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null ? null : row.authorUserId;
       }
       default:
         return null;

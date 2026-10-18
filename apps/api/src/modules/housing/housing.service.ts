@@ -152,6 +152,7 @@ const HOUSING_SELECT = {
   riskScore: true,
   moderationStatus: true,
   expiresAt: true,
+  hiddenFromUserIds: true,
   city: { select: { id: true, name: true, slug: true } },
   author: {
     select: {
@@ -523,7 +524,7 @@ export class HousingService {
     }
 
     const listing = await this.prisma.housingListing.findFirst({
-      where: { id: listingId, ...this.publiclyVisible() },
+      where: { id: listingId, ...this.publiclyVisible(), ...this.notHiddenFrom(viewerId) },
       select: { id: true, authorUserId: true },
     });
     if (listing === null) throw ApiError.notFound();
@@ -574,6 +575,9 @@ export class HousingService {
       conditions.push(this.publiclyVisible());
       const separated = await this.visibility.separatedFrom(viewerId);
       if (separated.length > 0) conditions.push({ authorUserId: { notIn: separated } });
+      // 10 §2.3 : l'auteur a masqué cette annonce à ce lecteur — pour lui, elle
+      // n'existe pas, comme pour un bloqué, mais SANS blocage global.
+      if (viewerId !== null) conditions.push(this.notHiddenFrom(viewerId));
     }
 
 
@@ -674,6 +678,7 @@ export class HousingService {
     const isMine = viewerId !== null && row.authorUserId === viewerId;
     if (!isMine) {
       if (!this.isPublished(row)) throw ApiError.notFound();
+      if (viewerId !== null && row.hiddenFromUserIds.includes(viewerId)) throw ApiError.notFound();
       await this.visibility.assertVisible(viewerId, row.authorUserId);
     }
 
@@ -1173,6 +1178,43 @@ export class HousingService {
 
   private async assertPremium(userId: string): Promise<void> {
     if ((await this.planOf(userId)) === 'FREE') this.fail('PLAN_REQUIRED', { feature: 'alerts' });
+  }
+
+  /** 10 §2.3 : exclut les annonces que leur auteur a masquées à ce membre. */
+  private notHiddenFrom(viewerId: string): Prisma.HousingListingWhereInput {
+    return { NOT: { hiddenFromUserIds: { has: viewerId } } };
+  }
+
+  /**
+   * `POST /housing/:id/hide-from` (10 §2.3, §6.1) — l'auteur masque son annonce à
+   * UN membre. « Blocage léger local » : ni la messagerie, ni le profil, ni les
+   * autres annonces du membre masqué ne sont touchés.
+   *
+   * Idempotent. On ne se masque pas à soi-même (400, erreur de validation), et le membre visé doit
+   * exister (404) — sans quoi la route servirait à sonder des identifiants.
+   * L'identifiant de l'auteur ne peut pas être celui d'un tiers : `loadOwned`
+   * rend 404 à qui n'est pas l'auteur.
+   */
+  async hideFrom(listingId: string, authorUserId: string, targetUserId: string): Promise<{ hiddenFromCount: number }> {
+    const row = await this.loadOwned(listingId, authorUserId);
+    if (targetUserId === authorUserId) {
+      throw ApiError.validation([{ path: 'userId', code: 'SELF' }]);
+    }
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true, deletedAt: true },
+    });
+    if (target === null || target.deletedAt !== null) throw ApiError.notFound();
+
+    const current = row.hiddenFromUserIds;
+    if (current.includes(targetUserId)) return { hiddenFromCount: current.length };
+    const next = [...current, targetUserId];
+    await this.prisma.housingListing.update({
+      where: { id: listingId },
+      data: { hiddenFromUserIds: next },
+      select: { id: true },
+    });
+    return { hiddenFromCount: next.length };
   }
 
   /** Publiée : active, hors modération, non expirée, non supprimée. */

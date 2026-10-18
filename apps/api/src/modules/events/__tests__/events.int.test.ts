@@ -890,14 +890,16 @@ describe('agenda (09 §3)', () => {
       const visible = await events.detail(event.id, organizer);
       expect(visible.status).toBe('CANCELLED');
 
-      // Le motif n'a pas de colonne : il vit dans l'événement de domaine et le
-      // journal d'audit. Il doit donc s'y trouver, sinon il est perdu.
+      // Le motif vit sur la ligne (`cancel_reason`, 09 §4) ET dans l'événement de
+      // domaine, que les notifications lisent sans relire l'événement.
+      expect(visible.cancelReason).toBe('Pluie');
       const [emitted] = await domainEvents(event.id, 'event.cancelled');
       expect(emitted?.payload).toMatchObject({ reason: 'Pluie' });
 
       await prisma.event.update({
         where: { id: event.id },
-        data: { updatedAt: new Date(Date.now() - (CANCELLED_VISIBLE_DAYS + 1) * 86_400_000) },
+        // Lot E : la borne des sept jours est `cancelled_at`, plus `updated_at`.
+        data: { cancelledAt: new Date(Date.now() - (CANCELLED_VISIBLE_DAYS + 1) * 86_400_000) },
       });
       await expect(events.detail(event.id, organizer)).rejects.toMatchObject({ code: 'NOT_FOUND' });
     });
@@ -908,7 +910,7 @@ describe('agenda (09 §3)', () => {
       await events.cancel(event.id, organizer, {});
       await prisma.event.update({
         where: { id: event.id },
-        data: { updatedAt: new Date(Date.now() - (CANCELLED_VISIBLE_DAYS + 2) * 86_400_000) },
+        data: { cancelledAt: new Date(Date.now() - (CANCELLED_VISIBLE_DAYS + 2) * 86_400_000) },
       });
 
       const result = await events.hideCancelled();

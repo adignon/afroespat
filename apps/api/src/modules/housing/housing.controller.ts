@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   createAlertSchema,
   createHousingSchema,
+  hideHousingFromSchema,
   housingQuerySchema,
   updateAlertSchema,
   updateHousingSchema,
@@ -143,6 +144,17 @@ export class HousingController {
   @ApiOperation({ summary: 'Ouvre une conversation avec l’auteur (L1 ; L0 → parrainage)' })
   async contact(@Param('id', zodPipe(uuidSchema)) id: string, @Auth() auth: AuthContext) {
     return this.housing.contact(id, auth.userId);
+  }
+
+  @Post('housing/:id/hide-from')
+  @RequiresCapability('housing.publish')
+  @ApiOperation({ summary: 'Masque l’annonce à un membre (blocage léger, local à l’annonce)' })
+  async hideFrom(
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Auth() auth: AuthContext,
+    @Body(zodPipe(hideHousingFromSchema)) body: z.infer<typeof hideHousingFromSchema>,
+  ) {
+    return this.housing.hideFrom(id, auth.userId, body.userId);
   }
 
   // ── Alertes (§2.4, §6.4) ──────────────────────────────────────────────────

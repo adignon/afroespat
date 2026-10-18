@@ -162,6 +162,7 @@ export class UsersService {
               availableToHelp: user.profile.availableToHelp,
               helpTypes: user.profile.helpTypes,
               isPublic: user.profile.isPublic,
+              showAsNewcomer: user.profile.showAsNewcomer,
             },
       phones: user.phoneNumbers.map((phone) => ({
         id: phone.id,
@@ -376,6 +377,7 @@ export class UsersService {
           availableToHelp: patch.availableToHelp ?? false,
           helpTypes: patch.helpTypes ?? [],
           isPublic: patch.isPublic ?? false,
+          showAsNewcomer: patch.showAsNewcomer ?? true,
         },
         update: {
           ...(patch.bio === undefined ? {} : { bio: patch.bio }),
@@ -387,6 +389,7 @@ export class UsersService {
             : { availableToHelp: patch.availableToHelp }),
           ...(patch.helpTypes === undefined ? {} : { helpTypes: patch.helpTypes }),
           ...(patch.isPublic === undefined ? {} : { isPublic: patch.isPublic }),
+          ...(patch.showAsNewcomer === undefined ? {} : { showAsNewcomer: patch.showAsNewcomer }),
         },
       });
 

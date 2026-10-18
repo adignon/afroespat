@@ -112,6 +112,21 @@ function desksAudience(separated: readonly string[]): string {
   return separated.length === 0 ? 'aucun' : [...separated].sort().join(',');
 }
 
+/** Une contribution de fiche ville, telle que la lecture ET l'écriture la rendent. */
+const TIP_SELECT = {
+  id: true,
+  kind: true,
+  body: true,
+  amountCents: true,
+  helpfulCount: true,
+  createdAt: true,
+  sourceStoryId: true,
+  venueName: true,
+  addressText: true,
+  authorUserId: true,
+  author: { select: { handle: true, displayName: true } },
+} satisfies Prisma.CityTipSelect;
+
 @Injectable()
 export class CitiesService {
   private readonly logger = new Logger(CitiesService.name);
@@ -363,7 +378,12 @@ export class CitiesService {
         status: 'ACTIVE',
         phase: 'RECENT_ARRIVAL',
         ...(separated.length > 0 ? { id: { notIn: separated } } : {}),
-        OR: [{ arrivalDate: { gte: since } }, { arrivalDate: null, createdAt: { gte: since } }],
+        AND: [
+          { OR: [{ arrivalDate: { gte: since } }, { arrivalDate: null, createdAt: { gte: since } }] },
+          // 09 §2.4 : le membre peut ne pas apparaître ici (`show_as_newcomer`, défaut
+          // vrai). Un membre sans ligne de profil est au défaut, donc visible.
+          { OR: [{ profile: { is: null } }, { profile: { showAsNewcomer: true } }] },
+        ],
       },
       orderBy: [{ arrivalDate: 'desc' }, { createdAt: 'desc' }],
       take: 12,
@@ -409,12 +429,16 @@ export class CitiesService {
         helpfulCount: true,
         createdAt: true,
         sourceStoryId: true,
+        venueName: true,
+        addressText: true,
+        authorUserId: true,
         author: { select: { handle: true, displayName: true } },
       },
     });
 
-    const grouped: Record<string, typeof rows> = { TIP: [], SHOP: [], BUDGET: [], TESTIMONY: [] };
-    for (const row of rows) {
+    const views = await this.withViewerState(rows, viewerId);
+    const grouped: Record<string, typeof views> = { TIP: [], SHOP: [], BUDGET: [], TESTIMONY: [] };
+    for (const row of views) {
       grouped[row.kind]?.push(row);
     }
     return grouped;
@@ -749,13 +773,16 @@ export class CitiesService {
         helpfulCount: true,
         createdAt: true,
         sourceStoryId: true,
+        venueName: true,
+        addressText: true,
+        authorUserId: true,
         author: { select: { handle: true, displayName: true } },
       },
     });
 
     const page = buildPage(rows, query.limit, scope, this.cursorSecret);
     return {
-      items: page.items,
+      items: await this.withViewerState(page.items, viewerId),
       nextCursor: page.nextCursor,
       meta:
         query.kind === 'BUDGET'
@@ -798,6 +825,8 @@ export class CitiesService {
           body: input.body,
           amountCents: input.amountCents ?? null,
           sourceStoryId: input.sourceStoryId ?? null,
+          venueName: input.venueName ?? null,
+          addressText: input.addressText ?? null,
           status: 'PUBLISHED',
         },
         select: {
@@ -808,6 +837,10 @@ export class CitiesService {
           helpfulCount: true,
           createdAt: true,
           sourceStoryId: true,
+          venueName: true,
+          addressText: true,
+          authorUserId: true,
+          author: { select: { handle: true, displayName: true } },
         },
       });
 
@@ -849,7 +882,7 @@ export class CitiesService {
      * `oublierGuichets` et son abonnement dans `event-subscriptions.service.ts`.
      */
     this.oublierGuichets(city.id);
-    return tip;
+    return this.withViewerStateOne(tip, authorUserId);
   }
 
   /**
@@ -890,21 +923,155 @@ export class CitiesService {
       throw ApiError.validation([{ path: 'amountCents', code: 'NOT_A_BUDGET' }]);
     }
 
-    return this.prisma.cityTip.update({
+    const updated = await this.prisma.cityTip.update({
       where: { id: tipId },
       data: {
         ...(patch.body === undefined ? {} : { body: patch.body }),
         ...(patch.amountCents === undefined ? {} : { amountCents: patch.amountCents }),
       },
-      select: {
-        id: true,
-        kind: true,
-        body: true,
-        amountCents: true,
-        helpfulCount: true,
-        createdAt: true,
-      },
+      select: TIP_SELECT,
     });
+    return this.withViewerStateOne(updated, authorUserId);
+  }
+
+  // ── Vote « utile » (09 §2.3) ──────────────────────────────────────────────
+
+  /**
+   * `PUT /tips/:id/vote` — « utile », un par membre.
+   *
+   * IDEMPOTENT : revoter ne change rien (la ligne unique `(city_tip_id, user_id)`
+   * est la prise) et n'émet rien. `helpful_count` est tenu dans la MÊME
+   * transaction que la ligne de vote : un compteur qui diverge de ses votes est
+   * la seule façon de rendre ce tri faux.
+   *
+   * On ne vote pas pour sa propre contribution (CONFLICT) — sinon le tri « par
+   * utilité » serait le classement de qui s'applaudit le mieux — ni pour celle
+   * d'un membre séparé de soi (404, comme tout contenu d'un bloqué).
+   */
+  async vote(tipId: string, userId: string): Promise<{ helpfulCount: number; votedByMe: true }> {
+    const tip = await this.loadVotableTip(tipId, userId);
+    const helpfulCount = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.cityTipVote.createMany({
+        data: [{ id: newId(), cityTipId: tipId, userId }],
+        skipDuplicates: true,
+      });
+      if (created.count === 0) {
+        const row = await tx.cityTip.findUniqueOrThrow({
+          where: { id: tipId },
+          select: { helpfulCount: true },
+        });
+        return row.helpfulCount;
+      }
+      const row = await tx.cityTip.update({
+        where: { id: tipId },
+        data: { helpfulCount: { increment: 1 } },
+        select: { helpfulCount: true },
+      });
+      await this.outbox.emit(tx, {
+        type: 'city_tip.voted',
+        aggregateId: tipId,
+        payload: { cityId: tip.cityId, voterUserId: userId, authorUserId: tip.authorUserId, voted: true },
+      });
+      return row.helpfulCount;
+    });
+    return { helpfulCount, votedByMe: true };
+  }
+
+  /** `DELETE /tips/:id/vote` — retire mon vote. Idempotent, comme `vote`. */
+  async unvote(tipId: string, userId: string): Promise<{ helpfulCount: number; votedByMe: false }> {
+    const tip = await this.loadVotableTip(tipId, userId);
+    const helpfulCount = await this.prisma.$transaction(async (tx) => {
+      const gone = await tx.cityTipVote.deleteMany({ where: { cityTipId: tipId, userId } });
+      if (gone.count === 0) {
+        const row = await tx.cityTip.findUniqueOrThrow({
+          where: { id: tipId },
+          select: { helpfulCount: true },
+        });
+        return row.helpfulCount;
+      }
+      const row = await tx.cityTip.update({
+        where: { id: tipId },
+        data: { helpfulCount: { decrement: 1 } },
+        select: { helpfulCount: true },
+      });
+      await this.outbox.emit(tx, {
+        type: 'city_tip.voted',
+        aggregateId: tipId,
+        payload: { cityId: tip.cityId, voterUserId: userId, authorUserId: tip.authorUserId, voted: false },
+      });
+      return row.helpfulCount;
+    });
+    return { helpfulCount, votedByMe: false };
+  }
+
+  private async loadVotableTip(tipId: string, userId: string) {
+    const tip = await this.prisma.cityTip.findUnique({
+      where: { id: tipId },
+      select: { id: true, cityId: true, authorUserId: true, deletedAt: true, status: true },
+    });
+    if (tip === null || tip.deletedAt !== null || tip.status !== 'PUBLISHED') throw ApiError.notFound();
+    if (tip.authorUserId === userId) throw ApiError.transverse('CONFLICT', { reason: 'OWN_TIP' });
+    if (tip.authorUserId !== null) await this.visibility.assertVisible(userId, tip.authorUserId);
+    return tip;
+  }
+
+  private async withViewerStateOne<T extends { id: string; authorUserId: string | null }>(
+    row: T,
+    viewerId: string | null,
+  ) {
+    const [view] = await this.withViewerState([row], viewerId);
+    if (view === undefined) throw ApiError.notFound();
+    return view;
+  }
+
+  /**
+   * Ce que le lecteur doit savoir d'une contribution et que la ligne ne dit pas :
+   * l'a-t-il trouvée utile (`votedByMe`) et est-elle de lui (`mine`). Le serveur
+   * décide ; le front n'en déduit rien.
+   */
+  private async withViewerState<
+    T extends { id: string; authorUserId: string | null },
+  >(rows: readonly T[], viewerId: string | null) {
+    const voted =
+      viewerId === null || rows.length === 0
+        ? new Set<string>()
+        : new Set(
+            (
+              await this.prisma.cityTipVote.findMany({
+                where: { userId: viewerId, cityTipId: { in: rows.map((r) => r.id) } },
+                select: { cityTipId: true },
+              })
+            ).map((v) => v.cityTipId),
+          );
+    return rows.map(({ authorUserId, ...rest }) => ({
+      ...rest,
+      votedByMe: voted.has(rest.id),
+      mine: viewerId !== null && authorUserId === viewerId,
+    }));
+  }
+
+  /**
+   * Gestionnaire de `user.deleted` (09 §9) : « Tips : conservés anonymisés ;
+   * votes supprimés. » Les contributions restent (la ligne `users` est
+   * anonymisée, pas retirée). Les votes du membre partent, et chaque
+   * `helpful_count` redescend d'autant — sans quoi le compteur survivrait à son
+   * électeur. Idempotent : un rejeu ne trouve plus de vote.
+   */
+  async handleUserDeleted(userId: string): Promise<void> {
+    const votes = await this.prisma.cityTipVote.findMany({
+      where: { userId },
+      select: { id: true, cityTipId: true },
+    });
+    for (const vote of votes) {
+      await this.prisma.$transaction(async (tx) => {
+        const gone = await tx.cityTipVote.deleteMany({ where: { id: vote.id } });
+        if (gone.count === 0) return;
+        await tx.cityTip.updateMany({
+          where: { id: vote.cityTipId, helpfulCount: { gt: 0 } },
+          data: { helpfulCount: { decrement: 1 } },
+        });
+      });
+    }
   }
 
   /** Suppression LOGIQUE : §9 conserve les tips anonymisés, jamais effacés en dur. */
