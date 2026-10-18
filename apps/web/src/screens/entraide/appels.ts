@@ -24,7 +24,7 @@ import type { EtatVide, FiltreTypeDemande, LigneDemande, PorteeFil } from '../h0
 import type { H01Data } from '../h01/data';
 import type { H02Data, ReponsePublique } from '../h02/data';
 import type { H03Data } from '../h03/data';
-import type { H04Data, LigneSuggestion } from '../h04/data';
+import type { H04Data, LigneSuggestion, TriSuggestions } from '../h04/data';
 import type { H05Data } from '../h05/data';
 import type { H06Data } from '../h06/data';
 import type { H07Data } from '../h07/data';
@@ -1022,7 +1022,29 @@ function ligneSuggestion(d: HelpCard, rang: number): LigneSuggestion {
  * lu de la même façon : une seule lecture de la route pour les deux chemins, donc
  * aucun moyen qu'ils se contredisent.
  */
-export const chargerH04 = async (): Promise<H04Data> => {
+export type TriChoisi = 'echeance' | 'recentes';
+
+function trisDeH04(choisi: TriChoisi, onTri: (t: TriChoisi) => void): readonly TriSuggestions[] {
+  return (
+    [
+      ['echeance', 'Échéance'],
+      ['recentes', 'Récentes'],
+    ] as const
+  ).map(([cle, libelle]) => ({
+    cle,
+    libelle,
+    ...teinte(cle === choisi),
+    actif: cle === choisi,
+    onChoisir: () => {
+      onTri(cle);
+    },
+  }));
+}
+
+export const chargerH04 = async ({
+  tri = 'echeance',
+  onTri = () => undefined,
+}: { readonly tri?: TriChoisi; readonly onTri?: (t: TriChoisi) => void } = {}): Promise<H04Data> => {
   const [bandeau, suggestions] = await Promise.all([
     bandeauSeul(),
     memberApi.get('/help/can-help?limit=20', helpCanHelpResponseSchema),
@@ -1031,7 +1053,12 @@ export const chargerH04 = async (): Promise<H04Data> => {
   return {
     ...bandeau,
     portees: porteesDeH04(bandeau.compteurs),
-    suggestions: suggestions.items.map((d, rang) => ligneSuggestion(d, rang)),
+    tris: trisDeH04(tri, onTri),
+    // « Échéance » est l'ordre du serveur (§2.6) ; « Récentes » reclasse la même liste.
+    suggestions: (tri === 'recentes'
+      ? [...suggestions.items].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      : suggestions.items
+    ).map((d, rang) => ligneSuggestion(d, rang)),
     vide: videDuFil(
       suggestions.items.length,
       'aider',
@@ -1254,6 +1281,7 @@ export const SQUELETTE_H03: H03Data = SQUELETTE_BANDEAU;
 export const SQUELETTE_H04: H04Data = {
   ...SQUELETTE_BANDEAU,
   portees: porteesDeH04(SQUELETTE_BANDEAU.compteurs),
+  tris: trisDeH04('echeance', () => undefined),
   suggestions: [],
   /** `null` : voir `SQUELETTE_H01`. Une liste vide d'attente n'est pas un vide. */
   vide: null,

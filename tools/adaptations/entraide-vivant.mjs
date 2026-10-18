@@ -412,6 +412,45 @@ const H09_BILAN = {
   },
 };
 
+/** H01, H04 : le signet de chaque carte enregistre la demande (§2.9 des enregistrés). */
+const H_SIGNET = {
+  screens: ['H01', 'H04'],
+  nom: 'H_SIGNET',
+  why: 'H01 et H04 : l’icône de signet de chaque carte enregistre la demande (`PUT /me/bookmarks`) au lieu d’être un dessin sans geste.',
+  provides: [],
+  apply(jsx) {
+    const motif = /<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1\.7" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" \/><\/svg>/g;
+    let n = 0;
+    const out = jsx.replace(motif, () => {
+      n += 1;
+      // La ligne de la boucle s'appelle `d` (fil) ou `s` (suggestions) ; elle porte `href`.
+      return `<Signet href={${jsx.includes('(suggestions ?? [])') ? 's' : 'd'}.href} />`;
+    });
+    return { jsx: out, applied: n > 0 };
+  },
+};
+
+/** H04 : « Échéance » et « Récentes » trient vraiment la liste. */
+const H04_TRI = {
+  screens: ['H04'],
+  nom: 'H04_TRI',
+  why: 'H04 : les pastilles de tri « Échéance » / « Récentes » reclassent la liste au lieu d’être deux `<span>` sans geste.',
+  provides: ['tris'],
+  apply(jsx) {
+    const m = />Échéance<\/span>/.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const span = jsx.lastIndexOf('<span style={{', m.index);
+    const conteneur = jsx.lastIndexOf('<div style={{', span);
+    const fin = finElement(jsx, conteneur);
+    if (fin < 0) return { jsx, applied: false };
+    const ouvre = jsx.slice(conteneur, jsx.indexOf('>', conteneur) + 1);
+    const neuf =
+      `{(tris ?? []).length > 0 ? (${ouvre}{(tris ?? []).map((t) => (<button type="button" key={t.cle} onClick={t.onChoisir} aria-pressed={t.actif} ` +
+      'style={{ font: "inherit", padding: "8px 13px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", cursor: "pointer", backgroundColor: t.fond, color: t.texte, border: `1px solid ${t.bord}` }}>{t.libelle}</button>))}</div>) : null}';
+    return { jsx: jsx.slice(0, conteneur) + neuf + jsx.slice(fin), applied: true };
+  },
+};
+
 /** H08 (téléphone) : le « Activer » de la barre du bas doublait le bouton du formulaire. */
 const H08_PIED = {
   screens: ['H08'],
@@ -436,6 +475,8 @@ export const ADAPTATIONS_ENTRAIDE_VIVANT = [
   H06_FICHE,
   H01_PUBLIER,
   H03_ENCART,
+  H04_TRI,
+  H_SIGNET,
   H_ENCART_AIDER,
   H09_BILAN,
   H05_CONDITIONS,
@@ -453,6 +494,7 @@ export const AJOUTS_ENTRAIDE_VIVANT = {
   FormulaireDemande: '@/components/entraide/formulaire-demande',
   EncartOffre: '@/components/entraide/encart-offre',
   EncartAider: '@/components/entraide/encart-aider',
+  Signet: '@/components/entraide/signet',
   EnteteDemande: '@/components/entraide/demande-vivante',
   MenuDemande: '@/components/entraide/demande-vivante',
   ActionsAuteur: '@/components/entraide/demande-vivante',
