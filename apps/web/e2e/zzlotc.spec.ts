@@ -4,24 +4,28 @@ import { connecter } from './session';
 test.use({ launchOptions: { executablePath: '/opt/pw-browsers/chromium' } });
 const OUT = '/tmp/claude-0/-home-user-afroespat/b604e56b-762f-5033-9aa9-c83b59d52246/scratchpad/lot-c';
 
-test('parcours : création, étapes, réglages', async ({ page, context, request }, info) => {
-  const largeur = info.project.name;
+test('parcours : toutes les pages', async ({ page, context, request }, info) => {
+  test.setTimeout(240000);
+  const l = info.project.name;
   await connecter(context, request, { displayName: 'Amina Test' });
   await page.goto('/parcours/nouveau');
   await expect(page.getByRole('radio').first()).toBeVisible({ timeout: 30000 });
-  await page.screenshot({ path: `${OUT}/${largeur}-creer.png`, fullPage: true });
-  await page.getByRole('radio', { name: /Travail|Étudier/ }).first().click();
-  await page.getByLabel('Nom du parcours').fill('Mon projet test');
+  await page.screenshot({ path: `${OUT}/${l}-creer.png`, fullPage: true });
+  await page.getByRole('radio', { name: /Régulariser/ }).click();
+  await page.getByRole('radio', { name: /Renouvel/ }).click();
   await page.getByRole('button', { name: 'Créer le parcours' }).click();
   await page.waitForURL(/\/parcours\/[0-9a-f-]{36}$/, { timeout: 30000 });
-  await expect(page.getByText('Mon projet test').first()).toBeVisible({ timeout: 30000 });
-  await page.screenshot({ path: `${OUT}/${largeur}-parcours.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Commencer' }).first().click();
-  await expect(page.getByRole('button', { name: 'Marquer comme franchie' }).first()).toBeVisible({ timeout: 15000 });
-  await page.getByRole('button', { name: 'Marquer comme franchie' }).first().click();
-  await expect(page.getByText('Étape franchie, bravo.')).toBeVisible({ timeout: 15000 });
-  await page.screenshot({ path: `${OUT}/${largeur}-franchie.png`, fullPage: true });
-  await page.getByRole('button', { name: 'Je suis bloqué·e' }).first().click();
-  await expect(page.getByLabel('Votre message')).toBeVisible({ timeout: 15000 });
-  await page.screenshot({ path: `${OUT}/${largeur}-bloque.png` });
+  const base = new URL(page.url()).pathname;
+  await page.waitForTimeout(4000);
+  await page.screenshot({ path: `${OUT}/${l}-j01.png`, fullPage: true });
+  for (const [nom, chemin] of [['etape', '/etapes'], ['discussion', '/discussion'], ['equipe', '/equipe'], ['documents', '/documents'], ['historique', '/historique'], ['reglages', '/reglages'], ['export', '/export']] as const) {
+    await page.goto(base + chemin);
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: `${OUT}/${l}-${nom}.png`, fullPage: true });
+  }
+  for (const [nom, chemin] of [['publics', '/parcours/publics'], ['liste', '/parcours'], ['abouti', `${base}/abouti`]] as const) {
+    await page.goto(chemin);
+    await page.waitForTimeout(2500);
+    await page.screenshot({ path: `${OUT}/${l}-${nom}.png`, fullPage: true });
+  }
 });

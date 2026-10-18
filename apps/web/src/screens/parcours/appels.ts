@@ -286,7 +286,7 @@ function panneauDe(parcours: JourneyFullResponse): PanneauParcours {
     avancement: Math.round(parcours.journey.progressPct),
     rang: etape?.position ?? parcours.journey.totalCount,
     etape: etape?.title ?? '',
-    echeance: echeance(parcours.journey.nextDueDate),
+    echeance: parcours.journey.nextDueDate === null ? 'non fixée' : echeance(parcours.journey.nextDueDate),
     /**
      * §3.4 — l'équipe COMPTE le propriétaire : la maquette écrit « Équipe 3 » à
      * côté d'une liste de quatre lignes dont la première est « Amina (vous) ».

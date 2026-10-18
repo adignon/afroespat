@@ -7,7 +7,6 @@ import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { J07Desktop } from '@/screens/j07/desktop.generated';
 import { J07Mobile } from '@/screens/j07/mobile.generated';
-import { J07MobileExport } from '@/screens/j07export/mobileexport.generated';
 
 /**
  * J07 — l'historique du parcours. `/parcours/:id/historique` (§3.8).

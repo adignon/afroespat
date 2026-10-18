@@ -7,7 +7,6 @@ import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
 import { J05Desktop } from '@/screens/j05/desktop.generated';
 import { J05Mobile } from '@/screens/j05/mobile.generated';
-import { J05MobileInvitation } from '@/screens/j05invitation/mobileinvitation.generated';
 
 /**
  * J05 — l'équipe du parcours. `/parcours/:id/equipe`.
