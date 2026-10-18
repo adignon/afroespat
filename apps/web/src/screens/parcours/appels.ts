@@ -41,6 +41,7 @@ import {
   type JourneyTeamMember,
   type PublicJourney,
 } from '@app/shared';
+import { fetchMe } from '@/lib/api/index';
 import {
   getPublicJourney,
   listJourneyActivities,
@@ -560,7 +561,8 @@ export const VUE_NEUTRE = {
   franchies: [] as readonly EtapeFrise[],
   actifs: [] as readonly CarteParcours[],
   aboutis: [] as readonly CarteParcours[],
-  plan: { actifs: 0, limite: JOURNEY_FREE_ACTIVE_LIMIT },
+  plan: { actifs: 0, limite: JOURNEY_FREE_ACTIVE_LIMIT, gratuit: true },
+  gratuit: true,
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -838,7 +840,11 @@ export async function chargerJ07(journeyId: string): Promise<Omit<J07Data, keyof
     readJourney(journeyId),
     listJourneyActivities(journeyId),
   ]);
-  return { panneau: panneauDe(parcours), journal: journal.items.map(entreeDe) };
+  return {
+    gratuit: !(await fetchMe()).monetisationActive,
+    panneau: panneauDe(parcours),
+    journal: journal.items.map(entreeDe),
+  };
 }
 
 const FAMILLE: Record<string, 'etape' | 'entraide' | 'franchie' | 'jalon' | 'equipe'> = {
@@ -1081,6 +1087,7 @@ export async function chargerJ11(): Promise<Omit<J11Data, keyof ParcoursData>> {
       actifs: liste.items.filter((i) => i.isOwner && (i.status === 'ACTIVE' || i.status === 'PAUSED'))
         .length,
       limite: JOURNEY_FREE_ACTIVE_LIMIT,
+      gratuit: !(await fetchMe()).monetisationActive,
     },
   };
 }

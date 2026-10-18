@@ -1,6 +1,7 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { PinoNestLogger, initSentry } from './common/observability';
 
 /**
  * Le démarrage du contexte applicatif du worker — 00-fondations.md §3.1.
@@ -55,7 +56,8 @@ import { AppModule } from './app.module';
  * Constaté en LANÇANT le worker, jamais en le relisant.
  */
 export async function createWorkerContext(): Promise<INestApplicationContext> {
+  await initSentry();
   return NestFactory.createApplicationContext(AppModule, {
-    logger: ['error', 'warn', 'log'],
+    logger: new PinoNestLogger(),
   });
 }

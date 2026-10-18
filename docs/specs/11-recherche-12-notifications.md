@@ -150,7 +150,7 @@ Cloche en barre haute avec compteur de non-lus, panneau déroulant, page complè
 | `notifications.category` | **Ajoutée**, enum ci-dessus |
 | `notifications.group_key` | **Ajoutée** — clé de regroupement |
 | `notification_preferences.quiet_hours` | `{ start: "22:00", end: "08:00" }` |
-| `users.email` | **Ajoutée au module 01**, facultative, chiffrée comme le téléphone, jamais affichée, vérifiée par lien. Sans email, pas de canal email (l'interface le propose au moment utile) |
+| `users.email_encrypted` · `users.email_verified_at` | **Livré** (migration `20261017020000_email_membre`) : facultative, chiffrée comme le téléphone (même clé, format scellé à identifiant de clé), jamais renvoyée en clair (seul un masque `j•••••••@gmail.com`), **vérifiée par un code à 6 chiffres** reçu par email (15 min, 5 essais, renvoi après 60 s) — et non par lien : la route exige la session du membre et le code se saisit sur l'écran des réglages. Sans email vérifié, pas de canal email. Une vérification en cours vit dans `email_verifications` (une par membre) ; un changement garde l'ancienne adresse active jusqu'à confirmation |
 
 ---
 
@@ -162,7 +162,9 @@ Cloche en barre haute avec compteur de non-lus, panneau déroulant, page complè
 | POST | `/notifications/read` | `ids[]` ou `all` |
 | GET/PUT | `/me/notification-preferences` | |
 | POST | `/me/push-subscriptions` · DELETE `/:id` | |
-| POST | `/me/email` · `/me/email/verify` | Ajout et vérification |
+| GET · POST · DELETE | `/me/email` | État masqué · ajout/changement (envoie le code) · retrait |
+| POST | `/me/email/verify` | `{ code }` — confirme l'adresse |
+| GET | `/me/push-subscriptions` | Clé publique VAPID et appareils abonnés (sans `endpoint` ni clés) |
 | GET | `/unsubscribe?token` | Lien signé (public) |
 | WS | événement `notification.new` | |
 

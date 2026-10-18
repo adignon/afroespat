@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import {
+  AsYouType,
   getExampleNumber,
   parsePhoneNumberFromString,
   type CountryCode,
-} from 'libphonenumber-js';
+} from 'libphonenumber-js/max';
 /**
  * L'attribut `with { type: 'json' }` NE MARCHE PAS ICI, et ce n'est pas un
  * oubli : `libphonenumber-js/examples.mobile.json` n'est pas un fichier JSON mais
@@ -12,6 +13,7 @@ import {
  * refuse alors l'attribut (`ERR_IMPORT_ATTRIBUTE_TYPE_INCOMPATIBLE`).
  */
 import exemplesMobiles from 'libphonenumber-js/examples.mobile.json';
+import { PHONE_REFUS_MESSAGES, type PhoneRefusCode } from './phone-refus.js';
 import { CountryKind } from '../enums/generated.js';
 import { cursorQuerySchema, pageSchema } from './pagination.js';
 
@@ -225,7 +227,7 @@ export const placesCountrySchema = z.object({
   id: z.string().uuid(),
   iso2: z.string().length(2),
   nameFr: z.string(),
-  /** `+33`, `+229`… La saisie du numéro s'y appuie (voir `normalizePhone`). */
+  /** `+33`, `+229`… La saisie du numéro s'y appuie (voir `analyserNumero`). */
   dialCode: z.string(),
   kind: z.enum(CountryKind),
   /**
@@ -294,26 +296,92 @@ export const placesCitiesResponseSchema = pageSchema(placesCitySchema);
  * Deux implémentations divergeraient, et c'est le membre qui paierait l'écart.
  */
 export function numeroValide(saisie: string, iso2: string): boolean {
-  const lu = parsePhoneNumberFromString(saisie, iso2.toUpperCase() as CountryCode);
-  return lu !== undefined && lu.isValid();
+  return analyserNumero(saisie, iso2).ok;
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LE PAYS RÉEL DU NUMÉRO, ET LE TYPE DE LIGNE — DEUX CONTOURNEMENTS FERMÉS  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ AVANT : `+2290190000000` saisi avec le pays « FR » était ACCEPTÉ.
+ * `parsePhoneNumberFromString(saisie, 'FR')` ne se sert du pays par défaut que
+ * pour une saisie NATIONALE ; une saisie déjà internationale garde son propre
+ * indicatif, et `isValid()` répondait vrai pour un numéro béninois. Le serveur
+ * comptait alors une destination française (`is_destination`) pour un numéro
+ * béninois : le niveau L2, qui exige un numéro d'un pays de destination, tombait
+ * en saisissant simplement « + » et un indicatif d'origine.
+ *
+ * Le pays RÉEL du numéro (`lu.country`) doit donc être le pays choisi.
+ *
+ * ── LIMITE CONNUE, ASSUMÉE ──────────────────────────────────────────────────
+ * Les territoires qui ont leur propre code ISO ont aussi leur propre pays pour la
+ * bibliothèque : un numéro de La Réunion (+262) ou de Guadeloupe (+590) saisi avec
+ * « France » est refusé. C'est cohérent avec le référentiel, où ces territoires ne
+ * sont pas des pays de destination actifs ; à rouvrir si le porteur les veut.
+ *
+ * ── LES LIGNES FIXES NE REÇOIVENT PAS DE SMS ────────────────────────────────
+ * On accepte MOBILE et FIXED_LINE_OR_MOBILE (les pays comme les États-Unis ne
+ * distinguent pas les deux plans). Une ligne fixe, un numéro VoIP, un numéro
+ * surtaxé ou gratuit sont refusés avant l'envoi : le SMS coûterait de l'argent et
+ * n'arriverait pas, ou arriverait à un numéro que le membre ne détient pas.
+ *
+ * ── MÉTADONNÉES `max` ───────────────────────────────────────────────────────
+ * Le type de ligne n'existe que dans les métadonnées `max` (les `min` ne
+ * l'ont pas). Tout `libphonenumber-js` s'importe donc de `/max` ici : mélanger
+ * `min` et `max` embarquerait deux jeux de métadonnées dans le paquet web.
+ */
+export type AnalyseNumero =
+  | { readonly ok: true; readonly e164: string }
+  | { readonly ok: false; readonly code: PhoneRefusCode };
+
+const TYPES_SMS = new Set<string>(['MOBILE', 'FIXED_LINE_OR_MOBILE']);
+
+export function analyserNumero(saisie: string, iso2: string): AnalyseNumero {
+  const choisi = iso2.toUpperCase();
+  const lu = parsePhoneNumberFromString(saisie, choisi as CountryCode);
+  if (lu === undefined || !lu.isValid()) return { ok: false, code: 'PHONE_INVALID' };
+  if (lu.country !== choisi) return { ok: false, code: 'PHONE_COUNTRY_MISMATCH' };
+  const type = lu.getType();
+  if (type === undefined || !TYPES_SMS.has(type)) {
+    return { ok: false, code: 'PHONE_NOT_MOBILE' };
+  }
+  return { ok: true, e164: lu.number };
+}
+
+/** Le message d'un refus : le MÊME texte côté API et côté écran. */
+export function messageRefusNumero(code: PhoneRefusCode): string {
+  return PHONE_REFUS_MESSAGES[code];
+}
+
+/**
+ * LA SAISIE, MISE EN FORME À LA FRAPPE (« 01 90 00 00 00 »).
+ *
+ * Seuls les chiffres, les espaces et un « + » de tête survivent : un champ qui
+ * accepte des lettres laisse croire qu'elles comptent. `AsYouType` connaît le
+ * plan du pays choisi ; sans lui la saisie est rendue nettoyée, non formatée.
+ */
+export function formaterSaisieNumero(saisie: string, iso2: string): string {
+  const propre = saisie.replace(/[^\d+\s]/g, '').replace(/(?!^)\+/g, '').slice(0, 24);
+  return new AsYouType(iso2.toUpperCase() as CountryCode).input(propre);
 }
 
 /**
  * LE NUMÉRO AU FORMAT INTERNATIONAL — « il faut que ce soit le format
  * international qu'il faut enregistrer ».
  *
- * `null` quand la saisie n'est pas un numéro valide dans ce pays : rendre une
- * chaîne quand même ferait enregistrer un numéro que personne ne peut appeler,
- * et deux écritures du même numéro créeraient deux comptes — ce que
- * `e164Schema` dit déjà vouloir empêcher.
+ * `null` quand la saisie n'est pas un numéro acceptable dans ce pays (mal formé,
+ * d'un autre pays, ligne fixe) : rendre une chaîne quand même ferait enregistrer
+ * un numéro que personne ne peut joindre par SMS, et deux écritures du même
+ * numéro créeraient deux comptes. Pour connaître la RAISON du refus, voir
+ * `analyserNumero`.
  *
  * La bibliothèque retire le zéro de service, accepte les espaces, les points et
- * les tirets, et accepte aussi une saisie DÉJÀ internationale : c'est exactement
- * ce que `normalizePhone` faisait à la main, en moins complet.
+ * les tirets, et accepte aussi une saisie DÉJÀ internationale.
  */
 export function enFormatInternational(saisie: string, iso2: string): string | null {
-  const lu = parsePhoneNumberFromString(saisie, iso2.toUpperCase() as CountryCode);
-  return lu !== undefined && lu.isValid() ? lu.number : null;
+  const a = analyserNumero(saisie, iso2);
+  return a.ok ? a.e164 : null;
 }
 
 /**

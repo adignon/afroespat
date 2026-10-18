@@ -25,7 +25,7 @@ import { createWorkerContext, loadEnv } from '@app/api';
  *
  * Ce qui ne tourne QUE ici :
  *   · le relais de la boîte d'envoi (§9.1), toutes les secondes ;
- *   · les 22 tâches planifiées de §9.3, protégées par un verrou Redis ;
+ *   · les tâches planifiées de §9.3, protégées par un verrou Redis ;
  *   · les consommateurs des neuf files de §9.2.
  */
 async function bootstrap(): Promise<void> {

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { STAFF_SCOPES, type StaffRoleValue } from '../validation/admin.js';
 import { StaffRole } from '../enums/generated.js';
@@ -177,5 +179,48 @@ describe('la matrice des rôles d’équipe (15 §2.2)', () => {
    */
   it('[RÈGLE DURE] seul SUPER_ADMIN gère les comptes d’équipe et les rôles', () => {
     expect(STAFF_SCOPES.staffAdmin).toEqual(['SUPER_ADMIN']);
+  });
+
+  /**
+   * ── LOT A : LES LISTES ÉCRITES À LA MAIN DANS L'API ────────────────────────
+   *
+   * Mesuré : `admin-moderation.controller.ts` et `moderation.service.ts`
+   * répétaient `['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']` — six endroits de
+   * la file, des actions et des suspensions — alors que la matrice ne donne la
+   * modération qu'à SUPER_ADMIN et MODERATOR. `STAFF_SCOPES` restait juste,
+   * donc ce fichier restait vert, pendant que l'API appliquait une autre table.
+   *
+   * Ce test lit donc le CODE de l'API : aucune liste littérale ne doit mêler
+   * MODERATOR et CONTENT_ADMIN (seule exception documentée : la LECTURE des seuils,
+   * que CONTENT_ADMIN édite, écrite `...STAFF_SCOPES.moderation, 'CONTENT_ADMIN'`),
+   * et chaque garde de la file doit citer `STAFF_SCOPES.moderation`.
+   */
+  describe('l’API applique STAFF_SCOPES.moderation, pas une copie', () => {
+    const lire = (chemin: string): string =>
+      readFileSync(resolve(__dirname, '../../../../apps/api/src/modules', chemin), 'utf8');
+    const fichiers = {
+      controleur: lire('admin/admin-moderation.controller.ts'),
+      service: lire('moderation/moderation.service.ts'),
+    };
+    // Une liste littérale qui nomme MODERATOR ET CONTENT_ADMIN.
+    const copie = /\[[^\]]*'MODERATOR'[^\]]*'CONTENT_ADMIN'[^\]]*\]|\([^)]*'MODERATOR'[^)]*'CONTENT_ADMIN'[^)]*\)/;
+
+    it('aucune liste littérale ne redonne la modération à CONTENT_ADMIN', () => {
+      for (const [nom, source] of Object.entries(fichiers)) {
+        const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+        expect(copie.test(sansCommentaires), `${nom} : liste littérale MODERATOR + CONTENT_ADMIN`).toBe(
+          false,
+        );
+      }
+    });
+
+    it('la file, les actions et les suspensions lisent STAFF_SCOPES.moderation', () => {
+      const gardesService = fichiers.service.match(/assertRole\(\s*staff,\s*STAFF_SCOPES\.moderation/g) ?? [];
+      // listCases, caseDetail, history, assign, release, stats (+ act, sur deux lignes).
+      expect(gardesService.length).toBeGreaterThanOrEqual(6);
+      expect(fichiers.service).toMatch(/BAN_USER' \? \['SUPER_ADMIN'\] : STAFF_SCOPES\.moderation/);
+      const gardesControleur = fichiers.controleur.match(/@RequiresStaffRole\(\.\.\.STAFF_SCOPES\.moderation\)/g) ?? [];
+      expect(gardesControleur.length).toBeGreaterThanOrEqual(7);
+    });
   });
 });

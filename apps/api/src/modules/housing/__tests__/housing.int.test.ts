@@ -1,3 +1,4 @@
+import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
 import {
@@ -101,6 +102,8 @@ describe('logement (10 §2)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    // Lot A : ces bancs vérifient les quotas des plans, donc les plans s'appliquent.
+    await reglerMonetisation(prisma, true);
     housing = new HousingService(
       prisma,
       new OutboxService(prisma),
@@ -133,6 +136,7 @@ describe('logement (10 §2)', () => {
     await prisma.user.deleteMany({ where: { id: { in: createdUsers } } });
     await prisma.mediaAsset.deleteMany({ where: { id: { in: createdAssets } } });
     await prisma.conversation.deleteMany({ where: { id: { in: createdConversations } } });
+    await reglerMonetisation(prisma, null);
     await prisma.$disconnect();
   });
 
@@ -702,6 +706,22 @@ describe('logement (10 §2)', () => {
   });
 
   // ── Alertes (§2.4) ────────────────────────────────────────────────────────
+
+  it('[TOUT GRATUIT] un membre gratuit crée une alerte, et la liste dit isPremium', async () => {
+    await reglerMonetisation(prisma, false);
+    try {
+      const free = await member({ level: 'L1', plan: 'FREE' });
+      const alert = await housing.createAlert(free, {
+        kind: 'HOUSING',
+        criteria: { cityId },
+        isActive: true,
+      });
+      expect(alert.isActive).toBe(true);
+      expect((await housing.listAlerts(free)).meta['isPremium']).toBe(true);
+    } finally {
+      await reglerMonetisation(prisma, true);
+    }
+  });
 
   it('une alerte est réservée à Premium, et se désactive sans l’être', async () => {
     const free = await member({ level: 'L1', plan: 'FREE' });

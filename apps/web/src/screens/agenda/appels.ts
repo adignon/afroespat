@@ -170,7 +170,7 @@ async function chargerSocle(jourChoisi: string | null): Promise<Socle> {
   const choisi = jourChoisi ?? jourDefaut(calendrier, aujourdhui);
 
   return {
-    panneau: construirePanneau(calendrier, abonnement, choisi, aujourdhui),
+    panneau: construirePanneau(calendrier, abonnement, choisi, aujourdhui, !me.monetisationActive),
     moi: construireMoi(me.user.displayName, me.user.avatarUrl),
     calendrier,
     zone,
@@ -383,7 +383,7 @@ export const SQUELETTE_E01: E01Data = {
     aujourdhui: '',
     totalMois: 0,
     semaines: [],
-    quota: { utilise: 0, plafond: '', reset: '' },
+    quota: { utilise: 0, plafond: '', reset: '', gratuit: true },
   },
   jour: '',
   nombre: 0,

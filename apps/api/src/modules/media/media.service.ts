@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { newId } from '@app/db';
 import {
   MEDIA_ERROR_CODES,
@@ -13,6 +13,7 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { PrismaService } from '../../common/prisma.service';
+import { MEDIA_QUEUE, THUMB_SUFFIX, type MediaQueuePort } from './media.consumer';
 import {
   ANTIVIRUS_PROVIDER,
   type AntivirusProvider,
@@ -89,6 +90,7 @@ export class MediaService {
     private readonly prisma: PrismaService,
     @Inject(STORAGE_PROVIDER) private readonly storage: StorageProvider,
     @Inject(ANTIVIRUS_PROVIDER) private readonly antivirus: AntivirusProvider,
+    @Optional() @Inject(MEDIA_QUEUE) private readonly queue: MediaQueuePort | null = null,
   ) {}
 
   private fail(code: MediaErrorCode, details?: Record<string, unknown>): never {
@@ -215,6 +217,14 @@ export class MediaService {
       select: MEDIA_VIEW_SELECT,
     });
 
+    // La vignette est un confort, jamais une condition : un échec de mise en file
+    // est journalisé, le média reste servi en pleine taille.
+    if (this.queue !== null && sniffed.mime.startsWith('image/')) {
+      this.queue.enqueueThumbnail({ assetId }).catch((error: unknown) => {
+        this.logger.warn(`vignette non planifiée : ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+
     return this.view(asset);
   }
 
@@ -262,6 +272,7 @@ export class MediaService {
       if (old !== null) {
         try {
           await this.storage.delete(old.storageKey);
+          await this.storage.delete(`${old.storageKey}${THUMB_SUFFIX}`); // la vignette suit l’original
         } catch (error) {
           this.logger.error(
             `Ancien avatar ${previous.avatarAssetId} : suppression du stockage impossible — ` +
@@ -369,7 +380,10 @@ export class MediaService {
    * Tous les refus rendent le MÊME 404. Distinguer « inconnu », « pas prêt » et
    * « pas à vous » dirait à qui tâtonne lesquels existent.
    */
-  async bytes(userId: string | null, storageKey: string) {
+  async bytes(userId: string | null, requestedKey: string) {
+    // `<clé>.thumb.webp` : la vignette hérite EXACTEMENT des contrôles de l'original.
+    const wantsThumb = requestedKey.endsWith(THUMB_SUFFIX);
+    const storageKey = wantsThumb ? requestedKey.slice(0, -THUMB_SUFFIX.length) : requestedKey;
     const asset = await this.prisma.mediaAsset.findFirst({
       where: { storageKey, deletedAt: null },
       select: { kind: true, mime: true, status: true, exifStripped: true, ownerUserId: true },
@@ -391,6 +405,11 @@ export class MediaService {
       return introuvable();
     }
 
+    if (wantsThumb) {
+      const thumb = await this.storage.get(requestedKey);
+      // Pas (encore) de vignette : l'original, pour qu'aucun écran n'attende le worker.
+      if (thumb !== null) return { body: thumb.body, mime: 'image/webp' };
+    }
     const octets = await this.storage.get(storageKey);
     // La ligne peut survivre à ses octets : purge de rétention, reprise de tâche.
     if (octets === null) return introuvable();

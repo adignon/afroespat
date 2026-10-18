@@ -147,6 +147,13 @@ model User {
   /// La progression automatique de phase ne s'applique pas si postérieure à arrival_date.
   phaseSetManuallyAt    DateTime? @map("phase_set_manually_at") @db.Timestamptz
 
+  /// Adresse email du membre (12 §3 : « facultative, chiffrée comme le téléphone,
+  /// jamais affichée »). Chiffrée avec la clé des numéros, AU FORMAT SCELLÉ À
+  /// IDENTIFIANT DE CLÉ (voir `crypto.service.ts`). Non vérifiée tant que
+  /// `email_verified_at` est nul : aucun email de notification n'y part avant.
+  emailEncrypted  Bytes?    @map("email_encrypted")
+  emailVerifiedAt DateTime? @map("email_verified_at") @db.Timestamptz
+
   /// Avancement de l'onboarding, 0 à 6 (§5, colonne ajoutée).
   ///
   /// STOCKÉ, et non déduit du profil : §5 le demande « pour reprendre là où le
@@ -160,6 +167,7 @@ model User {
   city          City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
 
   phoneNumbers            PhoneNumber[]
+  emailVerification       EmailVerification?
   authSessions            AuthSession[]
   kycVerifications        KycVerification[]
   profile                 UserProfile?
@@ -311,6 +319,27 @@ model OtpChallenge {
 
   @@index([phoneHmac])
   @@map("otp_challenges")
+}
+
+/// Vérification d'adresse email en cours (12 §3) : UNE par membre, remplacée par
+/// la suivante. L'adresse à vérifier est chiffrée comme celle de `users` ; le code
+/// est conservé haché. Tant que le code n'est pas confirmé, `users.email_encrypted`
+/// garde l'ancienne adresse (le changement ne coupe pas le canal email).
+model EmailVerification {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  /// Dernier envoi du code : sert au délai minimal entre deux envois.
+  sentAt    DateTime @default(now()) @map("sent_at") @db.Timestamptz
+
+  userId         String   @unique @map("user_id") @db.Uuid
+  emailEncrypted Bytes    @map("email_encrypted")
+  codeHash       String   @map("code_hash")
+  attempts       Int      @default(0)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verifications")
 }
 
 /// Sessions de connexion. Jeton de rafraîchissement 30 jours, rotation à chaque usage,

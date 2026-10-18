@@ -113,6 +113,8 @@ export interface Quotas {
   readonly barre: string;
   /** « 1er octobre », de `usage.resetsAt` — jamais calculée par l'horloge locale. */
   readonly reinitialise: string;
+  /** Tout est gratuit (réglage serveur) : la carte des quotas est masquée. */
+  readonly gratuit: boolean;
 }
 
 /**
