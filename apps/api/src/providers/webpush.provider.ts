@@ -63,7 +63,7 @@ export class WebPushProvider implements PushProvider {
         details.endpoint,
         {
           method: details.method,
-          headers: details.headers as Record<string, string>,
+          headers: details.headers,
           body: new Uint8Array(details.body),
         },
         this.http,

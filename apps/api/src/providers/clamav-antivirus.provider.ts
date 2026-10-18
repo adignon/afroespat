@@ -75,7 +75,7 @@ export class ClamAvAntivirusProvider implements AntivirusProvider {
           try {
             resolve(parseClamdReply(Buffer.concat(chunks).toString('utf8')));
           } catch (error) {
-            reject(error as Error);
+            reject(error instanceof Error ? error : new Error(String(error)));
           }
         }),
       );

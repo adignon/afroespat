@@ -42,7 +42,7 @@ describe('variables des fournisseurs réels', () => {
 });
 
 describe('garde-fou de production', () => {
-  const prod = (extra: Record<string, string>): NodeJS.ProcessEnv => ({ ...BASE, NODE_ENV: 'production', ...extra }) as NodeJS.ProcessEnv;
+  const prod = (extra: Record<string, string>): NodeJS.ProcessEnv => ({ ...BASE, NODE_ENV: 'production', ...extra });
   const REAL = {
     SMS_PROVIDER: 'twilio', TWILIO_ACCOUNT_SID: 'AC', TWILIO_AUTH_TOKEN: 't', TWILIO_FROM: '+33',
     EMAIL_PROVIDER: 'brevo', BREVO_API_KEY: 'k', PUSH_PROVIDER: 'webpush', VAPID_PUBLIC_KEY: 'p', VAPID_PRIVATE_KEY: 'q',

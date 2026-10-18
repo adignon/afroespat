@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-base-to-string, @typescript-eslint/no-require-imports --
+   les corps de réponse de supertest et les simulacres de fetch sont non typés par nature ; ce sont des fichiers d'épreuve. */
 import { createServer, type Server } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import webpush from 'web-push';
