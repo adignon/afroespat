@@ -12,6 +12,7 @@ export function P03Desktop(props: OnboardingVals) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ height: "72px", padding: "0 40px", display: "flex", alignItems: "center", gap: "10px", borderBottom: "1px solid #E6EBE9", background: "#fff" }}><div style={{ width: "38px", height: "38px", borderRadius: "12px", background: "#0F5C48" }}></div><span style={{ fontSize: "21px", fontWeight: "800", color: "#0F5C48", letterSpacing: "-0.5px" }}>Diaspora</span></div>

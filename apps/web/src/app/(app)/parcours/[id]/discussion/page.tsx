@@ -5,7 +5,6 @@ import { useParams } from 'next/navigation';
 import { VUE_NEUTRE, chargerJ01D } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
-import { plancheBlocage } from '@/screens/parcours/modales';
 import { J01DDesktop } from '@/screens/j01d/desktop.generated';
 import { J01DMobile } from '@/screens/j01d/mobile.generated';
 
@@ -48,7 +47,6 @@ export default function Page() {
       contexte={contexte}
       desktop={(d) => <J01DDesktop {...d} />}
       mobile={(d) => <J01DMobile {...d} />}
-      modales={(d, volet) => ({ J03: plancheBlocage(volet, d) })}
     />
   );
 }

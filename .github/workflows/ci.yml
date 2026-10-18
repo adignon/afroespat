@@ -72,6 +72,14 @@ jobs:
       - name: Migrations à jour
         run: pnpm --filter @app/db migrate:status
 
+      # Le schéma Prisma et la base migrée doivent être identiques : `--exit-code`
+      # rend 2 s'il reste une différence (un index renommé à la main, une colonne
+      # ajoutée au schéma sans migration…). `migrate status` ne le voit pas : il ne
+      # compare que l'historique, pas la structure. Lot A : un index mal nommé a
+      # traîné ainsi trois migrations avant qu'on l'écrive.
+      - name: Aucune dérive entre le schéma et la base
+        run: pnpm --filter @app/db migrate:drift
+
       - name: Enums réexportés à jour
         # Le fichier généré est commité : s'il diffère, c'est que le schéma a
         # bougé sans régénérer. Voir packages/shared/scripts/generate-enums.mjs.

@@ -1,5 +1,6 @@
 'use client';
 
+import { useChargeur } from '@/lib/entraide-recharge';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { SQUELETTE_H07, chargerH07 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
@@ -26,9 +27,10 @@ import { H07Mobile } from '@/screens/h07/mobile.generated';
  * exigerait `other` ferait échouer la page ENTIÈRE au premier blocage.
  */
 export default function MyMentorshipsPage() {
+  const charger = useChargeur(chargerH07);
   return (
     <EcranDonnees
-      charger={chargerH07}
+      charger={charger}
       /*
        * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
        * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre

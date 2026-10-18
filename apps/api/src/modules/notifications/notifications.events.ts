@@ -1247,9 +1247,9 @@ export class NotificationEventsService {
    * qui figurait au catalogue depuis le lot 0 sans que personne ne l'écoute.
    *
    * La catégorie est `ACCOUNT` : un abonnement est une affaire de compte, et §2.1
-   * du module 12 y autorise l'in-app, le push et l'email. L'email ne partira pas
-   * pour autant tant que `users.email` n'existe pas (`NoEmailAddressPort`) — le
-   * canal est DÉCIDÉ, pas envoyé, et c'est visible dans `channels_sent`.
+   * du module 12 y autorise l'in-app, le push et l'email. L'email ne part que si
+   * le membre a enregistré ET vérifié une adresse (`EmailAddressService.has`) — le
+   * canal est décidé selon cette adresse, et c'est visible dans `channels_sent`.
    *
    * `TRIAL_ENDING`, `RENEWAL_J7` et `RENEWAL_J1` sont des RAPPELS, pas des
    * changements : ils portent le même type d'événement parce que le tableau du §9

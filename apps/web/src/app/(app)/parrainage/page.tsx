@@ -1,5 +1,6 @@
 'use client';
 
+import { useChargeur } from '@/lib/entraide-recharge';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { SQUELETTE_H05, chargerH05 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
@@ -24,9 +25,10 @@ import { H05Mobile } from '@/screens/h05/mobile.generated';
  * fait partie du même travail. Remonté plutôt que monté à moitié.
  */
 export default function MentorsPage() {
+  const charger = useChargeur(chargerH05);
   return (
     <EcranDonnees
-      charger={chargerH05}
+      charger={charger}
       /*
        * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
        * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre

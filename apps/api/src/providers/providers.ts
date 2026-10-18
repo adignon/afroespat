@@ -49,7 +49,7 @@ export class FakeSmsProvider implements SmsProvider {
   send(to: string, body: string): Promise<{ providerRef: string }> {
     // Seuls les quatre derniers chiffres, même en développement : on n'apprend
     // pas à l'équipe à voir des numéros entiers dans les journaux.
-    this.logger.log(`SMS fictif vers …${to.slice(-4)} : ${body}`);
+    this.logger.log(`SMS fictif vers …${to.slice(-4)} : ${maskCodeOutsideDev(body)}`);
     this.bodies.push(body);
     return Promise.resolve({ providerRef: `fake-sms-${Date.now()}` });
   }
@@ -73,14 +73,54 @@ export interface EmailProvider {
 
 export const EMAIL_PROVIDER = Symbol('EmailProvider');
 
+/**
+ * Email fictif. Comme le SMS fictif, il CONSERVE ce qu'il envoie, en mémoire : le
+ * test de `POST /me/email` lit ainsi le code de vérification sans relire le
+ * journal. Le code n'est écrit au journal qu'en développement et en test.
+ */
 export class FakeEmailProvider implements EmailProvider {
   private readonly logger = new Logger('FakeEmail');
+  private readonly sent: { template: string; variables: Record<string, unknown> }[] = [];
 
-  send(to: string, template: string): Promise<{ providerRef: string }> {
+  send(to: string, template: string, variables: Record<string, unknown> = {}): Promise<{ providerRef: string }> {
     const [user, domain] = to.split('@');
-    this.logger.log(`Email fictif « ${template} » vers ${user?.slice(0, 2)}…@${domain}`);
-    return Promise.resolve({ providerRef: `fake-email-${Date.now()}` });
+    const code = typeof variables['code'] === 'string' ? ` — code ${maskCodeOutsideDev(variables['code'])}` : '';
+    this.logger.log(`Email fictif « ${template} » vers ${user?.slice(0, 2)}…@${domain}${code}`);
+    this.sent.push({ template, variables });
+    return Promise.resolve({ providerRef: fakeRef('fake-email') });
   }
+
+  /** Le dernier code envoyé pour ce modèle, ou `null`. */
+  lastCode(template = 'email_verification'): string | null {
+    const last = [...this.sent].reverse().find((s) => s.template === template);
+    const code = last?.variables['code'];
+    return typeof code === 'string' ? code : null;
+  }
+
+  sentCount(): number {
+    return this.sent.length;
+  }
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ UN CODE N'ENTRE EN CLAIR DANS UN JOURNAL QU'EN DÉVELOPPEMENT OU EN TEST    ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * La doublure SMS écrivait « Votre code de connexion : 482913 » au journal dans
+ * TOUS les environnements. `loadEnv` refuse bien un fournisseur fictif en
+ * production — mais une préproduction (`NODE_ENV` absent ou autre) qui garde la
+ * doublure et expédie ses journaux vers un agrégateur partagé y publierait chaque
+ * code de connexion : quiconque lit les journaux ouvre n'importe quel compte.
+ *
+ * Hors `development` et `test`, toute suite de six chiffres devient « •••••• ».
+ * On lit `process.env` directement, et non `loadEnv()` : la doublure doit rester
+ * instanciable sans configuration complète (tests unitaires).
+ */
+export function maskCodeOutsideDev(text: string): string {
+  const mode = process.env['NODE_ENV'];
+  if (mode === 'development' || mode === 'test') return text;
+  return text.replace(/\b\d{6}\b/g, '••••••');
 }
 
 // ── Push ────────────────────────────────────────────────────────────────────
@@ -89,7 +129,7 @@ export interface PushProvider {
   send(
     subscription: { endpoint: string; p256dh: string; auth: string },
     payload: { title: string; body: string; url?: string },
-  ): Promise<{ delivered: boolean }>;
+  ): Promise<{ delivered: boolean; gone?: boolean }>;
 }
 
 export const PUSH_PROVIDER = Symbol('PushProvider');

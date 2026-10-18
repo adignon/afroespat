@@ -1,1 +1,43 @@
 @import '@app/ui/styles.css';
+
+/*
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ LES TROIS ZONES D'UNE PAGE D'ORDINATEUR                                  ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « les sidebars [sont] laissées à gauche et à droite sans
+ * l'application du max width. Du coup seul le contenu de la page (contenu du
+ * milieu) est contenu. Cela doit être fait sur toutes les pages (réutilisable
+ * donc). »
+ *
+ * Les cadres générés NOMMENT leurs rôles (`data-zone`, posés par
+ * `tools/adaptations/zones-mise-en-page.mjs`) ; cette règle, UNE fois pour tous,
+ * en fait la mise en page :
+ *
+ *   gauche   collée au bord gauche de la fenêtre ;
+ *   droite   collée au bord droit ;
+ *   contenu  la seule zone bornée, centrée entre les deux.
+ *
+ * Le cadre d'ordinateur n'est donc plus borné à 1440 px DÈS QU'IL PORTE LES RÔLES.
+ * Un cadre qui ne les porte pas — un écran d'accueil de formulaire, d'onboarding —
+ * garde sa borne, que `ScreenFrames` lui pose.
+ *
+ * ── LE CONTENU ───────────────────────────────────────────────────────────
+ *
+ * `margin-inline: auto` : l'espace libre qui reste, une fois le contenu à sa
+ * largeur maximale, se partage de part et d'autre — le contenu se centre entre
+ * les deux colonnes, et la colonne de droite, dernière de la rangée, reste au
+ * bord. `max-width: 1036px` est la largeur de la zone de contenu de la maquette
+ * (1 440 − 400 de colonne − 4 de marges) : elle ne vaut que pour un contenu qui
+ * n'a pas SA borne — `main` 660 px du fil, par exemple, la garde, puisqu'un style
+ * en ligne l'emporte.
+ */
+[data-frame='desktop']:has([data-zone='gauche']) {
+  max-width: none;
+}
+
+[data-frame='desktop'] [data-zone='contenu'] {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 1036px;
+}

@@ -71,6 +71,8 @@ enum JourneyActivityType {
   MEMBER_JOINED
   MILESTONE_SHARED
   NOTE
+  /// Le membre a migré son parcours vers la version publiée courante (03 §2.2).
+  TEMPLATE_MIGRATED
 }
 
 enum BlockerStatus {
@@ -150,6 +152,7 @@ model JourneyTemplateVersion {
   steps            TemplateStep[]
   stepDependencies StepDependency[]
   journeys         Journey[]
+  migratedJourneys Journey[] @relation("JourneyMigratedFrom")
   corrections      TemplateCorrectionProposal[]
 
   @@unique([templateId, version, originCountryId])
@@ -258,6 +261,9 @@ model Journey {
 
   ownerUserId       String @map("owner_user_id") @db.Uuid
   templateVersionId String @map("template_version_id") @db.Uuid
+  /// La version que ce parcours suivait avant sa dernière migration (03 §2.2, §4).
+  /// Null tant que le membre n'a jamais migré.
+  migratedFromVersionId String? @map("migrated_from_version_id") @db.Uuid
 
   /// Nom donné par le membre — affiché dans la navigation.
   /// N'est JAMAIS exposé dans le fil : seul le nom du type l'est (règle dure 04 §2).
@@ -286,6 +292,7 @@ model Journey {
 
   owner             User                   @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
   templateVersion   JourneyTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  migratedFromVersion JourneyTemplateVersion? @relation("JourneyMigratedFrom", fields: [migratedFromVersionId], references: [id], onDelete: SetNull)
   originCountry     Country                @relation(fields: [originCountryId], references: [id], onDelete: Restrict)
   destinationCity   City                   @relation(fields: [destinationCityId], references: [id], onDelete: Restrict)
   currentStep       JourneyStep?           @relation("JourneyCurrentStep", fields: [currentStepId], references: [id], onDelete: SetNull)

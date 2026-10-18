@@ -9,6 +9,7 @@ import {
   exempleNational,
   handleSchema,
   masqueNumero,
+  formaterSaisieNumero,
   numeroValide,
 } from '@app/shared';
 import type { HelpType, OccupationStatus } from '@app/shared';
@@ -287,38 +288,35 @@ const fold = (value: string): string =>
     .toLowerCase();
 
 /**
- * Nettoie une saisie de pseudo — §2.6 : minuscules, chiffres, tiret, souligné.
+ * Nettoie une saisie de pseudo À LA FRAPPE — §2.6.
  *
- * Les accents sont TRANSLITTÉRÉS, pas supprimés. Les retirer faisait de « Aïcha
- * Sègbédji » un `achasgbdji` méconnaissable : le membre voit son nom se
- * désagréger sous ses doigts. `fold` ramène chaque lettre accentuée à sa base,
- * comme le fait `generateHandle` côté serveur — les deux doivent s'accorder,
- * sinon le pseudo proposé et le pseudo saisi ne se ressemblent pas.
+ * LOT A. L'ancienne `toHandle` MODIFIAIT silencieusement ce que le membre tapait :
+ * « Awa » devenait « awa », « 7ans » restait accepté et « jean- » perdait son
+ * tiret à l'envoi. Le schéma partagé (`handleSchema`) REFUSE ces trois saisies ;
+ * l'écran en disait donc autre chose que le serveur. Désormais l'écran ne retire
+ * que ce qui ne peut jamais appartenir à un pseudo (espaces, ponctuation, symboles)
+ * et translittère les accents (« Aïcha » → « Aicha », comme `generateHandle` côté
+ * serveur) ; la CASSE, le chiffre en tête, la longueur et le séparateur final sont
+ * laissés tels quels, et `etatPseudo` puis l'envoi les REFUSENT avec le message du
+ * schéma partagé.
  */
-export function toHandle(input: string): string {
-  return (
-    fold(input)
-      .replace(/\s+/g, '-')
-      .replace(/[^a-z0-9_-]/g, '')
-      // Pas de séparateurs consécutifs (§2.6).
-      .replace(/([_-])\1+/g, '$1')
-      // Pas de séparateur en TÊTE : aucun pseudo valide n'en commence par un, et
-      // le laisser ne mène qu'à un refus plus tard.
-      .replace(/^[_-]+/, '')
-      .slice(0, 30)
-  );
+export function saisieHandle(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9_-]/g, '')
+    .slice(0, 30);
 }
 
 /**
- * Le pseudo tel qu'il PART vers l'API.
- *
- * Le séparateur final est coupé ici, et non à la frappe : l'enlever pendant la
- * saisie rendrait « jean-baptiste » impossible à taper, puisque le tiret
- * disparaîtrait avant la seconde moitié. La règle du §2.6 est donc appliquée au
- * moment où elle compte — à l'envoi.
+ * Le pseudo saisi est-il acceptable ? `null` s'il l'est (ou s'il est vide : le
+ * pseudo est facultatif à l'inscription, le serveur en génère un), sinon le
+ * message du schéma partagé — le même que la ligne d'aide sous le champ.
  */
-export function finalHandle(input: string): string {
-  return toHandle(input).replace(/[_-]+$/, '');
+export function refusPseudo(handle: string): string | null {
+  if (handle === '') return null;
+  const forme = handleSchema.safeParse(handle);
+  return forme.success ? null : (forme.error.issues[0]?.message ?? 'Pseudo invalide.');
 }
 
 /**
@@ -910,14 +908,16 @@ export function onboardingVals(
       actions.countryOptions.find((c) => c.iso2 === state.countryIso2)?.dialCode ?? '+229',
     flagDisplay: state.countryIso2 === DRAWN_COUNTRY ? 'block' : 'none',
     onCountryChange: (event: { target: { value: string } }) => {
-      patch({ countryIso2: event.target.value });
+      patch({
+        countryIso2: event.target.value,
+        phone: formaterSaisieNumero(state.phone, event.target.value),
+      });
     },
     onPhoneChange: (event: { target: { value: string } }) => {
-      // Seuls les chiffres et les espaces : le reste est refusé à la FRAPPE,
-      // plutôt que signalé après envoi. `normalizePhone` fera le ménage côté
-      // API, mais un champ qui accepte des lettres laisse croire qu'elles
-      // comptent.
-      patch({ phone: event.target.value.replace(/[^\d\s]/g, '').slice(0, 20) });
+      // Mise en forme À LA FRAPPE (AsYouType, plan du pays choisi) : seuls les
+      // chiffres, les espaces et un « + » de tête survivent. Le serveur reçoit le
+      // numéro tel quel et le ramène au format international.
+      patch({ phone: formaterSaisieNumero(event.target.value, state.countryIso2) });
     },
     /**
      * Le pays de l'INDICATIF (P01), et non celui d'origine : c'est lui qui décide
@@ -946,7 +946,12 @@ export function onboardingVals(
      * UN SEUL `patch` : retenir l'indicatif ET refermer. Deux appels feraient deux
      * rendus, et le second rouvrirait un panneau que le premier a remplacé.
      */
-    onCountryPick: (iso2: string) => patch({ countryIso2: iso2, countryOuvert: false }),
+    onCountryPick: (iso2: string) =>
+      patch({
+        countryIso2: iso2,
+        countryOuvert: false,
+        phone: formaterSaisieNumero(state.phone, iso2),
+      }),
     // La page de P01 passe le sien ; les autres écrans n'en ont pas.
     paysIndicatifSelecteur: null,
     originFlag: drapeauDe(state.originIso2),
@@ -969,7 +974,7 @@ export function onboardingVals(
     },
     handleValue: state.handle,
     onHandleChange: (event: { target: { value: string } }) => {
-      patch({ handle: toHandle(event.target.value) });
+      patch({ handle: saisieHandle(event.target.value) });
     },
     /**
      * L'ÉTAT PAR DÉFAUT NE SAIT RIEN DU SERVEUR — et c'est volontaire.

@@ -80,6 +80,30 @@ export const TEMPLATE_ERROR_MESSAGE_MAX = 2_000;
 export const PUBLIC_JOURNEYS_PANEL_LIMIT = 5;
 export const PUBLIC_JOURNEYS_MAX_LIMIT = 50;
 
+// ── Régulariser ma situation : la variante choisie à la création (T3 A.2) ───
+
+/** Le code du type « Régulariser ma situation » (T3 A.2). */
+export const SETTLEMENT_TEMPLATE_CODE = 'SETTLEMENT';
+
+/**
+ * T3 A.2, ligne 1 de SETTLEMENT : « REGULARIZATION ou STATUS_CHANGE ou RENEWAL (le
+ * membre choisit à la création ; les deux autres sont supprimées) ».
+ *
+ * `@@unique(version, position)` interdit trois alternatives sur une position : la
+ * version publiée compose donc REGULARIZATION, et c'est `POST /journeys` qui
+ * REMPLACE la définition de cette première étape par celle choisie. Les trois
+ * codes sont ceux de `step_definitions.code` (seed T3 A.1).
+ */
+export const SETTLEMENT_VARIANTS = ['REGULARIZATION', 'STATUS_CHANGE', 'RENEWAL'] as const;
+export type SettlementVariant = (typeof SETTLEMENT_VARIANTS)[number];
+
+/** Les trois libellés de la planche J02 « variante Régulariser » (T5 §J02). */
+export const SETTLEMENT_VARIANT_LABELS: Record<SettlementVariant, string> = {
+  REGULARIZATION: 'Régulariser ma situation',
+  STATUS_CHANGE: 'Changer de statut',
+  RENEWAL: 'Renouveler mon titre de séjour',
+};
+
 // ── Gabarits de « Je suis bloqué » (T3 A.1) ─────────────────────────────────
 
 /**
@@ -172,6 +196,8 @@ export const JOURNEY_ERROR_CODES = {
   STEP_NOT_DONE: 422,
   /** §3.2 : le parcours doit être ACTIVE pour avancer. */
   JOURNEY_STATE: 409,
+  /** §5.1 `POST /journeys/:id/migrate` : le parcours suit déjà la version publiée courante. */
+  ALREADY_CURRENT: 409,
   /**
    * §3.1 suppose la ville et le pays connus (écran 3 de l'onboarding les pose).
    * `journeys.destination_city_id` est NOT NULL : sans ville, aucun parcours ne
@@ -195,6 +221,7 @@ export const JOURNEY_ERROR_MESSAGES: Record<JourneyErrorCode, string> = {
   NOT_A_MILESTONE: 'Cette étape n’est pas un jalon majeur.',
   STEP_NOT_DONE: 'Marquez l’étape comme franchie avant de la partager.',
   JOURNEY_STATE: 'Ce parcours n’est pas actif.',
+  ALREADY_CURRENT: 'Votre parcours suit déjà la dernière version de la procédure.',
   LOCATION_REQUIRED: 'Indiquez votre ville d’arrivée avant de créer un parcours.',
 };
 
@@ -209,6 +236,12 @@ export const createJourneySchema = z
     /** Absent = le nom du type (§3.1). */
     title: titleSchema.optional(),
     targetArrivalDate: z.string().date().optional(),
+    /**
+     * T3 A.2 : la variante de « Régulariser ma situation ». Elle n'a de sens que
+     * pour ce type — le serveur la REFUSE pour un autre (`VALIDATION_FAILED`),
+     * plutôt que de l'ignorer et de laisser croire qu'elle a servi.
+     */
+    variant: z.enum(SETTLEMENT_VARIANTS).optional(),
   })
   .strict();
 
@@ -328,18 +361,26 @@ export const publishBlockerSchema = z
     text: z.string().trim().min(BLOCKER_TEXT_MIN).max(BLOCKER_TEXT_MAX),
     /** §3.5 : privé = accompagnants et parrain seulement, rien de public. */
     isPrivate: z.boolean(),
-    /** Cible HELP : le titre de la demande d'entraide (06 §2.2). */
+    /**
+     * Le titre de la publication publique : celui de la demande d'entraide (06
+     * §2.2), de l'annonce de recherche (10 §2.1) ou de l'accroche du profil de
+     * recherche d'emploi (10 §3.2). Il est exigé par le SERVEUR selon la CIBLE du
+     * brouillon, qu'un schéma de corps ne connaît pas : un parrainage n'en a pas.
+     */
     title: z.string().trim().min(10).max(120).optional(),
     /** Cible HELP : le type de demande. Défaut `PAPERWORK` (06 §2.1). */
     helpType: z.enum(['PAPERWORK', 'SERVICE', 'RIDE', 'MATERIAL', 'OTHER']).optional(),
-    /** Cible HELP : la ville. Défaut = ville de destination du parcours. */
+    /** Cibles HELP et HOUSING : la ville. Défaut = ville de destination du parcours. */
     cityId: uuidSchema.optional(),
+    /** Cible HOUSING : recherche d'un logement ou d'un colocataire. Défaut : un logement. */
+    housingKind: z.enum(['SEEKING_HOUSING', 'SEEKING_FLATMATE']).optional(),
+    /** Cible JOBS : secteurs et contrats recherchés (10 §3.2). */
+    sectors: z.array(z.string().trim().min(2).max(80)).max(10).optional(),
+    contractTypes: z.array(z.string().trim().min(2).max(80)).max(10).optional(),
+    /** Cible MENTORSHIP : le parrain sollicité, par son pseudo (08 §2.2). */
+    mentorHandle: handleSchema.optional(),
   })
-  .strict()
-  .refine((v) => v.isPrivate || v.title !== undefined, {
-    path: ['title'],
-    message: 'Une publication publique demande un titre.',
-  });
+  .strict();
 
 export type PublishBlocker = z.infer<typeof publishBlockerSchema>;
 
@@ -853,6 +894,12 @@ export const journeyStepSchema = z
     stepDefinitionCode: z.string().nullable(),
     category: z.enum(StepCategory).nullable(),
     guideId: uuidSchema.nullable(),
+    /** Le guide lié s'il est publié (T3 A.1) : de quoi l'ouvrir et dire « N ont trouvé utile ». */
+    guide: z
+      .object({ slug: z.string(), title: z.string(), helpfulCount: z.number().int() })
+      .strict()
+      .nullable()
+      .optional(),
     blockerTarget: z.enum(BlockerTarget),
     /** §3.6 — seule une étape majeure propose le partage de jalon. */
     isMajorMilestone: z.boolean(),
@@ -869,6 +916,45 @@ export const journeyStepSchema = z
     /** §8.1 — chiffrées au repos, déchiffrées pour le propriétaire SEUL. */
     notes: z.string().nullable().optional(),
     checklist: z.array(journeyChecklistItemSchema).optional(),
+    /**
+     * §2.3 — « Cette échéance est trop proche : B prend en général N jours ».
+     *
+     * Posée par le serveur quand l'étape dépend d'une autre (`step_dependencies`)
+     * dont l'échéance + la durée indicative dépasse la sienne. UNE ALERTE, jamais
+     * un blocage. Absente (ou `null`) quand tout est cohérent, et réservée au
+     * propriétaire comme les échéances elles-mêmes.
+     */
+    deadlineAlert: z
+      .object({
+        dependsOnStepId: uuidSchema,
+        dependsOnTitle: z.string(),
+        indicativeDays: z.number().int(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    /**
+     * §6 — « N membres de Lyon ont franchi cette étape » : posé sur l'ÉTAPE EN COURS
+     * du propriétaire seulement. `sample` ne contient que des membres dont le parcours
+     * est PUBLIC (§3.7) — au plus trois.
+     */
+    peers: z
+      .object({
+        count: z.number().int(),
+        cityName: z.string(),
+        sample: z.array(
+          z
+            .object({
+              handle: z.string(),
+              displayName: z.string().nullable(),
+              avatarKey: z.string().nullable(),
+            })
+            .strict(),
+        ),
+      })
+      .strict()
+      .nullable()
+      .optional(),
   })
   /**
    * `.strict()` — parce qu'un champ greffé sur une étape EST une fuite.
@@ -944,6 +1030,25 @@ export const journeyDetailSchema = journeySummarySchema.extend({
   /** La prochaine échéance non franchie, ou `null`. §3.9 en tire les relances. */
   nextDueDate: z.string().nullable(),
   inactivityPromptSentAt: z.string().nullable(),
+  /**
+   * §2.2 — « La procédure a évolué ». La version publiée courante du modèle quand
+   * elle est PLUS RÉCENTE que celle que ce parcours suit, sinon `null`. Réservée au
+   * propriétaire : un accompagnant ne migre pas le parcours d'un autre. Absente
+   * d'une réponse plus ancienne que ce lot, d'où `optional`.
+   */
+  newerVersion: z
+    .object({
+      id: uuidSchema,
+      version: z.number().int(),
+      changelog: z.string().nullable(),
+    })
+    .strict()
+    .nullable()
+    .optional(),
+  /** §3.9 — « Où en êtes-vous ? » attend une réponse (relance envoyée, rien fait depuis). */
+  inactivityPromptPending: z.boolean().optional(),
+  /** J10 « N aides reçues » : le nombre d'activités `HELP_RECEIVED` du journal. */
+  helpReceivedCount: z.number().int().optional(),
 });
 
 export type JourneyDetail = z.infer<typeof journeyDetailSchema>;
@@ -1096,7 +1201,12 @@ export const journeyActivitySchema = z
     refType: z.string().nullable(),
     refId: uuidSchema.nullable(),
     payload: z.unknown().nullable(),
-    actor: z.object({ handle: z.string(), displayName: z.string().nullable() }).strict(),
+    /**
+     * `null` pour un événement que personne n'a produit à la main — `HELP_RECEIVED`,
+     * écrit par le consommateur de `help_request.resolved` — et pour l'auteur d'un
+     * autre parcours dont le compte a été supprimé (§9).
+     */
+    actor: z.object({ handle: z.string(), displayName: z.string().nullable() }).strict().nullable(),
     createdAt: z.string(),
   })
   .strict();
@@ -1116,3 +1226,95 @@ export const journeyActivitiesResponseSchema = pageSchema(journeyActivitySchema)
 });
 
 export type JourneyActivitiesResponse = z.infer<typeof journeyActivitiesResponseSchema>;
+
+
+// ── Réponses — les gestes d'écriture que l'écran appelle ────────────────────
+
+/**
+ * §3.6 — ce que `PATCH /journeys/:id/steps/:stepId` rend EN PLUS du parcours quand
+ * l'étape vient d'être franchie : des PROPOSITIONS, jamais des publications.
+ *
+ * `milestone.text` vaut toujours `''` : « le champ est VIDE, c'est le membre qui
+ * écrit » (§3.6). Un serveur qui y mettrait un texte ferait lever ce schéma.
+ */
+export const journeyProposalsSchema = z
+  .object({
+    tip: z.object({ kind: z.literal('STORY_TIP'), stepId: uuidSchema }).strict(),
+    milestone: z
+      .object({ kind: z.literal('VICTORY'), stepId: uuidSchema, text: z.literal('') })
+      .strict()
+      .nullable(),
+    goPublic: z.object({ kind: z.literal('GO_PUBLIC') }).strict().nullable(),
+  })
+  .strict();
+
+export type JourneyProposals = z.infer<typeof journeyProposalsSchema>;
+
+/** `PATCH /journeys/:id/steps/:stepId` : le parcours complet + les propositions éventuelles. */
+export const journeyStepUpdateResponseSchema = journeyFullResponseSchema.extend({
+  proposals: journeyProposalsSchema.nullable().optional(),
+});
+
+export type JourneyStepUpdateResponse = z.infer<typeof journeyStepUpdateResponseSchema>;
+
+/**
+ * `POST /journeys/:id/migrate` (§2.2) : le parcours complet + le bilan de la
+ * migration. Les trois compteurs sont ceux de la règle : « les étapes de même
+ * `step_definition` gardent leur état, les nouvelles arrivent en `TODO`, les
+ * supprimées sont conservées en `is_custom = true` ».
+ */
+export const journeyMigrationResponseSchema = journeyFullResponseSchema.extend({
+  migration: z
+    .object({
+      fromVersion: z.number().int(),
+      toVersion: z.number().int(),
+      kept: z.number().int(),
+      added: z.number().int(),
+      madeCustom: z.number().int(),
+      changelog: z.string().nullable(),
+    })
+    .strict(),
+});
+
+export type JourneyMigrationResponse = z.infer<typeof journeyMigrationResponseSchema>;
+
+/**
+ * `GET /journeys/invitations` (§3.4) — les invitations qui ATTENDENT ma réponse.
+ *
+ * L'invité ne voit PAS le titre personnel du parcours (§3.7) : le nom du type, la
+ * ville et la personne qui invite suffisent pour accepter ou refuser en
+ * connaissance de cause.
+ */
+export const journeyInvitationSchema = z
+  .object({
+    journeyId: uuidSchema,
+    role: z.enum(JourneyMemberRole),
+    invitedAt: z.string(),
+    template: journeyTemplateRefSchema,
+    destinationCity: cityRefSchema,
+    invitedBy: z
+      .object({ handle: z.string(), displayName: z.string().nullable() })
+      .strict(),
+  })
+  .strict();
+
+export type JourneyInvitation = z.infer<typeof journeyInvitationSchema>;
+
+export const journeyInvitationsResponseSchema = z.object({
+  items: z.array(journeyInvitationSchema),
+  meta: journeyMetaSchema,
+});
+
+export type JourneyInvitationsResponse = z.infer<typeof journeyInvitationsResponseSchema>;
+
+/** `POST /journeys/:id/members/decline`. */
+export const journeyDeclineResponseSchema = z.object({ declined: z.boolean() });
+
+/** `POST /journeys/:id/report-template-error` (§2.4). */
+export const reportTemplateErrorResponseSchema = z.object({
+  id: uuidSchema,
+  status: z.literal('PENDING'),
+  meta: journeyMetaSchema.optional(),
+});
+
+export type ReportTemplateErrorResponse = z.infer<typeof reportTemplateErrorResponseSchema>;

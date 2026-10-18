@@ -40,6 +40,7 @@ import { MentorshipController } from './modules/mentorship/mentorship.controller
 import { MentorshipService } from './modules/mentorship/mentorship.service';
 import { MessagingController } from './modules/messaging/messaging.controller';
 import { MessagingService } from './modules/messaging/messaging.service';
+import { BullMediaQueue, MEDIA_QUEUE, MediaConsumer, MediaThumbnailService } from './modules/media/media.consumer';
 import { ModerationConsumer } from './modules/moderation/moderation.consumer';
 import { ModerationController } from './modules/moderation/moderation.controller';
 import { ModerationService } from './modules/moderation/moderation.service';
@@ -64,6 +65,8 @@ import { JourneysController } from './modules/journeys/journeys.controller';
 import { JourneysService } from './modules/journeys/journeys.service';
 import { HelpController } from './modules/help/help.controller';
 import { HelpService } from './modules/help/help.service';
+import { HelpResponseModeration } from './modules/help/help-response-moderation';
+import { MentorshipMoneyGuard } from './modules/mentorship/mentorship-money.guard';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminModerationController } from './modules/admin/admin-moderation.controller';
 import { AdminService } from './modules/admin/admin.service';
@@ -82,11 +85,11 @@ import {
 } from './modules/notifications/notifications.controller';
 import {
   EMAIL_ADDRESS,
-  NoEmailAddressPort,
   NotificationsService,
   OUTBOUND_QUEUE,
 } from './modules/notifications/notifications.service';
 import { NotificationEventsService } from './modules/notifications/notifications.events';
+import { EmailAddressService } from './modules/notifications/email-address.service';
 import { BullOutboundQueue, OutboundConsumer } from './modules/notifications/notifications.outbound';
 import { BillingController } from './modules/billing/billing.controller';
 import { BillingAdminController } from './modules/billing/billing-admin.controller';
@@ -194,6 +197,8 @@ import {
     BlocksService,
     ConsentsService,
     HelpService,
+    // 06 §2.7 : la modération des RÉPONSES d'entraide (leur abonnement se pose seul).
+    HelpResponseModeration,
     GuidesService,
     // Transverse (01 §2.9) : l'état des contenus enregistrés, rafraîchi par la
     // tâche horaire `bookmark.state_refresh`. Aucun contrôleur — §2.9 n'est pas
@@ -216,6 +221,8 @@ import {
     NotificationEventsService,
     FeedService,
     MentorshipService,
+    // 08 §2.4 : `MONEY_REQUEST` en conversation de parrainage (s'abonne seul).
+    MentorshipMoneyGuard,
     ConnectionsService,
     MessagingService,
     JourneysService,
@@ -263,6 +270,9 @@ import {
       }),
     },
     ModerationConsumer,
+    MediaThumbnailService,
+    MediaConsumer,
+    { provide: MEDIA_QUEUE, useClass: BullMediaQueue },
 
     /**
      * Les trois files des modules 11 et 12, branchées comme celle de la modération :
@@ -295,15 +305,13 @@ import {
     { provide: GUIDE_VIEW_COUNTER, useClass: RedisGuideViewCounter },
 
     /**
-     * L'adresse email d'un membre — AUCUNE, et c'est une dépendance non satisfaite.
-     *
-     * 12 §3 annonce `users.email` « ajoutée au module 01 » ; la colonne n'existe pas
-     * dans le schéma figé, donc aucune table ne peut porter l'adresse. Ce fournisseur
-     * dit la vérité plutôt que de la masquer : `has()` rend `false`, donc AUCUN canal
-     * email n'est jamais décidé, conformément au §3 (« sans email, pas de canal
-     * email »). Le jour où la colonne arrive, ce seul fournisseur change.
+     * L'adresse email d'un membre — `users.email_encrypted`, chiffrée comme le
+     * téléphone, VÉRIFIÉE par code (12 §3). `has()` ne rend vrai qu'une adresse
+     * vérifiée : « sans email, pas de canal email ». `NoEmailAddressPort` reste
+     * exporté pour les tests qui veulent l'absence d'adresse.
      */
-    { provide: EMAIL_ADDRESS, useClass: NoEmailAddressPort },
+    EmailAddressService,
+    { provide: EMAIL_ADDRESS, useExisting: EmailAddressService },
 
     // ── Module 14 ────────────────────────────────────────────────────────────
     PlanService,

@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
 import {
   MENTORSHIP_DURATION_MS,
-  MENTORSHIP_REQUEST_EXPIRY_MS,
   MENTORSHIP_REVIEW_WINDOW_MS,
 } from '@app/shared';
 import { AuditService } from '../../../common/audit.service';
@@ -238,12 +237,13 @@ describe('parrainage (08 §2)', () => {
       mentorHandle: a.handle,
       message: LONG_MESSAGE,
     });
-    // La colonne `expires_at` de §6 n'existe pas : l'échéance se lit sur
-    // `created_at`. On vieillit donc la ligne, et la lecture doit déjà la
-    // considérer expirée.
+    // L'échéance est la colonne `expires_at` de §6 (posée à la demande). On la
+    // recule, et la lecture doit déjà considérer la demande expirée. (Le repli sur
+    // `created_at` d'une ligne sans échéance a son propre test, dans
+    // `mentorship-colonnes.int.test.ts`.)
     await prisma.mentorship.update({
       where: { id: first.id },
-      data: { createdAt: new Date(Date.now() - MENTORSHIP_REQUEST_EXPIRY_MS - 1000) },
+      data: { expiresAt: new Date(Date.now() - 1000) },
     });
 
     await expect(
@@ -792,7 +792,7 @@ describe('parrainage (08 §2)', () => {
     });
     await prisma.mentorship.update({
       where: { id: request.id },
-      data: { createdAt: new Date(Date.now() - MENTORSHIP_REQUEST_EXPIRY_MS - 1000) },
+      data: { expiresAt: new Date(Date.now() - 1000) },
     });
 
     expect(await mentorship.expireRequests()).toBeGreaterThanOrEqual(1);

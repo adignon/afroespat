@@ -9,7 +9,7 @@ import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../../auth/auth.service';
 import { UsersService } from '../users.service';
 import { newId } from '@app/db';
-import { numeroDEpreuve } from '../../../common/__tests__/numeros';
+import { numeroDEpreuve, numeroFrancaisDEpreuve } from '../../../common/__tests__/numeros';
 
 /**
  * Compte et profil — 01-identite.md §2.2, §2.6, §2.7 et §4.4.
@@ -35,7 +35,7 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
   const nextPhone = (): string => numeroDEpreuve(counter++);
 
   async function newMember(iso2 = 'BJ') {
-    const phone = nextPhone();
+    const phone = iso2 === 'FR' ? numeroFrancaisDEpreuve(counter++) : nextPhone();
     const { challengeId } = await auth.requestOtp({
       phone,
       countryIso2: iso2,

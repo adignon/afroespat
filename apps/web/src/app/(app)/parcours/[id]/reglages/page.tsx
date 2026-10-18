@@ -5,10 +5,8 @@ import { useParams } from 'next/navigation';
 import { VUE_NEUTRE, chargerJ08 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
-import { plancheBlocage } from '@/screens/parcours/modales';
 import { J08Desktop } from '@/screens/j08/desktop.generated';
 import { J08Mobile } from '@/screens/j08/mobile.generated';
-import { J08MobileArret } from '@/screens/j08arret/mobilearret.generated';
 
 /**
  * J08 — les réglages du parcours. `/parcours/:id/reglages`.
@@ -57,10 +55,6 @@ export default function Page() {
       contexte={contexte}
       desktop={(d) => <J08Desktop {...d} />}
       mobile={(d) => <J08Mobile {...d} />}
-      modales={(d, volet) => ({
-        J03: plancheBlocage(volet, d),
-        J08A: { mobile: <J08MobileArret {...d} />, mobileOnly: true },
-      })}
     />
   );
 }

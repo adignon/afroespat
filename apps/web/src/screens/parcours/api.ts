@@ -26,22 +26,36 @@
  * et le serveur répond `403 LEVEL_REQUIRED` avec de quoi afficher l'invitation de
  * §7.3. `partage_refus_niveau.json` est cette réponse, relevée telle quelle.
  *
- * ── CE QUI MANQUE, ET POURQUOI ON NE LE FORCE PAS ───────────────────────────
+ * ── LES ÉCRITURES (LOT « PARCOURS VIVANT ») ────────────────────────────────
  *
- * `POST /blockers/:id/publish` et `POST /journeys/:id/steps/:stepId/share` n'ont
- * PAS de fonction ici. Ce n'est pas un oubli : les cadres J03 et J04 transcodés ne
- * portent aucune prise sur leurs boutons « Publier » et « Partager » — le
- * générateur n'écrit `onClick` que sur les libellés qu'il reconnaît, et ces
- * deux-là n'en font pas partie. Ajouter les fonctions sans le bouton qui les
- * appelle donnerait du code mort qui aurait l'air branché.
- *
- * Il se trouve que cette limite TIENT la règle dure de §3.5 — « le brouillon n'est
- * jamais promu sans cet appel ». Ce lot crée le brouillon et sait l'annuler ; il ne
- * publie rien. Ce n'est pas une garantie sur laquelle se reposer, c'est un état de
- * fait à connaître.
+ * Toutes les routes d'écriture de `journeys` ont maintenant leur fonction ici, et un
+ * geste à l'écran qui les appelle. `POST /blockers/:id/publish` et
+ * `POST /journeys/:id/steps/:stepId/share` ne sont appelées QUE par le bouton
+ * « Publier » / « Partager » de leur feuille, avec le texte que le membre a écrit
+ * (règle dure de §3.5 et §3.6) : aucune autre fonction de ce fichier ne publie.
  */
 
 import {
+  blockerPublishedResponseSchema,
+  journeyDeclineResponseSchema,
+  journeyInvitationsResponseSchema,
+  journeyMigrationResponseSchema,
+  journeyStepUpdateResponseSchema,
+  reportTemplateErrorResponseSchema,
+  type AddJourneyMember,
+  type BlockerPublishedResponse,
+  type InactivityResponse,
+  type JourneyInvitationsResponse,
+  type JourneyMigrationResponse,
+  type JourneyStepUpdateResponse,
+  type PublishBlocker,
+  type ReorderSteps,
+  type ReplaceChecklist,
+  type ReportTemplateError,
+  type ShareMilestone,
+  type UpdateJourney,
+  type UpdateJourneyStep,
+  type CreateJourneyStep,
   blockerCancelledResponseSchema,
   blockerDraftResponseSchema,
   createJourneySchema,
@@ -55,6 +69,7 @@ import {
   publicJourneyDetailResponseSchema,
   publicJourneysResponseSchema,
   PUBLIC_JOURNEYS_PANEL_LIMIT,
+  PUBLIC_JOURNEYS_MAX_LIMIT,
   type BlockerCancelledResponse,
   type BlockerDraftResponse,
   type CreateJourney,
@@ -76,6 +91,7 @@ import {
  * préfère le fichier au dossier. Il le dit lui-même en commentaire : « à ne plus
  * employer dans du code neuf ».
  */
+import { z } from 'zod';
 import { memberApi } from '@/lib/api/index';
 
 /** §2.1 — les types de parcours proposés, résolus pour mon pays d'origine. */
@@ -261,4 +277,142 @@ export function listJourneyActivities(
     `/journeys/${journeyId}/activities?limit=${limit}`,
     journeyActivitiesResponseSchema,
   );
+}
+
+
+// ─── LES ÉCRITURES ──────────────────────────────────────────────────────────
+
+/** §3.4 — les invitations qui attendent MA réponse. */
+export function listJourneyInvitations(): Promise<JourneyInvitationsResponse> {
+  return memberApi.get('/journeys/invitations', journeyInvitationsResponseSchema);
+}
+
+/** §5.1 `PATCH /journeys/:id` — titre, date cible, pause/reprise/arrêt, visibilité. */
+export function updateJourney(journeyId: string, patch: UpdateJourney): Promise<JourneyFullResponse> {
+  return memberApi.patch(`/journeys/${journeyId}`, journeyFullResponseSchema, { body: patch });
+}
+
+/** §2.2 — migrer vers la version publiée courante du modèle. `ALREADY_CURRENT` sinon. */
+export function migrateJourney(journeyId: string): Promise<JourneyMigrationResponse> {
+  return memberApi.post(`/journeys/${journeyId}/migrate`, journeyMigrationResponseSchema);
+}
+
+/** §3.9 — la réponse à « Où en êtes-vous ? ». */
+export function answerInactivity(
+  journeyId: string,
+  answer: InactivityResponse['answer'],
+): Promise<JourneyFullResponse> {
+  return memberApi.post(`/journeys/${journeyId}/inactivity-response`, journeyFullResponseSchema, {
+    body: { answer },
+  });
+}
+
+/** §2.4 — « Signaler une erreur dans ce modèle ». */
+export function reportTemplateError(journeyId: string, input: ReportTemplateError) {
+  return memberApi.post(`/journeys/${journeyId}/report-template-error`, reportTemplateErrorResponseSchema, {
+    body: input,
+  });
+}
+
+/** §3.2 — démarrer, franchir, mettre en pause, rouvrir ; échéance ; notes ; titre. */
+export function updateStep(
+  journeyId: string,
+  stepId: string,
+  patch: UpdateJourneyStep,
+): Promise<JourneyStepUpdateResponse> {
+  return memberApi.patch(`/journeys/${journeyId}/steps/${stepId}`, journeyStepUpdateResponseSchema, {
+    body: patch,
+  });
+}
+
+/** §3.2 — une étape personnelle. */
+export function addStep(journeyId: string, input: CreateJourneyStep): Promise<JourneyFullResponse> {
+  return memberApi.post(`/journeys/${journeyId}/steps`, journeyFullResponseSchema, { body: input });
+}
+
+/** §3.2 — retirer une étape. */
+export function deleteStep(journeyId: string, stepId: string): Promise<JourneyFullResponse> {
+  return memberApi.del(`/journeys/${journeyId}/steps/${stepId}`, journeyFullResponseSchema);
+}
+
+/** §3.2 — la liste COMPLÈTE des identifiants, dans le nouvel ordre. */
+export function reorderSteps(journeyId: string, input: ReorderSteps): Promise<JourneyFullResponse> {
+  return memberApi.put(`/journeys/${journeyId}/steps/order`, journeyFullResponseSchema, { body: input });
+}
+
+/** §3.3 — la checklist COMPLÈTE remplace la précédente. Aucun fichier. */
+export function replaceChecklist(
+  journeyId: string,
+  stepId: string,
+  input: ReplaceChecklist,
+): Promise<JourneyFullResponse> {
+  return memberApi.put(`/journeys/${journeyId}/steps/${stepId}/checklist`, journeyFullResponseSchema, {
+    body: input,
+  });
+}
+
+/** §3.4 — inviter par pseudo. */
+export function inviteMember(journeyId: string, input: AddJourneyMember): Promise<JourneyFullResponse> {
+  return memberApi.post(`/journeys/${journeyId}/members`, journeyFullResponseSchema, { body: input });
+}
+
+export function removeMember(journeyId: string, userId: string): Promise<JourneyFullResponse> {
+  return memberApi.del(`/journeys/${journeyId}/members/${userId}`, journeyFullResponseSchema);
+}
+
+export function acceptInvitation(journeyId: string): Promise<JourneyFullResponse> {
+  return memberApi.post(`/journeys/${journeyId}/members/accept`, journeyFullResponseSchema);
+}
+
+export function declineInvitation(journeyId: string) {
+  return memberApi.post(`/journeys/${journeyId}/members/decline`, journeyDeclineResponseSchema);
+}
+
+/**
+ * §3.5, quatrième temps — LA seule fonction qui promeut un brouillon.
+ *
+ * Appelée par le bouton « Publier » de la dernière feuille, avec le texte que le
+ * membre a relu et écrit. Le gabarit du brouillon n'est jamais renvoyé tel quel
+ * par ce module : c'est le champ de la feuille qui part.
+ */
+export function publishBlocker(
+  blockerId: string,
+  input: PublishBlocker,
+): Promise<BlockerPublishedResponse> {
+  return memberApi.post(`/blockers/${blockerId}/publish`, blockerPublishedResponseSchema, {
+    body: input,
+  });
+}
+
+/** §3.6 — « Publier » sur la feuille de partage : le texte est CELUI DU MEMBRE. */
+export function shareMilestone(journeyId: string, stepId: string, input: ShareMilestone) {
+  return memberApi.post(`/journeys/${journeyId}/steps/${stepId}/share`, z.unknown(), { body: input });
+}
+
+/** §3.8 — une page du journal, à partir d'un curseur. */
+export function listJourneyActivitiesPage(
+  journeyId: string,
+  cursor: string | null,
+  limit = 20,
+): Promise<JourneyActivitiesResponse> {
+  const suite = cursor === null ? '' : `&cursor=${encodeURIComponent(cursor)}`;
+  return memberApi.get(
+    `/journeys/${journeyId}/activities?limit=${limit}${suite}`,
+    journeyActivitiesResponseSchema,
+  );
+}
+
+/** §3.7 — les parcours publics, filtrés (type, ville, avancement). */
+export function listPublicJourneysFiltered(filtres: {
+  readonly templateCode?: string;
+  readonly cityId?: string;
+  readonly progressNear?: number;
+  readonly limit?: number;
+}): Promise<PublicJourneysResponse> {
+  const q = new URLSearchParams();
+  if (filtres.templateCode !== undefined) q.set('templateCode', filtres.templateCode);
+  if (filtres.cityId !== undefined) q.set('cityId', filtres.cityId);
+  if (filtres.progressNear !== undefined) q.set('progressNear', String(filtres.progressNear));
+  q.set('limit', String(filtres.limit ?? PUBLIC_JOURNEYS_MAX_LIMIT));
+  return memberApi.get(`/journeys/public?${q.toString()}`, publicJourneysResponseSchema);
 }

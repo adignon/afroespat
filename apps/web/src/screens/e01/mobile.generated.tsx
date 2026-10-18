@@ -14,6 +14,7 @@ export function E01Mobile(props: E01Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 0", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" }}><h1 style={{ margin: "0", fontSize: "21px", fontWeight: "800", letterSpacing: "-0.6px", flex: "1" }}>Agenda</h1><BoutonCreer style={{ width: "40px", height: "40px", borderRadius: "999px", background: "#EEF2F0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14" /></svg></BoutonCreer></div><div style={{ display: "flex", gap: "6px", padding: "10px 16px", overflowX: "auto", flexShrink: "0" }} tabIndex={0}>{(bande ?? []).map((j, jIndex) => (
 <Fragment key={jIndex}><div style={{ width: "50px", flexShrink: "0", height: "64px", borderRadius: "16px", background: j.fond, border: `1px solid ${j.bord}`, color: j.couleur, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "2px", opacity: j.opacite }}><span style={{ fontSize: "10px", fontWeight: "700" }}>{j.abbr}</span><span style={{ fontSize: "17px", fontWeight: "800" }}>{j.numero}</span><span style={{ width: "6px", height: "6px", borderRadius: "999px", background: j.point }}></span></div></Fragment>
