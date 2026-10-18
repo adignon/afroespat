@@ -16,6 +16,10 @@ import {
 } from './adaptations/reseau-vivant.mjs';
 import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
 import {
+  ADAPTATIONS_ENTRAIDE_VIVANT,
+  AJOUTS_ENTRAIDE_VIVANT,
+} from './adaptations/entraide-vivant.mjs';
+import {
   ADAPTATIONS_EXPLOITATION_VIVANTE,
   AJOUTS_EXPLOITATION_VIVANTE,
 } from './adaptations/exploitation-vivante.mjs';
@@ -18230,6 +18234,8 @@ function adaptFields(jsx, section) {
      * `onRecommander`). Il emprunte `MenuRond` au registre du lot réseau.
      */
     ...ADAPTATIONS_PROFIL_VIVANT,
+    // Lot D : les gestes de l'entraide et du parrainage, H01 à H10 (tools/adaptations/entraide-vivant.mjs).
+    ...ADAPTATIONS_ENTRAIDE_VIVANT,
     // Lot B : l'email et le push de K07 (tools/adaptations/exploitation-vivante.mjs).
     ...ADAPTATIONS_EXPLOITATION_VIVANTE,
     // Lot A « tout gratuit » : en dernier, ses motifs lisent du JSX déjà branché.
@@ -19493,6 +19499,7 @@ const AJOUTS = {
   FenetreSignalement: '@/components/fenetre-signalement',
   /** Le lot « réseau vivant » — voir `tools/adaptations/reseau-vivant.mjs`. */
   ...AJOUTS_RESEAU_VIVANT,
+  ...AJOUTS_ENTRAIDE_VIVANT,
   ...AJOUTS_EXPLOITATION_VIVANTE,
   ...AJOUTS_GRATUIT_VIVANT,
 };
