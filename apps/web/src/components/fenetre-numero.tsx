@@ -1,5 +1,6 @@
 'use client';
 
+import { obtenirJetonCaptcha } from '@/lib/captcha';
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/modal';
 import { notifyError, notifySuccess } from '@/components/notifications';
@@ -52,13 +53,12 @@ import { z } from 'zod';
  * Portugal) — voir `packages/db/src/seed/referentials.ts` pour le pourquoi du
  * `kind: 'DESTINATION'`.
  *
- * ── `captchaToken: 'dev'` ─────────────────────────────────────────────────
+ * ── LE JETON DE CAPTCHA ───────────────────────────────────────────────────
  *
- * `addPhoneStartSchema` l'exige. L'onboarding envoie la même valeur
- * (`use-onboarding-flow.ts`) : le fournisseur de captcha n'est pas branché dans
- * ce dépôt, et inventer un second jeton ici ferait croire qu'il l'est. Le jour où
- * il arrive, les deux appels changent ensemble — et c'est pour ça qu'ils doivent
- * dire la même chose aujourd'hui.
+ * `addPhoneStartSchema` l'exige. Il vient de `obtenirJetonCaptcha()` (Turnstile,
+ * `lib/captcha.ts`), tiré au moment de l'envoi comme dans l'onboarding : les deux
+ * appels disent la même chose. Sans clé de site (développement), c'est le jeton de
+ * test officiel de Cloudflare.
  */
 /**
  * `POST /me/phones` rend ce que rend `requestOtp` : `{ challengeId, expiresAt }`.
@@ -115,22 +115,28 @@ export function FenetreNumero({
     const tel = numero.trim();
     if (tel.length < 4 || enVol) return;
     setEnVol(true);
-    memberApi
-      .post('/me/phones', debutSchema, {
+    // Le jeton est tiré AU MOMENT de l'envoi (usage unique, 5 min de validité).
+    obtenirJetonCaptcha()
+      .then((captchaToken) =>
+        memberApi.post('/me/phones', debutSchema, {
         /**
          * `countryIso2` EST OBLIGATOIRE, et son absence valait un `400` muet :
          * le code ne partait jamais et rien ne le disait. Relevé sur
          * `addPhoneStartSchema`, pas supposé.
          */
-        body: { phone: tel, countryIso2: iso2, captchaToken: 'dev' },
-      })
+        body: { phone: tel, countryIso2: iso2, captchaToken },
+      }))
       .then((r) => {
         setDefi(r.challengeId);
         notifySuccess('Code envoyé par SMS.');
       })
       .catch((cause: unknown) => {
         notifyError(
-          cause instanceof ApiError ? cause.displayMessage : 'Le code n’a pas pu être envoyé.',
+          cause instanceof ApiError
+            ? cause.displayMessage
+            : cause instanceof Error && cause.message !== ''
+              ? cause.message
+              : 'Le code n’a pas pu être envoyé.',
         );
       })
       .finally(() => {
