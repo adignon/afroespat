@@ -15,6 +15,7 @@ import {
   AJOUTS_RESEAU_VIVANT,
 } from './adaptations/reseau-vivant.mjs';
 import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
+import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18225,6 +18226,8 @@ function adaptFields(jsx, section) {
      * `onRecommander`). Il emprunte `MenuRond` au registre du lot réseau.
      */
     ...ADAPTATIONS_PROFIL_VIVANT,
+    // Lot A « tout gratuit » : en dernier, ses motifs lisent du JSX déjà branché.
+    ...ADAPTATIONS_GRATUIT_VIVANT,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -19484,6 +19487,7 @@ const AJOUTS = {
   FenetreSignalement: '@/components/fenetre-signalement',
   /** Le lot « réseau vivant » — voir `tools/adaptations/reseau-vivant.mjs`. */
   ...AJOUTS_RESEAU_VIVANT,
+  ...AJOUTS_GRATUIT_VIVANT,
 };
 
 const HEADER = (

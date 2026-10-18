@@ -423,6 +423,8 @@ export interface CarteParcours {
 export interface PlanParcours {
   readonly actifs: number;
   readonly limite: number;
+  /** Tout est gratuit (réglage serveur) : le bandeau « plan gratuit » est masqué. */
+  readonly gratuit: boolean;
 }
 
 /** Les deux filtres actifs de « Parcours publics » (§3.7). */
@@ -517,6 +519,8 @@ export interface J06Data extends ParcoursData {
 
 /** J07 · `/parcours/:id/historique` — `GET /journeys/:id/activities` (§3.8). */
 export interface J07Data extends ParcoursData {
+  /** Tout est gratuit : l'encart « Export PDF réservé à Premium » est masqué. */
+  readonly gratuit: boolean;
   readonly panneau: PanneauParcours;
   readonly journal: readonly EntreeJournal[];
 }

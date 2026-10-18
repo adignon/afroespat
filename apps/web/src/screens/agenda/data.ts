@@ -104,6 +104,8 @@ export interface QuotaEvenements {
   readonly plafond: string;
   /** « 1er novembre » : la remise à zéro, de `usage.resetsAt`. */
   readonly reset: string;
+  /** Tout est gratuit (réglage serveur) : le compteur et « Découvrir Premium » sont masqués. */
+  readonly gratuit: boolean;
 }
 
 /** Le panneau de gauche, dessiné à l'identique sur les quatre cadres d'ordinateur. */
@@ -637,6 +639,7 @@ export function construirePanneau(
   abonnement: MySubscriptionResponse,
   jourChoisi: string,
   aujourdhuiCivil: string,
+  gratuit = false,
 ): PanneauAgenda {
   const mois = aujourdhuiCivil.slice(0, 7);
   const duMois = calendrier.items.filter((j) => j.date.startsWith(mois));
@@ -690,6 +693,7 @@ export function construirePanneau(
       plafond:
         usage === undefined || usage.limit === null ? 'illimité' : String(usage.limit),
       reset: dateCourte(abonnement.usage.resetsAt, calendrier.meta.timeZone),
+      gratuit,
     },
   };
 }
