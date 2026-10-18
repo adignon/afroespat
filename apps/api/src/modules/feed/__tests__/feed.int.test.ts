@@ -2965,4 +2965,29 @@ describe('fil d’actualité (04 §2, §4, §9)', () => {
     expect(apres.post.poll?.question).toBe('Quel jour ?');
   });
 
+  it('« contenu en vérification » puis « contenu retiré » : l’auteur les voit, les autres reçoivent 404 (13 §2)', async () => {
+    const auteur = await newMember('L1');
+    const lecteur = await newMember('L1');
+    const publie = await feed.createPost(auteur, post({ body: 'Une publication que la modération masquera.' }));
+    const id = publie.post.id;
+
+    // PRÉMISSE : lisible par tous, sans état de modération.
+    expect((await feed.postDetail(lecteur, id)).post.moderationState).toBeNull();
+
+    // Masquée par le pipeline (chemin réel : le consommateur du fil).
+    await feed.handleContentHidden({ subjectType: 'POST', subjectId: id });
+    const vuParAuteur = await feed.postDetail(auteur, id);
+    expect(vuParAuteur.post.moderationState).toBe('IN_REVIEW');
+    expect(vuParAuteur.post.body).toContain('modération masquera');
+    await expect(feed.postDetail(lecteur, id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+
+    // Retirée : l'auteur voit l'état SANS le texte.
+    await prisma.post.update({ where: { id }, data: { status: 'REMOVED' } });
+    const retire = await feed.postDetail(auteur, id);
+    expect(retire.post.moderationState).toBe('REMOVED');
+    expect(retire.post.body).toBe('');
+    expect(retire.post.excerpt).toBe('');
+    await expect(feed.postDetail(lecteur, id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
 });

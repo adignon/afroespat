@@ -970,6 +970,15 @@ export const postDetailResponseSchema = z.object({
       .nullable(),
     /** §2.3 : le déplacement n'est JAMAIS automatique — le serveur dit s'il est offert. */
     canMoveToTopic: z.boolean(),
+    /**
+     * L'ÉTAT DE MODÉRATION, vu par l'AUTEUR seul (13 §2, lot G).
+     *
+     * `IN_REVIEW` — « contenu en vérification » : le pipeline l'a masqué en
+     * attendant l'équipe. `REMOVED` — « contenu retiré » : l'équipe l'a retiré, le
+     * corps n'est PLUS rendu (`body` et `excerpt` sont vides). Les autres membres
+     * reçoivent `404` dans les deux cas ; `null` quand la publication est lisible.
+     */
+    moderationState: z.enum(['IN_REVIEW', 'REMOVED']).nullable().default(null),
   }),
   comments: commentsResponseSchema,
   meta: z.object({ linkRel: z.literal(POST_LINK_REL) }),

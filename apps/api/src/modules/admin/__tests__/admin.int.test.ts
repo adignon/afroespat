@@ -1344,6 +1344,9 @@ describe('administration (15)', () => {
       'POST /v1/admin/moderation/scam-alerts',
       'PUT /v1/admin/moderation/scam-alerts/{id}',
       'POST /v1/admin/moderation/scam-alerts/{id}/retire',
+      // `moderation-pipeline.int.test.ts` (lot G) : marquer SA propre alerte comme lue
+      // n'est pas une décision de modération — rien d'auditable, c'est un drapeau de lecture.
+      'POST /v1/admin/moderation/alerts/{id}/read',
       // Refusée par construction : elle n'écrit jamais rien (voir `deleteStaff`).
       'DELETE /v1/admin/staff/{id}',
       // Module 14. L'audit de ces sept routes est vérifié dans

@@ -474,7 +474,9 @@ export class FeedService {
     // Masquée par la modération : invisible pour tous SAUF son auteur, qui doit
     // comprendre pourquoi elle ne paraît plus (13 §2).
     if (post.status !== 'PUBLISHED' && !isAuthor) throw ApiError.notFound();
-    if (post.status === 'REMOVED') throw ApiError.notFound();
+    // Retirée : l'AUTEUR la retrouve sous la forme « Contenu retiré » (corps vide),
+    // jamais un autre membre.
+    if (post.status === 'REMOVED' && !isAuthor) throw ApiError.notFound();
     if (post.moderationStatus === 'FLAGGED' && !isAuthor) throw ApiError.notFound();
     // En attente de validation : son auteur seul la lit, comme dans les fils.
     if (post.awaitingApproval && !isAuthor) throw ApiError.notFound();
@@ -491,10 +493,20 @@ export class FeedService {
       limit: FEED_LIMITS.detailCommentCount,
     });
 
+    const moderationState: 'IN_REVIEW' | 'REMOVED' | null =
+      post.status === 'REMOVED'
+        ? 'REMOVED'
+        : post.status === 'HIDDEN' || post.moderationStatus === 'FLAGGED'
+          ? 'IN_REVIEW'
+          : null;
+
     return {
       post: {
         ...card,
-        body: post.body,
+        // Une publication retirée ne rend plus son texte, même à son auteur.
+        ...(moderationState === 'REMOVED' ? { excerpt: '' } : {}),
+        body: moderationState === 'REMOVED' ? '' : post.body,
+        moderationState,
         /**
          * §2.3 : « la publication reste avec un lien "Suite dans le réseau X" ».
          */
