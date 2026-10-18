@@ -58,6 +58,10 @@ model HelpRequest {
   resolvedAt           DateTime? @map("resolved_at") @db.Timestamptz
   /// Réponse marquée « ça m'a aidé » : crée un contact et crédite la réputation.
   resolvedByResponseId String?   @map("resolved_by_response_id") @db.Uuid
+  /// §3 « Ajoutée » : dernière réouverture par l'auteur (§2.2, dans les 7 jours).
+  reopenedAt           DateTime? @map("reopened_at") @db.Timestamptz
+  /// §3 « Ajoutée » : posée par la tâche `help.archive` (§7).
+  archivedAt           DateTime? @map("archived_at") @db.Timestamptz
 
   moderationStatus ModerationStatus @map("moderation_status")
 

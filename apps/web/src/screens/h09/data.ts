@@ -14,5 +14,7 @@ export interface H09Data extends BandeauEntraide {
   readonly mesDemandes: {
     readonly total: number;
     readonly avecNouvelles: number;
+    /** Mes demandes RÉSOLUES : le BILAN de la colonne de droite. */
+    readonly resolues: number;
   };
 }

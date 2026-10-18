@@ -1,3 +1,4 @@
+import type { ActionDemande, ActionReponse } from '../entraide/actions-types';
 import type { BandeauEntraide, MembreDessine } from '../entraide/data';
 
 /**
@@ -50,11 +51,15 @@ export interface ReponsePublique {
   readonly age: string;
   readonly corps: string;
   readonly marquee: boolean;
+  /** Les gestes sur cette réponse (marquer, modifier, supprimer, signaler). */
+  readonly action: ActionReponse;
   /** `canMarkHelpful` : l'auteur, sur une demande OUVERTE, et pas sa propre réponse. */
   readonly peutMarquer: boolean;
 }
 
 export interface H02Data extends BandeauEntraide {
+  /** Les gestes de l'auteur et du lecteur sur la demande (modifier, résoudre, rouvrir, répondre…). */
+  readonly action: ActionDemande;
   readonly demande: {
     readonly titre: string;
     readonly corps: string;

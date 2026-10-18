@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import { useVersionEntraide } from '@/lib/entraide-recharge';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { SQUELETTE_H02, chargerH02 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
@@ -30,7 +31,17 @@ import { H02Mobile } from '@/screens/h02/mobile.generated';
  * sans réponses, c'est-à-dire apprendrait au membre qu'on lui cache quelque chose.
  */
 export function DemandeEcran({ id }: { readonly id: string }) {
-  const charger = useCallback(() => chargerH02(id), [id]);
+  /**
+   * UN GESTE (répondre, résoudre, rouvrir…) INCRÉMENTE `version` : l'identité de
+   * `charger` change, et `EcranDonnees` relit la demande SANS démonter le cadre — la
+   * fenêtre ouverte et le défilement survivent, ce qu'un rechargement de page
+   * aurait perdu. Voir `lib/entraide-recharge.ts`.
+   */
+  const version = useVersionEntraide();
+  const charger = useCallback(() => {
+    void version;
+    return chargerH02(id);
+  }, [id, version]);
 
   return (
     <EcranDonnees
