@@ -30,11 +30,12 @@ import { MessagingService } from './messaging.service';
  * la règle dure du §12 (« un L0 peut demander un parrain mais ne peut pas ouvrir de
  * conversation directe ») qui l'exige à cet endroit précis.
  *
- * Le WebSocket `/ws` de §7.3 n'est PAS ici : aucune passerelle WebSocket n'existe
- * dans cette application. Les trois événements (`message.new`, `message.read`,
- * `conversation.updated`) sont produits sous forme d'événements de domaine
- * (`message.sent`), et le repli en polling 15 s de §5.3 fonctionne dès maintenant
- * sur `GET /conversations`.
+ * Le WebSocket `/ws` de §7.3 n'est PAS ici mais dans `modules/realtime` : la
+ * passerelle existe, authentifiée par le jeton d'accès. `message.new` part du
+ * gestionnaire de l'événement de domaine `message.sent` (worker) ; `message.read` et
+ * `conversation.updated` partent de ce service (lecture, acceptation, suppression,
+ * sourdine), par `RealtimeRelayService`. Le repli en polling 15 s de §5.3 reste le
+ * filet d'un navigateur dont la socket est coupée.
  */
 @ApiTags('messaging')
 @Controller()
@@ -87,6 +88,14 @@ export class MessagingController {
   @ApiOperation({ summary: 'Accepter une conversation directe en attente (§5.2)' })
   async accept(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
     return this.messaging.acceptDirect(auth.userId, id);
+  }
+
+  @Post('conversations/:id/ignore')
+  @HttpCode(200)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Ignorer une demande de conversation en attente (§5.2)' })
+  async ignore(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.messaging.ignoreDirect(auth.userId, id);
   }
 
   /**

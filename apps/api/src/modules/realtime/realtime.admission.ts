@@ -141,4 +141,22 @@ export class RealtimeAdmissionService {
 
     return { userId: claims.sub, sessionId: claims.sid, claims };
   }
+
+  /**
+   * À QUI la frappe de `userId` dans `conversationId` doit-elle être montrée ?
+   *
+   * Les AUTRES membres encore présents, et rien si `userId` n'est pas membre actif
+   * de cette conversation : un socket authentifié ne doit pas pouvoir « taper »
+   * dans le fil d'un inconnu, ni sonder l'existence d'une conversation (le refus
+   * est un tableau vide, jamais une erreur — T4 §3, 404 plutôt que 403).
+   */
+  async typingAudience(userId: string, conversationId: string): Promise<string[]> {
+    const members = await this.prisma.conversationMember.findMany({
+      where: { conversationId },
+      select: { userId: true, leftAt: true },
+    });
+    const me = members.find((m) => m.userId === userId);
+    if (me === undefined || me.leftAt !== null) return [];
+    return members.filter((m) => m.userId !== userId && m.leftAt === null).map((m) => m.userId);
+  }
 }

@@ -157,6 +157,9 @@ model Notification {
 
   refType String? @map("ref_type")
   refId   String? @map("ref_id") @db.Uuid
+  /// La page où mène la ligne (12 §2.7), chemin RELATIF du front. NULL pour les
+  /// lignes antérieures à la colonne et pour celles qui n'ont pas de cible.
+  url     String?
 
   readAt       DateTime? @map("read_at") @db.Timestamptz
   /// IN_APP · PUSH · EMAIL — ce qui a effectivement été envoyé.

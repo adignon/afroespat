@@ -1,5 +1,8 @@
 import { Logger, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import {
+  ConnectedSocket,
+  MessageBody,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
   type OnGatewayConnection,
@@ -7,10 +10,18 @@ import {
 } from '@nestjs/websockets';
 import IORedis, { type Redis } from 'ioredis';
 import type { Server, Socket } from 'socket.io';
+import { REALTIME_TYPING_CLIENT_EVENT, REALTIME_TYPING_EMIT_INTERVAL_MS, uuidSchema } from '@app/shared';
+import { z } from 'zod';
 import { ApiError } from '../../common/api-error';
 import { loadEnv } from '../../config/env';
 import { RealtimeAdmissionService, type RealtimeContext } from './realtime.admission';
-import { REALTIME_CHANNEL, parseRelayMessage, userRoom, type RealtimeEvent } from './realtime.channel';
+import {
+  REALTIME_CHANNEL,
+  parseRelayMessage,
+  userRoom,
+  type RealtimeEvent,
+  type RelayMessage,
+} from './realtime.channel';
 
 /**
  * La passerelle temps réel — 08-parrainage-messagerie.md §7.3 (`WS /ws`) et
@@ -35,8 +46,10 @@ import { REALTIME_CHANNEL, parseRelayMessage, userRoom, type RealtimeEvent } fro
  */
 
 interface AuthedSocket extends Socket {
-  data: { auth?: RealtimeContext };
+  data: { auth?: RealtimeContext; lastTypingAt?: number };
 }
+
+const typingBodySchema = z.object({ conversationId: uuidSchema }).strict();
 
 @WebSocketGateway({
   path: '/ws',
@@ -55,6 +68,13 @@ export class RealtimeGateway
 
   private revalidation?: NodeJS.Timeout;
   private subscriber?: Redis;
+  /**
+   * Une connexion SÉPARÉE pour publier : l'abonné est en mode abonnement et ne
+   * peut plus rien émettre. Sert à la seule frappe, qui naît ici (un socket) et non
+   * dans le worker — et qui doit atteindre les sockets des AUTRES instances d'API,
+   * donc passer par le canal plutôt que par `publish()` (local).
+   */
+  private publisher?: Redis;
 
   constructor(private readonly admission: RealtimeAdmissionService) {}
 
@@ -72,6 +92,10 @@ export class RealtimeGateway
    */
   onApplicationBootstrap(): void {
     this.subscriber = new IORedis(loadEnv().REDIS_URL, { maxRetriesPerRequest: null });
+    this.publisher = new IORedis(loadEnv().REDIS_URL, { maxRetriesPerRequest: 1 });
+    this.publisher.on('error', (error: Error) => {
+      this.logger.error(`éditeur temps réel : ${error.message}`);
+    });
 
     this.subscriber.on('message', (_channel, raw: string) => {
       const message = parseRelayMessage(raw);
@@ -137,9 +161,50 @@ export class RealtimeGateway
     this.logger.debug(`socket ${client.id} fermé`);
   }
 
+  /**
+   * ╔════════════════════════════════════════════════════════════════════════════╗
+   * ║ « EST EN TRAIN D'ÉCRIRE » — ÉPHÉMÈRE, JAMAIS STOCKÉ                       ║
+   * ╚════════════════════════════════════════════════════════════════════════════╝
+   *
+   * Le client émet `typing` { conversationId } au plus toutes les
+   * `REALTIME_TYPING_EMIT_INTERVAL_MS`. On vérifie l'appartenance (une frappe dans
+   * le fil d'un inconnu est ignorée EN SILENCE, sans erreur qui sonderait
+   * l'existence de la conversation), on borne la cadence PAR SOCKET, et on relaie
+   * `conversation.typing` aux autres membres par le canal Redis. Le destinataire
+   * éteint l'indicateur seul après `REALTIME_TYPING_TTL_MS` : aucun « a cessé
+   * d'écrire » n'est jamais envoyé, donc aucun état à garder ni à purger.
+   */
+  @SubscribeMessage(REALTIME_TYPING_CLIENT_EVENT)
+  async handleTyping(@ConnectedSocket() client: AuthedSocket, @MessageBody() body: unknown): Promise<void> {
+    const auth = client.data.auth;
+    if (auth === undefined) return;
+
+    const parsed = typingBodySchema.safeParse(body);
+    if (!parsed.success) return;
+
+    const now = Date.now();
+    // Un peu en deçà de l'intervalle du client, pour tolérer la gigue réseau sans
+    // laisser passer une rafale.
+    if (client.data.lastTypingAt !== undefined && now - client.data.lastTypingAt < REALTIME_TYPING_EMIT_INTERVAL_MS * 0.6) {
+      return;
+    }
+    client.data.lastTypingAt = now;
+
+    const audience = await this.admission.typingAudience(auth.userId, parsed.data.conversationId);
+    for (const userId of audience) {
+      const message: RelayMessage = {
+        userId,
+        event: 'conversation.typing',
+        payload: { conversationId: parsed.data.conversationId, userId: auth.userId },
+      };
+      await this.publisher?.publish(REALTIME_CHANNEL, JSON.stringify(message));
+    }
+  }
+
   async onModuleDestroy(): Promise<void> {
     if (this.revalidation !== undefined) clearInterval(this.revalidation);
     await this.subscriber?.quit();
+    await this.publisher?.quit();
   }
 
   // ───────────────────────────────────────────────────────────────────────────

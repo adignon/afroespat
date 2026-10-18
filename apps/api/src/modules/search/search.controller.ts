@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
+  SEARCH_RATE_LIMITS,
   searchQuerySchema,
   searchZeroSchema,
   suggestQuerySchema,
@@ -8,7 +9,7 @@ import {
 } from '@app/shared';
 import type { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
-import { RequiresCapability } from '../../common/capability.decorator';
+import { RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { zodPipe } from '../../common/zod.pipe';
 import { SearchService } from './search.service';
 
@@ -63,6 +64,7 @@ export class SearchController {
 
   @Get()
   @RequiresCapability('content.read')
+  @RateLimit(SEARCH_RATE_LIMITS.search)
   @ApiOperation({ summary: 'Résultats groupés par type, ou paginés pour un type (§2.3)' })
   async search(
     @Auth() auth: AuthContext,
@@ -101,6 +103,7 @@ export class SearchController {
 
   @Get('suggest')
   @RequiresCapability('content.read')
+  @RateLimit(SEARCH_RATE_LIMITS.suggest)
   @ApiOperation({ summary: 'Suggestions de titres par préfixe, 6 max (§2.3)' })
   async suggest(@Query(zodPipe(suggestQuerySchema)) query: z.infer<typeof suggestQuerySchema>) {
     return this.searchService.suggest(query.q);
@@ -128,6 +131,7 @@ export class SearchController {
   @Post('zero')
   @HttpCode(200)
   @RequiresCapability('content.read')
+  @RateLimit(SEARCH_RATE_LIMITS.zero)
   @ApiOperation({ summary: 'Signaler une recherche sans résultat, anonymement (§2.4)' })
   async zero(
     @Auth() auth: AuthContext,

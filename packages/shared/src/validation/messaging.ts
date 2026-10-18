@@ -529,6 +529,16 @@ export const messagesResponseSchema = z.object({
       kind: z.enum(ConversationKind),
       pendingForMe: z.boolean(),
       awaitingReply: z.boolean(),
+      /**
+       * « VU » — jusqu'où les AUTRES membres ont lu, renvoyé tel quel de
+       * `conversation_members.last_read_at`. Pour une conversation à deux, c'est la
+       * lecture de l'interlocuteur ; à plusieurs, la PLUS ANCIENNE des lectures
+       * (« vu par tous »). `null` tant que l'un d'eux n'a rien lu — y compris une
+       * demande non acceptée, qui ne marque pas lu (voir `listMessages`). Le
+       * message le plus récent dont `sentAt <= seenAt` et qui est le mien porte
+       * « Vu ».
+       */
+      seenAt: z.string().datetime().nullable(),
     })
     .strict(),
 });

@@ -1250,14 +1250,33 @@ export class SearchService {
             // sont les publications déplacées vers lui : la table de réponses de
             // sujet n'existe pas dans le schéma figé (07 §6 le note aussi).
             postsMovedHere: {
-              select: { body: true },
+              select: { body: true, createdAt: true },
               orderBy: { createdAt: 'asc' },
               take: SEARCH_TOPIC_REPLIES_INDEXED,
             },
           },
         });
         if (topic === null) return null;
-        const replies = topic.postsMovedHere.map((p) => p.body).join('\n');
+        // Les réponses d'un sujet sont de DEUX origines : les publications déplacées
+        // vers lui, et les commentaires posés dessus (`POST /comments`,
+        // `subjectType: 'TOPIC'`). Seul le premier chemin était lu ; une réponse
+        // directe ne faisait donc jamais partie du document, et la réindexer à
+        // chaque réponse n'aurait rien changé. Les `SEARCH_TOPIC_REPLIES_INDEXED`
+        // premières, toutes origines confondues, dans l'ordre d'arrivée.
+        const comments = await this.prisma.comment.findMany({
+          where: { subjectType: 'TOPIC', subjectId: topic.id, deletedAt: null, status: 'PUBLISHED' },
+          orderBy: { createdAt: 'asc' },
+          take: SEARCH_TOPIC_REPLIES_INDEXED,
+          select: { body: true, createdAt: true },
+        });
+        const replies = [
+          ...topic.postsMovedHere.map((p) => ({ body: p.body, at: p.createdAt })),
+          ...comments.map((c) => ({ body: c.body, at: c.createdAt })),
+        ]
+          .sort((a, b) => a.at.getTime() - b.at.getTime())
+          .slice(0, SEARCH_TOPIC_REPLIES_INDEXED)
+          .map((r) => r.body)
+          .join('\n');
         return {
           subjectType,
           subjectId: topic.id,

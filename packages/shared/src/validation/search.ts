@@ -40,6 +40,19 @@ export const SEARCH_DEFAULT_RADIUS_KM = 30;
 export const SEARCH_MAX_QUERY_LENGTH = 120;
 
 /**
+ * LES BUDGETS DE DÉBIT DE LA RECHERCHE, par minute et par membre.
+ *
+ * Une recherche coûte plus qu'une lecture ordinaire : un classement plein texte
+ * sur l'index, avec les exclusions de blocage et le calcul de proximité. Les
+ * suggestions partent à chaque frappe passé trois caractères, donc elles ont le
+ * budget le plus large ; « zéro résultat » est un geste unique par recherche
+ * vide, et alimente un compteur d'admin, d'où le budget le plus serré (un script
+ * qui le martèlerait fausserait le « top des recherches sans réponse »).
+ * `RATE_LIMIT_ENABLED` les coupe en développement, comme toutes les limites.
+ */
+export const SEARCH_RATE_LIMITS = { search: 30, suggest: 60, zero: 10 } as const;
+
+/**
  * §2.1, « Jamais indexés » — la liste au mot.
  *
  * Elle est une CONSTANTE et non un commentaire parce qu'un test de règle dure s'y
