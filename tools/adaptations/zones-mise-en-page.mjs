@@ -30,6 +30,18 @@
  * droit ; le contenu, borné, se centre entre les deux. Une page nouvelle n'a rien
  * à écrire : elle porte ses rôles, et la règle s'applique.
  *
+ * ── CE QUI N'EST PAS UNE COLONNE ──────────────────────────────────────────
+ *
+ * Le porteur : « ma correction concerne uniquement les sidebars pleine hauteur, juste
+ * sous le header, qui occupent toute la colonne — et non celles qui sont une section
+ * du contenu principal de la page. La page a trois parties : gauche, droite, contenu. »
+ *
+ * Sur une page de RÉSEAU, la colonne « À propos / Prochain événement / Sujets
+ * épinglés » est une section du CONTENU : elle vit dans la planche d'onglet, sous
+ * l'en-tête du réseau et sa barre d'onglets. Elle n'est donc PAS une colonne de
+ * droite et n'est pas nommée : elle reste contre le contenu, comme avant. (Une
+ * première version la portait au bord de l'écran par une translation : retirée.)
+ *
  * ── CE QUI RESTE BORNÉ, FAUTE DE ROLES CLAIRS ─────────────────────────────
  *
  * Un cadre dont l'architecture n'est pas celle-là — deux colonnes de gauche
@@ -112,19 +124,6 @@ export const ADAPTATIONS_ZONES = [
         out = out.slice(0, m.at + nom.length) + ` data-zone="${m.zone}"` + out.slice(m.at + nom.length);
       }
       return { jsx: out, applied: true };
-    },
-  },
-  {
-    screens: ['A08T'],
-    nom: 'ZONES_RESEAU_DROITE',
-    why: 'Sur les pages d’un réseau, la colonne de droite fait partie de la planche d’onglet : elle est nommée pour que la règle commune la porte au bord de l’écran, sans perdre son comportement collant.',
-    provides: [],
-    apply(jsx) {
-      if (jsx.includes('data-zone=')) return { jsx, applied: false };
-      const motif = '<aside style={{ width: "300px"';
-      const i = jsx.indexOf(motif);
-      if (i === -1) return { jsx, applied: false };
-      return { jsx: jsx.slice(0, i) + '<aside data-zone="droite-collante" style={{ width: "300px"' + jsx.slice(i + motif.length), applied: true };
     },
   },
 ];

@@ -62,9 +62,12 @@ describe('les zones de mise en page', () => {
     );
   });
 
-  it('la colonne de droite d’une page de réseau est portée au bord, sans perdre son comportement collant', () => {
-    expect(CSS).toContain("[data-zone='droite-collante']");
-    const planche = readFileSync(join(RACINE, 'a08t', 'fil.generated.tsx'), 'utf8');
-    expect(planche).toContain('<aside data-zone="droite-collante"');
+  it('la colonne « À propos » d’une page de réseau est une section du CONTENU : elle n’est pas nommée', () => {
+    // Le porteur : seules les sidebars pleine hauteur sous le header sont des colonnes.
+    for (const f of ['fil', 'adminfil', 'apropos', 'membres']) {
+      const planche = readFileSync(join(RACINE, 'a08t', `${f}.generated.tsx`), 'utf8');
+      expect(planche.includes('data-zone='), f).toBe(false);
+    }
+    expect(CSS.includes('droite-collante')).toBe(false);
   });
 });
