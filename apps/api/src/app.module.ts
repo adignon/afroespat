@@ -40,6 +40,7 @@ import { MentorshipController } from './modules/mentorship/mentorship.controller
 import { MentorshipService } from './modules/mentorship/mentorship.service';
 import { MessagingController } from './modules/messaging/messaging.controller';
 import { MessagingService } from './modules/messaging/messaging.service';
+import { BullMediaQueue, MEDIA_QUEUE, MediaConsumer, MediaThumbnailService } from './modules/media/media.consumer';
 import { ModerationConsumer } from './modules/moderation/moderation.consumer';
 import { ModerationController } from './modules/moderation/moderation.controller';
 import { ModerationService } from './modules/moderation/moderation.service';
@@ -257,6 +258,9 @@ import {
       }),
     },
     ModerationConsumer,
+    MediaThumbnailService,
+    MediaConsumer,
+    { provide: MEDIA_QUEUE, useClass: BullMediaQueue },
 
     /**
      * Les trois files des modules 11 et 12, branchées comme celle de la modération :

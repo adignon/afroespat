@@ -33,6 +33,8 @@ export const AUTH_ERROR_CODES = {
    */
   PHONE_INVALID: 422,
   CAPTCHA_FAILED: 400,
+  /** Le fournisseur SMS n'a pas pu envoyer le code (panne, quota) : réessayer plus tard. */
+  SMS_SEND_FAILED: 502,
   OTP_INVALID: 422,
   OTP_EXPIRED: 422,
   OTP_ATTEMPTS_EXCEEDED: 429,
@@ -55,6 +57,7 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
    */
   PHONE_INVALID: 'Ce numéro ne correspond pas au format du pays choisi.',
   CAPTCHA_FAILED: 'La vérification anti-robot a échoué. Réessayez.',
+  SMS_SEND_FAILED: 'Nous n’avons pas pu envoyer le SMS. Réessayez dans un instant.',
   OTP_INVALID: 'Ce code n’est pas le bon. Vérifiez et réessayez.',
   OTP_EXPIRED: 'Ce code a expiré. Demandez-en un nouveau.',
   OTP_ATTEMPTS_EXCEEDED: 'Trop de tentatives. Demandez un nouveau code.',

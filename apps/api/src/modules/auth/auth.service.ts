@@ -11,6 +11,7 @@ import {
   type AuthErrorCode,
   type OtpPurpose,
 } from '@app/shared';
+import { ProviderError } from '../../providers/http';
 import { ApiError } from '../../common/api-error';
 import { TokenService } from '../../common/token.service';
 import { ConsentsService } from '../consents/consents.service';
@@ -219,9 +220,40 @@ export class AuthService {
       },
     });
 
-    await this.sms.send(e164, `Votre code de connexion : ${code}`);
+    /**
+     * ── POURQUOI L'ENVOI RESTE DIRECT, ET PAS DANS LA FILE `sms` ───────────────
+     *
+     * La file `sms` (réessais exponentiels) a été envisagée et écartée pour l'OTP :
+     *   · le code devrait voyager EN CLAIR dans la charge du travail, donc dans
+     *     Redis : le défi ne conserve que son empreinte, précisément pour qu'aucun
+     *     support de stockage ne détienne un code valide ;
+     *   · le membre attend ce SMS, écran ouvert : un réessai à +30 s, +1 min…
+     *     arriverait après qu'il a redemandé un code, et chaque envoi tardif est un
+     *     SMS payant de plus pour un code déjà remplacé ;
+     *   · le membre dispose du renvoi, et le défi vit 10 minutes.
+     * À la place : UN réessai immédiat sur une panne transitoire (réseau, 429, 5xx),
+     * et, si l'envoi échoue quand même, le défi est SUPPRIMÉ — il ne doit pas
+     * consommer l'un des trois envois horaires du membre pour un SMS jamais parti.
+     */
+    try {
+      await this.sendWithOneRetry(e164, `Votre code de connexion : ${code}`);
+    } catch (error) {
+      await this.prisma.otpChallenge.delete({ where: { id: challengeId } }).catch(() => undefined);
+      this.logger.warn(`SMS non envoyé : ${error instanceof Error ? error.message : 'erreur'}`);
+      this.fail('SMS_SEND_FAILED');
+    }
 
     return { challengeId, expiresAt };
+  }
+
+  private async sendWithOneRetry(to: string, body: string): Promise<void> {
+    try {
+      await this.sms.send(to, body);
+    } catch (error) {
+      const retryable = error instanceof ProviderError ? error.retryable : false;
+      if (!retryable) throw error;
+      await this.sms.send(to, body);
+    }
   }
 
   /**
