@@ -98,6 +98,17 @@ export interface JourneyActor {
 /** Ce qu'un lecteur est autorisé à voir d'un parcours (§3.4). */
 type ViewerRole = 'OWNER' | 'SUPPORTER' | 'OBSERVER';
 
+/** « N membres de la ville ont franchi cette étape » : l'agrégat et trois avatars publics. */
+export interface PeersView {
+  readonly count: number;
+  readonly cityName: string;
+  readonly sample: readonly {
+    readonly handle: string;
+    readonly displayName: string | null;
+    readonly avatarKey: string | null;
+  }[];
+}
+
 /** §2.3 : l'alerte « échéance trop proche » d'une étape. */
 export interface DeadlineAlert {
   readonly dependsOnStepId: string;
@@ -134,6 +145,7 @@ const STEP_SELECT = {
       isMajorMilestone: true,
       isRisky: true,
       riskMessage: true,
+      guide: { select: { slug: true, title: true, helpfulCount: true, status: true, deletedAt: true } },
     },
   },
 } as const satisfies Prisma.JourneyStepSelect;
@@ -766,6 +778,7 @@ export class JourneysService {
       role === 'OWNER'
         ? await this.prisma.journeyActivity.count({ where: { journeyId, type: 'HELP_RECEIVED' } })
         : 0;
+    const peers = role === 'OWNER' ? await this.peersOnCurrentStep(userId, journey, steps) : null;
     const alerts: Map<string, DeadlineAlert> =
       role === 'OWNER'
         ? await this.deadlineAlerts(journey.templateVersionId, steps)
@@ -792,6 +805,13 @@ export class JourneysService {
         totalCount: nonOptional.length,
         nextDueDate: nextDue?.dueDate ?? null,
         inactivityPromptSentAt: journey.inactivityPromptSentAt,
+        // §3.9 : « Où en êtes-vous ? » attend une réponse tant que le membre n'a rien
+        // fait depuis la relance. Répondre (même « je continue ») est une activité.
+        inactivityPromptPending:
+          role === 'OWNER' &&
+          journey.status === 'ACTIVE' &&
+          journey.inactivityPromptSentAt !== null &&
+          journey.lastActivityAt <= journey.inactivityPromptSentAt,
         newerVersion,
         helpReceivedCount,
       },
@@ -802,6 +822,7 @@ export class JourneysService {
           role,
           checklists.filter((c) => c.journeyStepId === step.id),
           alerts.get(step.id) ?? null,
+          peers !== null && peers.stepId === step.id ? peers.view : null,
         ),
       ),
       members: members.map((member) => ({
@@ -828,6 +849,7 @@ export class JourneysService {
     role: ViewerRole,
     checklist: readonly { id: string; label: string; position: number; isChecked: boolean; checkedAt: Date | null }[],
     deadlineAlert: DeadlineAlert | null = null,
+    peers: PeersView | null = null,
   ) {
     const definition = step.stepDefinition;
     const base = {
@@ -845,6 +867,18 @@ export class JourneysService {
       stepDefinitionCode: definition?.code ?? null,
       category: definition?.category ?? null,
       guideId: definition?.guideId ?? null,
+      // T3 A.1 : le guide lié, quand il est publié. « Guide à venir » sinon — c'est
+      // l'écran qui le dit, il n'y a rien à inventer ici.
+      guide:
+        definition?.guide != null &&
+        definition.guide.status === 'PUBLISHED' &&
+        definition.guide.deletedAt === null
+          ? {
+              slug: definition.guide.slug,
+              title: definition.guide.title,
+              helpfulCount: definition.guide.helpfulCount,
+            }
+          : null,
       blockerTarget: definition?.blockerTarget ?? 'HELP',
       isMajorMilestone: definition?.isMajorMilestone ?? false,
       isRisky: definition?.isRisky ?? false,
@@ -868,6 +902,59 @@ export class JourneysService {
         checkedAt: item.checkedAt,
       })),
       deadlineAlert,
+      peers,
+    };
+  }
+
+  /**
+   * « N membres de Lyon ont franchi cette étape » (§6, page parcours) — pour l'ÉTAPE
+   * EN COURS seulement, et seulement au propriétaire.
+   *
+   * C'est un AGRÉGAT : le nombre de parcours d'autres membres, de la même ville de
+   * destination, où l'étape de même définition est franchie. Les avatars, eux, ne
+   * viennent que des parcours PUBLICS non arrêtés — §3.7 : un parcours privé ne
+   * s'expose jamais, même par un avatar. Les membres dont on est séparé (dans les deux
+   * sens) sont exclus du nombre comme de la liste.
+   */
+  private async peersOnCurrentStep(
+    userId: string,
+    journey: { currentStepId: string | null; destinationCityId: string; destinationCity: { name: string } },
+    steps: readonly StepRow[],
+  ): Promise<{ stepId: string; view: PeersView } | null> {
+    const current = steps.find((s) => s.id === journey.currentStepId);
+    if (current === undefined || current.stepDefinitionId === null) return null;
+    const separated = await this.visibility.separatedFrom(userId);
+    const rows = await this.prisma.journeyStep.findMany({
+      where: {
+        stepDefinitionId: current.stepDefinitionId,
+        status: 'DONE',
+        journey: {
+          deletedAt: null,
+          destinationCityId: journey.destinationCityId,
+          ownerUserId: { not: userId, ...(separated.length === 0 ? {} : { notIn: separated }) },
+          owner: { deletedAt: null, status: 'ACTIVE' },
+        },
+      },
+      orderBy: { completedAt: 'desc' },
+      take: 200,
+      select: {
+        journeyId: true,
+        journey: { select: { visibility: true, status: true, owner: { select: MEMBER_USER_SELECT } } },
+      },
+    });
+    const distinct = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) if (!distinct.has(row.journeyId)) distinct.set(row.journeyId, row);
+    const sample = [...distinct.values()]
+      .filter((r) => r.journey.visibility === 'PUBLIC' && ['ACTIVE', 'COMPLETED'].includes(r.journey.status))
+      .slice(0, 3)
+      .map((r) => ({
+        handle: r.journey.owner.handle,
+        displayName: r.journey.owner.displayName,
+        avatarKey: r.journey.owner.avatarAsset?.storageKey ?? null,
+      }));
+    return {
+      stepId: current.id,
+      view: { count: distinct.size, cityName: journey.destinationCity.name, sample },
     };
   }
 
@@ -3220,6 +3307,8 @@ export class JourneysService {
         completedAt: true,
         groupConversationId: true,
         inactivityPromptSentAt: true,
+        lastActivityAt: true,
+        destinationCityId: true,
         ownerUserId: true,
         templateVersionId: true,
         owner: { select: MEMBER_USER_SELECT },

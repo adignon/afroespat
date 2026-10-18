@@ -894,6 +894,12 @@ export const journeyStepSchema = z
     stepDefinitionCode: z.string().nullable(),
     category: z.enum(StepCategory).nullable(),
     guideId: uuidSchema.nullable(),
+    /** Le guide lié s'il est publié (T3 A.1) : de quoi l'ouvrir et dire « N ont trouvé utile ». */
+    guide: z
+      .object({ slug: z.string(), title: z.string(), helpfulCount: z.number().int() })
+      .strict()
+      .nullable()
+      .optional(),
     blockerTarget: z.enum(BlockerTarget),
     /** §3.6 — seule une étape majeure propose le partage de jalon. */
     isMajorMilestone: z.boolean(),
@@ -923,6 +929,28 @@ export const journeyStepSchema = z
         dependsOnStepId: uuidSchema,
         dependsOnTitle: z.string(),
         indicativeDays: z.number().int(),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    /**
+     * §6 — « N membres de Lyon ont franchi cette étape » : posé sur l'ÉTAPE EN COURS
+     * du propriétaire seulement. `sample` ne contient que des membres dont le parcours
+     * est PUBLIC (§3.7) — au plus trois.
+     */
+    peers: z
+      .object({
+        count: z.number().int(),
+        cityName: z.string(),
+        sample: z.array(
+          z
+            .object({
+              handle: z.string(),
+              displayName: z.string().nullable(),
+              avatarKey: z.string().nullable(),
+            })
+            .strict(),
+        ),
       })
       .strict()
       .nullable()
@@ -1017,6 +1045,8 @@ export const journeyDetailSchema = journeySummarySchema.extend({
     .strict()
     .nullable()
     .optional(),
+  /** §3.9 — « Où en êtes-vous ? » attend une réponse (relance envoyée, rien fait depuis). */
+  inactivityPromptPending: z.boolean().optional(),
   /** J10 « N aides reçues » : le nombre d'activités `HELP_RECEIVED` du journal. */
   helpReceivedCount: z.number().int().optional(),
 });
