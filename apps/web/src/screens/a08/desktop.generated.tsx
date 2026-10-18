@@ -24,7 +24,7 @@ export function A08Desktop(props: A08Data) {
       <main style={{ display: "contents" }}>
 
 
-    <div style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
+    <div data-zone="gauche" style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div style={{ display: "flex", gap: "12px", paddingTop: "12px", minHeight: "0" }}>
         <RailSurvol style={{ width: "76px", background: "#0F5C48", borderRadius: "22px", padding: "12px 8px", display: "flex", flexDirection: "column", gap: "4px", flexShrink: "0", alignSelf: "stretch" }}>{(rail ?? []).map((r, rIndex) => (
@@ -46,9 +46,9 @@ export function A08Desktop(props: A08Data) {
         </div>
       </div>
     </div>
-    <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
+    <div data-zone="centre" style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
-      <div style={{ flex: "1", padding: "12px 0 24px", display: "flex", flexDirection: "column", gap: "16px", maxWidth: "1036px" }}>
+      <div data-zone="contenu" style={{ flex: "1", padding: "12px 0 24px", display: "flex", flexDirection: "column", gap: "16px", maxWidth: "1036px" }}>
         <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", overflow: "hidden" }}>
           <div style={{ height: "140px", background: "#CFE3DA", backgroundImage: reseau.couverture === null ? "none" : `url("${reseau.couverture}")`, backgroundSize: "cover", backgroundPosition: "center" }}></div>
           <div style={{ padding: "0 24px 18px", display: "flex", alignItems: "flex-end", gap: "16px", marginTop: "-32px" }}>

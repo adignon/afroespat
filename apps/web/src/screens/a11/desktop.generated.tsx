@@ -21,7 +21,7 @@ export function A11Desktop(props: AccueilData) {
       <main style={{ display: "contents" }}>
 
 
-    <div style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
+    <div data-zone="gauche" style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div style={{ display: "flex", gap: "12px", paddingTop: "12px", minHeight: "0" }}>
         <RailSurvol style={{ width: "76px", background: "#0F5C48", borderRadius: "22px", padding: "12px 8px", display: "flex", flexDirection: "column", gap: "4px", flexShrink: "0", alignSelf: "stretch" }}>{(rail ?? []).map((r, rIndex) => (
@@ -43,9 +43,9 @@ export function A11Desktop(props: AccueilData) {
         </div>
       </div>
     </div>
-    <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
+    <div data-zone="centre" style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
-      <div style={{ flex: "1", padding: "12px 0 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div data-zone="contenu" style={{ flex: "1", padding: "12px 0 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "16px" }}><h1 style={{ margin: "0", fontSize: "28px", fontWeight: "800", letterSpacing: "-0.9px", flex: "1" }}>Villes et Membres</h1><div style={{ display: "flex", gap: "4px", background: "#EEF2F0", borderRadius: "14px", padding: "4px" }}><span style={{ padding: "9px 18px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", background: "#fff" }}>Carte</span><span style={{ padding: "9px 18px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", color: "#5D6B66" }}>Annuaire</span></div><span style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 16px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", fontSize: "13px", fontWeight: "600" }}>Pays d'origine : Tous<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg></span></div>
         <div style={{ flex: "1", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", position: "relative", overflow: "hidden" }}>
           <iframe src="Carte Villes.html" title="Carte des membres" style={{ position: "absolute", inset: "0", width: "100%", height: "100%", border: "0" }}></iframe>

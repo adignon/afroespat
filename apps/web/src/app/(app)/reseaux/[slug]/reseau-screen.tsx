@@ -891,7 +891,8 @@ export function ReseauScreen({
                    */}
                   <A08BarreHauteDesktop />
                   <div style={{ height: '64px', flexShrink: 0 }} />
-                  <div style={ZONE_CONTENU}>
+                  {/* Le contenu du réseau : la seule zone bornée de la page (`globals.css`). */}
+                  <div data-zone="contenu" style={ZONE_CONTENU}>
                     <div style={BOARD}>
                       {tab.desktop({ ...ongletAvecAnnonce, publications: cartes })}
                     </div>

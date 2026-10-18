@@ -21,7 +21,7 @@ export function A07Desktop(props: A07Data) {
       <main style={{ display: "contents" }}>
 
 
-    <div style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
+    <div data-zone="gauche" style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div style={{ display: "flex", gap: "12px", paddingTop: "12px", minHeight: "0" }}>
         <RailSurvol style={{ width: "76px", background: "#0F5C48", borderRadius: "22px", padding: "12px 8px", display: "flex", flexDirection: "column", gap: "4px", flexShrink: "0", alignSelf: "stretch" }}>{(rail ?? []).map((r, rIndex) => (
@@ -43,9 +43,9 @@ export function A07Desktop(props: A07Data) {
         </div>
       </div>
     </div>
-    <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
+    <div data-zone="centre" style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
-      <div style={{ flex: "1", padding: "12px 0 24px", display: "flex", flexDirection: "column", gap: "16px", maxWidth: "1036px" }}>
+      <div data-zone="contenu" style={{ flex: "1", padding: "12px 0 24px", display: "flex", flexDirection: "column", gap: "16px", maxWidth: "1036px" }}>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between" }}><h1 style={{ margin: "0", fontSize: "28px", fontWeight: "800", letterSpacing: "-0.9px" }}>Réseaux</h1><a href="/reseaux/nouveau" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", height: "44px", padding: "0 18px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "14px", fontWeight: "700" }}>Créer un réseau d'intérêt</a></div>
         <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", marginTop: "6px" }}>MES RÉSEAUX</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "12px" }}>{(myNets ?? []).map((n, nIndex) => (

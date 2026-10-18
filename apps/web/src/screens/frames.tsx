@@ -15,7 +15,14 @@ import type { ReactNode } from 'react';
  * Au-delà de 1440 px on CENTRE au lieu d'étirer : les contenus de la maquette
  * sont déjà bornés, et l'étirement ne ferait qu'éloigner les colonnes.
  *
- * ⚠ CETTE BORNE NE VAUT QUE POUR LE CONTENU. La barre haute — logo, recherche
+ * ⚠ CETTE BORNE NE VAUT QUE POUR LE CONTENU — ET ELLE N'EST PLUS POSÉE ICI POUR LES
+ * PAGES À COLONNES. Un cadre qui porte les rôles `data-zone` (colonne de gauche,
+ * contenu, colonne de droite : `tools/adaptations/zones-mise-en-page.mjs`) n'est plus
+ * borné : `app/globals.css` colle les colonnes aux bords de la fenêtre et centre le
+ * contenu, seule zone bornée. La classe `max-w-[1440px]` ci-dessous ne vaut plus que
+ * pour les cadres SANS ces rôles — onboarding, formulaires, pages publiques.
+ *
+ * Et la barre haute — logo, recherche
  * centrée, contrôles — n'est PAS dans le cadre : l'adaptation `ENTETE_GLOBAL`
  * (`tools/adaptations/entete-global.mjs`) en fait un `<header>` fixe sur toute la
  * largeur de la fenêtre. Le porteur : « c'est uniquement le contenu de la page qui

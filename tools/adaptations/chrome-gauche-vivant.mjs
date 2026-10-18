@@ -64,8 +64,33 @@ export const ADAPTATIONS_CHROME_GAUCHE = [
       return { jsx: out, applied: true };
     },
   },
+  {
+    screens: ['*'],
+    nom: 'ACCUEIL_ENTREES',
+    why: 'La carte « ACCUEIL » des pages Messages et Notifications montre les mêmes entrées, cliquables, que le menu de la page d’accueil (une seule liste), au lieu de six <span> dont un « 12 » écrit en dur.',
+    provides: [],
+    apply(jsx) {
+      const titre = '>ACCUEIL</div></div>';
+      const i = jsx.indexOf(titre);
+      if (i === -1) return { jsx, applied: false };
+      // La carte : le <div> blanc qui précède le titre.
+      const debut = jsx.lastIndexOf('<div style={{ background: "#fff", border: "1px solid #E6EBE9"', i);
+      if (debut === -1) return { jsx, applied: false };
+      const fin = finElement(jsx, debut);
+      if (fin === -1) return { jsx, applied: false };
+      // Les entrées : tout ce qui suit le titre, jusqu'à la fermeture de la carte.
+      const apresTitre = i + titre.length;
+      const fermeture = fin - '</div>'.length;
+      if (apresTitre >= fermeture) return { jsx, applied: false };
+      const entrees = jsx.slice(apresTitre, fermeture);
+      // Garde-fou : on ne remplace que l'ancienne liste de <span>, rien d'autre.
+      if (!entrees.includes('Fil d’entraide') || entrees.includes('<a ')) return { jsx, applied: false };
+      return { jsx: jsx.slice(0, apresTitre) + '<MenuAccueil />' + jsx.slice(fermeture), applied: true };
+    },
+  },
 ];
 
 export const AJOUTS_CHROME_GAUCHE = {
   RaccourcisReseaux: '@/components/raccourcis-reseaux',
+  MenuAccueil: '@/components/rail/menu-accueil',
 };

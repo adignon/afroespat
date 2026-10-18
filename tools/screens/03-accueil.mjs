@@ -6566,7 +6566,7 @@ export const screens = [
         freres: 1,
         why: 'Le menu de gauche de A08, monté autour des vingt-cinq planches d’onglet — la maquette dit « menu de gauche identique à A08 », et c’est donc un emprunt, pas un dessin.',
         debut:
-          '<div style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>',
+          '<div data-zone="gauche" style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>',
       },
       {
         nom: 'BarreHaute',

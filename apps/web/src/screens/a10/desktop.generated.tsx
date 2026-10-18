@@ -22,7 +22,7 @@ export function A10Desktop(props: A10Data) {
       <main style={{ display: "contents" }}>
 
 
-    <div style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
+    <div data-zone="gauche" style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div style={{ display: "flex", gap: "12px", paddingTop: "12px", minHeight: "0" }}>
         <RailSurvol style={{ width: "76px", background: "#0F5C48", borderRadius: "22px", padding: "12px 8px", display: "flex", flexDirection: "column", gap: "4px", flexShrink: "0", alignSelf: "stretch" }}>{(rail ?? []).map((r, rIndex) => (
@@ -44,9 +44,9 @@ export function A10Desktop(props: A10Data) {
         </div>
       </div>
     </div>
-    <div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
+    <div data-zone="centre" style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", padding: "12px 0 24px" }}>
+      <div data-zone="contenu" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", padding: "12px 0 24px" }}>
     <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>
       <h1 style={{ margin: "0", fontSize: "24px", fontWeight: "800", letterSpacing: "-0.7px" }}>Nouveau réseau d'intérêt</h1>
       <label style={{ height: "120px", borderRadius: "18px", border: "1.5px dashed #CBD5D1", background: "#FAFBFB", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "13px", fontWeight: "700", color: "#5D6B66", cursor: couvertureOccupee ? "default" : "pointer", backgroundImage: couvertureUrl === null ? "none" : `url("${couvertureUrl}")`, backgroundSize: "cover", backgroundPosition: "center", overflow: "hidden" }} data-creation-couverture=""><input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={couvertureOccupee} onChange={onCouverture} data-creation-couverture-fichier="" />{couvertureOccupee ? "Envoi de la couverture…" : couvertureUrl === null ? "Ajouter une couverture" : (<span style={{ padding: "6px 12px", borderRadius: "12px", background: "rgba(255,255,255,.92)", color: "#16211D" }}>Changer la couverture</span>)}</label><label style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "13px", fontWeight: "700", color: "#5D6B66", cursor: logoOccupe ? "default" : "pointer" }} data-creation-logo=""><input type="file" accept="image/jpeg,image/png,image/webp" hidden disabled={logoOccupe} onChange={onLogo} data-creation-logo-fichier="" /><span style={{ width: "56px", height: "56px", borderRadius: "16px", border: "1.5px dashed #CBD5D1", background: "#FAFBFB", backgroundImage: logoUrl === null ? "none" : `url("${logoUrl}")`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: "0" }}></span>{logoOccupe ? "Envoi du logo…" : logoUrl === null ? "Ajouter un logo" : "Changer le logo"}</label>

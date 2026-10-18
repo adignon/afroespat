@@ -1,1 +1,59 @@
 @import '@app/ui/styles.css';
+
+/*
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ LES TROIS ZONES D'UNE PAGE D'ORDINATEUR                                  ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « les sidebars [sont] laissées à gauche et à droite sans
+ * l'application du max width. Du coup seul le contenu de la page (contenu du
+ * milieu) est contenu. Cela doit être fait sur toutes les pages (réutilisable
+ * donc). »
+ *
+ * Les cadres générés NOMMENT leurs rôles (`data-zone`, posés par
+ * `tools/adaptations/zones-mise-en-page.mjs`) ; cette règle, UNE fois pour tous,
+ * en fait la mise en page :
+ *
+ *   gauche   collée au bord gauche de la fenêtre ;
+ *   droite   collée au bord droit ;
+ *   contenu  la seule zone bornée, centrée entre les deux.
+ *
+ * Le cadre d'ordinateur n'est donc plus borné à 1440 px DÈS QU'IL PORTE LES RÔLES.
+ * Un cadre qui ne les porte pas — un écran d'accueil de formulaire, d'onboarding —
+ * garde sa borne, que `ScreenFrames` lui pose.
+ *
+ * ── LE CONTENU ───────────────────────────────────────────────────────────
+ *
+ * `margin-inline: auto` : l'espace libre qui reste, une fois le contenu à sa
+ * largeur maximale, se partage de part et d'autre — le contenu se centre entre
+ * les deux colonnes, et la colonne de droite, dernière de la rangée, reste au
+ * bord. `max-width: 1036px` est la largeur de la zone de contenu de la maquette
+ * (1 440 − 400 de colonne − 4 de marges) : elle ne vaut que pour un contenu qui
+ * n'a pas SA borne — `main` 660 px du fil, par exemple, la garde, puisqu'un style
+ * en ligne l'emporte.
+ */
+[data-frame='desktop']:has([data-zone='gauche']) {
+  max-width: none;
+}
+
+[data-frame='desktop'] [data-zone='contenu'] {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 1036px;
+}
+
+/*
+ * ── LA COLONNE DE DROITE D'UNE PAGE DE RÉSEAU ──────────────────────────────
+ *
+ * Sur les pages d'un réseau, la colonne de droite (« À propos », « Prochain
+ * événement »…) fait partie de la planche d'onglet : elle est dans le contenu, sous
+ * l'en-tête du réseau. On ne peut pas la sortir du flux sans perdre son
+ * comportement collant. On la DÉCALE donc vers le bord : l'espace que le contenu
+ * laisse de chaque côté, une fois à sa borne, est (largeur de la fenêtre − colonne de
+ * gauche − gouttière − contenu) ÷ 2, et c'est exactement la distance qui sépare la
+ * colonne du bord. Une translation n'affecte ni la mise en page ni `position:
+ * sticky` ; sous 1 460 px il n'y a pas d'espace libre, donc aucun décalage.
+ */
+[data-frame='desktop'] [data-zone='droite-collante'] {
+  transform: translateX(max(0px, calc((100vw - (400px + 24px + 1036px)) / 2)));
+}
