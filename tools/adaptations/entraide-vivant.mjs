@@ -377,6 +377,41 @@ const H03_ENCART = {
   },
 };
 
+/** H01, H04 : les trois suggestions de la colonne de droite lisent `GET /help/can-help`. */
+const H_ENCART_AIDER = {
+  screens: ['H01', 'H04'],
+  nom: 'H_ENCART_AIDER',
+  why: 'H01 et H04 : l’encart « VOUS POUVEZ AIDER · N » de la colonne de droite montre les vraies suggestions (`GET /help/can-help`), pas trois demandes écrites en dur.',
+  provides: ['compteurs'],
+  apply(jsx) {
+    const lib = jsx.indexOf('VOUS POUVEZ AIDER · 4');
+    if (lib < 0) return { jsx, applied: false };
+    const debut = jsx.lastIndexOf('<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px"', lib);
+    const fin = debut < 0 ? -1 : finElement(jsx, debut);
+    if (fin < 0) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, debut) + '<EncartAider nombre={compteurs.pouvezAider} />' + jsx.slice(fin), applied: true };
+  },
+};
+
+/** H09 : le BILAN de la colonne de droite compte mes demandes, il n'écrit pas « 4 » et « 2 ». */
+const H09_BILAN = {
+  screens: ['H09'],
+  nom: 'H09_BILAN',
+  why: 'H09 : le BILAN (« 4 demandes publiées · 2 résolues ») compte mes demandes réelles.',
+  provides: ['mesDemandes'],
+  apply(jsx) {
+    const lib = jsx.indexOf('>BILAN</div>');
+    if (lib < 0) return { jsx, applied: false };
+    const style = '"-0.6px", color: "#16211D" }}>';
+    let out = jsx;
+    const a = out.indexOf(style + '4</div>', lib);
+    const b = out.indexOf(style + '2</div>', lib);
+    if (a < 0 || b < 0) return { jsx, applied: false };
+    out = out.replace(style + '4</div>', style + '{mesDemandes.total}</div>').replace(style + '2</div>', style + '{mesDemandes.resolues}</div>');
+    return { jsx: out, applied: true };
+  },
+};
+
 /** H08 (téléphone) : le « Activer » de la barre du bas doublait le bouton du formulaire. */
 const H08_PIED = {
   screens: ['H08'],
@@ -401,6 +436,8 @@ export const ADAPTATIONS_ENTRAIDE_VIVANT = [
   H06_FICHE,
   H01_PUBLIER,
   H03_ENCART,
+  H_ENCART_AIDER,
+  H09_BILAN,
   H05_CONDITIONS,
   H08_PIED,
   H05_LISTE,
@@ -415,6 +452,7 @@ export const AJOUTS_ENTRAIDE_VIVANT = {
   SignalerArgent: '@/components/entraide/signaler-argent',
   FormulaireDemande: '@/components/entraide/formulaire-demande',
   EncartOffre: '@/components/entraide/encart-offre',
+  EncartAider: '@/components/entraide/encart-aider',
   EnteteDemande: '@/components/entraide/demande-vivante',
   MenuDemande: '@/components/entraide/demande-vivante',
   ActionsAuteur: '@/components/entraide/demande-vivante',

@@ -1113,6 +1113,7 @@ export async function chargerH09(): Promise<H09Data> {
     mesDemandes: {
       total: mine.items.length,
       avecNouvelles: mine.items.filter((d: HelpCard) => d.responseCount > 0).length,
+      resolues: mine.items.filter((d: HelpCard) => d.status === 'RESOLVED').length,
     },
   };
 }
@@ -1262,7 +1263,7 @@ export const SQUELETTE_H07: H07Data = SQUELETTE_BANDEAU;
 export const SQUELETTE_H08: H08Data = SQUELETTE_BANDEAU;
 export const SQUELETTE_H09: H09Data = {
   ...SQUELETTE_BANDEAU,
-  mesDemandes: { total: 0, avecNouvelles: 0 },
+  mesDemandes: { total: 0, avecNouvelles: 0, resolues: 0 },
 };
 export const SQUELETTE_H10: H10Data = {
   ...SQUELETTE_BANDEAU,
