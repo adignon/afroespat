@@ -172,3 +172,25 @@ export function EnteteParcours({
     </div>
   );
 }
+
+/**
+ * Un lien vers une page du parcours COURANT (`/parcours/:id{suffixe}`), pour les cadres
+ * transcodés qui ne connaissent pas l'identifiant : J10 « Voir mon parcours ». Sans
+ * identifiant (planche d'illustration), il mène à la liste.
+ */
+export function LienParcours({
+  suffixe,
+  style,
+  children,
+}: {
+  readonly suffixe: string;
+  readonly style?: React.CSSProperties;
+  readonly children: ReactNode;
+}) {
+  const id = useIdParcours();
+  return (
+    <Link href={id === null ? '/parcours' : `/parcours/${id}${suffixe}`} {...(style === undefined ? {} : { style })}>
+      {children}
+    </Link>
+  );
+}

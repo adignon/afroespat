@@ -360,6 +360,7 @@ function enteteDe(parcours: JourneyFullResponse): EnteteParcours {
     duree: dureeTotale(premiere, j.completedAt),
     aboutiLe: j.completedAt === null ? '' : dateComplete(j.completedAt),
     version: j.templateVersion,
+    aides: j.helpReceivedCount ?? 0,
   };
 }
 
@@ -492,6 +493,7 @@ const ENTETE_VIDE: EnteteParcours = {
   total: 0,
   duree: '',
   aboutiLe: '',
+  aides: 0,
   version: 0,
 };
 
@@ -870,7 +872,7 @@ const FAMILLE: Record<string, 'etape' | 'entraide' | 'franchie' | 'jalon' | 'equ
  * parrain — `JourneyMemberRole` ne connaît que `SUPPORTER` et `OBSERVER` — et le
  * garder aurait annoncé un parrainage qui n'a pas eu lieu.
  */
-function titreEntree(a: JourneyActivity): string {
+export function titreEntree(a: JourneyActivity): string {
   const etape = a.stepTitle === null ? '' : a.stepTitle;
   switch (a.type) {
     case 'STEP_STARTED':
@@ -897,7 +899,7 @@ function titreEntree(a: JourneyActivity): string {
 }
 
 /** Le détail d'une entrée : la durée pour un franchissement, rien sinon. */
-function detailEntree(a: JourneyActivity): string {
+export function detailEntree(a: JourneyActivity): string {
   if (a.type !== 'STEP_DONE') return '';
   const charge = a.payload;
   if (typeof charge !== 'object' || charge === null) return '';

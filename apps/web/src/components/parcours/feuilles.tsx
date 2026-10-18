@@ -156,7 +156,6 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
       annule = true;
     };
     // Une seule création à l'ouverture : `geste` est stable.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idParcours, stepId]);
 
   const etape = parcours?.steps.find((s) => s.id === brouillon?.journeyStepId);

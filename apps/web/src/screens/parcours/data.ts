@@ -209,6 +209,8 @@ export interface EnteteParcours {
   readonly duree: string;
   readonly aboutiLe: string;
   readonly version: number;
+  /** J10 « N aides reçues » : les activités `HELP_RECEIVED` du journal (03 §3.5). */
+  readonly aides: number;
 }
 
 /** L'étape sur laquelle l'écran porte : celle de l'URL, ou celle du serveur. */

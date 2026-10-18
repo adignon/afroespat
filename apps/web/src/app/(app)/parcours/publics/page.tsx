@@ -2,7 +2,6 @@
 
 import { VUE_NEUTRE, chargerJ09 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
-import { plancheBlocage } from '@/screens/parcours/modales';
 import { J09Desktop } from '@/screens/j09/desktop.generated';
 import { J09Mobile } from '@/screens/j09/mobile.generated';
 
@@ -61,7 +60,6 @@ export default function Page() {
       charger={chargerJ09}
       desktop={(d) => <J09Desktop {...d} />}
       mobile={(d) => <J09Mobile {...d} />}
-      modales={(d, volet) => ({ J03: plancheBlocage(volet, d) })}
     />
   );
 }

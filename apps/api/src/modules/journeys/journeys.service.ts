@@ -2210,7 +2210,7 @@ export class JourneysService {
           (role === 'SUPPORTER' ? 'accompagnant·e' : 'observateur·rice'),
         refType: 'JOURNEY',
         refId: journeyId,
-        url: '/parcours/invitations',
+        url: '/parcours',
       });
     } catch (cause) {
       this.logger.warn(

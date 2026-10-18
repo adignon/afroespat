@@ -3,7 +3,6 @@
 import { useCallback } from 'react';
 import { chargerMesParcours, VUE_NEUTRE } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
-import { plancheBlocage } from '@/screens/parcours/modales';
 import { J11Desktop } from '@/screens/j11/desktop.generated';
 import { J11Mobile } from '@/screens/j11/mobile.generated';
 import { J11MobileVide } from '@/screens/j11/mobilevide.generated';
@@ -72,7 +71,6 @@ export function MesParcoursEcran({ vide }: { readonly vide: boolean }) {
       squelette={VUE_NEUTRE}
       desktop={(d) => (vide ? <J01EDesktopVide {...d} /> : <J11Desktop {...d} />)}
       mobile={(d) => (vide ? <J11MobileVide {...d} /> : <J11Mobile {...d} />)}
-      modales={(d, volet) => ({ J03: plancheBlocage(volet, d) })}
     />
   );
 }
