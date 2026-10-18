@@ -29,7 +29,7 @@ import { createJourney, listJourneyTemplates } from '@/screens/parcours/api';
 import {
   type CityChoice,
   type CountryChoice,
-  finalHandle,
+  refusPseudo,
   helpTypeCodes,
   occupationCode,
   type OnboardingState,
@@ -781,8 +781,15 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         const identity: Record<string, unknown> = {};
         if (state.displayName.trim().length >= 2)
           identity['displayName'] = state.displayName.trim();
-        const handle = finalHandle(state.handle);
-        if (handle.length >= 3) identity['handle'] = handle;
+        // Le front PRÉVIENT avec la règle du schéma partagé (chiffre en tête, moins de
+        // 3 caractères, séparateur final, majuscules) au lieu de corriger ou d'ignorer
+        // en silence ; le serveur DÉCIDE ensuite.
+        const refus = refusPseudo(state.handle);
+        if (refus !== null) {
+          notifyError(refus);
+          return;
+        }
+        if (state.handle !== '') identity['handle'] = state.handle;
         if (Object.keys(identity).length > 0) await updateMe(identity);
 
         await updateProfile({

@@ -108,6 +108,38 @@ export const otpVerifySchema = z.object({
 
 export type OtpVerify = z.infer<typeof otpVerifySchema>;
 
+/**
+ * ── LES DATES ET LE FUSEAU D'UN PROFIL (lot A) ──────────────────────────────
+ *
+ * `arrivalDate` dans le futur et `plannedDepartureDate` dans le passé étaient
+ * acceptées : `arrivalDate` pilote la phase automatique et le classement des
+ * « nouveaux arrivants » d'une ville, une date à venir y ferait figurer le
+ * membre trop tôt ou le sortirait du calcul des phases.
+ *
+ * La comparaison se fait sur le JOUR CIVIL (`YYYY-MM-DD`, ordre lexicographique =
+ * ordre chronologique) avec UN JOUR DE MARGE : le membre saisit sa date dans son
+ * fuseau, le serveur compte en UTC, et à minuit un membre à Paris ou à Cotonou
+ * est déjà « demain » pour l'UTC. Sans marge, la date du jour serait refusée à
+ * certaines heures. Le contrôle se calcule AU MOMENT de la validation, jamais à
+ * l'import du module.
+ */
+const MSG_ARRIVEE_FUTURE = 'La date d’arrivée ne peut pas être dans le futur.';
+const MSG_DEPART_PASSE = 'La date de départ prévue ne peut pas être dans le passé.';
+
+function jourLimite(decalageJours: number): string {
+  return new Date(Date.now() + decalageJours * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Un fuseau IANA connu du moteur JS (`Europe/Paris`, `Africa/Porto-Novo`, `UTC`…). */
+export function estFuseauIana(valeur: string): boolean {
+  try {
+    new Intl.DateTimeFormat('fr-FR', { timeZone: valeur });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Onboarding, écrans O01 et O02 — phase, pays, ville. */
 export const updateMeSchema = z
   .object({
@@ -121,9 +153,22 @@ export const updateMeSchema = z
     cityId: uuidSchema.optional(),
     /** Modifiable UNE SEULE FOIS (§2.7) : il pilote réseaux et modèles. */
     originCountryId: uuidSchema.optional(),
-    arrivalDate: z.string().date().optional(),
-    plannedDepartureDate: z.string().date().optional(),
-    timezone: z.string().min(3).max(64).optional(),
+    arrivalDate: z
+      .string()
+      .date()
+      .refine((v) => v <= jourLimite(1), { message: MSG_ARRIVEE_FUTURE })
+      .optional(),
+    plannedDepartureDate: z
+      .string()
+      .date()
+      .refine((v) => v >= jourLimite(-1), { message: MSG_DEPART_PASSE })
+      .optional(),
+    timezone: z
+      .string()
+      .min(3)
+      .max(64)
+      .refine(estFuseauIana, { message: 'Ce fuseau horaire n’existe pas (ex. Europe/Paris).' })
+      .optional(),
   })
   .strict();
 
