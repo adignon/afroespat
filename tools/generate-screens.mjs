@@ -14016,11 +14016,13 @@ const BUTTON_ACTIONS = [
     screens: ['P01'],
     label: 'Recevoir le code',
     /**
-     * `phoneValide` S'AJOUTE À `busy` : on n'envoie pas de SMS pour un numéro que
-     * le serveur refusera. La règle est celle de `libphonenumber`, la même des
-     * deux côtés — un bouton actif suivi d'un refus serait pire que rien.
+     * LOT A : le bouton n'est plus grisé par `phoneValide`. Grisé, il ne disait
+     * pas POURQUOI : un numéro d'un autre pays ou une ligne fixe restait sans
+     * explication. Désormais `onSubmit` appelle `analyserNumero` (la règle du
+     * serveur, importée de shared) et affiche le MÊME message que l'API avant tout
+     * envoi ; le trait du champ (`phoneBordure`) signale déjà l'erreur à la frappe.
      */
-    attrs: ['onClick={onSubmit}', 'disabled={busy || !phoneValide}'],
+    attrs: ['onClick={onSubmit}', 'disabled={busy}'],
   },
   {
     screens: ['O01', 'O02', 'O03', 'O04'],

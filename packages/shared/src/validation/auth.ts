@@ -9,6 +9,7 @@ import {
   VerificationLevel,
 } from '../enums/generated.js';
 import { handleSchema, uuidSchema } from './pagination.js';
+import { PHONE_REFUS_MESSAGES } from './phone-refus.js';
 
 /**
  * Schémas d'authentification — 01-identite.md §2.1 et §4.1.
@@ -32,6 +33,10 @@ export const AUTH_ERROR_CODES = {
    * `OTP_INVALID`.
    */
   PHONE_INVALID: 422,
+  /** Le numéro est valide, mais d'un autre pays que celui choisi (contournement de L2). */
+  PHONE_COUNTRY_MISMATCH: 422,
+  /** Ligne fixe, VoIP, numéro spécial : aucun SMS ne peut y arriver. */
+  PHONE_NOT_MOBILE: 422,
   CAPTCHA_FAILED: 400,
   OTP_INVALID: 422,
   OTP_EXPIRED: 422,
@@ -53,7 +58,7 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
    * serveur la met dans `details.expectedLength` pour que l'écran l'écrive avec
    * ses propres mots. §5.2 : « le front utilise le code, jamais le message ».
    */
-  PHONE_INVALID: 'Ce numéro ne correspond pas au format du pays choisi.',
+  ...PHONE_REFUS_MESSAGES,
   CAPTCHA_FAILED: 'La vérification anti-robot a échoué. Réessayez.',
   OTP_INVALID: 'Ce code n’est pas le bon. Vérifiez et réessayez.',
   OTP_EXPIRED: 'Ce code a expiré. Demandez-en un nouveau.',
@@ -64,30 +69,6 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
   LAST_PHONE: 'Vous devez garder au moins un numéro.',
   ACCOUNT_MINOR: 'La plateforme est réservée aux personnes majeures.',
 };
-
-/**
- * Numéro au format E.164 : `+` suivi de 8 à 15 chiffres.
- *
- * La saisie côté front est plus souple — espaces, points, tirets — et
- * `normalizePhone` la ramène ici. Le stockage, lui, n'accepte que cette forme :
- * deux écritures du même numéro créeraient deux comptes.
- */
-export const e164Schema = z
-  .string()
-  .regex(/^\+[1-9]\d{7,14}$/, { message: 'Numéro de téléphone invalide.' });
-
-/**
- * Nettoie une saisie humaine. Ne DEVINE pas l'indicatif : c'est le sélecteur de
- * pays qui le donne, et supposer « +33 » parce qu'on est en France créerait des
- * comptes en double pour les membres encore au pays.
- */
-export function normalizePhone(input: string, dialCode: string): string {
-  const digits = input.replace(/[\s.\-–—()]/g, '');
-  if (digits.startsWith('+')) return digits;
-  // Un numéro national commence souvent par un 0 de service, qui saute.
-  const national = digits.replace(/^0+/, '');
-  return `${dialCode}${national}`;
-}
 
 export const otpPurposeSchema = z.enum([
   'SIGNUP',

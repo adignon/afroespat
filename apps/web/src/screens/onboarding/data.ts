@@ -9,6 +9,7 @@ import {
   exempleNational,
   handleSchema,
   masqueNumero,
+  formaterSaisieNumero,
   numeroValide,
 } from '@app/shared';
 import type { HelpType, OccupationStatus } from '@app/shared';
@@ -910,14 +911,16 @@ export function onboardingVals(
       actions.countryOptions.find((c) => c.iso2 === state.countryIso2)?.dialCode ?? '+229',
     flagDisplay: state.countryIso2 === DRAWN_COUNTRY ? 'block' : 'none',
     onCountryChange: (event: { target: { value: string } }) => {
-      patch({ countryIso2: event.target.value });
+      patch({
+        countryIso2: event.target.value,
+        phone: formaterSaisieNumero(state.phone, event.target.value),
+      });
     },
     onPhoneChange: (event: { target: { value: string } }) => {
-      // Seuls les chiffres et les espaces : le reste est refusé à la FRAPPE,
-      // plutôt que signalé après envoi. `normalizePhone` fera le ménage côté
-      // API, mais un champ qui accepte des lettres laisse croire qu'elles
-      // comptent.
-      patch({ phone: event.target.value.replace(/[^\d\s]/g, '').slice(0, 20) });
+      // Mise en forme À LA FRAPPE (AsYouType, plan du pays choisi) : seuls les
+      // chiffres, les espaces et un « + » de tête survivent. Le serveur reçoit le
+      // numéro tel quel et le ramène au format international.
+      patch({ phone: formaterSaisieNumero(event.target.value, state.countryIso2) });
     },
     /**
      * Le pays de l'INDICATIF (P01), et non celui d'origine : c'est lui qui décide
@@ -946,7 +949,12 @@ export function onboardingVals(
      * UN SEUL `patch` : retenir l'indicatif ET refermer. Deux appels feraient deux
      * rendus, et le second rouvrirait un panneau que le premier a remplacé.
      */
-    onCountryPick: (iso2: string) => patch({ countryIso2: iso2, countryOuvert: false }),
+    onCountryPick: (iso2: string) =>
+      patch({
+        countryIso2: iso2,
+        countryOuvert: false,
+        phone: formaterSaisieNumero(state.phone, iso2),
+      }),
     // La page de P01 passe le sien ; les autres écrans n'en ont pas.
     paysIndicatifSelecteur: null,
     originFlag: drapeauDe(state.originIso2),

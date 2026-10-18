@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { handleSchema, type LevelRequiredDetailsParsed } from '@app/shared';
+import {
+  analyserNumero,
+  handleSchema,
+  messageRefusNumero,
+  type LevelRequiredDetailsParsed,
+} from '@app/shared';
 import {
   ApiError,
   displayMessageFor,
@@ -442,6 +447,14 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       const phone = latest.current?.phone ?? '';
       if (phone.replace(/\D/g, '').length < 6) {
         notifyError('Entrez votre numéro de téléphone.');
+        return;
+      }
+
+      // Le MÊME contrôle que le serveur (pays réel du numéro, mobile) et le MÊME
+      // message : le bouton n'est plus grisé, il explique.
+      const analyse = analyserNumero(phone, latest.current?.countryIso2 ?? 'BJ');
+      if (!analyse.ok) {
+        notifyError(messageRefusNumero(analyse.code));
         return;
       }
 

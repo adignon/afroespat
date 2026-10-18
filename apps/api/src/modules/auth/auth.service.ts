@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@app/db';
 import {
-  enFormatInternational,
+  analyserNumero,
   ACCOUNT_ERROR_CODES,
   ACCOUNT_ERROR_MESSAGES,
   AUTH_ERROR_MESSAGES,
@@ -99,6 +99,9 @@ function otpCodeFixe(): string | null {
   }
 }
 
+/** Les finalités d'un défi qui peuvent ouvrir une session (`verifyOtp`). */
+const PURPOSES_DE_CONNEXION: readonly OtpPurpose[] = ['SIGNUP', 'LOGIN', 'REACTIVATE'];
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -161,12 +164,18 @@ export class AuthService {
      * implémentations divergeraient, et le membre paierait l'écart : un bouton
      * actif suivi d'un refus.
      *
+     * ── DEUX REFUS DE PLUS (lot A) ──────────────────────────────────────────
+     * `PHONE_COUNTRY_MISMATCH` : `+2290190000000` choisi avec « FR » passait et
+     * comptait comme destination française, donc ouvrait le niveau L2 avec un
+     * numéro béninois. `PHONE_NOT_MOBILE` : un fixe ne reçoit pas de SMS. Les
+     * deux règles vivent dans `analyserNumero` (shared), que l'écran appelle aussi.
+     *
      * Le refus arrive AVANT le captcha et avant tout envoi : un numéro mal formé
      * ne doit coûter ni vérification ni SMS.
      */
-    const international = enFormatInternational(input.phone, input.countryIso2);
-    if (international === null) {
-      this.fail('PHONE_INVALID', { dialCode: country.dialCode });
+    const analyse = analyserNumero(input.phone, input.countryIso2);
+    if (!analyse.ok) {
+      this.fail(analyse.code, { dialCode: country.dialCode });
     }
 
     /**
@@ -179,7 +188,7 @@ export class AuthService {
      * par type de ligne, plans renumérotés. On enregistre donc CE qu'elle rend,
      * et plus ce qu'on déduisait.
      */
-    const e164 = international;
+    const e164 = analyse.e164;
     const fingerprint = this.crypto.phoneFingerprint(e164);
 
     // 2. Captcha obligatoire (§2.1). Turnstile en production, fictif en local.
@@ -281,6 +290,28 @@ export class AuthService {
     userAgent: string | undefined;
   }): Promise<{ accessToken: string; refreshToken: string; isNewUser: boolean; userId: string }> {
     const challenge = await this.consumeChallenge(input.challengeId, input.code);
+
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ UN CODE D'AJOUT DE NUMÉRO OU DE SUPPRESSION N'OUVRE PAS DE SESSION  ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * `confirmWithOtp` contrôlait déjà le `purpose` ; la connexion, non. Un code
+     * reçu pour `ADD_PHONE` ou `DELETE_ACCOUNT` — demandé sur la route publique
+     * `POST /auth/otp/request`, qui accepte tout `purpose` — ouvrait donc une
+     * session complète sur le numéro. Seuls les défis de connexion le font :
+     * `SIGNUP` (bascule en connexion si le numéro est connu), `LOGIN` et
+     * `REACTIVATE` (reconnexion d'un compte désactivé). Le défi est déjà
+     * consommé : un refus brûle le code, comme dans `confirmWithOtp`.
+     */
+    if (!PURPOSES_DE_CONNEXION.includes(challenge.purpose)) {
+      throw new ApiError(
+        'OTP_PURPOSE_MISMATCH',
+        ACCOUNT_ERROR_MESSAGES.OTP_PURPOSE_MISMATCH,
+        ACCOUNT_ERROR_CODES.OTP_PURPOSE_MISMATCH,
+        { expected: 'LOGIN', given: challenge.purpose },
+      );
+    }
 
     const existing = await this.prisma.phoneNumber.findUnique({
       where: { phoneHmac: challenge.phoneHmac },

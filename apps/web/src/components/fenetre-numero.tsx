@@ -7,6 +7,13 @@ import { ApiError, memberApi } from '@/lib/api/index';
 import { PanneauFenetre } from '@/components/panneau-fenetre';
 import { listCountries } from '@/lib/api';
 import { z } from 'zod';
+import {
+  analyserNumero,
+  exempleNational,
+  formaterSaisieNumero,
+  messageRefusNumero,
+  numeroValide,
+} from '@app/shared';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -113,7 +120,14 @@ export function FenetreNumero({
 
   const envoyerCode = (): void => {
     const tel = numero.trim();
-    if (tel.length < 4 || enVol) return;
+    if (tel === '' || enVol) return;
+    // Le MÊME contrôle que le serveur et le MÊME message : pays réel du numéro,
+    // mobile. Le front prévient, le serveur décide.
+    const analyse = analyserNumero(tel, iso2);
+    if (!analyse.ok) {
+      notifyError(messageRefusNumero(analyse.code));
+      return;
+    }
     setEnVol(true);
     memberApi
       .post('/me/phones', debutSchema, {
@@ -203,7 +217,7 @@ export function FenetreNumero({
           <button
             type="button"
             onClick={defi === null ? envoyerCode : confirmer}
-            disabled={enVol || (defi === null ? numero.trim().length < 4 : code.trim().length < 4)}
+            disabled={enVol || (defi === null ? !numeroValide(numero, iso2) : code.trim().length < 4)}
             data-numero-valider=""
             style={{
               ...action,
@@ -226,6 +240,7 @@ export function FenetreNumero({
             value={iso2}
             onChange={(e) => {
               setIso2(e.target.value);
+              setNumero((n) => formaterSaisieNumero(n, e.target.value));
             }}
             aria-label="Pays du numéro"
             data-numero-pays=""
@@ -240,12 +255,12 @@ export function FenetreNumero({
           <input
             value={numero}
             onChange={(e) => {
-              setNumero(e.target.value);
+              setNumero(formaterSaisieNumero(e.target.value, iso2));
             }}
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            placeholder="6 12 34 56 78"
+            placeholder={exempleNational(iso2) || '6 12 34 56 78'}
             aria-label="Numéro de téléphone"
             data-numero-champ=""
             style={champ}
