@@ -813,7 +813,7 @@ export async function chargerH02(id: string): Promise<H02Data> {
       echeance: requete.dueDate === null ? '' : requete.dueDate.slice(0, 10),
       deParcours: requete.fromJourney,
       parcours:
-        detail.journeyContext?.own == null
+        detail.journeyContext === null || detail.journeyContext.own === null
           ? null
           : {
               journeyId: detail.journeyContext.own.journeyId,

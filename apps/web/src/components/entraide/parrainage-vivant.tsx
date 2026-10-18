@@ -757,7 +757,6 @@ export function FormulaireParrain({ variante }: { readonly variante: 'bureau' | 
       vivant = false;
     };
     // `initialise` ne relance pas la lecture : il ne sert qu'à ne pas réécrire le formulaire.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [version]);
 
   const brouillon = { ...(bio.trim() === '' ? {} : { bio: bio.trim() }), journeyTemplateIds: choix, maxMentees: max, isAvailable: dispo };
