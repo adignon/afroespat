@@ -13,6 +13,7 @@ export function A14MobilePublier(props: A14Data) {
   return (
     <>
       <div style={{ background: "#F6F8F7", display: "flex", flexDirection: "column", padding: "48px 18px 26px", gap: "14px", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}><span style={{ width: "40px", height: "40px", borderRadius: "999px", background: "#EEF2F0", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg></span><span style={{ flex: "1", display: "flex", justifyContent: "center", gap: "6px" }}><span style={{ width: "6px", height: "6px", borderRadius: "999px", background: "#CBD5D1" }}></span><span style={{ width: "6px", height: "6px", borderRadius: "999px", background: "#CBD5D1" }}></span><span style={{ width: "18px", height: "6px", borderRadius: "999px", background: "#16785E" }}></span></span><span style={{ width: "40px" }}></span></div>

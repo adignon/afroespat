@@ -13,6 +13,7 @@ export function A04AuteurMobile(props: A04Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 {menu.ouvert ? (<><button type="button" onClick={menu.onFermer} aria-label="Fermer" data-guide-menu-voile="" style={{ position: "fixed", inset: "0", background: "rgba(22,33,29,.5)", border: "none", padding: "0", zIndex: 70, cursor: "pointer" }}></button><div style={{ position: "fixed", left: "0", right: "0", bottom: "0", maxHeight: "80vh", overflowY: "auto", zIndex: 71, background: "#fff", borderRadius: "28px 28px 0 0", padding: "10px 16px 30px", display: "flex", flexDirection: "column", gap: "4px" }}><span style={{ alignSelf: "center", width: "40px", height: "5px", borderRadius: "999px", background: "#DDE3E0", marginBottom: "8px" }}></span>{(menu.actions ?? []).map((a, aIndex) => (
 <Fragment key={aIndex}><button type="button" onClick={a.onChoisir} data-guide-action={a.cle} style={{ height: "50px", display: "flex", alignItems: "center", gap: "12px", padding: "0 6px", fontSize: "14px", fontWeight: "600", color: "#16211D", fontFamily: "inherit", cursor: "pointer", border: "none", width: "100%", textAlign: "left" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={a.icon} /></svg>{a.label}</button></Fragment>

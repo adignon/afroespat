@@ -14,6 +14,7 @@ export function H04Mobile(props: H04Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 0", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" }}><h1 style={{ margin: "0", fontSize: "21px", fontWeight: "800", letterSpacing: "-0.6px", flex: "1" }}>Vous pouvez aider</h1></div><div style={{ display: "flex", gap: "6px", padding: "10px 16px", overflowX: "auto", flexShrink: "0" }} tabIndex={0}>{(portees ?? []).map((p, pIndex) => (
 <Fragment key={pIndex}>{p.href === null ? (<button type="button" onClick={p.onChoisir} aria-pressed={p.actif} data-entraide-portee={p.cle} style={{ height: "36px", padding: "0 13px", borderRadius: "999px", display: "flex", alignItems: "center", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", background: p.fond, color: p.texte, border: `1px solid ${p.bord}`, fontFamily: "inherit", cursor: "pointer" }}>{p.libelle}</button>) : (<Link href={p.href} data-entraide-portee={p.cle} style={{ height: "36px", padding: "0 13px", borderRadius: "999px", display: "flex", alignItems: "center", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", background: p.fond, color: p.texte, border: `1px solid ${p.bord}`, textDecoration: "none" }}>{p.libelle}</Link>)}</Fragment>

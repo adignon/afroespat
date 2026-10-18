@@ -10,6 +10,7 @@ import type { J02Data } from '../parcours/data';
 export function J02Mobile(_props: J02Data) {
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <VueCreer compact={true} />
       </main>

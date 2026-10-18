@@ -16,6 +16,7 @@ export function A08TFil(props: A08TData) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", overflow: "hidden" }}>
   <div style={{ height: "120px", background: "#CFE3DA", position: "relative", backgroundImage: reseau.couverture === null ? "none" : `url("${reseau.couverture}")`, backgroundSize: "cover", backgroundPosition: "center" }}></div>

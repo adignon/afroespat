@@ -10,6 +10,7 @@ import type { J09FicheData } from '../parcours/data';
 export function J09MobileFiche(_props: J09FicheData) {
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <VueFichePublique compact={true} />
       </main>

@@ -12,6 +12,7 @@ export function P01Mobile(props: OnboardingVals) {
   return (
     <>
       <div style={{ background: "#F6F8F7", display: "flex", flexDirection: "column", padding: "56px 20px 28px", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}><div style={{ width: "32px", height: "32px", borderRadius: "10px", background: "#0F5C48" }}></div><span style={{ fontSize: "18px", fontWeight: "800", color: "#0F5C48" }}>Diaspora</span></div>

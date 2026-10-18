@@ -11,6 +11,7 @@ export function A06CorrigerMobile(props: A06Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ padding: "56px 18px 0", opacity: ".6" }}><h1 style={{ margin: "0", fontSize: "22px", fontWeight: "800" }}>{guide.title}</h1><p style={{ fontSize: "14.5px", lineHeight: "1.7" }}>Les étudiants de 18 à 30 ans y ont droit, <span style={{ background: "#CFE3DA" }}>quel que soit leur pays d'origine…</span></p></div>

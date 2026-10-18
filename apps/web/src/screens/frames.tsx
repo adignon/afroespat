@@ -15,6 +15,13 @@ import type { ReactNode } from 'react';
  * Au-delà de 1440 px on CENTRE au lieu d'étirer : les contenus de la maquette
  * sont déjà bornés, et l'étirement ne ferait qu'éloigner les colonnes.
  *
+ * ⚠ CETTE BORNE NE VAUT QUE POUR LE CONTENU. La barre haute — logo, recherche
+ * centrée, contrôles — n'est PAS dans le cadre : l'adaptation `ENTETE_GLOBAL`
+ * (`tools/adaptations/entete-global.mjs`) en fait un `<header>` fixe sur toute la
+ * largeur de la fenêtre. Le porteur : « c'est uniquement le contenu de la page qui
+ * doit avoir un max width, et non le header. » Le cadre garde la place de la barre
+ * (deux espaces de 64 px), donc rien d'autre ne bouge.
+ *
  * Ce conteneur ne porte AUCUN repère : le `<main>` vit dans le cadre transcodé,
  * posé par le générateur quand la maquette n'en fournit pas. La maquette du fil,
  * elle, écrit déjà son propre `<main>` autour de la colonne centrale — un repère

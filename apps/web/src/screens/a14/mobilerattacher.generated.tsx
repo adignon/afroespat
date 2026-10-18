@@ -13,6 +13,7 @@ export function A14MobileRattacher(props: A14Data) {
   return (
     <>
       <div style={{ background: "#0A3F31", position: "relative", display: "flex", flexDirection: "column", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ padding: "70px 30px 0", color: "rgba(255,255,255,.4)", fontSize: "22px", fontWeight: "800", lineHeight: "1.2" }}>{storyBodyRecap}</div>

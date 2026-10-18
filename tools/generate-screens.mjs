@@ -24,6 +24,7 @@ import {
   AJOUTS_EXPLOITATION_VIVANTE,
 } from './adaptations/exploitation-vivante.mjs';
 import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
+import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
 import {
   ADAPTATIONS_PARCOURS_VIVANT,
   AJOUTS_PARCOURS_VIVANT,
@@ -18245,6 +18246,9 @@ function adaptFields(jsx, section) {
     // Lot A « tout gratuit » : en dernier, ses motifs lisent du JSX déjà branché.
     ...ADAPTATIONS_GRATUIT_VIVANT,
     ...ADAPTATIONS_PARCOURS_VIVANT,
+    // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
+    // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
+    ...ADAPTATIONS_ENTETE_GLOBAL,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -21103,11 +21107,20 @@ for (const screen of SCREENS) {
       ? promoteTitle(jsx, spec)
       : { jsx, promoted: false, id: null };
     const hasLandmark = /<main[\s>]/.test(titled.jsx);
+    /**
+     * L'EN-TÊTE GLOBAL N'EST PAS LE CONTENU PRINCIPAL. `ENTETE_GLOBAL` la place en
+     * tête du cadre et la termine par un marqueur : on la sort du `<main>` qu'on
+     * pose autour du reste, ou, quand la maquette écrit son propre `<main>`, on
+     * retire simplement le marqueur.
+     */
+    const finEntete = titled.jsx.indexOf(FIN_ENTETE);
+    const barreHaute = finEntete === -1 ? '' : titled.jsx.slice(0, finEntete);
+    const sansBarre = finEntete === -1 ? titled.jsx : titled.jsx.slice(finEntete + FIN_ENTETE.length);
     const wrapped = isModal
       ? titled.jsx
       : hasLandmark
-        ? titled.jsx
-        : `      <main style={{ display: "contents" }}>\n${titled.jsx}\n      </main>`;
+        ? titled.jsx.replace(FIN_ENTETE, '')
+        : `${barreHaute}\n      <main style={{ display: "contents" }}>\n${sansBarre}\n      </main>`;
 
     /**
      * LA COQUE DU CADRE, gardée seulement quand l'écran la réclame.

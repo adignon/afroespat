@@ -10,6 +10,7 @@ import type { J01DData } from '../parcours/data';
 export function J01DMobile(_props: J01DData) {
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <VueDiscussion compact={true} />
       </main>
