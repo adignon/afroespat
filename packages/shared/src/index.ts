@@ -30,6 +30,7 @@ export * from './validation/jobs.js';
 export * from './validation/housing.js';
 export * from './validation/events.js';
 export * from './validation/admin.js';
+export * from './validation/admin-content.js';
 export * from './validation/referentials.js';
 export * from './validation/search.js';
 export * from './validation/notifications.js';

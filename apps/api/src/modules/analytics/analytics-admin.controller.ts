@@ -1,6 +1,9 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Header, Param, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
+import { ADMIN_CONTENT_AUDIT_ACTIONS, impactExportQuerySchema } from '@app/shared';
+import { AuditService } from '../../common/audit.service';
+import { Staff, type StaffUser } from '../../common/staff.guard';
 import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { zodPipe } from '../../common/zod.pipe';
 import { AnalyticsService, quarterLabel, startOfQuarterUtc } from './analytics.service';
@@ -60,7 +63,10 @@ const BLOCK_NAMES = [
 @ApiTags('admin')
 @Controller('admin')
 export class AnalyticsAdminController {
-  constructor(private readonly analytics: AnalyticsService) {}
+  constructor(
+    private readonly analytics: AnalyticsService,
+    private readonly audit: AuditService,
+  ) {}
 
   @Get('dashboard')
   @RequiresStaffRole(...STAFF_ALL)
@@ -111,13 +117,60 @@ export class AnalyticsAdminController {
     return { items: await this.analytics.latest(['stats.step.blocker_ratio', 'stats.step.skipped']) };
   }
 
+  @Get('stats/migrations')
+  @RequiresStaffRole(...STAFF_ALL)
+  @ApiOperation({ summary: 'Parcours restés sur une version archivée, par modèle (§5.2)' })
+  async migrations() {
+    return { items: await this.analytics.migrations() };
+  }
+
   @Get('impact')
   @RequiresStaffRole(...STAFF_ALL)
   @ApiOperation({ summary: 'Rapport d’impact trimestriel (§5.3) — agrégé, jamais nominatif' })
-  async impact() {
+  async impact(@Query(zodPipe(impactExportQuerySchema)) query: z.infer<typeof impactExportQuerySchema>) {
+    return this.impactReport(query.quarter);
+  }
+
+  /**
+   * §7 : `/impact/export`. Un CSV (`indicateur;tranche;valeur`), pas un PDF : aucune
+   * bibliothèque de rendu PDF n'est installée dans l'API, et un export tabulaire sert
+   * aussi bien le financeur qui veut recompter. Le contenu est celui de `/impact`,
+   * donc agrégé et jamais nominatif — et l'export est TRACÉ (§2.3 : toute action qui
+   * sort des données de l'application se journalise).
+   */
+  @Get('impact/export')
+  @RequiresStaffRole(...STAFF_ALL)
+  @Header('content-type', 'text/csv; charset=utf-8')
+  @Header('content-disposition', 'attachment; filename="rapport-impact.csv"')
+  @ApiOperation({ summary: 'Export CSV du rapport d’impact' })
+  async impactExport(
+    @Staff() staff: StaffUser,
+    @Query(zodPipe(impactExportQuerySchema)) query: z.infer<typeof impactExportQuerySchema>,
+  ) {
+    const report = await this.impactReport(query.quarter);
+    await this.audit.record(this.analyticsPrisma(), {
+      actor: { type: 'STAFF', id: staff.staffId },
+      action: ADMIN_CONTENT_AUDIT_ACTIONS.impactExported,
+      targetType: 'impact_report',
+      metadata: { trimestre: report.trimestre, lignes: report.items.length },
+      ...(staff.ip === null ? {} : { ip: staff.ip }),
+    });
+    const cell = (v: string | number): string => `"${String(v).replace(/"/g, '""')}"`;
+    const lines = [
+      ['trimestre', 'indicateur', 'tranche', 'valeur'].map(cell).join(','),
+      ...report.items.map((i) => [report.trimestre, i.metric, i.dimension, i.value].map(cell).join(',')),
+    ];
+    return `\uFEFF${lines.join('\r\n')}\r\n`;
+  }
+
+  private analyticsPrisma() {
+    return this.analytics.prismaClient();
+  }
+
+  private async impactReport(quarter?: string) {
     const previous = startOfQuarterUtc(new Date(startOfQuarterUtc(new Date()).getTime() - 86_400_000));
     return {
-      trimestre: quarterLabel(previous),
+      trimestre: quarter ?? quarterLabel(previous),
       items: await this.analytics.latest([
         'impact.members_accompanied',
         'impact.journeys_completed',

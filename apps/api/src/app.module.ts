@@ -67,6 +67,10 @@ import { HelpService } from './modules/help/help.service';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminModerationController } from './modules/admin/admin-moderation.controller';
 import { AdminService } from './modules/admin/admin.service';
+import { AdminContentController, PublicContentController } from './modules/admin/admin-content.controller';
+import { AdminContentService } from './modules/admin/admin-content.service';
+import { AdminMemberController } from './modules/admin/admin-member.controller';
+import { AdminMemberActionsService } from './modules/admin/admin-member-actions.service';
 import { StaffAuthController } from './modules/admin/staff-auth.controller';
 import { StaffAuthService } from './modules/admin/staff-auth.service';
 import { SearchController } from './modules/search/search.controller';
@@ -148,7 +152,7 @@ import {
   ],
   controllers: [HealthController, PlacesController, BookmarksController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
-    StaffAuthController, AdminController, AdminModerationController,
+    StaffAuthController, AdminController, AdminModerationController, AdminContentController, PublicContentController, AdminMemberController,
     // Module 02 — les référentiels, tenus par CONTENT_ADMIN (§4.2).
     ReferentialsController,
     SearchController, NotificationsController, NotificationSettingsController,
@@ -204,6 +208,8 @@ import {
     ModerationService,
     StaffAuthService,
     AdminService,
+    AdminContentService,
+    AdminMemberActionsService,
     ReferentialsService,
     SearchService,
     NotificationsService,
