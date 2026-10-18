@@ -195,6 +195,22 @@ export const railBoucle = (frames) => [
       'destination ne peut pas être distinguée par le texte, qui est `{{ r.label }}`. Elle ' +
       'voyage donc avec la donnée (`r.href`), comme `r.bg` et `r.icon`.',
   },
+  /**
+   * LE LIEN « RÉGLAGES » DU BAS DU RAIL (lot G) — le dernier `href="#"` du rail.
+   *
+   * Il ne contient qu'une icône (le générateur lui pose `aria-label="Réglages"`,
+   * `A11Y_ANNOTATIONS`). « Réglages » du membre, c'est « Mon compte » : la page qui
+   * porte son profil, ses notifications, sa confidentialité et sa sécurité
+   * (`/compte`, section K01). Aucune autre route ne s'appelle réglages côté membre ;
+   * `/parcours/:id/reglages` est ceux d'UN parcours, pas du compte.
+   */
+  {
+    marqueur: 'M4 7h8M17 7h3M4 17h3M12 17h8',
+    vers: '/compte',
+    nom: 'Réglages',
+    frames,
+    why: 'Le lien « Réglages » du rail mène à « Mon compte » (/compte), qui rassemble les réglages du membre.',
+  },
 ];
 
 /**
