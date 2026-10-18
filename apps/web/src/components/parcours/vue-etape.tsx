@@ -30,6 +30,7 @@ import { Chargeur, EnteteParcours, OngletsMobile } from './commun';
 import { CorpsEtape, etatPastille } from './etape';
 import { ouvrirFeuille } from './feuilles-store';
 import { UUID, signalerMaj, useGeste } from './donnees';
+import { CadreActif } from './cadre-actif';
 
 export function EditeurChecklist({
   parcours,
@@ -165,7 +166,7 @@ function Echeance({
   );
 }
 
-export function VueEtape({ compact }: { readonly compact: boolean }) {
+function VueEtapeInterne({ compact }: { readonly compact: boolean }) {
   const params = useParams<{ etape?: string }>();
   const demandee = typeof params.etape === 'string' && UUID.test(params.etape) ? params.etape : null;
   return (
@@ -241,5 +242,13 @@ export function VueEtape({ compact }: { readonly compact: boolean }) {
         );
       }}
     />
+  );
+}
+
+export function VueEtape(props: Parameters<typeof VueEtapeInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueEtapeInterne {...props} />
+    </CadreActif>
   );
 }

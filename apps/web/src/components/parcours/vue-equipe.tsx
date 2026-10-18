@@ -18,6 +18,7 @@ import { Chargeur, EnteteParcours, OngletsMobile } from './commun';
 import { ouvrirFeuille } from './feuilles-store';
 import { signalerMaj, useGeste } from './donnees';
 import { LevelInvitation } from '@/components/level-invitation';
+import { CadreActif } from './cadre-actif';
 
 const ROLE: Record<string, string> = { OBSERVER: 'Observateur', SUPPORTER: 'Accompagnant' };
 
@@ -39,7 +40,7 @@ export function RolesEquipe() {
   );
 }
 
-export function VueEquipe({ compact }: { readonly compact: boolean }) {
+function VueEquipeInterne({ compact }: { readonly compact: boolean }) {
   return (
     <Chargeur
       enfants={(parcours, vue) => <Corps parcours={parcours} compact={compact} id={vue.id} appliquer={vue.appliquer} />}
@@ -119,5 +120,13 @@ function Corps({
     </>
   ) : (
     corps
+  );
+}
+
+export function VueEquipe(props: Parameters<typeof VueEquipeInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueEquipeInterne {...props} />
+    </CadreActif>
   );
 }

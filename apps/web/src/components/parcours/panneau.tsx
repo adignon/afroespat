@@ -25,12 +25,13 @@ import { PUBLIC_JOURNEYS_PANEL_LIMIT } from '@app/shared';
 import { avatarColor, initials } from '@/screens/accueil/from-api';
 import { listPublicJourneys } from '@/screens/parcours/api';
 import { echeance, typeCourt } from '@/screens/parcours/appels';
+import { CadreActif } from './cadre-actif';
 import { C, etiquette } from './ui';
 import { useParcoursComplet, useIdParcours } from './donnees';
 
 const CARTE = { background: '#fff', border: `1px solid ${C.bord}`, borderRadius: '22px', padding: '14px' } as const;
 
-export function PanneauPublics() {
+function PanneauPublicsInterne() {
   const [items, setItems] = useState<readonly PublicJourney[]>([]);
   useEffect(() => {
     let annule = false;
@@ -82,7 +83,7 @@ export function PanneauPublics() {
   );
 }
 
-export function PanneauRappels() {
+function PanneauRappelsInterne() {
   const id = useIdParcours();
   const { etat } = useParcoursComplet(id);
   if (etat.phase !== 'pret' || etat.parcours.viewerRole !== 'OWNER') return null;
@@ -108,5 +109,21 @@ export function PanneauRappels() {
         </Link>
       ))}
     </div>
+  );
+}
+
+export function PanneauPublics() {
+  return (
+    <CadreActif compact={false}>
+      <PanneauPublicsInterne />
+    </CadreActif>
+  );
+}
+
+export function PanneauRappels() {
+  return (
+    <CadreActif compact={false}>
+      <PanneauRappelsInterne />
+    </CadreActif>
   );
 }

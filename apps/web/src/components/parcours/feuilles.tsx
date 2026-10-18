@@ -134,27 +134,24 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
   const geste = useGeste();
 
   // §3.5, premier temps : le clic crée le BROUILLON — rien n'est publié.
+  //
+  // Pas de drapeau « annulé » : en développement React monte l'effet DEUX fois, et
+  // `executer` refuse le second appel tant que le premier est en vol — un drapeau levé par
+  // le premier nettoyage aurait jeté sa réponse, et la feuille serait restée vide.
   useEffect(() => {
     if (idParcours === null) return;
-    let annule = false;
-    void geste
-      .executer(async () => {
-        const complet = await readJourney(idParcours);
-        const cible = stepId ?? complet.journey.currentStepId;
-        if (cible === null) {
-          geste.signaler('Toutes les étapes de ce parcours sont franchies : il n’y a rien à débloquer.');
-          return;
-        }
-        const { blocker } = await createBlockerDraft(idParcours, cible);
-        if (annule) return;
-        setParcours(complet);
-        setBrouillon(blocker);
-        setTexte(blocker.draftText);
-      })
-      .catch(() => undefined);
-    return () => {
-      annule = true;
-    };
+    void geste.executer(async () => {
+      const complet = await readJourney(idParcours);
+      const cible = stepId ?? complet.journey.currentStepId;
+      if (cible === null) {
+        geste.signaler('Toutes les étapes de ce parcours sont franchies : il n’y a rien à débloquer.');
+        return;
+      }
+      const { blocker } = await createBlockerDraft(idParcours, cible);
+      setParcours(complet);
+      setBrouillon(blocker);
+      setTexte(blocker.draftText);
+    });
     // Une seule création à l'ouverture : `geste` est stable.
   }, [idParcours, stepId]);
 
@@ -230,6 +227,23 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
             </Link>
           )}
         </div>
+      </>
+    );
+  }
+
+  // Aucun brouillon possible (étape sans demande d'aide, parcours terminé, refus du serveur) :
+  // on le dit, on ne montre pas un champ qui ne servirait à rien.
+  if (brouillon === null) {
+    return (
+      <>
+        {geste.erreur === null && geste.niveau === null ? (
+          <div role="status" style={{ fontSize: '13.5px', color: C.gris }}>Préparation du brouillon…</div>
+        ) : null}
+        <Avis texte={geste.erreur} ton="erreur" />
+        <LevelInvitation details={geste.niveau} onClose={geste.effacer} />
+        <Bouton ton="calme" plein onClick={onFermer}>
+          Fermer
+        </Bouton>
       </>
     );
   }

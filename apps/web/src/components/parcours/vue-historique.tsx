@@ -23,6 +23,7 @@ import { detailEntree, ilYA, titreEntree } from '@/screens/parcours/appels';
 import { Avis, Attente, Bouton, C, Etiquette, carte } from './ui';
 import { Chargeur, EnteteParcours, OngletsMobile } from './commun';
 import { ouvrirFeuille } from './feuilles-store';
+import { CadreActif } from './cadre-actif';
 
 function Journal({ journeyId }: { readonly journeyId: string }) {
   const [entrees, setEntrees] = useState<readonly JourneyActivity[] | null>(null);
@@ -83,7 +84,7 @@ function Journal({ journeyId }: { readonly journeyId: string }) {
   );
 }
 
-export function VueHistorique({ compact }: { readonly compact: boolean }) {
+function VueHistoriqueInterne({ compact }: { readonly compact: boolean }) {
   return (
     <Chargeur
       enfants={(parcours, vue) => {
@@ -120,5 +121,13 @@ export function VueHistorique({ compact }: { readonly compact: boolean }) {
         );
       }}
     />
+  );
+}
+
+export function VueHistorique(props: Parameters<typeof VueHistoriqueInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueHistoriqueInterne {...props} />
+    </CadreActif>
   );
 }

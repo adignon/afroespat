@@ -18,8 +18,9 @@ import { displayMessageFor } from '@/lib/api/index';
 import { acceptInvitation, declineInvitation, listJourneyInvitations, listJourneys } from '@/screens/parcours/api';
 import { Avis, Attente, Bouton, C, Etiquette, Pastille, carte } from './ui';
 import { signalerMaj, useGeste } from './donnees';
+import { CadreActif } from './cadre-actif';
 
-export function Invitations({ onChange }: { readonly onChange?: () => void }) {
+function InvitationsInterne({ onChange }: { readonly onChange?: () => void }) {
   const [liste, setListe] = useState<readonly JourneyInvitation[] | null>(null);
   const geste = useGeste();
   const charger = useCallback(() => {
@@ -76,7 +77,7 @@ export function CommentCaMarche() {
 
 const STATUT: Record<string, string> = { ACTIVE: 'ACTIF', PAUSED: 'EN PAUSE', COMPLETED: 'ABOUTI', ABANDONED: 'ARRÊTÉ', ARCHIVED: 'ARCHIVÉ' };
 
-export function VueListe({ compact, vide = false }: { readonly compact: boolean; readonly vide?: boolean }) {
+function VueListeInterne({ compact, vide = false }: { readonly compact: boolean; readonly vide?: boolean }) {
   const [liste, setListe] = useState<readonly JourneyListItem[] | null>(null);
   const [echec, setEchec] = useState<string | null>(null);
   const charger = useCallback(() => {
@@ -121,4 +122,21 @@ export function VueListe({ compact, vide = false }: { readonly compact: boolean;
     </div>
   );
   return compact ? <div style={{ padding: '12px 16px 90px', flexGrow: 1 }}>{corps}</div> : corps;
+}
+
+export function VueListe(props: Parameters<typeof VueListeInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueListeInterne {...props} />
+    </CadreActif>
+  );
+}
+
+/** `compact` désigne le cadre qui la monte : les deux cadres de J11 en portent une. */
+export function Invitations({ compact = false, onChange }: { readonly compact?: boolean; readonly onChange?: () => void }) {
+  return (
+    <CadreActif compact={compact}>
+      <InvitationsInterne {...(onChange === undefined ? {} : { onChange })} />
+    </CadreActif>
+  );
 }

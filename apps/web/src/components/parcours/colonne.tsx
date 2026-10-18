@@ -15,6 +15,7 @@ import Link from 'next/link';
 import type { JourneyFullResponse } from '@app/shared';
 import { VISIBILITE_TITRE } from '@/screens/parcours/appels';
 import { Bouton, C, Etiquette, Icone, ICONES, Pastille, carte } from './ui';
+import { CadreActif } from './cadre-actif';
 import { Chargeur } from './commun';
 import { ouvrirFeuille } from './feuilles-store';
 
@@ -77,5 +78,9 @@ function Corps({ parcours }: { readonly parcours: JourneyFullResponse }) {
 }
 
 export function ColonneParcours() {
-  return <Chargeur sansParcours={<div />} enfants={(parcours) => <Corps parcours={parcours} />} />;
+  return (
+    <CadreActif compact={false}>
+      <Chargeur sansParcours={<div />} enfants={(parcours) => <Corps parcours={parcours} />} />
+    </CadreActif>
+  );
 }

@@ -29,6 +29,7 @@ import { Chargeur, EnteteParcours, OngletsMobile, type VueParcours as Vue } from
 import { CorpsEtape, dateCourte, etatPastille } from './etape';
 import { ouvrirFeuille } from './feuilles-store';
 import { signalerMaj, useGeste } from './donnees';
+import { CadreActif } from './cadre-actif';
 
 function LigneEdition({
   parcours,
@@ -336,7 +337,7 @@ function Corps({
   );
 }
 
-export function VueParcours({
+function VueParcoursInterne({
   compact,
   edition = false,
 }: {
@@ -358,5 +359,13 @@ export function VueParcours({
         )
       }
     />
+  );
+}
+
+export function VueParcours(props: Parameters<typeof VueParcoursInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueParcoursInterne {...props} />
+    </CadreActif>
   );
 }

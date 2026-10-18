@@ -24,6 +24,7 @@ import { BandeauVersion } from './bandeaux';
 import { Chargeur, EnteteParcours, OngletsMobile } from './commun';
 import { ouvrirFeuille } from './feuilles-store';
 import { signalerMaj, useGeste } from './donnees';
+import { CadreActif } from './cadre-actif';
 
 const VISIBILITES = [
   ['PRIVATE', 'Privé', 'Vous seul·e et les personnes que vous invitez voient votre parcours.'],
@@ -125,7 +126,7 @@ function Formulaire({
   );
 }
 
-export function VueReglages({ compact }: { readonly compact: boolean }) {
+function VueReglagesInterne({ compact }: { readonly compact: boolean }) {
   return (
     <Chargeur
       enfants={(parcours, vue) => {
@@ -141,7 +142,7 @@ export function VueReglages({ compact }: { readonly compact: boolean }) {
             ) : (
               <>
                 <BandeauVersion parcours={parcours} onParcours={onParcours} />
-                <Formulaire key={`${parcours.journey.title}-${parcours.journey.visibility}-${parcours.journey.status}`} parcours={parcours} onParcours={onParcours} />
+                <Formulaire parcours={parcours} onParcours={onParcours} />
               </>
             )}
           </div>
@@ -156,5 +157,13 @@ export function VueReglages({ compact }: { readonly compact: boolean }) {
         );
       }}
     />
+  );
+}
+
+export function VueReglages(props: Parameters<typeof VueReglagesInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueReglagesInterne {...props} />
+    </CadreActif>
   );
 }

@@ -30,6 +30,7 @@ import { getPublicJourney, listJourneyTemplates, listPublicJourneysFiltered, upd
 import { duree, typeCourt } from '@/screens/parcours/appels';
 import { Avis, Attente, Bouton, C, Etiquette, Pastille, carte } from './ui';
 import { signalerMaj, useGeste, useIdParcours } from './donnees';
+import { CadreActif } from './cadre-actif';
 
 function Avatar({ nom }: { readonly nom: string }) {
   return (
@@ -130,7 +131,7 @@ function Select({ id, libelle, valeur, onChange, options }: { readonly id: strin
   );
 }
 
-export function VuePublics({ compact }: { readonly compact: boolean }) {
+function VuePublicsInterne({ compact }: { readonly compact: boolean }) {
   const [items, setItems] = useState<readonly PublicJourney[] | null>(null);
   const [echec, setEchec] = useState<string | null>(null);
   const [types, setTypes] = useState<readonly (readonly [string, string])[]>([]);
@@ -214,7 +215,7 @@ export function VuePublics({ compact }: { readonly compact: boolean }) {
   return compact ? <div style={{ padding: '12px 16px 90px', flexGrow: 1 }}>{corps}</div> : corps;
 }
 
-export function VueFichePublique({ compact }: { readonly compact: boolean }) {
+function VueFichePubliqueInterne({ compact }: { readonly compact: boolean }) {
   const id = useIdParcours();
   const [p, setP] = useState<(PublicJourney & { currentStep: { title: string; position: number } | null }) | null>(null);
   const [echec, setEchec] = useState<string | null>(null);
@@ -264,5 +265,21 @@ export function VueFichePublique({ compact }: { readonly compact: boolean }) {
       )}
       {ecrire.fenetre}
     </div>
+  );
+}
+
+export function VuePublics(props: Parameters<typeof VuePublicsInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VuePublicsInterne {...props} />
+    </CadreActif>
+  );
+}
+
+export function VueFichePublique(props: Parameters<typeof VueFichePubliqueInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueFichePubliqueInterne {...props} />
+    </CadreActif>
   );
 }

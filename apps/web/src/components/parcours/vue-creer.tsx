@@ -34,12 +34,13 @@ import { LevelInvitation } from '@/components/level-invitation';
 import { createJourney, listJourneyTemplates } from '@/screens/parcours/api';
 import { Attente, Avis, Bouton, C, Champ, Icone, ICONES, carte } from './ui';
 import { signalerMaj, useGeste } from './donnees';
+import { CadreActif } from './cadre-actif';
 
 function aujourdhui(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function VueCreer({ compact }: { readonly compact: boolean }) {
+function VueCreerInterne({ compact }: { readonly compact: boolean }) {
   const router = useRouter();
   const [modeles, setModeles] = useState<readonly JourneyTemplate[] | null>(null);
   const [echec, setEchec] = useState<string | null>(null);
@@ -297,5 +298,13 @@ export function VueCreer({ compact }: { readonly compact: boolean }) {
         {bouton}
       </div>
     </>
+  );
+}
+
+export function VueCreer(props: Parameters<typeof VueCreerInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueCreerInterne {...props} />
+    </CadreActif>
   );
 }

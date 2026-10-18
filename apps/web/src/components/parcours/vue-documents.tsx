@@ -14,8 +14,9 @@ import { Etiquette, C, carte } from './ui';
 import { Chargeur, EnteteParcours, OngletsMobile } from './commun';
 import { EditeurChecklist } from './vue-etape';
 import { signalerMaj } from './donnees';
+import { CadreActif } from './cadre-actif';
 
-export function VueDocuments({ compact }: { readonly compact: boolean }) {
+function VueDocumentsInterne({ compact }: { readonly compact: boolean }) {
   return (
     <Chargeur
       enfants={(parcours, vue) => {
@@ -55,5 +56,13 @@ export function VueDocuments({ compact }: { readonly compact: boolean }) {
         );
       }}
     />
+  );
+}
+
+export function VueDocuments(props: Parameters<typeof VueDocumentsInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueDocumentsInterne {...props} />
+    </CadreActif>
   );
 }

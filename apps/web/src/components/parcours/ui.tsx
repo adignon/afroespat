@@ -110,7 +110,9 @@ export function Bouton({
         color: texte,
         border: ton === 'contour' ? `1.5px solid ${C.bord}` : 'none',
         cursor: disabled ? 'default' : 'pointer',
-        ...(plein ? { width: '100%' } : {}),
+        // `flex: 1` et non `width: 100%` : deux boutons « pleins » côte à côte (Fermer / Voir,
+        // Retour / Publier) se partagent la rangée au lieu de la déborder chacun de sa largeur.
+        ...(plein ? { flexGrow: 1, flexBasis: 0, minWidth: 0 } : {}),
       }}
     >
       {children}

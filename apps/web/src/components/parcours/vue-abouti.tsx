@@ -16,6 +16,7 @@ import type { JourneyFullResponse } from '@app/shared';
 import { duree } from '@/screens/parcours/appels';
 import { C, Etiquette, carte } from './ui';
 import { Chargeur, EnteteParcours } from './commun';
+import { CadreActif } from './cadre-actif';
 
 function Proposition({ href, titre, texte }: { readonly href: string; readonly titre: string; readonly texte: string }) {
   return (
@@ -62,12 +63,20 @@ function Corps({ parcours, compact }: { readonly parcours: JourneyFullResponse; 
   );
 }
 
-export function VueAbouti({ compact }: { readonly compact: boolean }) {
+function VueAboutiInterne({ compact }: { readonly compact: boolean }) {
   return (
     <Chargeur
       enfants={(parcours) =>
         compact ? <div style={{ padding: '12px 16px 90px', flexGrow: 1 }}><Corps parcours={parcours} compact /></div> : <Corps parcours={parcours} compact={false} />
       }
     />
+  );
+}
+
+export function VueAbouti(props: Parameters<typeof VueAboutiInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueAboutiInterne {...props} />
+    </CadreActif>
   );
 }

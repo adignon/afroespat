@@ -200,10 +200,10 @@ const PV_J11 = {
       const m = OUVRANTE_MAIN.exec(jsx);
       if (m !== null) {
         const apres = m.index + m[0].length;
-        return { jsx: jsx.slice(0, apres) + '<Invitations />' + jsx.slice(apres), applied: true };
+        return { jsx: jsx.slice(0, apres) + `<Invitations compact={${mobile}} />` + jsx.slice(apres), applied: true };
       }
       // Pas encore de repère `main` : les invitations viennent en tête du contenu.
-      return { jsx: '<Invitations />' + jsx, applied: true };
+      return { jsx: `<Invitations compact={${mobile}} />` + jsx, applied: true };
     }
     if (mobile && !jsx.includes('<a href="/accueil"')) return { jsx, applied: false };
     const neuf = remplacerMain(jsx, `<VueListe compact={${mobile}} vide />`, mobile);

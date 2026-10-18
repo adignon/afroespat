@@ -21,6 +21,7 @@ import { Avis, Attente, Bouton, C, Etiquette, carte } from './ui';
 import { Chargeur, EnteteParcours, OngletsMobile } from './commun';
 import { ouvrirFeuille } from './feuilles-store';
 import { useGeste } from './donnees';
+import { CadreActif } from './cadre-actif';
 
 function Fil({ conversationId, compact }: { readonly conversationId: string; readonly compact: boolean }) {
   const [messages, setMessages] = useState<readonly Message[] | null>(null);
@@ -107,7 +108,7 @@ function Fil({ conversationId, compact }: { readonly conversationId: string; rea
   );
 }
 
-export function VueDiscussion({ compact }: { readonly compact: boolean }) {
+function VueDiscussionInterne({ compact }: { readonly compact: boolean }) {
   return (
     <Chargeur
       enfants={(parcours, vue) => {
@@ -143,5 +144,13 @@ export function VueDiscussion({ compact }: { readonly compact: boolean }) {
         );
       }}
     />
+  );
+}
+
+export function VueDiscussion(props: Parameters<typeof VueDiscussionInterne>[0]) {
+  return (
+    <CadreActif compact={props.compact}>
+      <VueDiscussionInterne {...props} />
+    </CadreActif>
   );
 }
