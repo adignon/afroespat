@@ -49,8 +49,7 @@ export function PremiumGratuit() {
           lineHeight: '1.5',
         }}
       >
-        Si une formule payante voit le jour, vous serez prévenu à l’avance et rien ne changera sans
-        votre accord.
+        Les paiements sont suspendus : aucune carte ni aucun compte Mobile Money n’est demandé.
       </div>
       <a
         href="/accueil"

@@ -221,7 +221,7 @@ export function FenetreNumero({
             data-numero-valider=""
             style={{
               ...action,
-              background: enVol ? '#8A958F' : '#16785E',
+              background: enVol || (defi === null && !numeroValide(numero, iso2)) ? '#8A958F' : '#16785E',
               color: '#fff',
               cursor: enVol ? 'default' : 'pointer',
             }}

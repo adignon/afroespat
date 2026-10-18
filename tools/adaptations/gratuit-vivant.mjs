@@ -168,12 +168,19 @@ const K06_GRATUIT = {
     const m = jsx.indexOf(titreMobile);
     if (m >= 0 && jsx.slice(m + titreMobile.length).startsWith('<div style={{ flexGrow')) {
       const debutCorps = m + titreMobile.length;
-      const fin = finElement(jsx, debutCorps);
+      let fin = finElement(jsx, debutCorps);
       if (fin < 0) return { jsx, applied: false };
+      // La barre collante du bas (« Passer à Premium ») suit le contenu : elle
+      // part avec lui, sans quoi le bouton de paiement resterait seul à l'écran.
+      const barre = '<div style={{ flexShrink: "0", background: "#fff", borderTop';
+      if (jsx.slice(fin).startsWith(barre)) {
+        const finBarre = finElement(jsx, fin);
+        if (finBarre > 0) fin = finBarre;
+      }
       return {
         jsx:
           jsx.slice(0, debutCorps) +
-          `{gratuit ? (<PremiumGratuit />) : (${jsx.slice(debutCorps, fin)})}` +
+          `{gratuit ? (<PremiumGratuit />) : (<>${jsx.slice(debutCorps, fin)}</>)}` +
           jsx.slice(fin),
         applied: true,
       };
