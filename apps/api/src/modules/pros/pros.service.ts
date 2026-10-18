@@ -176,7 +176,11 @@ export class ProsService {
     if (row === null) return null;
     const { proofAssetId, ...rest } = row;
     return {
-      ...this.toCard(rest, userId),
+      // LOT A : `toCard(rest, userId)` sans le troisième argument rendait TOUJOURS
+      // `isFeatured: false` à son propre titulaire, même abonné — alors que la
+      // fiche publique (`detail`) disait « mise en avant ». Même définition :
+      // abonnement payant ET non expiré.
+      ...this.toCard(rest, userId, this.isPaidAndCurrent(row)),
       verificationStatus: row.verificationStatus,
       status: row.status,
       hasProof: proofAssetId !== null,

@@ -478,6 +478,38 @@ describe('annuaire professionnel (10 §4)', () => {
     expect(row.tier).toBe('FREE');
   });
 
+  /**
+   * LOT A — `GET /me/pro-profile` rendait TOUJOURS `isFeatured: false` : `toCard`
+   * recevait sans son troisième argument. Le titulaire d'une fiche payante ne voyait
+   * donc jamais « mise en avant » sur sa propre fiche, que la liste publique
+   * affichait pourtant.
+   */
+  it('ma fiche payante est « mise en avant », ma fiche gratuite ou échue ne l’est pas', async () => {
+    const professionForTest = await prisma.profession.findFirstOrThrow({
+      where: { isActive: true, nameFr: 'Avocat' },
+      select: { id: true },
+    });
+    const owner = await member();
+    const id = await registerPro(owner, { professionId: professionForTest.id });
+    await approve(id);
+
+    expect((await pros.myProfile(owner))?.isFeatured).toBe(false);
+
+    await prisma.proProfile.update({
+      where: { id },
+      data: { tier: 'PRO', tierUntil: new Date(Date.now() + 30 * 86_400_000) },
+    });
+    const payante = await pros.myProfile(owner);
+    expect(payante?.isFeatured).toBe(true);
+    expect(payante?.featuredLabel).toBe(PRO_FEATURED_LABEL);
+
+    await prisma.proProfile.update({
+      where: { id },
+      data: { tierUntil: new Date(Date.now() - 86_400_000) },
+    });
+    expect((await pros.myProfile(owner))?.isFeatured).toBe(false);
+  });
+
   it('le filtre de ville et le blocage s’appliquent ENSEMBLE', async () => {
     const reader = await member();
     const blockedOwner = await member();
