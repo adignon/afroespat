@@ -78,9 +78,31 @@ async function bootstrap(): Promise<void> {
     credentials: true, // le jeton de rafraîchissement est un cookie (T4 §2)
   });
 
-  // §8.3 — en-têtes de sécurité. La CSP complète viendra avec les domaines des
-  // fournisseurs ; ceux-ci n'en dépendent pas.
-  app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+  // §8.3 — en-têtes de sécurité : CSP et HSTS compris.
+  app.use((req: { url?: string }, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    /**
+     * ── CSP : CETTE API NE REND NI PAGE NI SCRIPT ──────────────────────────────
+     *
+     * Elle répond en JSON, en octets de média ou en flux : aucune de ses réponses
+     * n'a à charger quoi que ce soit. `default-src 'none'` + `frame-ancestors 'none'`
+     * est donc la politique la plus stricte qui soit, et elle ne coûte rien aux
+     * pages du front (la CSP de la page, côté web, est celle qui régit ses
+     * sous-ressources ; ces en-têtes ne s'appliquent qu'à une réponse ouverte
+     * DIRECTEMENT dans le navigateur — un fichier déposé par un membre ouvert dans
+     * un onglet n'y exécute aucun script).
+     *
+     * EXCEPTION : l'interface OpenAPI (`/v1/docs`, hors production) est une page
+     * avec ses propres scripts et styles ; elle garde une politique permissive pour
+     * elle seule.
+     */
+    const estDocs = (req.url ?? '').startsWith('/v1/docs');
+    if (!estDocs) {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    }
+    // HSTS : production seulement — en développement l'API répond en HTTP clair.
+    if (env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+    }
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('X-Frame-Options', 'DENY');
