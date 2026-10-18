@@ -55,6 +55,7 @@ model StaffUser {
   moderationActions   ModerationAction[]
   sanctionsIssued     Sanction[]
   scamAlertsCreated   ScamAlert[]
+  alerts              StaffAlert[]
 
   @@index([role])
   @@map("staff_users")

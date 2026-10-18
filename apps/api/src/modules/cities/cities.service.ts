@@ -23,6 +23,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
 import { haversineKm } from '../events/events.service';
+import { assertLocalRules } from '../../common/content-gate';
 
 /**
  * Villes et membres — 09-villes-agenda.md §2.
@@ -772,6 +773,8 @@ export class CitiesService {
     });
     if (city === null || city.mergedIntoCityId !== null) throw ApiError.notFound();
     if (!city.isActive) this.fail('CITY_INACTIVE');
+    // 13 §2.1 : les règles locales, avant que l'astuce n'existe.
+    assertLocalRules(input.body);
 
     if (input.sourceStoryId !== undefined) {
       // §2.3 : « Une story DECOUVERTE gardée PAR SON AUTEUR devient un city_tips. »
@@ -886,6 +889,7 @@ export class CitiesService {
 
   async updateTip(tipId: string, authorUserId: string, patch: UpdateCityTip) {
     const tip = await this.loadOwnedTip(tipId, authorUserId);
+    assertLocalRules(patch.body);
     if (patch.amountCents !== undefined && tip.kind !== 'BUDGET') {
       throw ApiError.validation([{ path: 'amountCents', code: 'NOT_A_BUDGET' }]);
     }

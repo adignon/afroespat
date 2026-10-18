@@ -115,6 +115,23 @@ export class AdminModerationController {
     return this.moderation.stats(staffContext(staff));
   }
 
+  // ── Les alertes d'équipe (lot G) ───────────────────────────────────────────
+
+  @Get('alerts')
+  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @ApiOperation({ summary: 'Mes alertes d’équipe (dossier prioritaire hors délai), non lues d’abord' })
+  async alerts(@Staff() staff: StaffUser, @Query('unread') unread?: string) {
+    return this.moderation.listStaffAlerts(staffContext(staff), unread === 'true');
+  }
+
+  @Post('alerts/:id/read')
+  @RequiresStaffRole('MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN')
+  @ApiOperation({ summary: 'Marque une de mes alertes comme lue' })
+  async readAlert(@Staff() staff: StaffUser, @Param('id', zodPipe(uuidSchema)) id: string) {
+    await this.moderation.markStaffAlertRead(staffContext(staff), id);
+    return { ok: true };
+  }
+
   // ── Les seuils (§4.4) ─────────────────────────────────────────────────────
 
   /**

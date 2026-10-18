@@ -46,6 +46,7 @@ import { loadEnv } from '../../config/env';
  * dépend d'aucun des deux (vérifié dans son constructeur).
  */
 import { MessagingService } from '../messaging/messaging.service';
+import { assertLocalRules } from '../../common/content-gate';
 
 /**
  * Réseaux (communautés) — 07-reseaux.md.
@@ -1920,6 +1921,8 @@ export class CommunitiesService {
     const access = await this.load(idOrSlug, userId);
     this.assertMember(access);
     this.assertWritable(access);
+    // 13 §2.1 : les règles locales, avant que le sujet n'existe.
+    assertLocalRules(input.title, input.body);
 
     const id = newId();
     await this.prisma.$transaction(async (tx) => {
@@ -2228,6 +2231,7 @@ export class CommunitiesService {
     const access = await this.load(topic.communityId, userId);
     const membership = this.assertMember(access);
     this.assertWritable(access);
+    assertLocalRules(patch.title, patch.body);
 
     const isAuthor = topic.authorUserId === userId;
     const isModerator = membership.role === 'OWNER' || membership.role === 'MODERATOR';
@@ -2437,6 +2441,7 @@ export class CommunitiesService {
     const access = await this.load(idOrSlug, userId);
     this.assertModerator(access);
     this.assertWritable(access);
+    assertLocalRules(input.title, input.body);
 
     const since = new Date(Date.now() - 7 * DAY_MS);
     const recent = await this.prisma.communityAnnouncement.count({

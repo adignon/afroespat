@@ -18,6 +18,7 @@ import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { VisibilityService } from '../../../common/visibility.service';
 import { FakeAiModerationProvider } from '../../../providers/providers';
+import { ModerationService } from '../../moderation/moderation.service';
 import { GuidesService } from '../guides.service';
 
 /**
@@ -61,6 +62,7 @@ const MEDIA_KEY_VALIDE =
 describe('guides (05 §2, §7, §8, §9)', () => {
   let prisma: PrismaService;
   let guides: GuidesService;
+  let moderation: ModerationService;
 
   const userIds: string[] = [];
   const guideIds: string[] = [];
@@ -167,12 +169,19 @@ describe('guides (05 §2, §7, §8, §9)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    moderation = new ModerationService(
+      prisma,
+      new OutboxService(prisma),
+      new AuditService(prisma),
+      new FakeAiModerationProvider(),
+    );
     guides = new GuidesService(
       prisma,
       new OutboxService(prisma),
       new AuditService(prisma),
       new VisibilityService(prisma),
-      new FakeAiModerationProvider(),
+      // Le pipeline du module 13 (lot G) : plus d'appel direct au fournisseur d'IA.
+      moderation,
     );
 
     const origin = await prisma.country.findFirstOrThrow({
@@ -196,7 +205,11 @@ describe('guides (05 §2, §7, §8, §9)', () => {
     // Les guides d'abord : `guides.author_user_id` est en `SET NULL`, donc
     // supprimer les membres laisserait des guides anonymes derrière nous.
     if (guideIds.length > 0) {
-      await prisma.moderationCase.deleteMany({ where: { subjectId: { in: guideIds } } });
+      // Un dossier qui porte une action (celui qu'ouvre une règle locale, avec sa
+      // note) ne peut plus être supprimé : `moderation_actions` est en ajout seul.
+      await prisma.moderationCase.deleteMany({
+        where: { subjectId: { in: guideIds }, actions: { none: {} } },
+      });
       await prisma.guide.deleteMany({ where: { id: { in: guideIds } } });
     }
     if (journeyIds.length > 0) {
@@ -2197,13 +2210,13 @@ describe('guides (05 §2, §7, §8, §9)', () => {
     });
   });
 
-  it('bloque à la publication un contenu que la modération refuse (§2.1)', async () => {
+  it('refuse à la publication un texte que les règles locales du pipeline interdisent (§2.1)', async () => {
     const author = await newMember();
     const draft = await guides.createDraft(author, {
       title: 'Comment régler les frais de dossier',
-      // La modération fictive applique les mêmes règles locales que le vrai
-      // pipeline : « envoyer » de l'argent est un motif de blocage.
-      body: `${body('Les frais')}\n\nIl faut envoyer l'argent avant de recevoir le formulaire.`,
+      // Les règles locales sont celles du module 13 (`matchLocalRule`) : une
+      // demande de versement ADRESSÉE AU MEMBRE est un motif de blocage.
+      body: `${body('Les frais')}\n\nEnvoyez-moi 225 € sur mon compte avant de recevoir le formulaire.`,
       category: 'ARRIVAL',
       scope: 'UNIVERSAL',
     });
@@ -2212,13 +2225,32 @@ describe('guides (05 §2, §7, §8, §9)', () => {
     await expect(guides.publish(author, draft.id)).rejects.toMatchObject({
       code: 'CONTENT_BLOCKED',
     });
-    // Le guide reste un brouillon, et un dossier attend l'équipe.
+    // Le guide reste un brouillon, et un dossier de priorité 1 attend l'équipe.
     expect((await prisma.guide.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe('DRAFT');
+    const cases = await prisma.moderationCase.findMany({
+      where: { subjectType: 'GUIDE', subjectId: draft.id, source: 'AI' },
+    });
+    expect(cases).toHaveLength(1);
+    expect(cases[0]?.priority).toBe(1);
+  });
+
+  it('ne publie plus par un appel direct à l’IA : le texte part au pipeline après la publication', async () => {
+    const author = await newMember();
+    const draft = await guides.createDraft(author, {
+      title: 'Comment régler les frais de dossier',
+      // Étiqueté MONEY_REQUEST par l'IA fictive, mais SANS motif local : la
+      // publication passe, et c'est le pipeline asynchrone qui décidera.
+      body: `${body('Les frais')}\n\nIl faut envoyer l'argent avant de recevoir le formulaire.`,
+      category: 'ARRIVAL',
+      scope: 'UNIVERSAL',
+    });
+    guideIds.push(draft.id);
+
+    const published = await guides.publish(author, draft.id);
+    expect(published.status).toBe('PUBLISHED');
     expect(
-      await prisma.moderationCase.count({
-        where: { subjectType: 'GUIDE', subjectId: draft.id, source: 'AI' },
-      }),
-    ).toBe(1);
+      await prisma.moderationCase.count({ where: { subjectType: 'GUIDE', subjectId: draft.id } }),
+    ).toBe(0);
   });
 
   it('dépublie puis republie à la demande de l’auteur (§2.6)', async () => {

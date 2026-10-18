@@ -41,6 +41,7 @@ import {
   type UpdateComment,
   type UpdatePost,
   type VerificationLevel,
+  matchLocalRule,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
@@ -136,40 +137,13 @@ interface AuthorRow {
   mentorProfile: { userId: string } | null;
 }
 
-/**
- * Règles locales synchrones de modération (13 §2, étape 1, motifs à blocage
- * automatique) — coordonnées bancaires et demande de versement adressée à un
- * membre.
- *
- * Copiées de `help.service.ts` à dessein : elles y sont annoncées comme « la
- * seule partie écrite pour être jetée », et les dupliquer maintenant coûte moins
- * cher que d'inventer un `common/` que le module 13 devra de toute façon
- * remplacer. Quand `ModerationService.check()` arrivera, les deux blocs
- * disparaissent ensemble.
- *
- * §2.4 laisse les LIENS passer dans une publication (rendus `nofollow ugc`) : le
- * réglage est donc volontairement étroit — « il faut payer 225 € à la
- * préfecture » doit passer, « envoyez-moi 225 € sur mon compte » non.
+/*
+ * Les règles locales de modération (IBAN, RIB, carte, lien de paiement, demande
+ * de versement) ne sont PLUS copiées ici : `matchLocalRule` (@app/shared) est la
+ * seule source (lot G). §2.4 laisse les LIENS passer dans une publication — le
+ * réglage y est volontairement étroit : « il faut payer 225 € à la préfecture »
+ * passe, « envoyez-moi 225 € sur mon compte » non.
  */
-const POST_BLOCK_RULES: readonly { readonly name: string; readonly pattern: RegExp }[] = [
-  { name: 'IBAN', pattern: /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){3,7}[ ]?[A-Z0-9]{0,4}\b/ },
-  { name: 'RIB', pattern: /\b(?:rib|iban|bic|swift)\b\s*[:=]?\s*[A-Z0-9]{6,}/i },
-  { name: 'CARD', pattern: /\b(?:\d{4}[ -]?){3}\d{4}\b/ },
-  {
-    name: 'PAYMENT_LINK',
-    pattern:
-      /\b(?:paypal\.me|paypal\.com|lydia\.app|revolut\.me|wise\.com|remitly|westernunion|western union|moneygram|ria money)\b/i,
-  },
-  {
-    name: 'MONEY_REQUEST',
-    pattern:
-      /\b(?:envoie|envoies|envoyez|envoyer|vers[ée]?|verses|versez|verser|transf[eè]re|transf[eé]rez|d[eé]pose|d[eé]posez|paye|payez|payer|r[eé]gle|r[eé]glez)\b[^.!?]{0,40}\b(?:moi|m['’]|me\s|mon compte|mon num[eé]ro|mon wave|mon momo|ma carte|mon rib|mon iban)/i,
-  },
-  {
-    name: 'MONEY_REQUEST',
-    pattern: /\bsur (?:mon|le) (?:compte|num[eé]ro|wave|momo|mobile money|orange money|mtn)\b/i,
-  },
-];
 
 /**
  * RÈGLE DURE (§2.6) : « Une story ne contient ni lien, ni numéro, ni email (même
@@ -2946,14 +2920,13 @@ export class FeedService {
 
   // ══ OUTILS — MODÉRATION LOCALE ET MASQUAGE ═════════════════════════════════
 
-  /** Règles locales bloquantes (13 §2) sur une publication ou un commentaire. */
+  /** Règles locales bloquantes (13 §2) sur une publication ou un commentaire — celles de `matchLocalRule`, sans copie locale. */
   private assertPostPublishable(body: string): void {
-    for (const rule of POST_BLOCK_RULES) {
-      if (rule.pattern.test(body)) {
-        this.logger.warn(`Publication bloquée par la règle locale ${rule.name} (13 §2)`);
-        // Motif générique côté membre : le détail servirait à contourner.
-        this.fail('CONTENT_BLOCKED');
-      }
+    const rule = matchLocalRule(body);
+    if (rule !== null) {
+      this.logger.warn(`Publication bloquée par la règle locale ${rule} (13 §2)`);
+      // Motif générique côté membre : le détail servirait à contourner.
+      this.fail('CONTENT_BLOCKED');
     }
   }
 

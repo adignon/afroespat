@@ -109,7 +109,8 @@ export interface ModerationCheckInput {
 
 export type SubjectType =
   | 'POST' | 'COMMENT' | 'TOPIC' | 'GUIDE' | 'HELP_REQUEST' | 'HELP_RESPONSE'
-  | 'HOUSING' | 'JOB' | 'PRO' | 'EVENT' | 'MESSAGE' | 'USER' | 'COMMUNITY';
+  | 'HOUSING' | 'JOB' | 'PRO' | 'EVENT' | 'MESSAGE' | 'USER' | 'COMMUNITY'
+  | 'STORY' | 'CITY_TIP';
 
 /**
  * Ce que `check()` rend. `blocked` est redondant avec `verdict` : c'est
@@ -227,27 +228,15 @@ export class ModerationService {
    */
   async check(input: ModerationCheckInput): Promise<ModerationCheckResult> {
     // ── 1. Règles locales ────────────────────────────────────────────────
-    const rule = matchLocalRule(input.text);
-    if (rule !== null) {
-      this.logger.warn(`Publication bloquée par la règle locale ${rule} (13 §2.1)`);
-      const caseId = await this.openCase({
-        subjectType: input.subjectType,
-        subjectId: input.subjectId,
-        subjectAuthorUserId: input.authorUserId,
-        source: 'AI',
-        // §3 : « contenu bloqué par l'IA » est en priorité 1.
-        priority: 1,
-        aiVerdict: 'BLOCK',
-        labels: ['SCAM'],
-        note: `Règle locale ${rule} (§2.1).`,
-      });
+    const local = await this.gate(input);
+    if (local.blocked) {
       return {
         verdict: 'BLOCK',
         blocked: true,
         source: 'LOCAL',
         labels: [],
         score: null,
-        caseId,
+        caseId: local.caseId,
         notice: null,
       };
     }
@@ -302,6 +291,35 @@ export class ModerationService {
     }
 
     return { verdict: 'ALLOW', blocked: false, source: 'NONE', labels: [], score: null, caseId: null, notice: null };
+  }
+
+  /**
+   * L'étape 1 du §2 SEULE, avec son effet : les règles locales, et le dossier de
+   * priorité 1 si l'une d'elles mord.
+   *
+   * C'est le point d'entrée des modules qui REFUSENT une publication avant qu'elle
+   * n'existe (fil, guides, annonces, offres, fiches, astuces, sujets). Ils n'ont
+   * plus chacun une copie des motifs : `matchLocalRule` est la seule source, et
+   * ce qui diffère d'un module à l'autre — le code d'erreur rendu au membre —
+   * reste chez l'appelant. L'IA n'est PAS appelée ici : elle est asynchrone et
+   * passe par l'événement `*.published` (`handleContentPublished`).
+   */
+  async gate(input: ModerationCheckInput): Promise<{ blocked: boolean; rule: string | null; caseId: string | null }> {
+    const rule = matchLocalRule(input.text);
+    if (rule === null) return { blocked: false, rule: null, caseId: null };
+    this.logger.warn(`Publication bloquée par la règle locale ${rule} (13 §2.1)`);
+    const caseId = await this.openCase({
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      subjectAuthorUserId: input.authorUserId,
+      source: 'AI',
+      // §3 : « contenu bloqué par l'IA » est en priorité 1.
+      priority: 1,
+      aiVerdict: 'BLOCK',
+      labels: ['SCAM'],
+      note: `Règle locale ${rule} (§2.1).`,
+    });
+    return { blocked: true, rule, caseId };
   }
 
   /**
@@ -1746,42 +1764,146 @@ export class ModerationService {
   async handleContentPublished(subjectType: SubjectType, subjectId: string): Promise<void> {
     const content = await this.contentText(subjectType, subjectId);
     if (content === null) return;
-    await this.check({
+    const result = await this.check({
       subjectType,
       subjectId,
       authorUserId: content.authorUserId,
       text: content.text,
     });
+    // Une règle locale qui mord APRÈS la publication (le contenu a été écrit par
+    // un chemin qui ne passait pas par `gate`, ou avant qu'une règle n'existe) :
+    // `check()` a ouvert le dossier, mais rien n'a masqué le contenu. Masquer est
+    // le seul effet automatique que §2 autorise, et c'est lui qu'on pose.
+    if (result.blocked && result.caseId !== null) {
+      await this.hideAutomatically(
+        result.caseId,
+        { subjectType, subjectId, authorUserId: content.authorUserId, redactedText: '' },
+        ['SCAM'],
+      );
+    }
   }
 
+  /**
+   * Le texte d'un contenu publié, relu depuis sa table.
+   *
+   * UN CONTENU ABSENT, SUPPRIMÉ OU DÉJÀ MASQUÉ rend `null` : analyser un texte que
+   * personne ne peut plus lire ouvrirait un dossier sans objet. Les types sans
+   * texte (`MESSAGE`, `USER`, `COMMUNITY`) rendent `null` aussi.
+   */
   private async contentText(
     subjectType: SubjectType,
     subjectId: string,
   ): Promise<{ text: string; authorUserId: string | null } | null> {
-    if (subjectType === 'HELP_REQUEST') {
-      const row = await this.prisma.helpRequest.findUnique({
-        where: { id: subjectId },
-        select: { title: true, body: true, authorUserId: true },
-      });
-      return row === null ? null : { text: `${row.title}\n\n${row.body}`, authorUserId: row.authorUserId };
+    switch (subjectType) {
+      case 'HELP_REQUEST': {
+        const row = await this.prisma.helpRequest.findUnique({
+          where: { id: subjectId },
+          select: { title: true, body: true, authorUserId: true },
+        });
+        return row === null ? null : { text: `${row.title}\n\n${row.body}`, authorUserId: row.authorUserId };
+      }
+      case 'HELP_RESPONSE': {
+        const row = await this.prisma.helpResponse.findUnique({
+          where: { id: subjectId },
+          select: { body: true, authorUserId: true },
+        });
+        return row === null ? null : { text: row.body, authorUserId: row.authorUserId };
+      }
+      case 'EVENT': {
+        const row = await this.prisma.event.findUnique({
+          where: { id: subjectId },
+          select: { title: true, description: true, organizerUserId: true },
+        });
+        return row === null
+          ? null
+          : { text: `${row.title}\n\n${row.description ?? ''}`, authorUserId: row.organizerUserId };
+      }
+      case 'POST': {
+        const row = await this.prisma.post.findUnique({
+          where: { id: subjectId },
+          select: { body: true, authorUserId: true, status: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null || row.status !== 'PUBLISHED'
+          ? null
+          : { text: row.body, authorUserId: row.authorUserId };
+      }
+      case 'COMMENT': {
+        const row = await this.prisma.comment.findUnique({
+          where: { id: subjectId },
+          select: { body: true, authorUserId: true, status: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null || row.status !== 'PUBLISHED'
+          ? null
+          : { text: row.body, authorUserId: row.authorUserId };
+      }
+      case 'STORY': {
+        const row = await this.prisma.story.findUnique({
+          where: { id: subjectId },
+          select: { body: true, authorUserId: true, status: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null || row.status !== 'ACTIVE'
+          ? null
+          : { text: row.body, authorUserId: row.authorUserId };
+      }
+      case 'GUIDE': {
+        const row = await this.prisma.guide.findUnique({
+          where: { id: subjectId },
+          select: {
+            title: true,
+            authorUserId: true,
+            pages: { orderBy: { position: 'asc' }, select: { currentVersion: { select: { body: true } } } },
+          },
+        });
+        if (row === null) return null;
+        const body = row.pages.map((p) => p.currentVersion?.body ?? '').join('\n\n');
+        return { text: `${row.title}\n\n${body}`, authorUserId: row.authorUserId };
+      }
+      case 'HOUSING': {
+        const row = await this.prisma.housingListing.findUnique({
+          where: { id: subjectId },
+          select: { title: true, description: true, authorUserId: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null
+          ? null
+          : { text: `${row.title}\n\n${row.description}`, authorUserId: row.authorUserId };
+      }
+      case 'JOB': {
+        const row = await this.prisma.jobListing.findUnique({
+          where: { id: subjectId },
+          select: { title: true, description: true, authorUserId: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null
+          ? null
+          : { text: `${row.title}\n\n${row.description}`, authorUserId: row.authorUserId };
+      }
+      case 'PRO': {
+        const row = await this.prisma.proProfile.findUnique({
+          where: { id: subjectId },
+          select: { description: true, userId: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null || row.description === null
+          ? null
+          : { text: row.description, authorUserId: row.userId };
+      }
+      case 'CITY_TIP': {
+        const row = await this.prisma.cityTip.findUnique({
+          where: { id: subjectId },
+          select: { body: true, authorUserId: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null ? null : { text: row.body, authorUserId: row.authorUserId };
+      }
+      case 'TOPIC': {
+        const row = await this.prisma.topic.findUnique({
+          where: { id: subjectId },
+          select: { title: true, body: true, authorUserId: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null
+          ? null
+          : { text: `${row.title}\n\n${row.body}`, authorUserId: row.authorUserId };
+      }
+      default:
+        return null;
     }
-    if (subjectType === 'HELP_RESPONSE') {
-      const row = await this.prisma.helpResponse.findUnique({
-        where: { id: subjectId },
-        select: { body: true, authorUserId: true },
-      });
-      return row === null ? null : { text: row.body, authorUserId: row.authorUserId };
-    }
-    if (subjectType === 'EVENT') {
-      const row = await this.prisma.event.findUnique({
-        where: { id: subjectId },
-        select: { title: true, description: true, organizerUserId: true },
-      });
-      return row === null
-        ? null
-        : { text: `${row.title}\n\n${row.description ?? ''}`, authorUserId: row.organizerUserId };
-    }
-    return null;
   }
 
   /** §4.4 : les seuils, lus dans `system_settings`, défauts de `@app/shared`. */
@@ -1937,6 +2059,93 @@ export class ModerationService {
       select: { id: true, createdAt: true, slaDueAt: true, subjectType: true, subjectId: true },
       orderBy: { slaDueAt: 'asc' },
     });
+  }
+
+  /**
+   * `moderation.sla_alert` — la lecture ET l'alerte (lot G).
+   *
+   * Avant ce lot la tâche ne faisait que lire : « alerte équipe » (§11) n'alertait
+   * personne, et le journal de la tâche était la seule trace. Elle écrit
+   * maintenant une `staff_alerts` pour chaque compte actif habilité à traiter la
+   * file (`MODERATOR`, `CONTENT_ADMIN`, `SUPER_ADMIN`) et pour chaque dossier de
+   * priorité 1 hors délai. Le `@@unique` (compte, genre, dossier) rend la tâche
+   * rejouable : elle tourne toutes les 15 minutes, et un dossier en retard n'écrit
+   * qu'UNE alerte par compte, pas quatre par heure.
+   *
+   * Retourne les dossiers en retard, comme avant (le journal de la tâche et les
+   * tests existants lisent cette forme).
+   */
+  async alertOverdueUrgentCases(now: Date = new Date()) {
+    const overdue = await this.overdueUrgentCases(now);
+    if (overdue.length === 0) return overdue;
+    const staff = await this.prisma.staffUser.findMany({
+      where: { isActive: true, role: { in: ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN'] } },
+      select: { id: true },
+    });
+    if (staff.length === 0) {
+      this.logger.warn(`${overdue.length} dossier(s) prioritaire(s) hors délai, aucun compte équipe actif à prévenir`);
+      return overdue;
+    }
+    const data = overdue.flatMap((c) =>
+      staff.map((st) => ({
+        id: newId(),
+        staffId: st.id,
+        kind: 'SLA_BREACH',
+        title: 'Dossier prioritaire hors délai',
+        body: `Un dossier de priorité 1 (${c.subjectType}) dépasse son délai de traitement depuis le ${c.slaDueAt.toISOString()}.`,
+        refType: 'moderation_case',
+        refId: c.id,
+      })),
+    );
+    const created = await this.prisma.staffAlert.createMany({ data, skipDuplicates: true });
+    if (created.count > 0) {
+      this.logger.warn(`moderation.sla_alert : ${created.count} alerte(s) écrite(s) pour l’équipe`);
+    }
+    return overdue;
+  }
+
+  /** `GET /admin/moderation/alerts` : les alertes du compte, non lues d'abord. */
+  async listStaffAlerts(staff: StaffContext, unreadOnly = false) {
+    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    const rows = await this.prisma.staffAlert.findMany({
+      where: { staffId: staff.staffId, ...(unreadOnly ? { readAt: null } : {}) },
+      orderBy: [{ readAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'desc' }],
+      take: 50,
+    });
+    // Une alerte dont le dossier est clos n'a plus d'objet : on la lit comme
+    // traitée plutôt que de la laisser faire du bruit.
+    const caseIds = rows.filter((r) => r.refType === 'moderation_case').map((r) => r.refId);
+    const open = await this.prisma.moderationCase.findMany({
+      where: { id: { in: caseIds }, status: { in: ['OPEN', 'IN_REVIEW'] } },
+      select: { id: true },
+    });
+    const openIds = new Set(open.map((c) => c.id));
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        createdAt: r.createdAt.toISOString(),
+        kind: r.kind,
+        title: r.title,
+        body: r.body,
+        caseId: r.refType === 'moderation_case' ? r.refId : null,
+        caseOpen: r.refType === 'moderation_case' ? openIds.has(r.refId) : null,
+        read: r.readAt !== null,
+      })),
+      unread: rows.filter((r) => r.readAt === null).length,
+    };
+  }
+
+  /** `POST /admin/moderation/alerts/:id/read` — seulement les siennes. */
+  async markStaffAlertRead(staff: StaffContext, alertId: string): Promise<void> {
+    this.assertRole(staff, ['MODERATOR', 'CONTENT_ADMIN', 'SUPER_ADMIN']);
+    const r = await this.prisma.staffAlert.updateMany({
+      where: { id: alertId, staffId: staff.staffId, readAt: null },
+      data: { readAt: new Date() },
+    });
+    if (r.count === 0) {
+      const exists = await this.prisma.staffAlert.count({ where: { id: alertId, staffId: staff.staffId } });
+      if (exists === 0) throw ApiError.notFound();
+    }
   }
 
   /** `GET /admin/moderation/stats` (§8.2) : délai moyen, file, respect du SLA. */

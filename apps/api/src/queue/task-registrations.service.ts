@@ -166,17 +166,14 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: (ctx) => this.moderation.expireSanctions(ctx.now),
     });
 
-    // `moderation.sla_alert` ne fait pour l'instant que LIRE : `overdueUrgentCases`
-    // rend les dossiers de priorité 1 hors SLA, sans notifier personne — le module
-    // 12 n'existe pas encore. La tâche est enregistrée quand même : sa ligne de
-    // journal est aujourd'hui la seule alerte SLA que le runbook §4 puisse
-    // observer, et le jour où les notifications arrivent, seul le gestionnaire
-    // change.
+    // `moderation.sla_alert` ÉCRIT l'alerte : une `staff_alerts` par compte équipe
+    // actif et par dossier de priorité 1 hors délai (lot G). Avant, elle ne faisait
+    // que lire et le journal de la tâche était la seule alerte observable.
     this.registry.register({
       name: 'moderation.sla_alert',
       module: 'moderation',
       schedule: every(15),
-      handle: (ctx) => this.moderation.overdueUrgentCases(ctx.now),
+      handle: (ctx) => this.moderation.alertOverdueUrgentCases(ctx.now),
     });
 
     this.registry.register({

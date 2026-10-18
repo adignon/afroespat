@@ -46,6 +46,7 @@ import { loadEnv } from '../../config/env';
 // finissent par ne plus donner le même rayon. C'est une fonction PURE, pas le
 // dépôt d'un autre module — l'interdit du §3.3 ne porte pas sur elle.
 import { haversineKm } from '../events/events.service';
+import { assertLocalRules } from '../../common/content-gate';
 
 /**
  * Logement — 10-services.md §2.
@@ -209,6 +210,8 @@ export class HousingService {
       select: { verificationLevel: true, createdAt: true },
     });
     this.assertPublishLevel(author.verificationLevel);
+    // 13 §2.1 : les règles locales, avant que l'annonce n'existe.
+    assertLocalRules(input.title, input.description);
 
     const cityId = await this.resolveCityId(input.cityId);
 
@@ -313,6 +316,8 @@ export class HousingService {
   async update(listingId: string, authorUserId: string, patch: UpdateHousing): Promise<HousingCard> {
     const listing = await this.loadOwned(listingId, authorUserId);
     if (listing.status === 'REMOVED') throw ApiError.transverse('CONFLICT', { status: 'REMOVED' });
+    // Un texte modifié repasse par les mêmes règles : sinon le filtre se contourne en deux temps.
+    assertLocalRules(patch.title, patch.description);
 
     const cityId = patch.cityId === undefined ? listing.city.id : await this.resolveCityId(patch.cityId);
     const description = patch.description ?? listing.description;

@@ -10,6 +10,7 @@ import { FeedService } from '../modules/feed/feed.service';
 import { JourneysService } from '../modules/journeys/journeys.service';
 import { MentorshipService } from '../modules/mentorship/mentorship.service';
 import { MessagingService } from '../modules/messaging/messaging.service';
+import { ModerationEffectsService } from '../modules/moderation/moderation-effects.service';
 import { ModerationService } from '../modules/moderation/moderation.service';
 import { ProsService } from '../modules/pros/pros.service';
 import { NotificationEventsService } from '../modules/notifications/notifications.events';
@@ -18,6 +19,7 @@ import { SearchService } from '../modules/search/search.service';
 import { BillingService } from '../modules/billing/billing.service';
 import { DataExportService } from '../modules/exports/data-export.service';
 import { RealtimeRelayService } from '../modules/realtime/realtime.relay';
+import type { DomainEventType } from '../common/outbox.service';
 import { EventHandlerRegistry } from './event-handlers';
 
 /**
@@ -63,6 +65,7 @@ export class EventSubscriptionsService implements OnModuleInit {
     private readonly dataExports: DataExportService,
     private readonly cities: CitiesService,
     private readonly realtime: RealtimeRelayService,
+    private readonly moderationEffects: ModerationEffectsService,
   ) {}
 
   onModuleInit(): void {
@@ -237,6 +240,49 @@ export class EventSubscriptionsService implements OnModuleInit {
 
     this.registry.on('event.published', 'moderation', async (job) => {
       await this.moderation.handleContentPublished('EVENT', job.aggregateId);
+    });
+
+    // ── TOUS les contenus publiés passent par le pipeline (lot G) ────────────
+    //
+    // Chaque événement ci-dessous nomme le sujet par `aggregateId` ; le texte est
+    // RELU depuis la table (`ModerationService.contentText`), jamais lu dans
+    // l'événement. Les modules refusent déjà en SYNCHRONE ce que les règles
+    // locales interdisent (`ModerationService.gate`) ; ce qui suit est l'étape
+    // asynchrone du §2 : analyse IA, dossier, masquage automatique.
+    const published: readonly [Parameters<ModerationService['handleContentPublished']>[0], DomainEventType][] = [
+      ['POST', 'post.published'],
+      ['STORY', 'story.published'],
+      ['GUIDE', 'guide.published'],
+      ['HOUSING', 'housing.published'],
+      ['JOB', 'job.published'],
+      ['CITY_TIP', 'city_tip.published'],
+      ['PRO', 'pro.registered'],
+      ['TOPIC', 'community.topic_created'],
+    ];
+    for (const [subjectType, eventType] of published) {
+      this.registry.on(eventType, 'moderation', async (job) => {
+        await this.moderation.handleContentPublished(subjectType, job.aggregateId);
+      });
+    }
+    // Un commentaire (fil, réponse de sujet de réseau, guide, événement) : le
+    // sujet de l'événement est la PUBLICATION, le commentaire est dans la charge.
+    this.registry.on('post.commented', 'moderation', async (job) => {
+      const commentId = readString(job.payload, 'commentId');
+      if (commentId === null) return;
+      await this.moderation.handleContentPublished('COMMENT', commentId);
+    });
+
+    // Les EFFETS du masquage, du rétablissement et du retrait sur les tables des
+    // autres modules (voir `ModerationEffectsService`). Le masquage des POST,
+    // STORY et COMMENT reste au fil, juste en dessous.
+    this.registry.on('moderation.content_hidden', 'moderation-effects', async (job) => {
+      await this.moderationEffects.apply('hidden', job.payload);
+    });
+    this.registry.on('moderation.content_restored', 'moderation-effects', async (job) => {
+      await this.moderationEffects.apply('restored', job.payload);
+    });
+    this.registry.on('moderation.content_removed', 'moderation-effects', async (job) => {
+      await this.moderationEffects.apply('removed', job.payload);
     });
 
     // ── La cascade du blocage (08 §4) ────────────────────────────────────────

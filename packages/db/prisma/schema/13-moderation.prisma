@@ -30,6 +30,10 @@ enum ReportSubjectType {
   /// automatique : le dossier part alors sans auteur, comme un signalement de
   /// contenu dont l'auteur a supprimé son compte.
   COMMUNITY
+  /// AJOUTÉ (lot G) : le pipeline de modération couvre désormais les stories et
+  /// les astuces de ville, qui n'avaient pas de type de sujet.
+  STORY
+  CITY_TIP
 }
 
 enum ReportReason {
@@ -306,4 +310,56 @@ model BannedPhoneHash {
 
   @@index([bannedAt])
   @@map("banned_phone_hashes")
+}
+
+/// AJOUT (lot G) — l'état d'un contenu AVANT que la modération ne le masque.
+///
+/// Le pipeline émet `moderation.content_hidden`, `…_restored`, `…_removed` pour
+/// treize types de sujet, et chaque table de contenu dit « masqué » à sa façon
+/// (`status`, `moderation_status`, `deleted_at`). Sans mémoire de l'état d'avant,
+/// « rétablir » ressusciterait un contenu que son auteur avait supprimé lui-même,
+/// ou lèverait un blocage de risque posé par une autre règle. Une ligne ici dit
+/// « c'est la modération qui a masqué ceci, et voici ce qu'il fallait remettre » ;
+/// sans ligne, un rétablissement ne touche à rien.
+model ModerationHide {
+  subjectType ReportSubjectType @map("subject_type")
+  subjectId   String            @map("subject_id") @db.Uuid
+  hiddenAt    DateTime          @default(now()) @map("hidden_at") @db.Timestamptz
+  /// L'état à remettre, tel que le module du contenu le comprend (`ACTIVE`,
+  /// `PUBLISHED`, `CLEARED`…). Texte libre à dessein : une valeur d'énumération
+  /// dépendrait de l'énumération de chaque table.
+  priorState  String            @map("prior_state")
+  caseId      String?           @map("case_id") @db.Uuid
+
+  @@id([subjectType, subjectId])
+  @@map("moderation_hides")
+}
+
+/// AJOUT (lot G) — l'alerte INTERNE adressée à un compte de l'équipe.
+///
+/// `notifications.user_id` désigne un MEMBRE (clé étrangère vers `users`) : une
+/// alerte pour l'équipe ne peut pas y entrer, `staff_users` est une autre table.
+/// La tâche `moderation.sla_alert` ne faisait que LIRE les dossiers de priorité 1
+/// hors délai, et personne n'était prévenu. Une ligne par compte, par dossier et
+/// par genre : la tâche tourne toutes les 15 minutes, et le `@@unique` lui évite
+/// d'écrire la même alerte quatre fois par heure.
+model StaffAlert {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  staffId String  @map("staff_id") @db.Uuid
+  /// `SLA_BREACH` aujourd'hui ; ouvert pour d'autres alertes d'équipe.
+  kind    String
+  title   String
+  body    String?
+  refType String? @map("ref_type")
+  refId   String  @map("ref_id") @db.Uuid
+
+  readAt DateTime? @map("read_at") @db.Timestamptz
+
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([staffId, kind, refId])
+  @@index([staffId, readAt])
+  @@map("staff_alerts")
 }

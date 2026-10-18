@@ -42,6 +42,7 @@ import { MessagingController } from './modules/messaging/messaging.controller';
 import { MessagingService } from './modules/messaging/messaging.service';
 import { ModerationConsumer } from './modules/moderation/moderation.consumer';
 import { ModerationController } from './modules/moderation/moderation.controller';
+import { ModerationEffectsService } from './modules/moderation/moderation-effects.service';
 import { ModerationService } from './modules/moderation/moderation.service';
 import { HousingController } from './modules/housing/housing.controller';
 import { HousingService } from './modules/housing/housing.service';
@@ -202,6 +203,9 @@ import {
     JobsService,
     ProsService,
     ModerationService,
+    // Les effets du masquage / rétablissement / retrait sur les tables des autres
+    // modules (lot G) — voir l'en-tête du service.
+    ModerationEffectsService,
     StaffAuthService,
     AdminService,
     ReferentialsService,

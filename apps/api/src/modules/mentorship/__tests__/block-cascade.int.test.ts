@@ -207,6 +207,8 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
       // ne publie ni ne fait expirer de story — inerte ici.
       inert(),
       inert(),
+      // Les effets de modération (lot G) : inertes, un blocage n'en émet pas.
+      inert(),
     ).onModuleInit();
 
     const country = await prisma.country.findFirstOrThrow({

@@ -45,10 +45,9 @@ import { buildPage, decodeCursor } from '../../common/cursor';
 import { ATTACHABLE_KINDS, REQUIRED_MEDIA_STATUS } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
-import { redactForModeration, assertRedacted } from '../../common/redact';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
-import { AI_MODERATION_PROVIDER, type AiModerationProvider } from '../../providers/providers';
+import { ModerationService } from '../moderation/moderation.service';
 
 /**
  * Guides et démarches — 05-guides.md.
@@ -191,7 +190,7 @@ export class GuidesService {
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
     private readonly visibility: VisibilityService,
-    @Inject(AI_MODERATION_PROVIDER) private readonly moderation: AiModerationProvider,
+    private readonly moderation: ModerationService,
     @Optional()
     @Inject(GUIDE_VIEW_COUNTER)
     private readonly views: GuideViewCounterPort | null = null,
@@ -3034,13 +3033,21 @@ export class GuidesService {
   }
 
   /**
-   * Modération à la publication, « comme pour un post » (§2.1).
+   * Modération à la publication (§2.1) — par le PIPELINE du module 13.
    *
-   * Le pipeline complet appartient au module 13 (scores, verdicts, file
-   * humaine) ; il n'existe pas encore. Ce qui est fait ici est le minimum
-   * NON NÉGOCIABLE : le texte est masqué avant de quitter le serveur (règle
-   * dure 13 §2), un verdict bloquant refuse la publication et ouvre un dossier.
-   * Quand le module 13 arrivera, ce bloc l'appellera au lieu du fournisseur.
+   * Avant le lot G, ce bloc appelait lui-même le fournisseur d'IA, avec sa propre
+   * liste d'étiquettes (plus large que la spec : elle bloquait `HARASSMENT` et
+   * `SELF_HARM`) et son propre dossier. Il n'y a plus qu'un chemin :
+   *
+   *   · ICI, l'étape 1 du §2 — les règles locales, synchrones, qui seules peuvent
+   *     refuser de publier. Un texte qui mord est refusé (`CONTENT_BLOCKED`) et un
+   *     dossier de priorité 1 est ouvert sur le guide (qui existe : c'est un
+   *     brouillon) ;
+   *   · APRÈS la publication, l'événement `guide.published` envoie le texte au
+   *     pipeline (`ModerationService.handleContentPublished`) : masquage, analyse
+   *     IA asynchrone, dossier et masquage automatique au-delà de 0,8 sur les
+   *     étiquettes bloquantes. Un fournisseur d'IA en panne ne bloque donc plus
+   *     une publication.
    */
   private async assertModerationAllows(
     title: string,
@@ -3048,43 +3055,13 @@ export class GuidesService {
     guideId: string,
     authorUserId: string,
   ): Promise<void> {
-    const { text } = redactForModeration(`${title}\n\n${body}`);
-    assertRedacted(text);
-
-    let verdict: { labels: string[]; score: number };
-    try {
-      verdict = await this.moderation.classify(text);
-    } catch (error) {
-      // Un fournisseur indisponible ne bloque pas la publication : §2.1 veut
-      // une modération, pas un point de panne unique. Le dossier est ouvert,
-      // l'équipe relira.
-      this.logger.warn(`Modération indisponible, publication laissée passer : ${String(error)}`);
-      await this.openModerationCase({
-        guideId,
-        authorUserId,
-        source: 'AI',
-        priority: 3,
-        dedupe: true,
-      });
-      return;
-    }
-
-    const blocking = verdict.labels.filter((label) =>
-      ['SCAM', 'MONEY_REQUEST', 'HARASSMENT', 'HATE', 'SEXUAL', 'SELF_HARM'].includes(label),
-    );
-    if (blocking.length === 0) return;
-
-    await this.openModerationCase({
-      guideId,
+    const gate = await this.moderation.gate({
+      subjectType: 'GUIDE',
+      subjectId: guideId,
       authorUserId,
-      source: 'AI',
-      // 13 §2 : arnaque et demande d'argent sont en priorité 1.
-      priority: blocking.some((l) => l === 'SCAM' || l === 'MONEY_REQUEST') ? 1 : 2,
-      dedupe: true,
-      labels: blocking,
-      score: verdict.score,
+      text: `${title}\n\n${body}`,
     });
-    this.fail('CONTENT_BLOCKED', { labels: blocking });
+    if (gate.blocked) this.fail('CONTENT_BLOCKED');
   }
 
   private async openModerationCase(input: {

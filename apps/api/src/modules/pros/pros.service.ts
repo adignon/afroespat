@@ -24,6 +24,7 @@ import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
+import { assertLocalRules } from '../../common/content-gate';
 
 /**
  * Annuaire professionnel — 10-services.md §4.
@@ -207,6 +208,8 @@ export class ProsService {
     for (const text of [input.businessName, input.description, input.priceHint]) {
       this.assertNoForbiddenWord(text);
     }
+    // 13 §2.1 : les règles locales du pipeline, en plus des mots interdits du §4.1.
+    assertLocalRules(input.businessName, input.description, input.priceHint);
 
     const profession = await this.prisma.profession.findFirst({
       where: { id: input.professionId, isActive: true },

@@ -18,6 +18,7 @@ import {
   type UpdateHelp,
   type VerificationLevel,
   levelSatisfies,
+  matchLocalRule,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
@@ -88,44 +89,13 @@ type AuthorRow = {
   mentorProfile: { userId: string } | null;
 };
 
-/**
- * Règles locales synchrones de modération (13 §2, étape 1) — coordonnées
- * bancaires, demande de versement adressée à un membre, liens de paiement.
- *
- * Elles sont ici et non dans `common/` parce que `ModerationService.check()`
- * n'existe pas encore (module 13, lot 5) : le lot 4 ne doit pas publier sans
- * filtre pour autant. Quand le module 13 arrivera, ces trois motifs déménagent
- * et ce bloc disparaît — c'est la seule partie de ce fichier écrite pour être
- * jetée.
- *
- * Le réglage est VOLONTAIREMENT étroit. « Il faut payer 225 € à la préfecture »
- * est une information juste, utile, et doit passer ; « envoyez-moi 225 € sur mon
- * compte » ne doit pas. La différence n'est pas le montant, c'est le
- * destinataire — d'où l'exigence d'un marqueur interpersonnel, et non d'un
- * simple verbe de paiement suivi d'une somme.
+/*
+ * Les règles locales de modération (13 §2.1) ne sont PLUS copiées ici : elles
+ * vivent dans `matchLocalRule` (@app/shared), seule source (lot G). Le réglage
+ * reste volontairement étroit — « il faut payer 225 € à la préfecture » passe,
+ * « envoyez-moi 225 € sur mon compte » non : la différence n'est pas le montant,
+ * c'est le destinataire.
  */
-const LOCAL_BLOCK_RULES: readonly { readonly name: string; readonly pattern: RegExp }[] = [
-  // IBAN : deux lettres de pays, deux chiffres de contrôle, puis des groupes.
-  { name: 'IBAN', pattern: /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){3,7}[ ]?[A-Z0-9]{0,4}\b/ },
-  { name: 'RIB', pattern: /\b(?:rib|iban|bic|swift)\b\s*[:=]?\s*[A-Z0-9]{6,}/i },
-  // Numéro de carte : quatre groupes de quatre chiffres.
-  { name: 'CARD', pattern: /\b(?:\d{4}[ -]?){3}\d{4}\b/ },
-  {
-    name: 'PAYMENT_LINK',
-    pattern:
-      /\b(?:paypal\.me|paypal\.com|lydia\.app|revolut\.me|wise\.com|remitly|westernunion|western union|moneygram|ria money)\b/i,
-  },
-  {
-    // Un verbe de versement dont la cible est LE MEMBRE lui-même.
-    name: 'MONEY_REQUEST',
-    pattern:
-      /\b(?:envoie|envoies|envoyez|envoyer|vers[ée]?|verses|versez|verser|transf[eè]re|transf[eé]rez|d[eé]pose|d[eé]posez|paye|payez|payer|r[eé]gle|r[eé]glez)\b[^.!?]{0,40}\b(?:moi|m['’]|me\s|mon compte|mon num[eé]ro|mon wave|mon momo|ma carte|mon rib|mon iban)/i,
-  },
-  {
-    name: 'MONEY_REQUEST',
-    pattern: /\bsur (?:mon|le) (?:compte|num[eé]ro|wave|momo|mobile money|orange money|mtn)\b/i,
-  },
-];
 
 /** Rayon de la Terre, en kilomètres — tri par proximité (02 §3, pas de PostGIS). */
 const EARTH_RADIUS_KM = 6_371;
@@ -1007,12 +977,11 @@ export class HelpService {
   /** Règles locales de modération (13 §2) sur le titre et le corps. */
   private assertPublishable(title: string | null, body: string): void {
     const text = title === null ? body : `${title}\n${body}`;
-    for (const rule of LOCAL_BLOCK_RULES) {
-      if (rule.pattern.test(text)) {
-        this.logger.warn(`Publication bloquée par la règle locale ${rule.name} (13 §2)`);
-        // Motif générique côté membre : le détail servirait à contourner.
-        this.fail('CONTENT_BLOCKED');
-      }
+    const rule = matchLocalRule(text);
+    if (rule !== null) {
+      this.logger.warn(`Publication bloquée par la règle locale ${rule} (13 §2)`);
+      // Motif générique côté membre : le détail servirait à contourner.
+      this.fail('CONTENT_BLOCKED');
     }
   }
 

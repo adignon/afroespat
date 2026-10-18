@@ -29,6 +29,7 @@ import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
+import { assertLocalRules } from '../../common/content-gate';
 
 /**
  * Emploi — 10-services.md §3.
@@ -141,6 +142,8 @@ export class JobsService {
   // ── Offres (§3.1) ─────────────────────────────────────────────────────────
 
   async create(authorUserId: string, input: CreateJob): Promise<JobCard> {
+    // 13 §2.1 : les règles locales, avant que l'offre n'existe.
+    assertLocalRules(input.title, input.description);
     const cityId = input.cityId === undefined || input.cityId === null
       ? null
       : await this.resolveCityId(input.cityId);
@@ -209,6 +212,7 @@ export class JobsService {
   async update(jobId: string, authorUserId: string, patch: UpdateJob): Promise<JobCard> {
     const job = await this.loadOwned(jobId, authorUserId);
     if (job.status === 'REMOVED') throw ApiError.transverse('CONFLICT', { status: 'REMOVED' });
+    assertLocalRules(patch.title, patch.description);
 
     const cityId =
       patch.cityId === undefined
