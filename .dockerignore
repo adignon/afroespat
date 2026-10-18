@@ -1,0 +1,23 @@
+# Ce qui ne doit ni entrer dans le contexte de build, ni finir dans une image.
+.git
+.claude
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/test-results
+**/playwright-report
+packages/db/generated
+# Secrets et configuration locale : JAMAIS dans une image.
+.env
+.env.*
+!.env.example
+# Sans rapport avec l'exécution.
+docs
+tools/__tests__
+*.md
+!apps/**/README.md
+apps/web/e2e
+Dockerfile
+.dockerignore
