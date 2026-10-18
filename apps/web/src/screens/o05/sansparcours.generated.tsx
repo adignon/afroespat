@@ -13,6 +13,7 @@ export function O05SansParcours(props: O05Data) {
   return (
     <>
       <div style={{ background: "#F6F8F7", display: "flex", flexDirection: "column", padding: "40px", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ width: "520px", margin: "48px auto 0", display: "flex", flexDirection: "column", gap: "14px" }}>

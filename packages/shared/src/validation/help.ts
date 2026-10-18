@@ -262,6 +262,15 @@ export const createHelpResponseSchema = z
 
 export type CreateHelpResponse = z.infer<typeof createHelpResponseSchema>;
 
+/**
+ * `PATCH /help/:id/responses/:rid` — modifier SA réponse. Mêmes bornes que la
+ * création (§2.3) : une seule définition, donc aucune façon d'éditer vers un texte
+ * que la publication aurait refusé.
+ */
+export const updateHelpResponseSchema = createHelpResponseSchema;
+
+export type UpdateHelpResponse = z.infer<typeof updateHelpResponseSchema>;
+
 // ── Schémas de lecture ──────────────────────────────────────────────────────
 
 /**
@@ -405,6 +414,25 @@ export const helpCardSchema = z
     resolvedByResponseId: uuidSchema.nullable(),
     /** Pastille « Depuis un parcours » (§2.5) — sans rien dire du parcours. */
     fromJourney: z.boolean(),
+    /**
+     * LA LIGNE D'ÉTAPE DE LA CARTE (§2.5) : « Étape 7 · Logement · parcours Études ».
+     *
+     * Elle n'existait que sur le détail, et c'est ce qui forçait les listes à
+     * écrire « Demande issue d'un parcours » faute de mieux. Même règle dure que
+     * `helpJourneyContextSchema` : le TYPE de parcours, JAMAIS son titre personnel.
+     * `null` quand la demande ne vient pas d'un parcours.
+     */
+    journeyStep: z
+      .object({
+        stepName: z.string(),
+        /** Rang de l'étape dans son parcours, à partir de 1. */
+        stepNumber: z.number().int().min(1),
+        journeyTypeName: z.string(),
+      })
+      .strict()
+      .nullable(),
+    /** §3 « Ajoutée » : dernière réouverture par l'auteur, ou `null`. */
+    reopenedAt: z.string().datetime().nullable(),
     author: helpMemberSchema,
     isAuthor: z.boolean(),
   })
@@ -496,6 +524,20 @@ export const helpJourneyContextSchema = z
     journeyTypeName: z.string(),
     dueDate: z.string().datetime().nullable(),
     dueInDays: z.number().int().nullable(),
+    /**
+     * L'étape et le parcours EUX-MÊMES — pour l'AUTEUR SEUL (`null` pour tout autre
+     * lecteur). §2.4 : à la résolution, le parcours propose de marquer l'étape
+     * franchie ; le bouton a besoin des deux identifiants. Ils ne sont pas rendus
+     * aux autres membres : ce sont ceux d'un parcours personnel.
+     */
+    own: z
+      .object({
+        journeyId: uuidSchema,
+        stepId: uuidSchema,
+        stepDone: z.boolean(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 
@@ -512,6 +554,13 @@ export const helpDetailResponseSchema = z
       /** Le corps ENTIER, que la carte tronque. */
       body: z.string(),
       updatedAt: z.string().datetime(),
+      /**
+       * CE QUE L'AUTEUR PEUT FAIRE, décidé par le serveur (le front prévient, le
+       * serveur décide) : modifier tant que la demande est ouverte (§4), rouvrir
+       * dans les 7 jours qui suivent la résolution (§2.2).
+       */
+      canEdit: z.boolean(),
+      canReopen: z.boolean(),
     }),
     journeyContext: helpJourneyContextSchema.nullable(),
     responses: z.array(
@@ -525,6 +574,9 @@ export const helpDetailResponseSchema = z
           author: helpMemberSchema,
           /** §2.4 : l'auteur marque UNE réponse, et seulement tant qu'elle est ouverte. */
           canMarkHelpful: z.boolean(),
+          /** C'est ma réponse : je peux la modifier ou la supprimer (sauf si marquée utile). */
+          isMine: z.boolean(),
+          canEdit: z.boolean(),
         })
         .strict(),
     ),

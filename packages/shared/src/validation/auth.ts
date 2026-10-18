@@ -9,6 +9,7 @@ import {
   VerificationLevel,
 } from '../enums/generated.js';
 import { handleSchema, uuidSchema } from './pagination.js';
+import { PHONE_REFUS_MESSAGES } from './phone-refus.js';
 
 /**
  * Schémas d'authentification — 01-identite.md §2.1 et §4.1.
@@ -32,7 +33,13 @@ export const AUTH_ERROR_CODES = {
    * `OTP_INVALID`.
    */
   PHONE_INVALID: 422,
+  /** Le numéro est valide, mais d'un autre pays que celui choisi (contournement de L2). */
+  PHONE_COUNTRY_MISMATCH: 422,
+  /** Ligne fixe, VoIP, numéro spécial : aucun SMS ne peut y arriver. */
+  PHONE_NOT_MOBILE: 422,
   CAPTCHA_FAILED: 400,
+  /** Le fournisseur SMS n'a pas pu envoyer le code (panne, quota) : réessayer plus tard. */
+  SMS_SEND_FAILED: 502,
   OTP_INVALID: 422,
   OTP_EXPIRED: 422,
   OTP_ATTEMPTS_EXCEEDED: 429,
@@ -53,8 +60,9 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
    * serveur la met dans `details.expectedLength` pour que l'écran l'écrive avec
    * ses propres mots. §5.2 : « le front utilise le code, jamais le message ».
    */
-  PHONE_INVALID: 'Ce numéro ne correspond pas au format du pays choisi.',
+  ...PHONE_REFUS_MESSAGES,
   CAPTCHA_FAILED: 'La vérification anti-robot a échoué. Réessayez.',
+  SMS_SEND_FAILED: 'Nous n’avons pas pu envoyer le SMS. Réessayez dans un instant.',
   OTP_INVALID: 'Ce code n’est pas le bon. Vérifiez et réessayez.',
   OTP_EXPIRED: 'Ce code a expiré. Demandez-en un nouveau.',
   OTP_ATTEMPTS_EXCEEDED: 'Trop de tentatives. Demandez un nouveau code.',
@@ -64,30 +72,6 @@ export const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
   LAST_PHONE: 'Vous devez garder au moins un numéro.',
   ACCOUNT_MINOR: 'La plateforme est réservée aux personnes majeures.',
 };
-
-/**
- * Numéro au format E.164 : `+` suivi de 8 à 15 chiffres.
- *
- * La saisie côté front est plus souple — espaces, points, tirets — et
- * `normalizePhone` la ramène ici. Le stockage, lui, n'accepte que cette forme :
- * deux écritures du même numéro créeraient deux comptes.
- */
-export const e164Schema = z
-  .string()
-  .regex(/^\+[1-9]\d{7,14}$/, { message: 'Numéro de téléphone invalide.' });
-
-/**
- * Nettoie une saisie humaine. Ne DEVINE pas l'indicatif : c'est le sélecteur de
- * pays qui le donne, et supposer « +33 » parce qu'on est en France créerait des
- * comptes en double pour les membres encore au pays.
- */
-export function normalizePhone(input: string, dialCode: string): string {
-  const digits = input.replace(/[\s.\-–—()]/g, '');
-  if (digits.startsWith('+')) return digits;
-  // Un numéro national commence souvent par un 0 de service, qui saute.
-  const national = digits.replace(/^0+/, '');
-  return `${dialCode}${national}`;
-}
 
 export const otpPurposeSchema = z.enum([
   'SIGNUP',
@@ -127,6 +111,38 @@ export const otpVerifySchema = z.object({
 
 export type OtpVerify = z.infer<typeof otpVerifySchema>;
 
+/**
+ * ── LES DATES ET LE FUSEAU D'UN PROFIL (lot A) ──────────────────────────────
+ *
+ * `arrivalDate` dans le futur et `plannedDepartureDate` dans le passé étaient
+ * acceptées : `arrivalDate` pilote la phase automatique et le classement des
+ * « nouveaux arrivants » d'une ville, une date à venir y ferait figurer le
+ * membre trop tôt ou le sortirait du calcul des phases.
+ *
+ * La comparaison se fait sur le JOUR CIVIL (`YYYY-MM-DD`, ordre lexicographique =
+ * ordre chronologique) avec UN JOUR DE MARGE : le membre saisit sa date dans son
+ * fuseau, le serveur compte en UTC, et à minuit un membre à Paris ou à Cotonou
+ * est déjà « demain » pour l'UTC. Sans marge, la date du jour serait refusée à
+ * certaines heures. Le contrôle se calcule AU MOMENT de la validation, jamais à
+ * l'import du module.
+ */
+const MSG_ARRIVEE_FUTURE = 'La date d’arrivée ne peut pas être dans le futur.';
+const MSG_DEPART_PASSE = 'La date de départ prévue ne peut pas être dans le passé.';
+
+function jourLimite(decalageJours: number): string {
+  return new Date(Date.now() + decalageJours * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Un fuseau IANA connu du moteur JS (`Europe/Paris`, `Africa/Porto-Novo`, `UTC`…). */
+export function estFuseauIana(valeur: string): boolean {
+  try {
+    new Intl.DateTimeFormat('fr-FR', { timeZone: valeur });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Onboarding, écrans O01 et O02 — phase, pays, ville. */
 export const updateMeSchema = z
   .object({
@@ -140,9 +156,22 @@ export const updateMeSchema = z
     cityId: uuidSchema.optional(),
     /** Modifiable UNE SEULE FOIS (§2.7) : il pilote réseaux et modèles. */
     originCountryId: uuidSchema.optional(),
-    arrivalDate: z.string().date().optional(),
-    plannedDepartureDate: z.string().date().optional(),
-    timezone: z.string().min(3).max(64).optional(),
+    arrivalDate: z
+      .string()
+      .date()
+      .refine((v) => v <= jourLimite(1), { message: MSG_ARRIVEE_FUTURE })
+      .optional(),
+    plannedDepartureDate: z
+      .string()
+      .date()
+      .refine((v) => v >= jourLimite(-1), { message: MSG_DEPART_PASSE })
+      .optional(),
+    timezone: z
+      .string()
+      .min(3)
+      .max(64)
+      .refine(estFuseauIana, { message: 'Ce fuseau horaire n’existe pas (ex. Europe/Paris).' })
+      .optional(),
   })
   .strict();
 
@@ -287,6 +316,11 @@ export const meResponseSchema = z.object({
   phones: z.array(
     z.object({ id: uuidSchema, masked: z.string(), isDestination: z.boolean() }),
   ),
+  /**
+   * Les plans sont-ils appliqués ? Faux = « tout gratuit » : le front n'affiche
+   * aucune incitation à payer. Défaut faux pour une réponse sans le champ.
+   */
+  monetisationActive: z.boolean().default(false),
   kyc: z.object({ status: z.enum(KycStatus) }).nullable(),
   /** Compteurs de réputation, tels que `user_stats` les porte. */
   stats: z

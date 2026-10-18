@@ -973,6 +973,7 @@ export async function chargerK06(): Promise<K06Data> {
       derniere: ligneFacture(paiements.items[0]),
       precedente: ligneFacture(paiements.items[1]),
     },
+    gratuit: !me.monetisationActive,
   };
 }
 
@@ -1454,6 +1455,7 @@ export const SQUELETTE_K06: K06Data = {
   abonnement: { plan: '', essai: 0, contactsPro: '' },
   premium: { prixMois: '', prixXof: '', montantXof: '' },
   factures: { derniere: '', precedente: '' },
+  gratuit: true,
 };
 
 /**

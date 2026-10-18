@@ -15,6 +15,22 @@ import {
   AJOUTS_RESEAU_VIVANT,
 } from './adaptations/reseau-vivant.mjs';
 import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
+import {
+  ADAPTATIONS_ENTRAIDE_VIVANT,
+  AJOUTS_ENTRAIDE_VIVANT,
+} from './adaptations/entraide-vivant.mjs';
+import {
+  ADAPTATIONS_EXPLOITATION_VIVANTE,
+  AJOUTS_EXPLOITATION_VIVANTE,
+} from './adaptations/exploitation-vivante.mjs';
+import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
+import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/chrome-gauche-vivant.mjs';
+import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
+import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
+import {
+  ADAPTATIONS_PARCOURS_VIVANT,
+  AJOUTS_PARCOURS_VIVANT,
+} from './adaptations/parcours-vivant.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14016,11 +14032,13 @@ const BUTTON_ACTIONS = [
     screens: ['P01'],
     label: 'Recevoir le code',
     /**
-     * `phoneValide` S'AJOUTE À `busy` : on n'envoie pas de SMS pour un numéro que
-     * le serveur refusera. La règle est celle de `libphonenumber`, la même des
-     * deux côtés — un bouton actif suivi d'un refus serait pire que rien.
+     * LOT A : le bouton n'est plus grisé par `phoneValide`. Grisé, il ne disait
+     * pas POURQUOI : un numéro d'un autre pays ou une ligne fixe restait sans
+     * explication. Désormais `onSubmit` appelle `analyserNumero` (la règle du
+     * serveur, importée de shared) et affiche le MÊME message que l'API avant tout
+     * envoi ; le trait du champ (`phoneBordure`) signale déjà l'erreur à la frappe.
      */
-    attrs: ['onClick={onSubmit}', 'disabled={busy || !phoneValide}'],
+    attrs: ['onClick={onSubmit}', 'disabled={busy}'],
   },
   {
     screens: ['O01', 'O02', 'O03', 'O04'],
@@ -18223,6 +18241,20 @@ function adaptFields(jsx, section) {
      * `onRecommander`). Il emprunte `MenuRond` au registre du lot réseau.
      */
     ...ADAPTATIONS_PROFIL_VIVANT,
+    // Lot D : les gestes de l'entraide et du parrainage, H01 à H10 (tools/adaptations/entraide-vivant.mjs).
+    ...ADAPTATIONS_ENTRAIDE_VIVANT,
+    // Lot B : l'email et le push de K07 (tools/adaptations/exploitation-vivante.mjs).
+    ...ADAPTATIONS_EXPLOITATION_VIVANTE,
+    // Lot A « tout gratuit » : en dernier, ses motifs lisent du JSX déjà branché.
+    ...ADAPTATIONS_GRATUIT_VIVANT,
+    ...ADAPTATIONS_PARCOURS_VIVANT,
+    // La colonne de gauche vivante : raccourcis et barre d'avancement.
+    ...ADAPTATIONS_CHROME_GAUCHE,
+    // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
+    // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
+    ...ADAPTATIONS_ENTETE_GLOBAL,
+    // Les rôles de la page (gauche, contenu, droite) : après l'en-tête, qu'il sort de la colonne.
+    ...ADAPTATIONS_ZONES,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -19362,7 +19394,11 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
      * le même commentaire : « on ne retient que ce qui figure réellement dans le
      * JSX produit ». Elle manquait ici.
      */
-    if (!new RegExp(`\\b${root}\\b`).test(codeSeul)) continue;
+    // `(?<![.\w$])` : le nom doit être une RACINE, pas la propriété d'un autre objet —
+    // `panneau.equipe` ne fait pas vivre une prise `equipe` (lot « parcours vivant » :
+    // quand une adaptation retire le contenu qui l'employait, la prise restait déclarée
+    // sans emploi, et le lint la refusait).
+    if (!new RegExp(`(?<![.\\w$])${root}\\b`).test(codeSeul)) continue;
     names.add(root);
   }
 
@@ -19482,6 +19518,11 @@ const AJOUTS = {
   FenetreSignalement: '@/components/fenetre-signalement',
   /** Le lot « réseau vivant » — voir `tools/adaptations/reseau-vivant.mjs`. */
   ...AJOUTS_RESEAU_VIVANT,
+  ...AJOUTS_ENTRAIDE_VIVANT,
+  ...AJOUTS_EXPLOITATION_VIVANTE,
+  ...AJOUTS_GRATUIT_VIVANT,
+  ...AJOUTS_PARCOURS_VIVANT,
+  ...AJOUTS_CHROME_GAUCHE,
 };
 
 const HEADER = (
@@ -21073,11 +21114,20 @@ for (const screen of SCREENS) {
       ? promoteTitle(jsx, spec)
       : { jsx, promoted: false, id: null };
     const hasLandmark = /<main[\s>]/.test(titled.jsx);
+    /**
+     * L'EN-TÊTE GLOBAL N'EST PAS LE CONTENU PRINCIPAL. `ENTETE_GLOBAL` la place en
+     * tête du cadre et la termine par un marqueur : on la sort du `<main>` qu'on
+     * pose autour du reste, ou, quand la maquette écrit son propre `<main>`, on
+     * retire simplement le marqueur.
+     */
+    const finEntete = titled.jsx.indexOf(FIN_ENTETE);
+    const barreHaute = finEntete === -1 ? '' : titled.jsx.slice(0, finEntete);
+    const sansBarre = finEntete === -1 ? titled.jsx : titled.jsx.slice(finEntete + FIN_ENTETE.length);
     const wrapped = isModal
       ? titled.jsx
       : hasLandmark
-        ? titled.jsx
-        : `      <main style={{ display: "contents" }}>\n${titled.jsx}\n      </main>`;
+        ? titled.jsx.replace(FIN_ENTETE, '')
+        : `${barreHaute}\n      <main style={{ display: "contents" }}>\n${sansBarre}\n      </main>`;
 
     /**
      * LA COQUE DU CADRE, gardée seulement quand l'écran la réclame.

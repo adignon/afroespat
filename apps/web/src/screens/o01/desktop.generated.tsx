@@ -12,6 +12,7 @@ export function O01Desktop(props: OnboardingVals) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ padding: "24px 40px 0", display: "flex", alignItems: "center", gap: "20px" }}>

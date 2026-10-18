@@ -23,6 +23,77 @@ const base64Key32 = z
 const providerMode = <T extends string>(...real: T[]) =>
   z.enum(['fake', ...real] as [string, ...string[]]).default('fake');
 
+/**
+ * Un secret de fournisseur : FACULTATIF dans le schéma, exigé par
+ * `REQUIRED_BY_PROVIDER` dès que le fournisseur réel est choisi.
+ *
+ * La chaîne vide vaut absence : `.env.example` laisse ces lignes vides, et un
+ * `KEY=` lu par `loadEnvFile` donne `''`, pas `undefined`. Sans ce prétraitement,
+ * une clé vide passerait pour posée et l'erreur n'arriverait qu'au premier appel.
+ */
+const optionalSecret = z.preprocess(
+  (v) => (v === '' ? undefined : v),
+  z.string().min(1).optional(),
+);
+
+/** L'identifiant d'une clé de chiffrement : 1 à 255 (0 est réservé à l'ancien format). */
+const keyId = z.coerce.number().int().min(1).max(255).default(1);
+
+/**
+ * Les clés RETIRÉES, encore lisibles : `id:base64,id:base64`. Vide par défaut.
+ * Chaque clé doit faire 32 octets, et un identifiant ne peut pas servir deux fois.
+ */
+const previousKeys = z
+  .preprocess((v) => (v === undefined ? '' : v), z.string())
+  .transform((raw, ctx) => {
+    const out: { id: number; key: string }[] = [];
+    for (const part of raw.split(',').map((p) => p.trim()).filter((p) => p !== '')) {
+      const at = part.indexOf(':');
+      const id = Number(part.slice(0, at));
+      const key = part.slice(at + 1);
+      if (at < 1 || !Number.isInteger(id) || id < 1 || id > 255 || Buffer.from(key, 'base64').length !== 32) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `entrée « ${part.slice(0, 4)}… » : attendu id:clé-base64-de-32-octets`,
+        });
+        continue;
+      }
+      if (out.some((k) => k.id === id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `identifiant de clé ${id} répété` });
+      }
+      out.push({ id, key });
+    }
+    return out;
+  });
+
+/**
+ * Ce que chaque fournisseur RÉEL exige pour fonctionner.
+ *
+ * Vérifié DANS TOUT ENVIRONNEMENT, pas seulement en production : choisir `twilio`
+ * en développement sans jeton ne doit pas démarrer un serveur qui lèverait au
+ * premier SMS — c'est exactement le « repli silencieux » que ce lot retire de
+ * `pick()` (`providers.module.ts`).
+ */
+export const REQUIRED_BY_PROVIDER: Readonly<
+  Record<string, Readonly<Record<string, readonly string[]>>>
+> = {
+  SMS_PROVIDER: { twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'] },
+  EMAIL_PROVIDER: { brevo: ['BREVO_API_KEY'] },
+  PUSH_PROVIDER: { webpush: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'] },
+  KYC_PROVIDER: { didit: ['DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID', 'DIDIT_WEBHOOK_SECRET'] },
+  AI_MODERATION_PROVIDER: { anthropic: ['ANTHROPIC_API_KEY'] },
+  CAPTCHA_PROVIDER: { turnstile: ['TURNSTILE_SECRET_KEY'] },
+};
+
+/**
+ * Les fournisseurs de PAIEMENT restent fictifs en production : le porteur a décidé
+ * « on va laisser les paiements, tout sera gratuit pour le moment ». Aucune
+ * implémentation réelle n'existe (`pick()` refuse d'ailleurs toute autre valeur que
+ * `fake` pour eux), donc les exiger réels interdirait tout démarrage en production.
+ * Le jour où l'intégration existe, cette exemption disparaît.
+ */
+const PAYMENT_PROVIDER_KEYS: readonly string[] = ['PAYMENT_PROVIDER', 'MOBILE_MONEY_PROVIDER'];
+
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
@@ -75,11 +146,25 @@ export const envSchema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32),
   /** Signe les curseurs de pagination : un curseur est opaque ET signé (§5.3). */
   CURSOR_SECRET: z.string().min(32),
-  /** Chiffre les numéros. JAMAIS rotée : la rotation impose un réchiffrement complet. */
+  /**
+   * Chiffre les numéros ET les adresses email (12 §3 : « chiffrée comme le
+   * téléphone »).
+   *
+   * ROTATION POSSIBLE depuis le lot « fournisseurs réels » : le format scellé porte
+   * désormais l'identifiant de la clé (voir `crypto.service.ts`). On pose la clé
+   * neuve ici avec un `PHONE_ENCRYPTION_KEY_ID` neuf, on déplace l'ancienne dans
+   * `PHONE_ENCRYPTION_KEYS_PREVIOUS`, puis on lance le script de réchiffrement
+   * (`infra/README.md`, « Rotation des clés »). L'ancien commentaire — « JAMAIS
+   * rotée » — décrivait un format qui ne savait pas dire quelle clé l'avait scellé.
+   */
   PHONE_ENCRYPTION_KEY: base64Key32,
+  PHONE_ENCRYPTION_KEY_ID: keyId,
+  PHONE_ENCRYPTION_KEYS_PREVIOUS: previousKeys,
   PHONE_HMAC_KEY: z.string().min(32),
   /** Chiffre notes d'étape et messages. Rotée tous les 12 mois (runbook §1). */
   CONTENT_ENCRYPTION_KEY: base64Key32,
+  CONTENT_ENCRYPTION_KEY_ID: keyId,
+  CONTENT_ENCRYPTION_KEYS_PREVIOUS: previousKeys,
 
   // ── Stockage objet — région UE obligatoire en production (règle dure §8.2) ─
   S3_ENDPOINT: z.string().url(),
@@ -87,14 +172,59 @@ export const envSchema = z.object({
   S3_BUCKET: z.string().min(1),
   S3_ACCESS_KEY_ID: z.string().min(1),
   S3_SECRET_ACCESS_KEY: z.string().min(1),
+  /**
+   * `true` pour MinIO et la plupart des stockages compatibles hors AWS : l'adresse
+   * est `endpoint/seau/clé` et non `seau.endpoint/clé`. Le défaut suit la pile
+   * locale du dépôt, qui est un MinIO.
+   */
+  S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 
   // ── Fournisseurs externes. `fake` partout en local et en test (§11.3). ─────
   SMS_PROVIDER: providerMode('twilio'),
   SMS_FAKE_FIXED_CODE: z.string().regex(/^\d{6}$/).default('123456'),
+  /**
+   * Twilio — API Messages, et NON Verify. Le code OTP reste tiré, haché, borné en
+   * tentatives et lié à son `purpose` par NOUS (`auth.service.ts`) : Verify
+   * tirerait son propre code et garderait la vérification chez lui, ce qui ferait
+   * deux sources de vérité pour un même défi et perdrait le lien code ↔ `purpose`
+   * qui protège la suppression de compte (01 §2.8). Messages ne fait que porter.
+   *
+   * `TWILIO_MESSAGING_SERVICE_SID` est préféré à `TWILIO_FROM` quand il est posé :
+   * un service de messagerie choisit l'expéditeur par pays (numéro long en France,
+   * identifiant alphanumérique là où la réglementation l'exige).
+   */
+  TWILIO_ACCOUNT_SID: optionalSecret,
+  TWILIO_AUTH_TOKEN: optionalSecret,
+  TWILIO_FROM: optionalSecret,
+  TWILIO_MESSAGING_SERVICE_SID: optionalSecret,
   EMAIL_PROVIDER: providerMode('brevo'),
   EMAIL_SMTP_URL: z.string().optional(),
+  /** Brevo — API transactionnelle (`POST /v3/smtp/email`), 12 §2.5. */
+  BREVO_API_KEY: optionalSecret,
+  /** « Expéditeur unique » (12 §2.5). */
+  EMAIL_FROM_ADDRESS: z.string().email().default('no-reply@localhost.test'),
+  EMAIL_FROM_NAME: z.string().min(1).default('DisaporyPlus'),
   PUSH_PROVIDER: providerMode('webpush'),
+  /**
+   * Web Push (VAPID). La clé PUBLIQUE est servie au navigateur par
+   * `GET /me/push-subscriptions` ; la privée ne quitte jamais le serveur. Générer
+   * une paire : `npx web-push generate-vapid-keys`.
+   */
+  VAPID_PUBLIC_KEY: optionalSecret,
+  VAPID_PRIVATE_KEY: optionalSecret,
+  /** « mailto:… » ou une URL : le service push s'en sert pour joindre l'émetteur. */
+  VAPID_SUBJECT: z.string().default('mailto:no-reply@localhost.test'),
   KYC_PROVIDER: providerMode('didit'),
+  /** Didit — création de session (`POST /v2/session/`) et lecture de la décision. */
+  DIDIT_API_KEY: optionalSecret,
+  DIDIT_WORKFLOW_ID: optionalSecret,
+  DIDIT_BASE_URL: z.string().url().default('https://verification.didit.me'),
+  /**
+   * La fenêtre ANTI-REJEU du webhook : un `X-Timestamp` plus vieux (ou plus en
+   * avance) que cela est refusé, même correctement signé. Cinq minutes : ce que
+   * Didit recommande, et assez large pour une horloge un peu dérivée.
+   */
+  DIDIT_WEBHOOK_TOLERANCE_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
   /**
    * Le secret qui signe le webhook Didit (T4 §8, 01 §4.3 : « webhook signé,
    * en-tête HMAC »).
@@ -125,7 +255,26 @@ export const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().min(32).optional(),
   MOBILE_MONEY_WEBHOOK_SECRET: z.string().min(32).optional(),
   AI_MODERATION_PROVIDER: providerMode('anthropic'),
+  /** Clé de l'API Claude. Le texte envoyé est TOUJOURS masqué avant (13 §2). */
+  ANTHROPIC_API_KEY: optionalSecret,
+  AI_MODERATION_MODEL: z.string().min(1).default('claude-opus-5-5'),
   CAPTCHA_PROVIDER: providerMode('turnstile'),
+  /** Cloudflare Turnstile, vérification serveur (`/turnstile/v0/siteverify`). */
+  TURNSTILE_SECRET_KEY: optionalSecret,
+  /**
+   * Stockage objet. `fake` écrit sur le disque local (`STORAGE_FAKE_DIR`) ; `s3`
+   * parle à tout stockage compatible S3 — région UE en production (règle dure
+   * §8.2). Il était FIGÉ à `fake` dans le module, sans variable : le garde-fou de
+   * production ne pouvait donc pas le voir.
+   */
+  STORAGE_PROVIDER: providerMode('s3'),
+  /**
+   * Antivirus. `clamav` parle à clamd en TCP (protocole INSTREAM) sur
+   * `ANTIVIRUS_HOST:ANTIVIRUS_PORT` — deux variables déclarées depuis le lot 0 et
+   * lues par personne jusqu'ici.
+   */
+  ANTIVIRUS_PROVIDER: providerMode('clamav'),
+  ANTIVIRUS_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30_000),
   ANTIVIRUS_HOST: z.string().default('localhost'),
   ANTIVIRUS_PORT: z.coerce.number().int().default(3310),
 
@@ -158,11 +307,22 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     );
   }
 
+  const missing = missingProviderSettings(result.data);
+  if (missing.length > 0) {
+    throw new Error(
+      `Configuration invalide : l'application refuse de démarrer (§11.2).\n` +
+        `${missing.map((m) => `  · ${m}`).join('\n')}`,
+    );
+  }
+
   // Un garde-fou qui coûte une ligne et évite une fuite : en production, aucun
-  // fournisseur ne doit rester en mode fictif.
+  // fournisseur ne doit rester en mode fictif. `STORAGE_PROVIDER` et
+  // `ANTIVIRUS_PROVIDER` y entrent depuis qu'ils sont des variables : figés à
+  // `fake` dans le module, ils échappaient au filtre par suffixe ci-dessous — la
+  // production aurait écrit les médias sur le disque local, sans antivirus.
   if (result.data.NODE_ENV === 'production') {
     const fakes = Object.entries(result.data)
-      .filter(([k, v]) => k.endsWith('_PROVIDER') && v === 'fake')
+      .filter(([k, v]) => k.endsWith('_PROVIDER') && v === 'fake' && !PAYMENT_PROVIDER_KEYS.includes(k))
       .map(([k]) => k);
     if (fakes.length > 0) {
       throw new Error(
@@ -187,6 +347,25 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 
   cached = result.data;
   return cached;
+}
+
+/**
+ * Les réglages manquants pour les fournisseurs RÉELS choisis — exporté pour être
+ * éprouvé sans recharger le module.
+ */
+export function missingProviderSettings(data: Env): string[] {
+  const record = data as unknown as Record<string, unknown>;
+  const missing: string[] = [];
+  for (const [variable, byMode] of Object.entries(REQUIRED_BY_PROVIDER)) {
+    const mode = String(record[variable]);
+    for (const needed of byMode[mode] ?? []) {
+      if (record[needed] === undefined) missing.push(`${variable}=${mode} exige ${needed}`);
+    }
+  }
+  if (data.SMS_PROVIDER === 'twilio' && data.TWILIO_FROM === undefined && data.TWILIO_MESSAGING_SERVICE_SID === undefined) {
+    missing.push('SMS_PROVIDER=twilio exige TWILIO_FROM ou TWILIO_MESSAGING_SERVICE_SID');
+  }
+  return missing;
 }
 
 /** Réservé aux tests. */

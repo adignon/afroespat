@@ -13,6 +13,7 @@ export function A01NMobile(props: AccueilData) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 12px) 12px 10px", display: "flex", alignItems: "center", gap: "8px", background: "#fff", borderBottom: "1px solid #E6EBE9" }}><Link href="/accueil" aria-label="Fermer" data-composeur-fermer="" style={{ width: "40px", height: "40px", borderRadius: "999px", background: "#F2F5F4", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", color: "inherit" }}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg></Link><h1 style={{ margin: "0", fontSize: "15.5px", fontWeight: "700", flex: "1" }}>Nouvelle publication</h1><button type="button" onClick={onPublier} disabled={publierBloque} data-composeur-publier="" style={{ height: "40px", padding: "0 18px", borderRadius: "12px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "13.5px", fontWeight: "700", cursor: publierBloque ? "default" : "pointer", opacity: publierBloque ? ".55" : "1" }}>Publier</button></div>

@@ -209,6 +209,8 @@ export interface EnteteParcours {
   readonly duree: string;
   readonly aboutiLe: string;
   readonly version: number;
+  /** J10 « N aides reçues » : les activités `HELP_RECEIVED` du journal (03 §3.5). */
+  readonly aides: number;
 }
 
 /** L'étape sur laquelle l'écran porte : celle de l'URL, ou celle du serveur. */
@@ -423,6 +425,8 @@ export interface CarteParcours {
 export interface PlanParcours {
   readonly actifs: number;
   readonly limite: number;
+  /** Tout est gratuit (réglage serveur) : le bandeau « plan gratuit » est masqué. */
+  readonly gratuit: boolean;
 }
 
 /** Les deux filtres actifs de « Parcours publics » (§3.7). */
@@ -517,6 +521,8 @@ export interface J06Data extends ParcoursData {
 
 /** J07 · `/parcours/:id/historique` — `GET /journeys/:id/activities` (§3.8). */
 export interface J07Data extends ParcoursData {
+  /** Tout est gratuit : l'encart « Export PDF réservé à Premium » est masqué. */
+  readonly gratuit: boolean;
   readonly panneau: PanneauParcours;
   readonly journal: readonly EntreeJournal[];
 }
@@ -559,4 +565,9 @@ export interface J11Data extends ParcoursData {
   readonly actifs: readonly CarteParcours[];
   readonly aboutis: readonly CarteParcours[];
   readonly plan: PlanParcours;
+  /**
+   * Vrai une fois la liste LUE. Sans lui, le squelette (listes vides) se lirait comme « aucun
+   * parcours » et l'écran d'accueil vide clignoterait avant chaque chargement.
+   */
+  readonly charge?: boolean;
 }

@@ -697,6 +697,8 @@ export interface K06Data {
     readonly montantXof: string;
   };
   readonly factures: { readonly derniere: string; readonly precedente: string };
+  /** Tout est gratuit (réglage serveur) : le corps de K06 dit « tout est gratuit », sans prix ni paiement. */
+  readonly gratuit: boolean;
 }
 
 /** K07 — réglages de notification. */

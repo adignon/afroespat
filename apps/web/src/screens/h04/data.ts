@@ -7,7 +7,23 @@ import type { EtatVide, PorteeFil } from '../h01/data';
  * Voir `../entraide/data` pour les formes partagées, et
  * `tools/screens/05-entraide.mjs` pour les liaisons qui les consomment.
  */
+/**
+ * Une pastille de tri (« Échéance » / « Récentes »). Le tri est fait ICI, sur la liste
+ * complète que la route rend : `GET /help/can-help` n'a pas de curseur (`nextCursor`
+ * toujours nul, 20 suggestions au plus), donc trier la page reçue ne cache rien.
+ */
+export interface TriSuggestions {
+  readonly cle: 'echeance' | 'recentes';
+  readonly libelle: string;
+  readonly fond: string;
+  readonly texte: string;
+  readonly bord: string;
+  readonly actif: boolean;
+  readonly onChoisir: () => void;
+}
+
 export interface H04Data extends BandeauEntraide {
+  readonly tris?: readonly TriSuggestions[];
   /**
    * LES TROIS PASTILLES DE PORTÉE du cadre de 390 px — la même rangée que H01,
    * arrêtée à « Mes demandes », parce que c'est ce que la planche dessine.

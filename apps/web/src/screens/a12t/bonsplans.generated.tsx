@@ -13,6 +13,7 @@ export function A12TBonsPlans(props: AccueilData) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <div style={{ background: "#0F5C48", borderRadius: "22px", padding: "20px 22px", color: "#fff", display: "flex", alignItems: "center", gap: "18px" }}><div style={{ flex: "1" }}><h1 style={{ margin: "0", fontSize: "26px", fontWeight: "800", letterSpacing: "-0.8px" }}>{ville.nom}</h1><div style={{ fontSize: "13px", color: "#A9CDBF" }}>{ville.region} · {ville.membres} · {ville.contributions}</div></div><a href="#" style={{ background: "#fff", color: "#0F5C48", fontSize: "12.5px", fontWeight: "700", padding: "9px 16px", borderRadius: "999px" }}>{ville.reseau}</a></div>
 <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", display: "flex", alignItems: "center", gap: "4px", padding: "0 12px 0 20px" }}>{(cityTabs ?? []).map((t, tIndex) => (

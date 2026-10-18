@@ -68,11 +68,11 @@ export function pageSchema<T extends z.ZodTypeAny>(item: T) {
 /** Le handle public d'un membre (01-identite.md §2.6). */
 export const handleSchema = z
   .string()
-  .min(3)
-  .max(30)
+  .min(3, 'Le pseudo compte au moins 3 caractères.')
+  .max(30, 'Le pseudo compte 30 caractères au plus.')
   .regex(/^[a-z0-9](?:[a-z0-9]|[_-](?![_-]))*[a-z0-9]$/, {
     message:
-      'Le pseudo accepte lettres minuscules, chiffres, tiret et souligné, sans commencer par un chiffre ni doubler les séparateurs.',
+      'Le pseudo accepte lettres minuscules, chiffres, tiret et souligné, sans commencer par un chiffre, sans finir par un séparateur ni doubler les séparateurs.',
   })
   .refine((v) => !/^[0-9]/.test(v), {
     message: 'Le pseudo ne peut pas commencer par un chiffre.',

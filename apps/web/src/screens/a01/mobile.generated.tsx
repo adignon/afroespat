@@ -19,6 +19,7 @@ export function A01Mobile(props: A01Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
     <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 0", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" }}>

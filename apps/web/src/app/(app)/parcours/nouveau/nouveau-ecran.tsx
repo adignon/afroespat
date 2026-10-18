@@ -4,7 +4,6 @@ import { useMemo } from 'react';
 import { VUE_NEUTRE, chargerJ02 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { CODE_REGULARISER } from '@/screens/parcours/use-parcours-api';
-import { plancheBlocage } from '@/screens/parcours/modales';
 import { J02Desktop } from '@/screens/j02/desktop.generated';
 import { J02Mobile } from '@/screens/j02/mobile.generated';
 import { J02MobileRegulariser } from '@/screens/j02/mobileregulariser.generated';
@@ -100,7 +99,6 @@ export function NouveauEcran({ etape }: { readonly etape: EtapeCreation }) {
           <J02Mobile {...d} />
         )
       }
-      modales={(d, volet) => ({ J03: plancheBlocage(volet, d) })}
     />
   );
 }

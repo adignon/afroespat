@@ -1,5 +1,6 @@
 'use client';
 
+import { obtenirJetonCaptcha } from '@/lib/captcha';
 import { useEffect, useState } from 'react';
 import { Modal } from '@/components/modal';
 import { notifyError, notifySuccess } from '@/components/notifications';
@@ -7,6 +8,13 @@ import { ApiError, memberApi } from '@/lib/api/index';
 import { PanneauFenetre } from '@/components/panneau-fenetre';
 import { listCountries } from '@/lib/api';
 import { z } from 'zod';
+import {
+  analyserNumero,
+  exempleNational,
+  formaterSaisieNumero,
+  messageRefusNumero,
+  numeroValide,
+} from '@app/shared';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -52,13 +60,12 @@ import { z } from 'zod';
  * Portugal) — voir `packages/db/src/seed/referentials.ts` pour le pourquoi du
  * `kind: 'DESTINATION'`.
  *
- * ── `captchaToken: 'dev'` ─────────────────────────────────────────────────
+ * ── LE JETON DE CAPTCHA ───────────────────────────────────────────────────
  *
- * `addPhoneStartSchema` l'exige. L'onboarding envoie la même valeur
- * (`use-onboarding-flow.ts`) : le fournisseur de captcha n'est pas branché dans
- * ce dépôt, et inventer un second jeton ici ferait croire qu'il l'est. Le jour où
- * il arrive, les deux appels changent ensemble — et c'est pour ça qu'ils doivent
- * dire la même chose aujourd'hui.
+ * `addPhoneStartSchema` l'exige. Il vient de `obtenirJetonCaptcha()` (Turnstile,
+ * `lib/captcha.ts`), tiré au moment de l'envoi comme dans l'onboarding : les deux
+ * appels disent la même chose. Sans clé de site (développement), c'est le jeton de
+ * test officiel de Cloudflare.
  */
 /**
  * `POST /me/phones` rend ce que rend `requestOtp` : `{ challengeId, expiresAt }`.
@@ -113,24 +120,37 @@ export function FenetreNumero({
 
   const envoyerCode = (): void => {
     const tel = numero.trim();
-    if (tel.length < 4 || enVol) return;
+    if (tel === '' || enVol) return;
+    // Le MÊME contrôle que le serveur et le MÊME message : pays réel du numéro,
+    // mobile. Le front prévient, le serveur décide.
+    const analyse = analyserNumero(tel, iso2);
+    if (!analyse.ok) {
+      notifyError(messageRefusNumero(analyse.code));
+      return;
+    }
     setEnVol(true);
-    memberApi
-      .post('/me/phones', debutSchema, {
+    // Le jeton est tiré AU MOMENT de l'envoi (usage unique, 5 min de validité).
+    obtenirJetonCaptcha()
+      .then((captchaToken) =>
+        memberApi.post('/me/phones', debutSchema, {
         /**
          * `countryIso2` EST OBLIGATOIRE, et son absence valait un `400` muet :
          * le code ne partait jamais et rien ne le disait. Relevé sur
          * `addPhoneStartSchema`, pas supposé.
          */
-        body: { phone: tel, countryIso2: iso2, captchaToken: 'dev' },
-      })
+        body: { phone: tel, countryIso2: iso2, captchaToken },
+      }))
       .then((r) => {
         setDefi(r.challengeId);
         notifySuccess('Code envoyé par SMS.');
       })
       .catch((cause: unknown) => {
         notifyError(
-          cause instanceof ApiError ? cause.displayMessage : 'Le code n’a pas pu être envoyé.',
+          cause instanceof ApiError
+            ? cause.displayMessage
+            : cause instanceof Error && cause.message !== ''
+              ? cause.message
+              : 'Le code n’a pas pu être envoyé.',
         );
       })
       .finally(() => {
@@ -203,11 +223,11 @@ export function FenetreNumero({
           <button
             type="button"
             onClick={defi === null ? envoyerCode : confirmer}
-            disabled={enVol || (defi === null ? numero.trim().length < 4 : code.trim().length < 4)}
+            disabled={enVol || (defi === null ? !numeroValide(numero, iso2) : code.trim().length < 4)}
             data-numero-valider=""
             style={{
               ...action,
-              background: enVol ? '#8A958F' : '#16785E',
+              background: enVol || (defi === null && !numeroValide(numero, iso2)) ? '#8A958F' : '#16785E',
               color: '#fff',
               cursor: enVol ? 'default' : 'pointer',
             }}
@@ -226,6 +246,7 @@ export function FenetreNumero({
             value={iso2}
             onChange={(e) => {
               setIso2(e.target.value);
+              setNumero((n) => formaterSaisieNumero(n, e.target.value));
             }}
             aria-label="Pays du numéro"
             data-numero-pays=""
@@ -240,12 +261,12 @@ export function FenetreNumero({
           <input
             value={numero}
             onChange={(e) => {
-              setNumero(e.target.value);
+              setNumero(formaterSaisieNumero(e.target.value, iso2));
             }}
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            placeholder="6 12 34 56 78"
+            placeholder={exempleNational(iso2) || '6 12 34 56 78'}
             aria-label="Numéro de téléphone"
             data-numero-champ=""
             style={champ}

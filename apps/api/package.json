@@ -6,6 +6,7 @@
     "dev": "node --watch -r @swc-node/register src/main.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
+    "rotate-keys": "node -r @swc-node/register src/common/rotate-keys.cli.ts",
     "staff:bootstrap": "node -r @swc-node/register src/modules/admin/staff-bootstrap.cli.ts",
     "lint": "eslint src",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -13,8 +14,11 @@
     "test:int": "vitest run --config vitest.int.config.ts --passWithNoTests"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@app/db": "workspace:*",
     "@app/shared": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@nestjs/common": "^10.4.15",
     "@nestjs/core": "^10.4.15",
     "@nestjs/platform-express": "^10.4.15",
@@ -22,6 +26,7 @@
     "@nestjs/swagger": "^8.1.0",
     "@nestjs/websockets": "^10.4.15",
     "@node-rs/argon2": "^2.2.1",
+    "@sentry/node": "^11.8.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "bullmq": "^5.34.6",
     "cookie-parser": "^1.4.7",
@@ -30,7 +35,9 @@
     "pino-http": "^10.3.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.1",
+    "web-push": "^3.6.7",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -43,6 +50,7 @@
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.2",
     "@types/supertest": "^6.0.2",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9.17.0",
     "socket.io-client": "^4.8.4",
     "supertest": "^7.0.0",

@@ -1,3 +1,4 @@
+import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { newId } from '@app/db';
 import {
   MOBILE_MONEY_GRACE_DAYS,
@@ -96,6 +97,8 @@ describe('facturation (14 §3, §4, §12)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    // Lot A : ces bancs vérifient les quotas des plans, donc les plans s'appliquent.
+    await reglerMonetisation(prisma, true);
 
     const crypto = new CryptoService();
     const outbox = new OutboxService(prisma);
@@ -137,12 +140,32 @@ describe('facturation (14 §3, §4, §12)', () => {
     await prisma.journeyTemplate.deleteMany({
       where: { code: { startsWith: 'recette-facturation-' } },
     });
+    await reglerMonetisation(prisma, null);
     await prisma.$disconnect();
   });
 
   // ══════════════════════════════════════════════════════════════════════════
   // Amorçage des plans (§3)
   // ══════════════════════════════════════════════════════════════════════════
+
+  it('[TOUT GRATUIT] limitsFor rend les droits Premium à tous, sauf hidePartners', async () => {
+    await reglerMonetisation(prisma, false);
+    try {
+      const gratuit = await prisma.user.findFirstOrThrow({ where: { plan: 'FREE' }, select: { id: true } });
+      const limites = await plans.limitsFor(gratuit.id);
+      const premium = await plans.limitsOf('PREMIUM');
+      expect({ ...limites, hidePartners: premium.hidePartners }).toEqual(premium);
+      expect(limites.hidePartners).toBe(false);
+      expect(limites.maxActiveJourneys).toBeNull();
+      expect(limites.alerts).toBe(true);
+    } finally {
+      await reglerMonetisation(prisma, true);
+    }
+    const reel = await plans.limitsFor(
+      (await prisma.user.findFirstOrThrow({ where: { plan: 'FREE' }, select: { id: true } })).id,
+    );
+    expect(reel.maxActiveJourneys).toBe(1);
+  });
 
   describe('les plans', () => {
     it('sont amorcés, avec les limites du §3', async () => {

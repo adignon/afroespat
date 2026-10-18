@@ -41,6 +41,8 @@
  * page absente est pire qu'un menu absent, parce qu'on y va.
  */
 
+import { ENTREES_ACCUEIL } from './entrees-accueil';
+
 export interface EntreeMenu {
   readonly libelle: string;
   readonly href: string;
@@ -88,17 +90,12 @@ const T = {
  * que les deux formes partagent.
  */
 export const MENUS_RAIL: Readonly<Record<string, MenuRubrique>> = {
-  Accueil: {
-    titre: 'ACCUEIL',
-    entrees: [
-      { libelle: 'Fil d’actualité', href: '/accueil', trace: T.fil },
-      { libelle: 'Guides et Démarches', href: '/guides', trace: T.guide },
-      { libelle: 'Fil d’entraide', href: '/entraide', trace: T.coeur },
-      { libelle: 'Réseaux', href: '/reseaux', trace: T.gens },
-      { libelle: 'Villes et Membres', href: '/villes', trace: T.epingle },
-      { libelle: 'Événements', href: '/agenda', trace: T.calendrier },
-    ],
-  },
+  /**
+   * LA MÊME LISTE QUE LE MENU DE LA PAGE D'ACCUEIL — voir `entrees-accueil.ts`. Le
+   * volet en portait six, dont deux que le porteur a retirées de l'accueil le
+   * 2026-10-11 (« Fil d'entraide » et « Événements » ont déjà leur rubrique au rail).
+   */
+  Accueil: { titre: 'ACCUEIL', entrees: ENTREES_ACCUEIL },
   Parcours: {
     titre: 'PARCOURS',
     entrees: [

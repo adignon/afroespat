@@ -13,6 +13,7 @@ export function A14Desktop(props: A14Data) {
   return (
     <>
       <div style={{ background: "#101A17", position: "relative", display: "flex", alignItems: "center", justifyContent: "center", flexGrow: "1", flexShrink: "1", flexBasis: "auto" }}>
+
       <main style={{ display: "contents" }}>
 
     <div style={{ position: "absolute", top: "24px", left: "28px", display: "flex", alignItems: "center", gap: "10px" }}><div style={{ width: "36px", height: "36px", borderRadius: "12px", background: "#0F5C48", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none" /></svg></div><span style={{ fontSize: "19px", fontWeight: "800", color: "#fff" }}>Diaspora</span></div>
