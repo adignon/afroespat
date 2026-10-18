@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { BarreHaute } from '../messages/data';
 
 /**
@@ -187,6 +188,13 @@ export interface BulleMessage {
   readonly onImage?: () => void;
   /** Le nom accessible de la vignette — « Voir la story de Fatim », ou l'image seule. */
   readonly imageNom?: string;
+  /**
+   * LE GESTE PAR BULLE — « Supprimer » (la mienne) ou « Signaler » (celle de
+   * l'autre). Posé par `ConversationVivante`, qui a la confirmation et la feuille ;
+   * le cadre le rend après l'heure (adaptation `MV_BULLE_ACTIONS`). Absent sur un
+   * message supprimé : il n'y a plus rien à supprimer ni à signaler.
+   */
+  readonly actions?: ReactNode | undefined;
 }
 
 /** L'en-tête de la conversation ouverte. */
@@ -343,4 +351,19 @@ export interface M01Data {
    */
   readonly emojisOuverts?: boolean;
   readonly onBasculerEmojis?: () => void;
+  /**
+   * LE PIED DU FIL, entre les bulles et le composeur : la demande de conversation
+   * à accepter ou ignorer, l'attente de réponse, et « écrit… ». AJOUT hors maquette
+   * (`components/messagerie/pied-conversation.tsx`), posé par l'adaptation
+   * `MV_FIL`.
+   */
+  readonly pied?: ReactNode | undefined;
+  /**
+   * L'état de la conversation OUVERTE vis-à-vis de la règle du premier message
+   * (08 §5.2) : `recue` = on m'écrit pour la première fois, à moi d'accepter ou
+   * d'ignorer ; `envoyee` = j'ai écrit, j'attends ; `null` = conversation normale.
+   */
+  readonly conversationDemande?: 'recue' | 'envoyee' | null;
+  /** Le prénom de l'interlocuteur, pour « Marc écrit… » et les bandeaux. */
+  readonly conversationPrenom?: string | null;
 }

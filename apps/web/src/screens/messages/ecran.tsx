@@ -104,7 +104,11 @@ export function EcranMessages({
   useEffect(() => {
     setCourante(ouverte);
   }, [ouverte]);
-  const fermer = useCallback((): void => setCourante(null), []);
+  const onFermee = signalement?.onFermee;
+  const fermer = useCallback((): void => {
+    setCourante(null);
+    onFermee?.();
+  }, [onFermee]);
 
   /**
    * LE NOM LU DANS L'ATTRIBUT EST VÉRIFIÉ contre la table. Sans cette garde, une

@@ -25,7 +25,7 @@ import {
   type NotificationCategory,
 } from '@app/shared';
 import { z } from 'zod';
-import { fetchMe, memberApi } from '@/lib/api/index';
+import { fetchMe, memberApi, voidResponse } from '@/lib/api/index';
 import { urlMedia } from '@/lib/api/base';
 import { photoFondFor } from '../a14/data';
 import {
@@ -319,9 +319,16 @@ const BULLE_SIENNE = {
 export interface BulleAvecStory extends BulleMessage {
   readonly storyId: string | null;
   readonly storyVivante: boolean;
+  /** Pour les gestes par bulle (supprimer, signaler). */
+  readonly id: string;
+  readonly supprime: boolean;
 }
 
-function bulleDe(m: Message, nomsParHandle: ReadonlyMap<string, string>): BulleAvecStory {
+function bulleDe(
+  m: Message,
+  nomsParHandle: ReadonlyMap<string, string>,
+  vu = false,
+): BulleAvecStory {
   const style = m.mine ? BULLE_MIENNE : BULLE_SIENNE;
   return {
     cote: style.cote,
@@ -331,7 +338,13 @@ function bulleDe(m: Message, nomsParHandle: ReadonlyMap<string, string>): BulleA
     trait: style.trait,
     auteur: m.mine ? '' : (nomsParHandle.get(m.senderHandle) ?? m.senderHandle),
     corps: m.body ?? '',
-    mention: heureRelative(m.sentAt, 'heure-du-jour'),
+    // « Vu » : renvoyé de `meta.seenAt` (`conversation_members.last_read_at` de
+    // l'AUTRE) — voir `bullesDuFil`. L'heure d'abord, « Vu » ensuite.
+    mention: vu
+      ? `${heureRelative(m.sentAt, 'heure-du-jour')} · Vu`
+      : heureRelative(m.sentAt, 'heure-du-jour'),
+    id: m.id,
+    supprime: m.deletedAt !== null,
     /**
      * L'IMAGE JOINTE — `photoFondFor` et non une recette de plus.
      *
@@ -432,7 +445,13 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
      * discret : les bulles alterneraient toujours de côté, et seul le sens des
      * phrases trahirait l'inversion.
      */
-    messages: fil === null ? [] : [...fil.items].reverse().map((m) => bulleDe(m, nomsParHandle)),
+    messages: fil === null ? [] : bullesDuFil(fil, nomsParHandle),
+    conversationDemande:
+      ouverte === null ? null : ouverte.pendingForMe ? 'recue' : ouverte.awaitingReply ? 'envoyee' : null,
+    conversationPrenom:
+      ouverte === null || ouverte.title !== null
+        ? null
+        : ((ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.displayName ?? '').split(' ')[0] ?? null),
     /**
      * CELLE QU'ON A RÉELLEMENT OUVERTE, et pas celle que l'URL demandait.
      *
@@ -456,6 +475,28 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
         ? null
         : (ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.userId ?? null),
   };
+}
+
+/**
+ * LE FIL, DANS L'ORDRE DE LECTURE, avec « Vu » sur la dernière bulle que j'ai
+ * envoyée et que l'autre a lue.
+ *
+ * `meta.seenAt` est la lecture des AUTRES membres (`last_read_at`, le plus ancien
+ * à plusieurs : « vu par tous »). « Vu » va sous MA dernière bulle non supprimée
+ * dont l'heure d'envoi n'est pas postérieure à cette lecture — pas sous toutes :
+ * Messenger écrit « Vu » une fois, au bout du fil, et la maquette n'en dessine
+ * qu'un.
+ */
+function bullesDuFil(
+  fil: { readonly items: readonly Message[]; readonly meta: { readonly seenAt: string | null } },
+  nomsParHandle: ReadonlyMap<string, string>,
+): BulleAvecStory[] {
+  const chrono = [...fil.items].reverse();
+  const lu = fil.meta.seenAt === null ? null : Date.parse(fil.meta.seenAt);
+  const derniere = [...chrono].reverse().find((m) => m.mine && m.deletedAt === null) ?? null;
+  return chrono.map((m) =>
+    bulleDe(m, nomsParHandle, lu !== null && m.id === derniere?.id && Date.parse(m.sentAt) <= lu),
+  );
 }
 
 /**
@@ -933,6 +974,20 @@ export function mettreEnSourdine(
     z.object({ muted: z.boolean() }).strict(),
     { body: { muted } },
   );
+}
+
+export function supprimerMessage(messageId: string): Promise<unknown> {
+  return memberApi.del(`/messages/${messageId}`, voidResponse);
+}
+
+/** Accepter la demande de conversation (08 §5.2). */
+export function accepterDemande(conversationId: string): Promise<unknown> {
+  return memberApi.post(`/conversations/${conversationId}/accept`, z.unknown());
+}
+
+/** L'ignorer : elle quitte ma liste, l'autre ne voit rien. */
+export function ignorerDemande(conversationId: string): Promise<unknown> {
+  return memberApi.post(`/conversations/${conversationId}/ignore`, z.unknown());
 }
 
 export function bloquerMembre(handle: string): Promise<unknown> {
