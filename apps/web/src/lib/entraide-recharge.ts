@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -36,4 +36,18 @@ export function useVersionEntraide(): number {
     () => version,
     () => 0,
   );
+}
+
+/**
+ * Le chargeur d'une page, relu après chaque geste : `charger` change d'IDENTITÉ
+ * quand `rechargerEntraide()` est appelé, ce qui est le seul signal que
+ * `EcranDonnees` écoute. Les compteurs du rail (« Mes parrainages · 1 ») restent
+ * ainsi justes après « Accepter ».
+ */
+export function useChargeur<T>(charger: () => Promise<T>): () => Promise<T> {
+  const version = useVersionEntraide();
+  return useCallback(() => {
+    void version;
+    return charger();
+  }, [charger, version]);
 }

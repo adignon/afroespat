@@ -226,3 +226,53 @@ export function Feuille({
     />
   );
 }
+
+export function initiales(nom: string): string {
+  const mots = nom.trim().split(/\s+/).filter((m) => m !== '');
+  if (mots.length === 0) return '?';
+  return mots.slice(0, 2).map((m) => [...m][0] ?? '').join('').toUpperCase();
+}
+
+/**
+ * Les trois états d'une liste qui se charge elle-même : attente, échec avec
+ * « Réessayer », vide. Une liste vide n'est JAMAIS affichée pendant le chargement
+ * (« Aucune demande » avant la réponse serait faux), ni après une panne.
+ */
+export function EtatListe({
+  etat,
+  vide,
+  onReessayer,
+}: {
+  readonly etat: 'attente' | 'echec' | 'vide';
+  readonly vide: ReactNode;
+  readonly onReessayer: () => void;
+}) {
+  const boite: CSSProperties = {
+    background: '#fff',
+    border: '1px solid #E6EBE9',
+    borderRadius: '22px',
+    padding: '24px',
+    textAlign: 'center',
+    fontSize: '13.5px',
+    color: '#5D6B66',
+    flexShrink: 0,
+  };
+  if (etat === 'attente') {
+    return (
+      <div style={boite} role="status">
+        Chargement…
+      </div>
+    );
+  }
+  if (etat === 'echec') {
+    return (
+      <div style={boite} role="alert">
+        <div>La liste n’a pas pu être chargée.</div>
+        <button type="button" onClick={onReessayer} style={{ ...BOUTON_DISCRET, margin: '12px auto 0' }}>
+          Réessayer
+        </button>
+      </div>
+    );
+  }
+  return <div style={boite}>{vide}</div>;
+}

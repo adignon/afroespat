@@ -264,7 +264,98 @@ const H06_FICHE = {
   },
 };
 
-export const ADAPTATIONS_ENTRAIDE_VIVANT = [SIGNALER, SIGNALER_H02, SIGNALER_H06, H03_FORMULAIRE, H02_GESTES, H06_FICHE];
+/**
+ * ── 5. H05, H07, H08, H09, H10 · LES LISTES ET FORMULAIRES SE CHARGENT EUX-MÊMES ──
+ *
+ * Ces cinq planches dessinent leurs cartes, leurs filtres et leur formulaire comme
+ * une image : trois parrains écrits en dur, trois parrainages, des demandes « Un lit
+ * et une table… » servies à tout le monde. On ne les recoud pas carte par carte
+ * (une carte oubliée ne se voit pas) : la région sous l'en-tête de la colonne
+ * centrale (ordinateur) ou le dernier bloc du `<main>` (téléphone) est REMPLACÉE par
+ * un composant qui reprend le dessin et branche l'API. L'en-tête, le rail, le
+ * panneau, la colonne de droite et la barre basse restent ceux de la maquette.
+ */
+function regionPrincipale(jsx, comp) {
+  const main = jsx.indexOf('<main');
+  // Le cadre du TÉLÉPHONE n'a pas encore son `<main>` au moment des adaptations
+  // (le générateur le pose après) : ses blocs sont alors des frères à la racine.
+  const mobile = main < 0;
+  const ouvreFin = mobile ? 0 : jsx.indexOf('>', main) + 1;
+  // Les enfants directs, dans l'ordre, jusqu'à `</main>` (ou la fin du fragment).
+  const enfants = [];
+  let curseur = ouvreFin;
+  for (;;) {
+    const debut = jsx.indexOf('<', curseur);
+    if (debut < 0 || jsx.startsWith('</', debut)) {
+      if (debut < 0 && !mobile) return null;
+      break;
+    }
+    const fin = finElement(jsx, debut);
+    if (fin < 0) return null;
+    enfants.push([debut, fin]);
+    curseur = fin;
+  }
+  const fermeture = curseur;
+  if (enfants.length < 2) return null;
+  if (mobile) {
+    // Le corps est le dernier enfant qui GRANDIT (`flexGrow: "1"`) : la barre basse
+    // qui suit n'est pas la région à remplacer.
+    const corps = enfants.filter(([d]) => jsx.slice(d, jsx.indexOf('>', d)).includes('flexGrow: "1"'));
+    if (corps.length === 0) return null;
+    const [d, f] = corps[corps.length - 1];
+    return jsx.slice(0, d) + `<${comp} variante="mobile" />` + jsx.slice(f);
+  }
+  const [, f] = enfants[0];
+  return jsx.slice(0, f) + `<${comp} variante="bureau" />` + jsx.slice(fermeture);
+}
+
+const regionVivante = (screen, comp, why) => ({
+  screens: [screen],
+  nom: `${screen}_REGION`,
+  why,
+  provides: [],
+  apply(jsx) {
+    const out = regionPrincipale(jsx, comp);
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+});
+
+const H05_LISTE = regionVivante('H05', 'ListeParrains', 'H05 : la liste des parrains et ses filtres (ville, langue, parcours, pays) lisent `GET /mentors` au lieu de trois parrains écrits en dur.');
+const H07_LISTE = regionVivante('H07', 'MesParrainagesVivants', 'H07 : mes parrainages par état (en cours, terminés, demandes en attente reçues et envoyées), avec accepter, refuser, terminer, prolonger, évaluer.');
+const H08_FORMULAIRE = regionVivante('H08', 'FormulaireParrain', 'H08 : le diagnostic des trois conditions et le formulaire réel du profil de parrain (`GET`, `PUT`, `DELETE /me/mentor-profile`).');
+const H09_LISTE = regionVivante('H09', 'MesDemandes', 'H09 : mes demandes (`GET /help/mine`) avec voir, modifier, clôturer, rouvrir, supprimer.');
+const H10_LISTE = regionVivante('H10', 'MesReponses', 'H10 : mes réponses (`GET /help/my-responses`) avec voir, écrire à, modifier, supprimer.');
+
+/** Le bouton « Publier une demande » de H09, dessiné `<button>` sans geste, devient un lien. */
+const H09_PUBLIER = {
+  screens: ['H09'],
+  nom: 'H09_PUBLIER',
+  why: 'Le bouton « Publier une demande » de H09 mène au composeur (`/entraide/nouveau`) au lieu de n’être qu’un dessin.',
+  provides: [],
+  apply(jsx) {
+    const fin = jsx.indexOf('Publier une demande</button>');
+    if (fin < 0) return { jsx, applied: false };
+    const debut = jsx.lastIndexOf('<button', fin);
+    const ouvre = jsx.slice(debut, jsx.indexOf('>', debut) + 1).replace('<button style={{', '<a href="/entraide/nouveau" style={{ textDecoration: "none", ');
+    const corps = jsx.slice(jsx.indexOf('>', debut) + 1, fin) + 'Publier une demande';
+    return { jsx: jsx.slice(0, debut) + ouvre.replace(/>$/, '>') + corps + '</a>' + jsx.slice(fin + 'Publier une demande</button>'.length), applied: true };
+  },
+};
+
+export const ADAPTATIONS_ENTRAIDE_VIVANT = [
+  SIGNALER,
+  SIGNALER_H02,
+  SIGNALER_H06,
+  H03_FORMULAIRE,
+  H02_GESTES,
+  H06_FICHE,
+  H09_PUBLIER,
+  H05_LISTE,
+  H07_LISTE,
+  H08_FORMULAIRE,
+  H09_LISTE,
+  H10_LISTE,
+];
 
 /** Les composants que ces adaptations posent, pour le registre d'imports. */
 export const AJOUTS_ENTRAIDE_VIVANT = {
@@ -278,4 +369,9 @@ export const AJOUTS_ENTRAIDE_VIVANT = {
   RepondreDemande: '@/components/entraide/demande-vivante',
   BarreReponse: '@/components/entraide/demande-vivante',
   BoutonDemander: '@/components/entraide/parrainage-vivant',
+  ListeParrains: '@/components/entraide/parrainage-vivant',
+  MesParrainagesVivants: '@/components/entraide/parrainage-vivant',
+  FormulaireParrain: '@/components/entraide/parrainage-vivant',
+  MesDemandes: '@/components/entraide/listes-entraide',
+  MesReponses: '@/components/entraide/listes-entraide',
 };

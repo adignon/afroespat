@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import {
@@ -75,6 +75,14 @@ export function MenuDemande({
   const [signal, setSignal] = useState(false);
   const [edition, setEdition] = useState(false);
   const [suppression, setSuppression] = useState(false);
+
+  // « Modifier » d'une carte de « Mes demandes » arrive ici avec `?modifier=1` : la
+  // feuille s'ouvre d'elle-même, une fois la demande chargée et si le serveur l'autorise.
+  useEffect(() => {
+    if (action.peutModifier && new URLSearchParams(window.location.search).get('modifier') === '1') {
+      setEdition(true);
+    }
+  }, [action.peutModifier]);
 
   const entrees: { label: string; onClick: () => void }[] = action.estAuteur
     ? [
