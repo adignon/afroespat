@@ -1,3 +1,4 @@
+import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { newId } from '@app/db';
 import {
   BLOCKER_TEMPLATES,
@@ -236,6 +237,8 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    // Lot A : ces bancs vérifient les quotas des plans, donc les plans s'appliquent.
+    await reglerMonetisation(prisma, true);
 
     const crypto = new CryptoService();
     const outbox = new OutboxService(prisma);
@@ -335,6 +338,7 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
     if (createdDefinitionIds.length > 0) {
       await prisma.stepDefinition.deleteMany({ where: { id: { in: createdDefinitionIds } } });
     }
+    await reglerMonetisation(prisma, null);
     await prisma.$disconnect();
   });
 
@@ -408,6 +412,18 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
     await journeys.update(member.userId, first, { status: 'ABANDONED' });
     const second = await journeys.create(member, { templateId: model.templateId });
     expect(second.journey.id).not.toBe(first);
+  });
+
+  it('[TOUT GRATUIT] un membre gratuit a plusieurs parcours actifs', async () => {
+    await reglerMonetisation(prisma, false);
+    try {
+      const member = await newMember();
+      await journeyFor(member);
+      const second = await journeys.create(member, { templateId: model.templateId });
+      expect(second.journey.id).toBeDefined();
+    } finally {
+      await reglerMonetisation(prisma, true);
+    }
   });
 
   it('résout la version du pays d’origine, et la générique à défaut', async () => {

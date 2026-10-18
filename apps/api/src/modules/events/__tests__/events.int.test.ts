@@ -1,3 +1,4 @@
+import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -158,6 +159,8 @@ describe('agenda (09 §3)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    // Lot A : ces bancs vérifient les quotas des plans, donc les plans s'appliquent.
+    await reglerMonetisation(prisma, true);
     events = new EventsService(
       prisma,
       new OutboxService(prisma),
@@ -218,6 +221,7 @@ describe('agenda (09 §3)', () => {
     if (createdCommunities.length > 0) {
       await prisma.community.deleteMany({ where: { id: { in: createdCommunities } } });
     }
+    await reglerMonetisation(prisma, null);
     await prisma.$disconnect();
   });
 
@@ -238,6 +242,22 @@ describe('agenda (09 §3)', () => {
       expect(counters).toHaveLength(1);
       expect(counters[0]?.count).toBe(1);
       expect(counters[0]?.periodKey).toBe(monthKey(new Date()));
+    });
+
+    it('[TOUT GRATUIT] un membre gratuit crée autant d’événements que le Premium', async () => {
+      await reglerMonetisation(prisma, false);
+      try {
+        const organizer = await member({ plan: 'FREE' });
+        await newEvent(organizer);
+        await newEvent(organizer);
+        const third = await newEvent(organizer);
+        expect(third.id).toBeDefined();
+        expect(
+          await prisma.usageCounter.count({ where: { userId: organizer, metric: 'EVENTS_CREATED' } }),
+        ).toBe(0);
+      } finally {
+        await reglerMonetisation(prisma, true);
+      }
     });
 
     it('n’applique aucune limite en Premium', async () => {
@@ -718,6 +738,57 @@ describe('agenda (09 §3)', () => {
         where: { eventId: event.id, userId: waiting },
       });
       expect(promoted.status).toBe('GOING');
+    });
+  });
+
+  describe('modifier la capacité (lot A)', () => {
+    it('refuse une capacité sous le nombre d’inscrits, sans rien écrire', async () => {
+      const organizer = await member();
+      const event = await newEvent(organizer, { capacity: 5 });
+      for (let i = 0; i < 2; i += 1) await events.rsvp(event.id, await member(), { status: 'GOING' });
+      // L'organisateur + deux invités = 3 inscrits.
+      await expect(events.update(event.id, organizer, { capacity: 2 })).rejects.toMatchObject({
+        code: 'CAPACITY_BELOW_ATTENDEES',
+      });
+      expect((await prisma.event.findUniqueOrThrow({ where: { id: event.id } })).capacity).toBe(5);
+      // Égale au nombre d'inscrits : permis (événement exactement complet).
+      await expect(events.update(event.id, organizer, { capacity: 3 })).resolves.toBeDefined();
+    });
+
+    it('promeut la liste d’attente quand la capacité augmente, dans l’ordre', async () => {
+      const organizer = await member();
+      const event = await newEvent(organizer, { capacity: 2 });
+      const first = await member();
+      const waiting1 = await member();
+      const waiting2 = await member();
+      const waiting3 = await member();
+      await events.rsvp(event.id, first, { status: 'GOING' });
+      await events.rsvp(event.id, waiting1, { status: 'GOING' });
+      await events.rsvp(event.id, waiting2, { status: 'GOING' });
+      await events.rsvp(event.id, waiting3, { status: 'GOING' });
+
+      // 2 → 4 : deux places, deux promus (les deux premiers de la file), un reste.
+      const card = await events.update(event.id, organizer, { capacity: 4 });
+      expect(card.attendeeCount).toBe(4);
+
+      const par = new Map(
+        (
+          await prisma.eventAttendee.findMany({
+            where: { eventId: event.id },
+            select: { userId: true, status: true },
+          })
+        ).map((a) => [a.userId, a.status]),
+      );
+      expect(par.get(waiting1)).toBe('GOING');
+      expect(par.get(waiting2)).toBe('GOING');
+      expect(par.get(waiting3)).toBe('WAITLIST');
+
+      // Les promus sont NOTIFIABLES : un événement de domaine par promu.
+      const emitted = await domainEvents(event.id, 'event.rsvp_changed');
+      const promus = emitted.map((e) => (e.payload as { promotedUserId?: string }).promotedUserId);
+      expect(promus).toContain(waiting1);
+      expect(promus).toContain(waiting2);
+      expect(promus).not.toContain(waiting3);
     });
   });
 

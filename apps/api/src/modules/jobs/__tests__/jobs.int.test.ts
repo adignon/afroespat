@@ -1,3 +1,4 @@
+import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
 import {
@@ -75,6 +76,8 @@ describe('emploi (10 §3)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    // Lot A : ces bancs vérifient les quotas des plans, donc les plans s'appliquent.
+    await reglerMonetisation(prisma, true);
     jobs = new JobsService(
       prisma,
       new OutboxService(prisma),
@@ -97,6 +100,7 @@ describe('emploi (10 §3)', () => {
   afterAll(async () => {
     await prisma.moderationCase.deleteMany({ where: { subjectAuthorUserId: { in: createdUsers } } });
     await prisma.user.deleteMany({ where: { id: { in: createdUsers } } });
+    await reglerMonetisation(prisma, null);
     await prisma.$disconnect();
   });
 
@@ -202,6 +206,17 @@ describe('emploi (10 §3)', () => {
     await expect(jobs.sponsor(job.id, free)).rejects.toMatchObject({
       response: { error: { code: 'PLAN_LIMIT_REACHED', details: { max: 0 } } },
     });
+  });
+
+  it('[TOUT GRATUIT] un membre gratuit met une offre en avant', async () => {
+    await reglerMonetisation(prisma, false);
+    try {
+      const free = await member({ plan: 'FREE' });
+      const job = await offer(free);
+      await expect(jobs.sponsor(job.id, free)).resolves.toBeDefined();
+    } finally {
+      await reglerMonetisation(prisma, true);
+    }
   });
 
   it('au plus cinq mises en avant par membre et par mois', async () => {

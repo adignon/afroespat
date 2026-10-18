@@ -34,6 +34,7 @@ import {
   type VerificationLevel,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { planEffectif } from '../../common/monetisation';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { CryptoService } from '../../common/crypto.service';
@@ -504,7 +505,7 @@ export class JourneysService {
     const now = new Date();
 
     await this.prisma.$transaction(async (tx) => {
-      await this.assertJourneyQuota(tx, actor.userId, me.plan);
+      await this.assertJourneyQuota(tx, actor.userId, await planEffectif(tx, me.plan));
 
       await tx.journey.create({
         data: {

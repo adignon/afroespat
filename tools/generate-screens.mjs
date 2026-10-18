@@ -15,6 +15,11 @@ import {
   AJOUTS_RESEAU_VIVANT,
 } from './adaptations/reseau-vivant.mjs';
 import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
+import {
+  ADAPTATIONS_EXPLOITATION_VIVANTE,
+  AJOUTS_EXPLOITATION_VIVANTE,
+} from './adaptations/exploitation-vivante.mjs';
+import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14016,11 +14021,13 @@ const BUTTON_ACTIONS = [
     screens: ['P01'],
     label: 'Recevoir le code',
     /**
-     * `phoneValide` S'AJOUTE À `busy` : on n'envoie pas de SMS pour un numéro que
-     * le serveur refusera. La règle est celle de `libphonenumber`, la même des
-     * deux côtés — un bouton actif suivi d'un refus serait pire que rien.
+     * LOT A : le bouton n'est plus grisé par `phoneValide`. Grisé, il ne disait
+     * pas POURQUOI : un numéro d'un autre pays ou une ligne fixe restait sans
+     * explication. Désormais `onSubmit` appelle `analyserNumero` (la règle du
+     * serveur, importée de shared) et affiche le MÊME message que l'API avant tout
+     * envoi ; le trait du champ (`phoneBordure`) signale déjà l'erreur à la frappe.
      */
-    attrs: ['onClick={onSubmit}', 'disabled={busy || !phoneValide}'],
+    attrs: ['onClick={onSubmit}', 'disabled={busy}'],
   },
   {
     screens: ['O01', 'O02', 'O03', 'O04'],
@@ -18223,6 +18230,10 @@ function adaptFields(jsx, section) {
      * `onRecommander`). Il emprunte `MenuRond` au registre du lot réseau.
      */
     ...ADAPTATIONS_PROFIL_VIVANT,
+    // Lot B : l'email et le push de K07 (tools/adaptations/exploitation-vivante.mjs).
+    ...ADAPTATIONS_EXPLOITATION_VIVANTE,
+    // Lot A « tout gratuit » : en dernier, ses motifs lisent du JSX déjà branché.
+    ...ADAPTATIONS_GRATUIT_VIVANT,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -19482,6 +19493,8 @@ const AJOUTS = {
   FenetreSignalement: '@/components/fenetre-signalement',
   /** Le lot « réseau vivant » — voir `tools/adaptations/reseau-vivant.mjs`. */
   ...AJOUTS_RESEAU_VIVANT,
+  ...AJOUTS_EXPLOITATION_VIVANTE,
+  ...AJOUTS_GRATUIT_VIVANT,
 };
 
 const HEADER = (

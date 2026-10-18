@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import {
+  EVENT_ERROR_MESSAGES,
+  EVENT_MAX_LEAD_MS,
+  EVENT_MIN_LEAD_MS,
   EventType,
   createEventSchema,
   mediaAssetSchema,
@@ -26,10 +29,11 @@ import { TYPES_FR, type FormulaireEvenementView } from './data';
  *
  * `bloque` n'éteint « Publier » que sur les champs OBLIGATOIRES vides, en lisant
  * les bornes de `createEventSchema` (titre 5–120, adresse 4–400) — un aller-
- * retour dont la seule issue serait un 400 n'apprend rien au membre. Le reste —
- * deux heures d'avance minimum, six mois au plus, le quota du mois, l'adhésion
- * au réseau — est la règle du SERVEUR, et son refus s'affiche tel quel dans
- * `echec`. Le front prévient, il n'autorise pas (mémo §5).
+ * retour dont la seule issue serait un 400 n'apprend rien au membre. `onPublier`
+ * contrôle en plus, avec les bornes PARTAGÉES, le délai (deux heures au moins, six
+ * mois au plus), la fin après le début et la capacité. Le reste — le quota du
+ * mois, l'adhésion au réseau — est la règle du SERVEUR, et son refus s'affiche tel
+ * quel dans `echec`. Le front prévient, il n'autorise pas (mémo §5).
  */
 export function useFormulaireEvenement(options: {
   readonly reseauId?: string;
@@ -137,6 +141,41 @@ export function useFormulaireEvenement(options: {
 
   const onPublier = useCallback((): void => {
     if (bloque) return;
+    /**
+     * LE FRONT PRÉVIENT avec les bornes PARTAGÉES (jamais recopiées) : délai de deux
+     * heures au moins et six mois au plus (`EVENT_MIN_LEAD_MS`/`EVENT_MAX_LEAD_MS`,
+     * les mêmes que le serveur, et le même texte), fin après début, capacité entière
+     * dans les bornes de `createEventSchema`. Le serveur décide ensuite — le front
+     * n'autorise rien — mais un refus certain n'a pas à coûter un aller-retour.
+     */
+    const debutMs = new Date(debut).getTime();
+    const delai = debutMs - Date.now();
+    if (Number.isNaN(debutMs)) {
+      setEchec('La date de début n’est pas valide.');
+      return;
+    }
+    if (delai < EVENT_MIN_LEAD_MS) {
+      setEchec(EVENT_ERROR_MESSAGES.TOO_SOON);
+      return;
+    }
+    if (delai > EVENT_MAX_LEAD_MS) {
+      setEchec(EVENT_ERROR_MESSAGES.TOO_FAR);
+      return;
+    }
+    if (fin !== '' && !(new Date(fin).getTime() > debutMs)) {
+      setEchec('La fin doit suivre le début.');
+      return;
+    }
+    if (capacite.trim() !== '') {
+      const borne = createEventSchema.innerType().shape.capacity.unwrap();
+      const n = Number(capacite);
+      if (!Number.isInteger(n) || n < (borne.minValue ?? 1) || n > (borne.maxValue ?? Infinity)) {
+        const min = (borne.minValue ?? 1).toLocaleString('fr-FR');
+        const max = (borne.maxValue ?? 100_000).toLocaleString('fr-FR');
+        setEchec(`La capacité doit être un nombre entier entre ${min} et ${max}.`);
+        return;
+      }
+    }
     setEnvoi(true);
     setEchec('');
     const capaciteNombre = Number.parseInt(capacite, 10);
