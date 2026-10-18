@@ -565,4 +565,9 @@ export interface J11Data extends ParcoursData {
   readonly actifs: readonly CarteParcours[];
   readonly aboutis: readonly CarteParcours[];
   readonly plan: PlanParcours;
+  /**
+   * Vrai une fois la liste LUE. Sans lui, le squelette (listes vides) se lirait comme « aucun
+   * parcours » et l'écran d'accueil vide clignoterait avant chaque chargement.
+   */
+  readonly charge?: boolean;
 }

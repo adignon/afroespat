@@ -2073,4 +2073,87 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
     const view = await journeys.detail(other.userId, otherJourney);
     expect(view.members.map((m) => m.userId)).not.toContain(leaving.userId);
   });
+
+  it('§3.9 : la relance « Où en êtes-vous ? » reste en attente jusqu’à la réponse, puis se tait', async () => {
+    const owner = await newMember();
+    const journeyId = await journeyFor(owner);
+    const pending = async () =>
+      (await journeys.detail(owner.userId, journeyId)).journey.inactivityPromptPending;
+
+    // Prémisse : pas de relance envoyée, rien en attente.
+    expect(await pending()).toBe(false);
+
+    const sentAt = new Date(Date.now() - 86_400_000);
+    await prisma.journey.update({
+      where: { id: journeyId },
+      data: { inactivityPromptSentAt: sentAt, lastActivityAt: new Date(sentAt.getTime() - 61 * 86_400_000) },
+    });
+    expect(await pending()).toBe(true);
+    // Un accompagnant ne répond pas à la place du propriétaire : rien n'est en attente pour lui.
+    const supporter = await newMember();
+    await journeys.addMember(owner.userId, journeyId, { userHandle: supporter.handle, role: 'SUPPORTER' });
+    await journeys.acceptInvite(supporter.userId, journeyId);
+    expect((await journeys.detail(supporter.userId, journeyId)).journey.inactivityPromptPending).toBe(false);
+
+    // « Je continue » est une activité : la relance ne revient pas (unique, §3.9).
+    await journeys.inactivityResponse(owner.userId, journeyId, { answer: 'CONTINUE' });
+    expect(await pending()).toBe(false);
+  });
+
+  it('§6 : « N membres de la ville ont franchi cette étape » — agrégat honnête, avatars des seuls parcours publics, séparés exclus', async () => {
+    const owner = await newMember();
+    const peerPublic = await newMember();
+    const peerPrivate = await newMember();
+    const blocked = await newMember();
+    const farAway = await newMember('L1', cityFar.id);
+
+    // Une définition NEUVE : les autres tests ont franchi `model.definitionIds.first` dans la
+    // même ville, et le compte de cette règle doit partir de zéro.
+    const freshDefinition = await definition({ code: 'peers-def', nameFr: 'Étape rare' });
+    const fresh = await template({ code: 'peers-tpl', nameFr: 'Pairs', steps: [{ definitionId: freshDefinition }] });
+    const journeyOf = async (member: JourneyActor) =>
+      (await journeys.create(member, { templateId: fresh.templateId })).journey.id;
+
+    const mine = await journeyOf(owner);
+    const currentOf = async () => {
+      const detail = await journeys.detail(owner.userId, mine);
+      return detail.steps.find((step) => step.id === detail.journey.currentStepId) as unknown as {
+        peers?: { count: number; cityName: string; sample: { handle: string }[] } | null;
+      };
+    };
+    // Prémisse : personne n'a franchi la première étape.
+    expect((await currentOf()).peers).toMatchObject({ count: 0 });
+
+    const franchirPremiere = async (member: JourneyActor & { handle: string }, visibility?: 'PUBLIC') => {
+      const id = await journeyOf(member);
+      const first = at(await stepsOf(id), 0);
+      await journeys.updateStep(member, id, first.id, { status: 'DONE' });
+      if (visibility !== undefined) await journeys.update(member.userId, id, { visibility });
+      return id;
+    };
+    await franchirPremiere(peerPublic, 'PUBLIC');
+    await franchirPremiere(peerPrivate);
+    await franchirPremiere(blocked, 'PUBLIC');
+    await franchirPremiere(farAway, 'PUBLIC');
+    await prisma.block.create({
+      data: { id: newId(), blockerUserId: owner.userId, blockedUserId: blocked.userId },
+    });
+
+    const peers = (await currentOf()).peers;
+    // Deux membres de LA MÊME ville (le privé compte dans le nombre, pas dans les avatars) ;
+    // la autre ville et le membre bloqué n'y sont pas.
+    expect(peers?.count).toBe(2);
+    expect(peers?.cityName).toBe(cityA.name);
+    expect(peers?.sample.map((m) => m.handle)).toEqual([peerPublic.handle]);
+
+    // Les autres rôles ne reçoivent pas l'agrégat (échéances et étapes de SON parcours).
+    const supporter = await newMember();
+    await journeys.addMember(owner.userId, mine, { userHandle: supporter.handle, role: 'SUPPORTER' });
+    await journeys.acceptInvite(supporter.userId, mine);
+    const seen = (await journeys.detail(supporter.userId, mine)).steps;
+    for (const step of seen) {
+      expect(Object.keys(step)).not.toContain('peers');
+      expect(Object.keys(step)).not.toContain('deadlineAlert');
+    }
+  });
 });

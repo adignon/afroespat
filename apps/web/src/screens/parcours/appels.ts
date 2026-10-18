@@ -1087,6 +1087,7 @@ export async function chargerJ11(): Promise<Omit<J11Data, keyof ParcoursData>> {
     panneau: parcours === null ? PANNEAU_VIDE : panneauDe(parcours),
     actifs: enCours.map(carteDe),
     aboutis: finis.map(carteDe),
+    charge: true,
     plan: {
       // §3.1 : la limite porte sur les parcours ACTIVE ou PAUSED, et sur les
       // MIENS — un parcours dont je suis accompagnant ne compte pas.

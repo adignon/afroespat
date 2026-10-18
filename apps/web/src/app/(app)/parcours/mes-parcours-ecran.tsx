@@ -47,6 +47,10 @@ import { J01EDesktopVide } from '@/screens/j01e/desktopvide.generated';
  * 15 pour `STUDIES` version 3. Le cadre MOBILE de l'état vide, lui, ne lit rien —
  * c'est le propre d'un état vide.
  */
+/** « Aucun parcours » se lit sur des listes LUES et vides — jamais sur le squelette. */
+const aucunParcours = (d: { readonly charge?: boolean; readonly actifs: readonly unknown[]; readonly aboutis: readonly unknown[] }) =>
+  d.charge === true && d.actifs.length === 0 && d.aboutis.length === 0;
+
 export function MesParcoursEcran({ vide }: { readonly vide: boolean }) {
   /**
    * MÉMOÏSÉ SUR L'ÉTAT, et `vide` doit vraiment entrer dans les dépendances :
@@ -69,8 +73,8 @@ export function MesParcoursEcran({ vide }: { readonly vide: boolean }) {
        * d'illustration : rien n'est inventé ici.
        */
       squelette={VUE_NEUTRE}
-      desktop={(d) => (vide ? <J01EDesktopVide {...d} /> : <J11Desktop {...d} />)}
-      mobile={(d) => (vide ? <J11MobileVide {...d} /> : <J11Mobile {...d} />)}
+      desktop={(d) => (vide || aucunParcours(d) ? <J01EDesktopVide {...d} /> : <J11Desktop {...d} />)}
+      mobile={(d) => (vide || aucunParcours(d) ? <J11MobileVide {...d} /> : <J11Mobile {...d} />)}
     />
   );
 }

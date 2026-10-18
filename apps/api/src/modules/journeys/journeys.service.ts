@@ -870,7 +870,8 @@ export class JourneysService {
       // T3 A.1 : le guide lié, quand il est publié. « Guide à venir » sinon — c'est
       // l'écran qui le dit, il n'y a rien à inventer ici.
       guide:
-        definition?.guide != null &&
+        definition?.guide !== undefined &&
+        definition.guide !== null &&
         definition.guide.status === 'PUBLISHED' &&
         definition.guide.deletedAt === null
           ? {
