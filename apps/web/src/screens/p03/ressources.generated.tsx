@@ -12,6 +12,7 @@ export function P03Ressources(props: OnboardingVals) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
       <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VARIANTE « RESSOURCES »</div>

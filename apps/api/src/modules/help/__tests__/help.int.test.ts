@@ -13,6 +13,9 @@ import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../../auth/auth.service';
 import { HelpService, type HelpActor } from '../help.service';
 import { numeroDEpreuve } from '../../../common/__tests__/numeros';
+import { EventHandlerRegistry } from '../../../queue/event-handlers';
+import type { ModerationService } from '../../moderation/moderation.service';
+import { HelpResponseModeration } from '../help-response-moderation';
 
 /**
  * Fil d'entraide — 06-entraide.md §9.
@@ -1099,7 +1102,33 @@ describe('fil d’entraide (06 §2, §4, §9)', () => {
     expect(created.journeyContext?.stepName).toBe('Logement');
     expect(created.journeyContext?.journeyTypeName).toBe('Études');
     expect(created.journeyContext?.dueInDays).toBeGreaterThan(0);
+    // Les identifiants du parcours PERSONNEL ne sortent que pour son auteur : le
+    // bouton « Marquer l'étape comme franchie » (§2.4) en a besoin, pas les autres.
+    expect(created.journeyContext?.own).toEqual({
+      journeyId: journey.id,
+      stepId: step.id,
+      stepDone: false,
+    });
+    const reader = await newMember();
+    expect((await help.detail(reader, created.request.id)).journeyContext?.own).toBeNull();
     expect(JSON.stringify(created)).not.toContain(personalTitle);
+
+    // La CARTE de liste porte la même ligne d'étape (« Étape 1 · Logement · parcours
+    // Études ») : elle n'existait que sur le détail, et les listes écrivaient
+    // « Demande issue d'un parcours » faute de mieux. Même règle : jamais le titre.
+    expect(created.request.journeyStep).toEqual({
+      stepName: 'Logement',
+      stepNumber: 1,
+      journeyTypeName: 'Études',
+    });
+    const listed = await help.mine(author, { limit: 20 });
+    const card = listed.items.find((i) => i.id === created.request.id);
+    expect(card?.journeyStep).toEqual({
+      stepName: 'Logement',
+      stepNumber: 1,
+      journeyTypeName: 'Études',
+    });
+    expect(JSON.stringify(listed)).not.toContain(personalTitle);
 
     // L'événement publié porte l'étape : le module 03 en a besoin pour l'activité
     // HELP_RECEIVED et la proposition « marquer l'étape comme franchie ? ».
@@ -1216,5 +1245,171 @@ describe('fil d’entraide (06 §2, §4, §9)', () => {
     }
     // Ni le plan du membre : l'entraide ne le lit jamais (règle dure 14 §2).
     expect(serialized).not.toContain('"plan"');
+  });
+
+  // ══ Colonnes « Ajoutées » de §3 : reopened_at et archived_at ══════════════
+
+  it('rule: rouvrir pose reopened_at, rend la demande ouverte et défait le crédit', async () => {
+    const author = await newMember();
+    const helper = await newMember();
+    const created = await help.create(author, request());
+    const reply = await help.respond(helper, created.request.id, {
+      body: 'La liste des pièces est affichée à l’accueil de la préfecture, demande le formulaire 14.',
+    });
+
+    // Prémisse : jamais rouverte.
+    expect(created.request.reopenedAt).toBeNull();
+
+    const resolved = await help.markHelpful(author, created.request.id, reply.id);
+    // §2.2 : le SERVEUR dit que l'auteur peut rouvrir, le front éteint le bouton dessus.
+    expect(resolved.request.canReopen).toBe(true);
+    expect(resolved.request.canEdit).toBe(false);
+
+    const reopened = await help.reopen(author, created.request.id);
+    expect(reopened.request.status).toBe('OPEN');
+    expect(reopened.request.canEdit).toBe(true);
+    expect(reopened.request.canReopen).toBe(false);
+    expect(reopened.request.reopenedAt).not.toBeNull();
+
+    const row = await prisma.helpRequest.findUniqueOrThrow({ where: { id: created.request.id } });
+    expect(row.reopenedAt).not.toBeNull();
+    expect(row.resolvedAt).toBeNull();
+    // Le crédit part avec la résolution (06 §6).
+    expect(
+      await prisma.reputationEvent.count({
+        where: { sourceType: 'help_request', sourceId: created.request.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('rule: passé 7 jours, canReopen est faux et la réouverture est refusée', async () => {
+    const author = await newMember();
+    const created = await help.create(author, request());
+    await help.resolve(author, created.request.id);
+    await prisma.helpRequest.update({
+      where: { id: created.request.id },
+      data: { resolvedAt: new Date(Date.now() - (HELP_LIMITS.reopenWindowDays + 1) * 86_400_000) },
+    });
+
+    expect((await help.detail(author, created.request.id)).request.canReopen).toBe(false);
+    await expect(help.reopen(author, created.request.id)).rejects.toMatchObject({
+      code: 'REOPEN_WINDOW_CLOSED',
+    });
+  });
+
+  it('rule: la tâche help.archive pose archived_at', async () => {
+    const author = await newMember();
+    const created = await help.create(author, request());
+    await prisma.helpRequest.update({
+      where: { id: created.request.id },
+      data: { createdAt: new Date(Date.now() - (HELP_LIMITS.archiveOpenDays + 1) * 86_400_000) },
+    });
+
+    const before = Date.now();
+    await help.archiveDue();
+    const row = await prisma.helpRequest.findUniqueOrThrow({ where: { id: created.request.id } });
+    expect(row.status).toBe('ARCHIVED');
+    expect(row.archivedAt).not.toBeNull();
+    expect((row.archivedAt as Date).getTime()).toBeGreaterThanOrEqual(before - 1000);
+  });
+
+  // ══ Modifier sa réponse (PATCH /help/:id/responses/:rid) ══════════════════
+
+  it('rule: on modifie sa réponse tant que la demande est ouverte, jamais celle d’un autre', async () => {
+    const author = await newMember();
+    const helper = await newMember();
+    const other = await newMember();
+    const created = await help.create(author, request());
+    const reply = await help.respond(helper, created.request.id, {
+      body: 'Première version de ma réponse, avec une faute de frappe.',
+    });
+
+    const asHelper = await help.detail(helper, created.request.id);
+    expect(asHelper.responses[0]).toMatchObject({ isMine: true, canEdit: true });
+    expect((await help.detail(other, created.request.id)).responses[0]).toMatchObject({
+      isMine: false,
+      canEdit: false,
+    });
+
+    await help.updateResponse(helper, created.request.id, reply.id, {
+      body: 'Seconde version, corrigée : prends rendez-vous en ligne avant d’y aller.',
+    });
+    expect((await help.detail(author, created.request.id)).responses[0]?.body).toContain('Seconde');
+
+    await expect(
+      help.updateResponse(other, created.request.id, reply.id, {
+        body: 'Je réécris la réponse de quelqu’un d’autre, ce qui est interdit.',
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_AUTHOR' });
+    // Le texte modifié repasse par les règles locales : sans cela, publier un texte
+    // acceptable puis le remplacer contournerait le filtre.
+    await expect(
+      help.updateResponse(helper, created.request.id, reply.id, {
+        body: 'Envoyez-moi 50 euros sur mon compte et je vous aide tout de suite.',
+      }),
+    ).rejects.toMatchObject({ code: 'CONTENT_BLOCKED' });
+  });
+
+  it('rule: une réponse marquée « ça m’a aidé » ne se modifie plus, ni sur une demande close', async () => {
+    const author = await newMember();
+    const helper = await newMember();
+    const created = await help.create(author, request());
+    const reply = await help.respond(helper, created.request.id, {
+      body: 'La liste des pièces est affichée à l’accueil de la préfecture, demande le formulaire 14.',
+    });
+    await help.markHelpful(author, created.request.id, reply.id);
+
+    expect((await help.detail(helper, created.request.id)).responses[0]?.canEdit).toBe(false);
+    await expect(
+      help.updateResponse(helper, created.request.id, reply.id, {
+        body: 'Je change le texte après coup, ce qui ne doit pas être possible.',
+      }),
+    ).rejects.toMatchObject({ code: 'CONFLICT' });
+
+    // Une demande close : la réponse non marquée ne se modifie plus non plus.
+    const closed = await help.create(author, request());
+    const late = await help.respond(helper, closed.request.id, {
+      body: 'Une réponse arrivée avant la clôture de la demande par son auteur.',
+    });
+    await help.resolve(author, closed.request.id);
+    await expect(
+      help.updateResponse(helper, closed.request.id, late.id, {
+        body: 'Je modifie après la clôture, ce qui doit être refusé par le serveur.',
+      }),
+    ).rejects.toMatchObject({ code: 'REQUEST_CLOSED' });
+  });
+
+  // ══ 06 §2.7 : la modération lit aussi les RÉPONSES ════════════════════════
+
+  it('rule: une réponse publiée part à la modération (abonnement HELP_RESPONSE)', async () => {
+    const author = await newMember();
+    const helper = await newMember();
+    const created = await help.create(author, request());
+    const reply = await help.respond(helper, created.request.id, {
+      body: 'Pense à apporter trois justificatifs de domicile récents, ça évite un second passage.',
+    });
+
+    const seen: { subjectType: string; subjectId: string }[] = [];
+    const registry = new EventHandlerRegistry();
+    new HelpResponseModeration(registry, {
+      handleContentPublished: (subjectType: string, subjectId: string) => {
+        seen.push({ subjectType, subjectId });
+        return Promise.resolve();
+      },
+    } as unknown as ModerationService).onModuleInit();
+
+    const event = await prisma.domainEvent.findFirstOrThrow({
+      where: { aggregateId: created.request.id, type: 'help_request.responded' },
+    });
+    for (const registration of registry.for('help_request.responded')) {
+      await registration.handle({
+        id: event.id,
+        type: 'help_request.responded',
+        aggregateId: event.aggregateId,
+        payload: event.payload,
+        occurredAt: event.occurredAt.toISOString(),
+      });
+    }
+    expect(seen).toEqual([{ subjectType: 'HELP_RESPONSE', subjectId: reply.id }]);
   });
 });

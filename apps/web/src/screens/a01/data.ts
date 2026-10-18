@@ -1,3 +1,4 @@
+import { ENTREES_ACCUEIL } from '@/components/rail/entrees-accueil';
 /**
  * Données de l'écran A01, reprises de `docs/template/03 Accueil v2.dc.html`.
  *
@@ -128,12 +129,13 @@ export const rail = RAIL_ITEMS.map(([label, icon, href], i) => ({
  * Le repère est donc le LIBELLÉ, et un libellé inconnu LÈVE au lieu de n'allumer
  * rien. Le prochain retrait sera sans danger.
  */
-const PANEL_ITEMS: readonly (readonly [string, string, number | null, string])[] = [
-  ["Fil d'actualité", I.feed, null, '/accueil'],
-  ['Guides & Démarches', I.book, null, '/guides'],
-  ['Réseaux', I.net, null, '/reseaux'],
-  ['Villes & Membres', I.city, null, '/villes'],
-];
+/**
+ * LA LISTE VIT DANS `components/rail/entrees-accueil.ts` : le volet du rail et la
+ * carte « ACCUEIL » des pages Messages et Notifications la lisent aussi, et ne
+ * peuvent donc plus diverger de ce panneau.
+ */
+const PANEL_ITEMS: readonly (readonly [string, string, number | null, string])[] =
+  ENTREES_ACCUEIL.map((e) => [e.libelle, e.trace, null, e.href] as const);
 
 /**
  * Les sept destinations sont des routes VÉRIFIÉES dans `app/(app)/`, et le cadre

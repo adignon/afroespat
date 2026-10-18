@@ -1,5 +1,6 @@
 'use client';
 
+import { useChargeur } from '@/lib/entraide-recharge';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { SQUELETTE_H09, chargerH09 } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
@@ -22,9 +23,10 @@ import { H09Mobile } from '@/screens/h09/mobile.generated';
  * route — et non une heuristique de fraîcheur inventée ici.
  */
 export default function MyHelpRequestsPage() {
+  const charger = useChargeur(chargerH09);
   return (
     <EcranDonnees
-      charger={chargerH09}
+      charger={charger}
       /*
        * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
        * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre

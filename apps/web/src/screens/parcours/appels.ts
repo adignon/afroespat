@@ -41,6 +41,7 @@ import {
   type JourneyTeamMember,
   type PublicJourney,
 } from '@app/shared';
+import { fetchMe } from '@/lib/api/index';
 import {
   getPublicJourney,
   listJourneyActivities,
@@ -148,14 +149,14 @@ const nomAffiche = (nom: string | null, handle: string): string =>
  * dit. Un nouveau modèle s'affichera donc avec son nom complet plutôt que de ne
  * rien afficher.
  */
-const TYPE_COURT: Record<string, string> = {
+export const TYPE_COURT: Record<string, string> = {
   STUDIES: 'Études',
   WORK: 'Travail',
   FAMILY: 'Famille',
   SETTLEMENT: 'Régulariser',
 };
 
-const typeCourt = (code: string, nameFr: string): string => TYPE_COURT[code] ?? nameFr;
+export const typeCourt = (code: string, nameFr: string): string => TYPE_COURT[code] ?? nameFr;
 
 // ── Dates et durées ────────────────────────────────────────────────────────
 //
@@ -164,14 +165,14 @@ const typeCourt = (code: string, nameFr: string): string => TYPE_COURT[code] ?? 
 
 const JOUR_MS = 86_400_000;
 
-const dateComplete = (iso: string): string =>
+export const dateComplete = (iso: string): string =>
   new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 
-const jourEtMois = (iso: string): string =>
+export const jourEtMois = (iso: string): string =>
   new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
 
 /** Jours entiers entre maintenant et `iso`. Positif = à venir. */
-function joursJusqua(iso: string): number {
+export function joursJusqua(iso: string): number {
   return Math.round((new Date(iso).getTime() - Date.now()) / JOUR_MS);
 }
 
@@ -184,7 +185,7 @@ function joursJusqua(iso: string): number {
  * elle ne dessine aucune planche sans échéance. C'est donc un TEXTE AJOUTÉ, et il
  * est signalé comme tel plutôt que glissé.
  */
-function echeance(iso: string | null): string {
+export function echeance(iso: string | null): string {
   if (iso === null) return 'sans échéance';
   const jours = joursJusqua(iso);
   if (jours === 0) return "aujourd'hui";
@@ -202,7 +203,7 @@ function echeance(iso: string | null): string {
  * une étape franchie le jour même, ce que la charge relevée contient — devient
  * « le jour même » : « 0 j » se lirait comme une donnée manquante.
  */
-function duree(jours: number | null): string {
+export function duree(jours: number | null): string {
   if (jours === null) return '';
   if (jours === 0) return 'le jour même';
   if (jours < 14) return `${jours} j`;
@@ -211,14 +212,14 @@ function duree(jours: number | null): string {
 }
 
 /** La durée totale d'un parcours, entre sa première étape et son aboutissement. */
-function dureeTotale(debut: string | null, fin: string | null): string {
+export function dureeTotale(debut: string | null, fin: string | null): string {
   if (debut === null || fin === null) return '';
   const jours = Math.max(0, Math.round((new Date(fin).getTime() - new Date(debut).getTime()) / JOUR_MS));
   return duree(jours === 0 ? 1 : jours);
 }
 
 /** « hier », « il y a 2 j », « il y a 3 sem. », « 14 février » — mots de la maquette. */
-function ilYA(iso: string): string {
+export function ilYA(iso: string): string {
   const jours = -joursJusqua(iso);
   if (jours <= 0) return "aujourd'hui";
   if (jours === 1) return 'hier';
@@ -239,7 +240,7 @@ function ilYA(iso: string): string {
  * « FRANCHIE » sont les mots de la maquette ; « À FAIRE » et « EN PAUSE » sont
  * composés de ses propres mots (« En pause » sur J11, « À faire » sur K03).
  */
-const ETAT_ETAPE: Record<string, string> = {
+export const ETAT_ETAPE: Record<string, string> = {
   TODO: 'À FAIRE',
   IN_PROGRESS: 'EN COURS',
   DONE: 'FRANCHIE',
@@ -247,7 +248,7 @@ const ETAT_ETAPE: Record<string, string> = {
 };
 
 /** La visibilité, telle que l'en-tête de J01 l'écrit : « PRIVÉ ». */
-const VISIBILITE: Record<string, string> = {
+export const VISIBILITE: Record<string, string> = {
   PRIVATE: 'PRIVÉ',
   SHARED: 'PARTAGÉ',
   PUBLIC: 'PUBLIC',
@@ -261,7 +262,7 @@ const VISIBILITE: Record<string, string> = {
  * c'est le seul endroit de ce fichier où un libellé d'affichage est assemblé
  * plutôt que recopié. Signalé.
  */
-const VISIBILITE_TITRE: Record<string, string> = {
+export const VISIBILITE_TITRE: Record<string, string> = {
   PRIVATE: 'Projet privé',
   SHARED: 'Projet partagé',
   PUBLIC: 'Projet public',
@@ -285,7 +286,7 @@ function panneauDe(parcours: JourneyFullResponse): PanneauParcours {
     avancement: Math.round(parcours.journey.progressPct),
     rang: etape?.position ?? parcours.journey.totalCount,
     etape: etape?.title ?? '',
-    echeance: echeance(parcours.journey.nextDueDate),
+    echeance: parcours.journey.nextDueDate === null ? 'non fixée' : echeance(parcours.journey.nextDueDate),
     /**
      * §3.4 — l'équipe COMPTE le propriétaire : la maquette écrit « Équipe 3 » à
      * côté d'une liste de quatre lignes dont la première est « Amina (vous) ».
@@ -359,6 +360,7 @@ function enteteDe(parcours: JourneyFullResponse): EnteteParcours {
     duree: dureeTotale(premiere, j.completedAt),
     aboutiLe: j.completedAt === null ? '' : dateComplete(j.completedAt),
     version: j.templateVersion,
+    aides: j.helpReceivedCount ?? 0,
   };
 }
 
@@ -491,6 +493,7 @@ const ENTETE_VIDE: EnteteParcours = {
   total: 0,
   duree: '',
   aboutiLe: '',
+  aides: 0,
   version: 0,
 };
 
@@ -560,7 +563,8 @@ export const VUE_NEUTRE = {
   franchies: [] as readonly EtapeFrise[],
   actifs: [] as readonly CarteParcours[],
   aboutis: [] as readonly CarteParcours[],
-  plan: { actifs: 0, limite: JOURNEY_FREE_ACTIVE_LIMIT },
+  plan: { actifs: 0, limite: JOURNEY_FREE_ACTIVE_LIMIT, gratuit: true },
+  gratuit: true,
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -838,7 +842,11 @@ export async function chargerJ07(journeyId: string): Promise<Omit<J07Data, keyof
     readJourney(journeyId),
     listJourneyActivities(journeyId),
   ]);
-  return { panneau: panneauDe(parcours), journal: journal.items.map(entreeDe) };
+  return {
+    gratuit: !(await fetchMe()).monetisationActive,
+    panneau: panneauDe(parcours),
+    journal: journal.items.map(entreeDe),
+  };
 }
 
 const FAMILLE: Record<string, 'etape' | 'entraide' | 'franchie' | 'jalon' | 'equipe'> = {
@@ -864,7 +872,7 @@ const FAMILLE: Record<string, 'etape' | 'entraide' | 'franchie' | 'jalon' | 'equ
  * parrain — `JourneyMemberRole` ne connaît que `SUPPORTER` et `OBSERVER` — et le
  * garder aurait annoncé un parrainage qui n'a pas eu lieu.
  */
-function titreEntree(a: JourneyActivity): string {
+export function titreEntree(a: JourneyActivity): string {
   const etape = a.stepTitle === null ? '' : a.stepTitle;
   switch (a.type) {
     case 'STEP_STARTED':
@@ -880,14 +888,18 @@ function titreEntree(a: JourneyActivity): string {
     case 'MILESTONE_SHARED':
       return `Jalon partagé : ${etape}`;
     case 'MEMBER_JOINED':
-      return `${nomAffiche(a.actor.displayName, a.actor.handle)} a rejoint votre équipe`;
+      return a.actor === null
+        ? 'Un membre a rejoint votre équipe'
+        : `${nomAffiche(a.actor.displayName, a.actor.handle)} a rejoint votre équipe`;
+    case 'TEMPLATE_MIGRATED':
+      return 'Parcours mis à jour vers la nouvelle version de la procédure';
     default:
       return etape === '' ? 'Note' : `Note · ${etape}`;
   }
 }
 
 /** Le détail d'une entrée : la durée pour un franchissement, rien sinon. */
-function detailEntree(a: JourneyActivity): string {
+export function detailEntree(a: JourneyActivity): string {
   if (a.type !== 'STEP_DONE') return '';
   const charge = a.payload;
   if (typeof charge !== 'object' || charge === null) return '';
@@ -1075,12 +1087,14 @@ export async function chargerJ11(): Promise<Omit<J11Data, keyof ParcoursData>> {
     panneau: parcours === null ? PANNEAU_VIDE : panneauDe(parcours),
     actifs: enCours.map(carteDe),
     aboutis: finis.map(carteDe),
+    charge: true,
     plan: {
       // §3.1 : la limite porte sur les parcours ACTIVE ou PAUSED, et sur les
       // MIENS — un parcours dont je suis accompagnant ne compte pas.
       actifs: liste.items.filter((i) => i.isOwner && (i.status === 'ACTIVE' || i.status === 'PAUSED'))
         .length,
       limite: JOURNEY_FREE_ACTIVE_LIMIT,
+      gratuit: !(await fetchMe()).monetisationActive,
     },
   };
 }

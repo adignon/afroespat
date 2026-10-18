@@ -13,6 +13,7 @@ export function A11Mobile(props: AccueilData) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 
     <div style={{ padding: "52px 16px 12px", background: "#fff", borderBottom: "1px solid #E6EBE9" }}><h1 style={{ margin: "0", fontSize: "22px", fontWeight: "800", letterSpacing: "-0.6px" }}>Villes et Membres</h1><div style={{ display: "flex", gap: "4px", background: "#EEF2F0", borderRadius: "12px", padding: "4px", marginTop: "12px" }}><span style={{ flex: "1", textAlign: "center", padding: "8px", borderRadius: "9px", fontSize: "13px", fontWeight: "700", color: "#5D6B66" }}>Carte</span><span style={{ flex: "1", textAlign: "center", padding: "8px", borderRadius: "9px", fontSize: "13px", fontWeight: "700", background: "#fff" }}>Annuaire</span></div><div style={{ display: "flex", gap: "6px", marginTop: "10px", overflowX: "auto" }} tabIndex={0}>{(dirFilters ?? []).map((f, fIndex) => (

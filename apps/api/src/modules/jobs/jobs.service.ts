@@ -23,6 +23,7 @@ import {
   sharedByLabel,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { planEffectif } from '../../common/monetisation';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { OutboxService } from '../../common/outbox.service';
@@ -317,9 +318,10 @@ export class JobsService {
     // Un membre gratuit n'est pas « au-dessus du quota » : la fonction ne lui est pas
     // ouverte. `PLAN_LIMIT_REACHED` porte l'invitation Premium (T4 §3), et `max: 0`
     // dit clairement qu'aucune mise en avant n'est incluse.
-    if (author.plan === 'FREE') throw ApiError.planLimit('sponsoredJobsPerMonth', 0, 0);
+    const plan = await planEffectif(this.prisma, author.plan);
+    if (plan === 'FREE') throw ApiError.planLimit('sponsoredJobsPerMonth', 0, 0);
 
-    const max = await this.sponsoredPerMonth(author.plan);
+    const max = await this.sponsoredPerMonth(plan);
     const used = await this.sponsoredThisMonth(authorUserId);
     if (used >= max) this.fail('SPONSORED_LIMIT', { current: used, max });
 

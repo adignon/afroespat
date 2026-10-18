@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ApiErrorFilter } from './common/error.filter';
+import { PinoNestLogger, httpLogger, initSentry } from './common/observability';
 import { loadEnv } from './config/env';
 
 /**
@@ -20,8 +21,11 @@ async function bootstrap(): Promise<void> {
   const env = loadEnv();
   const logger = new Logger('bootstrap');
 
+  await initSentry();
+
   const app = await NestFactory.create(AppModule, {
-    logger: env.NODE_ENV === 'production' ? ['error', 'warn', 'log'] : ['error', 'warn', 'log', 'debug'],
+    // Journaux JSON sur stdout (pino) ; le niveau suit LOG_LEVEL.
+    logger: new PinoNestLogger(),
     /**
      * Le corps BRUT est conservé, en plus du JSON analysé — T4 §8.
      *
@@ -35,6 +39,10 @@ async function bootstrap(): Promise<void> {
      */
     rawBody: true,
   });
+
+  // Une ligne JSON par requête : méthode, chemin SANS chaîne de requête, statut,
+  // durée, identifiant de requête. Ni en-têtes ni corps (voir observability.ts).
+  app.use(httpLogger());
 
   // Préfixe /v1 pour les membres, /v1/admin pour l'équipe (§5.1).
   app.setGlobalPrefix('v1');
@@ -78,9 +86,31 @@ async function bootstrap(): Promise<void> {
     credentials: true, // le jeton de rafraîchissement est un cookie (T4 §2)
   });
 
-  // §8.3 — en-têtes de sécurité. La CSP complète viendra avec les domaines des
-  // fournisseurs ; ceux-ci n'en dépendent pas.
-  app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+  // §8.3 — en-têtes de sécurité : CSP et HSTS compris.
+  app.use((req: { url?: string }, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
+    /**
+     * ── CSP : CETTE API NE REND NI PAGE NI SCRIPT ──────────────────────────────
+     *
+     * Elle répond en JSON, en octets de média ou en flux : aucune de ses réponses
+     * n'a à charger quoi que ce soit. `default-src 'none'` + `frame-ancestors 'none'`
+     * est donc la politique la plus stricte qui soit, et elle ne coûte rien aux
+     * pages du front (la CSP de la page, côté web, est celle qui régit ses
+     * sous-ressources ; ces en-têtes ne s'appliquent qu'à une réponse ouverte
+     * DIRECTEMENT dans le navigateur — un fichier déposé par un membre ouvert dans
+     * un onglet n'y exécute aucun script).
+     *
+     * EXCEPTION : l'interface OpenAPI (`/v1/docs`, hors production) est une page
+     * avec ses propres scripts et styles ; elle garde une politique permissive pour
+     * elle seule.
+     */
+    const estDocs = (req.url ?? '').startsWith('/v1/docs');
+    if (!estDocs) {
+      res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    }
+    // HSTS : production seulement — en développement l'API répond en HTTP clair.
+    if (env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+    }
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('X-Frame-Options', 'DENY');

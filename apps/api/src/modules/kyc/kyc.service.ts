@@ -18,6 +18,7 @@ import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { loadEnv } from '../../config/env';
 import { KYC_PROVIDER, type KycProvider } from '../../providers/providers';
+import { normalizeDiditWebhook } from '../../providers/didit-kyc.provider';
 import { VerificationLevelService } from '../users/verification-level.service';
 
 /**
@@ -292,6 +293,17 @@ export class KycService {
       this.fail('WEBHOOK_SIGNATURE_INVALID');
     }
 
+    /**
+     * ANTI-REJEU. Une signature valide prouve l'ORIGINE d'un message, pas sa
+     * FRAÎCHEUR : quiconque a vu passer un « APPROVED » signé pourrait le rejouer
+     * indéfiniment. Didit date chaque envoi (`X-Timestamp`, secondes Unix) ; un
+     * message hors de la fenêtre `DIDIT_WEBHOOK_TOLERANCE_SECONDS` est refusé,
+     * même correctement signé. Avec le fournisseur réel l'en-tête est EXIGÉ ;
+     * avec la doublure et les bancs d'essai, il est facultatif mais vérifié s'il
+     * est présent.
+     */
+    this.assertFresh(headers, now);
+
     let parsedJson: unknown;
     try {
       parsedJson = JSON.parse(rawBody.toString('utf8'));
@@ -310,7 +322,10 @@ export class KycService {
      * un `5xx` fait RÉESSAYER le fournisseur indéfiniment sur une charge qu'on
      * n'acceptera jamais. Un `400` dit « ne renvoyez pas celle-là ».
      */
-    const parsed = diditWebhookSchema.safeParse(parsedJson);
+    // Le corps RÉEL de Didit (`session_id`, `status` en toutes lettres, `decision`
+    // avec les données d'identité) est ramené à la forme interne ; tout le reste
+    // est jeté ici, avant zod (§2.3). Un corps déjà interne passe tel quel.
+    const parsed = diditWebhookSchema.safeParse(normalizeDiditWebhook(parsedJson) ?? parsedJson);
     if (!parsed.success) {
       throw ApiError.validation(
         parsed.error.issues.map((issue) => ({
@@ -365,6 +380,21 @@ export class KycService {
    * n'en accepter qu'un se découvre en production, quand le premier webhook réel
    * repart en 401 et qu'aucun membre ne passe L1.
    */
+  private assertFresh(headers: Record<string, unknown>, now: Date): void {
+    const env = loadEnv();
+    const raw = headers['x-timestamp'];
+    if (raw === undefined) {
+      if (env.KYC_PROVIDER !== 'fake') this.fail('WEBHOOK_SIGNATURE_INVALID');
+      return;
+    }
+    const seconds = Number(Array.isArray(raw) ? raw[0] : raw);
+    const skew = Math.abs(now.getTime() / 1000 - seconds);
+    if (!Number.isFinite(seconds) || skew > env.DIDIT_WEBHOOK_TOLERANCE_SECONDS) {
+      this.logger.warn('Webhook Didit hors fenêtre d’horodatage : refusé (anti-rejeu).');
+      this.fail('WEBHOOK_SIGNATURE_INVALID');
+    }
+  }
+
   private signatureMatches(
     rawBody: Buffer,
     headers: Record<string, unknown>,

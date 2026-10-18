@@ -119,6 +119,10 @@ model Mentorship {
   endsAt     DateTime?            @map("ends_at") @db.Timestamptz
   endedAt    DateTime?            @map("ended_at") @db.Timestamptz
   endReason  MentorshipEndReason? @map("end_reason")
+  /// §6 « Ajoutée » : la prolongation de 90 jours n'a lieu qu'une fois (§2.4).
+  extendedOnce Boolean           @default(false) @map("extended_once")
+  /// §6 « Ajoutée » : expiration de la demande, created_at + 7 jours (§2.2).
+  expiresAt    DateTime?         @map("expires_at") @db.Timestamptz
 
   conversationId String? @map("conversation_id") @db.Uuid
 
@@ -133,6 +137,7 @@ model Mentorship {
   @@index([mentorUserId])
   @@index([menteeUserId])
   @@index([status])
+  @@index([status, expiresAt])
   @@map("mentorships")
 }
 

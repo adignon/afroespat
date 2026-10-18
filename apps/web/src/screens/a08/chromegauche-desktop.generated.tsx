@@ -8,15 +8,19 @@ import { Fragment } from 'react';
 import { CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
+<<<<<<< HEAD
+=======
+import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
+>>>>>>> claude/beautiful-mayer-jze477
 import type { A08Data } from './data';
 
 export function A08ChromeGaucheDesktop(props: A08Data) {
-  const { panelReseaux, rail, shortcuts } = props;
+  const { panelReseaux, rail } = props;
 
   return (
     <>
-<div style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
-      <div style={{ height: "64px", display: "flex", alignItems: "center", gap: "10px", flexShrink: "0" }}><div style={{ width: "38px", height: "38px", borderRadius: "12px", background: "#0F5C48", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none" /></svg></div><span style={{ fontSize: "21px", fontWeight: "800", color: "#0F5C48", letterSpacing: "-0.5px" }}>Diaspora</span></div>
+<div data-zone="gauche" style={{ width: "400px", flexShrink: "0", display: "flex", flexDirection: "column", padding: "0 24px", position: "sticky", top: "0", alignSelf: "flex-start", maxHeight: "100vh", overflowY: "auto" }}>
+      <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div style={{ display: "flex", gap: "12px", paddingTop: "12px", minHeight: "0" }}>
         <RailSurvol style={{ width: "76px", background: "#0F5C48", borderRadius: "22px", padding: "12px 8px", display: "flex", flexDirection: "column", gap: "4px", flexShrink: "0", alignSelf: "stretch" }}>{(rail ?? []).map((r, rIndex) => (
 <Fragment key={rIndex}><a href={r.href} style={{ height: "58px", borderRadius: "16px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "5px", fontSize: "9.5px", fontWeight: "700", background: r.bg, color: r.fg }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={r.icon} /></svg>{r.label}</a></Fragment>
@@ -31,10 +35,8 @@ export function A08ChromeGaucheDesktop(props: A08Data) {
 ))}</div>
           </div>
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px 8px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VOS RACCOURCIS</span><a href="#" style={{ fontSize: "12px", fontWeight: "700" }}>Modifier</a></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>{(shortcuts ?? []).map((s, sIndex) => (
-<Fragment key={sIndex}><a href="#" style={{ height: "50px", display: "flex", alignItems: "center", gap: "11px", padding: "0 8px", borderRadius: "14px", color: "#16211D" }}><span style={{ width: "32px", height: "32px", borderRadius: "10px", background: s.bg, color: "#fff", fontSize: "10px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{s.i}</span><span style={{ minWidth: "0" }}><span style={{ display: "block", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.name}</span><span style={{ display: "block", fontSize: "11px", color: "#8A958F" }}>{s.sub}</span></span></a></Fragment>
-))}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px 8px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VOS RACCOURCIS</span><a href="/reseaux" style={{ fontSize: "12px", fontWeight: "700" }}>Modifier</a></div>
+            <RaccourcisReseaux />
           </div>
         </div>
       </div>

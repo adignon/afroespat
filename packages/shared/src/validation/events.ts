@@ -68,6 +68,8 @@ export const EVENT_ERROR_CODES = {
   TOO_FAR: 422,
   EVENT_STARTED: 422,
   CHECKIN_WINDOW_CLOSED: 422,
+  /** La nouvelle capacité est sous le nombre d'inscrits (`details.attendeeCount`). */
+  CAPACITY_BELOW_ATTENDEES: 422,
 } as const;
 
 export type EventErrorCode = keyof typeof EVENT_ERROR_CODES;
@@ -77,6 +79,8 @@ export const EVENT_ERROR_MESSAGES: Record<EventErrorCode, string> = {
   TOO_FAR: 'Un événement ne peut pas être créé plus de six mois à l’avance.',
   EVENT_STARTED: 'Cet événement a commencé : il n’est plus modifiable.',
   CHECKIN_WINDOW_CLOSED: 'La présence ne peut plus être enregistrée pour cet événement.',
+  CAPACITY_BELOW_ATTENDEES:
+    'La capacité ne peut pas être inférieure au nombre de personnes déjà inscrites.',
 };
 
 /**

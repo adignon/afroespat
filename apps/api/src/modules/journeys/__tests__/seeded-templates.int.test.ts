@@ -17,6 +17,9 @@ import { ConnectionsService } from '../../connections/connections.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { FeedService } from '../../feed/feed.service';
 import { HelpService } from '../../help/help.service';
+import { HousingService } from '../../housing/housing.service';
+import { JobsService } from '../../jobs/jobs.service';
+import { MentorshipService } from '../../mentorship/mentorship.service';
 import { MessagingService } from '../../messaging/messaging.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { JourneysService, type JourneyActor } from '../journeys.service';
@@ -139,6 +142,9 @@ describe('modèles amorcés (T3 partie A) vus du service', () => {
       new FeedService(prisma, outbox, audit, visibility),
       messaging,
       new NotificationsService(prisma, new FakeEmailProvider(), new FakePushProvider()),
+      new HousingService(prisma, outbox, audit, visibility),
+      new JobsService(prisma, outbox, audit, visibility),
+      new MentorshipService(prisma, outbox, audit, visibility, messaging),
     );
     auth = new AuthService(
       prisma,
@@ -380,5 +386,34 @@ describe('modèles amorcés (T3 partie A) vus du service', () => {
     expect(draft.blocker.draftText.startsWith(BLOCKER_TEMPLATES.HOUSING.slice(0, 20))).toBe(true);
     // Aucune variable non substituée ne fuit vers le membre.
     expect(draft.blocker.draftText).not.toMatch(/\{(ville|etape|parcours|echeance)\}/);
+  });
+
+  it('T3 A.2 : la variante de « Régulariser » remplace la première étape, et est refusée ailleurs', async () => {
+    const settlement = await prisma.journeyTemplate.findUniqueOrThrow({
+      where: { code: 'SETTLEMENT' },
+      select: { id: true },
+    });
+    for (const [variant, titre] of [
+      ['STATUS_CHANGE', 'Changer de statut'],
+      ['RENEWAL', 'Renouveler'],
+    ] as const) {
+      const member = await newMember();
+      const created = await journeys.create(member, { templateId: settlement.id, variant });
+      const first = await prisma.journeyStep.findFirstOrThrow({
+        where: { journeyId: created.journey.id, position: 1 },
+        select: { title: true, stepDefinition: { select: { code: true } }, _count: { select: { checklistItems: true } } },
+      });
+      expect(first.stepDefinition?.code).toBe(variant);
+      expect(first.title).toContain(titre);
+      expect(first._count.checklistItems).toBeGreaterThan(0);
+      expect(created.journey.totalCount).toBe(
+        (await prisma.journeyStep.count({ where: { journeyId: created.journey.id } })) - 5,
+      );
+    }
+    const member = await newMember();
+    await expect(
+      journeys.create(member, { templateId: studiesTemplateId, variant: 'RENEWAL' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(await prisma.journey.count({ where: { ownerUserId: member.userId } })).toBe(0);
   });
 });

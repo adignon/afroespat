@@ -1,3 +1,4 @@
+import { planEffectif } from '../../common/monetisation';
 import { Injectable, Logger } from '@nestjs/common';
 import { newId, type Prisma } from '@app/db';
 import {
@@ -176,7 +177,11 @@ export class ProsService {
     if (row === null) return null;
     const { proofAssetId, ...rest } = row;
     return {
-      ...this.toCard(rest, userId),
+      // LOT A : `toCard(rest, userId)` sans le troisième argument rendait TOUJOURS
+      // `isFeatured: false` à son propre titulaire, même abonné — alors que la
+      // fiche publique (`detail`) disait « mise en avant ». Même définition :
+      // abonnement payant ET non expiré.
+      ...this.toCard(rest, userId, this.isPaidAndCurrent(row)),
       verificationStatus: row.verificationStatus,
       status: row.status,
       hasProof: proofAssetId !== null,
@@ -515,6 +520,9 @@ export class ProsService {
       where: { id: viewerId },
       select: { plan: true },
     });
+    // LOT A : « tout gratuit » — le plan lu est PREMIUM pour tous tant que les plans
+    // ne sont pas appliqués (`common/monetisation.ts`).
+    const plan = await planEffectif(this.prisma, viewer.plan);
     const periodKey = monthKey(new Date());
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -524,7 +532,7 @@ export class ProsService {
       });
 
       if (already === null) {
-        await this.consumeContactQuota(tx, viewerId, viewer.plan, periodKey);
+        await this.consumeContactQuota(tx, viewerId, plan, periodKey);
         await tx.proContactLog.create({
           data: { id: newId(), proProfileId, userId: viewerId, periodKey },
         });
@@ -882,8 +890,9 @@ export class ProsService {
     });
     const periodKey = monthKey(new Date());
     const used = await this.prisma.proContactLog.count({ where: { userId, periodKey } });
-    if (user.plan !== 'FREE') return { used, max: null };
-    return { used, max: await this.contactsPerMonth(user.plan) };
+    const plan = await planEffectif(this.prisma, user.plan);
+    if (plan !== 'FREE') return { used, max: null };
+    return { used, max: await this.contactsPerMonth(plan) };
   }
 
   /** L'identifiant du contact entre deux membres, ou `null` (§4.3). */

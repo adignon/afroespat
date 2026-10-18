@@ -359,6 +359,7 @@ export const JourneyActivityType = [
   'MEMBER_JOINED',
   'MILESTONE_SHARED',
   'NOTE',
+  'TEMPLATE_MIGRATED',
 ] as const;
 export type JourneyActivityType = (typeof JourneyActivityType)[number];
 

@@ -1,7 +1,9 @@
 'use client';
 
+import { useCallback, useState } from 'react';
+import { useVersionEntraide } from '@/lib/entraide-recharge';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { SQUELETTE_H04, chargerH04 } from '@/screens/entraide/appels';
+import { SQUELETTE_H04, chargerH04, type TriChoisi } from '@/screens/entraide/appels';
 import { ScreenFrames } from '@/screens/frames';
 import { H04Desktop } from '@/screens/h04/desktop.generated';
 import { H04Mobile } from '@/screens/h04/mobile.generated';
@@ -48,9 +50,16 @@ import { H04Mobile } from '@/screens/h04/mobile.generated';
  *     derrière.
  */
 export default function HelpCanHelpPage() {
+  /** Le tri est un état de page : changer de tri change l'identité de `charger`, donc relit. */
+  const [tri, setTri] = useState<TriChoisi>('echeance');
+  const version = useVersionEntraide();
+  const charger = useCallback(() => {
+    void version;
+    return chargerH04({ tri, onTri: setTri });
+  }, [tri, version]);
   return (
     <EcranDonnees
-      charger={chargerH04}
+      charger={charger}
       /*
        * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est MESURÉ : cette route
        * répondait 200 avec cinq mots — « DisaporyPlus Chargement de votre

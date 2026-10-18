@@ -58,6 +58,18 @@ export const ACCOUNT_ERROR_CODES = {
   EXPORT_TOO_SOON: 429,
   /** Aucune archive à remettre : le membre n'en a jamais demandé. */
   EXPORT_NOT_FOUND: 404,
+  /** 12 §3 : le code de vérification d'adresse email est faux. */
+  EMAIL_CODE_INVALID: 422,
+  /** Le code a expiré, ou trop d'essais ont été faits : il faut en demander un autre. */
+  EMAIL_CODE_EXPIRED: 410,
+  /** Aucune vérification d'adresse n'est en cours. */
+  EMAIL_NO_PENDING: 409,
+  /** Un code vient d'être envoyé : on ne renvoie pas par rafales. */
+  EMAIL_RESEND_TOO_SOON: 429,
+  /** Le fournisseur d'envoi a refusé ou n'a pas répondu. */
+  EMAIL_SEND_FAILED: 502,
+  /** Aucune adresse n'est enregistrée sur le compte. */
+  EMAIL_NOT_SET: 404,
 } as const;
 
 export type AccountErrorCode = keyof typeof ACCOUNT_ERROR_CODES;
@@ -77,6 +89,12 @@ export const ACCOUNT_ERROR_MESSAGES: Record<AccountErrorCode, string> = {
   ACCOUNT_BANNED: 'Ce compte a été fermé définitivement.',
   EXPORT_TOO_SOON: 'Vous avez déjà demandé vos données récemment. Une demande est possible tous les 30 jours.',
   EXPORT_NOT_FOUND: 'Vous n’avez encore demandé aucune archive de vos données.',
+  EMAIL_CODE_INVALID: 'Ce code n’est pas le bon.',
+  EMAIL_CODE_EXPIRED: 'Ce code a expiré. Demandez-en un nouveau.',
+  EMAIL_NO_PENDING: 'Aucune vérification d’adresse n’est en cours.',
+  EMAIL_RESEND_TOO_SOON: 'Un code vient d’être envoyé. Patientez un instant avant d’en demander un autre.',
+  EMAIL_SEND_FAILED: 'Nous n’avons pas pu envoyer le message. Réessayez dans un instant.',
+  EMAIL_NOT_SET: 'Aucune adresse email n’est enregistrée.',
 };
 
 // ── Bornes temporelles ──────────────────────────────────────────────────────
@@ -89,6 +107,12 @@ export const ACCOUNT_ERROR_MESSAGES: Record<AccountErrorCode, string> = {
  * un jour ou vingt-quatre heures d'un fuseau particulier.
  */
 export const ACCOUNT_LIMITS = {
+  /** 12 §3 : le code de vérification d'adresse email vit 15 minutes. */
+  emailCodeTtlMinutes: 15,
+  /** Cinq essais par code, comme l'OTP téléphone. */
+  emailCodeMaxAttempts: 5,
+  /** Délai minimal entre deux envois de code. */
+  emailResendSeconds: 60,
   /** §2.3 : nouvelle tentative possible 24 h après un `DECLINED`. */
   kycRetryDelayHours: 24,
   /** §2.3 : 3 tentatives maximum sur 30 jours. */

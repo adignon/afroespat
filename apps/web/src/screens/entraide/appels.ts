@@ -7,6 +7,7 @@ import {
   helpListResponseSchema,
   helpMineResponseSchema,
   helpMyResponsesResponseSchema,
+  journeyTemplatesResponseSchema,
   mentorCardResponseSchema,
   myMentorshipsResponseSchema,
   publicProfileResponseSchema,
@@ -23,7 +24,7 @@ import type { EtatVide, FiltreTypeDemande, LigneDemande, PorteeFil } from '../h0
 import type { H01Data } from '../h01/data';
 import type { H02Data, ReponsePublique } from '../h02/data';
 import type { H03Data } from '../h03/data';
-import type { H04Data, LigneSuggestion } from '../h04/data';
+import type { H04Data, LigneSuggestion, TriSuggestions } from '../h04/data';
 import type { H05Data } from '../h05/data';
 import type { H06Data } from '../h06/data';
 import type { H07Data } from '../h07/data';
@@ -545,12 +546,19 @@ const CATEGORIE_CLOSE = { fond: '#EDF1EF', encre: '#8A958F' };
 /**
  * UNE DEMANDE, DANS L'UNE DES TROIS VARIANTES DESSINÉES.
  *
- * ⚠ ÉCART CONSIGNÉ : la maquette écrit « Étape 7 · Logement · parcours Études ».
- * `helpCardSchema` porte `fromJourney` (un booléen) mais ni le numéro d'étape,
- * ni son titre, ni le NOM du parcours — vérifié au schéma, pas supposé. La ligne
- * d'étape dit donc « Demande issue d'un parcours », ce qui est vrai, plutôt que
- * de composer trois informations qu'on n'a pas. REMONTÉ au porteur.
+ * LA LIGNE D'ÉTAPE (§2.5) : « Étape 7 · Logement · parcours Études ». Elle était
+ * remplacée par « Demande issue d'un parcours » faute de donnée : `helpCardSchema`
+ * ne portait que `fromJourney`. La carte porte maintenant `journeyStep` (rang, nom
+ * de l'étape, TYPE de parcours — jamais le titre personnel), et la ligne est
+ * composée par `ligneParcours`.
  */
+/** « Étape 7 · Logement · parcours Études », ou le repli sûr quand la carte n'a pas d'étape. */
+export function ligneParcours(d: Pick<HelpCard, 'journeyStep'>): string {
+  const e = d.journeyStep;
+  if (e === null) return 'Demande issue d’un parcours';
+  return `Étape ${String(e.stepNumber)} · ${e.stepName} · parcours ${e.journeyTypeName}`;
+}
+
 function ligneDemande(d: HelpCard, rang: number): LigneDemande {
   const close = d.status !== 'OPEN';
   const parcours = d.fromJourney;
@@ -565,7 +573,7 @@ function ligneDemande(d: HelpCard, rang: number): LigneDemande {
     categorieEncre: categorie.encre,
     etat: close ? 'Résolue' : '',
     delai: ageCourt(d.createdAt),
-    etape: parcours && !close ? 'Demande issue d’un parcours' : '',
+    etape: parcours && !close ? ligneParcours(d) : '',
     titre: d.title,
     titreCouleur: close ? '#5D6B66' : '#16211D',
     extrait: d.excerpt,
@@ -782,8 +790,40 @@ export async function chargerH02(id: string): Promise<H02Data> {
   ]);
 
   const parcours = detail.journeyContext;
+  const requete = detail.request;
+  const marqueeId = requete.resolvedByResponseId;
+  const aidant =
+    marqueeId === null
+      ? null
+      : (detail.responses.find((r) => r.id === marqueeId)?.author.displayName ?? null);
   return {
     ...bandeau,
+    action: {
+      id: requete.id,
+      kind: requete.kind,
+      statut: requete.status,
+      estAuteur: requete.isAuthor,
+      peutModifier: requete.canEdit,
+      peutRouvrir: requete.canReopen,
+      titre: requete.title,
+      corps: requete.body,
+      type: requete.type,
+      categorie: CATEGORIES_FR[requete.type],
+      // `dueDate` est un horodatage complet : le champ de date veut AAAA-MM-JJ.
+      echeance: requete.dueDate === null ? '' : requete.dueDate.slice(0, 10),
+      deParcours: requete.fromJourney,
+      parcours:
+        detail.journeyContext === null || detail.journeyContext.own === null
+          ? null
+          : {
+              journeyId: detail.journeyContext.own.journeyId,
+              stepId: detail.journeyContext.own.stepId,
+              fait: detail.journeyContext.own.stepDone,
+              etape: detail.journeyContext.stepName,
+            },
+      signalement: { type: 'HELP_REQUEST', id: requete.id },
+      aidant,
+    },
     demande: {
       titre: detail.request.title,
       corps: detail.request.body,
@@ -817,7 +857,11 @@ export async function chargerH02(id: string): Promise<H02Data> {
         parcours === null
           ? null
           : {
-              etape: parcours.stepName,
+              // « Étape 7 · Logement » : le rang vient de la carte (`journeyStep`).
+              etape:
+                detail.request.journeyStep === null
+                  ? parcours.stepName
+                  : `${String(detail.request.journeyStep.stepNumber)} · ${parcours.stepName}`,
               type: parcours.journeyTypeName,
               jours: parcours.dueInDays ?? 0,
             },
@@ -831,6 +875,16 @@ export async function chargerH02(id: string): Promise<H02Data> {
         corps: r.body,
         marquee: r.markedHelpful,
         peutMarquer: r.canMarkHelpful,
+        action: {
+          id: r.id,
+          demandeId: requete.id,
+          corps: r.body,
+          marquee: r.markedHelpful,
+          peutMarquer: r.canMarkHelpful,
+          estMienne: r.isMine,
+          peutModifier: r.canEdit,
+          signalement: { type: 'HELP_RESPONSE', id: r.id },
+        },
       }),
     ),
   };
@@ -941,7 +995,7 @@ function ligneSuggestion(d: HelpCard, rang: number): LigneSuggestion {
   const nom = d.author.displayName;
   return {
     categorie: CATEGORIES_FR[d.type] ?? d.type,
-    motif: d.fromJourney ? 'Demande issue d’un parcours' : 'Correspond à vos types d’aide',
+    motif: d.fromJourney ? ligneParcours(d) : 'Correspond à vos types d’aide',
     delai: echeanceCourte(d.dueDate, d.createdAt),
     titre: d.title,
     extrait: d.excerpt,
@@ -968,7 +1022,29 @@ function ligneSuggestion(d: HelpCard, rang: number): LigneSuggestion {
  * lu de la même façon : une seule lecture de la route pour les deux chemins, donc
  * aucun moyen qu'ils se contredisent.
  */
-export const chargerH04 = async (): Promise<H04Data> => {
+export type TriChoisi = 'echeance' | 'recentes';
+
+function trisDeH04(choisi: TriChoisi, onTri: (t: TriChoisi) => void): readonly TriSuggestions[] {
+  return (
+    [
+      ['echeance', 'Échéance'],
+      ['recentes', 'Récentes'],
+    ] as const
+  ).map(([cle, libelle]) => ({
+    cle,
+    libelle,
+    ...teinte(cle === choisi),
+    actif: cle === choisi,
+    onChoisir: () => {
+      onTri(cle);
+    },
+  }));
+}
+
+export const chargerH04 = async ({
+  tri = 'echeance',
+  onTri = () => undefined,
+}: { readonly tri?: TriChoisi; readonly onTri?: (t: TriChoisi) => void } = {}): Promise<H04Data> => {
   const [bandeau, suggestions] = await Promise.all([
     bandeauSeul(),
     memberApi.get('/help/can-help?limit=20', helpCanHelpResponseSchema),
@@ -977,7 +1053,12 @@ export const chargerH04 = async (): Promise<H04Data> => {
   return {
     ...bandeau,
     portees: porteesDeH04(bandeau.compteurs),
-    suggestions: suggestions.items.map((d, rang) => ligneSuggestion(d, rang)),
+    tris: trisDeH04(tri, onTri),
+    // « Échéance » est l'ordre du serveur (§2.6) ; « Récentes » reclasse la même liste.
+    suggestions: (tri === 'recentes'
+      ? [...suggestions.items].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      : suggestions.items
+    ).map((d, rang) => ligneSuggestion(d, rang)),
     vide: videDuFil(
       suggestions.items.length,
       'aider',
@@ -1003,14 +1084,24 @@ export const chargerH04 = async (): Promise<H04Data> => {
  * déduire d'un prénom est précisément ce qu'on refuse de faire.
  */
 export async function chargerH06(handle: string): Promise<H06Data> {
-  const [bandeau, fiche] = await Promise.all([
+  const [bandeau, fiche, modeles] = await Promise.all([
     bandeauSeul(),
     memberApi.get(`/mentors/${encodeURIComponent(handle)}`, mentorCardResponseSchema),
+    // Les identifiants de types de parcours de la fiche, nommés. Un échec ne fait pas
+    // tomber la fiche : les pastilles disparaissent, c'est tout.
+    memberApi.get('/journey-templates', journeyTemplatesResponseSchema).catch(() => null),
   ]);
+  const nomsTypes = (modeles?.items ?? [])
+    .filter((t) => fiche.journeyTemplateIds.includes(t.id))
+    .map((t) => t.nameFr);
 
   return {
     ...bandeau,
     parrain: {
+      handle: fiche.handle,
+      signalement: { type: 'USER', id: fiche.userId },
+      complet: fiche.availability !== 'AVAILABLE',
+      types: nomsTypes,
       nom: fiche.displayName,
       initiales: initialesDe(fiche.displayName),
       dispo: fiche.availability === 'AVAILABLE' ? DISPO_LIBRE : DISPO_COMPLET,
@@ -1049,6 +1140,7 @@ export async function chargerH09(): Promise<H09Data> {
     mesDemandes: {
       total: mine.items.length,
       avecNouvelles: mine.items.filter((d: HelpCard) => d.responseCount > 0).length,
+      resolues: mine.items.filter((d: HelpCard) => d.status === 'RESOLVED').length,
     },
   };
 }
@@ -1189,6 +1281,7 @@ export const SQUELETTE_H03: H03Data = SQUELETTE_BANDEAU;
 export const SQUELETTE_H04: H04Data = {
   ...SQUELETTE_BANDEAU,
   portees: porteesDeH04(SQUELETTE_BANDEAU.compteurs),
+  tris: trisDeH04('echeance', () => undefined),
   suggestions: [],
   /** `null` : voir `SQUELETTE_H01`. Une liste vide d'attente n'est pas un vide. */
   vide: null,
@@ -1198,7 +1291,7 @@ export const SQUELETTE_H07: H07Data = SQUELETTE_BANDEAU;
 export const SQUELETTE_H08: H08Data = SQUELETTE_BANDEAU;
 export const SQUELETTE_H09: H09Data = {
   ...SQUELETTE_BANDEAU,
-  mesDemandes: { total: 0, avecNouvelles: 0 },
+  mesDemandes: { total: 0, avecNouvelles: 0, resolues: 0 },
 };
 export const SQUELETTE_H10: H10Data = {
   ...SQUELETTE_BANDEAU,
@@ -1229,6 +1322,23 @@ export const SQUELETTE_H10: H10Data = {
  */
 export const SQUELETTE_H02: H02Data = {
   ...SQUELETTE_BANDEAU,
+  action: {
+    id: '',
+    kind: 'REQUEST',
+    statut: 'OPEN',
+    estAuteur: false,
+    peutModifier: false,
+    peutRouvrir: false,
+    titre: '',
+    corps: '',
+    type: 'OTHER',
+    categorie: '',
+    echeance: '',
+    deParcours: false,
+    parcours: null,
+    signalement: { type: 'HELP_REQUEST', id: '' },
+    aidant: null,
+  },
   demande: {
     titre: '—',
     corps: '',
@@ -1244,6 +1354,10 @@ export const SQUELETTE_H02: H02Data = {
 export const SQUELETTE_H06: H06Data = {
   ...SQUELETTE_BANDEAU,
   parrain: {
+    handle: '',
+    signalement: { type: 'USER', id: '' },
+    complet: false,
+    types: [],
     nom: '—',
     initiales: '',
     dispo: { libelle: '—', fond: '#E3F0EB', texte: '#0F5C48' },

@@ -7,6 +7,7 @@ import {
   helpListQuerySchema,
   helpMineQuerySchema,
   helpMyResponsesQuerySchema,
+  updateHelpResponseSchema,
   updateHelpSchema,
   uuidSchema,
 } from '@app/shared';
@@ -198,6 +199,22 @@ export class HelpController {
     @Param('id', zodPipe(uuidSchema)) id: string,
   ): Promise<void> {
     await this.help.remove(this.actor(auth), id);
+  }
+
+  /**
+   * Modifier SA réponse. `comment.create` comme la publication : c'est la même
+   * capacité, et le service refuse tout ce qui n'est pas la réponse de l'appelant.
+   */
+  @Patch(':id/responses/:rid')
+  @RequiresCapability('comment.create')
+  @ApiOperation({ summary: 'Modifier sa réponse, tant que la demande est ouverte' })
+  async updateResponse(
+    @Auth() auth: AuthContext,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Param('rid', zodPipe(uuidSchema)) rid: string,
+    @Body(zodPipe(updateHelpResponseSchema)) body: z.infer<typeof updateHelpResponseSchema>,
+  ) {
+    return this.help.updateResponse(this.actor(auth), id, rid, body);
   }
 
   @Delete(':id/responses/:rid')

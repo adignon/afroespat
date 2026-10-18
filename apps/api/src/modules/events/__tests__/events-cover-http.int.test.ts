@@ -89,7 +89,7 @@ describe('couverture d’événement — codes de retour HTTP (09 §3.1, 00 §8.
 
     await prisma.user.update({
       where: { id: signup.userId },
-      data: { verificationLevel: 'L1', cityId },
+      data: { verificationLevel: 'L2', cityId },
     });
 
     const again = await auth.requestOtp({

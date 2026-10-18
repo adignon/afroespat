@@ -73,6 +73,13 @@ export class MentorshipController {
 
   // ── Profil de parrain ─────────────────────────────────────────────────────
 
+  @Get('me/mentor-profile')
+  @RequiresCapability('mentorship.request')
+  @ApiOperation({ summary: 'Mon profil de parrain et le diagnostic d’éligibilité (§2.1)' })
+  async myProfile(@Auth() auth: AuthContext) {
+    return this.mentorship.myProfile(auth.userId, auth.claims.level);
+  }
+
   @Put('me/mentor-profile')
   @RequiresCapability('mentor.become')
   @ApiOperation({ summary: 'Devenir parrain (L2, parcours terminé ou installé depuis un an)' })

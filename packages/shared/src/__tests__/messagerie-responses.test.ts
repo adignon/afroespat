@@ -68,6 +68,10 @@ const CONVERSATIONS = {
       // DÉSCELLÉ PAR LE SERVEUR : c'est le texte que le membre a écrit.
       lastMessagePreview: 'Oui avec plaisir, je t’envoie tout.',
       unreadCount: 1,
+      // Ajouté par le serveur après le relevé d'origine (`messaging.service.ts`,
+      // `muted: mienne?.isMuted ?? false`) : la charge relevée est mise à jour,
+      // le schéma strict exige bien le champ.
+      muted: false,
       pendingForMe: false,
       awaitingReply: false,
     },
@@ -87,6 +91,10 @@ const MESSAGES = {
       body: 'Oui avec plaisir, je t’envoie tout.',
       mediaId: null,
       mediaUrl: null,
+      // `storyId`/`storyAlive` : servis par `messaging.service.ts` (null/false hors
+      // story) ; le relevé d'origine les précédait.
+      storyId: null,
+      storyAlive: false,
       sentAt: '2026-10-01T19:02:26.941Z',
       deletedAt: null,
       mine: true,
@@ -99,6 +107,10 @@ const MESSAGES = {
       body: 'Avec Visale ça passe. Tu veux que je relise ton dossier ce soir ?',
       mediaId: null,
       mediaUrl: null,
+      // `storyId`/`storyAlive` : servis par `messaging.service.ts` (null/false hors
+      // story) ; le relevé d'origine les précédait.
+      storyId: null,
+      storyAlive: false,
       sentAt: '2026-10-01T19:02:26.916Z',
       deletedAt: null,
       mine: false,

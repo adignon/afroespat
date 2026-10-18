@@ -13,6 +13,7 @@ export function X02Mobile(props: X02Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 0", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" }}><h1 style={{ margin: "0", fontSize: "21px", fontWeight: "800", letterSpacing: "-0.6px", flex: "1" }}>Notifications</h1></div><div style={{ display: "flex", gap: "6px", padding: "10px 16px", overflowX: "auto", flexShrink: "0" }} tabIndex={0}>{(filtres ?? []).map((ft, ftIndex) => (
 <Fragment key={ftIndex}><Link href={ft.href} data-notif-filtre={ft.cle} aria-current={ft.actif ? "page" : undefined} style={{ minHeight: "44px", padding: "0 13px", borderRadius: "999px", display: "flex", alignItems: "center", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", background: ft.fond, color: ft.texte, border: `1px solid ${ft.bord}`, textDecoration: "none" }}>{ft.libelle}</Link></Fragment>

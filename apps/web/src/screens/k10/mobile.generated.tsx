@@ -13,6 +13,7 @@ export function K10Mobile(props: K10Data) {
 
   return (
     <>
+
       <main style={{ display: "contents" }}>
 <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 0", display: "flex", alignItems: "center", gap: "8px", flexShrink: "0" }}><h1 style={{ margin: "0", fontSize: "21px", fontWeight: "800", letterSpacing: "-0.6px", flex: "1" }}>Enregistrés</h1></div><div style={{ flexGrow: "1", overflow: "visible", padding: "12px 16px", display: "flex", flexDirection: "column", gap: "12px" }}><div style={{ display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0" }}>{(onglets ?? []).map((o, oIndex) => (
 <Fragment key={oIndex}><button type="button" onClick={o.onChoisir} aria-pressed={o.actif} data-enregistres-onglet={o.cle} style={{ padding: "8px 13px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", background: o.fond, color: o.texte, border: `1px solid ${o.bord}`, fontFamily: "inherit", cursor: "pointer" }}>{o.libelle}</button></Fragment>

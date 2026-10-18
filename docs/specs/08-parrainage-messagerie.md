@@ -45,7 +45,9 @@ Pendant : rien d'imposé. Le parrain voit le parcours (rôle SUPPORTER), reçoit
 
 Prolongation : les deux peuvent prolonger de 90 jours, une fois.
 
-**[RÈGLE DURE]** Le parrainage n'implique jamais d'argent. Le guide du parrain le dit ; la modération IA marque `MONEY_REQUEST` dans la conversation de parrainage avec priorité 1.
+**[RÈGLE DURE]** Le parrainage n'implique jamais d'argent. Le guide du parrain le dit ; la modération IA marque `MONEY_REQUEST` dans la conversation de parrainage avec priorité 1. **Livré** : sur `message.sent` d'une conversation `MENTORSHIP`, les règles locales de modération (IBAN, carte, liens de paiement, demande de versement) ouvrent un dossier de priorité 1 sur le message (`modules/mentorship/mentorship-money.guard.ts`) ; le message n'est ni masqué ni sanctionné (un humain décide).
+
+**Capacité** : la table `capabilities.ts` fait foi — `mentorship.request` est **L1** (et non L0 comme écrit en §2.2) ; un membre L0 qui tente reçoit `LEVEL_REQUIRED` et l'écran ouvre la fenêtre de niveau.
 
 ---
 
@@ -119,8 +121,8 @@ Pas de recherche dans les messages en V1.
 
 | Table | Précision |
 |---|---|
-| `mentorships.extended_once` | **Ajoutée**, bool |
-| `mentorships.expires_at` | **Ajoutée** — expiration de la demande à 7 jours |
+| `mentorships.extended_once` | **Ajoutée**, bool — livrée (migration `20261017040000`), reprise de l'existant par la déduction qu'elle remplace |
+| `mentorships.expires_at` | **Ajoutée** — livrée ; posée à la demande (+ 7 jours), index `(status, expires_at)` ; une ligne sans échéance retombe sur `created_at + 7 jours` |
 | `connection_requests.expires_at` | **Ajoutée** |
 | `conversations.pending_from_user_id` | **Ajoutée**, facultatif — DIRECT non encore acceptée par le destinataire |
 | `messages.kind` | **Ajoutée**, enum `TEXT`, `IMAGE`, `SYSTEM` (ex. « Sandra a rejoint le parcours ») |
@@ -135,12 +137,13 @@ Pas de recherche dans les messages en V1.
 |---|---|---|---|
 | GET | `/mentors` | Filtres `cityId`, `languageId`, `templateCode`, `countryId` | |
 | GET | `/mentors/:handle` | Fiche parrain | |
+| GET | `/me/mentor-profile` | **Livrée** — mon profil et le diagnostic des trois conditions (`identity`, `phone`, `experience`) | |
 | PUT | `/me/mentor-profile` · DELETE | Devenir / cesser | `LEVEL_REQUIRED`, `MENTOR_NOT_ELIGIBLE` |
 | POST | `/mentorships` | `mentorHandle`, `message`, `journeyId?` | `MENTOR_FULL`, `PENDING_REQUEST_EXISTS`, `BLOCKED_RELATIONSHIP` |
 | POST | `/mentorships/:id/accept` · `/decline` | Par le parrain | `MENTOR_FULL` |
 | POST | `/mentorships/:id/end` · `/extend` | Par l'un des deux | `ALREADY_EXTENDED` |
 | POST | `/mentorships/:id/review` | `rating`, `comment?` | `REVIEW_WINDOW_CLOSED` |
-| GET | `/me/mentorships` | Comme parrain et comme filleul | |
+| GET | `/me/mentorships` | Comme parrain et comme filleul ; chaque ligne porte `extended`, `canExtend`, `expiresAt` (colonnes), `canReview` | |
 
 ### 7.2 Contacts et blocage
 
