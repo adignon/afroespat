@@ -538,6 +538,19 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     expect(await prisma.userLanguage.count({ where: { userId } })).toBe(second.length);
   });
 
+  it('[11 §2.5] modifier le profil ou la fiche émet user.profile_updated, sans les valeurs', async () => {
+    const userId = await newMember();
+    await users.updateProfile(userId, { bio: 'Une bio toute neuve et secrète' });
+    await users.updateMe(userId, { displayName: 'Nouveau Nom' });
+    const events = await prisma.domainEvent.findMany({
+      where: { type: 'user.profile_updated', aggregateId: userId },
+      select: { payload: true },
+    });
+    expect(events).toHaveLength(2);
+    expect(JSON.stringify(events)).not.toContain('secrète');
+    expect(JSON.stringify(events[0]?.payload)).toContain('bio');
+  });
+
   it('journalise les champs modifiés, jamais leurs valeurs', async () => {
     const userId = await newMember();
     await users.updateMe(userId, { displayName: 'Aïcha Sègbédji', timezone: 'Africa/Porto-Novo' });

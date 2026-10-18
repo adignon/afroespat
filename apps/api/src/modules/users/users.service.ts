@@ -421,6 +421,15 @@ export class UsersService {
           });
         }
       }
+
+      // La bio, les langues et les compétences sont dans la fiche USER indexée
+      // (11 §2.1) : sans cet événement, une bio modifiée restait cherchable sous
+      // son ancienne forme. Noms de champs seulement, jamais les valeurs.
+      await this.outbox.emit(tx, {
+        type: 'user.profile_updated',
+        aggregateId: userId,
+        payload: { fields: Object.keys(patch) },
+      });
     });
 
     return this.me(userId);
