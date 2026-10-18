@@ -532,6 +532,14 @@ export class NotificationsService {
           { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
           { title: job.title, body: job.body, ...(job.url === undefined ? {} : { url: job.url }) },
         );
+        if (result.gone === true) {
+          // 404/410 du service push : l'abonnement est mort, on ne l'essaie pas
+          // quatre fois de plus (§2.4 compte cinq échecs pour les pannes
+          // transitoires, pas pour une révocation explicite).
+          await this.prisma.pushSubscription.delete({ where: { id: sub.id } });
+          removed += 1;
+          continue;
+        }
         if (!result.delivered) throw new Error('non délivré');
         delivered += 1;
         await this.prisma.pushSubscription.update({
