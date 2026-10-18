@@ -64,6 +64,8 @@ import { JourneysController } from './modules/journeys/journeys.controller';
 import { JourneysService } from './modules/journeys/journeys.service';
 import { HelpController } from './modules/help/help.controller';
 import { HelpService } from './modules/help/help.service';
+import { HelpResponseModeration } from './modules/help/help-response-moderation';
+import { MentorshipMoneyGuard } from './modules/mentorship/mentorship-money.guard';
 import { AdminController } from './modules/admin/admin.controller';
 import { AdminModerationController } from './modules/admin/admin-moderation.controller';
 import { AdminService } from './modules/admin/admin.service';
@@ -190,6 +192,8 @@ import {
     BlocksService,
     ConsentsService,
     HelpService,
+    // 06 §2.7 : la modération des RÉPONSES d'entraide (leur abonnement se pose seul).
+    HelpResponseModeration,
     GuidesService,
     // Transverse (01 §2.9) : l'état des contenus enregistrés, rafraîchi par la
     // tâche horaire `bookmark.state_refresh`. Aucun contrôleur — §2.9 n'est pas
@@ -210,6 +214,8 @@ import {
     NotificationEventsService,
     FeedService,
     MentorshipService,
+    // 08 §2.4 : `MONEY_REQUEST` en conversation de parrainage (s'abonne seul).
+    MentorshipMoneyGuard,
     ConnectionsService,
     MessagingService,
     JourneysService,

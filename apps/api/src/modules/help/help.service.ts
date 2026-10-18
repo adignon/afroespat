@@ -18,6 +18,8 @@ import {
   type UpdateHelp,
   type VerificationLevel,
   levelSatisfies,
+  matchLocalRule,
+  type UpdateHelpResponse,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
@@ -89,43 +91,28 @@ type AuthorRow = {
 };
 
 /**
- * Règles locales synchrones de modération (13 §2, étape 1) — coordonnées
- * bancaires, demande de versement adressée à un membre, liens de paiement.
+ * CE QUE TOUTE CARTE DE LISTE LIT, au même endroit.
  *
- * Elles sont ici et non dans `common/` parce que `ModerationService.check()`
- * n'existe pas encore (module 13, lot 5) : le lot 4 ne doit pas publier sans
- * filtre pour autant. Quand le module 13 arrivera, ces trois motifs déménagent
- * et ce bloc disparaît — c'est la seule partie de ce fichier écrite pour être
- * jetée.
- *
- * Le réglage est VOLONTAIREMENT étroit. « Il faut payer 225 € à la préfecture »
- * est une information juste, utile, et doit passer ; « envoyez-moi 225 € sur mon
- * compte » ne doit pas. La différence n'est pas le montant, c'est le
- * destinataire — d'où l'exigence d'un marqueur interpersonnel, et non d'un
- * simple verbe de paiement suivi d'une somme.
+ * L'étape d'origine (§2.5) y est jointe : la ligne « Étape 7 · Logement · parcours
+ * Études » n'existait que sur le détail, et les listes écrivaient « Demande issue
+ * d'un parcours » faute de mieux. Le titre PERSONNEL du parcours n'est pas
+ * sélectionné — §2.5 veut le type, « jamais le titre personnel » (04 §2) : ne pas
+ * le lire est plus sûr que penser à ne pas l'écrire.
  */
-const LOCAL_BLOCK_RULES: readonly { readonly name: string; readonly pattern: RegExp }[] = [
-  // IBAN : deux lettres de pays, deux chiffres de contrôle, puis des groupes.
-  { name: 'IBAN', pattern: /\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]{4}){3,7}[ ]?[A-Z0-9]{0,4}\b/ },
-  { name: 'RIB', pattern: /\b(?:rib|iban|bic|swift)\b\s*[:=]?\s*[A-Z0-9]{6,}/i },
-  // Numéro de carte : quatre groupes de quatre chiffres.
-  { name: 'CARD', pattern: /\b(?:\d{4}[ -]?){3}\d{4}\b/ },
-  {
-    name: 'PAYMENT_LINK',
-    pattern:
-      /\b(?:paypal\.me|paypal\.com|lydia\.app|revolut\.me|wise\.com|remitly|westernunion|western union|moneygram|ria money)\b/i,
+const CARD_INCLUDE = {
+  author: { select: AUTHOR_SELECT },
+  city: { select: { id: true, name: true } },
+  originJourneyStep: {
+    select: {
+      title: true,
+      position: true,
+      stepDefinition: { select: { nameFr: true } },
+      journey: {
+        select: { templateVersion: { select: { template: { select: { nameFr: true } } } } },
+      },
+    },
   },
-  {
-    // Un verbe de versement dont la cible est LE MEMBRE lui-même.
-    name: 'MONEY_REQUEST',
-    pattern:
-      /\b(?:envoie|envoies|envoyez|envoyer|vers[ée]?|verses|versez|verser|transf[eè]re|transf[eé]rez|d[eé]pose|d[eé]posez|paye|payez|payer|r[eé]gle|r[eé]glez)\b[^.!?]{0,40}\b(?:moi|m['’]|me\s|mon compte|mon num[eé]ro|mon wave|mon momo|ma carte|mon rib|mon iban)/i,
-  },
-  {
-    name: 'MONEY_REQUEST',
-    pattern: /\bsur (?:mon|le) (?:compte|num[eé]ro|wave|momo|mobile money|orange money|mtn)\b/i,
-  },
-];
+} as const;
 
 /** Rayon de la Terre, en kilomètres — tri par proximité (02 §3, pas de PostGIS). */
 const EARTH_RADIUS_KM = 6_371;
@@ -189,7 +176,7 @@ export class HelpService {
       where: this.withCursor(where, query.cursor, scope),
       orderBy: { id: 'desc' },
       take: query.limit + 1,
-      include: { author: { select: AUTHOR_SELECT }, city: { select: { id: true, name: true } } },
+      include: CARD_INCLUDE,
     });
 
     const page = buildPage(rows, query.limit, scope, this.cursorSecret);
@@ -250,7 +237,7 @@ export class HelpService {
       // viennent après, faute de quoi elles occuperaient tout l'encadré.
       orderBy: [{ dueDate: { sort: 'asc', nulls: 'last' } }, { id: 'desc' }],
       take: query.limit,
-      include: { author: { select: AUTHOR_SELECT }, city: { select: { id: true, name: true } } },
+      include: CARD_INCLUDE,
     });
 
     return {
@@ -273,7 +260,7 @@ export class HelpService {
       where: this.withCursor(where, query.cursor, scope),
       orderBy: { id: 'desc' },
       take: query.limit + 1,
-      include: { author: { select: AUTHOR_SELECT }, city: { select: { id: true, name: true } } },
+      include: CARD_INCLUDE,
     });
 
     const page = buildPage(rows, query.limit, scope, this.cursorSecret);
@@ -301,12 +288,7 @@ export class HelpService {
       orderBy: { id: 'desc' },
       take: query.limit + 1,
       include: {
-        helpRequest: {
-          include: {
-            author: { select: AUTHOR_SELECT },
-            city: { select: { id: true, name: true } },
-          },
-        },
+        helpRequest: { include: CARD_INCLUDE },
       },
     });
 
@@ -343,6 +325,7 @@ export class HelpService {
           select: {
             id: true,
             title: true,
+            position: true,
             dueDate: true,
             stepDefinition: { select: { nameFr: true } },
             journey: {
@@ -380,6 +363,13 @@ export class HelpService {
         ...this.card(request, actor.userId),
         body: request.body,
         updatedAt: request.updatedAt,
+        // Le serveur DÉCIDE ce que l'auteur peut faire ; le front éteint les
+        // boutons sur ces drapeaux et ne recompte pas les 7 jours (§2.2).
+        canEdit: isAuthor && request.status === 'OPEN',
+        canReopen:
+          isAuthor &&
+          request.status === 'RESOLVED' &&
+          this.reopenWindowOpen(request.resolvedAt ?? request.updatedAt),
       },
       journeyContext: this.journeyContext(request.originJourneyStep),
       responses: responses
@@ -397,6 +387,9 @@ export class HelpService {
             request.kind === 'REQUEST' &&
             request.status === 'OPEN' &&
             r.authorUserId !== actor.userId,
+          isMine: r.authorUserId === actor.userId,
+          /** Modifier ou supprimer MA réponse : jamais une réponse déjà marquée utile (§8). */
+          canEdit: r.authorUserId === actor.userId && !r.markedHelpful && request.status === 'OPEN',
         })),
       meta: this.meta(),
     };
@@ -735,8 +728,7 @@ export class HelpService {
     if (request.status !== 'RESOLVED') this.fail('REQUEST_CLOSED');
 
     const since = request.resolvedAt ?? request.updatedAt;
-    const deadline = since.getTime() + HELP_LIMITS.reopenWindowDays * 86_400_000;
-    if (Date.now() > deadline) {
+    if (!this.reopenWindowOpen(since)) {
       this.fail('REOPEN_WINDOW_CLOSED', { resolvedAt: since.toISOString() });
     }
 
@@ -746,7 +738,15 @@ export class HelpService {
       }
       await tx.helpRequest.update({
         where: { id },
-        data: { status: 'OPEN', resolvedAt: null, resolvedByResponseId: null },
+        // §3 « Ajoutée » : `reopened_at` garde la trace de la réouverture — sans
+        // elle, rien ne distinguait une demande jamais résolue d'une demande
+        // rouverte, et une troisième résolution n'avait aucune mémoire.
+        data: {
+          status: 'OPEN',
+          resolvedAt: null,
+          resolvedByResponseId: null,
+          reopenedAt: new Date(),
+        },
       });
       await this.outbox.emit(tx, {
         type: 'help_request.reopened',
@@ -815,6 +815,54 @@ export class HelpService {
         metadata: { status: request.status, responseCount: request.responseCount },
       });
     });
+  }
+
+  /**
+   * `PATCH /help/:id/responses/:rid` — modifier SA réponse.
+   *
+   * Pas dans le tableau de §4, qui ne prévoit que la suppression ; l'écran « Mes
+   * réponses » dessine pourtant « Modifier ma réponse », et corriger une faute ne
+   * doit pas obliger à supprimer puis réécrire (la réponse perdrait son rang).
+   *
+   * Mêmes garde-fous que la publication : le texte repasse par les règles locales
+   * de modération (sinon publier un texte acceptable puis le remplacer
+   * contournerait le filtre), et une réponse marquée « ça m'a aidé » ne se modifie
+   * pas — elle a produit un crédit de réputation et un contact sur ce qu'elle
+   * disait. Comme `removeResponse`, la demande doit être encore ouverte.
+   */
+  async updateResponse(
+    actor: HelpActor,
+    id: string,
+    responseId: string,
+    input: UpdateHelpResponse,
+  ) {
+    const response = await this.prisma.helpResponse.findUnique({
+      where: { id: responseId },
+      select: {
+        id: true,
+        helpRequestId: true,
+        authorUserId: true,
+        deletedAt: true,
+        markedHelpful: true,
+        helpRequest: { select: { status: true, deletedAt: true } },
+      },
+    });
+    if (response === null || response.deletedAt !== null) throw ApiError.notFound();
+    if (response.helpRequestId !== id || response.helpRequest.deletedAt !== null) {
+      throw ApiError.notFound();
+    }
+    if (response.authorUserId !== actor.userId) this.fail('NOT_AUTHOR');
+    if (response.markedHelpful) {
+      throw ApiError.transverse('CONFLICT', { reason: 'MARKED_HELPFUL' });
+    }
+    if (response.helpRequest.status !== 'OPEN') this.fail('REQUEST_CLOSED');
+
+    this.assertPublishable(null, input.body);
+    await this.prisma.helpResponse.update({
+      where: { id: responseId },
+      data: { body: input.body },
+    });
+    return { id: responseId, meta: this.meta() };
   }
 
   /**
@@ -889,7 +937,10 @@ export class HelpService {
 
     const result = await this.prisma.helpRequest.updateMany({
       where: { id: { in: stale.map((r) => r.id) } },
-      data: { status: 'ARCHIVED' },
+      // §3 « Ajoutée » : `archived_at` est posée ici, par la tâche `help.archive`
+      // (§7) — la date de l'archivage, et non plus `updated_at` qu'une écriture
+      // quelconque déplace.
+      data: { status: 'ARCHIVED', archivedAt: now },
     });
     this.logger.log(`help.archive : ${result.count} demandes archivées`);
     return { archived: result.count };
@@ -1007,12 +1058,15 @@ export class HelpService {
   /** Règles locales de modération (13 §2) sur le titre et le corps. */
   private assertPublishable(title: string | null, body: string): void {
     const text = title === null ? body : `${title}\n${body}`;
-    for (const rule of LOCAL_BLOCK_RULES) {
-      if (rule.pattern.test(text)) {
-        this.logger.warn(`Publication bloquée par la règle locale ${rule.name} (13 §2)`);
-        // Motif générique côté membre : le détail servirait à contourner.
-        this.fail('CONTENT_BLOCKED');
-      }
+    // Les règles sont CELLES du module de modération (`matchLocalRule`, source
+    // unique dans `@app/shared`) : ce fichier en gardait une copie, écrite quand
+    // `ModerationService.check()` n'existait pas encore, et deux copies finissent
+    // par se contredire.
+    const rule = matchLocalRule(text);
+    if (rule !== null) {
+      this.logger.warn(`Publication bloquée par la règle locale ${rule} (13 §2)`);
+      // Motif générique côté membre : le détail servirait à contourner.
+      this.fail('CONTENT_BLOCKED');
     }
   }
 
@@ -1259,6 +1313,11 @@ export class HelpService {
     };
   }
 
+  /** §2.2 : « l'auteur peut rouvrir une demande RESOLVED dans les 7 jours ». */
+  private reopenWindowOpen(since: Date): boolean {
+    return Date.now() <= since.getTime() + HELP_LIMITS.reopenWindowDays * 86_400_000;
+  }
+
   /** La carte de liste (§5). */
   private card(
     row: {
@@ -1275,6 +1334,13 @@ export class HelpService {
       resolvedByResponseId: string | null;
       authorUserId: string;
       originJourneyStepId: string | null;
+      reopenedAt: Date | null;
+      originJourneyStep?: {
+        title: string;
+        position: number;
+        stepDefinition: { nameFr: string } | null;
+        journey: { templateVersion: { template: { nameFr: string } } };
+      } | null;
       author: AuthorRow;
       city: { id: string; name: string };
     },
@@ -1296,6 +1362,16 @@ export class HelpService {
       resolvedByResponseId: row.resolvedByResponseId,
       /** Pastille « Depuis un parcours » (§2.5) — sans rien dire du parcours. */
       fromJourney: row.originJourneyStepId !== null,
+      // §2.5 : l'étape et le TYPE de parcours — jamais son titre personnel.
+      journeyStep:
+        row.originJourneyStep === null || row.originJourneyStep === undefined
+          ? null
+          : {
+              stepName: row.originJourneyStep.stepDefinition?.nameFr ?? row.originJourneyStep.title,
+              stepNumber: Math.max(1, row.originJourneyStep.position),
+              journeyTypeName: row.originJourneyStep.journey.templateVersion.template.nameFr,
+            },
+      reopenedAt: row.reopenedAt,
       author: this.summary(row.author),
       isAuthor: row.authorUserId === viewerId,
     };
