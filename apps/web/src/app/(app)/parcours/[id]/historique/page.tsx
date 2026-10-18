@@ -5,10 +5,8 @@ import { useParams } from 'next/navigation';
 import { VUE_NEUTRE, chargerJ07 } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
-import { plancheBlocage } from '@/screens/parcours/modales';
 import { J07Desktop } from '@/screens/j07/desktop.generated';
 import { J07Mobile } from '@/screens/j07/mobile.generated';
-import { J07MobileExport } from '@/screens/j07export/mobileexport.generated';
 
 /**
  * J07 — l'historique du parcours. `/parcours/:id/historique` (§3.8).
@@ -53,10 +51,6 @@ export default function Page() {
       contexte={contexte}
       desktop={(d) => <J07Desktop {...d} />}
       mobile={(d) => <J07Mobile {...d} />}
-      modales={(d, volet) => ({
-        J03: plancheBlocage(volet, d),
-        J07X: { mobile: <J07MobileExport {...d} /> },
-      })}
     />
   );
 }

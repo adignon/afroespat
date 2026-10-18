@@ -106,6 +106,18 @@ export class JourneysController {
    * serait sinon lu comme un identifiant — qui échouerait à la validation UUID,
    * donc en 400 au lieu de la liste attendue.
    */
+  /**
+   * Les invitations qui attendent ma réponse (§3.4). Déclarée AVANT `journeys/:id`
+   * pour la raison déjà dite plus bas : `invitations` n'est pas un identifiant, et
+   * Express le lirait comme tel, d'où un 400 au lieu de la liste.
+   */
+  @Get('journeys/invitations')
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'Les invitations à rejoindre l’équipe d’un parcours, en attente' })
+  async invitations(@Auth() auth: AuthContext) {
+    return this.journeys.invitations(auth.userId);
+  }
+
   @Get('journeys/public')
   @RequiresCapability('content.read')
   @ApiOperation({ summary: 'Parcours publics d’autres membres (§3.7)' })
@@ -164,6 +176,13 @@ export class JourneysController {
   ) {
     // L'IP est la preuve du consentement `JOURNEY_VISIBILITY` (01 §2.10).
     return this.journeys.update(auth.userId, id, body, request.ip);
+  }
+
+  @Post('journeys/:id/migrate')
+  @RequiresCapability('journey.manage')
+  @ApiOperation({ summary: 'Migre vers la version publiée courante du modèle (§2.2) — ALREADY_CURRENT' })
+  async migrate(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.journeys.migrate(auth.userId, id);
   }
 
   @Post('journeys/:id/inactivity-response')

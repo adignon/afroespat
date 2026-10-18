@@ -154,7 +154,7 @@ Quand la demande d'entraide issue d'un blocage est résolue (module 06), l'étap
 |---|---|---|---|
 | GET | `/journey-templates` | Types proposés au membre (résolus pour son pays) | |
 | GET | `/journeys` | Mes parcours + ceux où je suis membre | |
-| POST | `/journeys` | `templateId`, `title`, `targetArrivalDate?` | `PLAN_LIMIT_REACHED`, `TEMPLATE_UNAVAILABLE` |
+| POST | `/journeys` | `templateId`, `title`, `targetArrivalDate?`, `variant?` (REGULARIZATION · STATUS_CHANGE · RENEWAL, type « Régulariser » seulement — refusé ailleurs) | `PLAN_LIMIT_REACHED`, `TEMPLATE_UNAVAILABLE` |
 | GET | `/journeys/:id` | Parcours complet : étapes, checklist, membres, progression, prochaine échéance | `403` si ni propriétaire ni membre |
 | PATCH | `/journeys/:id` | `title`, `targetArrivalDate`, `status` (PAUSED/ACTIVE/ABANDONED), `visibility` (PRIVATE/SHARED/PUBLIC) | |
 | POST | `/journeys/:id/migrate` | Vers la version publiée courante | `ALREADY_CURRENT` |
@@ -165,6 +165,7 @@ Quand la demande d'entraide issue d'un blocage est résolue (module 06), l'étap
 | PUT | `/journeys/:id/steps/:stepId/checklist` | Liste complète (remplace) | |
 | POST | `/journeys/:id/members` | `userHandle`, `role` | `MAX_MEMBERS`, `BLOCKED_RELATIONSHIP` |
 | DELETE | `/journeys/:id/members/:userId` | | |
+| GET | `/journeys/invitations` | Les invitations qui attendent ma réponse (sans le titre personnel) | |
 | POST | `/journeys/:id/members/accept` · `/decline` | Par l'invité | |
 | POST | `/journeys/:id/steps/:stepId/blocker` | Crée le brouillon, renvoie le texte pré-rempli et la cible | |
 | POST | `/blockers/:id/publish` | `text`, `isPrivate`, champs propres à la cible | `BLOCKER_ALREADY_PUBLISHED` |
@@ -245,3 +246,21 @@ Supprime physiquement les `journeys` du membre et tout leur contenu (étapes, ch
 - `rule: un parcours public n'est pas accessible hors connexion`
 - `rule: la limite d'un parcours actif en gratuit est appliquée côté serveur`
 - `rule: les notes et la checklist ne sont jamais renvoyées à un observateur`
+
+---
+
+## 11. Livré par le lot « parcours vivant » (écarts et précisions)
+
+**Back.**
+- `POST /journeys/:id/migrate` : les étapes de même définition (les trois variantes de « Régulariser » forment une seule case) gardent état, dates, notes et checklist et sont rattachées à la nouvelle ligne de version ; les étapes du modèle absentes de la nouvelle version deviennent personnelles (`is_custom`) ; les nouvelles arrivent `TODO` avec checklist et échéance rétro-planifiée ; l'ordre est celui de la nouvelle version, puis les étapes personnelles. `journeys.migrated_from_version_id` est écrit, une activité `TEMPLATE_MIGRATED` rejoint le journal. Refus : `ALREADY_CURRENT`, `JOURNEY_STATE` (arrêté/archivé), `TEMPLATE_UNAVAILABLE`. `GET /journeys/:id` rend `journey.newerVersion` (propriétaire seul).
+- Variante de régularisation : le choix remplace la définition de la première étape (REGULARIZATION) par celle choisie.
+- Invitation : notification `JOURNEY_TEAM` (`journey.invitation`) à l'invité, sans le titre personnel, et `journey.invitation_accepted` au propriétaire ; un refus ne notifie personne. Un invité ne peut pas encore ouvrir le parcours (403) ; il répond depuis « Mes parcours ».
+- `POST /blockers/:id/publish` publie aussi HOUSING (annonce SEEKING, niveau du logement), JOBS (profil de recherche, `post.create`) et MENTORSHIP (demande de parrainage rattachée au parcours, parrain choisi par `mentorHandle`). Le titre est exigé par le serveur selon la cible.
+- Alerte §2.3 : `deadlineAlert` sur l'étape (propriétaire seul), à partir de `step_dependencies`.
+- Quota : reprendre un parcours arrêté ou terminé (`PATCH status = ACTIVE`) repasse par la limite du plan gratuit.
+- `journey.inactivityPromptPending` : la relance §3.9 attend une réponse tant que rien n'a été fait depuis son envoi.
+- Détail : `helpReceivedCount` (J10), `peers` sur l'étape en cours (agrégat de la même ville ; avatars des seuls parcours publics), `guide` lié.
+- Gestionnaire `user.deleted` (§9) : parcours supprimés avec leur contenu, équipes quittées, journal des autres parcours privé de son auteur, corrections de modèle anonymisées (message effacé, `REJECTED` si en attente — `user_id` est NOT NULL et la ligne `users` reste).
+- Non livré : la notification « la procédure a évolué » à la publication d'une version (les routes d'administration §5.2 n'existent pas).
+
+**Front.** Les écrans J01 à J11 gardent le chrome transcodé (rail, barre haute, carte « Mon parcours », barre basse mobile) ; leur contenu est rendu par `apps/web/src/components/parcours/` (AJOUTS hors maquette, branchés par `tools/adaptations/parcours-vivant.mjs`). Écarts à la maquette : glisser-déposer remplacé par des flèches haut/bas ; feuilles J03/J04/J05I/J07X/J08A rendues par `FeuillesParcours` ; export J07 = page imprimable `/parcours/:id/export` (PDF par le navigateur) ; ajouts « Où en êtes-vous ? », « La procédure a évolué », « Signaler une erreur dans ce modèle », invitations (en tête de « Mes parcours »), route `/parcours/:id/etapes`. « Proposer comme parrain » est un message (il n'existe pas de route d'offre de parrainage : le parrainage part du filleul).

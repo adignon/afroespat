@@ -24,6 +24,9 @@ import { ConnectionsService } from '../../connections/connections.service';
 import { ConsentsService } from '../../consents/consents.service';
 import { FeedService } from '../../feed/feed.service';
 import { HelpService } from '../../help/help.service';
+import { HousingService } from '../../housing/housing.service';
+import { JobsService } from '../../jobs/jobs.service';
+import { MentorshipService } from '../../mentorship/mentorship.service';
 import { MessagingService } from '../../messaging/messaging.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { JourneysService, type JourneyActor } from '../journeys.service';
@@ -260,6 +263,9 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
       // fournisseurs FICTIFS : rien ne sort, et les lignes `notifications` sont
       // bien écrites — c'est sur elles que porte l'assertion d'idempotence.
       new NotificationsService(prisma, new FakeEmailProvider(), new FakePushProvider()),
+      new HousingService(prisma, outbox, audit, visibility),
+      new JobsService(prisma, outbox, audit, visibility),
+      new MentorshipService(prisma, outbox, audit, visibility, messaging),
     );
     auth = new AuthService(
       prisma,
@@ -1064,7 +1070,7 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
     );
   });
 
-  it('une cible sans publication publique livrée est refusée franchement, et annuler ferme le brouillon', async () => {
+  it('un logement exige L2 même depuis un blocage, une étape sans blocage le refuse, et annuler ferme le brouillon', async () => {
     const member = await newMember();
     const housingDefinition = await definition({
       code: 'j-housing',
@@ -1099,7 +1105,7 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
         isPrivate: false,
         title: 'Recherche de logement à Lyon',
       }),
-    ).rejects.toMatchObject({ code: 'BLOCKER_TARGET_UNSUPPORTED' });
+    ).rejects.toMatchObject({ code: 'LEVEL_REQUIRED' });
     // Le brouillon n'a pas bougé : il reste publiable en privé.
     expect(
       (await prisma.blockerRequest.findUniqueOrThrow({ where: { id: draft.blocker.id } })).status,
@@ -1533,5 +1539,621 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
       select: { status: true },
     });
     expect(step.status).toBe('TODO');
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // LOT « PARCOURS VIVANT » — migration, alerte, invitations, blocages publics,
+  // suppression du compte, reprise sous quota
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Publie une version 2 d'un modèle : l'ancienne passe ARCHIVED, la nouvelle est
+   * PUBLISHED. C'est ce qu'un back-office ferait (03 §2.2) — sans toucher un seul
+   * `journey`, ce que le test « publier une version ne touche aucun parcours »
+   * éprouve de son côté.
+   */
+  async function publishVersionTwo(
+    templateId: string,
+    previousVersionId: string,
+    definitionIds: string[],
+    changelog = 'Une étape a été ajoutée, une autre retirée.',
+  ): Promise<{ versionId: string; stepIds: string[] }> {
+    await prisma.journeyTemplateVersion.update({
+      where: { id: previousVersionId },
+      data: { status: 'ARCHIVED' },
+    });
+    const version = await prisma.journeyTemplateVersion.create({
+      data: {
+        id: newId(),
+        templateId,
+        version: 2,
+        status: 'PUBLISHED',
+        publishedAt: new Date(),
+        changelog,
+      },
+      select: { id: true },
+    });
+    const stepIds: string[] = [];
+    for (const [index, definitionId] of definitionIds.entries()) {
+      const created = await prisma.templateStep.create({
+        data: {
+          id: newId(),
+          templateVersionId: version.id,
+          stepDefinitionId: definitionId,
+          position: index + 1,
+          isOptional: false,
+          daysBeforeArrival: 100 - index * 10,
+        },
+        select: { id: true },
+      });
+      stepIds.push(created.id);
+    }
+    return { versionId: version.id, stepIds };
+  }
+
+  it('POST /journeys/:id/migrate : les étapes de même définition gardent leur état, les nouvelles arrivent en TODO, les retirées deviennent personnelles', async () => {
+    const owner = await newMember();
+    const defKept = await definition({ code: 'm-kept', nameFr: 'Constituer le dossier' });
+    const defGone = await definition({ code: 'm-gone', nameFr: 'Étape retirée' });
+    const defNew = await definition({
+      code: 'm-new',
+      nameFr: 'Nouvelle étape',
+      checklist: ['Pièce A', 'Pièce B'],
+    });
+    const built = await template({
+      code: 'm-tpl',
+      nameFr: 'Migration',
+      steps: [
+        { definitionId: defKept, daysBeforeArrival: 90 },
+        { definitionId: defGone, daysBeforeArrival: 60 },
+      ],
+    });
+    const created = await journeys.create(owner, {
+      templateId: built.templateId,
+      targetArrivalDate: '2027-06-01',
+    });
+    const journeyId = created.journey.id;
+    const before = await stepsOf(journeyId);
+    const keptStep = at(before, 0);
+    const goneStep = at(before, 1);
+    await journeys.updateStep(owner, journeyId, keptStep.id, { status: 'IN_PROGRESS' });
+    await journeys.addStep(owner.userId, journeyId, { title: 'Ma démarche perso' });
+    // Une échéance saisie à la main ne doit pas être écrasée par le rétro-planning.
+    await journeys.updateStep(owner, journeyId, keptStep.id, { dueDate: '2027-01-15' });
+
+    // Prémisse : pas encore de version plus récente, et la migration est refusée.
+    const detail0 = await journeys.detail(owner.userId, journeyId);
+    expect(detail0.journey.newerVersion).toBeNull();
+    await expect(journeys.migrate(owner.userId, journeyId)).rejects.toMatchObject({
+      code: 'ALREADY_CURRENT',
+    });
+
+    const v2 = await publishVersionTwo(built.templateId, built.versionId, [defNew, defKept]);
+
+    // [RÈGLE DURE §2.2] publier n'a rien déplacé.
+    const untouched = await prisma.journey.findUniqueOrThrow({
+      where: { id: journeyId },
+      select: { templateVersionId: true, migratedFromVersionId: true },
+    });
+    expect(untouched.templateVersionId).toBe(built.versionId);
+    expect(untouched.migratedFromVersionId).toBeNull();
+
+    const detail1 = await journeys.detail(owner.userId, journeyId);
+    expect(detail1.journey.newerVersion).toMatchObject({
+      id: v2.versionId,
+      version: 2,
+      changelog: 'Une étape a été ajoutée, une autre retirée.',
+    });
+    // Un accompagnant ne migre pas, et ne voit pas la proposition.
+    const supporter = await newMember();
+    await journeys.addMember(owner.userId, journeyId, { userHandle: supporter.handle, role: 'SUPPORTER' });
+    await journeys.acceptInvite(supporter.userId, journeyId);
+    expect((await journeys.detail(supporter.userId, journeyId)).journey.newerVersion).toBeNull();
+    await expect(journeys.migrate(supporter.userId, journeyId)).rejects.toMatchObject({ status: 404 });
+
+    const migrated = await journeys.migrate(owner.userId, journeyId);
+    expect(migrated.migration).toMatchObject({
+      fromVersion: 1,
+      toVersion: 2,
+      kept: 1,
+      added: 1,
+      madeCustom: 1,
+    });
+
+    const after = await prisma.journeyStep.findMany({
+      where: { journeyId },
+      orderBy: { position: 'asc' },
+      select: {
+        id: true,
+        title: true,
+        status: true,
+        position: true,
+        isCustom: true,
+        templateStepId: true,
+        dueDate: true,
+        dueDateManual: true,
+        _count: { select: { checklistItems: true } },
+      },
+    });
+    // L'ordre de la nouvelle version d'abord (nouvelle, puis conservée), puis les
+    // étapes personnelles dans leur ordre d'avant (retirée, puis la mienne).
+    expect(after.map((step) => step.title)).toEqual([
+      'Nouvelle étape',
+      'Constituer le dossier',
+      'Étape retirée',
+      'Ma démarche perso',
+    ]);
+    expect(after.map((step) => step.position)).toEqual([1, 2, 3, 4]);
+    const [added, kept, gone, mine] = [at(after, 0), at(after, 1), at(after, 2), at(after, 3)];
+    expect(added.status).toBe('TODO');
+    expect(added._count.checklistItems).toBe(2);
+    expect(added.templateStepId).toBe(at(v2.stepIds, 0));
+    expect(kept.id).toBe(keptStep.id);
+    expect(kept.status).toBe('IN_PROGRESS');
+    expect(kept.templateStepId).toBe(at(v2.stepIds, 1));
+    expect(kept.dueDateManual).toBe(true);
+    expect(kept.dueDate?.toISOString().slice(0, 10)).toBe('2027-01-15');
+    expect(gone.id).toBe(goneStep.id);
+    expect(gone.isCustom).toBe(true);
+    expect(gone.templateStepId).toBeNull();
+    expect(mine.isCustom).toBe(true);
+    // La nouvelle étape reçoit son rétro-planning (arrivée 2027-06-01 − 100 jours).
+    expect(added.dueDate?.toISOString().slice(0, 10)).toBe('2027-02-21');
+
+    const row = await prisma.journey.findUniqueOrThrow({
+      where: { id: journeyId },
+      select: { templateVersionId: true, migratedFromVersionId: true },
+    });
+    expect(row.templateVersionId).toBe(v2.versionId);
+    expect(row.migratedFromVersionId).toBe(built.versionId);
+    expect(
+      await prisma.journeyActivity.count({ where: { journeyId, type: 'TEMPLATE_MIGRATED' } }),
+    ).toBe(1);
+    expect(migrated.journey.newerVersion).toBeNull();
+    await expect(journeys.migrate(owner.userId, journeyId)).rejects.toMatchObject({
+      code: 'ALREADY_CURRENT',
+    });
+  });
+
+  it('migrer un parcours arrêté est refusé, et celui d’un autre est introuvable', async () => {
+    const owner = await newMember();
+    const stranger = await newMember();
+    const journeyId = await journeyFor(owner);
+    await journeys.update(owner.userId, journeyId, { status: 'ABANDONED' });
+    await expect(journeys.migrate(owner.userId, journeyId)).rejects.toMatchObject({
+      code: 'JOURNEY_STATE',
+    });
+    await expect(journeys.migrate(stranger.userId, journeyId)).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('§2.3 : une échéance trop proche d’une étape dont elle dépend lève une ALERTE (jamais un blocage), pour le propriétaire seul', async () => {
+    const owner = await newMember();
+    const defB = await definition({ code: 'd-b', nameFr: 'Obtenir l’admission' }); // 21 jours indicatifs
+    const defA = await definition({ code: 'd-a', nameFr: 'Demander le visa' });
+    const built = await template({
+      code: 'd-tpl',
+      nameFr: 'Alerte',
+      steps: [
+        { definitionId: defB, daysBeforeArrival: 100 },
+        { definitionId: defA, daysBeforeArrival: 60 },
+      ],
+    });
+    await prisma.stepDependency.create({
+      data: {
+        id: newId(),
+        templateVersionId: built.versionId,
+        stepId: at(built.stepIds, 1),
+        dependsOnStepId: at(built.stepIds, 0),
+      },
+    });
+    const created = await journeys.create(owner, {
+      templateId: built.templateId,
+      targetArrivalDate: '2027-09-01',
+    });
+    const journeyId = created.journey.id;
+    const [stepB, stepA] = [at(await stepsOf(journeyId), 0), at(await stepsOf(journeyId), 1)];
+
+    const alertOf = async (viewer: string, id: string) =>
+      (await journeys.detail(viewer, journeyId)).steps.find((step) => step.id === id) as unknown as {
+        deadlineAlert?: { dependsOnTitle: string; indicativeDays: number } | null;
+      };
+
+    // Prémisse : le rétro-planning du modèle est cohérent (40 jours d'écart > 21).
+    expect((await alertOf(owner.userId, stepA.id)).deadlineAlert).toBeNull();
+
+    // A (visa) passe à 10 jours après B (admission) : B prend 21 jours → alerte.
+    const dueB = (await prisma.journeyStep.findUniqueOrThrow({ where: { id: stepB.id } })).dueDate as Date;
+    const tooClose = new Date(dueB.getTime() + 10 * 86_400_000).toISOString().slice(0, 10);
+    await journeys.updateStep(owner, journeyId, stepA.id, { dueDate: tooClose });
+    expect((await alertOf(owner.userId, stepA.id)).deadlineAlert).toEqual({
+      dependsOnStepId: stepB.id,
+      dependsOnTitle: 'Obtenir l’admission',
+      indicativeDays: 21,
+    });
+
+    // Une alerte, pas un blocage : l'étape se démarre quand même.
+    await journeys.updateStep(owner, journeyId, stepA.id, { status: 'IN_PROGRESS' });
+
+    // Le rôle compte : les échéances sont celles du propriétaire.
+    const supporter = await newMember();
+    await journeys.addMember(owner.userId, journeyId, { userHandle: supporter.handle, role: 'SUPPORTER' });
+    await journeys.acceptInvite(supporter.userId, journeyId);
+    expect((await alertOf(supporter.userId, stepA.id)).deadlineAlert).toBeUndefined();
+
+    // Franchir l'étape dont on dépend éteint l'alerte : elle ne porte que sur l'avenir.
+    await journeys.updateStep(owner, journeyId, stepB.id, { status: 'DONE' });
+    expect((await alertOf(owner.userId, stepA.id)).deadlineAlert).toBeNull();
+  });
+
+  it('§3.4 : inviter notifie l’invité (sans le titre personnel), il accepte ou refuse, et le propriétaire est prévenu de l’acceptation', async () => {
+    const owner = await newMember();
+    const accepting = await newMember();
+    const declining = await newMember();
+    const personalTitle = 'Mon secret de famille 2026';
+    const journeyId = await journeyFor(owner, personalTitle);
+
+    expect((await journeys.invitations(accepting.userId)).items).toHaveLength(0);
+
+    await journeys.addMember(owner.userId, journeyId, { userHandle: accepting.handle, role: 'SUPPORTER' });
+    await journeys.addMember(owner.userId, journeyId, { userHandle: declining.handle, role: 'OBSERVER' });
+
+    const sent = await prisma.notification.findMany({
+      where: { userId: accepting.userId, type: 'journey.invitation' },
+      select: { category: true, title: true, body: true, refId: true },
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.category).toBe('JOURNEY_TEAM');
+    expect(sent[0]?.refId).toBe(journeyId);
+    // Le titre personnel ne sort pas du parcours (§3.7) — pas même vers un invité.
+    expect(JSON.stringify(sent)).not.toContain('secret');
+
+    // Changer le rôle d'une invitation en attente ne renotifie pas : un doublon, pas une invitation.
+    await journeys.addMember(owner.userId, journeyId, { userHandle: accepting.handle, role: 'SUPPORTER' });
+    expect(
+      await prisma.notification.count({ where: { userId: accepting.userId, type: 'journey.invitation' } }),
+    ).toBe(1);
+
+    const pending = await journeys.invitations(accepting.userId);
+    expect(pending.items).toHaveLength(1);
+    expect(pending.items[0]).toMatchObject({
+      journeyId,
+      role: 'SUPPORTER',
+      invitedBy: { handle: owner.handle },
+      template: { nameFr: 'Études' },
+    });
+    expect(JSON.stringify(pending)).not.toContain('secret');
+
+    // Un invité n'ouvre pas le parcours tant qu'il n'a pas accepté.
+    await expect(journeys.detail(accepting.userId, journeyId)).rejects.toMatchObject({ status: 403 });
+
+    await journeys.acceptInvite(accepting.userId, journeyId);
+    expect((await journeys.invitations(accepting.userId)).items).toHaveLength(0);
+    expect((await journeys.detail(accepting.userId, journeyId)).viewerRole).toBe('SUPPORTER');
+    expect(
+      await prisma.notification.count({
+        where: { userId: owner.userId, type: 'journey.invitation_accepted', refId: journeyId },
+      }),
+    ).toBe(1);
+    // Une seconde acceptation ne renotifie pas.
+    await journeys.acceptInvite(accepting.userId, journeyId);
+    expect(
+      await prisma.notification.count({
+        where: { userId: owner.userId, type: 'journey.invitation_accepted' },
+      }),
+    ).toBe(1);
+
+    await journeys.declineInvite(declining.userId, journeyId);
+    expect((await journeys.invitations(declining.userId)).items).toHaveLength(0);
+    // Un refus ne prévient personne.
+    expect(
+      await prisma.notification.count({
+        where: { userId: owner.userId, type: { startsWith: 'journey.invitation_' } },
+      }),
+    ).toBe(1);
+  });
+
+  it('§3.4 : une invitation d’un membre séparé n’est pas listée', async () => {
+    const owner = await newMember();
+    const invitee = await newMember();
+    const journeyId = await journeyFor(owner);
+    await journeys.addMember(owner.userId, journeyId, { userHandle: invitee.handle, role: 'OBSERVER' });
+    expect((await journeys.invitations(invitee.userId)).items).toHaveLength(1);
+    await prisma.block.create({
+      data: { id: newId(), blockerUserId: invitee.userId, blockedUserId: owner.userId },
+    });
+    expect((await journeys.invitations(invitee.userId)).items).toHaveLength(0);
+  });
+
+  it('§3.1 : reprendre un parcours arrêté repasse sous la limite du plan gratuit', async () => {
+    const member = await newMember();
+    const first = await journeyFor(member, 'Premier');
+    await journeys.update(member.userId, first, { status: 'ABANDONED' });
+    // Prémisse : un parcours arrêté ne compte pas, on peut en ouvrir un second.
+    const second = await journeyFor(member, 'Second');
+    expect(second).not.toBe(first);
+    await expect(journeys.update(member.userId, first, { status: 'ACTIVE' })).rejects.toMatchObject({
+      code: 'PLAN_LIMIT_REACHED',
+    });
+    // Le second arrêté, le premier peut reprendre.
+    await journeys.update(member.userId, second, { status: 'ABANDONED' });
+    const resumed = await journeys.update(member.userId, first, { status: 'ACTIVE' });
+    expect(resumed.journey.status).toBe('ACTIVE');
+  });
+
+  it('§3.5 : un blocage LOGEMENT publie une recherche de logement (L2), JAMAIS sans appel explicite', async () => {
+    const l1 = await newMember('L1');
+    const l2 = await newMember('L2');
+    const housingDef = await definition({
+      code: 'p-housing',
+      nameFr: 'Trouver un logement',
+      blockerTarget: 'HOUSING',
+    });
+    const built = await template({ code: 'p-housing-tpl', nameFr: 'Logement', steps: [{ definitionId: housingDef }] });
+
+    const text =
+      'Je cherche un studio meublé à Lyon pour septembre, budget 600 euros par mois, proche d’une ligne de métro.';
+    const journeyL1 = (await journeys.create(l1, { templateId: built.templateId })).journey.id;
+    const draftL1 = await journeys.createBlockerDraft(l1.userId, journeyL1, at(await stepsOf(journeyL1), 0).id);
+    await expect(
+      journeys.publishBlocker(l1, draftL1.blocker.id, { text, isPrivate: false, title: 'Studio meublé à Lyon' }),
+    ).rejects.toMatchObject({ code: 'LEVEL_REQUIRED' });
+
+    const journeyL2 = (await journeys.create(l2, { templateId: built.templateId })).journey.id;
+    const draft = await journeys.createBlockerDraft(l2.userId, journeyL2, at(await stepsOf(journeyL2), 0).id);
+    // Prémisse : le brouillon n'a rien publié.
+    expect(await prisma.housingListing.count({ where: { authorUserId: l2.userId } })).toBe(0);
+
+    // Un titre est exigé pour une publication publique ; le texte doit tenir une annonce.
+    await expect(
+      journeys.publishBlocker(l2, draft.blocker.id, { text, isPrivate: false }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    await expect(
+      journeys.publishBlocker(l2, draft.blocker.id, {
+        text: 'Je cherche un studio à Lyon, merci !',
+        isPrivate: false,
+        title: 'Studio meublé à Lyon',
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(await prisma.housingListing.count({ where: { authorUserId: l2.userId } })).toBe(0);
+
+    const published = await journeys.publishBlocker(l2, draft.blocker.id, {
+      text,
+      isPrivate: false,
+      title: 'Studio meublé à Lyon',
+    });
+    expect(published.blocker.publishedRefType).toBe('housing_listing');
+    const listing = await prisma.housingListing.findUniqueOrThrow({
+      where: { id: published.blocker.publishedRefId },
+      select: { kind: true, description: true, authorUserId: true, cityId: true, priceCents: true },
+    });
+    expect(listing.kind).toBe('SEEKING_HOUSING');
+    // Le texte publié est celui du membre, pas le gabarit.
+    expect(listing.description).toBe(text);
+    expect(listing.authorUserId).toBe(l2.userId);
+    expect(listing.priceCents).toBeNull();
+    await expect(
+      journeys.publishBlocker(l2, draft.blocker.id, { text, isPrivate: false, title: 'Studio meublé à Lyon' }),
+    ).rejects.toMatchObject({ code: 'BLOCKER_ALREADY_PUBLISHED' });
+  });
+
+  it('§3.5 : un blocage EMPLOI crée ou remplace le profil de recherche, et un blocage PARRAINAGE demande un parrain choisi', async () => {
+    const member = await newMember('L1');
+    const mentor = await newMember('L2');
+    await prisma.mentorProfile.create({
+      data: {
+        userId: mentor.userId,
+        isAvailable: true,
+        maxMentees: 2,
+        activeMenteeCount: 0,
+        journeyTemplateIds: [],
+        enabledAt: new Date(),
+      },
+    });
+    const jobsDef = await definition({ code: 'p-jobs', nameFr: 'Trouver un emploi', blockerTarget: 'JOBS' });
+    const mentorDef = await definition({ code: 'p-mentor', nameFr: 'Être accompagné', blockerTarget: 'MENTORSHIP' });
+    const built = await template({
+      code: 'p-jobs-tpl',
+      nameFr: 'Emploi',
+      steps: [{ definitionId: jobsDef }, { definitionId: mentorDef }],
+    });
+    const journeyId = (await journeys.create(member, { templateId: built.templateId })).journey.id;
+    const [jobsStep, mentorStep] = [at(await stepsOf(journeyId), 0), at(await stepsOf(journeyId), 1)];
+
+    // ── EMPLOI
+    const jobsDraft = await journeys.createBlockerDraft(member.userId, journeyId, jobsStep.id);
+    expect(await prisma.jobSeekerProfile.count({ where: { userId: member.userId } })).toBe(0);
+    const jobs = await journeys.publishBlocker(member, jobsDraft.blocker.id, {
+      text: 'Je cherche un poste de comptable à Lyon, disponible dès octobre, en CDI de préférence.',
+      isPrivate: false,
+      title: 'Comptable disponible à Lyon',
+      sectors: ['Comptabilité'],
+      contractTypes: ['CDI'],
+    });
+    expect(jobs.blocker.publishedRefType).toBe('job_seeker_profile');
+    const profile = await prisma.jobSeekerProfile.findUniqueOrThrow({ where: { userId: member.userId } });
+    expect(profile.headline).toBe('Comptable disponible à Lyon');
+    expect(profile.sectors).toEqual(['Comptabilité']);
+    expect(profile.isVisible).toBe(true);
+
+    // ── PARRAINAGE : le parrain est choisi, le message est assez long
+    const mentorDraft = await journeys.createBlockerDraft(member.userId, journeyId, mentorStep.id);
+    await expect(
+      journeys.publishBlocker(member, mentorDraft.blocker.id, {
+        text: 'J’aimerais être accompagné pour mes démarches de titre de séjour, merci beaucoup.',
+        isPrivate: false,
+      }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(await prisma.mentorship.count({ where: { menteeUserId: member.userId } })).toBe(0);
+
+    const requested = await journeys.publishBlocker(member, mentorDraft.blocker.id, {
+      text: 'J’aimerais être accompagné pour mes démarches de titre de séjour, merci beaucoup.',
+      isPrivate: false,
+      mentorHandle: mentor.handle,
+    });
+    expect(requested.blocker.publishedRefType).toBe('mentorship');
+    const mentorship = await prisma.mentorship.findUniqueOrThrow({
+      where: { id: requested.blocker.publishedRefId },
+      select: { status: true, journeyId: true, mentorUserId: true, menteeUserId: true },
+    });
+    expect(mentorship).toMatchObject({
+      status: 'REQUESTED',
+      journeyId,
+      mentorUserId: mentor.userId,
+      menteeUserId: member.userId,
+    });
+
+    // Un L0 ne demande pas de parrain (mentorship.request est L1) ni ne publie de profil.
+    const l0 = await newMember('L0');
+    const l0Journey = (await journeys.create(l0, { templateId: built.templateId })).journey.id;
+    const l0Draft = await journeys.createBlockerDraft(l0.userId, l0Journey, at(await stepsOf(l0Journey), 1).id);
+    await expect(
+      journeys.publishBlocker(l0, l0Draft.blocker.id, {
+        text: 'J’aimerais être accompagné pour mes démarches de titre de séjour, merci beaucoup.',
+        isPrivate: false,
+        mentorHandle: mentor.handle,
+      }),
+    ).rejects.toMatchObject({ code: 'LEVEL_REQUIRED' });
+  });
+
+  it('§9 : la suppression du compte efface les parcours et leur contenu, retire des équipes, anonymise les corrections — et se rejoue sans effet', async () => {
+    const leaving = await newMember();
+    const other = await newMember();
+    const bystander = await newMember();
+
+    // Le parcours de celui qui part : notes, checklist, blocage, journal, équipe.
+    const ownJourney = await journeyFor(leaving, 'Mon dossier confidentiel');
+    const ownSteps = await stepsOf(ownJourney);
+    const first = at(ownSteps, 0);
+    await journeys.updateStep(leaving, ownJourney, first.id, { notes: 'Numéro de dossier 4455-X' });
+    await journeys.updateStep(leaving, ownJourney, first.id, { status: 'IN_PROGRESS' });
+    await journeys.createBlockerDraft(leaving.userId, ownJourney, first.id);
+    await journeys.addMember(leaving.userId, ownJourney, { userHandle: bystander.handle, role: 'OBSERVER' });
+    await journeys.acceptInvite(bystander.userId, ownJourney);
+    await journeys.reportTemplateError(leaving.userId, ownJourney, {
+      message: 'Le délai indiqué est faux : mon dossier a pris trois mois.',
+    });
+
+    // Il est aussi accompagnant du parcours d'un autre.
+    const otherJourney = await journeyFor(other, 'Parcours de l’autre');
+    await journeys.addMember(other.userId, otherJourney, { userHandle: leaving.handle, role: 'SUPPORTER' });
+    await journeys.acceptInvite(leaving.userId, otherJourney);
+    expect(await prisma.journeyActivity.count({ where: { journeyId: otherJourney, actorUserId: leaving.userId } })).toBe(1);
+
+    const first1 = await journeys.handleUserDeleted(leaving.userId);
+    expect(first1).toMatchObject({ journeys: 1, memberships: 1, proposals: 1, activities: 1 });
+
+    // Plus rien de ce qui lui appartenait.
+    expect(await prisma.journey.count({ where: { ownerUserId: leaving.userId } })).toBe(0);
+    expect(await prisma.journeyStep.count({ where: { journeyId: ownJourney } })).toBe(0);
+    expect(await prisma.journeyStepChecklistItem.count({ where: { journeyStep: { journeyId: ownJourney } } })).toBe(0);
+    expect(await prisma.journeyActivity.count({ where: { journeyId: ownJourney } })).toBe(0);
+    expect(await prisma.blockerRequest.count({ where: { journeyId: ownJourney } })).toBe(0);
+    expect(await prisma.journeyMember.count({ where: { journeyId: ownJourney } })).toBe(0);
+    // Il n'est plus dans l'équipe de l'autre, qui garde SON parcours, ses étapes et son journal.
+    expect(await prisma.journeyMember.count({ where: { userId: leaving.userId } })).toBe(0);
+    expect(await prisma.journey.count({ where: { id: otherJourney } })).toBe(1);
+    expect(await prisma.journeyStep.count({ where: { journeyId: otherJourney } })).toBe(3);
+    // Le journal de l'autre garde la ligne, perd son auteur.
+    const kept = await prisma.journeyActivity.findMany({
+      where: { journeyId: otherJourney, type: 'MEMBER_JOINED' },
+      select: { actorUserId: true },
+    });
+    expect(kept).toEqual([{ actorUserId: null }]);
+    // La correction est anonymisée : texte effacé, écartée de la file, conservée pour le modèle.
+    const proposals = await prisma.templateCorrectionProposal.findMany({
+      where: { userId: leaving.userId },
+      select: { message: true, status: true },
+    });
+    expect(proposals).toEqual([{ message: '[Message supprimé avec le compte]', status: 'REJECTED' }]);
+
+    // Rejeu (la file livre « au moins une fois ») : aucun effet, aucune erreur.
+    const again = await journeys.handleUserDeleted(leaving.userId);
+    expect(again).toEqual({ journeys: 0, memberships: 0, proposals: 0, activities: 0 });
+    // Le détail du parcours de l'autre se lit encore (journal à auteur nul compris).
+    const view = await journeys.detail(other.userId, otherJourney);
+    expect(view.members.map((m) => m.userId)).not.toContain(leaving.userId);
+  });
+
+  it('§3.9 : la relance « Où en êtes-vous ? » reste en attente jusqu’à la réponse, puis se tait', async () => {
+    const owner = await newMember();
+    const journeyId = await journeyFor(owner);
+    const pending = async () =>
+      (await journeys.detail(owner.userId, journeyId)).journey.inactivityPromptPending;
+
+    // Prémisse : pas de relance envoyée, rien en attente.
+    expect(await pending()).toBe(false);
+
+    const sentAt = new Date(Date.now() - 86_400_000);
+    await prisma.journey.update({
+      where: { id: journeyId },
+      data: { inactivityPromptSentAt: sentAt, lastActivityAt: new Date(sentAt.getTime() - 61 * 86_400_000) },
+    });
+    expect(await pending()).toBe(true);
+    // Un accompagnant ne répond pas à la place du propriétaire : rien n'est en attente pour lui.
+    const supporter = await newMember();
+    await journeys.addMember(owner.userId, journeyId, { userHandle: supporter.handle, role: 'SUPPORTER' });
+    await journeys.acceptInvite(supporter.userId, journeyId);
+    expect((await journeys.detail(supporter.userId, journeyId)).journey.inactivityPromptPending).toBe(false);
+
+    // « Je continue » est une activité : la relance ne revient pas (unique, §3.9).
+    await journeys.inactivityResponse(owner.userId, journeyId, { answer: 'CONTINUE' });
+    expect(await pending()).toBe(false);
+  });
+
+  it('§6 : « N membres de la ville ont franchi cette étape » — agrégat honnête, avatars des seuls parcours publics, séparés exclus', async () => {
+    const owner = await newMember();
+    const peerPublic = await newMember();
+    const peerPrivate = await newMember();
+    const blocked = await newMember();
+    const farAway = await newMember('L1', cityFar.id);
+
+    // Une définition NEUVE : les autres tests ont franchi `model.definitionIds.first` dans la
+    // même ville, et le compte de cette règle doit partir de zéro.
+    const freshDefinition = await definition({ code: 'peers-def', nameFr: 'Étape rare' });
+    const fresh = await template({ code: 'peers-tpl', nameFr: 'Pairs', steps: [{ definitionId: freshDefinition }] });
+    const journeyOf = async (member: JourneyActor) =>
+      (await journeys.create(member, { templateId: fresh.templateId })).journey.id;
+
+    const mine = await journeyOf(owner);
+    const currentOf = async () => {
+      const detail = await journeys.detail(owner.userId, mine);
+      return detail.steps.find((step) => step.id === detail.journey.currentStepId) as unknown as {
+        peers?: { count: number; cityName: string; sample: { handle: string }[] } | null;
+      };
+    };
+    // Prémisse : personne n'a franchi la première étape.
+    expect((await currentOf()).peers).toMatchObject({ count: 0 });
+
+    const franchirPremiere = async (member: JourneyActor & { handle: string }, visibility?: 'PUBLIC') => {
+      const id = await journeyOf(member);
+      const first = at(await stepsOf(id), 0);
+      await journeys.updateStep(member, id, first.id, { status: 'DONE' });
+      if (visibility !== undefined) await journeys.update(member.userId, id, { visibility });
+      return id;
+    };
+    await franchirPremiere(peerPublic, 'PUBLIC');
+    await franchirPremiere(peerPrivate);
+    await franchirPremiere(blocked, 'PUBLIC');
+    await franchirPremiere(farAway, 'PUBLIC');
+    await prisma.block.create({
+      data: { id: newId(), blockerUserId: owner.userId, blockedUserId: blocked.userId },
+    });
+
+    const peers = (await currentOf()).peers;
+    // Deux membres de LA MÊME ville (le privé compte dans le nombre, pas dans les avatars) ;
+    // la autre ville et le membre bloqué n'y sont pas.
+    expect(peers?.count).toBe(2);
+    expect(peers?.cityName).toBe(cityA.name);
+    expect(peers?.sample.map((m) => m.handle)).toEqual([peerPublic.handle]);
+
+    // Les autres rôles ne reçoivent pas l'agrégat (échéances et étapes de SON parcours).
+    const supporter = await newMember();
+    await journeys.addMember(owner.userId, mine, { userHandle: supporter.handle, role: 'SUPPORTER' });
+    await journeys.acceptInvite(supporter.userId, mine);
+    const seen = (await journeys.detail(supporter.userId, mine)).steps;
+    for (const step of seen) {
+      expect(Object.keys(step)).not.toContain('peers');
+      expect(Object.keys(step)).not.toContain('deadlineAlert');
+    }
   });
 });

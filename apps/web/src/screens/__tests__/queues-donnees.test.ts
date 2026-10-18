@@ -186,16 +186,6 @@ const LIAISONS: readonly Liaison[] = [
     lit: ['{panneau.titre}', '{panneau.type}', '{panneau.avancement}', '{panneau.etape}'],
     nePlus: ['>Mes études à Lyon<', '>PARCOURS ÉTUDES<', '>58%<'],
   },
-  {
-    fichier: 'j02/mobile.generated.tsx',
-    lit: ['(modeles ?? []).map(', '{m.nom}', '{m.etapes}', 'm.choisi ? (', 'm.autre ? ('],
-    nePlus: ['>Étudier<', '>12 étapes<', '>Régulariser ma situation<'],
-  },
-  {
-    fichier: 'j02/mobileplanatteint.generated.tsx',
-    lit: ['(modeles ?? []).map(', '{m.nom}', '{m.etapes}'],
-    nePlus: ['Étudier · 12 étapes', 'Travailler · 10 étapes'],
-  },
   // ── Transverse et onboarding ──────────────────────────────────────────────
   {
     fichier: 'x04/mobile.generated.tsx',
@@ -378,11 +368,32 @@ describe('10 §7 — ni score de risque ni téléphone sur les feuilles de S02',
  */
 describe('03 §3.1 — le cadre « plan atteint » affiche la limite et ne l’applique pas', () => {
   it('il liste les types de parcours, et ils viennent du serveur', () => {
-    const source = cadre('j02/mobileplanatteint.generated.tsx');
-    expect(source).toContain('(modeles ?? []).map(');
-    expect(source).toContain('{m.etapes}');
-    // La lecture n'est pas bloquée : l'encart ET la liste sont dans le même cadre.
-    expect(source).toContain('PLAN ATTEINT');
+    // Le cadre monte `VueCreer`, qui lit `GET /journey-templates` et affiche l'encart
+    // « plan atteint » SANS retirer la liste des types (§3.1 : « sans bloquer la lecture »).
+    expect(cadre('j02/mobileplanatteint.generated.tsx')).toContain('<VueCreer compact={true} />');
+    const vue = cadre('../components/parcours/vue-creer.tsx');
+    expect(vue).toContain('listJourneyTemplates()');
+    expect(vue).toContain('Vous avez déjà un parcours actif');
+    // L'encart s'ajoute AU-DESSUS : la liste n'est pas conditionnée par `planAtteint`.
+    expect(vue).toMatch(/\(modeles \?\? \[\]\)\.map/);
+  });
+
+  it('les trois cadres mobiles de J02 montent VueCreer : plus aucune carte de type dessinée', () => {
+    for (const nom of ['mobile', 'mobileregulariser', 'mobileplanatteint'] as const) {
+      const source = cadre(`j02/${nom}.generated.tsx`);
+      expect(source, nom).toContain('<VueCreer compact={true} />');
+      for (const ancien of ['>Étudier<', '>12 étapes<', '>Mes études à Lyon<']) {
+        expect(source, nom).not.toContain(ancien);
+      }
+    }
+  });
+
+  it('la vue de création ne décide pas de la limite : elle réagit au refus du serveur', () => {
+    const vue = cadre('../components/parcours/vue-creer.tsx');
+    for (const interdit of ['verificationLevel', 'JOURNEY_FREE_ACTIVE_LIMIT']) {
+      expect(vue, 'VueCreer ne doit pas décider').not.toContain(interdit);
+    }
+    expect(vue).toContain("cause.code === 'PLAN_LIMIT_REACHED'");
   });
 
   it('aucun cadre de J02 ne compare un quota ni ne lit un niveau', () => {

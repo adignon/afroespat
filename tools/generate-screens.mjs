@@ -24,6 +24,10 @@ import {
   AJOUTS_EXPLOITATION_VIVANTE,
 } from './adaptations/exploitation-vivante.mjs';
 import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
+import {
+  ADAPTATIONS_PARCOURS_VIVANT,
+  AJOUTS_PARCOURS_VIVANT,
+} from './adaptations/parcours-vivant.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18240,6 +18244,7 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_EXPLOITATION_VIVANTE,
     // Lot A « tout gratuit » : en dernier, ses motifs lisent du JSX déjà branché.
     ...ADAPTATIONS_GRATUIT_VIVANT,
+    ...ADAPTATIONS_PARCOURS_VIVANT,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -19379,7 +19384,11 @@ function collectProps(frameHtml, appliedFields = [], producedJsx = '') {
      * le même commentaire : « on ne retient que ce qui figure réellement dans le
      * JSX produit ». Elle manquait ici.
      */
-    if (!new RegExp(`\\b${root}\\b`).test(codeSeul)) continue;
+    // `(?<![.\w$])` : le nom doit être une RACINE, pas la propriété d'un autre objet —
+    // `panneau.equipe` ne fait pas vivre une prise `equipe` (lot « parcours vivant » :
+    // quand une adaptation retire le contenu qui l'employait, la prise restait déclarée
+    // sans emploi, et le lint la refusait).
+    if (!new RegExp(`(?<![.\\w$])${root}\\b`).test(codeSeul)) continue;
     names.add(root);
   }
 
@@ -19502,6 +19511,7 @@ const AJOUTS = {
   ...AJOUTS_ENTRAIDE_VIVANT,
   ...AJOUTS_EXPLOITATION_VIVANTE,
   ...AJOUTS_GRATUIT_VIVANT,
+  ...AJOUTS_PARCOURS_VIVANT,
 };
 
 const HEADER = (

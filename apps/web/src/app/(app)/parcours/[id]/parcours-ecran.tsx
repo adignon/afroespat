@@ -1,21 +1,19 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { VUE_NEUTRE, chargerEcranParcours } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
+import { ouvrirFeuille } from '@/components/parcours/feuilles-store';
 import { useContexteParcours } from '@/screens/parcours/use-parcours-api';
-import { plancheBlocage, plancheJalon } from '@/screens/parcours/modales';
 import { J01Desktop } from '@/screens/j01/desktop.generated';
 import { J01Mobile } from '@/screens/j01/mobile.generated';
 import { J01MobileEdition } from '@/screens/j01/mobileedition.generated';
 import { J01MDesktop } from '@/screens/j01m/desktop.generated';
-import { J01MMobile } from '@/screens/j01mfeuille/mobile.generated';
 import { J01EDesktopVide } from '@/screens/j01e/desktopvide.generated';
 import { J01EMobileVide } from '@/screens/j01e/mobilevide.generated';
 import { J01EDesktopAbouti } from '@/screens/j01e/desktopabouti.generated';
 import { J01EMobileAbouti } from '@/screens/j01e/mobileabouti.generated';
-import { J05MobileInvitation } from '@/screens/j05invitation/mobileinvitation.generated';
 
 /**
  * J01 — la page d'un parcours, et les cinq états que la maquette lui dessine.
@@ -78,6 +76,11 @@ export function ParcoursEcran({ etat }: { readonly etat: EtatParcours }) {
   const contexte = useContexteParcours();
   const charger = useCallback(() => chargerEcranParcours(journeyId, etat), [journeyId, etat]);
 
+  // `?etat=parcours` ouvre le sélecteur « Mes parcours » dès l'arrivée (J01M).
+  useEffect(() => {
+    if (etat === 'parcours') ouvrirFeuille('selecteur');
+  }, [etat]);
+
   return (
     <EcranParcoursDonnees
       /*
@@ -100,7 +103,6 @@ export function ParcoursEcran({ etat }: { readonly etat: EtatParcours }) {
        * réécrire la maquette ; laisser l'état inatteignable serait livrer une
        * planche morte.
        */
-      modaleInitiale={etat === 'parcours' ? 'J01M' : null}
       desktop={(d) =>
         etat === 'vide' ? (
           <J01EDesktopVide {...d} />
@@ -123,13 +125,6 @@ export function ParcoursEcran({ etat }: { readonly etat: EtatParcours }) {
           <J01Mobile {...d} />
         )
       }
-      modales={(d, volet) => ({
-        J03: plancheBlocage(volet, d),
-        J04: plancheJalon(d),
-        // §3.4 — l'équipe s'invite depuis la colonne de droite de J01.
-        J05I: { mobile: <J05MobileInvitation {...d} /> },
-        J01M: { mobile: <J01MMobile {...d} />, mobileOnly: true },
-      })}
     />
   );
 }
