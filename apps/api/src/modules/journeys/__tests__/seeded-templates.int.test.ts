@@ -387,4 +387,33 @@ describe('modèles amorcés (T3 partie A) vus du service', () => {
     // Aucune variable non substituée ne fuit vers le membre.
     expect(draft.blocker.draftText).not.toMatch(/\{(ville|etape|parcours|echeance)\}/);
   });
+
+  it('T3 A.2 : la variante de « Régulariser » remplace la première étape, et est refusée ailleurs', async () => {
+    const settlement = await prisma.journeyTemplate.findUniqueOrThrow({
+      where: { code: 'SETTLEMENT' },
+      select: { id: true },
+    });
+    for (const [variant, titre] of [
+      ['STATUS_CHANGE', 'Changer de statut'],
+      ['RENEWAL', 'Renouveler'],
+    ] as const) {
+      const member = await newMember();
+      const created = await journeys.create(member, { templateId: settlement.id, variant });
+      const first = await prisma.journeyStep.findFirstOrThrow({
+        where: { journeyId: created.journey.id, position: 1 },
+        select: { title: true, stepDefinition: { select: { code: true } }, _count: { select: { checklistItems: true } } },
+      });
+      expect(first.stepDefinition?.code).toBe(variant);
+      expect(first.title).toContain(titre);
+      expect(first._count.checklistItems).toBeGreaterThan(0);
+      expect(created.journey.totalCount).toBe(
+        (await prisma.journeyStep.count({ where: { journeyId: created.journey.id } })) - 5,
+      );
+    }
+    const member = await newMember();
+    await expect(
+      journeys.create(member, { templateId: studiesTemplateId, variant: 'RENEWAL' }),
+    ).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+    expect(await prisma.journey.count({ where: { ownerUserId: member.userId } })).toBe(0);
+  });
 });
