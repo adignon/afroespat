@@ -15,6 +15,10 @@ import {
   AJOUTS_RESEAU_VIVANT,
 } from './adaptations/reseau-vivant.mjs';
 import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
+import {
+  ADAPTATIONS_EXPLOITATION_VIVANTE,
+  AJOUTS_EXPLOITATION_VIVANTE,
+} from './adaptations/exploitation-vivante.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -18223,6 +18227,8 @@ function adaptFields(jsx, section) {
      * `onRecommander`). Il emprunte `MenuRond` au registre du lot réseau.
      */
     ...ADAPTATIONS_PROFIL_VIVANT,
+    // Lot B : l'email et le push de K07 (tools/adaptations/exploitation-vivante.mjs).
+    ...ADAPTATIONS_EXPLOITATION_VIVANTE,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -19482,6 +19488,7 @@ const AJOUTS = {
   FenetreSignalement: '@/components/fenetre-signalement',
   /** Le lot « réseau vivant » — voir `tools/adaptations/reseau-vivant.mjs`. */
   ...AJOUTS_RESEAU_VIVANT,
+  ...AJOUTS_EXPLOITATION_VIVANTE,
 };
 
 const HEADER = (
