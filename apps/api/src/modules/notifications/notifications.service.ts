@@ -34,6 +34,7 @@ import { ApiError } from '../../common/api-error';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { PrismaService } from '../../common/prisma.service';
 import { loadEnv } from '../../config/env';
+import { vapidPublicKeyFor } from '../../providers/webpush.provider';
 import { EMAIL_PROVIDER, PUSH_PROVIDER, type EmailProvider, type PushProvider } from '../../providers/providers';
 
 /**
@@ -121,16 +122,11 @@ export interface OutboundPushJob {
 /**
  * L'adresse email d'un membre.
  *
- * DÉPENDANCE NON SATISFAITE, et ce port existe pour la nommer : §3 annonce
- * `users.email` « ajoutée au module 01 », et la colonne N'EXISTE PAS dans le
- * schéma figé. Aucune table ne peut donc porter l'adresse d'un membre, ce qui
- * rend `POST /me/email`, `/me/email/verify` et l'envoi réel impossibles.
- *
- * Le port est là plutôt qu'un `TODO` pour trois raisons : la décision « email ou
- * pas » reste testable (une doublure rend une adresse, et la règle dure SOCIAL se
- * vérifie vraiment) ; le jour où la colonne arrive, un seul fournisseur change ;
- * et `has()` traduit littéralement la règle du §3 — « sans email, pas de canal
- * email ».
+ * Implémenté par `EmailAddressService` (`users.email_encrypted`, adresse VÉRIFIÉE
+ * seulement). Le port reste une interface plutôt qu'un appel direct pour trois
+ * raisons : la décision « email ou pas » reste testable avec une doublure ; changer
+ * de source d'adresse ne touche qu'un fournisseur ; et `has()` traduit littéralement
+ * la règle du §3 — « sans email, pas de canal email ».
  */
 export interface EmailAddressPort {
   has(userId: string): Promise<boolean>;
@@ -139,7 +135,7 @@ export interface EmailAddressPort {
 
 export const EMAIL_ADDRESS = Symbol('EmailAddress');
 
-/** Le fournisseur par défaut : aucune adresse, parce qu'aucune colonne. */
+/** Aucune adresse : la doublure des tests qui éprouvent l'absence de canal email. */
 export class NoEmailAddressPort implements EmailAddressPort {
   has(): Promise<boolean> {
     return Promise.resolve(false);
@@ -799,6 +795,33 @@ export class NotificationsService {
       },
     });
     return { id, created: true };
+  }
+
+  /**
+   * `GET /me/push-subscriptions` — la clé publique VAPID dont le navigateur a besoin
+   * pour s'abonner, et les appareils déjà abonnés (sans `endpoint` ni clés : ce sont
+   * des capacités d'envoi, le membre n'a pas à les relire).
+   *
+   * `publicKey` est `null` quand aucun push n'est possible (fournisseur réel sans
+   * clé en production) : le front masque alors le réglage au lieu de proposer un
+   * geste qui échouerait.
+   */
+  async listPushSubscriptions(userId: string) {
+    const rows = await this.prisma.pushSubscription.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, userAgent: true, createdAt: true, lastSuccessAt: true },
+    });
+    const env = loadEnv();
+    return {
+      publicKey: vapidPublicKeyFor({ nodeEnv: env.NODE_ENV, configured: env.VAPID_PUBLIC_KEY }),
+      subscriptions: rows.map((r) => ({
+        id: r.id,
+        userAgent: r.userAgent,
+        createdAt: r.createdAt.toISOString(),
+        lastSuccessAt: r.lastSuccessAt?.toISOString() ?? null,
+      })),
+    };
   }
 
   async removePushSubscription(userId: string, id: string): Promise<void> {
