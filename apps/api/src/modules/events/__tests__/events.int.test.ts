@@ -1,3 +1,4 @@
+import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -158,6 +159,8 @@ describe('agenda (09 §3)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    // Lot A : ces bancs vérifient les quotas des plans, donc les plans s'appliquent.
+    await reglerMonetisation(prisma, true);
     events = new EventsService(
       prisma,
       new OutboxService(prisma),
@@ -218,6 +221,7 @@ describe('agenda (09 §3)', () => {
     if (createdCommunities.length > 0) {
       await prisma.community.deleteMany({ where: { id: { in: createdCommunities } } });
     }
+    await reglerMonetisation(prisma, null);
     await prisma.$disconnect();
   });
 
@@ -238,6 +242,22 @@ describe('agenda (09 §3)', () => {
       expect(counters).toHaveLength(1);
       expect(counters[0]?.count).toBe(1);
       expect(counters[0]?.periodKey).toBe(monthKey(new Date()));
+    });
+
+    it('[TOUT GRATUIT] un membre gratuit crée autant d’événements que le Premium', async () => {
+      await reglerMonetisation(prisma, false);
+      try {
+        const organizer = await member({ plan: 'FREE' });
+        await newEvent(organizer);
+        await newEvent(organizer);
+        const third = await newEvent(organizer);
+        expect(third.id).toBeDefined();
+        expect(
+          await prisma.usageCounter.count({ where: { userId: organizer, metric: 'EVENTS_CREATED' } }),
+        ).toBe(0);
+      } finally {
+        await reglerMonetisation(prisma, true);
+      }
     });
 
     it('n’applique aucune limite en Premium', async () => {

@@ -313,6 +313,11 @@ export const meResponseSchema = z.object({
   phones: z.array(
     z.object({ id: uuidSchema, masked: z.string(), isDestination: z.boolean() }),
   ),
+  /**
+   * Les plans sont-ils appliqués ? Faux = « tout gratuit » : le front n'affiche
+   * aucune incitation à payer. Défaut faux pour une réponse sans le champ.
+   */
+  monetisationActive: z.boolean().default(false),
   kyc: z.object({ status: z.enum(KycStatus) }).nullable(),
   /** Compteurs de réputation, tels que `user_stats` les porte. */
   stats: z

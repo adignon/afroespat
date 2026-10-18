@@ -26,6 +26,7 @@ import {
   TIME_ZONE_BY_COUNTRY_ISO2,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { planEffectif } from '../../common/monetisation';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
@@ -244,7 +245,7 @@ export class EventsService {
     const eventId = newId();
 
     const created = await this.prisma.$transaction(async (tx) => {
-      await this.consumeMonthlyQuota(tx, organizerUserId, organizer.plan);
+      await this.consumeMonthlyQuota(tx, organizerUserId, await planEffectif(tx, organizer.plan));
 
       const event = await tx.event.create({
         data: {

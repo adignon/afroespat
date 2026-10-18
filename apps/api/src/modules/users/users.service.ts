@@ -1,3 +1,4 @@
+import { monetisationActive } from '../../common/monetisation';
 import { Injectable } from '@nestjs/common';
 import { Prisma, newId } from '@app/db';
 import {
@@ -170,6 +171,7 @@ export class UsersService {
         ),
         isDestination: phone.isDestination,
       })),
+      monetisationActive: await monetisationActive(this.prisma),
       kyc: latestKyc === undefined ? null : { status: latestKyc.status },
       stats:
         user.stats === null

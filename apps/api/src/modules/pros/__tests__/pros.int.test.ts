@@ -1,3 +1,4 @@
+import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
 import {
@@ -135,6 +136,8 @@ describe('annuaire professionnel (10 §4)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    // Lot A : ces bancs vérifient les quotas des plans, donc les plans s'appliquent.
+    await reglerMonetisation(prisma, true);
     pros = new ProsService(
       prisma,
       new OutboxService(prisma),
@@ -181,6 +184,7 @@ describe('annuaire professionnel (10 §4)', () => {
     await prisma.user.deleteMany({ where: { id: { in: createdUsers } } });
     await prisma.mediaAsset.deleteMany({ where: { id: { in: createdAssets } } });
     await prisma.conversation.deleteMany({ where: { id: { in: createdConversations } } });
+    await reglerMonetisation(prisma, null);
     await prisma.$disconnect();
   });
 
@@ -545,6 +549,22 @@ describe('annuaire professionnel (10 §4)', () => {
   });
 
   // ── RÈGLE DURE : quota de contact (§4.4, §11) ─────────────────────────────
+
+  it('[TOUT GRATUIT] un membre gratuit contacte plus de 3 pros, sans plafond', async () => {
+    await reglerMonetisation(prisma, false);
+    try {
+      const visitor = await member({ level: 'L1', plan: 'FREE' });
+      for (let index = 0; index < FREE_PRO_CONTACTS_PER_MONTH + 1; index += 1) {
+        const id = await registerPro(await member());
+        await approve(id);
+        const result = await pros.contact(id, visitor);
+        createdConversations.push(result.conversationId);
+        expect(result.quota.max).toBeNull();
+      }
+    } finally {
+      await reglerMonetisation(prisma, true);
+    }
+  });
 
   it('rule: le quota de 3 contacts pro par mois est appliqué côté serveur', async () => {
     const visitor = await member({ level: 'L1', plan: 'FREE' });
