@@ -12,18 +12,11 @@ import { RailSurvol } from '@/components/rail/survol';
 import { ActionsReseau } from '@/components/actions-reseau';
 import { EtatVide } from '@/components/etat-vide';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-import type { A08Data } from './data';
-
-export function A08Desktop(props: A08Data) {
-  const { actions, hrefGerer, netTabs, outils, ownerActions, panelReseaux, rail, reseau, shortcuts, sujets, topics } = props;
-=======
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
 import type { A08Data } from './data';
 
 export function A08Desktop(props: A08Data) {
   const { actions, hrefGerer, netTabs, outils, ownerActions, panelReseaux, rail, reseau, sujets, topics } = props;
->>>>>>> claude/beautiful-mayer-jze477
 
   return (
     <>

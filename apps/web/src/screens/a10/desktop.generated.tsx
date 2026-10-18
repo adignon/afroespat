@@ -10,18 +10,11 @@ import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-import type { A10Data } from './data';
-
-export function A10Desktop(props: A10Data) {
-  const { categorie, categorieLabel, categorieOptions, couvertureOccupee, couvertureUrl, creerEncre, creerFond, creerPret, descriptionMax, descriptionValue, invitees, invitesBarre, invitesReste, invitesTexte, logoOccupe, logoUrl, nomMax, nomValue, onCategorie, onCouverture, onCreer, onDescriptionChange, onInviter, onLogo, onNomChange, onRechercheChange, onVisibilite, panelReseaux, rail, rechercheValue, shortcuts, visibility } = props;
-=======
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
 import type { A10Data } from './data';
 
 export function A10Desktop(props: A10Data) {
   const { categorie, categorieLabel, categorieOptions, couvertureOccupee, couvertureUrl, creerEncre, creerFond, creerPret, descriptionMax, descriptionValue, invitees, invitesBarre, invitesReste, invitesTexte, logoOccupe, logoUrl, nomMax, nomValue, onCategorie, onCouverture, onCreer, onDescriptionChange, onInviter, onLogo, onNomChange, onRechercheChange, onVisibilite, panelReseaux, rail, rechercheValue, visibility } = props;
->>>>>>> claude/beautiful-mayer-jze477
 
   return (
     <>

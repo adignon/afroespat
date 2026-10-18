@@ -11,10 +11,7 @@ import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { CadreCliquable } from '@/components/cadre-cliquable';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-=======
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
->>>>>>> claude/beautiful-mayer-jze477
 import type { A03Data } from './data';
 
 export function A03Desktop(props: A03Data) {

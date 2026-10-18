@@ -8,12 +8,9 @@ import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/
 import { PastilleMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-=======
 import { VueAbouti } from '@/components/parcours/vue-abouti';
 import { ColonneParcours } from '@/components/parcours/colonne';
 import { PanneauPublics } from '@/components/parcours/panneau';
->>>>>>> claude/beautiful-mayer-jze477
 import type { J01EVideData } from '../parcours/data';
 
 export function J01EDesktopVide(_props: J01EVideData) {

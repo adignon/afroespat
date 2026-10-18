@@ -14,10 +14,7 @@ import { RailSurvol } from '@/components/rail/survol';
 import { ApercuStory } from '@/components/apercu-story';
 import { RubanStories } from '@/components/ruban-stories';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-=======
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
->>>>>>> claude/beautiful-mayer-jze477
 import type { A01Data } from './data';
 
 export function A01Desktop(props: A01Data) {

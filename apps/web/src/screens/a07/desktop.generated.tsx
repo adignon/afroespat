@@ -9,18 +9,11 @@ import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-import type { A07Data } from './data';
-
-export function A07Desktop(props: A07Data) {
-  const { discover, myNets, netFilters, onRejoindre, panelReseaux, rail, seuil, shortcuts } = props;
-=======
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
 import type { A07Data } from './data';
 
 export function A07Desktop(props: A07Data) {
   const { discover, myNets, netFilters, onRejoindre, panelReseaux, rail, seuil } = props;
->>>>>>> claude/beautiful-mayer-jze477
 
   return (
     <>

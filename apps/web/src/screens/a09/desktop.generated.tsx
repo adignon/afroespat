@@ -11,10 +11,7 @@ import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { EtatVide } from '@/components/etat-vide';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-=======
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
->>>>>>> claude/beautiful-mayer-jze477
 import type { A09Data } from './data';
 
 export function A09Desktop(props: A09Data) {
@@ -62,11 +59,7 @@ export function A09Desktop(props: A09Data) {
 <Fragment key={cIndex}><div style={{ display: "flex", gap: "12px", paddingLeft: c.indent }}>{c.profil ? (<Link href={c.profil} data-avatar-profil="" aria-label={`Voir le profil de ${c.name}`} style={{ display: "contents", color: "inherit", textDecoration: "none" }}><span style={{ width: "34px", height: "34px", borderRadius: "999px", background: c.bg, color: "#fff", fontSize: "10.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{c.i}</span></Link>) : (<span style={{ width: "34px", height: "34px", borderRadius: "999px", background: c.bg, color: "#fff", fontSize: "10.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}>{c.i}</span>)}<div style={{ background: "#F6F8F7", borderRadius: "16px", padding: "12px 14px", flex: "1" }}><div style={{ fontSize: "13.5px", fontWeight: "700" }}>{c.profil ? (<Link href={c.profil} data-nom-profil="" style={{ color: "inherit", textDecoration: "none" }}>{c.name}</Link>) : c.name}</div><div style={{ fontSize: "13.5px", lineHeight: "1.55", marginTop: "3px" }}>{c.text}</div></div></div></Fragment>
 ))}{(comments ?? []).length === 0 ? (<EtatVide texte="Aucune réponse pour le moment : soyez la première personne à répondre." />) : null}</div>
     </main>
-<<<<<<< HEAD
-    <aside style={{ width: "300px", display: "flex", flexDirection: "column", gap: "12px" }}>
-=======
     <aside data-zone="droite" style={{ width: "300px", display: "flex", flexDirection: "column", gap: "12px" }}>
->>>>>>> claude/beautiful-mayer-jze477
       {(modActions ?? []).length === 0 ? null : (<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", padding: "10px 12px 4px" }}>MODÉRATION</div>{(modActions ?? []).map((a, aIndex) => (
 <Fragment key={aIndex}><button type="button" onClick={a.onClick} disabled={a.onClick === undefined} data-sujet-moderation="" style={{ height: "44px", display: "flex", alignItems: "center", gap: "10px", padding: "0 12px", borderRadius: "14px", fontSize: "13.5px", fontWeight: "600", color: "#16211D", width: "100%", background: "none", border: "none", textAlign: "left", fontFamily: "inherit", cursor: a.onClick === undefined ? "default" : "pointer" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={a.icon} /></svg>{a.label}</button></Fragment>
 ))}</div>)}

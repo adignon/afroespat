@@ -9,10 +9,7 @@ import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
-<<<<<<< HEAD
-=======
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
->>>>>>> claude/beautiful-mayer-jze477
 import type { A06Data } from './data';
 
 export function A06CorrigerDesktop(props: A06Data) {
