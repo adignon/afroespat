@@ -19,6 +19,7 @@ import {
   updateProfile,
   verifyOtp,
 } from '@/lib/api';
+import { obtenirJetonCaptcha } from '@/lib/captcha';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { createJourney, listJourneyTemplates } from '@/screens/parcours/api';
 import {
@@ -457,10 +458,9 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       const challenge = await requestOtp({
         phone,
         countryIso2,
-        // Turnstile en production ; le fournisseur fictif accepte n'importe quoi
-        // en développement, et `loadEnv` refuse le démarrage s'il reste fictif
-        // en production.
-        captchaToken: 'dev',
+        // Turnstile (`lib/captcha.ts`) : jeton à usage unique tiré MAINTENANT. Sans
+        // clé de site, le jeton de test officiel de Cloudflare.
+        captchaToken: await obtenirJetonCaptcha(),
         purpose: 'SIGNUP',
         acceptTerms: true,
       });
@@ -530,7 +530,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         const challenge = await requestOtp({
           phone,
           countryIso2: sessionStorage.getItem(COUNTRY_KEY) ?? 'BJ',
-          captchaToken: 'dev',
+          captchaToken: await obtenirJetonCaptcha(),
           purpose: 'SIGNUP',
           acceptTerms: true,
         });

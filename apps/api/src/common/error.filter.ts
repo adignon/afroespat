@@ -1,3 +1,4 @@
+import { reportError } from './observability';
 import {
   type ArgumentsHost,
   Catch,
@@ -90,6 +91,7 @@ export class ApiErrorFilter implements ExceptionFilter {
       `${req.method} ${req.url} — erreur non gérée`,
       exception instanceof Error ? exception.stack : String(exception),
     );
+    reportError(exception, typeof res.getHeader === 'function' ? String(res.getHeader('x-request-id') ?? '') || undefined : undefined);
     res.status(500).json(transverseError('INTERNAL_ERROR'));
   }
 }

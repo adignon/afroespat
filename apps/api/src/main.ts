@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ApiErrorFilter } from './common/error.filter';
+import { PinoNestLogger, httpLogger, initSentry } from './common/observability';
 import { loadEnv } from './config/env';
 
 /**
@@ -20,8 +21,11 @@ async function bootstrap(): Promise<void> {
   const env = loadEnv();
   const logger = new Logger('bootstrap');
 
+  await initSentry();
+
   const app = await NestFactory.create(AppModule, {
-    logger: env.NODE_ENV === 'production' ? ['error', 'warn', 'log'] : ['error', 'warn', 'log', 'debug'],
+    // Journaux JSON sur stdout (pino) ; le niveau suit LOG_LEVEL.
+    logger: new PinoNestLogger(),
     /**
      * Le corps BRUT est conservé, en plus du JSON analysé — T4 §8.
      *
@@ -35,6 +39,10 @@ async function bootstrap(): Promise<void> {
      */
     rawBody: true,
   });
+
+  // Une ligne JSON par requête : méthode, chemin SANS chaîne de requête, statut,
+  // durée, identifiant de requête. Ni en-têtes ni corps (voir observability.ts).
+  app.use(httpLogger());
 
   // Préfixe /v1 pour les membres, /v1/admin pour l'équipe (§5.1).
   app.setGlobalPrefix('v1');

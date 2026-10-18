@@ -3,6 +3,7 @@ import { CryptoService } from '../../../common/crypto.service';
 import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { type AccessClaims, TokenService } from '../../../common/token.service';
+import { ProviderError } from '../../../providers/http';
 import { FakeCaptchaProvider, FakeSmsProvider } from '../../../providers/providers';
 import { ConsentsService } from '../../consents/consents.service';
 import { AuthService } from '../auth.service';
@@ -91,6 +92,53 @@ describe('authentification (01 §2.1)', () => {
   });
 
   // ── Le pays choisi ────────────────────────────────────────────────────────
+
+  describe('panne du fournisseur SMS', () => {
+    const fournisseur = (appels: { n: number }, echecs: number, retryable: boolean) => ({
+      send: () => {
+        appels.n += 1;
+        return appels.n <= echecs
+          ? Promise.reject(new ProviderError('twilio', retryable ? 503 : 400, 'HTTP', retryable))
+          : Promise.resolve({ providerRef: 'x' });
+      },
+    });
+    const service = (sender: { send: () => Promise<{ providerRef: string }> }) =>
+      new AuthService(prisma, crypto, new OutboxService(prisma), new TokenService(), new ConsentsService(prisma),
+        sender as never, new FakeCaptchaProvider());
+
+    it('une panne transitoire est réessayée UNE fois, et le code part', async () => {
+      const appels = { n: 0 };
+      const out = await service(fournisseur(appels, 1, true)).requestOtp({
+        phone: numeroDEpreuve(7001), countryIso2: 'BJ', captchaToken: 't', purpose: 'SIGNUP', ip: undefined,
+      });
+      expect(appels.n).toBe(2);
+      expect(out.challengeId).toBeTruthy();
+    });
+
+    it('un échec définitif lève SMS_SEND_FAILED ET supprime le défi (pas de quota consommé pour rien)', async () => {
+      const appels = { n: 0 };
+      const phone = numeroDEpreuve(7002);
+      const fp = crypto.phoneFingerprint(enFormatInternational(phone, 'BJ') ?? phone);
+      const avant = await prisma.otpChallenge.count({ where: { phoneHmac: fp } });
+      await expect(
+        service(fournisseur(appels, 5, true)).requestOtp({
+          phone, countryIso2: 'BJ', captchaToken: 't', purpose: 'SIGNUP', ip: undefined,
+        }),
+      ).rejects.toMatchObject({ code: 'SMS_SEND_FAILED' });
+      expect(appels.n).toBe(2); // un envoi + un réessai, pas plus
+      expect(await prisma.otpChallenge.count({ where: { phoneHmac: fp } })).toBe(avant);
+    });
+
+    it('une erreur non réessayable (400) n’est pas rejouée', async () => {
+      const appels = { n: 0 };
+      await expect(
+        service(fournisseur(appels, 5, false)).requestOtp({
+          phone: numeroDEpreuve(7003), countryIso2: 'BJ', captchaToken: 't', purpose: 'SIGNUP', ip: undefined,
+        }),
+      ).rejects.toMatchObject({ code: 'SMS_SEND_FAILED' });
+      expect(appels.n).toBe(1);
+    });
+  });
 
   it('retient le pays SÉLECTIONNÉ, et non le premier de la liste', async () => {
     const { userId } = await signIn(nextPhone(), 'BJ');

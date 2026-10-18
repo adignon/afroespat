@@ -372,6 +372,50 @@ describe('vérification d’identité (01 §2.3, §2.4, §4.3)', () => {
     }
   });
 
+  it('[ANTI-REJEU] un X-Timestamp hors fenêtre est refusé même bien signé ; dans la fenêtre il passe', async () => {
+    const me = await signIn(nextPhone());
+    const session = await kyc.createSession(me.userId);
+    const raw = JSON.stringify({ sessionId: session.sessionId, status: 'APPROVED', isAdult: true });
+    const secret = loadEnv().DIDIT_WEBHOOK_SECRET as string;
+    const signature = createHmac('sha256', secret).update(Buffer.from(raw, 'utf8')).digest('hex');
+    const send = (timestamp: number) =>
+      request(httpServer(app))
+        .post('/v1/webhooks/didit')
+        .set('content-type', 'application/json')
+        .set('x-signature', signature)
+        .set('x-timestamp', String(timestamp))
+        .send(raw);
+
+    const now = Math.floor(Date.now() / 1000);
+    // Un message d'il y a une heure (rejeu) et un message « du futur » : refusés.
+    expect((await send(now - 3600).expect(401)).body.error.code).toBe('WEBHOOK_SIGNATURE_INVALID');
+    await send(now + 3600).expect(401);
+    await send(Number.NaN).expect(401);
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).not.toBe('APPROVED');
+    // Frais : accepté.
+    await send(now - 5).expect(200);
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).toBe('APPROVED');
+  });
+
+  it('le corps RÉEL de Didit (session_id, statut en toutes lettres, décision) est ramené à la forme interne sans rien garder', async () => {
+    const me = await signIn(nextPhone());
+    const session = await kyc.createSession(me.userId);
+    await postWebhook({
+      session_id: session.sessionId,
+      status: 'Approved',
+      decision: { id_verification: { age: 34, first_name: `Zainab${run}`, document_number: `ZZ${run}123` } },
+    }).expect(200);
+    const row = await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } });
+    expect(row.status).toBe('APPROVED');
+    expect(row.isAdult).toBe(true);
+    expect(JSON.stringify(row)).not.toContain(`Zainab${run}`);
+
+    const minor = await signIn(nextPhone());
+    const s2 = await kyc.createSession(minor.userId);
+    await postWebhook({ session_id: s2.sessionId, status: 'Approved', decision: { id_verification: { age: 16 } } }).expect(200);
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: s2.sessionId } })).isAdult).toBe(false);
+  });
+
   it('est idempotent sur (session, statut) : le rejeu n’applique rien', async () => {
     const me = await signIn(nextPhone());
     const session = await kyc.createSession(me.userId);
