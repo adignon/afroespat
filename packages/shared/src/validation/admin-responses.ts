@@ -281,3 +281,23 @@ export const adminScamAlertsResponseSchema = z.object({
   ),
 });
 
+
+/** L'aperçu d'une version : la composition plus la description de chaque étape (`GET …/preview`). */
+export const adminPreviewSchema = z
+  .object({
+    steps: z.array(
+      z
+        .object({
+          position: z.number(),
+          nameFr: z.string(),
+          isOptional: z.boolean(),
+          daysBeforeArrival: z.number().nullable(),
+          description: z.string().nullable(),
+          riskMessage: z.string().nullable(),
+          documentChecklist: z.array(z.string()),
+          dependsOn: z.array(z.number()),
+        })
+        .passthrough(),
+    ),
+  })
+  .passthrough();

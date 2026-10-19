@@ -19526,6 +19526,8 @@ const AJOUTS = {
   ...AJOUTS_GRATUIT_VIVANT,
   ...AJOUTS_PARCOURS_VIVANT,
   ...AJOUTS_CHROME_GAUCHE,
+  // Lot H — les composants de l'administration vivante.
+  ...AJOUTS_ADMIN_VIVANTE,
 };
 
 const HEADER = (

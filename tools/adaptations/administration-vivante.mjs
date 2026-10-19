@@ -113,10 +113,13 @@ const ADMIN_CONNEXION = {
   why: 'La carte de connexion d’équipe : mot de passe puis code TOTP, enrôlement forcé. La maquette dessinait trois cartes de saisie inertes ; `ConnexionEquipe` en est une seule, à trois états.',
   provides: [],
   apply(jsx) {
-    const debut = jsx.indexOf('<main style={{ display: "contents" }}>');
-    const fin = jsx.indexOf('</main>', debut);
-    if (debut < 0 || fin < 0) return { jsx, applied: false };
-    return { jsx: `${jsx.slice(0, debut)}<main style={{ display: "contents" }}><ConnexionEquipe /></main>${jsx.slice(fin + '</main>'.length)}`, applied: true };
+    // Le contenu de la carte : du bloc logo + titre jusqu'au bouton « Continuer » (le dernier
+    // bouton de chacune des trois planches). La carte elle-même (fond, trait, rayon) reste.
+    const debut = jsx.indexOf('<div style={{ display: "flex", alignItems: "center", gap: "10px" }}><div style={{ width: "38px", height: "38px"');
+    const bouton = jsx.lastIndexOf('</button>');
+    if (debut < 0 || bouton < debut) return { jsx, applied: false };
+    const fin = bouton + '</button>'.length;
+    return { jsx: `${jsx.slice(0, debut)}<ConnexionEquipe />${jsx.slice(fin)}`, applied: true };
   },
 };
 

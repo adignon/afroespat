@@ -2,17 +2,15 @@ import { ScreenFrames } from '@/screens/frames';
 import { D14Desktop } from '@/screens/d14/desktop.generated';
 
 /**
- * D14 — abonnements et revenus. `/admin/revenus` (T5 D14, 15 §5.1 bloc Revenus).
+ * D14 — Monétisation : désactivée — tout est gratuit pour le moment.
  *
- * MRR, part Mobile Money, affiliation du mois, puis les plans (EUR / XOF) et la
- * liste des abonnés avec leur statut, leur fournisseur et leurs échecs.
+ * Le châssis (rail, titre, emplacement) est celui de la maquette transcodée ; la zone de
+ * contenu et la barre haute sont posées par l'adaptation `administration-vivante`
+ * (`tools/adaptations/administration-vivante.mjs`) : composants vivants, lecture ET
+ * écriture réelles. La session d'équipe est gardée par `(admin)/layout.tsx`.
  *
- * LES PLANS SONT MARQUÉS « SUPER-ADMIN » PAR LA MAQUETTE, et c'est la table de
- * rôles de 15 §2.2 : « prix, plans, paramètres de paiement → SUPER_ADMIN »
- * seulement. L'écran affiche la contrainte ; le garde de rôle côté API la tient.
- *
- * Aucun rouge sur l'abonné « Impayé » ni sur le « Remboursé » : la règle dure de
- * 00 §1.2 vaut aussi dans l'administration, et la maquette s'y tient.
+ * Aucun cadre mobile n'est dessiné par la maquette : `admin.css` empile le rail sous
+ * 1 024 px.
  */
 export default function Page() {
   return <ScreenFrames screen="D14" desktop={<D14Desktop />} />;

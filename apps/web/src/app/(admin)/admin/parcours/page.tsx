@@ -2,19 +2,15 @@ import { ScreenFrames } from '@/screens/frames';
 import { D06Desktop } from '@/screens/d06/desktop.generated';
 
 /**
- * D06 — les modèles de parcours et leurs versions. `/admin/parcours` (T5 D06).
+ * D06 — Les modèles de parcours et leurs versions (03 §5.2) : composition, brouillon, publication.
  *
- * La maquette dessine la liste des versions (brouillon / publiée / archivée) et
- * l'éditeur de la version ouverte dans le MÊME cadre. T5 annonce
- * `admin/parcours · /versions/:id` ; il n'y a qu'une planche, donc une route.
+ * Le châssis (rail, titre, emplacement) est celui de la maquette transcodée ; la zone de
+ * contenu et la barre haute sont posées par l'adaptation `administration-vivante`
+ * (`tools/adaptations/administration-vivante.mjs`) : composants vivants, lecture ET
+ * écriture réelles. La session d'équipe est gardée par `(admin)/layout.tsx`.
  *
- * Le récapitulatif de publication est écrit à l'écran — « 142 parcours en cours
- * seront notifiés à la publication » — exactement comme T5 le demande. C'est la
- * seule chose que cet écran promet, et il la promet en la montrant.
- *
- * Le glisser-déposer des étapes que T5 décrit n'est PAS transcodable : une image
- * ne dessine pas un geste. Les sept étapes sont rendues telles que la maquette les
- * pose, dans l'ordre, avec leurs jalons (J-240 … J+45).
+ * Aucun cadre mobile n'est dessiné par la maquette : `admin.css` empile le rail sous
+ * 1 024 px.
  */
 export default function Page() {
   return <ScreenFrames screen="D06" desktop={<D06Desktop />} />;
