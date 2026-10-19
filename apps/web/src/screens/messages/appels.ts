@@ -732,7 +732,22 @@ function ligneDe(n: Notification): LigneNotification {
     corps: n.body === null ? '' : ` ${n.body}`,
     quand: heureRelative(n.createdAt, 'minutes'),
     nonLu: !lu,
+    // La cible posée par le serveur (colonne `url`). Les gestionnaires la calculent
+    // en chemins du front ; `null` pour les lignes sans page.
+    href: n.url,
+    id: n.id,
   };
+}
+
+/** `POST /notifications/read` : des lignes, ou toutes (12 §4). */
+export function marquerLues(
+  quoi: { readonly ids: readonly string[] } | { readonly all: true },
+): Promise<{ readonly unread: number }> {
+  return memberApi.post(
+    '/notifications/read',
+    z.object({ updated: z.number(), unread: z.number() }).strict(),
+    { body: 'all' in quoi ? { all: true } : { ids: quoi.ids } },
+  );
 }
 
 /**

@@ -26,6 +26,7 @@ import {
 } from './appels';
 import { EcranMessages } from './ecran';
 import { ConversationVivante } from './conversation-vivante';
+import { NotificationsVivantes } from './notifications-vivantes';
 import type { FeuilleMessages } from './feuilles';
 
 /**
@@ -246,7 +247,15 @@ export function EcranNotifications({
   readonly panneau: boolean;
   readonly filtre?: string;
 }) {
-  const charger = useCallback(() => chargerX02(filtre), [filtre]);
+  /** Recharger : voir `EcranMessagerie` — un compteur qui change l'identité de `charger`. */
+  const [recharge, setRecharge] = useState(0);
+  const charger = useCallback(() => {
+    void recharge;
+    return chargerX02(filtre);
+  }, [filtre, recharge]);
+  const recharger = useCallback(() => {
+    setRecharge((n) => n + 1);
+  }, []);
   return (
     <EcranDonnees
       charger={charger}
@@ -258,13 +267,17 @@ export function EcranNotifications({
       squelette={SQUELETTE_X02}
     >
       {(donnees) => (
-        <ScreenFrames
-          screen="X02"
-          desktop={
-            panneau ? <X02DesktopPanneau {...donnees} /> : <X02Desktop {...donnees} />
-          }
-          mobile={<X02Mobile {...donnees} />}
-        />
+        <NotificationsVivantes donnees={donnees} onRecharger={recharger}>
+          {(vivantes) => (
+            <ScreenFrames
+              screen="X02"
+              desktop={
+                panneau ? <X02DesktopPanneau {...vivantes} /> : <X02Desktop {...vivantes} />
+              }
+              mobile={<X02Mobile {...vivantes} />}
+            />
+          )}
+        </NotificationsVivantes>
       )}
     </EcranDonnees>
   );

@@ -60,6 +60,15 @@ export interface LigneNotification {
   /** L'heure relative : « 5 min », « 1 h », « hier », « lun. ». */
   readonly quand: string;
   readonly nonLu: boolean;
+  /**
+   * OÙ MÈNE LA LIGNE — la colonne `url` des notifications (12 §2.7), `null` pour
+   * « Bienvenue » ou un changement de niveau, qui n'ont pas de page. Sans cible, la
+   * ligne ne promet pas de lien.
+   */
+  readonly href?: string | null;
+  readonly id?: string;
+  /** Ouvrir la ligne la marque lue. Posé par `NotificationsVivantes`. */
+  readonly onOuvrir?: () => void;
 }
 
 /**
@@ -86,6 +95,10 @@ export interface X02Data {
    * `?vue=panneau` fonctionne.
    */
   readonly filtres: readonly FiltreNotification[];
+  /** `POST /notifications/read { all: true }` — posé par `NotificationsVivantes`. */
+  readonly onToutLire?: () => void;
+  /** Vrai quand tout est déjà lu ou pendant l'appel : le bouton s'éteint. */
+  readonly toutLuBloque?: boolean;
 }
 
 /** Une pastille de filtre. Les deux variantes de couleur sont dessinées. */

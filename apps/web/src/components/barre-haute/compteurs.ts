@@ -127,6 +127,11 @@ function relireBientot(): void {
   }, 250);
 }
 
+/** Les écrans qui changent un compte (marquer lu) demandent à la barre de le relire. */
+export function relireCompteursBarre(): void {
+  relireBientot();
+}
+
 export function useCompteursBarre(): CompteursBarre {
   const [compteurs, setCompteurs] = useState<CompteursBarre>(courants);
 

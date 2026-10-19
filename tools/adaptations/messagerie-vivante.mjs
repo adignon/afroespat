@@ -109,7 +109,116 @@ export const MV_MENU_CROIX = {
   },
 };
 
-export const ADAPTATIONS_MESSAGERIE_VIVANTE = [MV_FIL, MV_BULLE_ACTIONS, MV_MENU_CROIX];
+// ─── X02 · LES NOTIFICATIONS ─────────────────────────────────────────────────
+
+const LIGNE_X02 =
+  /<div (style=\{\{ display: "flex", gap: "12px", alignItems: "center", padding: "12px 14px", borderRadius: "14px", background: n\.fond \}\})>(<span style=\{\{ width: "38px".*?\{n\.nonLu \? \(<><span style=\{\{[^}]*\}\}><\/span><\/>\) : null\})<\/div><\/Fragment>/s;
+
+/**
+ * Chaque ligne devient un lien vers sa cible (colonne `url`), et l'ouvrir la marque
+ * lue. Sans cible, la ligne reste un bloc qui se marque lue au clic.
+ */
+export const MV_X02_LIGNES = {
+  screens: ['X02'],
+  nom: 'MV_X02_LIGNES',
+  why: 'Les lignes de notification n’étaient pas cliquables : elles mènent à leur cible (colonne `url`) et se marquent lues à l’ouverture.',
+  provides: [],
+  apply(jsx) {
+    const out = remplacerUn(
+      jsx,
+      LIGNE_X02,
+      (m) =>
+        `<LigneNotification href={n.href ?? null} onOuvrir={n.onOuvrir ?? (() => undefined)} ${m[1].replace('style={{', 'style={{').replace(/^style=\{\{ (.*) \}\}$/s, 'style={{ $1 }}')}>${m[2]}</LigneNotification></Fragment>`,
+    );
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/** « Tout marquer lu » : un lien mort (`href="#"`) devient le bouton qui écrit. */
+export const MV_X02_TOUT_LIRE = {
+  screens: ['X02'],
+  nom: 'MV_X02_TOUT_LIRE',
+  why: '« Tout marquer lu » était un lien mort (href="#") : il appelle POST /notifications/read, et s’éteint quand tout est lu.',
+  provides: ['onToutLire', 'toutLuBloque'],
+  apply(jsx) {
+    const out = remplacerUn(
+      jsx,
+      /<a href="#" style=\{\{ fontSize: "([\d.]+)px", fontWeight: "700" \}\}>Tout marquer lu<\/a>/,
+      (m) => `<ToutMarquerLu onClick={onToutLire} desactive={toutLuBloque === true} taille="${m[1]}px" />`,
+    );
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/** Le compteur de la cloche, que 12 §2.7 demande : près du titre, et en tête du mobile. */
+export const MV_X02_COMPTEUR = {
+  screens: ['X02'],
+  nom: 'MV_X02_COMPTEUR',
+  why: 'Le nombre de notifications non lues (12 §2.7) n’était affiché nulle part ; le téléphone n’avait ni titre de liste ni « Tout marquer lu ».',
+  provides: ['nonLusTotal', 'onToutLire', 'toutLuBloque'],
+  apply(jsx) {
+    // Ordinateur et panneau : juste après le titre.
+    let out = remplacerUn(
+      jsx,
+      /(<(?:h1|div) style=\{\{[^}]*\}\}>Notifications<\/(?:h1|div)>)/,
+      (m) => `${m[1]}<CompteurNonLues n={nonLusTotal} />`,
+    );
+    if (out !== null) return { jsx: out, applied: true };
+    // Panneau : le titre est le premier enfant de la rangée, le bouton le suivant.
+    if (jsx.includes('>Notifications</') && jsx.includes('<ToutMarquerLu ')) {
+      return {
+        jsx: jsx.replace('<ToutMarquerLu ', '<CompteurNonLues n={nonLusTotal} /><ToutMarquerLu '),
+        applied: true,
+      };
+    }
+    // Téléphone : une rangée au-dessus de la liste (le titre est dans la barre).
+    out = remplacerUn(
+      jsx,
+      /(<div style=\{\{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "6px"[^}]*\}\}>\{\(lignes \?\? \[\]\)\.map)/,
+      (m) =>
+        '<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: "0" }}><CompteurNonLues n={nonLusTotal} /><ToutMarquerLu onClick={onToutLire} desactive={toutLuBloque === true} taille="13px" /></div>' +
+        m[1],
+    );
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/** La liste vide dit qu'elle est vide, au lieu d'un cadre blanc. */
+export const MV_X02_VIDE = {
+  screens: ['X02'],
+  nom: 'MV_X02_VIDE',
+  why: 'Sans notification, la liste était un cadre blanc muet : elle dit « Aucune notification ».',
+  provides: [],
+  apply(jsx) {
+    const i = jsx.indexOf('{(lignes ?? []).map(');
+    if (i < 0) return { jsx, applied: false };
+    const fin = jsx.indexOf('))}', i);
+    if (fin < 0) return { jsx, applied: false };
+    const apres = fin + '))}'.length;
+    return {
+      jsx:
+        jsx.slice(0, apres) +
+        '{(lignes ?? []).length === 0 ? <EtatVide texte="Aucune notification pour le moment." /> : null}' +
+        jsx.slice(apres),
+      applied: true,
+    };
+  },
+};
+
+export const ADAPTATIONS_MESSAGERIE_VIVANTE = [
+  MV_FIL,
+  MV_BULLE_ACTIONS,
+  MV_MENU_CROIX,
+  MV_X02_LIGNES,
+  MV_X02_TOUT_LIRE,
+  MV_X02_COMPTEUR,
+  MV_X02_VIDE,
+];
 
 /** Les composants que ces adaptations posent, pour le registre d'imports. */
-export const AJOUTS_MESSAGERIE_VIVANTE = {};
+export const AJOUTS_MESSAGERIE_VIVANTE = {
+  LigneNotification: '@/components/messagerie/notifications',
+  ToutMarquerLu: '@/components/messagerie/notifications',
+  CompteurNonLues: '@/components/messagerie/notifications',
+  EtatVide: '@/components/etat-vide',
+};
