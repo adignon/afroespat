@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { chargerE01, SQUELETTE_E01 } from '@/screens/agenda/appels';
+import type { ScopeAgenda } from '@/screens/agenda/data';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { E01Desktop } from '@/screens/e01/desktop.generated';
@@ -19,8 +20,16 @@ import { E01Mobile } from '@/screens/e01/mobile.generated';
  * `ecran-donnees.tsx` — donc une fonction anonyme rechargerait en boucle. Le
  * `useCallback` dépend du seul paramètre qui change l'appel.
  */
-export function AgendaEcran({ jour }: { readonly jour: string | null }) {
-  const charger = useCallback(() => chargerE01(jour), [jour]);
+export function AgendaEcran({
+  jour,
+  mois,
+  scope,
+}: {
+  readonly jour: string | null;
+  readonly mois: string | null;
+  readonly scope: ScopeAgenda;
+}) {
+  const charger = useCallback(() => chargerE01(jour, scope, mois), [jour, mois, scope]);
 
   return (
     <EcranDonnees

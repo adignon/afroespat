@@ -1,3 +1,4 @@
+import { scopeDeUrl } from '@/screens/agenda/data';
 import { AgendaEcran } from './agenda-ecran';
 
 /**
@@ -25,5 +26,15 @@ export default async function AgendaPage({
 }) {
   const params = await searchParams;
   const jour = params['jour'];
-  return <AgendaEcran jour={typeof jour === 'string' ? jour : null} />;
+  const mois = params['mois'];
+  const scope = params['scope'];
+  const civil = /^\d{4}-\d{2}-\d{2}$/;
+  const moisCivil = /^\d{4}-(0[1-9]|1[0-2])$/;
+  return (
+    <AgendaEcran
+      jour={typeof jour === 'string' && civil.test(jour) ? jour : null}
+      mois={typeof mois === 'string' && moisCivil.test(mois) ? mois : null}
+      scope={scopeDeUrl(typeof scope === 'string' ? scope : null)}
+    />
+  );
 }

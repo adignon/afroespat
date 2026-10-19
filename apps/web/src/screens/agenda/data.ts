@@ -421,6 +421,8 @@ export interface FormulaireEvenementView {
   readonly onCouverture: (e: { target: { files: FileList | null; value: string } }) => void;
   readonly bloque: boolean;
   readonly onPublier: () => void;
+  /** Vrai en modification : le titre devient « Modifier l'événement », le bouton « Enregistrer ». */
+  readonly modification: boolean;
   /** Le refus du serveur, déjà en français — `TOO_SOON`, `TOO_FAR`, le quota. */
   readonly echec: string;
 }
@@ -456,6 +458,7 @@ export const formulaireVide: FormulaireEvenementView = {
   bloque: true,
   onPublier: RIEN,
   echec: '',
+  modification: false,
 };
 
 /**
