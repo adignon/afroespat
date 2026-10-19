@@ -249,6 +249,7 @@ export const adminEscalatedResponseSchema = z.object({
         maintainedByCommunity: z.boolean(),
         before: z.string(),
         after: z.string(),
+        reason: z.string(),
         daysOverdue: z.number(),
       })
       .passthrough(),
@@ -301,3 +302,19 @@ export const adminPreviewSchema = z
     ),
   })
   .passthrough();
+
+// ── Paramètres système (15 §4.4) ────────────────────────────────────────────
+
+export const adminSettingSchema = z
+  .object({
+    key: z.string(),
+    value: z.unknown(),
+    defaultValue: z.unknown(),
+    isDefault: z.boolean(),
+    description: z.string(),
+    requiredRole: z.array(z.string()),
+    updatedAt: nullableStr,
+  })
+  .passthrough();
+export type AdminSetting = z.infer<typeof adminSettingSchema>;
+export const adminSettingsResponseSchema = z.object({ items: z.array(adminSettingSchema), unregistered: z.array(z.string()) });
