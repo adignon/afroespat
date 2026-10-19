@@ -21,3 +21,4 @@ test-results/
 
 # Les worktrees des agents : des dépôts git à part, jamais suivis ici.
 .claude/worktrees/
+dump.rdb
