@@ -175,7 +175,6 @@ const SUGGESTIONS = {
       subjectType: 'GUIDE',
       subjectId: '01a0f8d8-0000-7000-8000-000000000002',
       url: '/guides/obtenir-la-garantie-visale-sans-cdi',
-      subline: '84 utiles',
     },
   ],
 };
@@ -208,6 +207,7 @@ const RECHERCHE_GROUPEE = {
            * `"url": "/services/logement/01a11025-…"` pour un logement.
            */
           url: '/guides/obtenir-la-garantie-visale-sans-cdi',
+          subline: '84 utiles',
         },
       ],
     },
