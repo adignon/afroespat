@@ -115,8 +115,9 @@ export class MessagingService {
     event: RealtimeEvent,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    if (this.realtime === null) return;
-    await Promise.all([...new Set(userIds)].map((id) => this.realtime?.publish(id, event, payload)));
+    const relais = this.realtime;
+    if (relais === null) return;
+    await Promise.all([...new Set(userIds)].map((id) => relais.publish(id, event, payload)));
   }
 
   private fail(code: MessagingErrorCode, details?: Record<string, unknown>): never {

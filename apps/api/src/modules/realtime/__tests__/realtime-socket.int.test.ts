@@ -86,7 +86,7 @@ describe('passerelle temps réel : livraison et frappe', () => {
     }).compile();
     app = moduleRef.createNestApplication();
     await app.listen(0);
-    url = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    url = `http://127.0.0.1:${((app.getHttpServer() as { address: () => AddressInfo }).address()).port}`;
     prisma = app.get(PrismaService);
     tokens = app.get(TokenService);
     publisher = new IORedis(loadEnv().REDIS_URL);

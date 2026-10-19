@@ -93,11 +93,11 @@ describe('lot F — routes HTTP : ignorer, Vu, signaler un message, débit de /s
     const b = await member();
     const { conversationId } = await opened(a, b);
     const avant = await request(server()).get(`/v1/conversations/${conversationId}/messages`).set(...auth(a));
-    expect(avant.body.meta.seenAt).toBeNull();
+    expect((avant.body as { meta: { seenAt: unknown } }).meta.seenAt).toBeNull();
 
     await request(server()).post(`/v1/conversations/${conversationId}/accept`).set(...auth(b)).expect(201);
     const apres = await request(server()).get(`/v1/conversations/${conversationId}/messages`).set(...auth(a));
-    expect(typeof apres.body.meta.seenAt).toBe('string');
+    expect(typeof (apres.body as { meta: { seenAt: unknown } }).meta.seenAt).toBe('string');
   });
 
   it('POST /reports { subjectType: MESSAGE } : un membre de la conversation oui, un étranger 404, son propre message non', async () => {
@@ -110,7 +110,7 @@ describe('lot F — routes HTTP : ignorer, Vu, signaler un message, débit de /s
     expect((await request(server()).post('/v1/reports').set(...auth(intrus)).send(corps)).status).toBe(404);
     const propre = await request(server()).post('/v1/reports').set(...auth(a)).send(corps);
     expect(propre.status).toBeGreaterThanOrEqual(400);
-    expect(propre.body.error?.code ?? propre.body.code).toBeDefined();
+    expect((propre.body as { error?: { code?: string } }).error?.code).toBeDefined();
 
     const ok = await request(server()).post('/v1/reports').set(...auth(b)).send(corps);
     expect(ok.status).toBe(201);
