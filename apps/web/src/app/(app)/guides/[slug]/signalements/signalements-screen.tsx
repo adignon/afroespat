@@ -8,9 +8,6 @@ import {
   correction as correctionMaquette,
   guide as guideMaquette,
   panelGuides,
-  propositionDepliee,
-  propositionRepliee,
-  propositionsCompte,
   rail,
   shortcuts,
   signalements as signalementsAvantReponse,
@@ -107,9 +104,6 @@ export function SignalementsScreen({ slug }: { readonly slug: string }) {
      * que les deux cadres « Propositions reçues » ne lisent pas non plus. On y
      * passe le dessin de la maquette plutôt qu'un objet vide.
      */
-    propositionDepliee,
-    propositionRepliee,
-    propositionsCompte,
     correction: correctionMaquette,
   };
 

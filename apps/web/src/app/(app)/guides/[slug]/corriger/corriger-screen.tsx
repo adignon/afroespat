@@ -9,9 +9,6 @@ import {
   correction as correctionMaquette,
   guide as guideMaquette,
   panelGuides,
-  propositionDepliee,
-  propositionRepliee,
-  propositionsCompte,
   signalements,
   rail,
   shortcuts,
@@ -112,9 +109,6 @@ export function CorrigerScreen({ slug }: { readonly slug: string }) {
     /** Le dessin de la planche : voir l'en-tête, l'envoi vit sur la page du guide. */
     correction: correctionMaquette,
     /** Non lues par les deux cadres de cette planche : le dessin, tel quel. */
-    propositionDepliee,
-    propositionRepliee,
-    propositionsCompte,
     /**
      * Non lue non plus : la liste des signalements vit sur sa propre page. Le
      * dessin d'attente de `a06/data.ts`, pour la même raison que les trois

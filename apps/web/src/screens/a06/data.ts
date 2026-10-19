@@ -393,9 +393,6 @@ export interface A06Data {
   panelGuides: typeof panelGuides;
   shortcuts: typeof shortcuts;
   guide: GuideCorrigeView;
-  propositionDepliee: PropositionEnTeteView;
-  propositionRepliee: PropositionEnTeteView;
-  propositionsCompte: PropositionsCompteView;
   /**
    * Lue par les deux cadres « Signalements » SEULS. Les quatre autres ne la lisent
    * pas — même marché que `correction` et `guide` : les six cadres de la section

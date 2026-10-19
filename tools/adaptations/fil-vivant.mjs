@@ -190,7 +190,68 @@ const A01_FIL_ETATS = {
   },
 };
 
-export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE, A01_MES_STORIES, A01_LIMITES, A01_FIL_ETATS];
+/**
+ * ── A06 : LES PROPOSITIONS, EN NOMBRE RÉEL, AVEC LEUR VRAI DIFF ──────────────
+ *
+ * La planche dessine deux emplacements fixes (une carte dépliée, une repliée) dont
+ * le « AVANT / APRÈS » et le nom de section sont écrits en dur, et trois onglets
+ * inertes. Les onglets et la liste deviennent `OngletsPropositions` et
+ * `ListePropositions` (`components/propositions-recues.tsx`, AJOUT) : zéro, une ou
+ * dix cartes, le diff mot à mot, un état vide par onglet. Le fournisseur est posé
+ * par la page. Seuls les cadres « Propositions reçues » (`Desktop`, `Mobile`) sont
+ * concernés — les cadres Corriger et Signalements n'ont pas ces blocs.
+ */
+const A06_ONGLETS = {
+  screens: ['A06'],
+  nom: 'A06_PROPOSITIONS_VIVANTES_ONGLETS',
+  why: 'Les trois onglets de A06 deviennent de vrais onglets (En attente, Acceptées, Refusées) — la planche les dessinait inertes, avec « Refusées · 1 » en dur.',
+  provides: [],
+  apply(jsx) {
+    // Ordinateur : un bandeau gris `#EEF2F0` ; téléphone : une rangée de puces sous le titre.
+    const d = jsx.indexOf('<div style={{ display: "flex", gap: "4px", background: "#EEF2F0"');
+    if (d >= 0) {
+      const f = finElement(jsx, d);
+      if (f < 0) return { jsx, applied: false };
+      return { jsx: jsx.slice(0, d) + '<OngletsPropositions largeur="desktop" />' + jsx.slice(f), applied: true };
+    }
+    const m = jsx.indexOf('<div style={{ display: "flex", gap: "6px", marginTop: "12px" }}><span style={{ padding: "8px 13px"');
+    if (m < 0) return { jsx, applied: false };
+    const f = finElement(jsx, m);
+    if (f < 0) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, m) + '<OngletsPropositions largeur="mobile" />' + jsx.slice(f), applied: true };
+  },
+};
+
+const A06_LISTE = {
+  screens: ['A06'],
+  nom: 'A06_PROPOSITIONS_VIVANTES_LISTE',
+  why: 'Les deux emplacements fixes de A06 deviennent `ListePropositions` : autant de cartes que de propositions, avec le diff réel — la planche en dessinait deux, et leur texte était écrit en dur.',
+  provides: [],
+  apply(jsx) {
+    // Ordinateur : deux cartes sœurs, la première commence par la pastille de la proposition dépliée.
+    const marque = jsx.indexOf('background: propositionDepliee.bg');
+    const debut1 =
+      marque < 0
+        ? -1
+        : jsx.lastIndexOf('<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "20px" }}>', marque);
+    if (debut1 >= 0) {
+      const fin1 = finElement(jsx, debut1);
+      const reste = jsx.indexOf('<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "20px" }}>', fin1);
+      if (fin1 < 0 || reste < 0) return { jsx, applied: false };
+      const fin2 = finElement(jsx, reste);
+      if (fin2 < 0) return { jsx, applied: false };
+      return { jsx: jsx.slice(0, debut1) + '<ListePropositions largeur="desktop" />' + jsx.slice(fin2), applied: true };
+    }
+    // Téléphone : le conteneur défilant des deux cartes.
+    const c = jsx.indexOf('<div style={{ flex: "1", padding: "14px 16px", overflow: "hidden", display: "flex", flexDirection: "column", gap: "12px" }}>');
+    if (c < 0) return { jsx, applied: false };
+    const f = finElement(jsx, c);
+    if (f < 0) return { jsx, applied: false };
+    return { jsx: jsx.slice(0, c) + '<ListePropositions largeur="mobile" />' + jsx.slice(f), applied: true };
+  },
+};
+
+export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE, A01_MES_STORIES, A01_LIMITES, A01_FIL_ETATS, A06_ONGLETS, A06_LISTE];
 
 /** Les composants que ces adaptations posent, pour le registre d'imports. */
 export const AJOUTS_FIL_VIVANT = {
@@ -198,4 +259,6 @@ export const AJOUTS_FIL_VIVANT = {
   GuidesLiesPublication: '@/components/publication-vivante',
   TitrePublication: '@/components/publication-vivante',
   FEED_LIMITS: '@app/shared',
+  OngletsPropositions: '@/components/propositions-recues',
+  ListePropositions: '@/components/propositions-recues',
 };
