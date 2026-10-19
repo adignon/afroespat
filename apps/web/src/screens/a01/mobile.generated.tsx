@@ -40,7 +40,7 @@ export function A01Mobile(props: A01Data) {
         <span style={{ background: "#fff", color: "#0F5C48", fontWeight: "700", fontSize: "12.5px", padding: "9px 14px", borderRadius: "999px" }}>Continuer</span>
       </div>
       <div>
-        <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", marginBottom: "10px" }}>STORIES DU JOUR</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "10px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>STORIES DU JOUR</span><Link href="/stories/mes-stories" style={{ height: "32px", padding: "0 12px", borderRadius: "999px", border: "1px solid #E6EBE9", background: "#fff", color: "#5D6B66", fontSize: "12px", fontWeight: "700", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Mes stories</Link></div>
         <RubanStories><div style={{ display: "contents" }}>
       <Link href="/stories/nouvelle" style={{ border: "1.5px dashed #CBD5D1", borderRadius: "20px", background: "#fff", display: "flex", flexDirection: "column", overflow: "hidden", width: "124px", flexShrink: "0", scrollSnapAlign: "start", color: "inherit", textDecoration: "none" }}>
         <div style={{ flex: "1", minHeight: "0", padding: "10px 10px 0" }}><div style={{ height: "100%", borderRadius: "14px", overflow: "hidden" }}><div style={{ height: "100%", background: "#F2F5F4" }}></div></div></div>

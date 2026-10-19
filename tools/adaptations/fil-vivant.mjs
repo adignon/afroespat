@@ -91,7 +91,41 @@ const A02_MOBILE = {
   },
 };
 
-export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE];
+
+/**
+ * ── A01 : L'ENTRÉE DE L'HISTORIQUE « MES STORIES » ───────────────────────────
+ *
+ * `GET /me/stories` (historique de 30 jours, 04 §2.6) n'était appelée par aucun
+ * écran. La page `/stories/mes-stories` la lit ; ce lien, posé à côté des filtres
+ * du ruban (ordinateur) ou du libellé « STORIES DU JOUR » (téléphone), y mène. Il
+ * reprend le dessin des puces de filtre voisines, en version neutre.
+ */
+const PUCE_MES_STORIES =
+  'height: "32px", padding: "0 12px", borderRadius: "999px", border: "1px solid #E6EBE9", background: "#fff", color: "#5D6B66", fontSize: "12px", fontWeight: "700", display: "inline-flex", alignItems: "center", textDecoration: "none"';
+
+const A01_MES_STORIES = {
+  screens: ['A01'],
+  nom: 'A01_MES_STORIES',
+  why: 'Un lien « Mes stories » mène à l’historique de 30 jours (`GET /me/stories`), que la maquette ne dessine pas et qu’aucun écran n’employait.',
+  provides: [],
+  apply(jsx) {
+    const desktop = 'STORIES DU JOUR</span><div style={{ display: "flex", gap: "6px" }}>';
+    const i = jsx.indexOf(desktop);
+    if (i >= 0) {
+      const lien = `<Link href="/stories/mes-stories" style={{ ${PUCE_MES_STORIES} }}>Mes stories</Link>`;
+      return { jsx: jsx.slice(0, i + desktop.length) + lien + jsx.slice(i + desktop.length), applied: true };
+    }
+    const m = /<div style=\{\{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", marginBottom: "10px" \}\}>STORIES DU JOUR<\/div>/.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const neuf =
+      '<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "10px" }}>' +
+      '<span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>STORIES DU JOUR</span>' +
+      `<Link href="/stories/mes-stories" style={{ ${PUCE_MES_STORIES} }}>Mes stories</Link></div>`;
+    return { jsx: jsx.slice(0, m.index) + neuf + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE, A01_MES_STORIES];
 
 /** Les composants que ces adaptations posent, pour le registre d'imports. */
 export const AJOUTS_FIL_VIVANT = {

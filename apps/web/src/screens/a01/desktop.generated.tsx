@@ -51,7 +51,7 @@ export function A01Desktop(props: A01Data) {
       <div data-zone="rangee" style={{ flex: "1", display: "flex", gap: "24px", padding: "12px 0 24px" }}>
         <main data-zone="contenu" style={{ flex: "1", minWidth: "0", maxWidth: "660px", display: "flex", flexDirection: "column", gap: "14px" }}>
           <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "16px 16px 14px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>STORIES DU JOUR</span><div style={{ display: "flex", gap: "6px" }}>{(storyFilters ?? []).map((f, fIndex) => (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>STORIES DU JOUR</span><div style={{ display: "flex", gap: "6px" }}><Link href="/stories/mes-stories" style={{ height: "32px", padding: "0 12px", borderRadius: "999px", border: "1px solid #E6EBE9", background: "#fff", color: "#5D6B66", fontSize: "12px", fontWeight: "700", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Mes stories</Link>{(storyFilters ?? []).map((f, fIndex) => (
 <Fragment key={fIndex}><button onClick={f.onPick} style={{ height: "32px", padding: "0 12px", borderRadius: "999px", border: `1px solid ${f.bd}`, background: f.bg, color: f.fg, font: "inherit", fontSize: "12px", fontWeight: "700", cursor: "pointer" }}>{f.label}</button></Fragment>
 ))}</div></div>
             <div style={{ marginTop: "14px" }}><RubanStories><div style={{ display: "contents" }}>

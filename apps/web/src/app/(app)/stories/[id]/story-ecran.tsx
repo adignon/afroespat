@@ -7,6 +7,7 @@ import { A13Desktop } from '@/screens/a13/desktop.generated';
 import { A13Mobile } from '@/screens/a13/mobile.generated';
 import { useStory } from '@/screens/story/use-story';
 import { useVoisinsDeStory } from '@/screens/story/use-voisins';
+import { ActionsStoryAuteur } from '@/components/actions-story-auteur';
 
 /**
  * A13 — une story en lecture plein écran, BRANCHÉE SUR L'API.
@@ -253,31 +254,42 @@ export function StoryEcran({
   };
 
   return (
-    <ScreenFrames
-      screen="A13"
-      background={enFenetre ? 'transparent' : '#101A17'}
-      /**
-       * ╔══════════════════════════════════════════════════════════════════════╗
-       * ║ PLUS DE `key` ICI — ET C'EST CE QUI REND LE FONDU POSSIBLE           ║
-       * ╚══════════════════════════════════════════════════════════════════════╝
-       *
-       * Le porteur : « il faut que le background se change avec une animation de
-       * fade ».
-       *
-       * `key={idCourant}` remontait le cadre ENTIER à chaque voisin. C'était voulu
-       * — une animation CSS ne rejoue que si le nœud est recréé, et c'est ainsi
-       * que la barre de progression repartait — mais ça interdisait exactement ce
-       * qui est demandé ici : on ne transitionne pas la couleur d'un nœud qui
-       * vient de naître. Le fond sautait d'un vert profond à un rouge sombre.
-       *
-       * La clé est descendue sur la SEULE barre (`key={st.cle}`, posé par le
-       * transcodeur) : elle repart de zéro, le cadre reste en place, et
-       * `[data-story-fond]` fond une couleur dans l'autre.
-       */
-      /** La story est une SURFACE : elle couvre, elle ne se centre pas. Voir `ScreenFrames`. */
-      pleineLargeur
-      desktop={<A13Desktop {...data} />}
-      mobile={<A13Mobile {...data} />}
-    />
+    <>
+      <ScreenFrames
+        screen="A13"
+        background={enFenetre ? 'transparent' : '#101A17'}
+        /**
+         * ╔══════════════════════════════════════════════════════════════════════╗
+         * ║ PLUS DE `key` ICI — ET C'EST CE QUI REND LE FONDU POSSIBLE           ║
+         * ╚══════════════════════════════════════════════════════════════════════╝
+         *
+         * Le porteur : « il faut que le background se change avec une animation de
+         * fade ».
+         *
+         * `key={idCourant}` remontait le cadre ENTIER à chaque voisin. C'était voulu
+         * — une animation CSS ne rejoue que si le nœud est recréé, et c'est ainsi
+         * que la barre de progression repartait — mais ça interdisait exactement ce
+         * qui est demandé ici : on ne transitionne pas la couleur d'un nœud qui
+         * vient de naître. Le fond sautait d'un vert profond à un rouge sombre.
+         *
+         * La clé est descendue sur la SEULE barre (`key={st.cle}`, posé par le
+         * transcodeur) : elle repart de zéro, le cadre reste en place, et
+         * `[data-story-fond]` fond une couleur dans l'autre.
+         */
+        /** La story est une SURFACE : elle couvre, elle ne se centre pas. Voir `ScreenFrames`. */
+        pleineLargeur
+        desktop={<A13Desktop {...data} />}
+        mobile={<A13Mobile {...data} />}
+      />
+      {/* Les gestes de l'AUTEUR (garder, supprimer, historique) — AJOUT lot G. */}
+      {story.isAuthor ? (
+        <ActionsStoryAuteur
+          storyId={idCourant}
+          type={story.typeStory}
+          expiree={story.expired}
+          onSupprimee={onFermer}
+        />
+      ) : null}
+    </>
   );
 }
