@@ -3,7 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
 import type { CommentSort, PostDetailResponse } from '@app/shared';
-import { createComment, fetchComments, fetchPost } from '../accueil/api';
+import {
+  createComment,
+  deleteComment,
+  fetchComments,
+  fetchPost,
+  updateComment,
+} from '../accueil/api';
 import { commentairesA02From } from './from-api';
 import { echecDe, type FilEchec } from './echec';
 
@@ -303,10 +309,107 @@ export function usePublication(
     }
   }, [fil, subjectType, subjectId, suiteEnCours, tri]);
 
+
+  /**
+   * MODIFIER SON COMMENTAIRE (`PATCH /comments/:id`, lot G).
+   *
+   * Le délai de 15 minutes est celui du SERVEUR (`canEdit`, `EDIT_WINDOW_CLOSED`) :
+   * le bouton ne s'offre que tant que `canEdit` est vrai, et un refus tardif remonte
+   * en échec nommé. Le commentaire est remplacé tel que le serveur le rend — ses
+   * réponses sont conservées, `PATCH` ne les renvoie pas.
+   */
+  const modifierCommentaire = useCallback(
+    async (commentId: string, body: string): Promise<FilEchec | null> => {
+      try {
+        const { comment } = await updateComment(commentId, body);
+        setFil((courant) =>
+          courant === null
+            ? courant
+            : {
+                ...courant,
+                items: courant.items.map((racine) => {
+                  if ('removed' in racine) return racine;
+                  if (racine.id === commentId) return { ...comment, replies: racine.replies };
+                  return {
+                    ...racine,
+                    replies: racine.replies.map((r) =>
+                      !('removed' in r) && r.id === commentId ? comment : r,
+                    ),
+                  };
+                }),
+              },
+        );
+        return null;
+      } catch (error) {
+        return echecDe(error);
+      }
+    },
+    [],
+  );
+
+  /**
+   * SUPPRIMER SON COMMENTAIRE (`DELETE /comments/:id`, suppression logique).
+   *
+   * Une RACINE supprimée emporte ses réponses de la vue, comme le serveur les
+   * masque avec elle ; le compteur de la publication descend du nombre de lignes
+   * retirées.
+   */
+  const supprimerCommentaire = useCallback(async (commentId: string): Promise<FilEchec | null> => {
+    try {
+      await deleteComment(commentId);
+      let retires = 0;
+      setFil((courant) => {
+        if (courant === null) return courant;
+        const items = courant.items.flatMap((racine): typeof courant.items => {
+          if ('removed' in racine) return [racine];
+          if (racine.id === commentId) {
+            retires += 1 + racine.replies.length;
+            return [];
+          }
+          const reste = racine.replies.filter((r) => 'removed' in r || r.id !== commentId);
+          retires += racine.replies.length - reste.length;
+          return [{ ...racine, replies: reste }];
+        });
+        return { ...courant, items };
+      });
+      setEtat((e) =>
+        e.post === null
+          ? e
+          : { ...e, post: { ...e.post, commentCount: Math.max(0, e.post.commentCount - Math.max(retires, 1)) } },
+      );
+      return null;
+    } catch (error) {
+      return echecDe(error);
+    }
+  }, []);
+
+  /** Après `PATCH /posts/:id` ou un déplacement : la publication rendue remplace l'ancienne. */
+  const remplacerPost = useCallback((post: PostDetailResponse['post']): void => {
+    setEtat((e) => ({ ...e, post }));
+  }, []);
+
+  /** Relit la publication et son fil (après un déplacement vers un réseau, par exemple). */
+  const recharger = useCallback(async (): Promise<void> => {
+    await charger(new AbortController().signal);
+  }, [charger]);
+
   const commentaires = useMemo(
     () => (fil === null ? [] : commentairesA02From(fil.items)),
     [fil],
   );
 
-  return { ...etat, fil, commentaires, commenter, tri, setTri, chargerSuite, suiteEnCours };
+  return {
+    ...etat,
+    fil,
+    commentaires,
+    commenter,
+    modifierCommentaire,
+    supprimerCommentaire,
+    remplacerPost,
+    recharger,
+    tri,
+    setTri,
+    chargerSuite,
+    suiteEnCours,
+  };
 }

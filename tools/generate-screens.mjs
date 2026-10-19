@@ -25,6 +25,7 @@ import {
 } from './adaptations/exploitation-vivante.mjs';
 import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
 import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/chrome-gauche-vivant.mjs';
+import { ADAPTATIONS_FIL_VIVANT, AJOUTS_FIL_VIVANT } from './adaptations/fil-vivant.mjs';
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
 import {
@@ -18250,6 +18251,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_PARCOURS_VIVANT,
     // La colonne de gauche vivante : raccourcis et barre d'avancement.
     ...ADAPTATIONS_CHROME_GAUCHE,
+    // Lot G : A02 (la vraie publication), le fil, les stories, les guides.
+    ...ADAPTATIONS_FIL_VIVANT,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19523,6 +19526,7 @@ const AJOUTS = {
   ...AJOUTS_GRATUIT_VIVANT,
   ...AJOUTS_PARCOURS_VIVANT,
   ...AJOUTS_CHROME_GAUCHE,
+  ...AJOUTS_FIL_VIVANT,
 };
 
 const HEADER = (

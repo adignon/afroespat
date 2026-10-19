@@ -101,6 +101,4 @@ export interface A02Data {
   rail: typeof rail;
   panelFil: typeof panelFil;
   shortcuts: typeof shortcuts;
-  comments: readonly CommentA02View[];
-  relGuides: readonly RelGuideView[];
 }

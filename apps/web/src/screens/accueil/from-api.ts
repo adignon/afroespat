@@ -233,7 +233,7 @@ function avatar(m: MemberSummary): {
  * maquette fait varier — terre cuite sur une victoire et une question, vert
  * ailleurs.
  */
-const TYPE_STYLE = {
+export const TYPE_STYLE = {
   VICTORY: {
     tBg: '#E3F0EB',
     tFg: '#0F5C48',

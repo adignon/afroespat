@@ -31,6 +31,13 @@ import {
   commentMutationResponseSchema,
   commentsResponseSchema,
   createCommentSchema,
+  updateCommentSchema,
+  moveToTopicSchema,
+  moveToTopicResponseSchema,
+  convertStorySchema,
+  convertStoryResponseSchema,
+  type ConvertStoryResponse,
+  type MoveToTopicResponse,
   type CommentSubjectType,
   createPostSchema,
   updatePostSchema,
@@ -244,6 +251,40 @@ export function createComment(input: CreateComment) {
   return memberApi.post('/comments', commentMutationResponseSchema, {
     body: createCommentSchema.parse(input),
   });
+}
+
+/** `PATCH /comments/:id` — dans les 15 minutes, et c'est le SERVEUR qui tranche (§2.5). */
+export function updateComment(commentId: string, body: string) {
+  return memberApi.patch(`/comments/${commentId}`, commentMutationResponseSchema, {
+    body: updateCommentSchema.parse({ body }),
+  });
+}
+
+/** `DELETE /comments/:id` — suppression logique de SON commentaire. */
+export function deleteComment(commentId: string): Promise<void> {
+  return memberApi.del(`/comments/${commentId}`, voidResponse);
+}
+
+/** `POST /posts/:id/move-to-topic` (§2.3) — jamais automatique : c'est ce geste, et lui seul. */
+export function moveToTopic(postId: string, communityId: string): Promise<MoveToTopicResponse> {
+  return memberApi.post(`/posts/${postId}/move-to-topic`, moveToTopicResponseSchema, {
+    body: moveToTopicSchema.parse({ communityId }),
+  });
+}
+
+/** `POST /stories/:id/convert` (§2.6) — garder une story avant son expiration. */
+export function convertStory(
+  storyId: string,
+  target: 'HELP_REQUEST' | 'CITY_TIP',
+): Promise<ConvertStoryResponse> {
+  return memberApi.post(`/stories/${storyId}/convert`, convertStoryResponseSchema, {
+    body: convertStorySchema.parse({ target }),
+  });
+}
+
+/** `DELETE /stories/:id` — supprimer sa story. */
+export function deleteStory(storyId: string): Promise<void> {
+  return memberApi.del(`/stories/${storyId}`, voidResponse);
 }
 
 export function createStory(input: CreateStory): Promise<StoryDetailResponse> {
