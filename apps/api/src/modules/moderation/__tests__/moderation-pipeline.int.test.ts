@@ -13,7 +13,6 @@ import {
   type ModerationQueuePort,
   ModerationService,
   type StaffContext,
-  type SubjectType,
 } from '../moderation.service';
 
 /**
@@ -360,7 +359,7 @@ describe('pipeline de modération — tous les contenus (13 §2, §6)', () => {
           expect(await visible(type, id)).toBe(true);
 
           ai.seen = [];
-          await moderation.handleContentPublished(type as SubjectType, id);
+          await moderation.handleContentPublished(type, id);
 
           // Le texte a bien été relu et envoyé à l'IA (masqué, §2.2).
           expect(ai.seen.some((t) => t.includes('garanti'))).toBe(true);
@@ -400,7 +399,7 @@ describe('pipeline de modération — tous les contenus (13 §2, §6)', () => {
         async () => {
           ai.next = { labels: ['OK'], score: 0.05 };
           const id = await makers[type]!('Bonjour à toutes et à tous, voici une information utile et sans danger.');
-          await moderation.handleContentPublished(type as SubjectType, id);
+          await moderation.handleContentPublished(type, id);
           expect(await prisma.moderationCase.count({ where: { subjectType: type, subjectId: id } })).toBe(0);
           expect(await lastEvent('moderation.content_hidden', id)).toBeNull();
           expect(await visible(type, id)).toBe(true);
@@ -492,13 +491,17 @@ describe('pipeline de modération — tous les contenus (13 §2, §6)', () => {
       const overdue = await moderation.alertOverdueUrgentCases(later);
       expect(overdue.map((c) => c.id)).toContain(caseId);
 
-      const mine = await moderation.listStaffAlerts(modA);
-      const alert = mine.items.find((a) => a.caseId === caseId);
-      expect(alert, 'le modérateur doit avoir son alerte').toBeDefined();
+      // La liste est bornée à 50 et la base garde les dossiers en retard des autres
+      // passes : l'alerte attendue se lit donc en base, et la liste ne sert qu'à
+      // vérifier sa forme.
+      const alert = await prisma.staffAlert.findFirst({ where: { staffId: modA.staffId, refId: caseId } });
+      expect(alert, 'le modérateur doit avoir son alerte').not.toBeNull();
       expect(alert?.kind).toBe('SLA_BREACH');
-      expect(alert?.read).toBe(false);
+      expect(alert?.readAt).toBeNull();
+      const mine = await moderation.listStaffAlerts(modA);
       expect(mine.unread).toBeGreaterThanOrEqual(1);
-      expect((await moderation.listStaffAlerts(admin)).items.some((a) => a.caseId === caseId)).toBe(true);
+      expect(mine.items.every((a) => a.kind === 'SLA_BREACH' && !a.read)).toBe(true);
+      expect(await prisma.staffAlert.count({ where: { staffId: admin.staffId, refId: caseId } })).toBe(1);
       // Le support n'est pas habilité (rôle refusé) ; un compte inactif n'est pas prévenu.
       await expect(moderation.listStaffAlerts(support)).rejects.toBeDefined();
       expect(await prisma.staffAlert.count({ where: { staffId: inactive.staffId } })).toBe(0);
@@ -510,7 +513,7 @@ describe('pipeline de modération — tous les contenus (13 §2, §6)', () => {
 
       // Lire SON alerte la marque ; celle d'un autre compte est introuvable.
       await moderation.markStaffAlertRead(modA, alert!.id);
-      expect((await moderation.listStaffAlerts(modA)).items.find((a) => a.id === alert!.id)?.read).toBe(true);
+      expect((await prisma.staffAlert.findUniqueOrThrow({ where: { id: alert!.id } })).readAt).not.toBeNull();
       await expect(moderation.markStaffAlertRead(admin, alert!.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
 
       // Hors délai : rien de nouveau avant l'échéance.
