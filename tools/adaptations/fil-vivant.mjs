@@ -251,7 +251,34 @@ const A06_LISTE = {
   },
 };
 
-export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE, A01_MES_STORIES, A01_LIMITES, A01_FIL_ETATS, A06_ONGLETS, A06_LISTE];
+
+/**
+ * ── A05 : « PARTIR D'UN PARCOURS » — LE CHOIX DU PARCOURS SOURCE ─────────────
+ *
+ * La planche dessine le résultat du pré-remplissage (carte ambre / bandeau orange)
+ * mais aucun geste pour choisir le parcours de départ : `POST /journeys/:id/to-guide`
+ * n'avait pas de déclencheur. On pose, AVANT la carte existante, une carte de même
+ * dessin (fond `#FBE3D4`, titre `#B4581F`) portant un bouton ; sur le téléphone, un
+ * bouton-puce de même teinte. Absent hors création (`parcoursChoix === null`).
+ */
+const A05_PARCOURS_SOURCE = {
+  screens: ['A05'],
+  nom: 'A05_PARCOURS_SOURCE',
+  why: 'Un geste « Choisir un parcours » déclenche `POST /journeys/:id/to-guide` : la maquette dessinait le résultat du pré-remplissage mais pas le choix du parcours de départ.',
+  provides: [],
+  apply(jsx) {
+    const motif = '{editeur.parcours === null ? null : (<div style={{ background: "#FBE3D4"';
+    const i = jsx.indexOf(motif);
+    if (i < 0) return { jsx, applied: false };
+    const desktop = jsx.slice(i, i + 400).includes('borderRadius: "22px"');
+    const neuf = desktop
+      ? '{editeur.parcoursChoix === null ? null : (<div style={{ background: "#FBE3D4", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#B4581F" }}>{editeur.parcoursChoix.titre}</div><div style={{ fontSize: "13px", lineHeight: "1.55", marginTop: "6px" }}>{editeur.parcoursChoix.texte}</div><button type="button" data-a05-parcours-source="" onClick={editeur.parcoursChoix.onChoisir} disabled={editeur.parcoursChoix.occupe} style={{ marginTop: "12px", height: "40px", padding: "0 16px", borderRadius: "999px", background: "#fff", color: "#B4581F", border: "none", font: "inherit", fontSize: "13px", fontWeight: "700", cursor: "pointer" }}>{editeur.parcoursChoix.bouton}</button></div>)}'
+      : '{editeur.parcoursChoix === null ? null : (<button type="button" data-a05-parcours-source="" onClick={editeur.parcoursChoix.onChoisir} disabled={editeur.parcoursChoix.occupe} style={{ background: "#FBE3D4", color: "#B4581F", borderRadius: "14px", padding: "10px 12px", border: "none", font: "inherit", fontSize: "12px", fontWeight: "700", flexShrink: "0", cursor: "pointer" }}>{editeur.parcoursChoix.bouton}</button>)}';
+    return { jsx: jsx.slice(0, i) + neuf + jsx.slice(i), applied: true };
+  },
+};
+
+export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE, A01_MES_STORIES, A01_LIMITES, A01_FIL_ETATS, A06_ONGLETS, A06_LISTE, A05_PARCOURS_SOURCE];
 
 /** Les composants que ces adaptations posent, pour le registre d'imports. */
 export const AJOUTS_FIL_VIVANT = {

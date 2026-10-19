@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ScreenFrames } from '@/screens/frames';
 import { A05Desktop } from '@/screens/a05/desktop.generated';
 import { A05Mobile } from '@/screens/a05/mobile.generated';
@@ -14,6 +16,10 @@ import {
 } from '@app/shared';
 import { CorpsGuide } from '@/screens/guides/corps-guide';
 import { useEditeurGuide, type ModeEditeur } from '@/screens/guides/use-editeur-guide';
+import { FenetreParcoursSource } from '@/components/fenetre-parcours-source';
+import { notifyError } from '@/components/notifications';
+import { ApiError } from '@/lib/api/index';
+import { draftFromJourney } from '@/screens/guides/api';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -50,6 +56,34 @@ import { useEditeurGuide, type ModeEditeur } from '@/screens/guides/use-editeur-
  */
 export function EditeurGuideEcran({ mode }: { readonly mode: ModeEditeur }) {
   const editeur = useEditeurGuide(mode);
+  const router = useRouter();
+  const [choixOuvert, setChoixOuvert] = useState(false);
+  const [parcoursEnVol, setParcoursEnVol] = useState(false);
+
+  /**
+   * « PARTIR D'UN PARCOURS » : le serveur crée le brouillon pré-rempli, puis on
+   * l'ouvre dans l'éditeur existant (`/guides/:slug/modifier`) — le même chemin que
+   * la reprise d'un brouillon, donc rien n'est dupliqué.
+   */
+  const partirDuParcours = (parcoursId: string): void => {
+    if (parcoursEnVol) return;
+    setParcoursEnVol(true);
+    void draftFromJourney(parcoursId)
+      .then((brouillon) => {
+        setChoixOuvert(false);
+        router.push(`/guides/${encodeURIComponent(brouillon.slug)}/modifier`);
+      })
+      .catch((cause: unknown) => {
+        notifyError(
+          cause instanceof ApiError
+            ? cause.displayMessage
+            : 'Le brouillon n’a pas pu être créé depuis ce parcours.',
+        );
+      })
+      .finally(() => {
+        setParcoursEnVol(false);
+      });
+  };
 
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
@@ -167,6 +201,18 @@ export function EditeurGuideEcran({ mode }: { readonly mode: ModeEditeur }) {
       },
       imageOccupe: editeur.imageOccupe,
       parcours: null,
+      parcoursChoix:
+        mode.kind === 'nouveau'
+          ? {
+              titre: 'PARTIR D’UN PARCOURS TERMINÉ',
+              texte: 'Pré-remplissez le guide avec une section par étape franchie, puis complétez-le.',
+              bouton: 'Choisir un parcours',
+              occupe: parcoursEnVol,
+              onChoisir: () => {
+                setChoixOuvert(true);
+              },
+            }
+          : null,
       /**
        * ╔══════════════════════════════════════════════════════════════════════╗
        * ║ LA CARTE DES PAGES — SES DEUX LIBELLÉS ET SES QUATRE GESTES          ║
@@ -247,6 +293,16 @@ export function EditeurGuideEcran({ mode }: { readonly mode: ModeEditeur }) {
         direction="column"
         desktop={<A05Desktop {...data} editeur={{ ...data.editeur, apercu: apercuDe('desktop') }} />}
         mobile={<A05Mobile {...data} editeur={{ ...data.editeur, apercu: apercuDe('mobile') }} />}
+      />
+      <FenetreParcoursSource
+        ouverte={choixOuvert}
+        occupe={parcoursEnVol}
+        onChoisir={(p) => {
+          partirDuParcours(p.id);
+        }}
+        onFermer={() => {
+          setChoixOuvert(false);
+        }}
       />
       <GardeNiveau capacite="guide.write" />
     </>

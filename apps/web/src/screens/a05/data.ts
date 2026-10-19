@@ -227,17 +227,33 @@ export interface EditeurGuideView {
   readonly imageOccupe: boolean;
 
   /**
-   * « Une section par étape de “Mes études à Lyon” a été pré-remplie » (carte
-   * ambre sur l'ordinateur, bandeau orange sur le téléphone).
+   * « Une section par étape de “Mes études à Lyon” a été pré-remplie » (carte ambre
+   * sur l'ordinateur, bandeau orange sur le téléphone).
    *
-   * ⚠ `null` AUJOURD'HUI, TOUJOURS, et c'est dit plutôt que masqué :
-   * `POST /journeys/:id/to-guide` existe et `api.ts` l'appelle déjà
-   * (`draftFromJourney`), mais la maquette n'offre AUCUN geste pour choisir le
-   * parcours de départ — elle dessine le résultat, pas le sélecteur. La carte
-   * disparaît donc, au lieu d'affirmer un pré-remplissage qui n'a pas eu lieu.
-   * REMONTÉ : il manque une planche « choisir le parcours de départ ».
+   * `null` ici encore : le pré-remplissage se fait AVANT l'éditeur. Le parcours est
+   * choisi par `parcoursChoix` ci-dessous, `POST /journeys/:id/to-guide` crée le
+   * brouillon pré-rempli, et l'éditeur s'ouvre dessus (`/guides/:slug/modifier`).
    */
   readonly parcours: string | null;
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ CHOISIR LE PARCOURS DE DÉPART (AJOUT, lot G)                              ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La maquette dessine le RÉSULTAT d'un pré-remplissage mais aucun geste pour
+   * choisir le parcours source : `draftFromJourney` existait sans déclencheur. Cette
+   * carte (ambre sur l'ordinateur, bouton sous le titre sur le téléphone) ouvre la
+   * liste de mes parcours terminés. `null` hors création : sur un guide existant, il
+   * n'y a plus rien à « partir de ».
+   */
+  readonly parcoursChoix: {
+    readonly titre: string;
+    readonly texte: string;
+    readonly bouton: string;
+    readonly occupe: boolean;
+    readonly onChoisir: () => void;
+  } | null;
 
   // ── Les pages du guide (décision du porteur) ──────────────────────────────
 
