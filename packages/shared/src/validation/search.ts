@@ -294,6 +294,15 @@ export const searchHitSchema = z
      * page absente.
      */
     url: z.string().nullable(),
+    /**
+     * LA SOUS-LIGNE DE LA CARTE — « 84 utiles », « 14 réponses · Ouverte · Lyon »,
+     * « 620 € · Lyon 7e » : le fait que la maquette écrit sous le titre et que
+     * l'index, qui ne porte que du texte, ne peut pas donner. Composée par le
+     * SERVEUR depuis la source (un compte, un prix, une date ne se devinent pas côté
+     * client), avec les mêmes contrôles de visibilité que l'URL. `null` quand la
+     * source a disparu ou n'a rien à dire.
+     */
+    subline: z.string().nullable(),
     rank: z.number(),
     updatedAt: z.string().datetime(),
   })

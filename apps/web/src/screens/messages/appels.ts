@@ -43,7 +43,8 @@ import type {
   RangeeConversation,
 } from '../m01/data';
 import type { M01BloqueData } from '../m01bloque/data';
-import type { X01Data } from '../x01/data';
+import type { ValeursFiltresRecherche, X01Data } from '../x01/data';
+import { FILTRES_VIDES } from '../x01/filtres';
 import {
   GLYPHES_X02,
   type FiltreNotification,
@@ -487,7 +488,7 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
  * Messenger écrit « Vu » une fois, au bout du fil, et la maquette n'en dessine
  * qu'un.
  */
-function bullesDuFil(
+export function bullesDuFil(
   fil: { readonly items: readonly Message[]; readonly meta: { readonly seenAt: string | null } },
   nomsParHandle: ReadonlyMap<string, string>,
 ): BulleAvecStory[] {
@@ -611,7 +612,11 @@ export async function chargerM01Bloque(conversationId: string | null): Promise<M
  * affiche alors ce que le membre a saisi, et c'est tout ce qu'il peut faire
  * honnêtement.
  */
-export async function chargerX01(requete: string, type: string | null = null): Promise<X01Data> {
+export async function chargerX01(
+  requete: string,
+  type: string | null = null,
+  filtres: ValeursFiltresRecherche = FILTRES_VIDES,
+): Promise<X01Data> {
   const q = requete.trim();
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
@@ -677,11 +682,11 @@ export async function chargerX01(requete: string, type: string | null = null): P
    */
   const [groupes, plats] = assezPourChercher
     ? await Promise.all([
-        memberApi.get(`/search?q=${encodeURIComponent(q)}`, groupedSearchResponseSchema),
+        memberApi.get(`/search?q=${encodeURIComponent(q)}${filtresEnRequete(filtres)}`, groupedSearchResponseSchema),
         typeRetenu === null
           ? Promise.resolve(null)
           : memberApi.get(
-              `/search?q=${encodeURIComponent(q)}&type=${typeRetenu}`,
+              `/search?q=${encodeURIComponent(q)}&type=${typeRetenu}${filtresEnRequete(filtres)}`,
               typedSearchResponseSchema,
             ),
       ])
@@ -696,7 +701,25 @@ export async function chargerX01(requete: string, type: string | null = null): P
     filtres: filtresDe(groupes, q, typeRetenu),
     resultats,
     vide: videDe(groupes, q, resultats),
+    filtresAvances: filtres,
+    typeActif: typeRetenu,
   };
+}
+
+/**
+ * Les filtres de la recherche en paramètres d'API (11 §3) : ville, rayon, pays,
+ * période, état — les noms du schéma partagé `searchQuerySchema`. Le rayon n'est
+ * envoyé qu'avec une ville ; la période « toute » est le défaut du serveur.
+ */
+function filtresEnRequete(f: ValeursFiltresRecherche): string {
+  const p = new URLSearchParams();
+  if (f.ville !== null) p.set('cityId', f.ville);
+  if (f.ville !== null && f.rayon !== null) p.set('radiusKm', String(f.rayon));
+  if (f.pays !== null) p.set('countryId', f.pays);
+  if (f.periode !== 'all') p.set('period', f.periode);
+  if (f.etat !== null) p.set('state', f.etat);
+  const texte = p.toString();
+  return texte === '' ? '' : `&${texte}`;
 }
 
 // ─── X02 · les notifications ─────────────────────────────────────────────────

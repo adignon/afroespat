@@ -1,5 +1,6 @@
 import { SEARCH_MAX_QUERY_LENGTH } from '@app/shared';
 import { EcranRecherche } from '@/screens/messages/ecran-donnees';
+import { filtresDeLUrl } from '@/screens/x01/filtres';
 
 /**
  * X01 — Recherche (`/recherche`, 11 §4, T5 §10).
@@ -71,5 +72,12 @@ export default async function SearchPage({
   const typeBrut = params['type'];
   const type = typeof typeBrut === 'string' ? typeBrut : null;
 
-  return <EcranRecherche requete={requete} type={type} />;
+  /**
+   * LES FILTRES (ville, rayon, pays, période, état) viennent aussi de l'URL, validés
+   * par les schémas partagés du serveur : une valeur forgée est ignorée plutôt
+   * qu'envoyée pour y prendre un `400`.
+   */
+  const filtres = filtresDeLUrl(params);
+
+  return <EcranRecherche requete={requete} type={type} filtres={filtres} />;
 }

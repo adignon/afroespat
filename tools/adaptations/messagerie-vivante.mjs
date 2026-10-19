@@ -205,7 +205,124 @@ export const MV_X02_VIDE = {
   },
 };
 
+// ─── X01 · LA RECHERCHE ──────────────────────────────────────────────────────
+
+/**
+ * Les quatre pastilles mortes (« Lyon ▾ », « Pays ▾ », « Période ▾ », « État ▾ »)
+ * deviennent les vrais filtres du serveur : ville, rayon, pays, période, état. Sur
+ * 390 px, la maquette ne dessine pas cette rangée du tout : elle est posée sous les
+ * pastilles de type, défilable.
+ */
+export const MV_X01_FILTRES = {
+  screens: ['X01'],
+  nom: 'MV_X01_FILTRES',
+  why: 'Les pastilles « Lyon ▾ / Pays ▾ / Période ▾ / État ▾ » étaient des <span> : ce sont les filtres ville, rayon, pays, période, état que le serveur traite. Le téléphone ne les dessinait pas.',
+  provides: ['filtresAvances', 'typeActif'],
+  apply(jsx) {
+    // Ordinateur : la rangée de quatre pastilles.
+    let out = remplacerUn(
+      jsx,
+      /<div style=\{\{ display: "flex", gap: "6px", flexWrap: "wrap", flexShrink: "0" \}\}>(?:<span style=\{\{ padding: "8px 13px"[^}]*\}\}>[^<]*▾<\/span>){4}<\/div>/,
+      '<FiltresRecherche requete={requete} type={typeActif} valeurs={filtresAvances} mobile={false} />',
+    );
+    if (out !== null) return { jsx: out, applied: true };
+    // Téléphone : sous les pastilles de type, avant la colonne de résultats.
+    out = remplacerUn(
+      jsx,
+      /(\)\)\}<\/div>)(<div style=\{\{ flexGrow: "1", overflow: "visible", padding: "12px 16px")/,
+      (m) =>
+        `${m[1]}<FiltresRecherche requete={requete} type={typeActif} valeurs={filtresAvances} mobile />${m[2]}`,
+    );
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/** Le fait écrit sous le titre d'une carte, composé par le serveur. */
+export const MV_X01_SOUSLIGNE = {
+  screens: ['X01'],
+  nom: 'MV_X01_SOUSLIGNE',
+  why: 'Les sous-lignes des cartes (« 84 utiles », « 14 réponses · Ouverte · Lyon », « 620 € ») n’avaient aucune source : le serveur les compose maintenant (`SearchHit.subline`).',
+  provides: [],
+  apply(jsx) {
+    const out = remplacerUn(
+      jsx,
+      /<div style=\{\{ fontSize: "12px", color: "#8A958F" \}\}>\{r\.extrait\}<\/div>/,
+      (m) =>
+        '{r.sousLigne ? (<div style={{ fontSize: "12px", fontWeight: "600", color: "#5D6B66" }}>{r.sousLigne}</div>) : null}' +
+        m[0],
+    );
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * L'état vide, la mémoire et le signal « zéro résultat ».
+ *
+ *   · `POST /search/zero` part quand le serveur propose « Poser la question » ;
+ *   · les recherches récentes (navigateur) s'affichent tant que rien n'est tapé ;
+ *   · une recherche qui a donné des résultats est mémorisée.
+ */
+export const MV_X01_MEMOIRE = {
+  screens: ['X01'],
+  nom: 'MV_X01_MEMOIRE',
+  why: 'Aucun résultat ne remontait au serveur (POST /search/zero), la page ne gardait aucune recherche récente, et rien ne la mémorisait.',
+  provides: ['filtresAvances'],
+  apply(jsx) {
+    let out = jsx;
+    let fait = false;
+    const zero = remplacerUn(
+      out,
+      /\{vide\.bouton === "" \? null : \((<a href=\{vide\.href\}[^}]*\}\}>\{vide\.bouton\}<\/a>)\)\}/,
+      (m) =>
+        `{vide.bouton === "" ? null : (<><SignalerRechercheVide requete={requete} ville={filtresAvances?.ville ?? null} />${m[1]}</>)}`,
+    );
+    if (zero !== null) {
+      out = zero;
+      fait = true;
+    }
+    const memoire = remplacerUn(
+      out,
+      /\{vide === null \? null : \(/,
+      (m) =>
+        '<MemoriserRecherche requete={requete} nbResultats={(resultats ?? []).length} /><RecherchesRecentes requete={requete} />' +
+        m[0],
+    );
+    if (memoire !== null) {
+      out = memoire;
+      fait = true;
+    }
+    return fait ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
+/**
+ * Le titre de la page sur 390 px. La maquette n'y écrit que la requête dans le
+ * champ : un titre VISIBLE serait un titre inventé (c'est ce qui a coûté A01), mais
+ * une page sans <h1> est muette pour un lecteur d'écran. Il est donc posé, masqué
+ * à l'œil, avec les mêmes mots que le titre de l'ordinateur.
+ */
+export const MV_X01_H1_MOBILE = {
+  screens: ['X01'],
+  nom: 'MV_X01_H1_MOBILE',
+  why: 'Le cadre mobile n’avait aucun <h1> : il est posé, masqué à l’œil (rien de dessiné en plus), avec les mots du titre d’ordinateur.',
+  provides: [],
+  apply(jsx) {
+    if (jsx.includes('<h1')) return { jsx, applied: false };
+    const out = remplacerUn(
+      jsx,
+      /(<div style=\{\{ flexGrow: "1", overflow: "visible", padding: "12px 16px"[^}]*\}\}>)/,
+      (m) =>
+        `${m[1]}<h1 style={{ position: "absolute", width: "1px", height: "1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>Résultats pour « {requete} »</h1>`,
+    );
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
 export const ADAPTATIONS_MESSAGERIE_VIVANTE = [
+  MV_X01_FILTRES,
+  MV_X01_SOUSLIGNE,
+  MV_X01_MEMOIRE,
+  MV_X01_H1_MOBILE,
   MV_FIL,
   MV_BULLE_ACTIONS,
   MV_MENU_CROIX,
@@ -221,4 +338,8 @@ export const AJOUTS_MESSAGERIE_VIVANTE = {
   ToutMarquerLu: '@/components/messagerie/notifications',
   CompteurNonLues: '@/components/messagerie/notifications',
   EtatVide: '@/components/etat-vide',
+  FiltresRecherche: '@/components/messagerie/filtres-recherche',
+  SignalerRechercheVide: '@/components/messagerie/recherche-vivante',
+  MemoriserRecherche: '@/components/messagerie/recherche-vivante',
+  RecherchesRecentes: '@/components/messagerie/recherche-vivante',
 };

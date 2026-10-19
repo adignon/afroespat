@@ -194,6 +194,8 @@ export interface ResultatRecherche {
    * préférable à un lien vers une page absente.
    */
   readonly url: string | null;
+  /** Le fait écrit sous le titre — « 84 utiles », « 620 € · Lyon » (serveur). */
+  readonly sousLigne?: string | null;
 }
 
 /**
@@ -247,6 +249,19 @@ export interface EtatVideRecherche {
 }
 
 /** X01 — ses deux cadres. */
+/**
+ * Les filtres de la recherche, tels que l'URL les porte (voir `./filtres.ts`).
+ * `periode` et `etat` reprennent les valeurs du serveur (`SEARCH_PERIODS`,
+ * `SEARCH_STATES`).
+ */
+export interface ValeursFiltresRecherche {
+  readonly ville: string | null;
+  readonly rayon: number | null;
+  readonly pays: string | null;
+  readonly periode: string;
+  readonly etat: string | null;
+}
+
 export interface X01Data {
   readonly moi: BarreHaute;
   /** La requête, de `meta.q` — le serveur la rend telle qu'il l'a reçue. */
@@ -256,4 +271,7 @@ export interface X01Data {
   readonly resultats: readonly ResultatRecherche[];
   /** L'état vide, ou `null` quand il y a des résultats à montrer. */
   readonly vide: EtatVideRecherche | null;
+  /** Les filtres posés (ville, rayon, pays, période, état) et le type retenu. */
+  readonly filtresAvances?: ValeursFiltresRecherche;
+  readonly typeActif?: string | null;
 }

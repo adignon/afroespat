@@ -260,7 +260,7 @@ export function cartesPlates(
  * `search.service.ts`.
  */
 function carteDe(
-  hit: { id: string; title: string; excerpt: string; url: string | null },
+  hit: { id: string; title: string; excerpt: string; url: string | null; subline: string | null },
   type: string,
 ): ResultatRecherche {
   return {
@@ -270,6 +270,7 @@ function carteDe(
     extrait: hit.excerpt,
     trace: TRACE[type as SearchSubjectType] ?? TRACE.TOPIC,
     url: hit.url,
+    sousLigne: hit.subline,
   };
 }
 
