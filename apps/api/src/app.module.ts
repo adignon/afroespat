@@ -198,8 +198,8 @@ import {
     HelpResponseModeration,
     GuidesService,
     // Transverse (01 §2.9) : l'état des contenus enregistrés, rafraîchi par la
-    // tâche horaire `bookmark.state_refresh`. Aucun contrôleur — §2.9 n'est pas
-    // livrée ; voir l'en-tête du service.
+    // tâche horaire `bookmark.state_refresh` et lu par `BookmarksController`
+    // (`/me/bookmarks`).
     BookmarksService,
     CommunitiesService,
     EventsService,
@@ -297,7 +297,8 @@ import {
      * la publication d'un guide.
      *
      * Ce compteur est le SEUL producteur de `guides.view_count`, et
-     * `guide.view_count_flush` son seul consommateur. Il n'est jamais lu par une
+     * `guide.view_count_flush` son seul consommateur — par décision : 05 §5 exige la
+     * colonne et la tâche, 00 §1.2 interdit de l'exposer. Il n'est jamais lu par une
      * route : la règle dure 00 §1.2 l'interdit, et un test de l'OpenAPI le tient.
      */
     { provide: GUIDE_VIEW_COUNTER, useClass: RedisGuideViewCounter },

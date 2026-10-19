@@ -616,14 +616,11 @@ export class TaskRegistrationsService implements OnModuleInit {
 
     // `bookmark.state_refresh` calcule l'état des contenus enregistrés (01 §2.9).
     //
-    // UNE RÉSERVE, ET ELLE EST DANS LE RAPPORT : les quatre routes de §2.9 ne sont
-    // pas livrées, donc rien ne CRÉE de signet et personne ne LIT `bookmarks.state`.
-    // La tâche est enregistrée quand même — elle balaie une table vide en quelques
-    // millisecondes et sa ligne de journal le dira — parce que le calcul, lui, est
-    // entièrement déterminé par nos propres données : il n'invente rien. C'est ce
-    // qui la distingue d'`affiliate.reconcile`, laissée absente plus bas faute de
-    // partenaire à interroger. Le propriétaire tranche : livrer §2.9, ou retirer la
-    // ligne de §9.3.
+    // Les quatre routes de §2.9 SONT livrées (`bookmarks.controller.ts` :
+    // `GET`/`PUT /me/bookmarks`, `GET /me/bookmarks/states`,
+    // `DELETE /me/bookmarks/:type/:id`) : la tâche a donc des signets à balayer et
+    // un lecteur — l'écran « Enregistrés » lit `bookmarks.state`. (Une version
+    // précédente de ce commentaire disait le contraire ; elle est périmée.)
     //
     // À la minute 55, la dernière de l'heure : elle lit l'état de douze tables que
     // d'autres tâches horaires modifient (`event.mark_done` à 5, `sanctions.expire`
@@ -732,19 +729,18 @@ export class TaskRegistrationsService implements OnModuleInit {
      * `housing.price_median_recompute` et `alerts.dispatch` (10 §9) ;
      * `retention.purge` et `bookmark.state_refresh` (transverse).
      *
-     * DEUX RÉSERVES SUR CE QUI VIENT D'ENTRER, à remonter plutôt qu'à taire :
+     * CE QUI RESTE VRAI, ET CE QUI A ÉTÉ TRANCHÉ (lot G) :
      *
-     *   · `guides.view_count` n'a AUCUN LECTEUR. La règle dure 00 §1.2 interdit de
-     *     l'exposer à qui que ce soit, et le tableau de bord de 15 §5.1 ne le liste
-     *     pas parmi les indicateurs « Guides » (publiés, votes, propositions
-     *     acceptées, à vérifier). C'est exactement la situation de
-     *     `housing_listings.view_count` et `pro_profiles.view_count`, incrémentés
-     *     depuis toujours et lus par personne. §5 du module 05 exige la colonne et
-     *     la tâche ; les lire est une décision qui n'est écrite nulle part ;
-     *   · `bookmarks.state` non plus, et pour une autre raison : les quatre routes
-     *     de 01 §2.9 (`GET`/`PUT`/`DELETE /me/bookmarks`,
-     *     `GET /me/bookmarks/states`) ne sont pas livrées, donc rien ne crée de
-     *     signet. La tâche calcule juste et ne balaie rien.
+     *   · `guides.view_count` N'A AUCUN LECTEUR, et c'est VOULU. 05 §5 exige la
+     *     colonne (« Ajoutée, compteur approximatif ») et 05 §7 la tâche
+     *     `guide.view_count_flush` ; la règle dure 00 §1.2 interdit d'exposer un
+     *     compteur de vues « à personne, sur aucun contenu », et 15 §5.1 ne le
+     *     liste pas parmi les indicateurs « Guides ». Ajouter un lecteur violerait la
+     *     spec, retirer la tâche aussi : le compteur est conservé comme donnée
+     *     interne du produit, sans route ni écran. Même situation que
+     *     `housing_listings.view_count` et `pro_profiles.view_count` ;
+     *   · `bookmark.state_refresh` A UN LECTEUR depuis que les routes de 01 §2.9 sont
+     *     livrées : voir son enregistrement plus haut.
      *
      * Le jour où la méthode existe, une entrée de ce fichier suffit. Rien d'autre
      * ne change, ni dans le registre, ni dans le planificateur.

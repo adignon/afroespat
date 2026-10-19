@@ -45,19 +45,14 @@ import { PrismaService } from '../../common/prisma.service';
  * tâche qui lirait `new Date()` serait inéprouvable à un instant choisi — et c'est
  * une tâche HORAIRE, donc celle dont l'instant bouge le plus souvent.
  *
- * ── CE QUI MANQUE ENCORE, ET IL FAUT LE DIRE ─────────────────────────────────
+ * ── LES ROUTES SONT LIVRÉES (corrigé au lot G) ───────────────────────────────
  *
- * §2.9 annonce quatre routes — `GET /me/bookmarks`, `PUT /me/bookmarks`,
- * `DELETE /me/bookmarks/:type/:id`, `GET /me/bookmarks/states`. AUCUNE n'est
- * livrée, et il n'existe donc aujourd'hui aucun chemin pour CRÉER un signet :
- * `bookmarks` ne se remplit par personne, et personne ne lit `bookmarks.state`. Les
- * seules lectures actuelles de la table sont internes — `story.purge_history`
- * épargne une story enregistrée (04 §7) et l'export RGPD la recopie (01 §2.8).
- *
- * Cette tâche est donc PRÊTE et sans lecteur, ce qui est l'exact symétrique du
- * défaut `cities.member_count` (une colonne lue par trois écrans et écrite par
- * personne). C'est signalé dans le rapport du lot, et c'est au propriétaire de
- * trancher : livrer §2.9, ou retirer la tâche de §9.3.
+ * Ce paragraphe affirmait qu'AUCUNE des quatre routes de §2.9 n'était livrée et que
+ * « personne ne lit `bookmarks.state` ». C'est périmé : `BookmarksController` sert
+ * `GET`/`PUT /me/bookmarks`, `DELETE /me/bookmarks/:type/:id` et
+ * `GET /me/bookmarks/states`, et l'écran « Enregistrés » lit l'état. La tâche a donc
+ * un lecteur. Les autres lectures de la table restent `story.purge_history`, qui
+ * épargne une story enregistrée (04 §7), et l'export RGPD (01 §2.8).
  */
 
 /**
