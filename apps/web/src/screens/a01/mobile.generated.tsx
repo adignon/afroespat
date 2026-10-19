@@ -12,10 +12,11 @@ import { CarrouselPhotos } from '@/components/carrousel-photos';
 import { MenuPublication } from '@/components/menu-publication';
 import { ApercuStory } from '@/components/apercu-story';
 import { RubanStories } from '@/components/ruban-stories';
+import { EtatVide } from '@/components/etat-vide';
 import type { A01Data } from './data';
 
 export function A01Mobile(props: A01Data) {
-  const { feedPosts, mBottom, mTabs, onAjouterImage, stories } = props;
+  const { feedPosts, filEtat, mBottom, mTabs, onAjouterImage, stories } = props;
 
   return (
     <>
@@ -76,7 +77,7 @@ export function A01Mobile(props: A01Data) {
           <div style={{ fontSize: "12px", color: "#5D6B66", marginTop: "12px" }}><strong style={{ color: "#16211D" }}>{p.n}</strong> {p.word} · {p.meta}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "6px", marginTop: "10px" }}><button type="button" data-post-reagir={p.postId} aria-label={p.action} aria-pressed={p.reagi === true} style={{ height: "44px", borderRadius: "12px", background: p.aBg, color: p.aFg, border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", cursor: "pointer" }}><svg width="17" height="17" viewBox="0 0 24 24" fill={p.reagi ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={p.actionIcon} /></svg>{p.action}</button><button style={{ height: "44px", borderRadius: "12px", background: "#F2F5F4", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", cursor: "pointer" }} data-modal-open="A01C" data-modal-subject={p.postId}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16v11H9l-5 4z" /></svg>{p.comment}</button><button style={{ height: "44px", borderRadius: "12px", background: "#F2F5F4", border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", cursor: "pointer" }} data-modal-open="A01P" data-modal-subject={p.postId}><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 22a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>Partager</button></div>
         </article></Fragment>
-))}
+))}{filEtat.chargement ? (<EtatVide texte="Chargement du fil…" />) : filEtat.echec !== null ? (<EtatVide texte={filEtat.echec} />) : (feedPosts ?? []).length === 0 ? (<EtatVide texte={filEtat.vide} />) : null}
     </div>
     <div style={{ position: "sticky", flexShrink: "0", bottom: "0", zIndex: 10, background: "#fff", borderTop: "1px solid #E6EBE9", padding: "6px 8px calc(env(safe-area-inset-bottom, 0px) + 24px)", display: "grid", gridTemplateColumns: "repeat(5,1fr)" }}>
       <BoutonCreer style={{ position: "absolute", right: "18px", top: "-66px", width: "54px", height: "54px", borderRadius: "18px", background: "#16785E", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg></BoutonCreer>

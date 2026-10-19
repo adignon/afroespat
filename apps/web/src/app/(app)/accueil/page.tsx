@@ -580,6 +580,13 @@ export default function FeedPage() {
      * fenêtre de modification vit dans cette page, et `onModifier` doit l'ouvrir.
      * Les attacher dans le crochet obligerait à y remonter l'état de la fenêtre.
      */
+    filEtat: {
+      // On ne masque pas des cartes déjà là par un « Chargement… » de rafraîchissement.
+      chargement: fil.chargement && fil.feedPosts.length === 0,
+      echec: fil.echec?.message ?? null,
+      vide:
+        'Aucune publication pour l’instant. Soyez la première personne à partager quelque chose avec la diaspora.',
+    },
     feedPosts: fil.feedPosts.map((carte) => ({
       ...carte,
       onEnregistrer: (): void => {

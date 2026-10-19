@@ -125,11 +125,77 @@ const A01_MES_STORIES = {
   },
 };
 
-export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE, A01_MES_STORIES];
+/** L'indice qui suit l'accolade fermante qui ferme celle ouverte à `debut` ; `-1` sinon. */
+function finAccolade(jsx, debut) {
+  let profondeur = 0;
+  for (let i = debut; i < jsx.length; i += 1) {
+    const c = jsx[i];
+    if (c === '{') profondeur += 1;
+    else if (c === '}') {
+      profondeur -= 1;
+      if (profondeur === 0) return i + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * ── LES BORNES DE SAISIE : `maxLength` SUR LE COMPOSEUR ET LES COMMENTAIRES ───
+ *
+ * Le composeur du fil (A01, A01N) et le champ de commentaire (A01C) acceptaient un
+ * texte sans limite, que le serveur refusait ensuite avec un `400`. Les bornes sont
+ * celles de `FEED_LIMITS` (@app/shared), jamais recopiées : le front PRÉVIENT, le
+ * serveur décide.
+ */
+const A01_LIMITES = {
+  screens: ['A01', 'A01N', 'A01C'],
+  nom: 'A01_LIMITES_SAISIE',
+  why: 'Le composeur et le champ de commentaire portent `maxLength` (les bornes de `FEED_LIMITS`) : le texte ne dépasse plus ce que le serveur accepte.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let n = 0;
+    if (out.includes('data-composeur-texte="" ') && !out.includes('maxLength={FEED_LIMITS.postBodyMax}')) {
+      out = out.replace('data-composeur-texte="" ', 'data-composeur-texte="" maxLength={FEED_LIMITS.postBodyMax} ');
+      n += 1;
+    }
+    if (out.includes('data-commentaire-texte="" ') && !out.includes('maxLength={FEED_LIMITS.commentBodyMax}')) {
+      out = out.replace('data-commentaire-texte="" ', 'data-commentaire-texte="" maxLength={FEED_LIMITS.commentBodyMax} ');
+      n += 1;
+    }
+    return n === 0 ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * ── A01 : LES ÉTATS DU FIL — CHARGEMENT, ERREUR, VIDE ────────────────────────
+ *
+ * La planche dessine des publications et rien d'autre : un fil qui charge, qui a
+ * échoué ou qui est vide restait une colonne blanche sous le composeur. La phrase
+ * est posée à la place des cartes, dans le style de `EtatVide` (gris, 13 px).
+ */
+const A01_FIL_ETATS = {
+  screens: ['A01'],
+  nom: 'A01_FIL_ETATS',
+  why: 'Un fil qui charge, qui a échoué ou qui est vide dit ce qu’il en est au lieu de rester une colonne blanche.',
+  provides: ['filEtat'],
+  apply(jsx) {
+    const debut = jsx.indexOf('{(feedPosts ?? []).map(');
+    if (debut < 0) return { jsx, applied: false };
+    const fin = finAccolade(jsx, debut);
+    if (fin < 0) return { jsx, applied: false };
+    const etats =
+      '{filEtat.chargement ? (<EtatVide texte="Chargement du fil…" />) : filEtat.echec !== null ? (<EtatVide texte={filEtat.echec} />) : (feedPosts ?? []).length === 0 ? (<EtatVide texte={filEtat.vide} />) : null}';
+    return { jsx: jsx.slice(0, fin) + etats + jsx.slice(fin), applied: true };
+  },
+};
+
+export const ADAPTATIONS_FIL_VIVANT = [A02_DESKTOP, A02_GUIDES, A02_MOBILE, A01_MES_STORIES, A01_LIMITES, A01_FIL_ETATS];
 
 /** Les composants que ces adaptations posent, pour le registre d'imports. */
 export const AJOUTS_FIL_VIVANT = {
   PublicationVivante: '@/components/publication-vivante',
   GuidesLiesPublication: '@/components/publication-vivante',
   TitrePublication: '@/components/publication-vivante',
+  FEED_LIMITS: '@app/shared',
 };

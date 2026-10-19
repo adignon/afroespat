@@ -6,6 +6,7 @@
 // serait pas responsive.
 import { Fragment } from 'react';
 import Link from 'next/link';
+import { FEED_LIMITS } from '@app/shared';
 import type { AccueilData } from '../accueil/data';
 
 export function A01NMobile(props: AccueilData) {
@@ -21,7 +22,7 @@ export function A01NMobile(props: AccueilData) {
         <div style={{ display: "flex", gap: "6px" }}>{(draftTypes ?? []).map((t, tIndex) => (
 <Fragment key={tIndex}><button type="button" onClick={t.onPick} aria-pressed={t.on === true} data-composeur-type={t.label} style={{ height: "34px", padding: "0 12px", borderRadius: "999px", fontSize: "12px", fontWeight: "700", display: "flex", alignItems: "center", background: t.bg, color: t.fg, border: `1px solid ${t.bd}`, fontFamily: "inherit", cursor: "pointer" }}>{t.label}</button></Fragment>
 ))}</div>
-        <textarea value={composeurTexte} onChange={onComposeurTexte} placeholder="Que voulez-vous partager ?" aria-label="Que voulez-vous partager ?" data-composeur-texte="" style={{ fontSize: "15px", lineHeight: "1.55", flex: "1", minHeight: "120px", width: "100%", boxSizing: "border-box", border: "none", background: "transparent", fontFamily: "inherit", color: "#16211D", outline: "none", resize: "none", padding: 0 }} />
+        <textarea value={composeurTexte} onChange={onComposeurTexte} placeholder="Que voulez-vous partager ?" aria-label="Que voulez-vous partager ?" data-composeur-texte="" maxLength={FEED_LIMITS.postBodyMax} style={{ fontSize: "15px", lineHeight: "1.55", flex: "1", minHeight: "120px", width: "100%", boxSizing: "border-box", border: "none", background: "transparent", fontFamily: "inherit", color: "#16211D", outline: "none", resize: "none", padding: 0 }} />
         <div style={{ display: "flex", gap: "8px" }}>{(brouillon.photos ?? []).map((ph, phIndex) => (
 <Fragment key={phIndex}><div style={{ position: "relative", width: "92px", height: "92px", borderRadius: "14px", background: "repeating-linear-gradient(135deg,#E3ECE8 0 10px,#DCE6E1 10px 20px)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10.5px", fontWeight: "600", color: "#7C8C85", flexShrink: "0" }}>{ph}<span style={{ position: "absolute", top: "6px", right: "6px", width: "24px", height: "24px", borderRadius: "999px", background: "rgba(22,33,29,.7)", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12" /></svg></span></div></Fragment>
 ))}</div>

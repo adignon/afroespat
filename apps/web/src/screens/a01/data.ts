@@ -1233,6 +1233,12 @@ export interface A01Data extends A01SData {
   postTypes: ReturnType<typeof postTypesFor>;
   feedPosts: readonly FeedPostView[];
   /**
+   * L'ÉTAT DU FIL (lot G) : la planche ne dessine que des publications. Chargement,
+   * échec et fil vide se disent à la place des cartes, avec les mots du serveur
+   * quand il y en a (`echec`) et ceux-ci sinon (`vide`).
+   */
+  filEtat: { readonly chargement: boolean; readonly echec: string | null; readonly vide: string };
+  /**
    * ╔════════════════════════════════════════════════════════════════════════╗
    * ║ LE COMPOSEUR DU FIL — IL N'AVAIT AUCUN ÉTAT                            ║
    * ╚════════════════════════════════════════════════════════════════════════╝

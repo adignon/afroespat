@@ -95,6 +95,7 @@ const donnees = {
     images: { garni: false, libelle: '', titre: 'Ajouter une image', encre: '#0F5C48' },
   },
   feedPosts: cartes,
+  filEtat: { chargement: false, echec: null, vide: "Aucune publication." },
   events: [],
   arrivals: [],
   online: [],

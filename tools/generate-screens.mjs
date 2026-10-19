@@ -19529,6 +19529,14 @@ const AJOUTS = {
   ...AJOUTS_FIL_VIVANT,
 };
 
+/**
+ * Un ajout est EMPLOYÉ quand son nom est une balise (`<Nom`) — ou, pour les VALEURS
+ * importées (`FEED_LIMITS`, lot G), quand il est lu (`FEED_LIMITS.`).
+ */
+const VALEURS_AJOUTEES = new Set(['FEED_LIMITS']);
+const emploiAjout = (jsx, nom) =>
+  jsx.includes(`<${nom}`) || (VALEURS_AJOUTEES.has(nom) && jsx.includes(`${nom}.`));
+
 const HEADER = (
   section,
   width,
@@ -21345,7 +21353,7 @@ for (const screen of SCREENS) {
     );
 
     /** Les composants ajoutés par le dépôt qu'emploie ce cadre. Voir `AJOUTS`. */
-    const ajouts = Object.keys(AJOUTS).filter((nom) => shelled.includes(`<${nom}`));
+    const ajouts = Object.keys(AJOUTS).filter((nom) => emploiAjout(shelled, nom));
 
     const body = `${HEADER(frame.section ?? screen.section, frame.width, screen.file, screen.dataModule, screen.dataType, shelled.includes('<Fragment'), shelled.includes('<Link'), barre, ajouts)}export function ${screen.section}${frame.name}(${signature}) {
 ${destructure}  return (
@@ -21484,7 +21492,7 @@ ${shelled}
         'CarteMembre',
         'RondMoi',
       ].filter((n) => corps.includes(`<${n}`));
-      const ajoutsC = Object.keys(AJOUTS).filter((n) => corps.includes(`<${n}`));
+      const ajoutsC = Object.keys(AJOUTS).filter((n) => emploiAjout(corps, n));
       const corpsComposant = `${HEADER(
         frame.section ?? screen.section,
         frame.width,
@@ -21729,7 +21737,7 @@ ${corps}
         'CarteMembre',
         'RondMoi',
       ].filter((n) => coupe.includes(`<${n}`));
-      const ajoutsR = Object.keys(AJOUTS).filter((n) => coupe.includes(`<${n}`));
+      const ajoutsR = Object.keys(AJOUTS).filter((n) => emploiAjout(coupe, n));
       /**
        * TROIS SIGNATURES, UNE PAR FORME DE RÉGION, et c'est `prises` qui tranche :
        *

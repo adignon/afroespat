@@ -48,6 +48,8 @@ import {
   feedResponseSchema,
   feedSidebarResponseSchema,
   mediaAssetSchema,
+  MEDIA_ERROR_CODES,
+  MEDIA_MAX_IMAGE_BYTES,
   myStoriesResponseSchema,
   postDetailResponseSchema,
   postReactionStateSchema,
@@ -82,7 +84,7 @@ import {
  * l'erreur qu'on obtient alors — « has no exported member » sur un nom qui est
  * bel et bien exporté par le socle — ne nomme pas la cause.
  */
-import { memberApi, voidResponse } from '@/lib/api/index';
+import { ApiError, memberApi, voidResponse } from '@/lib/api/index';
 
 /**
  * Les options d'appel, construites SANS clé absente.
@@ -253,6 +255,29 @@ export function createComment(input: CreateComment) {
   });
 }
 
+
+/**
+ * LE POIDS D'UNE IMAGE, VÉRIFIÉ AVANT L'ENVOI (lot G).
+ *
+ * Le serveur refuse au-delà de `MEDIA_MAX_IMAGE_BYTES` (`MEDIA_TOO_LARGE`, 413) : le
+ * front PRÉVIENT avec la MÊME borne, importée et jamais recopiée, pour ne pas
+ * téléverser cinq mégaoctets afin d'apprendre qu'ils étaient de trop. Le serveur
+ * décide toujours — c'est lui qui répondrait si cette garde manquait. L'erreur est
+ * une `ApiError`, donc les écrans qui affichent `displayMessage` n'ont rien à changer.
+ */
+function verifierPoidsImage(fichier: File): ApiError | null {
+  if (fichier.size <= MEDIA_MAX_IMAGE_BYTES) return null;
+  const limite = Math.round(MEDIA_MAX_IMAGE_BYTES / (1024 * 1024));
+  const poids = (fichier.size / (1024 * 1024)).toFixed(1).replace('.', ',');
+  return new ApiError(
+    'MEDIA_TOO_LARGE',
+    `Cette image pèse ${poids} Mo : la limite est de ${String(limite)} Mo.`,
+    MEDIA_ERROR_CODES.MEDIA_TOO_LARGE,
+    {},
+    null,
+  );
+}
+
 /** `PATCH /comments/:id` — dans les 15 minutes, et c'est le SERVEUR qui tranche (§2.5). */
 export function updateComment(commentId: string, body: string) {
   return memberApi.patch(`/comments/${commentId}`, commentMutationResponseSchema, {
@@ -321,6 +346,8 @@ export function createStory(input: CreateStory): Promise<StoryDetailResponse> {
  * source.
  */
 export function uploadStoryBackground(file: File, signal?: AbortSignal): Promise<MediaAssetView> {
+  const trop = verifierPoidsImage(file);
+  if (trop !== null) return Promise.reject(trop);
   const corps = new FormData();
   corps.append('file', file);
   corps.append('kind', 'POST');
@@ -355,6 +382,8 @@ export function uploadStoryBackground(file: File, signal?: AbortSignal): Promise
  * l'énumération de 00 §6.3 n'en offre pas. »
  */
 export function uploadPostImage(fichier: File, signal?: AbortSignal): Promise<MediaAssetView> {
+  const trop = verifierPoidsImage(fichier);
+  if (trop !== null) return Promise.reject(trop);
   const corps = new FormData();
   corps.append('file', fichier);
   corps.append('kind', 'POST');
