@@ -74,3 +74,15 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Le rapport d'impact s'imprime (« Imprimer / PDF ») : ni rail, ni barre, ni boutons. */
+@media print {
+  [data-admin] [data-admin-rail],
+  [data-admin] [data-admin-bar],
+  [data-admin] [data-no-print] {
+    display: none !important;
+  }
+  [data-admin] [data-frame='desktop'] {
+    display: block !important;
+  }
+}

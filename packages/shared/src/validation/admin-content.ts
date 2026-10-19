@@ -316,7 +316,7 @@ export type AdminProposalDecision = z.infer<typeof adminProposalDecisionSchema>;
 // ── Impact : export (15 §5.3) ───────────────────────────────────────────────
 
 export const impactExportQuerySchema = z
-  .object({ quarter: z.string().regex(/^\d{4}-Q[1-4]$/).optional() })
+  .object({ quarter: z.string().regex(/^\d{4}-[TQ][1-4]$/).optional() })
   .strict();
 
 // ── Codes d'erreur ──────────────────────────────────────────────────────────

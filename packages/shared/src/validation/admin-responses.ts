@@ -318,3 +318,50 @@ export const adminSettingSchema = z
   .passthrough();
 export type AdminSetting = z.infer<typeof adminSettingSchema>;
 export const adminSettingsResponseSchema = z.object({ items: z.array(adminSettingSchema), unregistered: z.array(z.string()) });
+
+// ── Partenaires et encarts (14 §5, côté équipe) ─────────────────────────────
+
+export const adminPartnersResponseSchema = z.object({
+  items: z.array(
+    z
+      .object({
+        id: z.string(),
+        name: z.string(),
+        category: z.string(),
+        payoutModel: z.string(),
+        affiliateUrlTemplate: z.string(),
+        contractStart: nullableStr,
+        contractEnd: nullableStr,
+        isActive: z.boolean(),
+        placements: z.number(),
+      })
+      .passthrough(),
+  ),
+  nextCursor: nullableStr,
+});
+export type AdminPartner = z.infer<typeof adminPartnersResponseSchema>['items'][number];
+
+export const adminPlacementsResponseSchema = z.object({
+  items: z.array(
+    z
+      .object({
+        id: z.string(),
+        headline: z.string(),
+        ctaLabel: z.string(),
+        isActive: z.boolean(),
+        partner: z.object({ id: z.string(), name: z.string() }).passthrough(),
+        step: z.object({ id: z.string(), code: z.string(), nameFr: z.string() }).passthrough().nullable(),
+        clicks: z.number(),
+      })
+      .passthrough(),
+  ),
+  nextCursor: nullableStr,
+});
+export type AdminPlacement = z.infer<typeof adminPlacementsResponseSchema>['items'][number];
+
+export const adminAffiliateResponseSchema = z.object({
+  items: z.array(
+    z.object({ placementId: z.string(), partnerId: z.string(), clicks: z.number(), conversions: z.number(), payoutCents: z.number() }).passthrough(),
+  ),
+});
+export const affiliateImportResultSchema = z.object({ converted: z.number(), alreadyKnown: z.number(), unknown: z.number() });

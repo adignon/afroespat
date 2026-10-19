@@ -7,7 +7,7 @@ import {
   type AdminCity,
   type AdminStepDefinition,
 } from '@app/shared';
-import { staffApi } from '@/lib/api/index';
+import { API_BASE, staffApi } from '@/lib/api/index';
 
 /** Les pages au-delà desquelles on REFUSE de continuer (voir `lireToutesLesVilles` de D08). */
 const PAGES_MAX = 20;
@@ -51,4 +51,26 @@ export async function toutesLesDefinitions(): Promise<readonly AdminStepDefiniti
     cursor = page.nextCursor;
   }
   throw new Error('La bibliothèque d’étapes dépasse 20 pages : ce sélecteur n’est plus la bonne forme.');
+}
+
+/**
+ * Télécharge un export CSV d'équipe (`/audit/export`, `/impact/export`).
+ *
+ * `staffApi` valide du JSON ; un CSV n'en est pas. Cet appel porte donc le COOKIE
+ * d'équipe (`credentials: 'include'`) et rien d'autre — jamais un en-tête
+ * `Authorization` — et il reste sous `/v1/admin` : même étanchéité que `staffApi`.
+ */
+export async function telechargerCsv(chemin: string, nom: string): Promise<void> {
+  if (!chemin.startsWith('/') || chemin.includes('..')) throw new Error('Chemin d’export refusé.');
+  const reponse = await fetch(`${API_BASE}/admin${chemin}`, { credentials: 'include' });
+  if (!reponse.ok) throw new Error(`L’export a échoué (${reponse.status}).`);
+  const blob = await reponse.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nom;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
