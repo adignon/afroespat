@@ -424,7 +424,16 @@ export const notificationSchema = z
     refId: z.string().nullable(),
     url: z.string().startsWith('/').nullable(),
     readAt: z.string().datetime().nullable(),
-    channelsSent: z.array(z.enum(NOTIFICATION_DELIVERY_CHANNELS)),
+    /**
+     * `PUSH_DEFERRED` EST ACCEPTÉ ICI, et son absence cassait la page entière : le
+     * serveur écrit ce marqueur dans `channels_sent` quand le push est retenu par les
+     * HEURES CALMES (en attendant `quiet_hours_flush`). Le schéma ne connaissait que
+     * les trois canaux ; toute notification créée pendant la plage calme — 22 h à 8 h
+     * par défaut — faisait donc échouer `GET /notifications` côté front
+     * (`ApiShapeError`), et avec elle la page X02 ET le compteur de la cloche. Le
+     * défaut était invisible en journée.
+     */
+    channelsSent: z.array(z.enum([...NOTIFICATION_DELIVERY_CHANNELS, PUSH_DEFERRED])),
   })
   .strict()
   .refine((n) => n.category !== 'MESSAGE' || n.body === null, {
