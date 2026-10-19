@@ -46,7 +46,7 @@ import type { M01BloqueData } from '../m01bloque/data';
 import type { ValeursFiltresRecherche, X01Data } from '../x01/data';
 import { FILTRES_VIDES } from '../x01/filtres';
 import {
-  GLYPHES_X02,
+  glypheDe,
   type FiltreNotification,
   type LigneNotification,
   type X02Data,
@@ -299,12 +299,10 @@ const BULLE_SIENNE = {
  * `null` veut dire masqué (§4), et la bulle reste vide plutôt que de porter un
  * substitut composé ici.
  *
- * `mention` PORTE L'HEURE, JAMAIS « Vu ». La maquette écrit « Vu » sous la dernière
- * bulle envoyée, et aucun accusé de lecture par message n'est exposé :
- * `conversation_members.last_read_at` existe en base, la réponse ne le rend pas.
- * Inventer un « Vu » dirait au membre que son message a été lu, ce que personne ne
- * sait ici. Signalé au porteur.
- */
+ * `mention` PORTE L'HEURE, ET « Vu » SOUS MA DERNIÈRE BULLE LUE. Le serveur rend
+ * maintenant `meta.seenAt` (`conversation_members.last_read_at` des autres
+ * membres) : `bullesDuFil` y pose « Vu » une fois, sous ma dernière bulle non
+ * supprimée dont l'envoi précède cette lecture. Tant que personne n'a lu, rien. */
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ LA BULLE PORTE LA STORY, MAIS PAS ENCORE LE GESTE                         ║
@@ -394,11 +392,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * n'est pas une demande en attente. C'est ce que la planche montre, pas une
  * préférence.
  *
- * `MESSAGE_POLL_INTERVAL_MS` (15 s) existe dans `packages/shared` pour le repli en
- * polling de §5.3, et il n'est PAS employé : ce lot charge une fois, au montage.
- * Rafraîchir en boucle sans que la maquette dessine d'état de rafraîchissement
- * ferait clignoter le fil sans le dire.
- */
+ * `MESSAGE_POLL_INTERVAL_MS` (15 s) sert maintenant : `ConversationVivante` relit par
+ * le temps réel (`lib/temps-reel`) et, socket coupée, par ce polling de repli (§5.3).
+ * Ce chargeur reste une fonction PURE appelée une fois par relecture ; c'est
+ * l'appelant qui décide quand. */
 export async function chargerM01(conversationId: string | null): Promise<M01Data> {
   const [me, page] = await Promise.all([
     fetchMe(),
@@ -750,7 +747,7 @@ function ligneDe(n: Notification): LigneNotification {
   return {
     fond: fonds.fond,
     fondIcone: fonds.fondIcone,
-    glyphe: GLYPHES_X02[n.category] ?? '',
+    glyphe: glypheDe(n.category),
     titre: n.title,
     corps: n.body === null ? '' : ` ${n.body}`,
     quand: heureRelative(n.createdAt, 'minutes'),
@@ -776,35 +773,9 @@ export function marquerLues(
 /**
  * X02 — les notifications du membre.
  *
- * `meta.unread` est lu et validé, puis N'EST AFFICHÉ NULLE PART : aucune des trois
- * planches ne dessine le compteur que 12 §2.7 demande. La raison complète est dans
- * `screens/x02/data.ts` ; elle est signalée au porteur plutôt que contournée.
- *
-/**
- * ╔════════════════════════════════════════════════════════════════════════════╗
- * ║ LES FILTRES ENVOIENT MAINTENANT — ET UN LIBELLÉ VAUT PARFOIS DEUX          ║
- * ╚════════════════════════════════════════════════════════════════════════════╝
- *
- * Le porteur : « Les filtres sur la page notification marchent ? » Ils ne
- * marchaient pas, et ce commentaire disait pourquoi : « aucune n'est un bouton ».
- * Elles sont maintenant des liens, et ce chargeur reçoit ce qu'elles portent.
- *
- * LE LIBELLÉ DESSINÉ N'EST PAS UNE CATÉGORIE, et c'est le point délicat.
- * `NOTIFICATION_CATEGORIES` en compte quatorze, la maquette dessine sept
- * pastilles : « Parcours » couvre à lui seul `JOURNEY_DEADLINE` ET
- * `JOURNEY_TEAM`. La correspondance est donc une TABLE, et elle est écrite ici
- * plutôt que devinée à l'écran.
- *
- * ── UNE CATÉGORIE : LE SERVEUR FILTRE. PLUSIEURS : ON TRIE ICI ──────────────
- *
- * `notificationListQuerySchema.category` prend UNE catégorie. Pour « Parcours »,
- * demander deux pages et les recoudre donnerait un ordre faux au premier
- * `nextCursor` ; on demande donc la page SANS filtre et on garde les lignes des
- * deux catégories. C'est le même arbitrage que l'onglet « Annonces » des
- * enregistrés, et il porte la même limite : au-delà d'une page, une catégorie
- * rare peut tomber hors de la fenêtre lue. Signalé plutôt que caché — la vraie
- * correction serait un `category` répétable côté serveur.
- */
+ * `meta.unread` est affiché : « N non lues » près du titre (`CompteurNonLues`), et
+ * la cloche de la barre haute le suit en direct. Les lignes mènent à leur cible (la
+ * colonne `url`) et « Tout marquer lu » écrit `POST /notifications/read`. */
 const CATEGORIES_DU_FILTRE: Readonly<Record<string, readonly NotificationCategory[]>> = {
   Parcours: ['JOURNEY_DEADLINE', 'JOURNEY_TEAM'],
   Entraide: ['HELP'],

@@ -154,3 +154,38 @@ export const GLYPHES_X02: Partial<Record<NotificationCategory, string>> = {
   MENTORSHIP:
     'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5',
 };
+
+/**
+ * AJOUT HORS MAQUETTE — les glyphes des catégories que la planche ne dessine pas.
+ *
+ * `GLYPHES_X02` ci-dessus reste EXACTEMENT les cinq tracés de la maquette (un test
+ * le fige). Mais « Nouveau message », « Vous avez rejoint un réseau », « Votre
+ * compte est désormais L1 » arrivaient avec un rond VIDE. Ces tracés-ci, au même
+ * gabarit (24×24, trait 1.8, extrémités arrondies), sont empruntés aux icônes que
+ * le produit emploie déjà ailleurs : la bulle de la barre haute (messages), le
+ * groupe du parrainage (équipe, réseaux), la silhouette du menu (compte), le livre
+ * des guides, la maison des services. Aucune couleur nouvelle.
+ */
+export const GLYPHES_X02_AJOUTS: Partial<Record<NotificationCategory, string>> = {
+  MESSAGE: 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z',
+  COMMUNITY:
+    'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5',
+  JOURNEY_TEAM:
+    'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5',
+  ACCOUNT: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0',
+  GUIDE:
+    'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+  SERVICES: 'M4 11 12 4l8 7v9H4z',
+  MODERATION: 'M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z',
+  BOOKMARK: 'M6 3h12v18l-6-4-6 4z',
+};
+
+
+/** Le glyphe d'une catégorie, ou la cloche : jamais un rond vide. */
+export function glypheDe(categorie: string): string {
+  return (
+    (GLYPHES_X02 as Record<string, string | undefined>)[categorie] ??
+    (GLYPHES_X02_AJOUTS as Record<string, string | undefined>)[categorie] ??
+    'M6 9a6 6 0 0 1 12 0c0 6 2 7 2 7H4s2-1 2-7zM10 20a2 2 0 0 0 4 0'
+  );
+}

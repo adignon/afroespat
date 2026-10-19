@@ -337,11 +337,11 @@ export const MV_K07_REGLAGES = {
   screens: ['K07'],
   nom: 'MV_K07_REGLAGES',
   why: 'Les heures calmes et le résumé hebdomadaire s’affichaient mais ne se modifiaient pas : leurs interrupteurs étaient des <span>.',
-  provides: [],
+  provides: ['prefs'],
   apply(jsx) {
     let out = jsx;
     let fait = false;
-    const calmes = remplacerUn(out, LIGNE_REGLAGE('Heures calmes'), '<ReglageHeuresCalmes />');
+    const calmes = remplacerUn(out, LIGNE_REGLAGE('Heures calmes'), '<ReglageHeuresCalmes debut={prefs.calmeDebut} fin={prefs.calmeFin} />');
     if (calmes !== null) {
       out = calmes;
       fait = true;
@@ -352,7 +352,7 @@ export const MV_K07_REGLAGES = {
       fait = true;
     } else if (fait) {
       // Le téléphone ne dessine pas le résumé : il suit les heures calmes, dans la même carte.
-      out = out.replace('<ReglageHeuresCalmes />', '<ReglageHeuresCalmes /><ReglageResume />');
+      out = out.replace('<ReglageHeuresCalmes debut={prefs.calmeDebut} fin={prefs.calmeFin} />', '<ReglageHeuresCalmes debut={prefs.calmeDebut} fin={prefs.calmeFin} /><ReglageResume />');
     }
     return fait ? { jsx: out, applied: true } : { jsx, applied: false };
   },

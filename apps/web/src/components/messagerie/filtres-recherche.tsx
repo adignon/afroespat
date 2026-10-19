@@ -47,6 +47,8 @@ const ETATS: readonly { readonly valeur: string; readonly libelle: string }[] = 
 
 function style(actif: boolean, mobile: boolean): CSSProperties {
   return {
+    // `font` D'ABORD : ce raccourci remet `font-size` à zéro s'il vient après lui.
+    font: 'inherit',
     padding: mobile ? '0 13px' : '8px 13px',
     height: mobile ? '36px' : undefined,
     minHeight: mobile ? '44px' : undefined,
@@ -57,7 +59,6 @@ function style(actif: boolean, mobile: boolean): CSSProperties {
     background: actif ? '#16785E' : '#fff',
     color: actif ? '#fff' : '#16211D',
     border: `1px solid ${actif ? '#16785E' : '#E6EBE9'}`,
-    font: 'inherit',
     cursor: 'pointer',
     maxWidth: '220px',
   };

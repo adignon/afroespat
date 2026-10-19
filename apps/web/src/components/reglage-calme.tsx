@@ -141,7 +141,14 @@ function heureFr(valeur: string): string {
   return m === '00' ? `${String(Number(h))} h` : `${String(Number(h))} h ${m}`;
 }
 
-export function ReglageHeuresCalmes() {
+export function ReglageHeuresCalmes({
+  debut: debutConnu,
+  fin: finConnue,
+}: {
+  /** Les bornes déjà chargées par la page (« 22 h »), montrées le temps que le réglage se charge. */
+  readonly debut?: string;
+  readonly fin?: string;
+}) {
   const { prefs, occupe, ecrire } = useReglages();
   const plage = prefs?.quietHours ?? null;
   const [debut, setDebut] = useState<string>(DEFAULT_QUIET_HOURS.start);
@@ -160,7 +167,9 @@ export function ReglageHeuresCalmes() {
         <div style={TITRE}>Heures calmes</div>
         <div style={PHRASE}>
           {prefs === null
-            ? 'Chargement…'
+            ? debutConnu !== undefined && finConnue !== undefined
+              ? `${debutConnu} – ${finConnue}`
+              : 'Chargement…'
             : plage === null
               ? 'Désactivées : les notifications push partent à toute heure.'
               : `Aucune notification push de ${heureFr(plage.start)} à ${heureFr(plage.end)} (heure locale). La sécurité du compte passe toujours.`}
