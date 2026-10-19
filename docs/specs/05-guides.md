@@ -154,3 +154,10 @@ Guides publiés : **conservés**, `author_user_id = null`, `maintained_by_commun
 - `rule: le mot certifié est rejeté dans un titre de guide`
 - `rule: la suppression du compte anonymise les guides publiés au lieu de les supprimer`
 - `rule: la date de dernière mise à jour est renvoyée sur chaque guide de liste`
+
+## Livré — lot G (guides)
+
+- **A06** : zéro, une ou N propositions (plus d'emplacements fixes), onglets En attente / Acceptées / Refusées réels, diff avant/après mot à mot. La route ne rend pas les refusées ni le nom de section.
+- **A05** : « Partir d'un parcours » — choix du parcours terminé source (`POST /journeys/:id/to-guide`), puis ouverture du brouillon pré-rempli.
+- **`guides.view_count`** : conservé sans lecteur, par décision (§5 exige colonne et tâche `guide.view_count_flush`, 00 §1.2 interdit de l'exposer).
+- Les guides passent par le pipeline de modération (13 §14) : règles locales à la publication, analyse IA asynchrone après `guide.published`.

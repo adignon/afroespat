@@ -184,3 +184,13 @@ Signalements émis : conservés anonymisés. Dossiers où le membre est l'auteur
 - `rule: une contestation est traitée par un modérateur différent`
 - `rule: un numéro banni ne peut pas se réinscrire`
 - `rule: un modérateur bénévole ne peut pas lire une conversation privée`
+
+## 14. Livré — le pipeline couvre tous les contenus publiés (lot G)
+
+- **Un seul pipeline.** `ModerationService.handleContentPublished` relit le texte depuis sa table pour : publications, commentaires (fil, réponses de sujet de réseau, guides, événements), stories, guides (titre + pages), annonces logement, offres d'emploi, fiches pro, astuces de ville, sujets de réseau, demandes et événements (déjà là). Abonnements : `post.published`, `post.commented`, `story.published`, `guide.published`, `housing.published`, `job.published`, `pro.registered`, `city_tip.published`, `community.topic_created`.
+- **Étape 1 synchrone, une seule source.** Les règles locales sont `matchLocalRule` (`@app/shared`) ; les copies du fil et de l'entraide ont disparu. Les modules qui refusent à la création : fil, entraide, guides (`ModerationService.gate`, dossier priorité 1), logement, emploi, fiches pro, astuces, sujets et annonces de réseau (`assertLocalRules`). Les guides n'appellent plus le fournisseur d'IA : l'analyse passe par `guide.published`.
+- **Effets** (`ModerationEffectsService`) : `moderation.content_hidden / restored / removed` sont appliqués sur chaque type (guide `UNPUBLISHED`, annonce `moderation_status = PENDING`, offre/fiche `REMOVED`, astuce `HIDDEN`, sujet `deleted_at`, entraide `FLAGGED`, fil via `FeedService`). Table `moderation_hides` : l'état d'avant, pour qu'un rétablissement ne ressuscite jamais un contenu supprimé par son auteur ni ne lève un blocage de risque.
+- **Types de sujet ajoutés** : `STORY`, `CITY_TIP` (`ReportSubjectType`).
+- **Auteur** : `GET /posts/:id` rend `moderationState` — `IN_REVIEW` (« contenu en vérification ») ou `REMOVED` (« contenu retiré », corps vide) — à l'auteur seul ; `404` pour les autres.
+- **`moderation.sla_alert`** écrit une `staff_alerts` par compte équipe actif (MODERATOR, CONTENT_ADMIN, SUPER_ADMIN) et par dossier prioritaire hors délai ; routes `GET /admin/moderation/alerts`, `POST /admin/moderation/alerts/:id/read`.
+- **Non touché** : le cas MONEY_REQUEST des conversations de parrainage (lot D).

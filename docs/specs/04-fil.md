@@ -174,3 +174,9 @@ Publications, images et stories : supprimées (les signets des autres membres af
 - `rule: une story expirée n'est renvoyée qu'à son auteur et aux membres qui l'ont enregistrée`
 - `rule: aucune réponse de story ne contient de compteur de vues`
 - `rule: une story contenant un lien ou un numéro est refusée`
+
+## Livré — lot G (fil, stories)
+
+- **A02** : la vraie publication (`GET /posts/:id`) à la place de la publication de la maquette ; répondre, modifier (15 min) et supprimer son commentaire (`PATCH`/`DELETE /comments/:id`), réagir, enregistrer, signaler ; « Choisir un réseau » (`POST /posts/:id/move-to-topic`, offert selon `canMoveToTopic`) et « Suite dans le réseau X » ; guides liés et « Lier un guide » (`PATCH /posts/:id`) ; états « contenu en vérification » / « contenu retiré ».
+- **A01** : états chargement / erreur / « fil vide » ; `maxLength` sur le composeur et les commentaires (`FEED_LIMITS`) ; poids d'image contrôlé avant l'envoi (`MEDIA_MAX_IMAGE_BYTES`).
+- **Stories** : « Mes stories » (`/stories/mes-stories`, `GET /me/stories`, historique 30 jours), « Garder » (`POST /stories/:id/convert`) et « Supprimer » (`DELETE /stories/:id`) depuis la lecture et l'historique.
