@@ -1,46 +1,49 @@
 import { notFound } from 'next/navigation';
-import { PageStatiqueScreen, type PageStatique } from './page-screen';
+import { pageSlugSchema, staticPagePublicSchema, type StaticPagePublic } from '@app/shared';
+import { FournisseurPageLegale } from '@/components/document-legal';
+import { API_BASE } from '@/lib/api/base';
+import { PageStatiqueScreen } from './page-screen';
 
 /**
  * `/p/:slug` — P03, la page statique. Composant SERVEUR.
  *
- * Le slug arrive en PROPRIÉTÉ, jamais par `useSearchParams()` : ce crochet force
- * un rendu côté client et fait échouer `next build` sans frontière `Suspense`. Le
- * serveur de développement l'accepte sans rien dire, et cinq pages de ce dépôt
- * ont déjà été servies blanches pour cette raison exacte.
+ * Le slug arrive en PROPRIÉTÉ, jamais par `useSearchParams()` : ce crochet force un rendu
+ * côté client et fait échouer `next build` sans frontière `Suspense`.
  *
- * ── LES SLUGS SONT UNE LISTE FERMÉE ─────────────────────────────────────────
+ * ── LA PAGE VIENT DE L'API, PLUS D'UNE LISTE FERMÉE ──────────────────────────
  *
- * L'URL est publique. Un slug inconnu rend `404` au lieu d'afficher une page
- * vide ou, pire, de réfléchir la valeur reçue : `/p/<script>…` ne doit pas faire
- * de cet écran un panneau d'affichage, et c'est la même règle que le `?reprise=`
- * de `/connexion` applique déjà.
+ * Avant ce lot, `SLUGS` était une liste de deux entrées : `/p/cgu` rendait 404 faute de
+ * route, et la politique de confidentialité était le texte de la maquette, « Version 3 »
+ * alors que la base disait 0. Le serveur lit maintenant `GET /pages/:slug` — la version EN
+ * VIGUEUR de `static_pages`, publiée depuis l'administration (D12) :
  *
- * ── POURQUOI `cgu` N'EST PAS DANS LA TABLE, ALORS QU'IL EXISTE EN BASE ──────
+ *   · un slug inconnu, ou jamais publié, rend un VRAI `404` (l'API répond 404, le
+ *     serveur appelle `notFound()`) — l'URL est publique, rien n'est réfléchi ;
+ *   · `ressources` garde la planche de la maquette (liste de ressources, 560 px) : c'est
+ *     une page de liens, pas un document, et elle n'est pas dans `static_pages`.
  *
- * `static_pages` porte bien deux lignes publiées, `cgu` et `confidentialite`,
- * mais AUCUNE ROUTE ne les sert (voir `page-screen.tsx`). Le seul document que la
- * maquette dessine est la politique de confidentialité. Brancher `cgu` sur cette
- * planche afficherait donc « Politique de confidentialité » à qui demande les
- * conditions d'utilisation — un document faux, avec son titre et ses pastilles de
- * version, sur un écran que le membre consulte avant d'accepter.
- *
- * Un `404` est honnête ; le mauvais document ne l'est pas. Le slug reviendra avec
- * la route, et c'est elle qu'il faut demander — pas une seconde planche inventée.
+ * Le texte part dans la PREMIÈRE réponse HTML (pas d'état de chargement) : c'est un
+ * document juridique, et un moteur de recherche ou un lecteur d'écran doit le voir.
  */
-const SLUGS: Readonly<Record<string, PageStatique>> = {
-  confidentialite: 'document',
-  ressources: 'ressources',
-};
-
 export default async function Page({
   params,
 }: {
   readonly params: Promise<{ readonly slug: string }>;
 }) {
   const { slug } = await params;
-  const variante = SLUGS[slug];
-  if (variante === undefined) notFound();
+  if (slug === 'ressources') return <PageStatiqueScreen variante="ressources" />;
 
-  return <PageStatiqueScreen variante={variante} />;
+  const valide = pageSlugSchema.safeParse(slug);
+  if (!valide.success) notFound();
+
+  const reponse = await fetch(`${API_BASE}/pages/${valide.data}`, { cache: 'no-store' });
+  if (reponse.status === 404) notFound();
+  if (!reponse.ok) throw new Error(`GET /pages/${valide.data} : ${reponse.status}`);
+  const page: StaticPagePublic = staticPagePublicSchema.parse(await reponse.json());
+
+  return (
+    <FournisseurPageLegale page={page}>
+      <PageStatiqueScreen variante="document" />
+    </FournisseurPageLegale>
+  );
 }

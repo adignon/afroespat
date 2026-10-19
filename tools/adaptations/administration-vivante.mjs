@@ -123,11 +123,40 @@ const ADMIN_CONNEXION = {
   },
 };
 
-export const ADAPTATIONS_ADMIN_VIVANTE = [ADMIN_CONNEXION, ADMIN_CONTENU, ADMIN_BARRE, ADMIN_REPERES];
+
+/**
+ * ── P03 : LE DOCUMENT LÉGAL VIENT DE L'API ───────────────────────────────────
+ *
+ * Le cadre « Desktop » de P03 écrit « Politique de confidentialité · Version 3 · En
+ * vigueur depuis le 1er septembre 2026 » en dur, avec un sommaire de cinq `href="#"` qui
+ * ne visaient rien. Le conteneur (sommaire + carte) devient `DocumentLegal`, qui en garde
+ * le dessin et lit le contenu de `GET /pages/:slug`. La variante « Ressources » (560 px)
+ * n'a pas ce conteneur : « introuvable sur ce cadre » est attendu (piège 7).
+ */
+const P03_DOCUMENT = {
+  screens: ['P03'],
+  nom: 'P03_DOCUMENT',
+  why: 'Le document de P03 (sommaire + carte) vient de `GET /pages/:slug` : titre, version, date et corps de `static_pages`, au lieu de la politique de confidentialité écrite en dur « Version 3 ».',
+  provides: [],
+  apply(jsx) {
+    const marque = '<div style={{ flex: "1", display: "flex", gap: "48px", justifyContent: "center", padding: "48px 40px", overflow: "hidden" }}>';
+    const debut = jsx.indexOf(marque);
+    if (debut < 0) return { jsx, applied: false };
+    const fin = finElement(jsx, debut);
+    if (fin < 0) return { jsx, applied: false };
+    let out = `${jsx.slice(0, debut)}<DocumentLegal />${jsx.slice(fin)}`;
+    // Le sommaire (`toc`) n'est plus lu : sans ceci, la déstructuration resterait inutilisée.
+    out = out.replace(/\n  const \{ toc \} = props;\n/, '\n').replace('(props: OnboardingVals)', '(_props: OnboardingVals)');
+    return { jsx: out, applied: true };
+  },
+};
+
+export const ADAPTATIONS_ADMIN_VIVANTE = [ADMIN_CONNEXION, ADMIN_CONTENU, ADMIN_BARRE, ADMIN_REPERES, P03_DOCUMENT];
 
 export const AJOUTS_ADMIN_VIVANTE = {
   BarreAdmin: '@/components/admin/barre-admin',
   ConnexionEquipe: '@/components/admin/connexion-equipe',
+  DocumentLegal: '@/components/document-legal',
   ...Object.fromEntries(
     Object.entries({
       ContenuMembres: 'membres',

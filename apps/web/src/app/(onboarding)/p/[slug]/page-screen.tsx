@@ -24,19 +24,13 @@ import { INITIAL_ONBOARDING_STATE, onboardingVals } from '@/screens/onboarding/d
  * Ce qui aurait rendu la page vide, en revanche, c'est `useSearchParams()`. Le
  * slug est donc lu en PROPRIÉTÉ, par le composant serveur d'à côté.
  *
- * ── CE QUE CET ÉCRAN NE PEUT PAS ENCORE FAIRE ───────────────────────────────
+ * ── D'OÙ VIENT LE CORPS DU DOCUMENT (lot « contenu légal ») ─────────────────
  *
- * Le corps du document est celui de la maquette, transcodé — il n'y a pas d'autre
- * choix aujourd'hui : `static_pages` existe en base et porte deux lignes
- * publiées (`cgu`, `confidentialite`, version « 0 »), mais AUCUNE ROUTE ne les
- * sert. Ni côté membre (`GET /pages/:slug`), ni côté équipe, alors que
- * 15-administration §5 promet le CRUD `/pages` et que `consents.version`
- * référence `static_pages.version`.
- *
- * Conséquence visible, et à remonter plutôt qu'à maquiller : les deux pastilles
- * « Version 3 » et « En vigueur depuis le 1er septembre 2026 » sont celles de la
- * maquette, et la base dit version « 0 ». Les corriger à la main ici serait
- * inventer une donnée ; les brancher demande la route.
+ * Plus de la maquette : de `GET /pages/:slug`, lu par `p/[slug]/page.tsx` et fourni à
+ * `DocumentLegal` (posé dans la planche par l'adaptation `P03_DOCUMENT`). Les pastilles
+ * « Version N » et « En vigueur depuis le … » sont celles de `static_pages`, plus le
+ * « Version 3 » de la maquette qui contredisait la base. La variante « ressources » est la
+ * planche de la maquette, inchangée.
  */
 export type PageStatique = 'document' | 'ressources';
 

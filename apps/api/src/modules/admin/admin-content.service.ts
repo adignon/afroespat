@@ -437,6 +437,14 @@ export class AdminContentService {
       select: { cityId: true, originCountryId: true, phase: true, plan: true },
     });
     if (user === null) return { announcement: null };
+    // Le drapeau `annonces.bandeau` coupe le bandeau en cas d'incident (15 §4.3 : « couper une
+    // fonctionnalité en incident »). Absent, il est ouvert : l'annonce est le comportement par défaut.
+    const ouvert = await this.flags.isEnabled(
+      'annonces.bandeau',
+      { userId, cityId: user.cityId, countryId: user.originCountryId, phase: user.phase, plan: user.plan },
+      true,
+    );
+    if (!ouvert) return { announcement: null };
     const now = new Date();
     const candidates = await this.prisma.announcement.findMany({
       where: { startsAt: { lte: now }, OR: [{ endsAt: null }, { endsAt: { gt: now } }] },

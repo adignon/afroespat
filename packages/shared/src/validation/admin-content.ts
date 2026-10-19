@@ -387,3 +387,17 @@ export const ADMIN_CONTENT_AUDIT_ACTIONS = {
   guideProposalDecided: 'guide.proposal_decided_by_staff',
   impactExported: 'impact.exported',
 } as const;
+
+// ── Consentement redemandé (01 §2.10) ───────────────────────────────────────
+
+/** `GET /me/consents` : l'état courant, et ce qu'il reste à (re)demander. */
+export const myConsentsSchema = z.object({
+  items: z
+    .array(z.object({ type: z.string(), granted: z.boolean(), version: z.string(), outdated: z.boolean() }).passthrough())
+    .default([]),
+  outstanding: z.array(z.string()),
+});
+export type MyConsents = z.infer<typeof myConsentsSchema>;
+
+/** Le document que chaque type de consentement référence (01 §2.10). */
+export const CONSENT_DOCUMENT_SLUGS = { TERMS: 'cgu', PRIVACY: 'confidentialite' } as const;
