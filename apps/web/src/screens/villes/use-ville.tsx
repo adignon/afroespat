@@ -10,6 +10,7 @@ import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { FenetreEcrire } from '@/components/fenetre-ecrire';
 import { FenetreSignalement } from '@/components/fenetre-signalement';
 import { notifyError } from '@/components/notifications';
+import { centimesDe } from '@/lib/centimes';
 import { ApiError, memberApi } from '@/lib/api/index';
 import type {
   ContributionView,
@@ -191,13 +192,6 @@ const LIGNES_DEPART: readonly LigneBudgetSaisie[] = [
   { libelle: '', montant: '' },
   { libelle: '', montant: '' },
 ];
-
-/** « 480 », « 480,50 », « 480 € » → des centimes entiers, ou `null` si illisible. */
-export function centimesDe(saisie: string): number | null {
-  const propre = saisie.replace(/[€\s]/g, '').replace(',', '.');
-  if (propre === '' || !/^\d+(\.\d{1,2})?$/.test(propre)) return null;
-  return Math.round(Number(propre) * 100);
-}
 
 export function useContribution(
   slug: string,
