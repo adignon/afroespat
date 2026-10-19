@@ -630,15 +630,8 @@ export const screens = [
    */
   screen({
     section: 'D04',
-    dataType: 'D04Data',
     frames: pleinEcran(titre('Modération')),
-    donnees: [
-      {
-        noeud: '>46 dossiers ouverts<',
-        devient: '>{{ file.ouverts }} dossiers ouverts<',
-        why: 'Les dossiers dans la file : somme de `openByPriority` de `GET /admin/moderation/stats` — qui compte `OPEN` ET `IN_REVIEW`, soit 1 847 là où la mesure du tableau de bord en voit 1 811. Les deux sont justes et ne comptent pas la même chose.',
-      },
-    ],
+    // Lot H : la zone de contenu est un composant vivant (tools/adaptations/administration-vivante.mjs).
   }),
 
   /**
@@ -675,15 +668,8 @@ export const screens = [
    */
   screen({
     section: 'D05',
-    dataType: 'D05Data',
     frames: pleinEcran(titre('Dossier #4812')),
-    donnees: [
-      {
-        noeud: '>Publication · priorité 1 · SLA dépassé<',
-        devient: '>{{ dossier.sujet }} · priorité {{ dossier.priorite }} · SLA {{ dossier.slaEtat }}<',
-        why: 'Le sous-titre du dossier : `subjectType`, `priority` et `sla` de `GET /admin/moderation/cases/:id`. L’état du SLA est calculé par le SERVEUR — l’horloge du navigateur est réglable, et un modérateur en retard d’une heure ne doit pas lire « respecté » sur un dossier hors délai.',
-      },
-    ],
+    // Lot H : la zone de contenu est un composant vivant (tools/adaptations/administration-vivante.mjs).
   }),
 
   // ── D06 · `/admin/parcours` — modèles et versions (T5 D06) ─────────────────
@@ -734,84 +720,8 @@ export const screens = [
    */
   screen({
     section: 'D08',
-    dataType: 'D08Data',
     frames: pleinEcran(titre('Référentiels')),
-    donnees: [
-      {
-        /**
-         * LES TROIS LIGNES DESSINÉES, liées en UNE boucle.
-         *
-         * Les trois colonnes d'action de la maquette sont les TROIS cas de 02 §4.2 —
-         * une ville active qu'on peut fusionner, une ville à activer, un doublon à
-         * rattacher — et aucune n'est jetée : chacune garde son dessin sous son
-         * `<sc-if>`. Ne garder que la première aurait donné une liste où aucune ville
-         * ne s'active jamais, et le défaut n'aurait sauté aux yeux de personne.
-         */
-        noeud:
-          LIGNE_VILLE(
-            '',
-            'Lyon',
-            'Auvergne-Rhône-Alpes',
-            '1 400',
-            PASTILLE_VILLE('#E3F0EB', '#0F5C48', 'Active'),
-            'Fusionner',
-          ) +
-          LIGNE_VILLE(
-            'background:#FAFBFB',
-            'Nantes',
-            'Pays de la Loire',
-            '190',
-            PASTILLE_VILLE('#FBE3D4', '#B4581F', 'Bientôt'),
-            BOUTON_ACTIVER_D08,
-          ) +
-          LIGNE_VILLE(
-            '',
-            'Lyon 07',
-            'Auvergne-Rhône-Alpes',
-            '4',
-            PASTILLE_VILLE('#F2F5F4', '#5D6B66', 'Doublon'),
-            AMORCE_FUSION_D08 + 'Lyon</span>',
-          ),
-        devient:
-          '<sc-for list="{{ villes }}" as="v">' +
-          LIGNE_VILLE(
-            '',
-            '{{ v.nom }}',
-            '{{ v.region }}',
-            '{{ v.membres }}',
-            PASTILLE_VILLE('{{ v.statutFond }}', '{{ v.statutTexte }}', '{{ v.statut }}'),
-            '<sc-if value="{{ v.fusionnable }}">Fusionner</sc-if>' +
-              '<sc-if value="{{ v.activable }}">' +
-              BOUTON_ACTIVER_D08 +
-              '</sc-if><sc-if value="{{ v.doublon }}">' +
-              AMORCE_FUSION_D08 +
-              '{{ v.fusionneAvec }}</span></sc-if>',
-          ) +
-          '</sc-for>',
-        /**
-         * Le remontage des trois colonnes d'action, DÉCLARÉ.
-         *
-         * Sans ces deux motifs, le troisième contrôle refuse — et il a raison de
-         * refuser : les trois cellules ne sont pas contiguës dans la maquette, donc
-         * les réunir est bien un remontage. Les deux fragments sont vérifiés présents
-         * DANS CE CADRE à chaque génération.
-         */
-        motifs: [BOUTON_ACTIVER_D08, AMORCE_FUSION_D08],
-        why: 'Le tableau des villes, de `GET /admin/ref/cities` — nom, région, nombre de membres, statut et les trois actions de 02 §4.2. La ville pilote (`isPilot`, Paris) porte son statut ici, où rien ne l’affichait.',
-      },
-      {
-        noeud: '>Activer Nantes ?<',
-        devient: '>Activer {{ activation.ville }} ?<',
-        why: 'La carte de confirmation porte le nom de la ville CANDIDATE — la première ville inactive de `GET /admin/ref/cities`, et non un nom figé.',
-      },
-      {
-        noeud:
-          'Un réseau de ville sera créé et les 190 membres y seront rattachés automatiquement.',
-        devient:
-          'Un réseau de ville sera créé et les {{ activation.membres }} membres y seront rattachés automatiquement.',
-        why: 'Le nombre de membres qui seront rattachés (`memberCount` de la ville candidate) : 02 §4.2 le promet, et un nombre figé en ferait une promesse fausse.',
-      },
-    ],
+    // Lot H : la zone de contenu est un composant vivant (tools/adaptations/administration-vivante.mjs).
   }),
 
   // ── D09 · `/admin/guides` — propositions escaladées et guides obsolètes ────
@@ -858,15 +768,8 @@ export const screens = [
    */
   screen({
     section: 'D10',
-    dataType: 'D10Data',
     frames: pleinEcran(titre('Services')),
-    donnees: [
-      {
-        noeud: '>JUSTIFICATIFS PRO · 5<',
-        devient: '>JUSTIFICATIFS PRO · {{ justificatifs.enAttente }}<',
-        why: 'Les fiches pro en attente de validation, comptées en suivant le curseur de `GET /admin/pro-profiles?status=PENDING` jusqu’au bout — cette route pagine honnêtement, donc le compte est complet.',
-      },
-    ],
+    // Lot H : la zone de contenu est un composant vivant (tools/adaptations/administration-vivante.mjs).
   }),
 
   // ── D11 · `/admin/alertes` — alertes arnaques (13 §5) ──────────────────────
@@ -929,64 +832,7 @@ export const screens = [
    */
   screen({
     section: 'D16',
-    dataType: 'D16Data',
     frames: pleinEcran(titre('Rapport d’impact')),
-    donnees: [
-      {
-        noeud: '>5 820 membres accompagnés<',
-        devient: '>{{ impact.membres }} membres accompagnés<',
-        why: 'Le titre de la première planche : `impact.members_accompanied` de `GET /admin/impact`.',
-      },
-      {
-        /**
-         * LE LIBELLÉ SERT DE DISCRIMINANT, et il n'est pas décoratif : les quatre
-         * tuiles sont dessinées à l'identique, et « 214 » seul ne dirait pas
-         * laquelle. C'est le cas que `fois` existe pour empêcher — lier la mauvaise
-         * tuile produirait un écran qui compile, s'affiche, et ment.
-         */
-        noeud: '>214</div><div style="font-size:10.5px;color:#5D6B66">parcours aboutis<',
-        devient:
-          '>{{ impact.parcours }}</div><div style="font-size:10.5px;color:#5D6B66">parcours aboutis<',
-        why: 'Les parcours aboutis : `impact.journeys_completed`.',
-      },
-      {
-        noeud: '>2 310</div><div style="font-size:10.5px;color:#5D6B66">présences<',
-        devient:
-          '>{{ impact.presences }}</div><div style="font-size:10.5px;color:#5D6B66">présences<',
-        why: 'Les présences aux événements : `impact.event_attendances`.',
-      },
-      {
-        noeud: '>1 780</div><div style="font-size:10.5px;color:#5D6B66">entraides<',
-        devient:
-          '>{{ impact.entraides }}</div><div style="font-size:10.5px;color:#5D6B66">entraides<',
-        why: 'Les entraides résolues : `impact.help_resolved`.',
-      },
-      {
-        noeud: '>148</div><div style="font-size:10.5px;color:#5D6B66">parrainages<',
-        devient:
-          '>{{ impact.parrainages }}</div><div style="font-size:10.5px;color:#5D6B66">parrainages<',
-        why: 'Les parrainages aboutis : `impact.mentorships_completed`.',
-      },
-      {
-        noeud: '>T3 2026 ▾<',
-        devient: '>{{ impact.trimestre }} ▾<',
-        why: 'Le trimestre du rapport, tel que `GET /admin/impact` le nomme (`trimestre`, « 2026-T3 ») — jamais déduit de l’horloge du navigateur.',
-      },
-      {
-        /**
-         * LE MÊME TRIMESTRE SUR LES TROIS PLANCHES, lié en une fois.
-         *
-         * `fois: 3` est COMPTÉ, pas estimé : la maquette écrit la légende sur ses
-         * trois planches (« · 1/4 », « · 2/4 », « · 3/4 »), et le fragment commun
-         * s'arrête avant le numéro. Si le designer en ajoute ou en retire une, la
-         * génération s'arrête en nommant le fragment au lieu de laisser deux
-         * planches sur trois afficher un trimestre figé.
-         */
-        noeud: "RAPPORT D'IMPACT · T3 2026 · ",
-        devient: "RAPPORT D'IMPACT · {{ impact.trimestre }} · ",
-        fois: 3,
-        why: 'La légende des trois planches porte le trimestre réel, et les trois sont liées ensemble.',
-      },
-    ],
+    // Lot H : la zone de contenu est un composant vivant (tools/adaptations/administration-vivante.mjs).
   }),
 ];

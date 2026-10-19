@@ -26,6 +26,7 @@ import {
 import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
 import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/chrome-gauche-vivant.mjs';
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
+import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/administration-vivante.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
 import {
   ADAPTATIONS_PARCOURS_VIVANT,
@@ -18250,6 +18251,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_PARCOURS_VIVANT,
     // La colonne de gauche vivante : raccourcis et barre d'avancement.
     ...ADAPTATIONS_CHROME_GAUCHE,
+    // Lot H : l'administration vivante (D01 à D16), tools/adaptations/administration-vivante.mjs.
+    ...ADAPTATIONS_ADMIN_VIVANTE,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -18269,7 +18272,7 @@ function adaptFields(jsx, section) {
      */
     const universelle = transform.screens.includes('*');
     if (!universelle && !transform.screens.includes(section)) continue;
-    const result = transform.apply(out);
+    const result = transform.apply(out, { section });
     if (!result.applied) {
       if (universelle) continue;
       // Attendue sur cet écran mais introuvable : c'est un motif qui a cessé de
