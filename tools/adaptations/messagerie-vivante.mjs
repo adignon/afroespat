@@ -318,7 +318,48 @@ export const MV_X01_H1_MOBILE = {
   },
 };
 
+// ─── K07 · HEURES CALMES ET RÉSUMÉ HEBDOMADAIRE ──────────────────────────────
+
+const LIGNE_REGLAGE = (titre) =>
+  new RegExp(
+    '<div style=\\{\\{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 0" \\}\\}><div style=\\{\\{ flex: "1" \\}\\}><div style=\\{\\{ fontSize: "13.5px", fontWeight: "700" \\}\\}>' +
+      titre +
+      '</div>.*?</span></span></div>',
+    's',
+  );
+
+/**
+ * Les deux lignes à interrupteur mort deviennent des réglages : la plage des heures
+ * calmes s'édite, le résumé hebdomadaire s'active. Séparés des composants de l'email
+ * et du push (lot B) : chacun lit et écrit sa propre part des préférences.
+ */
+export const MV_K07_REGLAGES = {
+  screens: ['K07'],
+  nom: 'MV_K07_REGLAGES',
+  why: 'Les heures calmes et le résumé hebdomadaire s’affichaient mais ne se modifiaient pas : leurs interrupteurs étaient des <span>.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let fait = false;
+    const calmes = remplacerUn(out, LIGNE_REGLAGE('Heures calmes'), '<ReglageHeuresCalmes />');
+    if (calmes !== null) {
+      out = calmes;
+      fait = true;
+    }
+    const resume = remplacerUn(out, LIGNE_REGLAGE('Résumé hebdomadaire'), '<ReglageResume />');
+    if (resume !== null) {
+      out = resume;
+      fait = true;
+    } else if (fait) {
+      // Le téléphone ne dessine pas le résumé : il suit les heures calmes, dans la même carte.
+      out = out.replace('<ReglageHeuresCalmes />', '<ReglageHeuresCalmes /><ReglageResume />');
+    }
+    return fait ? { jsx: out, applied: true } : { jsx, applied: false };
+  },
+};
+
 export const ADAPTATIONS_MESSAGERIE_VIVANTE = [
+  MV_K07_REGLAGES,
   MV_X01_FILTRES,
   MV_X01_SOUSLIGNE,
   MV_X01_MEMOIRE,
@@ -338,6 +379,8 @@ export const AJOUTS_MESSAGERIE_VIVANTE = {
   ToutMarquerLu: '@/components/messagerie/notifications',
   CompteurNonLues: '@/components/messagerie/notifications',
   EtatVide: '@/components/etat-vide',
+  ReglageHeuresCalmes: '@/components/reglage-calme',
+  ReglageResume: '@/components/reglage-calme',
   FiltresRecherche: '@/components/messagerie/filtres-recherche',
   SignalerRechercheVide: '@/components/messagerie/recherche-vivante',
   MemoriserRecherche: '@/components/messagerie/recherche-vivante',
