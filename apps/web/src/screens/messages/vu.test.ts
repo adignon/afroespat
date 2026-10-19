@@ -13,7 +13,7 @@ const base = {
 } as const;
 
 function msg(id: string, mine: boolean, sentAt: string, over: Partial<Message> = {}): Message {
-  return { ...base, id, senderUserId: mine ? 'moi' : 'lui', body: `corps ${id}`, sentAt, mine, ...over } as Message;
+  return { ...base, id, senderUserId: mine ? 'moi' : 'lui', body: `corps ${id}`, sentAt, mine, ...over };
 }
 
 // L'API rend du plus récent au plus ancien.

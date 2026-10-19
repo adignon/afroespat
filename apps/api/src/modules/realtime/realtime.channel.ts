@@ -46,7 +46,7 @@ export function parseRelayMessage(raw: string): RelayMessage | null {
     // pourrait publier un nom que cette passerelle ne connaît pas, et le pousser
     // tel quel à un navigateur serait pousser n'importe quoi.
     if (!(REALTIME_EVENTS as readonly string[]).includes(value.event)) return null;
-    return { userId: value.userId, event: value.event as RealtimeEvent, payload: value.payload ?? {} };
+    return { userId: value.userId, event: value.event, payload: value.payload ?? {} };
   } catch {
     return null;
   }

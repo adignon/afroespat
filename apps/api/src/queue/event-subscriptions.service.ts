@@ -158,7 +158,7 @@ export class EventSubscriptionsService implements OnModuleInit {
         recipientUserIds?: unknown;
         senderUserId?: unknown;
       };
-      const recipients = Array.isArray(payload?.recipientUserIds) ? payload.recipientUserIds : [];
+      const recipients: unknown[] = Array.isArray(payload?.recipientUserIds) ? (payload.recipientUserIds as unknown[]) : [];
       for (const userId of recipients) {
         if (typeof userId !== 'string') continue;
         await this.realtime.publish(userId, 'message.new', {

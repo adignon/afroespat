@@ -2,8 +2,6 @@ import {
   SEARCH_PERIODS,
   SEARCH_STATES,
   uuidSchema,
-  type SearchPeriod,
-  type SearchState,
 } from '@app/shared';
 import type { ValeursFiltresRecherche } from './data';
 
@@ -44,10 +42,8 @@ export function filtresDeLUrl(
     rayon:
       villeValide !== null && Number.isInteger(rayon) && rayon >= 1 && rayon <= 500 ? rayon : null,
     pays: pays !== null && uuidSchema.safeParse(pays).success ? pays : null,
-    periode: (SEARCH_PERIODS as readonly string[]).includes(periode ?? '')
-      ? (periode as SearchPeriod)
-      : 'all',
-    etat: (SEARCH_STATES as readonly string[]).includes(etat ?? '') ? (etat as SearchState) : null,
+    periode: periode !== null && (SEARCH_PERIODS as readonly string[]).includes(periode) ? periode : 'all',
+    etat: (SEARCH_STATES as readonly string[]).includes(etat ?? '') ? etat : null,
   };
 }
 
