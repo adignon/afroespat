@@ -108,7 +108,9 @@ export type CityTipsQuery = z.infer<typeof cityTipsQuerySchema>;
 export const createCityTipSchema = z
   .object({
     kind: z.enum(CityTipKind),
-    body: z.string().trim().min(10).max(1000),
+    // 2 caractères au moins : un libellé de budget tient en un mot (« Loyer »). Les
+    // trois autres genres exigent 10 caractères, ci-dessous.
+    body: z.string().trim().min(2).max(1000),
     amountCents: z.number().int().min(0).max(100_000_000).optional(),
     /** §2.3 : une découverte gardée devient un tip, avec sa story d'origine. */
     sourceStoryId: uuidSchema.optional(),
@@ -127,6 +129,9 @@ export const createCityTipSchema = z
         path: ['venueName'],
         message: 'Seul un commerce porte un nom et une adresse.',
       });
+    }
+    if (value.kind !== 'BUDGET' && value.body.length < 10) {
+      ctx.addIssue({ code: 'too_small', path: ['body'], minimum: 10, type: 'string', inclusive: true });
     }
     const max = CITY_TIP_MAX_BODY[value.kind];
     if (value.body.length > max) {
@@ -279,6 +284,8 @@ export const cityProfileResponseSchema = z
           title: z.string(),
           type: z.string(),
           startsAt: z.string().datetime(),
+          timeZone: z.string(),
+          localDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
           venueName: z.string().nullable(),
           attendeeCount: z.number().int(),
           capacity: z.number().int().nullable(),
@@ -302,6 +309,14 @@ export const cityProfileResponseSchema = z
       BUDGET: z.array(cityTipViewSchema),
       TESTIMONY: z.array(cityTipViewSchema),
     }),
+    tipCounts: z
+      .object({
+        TIP: z.number().int(),
+        SHOP: z.number().int(),
+        BUDGET: z.number().int(),
+        TESTIMONY: z.number().int(),
+      })
+      .strict(),
     budgetMedianCents: z.number().int().nullable(),
     meta: z.object({ threshold: z.number().int(), newcomerWindowDays: z.number().int() }).strict(),
   })
@@ -320,6 +335,7 @@ export const memberCardSchema = z
     availableToHelp: z.boolean(),
     helpTypes: z.array(z.string()),
     occupationStatus: z.string().nullable(),
+    skills: z.array(z.string()),
     memberSince: z.string().datetime(),
   })
   .strict();

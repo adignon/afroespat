@@ -7179,7 +7179,10 @@ export const screens = [
    * la section est l'Annuaire ; la Carte mobile est dans MOB2, en dernière planche.
    */
   {
+    // Lot E : ces cadres lisent des données VIVANTES (`screens/villes/data.ts`), plus `AccueilData`.
     section: 'A11',
+    dataModule: '../villes/data',
+    dataType: 'VillesData',
     /**
      * `MobileCarte` NE LIT AUCUNE DONNÉE, et ce n'est pas un oubli de déclaration.
      *
@@ -7215,7 +7218,10 @@ export const screens = [
    * de 30 px » aurait pris l'un ou l'autre selon l'ordre du DOM.
    */
   {
+    // Lot E : ces cadres lisent des données VIVANTES (`screens/villes/data.ts`), plus `AccueilData`.
     section: 'A12',
+    dataModule: '../villes/data',
+    dataType: 'VilleData',
     heading: 'Lyon',
     donnees: A12_MOBILE,
     // Le bouton « Contribuer » de la barre d'onglets ouvre A12C. La maquette le dit
@@ -7281,7 +7287,10 @@ export const screens = [
    * planche est rendue à la fois, donc `aria-labelledby` ne peut pas être ambigu.
    */
   {
+    // Lot E : ces cadres lisent des données VIVANTES (`screens/villes/data.ts`), plus `AccueilData`.
     section: 'A12C',
+    dataModule: '../villes/data',
+    dataType: 'VilleData',
     out: 'apps/web/src/screens/a12c',
     modal: true,
     donnees: A12C_DONNEES,
@@ -7354,7 +7363,10 @@ export const screens = [
    * que A08 la porte déjà.
    */
   {
+    // Lot E : ces cadres lisent des données VIVANTES (`screens/villes/data.ts`), plus `AccueilData`.
     section: 'A12T',
+    dataModule: '../villes/data',
+    dataType: 'VilleData',
     out: 'apps/web/src/screens/a12t',
     heading: 'Lyon',
     donnees: A12T_DONNEES,

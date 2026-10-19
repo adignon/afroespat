@@ -5,15 +5,18 @@
 // extérieur, lui, est fluide : la maquette le fige à 1440 px, ce qui ne
 // serait pas responsive.
 import { Fragment } from 'react';
+import Link from 'next/link';
 import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
-import type { AccueilData } from '../accueil/data';
+import { CarteVilles } from '@/components/carte-villes';
+import { AnnuaireVilles } from '@/components/annuaire-villes';
+import type { VillesData } from '../villes/data';
 
-export function A11Desktop(props: AccueilData) {
-  const { panelVilles, rail } = props;
+export function A11Desktop(props: VillesData) {
+  const { panelVilles, rail, vivant } = props;
 
   return (
     <>
@@ -46,9 +49,9 @@ export function A11Desktop(props: AccueilData) {
     <div data-zone="centre" style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div data-zone="contenu" style={{ flex: "1", padding: "12px 0 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}><h1 style={{ margin: "0", fontSize: "28px", fontWeight: "800", letterSpacing: "-0.9px", flex: "1" }}>Villes et Membres</h1><div style={{ display: "flex", gap: "4px", background: "#EEF2F0", borderRadius: "14px", padding: "4px" }}><span style={{ padding: "9px 18px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", background: "#fff" }}>Carte</span><span style={{ padding: "9px 18px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", color: "#5D6B66" }}>Annuaire</span></div><span style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 16px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", fontSize: "13px", fontWeight: "600" }}>Pays d'origine : Tous<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg></span></div>
+        <div style={{ display: "flex", alignItems: "center", gap: "16px" }}><h1 style={{ margin: "0", fontSize: "28px", fontWeight: "800", letterSpacing: "-0.9px", flex: "1" }}>Villes et Membres</h1><div style={{ display: "flex", gap: "4px", background: "#EEF2F0", borderRadius: "14px", padding: "4px" }}><Link href={vivant.hrefCarte} data-villes-vue="carte" style={{ padding: "9px 18px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", background: vivant.vue === "carte" ? "#fff" : "transparent", color: vivant.vue === "carte" ? "#16211D" : "#5D6B66", textDecoration: "none" }}>Carte</Link><Link href={vivant.hrefAnnuaire} data-villes-vue="annuaire" style={{ padding: "9px 18px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", background: vivant.vue === "annuaire" ? "#fff" : "transparent", color: vivant.vue === "annuaire" ? "#16211D" : "#5D6B66", textDecoration: "none" }}>Annuaire</Link></div><label style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 16px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9", fontSize: "13px", fontWeight: "600", position: "relative", cursor: "pointer" }} data-villes-pays="">Pays d’origine : <select value={vivant.pays} onChange={(e) => vivant.onPays(e.target.value)} aria-label="Pays d’origine" style={{ border: "none", background: "transparent", font: "inherit", fontWeight: "600", color: "inherit", cursor: "pointer", outline: "none", appearance: "none", paddingRight: "4px" }}>{(vivant.paysOptions ?? []).map((o, oIndex) => (<option key={oIndex} value={o.valeur}>{o.libelle}</option>))}</select><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg></label></div>
         <div style={{ flex: "1", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", position: "relative", overflow: "hidden" }}>
-          <iframe src="Carte Villes.html" title="Carte des membres" style={{ position: "absolute", inset: "0", width: "100%", height: "100%", border: "0" }}></iframe>
+          {vivant.vue === "carte" ? (<CarteVilles points={vivant.points} maVilleId={vivant.maVilleId} />) : (<AnnuaireVilles membres={vivant.annuaire} filtres={vivant.filtres} aPlus={vivant.aPlus} onPlus={vivant.onPlus} />)}
         </div>
       </div>
     </div>

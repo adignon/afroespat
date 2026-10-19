@@ -22,7 +22,7 @@ import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
-import { haversineKm } from '../events/events.service';
+import { haversineKm, localDate, zoneOf } from '../events/events.service';
 
 /**
  * Villes et membres — 09-villes-agenda.md §2.
@@ -66,6 +66,8 @@ const MEMBER_SELECT = {
   city: { select: { id: true, name: true, slug: true } },
   originCountry: { select: { iso2: true, nameFr: true } },
   profile: { select: { availableToHelp: true, helpTypes: true, occupationStatus: true } },
+  // Les compétences que la carte de l'annuaire montre en puces (les trois premières).
+  skills: { select: { skill: { select: { nameFr: true } } }, take: 3 },
 } satisfies Prisma.UserSelect;
 
 type MemberRow = Prisma.UserGetPayload<{ select: typeof MEMBER_SELECT }>;
@@ -131,6 +133,7 @@ const TIP_SELECT = {
 export class CitiesService {
   private readonly logger = new Logger(CitiesService.name);
   private readonly cursorSecret = loadEnv().CURSOR_SECRET;
+  private readonly defaultTimeZone = loadEnv().DEFAULT_TIMEZONE;
 
   /** §2.3 : « Calculé à la requête, cache 5 minutes. Rien n'est stocké. » */
   private readonly desksCache = new Map<string, { at: number; items: unknown[] }>();
@@ -244,6 +247,7 @@ export class CitiesService {
         isActive: true,
         mergedIntoCityId: true,
         countryId: true,
+        country: { select: { iso2: true } },
       },
     });
     if (city === null) throw ApiError.notFound();
@@ -252,8 +256,9 @@ export class CitiesService {
     if (city.mergedIntoCityId !== null) throw ApiError.notFound();
     // Ni carte, ni fiche pour une ville inactive (§2.3, 02 §2.2).
     if (!city.isActive) this.fail('CITY_INACTIVE');
+    const zone = zoneOf(city.country.iso2, this.defaultTimeZone);
 
-    const [byCountry, network, upcoming, newcomers, tips, budgetMedian] = await Promise.all([
+    const [byCountry, network, upcoming, newcomers, tips, budgetMedian, tipCounts] = await Promise.all([
       this.breakdownByCountry(city.id),
       this.prisma.community.findFirst({
         where: { kind: 'CITY', cityId: city.id, status: 'ACTIVE' },
@@ -263,6 +268,7 @@ export class CitiesService {
       this.newcomers(city.id, viewerId),
       this.tipsByKind(city.id, viewerId),
       this.budgetMedianCents(city.id),
+      this.tipCountsByKind(city.id, viewerId),
     ]);
 
     return {
@@ -275,9 +281,16 @@ export class CitiesService {
         byCountry,
       },
       network,
-      events: upcoming,
+      events: upcoming.map((e) => ({
+        ...e,
+        // Le fuseau de la ville et le jour civil DANS ce fuseau : l'écran ne
+        // recalcule jamais un jour (comme les fiches de l'agenda).
+        timeZone: zone,
+        localDate: localDate(e.startsAt, zone),
+      })),
       newcomers,
       tips,
+      tipCounts,
       // §2.3 : « l'agrégat (médiane) s'affiche en tête ».
       budgetMedianCents: budgetMedian,
       meta: { threshold: CITY_COUNT_PRIVACY_THRESHOLD, newcomerWindowDays: NEWCOMER_WINDOW_DAYS },
@@ -442,6 +455,31 @@ export class CitiesService {
       grouped[row.kind]?.push(row);
     }
     return grouped;
+  }
+
+  /**
+   * Le NOMBRE de contributions par genre : la liste `tips` est bornée (40), le
+   * compteur de l'en-tête (« 212 contributions », « 38 contributions » sous la
+   * médiane) ne doit pas l'être.
+   */
+  private async tipCountsByKind(
+    cityId: string,
+    viewerId: string | null,
+  ): Promise<Record<'TIP' | 'SHOP' | 'BUDGET' | 'TESTIMONY', number>> {
+    const separated = await this.visibility.separatedFrom(viewerId);
+    const rows = await this.prisma.cityTip.groupBy({
+      by: ['kind'],
+      where: {
+        cityId,
+        deletedAt: null,
+        status: 'PUBLISHED',
+        ...separatedAuthorFilter(separated),
+      },
+      _count: { _all: true },
+    });
+    const out = { TIP: 0, SHOP: 0, BUDGET: 0, TESTIMONY: 0 };
+    for (const row of rows) out[row.kind] = row._count._all;
+    return out;
   }
 
   /**
@@ -695,6 +733,7 @@ export class CitiesService {
         availableToHelp: row.profile?.availableToHelp ?? false,
         helpTypes: row.profile?.helpTypes ?? [],
         occupationStatus: row.profile?.occupationStatus ?? null,
+        skills: row.skills.map((s) => s.skill.nameFr),
         memberSince: row.createdAt,
       })),
       nextCursor:
