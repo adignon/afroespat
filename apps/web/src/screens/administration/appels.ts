@@ -599,8 +599,8 @@ export async function chargerD04(): Promise<D04Data> {
 /**
  * Le type de contenu visé, dans les mots de la maquette.
  *
- * `ReportSubjectType` est une énumération FERMÉE de douze valeurs, et les douze
- * sont nommées ici — pas onze. Un `?? subjectType` en repli aurait affiché
+ * `ReportSubjectType` est une énumération FERMÉE, et toutes ses valeurs sont
+ * nommées ici (la quatorzième, `CITY_TIP`, est arrivée avec la fiche ville). Un `?? subjectType` en repli aurait affiché
  * `HELP_RESPONSE` en toutes lettres à un modérateur le jour où un dossier porte
  * ce type, et le défaut ne se serait vu que ce jour-là. L'exhaustivité est tenue
  * par le type : `Record<ReportSubjectType, string>` ne compile pas s'il en manque
@@ -625,6 +625,7 @@ const SUJET_FR: Record<ReportSubjectType, string> = {
   MESSAGE: 'Message',
   USER: 'Membre',
   COMMUNITY: 'Réseau',
+  CITY_TIP: 'Contribution de ville',
 };
 
 /**

@@ -2,6 +2,7 @@
 
 import {
   calendarResponseSchema,
+  cityMapResponseSchema,
   communitiesResponseSchema,
   eventDetailResponseSchema,
   eventsResponseSchema,
@@ -15,6 +16,12 @@ import {
 import { fetchMe, hasAccessToken, memberApi, resumeSession } from '@/lib/api/index';
 import {
   construireBande,
+  construireFiltres,
+  texteJourVide,
+  actionsVides,
+  presenceVide,
+  premierDuMois,
+  type ScopeAgenda,
   construireCarte,
   construireChoix,
   construireFeuille,
@@ -116,18 +123,18 @@ async function assurerSession(): Promise<void> {
  * fenêtre, jamais une erreur d'affichage — parce que tout ce qui est AFFICHÉ est
  * ensuite formaté dans le fuseau que l'API a annoncé.
  */
-function fenetreDuMois(maintenant: Date): { from: string; to: string } {
-  const an = maintenant.getFullYear();
-  const mois = maintenant.getMonth();
-  const premier = new Date(an, mois, 1);
-  const dernier = new Date(an, mois + 1, 0);
+function fenetreDuMois(moisCivil: string): { from: string; to: string } {
+  // Arithmétique civile en UTC : un mois n'a pas de fuseau, et les accesseurs
+  // locaux du navigateur feraient glisser la fenêtre d'un jour hors de Paris.
+  const [an, m] = moisCivil.split('-').map(Number) as [number, number];
+  const premier = new Date(Date.UTC(an, m - 1, 1));
+  const dernier = new Date(Date.UTC(an, m, 0));
   // Lundi de la semaine du 1er, dimanche de la semaine du dernier jour (ISO).
   const debut = new Date(premier);
-  debut.setDate(premier.getDate() - ((premier.getDay() + 6) % 7));
+  debut.setUTCDate(premier.getUTCDate() - ((premier.getUTCDay() + 6) % 7));
   const fin = new Date(dernier);
-  fin.setDate(dernier.getDate() + (7 - ((dernier.getDay() + 6) % 7)) - 1);
-  const civil = (d: Date): string =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  fin.setUTCDate(dernier.getUTCDate() + (7 - ((dernier.getUTCDay() + 6) % 7)) - 1);
+  const civil = (d: Date): string => d.toISOString().slice(0, 10);
   return { from: civil(debut), to: civil(fin) };
 }
 
@@ -144,6 +151,8 @@ interface Socle {
   readonly zone: string;
   readonly aujourdhui: string;
   readonly handle: string;
+  readonly cityId: string | null;
+  readonly mois: string;
 }
 
 /**
@@ -153,9 +162,17 @@ interface Socle {
  * il n'y a pas de jour sélectionné : on passe le jour courant, qui est ce que le
  * panneau met en avant quand la page ne parle pas d'un jour.
  */
-async function chargerSocle(jourChoisi: string | null): Promise<Socle> {
+async function chargerSocle(
+  jourChoisi: string | null,
+  options: { readonly mois?: string | null; readonly scope?: ScopeAgenda } = {},
+): Promise<Socle> {
   await assurerSession();
-  const fenetre = fenetreDuMois(new Date());
+  // Le mois AFFICHÉ : celui de l'URL, sinon celui du jour demandé, sinon le courant.
+  // (L'horloge du navigateur ne sert qu'à choisir la fenêtre ; tout ce qui est
+  // AFFICHÉ est formaté dans le fuseau que l'API annonce.)
+  const courant = jourCivilDe(new Date(), 'Europe/Paris').slice(0, 7);
+  const mois = options.mois ?? jourChoisi?.slice(0, 7) ?? courant;
+  const fenetre = fenetreDuMois(mois);
   const [me, calendrier, abonnement] = await Promise.all([
     fetchMe(),
     memberApi.get(
@@ -167,15 +184,20 @@ async function chargerSocle(jourChoisi: string | null): Promise<Socle> {
 
   const zone = calendrier.meta.timeZone;
   const aujourdhui = jourCivilDe(new Date(), zone);
-  const choisi = jourChoisi ?? jourDefaut(calendrier, aujourdhui);
+  const choisi = jourChoisi ?? jourDefaut(calendrier, aujourdhui, mois);
 
   return {
-    panneau: construirePanneau(calendrier, abonnement, choisi, aujourdhui, !me.monetisationActive),
+    panneau: construirePanneau(calendrier, abonnement, choisi, aujourdhui, !me.monetisationActive, {
+      mois,
+      ...(options.scope === undefined ? {} : { scope: options.scope }),
+    }),
     moi: construireMoi(me.user.displayName, me.user.avatarUrl),
     calendrier,
     zone,
     aujourdhui: choisi,
     handle: me.user.handle,
+    cityId: me.user.cityId,
+    mois,
   };
 }
 
@@ -186,7 +208,13 @@ async function chargerSocle(jourChoisi: string | null): Promise<Socle> {
  * serveur — pas sur une intuition. Si rien n'a d'événement dans la fenêtre, on
  * reste sur aujourd'hui : un agenda vide se montre vide, il ne saute pas.
  */
-function jourDefaut(calendrier: CalendarResponse, aujourdhui: string): string {
+function jourDefaut(calendrier: CalendarResponse, aujourdhui: string, mois: string): string {
+  // Dans un AUTRE mois que le courant, « aujourd'hui » n'a pas de sens : on ouvre
+  // sur le premier jour qui a un événement, sinon sur le 1er du mois.
+  if (!aujourdhui.startsWith(mois)) {
+    const premierPlein = calendrier.items.find((j) => j.date.startsWith(mois) && j.total > 0);
+    return premierPlein?.date ?? premierDuMois(mois);
+  }
   const aujourdhuiPlein = calendrier.items.find((j) => j.date === aujourdhui && j.total > 0);
   if (aujourdhuiPlein !== undefined) return aujourdhui;
   const prochain = calendrier.items.find((j) => j.date > aujourdhui && j.total > 0);
@@ -194,9 +222,18 @@ function jourDefaut(calendrier: CalendarResponse, aujourdhui: string): string {
 }
 
 /** Le nom de ma ville. `GET /me` ne rend que `cityId` : c'est l'écart de K01. */
-async function maVille(handle: string): Promise<string> {
-  const profil = await memberApi.get(`/users/${handle}`, publicProfileResponseSchema);
-  return profil.city?.name ?? '—';
+async function maVille(
+  handle: string,
+  cityId: string | null,
+): Promise<{ readonly nom: string; readonly slug: string | null }> {
+  const [profil, carte] = await Promise.all([
+    memberApi.get(`/users/${handle}`, publicProfileResponseSchema),
+    // La fiche ne vit que pour une ville ACTIVE : la carte les liste, et elle seule
+    // dit si le lien « Voir la fiche ville » a une destination.
+    memberApi.get('/cities/map', cityMapResponseSchema),
+  ]);
+  const slug = cityId === null ? null : (carte.items.find((v) => v.id === cityId)?.slug ?? null);
+  return { nom: profil.city?.name ?? '—', slug };
 }
 
 // ─── E01 · /agenda ───────────────────────────────────────────────────────────
@@ -212,25 +249,33 @@ async function maVille(handle: string): Promise<string> {
  *   · le prochain week-end (`/events?from&to`) — la carte « CE WEEK-END » a besoin
  *     des HEURES, que le calendrier ne porte pas.
  */
-export async function chargerE01(jourDemande: string | null): Promise<E01Data> {
-  const socle = await chargerSocle(jourDemande);
+export async function chargerE01(
+  jourDemande: string | null,
+  scope: ScopeAgenda = 'all',
+  moisDemande: string | null = null,
+): Promise<E01Data> {
+  const socle = await chargerSocle(jourDemande, { mois: moisDemande, scope });
   // Le socle a repris la session : les lectures publiques qui suivent partent
   // donc AVEC le jeton, et rendent la vue du MEMBRE — « mes participations en
   // tête » et la pastille « Vous y allez » en dépendent.
   const jour = socle.aujourdhui;
   const weekEnd = prochainWeekEnd(jour);
+  const filtreScope = scope === 'all' ? '' : `&scope=${scope}`;
 
   const [jourListe, weekEndListe, reseaux, ville] = await Promise.all([
-    memberApi.get(`/events?date=${jour}`, eventsResponseSchema),
+    memberApi.get(`/events?date=${jour}${filtreScope}`, eventsResponseSchema),
     memberApi.get(
       `/events?from=${weekEnd.from}&to=${weekEnd.to}&limit=5`,
       eventsResponseSchema,
     ),
     reseauxParId(),
-    maVille(socle.handle),
+    maVille(socle.handle, socle.cityId),
   ]);
 
   return {
+    villeHref: ville.slug === null ? null : `/villes/${ville.slug}`,
+    videTexte: texteJourVide(scope),
+    filtres: construireFiltres(jour, moisDemande, scope),
     moi: socle.moi,
     panneau: socle.panneau,
     jour: jourLong(jour),
@@ -239,8 +284,8 @@ export async function chargerE01(jourDemande: string | null): Promise<E01Data> {
     evenements: jourListe.items.map((e) => construireCarte(e, reseaux)),
     weekEnd: construireWeekEnd(weekEndListe),
     // La maquette écrit « LYON » en capitales : l'intitulé de sa carte de ville.
-    ville: ville.toUpperCase(),
-    bande: construireBande(socle.calendrier, jour),
+    ville: ville.nom.toUpperCase(),
+    bande: construireBande(socle.calendrier, jour, scope),
   };
 }
 
@@ -276,6 +321,9 @@ export async function chargerE02(id: string): Promise<E02Data> {
       : await reseauxParId();
 
   return {
+    // Les gestes sont ceux de la PAGE (`useActionsEvenement`) : un chargeur ne
+    // tient pas d'état d'appel. Voir `evenement-ecran.tsx`.
+    actions: actionsVides,
     moi: socle.moi,
     panneau: socle.panneau,
     evenement: construireFiche(detail, reseaux),
@@ -307,7 +355,7 @@ export async function chargerE03(): Promise<E03Data> {
   return {
     moi: socle.moi,
     panneau: socle.panneau,
-    ville: await maVille(socle.handle),
+    ville: (await maVille(socle.handle, socle.cityId)).nom,
     formulaire: formulaireVide,
   };
 }
@@ -335,6 +383,7 @@ export async function chargerE04(id: string): Promise<E04Data> {
   const lue = construireFeuille(feuille);
 
   return {
+    presence: { ...presenceVide, estOrganisateur: detail.isOrganizer, lignes: lue.participants },
     moi: socle.moi,
     panneau: socle.panneau,
     evenement: { titre: detail.title, quand: jourLongBas(detail.localDate) },
@@ -377,8 +426,13 @@ export type { EventDetailResponse };
  * C'est préférable à un plafond inventé, qui serait affiché comme vrai.
  */
 export const SQUELETTE_E01: E01Data = {
+  villeHref: null,
+  videTexte: '',
+  filtres: construireFiltres('', null, 'all'),
   moi: { initiales: '', prenom: '' },
   panneau: {
+    precedent: '/agenda',
+    suivant: '/agenda',
     mois: '',
     aujourdhui: '',
     totalMois: 0,
@@ -416,9 +470,15 @@ export const SQUELETTE_E01: E01Data = {
 const CHOIX_AU_REPOS: EtatBouton = { fond: '#F2F5F4', texte: '#5D6B66' };
 
 export const SQUELETTE_E02: E02Data = {
+  actions: actionsVides,
   moi: SQUELETTE_E01.moi,
   panneau: SQUELETTE_E01.panneau,
   evenement: {
+    id: '',
+    annule: null,
+    monStatut: null,
+    commence: false,
+    villeNom: '',
     titre: '—',
     type: '',
     reseau: null,
@@ -450,6 +510,7 @@ export const SQUELETTE_E03: E03Data = {
 };
 
 export const SQUELETTE_E04: E04Data = {
+  presence: presenceVide,
   moi: SQUELETTE_E01.moi,
   panneau: SQUELETTE_E01.panneau,
   evenement: { titre: '—', quand: '' },
