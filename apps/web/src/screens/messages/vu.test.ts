@@ -42,7 +42,8 @@ describe('« Vu » (08 §7.3) : sous MA dernière bulle, quand l’autre l’a l
   it('une dernière bulle supprimée laisse « Vu » à la précédente des miennes', () => {
     const fil = [msg('c', true, '2026-10-18T10:20:00.000Z', { deletedAt: '2026-10-18T10:21:00.000Z' }), FIL[1] as Message, FIL[2] as Message];
     const vus = bullesDuFil({ items: fil, meta: { seenAt: '2026-10-18T10:30:00.000Z' } }, new Map()).map((b) => b.mention.includes('Vu'));
-    expect(vus).toEqual([false, false, true]);
+    // Ordre de lecture : a (la mienne), b (l'autre), c (supprimée).
+    expect(vus).toEqual([true, false, false]);
   });
 
   it('le fil est remis dans l’ordre de lecture', () => {
