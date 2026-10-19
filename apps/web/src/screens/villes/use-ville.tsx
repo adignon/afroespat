@@ -202,8 +202,9 @@ export function centimesDe(saisie: string): number | null {
 export function useContribution(
   slug: string,
   surPublie: () => void,
+  initial: { readonly type: TypeContribution; readonly etape: 'type' | 'detail' } | null = null,
 ): ContributionView {
-  const [type, setType] = useState<TypeContribution>('TIP');
+  const [type, setType] = useState<TypeContribution>(initial?.type ?? 'TIP');
   const [titre, setTitre] = useState('');
   const [texte, setTexte] = useState('');
   const [lieu, setLieu] = useState('');
@@ -211,7 +212,7 @@ export function useContribution(
   const [lignes, setLignes] = useState<readonly LigneBudgetSaisie[]>(LIGNES_DEPART);
   const [occupe, setOccupe] = useState(false);
   const [echec, setEchec] = useState('');
-  const [etape, setEtape] = useState<'type' | 'detail'>('type');
+  const [etape, setEtape] = useState<'type' | 'detail'>(initial?.etape ?? 'type');
 
   const vider = useCallback((): void => {
     setTitre('');

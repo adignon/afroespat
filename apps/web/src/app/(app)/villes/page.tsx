@@ -8,9 +8,10 @@ import { VillesScreen } from './villes-screen';
  * déjà payé une fois (voir `(onboarding)/bienvenue/fin/page.tsx`) : ce crochet force
  * le rendu côté client de tout ce qu'il enveloppe. Sur une page STATIQUE, le HTML
  * envoyé au navigateur est alors VIDE — pas de titre, pas de contenu tant que le
- * JavaScript n'a pas tourné. C'est exactement ce qui est arrivé ici, et ça ne s'est
- * vu qu'en lisant la réponse du serveur : la page s'affichait parfaitement dans un
- * navigateur.
+ * JavaScript n'a pas tourné.
+ *
+ * `?vue=carte|annuaire` et `?pays=<uuid>` : toute autre valeur est ignorée plutôt
+ * que transmise au serveur.
  */
 export default async function Page({
   searchParams,
@@ -18,5 +19,13 @@ export default async function Page({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  return <VillesScreen carte={params['vue'] === 'carte'} />;
+  const vue = params['vue'];
+  const pays = params['pays'];
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return (
+    <VillesScreen
+      vue={vue === 'carte' || vue === 'annuaire' ? vue : null}
+      pays={typeof pays === 'string' && uuid.test(pays) ? pays : ''}
+    />
+  );
 }

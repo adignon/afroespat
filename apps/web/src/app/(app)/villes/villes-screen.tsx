@@ -4,29 +4,55 @@ import { ScreenFrames } from '@/screens/frames';
 import { A11Desktop } from '@/screens/a11/desktop.generated';
 import { A11Mobile } from '@/screens/a11/mobile.generated';
 import { A11MobileCarte } from '@/screens/a11/mobilecarte.generated';
-import { accueilData } from '@/screens/accueil/props';
+import { panelVilles, rail, shortcuts } from '@/screens/accueil/data';
+import type { VillesData, VueVilles } from '@/screens/villes/data';
+import { useVilles } from '@/screens/villes/use-villes';
 
 /**
  * A11 — Villes et Membres. `/villes`
  *
- * « Carte (ordinateur) et Annuaire (mobile) », écrit la maquette. Le cadre mobile de
- * la section est donc l'ANNUAIRE, et la carte mobile vit dans la dernière planche de
- * « Versions mobiles réseau et ville » (MOB2). Sur ordinateur la carte est toujours
- * là : les deux vues ne diffèrent que sous 1024 px.
+ * « Carte (ordinateur) et Annuaire (mobile) », écrit la maquette : la carte est la vue
+ * par défaut sur ordinateur, l'annuaire sur téléphone. `?vue=carte|annuaire` impose
+ * la même vue aux deux largeurs ; `?pays=<id>` filtre la carte (les compteurs sont
+ * recalculés PAR LE SERVEUR, avec le seuil de 3 : 09 §2.1) et l'annuaire.
  *
- * SEUIL DE CONFIDENTIALITÉ (§9) : `cities.member_count` ne se rend pas sous trois
- * membres. Les sept villes dessinées vont de 190 à 2 100, aucune n'en approche — la
- * maquette ne montre donc pas ce cas, et il n'y a rien à masquer ici. La règle
- * s'appliquera à la requête du lot 3.
+ * Tout ce que l'écran affiche vient de `GET /cities/map` et `GET /members` (voir
+ * `useVilles`). Il n'y a plus de démonstration : `accueilData()` n'est plus appelée,
+ * et la carte est un SVG local, sans aucune requête vers un service de cartes.
+ *
+ * La fenêtre « Saluer » est rendue UNE fois, ici : `ScreenFrames` monte les deux
+ * cadres et une fenêtre posée dans un cadre s'ouvrirait en double.
  */
-export function VillesScreen({ carte }: { readonly carte: boolean }) {
-  const data = accueilData();
+export function VillesScreen({
+  vue,
+  pays,
+}: {
+  readonly vue: VueVilles | null;
+  readonly pays: string;
+}) {
+  const { vivant, vueMobile, fenetre } = useVilles({
+    vueDemandee: vue,
+    pays,
+    hrefVue: (v, p) => `/villes?vue=${v}${p === '' ? '' : `&pays=${encodeURIComponent(p)}`}`,
+  });
+
+  const data: VillesData = {
+    rail,
+    panelVilles,
+    shortcuts,
+    dirFilters: vivant.filtres,
+    directory: vivant.annuaire,
+    vivant,
+  };
 
   return (
-    <ScreenFrames
-      screen={carte ? 'A11-carte' : 'A11'}
-      desktop={<A11Desktop {...data} />}
-      mobile={carte ? <A11MobileCarte {...data} /> : <A11Mobile {...data} />}
-    />
+    <>
+      <ScreenFrames
+        screen={vue === 'carte' ? 'A11-carte' : 'A11'}
+        desktop={<A11Desktop {...data} />}
+        mobile={vueMobile === 'carte' ? <A11MobileCarte {...data} /> : <A11Mobile {...data} />}
+      />
+      {fenetre}
+    </>
   );
 }

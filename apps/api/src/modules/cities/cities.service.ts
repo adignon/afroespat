@@ -1054,7 +1054,9 @@ export class CitiesService {
     return tip;
   }
 
-  private async withViewerStateOne<T extends { id: string; authorUserId: string | null }>(
+  private async withViewerStateOne<
+    T extends { id: string; authorUserId: string | null; kind: string; author: unknown },
+  >(
     row: T,
     viewerId: string | null,
   ) {
@@ -1069,7 +1071,7 @@ export class CitiesService {
    * décide ; le front n'en déduit rien.
    */
   private async withViewerState<
-    T extends { id: string; authorUserId: string | null },
+    T extends { id: string; authorUserId: string | null; kind: string; author: unknown },
   >(rows: readonly T[], viewerId: string | null) {
     const voted =
       viewerId === null || rows.length === 0
@@ -1084,6 +1086,9 @@ export class CitiesService {
           );
     return rows.map(({ authorUserId, ...rest }) => ({
       ...rest,
+      // La fenêtre de contribution promet « Votre budget est anonymisé » : une ligne de
+      // BUDGET ne porte jamais le nom de son auteur (le montant seul compte).
+      author: rest.kind === 'BUDGET' ? null : rest.author,
       votedByMe: voted.has(rest.id),
       mine: viewerId !== null && authorUserId === viewerId,
     }));

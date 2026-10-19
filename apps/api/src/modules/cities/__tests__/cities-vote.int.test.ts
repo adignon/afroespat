@@ -225,6 +225,81 @@ describe('villes — vote, commerce, nouveaux arrivants, suppression (09 §2.3, 
     });
   });
 
+  // ══ Budgets, compteurs et fiche (09 §2.3) ═════════════════════════════════
+
+  describe('budgets et en-tête de la fiche', () => {
+    it('une ligne de budget tient en un mot (« Loyer »), un bon plan non', () => {
+      const budget = createCityTipSchema.safeParse({ kind: 'BUDGET', body: 'Loyer', amountCents: 48_000 });
+      const court = createCityTipSchema.safeParse({ kind: 'TIP', body: 'Court' });
+      expect(budget.success).toBe(true);
+      expect(court.success).toBe(false);
+    });
+
+    it('une ligne de budget ne porte JAMAIS le nom de son auteur (« votre budget est anonymisé »)', async () => {
+      const author = await member();
+      const created = await cities.createTip(citySlug, author, {
+        kind: 'BUDGET',
+        body: 'Chambre en coloc',
+        amountCents: 48_000,
+      });
+      createdTips.push(created.id);
+      expect(created.author).toBeNull();
+      expect(created.mine).toBe(true);
+      const liste = await cities.listTips(citySlug, { limit: 50, kind: 'BUDGET' }, null);
+      expect(liste.items.find((t) => t.id === created.id)?.author).toBeNull();
+    });
+
+    it('la fiche compte les contributions par genre, sans plafond de liste', async () => {
+      const author = await member();
+      await tip(author);
+      const created = await cities.createTip(citySlug, author, { kind: 'BUDGET', body: 'Courses', amountCents: 20_000 });
+      createdTips.push(created.id);
+      const fiche = await cities.profile(citySlug, author);
+      expect(fiche.tipCounts.TIP).toBeGreaterThanOrEqual(1);
+      expect(fiche.tipCounts.BUDGET).toBeGreaterThanOrEqual(1);
+      expect(fiche.budgetMedianCents).not.toBeNull();
+    });
+
+    it('les événements de la fiche portent le fuseau et le jour civil de la ville', async () => {
+      const organizer = await member();
+      const id = newId();
+      await prisma.event.create({
+        data: {
+          id,
+          organizerUserId: organizer,
+          type: 'PICNIC',
+          title: 'Pique-nique de quartier',
+          cityId,
+          addressText: 'Parc',
+          startsAt: new Date(Date.now() + 5 * 86_400_000),
+          status: 'SCHEDULED',
+        },
+      });
+      try {
+        const fiche = await cities.profile(citySlug, organizer);
+        const e = fiche.events.find((x) => x.id === id);
+        expect(e?.timeZone).toMatch(/\//);
+        expect(e?.localDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      } finally {
+        await prisma.event.delete({ where: { id } });
+      }
+    });
+
+    it('l’annuaire donne les compétences (trois au plus) de chaque membre', async () => {
+      const m = await member();
+      const skills = await prisma.skill.findMany({ where: { isActive: true }, take: 4, select: { id: true } });
+      if (skills.length < 4) return;
+      await prisma.userSkill.createMany({ data: skills.map((k) => ({ userId: m, skillId: k.id })) });
+      const page = await cities.members(
+        { limit: 50, radiusKm: 0, cityId, skillId: (skills[0] as { id: string }).id } as never,
+        m,
+      );
+      const carte = page.items[0];
+      expect(carte).toBeDefined();
+      expect(carte?.skills.length).toBeLessThanOrEqual(3);
+    });
+  });
+
   // ══ Suppression de compte (09 §9) ═════════════════════════════════════════
 
   describe('gestionnaire de suppression', () => {
