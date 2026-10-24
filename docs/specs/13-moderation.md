@@ -69,7 +69,9 @@ Chaque action → `moderation_actions` + `audit_logs`. Une suspension ou un bann
 
 ### 4.3 Recours
 
-Le membre sanctionné peut contester une fois (formulaire, ≤ 1 000 caractères) → rouvre le dossier en priorité 3 pour un **autre** modérateur. Décision finale non contestable.
+Le membre sanctionné peut contester une fois (formulaire, de 20 à 1 000 caractères — `APPEAL_TEXT_MIN` / `APPEAL_TEXT_MAX`) → rouvre le dossier en priorité 3 pour un **autre** modérateur. Décision finale non contestable.
+
+**Écran « Mes sanctions » (K09, 1440 et 390 px).** Une carte par sanction renvoyée par `GET /me/sanctions` ; « Contester » n'est offert que si le serveur dit `appealable` (un seul recours par sanction) et ouvre le formulaire dans la carte (texte borné, compteur, « Réponse d'un modérateur sous 72 h » — `APPEAL_RESPONSE_HOURS`, la promesse faite au membre, distincte du SLA interne du dossier). Contester exige le niveau N2 (`sanction.appeal`) : sinon la fenêtre d'invitation à monter de niveau s'ouvre. Une fois le recours déposé, la carte affiche « Recours en cours » (`appeal: PENDING`), puis « Recours examiné — la décision est définitive » quand un autre modérateur a retranché (`appeal: DECIDED`). Sans sanction, une seule carte « Aucune sanction ».
 
 ### 4.4 Règles automatiques (AUTO_RULE)
 
@@ -118,7 +120,7 @@ Membres nommés par l'équipe sur un réseau ou une ville (`community_members.ro
 | Méthode | Route | Rôle |
 |---|---|---|
 | POST | `/reports` | `subjectType`, `subjectId`, `reason`, `details?` — `ALREADY_REPORTED` |
-| GET | `/me/sanctions` | Mes avertissements et suspensions, avec règle enfreinte |
+| GET | `/me/sanctions` | Mes avertissements et suspensions, avec règle enfreinte ; par sanction : `active`, `appealable`, `appeal` (`NONE` · `PENDING` · `DECIDED`) |
 | POST | `/sanctions/:id/appeal` | `text` — `ALREADY_APPEALED` |
 | GET | `/scam-alerts?cityId&countryId` | Alertes actives |
 
@@ -142,7 +144,7 @@ Membres nommés par l'équipe sur un réseau ou une ville (`community_members.ro
 | Écran | Détail |
 |---|---|
 | Signaler (membre) | Feuille : motif, détails, confirmation. Sur un message : mention que la conversation sera visible des modérateurs |
-| Mes sanctions | Liste, règle, contestation |
+| Mes sanctions | Liste, règle, contestation dans la carte, état du recours (voir §4.3) |
 | Contenu masqué (auteur) | Mention « Ce contenu est en vérification » sur ses propres contenus HIDDEN |
 | File (admin) | Tableau trié, filtres, indicateur SLA (vert/ambre/dépassé), assignation en un clic |
 | Dossier (admin) | Trois colonnes : contenu · contexte de l'auteur · actions avec motif obligatoire ; conversation dépliable si jointe |

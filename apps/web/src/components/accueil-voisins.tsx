@@ -46,7 +46,7 @@ import { avatarColor, initials } from '@/screens/accueil/from-api';
  * Aucune valeur n'est inventée : tout vient des deux routes.
  */
 
-const MOT_PAR_DEFAUT = 'Bienvenue ! Si vous avez une question sur la ville, écrivez-moi.';
+export const MOT_PAR_DEFAUT = 'Bienvenue ! Si vous avez une question sur la ville, écrivez-moi.';
 
 type Etat = 'repos' | 'envoi' | 'envoyee' | 'contact' | 'attente';
 
