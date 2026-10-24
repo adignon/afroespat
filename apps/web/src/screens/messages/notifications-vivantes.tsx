@@ -3,6 +3,7 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { ApiError } from '@/lib/api/index';
 import { notifyError, notifySuccess } from '@/components/notifications';
+import { useAutresOnglets } from '@/lib/entre-onglets';
 import { relireCompteursBarre } from '@/components/barre-haute/compteurs';
 import { useEvenements, useRepliPolling } from '@/lib/use-temps-reel';
 import type { X02Data } from '../x02/data';
@@ -36,6 +37,8 @@ export function NotificationsVivantes({
   const [enVol, setEnVol] = useState(false);
 
   useEvenements(['notification.new', 'resync'], onRecharger);
+  // Lot F2 : un autre onglet a marqué lu — la liste se relit comme à `notification.new`.
+  useAutresOnglets(onRecharger);
   useRepliPolling(onRecharger);
 
   const ouvrir = useCallback((id: string | undefined): void => {

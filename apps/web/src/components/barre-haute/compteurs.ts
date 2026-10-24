@@ -5,6 +5,7 @@ import { conversationsResponseSchema, notificationsResponseSchema } from '@app/s
 import { hasAccessToken, memberApi, resumeSession } from '@/lib/api/member';
 import { RESYNCHRONISER } from '@/lib/temps-reel';
 import { useEvenements, useRepliPolling } from '@/lib/use-temps-reel';
+import { diffuserCompteurs, useAutresOnglets } from '@/lib/entre-onglets';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -122,13 +123,28 @@ function relireBientot(): void {
   if (relecture !== null) return;
   relecture = setTimeout(() => {
     relecture = null;
+    const aDiffuser = diffuserApresRelecture;
+    diffuserApresRelecture = false;
     enCours = demander();
-    void enCours.then(publier).catch(() => undefined);
+    void enCours
+      .then((suite) => {
+        publier(suite);
+        // Lot F2 : le geste vient de CET onglet, les autres doivent suivre (voir `lib/entre-onglets`).
+        if (aDiffuser) diffuserCompteurs(suite);
+      })
+      .catch(() => undefined);
   }, 250);
 }
 
-/** Les écrans qui changent un compte (marquer lu) demandent à la barre de le relire. */
+/** Vrai quand la prochaine relecture suit un geste local (marquer lu) : on la diffuse. */
+let diffuserApresRelecture = false;
+
+/**
+ * Les écrans qui changent un compte (marquer lu) demandent à la barre de le relire,
+ * puis les AUTRES ONGLETS du navigateur reçoivent le résultat (lot F2).
+ */
 export function relireCompteursBarre(): void {
+  diffuserApresRelecture = true;
   relireBientot();
 }
 
@@ -158,6 +174,8 @@ export function useCompteursBarre(): CompteursBarre {
     },
   );
   useRepliPolling(relireBientot);
+  // Un autre onglet vient de marquer lu : on prend ses comptes tels quels.
+  useAutresOnglets(publier);
 
   return compteurs;
 }
