@@ -65,6 +65,9 @@ const THIRTY_DAYS_MS = 30 * 86_400_000;
 /** L'écran du lieu, troisième des six de §5. */
 const PLACE_STEP = 3;
 
+/** Le refus de l'écran du lieu sans ville : même code que celui de `POST /journeys`. */
+const ONBOARDING_LOCATION_MESSAGE = 'Choisissez votre ville pour continuer.';
+
 /**
  * L'extrait d'un corps libre, pour une carte de profil : la maquette n'y dessine
  * qu'UNE ligne, et un corps de trois mille caractères y entrerait en entier.
@@ -457,6 +460,24 @@ export class UsersService {
       where: { id: userId },
       select: { originCountryId: true, cityId: true },
     });
+
+    /**
+     * L'ÉCRAN DU LIEU NE SE FRANCHIT PAS SANS VILLE (lot W1A, phase 0.2).
+     *
+     * MESURÉ : « Continuer » passait sans ville choisie, et le parcours choisi à
+     * l'écran suivant n'était pas créé — `POST /journeys` répondait
+     * `409 LOCATION_REQUIRED` (la ville est la destination du parcours, colonne
+     * NOT NULL) et le membre arrivait sur l'accueil sans parcours, sans qu'aucun
+     * écran ne lui dise pourquoi. Le front prévient (il refuse « Continuer »), le
+     * serveur DÉCIDE : l'avancement de l'écran 3 n'est enregistré que si la ville
+     * l'est. « Passer cette étape » n'appelle pas cette route : il reste permis, et
+     * le parcours sera alors refusé avec son propre message.
+     *
+     * Le pays d'origine, lui, a toujours une valeur (celui du numéro).
+     */
+    if (step === PLACE_STEP && place.cityId === null) {
+      throw new ApiError('LOCATION_REQUIRED', ONBOARDING_LOCATION_MESSAGE, 409);
+    }
 
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: userId }, data: { onboardingStep: step } });

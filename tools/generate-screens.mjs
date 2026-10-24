@@ -35,6 +35,7 @@ import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/a
 import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
 import { ADAPTATIONS_SERVICES_VIVANT, AJOUTS_SERVICES_VIVANT } from './adaptations/services-vivant.mjs';
 import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/villes-vivant.mjs';
+import { ADAPTATIONS_INSCRIPTION_VIVANTE } from './adaptations/inscription-vivante.mjs';
 import { ADAPTATIONS_SERVICES_COMPLEMENTS, AJOUTS_SERVICES_COMPLEMENTS } from './adaptations/services-complements-vivants.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
 import {
@@ -18274,6 +18275,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_SERVICES_VIVANT,
     // Lot E2 (services-complements-vivants) : S04 à 3 onglets, compteurs, Signaler mobile, ville, S10.
     ...ADAPTATIONS_SERVICES_COMPLEMENTS,
+    // W1A (inscription-vivante) : O05 sans parcours, ses données et ses deux gestes.
+    ...ADAPTATIONS_INSCRIPTION_VIVANTE,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,

@@ -9,6 +9,8 @@ import { ScreenFrames } from '@/screens/frames';
 import { FlowError } from '@/screens/onboarding/flow-error';
 import { LevelInvitation } from '@/components/level-invitation';
 import { listJourneys } from '@/screens/parcours/api';
+import { hasAccessToken, resumeSession } from '@/lib/api/index';
+import { LIEU_INCONNU, chargerAtterrissage, type LieuAtterrissage } from '@/screens/onboarding/atterrissage';
 import { PARCOURS_INCONNU, type ParcoursPret } from '@/screens/onboarding/data';
 
 /**
@@ -117,6 +119,60 @@ export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
     router.push(`/parcours/${parcours.id}`);
   }, [parcours.id, router]);
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « SANS PARCOURS » : LA VILLE, LE RÉSEAU, LES ÉVÉNEMENTS, LE PARRAIN     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * Lot W1A, phase 0.1. Cette variante était entièrement dessinée — « Bienvenue à
+   * Lyon », trois événements lyonnais, une marraine inventée — et ses deux boutons
+   * ne faisaient rien. Les données viennent maintenant de `chargerAtterrissage`
+   * (voir `screens/onboarding/atterrissage.ts`), chargé seulement quand la variante
+   * est celle qu'on montre : l'autre planche n'en lit rien.
+   *
+   * Une erreur de chargement laisse `LIEU_INCONNU` : titre sans ville, aucun
+   * événement annoncé, aucune carte de parrain — jamais la démonstration.
+   */
+  const [lieu, setLieu] = useState<LieuAtterrissage>(LIEU_INCONNU);
+
+  useEffect(() => {
+    if (hasJourney) return undefined;
+    let alive = true;
+    void chargerAtterrissage()
+      .then((charge) => {
+        if (alive) setLieu(charge);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [hasJourney]);
+
+  /**
+   * « ALLER À L'ACCUEIL » VÉRIFIE LA SESSION, PUIS Y VA.
+   *
+   * L'accueil est une page du groupe `(app)`, dont la garde de session renvoie vers
+   * la connexion si la session est morte. Y pousser le membre sans vérifier, c'est
+   * lui faire traverser un écran qui se ferme aussitôt. On reprend donc la session
+   * d'abord (un jeton est déjà en main dans le cas normal : aucun appel), et on
+   * l'envoie se reconnecter — avec l'accueil comme suite — si elle est perdue.
+   */
+  const onAccueil = useCallback((): void => {
+    void (async () => {
+      if (!hasAccessToken() && !(await resumeSession())) {
+        router.push(`/connexion?suite=${encodeURIComponent('/accueil')}`);
+        return;
+      }
+      router.push('/accueil');
+    })();
+  }, [router]);
+
+  /** « Demander » : la fiche du parrain suggéré, où la demande se rédige et s'envoie. */
+  const onDemander = useCallback((): void => {
+    if (lieu.parrain === null) return;
+    router.push(`/parrainage/${encodeURIComponent(lieu.parrain.handle)}`);
+  }, [lieu.parrain, router]);
+
   return (
     <>
       <ScreenFrames
@@ -140,9 +196,24 @@ export function FinScreen({ withJourney }: { readonly withJourney: boolean }) {
       direction="column"
         desktop={
           hasJourney ? (
-            <O05AvecParcours {...vals} parcours={parcours} onCommencer={onCommencer} />
+            <O05AvecParcours
+              {...vals}
+              lieu={lieu}
+              parcours={parcours}
+              onCommencer={onCommencer}
+              onAccueil={onAccueil}
+              onDemander={onDemander}
+            />
           ) : (
-            <O05SansParcours {...vals} parcours={parcours} onCommencer={onCommencer} />
+            <O05SansParcours
+              {...vals}
+              events={lieu.evenements}
+              lieu={lieu}
+              parcours={parcours}
+              onCommencer={onCommencer}
+              onAccueil={onAccueil}
+              onDemander={onDemander}
+            />
           )
         }
       />

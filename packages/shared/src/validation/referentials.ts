@@ -257,6 +257,13 @@ export const placesCountriesResponseSchema = pageSchema(placesCountrySchema);
  */
 export const placesCitySchema = z.object({
   id: z.string().uuid(),
+  /**
+   * Le pays de la ville — ajouté au lot W1A (phase 0.2) : l'écran « lieu » de
+   * l'inscription ne propose que les villes du pays où le membre vit (son pays
+   * d'origine avant le départ, un pays de destination ensuite), et il lui faut
+   * donc savoir de quel pays est chaque ville sans un aller-retour par pays.
+   */
+  countryId: z.string().uuid(),
   name: z.string(),
   slug: z.string(),
   region: z.string().nullable(),

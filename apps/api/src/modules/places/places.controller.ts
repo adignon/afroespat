@@ -82,6 +82,7 @@ export class PlacesController {
       orderBy: [{ memberCount: 'desc' }, { name: 'asc' }],
       select: {
         id: true,
+        countryId: true,
         name: true,
         slug: true,
         region: true,

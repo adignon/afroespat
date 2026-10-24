@@ -38,6 +38,7 @@ import {
   type ScreenActions,
   etatPseudo,
   useOnboarding,
+  villesProposees,
 } from './data';
 import type { ChoixItem } from './choix-referentiel';
 import { toTemplateChoices, type JourneyTemplateChoice } from './from-api';
@@ -116,6 +117,9 @@ const PHASES = ['PRE_DEPARTURE', 'RECENT_ARRIVAL', 'SETTLED'] as const;
  * d'inscription, et la cause serait invisible.
  */
 const STEP_OBJECTIF = 4;
+
+/** L'écran O02, celui du lieu : le seul qui charge les villes et lit la phase. */
+const STEP_LIEU = 3;
 
 /**
  * Les refus de `POST /journeys` qui ne doivent PAS arrêter l'inscription.
@@ -208,6 +212,8 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
    * vide. C'est le genre de bogue qui ne se voit qu'en tapant.
    */
   const latest = useRef<OnboardingState | null>(null);
+  /** `patch` de l'état, posé après `useOnboarding` : `onContinue` est défini avant lui. */
+  const patchRef = useRef<((suite: Partial<OnboardingState>) => void) | null>(null);
 
   /**
    * Les pays proposés au sélecteur d'indicatif.
@@ -270,17 +276,38 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       });
   }, [step]);
 
+  /**
+   * LA PHASE DU MEMBRE, lue au serveur — elle décide des villes proposées au lieu.
+   *
+   * `null` tant que `GET /me` n'a pas répondu. Voir `villesProposees` (`data.ts`) :
+   * la phase vient du SERVEUR et non de l'état local, parce que l'écran du lieu est
+   * une page à part, montée après celle de la phase — son état local est neuf.
+   */
+  const [phaseServeur, setPhaseServeur] = useState<string | null>(null);
+  /** La ville DÉJÀ enregistrée, pour la remontrer quand on revient sur l'écran. */
+  const [villeEnregistree, setVilleEnregistree] = useState<string | null>(null);
+
   useEffect(() => {
+    // Les villes ne servent qu'à l'écran du lieu : les charger partout coûtait un
+    // aller-retour à chaque écran de l'inscription.
+    if (step !== STEP_LIEU) return undefined;
     let alive = true;
     void listCities()
       .then(({ items }) => {
         if (alive) setCityCatalogue(items);
       })
       .catch(() => undefined);
+    void fetchMe({ force: true })
+      .then((me) => {
+        if (!alive) return;
+        setPhaseServeur(me.user.phase);
+        setVilleEnregistree(me.user.cityId);
+      })
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
-  }, []);
+  }, [step]);
 
   useEffect(() => {
     let alive = true;
@@ -293,6 +320,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
             iso2: c.iso2,
             nameFr: c.nameFr,
             dialCode: c.dialCode,
+            kind: c.kind,
           })),
         );
       })
@@ -687,7 +715,22 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         await updateMe({ phase: PHASES[state.phase] ?? 'PRE_DEPARTURE' });
       }
 
-      if (step === 3 && state !== null) {
+      if (step === STEP_LIEU && state !== null) {
+        /**
+         * « CONTINUER » EST REFUSÉ TANT QU'AUCUNE VILLE N'EST CHOISIE (phase 0.2).
+         *
+         * MESURÉ : l'écran passait sans ville, et le parcours choisi ensuite n'était
+         * pas créé (`409 LOCATION_REQUIRED`) — le membre arrivait à l'accueil sans
+         * parcours et sans un mot d'explication. Le front prévient : il dit quoi
+         * faire et ouvre le sélecteur ; le serveur DÉCIDE aussi (`advanceOnboarding`
+         * refuse l'écran 3 sans ville). « Passer cette étape » reste un lien, donc
+         * permis — le membre qui passe sait qu'il n'a rien renseigné.
+         */
+        if (state.cityId === null) {
+          notifyError('Choisissez votre ville pour continuer.');
+          patchRef.current?.({ villeOuvert: true });
+          return;
+        }
         const patch: Record<string, unknown> = {};
         // Le pays d'origine n'est envoyé que s'il a CHANGÉ du défaut : §2.7 ne
         // permet qu'une modification, et la consommer pour confirmer une valeur
@@ -828,6 +871,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       onBack,
       countryOptions,
       cityCatalogue,
+      phaseServeur,
       skillCatalogue,
       languageCatalogue,
       templates,
@@ -842,6 +886,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
       onBack,
       countryOptions,
       cityCatalogue,
+      phaseServeur,
       /**
        * CES DEUX-LÀ MANQUAIENT, et c'est un défaut mesuré : `actions` est un
        * `useMemo`, donc il rend le MÊME objet tant que ses dépendances ne bougent
@@ -869,6 +914,24 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
 
   const { state, patch, vals } = useOnboarding(actions);
   latest.current = state;
+  patchRef.current = patch;
+
+  /**
+   * La ville déjà enregistrée revient dans le champ (retour depuis l'écran suivant),
+   * et une ville qui n'est plus parmi celles proposées — le membre a changé de pays
+   * d'origine — est retirée : la garder ferait créer un parcours dans une ville que
+   * la liste ne montre plus.
+   */
+  useEffect(() => {
+    if (step !== STEP_LIEU) return;
+    if (state.cityId === null && villeEnregistree !== null) {
+      patch({ cityId: villeEnregistree });
+      return;
+    }
+    if (state.cityId === null || cityCatalogue.length === 0) return;
+    const proposees = villesProposees(cityCatalogue, countryOptions, phaseServeur, state.originIso2);
+    if (!proposees.some((c) => c.id === state.cityId)) patch({ cityId: null });
+  }, [step, state.cityId, state.originIso2, villeEnregistree, cityCatalogue, countryOptions, phaseServeur, patch]);
 
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗

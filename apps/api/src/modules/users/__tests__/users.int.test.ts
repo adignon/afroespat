@@ -27,6 +27,8 @@ import { numeroDEpreuve, numeroFrancaisDEpreuve } from '../../../common/__tests_
 describe('compte et profil (01 §2.6, §2.7)', () => {
   let prisma: PrismaService;
   let users: UsersService;
+  /** Une ville de la base de dev, pour franchir l'écran du lieu. */
+  let lyonId: string;
   let auth: AuthService;
   const sms = new FakeSmsProvider();
   const createdUserIds: string[] = [];
@@ -56,6 +58,7 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
+    lyonId = (await prisma.city.findUniqueOrThrow({ where: { slug: 'lyon' }, select: { id: true } })).id;
     const crypto = new CryptoService();
     const outbox = new OutboxService(prisma);
     users = new UsersService(prisma, crypto, outbox, new AuditService(prisma), new ConsentsService(prisma));
@@ -337,6 +340,8 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
       }),
     ).toBe(0);
 
+    // L'écran du lieu ne se franchit qu'avec une ville (W1A, phase 0.2).
+    await prisma.user.update({ where: { id: userId }, data: { cityId: lyonId } });
     await users.advanceOnboarding(userId, 3);
     const emitted = await prisma.domainEvent.findFirst({
       where: { aggregateId: userId, type: 'user.onboarded_location' },
@@ -352,6 +357,32 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     // pour créer les deux adhésions.
     expect(JSON.stringify(emitted?.payload)).toContain('originCountryId');
     expect(JSON.stringify(emitted?.payload)).toContain('cityId');
+  });
+
+  /**
+   * W1A, phase 0.2 — « Continuer » refusé tant qu'aucune ville n'est choisie.
+   *
+   * MUTATION : en retirant le `throw` de `advanceOnboarding`, l'écran 3 est
+   * enregistré sans ville, et ce test tombe sur la première assertion.
+   */
+  it('refuse d’enregistrer l’écran du lieu sans ville, puis l’accepte avec', async () => {
+    const userId = await newMember();
+    await users.advanceOnboarding(userId, 2);
+
+    await expect(users.advanceOnboarding(userId, 3)).rejects.toMatchObject({
+      code: 'LOCATION_REQUIRED',
+      status: 409,
+    });
+    // Rien n'a bougé : l'avancement reste à 2, et aucun réseau n'a été annoncé.
+    expect((await users.me(userId)).onboarding.step).toBe(2);
+    expect(
+      await prisma.domainEvent.count({
+        where: { aggregateId: userId, type: 'user.onboarded_location' },
+      }),
+    ).toBe(0);
+
+    await prisma.user.update({ where: { id: userId }, data: { cityId: lyonId } });
+    await expect(users.advanceOnboarding(userId, 3)).resolves.toEqual({ step: 3 });
   });
 
   it('émet `user.onboarded` au dernier écran, et pas avant', async () => {

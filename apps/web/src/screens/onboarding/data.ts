@@ -16,6 +16,7 @@ import type { HelpType, OccupationStatus } from '@app/shared';
 import { createAnnounce, goalCards, type GoalCard, type JourneyTemplateChoice } from './from-api';
 import { drapeauDe } from './drapeau';
 import type { ChoixItem } from './choix-referentiel';
+import type { LieuAtterrissage } from './atterrissage';
 
 /**
  * Données et état des écrans d'accès et d'onboarding.
@@ -396,6 +397,8 @@ const PHASE_CARDS = [
 /** Une ville proposée par la recherche de O02. */
 export interface CityChoice {
   readonly id: string;
+  /** Le pays de la ville — `GET /places/cities` le rend (lot W1A, phase 0.2). */
+  readonly countryId: string;
   readonly name: string;
   readonly region: string | null;
   readonly isActive: boolean;
@@ -409,6 +412,50 @@ export interface CountryChoice {
   readonly iso2: string;
   readonly nameFr: string;
   readonly dialCode: string;
+  /** Pays d'ORIGINE ou de DESTINATION (02 §2.1) : décide quelles villes l'écran du lieu propose. */
+  readonly kind?: 'ORIGIN' | 'DESTINATION' | 'BOTH';
+}
+
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES VILLES QUE L'ÉCRAN DU LIEU PROPOSE (lot W1A, phase 0.2)               ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le sélecteur « Votre ville » listait les 65 villes de la base, tous pays mêlés :
+ * « Abomey » ouvrait la liste d'un membre qui venait de dire qu'il vivait en
+ * France. L'audit l'avait noté (« liste de villes non détectée »), et le défaut
+ * était réel : un membre pouvait « choisir » une ville sans rapport avec l'endroit
+ * où il vit, et le parcours créé ensuite avait cette ville pour destination.
+ *
+ * La question de l'écran est « Où vivez-vous ? ». Le pays où le membre vit se
+ * déduit de ce qu'il a déjà dit à l'écran de la phase :
+ *
+ *   · AVANT LE DÉPART (`PRE_DEPARTURE`) — il vit encore au pays : ses villes sont
+ *     celles du pays d'ORIGINE qu'il vient de choisir au-dessus ;
+ *   · DÉJÀ ARRIVÉ ou INSTALLÉ — il vit dans un pays de DESTINATION : les villes de
+ *     tous les pays de destination.
+ *
+ * Tant que la phase n'est pas connue (la réponse de `GET /me` n'est pas arrivée),
+ * rien n'est filtré : une liste complète un instant vaut mieux qu'une liste vide.
+ * Et si le filtre ne laissait AUCUNE ville (un pays sans ville amorcée), on rend
+ * le catalogue entier plutôt que d'enfermer le membre sur un écran où « Continuer »
+ * est refusé et où rien ne se choisit.
+ */
+export function villesProposees(
+  catalogue: readonly CityChoice[],
+  pays: readonly CountryChoice[],
+  phase: string | null,
+  originIso2: string,
+): readonly CityChoice[] {
+  if (phase === null) return catalogue;
+  const ids = new Set(
+    phase === 'PRE_DEPARTURE'
+      ? pays.filter((c) => c.iso2 === originIso2).map((c) => c.id)
+      : pays.filter((c) => c.kind === 'DESTINATION' || c.kind === 'BOTH').map((c) => c.id),
+  );
+  if (ids.size === 0) return catalogue;
+  const gardees = catalogue.filter((c) => ids.has(c.countryId));
+  return gardees.length === 0 ? catalogue : gardees;
 }
 
 /**
@@ -549,8 +596,13 @@ export interface ScreenActions {
    * indicatif de la maquette, ce qui vaut mieux qu'un menu vide.
    */
   readonly countryOptions: readonly CountryChoice[];
-  /** Les villes du pays de destination, chargées une fois (02 §2.2). */
+  /** TOUTES les villes, chargées une fois (02 §2.2) ; l'écran n'en propose que `villesProposees`. */
   readonly cityCatalogue: readonly CityChoice[];
+  /**
+   * La phase du membre telle que le SERVEUR la connaît (`GET /me`), ou `null` tant
+   * qu'elle n'est pas lue. Elle décide du pays dont on propose les villes.
+   */
+  readonly phaseServeur: string | null;
   /**
    * Les compétences et les langues proposées — `GET /places/skills` et
    * `GET /places/languages`. Soixante et vingt-quatre lignes, servies triées :
@@ -1145,7 +1197,10 @@ export function onboardingVals(
     onVilleFermer: () => patch({ villeOuvert: false }),
     // La page de O02 passe le sien ; les autres écrans n'en ont pas.
     villeSelecteur: null,
-    cities: matchCities(actions.cityCatalogue, state.citySearch).map((city) => {
+    cities: matchCities(
+      villesProposees(actions.cityCatalogue, actions.countryOptions, actions.phaseServeur, state.originIso2),
+      state.citySearch,
+    ).map((city) => {
       const chosen = state.cityId === city.id;
       return {
         /** L'identifiant : le panneau en a besoin pour sa clé et sa coche. */
@@ -1315,11 +1370,13 @@ export function onboardingVals(
       });
     }),
 
-    events: [
-      { d: '24', m: 'FÉV', t: 'Apéro Diaspora et Étudiants', s: 'Berges du Rhône · 19h00' },
-      { d: '02', m: 'MAR', t: 'Atelier CV et stage', s: 'Maison des Assos · 14h30' },
-      { d: '09', m: 'MAR', t: 'Permanence titre de séjour', s: 'Lyon 3e · 10h00' },
-    ],
+    /**
+     * Les prochains événements de la ville. VIDE ICI, et c'est voulu : la planche
+     * dessinait trois événements lyonnais (« Apéro Diaspora et Étudiants »…) que
+     * tout membre voyait, où qu'il vive. `FinScreen` les remplace par ceux de
+     * `GET /events` (voir `atterrissage.ts`) ; les autres écrans n'en lisent aucun.
+     */
+    events: [],
   };
 }
 
@@ -1399,6 +1456,15 @@ export interface O05Data extends OnboardingVals {
    * ne fait rien plutôt que d'aller sur une adresse construite avec `null`.
    */
   readonly onCommencer: () => void;
+  /**
+   * « Aller à l'accueil » de la variante sans parcours — il n'avait AUCUN geste
+   * (lot W1A, phase 0.1). Vérifie la session, puis ouvre `/accueil`.
+   */
+  readonly onAccueil: () => void;
+  /** La ville, son réseau, ses événements et le parrain suggéré — voir `atterrissage.ts`. */
+  readonly lieu: LieuAtterrissage;
+  /** « Demander » : mène à la fiche du parrain suggéré, où la demande se rédige. */
+  readonly onDemander: () => void;
 }
 
 /** L'état et les valeurs, pour un composant client. */

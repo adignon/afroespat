@@ -51,6 +51,7 @@ export function PageStatiqueScreen({ variante }: { readonly variante: PageStatiq
     onBack: () => undefined,
     countryOptions: [],
     cityCatalogue: [],
+    phaseServeur: null,
     skillCatalogue: [],
     languageCatalogue: [],
     templates: [],
