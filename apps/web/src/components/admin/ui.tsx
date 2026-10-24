@@ -76,7 +76,7 @@ export function Titre({
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', flexShrink: 0, flexWrap: 'wrap' }}>
-      <div style={{ flex: '1', minWidth: 0 }}>
+      <div style={{ flex: '1 1 280px', minWidth: 0 }}>
         <h1 style={{ margin: 0, fontSize: '28px', fontWeight: 800, letterSpacing: '-0.9px' }}>{titre}</h1>
         {sous === undefined ? null : <div style={{ fontSize: '14px', color: C.gris, marginTop: '4px' }}>{sous}</div>}
       </div>
@@ -214,6 +214,7 @@ export function Bouton({
   plein,
   petit,
   titre,
+  etiquette,
 }: {
   readonly children: ReactNode;
   readonly onClick?: () => void;
@@ -223,6 +224,8 @@ export function Bouton({
   readonly plein?: boolean;
   readonly petit?: boolean;
   readonly titre?: string | undefined;
+  /** Nom accessible d'un bouton qui ne porte qu'un symbole (▲ ▼ ✕) : il ne se lisait que « ▼ ». */
+  readonly etiquette?: string;
 }) {
   const palette: Record<Ton, CSSProperties> = {
     principal: { background: C.vert, color: '#fff', border: 'none' },
@@ -236,6 +239,7 @@ export function Bouton({
       onClick={onClick}
       disabled={disabled}
       title={titre}
+      {...(etiquette === undefined ? {} : { 'aria-label': etiquette })}
       style={{
         height: petit === true ? '34px' : '44px',
         padding: petit === true ? '0 14px' : '0 18px',
