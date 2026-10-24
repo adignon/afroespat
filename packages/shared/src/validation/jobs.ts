@@ -142,11 +142,32 @@ export type JobsQuery = z.infer<typeof jobsQuerySchema>;
  * Le schéma ne porte donc AUCUN champ de fichier, et c'est volontaire : un champ
  * `cvAssetId` optionnel aurait suffi à faire naître la fonction par accident.
  */
+/**
+ * Les bornes du profil de recherche, NOMMÉES pour que le formulaire (S04, onglet
+ * « Mon profil de recherche ») les importe au lieu de les recopier : le front prévient
+ * avec ces nombres, le serveur décide avec le même schéma.
+ */
+export const JOB_SEEKER_LIMITS = {
+  headlineMin: 5,
+  headlineMax: 140,
+  /** Secteurs ou contrats : au plus dix entrées… */
+  listMax: 10,
+  /** …de deux à quatre-vingts caractères chacune. */
+  itemMin: 2,
+  itemMax: 80,
+} as const;
+
+const jobSeekerItemSchema = z
+  .string()
+  .trim()
+  .min(JOB_SEEKER_LIMITS.itemMin)
+  .max(JOB_SEEKER_LIMITS.itemMax);
+
 export const jobSeekerProfileSchema = z
   .object({
-    headline: z.string().trim().min(5).max(140),
-    sectors: z.array(z.string().trim().min(2).max(80)).max(10).default([]),
-    contractTypes: z.array(z.string().trim().min(2).max(80)).max(10).default([]),
+    headline: z.string().trim().min(JOB_SEEKER_LIMITS.headlineMin).max(JOB_SEEKER_LIMITS.headlineMax),
+    sectors: z.array(jobSeekerItemSchema).max(JOB_SEEKER_LIMITS.listMax).default([]),
+    contractTypes: z.array(jobSeekerItemSchema).max(JOB_SEEKER_LIMITS.listMax).default([]),
     isVisible: z.boolean().default(true),
   })
   .strict();

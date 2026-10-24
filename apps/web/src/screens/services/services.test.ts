@@ -32,10 +32,26 @@ describe('la bande d’onglets du module Services', () => {
     ]);
   });
 
-  it('seul « Logement » porte un compteur, et seulement quand la page l’a lu', () => {
-    expect(ongletsServices('logement', 12)[0]?.libelle).toBe('Logement · 12');
+  it('« Logement » et « Emploi » portent leur total, et seulement quand la page l’a lu', () => {
+    const c = { logement: 12, emploi: 8 };
+    expect(ongletsServices('logement', c).map((o) => o.libelle)).toEqual([
+      'Logement · 12',
+      'Emploi · 8',
+      'Annuaire',
+      'Mes annonces',
+      'Alertes',
+    ]);
     expect(ongletsServices('logement')[0]?.libelle).toBe('Logement');
-    expect(ongletsServices('emploi', 12)[1]?.libelle).toBe('Emploi');
+    // Un compteur que l'appel n'a pas pu lire disparaît : jamais « · 0 » par défaut.
+    expect(ongletsServices('emploi', { logement: null, emploi: null }).map((o) => o.libelle)).toEqual([
+      'Logement',
+      'Emploi',
+      'Annuaire',
+      'Mes annonces',
+      'Alertes',
+    ]);
+    // Zéro est un vrai total : il s'affiche.
+    expect(ongletsServices('emploi', { logement: 0, emploi: 0 })[1]?.libelle).toBe('Emploi · 0');
   });
 });
 

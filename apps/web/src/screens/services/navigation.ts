@@ -5,10 +5,10 @@
  * Annuaire · Mes annonces · Alertes » en `<span>` : ni lien, ni compteur vrai. Elle
  * devient une liste de liens ; l'onglet actif est celui de la page.
  *
- * Les compteurs : « Logement » a un TOTAL (`GET /housing` → `meta.total`), pas
- * « Emploi » (`GET /jobs` n'en rend aucun : écart déjà signalé dans
- * `tools/screens/06-services.mjs`). Un compteur qu'aucune route ne donne est retiré
- * plutôt qu'inventé : seul « Logement » en porte un, quand la page l'a lu.
+ * Les compteurs : « Logement » et « Emploi » portent leur TOTAL
+ * (`GET /services/counts`, lot E2 ; `GET /jobs` a désormais `meta.total` comme
+ * `GET /housing`). Un compteur que l'appel n'a pas pu lire est retiré plutôt
+ * qu'inventé.
  */
 export interface Onglet {
   readonly libelle: string;
@@ -26,10 +26,14 @@ const RUBRIQUES: readonly { readonly rubrique: Rubrique; readonly libelle: strin
   { rubrique: 'alertes', libelle: 'Alertes', href: '/services/alertes' },
 ];
 
-export function ongletsServices(actif: Rubrique, totalLogement: number | null = null): readonly Onglet[] {
+export function ongletsServices(
+  actif: Rubrique,
+  compteurs: { readonly logement: number | null; readonly emploi: number | null } | null = null,
+): readonly Onglet[] {
+  const total: Partial<Record<Rubrique, number | null>> =
+    compteurs === null ? {} : { logement: compteurs.logement, emploi: compteurs.emploi };
   return RUBRIQUES.map((r) => ({
-    libelle:
-      r.rubrique === 'logement' && totalLogement !== null ? `${r.libelle} · ${totalLogement}` : r.libelle,
+    libelle: total[r.rubrique] == null ? r.libelle : `${r.libelle} · ${total[r.rubrique]}`,
     href: r.href,
     actif: r.rubrique === actif,
   }));
