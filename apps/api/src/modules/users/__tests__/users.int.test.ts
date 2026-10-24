@@ -609,4 +609,62 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     const apres = await users.updateMe(userId, { arrivalDate: '2026-09-15' });
     expect(apres.user.arrivalDate).toBe('2026-09-15');
   });
+  /**
+   * LE NOM DE LA VILLE ET LA DATE DU DERNIER CHANGEMENT DE PSEUDO SORTENT DE
+   * `GET /me` (lot W2A, phase 2.1/2.6/2.7).
+   *
+   * Sans eux, l'accueil écrivait « ÉVÉNEMENTS À LYON » et K01 « Modifié le 2
+   * janvier » pour tout le monde. Un membre sans ville lit `null`, un membre qui
+   * n'a jamais changé son pseudo lit `null` aussi — et c'est le front qui dit
+   * « jamais modifié », pas le serveur qui invente une date.
+   */
+  it('rend le nom et le pays de ma ville, et la date de mon dernier changement de pseudo', async () => {
+    const userId = await newMember();
+    const avant = (await users.me(userId)).user;
+    expect(avant.cityId).toBeNull();
+    expect(avant.cityName).toBeNull();
+    expect(avant.cityCountryId).toBeNull();
+    expect(avant.handleChangedAt).toBeNull();
+
+    const apres = (await users.updateMe(userId, { cityId: lyonId, handle: `date${counter}x` })).user;
+    expect(apres.cityName).toBe('Lyon');
+    const lyon = await prisma.city.findUniqueOrThrow({ where: { id: lyonId }, select: { countryId: true } });
+    expect(apres.cityCountryId).toBe(lyon.countryId);
+    expect(apres.handleChangedAt).not.toBeNull();
+    expect(Date.now() - new Date(apres.handleChangedAt as string).getTime()).toBeLessThan(60_000);
+  });
+
+  /**
+   * `cities.member_count` BOUGE AVEC LA VILLE DU MEMBRE, pas seulement la nuit.
+   *
+   * Mesuré : « 0 membre · vous avez rejoint ce réseau » à l'arrivée, parce que seul
+   * le recalcul nocturne écrivait la colonne.
+   */
+  it('tient cities.member_count à jour quand le membre choisit puis change de ville', async () => {
+    const autre = await prisma.city.findFirstOrThrow({
+      where: { id: { not: lyonId }, mergedIntoCityId: null },
+      select: { id: true },
+    });
+    const compte = async (id: string): Promise<number> =>
+      (await prisma.city.findUniqueOrThrow({ where: { id }, select: { memberCount: true } })).memberCount;
+    const lyonAvant = await compte(lyonId);
+    const autreAvant = await compte(autre.id);
+
+    const userId = await newMember();
+    await users.updateMe(userId, { cityId: lyonId });
+    expect(await compte(lyonId)).toBe(lyonAvant + 1);
+
+    // Rejouer la même ville ne compte pas deux fois.
+    await users.updateMe(userId, { cityId: lyonId, displayName: 'Autre nom' });
+    expect(await compte(lyonId)).toBe(lyonAvant + 1);
+
+    await users.updateMe(userId, { cityId: autre.id });
+    expect(await compte(lyonId)).toBe(lyonAvant);
+    expect(await compte(autre.id)).toBe(autreAvant + 1);
+
+    // Le filet de la nuit : le recalcul retombe sur le même chiffre (la ville du
+    // test est la seule à avoir bougé).
+    await prisma.city.update({ where: { id: autre.id }, data: { memberCount: autreAvant } });
+    await prisma.city.update({ where: { id: lyonId }, data: { memberCount: lyonAvant } });
+  });
 });

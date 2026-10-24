@@ -291,6 +291,22 @@ export const meResponseSchema = z.object({
     originCountryId: uuidSchema,
     cityId: uuidSchema.nullable(),
     /**
+     * LE NOM ET LE PAYS DE LA VILLE — pour que l'écran écrive « Évry » sans
+     * redemander une liste de villes. `/me` ne rendait que l'identifiant, et
+     * chaque écran qui voulait dire où vit le membre allait chercher le
+     * référentiel — ou, pire, écrivait le nom de la ville de la maquette.
+     * `null` tous les deux quand le membre n'a pas de ville.
+     */
+    cityName: z.string().nullable().default(null),
+    cityCountryId: uuidSchema.nullable().default(null),
+    /**
+     * LA DATE DU DERNIER CHANGEMENT DE PSEUDO (`users.handle_changed_at`), ISO.
+     * `null` = jamais changé depuis sa génération à l'onboarding. K01 en tire
+     * « Modifié le … · prochain changement possible le … » avec
+     * `HANDLE_CHANGE_INTERVAL_DAYS` — jamais une date écrite en dur.
+     */
+    handleChangedAt: z.string().datetime().nullable().default(null),
+    /**
      * ╔═══════════════════════════════════════════════════════════════════╗
      * ║ LA DATE D'ARRIVÉE — on pouvait l'ÉCRIRE sans jamais la RELIRE          ║
      * ╚═══════════════════════════════════════════════════════════════════╝
