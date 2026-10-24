@@ -18,7 +18,7 @@ import {
 import { staffApi } from '@/lib/api/index';
 import { PHASES, telechargerCsv, toutesLesVilles } from '../donnees';
 import { useDroit, useEquipe } from '../session-equipe';
-import { Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, FenetreMotif, Interrupteur, Lecture, Message, Onglets, Pastille, Selecteur, Titre, Vide, ZoneTexte, dateCourte, useCharge, useGeste } from '../ui';
+import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, FenetreMotif, Interrupteur, Lecture, Message, Onglets, Pastille, Selecteur, Titre, Vide, ZoneTexte, dateCourte, useCharge, useGeste } from '../ui';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -229,7 +229,7 @@ function Parametres() {
     try {
       valeur = JSON.parse(json);
     } catch {
-      await geste.lancer(() => Promise.reject(new Error('La valeur n’est pas du JSON valide.')));
+      geste.prevenir('La valeur n’est pas du JSON valide.');
       return;
     }
     const ok = await geste.lancer(() => staffApi.put(`/settings/${cible.key}`, okResponseSchema, { body: { value: valeur, ...(motif === '' ? {} : { reason: motif }) } }));
@@ -404,7 +404,7 @@ function CreationCompte({ ouverte, onFermer, onFait }: { readonly ouverte: boole
   const creer = async () => {
     const corps = staffCreateSchema.safeParse({ email: email.trim(), displayName: nom.trim(), password: mdp, role });
     if (!corps.success) {
-      await geste.lancer(() => Promise.reject(new Error(corps.error.issues[0]?.message ?? 'Compte incomplet.')));
+      geste.prevenir(premierDefaut(corps.error.issues, { email: 'E-mail', displayName: 'Nom affiché', password: 'Mot de passe (12 caractères minimum)', role: 'Rôle' }));
       return;
     }
     const ok = await geste.lancer(() => staffApi.post('/staff', okResponseSchema, { body: corps.data }));

@@ -243,12 +243,14 @@ export function ContenuGuidesEquipe() {
         enfants={
           <Lecture etat={versions.etat} recharger={versions.recharger}>
             {(v) =>
-              v === null ? null : (
+              v === null ? null : v.items.length < 2 ? (
+                <Vide>Une seule version : il n’y a rien à restaurer.</Vide>
+              ) : (
                 <Selecteur
-                  libelle="Version à retrouver"
+                  libelle="Version à retrouver (la version actuelle n’est pas proposée)"
                   valeur={versionId}
                   onChange={setVersionId}
-                  options={[{ valeur: '', libelle: 'Choisir…' }, ...v.items.map((x) => ({ valeur: x.id, libelle: `v${x.version} · ${dateCourte(x.createdAt)}${x.summary === null ? '' : ` · ${x.summary}`}` }))]}
+                  options={[{ valeur: '', libelle: 'Choisir…' }, ...v.items.slice(1).map((x) => ({ valeur: x.id, libelle: `v${x.version} · ${dateCourte(x.createdAt)}${x.summary === null ? '' : ` · ${x.summary}`}` }))]}
                 />
               )
             }

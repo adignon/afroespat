@@ -105,7 +105,7 @@ function Creation({ ouverte, onFermer, onFait }: { readonly ouverte: boolean; re
   const creer = async () => {
     const corps = pageCreateSchema.safeParse({ slug: slug.trim(), title: titre.trim(), body: '## 1. Titre de la première section\n\nTexte.' });
     if (!corps.success) {
-      await geste.lancer(() => Promise.reject(new Error('L’identifiant s’écrit en minuscules, chiffres et tirets (p. ex. a-propos).')));
+      geste.prevenir('L’identifiant s’écrit en minuscules, chiffres et tirets (p. ex. a-propos).');
       return;
     }
     let id = '';

@@ -97,15 +97,15 @@
   }
 }
 
-/* D08 : sur grand écran le tableau, sous 1 024 px une carte par ville (gestes sans défilement). */
-.admin-villes-cartes {
+/* Tableaux à gestes (D08, D13) : sur grand écran le tableau, sous 1 024 px une carte par ville (gestes sans défilement). */
+.admin-cartes-mobile {
   display: none !important;
 }
 @media (max-width: 1023px) {
-  .admin-villes-cartes {
+  .admin-cartes-mobile {
     display: flex !important;
   }
-  .admin-villes-table {
+  .admin-table-bureau {
     display: none !important;
   }
 }

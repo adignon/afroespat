@@ -143,7 +143,7 @@ export function ContenuVilles() {
               </div>
             </div>
             {/* Sous 1 024 px : une carte par ville, les gestes visibles sans défilement (admin.css). */}
-            <div className="admin-villes-cartes" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div className="admin-cartes-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {affichees.length === 0 ? (
                 <Carte>
                   <div style={{ textAlign: 'center', color: C.gris }}>Aucune ville ne correspond.</div>
@@ -164,7 +164,7 @@ export function ContenuVilles() {
                 </Carte>
               ))}
             </div>
-            <Carte className="admin-villes-table" style={{ padding: 0, overflow: 'hidden' }}>
+            <Carte className="admin-table-bureau" style={{ padding: 0, overflow: 'hidden' }}>
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>

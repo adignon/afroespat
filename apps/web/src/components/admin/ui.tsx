@@ -470,7 +470,15 @@ export function useGeste() {
     }
   }, []);
 
-  return { occupe, message, lancer, effacer: () => setMessage(null) };
+  /**
+   * Une validation faite CÔTÉ ÉCRAN, avant tout appel : le message est dit tel quel.
+   * (Avant, on faisait `lancer(() => Promise.reject(new Error(…)))`, et `displayMessageFor`
+   * remplaçait le texte par « Une erreur est survenue » — l'équipe ne savait pas quel champ
+   * corriger. Relevé au navigateur sur D13.)
+   */
+  const prevenir = useCallback((texte: string) => setMessage({ ton: 'attention', texte }), []);
+
+  return { occupe, message, lancer, prevenir, effacer: () => setMessage(null) };
 }
 
 export function Message({ message }: { readonly message: { ton: 'info' | 'attention'; texte: string } | null }) {
@@ -647,4 +655,19 @@ export function FenetreMotif({
       </div>
     </Fenetre>
   );
+}
+
+/**
+ * Le premier défaut d'un `safeParse` Zod, dit en français : le message du schéma s'il en a
+ * écrit un (`custom`), sinon « libellé du champ : valeur non valide ».
+ */
+export function premierDefaut(
+  issues: readonly { readonly code: string; readonly message: string; readonly path: readonly (string | number)[] }[],
+  libelles: Readonly<Record<string, string>>,
+): string {
+  const i = issues[0];
+  if (i === undefined) return 'Formulaire incomplet.';
+  if (i.code === 'custom') return i.message;
+  const champ = libelles[String(i.path[0] ?? '')] ?? 'Un champ';
+  return `${champ} : valeur non valide (trop courte, trop longue ou mal formée).`;
 }

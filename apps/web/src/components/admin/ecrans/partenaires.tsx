@@ -9,12 +9,13 @@ import {
   affiliateImportResultSchema,
   okResponseSchema,
   partnerCreateSchema,
+  affiliateConversionSchema,
   placementCreateSchema,
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { toutesLesDefinitions } from '../donnees';
 import { useDroit } from '../session-equipe';
-import { Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, Interrupteur, Lecture, Message, Selecteur, Titre, Vide, dateLongue, nombreFr, useCharge, useGeste } from '../ui';
+import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, Interrupteur, Lecture, Message, Selecteur, Titre, Vide, dateLongue, nombreFr, useCharge, useGeste } from '../ui';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -66,27 +67,38 @@ export function ContenuPartenaires() {
     return { clics: lignes.reduce((t, l) => t + l.clicks, 0), conv: lignes.reduce((t, l) => t + l.conversions, 0), cents: lignes.reduce((t, l) => t + l.payoutCents, 0) };
   };
   const basculerPartenaire = async (id: string, actif: boolean) => {
-    const ok = await geste.lancer(() => staffApi.patch(`/billing/partners/${id}`, okResponseSchema, { body: { isActive: actif } }));
+    const ok = await geste.lancer(() => staffApi.patch(`/billing/partners/${id}`, okResponseSchema, { body: { isActive: actif } }), actif ? 'Partenaire activé.' : 'Partenaire désactivé.');
     if (ok) {
       partenaires.recharger();
       encarts.recharger();
     }
   };
   const basculerEncart = async (id: string, actif: boolean) => {
-    const ok = await geste.lancer(() => staffApi.patch(`/billing/placements/${id}`, okResponseSchema, { body: { isActive: actif } }));
+    const ok = await geste.lancer(() => staffApi.patch(`/billing/placements/${id}`, okResponseSchema, { body: { isActive: actif } }), actif ? 'Encart activé.' : 'Encart désactivé.');
     if (ok) encarts.recharger();
   };
   const importer = async (fichier: File | undefined) => {
     if (fichier === undefined) return;
     const texte = await fichier.text();
-    const rows = texte
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l !== '' && !/^click/i.test(l))
-      .map((l) => {
-        const [clickId = '', conversionRef = '', payout = '0'] = l.split(/[;,]/).map((c) => c.trim());
-        return { clickId, conversionRef, payoutCents: Math.round(Number(payout)) };
-      });
+    setBilan(null);
+    const rows: { clickId: string; conversionRef: string; payoutCents: number }[] = [];
+    const lignes = texte.split(/\r?\n/);
+    for (const [i, brute] of lignes.entries()) {
+      const l = brute.trim();
+      if (l === '' || /^click/i.test(l)) continue;
+      const [clickId = '', conversionRef = '', payout = '0'] = l.split(/[;,]/).map((c) => c.trim());
+      const ligne = { clickId, conversionRef, payoutCents: Math.round(Number(payout)) };
+      // Le front PRÉVIENT (quelle ligne est fausse), le serveur DÉCIDE (il revalide tout).
+      if (!affiliateConversionSchema.safeParse(ligne).success) {
+        geste.prevenir(`Ligne ${i + 1} refusée : l’identifiant du clic doit être un UUID, la référence non vide et la rémunération un nombre de centimes. Rien n’a été importé.`);
+        return;
+      }
+      rows.push(ligne);
+    }
+    if (rows.length === 0) {
+      geste.prevenir('Le fichier ne contient aucune ligne de conversion.');
+      return;
+    }
     const ok = await geste.lancer(async () => {
       const r = await staffApi.post('/billing/affiliate/import', affiliateImportResultSchema, { body: { rows } });
       setBilan(`Import terminé : ${r.converted} conversion(s), ${r.alreadyKnown} déjà connue(s), ${r.unknown} inconnue(s).`);
@@ -99,7 +111,7 @@ export function ContenuPartenaires() {
       <Titre titre="Partenaires" action={<Bouton ton="principal" disabled={!peut} titre={peut ? undefined : 'Réservé : contenu'} onClick={() => setNouveau(true)}>+ Nouveau partenaire</Bouton>} />
       <Message message={geste.message} />
       {bilan === null ? null : <Bandeau role="status">{bilan}</Bandeau>}
-      <Carte style={{ padding: 0, overflow: 'hidden' }}>
+      <Carte className="admin-table-bureau" style={{ padding: 0, overflow: 'hidden' }}>
         <Lecture etat={partenaires.etat} recharger={partenaires.recharger}>
           {(d) =>
             d.items.length === 0 ? (
@@ -139,6 +151,31 @@ export function ContenuPartenaires() {
           }
         </Lecture>
       </Carte>
+
+      {/* Sous 1 024 px : une carte par partenaire, l'interrupteur « Actif » visible sans défilement. */}
+      <div className="admin-cartes-mobile" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <Lecture etat={partenaires.etat} recharger={partenaires.recharger}>
+          {(d) =>
+            d.items.map((p) => {
+              const s = parPartenaire(p.id);
+              return (
+                <Carte key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                    <div style={{ fontWeight: 700, fontSize: '15px' }}>{p.name}</div>
+                    <Interrupteur actif={p.isActive} onChange={(v) => void basculerPartenaire(p.id, v)} libelle={`Actif : ${p.name}`} disabled={!peut || geste.occupe} />
+                  </div>
+                  <div style={{ fontSize: '13px', color: C.gris }}>
+                    {CATEGORIES[p.category] ?? p.category} · {p.payoutModel} · {p.contractEnd === null ? 'sans échéance' : `jusqu’au ${dateLongue(p.contractEnd)}`}
+                  </div>
+                  <div style={{ fontSize: '13px' }}>
+                    {nombreFr(s.clics)} clics · {nombreFr(s.conv)} conv. · {euros(s.cents)}
+                  </div>
+                </Carte>
+              );
+            })
+          }
+        </Lecture>
+      </div>
 
       <Carte style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
         <Etiquette>Placements par étape</Etiquette>
@@ -187,7 +224,7 @@ function NouveauPartenaire({ ouverte, onFermer, onFait }: { readonly ouverte: bo
   const creer = async () => {
     const corps = partnerCreateSchema.safeParse({ name: nom.trim(), category: categorie, payoutModel: modele, affiliateUrlTemplate: url.trim() });
     if (!corps.success) {
-      await geste.lancer(() => Promise.reject(new Error(corps.error.issues[0]?.message ?? 'Partenaire incomplet.')));
+      geste.prevenir(premierDefaut(corps.error.issues, { name: 'Nom', affiliateUrlTemplate: 'Gabarit d’adresse (https://… avec {click_id})', category: 'Catégorie', payoutModel: 'Modèle' }));
       return;
     }
     const ok = await geste.lancer(() => staffApi.post('/billing/partners', okResponseSchema, { body: corps.data }));
@@ -222,7 +259,7 @@ function NouvelEncart({ ouverte, partenaires, onFermer, onFait }: { readonly ouv
   const creer = async () => {
     const corps = placementCreateSchema.safeParse({ partnerId: partenaire, stepDefinitionId: etape, headline: titre.trim(), ctaLabel: bouton.trim() });
     if (!corps.success) {
-      await geste.lancer(() => Promise.reject(new Error(corps.error.issues[0]?.message ?? 'Encart incomplet.')));
+      geste.prevenir(premierDefaut(corps.error.issues, { headline: 'Titre de l’encart', ctaLabel: 'Texte du bouton', partnerId: 'Partenaire', stepDefinitionId: 'Étape' }));
       return;
     }
     const ok = await geste.lancer(() => staffApi.post('/billing/placements', okResponseSchema, { body: corps.data }));
