@@ -1266,6 +1266,8 @@ export const webFrameFor = (
     readonly onNext?: () => void;
     readonly onPrev?: () => void;
     readonly busy?: boolean;
+    /** Le bandeau « 1 · Écrire / 2 · Rattacher / 3 · Publier » : aller à l'étape `i`. */
+    readonly onStep?: (i: number) => void;
   } = {},
 ) => ({
   onNext: flux.onNext ?? noopFlux,
@@ -1306,10 +1308,21 @@ export const webFrameFor = (
   next: flux.busy === true
     ? PUBLICATION_EN_COURS[step] ?? 'Envoi en cours…'
     : (['Suivant', 'Continuer', 'Publier'][step] ?? 'Suivant'),
+  /**
+   * LE BANDEAU D'ÉTAPES EST UNE NAVIGATION, pas une frise. On revient sur une étape
+   * DÉJÀ FRANCHIE (`i < step`) ; l'étape courante est marquée (`aria-current`) ;
+   * les étapes futures sont inactives (`aria-disabled`) — on n'y arrive que par
+   * « Suivant », qui garde ses contrôles (la story doit être écrite avant de la
+   * rattacher). Aucune couleur n'est neuve : le gris des étapes à venir est celui
+   * de la maquette.
+   */
   steps: WEB_STEPS.map((label, i) => ({
     label,
     bar: i <= step ? '#16785E' : '#E6EBE9',
     fg: i === step ? '#16211D' : '#8A958F',
+    current: i === step,
+    locked: i >= step,
+    onGo: i < step ? () => (flux.onStep ?? noopFlux)(i) : noopFlux,
   })),
 });
 

@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useState } from 'react';
-import { SanctionsVivantes } from '@/screens/compte/sanctions-vivantes';
 import { SQUELETTE_K09, chargerK09 } from '@/screens/compte/appels';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
@@ -11,32 +10,21 @@ import { K09Mobile } from '@/screens/k09/mobile.generated';
 /**
  * K09 — « Sanctions » (`/compte/sanctions`, 13 §4).
  *
- * LA CONTESTATION N'EST PAS UNE FENÊTRE, et c'est la maquette qui le décide : la
- * planche d'ordinateur dessine la carte « CONTESTER · UNE SEULE FOIS » DANS la
- * page, avec son champ et son bouton, et ne lui donne aucune croix de fermeture —
- * la signature d'une fenêtre dans cette maquette. Le cadre mobile n'en dessine pas
- * du tout. On n'ouvre donc pas une fenêtre par-dessus une carte qui dit déjà la
- * même chose.
+ * UNE CARTE PAR SANCTION, et la contestation s'ouvre DANS la carte : la planche
+ * d'ordinateur dessinait la carte « CONTESTER · UNE SEULE FOIS » dans la page,
+ * sans croix de fermeture — la signature d'une fenêtre dans cette maquette — donc
+ * pas de fenêtre. Le cadre mobile n'en dessinait pas du tout : le même composant
+ * (`SanctionsListe`, AJOUT) sert les deux largeurs.
  *
- * `active` ET `appealable` VIENNENT DU SERVEUR, et ne sont pas recalculés ici.
- * Comparer `endsAt` à l'horloge du navigateur afficherait « suspendu » à un membre
- * libre dès que sa machine est décalée ; et « contester une fois » (13 §4.3)
- * demande de savoir si une contestation a déjà été déposée, ce que seul le serveur
- * sait. Le bouton reste inerte : ce lot ne poste aucune contestation.
- *
- * AUCUNE SANCTION EST LE CAS NORMAL, et la carte le dit alors — un écran vide
- * serait plus inquiétant qu'informatif pour quelqu'un qui vient vérifier qu'il n'a
- * rien.
+ * `active`, `appealable` ET `appeal` VIENNENT DU SERVEUR, et ne sont pas recalculés
+ * ici (voir `chargerK09`). AUCUNE SANCTION est le cas normal, et la liste le dit.
  */
 export default function SanctionsPage() {
-  /** Recharger après une contestation : voir la page Sécurité pour le pourquoi. */
+  /** Recharger après un recours : la carte passe à « Recours en cours ». */
   const [recharge, setRecharge] = useState(0);
-  const [sanctionId, setSanctionId] = useState<string | null>(null);
   const charger = useCallback(async () => {
     void recharge;
-    const d = await chargerK09();
-    setSanctionId(d.sanctionId ?? null);
-    return d;
+    return chargerK09();
   }, [recharge]);
   const recharger = useCallback(() => {
     setRecharge((n) => n + 1);
@@ -51,15 +39,11 @@ export default function SanctionsPage() {
        */
       squelette={SQUELETTE_K09} charger={charger}>
       {(donnees) => (
-        <SanctionsVivantes donnees={donnees} sanctionId={sanctionId} onRecharger={recharger}>
-          {(vivantes) => (
-            <ScreenFrames
+        <ScreenFrames
           screen="K09"
-          desktop={<K09Desktop {...vivantes} />}
-          mobile={<K09Mobile {...vivantes} />}
+          desktop={<K09Desktop {...donnees} onRecharger={recharger} />}
+          mobile={<K09Mobile {...donnees} onRecharger={recharger} />}
         />
-          )}
-        </SanctionsVivantes>
       )}
     </EcranDonnees>
   );

@@ -71,6 +71,7 @@
  * répond `403 LEVEL_REQUIRED` avec de quoi afficher l'invitation du §7.3.
  */
 import type { PublicProfileResponse } from '@app/shared';
+import type { SanctionCarte } from '@/components/compte/sanctions-liste';
 import type { FeedPostView } from '../a01/data';
 import type { GuideCardView } from '../a03/data';
 import type { CarteEvenement } from '../agenda/data';
@@ -788,36 +789,23 @@ export interface K08Data {
 }
 
 /**
- * K09 — sanctions. `etat` et la date viennent du SERVEUR, jamais de l'horloge
- * locale.
+ * K09 — sanctions. Tout vient de `GET /me/sanctions` (type, règle, date, `active`,
+ * `appealable`, `appeal`), jamais de l'horloge locale : comparer `endsAt` à celle
+ * du navigateur afficherait « suspendu » à un membre libre dès que sa machine est
+ * décalée, et « contester une fois » (13 §4.3) demande de savoir si un recours a
+ * déjà été déposé, ce que seul le serveur sait.
  *
- * ── LA CONTESTATION ÉTAIT UN TEXTE D'EXEMPLE ──────────────────────────────
+ * ── LA PLANCHE DESSINAIT DEUX CARTES EN DUR ET UN BOUTON MORT ───────────────
  *
- * Le porteur : « La page des sanctions et ses options ? »
- *
- * MESURÉ : zéro champ sur le cadre. La boîte « Expliquez votre point de vue »
- * portait la phrase d'exemple de la maquette, et « Envoyer ma contestation »
- * n'avait aucun geste. `POST /sanctions/:id/appeal` répondait déjà.
- *
- * `contestationBloquee` : `appealSchema` exige VINGT caractères. Le bouton reste
- * éteint en dessous plutôt que de prendre un refus — « une seule fois », dit la
- * planche, et un échec gâcherait l'unique tentative dans l'esprit du membre même
- * si le serveur ne la compte pas.
+ * Elle est remplacée par une carte PAR sanction (`SanctionsListe`, AJOUT : voir
+ * `components/compte/sanctions-liste.tsx`) avec son formulaire de contestation
+ * dans la carte, ses états et son état vide unique. `onRecharger` relit la liste
+ * après un recours.
  */
 export interface K09Data {
   readonly moi: Bandeau;
-  /** `null` quand aucune sanction : il n'y a alors rien à contester. */
-  readonly sanctionId?: string | null;
-  readonly contestationTexte?: string;
-  readonly onContestationTexte?: (e: { readonly target: { readonly value: string } }) => void;
-  readonly onContester?: () => void;
-  readonly contestationBloquee?: boolean;
-  readonly sanction: {
-    readonly type: string;
-    readonly regle: string;
-    readonly date: string;
-    readonly etat: string;
-  };
+  readonly sanctions: readonly SanctionCarte[];
+  readonly onRecharger?: () => void;
 }
 
 /**

@@ -157,7 +157,7 @@ export function CarteMembre({ styleAvatar, styleNom, styleLien, libelle }: {
 }
 
 /** Le membre courant, demandé une fois par page et partagé. */
-function useMembreBarre(): Membre | null {
+export function useMembreBarre(): Membre | null {
   const [membre, setMembre] = useState<Membre | null>(null);
 
   useEffect(() => {

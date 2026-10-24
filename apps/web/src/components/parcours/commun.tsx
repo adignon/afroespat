@@ -13,6 +13,7 @@
 
 import type { ReactNode } from 'react';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { displayMessageFor } from '@/lib/api/index';
 import type { JourneyFullResponse } from '@app/shared';
 import { VISIBILITE, typeCourt } from '@/screens/parcours/appels';
@@ -34,6 +35,42 @@ export function Chargeur({
   return <Etats etat={vue.etat} sansParcours={sansParcours} rendu={(p) => enfants(p, { ...vue, id: id as string })} onReessayer={vue.recharger} />;
 }
 
+/**
+ * ── « AUCUN PARCOURS », ET LE GESTE QUI MANQUAIT ────────────────────────────
+ *
+ * `/parcours` sans parcours montre le cadre J01E « ORDINATEUR · AUCUN PARCOURS » :
+ * la colonne de gauche propose « Commencer », mais le centre disait seulement
+ * « Ouvrez un de vos parcours pour voir cette page. Mes parcours » — un lien
+ * VERS LA PAGE OÙ L'ON EST, et aucun moyen d'en créer un depuis le contenu
+ * (audit de la vague 1, J01 desktopvide). Sur `/parcours` lui-même la carte dit donc
+ * qu'il n'y en a pas et mène à la création, comme le « Nouveau parcours » de J11 ;
+ * sur une adresse de parcours introuvable, elle garde son renvoi vers la liste ET
+ * propose la création.
+ */
+function AucunParcours() {
+  const surLaListe = usePathname() === '/parcours';
+  const lien = { color: C.vertFonce, fontWeight: 700 } as const;
+  return (
+    <div style={{ ...carte(24), color: C.gris, fontSize: '14px', display: 'flex', flexDirection: 'column', gap: '12px' }} data-aucun-parcours="">
+      <div>
+        {surLaListe
+          ? 'Vous n’avez pas encore de parcours. Créez-en un pour découper votre projet en étapes.'
+          : 'Ce parcours n’est pas ouvert. Ouvrez un de vos parcours pour voir cette page.'}
+      </div>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+        <Link href="/parcours/nouveau" style={lien}>
+          Créer un parcours
+        </Link>
+        {surLaListe ? null : (
+          <Link href="/parcours" style={lien}>
+            Mes parcours
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Etats({
   etat,
   sansParcours,
@@ -46,18 +83,7 @@ function Etats({
   readonly onReessayer: () => void;
 }) {
   if (etat.phase === 'absent') {
-    return (
-      <>
-        {sansParcours ?? (
-          <div style={{ ...carte(24), color: C.gris, fontSize: '14px' }}>
-            Ouvrez un de vos parcours pour voir cette page.{' '}
-            <Link href="/parcours" style={{ color: C.vertFonce, fontWeight: 700 }}>
-              Mes parcours
-            </Link>
-          </div>
-        )}
-      </>
-    );
+    return <>{sansParcours ?? <AucunParcours />}</>;
   }
   if (etat.phase === 'attente') return <Attente texte="Chargement de votre parcours…" />;
   if (etat.phase === 'echec') {

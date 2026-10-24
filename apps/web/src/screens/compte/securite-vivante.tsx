@@ -58,6 +58,9 @@ export function SecuriteVivante({
         })
         .catch((cause: unknown) => {
           notifyError(cause instanceof ApiError ? cause.displayMessage : echec);
+          // La liste a pu changer sous nos pieds (un autre onglet a déjà retiré un
+          // numéro : `LAST_PHONE`) : on la relit, pour que l'écran dise la vérité.
+          onRecharger();
         })
         .finally(() => {
           setEnVol(false);

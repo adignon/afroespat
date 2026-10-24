@@ -265,6 +265,14 @@ export type SuspensionDays = (typeof SUSPENSION_DAYS)[number];
 
 /** §4.3 : « contester une fois (formulaire, ≤ 1 000 caractères) ». */
 export const APPEAL_TEXT_MAX = 1000;
+/** Un recours se motive : en dessous, le serveur refuse (le formulaire K09 le dit avant l'envoi). */
+export const APPEAL_TEXT_MIN = 20;
+/**
+ * La réponse PROMISE au membre sur K09 (« Réponse d'un modérateur sous 72 h »,
+ * texte de la maquette). Ce n'est pas le SLA interne du dossier (`slaDueAt`) : la
+ * promesse faite au membre est plus large que l'objectif de la file.
+ */
+export const APPEAL_RESPONSE_HOURS = 72;
 /** §4.3 : la contestation « rouvre le dossier en priorité 3 ». */
 export const APPEAL_CASE_PRIORITY = 3;
 
@@ -352,7 +360,7 @@ export const createReportSchema = z
 export type CreateReport = z.infer<typeof createReportSchema>;
 
 export const appealSchema = z
-  .object({ text: z.string().trim().min(20).max(APPEAL_TEXT_MAX) })
+  .object({ text: z.string().trim().min(APPEAL_TEXT_MIN).max(APPEAL_TEXT_MAX) })
   .strict();
 
 export type Appeal = z.infer<typeof appealSchema>;
@@ -386,6 +394,14 @@ export const mySanctionsResponseSchema = z.object({
       liftedAt: z.string().datetime().nullable(),
       active: z.boolean(),
       appealable: z.boolean(),
+      /**
+       * L'ÉTAT DU RECOURS, dérivé par le serveur (K09, « Recours en cours ») :
+       * `NONE` — aucune contestation déposée ; `PENDING` — déposée, le dossier
+       * rouvert attend un autre modérateur ; `DECIDED` — le dossier a été retranché
+       * de nouveau, la décision est finale (13 §4.3). `appealable` reste faux dès
+       * que le recours est déposé : un seul recours par sanction.
+       */
+      appeal: z.enum(['NONE', 'PENDING', 'DECIDED']),
     }),
   ),
   /** Toujours `null` : le service ne pagine pas cette liste. */

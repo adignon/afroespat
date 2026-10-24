@@ -1596,6 +1596,17 @@ export class ModerationService {
     });
 
     const appealed = await this.appealedSanctionIds(rows.map((r) => r.id));
+    // L'état du recours se lit sur le dossier rouvert : tant qu'il n'est pas
+    // retranché (RESOLVED), le recours est « en cours ».
+    const caseIds = rows.flatMap((r) => (r.caseId === null ? [] : [r.caseId]));
+    const cases =
+      caseIds.length === 0
+        ? []
+        : await this.prisma.moderationCase.findMany({
+            where: { id: { in: caseIds } },
+            select: { id: true, status: true },
+          });
+    const statusOf = new Map(cases.map((c) => [c.id, c.status]));
 
     return {
       items: rows.map((row) => ({
@@ -1612,6 +1623,11 @@ export class ModerationService {
         // §4.3 : « contester UNE FOIS ». Le front n'affiche le formulaire que si
         // c'est encore possible — et l'API refuse de toute façon.
         appealable: row.caseId !== null && !appealed.has(row.id),
+        appeal: !appealed.has(row.id)
+          ? ('NONE' as const)
+          : statusOf.get(row.caseId ?? '') === 'RESOLVED'
+            ? ('DECIDED' as const)
+            : ('PENDING' as const),
       })),
       nextCursor: null,
     };

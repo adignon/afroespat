@@ -29,7 +29,7 @@ export function A14Desktop(props: A14Data) {
       </div>
       <div style={{ width: "460px", height: "746px", background: "#fff", borderRadius: "28px", padding: "26px", display: "flex", flexDirection: "column", gap: "16px", overflowY: "auto" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "6px" }}>{(w.steps ?? []).map((s, sIndex) => (
-<Fragment key={sIndex}><button style={{ border: "none", background: "none", padding: "0", font: "inherit", textAlign: "left", cursor: "pointer", display: "flex", flexDirection: "column", gap: "8px" }}><span style={{ height: "5px", borderRadius: "999px", background: s.bar }}></span><span style={{ fontSize: "12px", fontWeight: "700", color: s.fg }}>{s.label}</span></button></Fragment>
+<Fragment key={sIndex}><button type="button" onClick={s.onGo} aria-current={s.current ? "step" : undefined} aria-disabled={s.locked && !s.current ? "true" : undefined} data-etape-bandeau="" style={{ border: "none", background: "none", padding: "0", font: "inherit", textAlign: "left", cursor: s.locked ? "default" : "pointer", display: "flex", flexDirection: "column", gap: "8px" }}><span style={{ height: "5px", borderRadius: "999px", background: s.bar }}></span><span style={{ fontSize: "12px", fontWeight: "700", color: s.fg }}>{s.label}</span></button></Fragment>
 ))}</div>
 
         {w.s1 ? (<><div style={{ fontSize: "22px", fontWeight: "800", letterSpacing: "-0.6px" }}>Écrire votre story</div>

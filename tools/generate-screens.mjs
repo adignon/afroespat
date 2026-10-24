@@ -33,6 +33,7 @@ import { ADAPTATIONS_FIL_VIVANT, AJOUTS_FIL_VIVANT } from './adaptations/fil-viv
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
 import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/administration-vivante.mjs';
 import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
+import { ADAPTATIONS_BOUTONS_INERTES, AJOUTS_BOUTONS_INERTES } from './adaptations/boutons-inertes-vivants.mjs';
 import { ADAPTATIONS_SERVICES_VIVANT, AJOUTS_SERVICES_VIVANT } from './adaptations/services-vivant.mjs';
 import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/villes-vivant.mjs';
 import { ADAPTATIONS_INSCRIPTION_VIVANTE } from './adaptations/inscription-vivante.mjs';
@@ -6217,63 +6218,6 @@ const K08_DONNEES = {
         ),
       );
       if (out !== avant) pris = true;
-    }
-
-    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
-  },
-};
-
-const K09_CONTESTATION = {
-  screens: ['K09'],
-  nom: 'K09_CONTESTATION',
-  why: 'La contestation d’une sanction était un texte d’exemple et un bouton sans geste.',
-  provides: ['contestationTexte', 'onContestationTexte', 'onContester', 'contestationBloquee'],
-  apply(jsx) {
-    /**
-     * ╔════════════════════════════════════════════════════════════════════════╗
-     * ║ « LA PAGE DES SANCTIONS ET SES OPTIONS ? »                            ║
-     * ╚════════════════════════════════════════════════════════════════════════╝
-     *
-     * MESURÉ : zéro champ sur le cadre. La boîte « Expliquez votre point de vue »
-     * portait la phrase d'EXEMPLE de la maquette — « Le lien renvoyait vers une
-     * association gratuite, pas une publicité. » — et « Envoyer ma contestation »
-     * n'avait aucun geste. `POST /sanctions/:id/appeal` répondait déjà.
-     *
-     * ── VINGT CARACTÈRES AU MOINS, ET C'EST LE SERVEUR QUI LE DIT ────────
-     *
-     * `appealSchema` : `min(20)`. Le bouton reste éteint en dessous plutôt que de
-     * prendre un `422` — « une seule fois », dit la planche, et un refus gâcherait
-     * l'unique tentative dans l'esprit du membre même si le serveur ne la compte
-     * pas.
-     */
-    let out = jsx;
-    let pris = false;
-
-    const boite =
-      /<div style=\{\{ (minHeight: "48px", borderRadius: "14px", border: "1\.5px solid #16785E", background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1\.5") \}\}>[^<]*<\/div>/;
-    const mB = boite.exec(out);
-    if (mB !== null) {
-      out =
-        out.slice(0, mB.index) +
-        `<textarea value={contestationTexte} onChange={onContestationTexte} rows={4} ` +
-        `placeholder="Expliquez votre point de vue" aria-label="Expliquez votre point de vue" ` +
-        `data-sanction-texte="" style={{ ${mB[1]}, width: "100%", boxSizing: "border-box", ` +
-        `resize: "vertical", outline: "none", fontFamily: "inherit", color: "#16211D" }} />` +
-        out.slice(mB.index + mB[0].length);
-      pris = true;
-    }
-
-    const envoyer = /<button style=\{\{ ([^}]*) \}\}>Envoyer ma contestation<\/button>/;
-    const mE = envoyer.exec(out);
-    if (mE !== null) {
-      out =
-        out.slice(0, mE.index) +
-        `<button type="button" onClick={onContester} disabled={contestationBloquee} ` +
-        `data-sanction-envoyer="" style={{ ${mE[1].replace('background: "#16785E", ', '')}, ` +
-        `background: contestationBloquee ? "#8A958F" : "#16785E", ` +
-        `cursor: contestationBloquee ? "default" : "pointer" }}>Envoyer ma contestation</button>` +
-        out.slice(mE.index + mE[0].length);
-      pris = true;
     }
 
     return pris ? { jsx: out, applied: true } : { jsx, applied: false };
@@ -13551,6 +13495,11 @@ const A13_NAVIGATION = {
      * ║ LES DEUX BOUTONS DE VOTE — ILS N'ÉTAIENT PAS CLIQUABLES               ║
      * ╚════════════════════════════════════════════════════════════════════════╝
      *
+     * ⚠ LA HAUTEUR EST CAPTURÉE (`(?<h>\d+)`), pas figée : 50 px sur la planche
+     * d'ordinateur, 48 px sur celle du téléphone. Le motif écrit en dur avec
+     * `50px` ne trouvait RIEN à 390 px — les deux votes y restaient des `<span>`
+     * inertes (audit de la vague 1), exactement le piège n° 1 de l'amorçage.
+     *
      * Le porteur : « Les boutons utile et pas utile permettent à l'utilisateur de
      * voter donc ils doivent être cliquables. Donc selon le clic de l'utilisateur
      * une icône check ou close s'affiche sur le bouton cliqué ainsi que le
@@ -13577,16 +13526,16 @@ const A13_NAVIGATION = {
       '<path d="M18 6 6 18M6 6l12 12" /></svg>';
 
     const utile =
-      /<span style=\{\{ height: "50px", borderRadius: "999px", background: "#fff", color: "#0F5C48",([^}]*)\}\}>\{st\.useful \?[\s\S]*?\{st\.a1\}<span style=\{\{ color: "#6FA893", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n1\}<\/span><\/span>/;
+      /<span style=\{\{ height: "(?<h>\d+)px", borderRadius: "999px", background: "#fff", color: "#0F5C48",([^}]*)\}\}>\{st\.useful \?[\s\S]*?\{st\.a1\}<span style=\{\{ color: "#6FA893", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n1\}<\/span><\/span>/;
     const mUtile = utile.exec(out);
     if (mUtile !== null) {
       const bouton =
         '<button type="button" onClick={st.onVoteUtile} aria-pressed={st.voteUtileIcone} ' +
-        `style={{ height: "50px", borderRadius: "999px", background: st.voteUtileBg, ` +
+        `style={{ height: "${mUtile.groups.h}px", borderRadius: "999px", background: st.voteUtileBg, ` +
         // Le groupe capturé s'arrête AVANT le ` }}` et n'a donc pas de virgule
         // finale : on la pose, sinon deux propriétés se collent et le JSX ne
         // compile pas — ce que le compilateur a dit tout de suite.
-        `color: st.voteUtileFg, border: st.voteUtileBd,${mUtile[1].trimEnd()}, ` +
+        `color: st.voteUtileFg, border: st.voteUtileBd,${mUtile[2].trimEnd()}, ` +
         'fontFamily: "inherit", cursor: "pointer" }}>' +
         `{st.voteUtileIcone ? (${COCHE}) : null}{st.a1}` +
         '<span style={{ color: st.voteUtileCompteFg, fontSize: "12.5px", fontWeight: "700" }}>' +
@@ -13596,13 +13545,13 @@ const A13_NAVIGATION = {
     }
 
     const pasUtile =
-      /<span style=\{\{ height: "50px", borderRadius: "999px", border: "1\.5px solid rgba\(255,255,255,\.7\)",([^}]*)\}\}>\{st\.a2\}<span style=\{\{ opacity: "\.55", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n2\}<\/span><\/span>/;
+      /<span style=\{\{ height: "(?<h>\d+)px", borderRadius: "999px", border: "1\.5px solid rgba\(255,255,255,\.7\)",([^}]*)\}\}>\{st\.a2\}<span style=\{\{ opacity: "\.55", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n2\}<\/span><\/span>/;
     const mPas = pasUtile.exec(out);
     if (mPas !== null) {
       const bouton =
         '<button type="button" onClick={st.onVotePasUtile} aria-pressed={st.votePasUtileIcone} ' +
-        'style={{ height: "50px", borderRadius: "999px", background: st.votePasUtileBg, ' +
-        `color: st.votePasUtileFg, border: st.votePasUtileBd,${mPas[1].trimEnd()}, ` +
+        `style={{ height: "${mPas.groups.h}px", borderRadius: "999px", background: st.votePasUtileBg, ` +
+        `color: st.votePasUtileFg, border: st.votePasUtileBd,${mPas[2].trimEnd()}, ` +
         'fontFamily: "inherit", cursor: "pointer" }}>' +
         `{st.votePasUtileIcone ? (${CROIX}) : null}{st.a2}` +
         '<span style={{ color: st.votePasUtileCompteFg, fontSize: "12.5px", fontWeight: "700" }}>' +
@@ -18106,7 +18055,6 @@ function adaptFields(jsx, section) {
     K10_ENREGISTRES,
     K07_INTERRUPTEURS,
     K08_DONNEES,
-    K09_CONTESTATION,
     K04_SECURITE,
     A01_JALONS,
     A01C_SIGNALER_COMMENTAIRE,
@@ -18269,6 +18217,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_ADMIN_VIVANTE,
     // Lot E (agenda-vivant).
     ...ADAPTATIONS_AGENDA_VIVANT,
+    // Vague 1 / phase 1 : boutons, liens et sections inertes.
+    ...ADAPTATIONS_BOUTONS_INERTES,
     // Lot E (villes-vivant).
     ...ADAPTATIONS_VILLES_VIVANT,
     // Lot E (services-vivant).
@@ -19555,6 +19505,7 @@ const AJOUTS = {
   // Lot H — les composants de l'administration vivante.
   ...AJOUTS_ADMIN_VIVANTE,
   ...AJOUTS_AGENDA_VIVANT,
+  ...AJOUTS_BOUTONS_INERTES,
   ...AJOUTS_SERVICES_VIVANT,
   ...AJOUTS_SERVICES_COMPLEMENTS,
   ...AJOUTS_VILLES_VIVANT,

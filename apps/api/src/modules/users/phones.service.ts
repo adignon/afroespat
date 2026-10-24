@@ -222,24 +222,40 @@ export class PhonesService {
     userId: string,
     phoneId: string,
   ): Promise<{ removed: string; level: string }> {
-    const phones = await this.prisma.phoneNumber.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, isPrimary: true },
-    });
-
-    const target = phones.find((p) => p.id === phoneId);
-    // 404 et non 403 : le numéro d'un autre membre ne doit pas se laisser deviner.
-    if (target === undefined) throw ApiError.notFound();
-    if (phones.length <= 1) {
-      throw new ApiError(
-        'LAST_PHONE',
-        AUTH_ERROR_MESSAGES.LAST_PHONE,
-        AUTH_ERROR_CODES.LAST_PHONE,
-      );
-    }
-
     const result = await this.prisma.$transaction(async (tx) => {
+      /**
+       * ── LE GARDE-FOU DU DERNIER NUMÉRO TIENT SOUS CONCURRENCE ───────────────
+       *
+       * La lecture des numéros et la suppression étaient deux temps SANS verrou :
+       * deux `DELETE` simultanés sur les deux numéros d'un compte lisaient chacun
+       * « deux numéros », passaient tous deux le contrôle, et supprimaient chacun
+       * le leur — un compte SANS aucun numéro, donc sans connexion possible (il
+       * n'y a pas de mot de passe, §1). Un double clic sur deux lignes, ou deux
+       * onglets, suffisait.
+       *
+       * Le verrou `FOR UPDATE` sur la ligne du membre sérialise ses retraits (même
+       * recette que la création de parcours) : le second voit le numéro restant
+       * seul et reçoit `LAST_PHONE`.
+       */
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+
+      const phones = await tx.phoneNumber.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, isPrimary: true },
+      });
+
+      const target = phones.find((p) => p.id === phoneId);
+      // 404 et non 403 : le numéro d'un autre membre ne doit pas se laisser deviner.
+      if (target === undefined) throw ApiError.notFound();
+      if (phones.length <= 1) {
+        throw new ApiError(
+          'LAST_PHONE',
+          AUTH_ERROR_MESSAGES.LAST_PHONE,
+          AUTH_ERROR_CODES.LAST_PHONE,
+        );
+      }
+
       await tx.phoneNumber.delete({ where: { id: phoneId } });
 
       /**

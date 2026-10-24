@@ -66,6 +66,13 @@ const CARTE = {
   fontSize: '14px',
   fontWeight: 600,
   lineHeight: 1.5,
+  /**
+   * LA CARTE NE CAPTE AUCUN CLIC. Aucune notification n'a de bouton, mais la carte
+   * (et son enveloppe) restent quatre secondes devant la barre d'écriture de la
+   * story, le pied de page des fenêtres, la barre basse : mesuré à 390 px, elle
+   * interceptait le clic sur « Envoyer » juste après « Story enregistrée ».
+   */
+  pointerEvents: 'none',
 } as const;
 
 /**
