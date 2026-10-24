@@ -41,7 +41,7 @@ import type { LigneAlerte, S10Charge } from '@/screens/s10/data';
 import { COMPTEURS_INCONNUS, type Compteurs, type Moi, type Quotas } from './data';
 import { fondAvatar } from '@/lib/avatar';
 import { urlMedia } from '@/lib/api/base';
-import { filtresLogement, ongletsServices, type FiltreLogement } from './navigation';
+import { filtresLogement, ongletsServices, sousTitreOffres, type FiltreLogement } from './navigation';
 
 /**
  * LES APPELS DES ÉCRANS S01 À S10 — un chargeur par écran, et rien d'autre.
@@ -569,18 +569,6 @@ export async function chargerS04(): Promise<S04Charge> {
 
 /** Les profils disponibles se lisent par pages de vingt. */
 const PAGE_PROFILS = 20;
-
-/**
- * « 8 offres en ligne » — le TOTAL de la recherche (`GET /jobs` → `meta.total`).
- *
- * La maquette écrit « 8 offres à Lyon et en télétravail » : « Lyon » était la ville
- * d'un exemple, et la requête ne filtre sur aucune ville. Le sous-titre dit donc ce
- * que la liste contient réellement — jamais une ville que personne n'a choisie.
- */
-export function sousTitreOffres(total: number): string {
-  if (total === 0) return 'Aucune offre en ligne pour le moment';
-  return total === 1 ? '1 offre en ligne' : `${total} offres en ligne`;
-}
 
 /** La page suivante des profils disponibles (`Voir plus`). */
 export async function chargerProfilsSuivants(

@@ -11,6 +11,7 @@ import {
 import { hasAccessToken, memberApi, resumeSession } from '@/lib/api/index';
 import { cityPillsFor, cityTabsFor, panelVilles, rail, shortcuts } from '../accueil/data';
 import type { VilleData } from './data';
+import { KIND_PAR_ONGLET, ONGLETS_VILLE, ongletDeUrl, type OngletVille } from './onglets';
 import {
   arrivants,
   barresPays,
@@ -21,6 +22,8 @@ import {
   lieux,
   temoignages,
 } from './from-api';
+
+export { KIND_PAR_ONGLET, ONGLETS_VILLE, ongletDeUrl, type OngletVille };
 
 /**
  * Les appels des écrans « Villes » — et eux seuls touchent l'API.
@@ -33,23 +36,6 @@ import {
  */
 export async function assurerSession(): Promise<void> {
   if (!hasAccessToken()) await resumeSession();
-}
-
-/** Les quatre onglets de la fiche, dans l'ordre de `CITY_TABS`, et le genre qu'ils listent. */
-export const ONGLETS_VILLE = ['bons-plans', 'produits', 'budgets', 'temoignages'] as const;
-export type OngletVille = (typeof ONGLETS_VILLE)[number];
-
-export const KIND_PAR_ONGLET = {
-  'bons-plans': 'TIP',
-  produits: 'SHOP',
-  budgets: 'BUDGET',
-  temoignages: 'TESTIMONY',
-} as const satisfies Record<OngletVille, 'TIP' | 'SHOP' | 'BUDGET' | 'TESTIMONY'>;
-
-export function ongletDeUrl(valeur: string | null): OngletVille {
-  return (ONGLETS_VILLE as readonly (string | null)[]).includes(valeur)
-    ? (valeur as OngletVille)
-    : 'budgets';
 }
 
 export type VilleBase = Omit<VilleData, 'vivant'>;

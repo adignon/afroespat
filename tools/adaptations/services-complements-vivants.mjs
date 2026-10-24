@@ -137,6 +137,37 @@ const SC_ROUE = sur(
   },
 );
 
+/**
+ * « Compte » de la barre basse (390 px) mène à `/compte`.
+ *
+ * Quatre des cinq entrées de la barre étaient des liens ; la cinquième, « Compte »,
+ * était un `<div>` : sur un téléphone, depuis les écrans Services et les fiches ville,
+ * on ne pouvait pas atteindre ses réglages. `/compte` existe (et la roue du rail
+ * d'ordinateur y mène déjà). Bornée à ces écrans : les autres modules règlent la
+ * barre de leurs propres cadres.
+ */
+const SC_COMPTE_BARRE = sur(
+  'SC_COMPTE_BARRE',
+  [...SERIE, 'A11', 'A12', 'A12T'],
+  ['>Compte</div>', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0'],
+  'L’entrée « Compte » de la barre basse mène à `/compte` : c’était un <div> sans geste, la seule des cinq entrées qui n’était pas un lien (S01 à S10, A11, A12).',
+  [],
+  (jsx) => {
+    let out = jsx;
+    let n = 0;
+    for (;;) {
+      const re = /<div style=\{\{ height: "54px"[^}]*\}\}><svg [^>]*><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0" \/><\/svg>Compte<\/div>/;
+      const m = re.exec(out);
+      if (m === null) break;
+      const neuf = changerBalise(out, m.index, 'Link', 'href="/compte"', 'textDecoration: "none", cursor: "pointer"');
+      if (neuf === null) break;
+      out = neuf;
+      n += 1;
+    }
+    return n === 0 ? null : out;
+  },
+);
+
 // ─── S04 : trois onglets, sous-titre, contenu ────────────────────────────────
 
 const HREF_ONGLET = {
@@ -347,6 +378,7 @@ export const ADAPTATIONS_SERVICES_COMPLEMENTS = [
   SC_COMPTEURS,
   SC_CREER_FICHE,
   SC_ROUE,
+  SC_COMPTE_BARRE,
   SC_S04,
   SC_SIGNALER_S05,
   SC_SIGNALER_S07,

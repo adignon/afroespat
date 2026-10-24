@@ -1,5 +1,5 @@
 import { VilleScreen } from './ville-screen';
-import { ongletDeUrl } from '@/screens/villes/appels';
+import { ongletDeUrl } from '@/screens/villes/onglets';
 import { voletContribution } from '@/screens/accueil/data';
 
 /**

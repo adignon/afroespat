@@ -63,3 +63,15 @@ export function filtresLogement(courant: FiltreLogement): readonly Onglet[] {
     actif: f.kind === courant,
   }));
 }
+
+/**
+ * « 8 offres en ligne » — le TOTAL de la recherche (`GET /jobs` → `meta.total`).
+ *
+ * La maquette écrit « 8 offres à Lyon et en télétravail » : « Lyon » était la ville
+ * d'un exemple, et la requête ne filtre sur aucune ville. Le sous-titre dit donc ce
+ * que la liste contient réellement — jamais une ville que personne n'a choisie.
+ */
+export function sousTitreOffres(total: number): string {
+  if (total === 0) return 'Aucune offre en ligne pour le moment';
+  return total === 1 ? '1 offre en ligne' : `${total} offres en ligne`;
+}
