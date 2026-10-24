@@ -134,6 +134,8 @@ export type AdministrationData = Record<string, never>;
  * calcule rien.
  */
 export interface D02Data {
+  /** Aucun bloc ne porte la moindre mesure : base neuve, `metric_snapshots` vide. */
+  readonly aucuneMesure: boolean;
   /** Les trois nombres de la carte MEMBRES. */
   readonly membres: {
     readonly inscrits: string;
@@ -224,6 +226,7 @@ const ATTENTE = '—';
 
 /** D02 — les cinq cartes liées du tableau de bord, en attente. */
 export const SQUELETTE_D02: D02Data = {
+  aucuneMesure: false,
   membres: { inscrits: ATTENTE, actifs30j: ATTENTE, niveau2: ATTENTE },
   parcours: { crees: ATTENTE, actifs: ATTENTE, aboutis: ATTENTE, enPause: ATTENTE },
   entraide: { ouvertes: ATTENTE, resolues: ATTENTE, delaiMedian: ATTENTE },

@@ -112,54 +112,42 @@ describe('D02 — les cinq cartes servies', () => {
   });
 });
 
-describe('D02 — [RÈGLE DURE] zéro est un fait, pas une absence', () => {
+describe('D02 — [RÈGLE DURE] zéro est un fait, une absence est « pas encore de mesure »', () => {
   /**
-   * LE DÉFAUT RÉEL : une mesure renommée côté serveur, ou mal orthographiée ici.
-   * Rendue comme « 0 », elle donne « 0 inscrit » sur un tableau de bord d'allure
-   * normale, et personne ne regarde un tableau de bord pour vérifier qu'il est
-   * vrai. On REFUSE, en nommant la mesure et en listant ce que l'API a envoyé.
+   * LE DÉFAUT RÉEL, relevé au navigateur : sur une base sans `metric_snapshots`, le
+   * serveur répond 200 avec onze blocs vides, et le chargeur LEVAIT — donc « Une erreur
+   * est survenue ». Une absence n'est pas une panne. Elle n'est pas non plus zéro :
+   * « 0 inscrit » serait un mensonge. Elle se rend « — ».
    */
-  it('REFUSE une mesure globale absente, au lieu d’afficher zéro', () => {
-    expect(() => vueD02(sansMesure('membres', 'members.registered'))).toThrow(
-      /members\.registered/,
-    );
-    expect(() => vueD02(sansMesure('membres', 'members.registered'))).toThrow(
-      /pas une absence/,
-    );
+  it('rend un tiret, et jamais zéro ni une erreur, pour une mesure globale absente', () => {
+    const v = vueD02(sansMesure('membres', 'members.registered'));
+    expect(v.membres.inscrits).toBe('—');
+    expect(v.membres.actifs30j).not.toBe('—');
   });
 
-  it('REFUSE un bloc attendu absent, en listant les blocs reçus', () => {
+  it('rend un tiret pour un bloc entier absent', () => {
     const r = reelle();
     const { parcours: _retire, ...reste } = r.blocks;
-    expect(() => vueD02({ blocks: reste })).toThrow(/Le bloc « parcours » manque/);
+    const v = vueD02({ blocks: reste });
+    expect(v.parcours).toEqual({ crees: '—', actifs: '—', aboutis: '—', enPause: '—' });
+  });
+
+  it('une base sans aucun instantané : onze blocs vides → tirets partout, `aucuneMesure`', () => {
+    const vide = Object.fromEntries(Object.keys(reelle().blocks).map((k) => [k, []]));
+    const v = vueD02({ blocks: vide });
+    expect(v.aucuneMesure).toBe(true);
+    expect(v.membres).toEqual({ inscrits: '—', actifs30j: '—', niveau2: '—' });
+    expect(v.entraide.delaiMedian).toBe('—');
+    expect(v.services).toEqual({ annonces: '—', fichesPro: '—' });
+    expect(vueD02(reelle()).aucuneMesure).toBe(false);
   });
 
   /**
-   * L'AUTRE SENS, et c'est le cas qui distingue ce test d'un simple « tout
-   * refuser » : une MESURE VENTILÉE dont le NOM est introuvable est un désaccord
-   * de contrat, tandis qu'une TRANCHE absente est un seau vide, donc un fait.
-   *
-   * Sans cette distinction, un `?? 0` posé partout aurait effacé le premier
-   * défaut, et un `throw` posé partout aurait arrêté le tableau de bord sur une
-   * plateforme jeune. Les deux assertions se tiennent par les épaules.
+   * L'AUTRE SENS : une MESURE VENTILÉE dont le NOM manque n'est pas mesurée (tiret),
+   * tandis qu'une TRANCHE absente d'une mesure présente est un seau vide, donc zéro.
    */
-  it('REFUSE un nom de mesure ventilée introuvable, mais ACCEPTE une tranche vide', () => {
-    /**
-     * Le nom disparaît entièrement → désaccord de contrat.
-     *
-     * La casse du message n'est pas fixée ici : `sommeDesTranches` (qui calcule
-     * « Créés ») garde le nom avant `tranche`, et les deux formulent le refus à
-     * leur façon. Ce qui compte et qui est figé, c'est que le refus NOMME la
-     * mesure et dise qu'elle ne figure sur aucune ligne.
-     */
-    expect(() => vueD02(sansMesure('parcours', 'journeys.by_status'))).toThrow(
-      /journeys\.by_status/,
-    );
-    expect(() => vueD02(sansMesure('parcours', 'journeys.by_status'))).toThrow(
-      /ne figure sur aucune ligne/i,
-    );
-
-    // Le nom est là, la tranche `COMPLETED` non → zéro, sans lever.
+  it('tiret si le nom de la mesure ventilée manque, zéro si seule la tranche manque', () => {
+    expect(vueD02(sansMesure('parcours', 'journeys.by_status')).parcours.crees).toBe('—');
     expect(vueD02(reelle()).parcours.aboutis).toBe('0');
   });
 

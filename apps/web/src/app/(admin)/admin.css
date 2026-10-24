@@ -55,6 +55,16 @@
   }
 }
 
+/* D02 : la rangée « indicateur clé / alertes » s'empile, les cartes passent à deux colonnes. */
+@media (max-width: 1023px) {
+  [data-admin] [data-admin-d02-haut] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  [data-admin] [data-admin-d02-cartes] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
 /* Les colonnes de contenu : une seule sous 1 024 px, le gabarit de la maquette au-delà. */
 .admin-colonnes {
   grid-template-columns: minmax(0, 1fr);

@@ -59,6 +59,14 @@ import { D02Desktop } from '@/screens/d02/desktop.generated';
  * `chargerD02` est une fonction de MODULE, donc stable : `useDonneesEquipe` la
  * garde dans ses dépendances sans boucler.
  *
+ * ─── UNE BASE SANS MESURE N'EST PAS UNE ERREUR ───────────────────────────────
+ *
+ * Sur une base sans instantané de métriques, `GET /admin/dashboard` répond 200 avec onze
+ * blocs vides. Le chargeur levait sur la première mesure absente et la page affichait
+ * « Une erreur est survenue ». Il rend maintenant des tirets et `aucuneMesure`, et la
+ * page le dit (« Pas encore de mesure »). Les sept cartes non liées n'affichent plus les
+ * nombres d'exemple de la maquette (adaptation `D02_SANS_INVENTION`).
+ *
  * CETTE PAGE N'A PAS DE `<h1>`, et c'est la maquette qui en décide : le seul
  * endroit où « Tableau de bord » est écrit dans ce cadre, c'est l'entrée ACTIVE du
  * menu latéral. Promouvoir un élément de `<nav>` en titre de page dirait que la
@@ -66,7 +74,15 @@ import { D02Desktop } from '@/screens/d02/desktop.generated';
  */
 export default function Page() {
   return (
-    <EcranDonneesEquipe charger={chargerD02} squelette={SQUELETTE_D02}>
+    <EcranDonneesEquipe
+      charger={chargerD02}
+      squelette={SQUELETTE_D02}
+      note={(d) =>
+        d.aucuneMesure
+          ? 'Pas encore de mesure : les indicateurs apparaissent après le premier calcul horaire.'
+          : null
+      }
+    >
       {(donnees) => <ScreenFrames screen="D02" desktop={<D02Desktop {...donnees} />} />}
     </EcranDonneesEquipe>
   );

@@ -113,91 +113,52 @@ const nombre = (n: number): string => nombreFr.format(n);
  */
 
 /**
- * Un bloc que l'écran ATTEND, et qui doit donc être là.
+ * LES MESURES ABSENTES NE SONT PAS DES ERREURS — elles sont « pas encore de mesure ».
  *
- * `adminDashboardResponseSchema` valide la FORME (`z.record`, parce que le serveur
- * décide des blocs et qu'un douzième ne doit pas arrêter le tableau de bord).
- * Ici on exige le CONTENU dont l'écran dépend : un bloc attendu qui manque est un
- * désaccord de contrat, et il lève avec la liste de ce que l'API a réellement
- * envoyé.
+ * Ce module LEVAIT sur un bloc ou une mesure manquants (« zéro est un fait, pas une
+ * absence »). La règle de fond reste : une absence n'est JAMAIS rendue « 0 ». Mais lever
+ * était la mauvaise réponse : sur une base neuve, `metric_snapshots` est vide, le serveur
+ * rend onze blocs VIDES et le tableau de bord entier tombait sur « Une erreur est
+ * survenue » — alors que le serveur répondait 200 et disait vrai (relevé : base sans
+ * instantané, `GET /admin/dashboard` → 200, tous les blocs `[]`). Une plateforme qui n'a
+ * pas encore calculé ses indicateurs n'est pas en panne.
  *
- * Pas de `?? []` : un bloc absent rendu comme un bloc vide donnerait « 0 inscrit »
- * sur un tableau de bord d'apparence normale. C'est le raisonnement de `mesure()`
- * ci-dessus, au niveau du bloc.
+ * Désormais : bloc absent ou vide, mesure globale absente, nom de mesure ventilée
+ * absent → `null`, rendu « — » (le tiret que le squelette emploie déjà), et la page dit
+ * « Pas encore de mesure » (`aucuneMesure`). Une TRANCHE absente d'une mesure ventilée
+ * PRÉSENTE reste zéro : c'est un `GROUP BY`, un seau vide ne produit aucune ligne.
+ *
+ * Ce qui continue de lever : une réponse qui n'a pas la forme du schéma partagé
+ * (`ApiShapeError`, par `staffApi`) — là, c'est bien un désaccord de contrat.
  */
+const ABSENT = '—';
+
 function bloc(reponse: AdminDashboardResponse, nom: string): readonly MetricPoint[] {
-  const points = reponse.blocks[nom];
-  if (points === undefined) {
-    throw new Error(
-      `Le bloc « ${nom} » manque à la réponse de GET /admin/dashboard. Le tableau de ` +
-        `bord n’affiche pas zéro à sa place : zéro est un fait, pas une absence. ` +
-        `Blocs reçus : ${Object.keys(reponse.blocks).join(', ') || '(aucun)'}.`,
-    );
-  }
-  return points;
+  return reponse.blocks[nom] ?? [];
+}
+
+/** La mesure GLOBALE d'un bloc (dimension vide), ou `null` si elle n'est pas mesurée. */
+function globale(points: readonly MetricPoint[], nom: string): number | null {
+  return points.find((p) => p.metric === nom && p.dimension === '')?.value ?? null;
 }
 
 /**
- * La mesure GLOBALE d'un bloc — celle dont la ventilation est vide.
- *
- * Même exigence que `mesure()` : une mesure absente LÈVE. `dimension: ''` est la
- * tranche globale, et l'exiger empêche de rendre la première ventilation venue à
- * la place du total.
+ * UNE TRANCHE d'une mesure ventilée. Le NOM de la mesure absent veut dire « pas mesuré »
+ * (`null`) ; le nom présent et la tranche absente veulent dire zéro — un fait.
  */
-function globale(points: readonly MetricPoint[], nom: string): number {
-  const point = points.find((p) => p.metric === nom && p.dimension === '');
-  if (point === undefined) {
-    throw new Error(
-      `La mesure « ${nom} » manque au bloc lu de GET /admin/dashboard. Zéro est un ` +
-        `fait, pas une absence. Mesures reçues : ` +
-        `${points.map((p) => p.metric).join(', ') || '(aucune)'}.`,
-    );
-  }
-  return point.value;
-}
-
-/**
- * UNE TRANCHE d'une mesure ventilée — et ici, l'absence VEUT DIRE ZÉRO.
- *
- * ── POURQUOI LA RÈGLE S'INVERSE, ET POURQUOI CE N'EST PAS UN RELÂCHEMENT ────
- *
- * `globale()` lève sur une mesure absente ; celle-ci rend 0 sur une TRANCHE
- * absente. La différence n'est pas de rigueur, elle est de nature, et elle est
- * mesurable sur la charge relevée : `journeys.by_status` arrive avec la SEULE
- * dimension `ACTIVE`, parce que ces mesures sont des `GROUP BY` — un seau vide ne
- * produit aucune ligne. `COMPLETED` absent veut donc dire « aucun parcours
- * abouti », ce qui est un FAIT, et lever dessus arrêterait le tableau de bord
- * d'une plateforme jeune où presque tous les seaux sont vides.
- *
- * Ce qui reste gardé est le NOM DE LA MESURE : si `journeys.by_status` n'apparaît
- * sur AUCUNE ligne, c'est un désaccord de contrat — un nom mal orthographié, une
- * mesure renommée — et là on lève. Un nom introuvable et un seau vide ne se
- * confondent pas, et c'est exactement la distinction qu'un `?? 0` posé partout
- * aurait effacée.
- */
-function tranche(points: readonly MetricPoint[], nom: string, dimension: string): number {
-  if (!points.some((p) => p.metric === nom)) {
-    throw new Error(
-      `La mesure ventilée « ${nom} » ne figure sur AUCUNE ligne du bloc lu de ` +
-        `GET /admin/dashboard — ce n’est pas une tranche vide, c’est un nom que ` +
-        `l’API ne connaît pas. Mesures reçues : ` +
-        `${[...new Set(points.map((p) => p.metric))].join(', ') || '(aucune)'}.`,
-    );
-  }
+function tranche(points: readonly MetricPoint[], nom: string, dimension: string): number | null {
+  if (!points.some((p) => p.metric === nom)) return null;
   return points.find((p) => p.metric === nom && p.dimension === dimension)?.value ?? 0;
 }
 
-/** La somme de toutes les tranches d'une mesure ventilée. */
-function sommeDesTranches(points: readonly MetricPoint[], nom: string): number {
-  if (!points.some((p) => p.metric === nom)) {
-    throw new Error(
-      `La mesure ventilée « ${nom} » ne figure sur aucune ligne du bloc lu de ` +
-        `GET /admin/dashboard. Mesures reçues : ` +
-        `${[...new Set(points.map((p) => p.metric))].join(', ') || '(aucune)'}.`,
-    );
-  }
+/** La somme de toutes les tranches d'une mesure ventilée, ou `null` si non mesurée. */
+function sommeDesTranches(points: readonly MetricPoint[], nom: string): number | null {
+  if (!points.some((p) => p.metric === nom)) return null;
   return points.filter((p) => p.metric === nom).reduce((t, p) => t + p.value, 0);
 }
+
+/** Un nombre mis en forme, ou le tiret d'absence. */
+const fmt = (n: number | null): string => (n === null ? ABSENT : nombre(n));
 
 /**
  * Une part, dans les mots de la maquette : « 41 % ».
@@ -206,7 +167,8 @@ function sommeDesTranches(points: readonly MetricPoint[], nom: string): number {
  * « 0 % » plutôt que « NaN % » — une plateforme sans aucun membre est un état
  * normal le premier jour, pas une erreur.
  */
-function part(numerateur: number, denominateur: number): string {
+function part(numerateur: number | null, denominateur: number | null): string {
+  if (numerateur === null || denominateur === null) return ABSENT;
   if (denominateur === 0) return '0 %';
   return `${nombre(Math.round((numerateur / denominateur) * 100))} %`;
 }
@@ -219,7 +181,8 @@ function part(numerateur: number, denominateur: number): string {
  * plutôt que d'écrire « 0 h » — qui dirait « immédiat » là où le vrai délai est de
  * quarante minutes.
  */
-function delai(minutes: number): string {
+function delai(minutes: number | null): string {
+  if (minutes === null) return ABSENT;
   if (minutes < 60) return `${nombre(Math.round(minutes))} min`;
   return `${nombre(Math.round(minutes / 60))} h`;
 }
@@ -259,45 +222,47 @@ export function vueD02(reponse: AdminDashboardResponse): D02Data {
    */
   const niveaux = sommeDesTranches(membres, DASHBOARD_METRICS.membresParNiveau);
 
-  return {
+  const resultat: D02Data = {
+    aucuneMesure: Object.values(reponse.blocks).every((points) => points.length === 0),
     membres: {
-      inscrits: nombre(globale(membres, DASHBOARD_METRICS.membresInscrits)),
-      actifs30j: nombre(globale(membres, DASHBOARD_METRICS.membresActifs30j)),
+      inscrits: fmt(globale(membres, DASHBOARD_METRICS.membresInscrits)),
+      actifs30j: fmt(globale(membres, DASHBOARD_METRICS.membresActifs30j)),
       niveau2: part(tranche(membres, DASHBOARD_METRICS.membresParNiveau, 'L2'), niveaux),
     },
     parcours: {
-      crees: nombre(sommeDesTranches(parcours, DASHBOARD_METRICS.parcoursParStatut)),
-      actifs: nombre(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'ACTIVE')),
-      aboutis: nombre(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'COMPLETED')),
-      enPause: nombre(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'PAUSED')),
+      crees: fmt(sommeDesTranches(parcours, DASHBOARD_METRICS.parcoursParStatut)),
+      actifs: fmt(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'ACTIVE')),
+      aboutis: fmt(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'COMPLETED')),
+      enPause: fmt(tranche(parcours, DASHBOARD_METRICS.parcoursParStatut, 'PAUSED')),
     },
     entraide: {
-      ouvertes: nombre(tranche(entraide, DASHBOARD_METRICS.entraideParStatut, 'OPEN')),
-      resolues: nombre(tranche(entraide, DASHBOARD_METRICS.entraideParStatut, 'RESOLVED')),
+      ouvertes: fmt(tranche(entraide, DASHBOARD_METRICS.entraideParStatut, 'OPEN')),
+      resolues: fmt(tranche(entraide, DASHBOARD_METRICS.entraideParStatut, 'RESOLVED')),
       delaiMedian: delai(globale(entraide, DASHBOARD_METRICS.entraideDelaiMedianMinutes)),
     },
     guides: {
-      publies: nombre(tranche(guides, DASHBOARD_METRICS.guidesParStatut, 'PUBLISHED')),
-      aVerifier: nombre(tranche(guides, DASHBOARD_METRICS.guidesParStatut, 'FLAGGED')),
+      publies: fmt(tranche(guides, DASHBOARD_METRICS.guidesParStatut, 'PUBLISHED')),
+      aVerifier: fmt(tranche(guides, DASHBOARD_METRICS.guidesParStatut, 'FLAGGED')),
     },
     services: {
       /**
-       * Les annonces EN LIGNE : logements actifs plus emplois actifs.
-       *
-       * La maquette écrit « Annonces » sans dire si les expirées comptent. Les deux
-       * mesures ventilent par statut et la charge relevée porte `EXPIRED` sur les
-       * deux ; prendre la somme de TOUTES les tranches aurait donné le nombre
-       * d'annonces jamais publiées, pas le nombre d'annonces. On prend les actives,
-       * qui est ce qu'un tableau de bord d'aujourd'hui montre, et la lecture est
-       * écrite ici pour que le porteur puisse la corriger d'une ligne.
+       * Les annonces EN LIGNE : logements actifs plus emplois actifs (les expirées ne
+       * comptent pas). Si l'une des deux mesures manque, la somme n'est pas connue.
        */
-      annonces: nombre(
-        tranche(services, DASHBOARD_METRICS.logementsParStatut, 'ACTIVE') +
+      annonces: fmt(
+        sommeOuNull(
+          tranche(services, DASHBOARD_METRICS.logementsParStatut, 'ACTIVE'),
           tranche(services, DASHBOARD_METRICS.emploisParStatut, 'ACTIVE'),
+        ),
       ),
-      fichesPro: nombre(tranche(services, DASHBOARD_METRICS.prosParVerification, 'APPROVED')),
+      fichesPro: fmt(tranche(services, DASHBOARD_METRICS.prosParVerification, 'APPROVED')),
     },
   };
+  return resultat;
+}
+
+function sommeOuNull(a: number | null, b: number | null): number | null {
+  return a === null || b === null ? null : a + b;
 }
 
 /** D02 — l'appel, et rien d'autre : tout le jugement est dans `vueD02`. */

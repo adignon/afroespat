@@ -1145,9 +1145,15 @@ describe('administration (15)', () => {
       const staff = await as('SUPPORT');
       const userId = await memberId();
 
-      // Le jeu de référentiels n'a aucune ville active : on en ouvre une, comme
-      // l'exploitation le ferait, et on la referme ensuite.
+      // INDÉPENDANT DU JEU DE DONNÉES : le test ne suppose plus que la base n'a
+      // aucune ville active. Il fixe lui-même l'état des deux villes (l'une
+      // active, l'autre inactive), puis rétablit l'état d'origine.
+      const before = await prisma.city.findMany({
+        where: { id: { in: [cityId, otherCityId] } },
+        select: { id: true, isActive: true },
+      });
       await prisma.city.update({ where: { id: otherCityId }, data: { isActive: true } });
+      await prisma.city.update({ where: { id: cityId }, data: { isActive: false } });
       try {
         await request(httpServer(app))
           .post(`/v1/admin/users/${userId}/city`)
@@ -1174,7 +1180,9 @@ describe('administration (15)', () => {
           ).fields[0],
         ).toMatchObject({ path: 'cityId', code: 'NOT_FOUND' });
       } finally {
-        await prisma.city.update({ where: { id: otherCityId }, data: { isActive: false } });
+        for (const c of before) {
+          await prisma.city.update({ where: { id: c.id }, data: { isActive: c.isActive } });
+        }
       }
     });
 
