@@ -34,6 +34,7 @@ export * from './validation/events.js';
 export * from './validation/admin.js';
 export * from './validation/admin-content.js';
 export * from './validation/admin-responses.js';
+export * from './validation/admin-pilotage.js';
 export * from './validation/phone-refus.js';
 export * from './validation/referentials.js';
 export * from './validation/search.js';

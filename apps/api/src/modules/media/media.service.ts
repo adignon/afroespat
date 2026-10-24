@@ -419,6 +419,25 @@ export class MediaService {
     return { body: octets.body, mime: asset.mime };
   }
 
+  /**
+   * Le justificatif d'une fiche pro, LU PAR L'ÉQUIPE (15 §2.2 : « Valider les fiches pro (justificatif) »).
+   *
+   * Les genres privés ne se servent qu'à leur propriétaire (`bytes`) : un justificatif est donc
+   * invisible de la personne qui doit le valider. Cette lecture est réservée à la route d'équipe de la
+   * fiche (`GET /admin/pro-profiles/:id/proof`, rôles `proReview`), ne rend QUE le genre `PROOF`, prêt et
+   * sans EXIF, et la route journalise la consultation. Même 404 pour tout refus.
+   */
+  async proofBytesForStaff(proofAssetId: string): Promise<{ body: Buffer; mime: string }> {
+    const asset = await this.prisma.mediaAsset.findFirst({
+      where: { id: proofAssetId, kind: 'PROOF', deletedAt: null },
+      select: { storageKey: true, mime: true, status: true, exifStripped: true },
+    });
+    if (asset === null || asset.status !== 'READY' || !asset.exifStripped) throw ApiError.notFound();
+    const octets = await this.storage.get(asset.storageKey);
+    if (octets === null) throw ApiError.notFound();
+    return { body: octets.body, mime: asset.mime };
+  }
+
   private view(row: MediaViewRow): MediaAssetView {
     return {
       id: row.id,

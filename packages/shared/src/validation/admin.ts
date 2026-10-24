@@ -19,6 +19,7 @@ import {
   VerificationLevel,
 } from '../enums/generated.js';
 import { COMMUNITY_CITY_THRESHOLD_DEFAULT, COMMUNITY_CITY_THRESHOLD_SETTING_KEY } from './communities.js';
+import { KEY_INDICATOR_TARGET_DEFAULT, KEY_INDICATOR_TARGET_SETTING_KEY } from './admin-pilotage.js';
 import {
   HOUSING_PRICE_BOUNDS_DEFAULT,
   HOUSING_RISK_FLAGS,
@@ -416,6 +417,13 @@ export const SETTINGS_REGISTRY = {
     description:
       'Faux : tout est gratuit, tous les membres ont les droits Premium. Vrai : les plans s’appliquent (14).',
   },
+  [KEY_INDICATOR_TARGET_SETTING_KEY]: {
+    schema: z.number().min(1).max(100),
+    defaultValue: KEY_INDICATOR_TARGET_DEFAULT,
+    role: STAFF_SCOPES.staffAdmin,
+    description:
+      'Objectif de l’indicateur clé, en pourcentage : part des membres d’une ville présents à un événement sur 90 jours (15 §5.1).',
+  },
   admin_allowed_cidrs: {
     schema: z.array(cidrSchema).max(200),
     defaultValue: [],
@@ -516,6 +524,7 @@ export const AUDIT_ACTIONS = {
   staffUpdated: 'staff.updated',
   settingChanged: 'setting.changed',
   proApproved: 'pro.approved',
+  proProofViewed: 'pro.proof_viewed',
   proRejected: 'pro.rejected',
   userSessionsRevoked: 'user.sessions_revoked',
   userDeactivated: 'user.deactivated',

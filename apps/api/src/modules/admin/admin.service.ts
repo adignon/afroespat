@@ -573,6 +573,24 @@ export class AdminService {
     return { ...shapeProReview(row), decisions: await this.proDecisions(proProfileId) };
   }
 
+  /** Lit le justificatif d'une fiche et trace la consultation (une pièce d'identité d'activité est une donnée sensible). */
+  async readProProof(staff: StaffUser, proProfileId: string, lire: (assetId: string) => Promise<{ body: Buffer; mime: string }>) {
+    const row = await this.prisma.proProfile.findFirst({
+      where: { id: proProfileId, deletedAt: null },
+      select: { id: true, proofAssetId: true },
+    });
+    if (row === null || row.proofAssetId === null) throw ApiError.notFound();
+    const octets = await lire(row.proofAssetId);
+    await this.audit.record(this.prisma, {
+      actor: { type: 'STAFF', id: staff.staffId },
+      action: AUDIT_ACTIONS.proProofViewed,
+      targetType: 'pro_profile',
+      targetId: proProfileId,
+      ...(staff.ip === null ? {} : { ip: staff.ip }),
+    });
+    return octets;
+  }
+
   /** §4.1 du module 10 : la validation humaine. Fait passer la fiche en `APPROVED`. */
   async approveProProfile(staff: StaffUser, proProfileId: string, input: ProApprove) {
     return this.decideProProfile(staff, proProfileId, {

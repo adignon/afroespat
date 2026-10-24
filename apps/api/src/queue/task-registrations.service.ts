@@ -19,6 +19,7 @@ import { StaffAuthService } from '../modules/admin/staff-auth.service';
 import { BillingService } from '../modules/billing/billing.service';
 import { AccountService } from '../modules/users/account.service';
 import { KycService } from '../modules/kyc/kyc.service';
+import { ImpactService } from '../modules/analytics/impact.service';
 import { AnalyticsService } from '../modules/analytics/analytics.service';
 import { DataExportService } from '../modules/exports/data-export.service';
 import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, quarterlyAt, weeklyAt } from './scheduled-tasks';
@@ -50,11 +51,11 @@ import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, quarterlyAt, weeklyAt 
  * TROIS TÂCHES DES SPECS NE SONT PAS ICI, et chacune pour une raison écrite :
  *   · `outbox.relay` (1 s) — déjà tenue par `OutboxRelayService`, à son propre
  *     rythme. Un travail BullMQ par seconde coûterait plus que le balayage lui-même ;
- *   · `audit.retention` et `affiliate.reconcile` — la première est une
- *     contradiction de spec qui appartient au propriétaire, la seconde attend un
- *     partenaire qui expose une API. Les deux sont détaillées en fin de fichier,
- *     pour que l'écart avec §9.3 se lise ici plutôt que de se découvrir en
- *     production.
+ *   · `audit.retention` et `affiliate.reconcile` — la première a été RETIRÉE
+ *     par décision du porteur (« on ne supprime jamais » : le journal d'audit est
+ *     conservé sans limite), la seconde attend un partenaire qui expose une API.
+ *     Les deux sont détaillées en fin de fichier, pour que l'écart avec §9.3 se lise
+ *     ici plutôt que de se découvrir en production.
  *
  * `event.waitlist_promote` (09 §8) n'est pas une tâche : la spec la donne « à la
  * désinscription (immédiat, pas planifié) », et elle est tenue par le service.
@@ -83,6 +84,7 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly account: AccountService,
     private readonly kyc: KycService,
     private readonly analytics: AnalyticsService,
+    private readonly impact: ImpactService,
     private readonly dataExports: DataExportService,
     private readonly journeys: JourneysService,
     private readonly bookmarks: BookmarksService,
@@ -683,7 +685,7 @@ export class TaskRegistrationsService implements OnModuleInit {
       name: 'impact.quarterly_prepare',
       module: '15',
       schedule: quarterlyAt(6, 0),
-      handle: (ctx) => this.analytics.prepareQuarterlyImpact(ctx.now),
+      handle: (ctx) => this.impact.prepareQuarter(ctx.now),
     });
 
     /**
@@ -700,15 +702,15 @@ export class TaskRegistrationsService implements OnModuleInit {
      * en compte deux, une par module, pour la raison écrite plus haut) ; restent les
      * deux qui suivent.
      *
-     *   · `audit.retention` (quotidienne) — 15 §10, « 5 ans ». `audit_logs` est en
-     *     AJOUT SEUL, et pas seulement par convention : la migration
-     *     `append_only_truncate_guard` y pose deux déclencheurs PostgreSQL
-     *     (`audit_logs_append_only`, `audit_logs_no_truncate`) qui font LEVER tout
-     *     UPDATE, DELETE ou TRUNCATE. Écrire la tâche demanderait donc de retirer
-     *     une protection posée exprès contre §2.3 (« Aucune suppression
-     *     possible »). §2.3 et §10 se contredisent — cinq ans de rétention
-     *     supposent un effacement au bout de cinq ans — et l'arbitrage appartient
-     *     au propriétaire, pas à ce fichier. RIEN n'a été retiré ni contourné ;
+     *   · `audit.retention` (quotidienne) — 15 §10 la donnait à « 5 ans », en
+     *     contradiction avec §2.3 (« Aucune suppression possible »). LE PORTEUR A
+     *     TRANCHÉ : « on ne supprime jamais ». La rétention du journal est ILLIMITÉE,
+     *     la tâche est retirée de la spec (15 §10) et n'existera pas. `audit_logs` est
+     *     en AJOUT SEUL par deux déclencheurs PostgreSQL (`audit_logs_append_only`,
+     *     `audit_logs_no_truncate`) qui font LEVER tout UPDATE, DELETE ou TRUNCATE, et
+     *     aucune clé étrangère ne l'atteint. Le test
+     *     `common/__tests__/audit-jamais-supprime.int.test.ts` ÉCHOUE si une tâche,
+     *     une purge ou une cascade apparaît ;
      *   · `affiliate.reconcile` (quotidienne) — module 14 : §10 la conditionne à un
      *     partenaire qui expose une API (« import automatique SI le partenaire
      *     expose une API »), et aucun partenaire n'est configuré. Il n'y a donc

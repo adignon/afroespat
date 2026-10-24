@@ -44,7 +44,7 @@ Un `SUPER_ADMIN` ne peut pas retirer son propre rôle ni supprimer son compte s'
 
 ### 2.3 Audit
 
-**[RÈGLE DURE]** Toute écriture depuis l'application admin passe par `AuditService.record()` avant validation de la transaction : acteur, action, cible, `metadata` avant/après (champs modifiés uniquement, valeurs sensibles masquées), IP. Page « Journal d'audit » filtrable par acteur, action, cible, période ; export CSV. Aucune suppression possible ; rétention 5 ans.
+**[RÈGLE DURE]** Toute écriture depuis l'application admin passe par `AuditService.record()` avant validation de la transaction : acteur, action, cible, `metadata` avant/après (champs modifiés uniquement, valeurs sensibles masquées), IP. Page « Journal d'audit » filtrable par acteur, action, cible, période ; export CSV. **Aucune suppression possible, jamais** : décision du porteur (« on ne supprime jamais »), la rétention du journal est **illimitée**. Ni tâche, ni purge, ni cascade ne l'atteint (déclencheurs `audit_logs_append_only` et `audit_logs_no_truncate`, aucune clé étrangère) ; le test `audit-jamais-supprime.int.test.ts` échoue si une suppression apparaît.
 
 ---
 
@@ -136,7 +136,9 @@ Page et export PDF trimestriel, pour les financeurs (subventions, fonds d'intég
 | `member_notes` | **Table ajoutée** (`std`) : `user_id`, `staff_id`, `body` — notes internes |
 | `announcements.plans` | Dans `target` |
 | `metric_snapshots` | **Table ajoutée** (`append`) : `metric`, `dimension` (ville, type…), `value`, `period_start` — historique des indicateurs pour les courbes |
-| `guides.quotable`, `city_tips.quotable` | **Ajoutées**, bool — accord de citation pour le rapport |
+| `guides.quotable`, `city_tips.quotable` | **Ajoutées**, bool, faux par défaut — accord de l'auteur pour la citation dans le rapport |
+| `impact_report_snapshots` | **Table ajoutée** : un instantané du rapport d'impact par trimestre ET par révision, jamais écrasé (décision « il faut tout conserver ») |
+| `impact_quotes` | **Table ajoutée** : la citation approuvée par l'équipe pour un trimestre (extrait de guide ou de contribution de ville), sans nom ni identifiant d'auteur |
 
 ---
 
@@ -199,11 +201,11 @@ Toutes les routes exigent une session équipe valide et vérifient le rôle. Tou
 | `stats.steps_recompute` | hebdomadaire |
 | `impact.quarterly_prepare` | 1er jour du trimestre |
 | `staff.session_cleanup` | horaire |
-| `audit.retention` | quotidienne (5 ans) |
+| ~~`audit.retention`~~ | **Retirée** : le journal d'audit est conservé sans limite (§2.3). |
 
 ## 11. Gestionnaire de suppression
 
-`member_notes` : supprimées. `audit_logs` : conservés, `target_id` gardé (référence anonymisée) — obligation de traçabilité. `metric_snapshots` : agrégats, non concernés.
+`member_notes` : supprimées. `audit_logs` : conservés **sans limite de durée**, `target_id` gardé (référence anonymisée) — obligation de traçabilité. `metric_snapshots` : agrégats, non concernés.
 
 ## 12. Tests des règles dures
 
@@ -216,62 +218,80 @@ Toutes les routes exigent une session équipe valide et vérifient le rôle. Tou
 
 ---
 
-## 13. État de la livraison (relevé au navigateur, 1440 px et 390 px)
+## 13. État de la livraison — état final (phase 5 « Administration », relevé au navigateur, 1440 px et 390 px)
 
 Cette section dit ce qui est LIVRÉ et ce qui s'écarte du texte ci-dessus. Les écrans sont ceux
-de `docs/template/10 Administration` (D01 à D16) ; l'application d'équipe vit sous `/admin/*`
-du front (groupe de routes `(admin)`), pas dans une application `apps/admin` séparée, et tient
-l'étanchéité des deux domaines par le client `staffApi` (cookie `dp_staff` seul, jamais le jeton
-de membre — voir `lib/api/domains.ts`).
+de `docs/template/10 Administration` (D01 à D16), plus un ajout, D17 (alertes d'équipe). L'application
+d'équipe vit sous `/admin/*` du front (groupe de routes `(admin)`), pas dans une application `apps/admin`
+séparée, et tient l'étanchéité des deux domaines par le client `staffApi` (cookie `dp_staff` seul, jamais
+le jeton de membre — voir `lib/api/domains.ts`).
 
 ### 13.1 Livré, écran par écran
 
 | Écran | Livré | Gestes d'écriture éprouvés |
 |---|---|---|
-| D01 Connexion | e-mail + mot de passe, TOTP, **enrôlement forcé avec code QR rendu localement** (`qrcode-generator`, SVG en ligne : le secret ne sort pas du navigateur), clé en texte et lien `otpauth://` en secours | connexion, enrôlement, première session |
-| D02 Tableau de bord | cinq cartes liées (membres, parcours, entraide, guides, services) lues de `GET /admin/dashboard` ; **base sans instantané = tirets et « Pas encore de mesure », jamais une erreur** ; les sept cartes sans source n'affichent plus les nombres d'exemple de la maquette | lecture |
-| D03 à D05 | membres, file de modération, dossier | (lot précédent) |
-| D06 Parcours | modèles et versions, éditeur d'étapes, aperçu, publication (la précédente est archivée), corrections proposées, parcours restés sur une version archivée | nouveau brouillon, édition, ordre, enregistrement, aperçu, publication |
-| D08 Référentiels | villes : activer, fermer, fusionner (irréversible, confirmation par le slug) ; cartes sur mobile | les trois gestes, avec motif tracé |
-| D09 Guides | propositions escaladées (accepter, refuser avec motif), signalés obsolètes, tous les guides, forçage de statut, retour arrière (la version actuelle n'est pas proposée), « maintenu par la communauté » | tous |
-| D10 Services | justificatifs pro, annonces logement à risque (publier / retirer), bornes de prix | bornes de prix, classement d'un dossier |
-| D11 Alertes arnaques | création, édition, retrait, ciblage ville / pays, aperçu membre | création, édition, retrait |
-| D12 Pages et annonces | pages versionnées ; annonces (ciblage villes et phases, période) | publication d'une annonce |
-| D13 Partenaires | partenaires, encarts par étape, import CSV des conversions (validé ligne à ligne côté écran, revalidé par le serveur) ; cartes sur mobile | création, bascule, encart (refus du doublon affiché), import |
-| D15 Réglages | feature flags, paramètres (registre fermé), seuils de modération, équipe, journal d'audit paginé (« Voir plus ») avec export CSV | création / modification de flag, paramètre, seuils, compte équipe, export |
-| D16 Impact | agrégats par ville et pays, impression | lecture |
+| D01 Connexion | e-mail + mot de passe, TOTP, **enrôlement forcé avec code QR rendu localement**, clé en texte et lien `otpauth://` en secours | connexion, enrôlement, première session |
+| D02 Tableau de bord | **entièrement branché** : indicateur clé (pourcentage, écart en points, objectif réglable `key_indicator_target`, courbe hebdomadaire, villes), bandeau d'alertes (SLA dépassé, justificatifs pro, villes à activer, alertes d'équipe non lues), file et respect du SLA de modération, note moyenne et parrainages en cours, événements et présences du mois, réseaux actifs et d'intérêt, plus les cinq cartes d'instantanés. Une mesure absente est « — » et « Pas encore de mesure ». Revenus : « — », « Tout est gratuit pour le moment » (le paiement est hors périmètre) | lecture (4 rôles) |
+| D03 Membres | recherche, fiche, notes internes, actions avec motif ; **la confirmation du geste reste affichée après la fermeture de la fenêtre** | note, révocation, désactivation, réactivation, correction phase/ville |
+| D04 Modération | file filtrable ; types « Story » et « Conseil de ville » nommés ; **à 390 px chaque ligne tient sans défilement et nomme ses colonnes** | prendre un dossier |
+| D05 Dossier | contenu, contexte, verdict IA, actions | prendre, conserver avec motif |
+| D06 Parcours | modèles et versions, éditeur d'étapes, aperçu, publication, **corrections proposées par les membres : accepter / refuser avec motif**, parcours restés sur une version archivée | brouillon, édition, publication, **acceptation et refus d'une correction (éprouvés avec des corrections déposées par de vrais membres)** |
+| D07 Bibliothèque d'étapes | liste, éditeur ; colonnes nommées à 390 px | sélection, édition |
+| D08 Référentiels | villes : activer, fermer, fusionner | les trois gestes |
+| D09 Guides | propositions escaladées (accepter, refuser avec motif), signalés, forçage, retour arrière | tous |
+| D10 Services | **fiches pro en attente : voir le justificatif (route d'équipe tracée), approuver, rejeter avec motif**, annonces logement à risque, bornes de prix | approbation, rejet avec motif, bornes, classement d'un dossier |
+| D11 Alertes arnaques | création, édition, retrait, ciblage | création, édition, retrait |
+| D12 Pages et annonces | pages versionnées ; annonces avec **ciblage par pays d'origine, villes, phases et plans** | publication d'une annonce ciblée |
+| D13 Partenaires | partenaires, encarts, import CSV | création, bascule, encart, import |
+| D14 Revenus | état « monétisation désactivée » | lecture |
+| D15 Réglages | feature flags, paramètres (registre fermé, dont `key_indicator_target`), seuils, équipe, journal d'audit paginé avec export CSV | flags, paramètres, seuils, équipe, export |
+| D16 Impact | **sélecteur de trimestre sur l'historique conservé**, recalcul (nouvelle révision, l'ancienne reste), **témoignages consentis et approuvés**, export CSV par trimestre, impression PDF (feuille d'impression propre) | recalcul, approbation et retrait d'une citation, export |
+| D17 Alertes d'équipe (AJOUT) | `staff_alerts` : alertes de délai de modération et de **verrouillage de compte** (5 échecs, alerte aux autres SUPER_ADMIN), « Non lues / Toutes », « Marquer lu », « Tout marquer comme lu » | marquer lu |
 
-**Bandeau d'annonce (§4.2)** : une annonce publiée en D12 s'affiche en tête de l'accueil du
-membre ciblé ; la fermeture est mémorisée dans `localStorage` par identifiant d'annonce ; le
-drapeau `annonces.bandeau` le coupe (absent, il est ouvert). Éprouvé : annonce créée par l'écran,
-vue par un membre, fermée, absente après rechargement, absente quand le drapeau est coupé.
+**Bandeau d'annonce (§4.2)** : inchangé — l'annonce publiée en D12 s'affiche en tête de l'accueil du membre ciblé,
+fermable, mémorisée dans `localStorage`, coupée par le drapeau `annonces.bandeau`.
 
-### 13.2 Écarts avec le texte de ce module
+### 13.2 Routes ajoutées ou changées
 
-- **Pas de PDF d'impact** : `GET /admin/impact/export` rend un CSV (`indicateur;tranche;valeur`),
-  tracé à l'audit ; « Imprimer / PDF » ouvre la boîte d'impression du navigateur, qui enregistre
-  en PDF (rail, barre et boutons masqués à l'impression). Aucune bibliothèque de rendu PDF n'est
-  dans l'API.
-- **Pas de sélecteur de trimestre** : l'API ne garde que le dernier calcul par indicateur.
-- **Pas de témoignages** (`guides.quotable`, `city_tips.quotable` non livrés) : citer sans accord
-  est ce que ces colonnes existent pour empêcher.
-- **D02** : le bandeau d'alertes (SLA dépassé, justificatifs, villes à activer), l'indicateur clé
-  par ville, les revenus, le parrainage, les événements du mois et les réseaux ne sont pas liés
-  (aucune route d'équipe ne sert tous leurs nombres sans exiger un rôle plus fort que ce que le
-  tableau de bord autorise) ; ils affichent un tiret.
-- **Ciblage des annonces** : l'écran propose villes et phases ; pays et plans sont acceptés par le
-  serveur mais n'ont pas de commande à l'écran.
-- **`docs/flags.md`** (liste des flags) n'existe pas ; la liste vit à l'écran D15.
+| Route | Rôles | Effet |
+|---|---|---|
+| `GET /admin/dashboard/overview` | les 4 | alertes, indicateur clé (objectif, écart, courbe, villes), modération et SLA, parrainage, événements du mois, réseaux |
+| `GET /admin/impact?quarter=AAAA-TN` | les 4 | rapport d'un trimestre lu dans l'historique ; sans paramètre, le dernier trimestre **clos** conservé ; `quarters`, `temoignages` |
+| `GET /admin/impact/export?quarter=` | les 4 | CSV du trimestre (tranches nommées, témoignages), tracé |
+| `POST /admin/impact/recompute` | content | nouvelle révision d'un trimestre clos (409 `IMPACT_QUARTER_OPEN` sinon), tracée |
+| `GET /admin/impact/testimonials` · `PUT /admin/impact/quotes` · `DELETE /admin/impact/quotes/:id` | content | les contenus consentis, l'approbation (20 à 300 caractères) et le retrait d'une citation, tracés |
+| `PUT /guides/:id/quotable` · `PUT /tips/:id/quotable` | membre auteur | l'accord de citation (jamais l'équipe) |
+| `GET /admin/pro-profiles/:id/proof` | SUPER_ADMIN, CONTENT_ADMIN, SUPPORT | le justificatif, en-têtes `sandbox`/`nosniff`, consultation tracée (`pro.proof_viewed`) |
+| `GET /admin/moderation/alerts` | MODERATOR, CONTENT_ADMIN, SUPER_ADMIN | `unread` compté sur toute la table du compte, plus sur 50 lignes |
+
+La tâche `impact.quarterly_prepare` pose la révision 1 du trimestre écoulé dans `impact_report_snapshots`
+(idempotente) en plus des points de `metric_snapshots`.
+
+### 13.3 Témoignages : trois conditions
+
+1. l'auteur a coché « autoriser la citation » (`quotable`) ;
+2. l'équipe a **approuvé l'extrait** (citation modérée) ;
+3. l'accord tient **à chaque affichage** : `quotable` retiré, contenu dépublié ou supprimé → la citation disparaît du rapport.
+Le rapport ne porte ni nom ni identifiant d'auteur.
+
+### 13.4 Journal d'audit
+
+Rétention **illimitée** (§2.3). Aucune tâche, purge ni cascade ; l'ancienne tâche `audit.retention` est retirée.
+
+### 13.5 Écarts restants avec le texte de ce module
+
+- **Pas de bibliothèque de rendu PDF dans l'API** : le PDF d'impact est celui de la boîte d'impression du navigateur ; l'export serveur est un CSV.
+- **Revenus (D02, D14)** : « — » — le paiement est hors périmètre.
+- **Le marqueur « consentement à la citation » côté membre** est servi par l'API (`PUT /guides/:id/quotable`, `PUT /tips/:id/quotable`) ; son interrupteur dans les écrans membres est laissé au lot qui tient ces écrans.
+- **`docs/flags.md`** n'existe pas ; la liste vit à l'écran D15.
 - **Restriction IP** : portée par `StaffGuard` (`admin_allowed_cidrs`), modifiable en D15.
-- **Corrections de parcours (D06)** et **fiches pro en attente (D10)** : écrans rendus, geste
-  d'acceptation non éprouvé faute de donnée de membre correspondante dans la base d'essai.
+- Les autres specs (`00` §8.4 « Journal d'audit : 5 ans ») portent encore l'ancienne durée : elles ne sont pas de ce lot.
 
-### 13.3 Défauts trouvés au navigateur, corrigés
+### 13.6 Défauts trouvés au navigateur, corrigés
 
-Le journal d'audit tombait en erreur dès qu'une ligne n'avait pas d'acteur ou de cible (actions
-système) ; la file de modération et les annonces à risque tombaient sur `aiVerdict` nul (dossier
-ouvert par signalement, sans passage IA) ; les validations d'écran (D13, D15) affichaient
-« Une erreur est survenue » au lieu du champ à corriger ; les messages de succès étaient effacés
-à la fermeture des fenêtres (D08, D09) ou perdus au remontage du formulaire (D11, D12) ; le
-bandeau d'annonce était recouvert par la barre haute fixe à 1440 px ; D02, D08, D13, D15 et D06
-débordaient ou perdaient leurs gestes à 390 px.
+Lots précédents : journal d'audit en erreur sur une ligne sans acteur ni cible ; `aiVerdict` nul ; validations D13/D15 ;
+messages de succès effacés (D08, D09, D11, D12) ; bandeau d'annonce recouvert ; débordements à 390 px (D02, D08, D13, D15, D06).
+Phase 5 : D10 validait « à l'aveugle » (le justificatif n'était lisible que de son propriétaire) ; D03 n'annonçait pas
+l'issue d'un geste une fois la fenêtre de motif fermée ; D04 écrivait « STORY » et « CITY_TIP » en clair et coupait le
+geste « Prendre » hors écran à 390 px ; D07 cachait ses colonnes à 390 px ; l'indicateur « non lues » des alertes
+d'équipe plafonnait à 50 ; le sélecteur de rapport d'impact aurait montré un trimestre non clos.

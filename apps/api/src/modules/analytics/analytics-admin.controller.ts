@@ -1,12 +1,21 @@
-import { Controller, Get, Header, Param, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
-import { ADMIN_CONTENT_AUDIT_ACTIONS, impactExportQuerySchema } from '@app/shared';
+import {
+  ADMIN_CONTENT_AUDIT_ACTIONS,
+  STAFF_SCOPES,
+  impactQuarterQuerySchema,
+  impactQuoteApproveSchema,
+  impactRecomputeSchema,
+  uuidSchema,
+} from '@app/shared';
 import { AuditService } from '../../common/audit.service';
 import { Staff, type StaffUser } from '../../common/staff.guard';
 import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { zodPipe } from '../../common/zod.pipe';
-import { AnalyticsService, quarterLabel, startOfQuarterUtc } from './analytics.service';
+import { AnalyticsService } from './analytics.service';
+import { DashboardOverviewService } from './dashboard-overview.service';
+import { ImpactService } from './impact.service';
 
 /**
  * Le pilotage, côté équipe — 15-administration.md §7.
@@ -66,6 +75,8 @@ export class AnalyticsAdminController {
   constructor(
     private readonly analytics: AnalyticsService,
     private readonly audit: AuditService,
+    private readonly overviewService: DashboardOverviewService,
+    private readonly impactService: ImpactService,
   ) {}
 
   @Get('dashboard')
@@ -77,6 +88,19 @@ export class AnalyticsAdminController {
       blocks[name] = await this.analytics.latest(metrics);
     }
     return { blocks };
+  }
+
+  /**
+   * Ce que les blocs d'instantanés ne portent pas : alertes, indicateur clé AVEC objectif,
+   * variation et courbe, file et SLA de modération, note des parrainages, événements du
+   * mois, réseaux par type. Déclarée AVANT `dashboard/:block` : `overview` n'est pas un
+   * nom de bloc, et l'ordre de déclaration décide de la route retenue.
+   */
+  @Get('dashboard/overview')
+  @RequiresStaffRole(...STAFF_ALL)
+  @ApiOperation({ summary: 'Tableau de bord — alertes, indicateur clé, modération, parrainage, événements, réseaux (§5.1)' })
+  async overview(@Staff() staff: StaffUser) {
+    return this.overviewService.overview(staff.staffId);
   }
 
   @Get('dashboard/:block')
@@ -126,61 +150,68 @@ export class AnalyticsAdminController {
 
   @Get('impact')
   @RequiresStaffRole(...STAFF_ALL)
-  @ApiOperation({ summary: 'Rapport d’impact trimestriel (§5.3) — agrégé, jamais nominatif' })
-  async impact(@Query(zodPipe(impactExportQuerySchema)) query: z.infer<typeof impactExportQuerySchema>) {
-    return this.impactReport(query.quarter);
+  @ApiOperation({ summary: 'Rapport d’impact d’un trimestre, relu dans l’historique (§5.3) — agrégé, jamais nominatif' })
+  async impact(@Query(zodPipe(impactQuarterQuerySchema)) query: z.infer<typeof impactQuarterQuerySchema>) {
+    return this.impactService.report(query.quarter);
   }
 
   /**
-   * §7 : `/impact/export`. Un CSV (`indicateur;tranche;valeur`), pas un PDF : aucune
-   * bibliothèque de rendu PDF n'est installée dans l'API, et un export tabulaire sert
-   * aussi bien le financeur qui veut recompter. Le contenu est celui de `/impact`,
-   * donc agrégé et jamais nominatif — et l'export est TRACÉ (§2.3 : toute action qui
-   * sort des données de l'application se journalise).
+   * §7 : `/impact/export`. Un CSV (`trimestre,révision,indicateur,tranche,valeur`), pas un
+   * PDF : aucune bibliothèque de rendu PDF n'est installée dans l'API, et l'impression du
+   * navigateur (D16) produit le PDF. Le contenu est celui de `/impact` pour le trimestre
+   * demandé — agrégé, jamais nominatif, témoignages consentis compris — et l'export est
+   * TRACÉ (§2.3 : toute action qui sort des données de l'application se journalise).
    */
   @Get('impact/export')
   @RequiresStaffRole(...STAFF_ALL)
   @Header('content-type', 'text/csv; charset=utf-8')
   @Header('content-disposition', 'attachment; filename="rapport-impact.csv"')
-  @ApiOperation({ summary: 'Export CSV du rapport d’impact' })
+  @ApiOperation({ summary: 'Export CSV du rapport d’impact d’un trimestre' })
   async impactExport(
     @Staff() staff: StaffUser,
-    @Query(zodPipe(impactExportQuerySchema)) query: z.infer<typeof impactExportQuerySchema>,
+    @Query(zodPipe(impactQuarterQuerySchema)) query: z.infer<typeof impactQuarterQuerySchema>,
   ) {
-    const report = await this.impactReport(query.quarter);
+    const { report, text } = await this.impactService.csv(query.quarter);
     await this.audit.record(this.analyticsPrisma(), {
       actor: { type: 'STAFF', id: staff.staffId },
       action: ADMIN_CONTENT_AUDIT_ACTIONS.impactExported,
       targetType: 'impact_report',
-      metadata: { trimestre: report.trimestre, lignes: report.items.length },
+      metadata: { trimestre: report.trimestre, revision: report.revision, lignes: report.items.length },
       ...(staff.ip === null ? {} : { ip: staff.ip }),
     });
-    const cell = (v: string | number): string => `"${String(v).replace(/"/g, '""')}"`;
-    const lines = [
-      ['trimestre', 'indicateur', 'tranche', 'valeur'].map(cell).join(','),
-      ...report.items.map((i) => [report.trimestre, i.metric, i.dimension, i.value].map(cell).join(',')),
-    ];
-    return `\uFEFF${lines.join('\r\n')}\r\n`;
+    return text;
+  }
+
+  /** Un nouveau calcul d'un trimestre CLOS : une révision de plus, l'ancienne est conservée. */
+  @Post('impact/recompute')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Recalcule un trimestre clos : pose la révision suivante (rien n’est écrasé)' })
+  async recompute(@Staff() staff: StaffUser, @Body(zodPipe(impactRecomputeSchema)) body: z.infer<typeof impactRecomputeSchema>) {
+    return this.impactService.recompute(body.quarter, staff.staffId, staff.ip);
+  }
+
+  @Get('impact/testimonials')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Contenus dont l’auteur accepte la citation, avec la citation approuvée du trimestre' })
+  async testimonials(@Query(zodPipe(impactQuarterQuerySchema)) query: z.infer<typeof impactQuarterQuerySchema>) {
+    return this.impactService.candidates(query.quarter ?? (await this.impactService.report(undefined)).trimestre);
+  }
+
+  @Put('impact/quotes')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Approuve la citation (extrait modéré) d’un contenu consenti pour un trimestre' })
+  async approveQuote(@Staff() staff: StaffUser, @Body(zodPipe(impactQuoteApproveSchema)) body: z.infer<typeof impactQuoteApproveSchema>) {
+    return this.impactService.approveQuote(body, staff.staffId, staff.ip);
+  }
+
+  @Delete('impact/quotes/:id')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Retire une citation du rapport' })
+  async withdrawQuote(@Staff() staff: StaffUser, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.impactService.withdrawQuote(id, staff.staffId, staff.ip);
   }
 
   private analyticsPrisma() {
     return this.analytics.prismaClient();
-  }
-
-  private async impactReport(quarter?: string) {
-    const previous = startOfQuarterUtc(new Date(startOfQuarterUtc(new Date()).getTime() - 86_400_000));
-    return {
-      trimestre: quarter ?? quarterLabel(previous),
-      items: await this.analytics.latest([
-        'impact.members_accompanied',
-        'impact.journeys_completed',
-        'impact.event_attendances',
-        'impact.help_resolved',
-        'impact.guides_published',
-        'impact.mentorships_completed',
-        'impact.members_by_city',
-        'impact.members_by_origin_country',
-      ]),
-    };
   }
 }

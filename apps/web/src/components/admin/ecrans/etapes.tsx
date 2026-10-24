@@ -84,7 +84,7 @@ export function ContenuEtapes() {
             />
             <Carte style={{ padding: 0, overflow: 'hidden' }}>
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: '820px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <table data-admin-pile="" style={{ width: '100%', minWidth: '820px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: C.grisClair, fontSize: '10.5px', letterSpacing: '1px', textTransform: 'uppercase' }}>
                       {['Code', 'Nom', 'Catégorie', 'Durée', 'Blocage', 'Jalon', 'Risque', 'Guide lié'].map((h) => (
@@ -104,12 +104,12 @@ export function ContenuEtapes() {
                       >
                         <td style={{ padding: '10px 14px', fontWeight: 700 }}>{d.code}</td>
                         <td style={{ padding: '10px 14px' }}>{d.nameFr}</td>
-                        <td style={{ padding: '10px 14px' }}>{libCat(d.category)}</td>
-                        <td style={{ padding: '10px 14px' }}>{duree(d.defaultDurationDays)}</td>
-                        <td style={{ padding: '10px 14px' }}>{libCible(d.blockerTarget)}</td>
-                        <td style={{ padding: '10px 14px' }}>{d.isMajorMilestone ? 'Oui' : 'Non'}</td>
+                        <td data-etiquette="Catégorie" style={{ padding: '10px 14px' }}>{libCat(d.category)}</td>
+                        <td data-etiquette="Durée" style={{ padding: '10px 14px' }}>{duree(d.defaultDurationDays)}</td>
+                        <td data-etiquette="Blocage" style={{ padding: '10px 14px' }}>{libCible(d.blockerTarget)}</td>
+                        <td data-etiquette="Jalon" style={{ padding: '10px 14px' }}>{d.isMajorMilestone ? 'Oui' : 'Non'}</td>
                         <td style={{ padding: '10px 14px' }}>{d.isRisky ? <Pastille ton="terre">À risque</Pastille> : <Pastille>—</Pastille>}</td>
-                        <td style={{ padding: '10px 14px' }}>{d.guideTitle ?? 'guide à venir'}</td>
+                        <td data-etiquette="Guide" style={{ padding: '10px 14px' }}>{d.guideTitle ?? 'guide à venir'}</td>
                       </tr>
                     ))}
                   </tbody>

@@ -47,6 +47,8 @@ const TYPES: Record<string, string> = {
   MESSAGE: 'Message',
   USER: 'Profil',
   COMMUNITY: 'Réseau',
+  STORY: 'Story',
+  CITY_TIP: 'Conseil de ville',
 };
 const SOURCES: Record<string, string> = { REPORT: 'Signalement', AI: 'IA', RISK_SCORE: 'Score de risque', AUTO_RULE: 'Règle auto' };
 
@@ -150,7 +152,7 @@ export function ContenuFileModeration() {
           ) : (
             <Carte style={{ padding: 0, overflow: 'hidden' }}>
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: '860px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <table data-admin-pile="" style={{ width: '100%', minWidth: '860px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: C.grisClair, fontSize: '10.5px', letterSpacing: '1px', textTransform: 'uppercase' }}>
                       {['Prio', 'Sujet', 'Auteur', 'Source', 'Sign.', 'Assigné', 'SLA', ''].map((h) => (
@@ -174,10 +176,10 @@ export function ContenuFileModeration() {
                             {c.title ?? c.excerpt ? <span style={{ color: C.gris }}> · {c.title ?? c.excerpt}</span> : null}
                           </Link>
                         </td>
-                        <td style={{ padding: '12px 14px' }}>{c.authorName ?? '—'}</td>
-                        <td style={{ padding: '12px 14px' }}>{SOURCES[c.source] ?? c.source}</td>
-                        <td style={{ padding: '12px 14px' }}>{c.reportCount ?? 0}</td>
-                        <td style={{ padding: '12px 14px' }}>{c.assignedName ?? '—'}</td>
+                        <td data-etiquette="Auteur" style={{ padding: '12px 14px' }}>{c.authorName ?? '—'}</td>
+                        <td data-etiquette="Source" style={{ padding: '12px 14px' }}>{SOURCES[c.source] ?? c.source}</td>
+                        <td data-etiquette="Sign." style={{ padding: '12px 14px' }}>{c.reportCount ?? 0}</td>
+                        <td data-etiquette="Assigné" style={{ padding: '12px 14px' }}>{c.assignedName ?? '—'}</td>
                         <td style={{ padding: '12px 14px' }}>
                           <PastilleSla sla={c.sla} due={c.slaDueAt} />
                         </td>

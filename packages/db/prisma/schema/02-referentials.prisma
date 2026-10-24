@@ -107,6 +107,7 @@ model City {
   helpRequests        HelpRequest[]
   communities         Community[]
   cityTips            CityTip[]
+  impactQuotes        ImpactQuote[]
   events              Event[]
   housingListings     HousingListing[]
   housingPriceMedians HousingPriceMedian[]

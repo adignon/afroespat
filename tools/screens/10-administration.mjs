@@ -190,6 +190,7 @@ const RAIL_AJOUTS = [
   ['Contenu', 'Guides', 'D09'],
   ['Guides', 'Alertes arnaques', 'D11'],
   ['Revenus', 'Partenaires', 'D13'],
+  ['Modération', 'Alertes d’équipe', 'D17'],
 ].map(([apres, libelle, planche]) => ({
   apres,
   libelle,
@@ -218,6 +219,7 @@ const PAGE_COURANTE = {
   D03: 'Membres',
   D04: 'Modération',
   D05: 'Modération',
+  D17: 'Alertes d’équipe',
   D06: 'Parcours',
   D07: 'Bibliothèque d’étapes',
   D08: 'Référentiels',
@@ -246,6 +248,7 @@ const RAIL_EQUIPE = [
   ['Rapport d’impact', '/admin/impact'],
   ['Membres', '/admin/membres'],
   ['Modération', '/admin/moderation'],
+  ['Alertes d’équipe', '/admin/alertes-equipe'],
   ['Parcours', '/admin/parcours'],
   ['Bibliothèque d’étapes', '/admin/etapes'],
   ['Contenu', '/admin/contenu'],
@@ -456,140 +459,30 @@ export const screens = [
    *
    * 15 §5.1 et T5 D02.
    *
-   * ─── LA RÉSERVE SUR `metric_snapshots` ÉTAIT FAUSSE, POUR LA DEUXIÈME FOIS ──
+   * ─── PHASE 5 « ADMINISTRATION » : TOUT EST BRANCHÉ ──────────────────────────
    *
-   * Ce bloc disait « LE BACK-END NE LE SERT PAS ENCORE : §6 ajoute la table
-   * `metric_snapshots` et elle manque au schéma ». C'est la MÊME réserve que le lot
-   * précédent a déjà levée sur D16, et elle était fausse ici aussi :
-   * `GET /v1/admin/dashboard` répond 200 sur l'API qui tourne et rend onze blocs
-   * de points de mesure. Relevé avec une vraie session d'équipe — mot de passe
-   * argon2id puis TOTP — et non déduit du service.
+   * Ce bloc déclarait quatorze liaisons `donnees` (cinq cartes sur douze) et laissait
+   * l'indicateur clé, le bandeau d'alertes et sept cartes DESSINÉS ou à tiret : « une
+   * carte n'est liée que si chaque nombre qu'elle porte est servi ». Le serveur sert
+   * maintenant tout ce que la planche montre — `GET /admin/dashboard` (instantanés) et
+   * `GET /admin/dashboard/overview` (alertes, indicateur clé avec objectif, écart et
+   * courbe, file et SLA de modération, note des parrainages, événements du mois,
+   * réseaux par type), ouverts aux QUATRE rôles.
    *
-   * ─── CINQ CARTES SUR DOUZE, ET LE CRITÈRE EST UNE SEULE RÈGLE ──────────────
-   *
-   *   UNE CARTE N'EST LIÉE QUE SI CHAQUE NOMBRE QU'ELLE PORTE EST SERVI.
-   *
-   * Ces cartes ne sont pas des listes : chaque nombre a son libellé propre à côté
-   * de lui. Lier « File » sur une carte MODÉRATION dont « SLA respecté » resterait
-   * figé à « 93 % » ne donnerait pas une carte à moitié vraie — ça donnerait une
-   * carte dont le premier nombre bouge, ce qui fait croire que le second aussi. Un
-   * nombre figé à côté d'un nombre vivant est PIRE qu'une carte entièrement figée,
-   * parce que la carte figée se reconnaît et l'autre non.
-   *
-   * Liées : MEMBRES (3 nombres), PARCOURS (4), ENTRAIDE (3), GUIDES (2),
-   * SERVICES (2). Le détail de ce qui manque aux sept autres est dans
-   * `apps/web/src/screens/administration/data.ts`, carte par carte et avec le nom
-   * du nombre absent.
-   *
-   * ─── LE BANDEAU D'ALERTES N'EST PAS ENTAMÉ ─────────────────────────────────
-   *
-   * « SLA dépassé · 3 dossiers de modération », « Justificatifs pro · 5 en
-   * attente », « Villes à activer · Nantes, Rennes ». `GET /admin/dashboard` ne
-   * rend AUCUNE alerte. Les trois morceaux vivraient dans trois routes distinctes
-   * (`/moderation/stats`, `/pro-profiles`, `/ref/cities`) ; les recoller ici
-   * fabriquerait un bandeau d'alertes que l'API ne sert pas, et dont personne ne
-   * pourrait dire s'il est complet. Il reste DESSINÉ, entier. Remonté au porteur.
-   *
-   * ─── ET LE TABLEAU DE BORD N'APPELLE QU'UNE ROUTE, PAR SÉCURITÉ ────────────
-   *
-   * `GET /admin/dashboard` est ouvert aux QUATRE rôles. Les nombres manquants
-   * vivent dans des routes plus restreintes — `/moderation/stats` exclut
-   * `SUPPORT`. Les appeler d'ici rendrait le tableau de bord 403 pour un rôle que
-   * §2.2 autorise explicitement à le voir, et le défaut serait invisible pour qui
-   * développe en SUPER_ADMIN.
+   * La zone de contenu devient donc un composant, `ContenuTableauDeBord`
+   * (`components/admin/ecrans/tableau-de-bord.tsx`), posé par l'adaptation
+   * `ADMIN_CONTENU` de `tools/adaptations/administration-vivante.mjs` comme pour D03 à
+   * D16 : mêmes cartes, mêmes rayons, mêmes tailles, même grille 2fr/1fr puis 5 colonnes,
+   * mais des données qui ne sont plus des constantes de la maquette. Le châssis (rail,
+   * barre) reste celui de la planche. Une mesure absente est « — » et « Pas encore de
+   * mesure », jamais un nombre inventé ; les REVENUS restent à « — » (le paiement est
+   * hors périmètre : tout est gratuit).
    *
    * Sans titre : voir l'en-tête de ce fichier.
    */
   screen({
     section: 'D02',
-    dataType: 'D02Data',
     frames: pleinEcran(),
-    donnees: [
-      // ── MEMBRES ────────────────────────────────────────────────────────────
-      //
-      // LE LIBELLÉ EST LE DISCRIMINANT, et il n'est pas décoratif : les douze
-      // cartes de D02 dessinent leurs lignes à l'identique, et « 5 820 » seul ne
-      // dirait pas laquelle. C'est ce que `fois` existe pour empêcher — les
-      // quatorze fragments ci-dessous ont été COMPTÉS dans ce cadre, un chacun.
-      {
-        noeud: '>Inscrits</span><strong>5 820</strong>',
-        devient: '>Inscrits</span><strong>{{ membres.inscrits }}</strong>',
-        why: 'Les membres inscrits : `members.registered` du bloc `membres` de `GET /admin/dashboard`.',
-      },
-      {
-        noeud: '>Actifs 30 j</span><strong>3 140</strong>',
-        devient: '>Actifs 30 j</span><strong>{{ membres.actifs30j }}</strong>',
-        why: 'Les membres actifs sur 30 jours : `members.active_30d`.',
-      },
-      {
-        noeud: '>Niveau 2</span><strong>41 %</strong>',
-        devient: '>Niveau 2</span><strong>{{ membres.niveau2 }}</strong>',
-        why: 'La part des membres au niveau L2, calculée sur `members.by_level` — rapportée à la somme des niveaux, et non à `members.registered` qui ne compte pas la même population.',
-      },
-
-      // ── PARCOURS — les quatre statuts de `JourneyStatus` ───────────────────
-      {
-        noeud: '>Créés</span><strong>1 212</strong>',
-        devient: '>Créés</span><strong>{{ parcours.crees }}</strong>',
-        why: 'Les parcours créés : la somme de toutes les tranches de `journeys.by_status` — un parcours créé porte toujours un statut.',
-      },
-      {
-        noeud: '>Actifs</span><strong>860</strong>',
-        devient: '>Actifs</span><strong>{{ parcours.actifs }}</strong>',
-        why: 'Les parcours actifs : `journeys.by_status`, tranche `ACTIVE`.',
-      },
-      {
-        noeud: '>Aboutis</span><strong>214</strong>',
-        devient: '>Aboutis</span><strong>{{ parcours.aboutis }}</strong>',
-        why: 'Les parcours aboutis : `journeys.by_status`, tranche `COMPLETED`. Une tranche absente vaut zéro — c’est un `GROUP BY`, un seau vide ne produit aucune ligne.',
-      },
-      {
-        noeud: '>En pause</span><strong>138</strong>',
-        devient: '>En pause</span><strong>{{ parcours.enPause }}</strong>',
-        why: 'Les parcours en pause : `journeys.by_status`, tranche `PAUSED`.',
-      },
-
-      // ── ENTRAIDE — les deux statuts utiles de `HelpStatus`, plus le délai ──
-      {
-        noeud: '>Ouvertes</span><strong>412</strong>',
-        devient: '>Ouvertes</span><strong>{{ entraide.ouvertes }}</strong>',
-        why: 'Les entraides ouvertes : `help.by_status`, tranche `OPEN`.',
-      },
-      {
-        noeud: '>Résolues</span><strong>1 780</strong>',
-        devient: '>Résolues</span><strong>{{ entraide.resolues }}</strong>',
-        why: 'Les entraides résolues : `help.by_status`, tranche `RESOLVED`.',
-      },
-      {
-        noeud: '>Délai médian</span><strong>19 h</strong>',
-        devient: '>Délai médian</span><strong>{{ entraide.delaiMedian }}</strong>',
-        why: 'Le délai médian de première réponse : `help.first_response_median_minutes`, servi EN MINUTES et rendu en heures comme la maquette l’écrit.',
-      },
-
-      // ── GUIDES — deux statuts de `GuideStatus` ────────────────────────────
-      {
-        noeud: '>Publiés</span><strong>386</strong>',
-        devient: '>Publiés</span><strong>{{ guides.publies }}</strong>',
-        why: 'Les guides publiés : `guides.by_status`, tranche `PUBLISHED`.',
-      },
-      {
-        noeud: '>À vérifier</span><strong>22</strong>',
-        devient: '>À vérifier</span><strong>{{ guides.aVerifier }}</strong>',
-        why: 'Les guides à vérifier : `guides.by_status`, tranche `FLAGGED` — un guide signalé est un guide à vérifier.',
-      },
-
-      // ── SERVICES ──────────────────────────────────────────────────────────
-      {
-        noeud: '>Annonces</span><strong>244</strong>',
-        devient: '>Annonces</span><strong>{{ services.annonces }}</strong>',
-        why: 'Les annonces en ligne : `housing.by_status` plus `jobs.by_status`, tranches `ACTIVE`. La maquette ne dit pas si les expirées comptent ; la lecture retenue est écrite dans `appels.ts`.',
-      },
-      {
-        noeud: '>Fiches pro</span><strong>58</strong>',
-        devient: '>Fiches pro</span><strong>{{ services.fichesPro }}</strong>',
-        why: 'Les fiches professionnelles approuvées : `pros.by_verification`, tranche `APPROVED`.',
-      },
-    ],
   }),
 
   /**
@@ -846,5 +739,17 @@ export const screens = [
     section: 'D16',
     frames: pleinEcran(titre('Rapport d’impact')),
     // Lot H : la zone de contenu est un composant vivant (tools/adaptations/administration-vivante.mjs).
+  }),
+
+  /**
+   * ── D17 · `/admin/alertes-equipe` — LES ALERTES D'ÉQUIPE (13 §4.4, 15 §2.1) ──
+   *
+   * AJOUT : la maquette ne dessine pas de page pour `staff_alerts` (alerte de délai de modération,
+   * verrouillage de compte). Le CHÂSSIS (rail, barre) est celui de D04 (`frame.section`) ; la zone de
+   * contenu est le composant `ContenuAlertesEquipe`, posé par `ADMIN_CONTENU`.
+   */
+  screen({
+    section: 'D17',
+    frames: [{ width: 1440, name: 'Desktop', occurrence: 0, section: 'D04', title: titre('Modération') }],
   }),
 ];

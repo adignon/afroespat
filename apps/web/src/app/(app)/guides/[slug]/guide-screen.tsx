@@ -1,5 +1,6 @@
 'use client';
 
+import { AccordCitation } from '@/components/accord-citation';
 import { ScreenFrames } from '@/screens/frames';
 import { A04Desktop } from '@/screens/a04/desktop.generated';
 import { A04Mobile } from '@/screens/a04/mobile.generated';
@@ -1545,6 +1546,8 @@ export function GuideScreen({
       >
         {chargement ? 'Chargement du guide' : 'Guide chargé'}
       </span>
+      {/* AJOUT : l'accord de citation (rapport d'impact, 15 §5.3) — vue auteur seulement. */}
+      {vueAuteur && guideId !== null ? <AccordCitation guideId={guideId} /> : null}
     </>
   );
 }

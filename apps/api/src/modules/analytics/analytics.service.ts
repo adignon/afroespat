@@ -394,17 +394,29 @@ export class AnalyticsService {
    * dimensions sont des villes et des pays, et §12 en fait un test
    * (`rule: le rapport d'impact ne contient aucune donnée nominative`).
    *
-   * Les TÉMOIGNAGES de §5.3 ne sont pas ici : ils demandent `guides.quotable` et
-   * `city_tips.quotable`, deux colonnes que §6 annonce « Ajoutées » et qui
-   * n'existent pas au schéma. Remonté, non contourné — citer un membre sans son
-   * accord serait exactement ce que la colonne existe pour empêcher.
+   * Les TÉMOIGNAGES de §5.3 ne sont pas ici non plus : ils vivent dans `ImpactService`
+   * (`impact_quotes`, citation approuvée par l'équipe À PARTIR d'un contenu dont
+   * l'auteur a coché `quotable`). L'HISTORIQUE des calculs (un instantané par
+   * trimestre, jamais écrasé) y est aussi : cette méthode continue d'écrire les points
+   * dans `metric_snapshots`, et `ImpactService.prepareQuarter` les range en plus dans
+   * `impact_report_snapshots`, que le sélecteur de trimestre de D16 relit.
    */
   async prepareQuarterlyImpact(now: Date): Promise<{ trimestre: string; ecrits: number }> {
     const currentQuarter = startOfQuarterUtc(now);
     const periodStart = startOfQuarterUtc(new Date(currentQuarter.getTime() - DAY_MS));
-    const periodEnd = currentQuarter;
-    const window = { gte: periodStart, lt: periodEnd };
+    const points = await this.impactPoints(periodStart, currentQuarter);
+    const ecrits = await this.append(points, periodStart);
+    return { trimestre: quarterLabel(periodStart), ecrits };
+  }
 
+  /**
+   * Les points du rapport d'impact d'un trimestre (15 §5.3), calculés depuis les tables
+   * métier — agrégés, JAMAIS nominatifs. Extrait de `prepareQuarterlyImpact` pour que
+   * l'historique (`ImpactService`) calcule EXACTEMENT les mêmes nombres, pour n'importe
+   * quel trimestre clos, sans second jeu de requêtes qui divergerait.
+   */
+  async impactPoints(periodStart: Date, periodEnd: Date): Promise<MetricPoint[]> {
+    const window = { gte: periodStart, lt: periodEnd };
     const points: MetricPoint[] = [];
 
     points.push({
@@ -447,8 +459,7 @@ export class AnalyticsService {
       points.push({ metric: 'impact.members_by_origin_country', dimension: row.originCountryId, value: row._count._all });
     }
 
-    const ecrits = await this.append(points, periodStart);
-    return { trimestre: quarterLabel(periodStart), ecrits };
+    return points;
   }
 
   // ───────────────────────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ import {
   type AdminProProfile,
 } from '@app/shared';
 import { z } from 'zod';
-import { staffApi } from '@/lib/api/index';
+import { API_BASE, staffApi } from '@/lib/api/index';
 import { useDroit, useEquipe } from '../session-equipe';
 import { Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, FenetreMotif, Lecture, Message, Pastille, Titre, Vide, ZoneTexte, useCharge, useGeste } from '../ui';
 
@@ -93,6 +93,19 @@ function Justificatifs() {
                 <div style={{ fontSize: '12.5px', color: C.gris }}>
                   {p.siret === null ? 'Pas de SIRET' : `SIRET ${p.siret}`} · justificatif :{' '}
                   {p.proof === null ? 'aucun' : `${p.proof.mime} · ${Math.max(1, Math.round(p.proof.sizeBytes / 1024))} Ko`}
+                  {p.proof === null ? null : (
+                    <>
+                      {' · '}
+                      <a
+                        href={`${API_BASE}/admin/pro-profiles/${p.id}/proof`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: C.vertFonce, fontWeight: 700 }}
+                      >
+                        Voir le justificatif
+                      </a>
+                    </>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <Bouton ton="principal" disabled={!peut || geste.occupe} onClick={() => void approuver(p)}>

@@ -58,6 +58,8 @@ model StaffUser {
   alerts              StaffAlert[]
   memberNotes         MemberNote[]
   pageVersions        StaticPageVersion[]
+  impactSnapshots     ImpactReportSnapshot[]
+  impactQuotes        ImpactQuote[]
 
   @@index([role])
   @@map("staff_users")
@@ -282,4 +284,62 @@ model MemberNote {
 
   @@index([userId])
   @@map("member_notes")
+}
+
+/// Rapport d'impact — HISTORIQUE (15 §5.3). DÉCISION DU PORTEUR : « il faut tout
+/// conserver ». Un instantané par trimestre ET par révision, jamais écrasé : un
+/// recalcul pose la révision suivante. Aucun chemin de code ne modifie ni ne
+/// supprime une ligne de cette table.
+///
+/// `items` : les points agrégés `{ metric, dimension, value }` — jamais d'identifiant
+/// de membre (règle dure §5.3 : agrégé, jamais nominatif).
+model ImpactReportSnapshot {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  /// « 2026-T3 » (`quarterLabel`).
+  quarter     String
+  revision    Int      @default(1)
+  periodStart DateTime @map("period_start") @db.Timestamptz
+  periodEnd   DateTime @map("period_end") @db.Timestamptz
+  items       Json
+
+  computedByStaffId String? @map("computed_by_staff_id") @db.Uuid
+
+  computedByStaff StaffUser? @relation(fields: [computedByStaffId], references: [id], onDelete: SetNull)
+
+  @@unique([quarter, revision])
+  @@index([periodStart])
+  @@map("impact_report_snapshots")
+}
+
+/// Une citation MODÉRÉE du rapport d'impact (15 §5.3 : « témoignages, avec accord de
+/// l'auteur »). L'équipe approuve un extrait d'un contenu dont l'auteur a coché
+/// « autoriser la citation » (`quotable`). Le rapport ne l'affiche que tant que
+/// l'accord tient : `quotable` retiré, contenu masqué ou supprimé → la citation
+/// disparaît du rapport (la suppression du contenu l'efface en cascade).
+///
+/// Aucun identifiant ni nom d'auteur n'y est stocké : « agrégé, jamais nominatif ».
+model ImpactQuote {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  quarter   String
+  guideId   String? @map("guide_id") @db.Uuid
+  cityTipId String? @map("city_tip_id") @db.Uuid
+  cityId    String? @map("city_id") @db.Uuid
+  quote     String
+
+  approvedByStaffId String?   @map("approved_by_staff_id") @db.Uuid
+  withdrawnAt       DateTime? @map("withdrawn_at") @db.Timestamptz
+
+  guide           Guide?     @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  cityTip         CityTip?   @relation(fields: [cityTipId], references: [id], onDelete: Cascade)
+  city            City?      @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  approvedByStaff StaffUser? @relation(fields: [approvedByStaffId], references: [id], onDelete: SetNull)
+
+  @@unique([quarter, guideId])
+  @@unique([quarter, cityTipId])
+  @@index([quarter])
+  @@map("impact_quotes")
 }

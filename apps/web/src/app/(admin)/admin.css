@@ -85,15 +85,60 @@
   }
 }
 
-/* Le rapport d'impact s'imprime (« Imprimer / PDF ») : ni rail, ni barre, ni boutons. */
+/*
+ * LA FEUILLE D'IMPRESSION DU RAPPORT D'IMPACT (« Imprimer / PDF », D16) — AJOUT, la maquette ne dessine
+ * rien pour le papier. Le navigateur enregistre en PDF ; aucune bibliothèque de rendu PDF n'est dans l'API.
+ *
+ *   · hors du rapport : ni rail, ni barre haute, ni sélecteur de trimestre, ni boutons, ni panneau de
+ *     choix des citations (`data-no-print`) ;
+ *   · fond blanc, marges de 14 mm, couleurs conservées (les barres de répartition sont des aplats) ;
+ *   · une carte, un témoignage ne se coupe jamais entre deux pages (`admin-print-carte`) ;
+ *   · six tuiles sur trois colonnes, répartitions côte à côte, quelle que soit la largeur de l'écran ;
+ *   · le titre, le trimestre, la date de calcul et la révision restent : c'est ce qui date le document.
+ */
+@page {
+  margin: 14mm;
+}
 @media print {
+  html,
+  body,
+  [data-admin],
+  [data-admin] [data-frame='desktop'] {
+    background: #fff !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   [data-admin] [data-admin-rail],
   [data-admin] [data-admin-bar],
-  [data-admin] [data-no-print] {
+  [data-admin] [data-no-print],
+  nextjs-portal {
     display: none !important;
+  }
+  [data-admin] > *,
+  [data-admin] [data-frame='desktop'] {
+    background: #fff !important;
+    min-height: 0 !important;
+    height: auto !important;
   }
   [data-admin] [data-frame='desktop'] {
     display: block !important;
+  }
+  [data-admin] [data-admin-main] {
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+  [data-admin] .admin-print-carte {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  [data-admin] [data-print-grid] {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+  [data-admin] .admin-colonnes {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
   }
 }
 
@@ -132,6 +177,12 @@
     align-items: center;
     gap: 4px 14px;
     padding: 10px 14px;
+  }
+  /* La colonne qui n'a plus d'en-tête se nomme elle-même : « Auteur : — », « Source : IA ». */
+  [data-admin] table[data-admin-pile] td[data-etiquette]::before {
+    content: attr(data-etiquette) ' : ';
+    color: #8A958F;
+    font-size: 11.5px;
   }
   [data-admin] table[data-admin-pile] td {
     display: block;

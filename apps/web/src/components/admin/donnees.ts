@@ -37,7 +37,7 @@ export const PHASES: readonly { valeur: string; libelle: string }[] = [
 ];
 
 export const libellePhase = (p: string): string => PHASES.find((x) => x.valeur === p)?.libelle ?? p;
-export const libellePlan = (p: string): string => (p === 'FREE' ? 'Gratuit' : p === 'PREMIUM' ? 'Premium' : p);
+export const libellePlan = (p: string): string => (p === 'FREE' ? 'Gratuit' : p === 'PREMIUM' ? 'Premium' : p === 'PRO' ? 'Pro' : p === 'PRO_PLUS' ? 'Pro+' : p);
 
 /** Toutes les définitions d'étape, en suivant le curseur (la bibliothèque en compte une trentaine). */
 export async function toutesLesDefinitions(): Promise<readonly AdminStepDefinition[]> {
