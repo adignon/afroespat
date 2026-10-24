@@ -525,7 +525,15 @@ export function bullesDuFil(
   fil: { readonly items: readonly Message[]; readonly meta: { readonly seenAt: string | null } },
   nomsParHandle: ReadonlyMap<string, string>,
 ): BulleAvecStory[] {
-  const chrono = [...fil.items].reverse();
+  /**
+   * LES CONTENUS MASQUÉS NE FONT PAS DE BULLE (08 §4, lot F2). Le serveur rend
+   * `body: null` pour un message d'un membre dont je suis séparé : sans ce filtre il
+   * restait une bulle VIDE, légendée de son pseudo brut (`m-dad20f94ded0`). Un
+   * message supprimé, lui, porte un substitut texte et reste une bulle.
+   */
+  const chrono = [...fil.items]
+    .filter((m) => m.mine || m.kind === 'SYSTEM' || m.body !== null)
+    .reverse();
   const lu = fil.meta.seenAt === null ? null : Date.parse(fil.meta.seenAt);
   const derniere = [...chrono].reverse().find((m) => m.mine && m.kind !== 'SYSTEM' && m.deletedAt === null) ?? null;
   return chrono.map((m) =>

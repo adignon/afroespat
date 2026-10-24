@@ -127,6 +127,23 @@ export function EcranMessages({
     if (feuille !== undefined) setCourante(feuille);
   }, []);
 
+  /**
+   * « BLOQUER » FERME LE MENU (lot F2). La confirmation s'ouvre depuis le menu ; sans
+   * cette fermeture le menu restait ouvert dessous, puis encore ouvert APRÈS le
+   * blocage — maintenant qu'on reste sur la conversation, au lieu de partir sur la
+   * liste, il aurait masqué le bandeau « Débloquer ».
+   */
+  const menuQuiSeFerme: MenuConversation | undefined =
+    menu === undefined
+      ? undefined
+      : {
+          ...menu,
+          onBloquer: () => {
+            menu.onBloquer?.();
+            setCourante(null);
+          },
+        };
+
   return (
     <div onClick={ouvrir}>
       <ScreenFrames screen="M01" desktop={desktop} mobile={mobile} />
@@ -147,7 +164,7 @@ export function EcranMessages({
         onClose={fermer}
         titleId={TITRES_DE_FEUILLE.menu}
         name="M01MENU"
-        mobile={<M01Menu menu={menu} />}
+        mobile={<M01Menu menu={menuQuiSeFerme} />}
       />
       <Modal
         open={courante === 'signaler'}

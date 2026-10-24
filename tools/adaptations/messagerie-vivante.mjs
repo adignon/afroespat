@@ -128,10 +128,25 @@ export const MV_DEBLOQUER = {
     const out = remplacerUn(
       jsx,
       /<button style=\{\{ ([^}]*) \}\}>Débloquer<\/button>/,
-      (m) =>
-        `<button type="button" data-debloquer="" onClick={onDebloquer} disabled={debloquerBloque === true} style={{ ${m[1]}, marginTop: "10px", cursor: "pointer", opacity: debloquerBloque === true ? 0.6 : 1 }}>Débloquer</button>`,
+      (m) => {
+        // Le bouton de K05 (`#F2F5F4`) tenait sur une carte BLANCHE ; posé ici sur le bandeau
+        // `#F3F7F5` il disparaissait (même clarté). Il passe en blanc, filet `#E6EBE9` : deux
+        // valeurs déjà employées par la maquette voisine, aucune couleur nouvelle.
+        const style = m[1]
+          .replace('background: "#F2F5F4"', 'background: "#fff"')
+          .replace('border: "none"', 'border: "1px solid #E6EBE9"');
+        return `<button type="button" data-debloquer="" onClick={onDebloquer} disabled={debloquerBloque === true} style={{ ${style}, marginTop: "10px", cursor: "pointer", opacity: debloquerBloque === true ? 0.6 : 1 }}>Débloquer</button>`;
+      },
     );
-    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+    if (out === null) return { jsx, applied: false };
+    // Le bandeau emprunté à « DEMANDE EN ATTENTE » se tenait à la largeur de son texte,
+    // au milieu de la barre du bas : il la remplit (`flex: 1`), comme un composeur.
+    const large = remplacerUn(
+      out,
+      /<div style=\{\{ (background: "#F3F7F5"[^}]*) \}\}>Vous avez bloqué/,
+      (m) => `<div data-conversation-bloquee="" style={{ ${m[1]}, flex: "1", minWidth: "0" }}>Vous avez bloqué`,
+    );
+    return { jsx: large ?? out, applied: true };
   },
 };
 
