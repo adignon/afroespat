@@ -8,6 +8,7 @@ import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { K02Desktop } from '@/screens/k02/desktop.generated';
 import { K02Mobile } from '@/screens/k02/mobile.generated';
 import { K02Ajout } from '@/screens/k02contact/ajout.generated';
+import { K02AjoutFeuille } from '@/screens/k02contact/ajoutfeuille.generated';
 import { ProfilContactVivant } from '@/screens/compte/profil-contact-vivant';
 import { CartesFilVivantes } from '@/screens/accueil/cartes-fil-vivantes';
 
@@ -106,7 +107,7 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
                    * contacts »). Figé, il disait « Fatou » sur le profil de Kofi — la
                    * fenêtre aurait menti par-dessus un écran qui, lui, disait vrai.
                    */
-                  modales={{ K02C: { mobile: <K02Ajout {...vivantes} /> } }}
+                  modales={{ K02C: { desktop: <K02Ajout {...vivantes} />, mobile: <K02AjoutFeuille {...vivantes} /> } }}
                 />
               )}
             </CartesFilVivantes>

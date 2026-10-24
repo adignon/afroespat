@@ -53,7 +53,7 @@
 import { readdirSync, statSync, mkdirSync } from 'node:fs';
 import { createHmac } from 'node:crypto';
 import { dirname, join, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium, request as pwRequest } from '@playwright/test';
 
 const ARGS = Object.fromEntries(
@@ -625,7 +625,11 @@ async function main() {
   process.exit(erreurs > 0 ? 1 : 0);
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(2);
-});
+// Importable (monterMembre, semer) par un script de capture ; lancé seul, il balaie.
+export { monterMembre, semer };
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(2);
+  });
+}

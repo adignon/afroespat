@@ -9,7 +9,9 @@ import type { S05Charge } from '@/screens/s05/data';
 import { S05Desktop } from '@/screens/s05/desktop.generated';
 import { S05Mobile } from '@/screens/s05/mobile.generated';
 import { S05LienExterne } from '@/screens/s05lien/lienexterne.generated';
+import { S05LienExterneFeuille } from '@/screens/s05lien/lienexternefeuille.generated';
 import { S05Recommander } from '@/screens/s05recommander/recommander.generated';
+import { S05RecommanderFeuille } from '@/screens/s05recommander/recommanderfeuille.generated';
 
 /**
  * S05 — une offre d'emploi (`/services/emploi/:id`) ou le formulaire de publication
@@ -54,8 +56,8 @@ function OffreVivante({
         onOuvrir={onOuvrir}
         onFermer={onFermer}
         modales={{
-          S05L: { mobile: <S05LienExterne {...avec} /> },
-          S05R: { mobile: <S05Recommander {...avec} /> },
+          S05L: { desktop: <S05LienExterne {...avec} />, mobile: <S05LienExterneFeuille {...avec} /> },
+          S05R: { desktop: <S05Recommander {...avec} />, mobile: <S05RecommanderFeuille {...avec} /> },
         }}
       />
       {fenetres}

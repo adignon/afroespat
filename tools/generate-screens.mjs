@@ -36,6 +36,7 @@ import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/a
 import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
 import { ADAPTATIONS_BOUTONS_INERTES, AJOUTS_BOUTONS_INERTES } from './adaptations/boutons-inertes-vivants.mjs';
 import { ADAPTATIONS_SERVICES_VIVANT, AJOUTS_SERVICES_VIVANT } from './adaptations/services-vivant.mjs';
+import { FEUILLES_MOBILES, enFeuille } from './adaptations/feuilles-mobiles.mjs';
 import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/villes-vivant.mjs';
 import { ADAPTATIONS_INSCRIPTION_VIVANTE } from './adaptations/inscription-vivante.mjs';
 import { ADAPTATIONS_SERVICES_COMPLEMENTS, AJOUTS_SERVICES_COMPLEMENTS } from './adaptations/services-complements-vivants.mjs';
@@ -21378,6 +21379,16 @@ ${shelled}
     mkdirSync(resolve(OUT_ROOT, screen.out), { recursive: true });
     const path = resolve(OUT_ROOT, screen.out, `${frame.name.toLowerCase()}.generated.tsx`);
     writeFileSync(path, body, 'utf8');
+    // AJOUT W3A : les fenêtres sans planche mobile reçoivent leur feuille basse dérivée.
+    if (FEUILLES_MOBILES.has(screen.out.split('/').pop())) {
+      const nomFeuille = `${screen.section}${frame.name}Feuille`;
+      const feuille = enFeuille(body, nomFeuille);
+      if (feuille === null) console.log(`      ⚠ feuille mobile non dérivée pour ${screen.out} : le panneau n'a pas la forme attendue.`);
+      else {
+        writeFileSync(resolve(OUT_ROOT, screen.out, `${frame.name.toLowerCase()}feuille.generated.tsx`), feuille, 'utf8');
+        console.log(`      Feuille basse mobile dérivée : ${screen.out}/${frame.name.toLowerCase()}feuille.generated.tsx`);
+      }
+    }
 
     /**
      * ╔════════════════════════════════════════════════════════════════════════╗

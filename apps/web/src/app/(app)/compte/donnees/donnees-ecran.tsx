@@ -7,6 +7,7 @@ import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { K08Desktop } from '@/screens/k08/desktop.generated';
 import { K08Mobile } from '@/screens/k08/mobile.generated';
 import { K08Confirmation } from '@/screens/k08suppression/confirmation.generated';
+import { K08ConfirmationFeuille } from '@/screens/k08suppression/confirmationfeuille.generated';
 
 /**
  * K08 — « Mes données » et sa confirmation de suppression.
@@ -53,7 +54,7 @@ export function DonneesEcran() {
               ouverte={ouverte}
               onOuvrir={onOuvrir}
               onFermer={onFermer}
-              modales={{ K08S: { mobile: <K08Confirmation /> } }}
+              modales={{ K08S: { desktop: <K08Confirmation />, mobile: <K08ConfirmationFeuille /> } }}
             />
           )}
         </DonneesVivantes>

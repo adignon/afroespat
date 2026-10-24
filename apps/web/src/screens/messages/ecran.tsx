@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Modal } from '@/components/modal';
 import { ScreenFrames } from '@/screens/frames';
 import { M01Menu } from '@/screens/m01menu/menu.generated';
+import { M01MenuFeuille } from '@/screens/m01menu/menufeuille.generated';
 import { TITRES_DE_FEUILLE, type FeuilleMessages } from '@/screens/messages/feuilles';
 import type { MenuConversation, SignalementVue } from './data';
 import { X03Desktop } from '@/screens/x03/desktop.generated';
@@ -164,7 +165,8 @@ export function EcranMessages({
         onClose={fermer}
         titleId={TITRES_DE_FEUILLE.menu}
         name="M01MENU"
-        mobile={<M01Menu menu={menuQuiSeFerme} />}
+        desktop={<M01Menu menu={menuQuiSeFerme} />}
+        mobile={<M01MenuFeuille menu={menuQuiSeFerme} />}
       />
       <Modal
         open={courante === 'signaler'}
