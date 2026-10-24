@@ -125,6 +125,9 @@ model Guide {
   /// le titre, la catégorie et la portée restent hors garde.
   revision            Int       @default(0)
 
+  /// Accord de l'auteur pour être CITÉ dans le rapport d'impact (15 §5.3, §6). Faux par défaut.
+  quotable            Boolean   @default(false)
+  impactQuotes        ImpactQuote[]
   outdatedFlagCount   Int       @default(0) @map("outdated_flag_count")
   /// Fixée à 3 signalements ; dépublication si dépassée (tâche quotidienne).
   unpublishDeadlineAt DateTime? @map("unpublish_deadline_at") @db.Timestamptz

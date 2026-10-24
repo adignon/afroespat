@@ -61,6 +61,10 @@ model CityTip {
   helpfulCount Int           @default(0) @map("helpful_count")
   status       ContentStatus
 
+  /// Accord de l'auteur pour être CITÉ dans le rapport d'impact (15 §5.3, §6). Faux par défaut.
+  quotable     Boolean       @default(false)
+  impactQuotes ImpactQuote[]
+
   /// 09 §2.3 et §4 — un « produit du pays » (SHOP) : nom et adresse en texte
   /// libre, JAMAIS géocodés (même règle que les événements, T4).
   venueName   String? @map("venue_name")
