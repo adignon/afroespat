@@ -1617,23 +1617,6 @@ export const screens = [
     frames: page('Sanctions', 'Sanctions'),
     donnees: [
       ...bandeau(),
-      {
-        noeud: '>Publication masquée<',
-        devient: '>{{ sanction.type }}<',
-        why: 'Le type de la sanction, de `GET /me/sanctions`.',
-      },
-      {
-        noeud: '>Règle : Coordonnées personnelles · 12 janvier 2026<',
-        devient: '>Règle : {{ sanction.regle }} · {{ sanction.date }}<',
-        frames: ['Desktop'],
-        why: 'La règle enfreinte telle que le modérateur l’a écrite (13 §4.2), et la date.',
-      },
-      {
-        noeud: '>Contestation en cours<',
-        devient: '>{{ sanction.etat }}<',
-        frames: ['Desktop'],
-        why: 'L’état de la contestation, dérivé par le serveur (`appealable`).',
-      },
     ],
   }),
 

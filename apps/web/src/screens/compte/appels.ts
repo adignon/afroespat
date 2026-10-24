@@ -1157,8 +1157,10 @@ export async function lireExport() {
  * décalée, et recalculer « contester une fois » (13 §4.3) demanderait de savoir si
  * une contestation a déjà été déposée — ce que seul le serveur sait.
  *
- * Aucune sanction est le cas NORMAL, et la carte de la maquette dit alors qu'il
- * n'y en a pas. Un écran vide serait plus inquiétant qu'informatif.
+ * `appeal` dit où en est le recours (`NONE`, `PENDING`, `DECIDED`) : la carte
+ * contestée affiche « Recours en cours ». Aucune sanction est le cas NORMAL, et la
+ * liste vide le dit (`SanctionsListe`) : un écran vide serait plus inquiétant
+ * qu'informatif.
  */
 export async function chargerK09(): Promise<K09Data> {
   const [me, sanctions, demandes] = await Promise.all([
@@ -1167,30 +1169,17 @@ export async function chargerK09(): Promise<K09Data> {
     compterDemandes(),
   ]);
 
-  const derniere = sanctions.items[0];
-
   return {
     moi: bandeauDe(me, demandes),
-    /**
-     * L'IDENTIFIANT DE LA SANCTION, pour `POST /sanctions/:id/appeal`. `null`
-     * quand il n'y en a aucune : la planche dessine la carte de contestation en
-     * permanence, et l'écran doit pouvoir savoir qu'il n'y a rien à contester.
-     */
-    sanctionId: derniere?.id ?? null,
-    sanction:
-      derniere === undefined
-        ? {
-            type: 'Aucune sanction',
-            regle: 'Aucune règle enfreinte',
-            date: '—',
-            etat: 'Rien à contester',
-          }
-        : {
-            type: SANCTIONS_FR[derniere.type],
-            regle: derniere.rule,
-            date: jourMoisAnnee(derniere.startsAt),
-            etat: derniere.appealable ? 'Contestable une fois' : 'Contestation close',
-          },
+    sanctions: sanctions.items.map((x) => ({
+      id: x.id,
+      type: SANCTIONS_FR[x.type],
+      regle: x.rule,
+      date: jourMoisAnnee(x.startsAt),
+      active: x.active,
+      appealable: x.appealable,
+      appeal: x.appeal,
+    })),
   };
 }
 
@@ -1538,10 +1527,7 @@ export const SQUELETTE_K07: K07Data = {
 
 export const SQUELETTE_K08: K08Data = { moi: SOCLE_BANDEAU };
 
-export const SQUELETTE_K09: K09Data = {
-  moi: SOCLE_BANDEAU,
-  sanction: { type: '', regle: '', date: '', etat: '' },
-};
+export const SQUELETTE_K09: K09Data = { moi: SOCLE_BANDEAU, sanctions: [] };
 
 /**
  * LE SQUELETTE NE DIT PAS « RIEN D'ENREGISTRÉ ».

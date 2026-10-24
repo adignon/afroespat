@@ -6223,63 +6223,6 @@ const K08_DONNEES = {
   },
 };
 
-const K09_CONTESTATION = {
-  screens: ['K09'],
-  nom: 'K09_CONTESTATION',
-  why: 'La contestation d’une sanction était un texte d’exemple et un bouton sans geste.',
-  provides: ['contestationTexte', 'onContestationTexte', 'onContester', 'contestationBloquee'],
-  apply(jsx) {
-    /**
-     * ╔════════════════════════════════════════════════════════════════════════╗
-     * ║ « LA PAGE DES SANCTIONS ET SES OPTIONS ? »                            ║
-     * ╚════════════════════════════════════════════════════════════════════════╝
-     *
-     * MESURÉ : zéro champ sur le cadre. La boîte « Expliquez votre point de vue »
-     * portait la phrase d'EXEMPLE de la maquette — « Le lien renvoyait vers une
-     * association gratuite, pas une publicité. » — et « Envoyer ma contestation »
-     * n'avait aucun geste. `POST /sanctions/:id/appeal` répondait déjà.
-     *
-     * ── VINGT CARACTÈRES AU MOINS, ET C'EST LE SERVEUR QUI LE DIT ────────
-     *
-     * `appealSchema` : `min(20)`. Le bouton reste éteint en dessous plutôt que de
-     * prendre un `422` — « une seule fois », dit la planche, et un refus gâcherait
-     * l'unique tentative dans l'esprit du membre même si le serveur ne la compte
-     * pas.
-     */
-    let out = jsx;
-    let pris = false;
-
-    const boite =
-      /<div style=\{\{ (minHeight: "48px", borderRadius: "14px", border: "1\.5px solid #16785E", background: "#fff", padding: "13px 14px", fontSize: "14px", lineHeight: "1\.5") \}\}>[^<]*<\/div>/;
-    const mB = boite.exec(out);
-    if (mB !== null) {
-      out =
-        out.slice(0, mB.index) +
-        `<textarea value={contestationTexte} onChange={onContestationTexte} rows={4} ` +
-        `placeholder="Expliquez votre point de vue" aria-label="Expliquez votre point de vue" ` +
-        `data-sanction-texte="" style={{ ${mB[1]}, width: "100%", boxSizing: "border-box", ` +
-        `resize: "vertical", outline: "none", fontFamily: "inherit", color: "#16211D" }} />` +
-        out.slice(mB.index + mB[0].length);
-      pris = true;
-    }
-
-    const envoyer = /<button style=\{\{ ([^}]*) \}\}>Envoyer ma contestation<\/button>/;
-    const mE = envoyer.exec(out);
-    if (mE !== null) {
-      out =
-        out.slice(0, mE.index) +
-        `<button type="button" onClick={onContester} disabled={contestationBloquee} ` +
-        `data-sanction-envoyer="" style={{ ${mE[1].replace('background: "#16785E", ', '')}, ` +
-        `background: contestationBloquee ? "#8A958F" : "#16785E", ` +
-        `cursor: contestationBloquee ? "default" : "pointer" }}>Envoyer ma contestation</button>` +
-        out.slice(mE.index + mE[0].length);
-      pris = true;
-    }
-
-    return pris ? { jsx: out, applied: true } : { jsx, applied: false };
-  },
-};
-
 const K07_INTERRUPTEURS = {
   screens: ['K07'],
   nom: 'K07_INTERRUPTEURS',
@@ -18106,7 +18049,6 @@ function adaptFields(jsx, section) {
     K10_ENREGISTRES,
     K07_INTERRUPTEURS,
     K08_DONNEES,
-    K09_CONTESTATION,
     K04_SECURITE,
     A01_JALONS,
     A01C_SIGNALER_COMMENTAIRE,

@@ -3,6 +3,9 @@ import { newId } from '@app/db';
 import {
   AI_BLOCKING_LABELS,
   APPEAL_CASE_PRIORITY,
+  APPEAL_TEXT_MAX,
+  APPEAL_TEXT_MIN,
+  appealSchema,
   MODERATION_SLA_HOURS,
   MODERATION_SLA_HOURS_PRIORITY_1,
   MODERATION_THRESHOLDS_SETTING_KEY,
@@ -956,12 +959,17 @@ describe('modération (13)', () => {
       const mine = await moderation.mySanctions(author);
       expect(mine.items).toHaveLength(1);
       expect(mine.items[0]?.appealable).toBe(true);
+      expect(mine.items[0]?.appeal).toBe('NONE');
       expect(mine.items[0]?.rule).toMatch(/Propos répétés/);
 
       const appeal = await moderation.appeal(author, sanction.id, {
         text: 'Je n’ai jamais visé personne : les messages cités sont sortis de leur contexte.',
       });
       expect(appeal.priority).toBe(APPEAL_CASE_PRIORITY);
+
+      // K09 : la carte contestée affiche « Recours en cours » — le dossier est rouvert.
+      const pending = await moderation.mySanctions(author);
+      expect(pending.items[0]).toMatchObject({ appealable: false, appeal: 'PENDING' });
 
       const reopened = await prisma.moderationCase.findUniqueOrThrow({ where: { id: caseId } });
       expect(reopened.status).toBe('OPEN');
@@ -994,6 +1002,17 @@ describe('modération (13)', () => {
           reason: 'Après relecture du contexte, la sanction n’était pas fondée.',
         }),
       ).resolves.toMatchObject({ resolution: 'KEEP' });
+
+      // Retranché : la décision est finale, le recours n'est plus « en cours ».
+      const decided = await moderation.mySanctions(author);
+      expect(decided.items[0]).toMatchObject({ appealable: false, appeal: 'DECIDED' });
+    });
+
+    it('refuse une contestation trop courte ou trop longue (bornes de packages/shared)', () => {
+      expect(appealSchema.safeParse({ text: 'x'.repeat(APPEAL_TEXT_MIN - 1) }).success).toBe(false);
+      expect(appealSchema.safeParse({ text: 'x'.repeat(APPEAL_TEXT_MIN) }).success).toBe(true);
+      expect(appealSchema.safeParse({ text: 'x'.repeat(APPEAL_TEXT_MAX) }).success).toBe(true);
+      expect(appealSchema.safeParse({ text: 'x'.repeat(APPEAL_TEXT_MAX + 1) }).success).toBe(false);
     });
 
     it('refuse une seconde contestation — la décision finale n’est pas contestable', async () => {
@@ -1020,6 +1039,7 @@ describe('modération (13)', () => {
 
       const after = await moderation.mySanctions(author);
       expect(after.items[0]?.appealable).toBe(false);
+      expect(after.items[0]?.appeal).toBe('PENDING');
     });
 
     it('ne laisse pas un membre contester la sanction d’un autre — 404, pas 403', async () => {

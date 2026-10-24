@@ -11,6 +11,7 @@
  * Règles (AMORCAGE §3) : un motif est ancré sur la STRUCTURE, jamais sur une
  * mesure ; une coupe COMPTE ses balises ; aucune couleur n'est inventée.
  */
+import { finElement } from './reseau-vivant.mjs';
 import { NU, changerBalise, ouvranteAvant } from './outils-lot-e.mjs';
 
 // ─── J11 · « Créer un parcours » ─────────────────────────────────────────────
@@ -87,8 +88,46 @@ const BI_A01_PARRAINS = {
   },
 };
 
-export const ADAPTATIONS_BOUTONS_INERTES = [BI_J11_CREER, BI_A01_SALUER, BI_A01_PARRAINS];
+// ─── K09 · les sanctions et « Contester » ────────────────────────────────────
+
+/**
+ * K09 dessinait, aux DEUX largeurs, des cartes de sanction écrites en dur (une
+ * « Avertissement · Pas de publicité sans accord · 3 mars 2026 » avec un
+ * « Contester » mort, une autre alimentée par la seule dernière sanction) et, sur
+ * ordinateur, une carte de contestation détachée. On COUPE ces cartes sœurs —
+ * ouvrantes `background #fff / border #E6EBE9 / borderRadius 22px / padding NNpx`,
+ * fermées en comptant les balises — et on pose `SanctionsListe` à leur place :
+ * une carte par sanction du serveur, son formulaire dedans, son état vide.
+ */
+const CARTE_SANCTION = /<div style=\{\{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "\d+px", flexShrink: "0" \}\}>/y;
+
+const BI_K09_LISTE = {
+  screens: ['K09'],
+  nom: 'BI_K09_LISTE',
+  why: 'Les cartes de sanction étaient écrites en dur et « Contester » n’avait aucun geste : une carte par sanction du serveur, avec son recours (états, bornes de packages/shared, « Recours en cours »).',
+  provides: ['sanctions', 'onRecharger'],
+  apply(jsx) {
+    const premiere = new RegExp(CARTE_SANCTION.source).exec(jsx);
+    if (premiere === null || !jsx.slice(premiere.index, premiere.index + 900).includes('Avertissement')) {
+      return { jsx, applied: false };
+    }
+    const mobile = !jsx.includes('data-zone="contenu"');
+    let fin = premiere.index;
+    for (;;) {
+      CARTE_SANCTION.lastIndex = fin;
+      if (CARTE_SANCTION.exec(jsx) === null) break;
+      const suite = finElement(jsx, fin);
+      if (suite === -1) return { jsx, applied: false };
+      fin = suite;
+    }
+    const liste = `<SanctionsListe sanctions={sanctions} compact={${mobile}} onRecharger={onRecharger ?? (() => undefined)} />`;
+    return { jsx: jsx.slice(0, premiere.index) + liste + jsx.slice(fin), applied: true };
+  },
+};
+
+export const ADAPTATIONS_BOUTONS_INERTES = [BI_J11_CREER, BI_A01_SALUER, BI_A01_PARRAINS, BI_K09_LISTE];
 export const AJOUTS_BOUTONS_INERTES = {
+  SanctionsListe: '@/components/compte/sanctions-liste',
   BoutonSaluer: '@/components/accueil-voisins',
   SuggestionsParrains: '@/components/accueil-voisins',
 };
