@@ -31,6 +31,7 @@ import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations
 import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/chrome-gauche-vivant.mjs';
 import { ADAPTATIONS_FIL_VIVANT, AJOUTS_FIL_VIVANT } from './adaptations/fil-vivant.mjs';
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
+import { ADAPTATIONS_FEUILLES_DESSINEES, AJOUTS_FEUILLES_DESSINEES } from './adaptations/feuilles-dessinees.mjs';
 import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/administration-vivante.mjs';
 import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
 import { ADAPTATIONS_BOUTONS_INERTES, AJOUTS_BOUTONS_INERTES } from './adaptations/boutons-inertes-vivants.mjs';
@@ -18227,6 +18228,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_SERVICES_COMPLEMENTS,
     // W1A (inscription-vivante) : O05 sans parcours, ses données et ses deux gestes.
     ...ADAPTATIONS_INSCRIPTION_VIVANTE,
+    // W2B (feuilles-dessinees) : J03, J04, J05I, J07X, J08A, J01M, X04 montés et vivants.
+    ...ADAPTATIONS_FEUILLES_DESSINEES,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19509,6 +19512,7 @@ const AJOUTS = {
   ...AJOUTS_SERVICES_VIVANT,
   ...AJOUTS_SERVICES_COMPLEMENTS,
   ...AJOUTS_VILLES_VIVANT,
+  ...AJOUTS_FEUILLES_DESSINEES,
 };
 
 /**

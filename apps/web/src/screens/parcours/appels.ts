@@ -107,7 +107,7 @@ const TEINTE_FUTUR = '#E6EBE9';
  * identiques. On dérive donc de son handle, ce qui est reproductible et ne dépend
  * d'aucun état.
  */
-function fondAvatar(cle: string): string {
+export function fondAvatar(cle: string): string {
   let somme = 0;
   for (let i = 0; i < cle.length; i += 1) somme = (somme * 31 + cle.charCodeAt(i)) % 100_000;
   return AVATARS[somme % AVATARS.length] as string;
@@ -119,7 +119,7 @@ function fondAvatar(cle: string): string {
  * `displayName` peut valoir `""` sur un compte qui n'a pas rempli son profil — la
  * charge relevée en porte un. On retombe alors sur le handle, qui est toujours là.
  */
-function initiales(nom: string, repli: string): string {
+export function initiales(nom: string, repli: string): string {
   const source = nom.trim() === '' ? repli : nom.trim();
   const mots = source.split(/[\s.·-]+/u).filter((m) => m !== '');
   const deux = mots.slice(0, 2).map((m) => m[0] ?? '');
@@ -127,12 +127,12 @@ function initiales(nom: string, repli: string): string {
 }
 
 /** Le prénom : le premier mot du nom affiché. Repli sur le handle. */
-function prenom(nom: string, repli: string): string {
+export function prenom(nom: string, repli: string): string {
   const source = nom.trim() === '' ? repli : nom.trim();
   return source.split(/\s+/u)[0] ?? source;
 }
 
-const nomAffiche = (nom: string | null, handle: string): string =>
+export const nomAffiche = (nom: string | null, handle: string): string =>
   nom === null || nom.trim() === '' ? handle : nom;
 
 // ── Les types de parcours, nommés comme la maquette les nomme ───────────────
@@ -754,6 +754,7 @@ function choixDe(item: JourneyListItem, courantId: string): ChoixParcours {
   const enPause = item.status === 'PAUSED';
   const courant = item.id === courantId;
   return {
+    id: item.id,
     // Le fond pâle désigne la ligne COURANTE ; les autres sont transparentes.
     fond: courant ? '#EFF7F3' : 'transparent',
     titre: item.title,

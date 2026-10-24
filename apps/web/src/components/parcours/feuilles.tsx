@@ -1,14 +1,29 @@
 'use client';
 
 /**
- * AJOUT HORS MAQUETTE — LES FEUILLES DU MODULE PARCOURS, AVEC DE VRAIS CHAMPS.
+ * LES FEUILLES DU MODULE PARCOURS — LE DESSIN DE LA MAQUETTE, AVEC DE VRAIS GESTES.
  *
- * La maquette dessine « Je suis bloqué·e » (3 volets), « Partager un jalon »,
- * « Inviter dans l'équipe », « Exporter », « Arrêter » et « Mes parcours » comme des
- * images de formulaires : aucun champ, et « Publier » / « Partager » sans geste. Ces
- * feuilles les rendent réels, dans le châssis de `FenetreEcrire` (voile
- * `rgba(22,33,29,.55)`, panneau de 440 px, bord `#DDE3E0`, rayon 28, retrait 24, croix
- * de 40 px) — le même que K08 et D08.
+ * ── CE QUI A CHANGÉ (LOT « FEUILLES DESSINÉES ») ─────────────────────────────
+ *
+ * Ce fichier rendait six feuilles à la main dans un panneau centré de 440 px, sur les deux
+ * largeurs. Mesuré contre la maquette, il divergeait visiblement : « Je suis bloqué·e »
+ * n'avait ni le décompte « 1 · Votre message / 2 · Portée / 3 · Aperçu », ni les cartes de
+ * portée à pastille, ni l'aperçu en carte terre cuite ; « Partager un jalon » n'avait pas la
+ * carte « ÉTAPE FRANCHIE · N sur M ». Le porteur : « Monte les dessins de la maquette et
+ * rends-les dynamiques. »
+ *
+ * Les planches transcodées sont donc MONTÉES :
+ *
+ *   · J03 « Je suis bloqué·e » — trois volets, ordinateur ET mobile ;
+ *   · J04 « Partager un jalon » — ordinateur ET mobile ;
+ *   · J05 « Inviter dans l'équipe », J07 « Exporter », J08 « Arrêter », J01M « Mes parcours »
+ *     — la feuille mobile est celle de la maquette ; la maquette ne dessine PAS de fenêtre
+ *     d'ordinateur pour elles, qui garde donc le panneau centré (châssis de K08 et D08).
+ *
+ * Les planches sont des images : leur texte, leurs champs, leurs listes et leurs boutons sont
+ * branchés par `tools/adaptations/feuilles-dessinees.mjs`, qui remplace chaque nœud vivant par
+ * une pièce de `feuille-dessinee.tsx` (`FVal`, `FAct`, `FLien`, `FSlot`). Les CONTRÔLEURS
+ * ci-dessous — un par feuille — leur donnent l'état et les appels serveur.
  *
  * ── LES DEUX RÈGLES DURES QUE CE FICHIER PORTE ──────────────────────────────
  *
@@ -19,9 +34,17 @@
  *
  * §3.6 — « Partager un jalon » : le champ est VIDE (aucun texte pré-rédigé), l'aperçu
  * montre l'encart « Étape franchie · N sur M », « Plus tard » est définitif pour l'étape.
+ *
+ * ── CE QUI RESTE UN AJOUT HORS MAQUETTE ─────────────────────────────────────
+ *
+ *   · les états que la maquette ne dessine pas (préparation du brouillon, confirmation de
+ *     publication, refus) : le panneau centré, dans le langage visuel de K08 ;
+ *   · les champs que `publishBlocker` exige selon la cible (titre, secteurs, contrats,
+ *     parrain), sous les cartes de portée ;
+ *   · « Signaler une erreur dans ce modèle » (§2.4), que la maquette ne dessine pas.
  */
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -51,9 +74,35 @@ import {
   shareMilestone,
   updateJourney,
 } from '@/screens/parcours/api';
+import {
+  chargerJ01M,
+  chargerJ08Arret,
+  dureeTotale,
+  echeance,
+  fondAvatar,
+  initiales,
+  nomAffiche,
+  typeCourt,
+} from '@/screens/parcours/appels';
+import type { J01MData, J08ArretData } from '@/screens/parcours/data';
+import { J03Desktop1 } from '@/screens/j03/desktop1.generated';
+import { J03Desktop2 } from '@/screens/j03/desktop2.generated';
+import { J03Desktop3 } from '@/screens/j03/desktop3.generated';
+import { J03Mobile1 } from '@/screens/j03/mobile1.generated';
+import { J03Mobile2 } from '@/screens/j03/mobile2.generated';
+import { J03Mobile3 } from '@/screens/j03/mobile3.generated';
+import { J04Desktop } from '@/screens/j04/desktop.generated';
+import { J04Mobile } from '@/screens/j04/mobile.generated';
+import { J05MobileInvitation } from '@/screens/j05invitation/mobileinvitation.generated';
+import { J07MobileExport } from '@/screens/j07export/mobileexport.generated';
+import { J08MobileArret } from '@/screens/j08arret/mobilearret.generated';
+import { J01MMobile } from '@/screens/j01mfeuille/mobile.generated';
 import { Avis, Bouton, C, Champ, Etiquette, Icone, ICONES, Pastille, ZoneTexte } from './ui';
+import { FeuilleDessinee, SANS_DONNEES, type Controleur, type Styles } from './feuille-dessinee';
 import { fermerFeuille, useFeuille } from './feuilles-store';
 import { signalerMaj, useGeste, useIdParcours } from './donnees';
+
+// ═══ LE CHÂSSIS DES ÉTATS QUE LA MAQUETTE NE DESSINE PAS ═══════════════════
 
 /** Le châssis commun : voile, panneau, en-tête à croix. */
 function Panneau({
@@ -110,7 +159,94 @@ function Panneau({
   );
 }
 
-// ═══ JE SUIS BLOQUÉ·E (§3.5) ═══════════════════════════════════════════════
+/** Une fenêtre dans le châssis centré : les états sans dessin et la fenêtre d'ordinateur des feuilles mobiles. */
+function FenetreCentree({
+  nom,
+  titre,
+  onFermer,
+  children,
+}: {
+  readonly nom: string;
+  readonly titre: string;
+  readonly onFermer: () => void;
+  readonly children: ReactNode;
+}) {
+  const titreId = `parcours-feuille-${nom.toLowerCase()}`;
+  return (
+    <Modal
+      open
+      onClose={onFermer}
+      titleId={titreId}
+      name={nom}
+      mobile={
+        <Panneau titreId={titreId} titre={titre} onFermer={onFermer}>
+          {children}
+        </Panneau>
+      }
+    />
+  );
+}
+
+/** Un champ de texte DESSINÉ : reprend le style du nœud de la maquette qu'il remplace. */
+function ZoneDessinee({
+  s,
+  id,
+  etiquette,
+  valeur,
+  onChange,
+  maxLength,
+  placeholder,
+}: {
+  readonly s: CSSProperties | undefined;
+  readonly id: string;
+  readonly etiquette: string;
+  readonly valeur: string;
+  readonly onChange: (v: string) => void;
+  readonly maxLength: number;
+  readonly placeholder?: string;
+}) {
+  const base = s ?? {};
+  return (
+    <textarea
+      id={id}
+      aria-label={etiquette}
+      data-feuille-champ=""
+      value={valeur}
+      maxLength={maxLength}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        ...base,
+        display: 'block',
+        width: '100%',
+        boxSizing: 'border-box',
+        font: 'inherit',
+        fontSize: base.fontSize,
+        lineHeight: base.lineHeight ?? 1.6,
+        color: C.texte,
+        background: '#fff',
+        outline: 'none',
+        resize: 'none',
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+/** « Amina Diallo » → « Amina D. » : le nom que la maquette écrit sous un aperçu. */
+function nomCourt(nom: string): string {
+  const mots = nom.trim().split(/\s+/u);
+  const second = mots[1];
+  return second === undefined || mots.length < 2 ? (mots[0] ?? nom) : `${mots[0] ?? ''} ${second[0] ?? ''}.`;
+}
+
+/** « Aïcha, Moussa et Fanta » */
+function listeFrancaise(noms: readonly string[]): string {
+  if (noms.length <= 1) return noms[0] ?? '';
+  return `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1] ?? ''}`;
+}
+
+// ═══ JE SUIS BLOQUÉ·E (§3.5) — J03, trois volets ═══════════════════════════
 
 const CIBLES: Record<string, string> = {
   HELP: 'une demande d’entraide',
@@ -118,8 +254,30 @@ const CIBLES: Record<string, string> = {
   JOBS: 'votre profil de recherche d’emploi',
   MENTORSHIP: 'une demande de parrainage',
 };
+const CATEGORIES: Record<string, string> = {
+  HELP: 'Entraide',
+  HOUSING: 'Logement',
+  JOBS: 'Emploi',
+  MENTORSHIP: 'Parrainage',
+};
 
-function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefined; readonly onFermer: () => void }) {
+function porteePublique(cible: string, ville: string): readonly [string, string] {
+  switch (cible) {
+    case 'HOUSING':
+      return ['Publier dans Annonces logement', `Visible par les membres de ${ville} qui proposent un logement.`];
+    case 'JOBS':
+      return ['Publier dans Emploi', `Visible par les membres de ${ville} qui recrutent ou recommandent.`];
+    case 'MENTORSHIP':
+      return ['Demander à un parrain', 'Envoyée au parrain que vous choisissez, et à lui seul.'];
+    default:
+      return ['Publier dans Entraide', `Visible par les membres de ${ville} qui peuvent vous aider.`];
+  }
+}
+
+const VOLETS_DESKTOP = [J03Desktop1, J03Desktop2, J03Desktop3] as const;
+const VOLETS_MOBILE = [J03Mobile1, J03Mobile2, J03Mobile3] as const;
+
+function FeuilleBlocage({ stepId, onFermer }: { readonly stepId: string | undefined; readonly onFermer: () => void }) {
   const idParcours = useIdParcours();
   const [volet, setVolet] = useState(0);
   const [brouillon, setBrouillon] = useState<BlockerDraftResponse['blocker'] | null>(null);
@@ -157,17 +315,18 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
 
   const etape = parcours?.steps.find((s) => s.id === brouillon?.journeyStepId);
   const cible = brouillon?.target ?? 'HELP';
+  const ville = parcours?.journey.destinationCity.name ?? '';
   const texteValide = texte.trim().length >= BLOCKER_TEXT_MIN && texte.trim().length <= BLOCKER_TEXT_MAX;
   const titreRequis = !prive && (cible === 'HELP' || cible === 'HOUSING' || cible === 'JOBS');
   const titreValide = !titreRequis || (titre.trim().length >= 10 && titre.trim().length <= 120);
   const parrainValide = prive || cible !== 'MENTORSHIP' || parrain.trim().length >= 2;
 
-  const annuler = () => {
+  const annuler = useCallback(() => {
     if (brouillon !== null && fait === null) {
       void cancelBlocker(brouillon.id).catch(() => undefined);
     }
     onFermer();
-  };
+  }, [brouillon, fait, onFermer]);
 
   const publier = () => {
     if (brouillon === null) return;
@@ -209,9 +368,147 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
     });
   };
 
+  const equipe = (parcours?.members ?? []).map((m) => m.user.displayName ?? m.user.handle).map((n) => (n.trim() === '' ? '…' : n.split(/\s+/u)[0] ?? n));
+  const proprietaire = parcours?.journey.owner;
+  const nomProprietaire = proprietaire === undefined ? '' : nomAffiche(proprietaire.displayName, proprietaire.handle);
+
+  const controleur: Controleur = {
+    fermer: annuler,
+    val: (cle) => {
+      switch (cle) {
+        case 'categorie':
+          return prive ? 'Mon équipe seulement' : (CATEGORIES[cible] ?? null);
+        case 'etape':
+          if (etape === undefined) return null;
+          return `Étape ${String(etape.position)} · ${etape.title}${
+            etape.dueDate === null || etape.dueDate === undefined ? '' : ` · échéance ${echeance(etape.dueDate)}`
+          }`;
+        case 'titre':
+          return titreRequis && titre.trim() !== '' ? titre.trim() : null;
+        case 'texte':
+          return texte.trim() === '' ? null : texte.trim();
+        case 'initiales':
+          return proprietaire === undefined ? null : initiales(nomProprietaire, proprietaire.handle);
+        case 'auteur':
+          return proprietaire === undefined ? null : nomCourt(nomProprietaire);
+        case 'profil':
+          return parcours === null
+            ? null
+            : `${typeCourt(parcours.journey.template.code, parcours.journey.template.nameFr)} · ${ville}`;
+        default:
+          return null;
+      }
+    },
+    act: (cle) => {
+      switch (cle) {
+        case 'annuler':
+          return { onClick: annuler };
+        case 'retour':
+          return { onClick: () => setVolet((v) => Math.max(0, v - 1)) };
+        case 'suivant':
+          return volet === 0
+            ? { onClick: () => setVolet(1), disabled: !texteValide }
+            : { onClick: () => setVolet(2), disabled: !titreValide || !parrainValide };
+        case 'publier':
+          return { onClick: publier, disabled: geste.occupe, libelle: geste.occupe ? 'Publication…' : 'Publier' };
+        default:
+          return {};
+      }
+    },
+    slot: (cle, s: Styles) => {
+      if (cle === 'brouillon') {
+        return (
+          <ZoneDessinee
+            s={s[0]}
+            id="bloque-texte"
+            etiquette="Votre message"
+            valeur={texte}
+            onChange={setTexte}
+            maxLength={BLOCKER_TEXT_MAX}
+          />
+        );
+      }
+      if (cle === 'portee') {
+        const [libellePublic, aidePublic] = porteePublique(cible, ville);
+        const aideEquipe =
+          equipe.length === 0
+            ? 'Personne n’est encore dans votre équipe : le message restera dans la discussion du parcours.'
+            : `${listeFrancaise(equipe)} ${equipe.length === 1 ? 'recevra' : 'recevront'} votre message en privé.`;
+        const lignes: ReadonlyArray<readonly [boolean, string, string]> = [
+          [false, libellePublic, aidePublic],
+          [true, 'Envoyer seulement à mon équipe', aideEquipe],
+        ];
+        return (
+          <>
+            <div role="radiogroup" aria-label="Qui peut le voir ?" style={{ display: 'contents' }}>
+              {lignes.map(([valeur, libelle, aide]) => {
+                const choisie = prive === valeur;
+                return (
+                  <div
+                    key={libelle}
+                    role="radio"
+                    aria-checked={choisie}
+                    tabIndex={0}
+                    data-portee={valeur ? 'equipe' : 'public'}
+                    onClick={() => setPrive(valeur)}
+                    onKeyDown={(e) => {
+                      if (e.key === ' ' || e.key === 'Enter') {
+                        e.preventDefault();
+                        setPrive(valeur);
+                      }
+                    }}
+                    style={{ ...(choisie ? s[0] : s[4]), cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <span style={choisie ? s[1] : s[5]} />
+                    <span>
+                      <span style={choisie ? s[2] : s[6]}>{libelle}</span>
+                      <span style={choisie ? s[3] : s[7]}>{aide}</span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            {titreRequis ? (
+              <Champ
+                id="bloque-titre"
+                etiquette={cible === 'JOBS' ? 'Votre accroche' : 'Titre de la publication'}
+                valeur={titre}
+                maxLength={120}
+                onChange={setTitre}
+                aide="Entre 10 et 120 caractères. Il ne reprend pas le nom personnel de votre parcours."
+              />
+            ) : null}
+            {!prive && cible === 'JOBS' ? (
+              <>
+                <Champ id="bloque-secteurs" etiquette="Secteurs (séparés par des virgules)" valeur={secteurs} onChange={setSecteurs} />
+                <Champ id="bloque-contrats" etiquette="Types de contrat (séparés par des virgules)" valeur={contrats} onChange={setContrats} />
+              </>
+            ) : null}
+            {!prive && cible === 'MENTORSHIP' ? (
+              <Champ id="bloque-parrain" etiquette="Pseudo du parrain sollicité" valeur={parrain} onChange={setParrain} placeholder="@pseudo" aide="Vous choisissez la personne : rien n’est envoyé à quelqu’un d’autre." />
+            ) : null}
+            <Avis texte={geste.erreur} ton="erreur" />
+          </>
+        );
+      }
+      if (cle === 'alertes') {
+        return (
+          <>
+            {volet === 0 && texte.trim().length > 0 && !texteValide ? (
+              <Avis texte={`Entre ${String(BLOCKER_TEXT_MIN)} et ${String(BLOCKER_TEXT_MAX)} caractères : c’est CE texte qui sera publié, rien d’autre.`} />
+            ) : null}
+            {volet !== 1 ? <Avis texte={geste.erreur} ton="erreur" /> : null}
+            <LevelInvitation details={geste.niveau} onClose={geste.effacer} />
+          </>
+        );
+      }
+      return null;
+    },
+  };
+
   if (fait !== null) {
     return (
-      <>
+      <FenetreCentree nom="J03" titre="Je suis bloqué·e" onFermer={onFermer}>
         <Avis texte={fait.libelle} />
         <div style={{ display: 'flex', gap: '8px' }}>
           <Bouton ton="calme" plein onClick={onFermer}>
@@ -227,7 +524,7 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
             </Link>
           )}
         </div>
-      </>
+      </FenetreCentree>
     );
   }
 
@@ -235,7 +532,7 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
   // on le dit, on ne montre pas un champ qui ne servirait à rien.
   if (brouillon === null) {
     return (
-      <>
+      <FenetreCentree nom="J03" titre="Je suis bloqué·e" onFermer={onFermer}>
         {geste.erreur === null && geste.niveau === null ? (
           <div role="status" style={{ fontSize: '13.5px', color: C.gris }}>Préparation du brouillon…</div>
         ) : null}
@@ -244,118 +541,36 @@ function ContenuBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
         <Bouton ton="calme" plein onClick={onFermer}>
           Fermer
         </Bouton>
-      </>
+      </FenetreCentree>
     );
   }
 
+  const Ordinateur = VOLETS_DESKTOP[volet] ?? J03Desktop1;
+  const Mobile = VOLETS_MOBILE[volet] ?? J03Mobile1;
   return (
-    <>
-      <div style={{ fontSize: '12.5px', color: C.gris }}>
-        {etape === undefined ? 'Préparation du brouillon…' : `Étape ${String(etape.position)} · ${etape.title}`}
-        {brouillon === null ? null : ` · volet ${String(volet + 1)} sur 3`}
-      </div>
-
-      {volet === 0 ? (
-        <>
-          <ZoneTexte
-            id="bloque-texte"
-            etiquette="Votre message"
-            valeur={texte}
-            onChange={setTexte}
-            lignes={7}
-            maxLength={BLOCKER_TEXT_MAX}
-            aide={`Complétez le texte pré-rempli : c’est CE texte qui sera publié, rien d’autre. Entre ${String(BLOCKER_TEXT_MIN)} et ${String(BLOCKER_TEXT_MAX)} caractères.`}
-          />
-          <Avis texte={geste.erreur} ton="erreur" />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Bouton ton="calme" onClick={annuler}>
-              Annuler
-            </Bouton>
-            <Bouton plein disabled={brouillon === null || !texteValide} onClick={() => setVolet(1)}>
-              Suivant
-            </Bouton>
-          </div>
-        </>
-      ) : null}
-
-      {volet === 1 ? (
-        <>
-          <Etiquette>QUI PEUT LE VOIR ?</Etiquette>
-          {[
-            [false, 'Public', `Publié dans la section concernée : ${CIBLES[cible] ?? 'une demande'}.`],
-            [true, 'Mon équipe seulement', 'Envoyé aux accompagnants et au parrain, dans la discussion du parcours. Rien de public.'],
-          ].map(([valeur, libelle, aide]) => (
-            <label
-              key={String(libelle)}
-              style={{ display: 'flex', gap: '10px', padding: '12px 14px', borderRadius: '14px', border: prive === valeur ? `2px solid ${C.vert}` : `1px solid ${C.bord}`, background: prive === valeur ? C.vertPale : '#fff', cursor: 'pointer' }}
-            >
-              <input type="radio" name="portee" checked={prive === valeur} onChange={() => setPrive(valeur as boolean)} style={{ accentColor: C.vert, marginTop: '3px' }} />
-              <span>
-                <span style={{ display: 'block', fontSize: '14px', fontWeight: 700 }}>{libelle as string}</span>
-                <span style={{ display: 'block', fontSize: '12.5px', color: C.gris, lineHeight: 1.45 }}>{aide as string}</span>
-              </span>
-            </label>
-          ))}
-          {titreRequis ? (
-            <Champ
-              id="bloque-titre"
-              etiquette={cible === 'JOBS' ? 'Votre accroche' : 'Titre de la publication'}
-              valeur={titre}
-              maxLength={120}
-              onChange={setTitre}
-              aide="Entre 10 et 120 caractères. Il ne reprend pas le nom personnel de votre parcours."
-            />
-          ) : null}
-          {!prive && cible === 'JOBS' ? (
-            <>
-              <Champ id="bloque-secteurs" etiquette="Secteurs (séparés par des virgules)" valeur={secteurs} onChange={setSecteurs} />
-              <Champ id="bloque-contrats" etiquette="Types de contrat (séparés par des virgules)" valeur={contrats} onChange={setContrats} />
-            </>
-          ) : null}
-          {!prive && cible === 'MENTORSHIP' ? (
-            <Champ id="bloque-parrain" etiquette="Pseudo du parrain sollicité" valeur={parrain} onChange={setParrain} placeholder="@pseudo" aide="Vous choisissez la personne : rien n’est envoyé à quelqu’un d’autre." />
-          ) : null}
-          <Avis texte={geste.erreur} ton="erreur" />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Bouton ton="calme" onClick={() => setVolet(0)}>
-              Retour
-            </Bouton>
-            <Bouton plein disabled={!titreValide || !parrainValide} onClick={() => setVolet(2)}>
-              Voir l’aperçu
-            </Bouton>
-          </div>
-        </>
-      ) : null}
-
-      {volet === 2 ? (
-        <>
-          <Etiquette>APERÇU</Etiquette>
-          <div style={{ border: `1px solid ${C.bord}`, borderRadius: '16px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {titreRequis ? <div style={{ fontSize: '14.5px', fontWeight: 800 }}>{titre.trim()}</div> : null}
-            <div style={{ fontSize: '13.5px', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{texte.trim()}</div>
-            <div>
-              <Pastille>{prive ? 'MON ÉQUIPE SEULEMENT' : 'PUBLIC'}</Pastille>
-            </div>
-          </div>
-          <Avis texte={geste.erreur} ton="erreur" />
-          <LevelInvitation details={geste.niveau} onClose={geste.effacer} />
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <Bouton ton="calme" onClick={() => setVolet(1)}>
-              Retour
-            </Bouton>
-            <Bouton plein disabled={geste.occupe} onClick={publier}>
-              {geste.occupe ? 'Publication…' : 'Publier'}
-            </Bouton>
-          </div>
-        </>
-      ) : null}
-    </>
+    <Modal
+      open
+      onClose={annuler}
+      titleId="j03-titre"
+      name="J03"
+      phase={volet}
+      desktop={
+        <FeuilleDessinee controleur={controleur}>
+          <Ordinateur {...SANS_DONNEES} />
+        </FeuilleDessinee>
+      }
+      mobile={
+        <FeuilleDessinee controleur={controleur}>
+          <Mobile {...SANS_DONNEES} />
+        </FeuilleDessinee>
+      }
+    />
   );
 }
 
-// ═══ PARTAGER UN JALON (§3.6) ═══════════════════════════════════════════════
+// ═══ PARTAGER UN JALON (§3.6) — J04 ═══════════════════════════════════════
 
-function ContenuPartage({ stepId, onFermer }: { readonly stepId: string | undefined; readonly onFermer: () => void }) {
+function FeuillePartage({ stepId, onFermer }: { readonly stepId: string | undefined; readonly onFermer: () => void }) {
   const idParcours = useIdParcours();
   const [parcours, setParcours] = useState<JourneyFullResponse | null>(null);
   const [texte, setTexte] = useState('');
@@ -383,49 +598,96 @@ function ContenuPartage({ stepId, onFermer }: { readonly stepId: string | undefi
     onFermer();
   };
 
+  const controleur: Controleur = {
+    fermer: onFermer,
+    val: (cle) => {
+      switch (cle) {
+        case 'compte':
+          return parcours === null ? null : `${String(parcours.journey.doneCount)} sur ${String(parcours.journey.totalCount)}`;
+        case 'titreEtape':
+          return etape?.title ?? null;
+        case 'duree': {
+          const d = etape === undefined ? '' : dureeTotale(etape.startedAt, etape.completedAt);
+          return d === '' ? null : `Franchie en ${d}`;
+        }
+        default:
+          return null;
+      }
+    },
+    act: (cle) =>
+      cle === 'publier'
+        ? {
+            onClick: publier,
+            disabled: geste.occupe || texte.trim().length < 1 || etape === undefined,
+            libelle: geste.occupe ? 'Publication…' : 'Publier',
+          }
+        : { onClick: plusTard },
+    slot: (cle, s) => {
+      if (cle === 'texte') {
+        return (
+          <ZoneDessinee
+            s={s[0]}
+            id="partage-texte"
+            etiquette="Votre message"
+            valeur={texte}
+            onChange={setTexte}
+            maxLength={MILESTONE_TEXT_MAX}
+            placeholder="Racontez-la avec vos mots…"
+          />
+        );
+      }
+      if (cle === 'alertes') {
+        return (
+          <>
+            <Avis texte={geste.erreur} ton="erreur" />
+            <LevelInvitation details={geste.niveau} onClose={geste.effacer} />
+          </>
+        );
+      }
+      return null;
+    },
+  };
+
   if (fait) {
     return (
-      <>
+      <FenetreCentree nom="J04" titre="Partager un jalon" onFermer={onFermer}>
         <Avis texte="Votre victoire est publiée dans le fil." />
         <Bouton ton="calme" plein onClick={onFermer}>
           Fermer
         </Bouton>
-      </>
+      </FenetreCentree>
     );
   }
   return (
-    <>
-      <div style={{ fontSize: '13px', color: C.gris, lineHeight: 1.5 }}>
-        Racontez ce qui vous a aidé : cela encourage ceux qui préparent leur départ. Le champ est vide, c’est
-        vous qui écrivez.
-      </div>
-      <div style={{ background: C.vertPale, border: `1px solid ${C.vertPale2}`, borderRadius: '14px', padding: '12px 14px', fontSize: '13px', fontWeight: 700, color: C.vertFonce }}>
-        Étape franchie · {parcours?.journey.doneCount ?? '…'} sur {parcours?.journey.totalCount ?? '…'}
-        {etape === undefined ? '' : ` — ${etape.title}`}
-      </div>
-      <ZoneTexte id="partage-texte" etiquette="Votre message" valeur={texte} onChange={setTexte} maxLength={MILESTONE_TEXT_MAX} lignes={5} />
-      <Avis texte={geste.erreur} ton="erreur" />
-      <LevelInvitation details={geste.niveau} onClose={geste.effacer} />
-      <div style={{ display: 'flex', gap: '8px' }}>
-        <Bouton ton="calme" onClick={plusTard}>
-          Plus tard
-        </Bouton>
-        <Bouton plein disabled={geste.occupe || texte.trim().length < 1 || etape === undefined} onClick={publier}>
-          {geste.occupe ? 'Publication…' : 'Publier'}
-        </Bouton>
-      </div>
-    </>
+    <Modal
+      open
+      onClose={onFermer}
+      titleId="j04-titre"
+      name="J04"
+      desktop={
+        <FeuilleDessinee controleur={controleur}>
+          <J04Desktop {...SANS_DONNEES} />
+        </FeuilleDessinee>
+      }
+      mobile={
+        <FeuilleDessinee controleur={controleur}>
+          <J04Mobile {...SANS_DONNEES} />
+        </FeuilleDessinee>
+      }
+    />
   );
 }
 
-// ═══ INVITER DANS L'ÉQUIPE (§3.4) ═══════════════════════════════════════════
+// ═══ INVITER DANS L'ÉQUIPE (§3.4) — J05 (feuille mobile) ═══════════════════
 
 type Contact = { readonly handle: string; readonly displayName: string };
+type RoleInvite = 'OBSERVER' | 'SUPPORTER';
 
-function ContenuInviter({ onFermer }: { readonly onFermer: () => void }) {
+/** L'état et les gestes de l'invitation, partagés par la feuille mobile (dessinée) et la fenêtre d'ordinateur. */
+function useInviter() {
   const idParcours = useIdParcours();
   const [pseudo, setPseudo] = useState('');
-  const [role, setRole] = useState<'OBSERVER' | 'SUPPORTER'>('SUPPORTER');
+  const [role, setRole] = useState<RoleInvite>('SUPPORTER');
   const [contacts, setContacts] = useState<readonly Contact[]>([]);
   const [invites, setInvites] = useState<readonly string[]>([]);
   const geste = useGeste();
@@ -448,7 +710,157 @@ function ContenuInviter({ onFermer }: { readonly onFermer: () => void }) {
       { majPanneau: true },
     );
   };
+  return { pseudo, setPseudo, role, setRole, contacts, invites, inviter, geste };
+}
 
+const AIDE_ROLE: Record<RoleInvite, string> = {
+  SUPPORTER: 'L’accompagnant peut échanger et recevoir vos demandes privées.',
+  OBSERVER: 'L’observateur voit la progression, sans échanger.',
+};
+
+function FeuilleInviter({ onFermer }: { readonly onFermer: () => void }) {
+  const { pseudo, setPseudo, role, setRole, contacts, invites, inviter, geste } = useInviter();
+  const saisi = pseudo.replace(/^@/, '').trim().toLowerCase();
+
+  const controleur: Controleur = {
+    fermer: onFermer,
+    val: (cle) => (cle === 'aideRole' ? AIDE_ROLE[role] : null),
+    act: () => ({}),
+    slot: (cle, s: Styles) => {
+      if (cle === 'pseudo') {
+        return (
+          <input
+            id="inviter-pseudo"
+            aria-label="Pseudo ou contact"
+            data-feuille-champ=""
+            value={pseudo}
+            placeholder="Pseudo ou contact"
+            autoComplete="off"
+            autoCapitalize="none"
+            onChange={(e) => setPseudo(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && saisi.length >= 3 && !geste.occupe) inviter(saisi);
+            }}
+            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', font: 'inherit', color: C.texte, padding: 0 }}
+          />
+        );
+      }
+      if (cle === 'contacts') {
+        const visibles = contacts
+          .filter((c) => saisi === '' || c.handle.toLowerCase().includes(saisi) || c.displayName.toLowerCase().includes(saisi))
+          .slice(0, 8);
+        const connu = contacts.some((c) => c.handle.toLowerCase() === saisi);
+        // Un pseudo saisi qui n'est pas un contact : on propose de l'inviter tel quel, le serveur tranche.
+        const lignes: Contact[] = [
+          ...(saisi.length >= 3 && !connu ? [{ handle: saisi, displayName: '' }] : []),
+          ...visibles,
+        ];
+        return (
+          <>
+            {lignes.map((c) => {
+              const nom = c.displayName === '' ? `@${c.handle}` : c.displayName;
+              const invite = invites.includes(c.handle);
+              return (
+                <div key={c.handle} style={s[0]}>
+                  <span style={{ ...s[1], background: fondAvatar(c.handle) }}>{initiales(c.displayName, c.handle)}</span>
+                  <span style={s[2]}>
+                    <span style={s[3]}>{nom}</span>
+                    <span style={s[4]}>{c.displayName === '' ? 'Inviter par pseudo' : `@${c.handle}`}</span>
+                  </span>
+                  <button
+                    type="button"
+                    disabled={geste.occupe || invite}
+                    onClick={() => inviter(c.handle)}
+                    style={{
+                      ...s[5],
+                      cursor: 'pointer',
+                      ...(invite ? { background: C.fond, color: C.gris } : {}),
+                      ...(geste.occupe && !invite ? { opacity: 0.5, cursor: 'default' } : {}),
+                    }}
+                  >
+                    {invite ? 'Invité·e' : 'Inviter'}
+                  </button>
+                </div>
+              );
+            })}
+            {lignes.length === 0 ? (
+              <div style={{ fontSize: '12.5px', color: C.gris, lineHeight: 1.5 }}>
+                {contacts.length === 0
+                  ? 'Vous n’avez pas encore de contact : saisissez un pseudo pour inviter quelqu’un.'
+                  : 'Aucun contact ne correspond : saisissez le pseudo complet pour inviter quelqu’un d’autre.'}
+              </div>
+            ) : null}
+          </>
+        );
+      }
+      if (cle === 'role') {
+        return (
+          <div role="radiogroup" aria-label="Rôle" style={s[0]}>
+            {(
+              [
+                ['OBSERVER', 'Observateur'],
+                ['SUPPORTER', 'Accompagnant'],
+              ] as const
+            ).map(([valeur, libelle]) => (
+              <button
+                key={valeur}
+                type="button"
+                role="radio"
+                aria-checked={role === valeur}
+                onClick={() => setRole(valeur)}
+                style={{ ...(role === valeur ? s[2] : s[1]), border: 'none', font: 'inherit', fontSize: s[1]?.fontSize, fontWeight: 700, cursor: 'pointer', ...(role === valeur ? { color: C.texte } : {}) }}
+              >
+                {libelle}
+              </button>
+            ))}
+          </div>
+        );
+      }
+      if (cle === 'alertes') {
+        return (
+          <>
+            {invites.length === 0 ? null : (
+              <Avis texte={`Invitation envoyée à ${invites.map((h) => `@${h.replace(/^@/, '')}`).join(', ')}. Elle accepte ou refuse.`} />
+            )}
+            <Avis texte={geste.erreur} ton="erreur" />
+            <LevelInvitation details={geste.niveau} onClose={geste.effacer} />
+          </>
+        );
+      }
+      return null;
+    },
+  };
+
+  // La fenêtre d'ordinateur : la maquette ne la dessine pas (AJOUT) — le panneau centré, mêmes gestes.
+  const ordinateur = (
+    <Panneau titreId="j05-titre" titre="Inviter dans l’équipe" onFermer={onFermer}>
+      <ContenuInviter etat={{ pseudo, setPseudo, role, setRole, contacts, invites, inviter, geste }} onFermer={onFermer} />
+    </Panneau>
+  );
+  return (
+    <Modal
+      open
+      onClose={onFermer}
+      titleId="j05-titre"
+      name="J05I"
+      desktop={ordinateur}
+      mobile={
+        <FeuilleDessinee controleur={controleur}>
+          <J05MobileInvitation {...SANS_DONNEES} />
+        </FeuilleDessinee>
+      }
+    />
+  );
+}
+
+function ContenuInviter({
+  etat,
+  onFermer,
+}: {
+  readonly etat: ReturnType<typeof useInviter>;
+  readonly onFermer: () => void;
+}) {
+  const { pseudo, setPseudo, role, setRole, contacts, invites, inviter, geste } = etat;
   return (
     <>
       <div style={{ fontSize: '13px', color: C.gris, lineHeight: 1.5 }}>
@@ -473,7 +885,7 @@ function ContenuInviter({ onFermer }: { readonly onFermer: () => void }) {
       </fieldset>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <div style={{ flex: 1 }}>
-          <Champ id="inviter-pseudo" etiquette="Pseudo" valeur={pseudo} onChange={setPseudo} placeholder="@pseudo" />
+          <Champ id="inviter-pseudo-ordinateur" etiquette="Pseudo" valeur={pseudo} onChange={setPseudo} placeholder="@pseudo" />
         </div>
         <Bouton disabled={geste.occupe || pseudo.replace(/^@/, '').trim().length < 3} onClick={() => inviter(pseudo.trim())}>
           Inviter
@@ -508,15 +920,17 @@ function ContenuInviter({ onFermer }: { readonly onFermer: () => void }) {
   );
 }
 
-// ═══ ARRÊTER (§3.9) ═════════════════════════════════════════════════════════
+// ═══ ARRÊTER (§3.9) — J08 (feuille mobile) ═════════════════════════════════
 
-function ContenuArreter({ onFermer }: { readonly onFermer: () => void }) {
+function FeuilleArret({ onFermer }: { readonly onFermer: () => void }) {
   const idParcours = useIdParcours();
   const router = useRouter();
+  const [donnees, setDonnees] = useState<Omit<J08ArretData, keyof typeof SANS_DONNEES> | null>(null);
   const [parcours, setParcours] = useState<JourneyFullResponse | null>(null);
   const geste = useGeste();
   useEffect(() => {
     if (idParcours === null) return;
+    void chargerJ08Arret(idParcours).then(setDonnees, () => undefined);
     void readJourney(idParcours).then(setParcours, () => undefined);
   }, [idParcours]);
 
@@ -529,8 +943,19 @@ function ContenuArreter({ onFermer }: { readonly onFermer: () => void }) {
       router.push('/parcours');
     });
   };
-  return (
-    <>
+
+  const controleur: Controleur = {
+    fermer: onFermer,
+    val: () => null,
+    act: (cle) =>
+      cle === 'arreter'
+        ? { onClick: arreter, disabled: geste.occupe, libelle: geste.occupe ? 'Arrêt…' : 'Arrêter' }
+        : { onClick: onFermer },
+    slot: (cle) => (cle === 'alertes' ? <Avis texte={geste.erreur} ton="erreur" /> : null),
+  };
+
+  const ordinateur = (
+    <Panneau titreId="j08-titre" titre="Arrêter ce parcours ?" onFermer={onFermer}>
       <div style={{ fontSize: '13.5px', lineHeight: 1.55 }}>
         Votre projet a évolué, c’est normal. Vos {parcours?.journey.doneCount ?? ''} étapes franchies restent dans
         votre historique et vous pourrez créer un autre parcours.
@@ -544,16 +969,46 @@ function ContenuArreter({ onFermer }: { readonly onFermer: () => void }) {
           Arrêter
         </Bouton>
       </div>
-    </>
+    </Panneau>
+  );
+  return (
+    <Modal
+      open
+      onClose={onFermer}
+      titleId="j08-titre"
+      name="J08A"
+      desktop={ordinateur}
+      mobile={
+        // Le titre « Arrêter « … » ? » est LIÉ au parcours : sans lui la feuille mentirait.
+        donnees === null ? (
+          <Panneau titreId="j08-titre" titre="Arrêter ce parcours ?" onFermer={onFermer}>
+            <div role="status" style={{ color: C.gris }}>Chargement…</div>
+          </Panneau>
+        ) : (
+          <FeuilleDessinee controleur={controleur}>
+            <J08MobileArret {...SANS_DONNEES} {...donnees} />
+          </FeuilleDessinee>
+        )
+      }
+    />
   );
 }
 
-// ═══ EXPORTER (J07) ═════════════════════════════════════════════════════════
+// ═══ EXPORTER (J07) — feuille mobile ═══════════════════════════════════════
 
-function ContenuExporter({ onFermer }: { readonly onFermer: () => void }) {
+function FeuilleExport({ onFermer }: { readonly onFermer: () => void }) {
   const idParcours = useIdParcours();
-  return (
-    <>
+  const controleur: Controleur = {
+    fermer: onFermer,
+    val: () => null,
+    act: (cle) =>
+      cle === 'exporter' && idParcours !== null
+        ? { href: `/parcours/${idParcours}/export` }
+        : { onClick: onFermer, disabled: cle === 'exporter' },
+    slot: () => null,
+  };
+  const ordinateur = (
+    <Panneau titreId="j07-titre" titre="Exporter mon parcours" onFermer={onFermer}>
       <div style={{ fontSize: '13.5px', lineHeight: 1.55, color: C.gris }}>
         Votre parcours — étapes, durées réelles et journal — s’ouvre dans une page prête à imprimer. Choisissez
         « Enregistrer au format PDF » dans la fenêtre d’impression. Vos notes ne sont pas incluses.
@@ -572,11 +1027,25 @@ function ContenuExporter({ onFermer }: { readonly onFermer: () => void }) {
           </Link>
         )}
       </div>
-    </>
+    </Panneau>
+  );
+  return (
+    <Modal
+      open
+      onClose={onFermer}
+      titleId="j07-titre"
+      name="J07X"
+      desktop={ordinateur}
+      mobile={
+        <FeuilleDessinee controleur={controleur}>
+          <J07MobileExport {...SANS_DONNEES} />
+        </FeuilleDessinee>
+      }
+    />
   );
 }
 
-// ═══ MES PARCOURS (J01M) ════════════════════════════════════════════════════
+// ═══ MES PARCOURS (J01M) — feuille mobile ══════════════════════════════════
 
 function ContenuSelecteur({ onFermer }: { readonly onFermer: () => void }) {
   const [liste, setListe] = useState<readonly JourneyListItem[] | null>(null);
@@ -610,6 +1079,40 @@ function ContenuSelecteur({ onFermer }: { readonly onFermer: () => void }) {
         <Icone d={ICONES.plus} taille={15} /> Nouveau parcours
       </Link>
     </>
+  );
+}
+
+function FeuilleSelecteur({ onFermer }: { readonly onFermer: () => void }) {
+  const idParcours = useIdParcours();
+  const [donnees, setDonnees] = useState<Omit<J01MData, keyof typeof SANS_DONNEES> | null>(null);
+  useEffect(() => {
+    // Hors d'un parcours (planche d'illustration) il n'y a pas de « courant » : on lit la liste seule.
+    void chargerJ01M(idParcours ?? '').then(setDonnees, () => undefined);
+  }, [idParcours]);
+  const controleur: Controleur = { fermer: onFermer, val: () => null, act: () => ({}), slot: () => null };
+  return (
+    <Modal
+      open
+      onClose={onFermer}
+      titleId="j01m-titre"
+      name="J01M"
+      desktop={
+        <Panneau titreId="j01m-titre" titre="Mes parcours" onFermer={onFermer}>
+          <ContenuSelecteur onFermer={onFermer} />
+        </Panneau>
+      }
+      mobile={
+        donnees === null ? (
+          <Panneau titreId="j01m-titre" titre="Mes parcours" onFermer={onFermer}>
+            <div role="status" style={{ color: C.gris }}>Chargement…</div>
+          </Panneau>
+        ) : (
+          <FeuilleDessinee controleur={controleur}>
+            <J01MMobile {...SANS_DONNEES} {...donnees} />
+          </FeuilleDessinee>
+        )
+      }
+    />
   );
 }
 
@@ -657,53 +1160,33 @@ function ContenuSignaler({ stepId, onFermer }: { readonly stepId: string | undef
   );
 }
 
-// ═══ LE MONTAGE ═════════════════════════════════════════════════════════════
 
-const TITRES: Record<string, string> = {
-  blocage: 'Je suis bloqué·e',
-  partage: 'Partager un jalon',
-  inviter: 'Inviter dans l’équipe',
-  arreter: 'Arrêter ce parcours ?',
-  exporter: 'Exporter mon parcours',
-  selecteur: 'Mes parcours',
-  signaler: 'Signaler une erreur dans ce modèle',
-};
+// ═══ LE MONTAGE ═════════════════════════════════════════════════════════════
 
 /** Montée UNE fois par page de parcours (voir `EcranParcoursDonnees`). */
 export function FeuillesParcours() {
   const feuille = useFeuille();
   const onFermer = useCallback(() => fermerFeuille(), []);
+  const monteur = onFermer;
   if (feuille === null) return null;
-  const titreId = `parcours-feuille-${feuille.nom}`;
-  const contenu = (() => {
-    switch (feuille.nom) {
-      case 'blocage':
-        return <ContenuBlocage stepId={feuille.stepId} onFermer={onFermer} />;
-      case 'partage':
-        return <ContenuPartage stepId={feuille.stepId} onFermer={onFermer} />;
-      case 'inviter':
-        return <ContenuInviter onFermer={onFermer} />;
-      case 'arreter':
-        return <ContenuArreter onFermer={onFermer} />;
-      case 'exporter':
-        return <ContenuExporter onFermer={onFermer} />;
-      case 'selecteur':
-        return <ContenuSelecteur onFermer={onFermer} />;
-      case 'signaler':
-        return <ContenuSignaler stepId={feuille.stepId} onFermer={onFermer} />;
-    }
-  })();
-  return (
-    <Modal
-      open
-      onClose={onFermer}
-      titleId={titreId}
-      name={feuille.nom.toUpperCase()}
-      mobile={
-        <Panneau titreId={titreId} titre={TITRES[feuille.nom] ?? ''} onFermer={onFermer}>
-          {contenu}
-        </Panneau>
-      }
-    />
-  );
+  switch (feuille.nom) {
+    case 'blocage':
+      return <FeuilleBlocage key={`b-${feuille.stepId ?? ''}`} stepId={feuille.stepId} onFermer={monteur} />;
+    case 'partage':
+      return <FeuillePartage key={`p-${feuille.stepId ?? ''}`} stepId={feuille.stepId} onFermer={monteur} />;
+    case 'inviter':
+      return <FeuilleInviter onFermer={monteur} />;
+    case 'arreter':
+      return <FeuilleArret onFermer={monteur} />;
+    case 'exporter':
+      return <FeuilleExport onFermer={monteur} />;
+    case 'selecteur':
+      return <FeuilleSelecteur onFermer={monteur} />;
+    case 'signaler':
+      return (
+        <FenetreCentree nom="SIGNALER" titre="Signaler une erreur dans ce modèle" onFermer={monteur}>
+          <ContenuSignaler stepId={feuille.stepId} onFermer={monteur} />
+        </FenetreCentree>
+      );
+  }
 }

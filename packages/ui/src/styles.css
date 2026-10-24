@@ -293,3 +293,16 @@
 [data-story-fond] {
   transition: background-color 220ms cubic-bezier(0.16, 1, 0.3, 1); /* motion:storyFond */
 }
+
+/**
+ * ── LES CHAMPS DES FEUILLES DESSINÉES (J03, J04, J05) ───────────────────────
+ *
+ * La maquette dessine l'indice d'un champ (« Pseudo ou contact », « Racontez-la avec vos
+ * mots… ») en gris #8A958F. Un style en ligne ne peut pas atteindre `::placeholder` : sans
+ * cette règle le navigateur choisit son propre gris, plus sombre que le dessin. Aucune
+ * couleur nouvelle — c'est celle de la maquette.
+ */
+[data-feuille-champ]::placeholder {
+  color: #8a958f;
+  opacity: 1;
+}

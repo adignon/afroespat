@@ -290,6 +290,8 @@ export interface ModeleProposé extends ModeleAffiche {
 
 /** Une ligne du sélecteur « Mes parcours » (J01M). */
 export interface ChoixParcours {
+  /** L'identifiant du parcours : la ligne de la feuille mène à `/parcours/:id`. */
+  readonly id: string;
   readonly fond: string;
   readonly titre: string;
   readonly pastilleFond: string;
