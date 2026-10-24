@@ -50,14 +50,14 @@ Membres `RECENT_ARRIVAL` de la ville avec `arrival_date` dans les 14 derniers jo
 
 ### 3.1 Création
 
-- Capacité `event.create` (L1). Limite de plan : **1 par mois en gratuit** (`usage_counters` EVENTS_CREATED), illimité en Premium. Un événement annulé dans l'heure ne compte pas.
+- Capacité `event.create` (**L2** — voir §11, « Droits »). Limite de plan : **1 par mois en gratuit** (`usage_counters` EVENTS_CREATED), illimité en Premium. Un événement annulé dans l'heure ne compte pas.
 - Champs : type, titre 5–120, description ≤ 3 000, ville, lieu (`venue_name`, `address_text` libre — **jamais géocodé**), début, fin facultative, capacité facultative, couverture facultative, `community_id` facultatif (réservé au réseau).
 - Début ≥ maintenant + 2 h ; au plus 6 mois à l'avance.
 - Modération à la publication (comme un post). Modifiable par l'organisateur jusqu'au début ; les participants sont notifiés d'un changement de date, d'heure ou de lieu.
 
 ### 3.2 RSVP
 
-- Capacité `event.attend` (L1). Statuts `GOING`, `MAYBE`, `DECLINED`. Si `capacity` atteinte : `WAITLIST`, promotion automatique en `GOING` à la première désinscription (notification).
+- Capacité `event.attend` (**L2** — voir §11, « Droits »). Statuts `GOING`, `MAYBE`, `DECLINED`. Si `capacity` atteinte : `WAITLIST`, promotion automatique en `GOING` à la première désinscription (notification). La réponse de `PUT /events/:id/rsvp` porte le statut RÉEL et la position : `{ status, waitlistPosition, attendeeCount }` (voir §12).
 - Impossible de RSVP à l'événement d'un membre bloqué.
 - L'organisateur voit la liste ; les participants voient les avatars des `GOING` et le compteur.
 
@@ -91,7 +91,7 @@ Par l'organisateur, motif facultatif, notification à tous les inscrits. Un év�
 | `user_profiles.show_as_newcomer` | **Ajoutée** |
 | `events.cancelled_at`, `cancel_reason` | **Ajoutées** |
 | `events.checked_in_count` | **Ajoutée**, dénormalisée |
-| `event_attendees.waitlist_position` | **Ajoutée** |
+| `event_attendees.waitlist_position` | **Non stockée** : la position se recalcule sur `(responded_at, id)`, l'ordre même de la promotion (lot E2, §12) |
 
 ---
 
@@ -170,5 +170,10 @@ Par l'organisateur, motif facultatif, notification à tous les inscrits. Un év�
 - **Contributions** : `city_tips.venue_name` (obligatoire pour un commerce) et `address_text` (texte libre, jamais géocodé). Les budgets sont **anonymes** : l'auteur n'est jamais renvoyé. Pas de catégorie ni de photo : un filtre sans colonne ment.
 - **Arrivants** : `user_profiles.show_as_newcomer` (défaut vrai) ; un membre qui le retire disparaît de « Arrivés récemment ».
 - **Carte** : SVG local, sans iframe ni service tiers ; le seuil `CITY_COUNT_PRIVACY_THRESHOLD` (3) est appliqué par le serveur et affiché « moins de 3 ».
-- **Droits** : `event.attend` et `event.create` exigent L2 côté serveur (la matrice de §3 dit L1 : écart à arbitrer). Le front ne lit jamais le niveau : il tente, le serveur répond `LEVEL_REQUIRED`.
+- **Droits** : `event.attend` et `event.create` exigent **L2**. ÉCART ARBITRÉ (lot E2) : la matrice historique de §3 et de `00 §7.3` disait L1 ; la refonte des niveaux du porteur (2026-10-09 — « N2 : faire tout le reste ») les a placés en L2, et `packages/shared/src/capabilities/capabilities.ts` est la source qui fait foi. Le serveur n'a PAS été aligné sur L1 : un test (`media.int.test.ts`, couverture d'événement) et le mémo d'amorçage §5 figent L2, et L1 rouvrirait la création d'événements à un membre sans numéro vérifié. C'est la spec qu'on a corrigée. Le front ne lit jamais le niveau : il tente, le serveur répond `LEVEL_REQUIRED` (`details.capability`).
 - **Suppression de compte** : abonnés `user.deleted` des modules `events` (annule les événements à venir de l'organisateur, retire ses RSVP, promeut la file d'attente) et `cities` (retire ses votes, décrémente `helpful_count`).
+
+## 12. Précisions de mise en œuvre (lot E2)
+
+- **Position en liste d'attente** : `PUT /events/:id/rsvp` répond `{ status, waitlistPosition, attendeeCount }` (schéma partagé `rsvpResponseSchema`, `.strict()`). `status` est le statut RÉEL : un « Je viens » sur un événement complet revient `WAITLIST`, et `waitlistPosition` (1 = prochain promu) n'existe que dans ce cas, sinon `null`. Il n'y a pas de colonne : la position se recalcule sur `(responded_at, id)` — l'ordre de `promoteWaitlist` — donc deux inscrits de la même milliseconde ont deux positions, et la position baisse d'elle-même quand quelqu'un devant se retire. L'écran dit « Complet : vous êtes 2e sur la liste d'attente » (rang en lettres : 1re, 2e…), puis relit la fiche (`myWaitlistPosition`, « Vous êtes 2e sur la liste d'attente »).
+- **Fiche ville (A12)** : le titre est lié à `ville.nom` aux deux largeurs (il restait « Lyon » pour toute ville) ; l'onglet lu par `?onglet=` est calculé par `screens/villes/onglets.ts`, module SANS `'use client'` — la page serveur appelait une fonction cliente et toute la fiche tombait en erreur d'exécution. « Réglages » (rail) et « Compte » (barre basse) mènent à `/compte` ; il ne reste aucun `href="#"` sur A11, A12, A12C ni A12T.
