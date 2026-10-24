@@ -1053,6 +1053,8 @@ export interface PersonView {
    * Sans elle, le nom reste nu — exactement le dessin d'avant.
    */
   readonly profil?: string;
+  /** Le pseudo : ce que « Saluer » (demande de contact) envoie à l'API. */
+  readonly handle?: string;
   readonly name: string;
   readonly i: string;
   readonly bg: string;

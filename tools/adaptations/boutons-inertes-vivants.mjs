@@ -41,6 +41,55 @@ const BI_J11_CREER = {
   },
 };
 
-export const ADAPTATIONS_BOUTONS_INERTES = [BI_J11_CREER];
-export const AJOUTS_BOUTONS_INERTES = {};
+// ─── A01 · « Saluer » et « Parrains et contacts » ────────────────────────────
+
+/**
+ * « Saluer » (deux boutons du bloc « Nouveaux arrivants » de A01 1440 px) envoie
+ * une demande de contact avec un mot d'accueil (`BoutonSaluer`, voir son en-tête).
+ * Le cadre mobile ne dessine pas ce bloc (relevé de l'audit).
+ */
+const BI_A01_SALUER = {
+  screens: ['A01'],
+  nom: 'BI_A01_SALUER',
+  why: '« Saluer » ne faisait rien : il envoie une demande de contact (états : envoi, envoyée, déjà en contact, en attente, erreur du serveur).',
+  provides: ['arrivals'],
+  apply(jsx) {
+    const re = /<button style=\{\{ ([^}]*) \}\}>Saluer<\/button>/g;
+    let compte = 0;
+    const out = jsx.replace(re, (_m, style) => {
+      compte += 1;
+      return `<BoutonSaluer handle={a.handle} nom={a.name} style={{ ${style} }} />`;
+    });
+    return compte === 0 ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
+/**
+ * La carte « PARRAINS ET CONTACTS » : après la boucle des contacts en ligne, les
+ * parrains disponibles et les suggestions de contact quand personne n'est en
+ * ligne, ou l'état vide honnête (`SuggestionsParrains`).
+ */
+const BI_A01_PARRAINS = {
+  screens: ['A01'],
+  nom: 'BI_A01_PARRAINS',
+  why: 'La carte « Parrains et contacts » restait un titre seul quand personne n’est en ligne : elle lit /mentors et /me/connection-suggestions, avec lien profil et état vide.',
+  provides: ['online'],
+  apply(jsx) {
+    const titre = jsx.indexOf('>PARRAINS ET CONTACTS</div>');
+    if (titre === -1) return { jsx, applied: false };
+    const boucle = jsx.indexOf('))}</div>', titre);
+    if (boucle === -1) return { jsx, applied: false };
+    const at = boucle + '))}'.length;
+    return {
+      jsx: jsx.slice(0, at) + '<SuggestionsParrains actif={(online ?? []).length === 0} />' + jsx.slice(at),
+      applied: true,
+    };
+  },
+};
+
+export const ADAPTATIONS_BOUTONS_INERTES = [BI_J11_CREER, BI_A01_SALUER, BI_A01_PARRAINS];
+export const AJOUTS_BOUTONS_INERTES = {
+  BoutonSaluer: '@/components/accueil-voisins',
+  SuggestionsParrains: '@/components/accueil-voisins',
+};
 void NU;
