@@ -436,11 +436,10 @@ export class AccountService {
    *     suppression de compte ne vide `auth_sessions` que du membre supprimé. Les
    *     sessions expirées de tous les autres s'accumulaient donc sans fin ;
    *   · « Signalements traités : 3 ans » → `moderation.purge_reports`, quotidienne ;
-   *   · « Journal d'audit : 5 ans » → `audit.retention`, ABSENTE : `audit_logs` est
-   *     en ajout seul, protégée par deux déclencheurs PostgreSQL, et §2.3 du module
-   *     15 dit « Aucune suppression possible ». La contradiction avec §10
-   *     appartient au propriétaire ; cette tâche ne l'arbitre pas et ne touche pas
-   *     la table ;
+   *   · « Journal d'audit : 5 ans » → AUCUNE tâche : le porteur a décidé « on ne
+   *     supprime jamais ». `audit_logs` est en ajout seul (deux déclencheurs
+   *     PostgreSQL), sa rétention est ILLIMITÉE (15 §2.3), et cette tâche ne touche
+   *     pas la table — `audit-jamais-supprime.int.test.ts` le garde ;
    *   · « Journaux applicatifs : 90 jours » → ils ne sont pas en base (pino, sortie
    *     standard). Rien à purger ici ;
    *   · « Contenus d'un compte supprimé » → les gestionnaires de suppression de
