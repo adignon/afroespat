@@ -170,6 +170,12 @@ Six écrans, tous « passables » sauf le téléphone. L'état d'avancement est 
 
 Consentements `TERMS` et `PRIVACY` recueillis à l'écran 1 (case à cocher obligatoire).
 
+**[RÈGLE DURE — écran 3, précisée au lot W1A]** « Continuer » est refusé tant qu'aucune ville n'est choisie : le front prévient (message « Choisissez votre ville pour continuer. » et ouverture du sélecteur) et le serveur décide — `POST /me/onboarding` avec `step = 3` répond `409 LOCATION_REQUIRED` si `users.city_id` est nul, sans rien enregistrer. « Passer cette étape » reste permis (c'est un lien, il n'appelle pas la route) ; le parcours de l'écran 4 est alors refusé par `POST /journeys` (`409 LOCATION_REQUIRED`, la ville est la destination du parcours). La ville est enregistrée par `PATCH /me { cityId }` au « Continuer », **avant** l'avancement : c'est ce qui permet à l'écran 4 de créer le parcours.
+
+Villes proposées à l'écran 3 : celles du pays où le membre vit, déduit de sa phase — pays d'**origine** choisi s'il n'est pas encore parti (`PRE_DEPARTURE`), pays de **destination** sinon. `GET /places/cities` rend `countryId` pour cela ; si le filtre ne laisse aucune ville, tout le catalogue est proposé (le membre n'est jamais enfermé).
+
+**Écran 6 — atterrissage.** « Aller à l'accueil » vérifie la session puis ouvre `/accueil`. La variante **sans parcours** lit l'API et n'affiche aucune valeur de maquette : la ville (`GET /me` + `GET /places/cities`), le réseau et la coche « rejoint » (`GET /communities`, `mine`), les trois prochains événements (`GET /events?cityId=…&from=…`) — ou « Aucun événement annoncé dans votre ville pour le moment. » —, et un parrain suggéré (`GET /mentors?cityId=…`, premier disponible qui n'est pas le membre) dont la carte **disparaît** quand il n'y en a aucun. « Demander » mène à la fiche du parrain (`/parrainage/:handle`), où la demande se rédige (message de 50 à 1 000 caractères, niveau L1) : aucun message n'est envoyé à la place du membre.
+
 **[RÈGLE DURE]** L'écran 4 propose « M'intégrer, rencontrer du monde » et « Aider les autres » comme choix de même rang que les types de parcours. Le parcours n'est jamais imposé.
 
 ---
