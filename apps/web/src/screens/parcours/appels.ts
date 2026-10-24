@@ -986,6 +986,16 @@ export async function chargerJ09(): Promise<Omit<J09Data, keyof ParcoursData>> {
 }
 
 /**
+ * Le panneau de gauche des écrans « publics » : celui de MON parcours actif, ou le
+ * panneau vide quand je n'en ai pas. Même choix que `chargerJ09`.
+ */
+async function panneauDuMembre(): Promise<PanneauParcours> {
+  const liste = await listJourneys();
+  const mien = liste.items.find((i) => i.isOwner && i.status === 'ACTIVE') ?? liste.items[0];
+  return mien === undefined ? PANNEAU_VIDE : panneauDe(await readJourney(mien.id));
+}
+
+/**
  * Un parcours public, prêt à poser (§3.7).
  *
  * LA FRISE DE SIX SEGMENTS de la maquette ne correspond pas aux étapes du
@@ -1039,7 +1049,12 @@ export async function chargerJ09Fiche(
   journeyId: string,
 ): Promise<Omit<J09FicheData, keyof ParcoursData>> {
   if (!UUID.test(journeyId)) return VUE_NEUTRE;
-  const { journey } = await getPublicJourney(journeyId);
+  // Le panneau de gauche (cadre d'ordinateur) montre MON parcours, comme la liste :
+  // on le lit à côté de la fiche, et son absence ne fait pas tomber la fiche.
+  const [{ journey }, panneau] = await Promise.all([
+    getPublicJourney(journeyId),
+    panneauDuMembre().catch(() => PANNEAU_VIDE),
+  ]);
   const nom = nomAffiche(journey.member.displayName, journey.member.handle);
   const membre: FichePublique = {
     prenom: prenom(nom, journey.member.handle),
@@ -1052,6 +1067,7 @@ export async function chargerJ09Fiche(
     enCours: journey.currentStep?.title ?? '',
   };
   return {
+    panneau,
     membre,
     franchies: journey.completedSteps.map((s) => ({ titre: s.title, duree: duree(s.durationDays) })),
   };

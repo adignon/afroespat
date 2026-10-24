@@ -549,6 +549,8 @@ export interface J09Data extends ParcoursData {
 
 /** J09 · `/parcours/publics/:id` — `GET /journeys/public/:id`, AUTRE forme. */
 export interface J09FicheData extends ParcoursData {
+  /** Le panneau de gauche du cadre d'ordinateur : MON parcours, comme sur la liste. */
+  readonly panneau: PanneauParcours;
   readonly membre: FichePublique;
   readonly franchies: readonly EtapeFrise[];
 }

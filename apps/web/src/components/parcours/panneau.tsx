@@ -27,6 +27,7 @@ import { listPublicJourneys } from '@/screens/parcours/api';
 import { echeance, typeCourt } from '@/screens/parcours/appels';
 import { CadreActif } from './cadre-actif';
 import { C, etiquette } from './ui';
+import { usePathname } from 'next/navigation';
 import { useParcoursComplet, useIdParcours } from './donnees';
 
 const CARTE = { background: '#fff', border: `1px solid ${C.bord}`, borderRadius: '22px', padding: '14px' } as const;
@@ -84,7 +85,17 @@ function PanneauPublicsInterne() {
 }
 
 function PanneauRappelsInterne() {
-  const id = useIdParcours();
+  /**
+   * SUR `/parcours/publics/:id`, L'IDENTIFIANT DE L'URL EST CELUI D'UN AUTRE MEMBRE.
+   *
+   * Mesuré (lot W1A, phase 0.4) : à 1 440 px la fiche d'un parcours public montait
+   * ce panneau, qui lisait `GET /journeys/:id` sur le parcours d'autrui et prenait un
+   * `403` (deux, avec le rejeu) dans la console. Les rappels sont ceux de MON
+   * parcours : sur une fiche publique, il n'y en a aucun à montrer.
+   */
+  const chemin = usePathname();
+  const idUrl = useIdParcours();
+  const id = chemin !== null && chemin.startsWith('/parcours/publics') ? null : idUrl;
   const { etat } = useParcoursComplet(id);
   if (etat.phase !== 'pret' || etat.parcours.viewerRole !== 'OWNER') return null;
   const prochains = etat.parcours.steps

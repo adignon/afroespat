@@ -311,33 +311,33 @@ const t = (text, size) => ({ text, size });
  * propres occurrences — `applyData` applique les liaisons dans l'ordre, sur le HTML
  * déjà réécrit.
  */
-const panneau = ({ titre = 1, type = 1, pourcent = 1, equipe = true } = {}) => [
+const panneau = ({ titre = 1, type = 1, pourcent = 1, equipe = true, frames = ['Desktop'] } = {}) => [
   {
     noeud: '>Mes études à Lyon<',
     devient: '>{{ panneau.titre }}<',
     fois: titre,
-    frames: ['Desktop'],
+    frames,
     why: 'Le titre PERSONNEL du parcours, de `GET /journeys/:id` (`journey.title`) — il ne sort jamais du parcours (§3.7).',
   },
   {
     noeud: '>PARCOURS ÉTUDES<',
     devient: '>PARCOURS {{ panneau.type }}<',
     fois: type,
-    frames: ['Desktop'],
+    frames,
     why: 'Le nom du TYPE de parcours (`journey.template.nameFr`), le seul nom qui circule hors du parcours.',
   },
   {
     noeud: '>58%<',
     devient: '>{{ panneau.avancement }}%<',
     fois: pourcent,
-    frames: ['Desktop'],
+    frames,
     why: 'L’avancement calculé par le serveur (`journey.progressPct`) — jamais recalculé côté écran.',
   },
   {
     noeud: '>Étape 7 : Logement · échéance dans 9 jours<',
     devient:
       '>Étape {{ panneau.rang }} : {{ panneau.etape }} · échéance {{ panneau.echeance }}<',
-    frames: ['Desktop'],
+    frames,
     why: 'L’étape EN COURS que le serveur déclare (`journey.currentStepId`), son rang, et `journey.nextDueDate`.',
   },
   /**
@@ -356,7 +356,7 @@ const panneau = ({ titre = 1, type = 1, pourcent = 1, equipe = true } = {}) => [
         {
           noeud: '>3<',
           devient: '>{{ panneau.equipe }}<',
-          frames: ['Desktop'],
+          frames,
           why: 'Le nombre de membres de l’équipe, de `members` (§3.4) — le plafond est `meta.maxMembers`.',
         },
       ]
@@ -2490,8 +2490,40 @@ export const screens = [
     out: 'j09',
     dataType: 'J09FicheData',
     modal: false,
-    frames: [f(390, 'MobileFiche', 1, t('Parcours de Fatou', '16px'))],
+    /**
+     * ╔══════════════════════════════════════════════════════════════════════╗
+     * ║ LA FICHE À 1 440 PX — UN CADRE D'ORDINATEUR QUE LA MAQUETTE N'A PAS  ║
+     * ╚══════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ (audit, lot W1A phase 0.4) : `/parcours/publics/:id` était BLANCHE à
+     * 1 440 px, parce que la page branchait son bureau sur `J09MobileFiche`, le
+     * cadre de 390 px : sa seule enveloppe est `lg:max-w-[390px]`, et le contenu
+     * ne remplissait rien du cadre d'ordinateur.
+     *
+     * La maquette dessine la fiche en 390 px seulement. On ne lui invente pas un
+     * dessin : le cadre `DesktopFiche` est la planche d'ordinateur de la LISTE
+     * (même occurrence 0 que `Desktop`, déclarée une seconde fois comme A06 le fait
+     * pour ses signalements) — l'en-tête global, le rail, le panneau du parcours
+     * du membre — dont le contenu central devient `VueFichePublique` en pleine
+     * largeur de colonne. C'est un AJOUT hors maquette : la fiche n'y est pas
+     * dessinée à cette largeur. Le marqueur ci-dessous (`{membre.prenom}`) ne sert qu'à l'adaptation
+     * `PV_J09` (`parcours-vivant.mjs`), qui reconnaît la fiche à cette liaison ; il
+     * disparaît avec le contenu qu'elle remplace.
+     */
+    frames: [
+      f(1440, 'DesktopFiche', 0, t('Parcours publics', '26px')),
+      f(390, 'MobileFiche', 1, t('Parcours de Fatou', '16px')),
+    ],
+    liensPlus: [NOUVEAU_PARCOURS(['DesktopFiche']), VOIR_TOUS_PUBLICS(['DesktopFiche'])],
     donnees: [
+      // Le panneau de gauche du cadre d'ordinateur : MON parcours, lié comme sur la liste.
+      ...panneau({ frames: ['DesktopFiche'] }),
+      {
+        noeud: '>14 membres suivent un parcours Études vers Lyon<',
+        devient: '>{{ membre.prenom }}<',
+        frames: ['DesktopFiche'],
+        why: 'Marqueur de la fiche à 1 440 px : le texte est dans le contenu central, que `PV_J09` remplace par `VueFichePublique` ; il sert à la reconnaître (voir plus haut).',
+      },
       {
         noeud: '>Parcours de Fatou<',
         devient: '>Parcours de {{ membre.prenom }}<',

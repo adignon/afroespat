@@ -4,6 +4,7 @@ import { useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { VUE_NEUTRE, chargerJ09Fiche } from '@/screens/parcours/appels';
 import { EcranParcoursDonnees } from '@/screens/parcours/ecran-donnees';
+import { J09DesktopFiche } from '@/screens/j09/desktopfiche.generated';
 import { J09MobileFiche } from '@/screens/j09/mobilefiche.generated';
 
 /**
@@ -20,9 +21,11 @@ import { J09MobileFiche } from '@/screens/j09/mobilefiche.generated';
  *
  * ── UNE SEULE PLANCHE, ET C'EST UN MANQUE DE LA MAQUETTE ───────────────────
  *
- * Elle ne dessine cette vue qu'en 390 px. On ne lui invente pas un cadre
- * d'ordinateur — la planche unique s'étire, comme `ScreenFrames` le fait déjà pour
- * O05, qui n'a pas non plus de cadre mobile. Consigné dans `docs/decisions.md`.
+ * Elle ne dessine cette vue qu'en 390 px. Le cadre d'ordinateur est un AJOUT hors
+ * maquette (lot W1A, phase 0.4) : la planche d'ordinateur de la LISTE (en-tête,
+ * rail, panneau) dont le contenu central est `VueFichePublique` — voir
+ * `tools/screens/04-parcours.mjs`. Avant, le bureau était branché sur le cadre de
+ * 390 px et la page était BLANCHE à 1 440 px.
  *
  * ── CE QUE LE TITRE NE DIT PAS ─────────────────────────────────────────────
  *
@@ -51,7 +54,8 @@ export default function Page() {
       squelette={VUE_NEUTRE}
       screen="J09F"
       charger={charger}
-      desktop={(d) => <J09MobileFiche {...d} />}
+      desktop={(d) => <J09DesktopFiche {...d} />}
+      mobile={(d) => <J09MobileFiche {...d} />}
     />
   );
 }

@@ -141,7 +141,9 @@ function unePourSection(section) {
     apply(jsx) {
       const mobile = !jsx.includes('<RailSurvol');
       // J09 dessine DEUX écrans : la liste, et la fiche d'un parcours public (mobile seul).
-      const fiche = section === 'J09' && jsx.includes('Parcours de {membre.prenom}');
+      // Mobile : le titre « Parcours de … » ; ordinateur : la liaison marqueur `{membre.prenom}`
+      // (cadre `DesktopFiche`, AJOUT — voir `tools/screens/04-parcours.mjs`).
+      const fiche = section === 'J09' && jsx.includes('{membre.prenom}');
       const choix = VUES[fiche ? 'J09F' : section];
       if (choix === undefined) return { jsx, applied: false };
       let props = `compact={${mobile ? 'true' : 'false'}}`;
