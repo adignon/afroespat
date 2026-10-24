@@ -1,3 +1,4 @@
+import type { FormulaireFicheProView } from '../services/use-ma-fiche-pro';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -45,5 +46,10 @@ export interface OffrePro {
 export interface S08Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** Le formulaire de la fiche pro : posé par la page. */
+  readonly formulaire: FormulaireFicheProView;
   readonly offrePro: OffrePro;
 }
+
+/** Ce que `chargerS08` lit de l'API ; la page y ajoute `formulaire`. */
+export type S08Charge = Omit<S08Data, 'formulaire'>;

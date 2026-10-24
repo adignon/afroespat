@@ -27,17 +27,19 @@ import {
 } from '@app/shared';
 import { fetchMe, memberApi } from '@/lib/api/index';
 import type { CarteAnnonce, S01Data } from '@/screens/s01/data';
-import type { S02Data } from '@/screens/s02/data';
-import type { S03Data } from '@/screens/s03/data';
-import type { CarteOffre, CarteProfil, S04Data } from '@/screens/s04/data';
-import type { S05Data } from '@/screens/s05/data';
+import type { S02Charge } from '@/screens/s02/data';
+import type { S03Charge } from '@/screens/s03/data';
+import type { CarteOffre, CarteProfil, S04Charge } from '@/screens/s04/data';
+import type { S05Charge } from '@/screens/s05/data';
 import type { CarteFiche, S06Data } from '@/screens/s06/data';
-import type { Recommandation, S07Data } from '@/screens/s07/data';
-import type { S08Data } from '@/screens/s08/data';
-import type { LigneAnnonce, S09Data } from '@/screens/s09/data';
-import type { LigneAlerte, S10Data } from '@/screens/s10/data';
+import type { Recommandation, S07Charge } from '@/screens/s07/data';
+import type { S08Charge } from '@/screens/s08/data';
+import type { LigneAnnonce, S09Charge } from '@/screens/s09/data';
+import type { LigneAlerte, S10Charge } from '@/screens/s10/data';
 import type { Moi, Quotas } from './data';
 import { fondAvatar } from '@/lib/avatar';
+import { urlMedia } from '@/lib/api/base';
+import { filtresLogement, ongletsServices, type FiltreLogement } from './navigation';
 
 /**
  * LES APPELS DES ÉCRANS S01 À S10 — un chargeur par écran, et rien d'autre.
@@ -367,16 +369,18 @@ function quotasDe(abonnement: MySubscriptionResponse, gratuit: boolean): Quotas 
  * même, et « France » sinon — ce qui est vrai dans les deux cas. Composer « Lyon »
  * parce que la maquette l'écrit aurait été le mensonge le plus facile de ce lot.
  */
-export async function chargerS01(): Promise<S01Data> {
+export async function chargerS01(kind: FiltreLogement = null): Promise<S01Data> {
   const [commun, liste] = await Promise.all([
     moiEtQuotas(),
-    memberApi.get('/housing?limit=20', housingListResponseSchema),
+    memberApi.get(kind === null ? '/housing?limit=20' : `/housing?limit=20&kind=${kind}`, housingListResponseSchema),
   ]);
 
   const villes = new Set(liste.items.map((a) => a.city.name));
 
   return {
     ...commun,
+    onglets: ongletsServices('logement', liste.meta.total),
+    filtres: filtresLogement(kind),
     liste: {
       total: liste.meta.total,
       ville: villes.size === 1 ? ([...villes][0] ?? 'France') : 'France',
@@ -388,6 +392,7 @@ export async function chargerS01(): Promise<S01Data> {
 
 function carteAnnonce(a: HousingCardView, rang: number): CarteAnnonce {
   return {
+    id: a.id,
     /** `/services/logement/:id` — la route que `app/(app)/services/logement/[id]/` sert. */
     href: `/services/logement/${a.id}`,
     genre: LOGEMENTS_FR[a.kind],
@@ -397,7 +402,17 @@ function carteAnnonce(a: HousingCardView, rang: number): CarteAnnonce {
     fond: fondDeRang(rang),
     initiales: initialesDe(a.author.displayName),
     auteur: nomCourt(a.author.displayName),
+    fondPhoto: fondDePhoto(a.photos[0]?.url),
+    niveau: a.author.verificationLevel,
   };
+}
+
+/** Les rayures de la maquette, quand l'annonce n'a pas (encore) de photo. */
+const RAYURES = 'repeating-linear-gradient(135deg,#E3ECE8 0 14px,#DCE6E1 14px 28px)';
+
+/** Le `background` d'une tuile : la photo réelle, recadrée, ou les rayures. */
+export function fondDePhoto(url: string | undefined): string {
+  return url === undefined ? RAYURES : `center / cover no-repeat url(${JSON.stringify(urlMedia(url))})`;
 }
 
 /**
@@ -434,7 +449,7 @@ function detailAnnonce(a: HousingCardView): string {
  * d'une annonce qui n'existe pas. `displayMessageFor` dira « introuvable » dans les
  * quatre cas, ce qui est le but.
  */
-export async function chargerS02(id: string): Promise<S02Data> {
+export async function chargerS02(id: string): Promise<S02Charge> {
   const [commun, annonce] = await Promise.all([
     moiEtQuotas(),
     memberApi.get(`/housing/${encodeURIComponent(id)}`, housingDetailResponseSchema),
@@ -443,6 +458,13 @@ export async function chargerS02(id: string): Promise<S02Data> {
   return {
     ...commun,
     annonce: {
+      id: annonce.id,
+      fonds: [0, 1, 2].map((i) => fondDePhoto(annonce.photos[i]?.url)),
+      nbPhotos: annonce.photos.length,
+      meuble: annonce.isFurnished === true,
+      auteurSous: `@${annonce.author.handle} · ${annonce.city.name}`,
+      niveau: annonce.author.verificationLevel,
+      estMienne: annonce.isMine,
       titre: annonce.title,
       prix: loyer(annonce),
       genre: LOGEMENTS_FR[annonce.kind],
@@ -481,7 +503,7 @@ export async function chargerS02(id: string): Promise<S02Data> {
  * NULLE PART : la maquette n'a pas d'emplacement pour le formulaire grisé de §2.1.
  * La donnée est là, prête ; c'est l'écart remonté au porteur.
  */
-export async function chargerS03(): Promise<S03Data> {
+export async function chargerS03(): Promise<S03Charge> {
   const [commun, liste] = await Promise.all([
     moiEtQuotas(),
     memberApi.get('/housing?limit=1', housingListResponseSchema),
@@ -501,7 +523,7 @@ export async function chargerS03(): Promise<S03Data> {
  * puis le classement naturel — et on ne les déduplique pas : le service a déjà
  * retiré d'`items` les identifiants de la tête.
  */
-export async function chargerS04(): Promise<S04Data> {
+export async function chargerS04(): Promise<S04Charge> {
   const [commun, offres, profils] = await Promise.all([
     moiEtQuotas(),
     memberApi.get('/jobs?limit=20', jobsListResponseSchema),
@@ -510,6 +532,7 @@ export async function chargerS04(): Promise<S04Data> {
 
   return {
     ...commun,
+    onglets: ongletsServices('emploi'),
     offres: { liste: [...offres.sponsored, ...offres.items].map(carteOffre) },
     profils: { liste: profils.items.map(carteProfil) },
   };
@@ -517,6 +540,8 @@ export async function chargerS04(): Promise<S04Data> {
 
 function carteOffre(o: JobCardView): CarteOffre {
   return {
+    id: o.id,
+    href: `/services/emploi/${o.id}`,
     sponsorisee: o.isSponsored,
     /**
      * Le libellé vient du SERVEUR, et le repli n'est pas une chaîne inventée : si
@@ -541,6 +566,8 @@ function lieuOffre(o: JobCardView): string {
 
 function carteProfil(p: JobSeekerCardView, rang: number): CarteProfil {
   return {
+    handle: p.member.handle,
+    prenom: prenomDe(p.member.displayName),
     fond: fondDeRang(rang),
     initiales: initialesDe(p.member.displayName),
     nom: nomCourt(p.member.displayName),
@@ -551,7 +578,7 @@ function carteProfil(p: JobSeekerCardView, rang: number): CarteProfil {
 // ─── S05 · /services/emploi/:id ──────────────────────────────────────────────
 
 /** Une offre. Le contrôleur la rend NUE — pas d'enveloppe, pas de `meta`. */
-export async function chargerS05(id: string): Promise<S05Data> {
+export async function chargerS05(id: string): Promise<S05Charge> {
   const [commun, offre] = await Promise.all([
     moiEtQuotas(),
     memberApi.get(`/jobs/${encodeURIComponent(id)}`, jobDetailResponseSchema),
@@ -560,6 +587,9 @@ export async function chargerS05(id: string): Promise<S05Data> {
   return {
     ...commun,
     offre: {
+      mode: 'detail',
+      id: offre.id,
+      lienExterne: offre.externalUrl ?? '',
       titre: offre.title,
       genre: OFFRES_FR[offre.kind],
       contrat: offre.contractType ?? '—',
@@ -589,11 +619,14 @@ export async function chargerS05(id: string): Promise<S05Data> {
  * seul titre que la maquette écrive pour cette route. Écart remonté au porteur :
  * il faudrait une planche propre à `/nouveau`.
  */
-export async function chargerS05Nouveau(): Promise<S05Data> {
+export async function chargerS05Nouveau(): Promise<S05Charge> {
   const commun = await moiEtQuotas();
   return {
     ...commun,
     offre: {
+      mode: 'nouveau',
+      id: '',
+      lienExterne: '',
       titre: 'Publier une offre',
       genre: '—',
       contrat: '—',
@@ -623,15 +656,23 @@ export async function chargerS05Nouveau(): Promise<S05Data> {
  * `proCardSchema` est `.strict()` — une réponse qui en porterait un serait refusée
  * avant d'arriver jusqu'à cette fonction.
  */
-export async function chargerS06(): Promise<S06Data> {
+export async function chargerS06(recherche = ''): Promise<S06Data> {
+  const q = recherche.trim();
   const [commun, annuaire] = await Promise.all([
     moiEtQuotas(),
-    memberApi.get('/pros?limit=20', prosListResponseSchema),
+    memberApi.get(q.length < 2 ? '/pros?limit=20' : `/pros?limit=20&q=${encodeURIComponent(q)}`, prosListResponseSchema),
   ]);
 
   return {
     ...commun,
+    onglets: ongletsServices('annuaire'),
     annuaire: {
+      recherche: q,
+      metiers: METIERS_PUCES.map((m) => ({
+        libelle: m,
+        href: `/services/annuaire?q=${encodeURIComponent(m)}`,
+        actif: q.toLowerCase() === m.toLowerCase(),
+      })),
       fiches: [...annuaire.featured, ...annuaire.items].map((p, rang) =>
         carteFiche(p, rang, annuaire.meta.featuredLabel),
       ),
@@ -639,8 +680,12 @@ export async function chargerS06(): Promise<S06Data> {
   };
 }
 
+/** Les puces de métier de la planche : des recherches `?q=` (la route sait chercher un mot). */
+const METIERS_PUCES = ['Avocat', 'Comptable', 'Traducteur', 'Coiffure', 'Plombier', 'Auto-école'] as const;
+
 function carteFiche(p: ProCardView, rang: number, mentionDeLaListe: string): CarteFiche {
   return {
+    href: `/services/annuaire/${p.id}`,
     enAvant: p.isFeatured,
     ordinaire: !p.isFeatured,
     mention: p.featuredLabel ?? mentionDeLaListe,
@@ -675,7 +720,7 @@ function lieuxEtLangues(p: ProCardView): string {
  * demanderait de relire le plan du membre et de savoir s'il est en contact avec le
  * pro — le premier est interdit par le socle, le second est hors de portée du front.
  */
-export async function chargerS07(id: string): Promise<S07Data> {
+export async function chargerS07(id: string): Promise<S07Charge> {
   const [commun, pro] = await Promise.all([
     moiEtQuotas(),
     memberApi.get(`/pros/${encodeURIComponent(id)}`, proDetailResponseSchema),
@@ -687,6 +732,9 @@ export async function chargerS07(id: string): Promise<S07Data> {
   return {
     ...commun,
     pro: {
+      id: pro.id,
+      estMienne: pro.isMine,
+      peutRecommander: pro.canRecommend && pro.myRecommendation === null,
       initiales: initialesDe(pro.displayName),
       nom: pro.displayName,
       palier: PALIERS_FR[pro.tier],
@@ -745,7 +793,7 @@ function recommandation(
  * qui viennent le remplir. Signalé au porteur, avec l'écart de palier que la même
  * route porte (voir `screens/s08/data.ts`).
  */
-export async function chargerS08(): Promise<S08Data> {
+export async function chargerS08(): Promise<S08Charge> {
   const [commun, plans] = await Promise.all([
     moiEtQuotas(),
     memberApi.get('/plans', plansResponseSchema),
@@ -794,7 +842,7 @@ export async function chargerS08(): Promise<S08Data> {
  * Le sous-titre porte donc l'expiration seule, qui est une donnée réelle de la même
  * réponse.
  */
-export async function chargerS09(): Promise<S09Data> {
+export async function chargerS09(): Promise<S09Charge> {
   const [commun, logement, emploi] = await Promise.all([
     moiEtQuotas(),
     memberApi.get('/housing?scope=mine&limit=20', housingListResponseSchema),
@@ -811,7 +859,7 @@ export async function chargerS09(): Promise<S09Data> {
        * pas vingt ; la limite est dite ici plutôt que cachée, et l'écart est remonté.
        */
       emploi: emploi.items.length,
-      liste: logement.items.map(ligneAnnonce),
+      liste: [...logement.items.map(ligneAnnonce), ...emploi.items.map(ligneOffre)],
     },
   };
 }
@@ -829,6 +877,10 @@ export async function chargerS09(): Promise<S09Data> {
 function ligneAnnonce(a: HousingCardView): LigneAnnonce {
   const enRevue = a.reviewState === 'UNDER_REVIEW';
   return {
+    id: a.id,
+    genre: 'logement',
+    href: `/services/logement/${a.id}`,
+    hrefModifier: `/services/logement/nouveau?modifier=${a.id}`,
     enVerification: enRevue,
     active: !enRevue && a.status === 'ACTIVE',
     enPause: !enRevue && a.status === 'PAUSED',
@@ -836,6 +888,24 @@ function ligneAnnonce(a: HousingCardView): LigneAnnonce {
     expiree: !enRevue && (a.status === 'EXPIRED' || a.status === 'REMOVED'),
     titre: a.title,
     sousTitre: sousTitreAnnonce(a, enRevue),
+  };
+}
+
+/** Une offre d'emploi de l'auteur : active, ou expirée (une offre ne se met pas en pause). */
+function ligneOffre(o: JobCardView): LigneAnnonce {
+  const active = o.status === 'ACTIVE';
+  return {
+    id: o.id,
+    genre: 'emploi',
+    href: `/services/emploi/${o.id}`,
+    hrefModifier: '',
+    enVerification: false,
+    active,
+    enPause: false,
+    trouvee: false,
+    expiree: !active,
+    titre: o.title,
+    sousTitre: active ? `expire ${dansCombien(o.expiresAt)}` : `Expirée le ${jourMoisEcrit(o.expiresAt)}`,
   };
 }
 
@@ -863,7 +933,7 @@ function sousTitreAnnonce(a: HousingCardView, enRevue: boolean): string {
  * tromperait le jour où un essai, une grâce Mobile Money ou un plan Pro change la
  * réponse.
  */
-export async function chargerS10(): Promise<S10Data> {
+export async function chargerS10(): Promise<S10Charge> {
   const [commun, alertes] = await Promise.all([
     moiEtQuotas(),
     memberApi.get('/me/alerts', myAlertsResponseSchema),
@@ -880,6 +950,7 @@ export async function chargerS10(): Promise<S10Data> {
 
 function ligneAlerte(al: SavedAlertView): LigneAlerte {
   return {
+    id: al.id,
     titre: titreAlerte(al),
     criteres: criteresAlerte(al.criteria),
     etat: al.isActive
@@ -964,6 +1035,8 @@ export const SQUELETTE_S01: S01Data = {
     reinitialise: '',
     gratuit: true,
   },
+  onglets: [],
+  filtres: [],
   liste: { total: 0, ville: '', bandeau: HOUSING_SAFETY_BANNER, annonces: [] },
 };
 
@@ -997,22 +1070,27 @@ const SOCLE_SERVICES = {
   },
 } as const;
 
-export const SQUELETTE_S04: S04Data = {
+export const SQUELETTE_S04: S04Charge = {
   ...SOCLE_SERVICES,
+  onglets: [],
   offres: { liste: [] },
   profils: { liste: [] },
 };
 
-export const SQUELETTE_S06: S06Data = { ...SOCLE_SERVICES, annuaire: { fiches: [] } };
+export const SQUELETTE_S06: S06Data = {
+  ...SOCLE_SERVICES,
+  onglets: [],
+  annuaire: { recherche: '', metiers: [], fiches: [] },
+};
 
-export const SQUELETTE_S08: S08Data = { ...SOCLE_SERVICES, offrePro: { nom: '', prix: '' } };
+export const SQUELETTE_S08: S08Charge = { ...SOCLE_SERVICES, offrePro: { nom: '', prix: '' } };
 
-export const SQUELETTE_S09: S09Data = {
+export const SQUELETTE_S09: S09Charge = {
   ...SOCLE_SERVICES,
   mesAnnonces: { logement: 0, emploi: 0, liste: [] },
 };
 
-export const SQUELETTE_S10: S10Data = {
+export const SQUELETTE_S10: S10Charge = {
   ...SOCLE_SERVICES,
   alertes: { liste: [], sansPremium: false },
 };
@@ -1038,9 +1116,16 @@ export const SQUELETTE_S10: S10Data = {
  * ne le suggère : `true` afficherait un avertissement renforcé sur une annonce
  * dont le serveur n'a rien dit. On n'invente pas d'alerte.
  */
-export const SQUELETTE_S02: S02Data = {
+export const SQUELETTE_S02: S02Charge = {
   ...SOCLE_SERVICES,
   annonce: {
+    id: '',
+    fonds: [],
+    nbPhotos: 0,
+    meuble: false,
+    auteurSous: '',
+    niveau: '',
+    estMienne: false,
     titre: '—',
     prix: '',
     genre: '',
@@ -1058,14 +1143,17 @@ export const SQUELETTE_S02: S02Data = {
   },
 };
 
-export const SQUELETTE_S03: S03Data = {
+export const SQUELETTE_S03: S03Charge = {
   ...SOCLE_SERVICES,
   publication: { bandeau: HOUSING_SAFETY_BANNER },
 };
 
-export const SQUELETTE_S05: S05Data = {
+export const SQUELETTE_S05: S05Charge = {
   ...SOCLE_SERVICES,
   offre: {
+    mode: 'detail',
+    id: '',
+    lienExterne: '',
     titre: '—',
     genre: '',
     contrat: '',
@@ -1079,9 +1167,12 @@ export const SQUELETTE_S05: S05Data = {
   },
 };
 
-export const SQUELETTE_S07: S07Data = {
+export const SQUELETTE_S07: S07Charge = {
   ...SOCLE_SERVICES,
   pro: {
+    id: '',
+    estMienne: false,
+    peutRecommander: false,
     initiales: '',
     nom: '—',
     palier: '',

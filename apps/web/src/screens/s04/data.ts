@@ -1,3 +1,5 @@
+import type { VivantProfils } from '../services/use-contacter-membre';
+import type { Onglet } from '../services/navigation';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -29,6 +31,9 @@ import type { Moi, Quotas } from '../services/data';
 export interface S04Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** « Contacter » un profil : posé par la page. */
+  readonly vivant: VivantProfils;
+  readonly onglets: readonly Onglet[];
   readonly offres: {
     /** La TÊTE sponsorisée d'abord (au plus deux, §11), puis le classement naturel. */
     readonly liste: readonly CarteOffre[];
@@ -39,6 +44,9 @@ export interface S04Data {
 }
 
 export interface CarteOffre {
+  readonly id: string;
+  /** `/services/emploi/:id` — la fiche de l'offre. */
+  readonly href: string;
   /** `isSponsored` — décidé par le serveur sur la date, jamais recalculé ici. */
   readonly sponsorisee: boolean;
   /** `sponsoredLabel` — « Sponsorisée », et c'est le serveur qui l'écrit (§11). */
@@ -62,6 +70,9 @@ export interface CarteOffre {
  * un champ de CV qui apparaîtrait dans la réponse ferait refuser la charge.
  */
 export interface CarteProfil {
+  /** Le pseudo du membre : « Contacter » ouvre une conversation avec lui. */
+  readonly handle: string;
+  readonly prenom: string;
   /**
    * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
    *
@@ -79,3 +90,6 @@ export interface CarteProfil {
   /** `headline` — « Assistante RH · alternance », écrite par le membre. */
   readonly titre: string;
 }
+
+/** Ce que `chargerS04` lit de l'API ; la page y ajoute `vivant`. */
+export type S04Charge = Omit<S04Data, 'vivant'>;

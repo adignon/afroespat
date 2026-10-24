@@ -1,3 +1,4 @@
+import type { FormulaireAlerteView, GestesAlertes } from '../services/use-alertes';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -25,6 +26,10 @@ import type { Moi, Quotas } from '../services/data';
 export interface S10Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** Le formulaire « Nouvelle alerte » : posé par la page. */
+  readonly formulaire: FormulaireAlerteView;
+  /** Activer, mettre en pause, supprimer : posé par la page. */
+  readonly gestes: GestesAlertes;
   readonly alertes: {
     readonly liste: readonly LigneAlerte[];
     /** `!meta.isPremium` — l'encart disparaît pour un membre Premium (§2.4). */
@@ -45,6 +50,7 @@ export interface S10Data {
  * laissé cet écran lire des champs qui n'existent pas.
  */
 export interface LigneAlerte {
+  readonly id: string;
   /** « Logement · Colocation » — le kind de l'alerte et celui de son critère. */
   readonly titre: string;
   /** « Lyon 7e, 3e · jusqu'à 500 € · meublé » — les critères, dans l'ordre de §2.4. */
@@ -54,3 +60,6 @@ export interface LigneAlerte {
   readonly active: boolean;
   readonly enPause: boolean;
 }
+
+/** Ce que `chargerS10` lit de l'API ; la page y ajoute `formulaire` et `gestes`. */
+export type S10Charge = Omit<S10Data, 'formulaire' | 'gestes'>;

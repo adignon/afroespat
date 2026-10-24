@@ -1,3 +1,4 @@
+import type { FormulaireAnnonceView } from '../services/use-publication';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -22,7 +23,12 @@ import type { Moi, Quotas } from '../services/data';
 export interface S03Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** Le formulaire (champs, photos, publication) : posé par la page. */
+  readonly formulaire: FormulaireAnnonceView;
   readonly publication: {
     readonly bandeau: string;
   };
 }
+
+/** Ce que `chargerS03` lit de l'API ; la page y ajoute `formulaire`. */
+export type S03Charge = Omit<S03Data, 'formulaire'>;

@@ -1,3 +1,4 @@
+import type { FormulaireOffreView, VivantOffre } from '../services/use-offre';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -21,7 +22,16 @@ import type { Moi, Quotas } from '../services/data';
 export interface S05Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** Postuler, recommander, signaler : posé par la page. */
+  readonly vivant: VivantOffre;
+  /** Le formulaire « Publier une offre » : posé par la page. */
+  readonly formulaire: FormulaireOffreView;
   readonly offre: {
+    /** `detail` sur `/services/emploi/:id`, `nouveau` sur `/services/emploi/nouveau`. */
+    readonly mode: 'detail' | 'nouveau';
+    readonly id: string;
+    /** L'adresse de candidature COMPLÈTE (le domaine seul est dans `domaine`). */
+    readonly lienExterne: string;
     readonly titre: string;
     readonly genre: string;
     readonly contrat: string;
@@ -46,3 +56,6 @@ export interface S05Data {
     readonly domaine: string;
   };
 }
+
+/** Ce que `chargerS05` lit de l'API ; la page y ajoute `vivant` et `formulaire`. */
+export type S05Charge = Omit<S05Data, 'vivant' | 'formulaire'>;

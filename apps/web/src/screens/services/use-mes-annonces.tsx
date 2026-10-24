@@ -23,6 +23,9 @@ import { memberApi } from '@/lib/api/index';
  * tel quel, sans que le front recalcule la date.
  */
 export interface GestesMesAnnonces {
+  /** L'onglet montré : les annonces de logement ou les offres d'emploi. */
+  readonly onglet: 'logement' | 'emploi';
+  readonly onOnglet: (onglet: 'logement' | 'emploi') => void;
   readonly occupe: boolean;
   readonly onRenouveler: (id: string, logement: boolean) => void;
   readonly onPause: (id: string) => void;
@@ -34,6 +37,8 @@ export interface GestesMesAnnonces {
 const RIEN = (): void => {};
 
 export const gestesMesAnnoncesVides: GestesMesAnnonces = {
+  onglet: 'logement',
+  onOnglet: RIEN,
   occupe: false,
   onRenouveler: RIEN,
   onPause: RIEN,
@@ -48,6 +53,7 @@ export function useMesAnnonces(recharger: () => void): {
 } {
   const { occupe, lancer, fenetre } = useGeste();
   const [aSupprimer, setASupprimer] = useState<{ id: string; logement: boolean } | null>(null);
+  const [onglet, setOnglet] = useState<'logement' | 'emploi'>('logement');
 
   const agir = useCallback(
     (appel: () => Promise<unknown>, succes: string, echecRepli: string): void => {
@@ -60,6 +66,8 @@ export function useMesAnnonces(recharger: () => void): {
 
   const gestes = useMemo<GestesMesAnnonces>(
     () => ({
+      onglet,
+      onOnglet: setOnglet,
       occupe,
       onRenouveler: (id, logement) => {
         agir(
@@ -81,7 +89,7 @@ export function useMesAnnonces(recharger: () => void): {
         setASupprimer({ id, logement });
       },
     }),
-    [agir, occupe],
+    [agir, occupe, onglet],
   );
 
   const confirmer = useCallback((): void => {

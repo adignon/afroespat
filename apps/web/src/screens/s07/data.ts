@@ -1,3 +1,4 @@
+import type { VivantFichePro } from '../services/use-fiche-pro';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -36,7 +37,13 @@ import type { Moi, Quotas } from '../services/data';
 export interface S07Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** Contacter, recommander, signaler : posé par la page. */
+  readonly vivant: VivantFichePro;
   readonly pro: {
+    readonly id: string;
+    readonly estMienne: boolean;
+    /** Le serveur dit si recommander est permis (un contact existe, §4.3). */
+    readonly peutRecommander: boolean;
     readonly initiales: string;
     readonly nom: string;
     /** `tier` — le palier EFFECTIF (§4.1) : `FREE` dès que l'abonnement est échu. */
@@ -78,3 +85,6 @@ export interface Recommandation {
   /** Le commentaire, entre guillemets comme la maquette l'écrit. */
   readonly mot: string;
 }
+
+/** Ce que `chargerS07` lit de l'API ; la page y ajoute `vivant`. */
+export type S07Charge = Omit<S07Data, 'vivant'>;

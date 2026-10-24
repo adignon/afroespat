@@ -1,3 +1,4 @@
+import type { VivantAnnonce } from '../services/use-annonce-logement';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -27,7 +28,19 @@ import type { Moi, Quotas } from '../services/data';
 export interface S02Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** Les gestes de l'écran (contacter, signaler, masquer) : posés par la page, pas lus de l'API. */
+  readonly vivant: VivantAnnonce;
   readonly annonce: {
+    readonly id: string;
+    /** Les trois fonds de photo (CSS `background`) : la photo réelle, ou les rayures de la maquette. */
+    readonly fonds: readonly string[];
+    readonly nbPhotos: number;
+    readonly meuble: boolean;
+    /** « @sarah · Lyon » — le pseudo et la ville de l'annonce. */
+    readonly auteurSous: string;
+    /** Le niveau d'identité de l'auteur (« L2 »). */
+    readonly niveau: string;
+    readonly estMienne: boolean;
     readonly titre: string;
     /** « 620 € », mis en forme par `Intl` depuis `priceCents` et `currency`. */
     readonly prix: string;
@@ -58,3 +71,6 @@ export interface S02Data {
     readonly prudenceRenforcee: boolean;
   };
 }
+
+/** Ce que `chargerS02` lit de l'API ; la page y ajoute `vivant`. */
+export type S02Charge = Omit<S02Data, 'vivant'>;
