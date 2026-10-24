@@ -412,6 +412,14 @@ export const conversationSchema = z
     muted: z.boolean(),
     pendingForMe: z.boolean(),
     awaitingReply: z.boolean(),
+    /**
+     * C'EST MOI QUI AI BLOQUÉ L'INTERLOCUTEUR (DIRECT seulement) — lot F2.
+     *
+     * `members[].hidden` dit « séparés dans un sens ou dans l'autre » (§4) ; seule
+     * cette face-ci justifie un bouton « Débloquer ». Le serveur garde alors la
+     * conversation listée pour moi, fermée, au lieu de la faire disparaître.
+     */
+    blockedByMe: z.boolean(),
   })
   .strict();
 

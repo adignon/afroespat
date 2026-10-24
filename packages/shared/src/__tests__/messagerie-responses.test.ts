@@ -74,6 +74,7 @@ const CONVERSATIONS = {
       muted: false,
       pendingForMe: false,
       awaitingReply: false,
+      blockedByMe: false,
     },
   ],
   nextCursor: null,

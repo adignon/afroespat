@@ -34,28 +34,13 @@ import { feuilleDemandee } from '@/screens/messages/feuilles';
  * s'ouvre aussi depuis le lien sous une bulle, qui vise alors CE message
  * (`POST /reports`, `subjectType: MESSAGE`) et non le membre.
  *
- * `?etat=bloque` — LA CONVERSATION AVEC UN MEMBRE BLOQUÉ.
- *
- * L'état est une PLANCHE, comme tous les états de cette maquette (voir l'en-tête de
- * `tools/screens/09-messages.mjs`) : la page CHOISIT le cadre. Les deux cadres
- * bloqués sont ceux de la conversation, composeur en moins et bandeau en plus — et
- * ils lisent EXACTEMENT les mêmes données, parce qu'une conversation bloquée reste
- * une conversation.
- *
- * ⚠ CET ÉTAT N'EST DESSINÉ PAR AUCUNE MAQUETTE. Sa forme est empruntée — le bandeau
- * de « DEMANDE EN ATTENTE » (M01), le bouton « Débloquer » de K05 (`08 Compte`) — et
- * sa PHRASE vient du porteur, pas d'une planche. Le générateur le redit avec un ⚠ à
- * chaque exécution ; le détail est dans `CONVERSATION_BLOQUEE`.
- *
- * ET IL N'EST PAS DÉDUIT DE L'API, délibérément : `members[].hidden` dit « séparé
- * mutuellement » (§4), pas « c'est MOI qui ai bloqué », et seule la seconde chose
- * justifie un bouton « Débloquer ». La distinction demanderait de croiser
- * `GET /me/blocks` avec les membres de la conversation. Signalé au porteur.
- *
- * « Débloquer » est INERTE : `DELETE /v1/blocks/:userId` existe et répond `204`,
- * mais débloquer est une ÉCRITURE et ce lot n'en branche aucune. Le rendre actif
- * sans que rien ne parte mentirait au membre — la même règle que pour « Envoyer le
- * signalement ».
+ * LA CONVERSATION AVEC UN MEMBRE BLOQUÉ (M01BLOQUE) N'EST PLUS UN PARAMÈTRE D'URL
+ * (lot F2). Elle était choisie par `?etat=bloque`, sans rien vérifier : l'URL
+ * pouvait affirmer un blocage qui n'existait pas. Elle est maintenant DÉDUITE de
+ * l'API — `GET /conversations` rend `blockedByMe` pour la DIRECT dont l'interlocuteur
+ * figure dans MES blocages — et l'écran choisit ses cadres sur cette donnée.
+ * « Débloquer » appelle `DELETE /blocks/:userId`, le serveur rouvre la conversation,
+ * et l'écran revient au cadre ordinaire. `?etat=` est ignoré.
  *
  * 08 §8 : « conversation de parcours nommée par le titre du parcours ». La maquette
  * s'y tient — l'en-tête porte « Mes études à Lyon » et le sous-titre « Parcours ·
@@ -71,13 +56,9 @@ export default async function ConversationPage({
   readonly searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ id }, recherche] = await Promise.all([params, searchParams]);
-  // Une valeur inconnue rend la conversation ORDINAIRE : l'URL est publique, et une
-  // valeur fantaisiste ne doit ni casser la page ni faire croire à un blocage.
-  const bloque = recherche['etat'] === 'bloque';
-
   return (
     <EcranMessagerie
-      vue={bloque ? 'bloque' : 'conversation'}
+      vue="conversation"
       conversationId={id}
       ouverte={feuilleDemandee(recherche['feuille'])}
     />

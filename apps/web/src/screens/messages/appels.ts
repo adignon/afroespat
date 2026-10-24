@@ -42,7 +42,6 @@ import type {
   M01Data,
   RangeeConversation,
 } from '../m01/data';
-import type { M01BloqueData } from '../m01bloque/data';
 import type { ValeursFiltresRecherche, X01Data } from '../x01/data';
 import { FILTRES_VIDES } from '../x01/filtres';
 import {
@@ -212,9 +211,19 @@ const RANGEE_FERMEE = 'transparent';
  * Un membre masqué (§4, séparation mutuelle) n'est pas nommé : le serveur a déjà
  * posé `hidden`, et afficher son nom contredirait le masquage qu'il vient de faire.
  */
+/**
+ * L'INTERLOCUTEUR d'une conversation, ou `null`. Un membre `hidden` (séparé, §4)
+ * est écarté — SAUF dans la conversation que j'ai moi-même bloquée (lot F2) : je
+ * sais qui j'ai bloqué, et l'en-tête doit le nommer pour que « Débloquer » ait un
+ * sujet.
+ */
+function interlocuteurDe(c: Conversation, moiId: string): Conversation['members'][number] | null {
+  return c.members.find((m) => m.userId !== moiId && (!m.hidden || c.blockedByMe)) ?? null;
+}
+
 function nomDeConversation(c: Conversation): string {
   if (c.title !== null) return c.title;
-  const visibles = c.members.filter((m) => !m.hidden).map((m) => m.displayName);
+  const visibles = c.members.filter((m) => !m.hidden || c.blockedByMe).map((m) => m.displayName);
   return visibles.length === 0 ? 'Conversation' : visibles.join(', ');
 }
 
@@ -407,9 +416,16 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
   const demandes = page.items.filter((c) => c.pendingForMe);
 
   const demande = conversationId !== null && UUID.test(conversationId);
+  /**
+   * LA CONVERSATION DE REPLI NE EST JAMAIS UNE CONVERSATION QUE J'AI BLOQUÉE
+   * (lot F2) : le serveur les laisse listées pour que « Débloquer » ait un
+   * endroit où vivre, mais ouvrir `/messages` sur l'une d'elles montrerait un
+   * bandeau de blocage à qui n'a rien demandé. Elle ne s'ouvre que par son URL
+   * ou en cliquant sa rangée.
+   */
   const ouverte =
     (demande ? page.items.find((c) => c.id === conversationId) : undefined) ??
-    conversations[0] ??
+    conversations.find((c) => !c.blockedByMe) ??
     null;
 
   const fil =
@@ -417,6 +433,7 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
       ? null
       : await memberApi.get(`/conversations/${ouverte.id}/messages`, messagesResponseSchema);
 
+  const bloquee = ouverte?.blockedByMe === true;
   const nomsParHandle = new Map(
     (ouverte?.members ?? [])
       .filter((m) => !m.hidden)
@@ -449,7 +466,7 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
     conversationPrenom:
       ouverte === null || ouverte.title !== null
         ? null
-        : ((ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.displayName ?? '').split(' ')[0] ?? null),
+        : ((interlocuteurDe(ouverte, me.user.id)?.displayName ?? '').split(' ')[0] ?? null),
     /**
      * CELLE QU'ON A RÉELLEMENT OUVERTE, et pas celle que l'URL demandait.
      *
@@ -459,6 +476,8 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
      */
     conversationOuverte: ouverte?.id ?? null,
     conversationSourdine: ouverte?.muted ?? false,
+    /** C'est moi qui ai bloqué l'interlocuteur : le cadre « bloquée » (M01BLOQUE) prend la place. */
+    conversationBloquee: bloquee,
     /**
      * LE HANDLE DE L'INTERLOCUTEUR, pour `POST /blocks` — qui prend un handle et
      * non un identifiant (08 §7.2). `null` sur une conversation de parcours : on
@@ -467,11 +486,11 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
     conversationHandle:
       ouverte === null || ouverte.title !== null
         ? null
-        : (ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.handle ?? null),
+        : (interlocuteurDe(ouverte, me.user.id)?.handle ?? null),
     conversationUserId:
       ouverte === null || ouverte.title !== null
         ? null
-        : (ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.userId ?? null),
+        : (interlocuteurDe(ouverte, me.user.id)?.userId ?? null),
   };
 }
 
@@ -544,7 +563,7 @@ function enteteDe(ouverte: Conversation | null, moiId: string): EnteteConversati
    * `hidden` est exclu (§4) : un membre séparé du lecteur ne doit pas être
    * identifiable par son avatar alors que ses contenus sont masqués.
    */
-  const lui = ouverte.members.find((m) => m.userId !== moiId && !m.hidden) ?? null;
+  const lui = interlocuteurDe(ouverte, moiId);
   const nom = nomDeConversation(ouverte);
 
   return {
@@ -573,18 +592,6 @@ function enteteDe(ouverte: Conversation | null, moiId: string): EnteteConversati
      */
     profil: estParcours || lui === null ? null : `/@${lui.handle}`,
   };
-}
-
-/**
- * M01BLOQUE — les mêmes données.
- *
- * L'état bloqué n'est pas une donnée de l'API mais un paramètre d'URL
- * (`?etat=bloque`) : la raison est dans `screens/m01bloque/data.ts`, et elle vaut
- * d'être lue avant de « brancher » cet écran. Ce chargeur existe pour que la page
- * bloquée ait son propre point d'entrée nommé, et non pour faire autre chose.
- */
-export async function chargerM01Bloque(conversationId: string | null): Promise<M01BloqueData> {
-  return chargerM01(conversationId);
 }
 
 // ─── X01 · la recherche ──────────────────────────────────────────────────────
@@ -997,6 +1004,14 @@ export function accepterDemande(conversationId: string): Promise<unknown> {
 /** L'ignorer : elle quitte ma liste, l'autre ne voit rien. */
 export function ignorerDemande(conversationId: string): Promise<unknown> {
   return memberApi.post(`/conversations/${conversationId}/ignore`, z.unknown());
+}
+
+/**
+ * « Débloquer » — `DELETE /blocks/:userId` (204). Le serveur rouvre la conversation
+ * DIRECT que le blocage avait fermée (lot F2) ; les contacts, eux, ne reviennent pas (§4).
+ */
+export function debloquerMembre(userId: string): Promise<unknown> {
+  return memberApi.del(`/blocks/${userId}`, z.unknown());
 }
 
 export function bloquerMembre(handle: string): Promise<unknown> {

@@ -109,6 +109,32 @@ export const MV_MENU_CROIX = {
   },
 };
 
+/**
+ * ── 4. « DÉBLOQUER » : LE BOUTON DE LA CONVERSATION BLOQUÉE (M01BLOQUE) ──────
+ *
+ * Le bouton est emprunté à la carte « BLOQUÉS » de K05 et arrivait INERTE (« Débloquer
+ * est une écriture, ce lot n'en branche aucune »). Il appelle maintenant
+ * `DELETE /blocks/:userId` par `onDebloquer`, se désactive pendant l'appel
+ * (`debloquerBloque`), et reçoit un espace au-dessus : emprunté à une rangée où il
+ * se tient À CÔTÉ du texte, il collait ici à la phrase qui le précède.
+ * Le motif s'ancre sur le TEXTE du bouton, pas sur une mesure (36 px vs 44 px).
+ */
+export const MV_DEBLOQUER = {
+  screens: ['M01'],
+  nom: 'MV_DEBLOQUER',
+  why: 'Le bouton « Débloquer » de la conversation bloquée était inerte : il appelle `DELETE /blocks/:userId`, et la conversation revient.',
+  provides: ['onDebloquer', 'debloquerBloque'],
+  apply(jsx) {
+    const out = remplacerUn(
+      jsx,
+      /<button style=\{\{ ([^}]*) \}\}>Débloquer<\/button>/,
+      (m) =>
+        `<button type="button" data-debloquer="" onClick={onDebloquer} disabled={debloquerBloque === true} style={{ ${m[1]}, marginTop: "10px", cursor: "pointer", opacity: debloquerBloque === true ? 0.6 : 1 }}>Débloquer</button>`,
+    );
+    return out === null ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
 // ─── X02 · LES NOTIFICATIONS ─────────────────────────────────────────────────
 
 const LIGNE_X02 =
@@ -367,6 +393,7 @@ export const ADAPTATIONS_MESSAGERIE_VIVANTE = [
   MV_FIL,
   MV_BULLE_ACTIONS,
   MV_MENU_CROIX,
+  MV_DEBLOQUER,
   MV_X02_LIGNES,
   MV_X02_TOUT_LIRE,
   MV_X02_COMPTEUR,

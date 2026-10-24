@@ -265,6 +265,16 @@ export interface M01Data {
    * inerte, et c'est juste.
    */
   readonly conversationOuverte?: string | null;
+  /**
+   * C'EST MOI QUI AI BLOQUÉ L'INTERLOCUTEUR de la conversation ouverte (lot F2),
+   * dérivé de `Conversation.blockedByMe` et non de l'URL : c'est ce qui choisit les
+   * cadres M01BLOQUE à la place de M01.
+   */
+  readonly conversationBloquee?: boolean;
+  /** « Débloquer » (`DELETE /blocks/:userId`), posé sur le bouton du bandeau bloqué. */
+  readonly onDebloquer?: () => void;
+  /** Vrai pendant le déblocage : le bouton ne repart pas deux fois. */
+  readonly debloquerBloque?: boolean;
   /** L'état de sourdine de la conversation ouverte — le menu en lit le libellé. */
   readonly conversationSourdine?: boolean;
   /** `/<handle>` de l'interlocuteur, ou `null` sur une conversation de parcours. */

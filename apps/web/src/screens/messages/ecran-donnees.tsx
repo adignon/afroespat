@@ -20,7 +20,6 @@ import { X02DesktopPanneau } from '@/screens/x02/desktoppanneau.generated';
 import { X02Mobile } from '@/screens/x02/mobile.generated';
 import {
   chargerM01,
-  chargerM01Bloque,
   chargerX01,
   chargerX02,
   filtresNotifications,
@@ -71,7 +70,7 @@ import type { FeuilleMessages } from './feuilles';
  */
 
 /** Quelle paire de cadres M01 sert cette route. C'est la maquette qui en décide. */
-export type VueMessagerie = 'liste' | 'conversation' | 'bloque';
+export type VueMessagerie = 'liste' | 'conversation';
 
 /**
  * M01 — les deux routes de messagerie et les trois fenêtres qu'elles ouvrent.
@@ -95,7 +94,6 @@ export function EcranMessagerie({
   readonly conversationId: string | null;
   readonly ouverte?: FeuilleMessages | null;
 }) {
-  const bloque = vue === 'bloque';
   /**
    * ── RECHARGER APRÈS UN ENVOI ─────────────────────────────────────────────
    *
@@ -112,9 +110,9 @@ export function EcranMessagerie({
    */
   const [recharge, setRecharge] = useState(0);
   const charger = useCallback(
-    () => (bloque ? chargerM01Bloque(conversationId) : chargerM01(conversationId)),
+    () => chargerM01(conversationId),
     /** `recharge` n'est lu par personne : il est là POUR changer l'identité. */
-    [bloque, conversationId, recharge],
+    [conversationId, recharge],
   );
   const recharger = useCallback(() => {
     setRecharge((n) => n + 1);
@@ -139,12 +137,16 @@ export function EcranMessagerie({
           {(vivantes, menu, signalement) => (
             <EcranMessages
               desktop={
-                bloque ? <M01BloqueDesktop {...vivantes} /> : <M01Desktop {...vivantes} />
+                vivantes.conversationBloquee === true ? (
+                  <M01BloqueDesktop {...vivantes} />
+                ) : (
+                  <M01Desktop {...vivantes} />
+                )
               }
               mobile={
                 vue === 'liste' ? (
                   <M01Mobile {...vivantes} />
-                ) : bloque ? (
+                ) : vivantes.conversationBloquee === true ? (
                   <M01BloqueMobileConversation {...vivantes} />
                 ) : (
                   <M01MobileConversation {...vivantes} />

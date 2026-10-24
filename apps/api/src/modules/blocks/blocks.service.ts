@@ -85,20 +85,63 @@ export class BlocksService {
    *
    * Aucun événement n'est émis : il n'y a rien à reconstruire, et un
    * `user.unblocked` inviterait un consommateur à tenter de restaurer ce que la
-   * spec dit explicitement perdu.
+   * spec dit explicitement perdu. SEULE EXCEPTION, écrite dans la même
+   * transaction : la conversation DIRECT fermée par le blocage est rouverte (voir
+   * plus bas).
    */
   async unblock(blockerUserId: string, blockedUserId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
-      const removed = await tx.block.deleteMany({
-        where: { blockerUserId, blockedUserId },
+      const block = await tx.block.findUnique({
+        where: { blockerUserId_blockedUserId: { blockerUserId, blockedUserId } },
+        select: { id: true, createdAt: true },
       });
-      if (removed.count === 0) return;
+      if (block === null) return;
+      await tx.block.delete({ where: { id: block.id } });
 
       await this.audit.record(tx, {
         actor: { type: 'MEMBER', id: blockerUserId },
         action: 'user.unblocked',
         targetType: 'user',
         targetId: blockedUserId,
+      });
+
+      /**
+       * ── LA CONVERSATION REVIENT (lot F2) ──────────────────────────────────
+       *
+       * Le blocage avait fermé la DIRECT des deux (`left_at`, §4). §4 ne rend pas
+       * les CONTACTS ; il ne dit rien de la conversation, et la laisser fermée
+       * enfermerait le bouton « Débloquer » de la conversation bloquée dans un
+       * geste qui ne rend rien : on débloque, et l'on ne peut toujours pas écrire.
+       *
+       * On rouvre donc, sans événement ni message, les lignes de membre fermées
+       * APRÈS la pose du blocage (`left_at >= block.createdAt`) : une demande
+       * IGNORÉE avant le blocage reste fermée, elle n'est pas du fait du blocage.
+       * Et pas si l'AUTRE m'a aussi bloqué : la séparation tient encore dans
+       * l'autre sens.
+       */
+      const reciproque = await tx.block.findUnique({
+        where: {
+          blockerUserId_blockedUserId: {
+            blockerUserId: blockedUserId,
+            blockedUserId: blockerUserId,
+          },
+        },
+        select: { id: true },
+      });
+      if (reciproque !== null) return;
+      await tx.conversationMember.updateMany({
+        where: {
+          userId: { in: [blockerUserId, blockedUserId] },
+          leftAt: { gte: block.createdAt },
+          conversation: {
+            kind: 'DIRECT',
+            AND: [
+              { members: { some: { userId: blockerUserId } } },
+              { members: { some: { userId: blockedUserId } } },
+            ],
+          },
+        },
+        data: { leftAt: null },
       });
     });
   }

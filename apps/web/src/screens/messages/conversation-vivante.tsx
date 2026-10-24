@@ -15,6 +15,7 @@ import { useEvenements, useRepliPolling } from '@/lib/use-temps-reel';
 import {
   accepterDemande,
   bloquerMembre,
+  debloquerMembre,
   ignorerDemande,
   supprimerMessage,
   deposerImageDeMessage,
@@ -428,6 +429,25 @@ export function ConversationVivante({
         }}
       />
     ),
+    onDebloquer: () => {
+      const id = donnees.conversationUserId ?? null;
+      if (id === null || enVol) return;
+      setEnVol(true);
+      debloquerMembre(id)
+        .then(() => {
+          notifySucces(`${donnees.entete.nom} est débloqué·e : vous pouvez de nouveau lui écrire.`);
+          onRecharger();
+        })
+        .catch((cause: unknown) => {
+          notifyError(
+            cause instanceof ApiError ? cause.displayMessage : 'Le déblocage n’a pas pu être fait.',
+          );
+        })
+        .finally(() => {
+          setEnVol(false);
+        });
+    },
+    debloquerBloque: enVol,
     composeurTexte: texte,
     onComposeurTexte: (e) => {
       setTexte(e.target.value);
@@ -538,11 +558,14 @@ export function ConversationVivante({
         .then(() => {
           notifySucces(`${donnees.entete.nom} est bloqué.`);
           /**
-           * ON QUITTE LA CONVERSATION. Rester dessus après un blocage montrerait
-           * un fil que le serveur masque déjà à moitié (§4) : la liste est le seul
-           * endroit juste où atterrir.
+           * ON RESTE SUR LA CONVERSATION, qui change d'état (lot F2). Le serveur la
+           * garde listée pour celui qui a bloqué (`blockedByMe`) : on la relit, et le
+           * cadre « conversation bloquée » prend la place, avec son « Débloquer ».
+           * Avant, on partait sur la liste : la conversation disparaissait, et plus
+           * rien ne permettait de revenir sur le geste.
            */
-          routeur.push('/messages');
+          routeur.push(cible === null ? '/messages' : `/messages/${cible}`);
+          onRecharger();
         })
         .catch((cause: unknown) => {
           notifyError(

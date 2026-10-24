@@ -22,20 +22,14 @@ import type { M01Data } from '../m01/data';
  * `applyBorrows` lève si l'un des motifs disparaît de sa source. Ne pas casser ce
  * mécanisme : c'est lui qui garde l'emprunt honnête.
  *
- * ── CE QUI N'EST PAS BRANCHÉ ICI, ET POURQUOI ───────────────────────────────
+ * ── CE QUI EST BRANCHÉ (lot F2) ─────────────────────────────────────────────
  *
- * « DÉBLOQUER » RESTE INERTE. Débloquer quelqu'un est une ÉCRITURE —
- * `DELETE /v1/blocks/:userId`, qui existe et répond `204` — et ce lot ne branche
- * aucune écriture. Le rendre actif sans que rien ne parte mentirait au membre, et
- * c'est la même règle que pour « Envoyer le signalement » et pour le « Publier »
- * de J03 : un bouton inerte est moins nuisible qu'un bouton qui ment.
+ * « DÉBLOQUER » EST VIVANT : `DELETE /v1/blocks/:userId` (204). Le serveur rouvre la
+ * conversation DIRECT que le blocage avait fermée ; l'écran relit et retombe sur le
+ * cadre ordinaire. Les contacts, eux, ne reviennent pas (08 §4).
  *
- * ET L'ÉTAT N'EST PAS DÉDUIT DE L'API. La page le reçoit par `?etat=bloque`, pas
- * d'un champ : `GET /conversations` rend bien `members[].hidden`, mais ce drapeau
- * dit « séparé mutuellement » (§4) et non « c'est MOI qui ai bloqué », et c'est
- * cette seconde chose seule qui justifie un bouton « Débloquer ». La distinction
- * demanderait de croiser `GET /me/blocks` avec les membres de la conversation.
- * Faisable, non fait : la maquette ne dessine pas cet écran, et l'URL le rend
- * atteignable sans rien affirmer. Signalé au porteur.
+ * ET L'ÉTAT EST DÉDUIT DE L'API, plus de `?etat=bloque` : `GET /conversations` rend
+ * `blockedByMe` (c'est MOI qui ai bloqué, et non « séparés dans un sens ou dans
+ * l'autre » comme `members[].hidden`). Voir `M01Data.conversationBloquee`.
  */
 export type M01BloqueData = M01Data;

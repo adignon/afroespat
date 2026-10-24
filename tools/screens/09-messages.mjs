@@ -1224,7 +1224,7 @@ export const screens = [
   /**
    * ── M01 · LA CONVERSATION AVEC UN MEMBRE BLOQUÉ ────────────────────────────
    *
-   * Servie par `/messages/:id?etat=bloque`. Les DEUX cadres de conversation sont
+   * Servie par `/messages/:id` quand `Conversation.blockedByMe` est vrai (lot F2). Les DEUX cadres de conversation sont
    * repris tels quels — le fil, l'en-tête, le « ··· » qui ouvre le menu — et seul
    * le composeur change de contenu. Voir `CONVERSATION_BLOQUEE` pour ce qui est
    * emprunté, à quelle maquette, et pour la phrase qui vient du porteur.

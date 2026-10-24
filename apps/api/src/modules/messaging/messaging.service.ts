@@ -135,8 +135,40 @@ export class MessagingService {
    */
   async listConversations(userId: string, query: ConversationsQuery) {
     const scope = `conversations:${userId}`;
+    /**
+     * LA CONVERSATION QUE J'AI FERMÉE PAR UN BLOCAGE RESTE LISTÉE (lot F2).
+     *
+     * La cascade de blocage (§4) pose `left_at` sur les deux lignes d'une DIRECT.
+     * Sans exception, la conversation disparaissait de la liste ET le membre qui
+     * venait de bloquer n'avait plus aucun endroit où la DÉBLOQUER : le bouton
+     * « Débloquer » de la conversation bloquée (M01BLOQUE) aurait été
+     * inatteignable. On garde donc, pour MOI seul, les DIRECT fermées dont
+     * l'interlocuteur figure dans MES blocages (`blockedByMe`). Celui qui a été
+     * bloqué, lui, ne la voit plus : il n'a rien à y faire et ne doit pas deviner.
+     */
+    const bloquesParMoi = (
+      await this.prisma.block.findMany({
+        where: { blockerUserId: userId },
+        select: { blockedUserId: true },
+      })
+    ).map((b) => b.blockedUserId);
     const memberships = await this.prisma.conversationMember.findMany({
-      where: { userId, leftAt: null },
+      where: {
+        userId,
+        OR: [
+          { leftAt: null },
+          ...(bloquesParMoi.length === 0
+            ? []
+            : [
+                {
+                  conversation: {
+                    kind: 'DIRECT' as const,
+                    members: { some: { userId: { in: bloquesParMoi } } },
+                  },
+                },
+              ]),
+        ],
+      },
       select: { conversationId: true, lastReadAt: true },
     });
     if (memberships.length === 0) return { items: [], nextCursor: null, meta: { unreadTotal: 0 } };
@@ -189,14 +221,19 @@ export class MessagingService {
       const others = conversation.members.filter((m) => m.userId !== userId);
       const mienne = conversation.members.find((m) => m.userId === userId) ?? null;
 
-      const unread = await this.prisma.message.count({
-        where: {
-          conversationId: conversation.id,
-          senderUserId: { not: userId },
-          deletedAt: null,
-          ...(lastReadAt === null ? {} : { sentAt: { gt: lastReadAt } }),
-        },
-      });
+      const blockedByMe =
+        conversation.kind === 'DIRECT' && others.some((m) => bloquesParMoi.includes(m.userId));
+      // Une conversation que j'ai fermée par un blocage ne compte aucun non-lu.
+      const unread = blockedByMe
+        ? 0
+        : await this.prisma.message.count({
+            where: {
+              conversationId: conversation.id,
+              senderUserId: { not: userId },
+              deletedAt: null,
+              ...(lastReadAt === null ? {} : { sentAt: { gt: lastReadAt } }),
+            },
+          });
       unreadTotal += unread;
 
       const last = await this.prisma.message.findFirst({
@@ -283,6 +320,8 @@ export class MessagingService {
         pendingForMe: pending.pending && pending.initiatorUserId !== userId,
         /** Mon premier message attend une réponse : pas de second (§5.2). */
         awaitingReply: pending.pending && pending.initiatorUserId === userId,
+        /** C'est MOI qui ai bloqué l'interlocuteur de cette DIRECT (lot F2). */
+        blockedByMe,
       });
     }
 
@@ -1137,6 +1176,18 @@ export class MessagingService {
    * IDEMPOTENT : `updateMany` conditionné à `left_at: null`.
    */
   async handleUserBlocked(blockerUserId: string, blockedUserId: string): Promise<void> {
+    // Le consommateur tourne après coup (outbox) : si le membre a déjà débloqué,
+    // fermer la conversation maintenant la ferait pour rien (lot F2).
+    const toujours = await this.prisma.block.findFirst({
+      where: {
+        OR: [
+          { blockerUserId, blockedUserId },
+          { blockerUserId: blockedUserId, blockedUserId: blockerUserId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (toujours === null) return;
     const shared = await this.prisma.conversation.findMany({
       where: {
         kind: 'DIRECT',
