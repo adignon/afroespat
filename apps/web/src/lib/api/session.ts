@@ -71,9 +71,74 @@ let knownMember: MeResponse | null = null;
  */
 let sessionDead = false;
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ « UNE SESSION EST ATTENDUE » — POUR REPRENDRE AVANT LE PREMIER APPEL      ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * MESURÉ au navigateur (lot W1A, phase 0.6) : au premier chargement d'une page
+ * membre, `GET /me`, `/journeys`, `/communities`… partaient SANS jeton, prenaient
+ * chacun un `401`, puis étaient rejoués après le rafraîchissement. Rien d'invalide
+ * côté membre, mais quatre `401` dans la console et dans le journal du serveur à
+ * chaque rechargement — un signal qui ne veut plus rien dire. La reprise existait
+ * (`GardeSession`, `SessionBoot`) mais elle tourne dans un `useEffect`, et React
+ * exécute les effets des ENFANTS avant ceux du parent : les écrans partaient
+ * toujours les premiers.
+ *
+ * La correction est dans le transport, pas dans les écrans : avant un appel
+ * authentifié sans jeton, on attend la reprise (partagée et unique en vol,
+ * voir `member.ts`). Elle ne se déclenche que si une session est ATTENDUE :
+ *
+ *   · la zone `(app)` la déclare (`attendreSession()`, appelé par `GardeSession`) ;
+ *   · un indicateur du navigateur la déclare ailleurs (`dp_session`, posé à
+ *     l'obtention d'un jeton, retiré à la déconnexion et à la mort de la session).
+ *     Il ne contient AUCUN secret — un « 1 » — : le jeton de rafraîchissement
+ *     reste un cookie `httpOnly`, et le jeton d'accès reste en mémoire. Il sert à
+ *     ne PAS appeler `/auth/refresh` pour un visiteur qui n'a jamais ouvert de
+ *     session (la page de connexion), ce qui lui prendrait un `401` pour rien.
+ *
+ * `localStorage` peut manquer ou lever (navigation privée, données bloquées) : tout
+ * est enveloppé, et sans lui on retombe sur le comportement d'avant — le premier
+ * `401` déclenche le rafraîchissement, comme le transport le fait depuis toujours.
+ */
+const INDICATEUR_SESSION = 'dp_session';
+
+let sessionAttendue = false;
+
+function lireIndicateur(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(INDICATEUR_SESSION) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function ecrireIndicateur(present: boolean): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (present) localStorage.setItem(INDICATEUR_SESSION, '1');
+    else localStorage.removeItem(INDICATEUR_SESSION);
+  } catch {
+    // Sans stockage, l'indicateur n'existe pas : voir plus haut.
+  }
+}
+
+/** La zone membre déclare qu'une session doit exister : les appels l'attendront. */
+export function attendreSession(): void {
+  sessionAttendue = true;
+}
+
+/** Faut-il reprendre la session avant d'envoyer un appel sans jeton ? */
+export function sessionEstAttendue(): boolean {
+  return sessionAttendue || lireIndicateur();
+}
+
 export function setAccessToken(token: string | null): void {
   accessToken = token;
-  if (token !== null) sessionDead = false;
+  if (token !== null) {
+    sessionDead = false;
+    ecrireIndicateur(true);
+  }
 }
 
 export function hasAccessToken(): boolean {
@@ -100,6 +165,7 @@ export function markSessionDead(): void {
   sessionDead = true;
   accessToken = null;
   knownMember = null;
+  ecrireIndicateur(false);
 }
 
 /** Déconnexion : tout part, y compris ce qu'on croyait savoir. */
@@ -107,6 +173,8 @@ export function clearSession(): void {
   accessToken = null;
   knownMember = null;
   sessionDead = false;
+  sessionAttendue = false;
+  ecrireIndicateur(false);
 }
 
 /**

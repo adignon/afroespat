@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { notifyError } from '@/components/notifications';
 import { ApiError, memberApi } from '@/lib/api/index';
+import { oublierReglagesNotification } from '@/lib/preferences-notification';
 import { z } from 'zod';
 import type { CategorieNotification, K07Data } from './data';
 
@@ -46,6 +47,7 @@ export function NotificationsVivantes({
   const enregistrer = (cle: string, canal: 'push' | 'email', voulu: boolean): void => {
     if (enVol) return;
     setEnVol(true);
+    oublierReglagesNotification();
     memberApi
       .put('/me/notification-preferences', z.unknown(), {
         body: {

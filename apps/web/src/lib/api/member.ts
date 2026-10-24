@@ -7,7 +7,9 @@ import {
   bearerHeader,
   clearSession,
   forgetRights,
+  hasAccessToken,
   isSessionDead,
+  sessionEstAttendue,
   knownMe,
   markSessionDead,
   rememberMe,
@@ -117,6 +119,25 @@ async function refreshOnce(): Promise<boolean> {
   }
 }
 
+/**
+ * LA REPRISE AVANT LE PREMIER APPEL — voir `session.ts`, « une session est attendue ».
+ *
+ * `/auth/…` est exclu : l'envoi du code et sa vérification n'ont pas de session à
+ * reprendre, et `/auth/logout` n'a pas à en acheter une pour la fermer. La promesse
+ * est gardée : plusieurs appels simultanés attendent la MÊME reprise (et
+ * `refreshOnce` la partage de toute façon, ce qui évite la rotation multiple).
+ */
+let reprise: Promise<boolean> | null = null;
+
+async function reprendreAvant(path: string): Promise<void> {
+  if (hasAccessToken() || isSessionDead() || path.startsWith('/auth/')) return;
+  if (!sessionEstAttendue()) return;
+  reprise ??= refreshOnce().finally(() => {
+    reprise = null;
+  });
+  await reprise.catch(() => false);
+}
+
 const transport = createTransport({
   base: API_BASE,
   /** Domaine membre : aucun préfixe. Le domaine équipe en a un. */
@@ -126,6 +147,7 @@ const transport = createTransport({
     header: bearerHeader,
     refresh: refreshOnce,
     isDead: isSessionDead,
+    before: reprendreAvant,
     onRightsChanged: forgetRights,
   },
   assertPath: assertMemberPath,

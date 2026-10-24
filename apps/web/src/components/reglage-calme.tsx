@@ -8,6 +8,7 @@ import {
 } from '@app/shared';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { ApiError, memberApi } from '@/lib/api/index';
+import { lireReglagesNotification, oublierReglagesNotification } from '@/lib/preferences-notification';
 
 /**
  * AJOUTS HORS MAQUETTE — les heures calmes et le résumé hebdomadaire de K07
@@ -54,8 +55,7 @@ function useReglages() {
 
   useEffect(() => {
     let vivant = true;
-    void memberApi
-      .get('/me/notification-preferences', notificationPreferencesResponseSchema)
+    void lireReglagesNotification()
       .then((p) => {
         if (vivant) setPrefs(p);
       })
@@ -67,6 +67,7 @@ function useReglages() {
 
   const ecrire = useCallback((corps: Record<string, unknown>, succes: string): void => {
     setOccupe(true);
+    oublierReglagesNotification();
     memberApi
       .put('/me/notification-preferences', notificationPreferencesResponseSchema, { body: corps })
       .then((p) => {

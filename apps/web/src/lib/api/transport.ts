@@ -44,6 +44,15 @@ export type Credentials =
       readonly refresh: () => Promise<boolean>;
       /** La session est-elle définitivement morte ? Si oui, on ne rafraîchit plus. */
       readonly isDead: () => boolean;
+      /**
+       * Avant d'envoyer un appel SANS jeton : reprendre la session s'il y a lieu.
+       *
+       * Rend quand la reprise est terminée (réussie ou non) ; ne lève jamais. Sans
+       * cette porte, le premier appel de chaque page part sans jeton, prend un
+       * `401` et n'est rejoué qu'après coup — voir `session.ts`, « une session est
+       * attendue ».
+       */
+      readonly before?: (path: string) => Promise<void>;
       /** Appelé quand le serveur dit que les droits ont changé (`TOKEN_STALE`). */
       readonly onRightsChanged: () => void;
     }
@@ -234,6 +243,11 @@ export function createTransport(config: TransportConfig): Transport {
     options: RequestOptions = {},
   ): Promise<z.infer<S>> {
     assertPath(path);
+
+    // La reprise de session se fait AVANT le premier appel authentifié.
+    if (credentials.kind === 'bearer' && credentials.before !== undefined) {
+      await credentials.before(path);
+    }
 
     let response = await attempt(method, path, options);
 

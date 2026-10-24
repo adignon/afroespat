@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
+import { attendreSession } from '@/lib/api/session';
 import { BandeauAnnonce } from './bandeau-annonce';
 import { FenetreConsentement } from './fenetre-consentement';
 
@@ -58,6 +59,9 @@ export function GardeSession({ children }: { readonly children: React.ReactNode 
   const router = useRouter();
   const chemin = usePathname();
   const [tranchee, setTranchee] = useState(() => hasAccessToken());
+  // Déclaré AU RENDU, avant tout effet : les effets des enfants partent d'abord, et
+  // leurs appels doivent déjà attendre la reprise (voir `lib/api/session.ts`).
+  attendreSession();
 
   useEffect(() => {
     if (tranchee) return;

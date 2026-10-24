@@ -15,7 +15,6 @@ import {
   MEMBER_CONTENT_LABELS_FR,
   MEMBER_CONTENT_TYPES,
   memberContentResponseSchema,
-  notificationPreferencesResponseSchema,
   plansResponseSchema,
   publicProfileResponseSchema,
   mutualConnectionsResponseSchema,
@@ -32,6 +31,7 @@ import {
   HELP_TYPE_LABELS,
 } from '@app/shared';
 import { ApiError, fetchMe, hasAccessToken, memberApi, resumeSession } from '@/lib/api/index';
+import { lireReglagesNotification } from '@/lib/preferences-notification';
 import { fetchFeed } from '@/screens/accueil/api';
 import { feedPostsFrom } from '@/screens/accueil/from-api';
 import { fetchGuides } from '@/screens/guides/api';
@@ -1013,7 +1013,7 @@ function ligneFacture(facture: Facture | undefined): string {
 export async function chargerK07(): Promise<K07Data> {
   const [me, prefs, demandes] = await Promise.all([
     fetchMe(),
-    memberApi.get('/me/notification-preferences', notificationPreferencesResponseSchema),
+    lireReglagesNotification(),
     compterDemandes(),
   ]);
 

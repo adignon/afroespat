@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
+import { sessionEstAttendue } from '@/lib/api/session';
 
 /**
  * REPRENDRE LA SESSION AU CHARGEMENT DE L'APPLICATION.
@@ -59,6 +60,9 @@ export function SessionBoot() {
     // Un jeton déjà en main : rien à reprendre. Le rafraîchir ferait tourner le
     // jeton de rafraîchissement pour rien.
     if (hasAccessToken()) return;
+    // Aucune session attendue (visiteur qui n'en a jamais ouvert) : un
+    // `/auth/refresh` ne rendrait qu'un `401` de plus dans la console.
+    if (!sessionEstAttendue()) return;
     // Le résultat n'est pas lu : `false` peut vouloir dire « pas connecté »
     // comme « réseau coupé », et cet appel n'a pas à trancher. Les écrans qui ont
     // besoin de la réponse appellent `fetchMe()`, qui la leur donnera.
