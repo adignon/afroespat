@@ -16,11 +16,10 @@
  *   · L'ENCART « PLAN » est un COMPTEUR, et un compteur se lit. C'est ce que ce
  *     fichier porte.
  *
- * ⚠ AUCUNE PAGE NE MONTE CE CADRE. Son composant est généré et importé par
- * personne — T5 range ces encarts en « composants » et ne leur donne aucune route.
- * Lier le quota ne le fait pas apparaître : cela garantit qu'il n'affichera pas
- * « 1 événement sur 1 » à un membre qui en a créé trois, le jour où une page
- * l'affichera.
+ * ⚠ CE CADRE EST MAINTENANT MONTÉ — mais pas en page : `FenetreNiveau` le rend sur mobile,
+ * réduit à l'encart « NIVEAU » (voir `tools/adaptations/feuilles-dessinees.mjs`). L'encart
+ * « PLAN » et son quota ne sont pas montés (paiement hors périmètre) ; la donnée ci-dessous
+ * reste décrite pour le jour où le plan gratuit aura de nouveau un plafond.
  */
 
 /**
@@ -43,5 +42,10 @@ export interface QuotaEvenements {
 }
 
 export interface X04Data {
-  readonly quota: QuotaEvenements;
+  /**
+   * OPTIONNEL DEPUIS LE LOT « FEUILLES DESSINÉES » : seul l'encart « NIVEAU » est monté (dans
+   * `FenetreNiveau`, sur mobile) — l'encart « PLAN » est un compteur de paiement, hors
+   * périmètre tant que tout est gratuit. Le cadre généré ne lit donc plus `quota`.
+   */
+  readonly quota?: QuotaEvenements;
 }

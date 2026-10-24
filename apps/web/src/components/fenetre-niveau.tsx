@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Modal } from '@/components/modal';
 import { requiredLevel, type Capability } from '@app/shared';
 import { CONDITIONS_NIVEAU, libelleCapacite, niveauEcrit } from '@/lib/capacites';
+import { FeuilleDessinee, type Controleur } from '@/components/parcours/feuille-dessinee';
+import { X04Mobile } from '@/screens/x04/mobile.generated';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -26,7 +28,17 @@ import { CONDITIONS_NIVEAU, libelleCapacite, niveauEcrit } from '@/lib/capacites
  * Le bouton mène à `/compte/verification`, la page qui fait franchir la marche —
  * « ses paramètres », dans les mots du porteur.
  *
- * ── LE CHÂSSIS EST CELUI DE K08, COMME LES AUTRES FENÊTRES ────────────────
+ * ── SUR MOBILE, C'EST L'ENCART DE LA MAQUETTE (X04 « NIVEAU ») ─────────────
+ *
+ * La maquette dessine l'encart de refus de niveau pour le téléphone (`screens/x04/mobile`) :
+ * la carte vert pâle au bouclier, « Cette action demande une identité vérifiée », « Vérifier
+ * mon identité » et « Voir les niveaux ». Elle est montée ici, dans une feuille du bas (AJOUT :
+ * le châssis est celui des feuilles J05/J07/J08, la maquette ne dessine pas l'encart dans une
+ * feuille — elle le pose dans la page, « sans jamais bloquer la navigation »). Seul l'encart
+ * « NIVEAU » est gardé : « PLAN » est un compteur de paiement, hors périmètre. Son titre, son
+ * texte et son bouton suivent le niveau exigé par la table des capacités.
+ *
+ * ── LE CHÂSSIS D'ORDINATEUR EST CELUI DE K08, COMME LES AUTRES FENÊTRES ───
  *
  * Voile `rgba(22,33,29,.55)`, panneau de 440 px, trait `#DDE3E0`, rayon 28,
  * retrait 24, croix de 40 px sur `#F2F5F4`, boutons de 44 px au rayon 14. Rien
@@ -171,13 +183,92 @@ export function FenetreNiveau({
     </>
   );
 
+  const controleur: Controleur = {
+    fermer: onFermer,
+    val: (cle) => {
+      if (cle === 'titre') {
+        return exige === 'L1'
+          ? 'Cette action demande une identité vérifiée'
+          : `Cette action demande le niveau ${niveauEcrit(exige)}`;
+      }
+      if (cle === 'texte') {
+        return exige === 'L1'
+          ? 'Deux minutes avec votre pièce d’identité. Elle n’est jamais conservée par la plateforme.'
+          : CONDITIONS_NIVEAU[exige];
+      }
+      return null;
+    },
+    act: (cle) =>
+      cle === 'monter'
+        ? { href: '/compte/verification', ...(exige === 'L1' ? {} : { libelle: `Passer au niveau ${niveauEcrit(exige)}` }) }
+        : {},
+    slot: () => null,
+  };
+
+  const feuille = (
+    <>
+      <div
+        style={{ position: 'fixed', inset: '0', background: 'rgba(22,33,29,.55)' }}
+        data-modal-overlay=""
+      />
+      <div
+        data-modal-panel=""
+        data-fenetre-niveau={capacite ?? ''}
+        style={{
+          position: 'fixed',
+          left: '0',
+          right: '0',
+          bottom: '0',
+          height: 'auto',
+          background: '#fff',
+          borderRadius: '28px 28px 0 0',
+          padding: '10px 16px 28px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px',
+          maxHeight: 'calc(100vh - 24px)',
+          overflow: 'hidden',
+        }}
+      >
+        <button
+          type="button"
+          aria-label="Fermer"
+          data-modal-close=""
+          onClick={onFermer}
+          style={{ alignSelf: 'center', width: '40px', height: '5px', borderRadius: '999px', background: '#DDE3E0', border: 'none', padding: '10px 24px', font: 'inherit', cursor: 'pointer', boxSizing: 'content-box', marginTop: '0', backgroundClip: 'content-box' }}
+        />
+        <h2 id="niveau-titre" style={{ margin: '0', fontSize: '18px', fontWeight: 800 }}>
+          Niveau {niveauEcrit(exige)} requis
+        </h2>
+        <div data-fenetre-contenu="" style={{ flex: '1', minHeight: '0', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ fontSize: '13px', lineHeight: '1.55', color: '#16211D' }}>
+            Pour {capacite === null ? 'cette action' : libelleCapacite(capacite)}, il faut être de niveau{' '}
+            {niveauEcrit(exige)}.
+          </div>
+          <FeuilleDessinee controleur={controleur}>
+            <X04Mobile />
+          </FeuilleDessinee>
+        </div>
+        <button
+          type="button"
+          onClick={onFermer}
+          data-niveau-plus-tard=""
+          style={{ ...BOUTON, background: '#F2F5F4', color: '#16211D', width: '100%' }}
+        >
+          Plus tard
+        </button>
+      </div>
+    </>
+  );
+
   return (
     <Modal
       open={capacite !== null}
       onClose={onFermer}
       titleId="niveau-titre"
       name="NIVEAU"
-      mobile={panneau}
+      desktop={panneau}
+      mobile={feuille}
     />
   );
 }

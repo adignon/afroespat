@@ -424,38 +424,31 @@ const AMORCE_FUSION_D08 = '<span style="font-weight:700">Fusionner avec ';
 
 export const screens = [
   /**
-   * ── D01 · `/admin/connexion` — TROIS CARTES, PAS TROIS ÉCRANS ──────────────
+   * ── D01 · `/admin/connexion` — UNE CARTE MONTÉE, DEUX RETIRÉES ─────────────
    *
    * 15 §2.1 et T5 D01 : « email, mot de passe, puis code TOTP (six cases),
    * enrôlement forcé si absent ». La maquette dessine les trois moments comme
    * trois cartes de 420 px posées côte à côte, étiquetées « 1 · IDENTIFIANTS »,
-   * « 2 · CODE TOTP » et « ENRÔLEMENT FORCÉ ». C'est une seule route, et la page
-   * choisit la carte selon `?etape=`.
+   * « 2 · CODE TOTP » et « ENRÔLEMENT FORCÉ ».
    *
-   * `frameIsCard` : le conteneur extérieur de ces trois planches n'est PAS une
-   * planche, c'est la CARTE elle-même — son fond blanc, sa bordure, son rayon de
-   * 28 px et son remplissage de 24 px sont du design. Voir la note dans
-   * `tools/generate-screens.mjs`.
+   * SEULE LA PREMIÈRE EST TRANSCODÉE. Les deux autres (`Totp`, `Enrolement`) l'ont été
+   * jusqu'au lot « feuilles dessinées » et n'ont jamais été importées : le code TOTP et
+   * l'enrôlement sont rendus par `ConnexionEquipe`, qui porte ce qu'une image ne peut pas
+   * dessiner — le QR code à scanner, la clé en clair, les codes de secours, les six cases
+   * réelles. Garder des planches mortes dans le générateur donnait l'illusion d'un écran
+   * dessiné et monté ; le garde-fou « planche non montée » (`screens/__tests__/
+   * planches-montees.test.ts`) les aurait de toute façon refusées.
    *
-   * Les deux premières cartes portent « Administration » en 17 px gras comme seul
-   * titre ; la troisième écrit « Activer la double authentification », qui dit ce
-   * que l'écran demande. On recopie ce que la maquette écrit, sans l'uniformiser.
+   * `frameIsCard` : le conteneur extérieur de la planche n'est PAS une planche, c'est la
+   * CARTE elle-même — son fond blanc, sa bordure, son rayon de 28 px et son remplissage de
+   * 24 px sont du design. Voir la note dans `tools/generate-screens.mjs`.
    */
   screen({
     section: 'D01',
     // Aucun rail : on ne navigue pas dans la console avant de s'y authentifier.
     rail: false,
     frameIsCard: true,
-    frames: [
-      { width: 420, name: 'Identifiants', occurrence: 0, title: 'Administration' },
-      { width: 420, name: 'Totp', occurrence: 1, title: 'Administration' },
-      {
-        width: 420,
-        name: 'Enrolement',
-        occurrence: 2,
-        title: 'Activer la double authentification',
-      },
-    ],
+    frames: [{ width: 420, name: 'Identifiants', occurrence: 0, title: 'Administration' }],
   }),
 
   /**
