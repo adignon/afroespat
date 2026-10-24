@@ -612,9 +612,27 @@ describe('notifications (12)', () => {
     it('ajoute « · Modérateurs de <réseau> », et le corps reste absent', async () => {
       const sender = await member();
       const recipient = await awakeMember();
-      // Un réseau existant suffit (le relevé de départ en sème) : seul son NOM
-      // est lu, et le fil est retiré à la fin du test.
-      const reseau = await prisma.community.findFirstOrThrow({ select: { id: true, name: true } });
+      // Le réseau est CRÉÉ ici : ce cas supposait qu'un réseau préexiste
+      // (`findFirstOrThrow`) et tombait sur une base sans seed de réseaux. Seul son
+      // NOM est lu ; il est retiré avec les autres (`createdCommunities`).
+      const reseauId = newId();
+      const nomReseau = `Cuisine béninoise ${run}`;
+      await prisma.community.create({
+        data: {
+          id: reseauId,
+          kind: 'INTEREST',
+          name: nomReseau,
+          slug: `moderateurs-${run}-${newId().slice(-6)}`,
+          category: 'cuisine',
+          visibility: 'PUBLIC',
+          createdByUserId: sender,
+          status: 'ACTIVE',
+          memberCount: 1,
+          lastActivityAt: new Date(),
+        },
+      });
+      createdCommunities.push(reseauId);
+      const reseau = { id: reseauId, name: nomReseau };
       const conversationId = newId();
       await prisma.conversation.create({
         data: { id: conversationId, kind: 'COMMUNITY_MODERATION', communityId: reseau.id, openedByUserId: sender },

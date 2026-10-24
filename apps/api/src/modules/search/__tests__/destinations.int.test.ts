@@ -66,13 +66,33 @@ describe('recherche — les destinations (11 §2.1, §2.3)', () => {
 
     const country = await prisma.country.findFirstOrThrow({ select: { id: true } });
     originCountryId = country.id;
-    const city = await prisma.city.findFirstOrThrow({ where: { isActive: true }, select: { id: true, slug: true } });
+    /**
+     * LA VILLE EST À NOUS, plus celle du jeu de départ. Ce cas exigeait qu'une ville
+     * ACTIVE existe (`findFirstOrThrow`) : sur une base sans seed actif il tombait,
+     * et il ne prouvait rien sur la ville qu'il trouvait par hasard. On crée donc la
+     * nôtre, dans un pays de destination quelconque, avec un nom unique que la
+     * recherche retrouve sans ambiguïté — et l'assertion de l'adresse devient dure.
+     */
+    const pays = await prisma.country.findFirstOrThrow({ select: { id: true } });
+    citySlug = `zodimexville-${run}`;
+    const city = await prisma.city.create({
+      data: {
+        id: newId(),
+        countryId: pays.id,
+        name: `Zodimexville ${run}`,
+        slug: citySlug,
+        latitude: 45.75,
+        longitude: 4.85,
+        isActive: true,
+        activatedAt: new Date(),
+      },
+    });
     cityId = city.id;
-    citySlug = city.slug;
   });
 
   afterAll(async () => {
     await prisma.$executeRaw`DELETE FROM search_documents WHERE title ILIKE ${`%${mot}%`}`;
+    await prisma.$executeRaw`DELETE FROM search_documents WHERE subject_type = 'CITY' AND subject_id = ${cityId}::uuid`.catch(() => undefined);
     for (const id of topics) await prisma.topic.delete({ where: { id } }).catch(() => undefined);
     for (const id of helps) await prisma.helpRequest.delete({ where: { id } }).catch(() => undefined);
     for (const id of communities) await prisma.community.delete({ where: { id } }).catch(() => undefined);
@@ -80,6 +100,7 @@ describe('recherche — les destinations (11 §2.1, §2.3)', () => {
       await prisma.userProfile.deleteMany({ where: { userId: id } }).catch(() => undefined);
       await prisma.user.delete({ where: { id } }).catch(() => undefined);
     }
+    await prisma.city.delete({ where: { id: cityId } }).catch(() => undefined);
     await prisma.$disconnect();
   });
 
@@ -213,15 +234,11 @@ describe('recherche — les destinations (11 §2.1, §2.3)', () => {
     const lecteur = await membre();
     await search.reindexSubject('CITY', cityId);
 
-    const trouves = await plats(lecteur.id, citySlug.replace(/-/g, ' '), 'CITY');
+    const trouves = await plats(lecteur.id, `zodimexville ${run}`, 'CITY');
     const ligne = trouves.find((h) => h.subjectId === cityId);
-    /**
-     * LA VILLE N'EST PAS TROUVÉE PAR UN MOT INVENTÉ : elle existe dans le
-     * référentiel et son titre est son nom. On la cherche donc par son propre slug,
-     * et on n'affirme rien si la recherche ne la rend pas — ce cas éprouve la
-     * COMPOSITION de l'adresse, pas la pondération du moteur.
-     */
-    if (ligne !== undefined) expect(ligne.url).toBe(`/villes/${citySlug}`);
+    // Dure : la ville est la nôtre, le moteur DOIT la rendre, et l'adresse est son slug.
+    expect(ligne).toBeDefined();
+    expect(ligne?.url).toBe(`/villes/${citySlug}`);
   });
 
   it('une suggestion porte son identifiant ET son adresse — §2.3', async () => {
