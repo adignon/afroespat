@@ -33,6 +33,7 @@ import { ADAPTATIONS_FIL_VIVANT, AJOUTS_FIL_VIVANT } from './adaptations/fil-viv
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
 import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/administration-vivante.mjs';
 import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
+import { ADAPTATIONS_BOUTONS_INERTES, AJOUTS_BOUTONS_INERTES } from './adaptations/boutons-inertes-vivants.mjs';
 import { ADAPTATIONS_SERVICES_VIVANT, AJOUTS_SERVICES_VIVANT } from './adaptations/services-vivant.mjs';
 import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/villes-vivant.mjs';
 import { ADAPTATIONS_SERVICES_COMPLEMENTS, AJOUTS_SERVICES_COMPLEMENTS } from './adaptations/services-complements-vivants.mjs';
@@ -18268,6 +18269,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_ADMIN_VIVANTE,
     // Lot E (agenda-vivant).
     ...ADAPTATIONS_AGENDA_VIVANT,
+    // Vague 1 / phase 1 : boutons, liens et sections inertes.
+    ...ADAPTATIONS_BOUTONS_INERTES,
     // Lot E (villes-vivant).
     ...ADAPTATIONS_VILLES_VIVANT,
     // Lot E (services-vivant).
@@ -19552,6 +19555,7 @@ const AJOUTS = {
   // Lot H — les composants de l'administration vivante.
   ...AJOUTS_ADMIN_VIVANTE,
   ...AJOUTS_AGENDA_VIVANT,
+  ...AJOUTS_BOUTONS_INERTES,
   ...AJOUTS_SERVICES_VIVANT,
   ...AJOUTS_SERVICES_COMPLEMENTS,
   ...AJOUTS_VILLES_VIVANT,
