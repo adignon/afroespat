@@ -181,11 +181,15 @@ export const panel = (actif: PanelLabel) => {
 
 export const panelFil = panel("Fil d'actualité");
 
-export const shortcuts = [
-  { name: 'Lyon & Rhône', sub: '1 400 membres', i: 'LY', bg: '#16785E' },
-  { name: 'Béninois en France', sub: '890 membres', i: 'BN', bg: '#E0733A' },
-  { name: 'Recherche Colocation', sub: '210 membres', i: 'RC', bg: '#0F5C48' },
-];
+/**
+ * LES RACCOURCIS D'EXEMPLE SONT RETIRÉS (lot W2A, phase 2.22). La planche dessinait
+ * « Lyon & Rhône · 1 400 membres », « Béninois en France · 890 membres » et
+ * « Recherche Colocation · 210 membres » ; la carte « Vos raccourcis » lit depuis
+ * longtemps MES réseaux (`RaccourcisReseaux`, `GET /communities`). Cette liste n'est
+ * plus rendue nulle part : elle ne reste que parce que la signature des cadres
+ * (`shortcuts`) la demande encore, vide.
+ */
+export const shortcuts: readonly { name: string; sub: string; i: string; bg: string }[] = [];
 
 // ─── Stories ─────────────────────────────────────────────────────────────────
 
@@ -1226,6 +1230,12 @@ export interface A01SData {
   sondageBloque: boolean;
 }
 
+/** Une alerte arnaque telle que la carte de vigilance l'écrit : un titre, puis le détail. */
+export interface AlerteVigilanceView {
+  readonly titre: string;
+  readonly corps: string;
+}
+
 export interface A01Data extends A01SData {
   rail: typeof rail;
   panelFil: typeof panelFil;
@@ -1240,6 +1250,13 @@ export interface A01Data extends A01SData {
    * quand il y en a (`echec`) et ceux-ci sinon (`vide`).
    */
   filEtat: { readonly chargement: boolean; readonly echec: string | null; readonly vide: string };
+  /**
+   * L'ALERTE DE VIGILANCE de la colonne de droite (lot W2A) : celle que le serveur
+   * publie pour la ville ou le pays du membre (`scamAlert` de `GET /feed/sidebar`),
+   * ou `null` — la carte n'existe alors pas. La planche écrivait « fausses offres
+   * de logement… » pour tout le monde, alerte ou non.
+   */
+  alerte: AlerteVigilanceView | null;
   /**
    * ╔════════════════════════════════════════════════════════════════════════╗
    * ║ LE COMPOSEUR DU FIL — IL N'AVAIT AUCUN ÉTAT                            ║

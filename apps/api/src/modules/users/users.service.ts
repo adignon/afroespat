@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, newId } from '@app/db';
 import {
   CONNECTION_REQUEST_EXPIRY_MS,
+  HANDLE_CHANGE_INTERVAL_DAYS,
   AUTH_ERROR_CODES,
   AUTH_ERROR_MESSAGES,
   MEMBER_CONTENT_TYPES,
@@ -60,7 +61,7 @@ const RESERVED_HANDLES = new Set([
   'notifications',
 ]);
 
-const THIRTY_DAYS_MS = 30 * 86_400_000;
+const THIRTY_DAYS_MS = HANDLE_CHANGE_INTERVAL_DAYS * 86_400_000;
 
 /** L'écran du lieu, troisième des six de §5. */
 const PLACE_STEP = 3;
@@ -122,6 +123,7 @@ export class UsersService {
       include: {
         profile: true,
         stats: true,
+        city: { select: { name: true, countryId: true } },
         avatarAsset: { select: { storageKey: true } },
         phoneNumbers: {
           orderBy: { isPrimary: 'desc' },
@@ -145,6 +147,9 @@ export class UsersService {
         status: user.status,
         originCountryId: user.originCountryId,
         cityId: user.cityId,
+        cityName: user.city?.name ?? null,
+        cityCountryId: user.city?.countryId ?? null,
+        handleChangedAt: user.handleChangedAt === null ? null : user.handleChangedAt.toISOString(),
         /**
          * `YYYY-MM-DD`, découpé de l'horodatage. La colonne est une `DateTime` et
          * le champ de saisie de K01 n'accepte que la date nue ; rendre l'ISO
@@ -210,6 +215,7 @@ export class UsersService {
         originCountryLockedAt: true,
         phase: true,
         arrivalDate: true,
+        cityId: true,
       },
     });
 
@@ -281,7 +287,7 @@ export class UsersService {
      * remonte donc tel quel, parce qu'il voudrait dire autre chose.
      */
     try {
-      await this.writeMe(userId, data, current.phase);
+      await this.writeMe(userId, data, current.phase, current.cityId);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -301,9 +307,31 @@ export class UsersService {
     userId: string,
     data: Record<string, unknown>,
     phaseAvant: string,
+    villeAvant: string | null,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: userId }, data });
+
+      /**
+       * `cities.member_count` TENU À JOUR À LA MAIN, pas seulement la nuit.
+       *
+       * Seule la tâche nocturne `city.member_count_recompute` l'écrivait : un
+       * membre qui choisissait sa ville à l'inscription lisait « 0 membre · vous
+       * avez rejoint ce réseau » sur l'écran d'arrivée (mesuré), puisque la liste
+       * des villes sert ce compteur. Un déplacement le corrige dans la même
+       * transaction que l'écriture de `city_id` ; le recalcul de la nuit reste le
+       * filet qui rattrape toute dérive (suppression, bannissement…).
+       */
+      const villeApres = data['cityId'];
+      if (typeof villeApres === 'string' && villeApres !== villeAvant) {
+        if (villeAvant !== null) {
+          await tx.city.updateMany({
+            where: { id: villeAvant, memberCount: { gt: 0 } },
+            data: { memberCount: { decrement: 1 } },
+          });
+        }
+        await tx.city.update({ where: { id: villeApres }, data: { memberCount: { increment: 1 } } });
+      }
 
       await this.audit.record(tx, {
         actor: { type: 'MEMBER', id: userId },

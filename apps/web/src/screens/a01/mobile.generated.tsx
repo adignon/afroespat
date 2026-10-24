@@ -13,6 +13,7 @@ import { MenuPublication } from '@/components/menu-publication';
 import { ApercuStory } from '@/components/apercu-story';
 import { RubanStories } from '@/components/ruban-stories';
 import { EtatVide } from '@/components/etat-vide';
+import { CarteParcoursTelephone } from '@/components/carte-mon-parcours';
 import type { A01Data } from './data';
 
 export function A01Mobile(props: A01Data) {
@@ -36,10 +37,7 @@ export function A01Mobile(props: A01Data) {
 ))}
     </div>
     <div style={{ flexGrow: "1", overflow: "visible", padding: "0 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-      <div style={{ background: "#0F5C48", borderRadius: "20px", padding: "14px 16px", color: "#fff", display: "flex", alignItems: "center", gap: "14px" }}>
-        <div style={{ flex: "1", minWidth: "0" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><span style={{ fontSize: "14px", fontWeight: "700" }}>Mes études à Lyon</span><span style={{ fontSize: "16px", fontWeight: "800" }}>58%</span></div><div style={{ height: "6px", borderRadius: "999px", background: "rgba(255,255,255,.18)", marginTop: "8px", overflow: "hidden" }}><div style={{ width: "58%", height: "100%", background: "#E0733A", borderRadius: "999px" }}></div></div><div style={{ fontSize: "12px", color: "#F0C3A4", fontWeight: "600", marginTop: "8px" }}>Étape 7 : Logement</div></div>
-        <span style={{ background: "#fff", color: "#0F5C48", fontWeight: "700", fontSize: "12.5px", padding: "9px 14px", borderRadius: "999px" }}>Continuer</span>
-      </div>
+      <CarteParcoursTelephone />
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "10px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>STORIES DU JOUR</span><Link href="/stories/mes-stories" style={{ height: "32px", padding: "0 12px", borderRadius: "999px", border: "1px solid #E6EBE9", background: "#fff", color: "#5D6B66", fontSize: "12px", fontWeight: "700", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Mes stories</Link></div>
         <RubanStories><div style={{ display: "contents" }}>

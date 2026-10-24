@@ -40,6 +40,7 @@ import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/v
 import { ADAPTATIONS_INSCRIPTION_VIVANTE } from './adaptations/inscription-vivante.mjs';
 import { ADAPTATIONS_SERVICES_COMPLEMENTS, AJOUTS_SERVICES_COMPLEMENTS } from './adaptations/services-complements-vivants.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
+import { ADAPTATIONS_DONNEES_VIVES, AJOUTS_DONNEES_VIVES } from './adaptations/donnees-vives.mjs';
 import {
   ADAPTATIONS_PARCOURS_VIVANT,
   AJOUTS_PARCOURS_VIVANT,
@@ -504,7 +505,7 @@ const FIELD_ADAPTATIONS = [
     // champ la ferait partir vers l'API — où `handleSchema` la refuse.
     prefix: '@',
     sample: '@amina.d',
-    placeholder: 'amina.d',
+    placeholder: 'votre pseudo',
     why: 'Le pseudo devient saisissable.',
     attrs: [
       'type="text"',
@@ -520,6 +521,8 @@ const FIELD_ADAPTATIONS = [
   {
     screens: ['O04'],
     sample: 'Amina Diallo',
+    // W2A : l'exemple de saisie est neutre — ni nom propre, ni ville.
+    placeholder: 'Prénom et nom',
     why: 'Le nom d’affichage devient saisissable.',
     attrs: [
       'type="text"',
@@ -547,6 +550,7 @@ const FIELD_ADAPTATIONS = [
   {
     screens: ['A10'],
     sample: 'Entrepreneurs africains à Lyon',
+    placeholder: 'Entrepreneurs africains de la diaspora',
     why: 'Le nom du réseau devient saisissable — c’était un <div> portant l’exemple de la maquette.',
     provides: ['nomMax'],
     attrs: [
@@ -18230,6 +18234,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_INSCRIPTION_VIVANTE,
     // W2B (feuilles-dessinees) : J03, J04, J05I, J07X, J08A, J01M, X04 montés et vivants.
     ...ADAPTATIONS_FEUILLES_DESSINEES,
+    // W2A : les données statiques de la maquette rendues dynamiques (tools/adaptations/donnees-vives.mjs).
+    ...ADAPTATIONS_DONNEES_VIVES,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19513,6 +19519,7 @@ const AJOUTS = {
   ...AJOUTS_SERVICES_COMPLEMENTS,
   ...AJOUTS_VILLES_VIVANT,
   ...AJOUTS_FEUILLES_DESSINEES,
+  ...AJOUTS_DONNEES_VIVES,
 };
 
 /**

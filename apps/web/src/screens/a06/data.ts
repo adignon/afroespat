@@ -225,12 +225,29 @@ export const propositionsCompte: PropositionsCompteView = { attente: 2, acceptee
 export interface GuideCorrigeView {
   readonly title: string;
   readonly href: string;
+  /**
+   * « Mis à jour le 12 mars » — la date de dernière mise à jour du CONTENU du guide
+   * (`lastContentUpdateAt` de `GET /guides/:slug`), jamais celle de la planche. `''`
+   * tant que le guide n'est pas chargé.
+   */
+  readonly misAJour: string;
+  /** « 84 membres ont trouvé utile » — `helpfulCount`, dit en toutes lettres, ou `''`. */
+  readonly utiles: string;
 }
 
+/**
+ * LE GUIDE AVANT SA RÉPONSE — vide, et non celui de la maquette (lot W2A).
+ *
+ * Elle portait « Obtenir la garantie Visale sans CDI » et son adresse : pendant
+ * l'aller-retour (ou si le guide n'existe pas) la page nommait un guide qu'aucun
+ * membre n'avait écrit. Le titre vide ne dessine rien ; l'adresse mène à la liste
+ * des guides, la seule qui soit vraie sans connaître le guide.
+ */
 export const guide: GuideCorrigeView = {
-  title: 'Obtenir la garantie Visale sans CDI',
-  /** Le slug dérivé du titre de la planche — la valeur de la maquette, comme lui. */
-  href: '/guides/obtenir-la-garantie-visale-sans-cdi',
+  title: '',
+  href: '/guides',
+  misAJour: '',
+  utiles: '',
 };
 
 /**

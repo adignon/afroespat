@@ -99,6 +99,7 @@ const donnees = {
   events: [],
   arrivals: [],
   online: [],
+  alerte: null,
   mTabs,
   mBottom,
 };

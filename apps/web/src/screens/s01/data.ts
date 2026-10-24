@@ -21,7 +21,18 @@ export interface S01Data {
   readonly liste: {
     /** `meta.total` — le compte de la RECHERCHE, pas celui de la page. */
     readonly total: number;
-    /** La ville cherchée, ou « France » quand aucun filtre de ville n'est posé. */
+    /**
+     * LA PHRASE DU SOUS-TITRE — « 3 annonces à Évry », « 1 annonce dans votre pays »,
+     * « 0 annonce ». Composée par `phraseAnnonces` : la planche écrivait « 8 annonces
+     * à Lyon » et le chargeur y mettait « France » faute de ville, soit « 0 annonces à
+     * France ». Le pays n'est pas une ville, et le pluriel se décide sur le nombre.
+     */
+    readonly phrase: string;
+    /**
+     * LA VILLE COMMUNE À TOUTES LES ANNONCES, ou `''`. La pastille de la rangée de
+     * filtres l'écrit ; elle disparaît quand il n'y a pas UNE ville à nommer (la
+     * planche y mettait « Lyon », puis le chargeur « France » — un pays).
+     */
     readonly ville: string;
     /**
      * RÈGLE DURE 10 §2.2 — le bandeau de non-paiement, de `meta.safetyBanner`.

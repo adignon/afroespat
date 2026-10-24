@@ -86,7 +86,7 @@ export function ChampsAnnonce({ f, mobile = false }: { readonly f: FormulaireAnn
       )}
 
       <Bloc libelle="Titre">
-        <input type="text" value={f.titre} onChange={f.onTitre} maxLength={120} placeholder="Studio meublé Lyon 7e" aria-label="Titre" data-annonce-titre="" style={CHAMP} />
+        <input type="text" value={f.titre} onChange={f.onTitre} maxLength={120} placeholder="Studio meublé, proche des transports" aria-label="Titre" data-annonce-titre="" style={CHAMP} />
       </Bloc>
 
       <Bloc libelle="Description">

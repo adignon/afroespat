@@ -104,7 +104,12 @@ export function CorrigerScreen({ slug }: { readonly slug: string }) {
      */
     guide:
       detail !== null && enTete !== null
-        ? { title: enTete.title, href: `/guides/${encodeURIComponent(detail.guide.slug)}` }
+        ? {
+            title: enTete.title,
+            href: `/guides/${encodeURIComponent(detail.guide.slug)}`,
+            misAJour: enTete.updated,
+            utiles: enTete.utiles,
+          }
         : guideMaquette,
     /** Le dessin de la planche : voir l'en-tête, l'envoi vit sur la page du guide. */
     correction: correctionMaquette,

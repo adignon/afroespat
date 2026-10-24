@@ -25,6 +25,7 @@ import {
   construireCarte,
   construireChoix,
   construireFeuille,
+  evenementTermine,
   construireFiche,
   construireMoi,
   construirePanneau,
@@ -380,7 +381,7 @@ export async function chargerE04(id: string): Promise<E04Data> {
     ? await memberApi.get(`/events/${id}/attendees`, organizerAttendeesResponseSchema)
     : await memberApi.get(`/events/${id}/attendees`, publicAttendeesResponseSchema);
 
-  const lue = construireFeuille(feuille);
+  const lue = construireFeuille(feuille, evenementTermine(detail));
 
   return {
     presence: { ...presenceVide, estOrganisateur: detail.isOrganizer, lignes: lue.participants },

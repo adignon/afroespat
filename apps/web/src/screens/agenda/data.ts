@@ -490,6 +490,13 @@ export interface LignePresence {
   readonly userId?: string;
   /** Vrai si la présence est DÉJÀ enregistrée côté serveur : la case ne se décoche plus. */
   readonly figee?: boolean;
+  /**
+   * LE STATUT RÉEL DE LA LIGNE — « Inscrit·e », « Présent·e », « Absent·e » ou « À
+   * enregistrer ». La planche écrivait « Présent·e » devant la case de CHAQUE inscrit,
+   * cochée ou non : une ligne qui disait présent·e un inscrit que personne n'avait
+   * pointé. Voir `statutDeLigne`.
+   */
+  readonly statut: string;
 }
 
 /** La feuille de présence vivante (E04) : cases, recherche, enregistrement. */
@@ -1011,6 +1018,40 @@ export function construirePresence(detail: EventDetailResponse): {
   return { debut: heure(detail.startsAt, zone), fin: heure(finIso, zone) };
 }
 
+/**
+ * LE MOT QUE LA LIGNE ÉCRIT DEVANT SA CASE (lot W2A, phase 2.18).
+ *
+ *   · `checkedIn` vrai et enregistré  → « Présent·e » ;
+ *   · coché ici, pas encore envoyé    → « À enregistrer » (ce n'est pas encore un fait) ;
+ *   · pas pointé, événement terminé   → « Absent·e » ;
+ *   · pas pointé, événement à venir ou en cours, ou présence inconnue → « Inscrit·e ».
+ *
+ * Le compteur « N présents sur M inscrits » compte les seules présences ENREGISTRÉES
+ * (`meta.checkedIn`) : les lignes « Présent·e » sont donc exactement celles qu'il
+ * compte, et « À enregistrer » ne s'y glisse pas.
+ */
+export function statutDeLigne(
+  ligne: { readonly figee: boolean; readonly coche: boolean; readonly connue: boolean },
+  termine: boolean,
+): string {
+  if (ligne.figee) return 'Présent·e';
+  if (ligne.coche) return 'À enregistrer';
+  if (ligne.connue && termine) return 'Absent·e';
+  return 'Inscrit·e';
+}
+
+/** Vrai quand l'événement est fini (fin déclarée, ou début + fenêtre de pointage). */
+export function evenementTermine(
+  detail: Pick<EventDetailResponse, 'startsAt' | 'endsAt'>,
+  maintenant: Date = new Date(),
+): boolean {
+  const fin =
+    detail.endsAt === null
+      ? new Date(detail.startsAt).getTime() + SELF_CHECKIN_WINDOW_MS
+      : new Date(detail.endsAt).getTime();
+  return maintenant.getTime() > fin;
+}
+
 /** Les statuts qu'on peut cocher présents (§3.3) : `POST /check-in` refuse les autres. */
 const COCHABLES = ['GOING', 'MAYBE', 'WAITLIST'] as const;
 
@@ -1027,6 +1068,7 @@ const COCHABLES = ['GOING', 'MAYBE', 'WAITLIST'] as const;
  */
 export function construireFeuille(
   feuille: OrganizerAttendeesResponse | PublicAttendeesResponse,
+  termine = false,
 ): {
   readonly participants: LignePresence[];
   readonly presents: number;
@@ -1055,6 +1097,10 @@ export function construireFeuille(
         nom: p.displayName,
         coche: presente === true,
         vide: presente === false,
+        statut: statutDeLigne(
+          { figee: presente === true, coche: false, connue },
+          termine,
+        ),
         ...(p.handle === null ? {} : { profil: `/@${p.handle}` }),
         ...('userId' in p ? { userId: (p as { userId: string }).userId } : {}),
         figee: presente === true,

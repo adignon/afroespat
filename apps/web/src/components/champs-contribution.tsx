@@ -84,7 +84,7 @@ export function ChampsContribution({ c, ville }: { readonly c: ContributionView;
               value={c.titre}
               onChange={c.onTitre}
               maxLength={120}
-              placeholder="Abonnement TCL à 25 € pour les moins de 26 ans"
+              placeholder="Abonnement de transport à tarif réduit pour les moins de 26 ans"
               aria-label="Votre bon plan"
               data-contribution-titre=""
               style={CHAMP}

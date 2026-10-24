@@ -65,6 +65,15 @@ export function pageSchema<T extends z.ZodTypeAny>(item: T) {
   });
 }
 
+/**
+ * 01 §2.6 : « Modifiable 1 fois par 30 jours. »
+ *
+ * UNE SEULE VALEUR, lue par le serveur (qui refuse) ET par K01 (qui annonce
+ * « prochain changement possible le … ») : la phrase de l'écran ne peut plus
+ * diverger de la règle.
+ */
+export const HANDLE_CHANGE_INTERVAL_DAYS = 30;
+
 /** Le handle public d'un membre (01-identite.md §2.6). */
 export const handleSchema = z
   .string()

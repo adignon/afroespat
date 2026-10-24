@@ -219,3 +219,9 @@ Annonces logement et emploi : supprimées. Profil de recherche : supprimé. Fich
 - **S06, ville** : la pastille « Lyon » (en dur) est la liste des villes du référentiel (`GET /places/cities`), qui filtre `GET /pros?cityId=` via `?ville=` ; « Toutes les villes » par défaut. Présente aussi à 390 px (AJOUT : la planche mobile ne la dessine pas).
 - **S10 à 390 px** : la carte « Réservé à Premium » n'apparaît que si `GET /me/alerts` dit `meta.isPremium: false` ; tout est gratuit, elle disparaît.
 - **Barre latérale** : « Créer ma fiche pro » mène à `/services/annuaire/ma-fiche`, la roue du rail à `/compte`, « Compte » de la barre basse à `/compte`.
+
+## 14. Précisions de mise en œuvre (lot W2A)
+
+- **S06, pastilles de métier** : `GET /pros/professions` rend les métiers qui ont au moins une fiche visible, du plus représenté au moins représenté (`{ items: [{ id, nameFr, count }] }`). Les six premiers sont des pastilles qui filtrent par `?metier=<id>` (le filtre `professionId` de `GET /pros`) ; au-delà, « Plus » (`?plus=1`) les montre tous, puis « Moins ». Sans fiche, pas de pastille. Les noms écrits en dur (dont « Auto-école », absent du référentiel) sont retirés.
+- **S01** : le sous-titre est « N annonces à {ville} » quand toutes partagent une ville, « N annonces dans votre pays » sinon, « 0 annonce » sans annonce ; la pastille de ville n'existe que s'il y a une ville à nommer (elle disait « France »).
+- **« N contacts sur illimité »** devient « N contacts » ; le bloc est masqué tant que les plans ne sont pas appliqués.

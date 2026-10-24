@@ -10,10 +10,11 @@ import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
+import { Texte } from '@/components/valeurs-vives';
 import type { A06Data } from './data';
 
 export function A06CorrigerDesktop(props: A06Data) {
-  const { correction, panelGuides, rail } = props;
+  const { correction, guide, panelGuides, rail } = props;
 
   return (
     <>
@@ -46,14 +47,7 @@ export function A06CorrigerDesktop(props: A06Data) {
     <div data-zone="centre" style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div data-zone="rangee" style={{ flex: "1", display: "flex", gap: "28px", padding: "12px 0 24px" }}>
-        <article data-zone="contenu" style={{ width: "688px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "28px", alignSelf: "flex-start" }}>
-          <div style={{ display: "flex", gap: "8px" }}><span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11.5px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px" }}>Logement</span><span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11.5px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px" }}>Universel</span></div>
-          <h1 style={{ margin: "14px 0 0", fontSize: "30px", fontWeight: "800", letterSpacing: "-1px" }}>Obtenir la garantie Visale sans CDI</h1>
-          <span style={{ display: "inline-block", marginTop: "12px", fontSize: "14px", fontWeight: "700", color: "#0F5C48", background: "#E3F0EB", padding: "6px 12px", borderRadius: "999px" }}>Mis à jour le 12 mars 2026</span>
-          <h2 style={{ margin: "24px 0 0", fontSize: "19px", fontWeight: "700" }}>1. Vérifier votre éligibilité</h2>
-          <p style={{ margin: "10px 0 0", fontSize: "15px", lineHeight: "1.72" }}>Visale est une caution gratuite proposée par Action Logement. Les étudiants de 18 à 30 ans y ont droit, <span style={{ background: "#CFE3DA", borderRadius: "4px", outline: "2px solid #16785E", outlineOffset: "1px" }}>quel que soit leur pays d'origine, dès l'obtention du VLS-TS</span>.</p>
-          <ul style={{ margin: "18px 0 0", paddingLeft: "20px", fontSize: "15px", lineHeight: "1.85" }}><li>Créer un compte sur visale.fr</li><li>Déposer votre VLS-TS et votre certificat de scolarité</li></ul>
-        </article>
+        <article data-zone="contenu" style={{ width: "688px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "28px", alignSelf: "flex-start" }}><h1 style={{ margin: "0", fontSize: "30px", fontWeight: "800", letterSpacing: "-1px" }}>{guide.title}</h1>{guide.misAJour === "" ? null : (<span style={{ display: "inline-block", marginTop: "12px", fontSize: "14px", fontWeight: "700", color: "#0F5C48", background: "#E3F0EB", padding: "6px 12px", borderRadius: "999px" }}>{guide.misAJour}</span>)}</article>
       </div>
       <div style={{ position: "absolute", inset: "0", background: "rgba(22,33,29,.45)" }}></div>
       <div style={{ position: "absolute", top: "0", right: "0", bottom: "0", width: "480px", background: "#fff", padding: "28px", display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -66,7 +60,7 @@ export function A06CorrigerDesktop(props: A06Data) {
           <textarea value={correction.motif} onChange={correction.onMotif} aria-label="Pourquoi cette correction ? (obligatoire)" data-correction-motif="" required aria-required="true" minLength={20} style={{ width: "100%", boxSizing: "border-box", background: "transparent", fontFamily: "inherit", color: "inherit", outline: "none", resize: "none", display: "block", margin: "0", marginTop: "-8px", border: "1px solid #E6EBE9", borderRadius: "14px", padding: "14px", fontSize: "14px" }} />
           <div style={{ fontSize: "12.5px", fontWeight: "700" }}>Source <span style={{ color: "#8A958F", fontWeight: "500" }}>(facultatif)</span></div>
           <input type="url" inputMode="url" autoComplete="off" placeholder="https://" aria-label="Une source qui appuie votre correction (facultatif)" value={correction.source} onChange={correction.onSource} data-correction-source="" style={{ width: "100%", boxSizing: "border-box", background: "transparent", fontFamily: "inherit", outline: "none", marginTop: "-8px", height: "46px", border: "1px solid #E6EBE9", borderRadius: "14px", padding: "0 14px", display: "flex", alignItems: "center", fontSize: "13.5px", color: "inherit" }} />
-          <div style={{ display: "flex", gap: "10px", alignItems: "center", background: "#F3F7F5", borderRadius: "14px", padding: "12px 14px", fontSize: "12.5px", color: "#0F5C48", fontWeight: "600" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>L'auteur a 14 jours pour répondre. Sans réponse, la modération tranche.</div>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center", background: "#F3F7F5", borderRadius: "14px", padding: "12px 14px", fontSize: "12.5px", color: "#0F5C48", fontWeight: "600" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg><Texte id="correctionDelai" /></div>
           {correction.accuse === null ? null : (<div role="status" data-correction-accuse="" style={{ background: "#16211D", color: "#fff", borderRadius: "16px", padding: "14px 16px", fontSize: "13px", fontWeight: "600", lineHeight: "1.5" }}>{correction.accuse}</div>)}<div style={{ flex: "1" }}></div>
           <div style={{ display: "flex", gap: "8px" }}><button type="button" onClick={correction.onFermer} data-correction-annuler="" style={{ height: "50px", padding: "0 20px", borderRadius: "14px", background: "#F2F5F4", border: "none", font: "inherit", fontSize: "14.5px", fontWeight: "700", cursor: "pointer" }}>Annuler</button><button type="button" onClick={correction.onEnvoyer} disabled={!correction.peutEnvoyer} data-correction-envoyer="" style={{ flex: "1", height: "50px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "14.5px", fontWeight: "700", cursor: correction.peutEnvoyer ? "pointer" : "default", opacity: correction.peutEnvoyer ? "1" : ".55" }}>Envoyer la proposition</button></div>
       </div>

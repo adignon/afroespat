@@ -23,7 +23,6 @@ export { arrivals, events, rail, shortcuts };
  * premières restent là-bas, et rien n'est écrit deux fois.
  */
 const PIN = 'M12 17v5M9 3h6l-1 6 4 4H6l4-4z';
-const CHAT = 'M4 5h16v11H9l-5 4z';
 const LOCK = 'M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3';
 const EYE = 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
 const EDIT = 'M4 20h4L19 9l-4-4L4 16z';
@@ -76,47 +75,7 @@ export const guideFilters = ['Catégorie', 'Pays', 'Ville'];
  * les objets aient la même forme — sans quoi `g.verify` devient inaccessible sur
  * l'union, ce que `tsc` refuse sous `exactOptionalPropertyTypes`.
  */
-export const guides = [
-  {
-    title: 'Obtenir la garantie Visale sans CDI',
-    updated: 'Mis à jour le 12 mars',
-    cat: 'Logement',
-    scope: 'Universel',
-    author: 'Marc Koudou',
-    i: 'MK',
-    bg: '#0F5C48',
-    useful: 84,
-    verify: false,
-    excerpt:
-      'Visale est une caution gratuite d’Action Logement. Les étudiants de 18 à 30 ans y ont droit dès la validation du VLS-TS. Voici les pièces à préparer, les délais réels observés par les membres et la façon de le présenter au propriétaire pour qu’il l’accepte.',
-  },
-  {
-    title: 'Valider son VLS-TS en ligne',
-    updated: 'Mis à jour le 28 février',
-    cat: 'Titre de séjour',
-    scope: 'Universel',
-    author: 'Aïcha Diop',
-    i: 'AD',
-    bg: '#16785E',
-    useful: 132,
-    verify: false,
-    excerpt:
-      'Depuis 2025, la validation du VLS-TS se fait uniquement sur le site de l’ANEF, dans les trois mois après l’arrivée. Le guide détaille chaque écran, la taxe à payer et ce qu’il faut faire si le site refuse votre numéro de visa.',
-  },
-  {
-    title: 'Ouvrir un compte bancaire depuis Cotonou',
-    updated: 'Mis à jour le 3 oct. 2025',
-    cat: 'Banque',
-    scope: 'Bénin',
-    author: 'Ibrahim S.',
-    i: 'IS',
-    bg: '#B4581F',
-    useful: 41,
-    verify: true,
-    excerpt:
-      'Plusieurs banques proposent l’ouverture à distance avant le départ. Comparatif des frais, des documents demandés et du délai pour obtenir l’attestation de virement irrévocable exigée par le consulat.',
-  },
-];
+export const guides: readonly { title: string; updated: string; cat: string; scope: string; author: string; i: string; bg: string; useful: number; verify: boolean; excerpt: string }[] = [];
 
 /** « Recherché sans résultat ce mois-ci » — ce que la communauté ne trouve pas. */
 export const missing = [
@@ -141,11 +100,7 @@ export const guideActions = [
   { label: 'Signaler', icon: FLAG },
 ];
 
-export const versions = [
-  { t: 'Version 6 — Délais mis à jour', s: '12 mars · Marc K.', dot: '#16785E' },
-  { t: 'Version 5 — Section propriétaire', s: '2 février · Fatou N.', dot: '#CBD5D1' },
-  { t: 'Version 4', s: '10 janvier · Aïcha D.', dot: '#CBD5D1' },
-];
+export const versions: readonly { t: string; s: string; dot: string }[] = [];
 
 // ═══ A05 · l'éditeur de guide ════════════════════════════════════════════════
 
@@ -169,40 +124,7 @@ export const rules = [
  * maquette les omet, mais quatre formes d'objet différentes rendent `n.muted`
  * inaccessible sur l'union.
  */
-export const myNets = [
-  {
-    i: 'LY',
-    name: 'Lyon et Rhône',
-    bg: '#16785E',
-    members: '1 400 membres',
-    unread: 12,
-    muted: false,
-  },
-  {
-    i: 'BN',
-    name: 'Béninois en France',
-    bg: '#E0733A',
-    members: '890 membres',
-    unread: 3,
-    muted: false,
-  },
-  {
-    i: 'EN',
-    name: 'Entrepreneurs Lyon',
-    bg: '#0F5C48',
-    members: '62 membres',
-    unread: null,
-    muted: true,
-  },
-  {
-    i: 'CO',
-    name: 'Recherche Colocation',
-    bg: '#2FA37D',
-    members: '210 membres',
-    unread: null,
-    muted: false,
-  },
-];
+export const myNets: readonly { i: string; name: string; bg: string; members: string; unread: number | null; muted: boolean }[] = [];
 
 export const netFilters = [chip('Ville', true), chip('Pays'), chip('Intérêt'), chip('Catégorie')];
 
@@ -211,38 +133,7 @@ export const netFilters = [chip('Ville', true), chip('Pays'), chip('Intérêt'),
  * bouton le dit : « Demander » sur fond clair, pas « Rejoindre » sur fond vert. La
  * différence de couleur porte l'information, elle n'est pas décorative.
  */
-export const discover = [
-  {
-    name: 'Étudiants de Lyon 2',
-    cat: 'Intérêt',
-    desc: 'Entraide cours, stages et vie de campus.',
-    members: '340 membres',
-    cta: 'Rejoindre',
-    cover: '#CFE3DA',
-    btnBg: '#16785E',
-    btnFg: '#fff',
-  },
-  {
-    name: 'Sénégalais de Lyon',
-    cat: 'Pays',
-    desc: 'Réseau des Sénégalais installés dans le Rhône.',
-    members: '520 membres',
-    cta: 'Rejoindre',
-    cover: '#FBE3D4',
-    btnBg: '#16785E',
-    btnFg: '#fff',
-  },
-  {
-    name: 'Femmes entrepreneures',
-    cat: 'Intérêt',
-    desc: 'Sur demande · pour créer et développer son activité.',
-    members: '88 membres',
-    cta: 'Demander',
-    cover: '#E9F2EE',
-    btnBg: '#F2F5F4',
-    btnFg: '#0F5C48',
-  },
-];
+export const discover: readonly { name: string; cat: string; desc: string; members: string; cta: string; cover: string; btnBg: string; btnFg: string }[] = [];
 
 // ═══ A08 · un réseau ═════════════════════════════════════════════════════════
 
@@ -260,55 +151,7 @@ export const ownerActions = ['Annonce', 'Épingler', 'Gérer'];
  * icône — deux marques, pas une, parce qu'un fond très clair seul ne se voit pas
  * à contraste réduit.
  */
-export const topics = [
-  {
-    title: 'Renouveler son passeport depuis la France',
-    last: 'Dernier message il y a 2 h · Sandra M.',
-    state: 'Ouvert',
-    n: 23,
-    icon: PIN,
-    pinned: true,
-  },
-  {
-    title: 'Liste des pièces pour l’acte de naissance',
-    last: 'Épinglé par les modérateurs',
-    state: 'Résolu',
-    n: 41,
-    icon: PIN,
-    pinned: true,
-  },
-  {
-    title: 'Envoyer de l’argent au pays : quels services ?',
-    last: 'il y a 5 h · Marc K.',
-    state: 'Ouvert',
-    n: 17,
-    icon: CHAT,
-    pinned: false,
-  },
-  {
-    title: 'Fête de l’indépendance — 1er août',
-    last: 'hier · Aïcha D.',
-    state: 'Ouvert',
-    n: 9,
-    icon: CHAT,
-    pinned: false,
-  },
-  {
-    title: 'Double nationalité : retours d’expérience',
-    last: 'il y a 3 j · Ibrahim S.',
-    state: 'Résolu',
-    n: 32,
-    icon: CHAT,
-    pinned: false,
-  },
-].map((t) => ({
-  ...t,
-  bg: t.pinned ? '#FAFBFB' : 'transparent',
-  iconBg: t.pinned ? '#E3F0EB' : '#F2F5F4',
-  iconFg: t.pinned ? '#0F5C48' : '#5D6B66',
-  stBg: t.state === 'Ouvert' ? '#E3F0EB' : '#F2F5F4',
-  stFg: t.state === 'Ouvert' ? '#0F5C48' : '#5D6B66',
-}));
+export const topics: readonly { bg: string; iconBg: string; iconFg: string; stBg: string; stFg: string; title: string; last: string; state: string; n: number; icon: string; pinned: boolean }[] = [];
 
 // ═══ A09 · un sujet ══════════════════════════════════════════════════════════
 
@@ -320,41 +163,7 @@ export const topics = [
  * elle-même. On reproduit l'état qu'elle montre (aucun guide lié) plutôt que
  * d'inventer le lien qu'elle a oublié de fournir.
  */
-export const comments = [
-  {
-    i: 'SM',
-    bg: '#0F5C48',
-    name: 'Sandra M.',
-    text: 'Le Dr Mensah, rue de Marseille, prend encore des patients. Appelez le matin.',
-    time: 'il y a 5 h',
-    indent: '0px',
-    indentM: '0px',
-    canReply: true,
-    guide: null,
-  },
-  {
-    i: 'FN',
-    bg: '#2FA37D',
-    name: 'Fatou Ndiaye',
-    text: 'Merci ! Il accepte la carte Vitale provisoire ?',
-    time: 'il y a 4 h',
-    indent: '48px',
-    indentM: '34px',
-    canReply: false,
-    guide: null,
-  },
-  {
-    i: 'KB',
-    bg: '#E0733A',
-    name: 'Kofi Boateng',
-    text: 'Maison de santé Jean Macé aussi, via Doctolib. Ils parlent anglais.',
-    time: 'il y a 3 h',
-    indent: '0px',
-    indentM: '0px',
-    canReply: true,
-    guide: null,
-  },
-];
+export const comments: readonly { i: string; bg: string; name: string; text: string; time: string; indent: string; indentM: string; canReply: boolean; guide: null }[] = [];
 
 export const modActions = [
   { label: 'Épingler', icon: PIN },
@@ -383,23 +192,12 @@ export const visibility = [
   radio: v.on ? '6px solid #16785E' : '1.5px solid #CBD5D1',
 }));
 
-export const invitees = [
-  { i: 'SM', name: 'Sandra M.', sub: 'Installée · Lyon 3e', bg: '#0F5C48', invited: true },
-  { i: 'KB', name: 'Kofi Boateng', sub: 'Arrivé · Lyon 3e', bg: '#E0733A', invited: true },
-  { i: 'FN', name: 'Fatou Ndiaye', sub: 'Installée · Lyon 7e', bg: '#2FA37D', invited: true },
-  { i: 'IS', name: 'Ibrahim S.', sub: 'Contact · Bordeaux', bg: '#B4581F', invited: false },
-  { i: 'YB', name: 'Yasmine Benali', sub: 'Contact · Paris', bg: '#16785E', invited: false },
-].map((m) => ({
-  ...m,
-  btn: m.invited ? 'Invité·e' : 'Inviter',
-  btnBg: m.invited ? '#E3F0EB' : '#16785E',
-  btnFg: m.invited ? '#0F5C48' : '#fff',
-}));
+export const invitees: readonly { btn: string; btnBg: string; btnFg: string; i: string; name: string; sub: string; bg: string; invited: boolean }[] = [];
 
 // ═══ A11 · villes et membres ═════════════════════════════════════════════════
 
 export const dirFilters = [
-  chip('Lyon · 10 km', true),
+  chip('Ma ville', true),
   chip('Pays'),
   chip('Phase'),
   chip('Disponible'),
@@ -422,40 +220,7 @@ export interface MembreAnnuaire {
   readonly profil?: string;
 }
 
-export const directory: readonly MembreAnnuaire[] = [
-  {
-    i: 'SM',
-    name: 'Sandra M.',
-    sub: 'Installée · Lyon 3e',
-    bg: '#0F5C48',
-    help: true,
-    skills: ['Droit', 'Anglais'],
-  },
-  {
-    i: 'KB',
-    name: 'Kofi Boateng',
-    sub: 'Arrivé · Lyon 3e',
-    bg: '#E0733A',
-    help: false,
-    skills: ['Informatique'],
-  },
-  {
-    i: 'AD',
-    name: 'Aïcha Diop',
-    sub: 'Installée · Lyon 7e',
-    bg: '#16785E',
-    help: true,
-    skills: ['Comptabilité', 'CAF'],
-  },
-  {
-    i: 'MS',
-    name: 'Moussa Sow',
-    sub: 'Prépare son départ · Dakar',
-    bg: '#2FA37D',
-    help: false,
-    skills: ['BTP'],
-  },
-];
+export const directory: readonly MembreAnnuaire[] = [];
 
 // ═══ A12 · la fiche d'une ville ══════════════════════════════════════════════
 
@@ -656,18 +421,9 @@ export interface GuideLiableView {
   readonly onPick?: () => void;
 }
 
-export const guidesSuggeres = [
-  { titre: 'Déclarer son médecin traitant', meta: 'Santé · mis à jour le 2 février' },
-  { titre: 'Carte Vitale : premiers pas', meta: 'Santé · mis à jour le 18 janvier' },
-] satisfies readonly GuideLiableView[];
+export const guidesSuggeres: readonly GuideLiableView[] = [];
 
-export const guidesTrouves = [
-  {
-    titre: 'Trouver un médecin qui accepte de nouveaux patients',
-    meta: 'Santé · Lyon · 57 utiles',
-  },
-  { titre: 'Complémentaire santé solidaire', meta: 'Santé · Universel · 34 utiles' },
-] satisfies readonly GuideLiableView[];
+export const guidesTrouves: readonly GuideLiableView[] = [];
 
 // ═══ A12T · LES ONGLETS DE LA FICHE VILLE ══════════════════════════════════
 //
@@ -716,11 +472,11 @@ export interface CityHeadView {
 }
 
 export const ville: CityHeadView = {
-  nom: 'Lyon',
-  region: 'Auvergne-Rhône-Alpes',
-  membres: '1 400 membres',
-  contributions: '212 contributions',
-  reseau: 'Réseau Lyon et Rhône',
+  nom: '',
+  region: '',
+  membres: '',
+  contributions: '',
+  reseau: '',
 };
 
 /**
@@ -797,109 +553,11 @@ export const cityStoryFilters = cityStoryFiltersFor(0);
  * vérifié contre la prise. Si un cadre se mettait à lire un champ de plus, la
  * ligne rougirait ici, à la source du dessin.
  */
-export const cityTips = [
-  {
-    cat: 'Transport',
-    titre: 'Abonnement TCL à 25 € pour les moins de 26 ans',
-    texte:
-      'Demandez-le en agence avec votre carte étudiante, il n’est pas proposé en ligne pour les étudiants étrangers.',
-    i: 'SM',
-    bg: '#0F5C48',
-    auteur: 'Sandra M.',
-    sous: 'Installée · Lyon 3e',
-    utileBg: '#16785E',
-    utileFg: '#fff',
-    utiles: 48,
-  },
-  {
-    cat: 'Administration',
-    titre: 'Préfecture : arriver avant 8 h le mardi',
-    texte:
-      'Les files sont plus courtes le mardi matin pour les retraits de titre. Pensez à la photocopie du récépissé.',
-    i: 'MK',
-    bg: '#0F5C48',
-    auteur: 'Marc K.',
-    sous: 'Installé',
-    utileBg: '#F2F5F4',
-    utileFg: '#16211D',
-    utiles: 31,
-  },
-  {
-    cat: 'Économies',
-    titre: 'Too Good To Go autour de la Guillotière',
-    texte:
-      'Les boulangeries de la place Gabriel-Péri mettent leurs paniers en ligne vers 19 h.',
-    i: 'FN',
-    bg: '#2FA37D',
-    auteur: 'Fatou N.',
-    sous: 'Installée · Lyon 7e',
-    utileBg: '#F2F5F4',
-    utileFg: '#16211D',
-    utiles: 22,
-  },
-] satisfies readonly CityTipView[];
+export const cityTips: readonly CityTipView[] = [];
 
-export const cityPlaces = [
-  {
-    nom: 'Wax et Saveurs',
-    adresse: '12 rue Paul-Bert, Lyon 3e',
-    tags: ['Épicerie', 'Bénin', 'Sénégal'],
-    been: 'Vous y êtes allé·e',
-    beenBg: '#E3F0EB',
-    beenBd: '#E3F0EB',
-    texte: 'Attiéké frais le samedi matin, gari, piment. Paiement carte.',
-    i: 'KB',
-    bg: '#E0733A',
-    auteur: 'Kofi B.',
-    sous: 'Arrivé · Lyon 3e',
-    utileBg: '#F2F5F4',
-    utileFg: '#16211D',
-    utiles: 36,
-  },
-  {
-    nom: 'Chez Mama Adjo',
-    adresse: '5 cours Gambetta, Lyon 7e',
-    tags: ['Restaurant', 'Bénin'],
-    been: 'J’y suis allé·e',
-    beenBg: '#fff',
-    beenBd: '#E6EBE9',
-    texte: 'Amiwo et sauce feuille le vendredi. Petites portions à 8 €.',
-    i: 'AD',
-    bg: '#16785E',
-    auteur: 'Aïcha D.',
-    sous: 'Installée · Lyon 7e',
-    utileBg: '#F2F5F4',
-    utileFg: '#16211D',
-    utiles: 27,
-  },
-] satisfies readonly CityPlaceView[];
+export const cityPlaces: readonly CityPlaceView[] = [];
 
-export const cityStories = [
-  {
-    texte:
-      '« J’ai trouvé ma coloc en deux semaines grâce au réseau. Le plus dur a été le garant, Visale m’a sauvé. Venez tôt aux événements du jeudi, c’est là que tout se passe. »',
-    parcours: 'Parcours Études · 7 étapes franchies',
-    i: 'AD',
-    bg: '#B4581F',
-    auteur: 'Amina D.',
-    sous: 'Étudiante · Lyon',
-    utileBg: '#16785E',
-    utileFg: '#fff',
-    utiles: 54,
-  },
-  {
-    texte:
-      '« Arrivé en plein hiver sans connaître personne. Trois mois après, j’ai un CDI et des amis. Le parrainage change tout. »',
-    parcours: 'Parcours Travail · abouti',
-    i: 'KB',
-    bg: '#E0733A',
-    auteur: 'Kofi B.',
-    sous: 'Arrivé · Lyon 3e',
-    utileBg: '#F2F5F4',
-    utileFg: '#16211D',
-    utiles: 41,
-  },
-] satisfies readonly CityStoryView[];
+export const cityStories: readonly CityStoryView[] = [];
 
 // ═══ A02 · une publication ═══════════════════════════════════════════════════
 
@@ -966,76 +624,33 @@ export const relGuidesFor = (
 const MAIN_STORY = {
   bg: '#16785E',
   avBg: '#B4581F',
-  i: 'AD',
-  name: 'Aïcha Diop',
-  sub: 'Lyon · il y a 3 h · expire dans 21 h',
-  pill: 'CONSEIL · LOGEMENT',
+  i: '',
+  name: '',
+  sub: '',
+  pill: '',
   pillFg: '#16785E',
-  label: 'CONSEIL',
-  text: 'Pour Visale, déposez votre VLS-TS dès sa validation sur l\u2019ANEF. Réponse en 48 h.',
-  state: '1er des conseils Logement aujourd\u2019hui · 31 trouvent utile',
+  label: '',
+  text: '',
+  state: '',
   a1: 'Utile',
-  useful: true,
-  n1: '31',
+  useful: false,
+  n1: '0',
   a2: 'Pas utile',
-  n2: '2',
-  write: 'Écrire à Aïcha…',
-  bars: ['100%', '40%', '0%'],
+  n2: '0',
+  write: 'Écrire…',
+  bars: ['100%'],
   align: 'center',
   photo: false,
   confirmers: null as readonly { readonly i: string; readonly bg: string }[] | null,
 };
 
-export const storyViews = [
-  MAIN_STORY,
-  {
-    bg: '#2E3A35',
-    avBg: '#E0733A',
-    i: 'KB',
-    name: 'Kofi Boateng',
-    sub: 'Lyon 7e · il y a 5 h · expire dans 19 h',
-    pill: 'DÉCOUVERTE · PRODUIT',
-    pillFg: '#16785E',
-    label: 'DÉCOUVERTE',
-    text: 'Épicerie Wax et Saveurs : attiéké frais le samedi matin.',
-    state: 'Ajoutée aux produits du pays de la fiche Lyon · 14 veulent y aller',
-    a1: 'À voir',
-    useful: false,
-    n1: '14',
-    a2: 'J\u2019y suis allé·e',
-    n2: '6',
-    write: 'Écrire à Kofi…',
-    bars: ['100%', '0%'],
-    align: 'flex-end',
-    photo: true,
-    confirmers: null as readonly { readonly i: string; readonly bg: string }[] | null,
-  },
-  {
-    bg: '#1F2A44',
-    avBg: '#0F5C48',
-    i: 'SM',
-    name: 'Sandra M.',
-    sub: 'Lyon 3e · il y a 1 h · expire dans 23 h',
-    pill: 'INFORMATION · CAF',
-    pillFg: '#1F2A44',
-    label: 'INFORMATION',
-    text: 'Le guichet CAF de la Part-Dieu ferme à 12 h cette semaine.',
-    state: '2 membres confirment · dans Guichets du jour',
-    a1: 'Je confirme',
-    useful: false,
-    n1: '2',
-    a2: 'Ça a changé',
-    n2: '0',
-    write: 'Écrire à Sandra…',
-    bars: ['60%'],
-    align: 'center',
-    photo: false,
-    confirmers: [
-      { i: 'MK', bg: '#16785E' },
-      { i: 'FN', bg: '#2FA37D' },
-    ] as readonly { readonly i: string; readonly bg: string }[] | null,
-  },
-];
+/**
+ * LES TROIS STORIES D'EXEMPLE (Aïcha Diop, Kofi Boateng, Sandra M.) SONT RETIRÉES
+ * (lot W2A, phase 2.22). Aucune page ne les lit : la story qu'on ouvre vient de
+ * `GET /stories/:id`. Il reste UNE vue VIDE, pour que `storyViewFor` ait de quoi
+ * répondre avant la réponse du serveur — sans nom, sans ville, sans texte.
+ */
+export const storyViews = [MAIN_STORY];
 
 /**
  * Le cadre d'ORDINATEUR de A13 boucle sur `storyMain`, celui de MOBILE est lui-même
@@ -1164,8 +779,10 @@ export const attachTopics = ['Visale', 'Garant', 'CAF', 'Colocation', 'Banque'];
  * de la phrase, elle, est EXACTEMENT celle de la maquette : un nom de ville, un
  * espace, « seulement ». Seul le nom vient maintenant de l'état.
  *
- * `villeLabel` retombe sur `'Lyon'` : c'est ce que la planche écrit, donc les
- * appelants qui ne choisissent pas de ville voient ce qu'ils voyaient.
+ * `villeLabel` retombe sur « Ma ville » (lot W2A, phase 2.22) : le repli était
+ * `'Lyon'`, le mot de la planche, donc un membre sans ville connue publiait « Lyon
+ * seulement ». Sans nom à dire, l'onglet dit « Ma ville seulement » — la portée, pas
+ * une ville inventée.
  *
  * `chevron` ne vaut que pour le SECOND onglet, parce que lui seul ouvre quelque
  * chose. Le premier n'a rien à montrer : « tous les membres » n'a pas de liste.
@@ -1177,9 +794,9 @@ export const attachTopics = ['Visale', 'Garant', 'CAF', 'Colocation', 'Banque'];
 export const audienceFor = (
   aud: number,
   onPick: (i: number) => void,
-  villeLabel = 'Lyon',
+  villeLabel: string | null = null,
 ) =>
-  ['Tous les membres', `${villeLabel} seulement`].map((label, i) => {
+  ['Tous les membres', `${villeLabel ?? 'Ma ville'} seulement`].map((label, i) => {
     const on = aud === i;
     return {
       label,

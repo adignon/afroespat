@@ -489,6 +489,13 @@ const CARTE_CONTACT = (fond, initiales, nom, sousTitre, origine) =>
   '</span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
   '<path d="M4 5h16v11H9l-5 4z"/></svg></span></div></div>';
 
+ /** La ligne de contact du cadre mobile : celle de l’ordinateur, sans l’icône de message. */
+const SANS_ICONE_MESSAGE = (ligne) =>
+  ligne.replaceAll(
+    '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
+    '',
+  );
+
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ K10 · LES ENREGISTRÉS — LE DESSIN DEVIENT UNE LISTE                       ║
@@ -1251,6 +1258,35 @@ export const screens = [
           '</sc-for>',
         frames: ['Desktop'],
         why: 'Mes contacts, de `GET /me/connections` — nom, initiales, couleur d’avatar et origine de la mise en relation.',
+      },
+      /**
+       * ── LE TÉLÉPHONE MONTRAIT DEUX CONTACTS INVENTÉS (lot W2A, phase 2.8) ────
+       *
+       * « Sandra M. · Lyon 3e » et « Aïcha Diop · Lyon 7e » : les deux lignes du
+       * cadre mobile, identiques pour tout le monde — un membre sans aucun contact
+       * les lisait quand même. Ce sont des lignes de la liste « Contacts » (même
+       * rond, même pastille d’origine que la planche d’ordinateur, moins l’icône
+       * de message) : elles lisent donc la MÊME liste, `contacts.liste`.
+       */
+      {
+        noeud: SANS_ICONE_MESSAGE(
+          CARTE_CONTACT('#0F5C48', 'SM', 'Sandra M.', 'Lyon 3e', 'Entraide') +
+            CARTE_CONTACT('#16785E', 'AI', 'Aïcha Diop', 'Lyon 7e', 'Parrainage'),
+        ),
+        devient:
+          '<sc-for list="{{ contacts.liste }}" as="c">' +
+          SANS_ICONE_MESSAGE(
+            CARTE_CONTACT(
+              '{{ c.fond }}',
+              '{{ c.initiales }}',
+              '{{ c.nom }}',
+              '{{ c.depuis }}',
+              '{{ c.origine }}',
+            ),
+          ) +
+          '</sc-for>',
+        frames: ['Mobile'],
+        why: 'Mes contacts, de `GET /me/connections` : le téléphone lit la liste de l’ordinateur au lieu de deux lignes de la maquette.',
       },
       /**
        * ── LES TROIS SECTIONS ÉTAIENT DES LIGNES UNIQUES ────────────────────

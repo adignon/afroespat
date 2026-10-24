@@ -5,6 +5,7 @@ import {
   mediaAssetSchema,
   meResponseSchema,
   placesCitiesResponseSchema,
+  placesCountriesResponseSchema,
   updateMeSchema,
   updateProfileSchema,
   type MeResponse,
@@ -145,6 +146,54 @@ function televerserAvatar(fichier: File): Promise<MediaAssetView> {
   return memberApi.put('/me/avatar', mediaAssetSchema, { body: corps });
 }
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA LISTE « VILLE » EST CELLE DU PAYS OÙ L'ON VIT — PAS DU PAYS D'ORIGINE   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Lot W2A, phase 2.7. Le menu proposait les douze villes du pays d'ORIGINE (le
+ * Bénin) à un membre qui habite Évry : sa ville n'y figurait pas, et le menu
+ * affichait donc la première ville de la liste comme si c'était la sienne.
+ *
+ * Le pays est celui de la ville COURANTE (`cityCountryId`, rendu par `GET /me`) ;
+ * sans ville, c'est le premier pays de destination actif — celui où l'on s'installe,
+ * comme à l'onboarding. Les villes inactives sont proposées (`activeOnly=false`) :
+ * on peut vivre dans une ville dont le réseau n'est pas encore ouvert. Et la ville
+ * courante est TOUJOURS dans la liste, même si le référentiel ne la rendait plus
+ * (ville fusionnée depuis) : un menu qui ne contient pas sa propre valeur affiche
+ * une autre ville à la place.
+ */
+async function villesProposees(me: MeResponse): Promise<readonly PlacesCity[]> {
+  let pays = me.user.cityCountryId;
+  if (pays === null) {
+    const liste = await memberApi.get('/places/countries?limit=50', placesCountriesResponseSchema);
+    pays = liste.items.find((c) => c.kind !== 'ORIGIN')?.id ?? null;
+  }
+  const items =
+    pays === null
+      ? []
+      : (
+          await memberApi.get(
+            `/places/cities?countryId=${encodeURIComponent(pays)}&activeOnly=false&limit=200`,
+            placesCitiesResponseSchema,
+          )
+        ).items;
+  const courante = me.user.cityId;
+  if (courante === null || items.some((v) => v.id === courante)) return items;
+  return [
+    ...items,
+    {
+      id: courante,
+      countryId: pays ?? courante,
+      name: me.user.cityName ?? '',
+      slug: '',
+      region: null,
+      isActive: false,
+      memberCount: 0,
+    },
+  ];
+}
+
 export function useEditionProfil(): {
   readonly edition: EditionProfil;
   readonly rechargement: number;
@@ -182,13 +231,7 @@ export function useEditionProfil(): {
       const forme = depuisMe(me);
       setDepart(forme);
       setForm(forme);
-      if (me.user.originCountryId !== null) {
-        const liste = await memberApi.get(
-          `/places/cities?countryId=${encodeURIComponent(me.user.originCountryId)}&activeOnly=false&limit=200`,
-          placesCitiesResponseSchema,
-        );
-        setVilles(liste.items);
-      }
+      setVilles(await villesProposees(me));
     } catch {
       /**
        * LE SEMIS NE CRIE PAS. L'écran a déjà affiché le profil par son propre

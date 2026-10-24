@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { ApiError, memberApi } from '@/lib/api/index';
+import { TEXTES_DELAIS } from '@/lib/textes-delais';
 import { z } from 'zod';
 import type { K08Data } from './data';
 
@@ -50,8 +51,9 @@ const etatSchema = z
 
 /** Ce que l'écran écrit à la place de la promesse « Préparé sous 48 h ». */
 function phraseDe(etat: z.infer<typeof etatSchema>): string {
-  if (etat === null) return 'Aucune archive demandée. Préparée sous 48 h, lien valable 7 jours.';
-  if (etat.downloadUrl !== null) return 'Votre archive est prête. Le lien reste valable 7 jours.';
+  // Les délais viennent de `lib/textes-delais.ts` (donc de `ACCOUNT_LIMITS`), pas de la maquette.
+  if (etat === null) return TEXTES_DELAIS.exportAucune;
+  if (etat.downloadUrl !== null) return TEXTES_DELAIS.exportPrete;
   if (etat.status === 'READY') return 'Votre archive a expiré. Demandez-en une nouvelle.';
   return 'Archive en préparation. Nous vous préviendrons dès qu’elle sera prête.';
 }
