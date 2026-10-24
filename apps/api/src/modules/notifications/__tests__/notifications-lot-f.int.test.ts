@@ -4,6 +4,7 @@ import { AuditService } from '../../../common/audit.service';
 import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
 import { VisibilityService } from '../../../common/visibility.service';
+import { AdminJourneysService } from '../../admin/admin-journeys.service';
 import { ConnectionsService } from '../../connections/connections.service';
 import type { RealtimeEvent } from '../../realtime/realtime.channel';
 import type { RealtimeRelayService } from '../../realtime/realtime.relay';
@@ -26,6 +27,8 @@ describe('notifications : notification.new, url, suggestions de contact', () => 
   const users: string[] = [];
   const evenements: string[] = [];
   const salons: string[] = [];
+  const modeles: string[] = [];
+  const equipe: string[] = [];
   let countryId = '';
   let cityId = '';
   const run = Math.random().toString(36).slice(2, 7);
@@ -66,6 +69,8 @@ describe('notifications : notification.new, url, suggestions de contact', () => 
     await prisma.eventAttendee.deleteMany({ where: { userId: { in: users } } });
     await prisma.event.deleteMany({ where: { id: { in: salons } } });
     await prisma.user.deleteMany({ where: { id: { in: users } } });
+    await prisma.journeyTemplate.deleteMany({ where: { id: { in: modeles } } });
+    await prisma.staffUser.deleteMany({ where: { id: { in: equipe } } }).catch(() => undefined);
     await prisma.$disconnect();
   });
 
@@ -130,5 +135,91 @@ describe('notifications : notification.new, url, suggestions de contact', () => 
   it('emitSuggestions n’émet rien pour des membres déjà en contact, ni pour soi', async () => {
     const a = await member();
     expect(await connections.emitSuggestions([a.id], 'GUIDE', newId())).toBe(0);
+  });
+
+  /**
+   * ── « LA PROCÉDURE A ÉVOLUÉ » (03 §2.2, §7 — lot F2) ───────────────────────────
+   *
+   * La publication d'une version archive la précédente ; les parcours en cours
+   * restent dessus et leur PROPRIÉTAIRE est prévenu, par l'événement
+   * `journey.template_version_published` — jamais par un appel direct (§3.3).
+   */
+  describe('journey.template_version_published', () => {
+    async function modele() {
+      const templateId = newId();
+      await prisma.journeyTemplate.create({
+        data: { id: templateId, code: `pe-${run}-${templateId.slice(-6)}`, nameFr: 'Modèle évolutif', targetPhase: 'PRE_DEPARTURE', isActive: true, sortOrder: 1 },
+      });
+      modeles.push(templateId);
+      const definition = await prisma.stepDefinition.create({
+        data: { id: newId(), code: `pe-def-${run}-${templateId.slice(-6)}`, nameFr: 'Étape', description: 'x', category: 'PRE_DEPARTURE', defaultDurationDays: 7, blockerTarget: 'NONE', isMajorMilestone: false, isRisky: false, documentChecklist: [] },
+      });
+      const v1 = newId();
+      await prisma.journeyTemplateVersion.create({ data: { id: v1, templateId, version: 1, status: 'PUBLISHED', publishedAt: new Date() } });
+      const v2 = newId();
+      await prisma.journeyTemplateVersion.create({ data: { id: v2, templateId, version: 2, status: 'DRAFT' } });
+      await prisma.templateStep.create({ data: { id: newId(), templateVersionId: v2, stepDefinitionId: definition.id, position: 1, isOptional: false } });
+      return { v1, v2 };
+    }
+    async function parcours(ownerId: string, versionId: string, title: string, status: 'ACTIVE' | 'COMPLETED' = 'ACTIVE') {
+      const id = newId();
+      await prisma.journey.create({
+        data: { id, ownerUserId: ownerId, templateVersionId: versionId, title, status, originCountryId: countryId, destinationCityId: cityId, lastActivityAt: new Date() },
+      });
+      return id;
+    }
+
+    it('publier une version prévient le propriétaire de chaque parcours resté dessus — et lui seul', async () => {
+      const { v1, v2 } = await modele();
+      const un = await member();
+      const deux = await member();
+      const termine = await member();
+      const passif = await member();
+      const unParcours = await parcours(un.id, v1, 'Mes études à Lyon');
+      await parcours(deux.id, v1, 'Premier');
+      await parcours(deux.id, v1, 'Second');
+      await parcours(termine.id, v1, 'Fini', 'COMPLETED');
+
+      const admin = new AdminJourneysService(prisma, new AuditService(prisma), new OutboxService(prisma));
+      const staffId = newId();
+      await prisma.staffUser.create({
+        data: { id: staffId, email: `pe-${run}-${staffId.slice(-6)}@example.test`, displayName: 'Équipe contenu', passwordHash: 'x', totpSecretEncrypted: Buffer.from('x'), role: 'CONTENT_ADMIN', isActive: true },
+      });
+      equipe.push(staffId);
+      // La publication ÉMET l'événement (relevé en base), qu'on rejoue ensuite par le registre.
+      const publiee = await admin.publish({ staffId, role: 'CONTENT_ADMIN', sessionId: newId(), ip: null }, v2, {});
+      expect(publiee.journeysNotified).toBe(3); // le parcours terminé ne compte pas
+      const emis = await prisma.domainEvent.findFirstOrThrow({ where: { type: 'journey.template_version_published', aggregateId: v2 } });
+      evenements.push(emis.id);
+      expect((emis.payload as { previousVersionIds: string[] }).previousVersionIds).toEqual([v1]);
+      await dispatch('journey.template_version_published', v2, emis.payload);
+
+      const chezUn = await prisma.notification.findMany({ where: { userId: un.id, type: 'journey.template_version_published' } });
+      expect(chezUn).toHaveLength(1);
+      expect(chezUn[0]?.category).toBe('JOURNEY_DEADLINE');
+      expect(chezUn[0]?.title).toBe('La procédure de « Mes études à Lyon » a évolué');
+      expect(chezUn[0]?.url).toBe(`/parcours/${unParcours}`);
+
+      // Deux parcours visés : UNE notification, qui mène à la liste.
+      const chezDeux = await prisma.notification.findMany({ where: { userId: deux.id, type: 'journey.template_version_published' } });
+      expect(chezDeux).toHaveLength(1);
+      expect(chezDeux[0]?.title).toBe('La procédure de 2 de vos parcours a évolué');
+      expect(chezDeux[0]?.url).toBe('/parcours');
+
+      // Un parcours terminé n'a plus de procédure à suivre ; un membre sans parcours, rien à apprendre.
+      for (const aucun of [termine, passif]) {
+        expect(await prisma.notification.count({ where: { userId: aucun.id, type: 'journey.template_version_published' } })).toBe(0);
+      }
+
+      // Rejeu : aucune seconde notification.
+      await dispatch('journey.template_version_published', v2, { templateVersionId: v2, previousVersionIds: [v1] });
+      expect(await prisma.notification.count({ where: { userId: un.id, type: 'journey.template_version_published' } })).toBe(1);
+    });
+
+    it('sans version précédente, personne n’est prévenu', async () => {
+      const a = await member();
+      await dispatch('journey.template_version_published', newId(), { templateVersionId: newId(), previousVersionIds: [] });
+      expect(await prisma.notification.count({ where: { userId: a.id, type: 'journey.template_version_published' } })).toBe(0);
+    });
   });
 });
