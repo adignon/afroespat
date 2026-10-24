@@ -189,11 +189,7 @@ const LIAISONS: readonly Liaison[] = [
     nePlus: ['>Mes études à Lyon<', '>PARCOURS ÉTUDES<', '>58%<'],
   },
   // ── Transverse et onboarding ──────────────────────────────────────────────
-  {
-    fichier: 'x04/mobile.generated.tsx',
-    lit: ['{quota.utilises}', '{quota.plafond}', '{quota.reinitialise}'],
-    nePlus: ['1 événement sur 1 ce mois-ci', 'Réinitialisé le 1er octobre.'],
-  },
+  // x04/mobile : voir `feuilles-dessinees.test.ts` — le cadre ne reçoit plus aucune donnée.
   {
     fichier: 'o05/avecparcours.generated.tsx',
     lit: ['{parcours.titre}', '{parcours.rang}', '{parcours.total}', '{parcours.etape}'],
