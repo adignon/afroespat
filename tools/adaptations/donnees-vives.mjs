@@ -115,13 +115,18 @@ const A01_VIVANT = [
     'A01_TITRE_EVENEMENTS_VILLE',
     '« ÉVÉNEMENTS À LYON » nomme la ville du membre (`GET /me`) ; sans ville, le titre dit « ÉVÉNEMENTS » et rien d’autre.',
     [],
-    (jsx) =>
-      serie(jsx, [
+    (jsx) => {
+      const r = serie(jsx, [
         [
           '>ÉVÉNEMENTS À LYON</span>',
           '><VilleMembre avant="ÉVÉNEMENTS À " sans="ÉVÉNEMENTS" majuscules /></span>',
         ],
-      ]),
+      ]);
+      if (!r.applied) return r;
+      // Sans événement, la carte le dit (comme l'écran d'arrivée, O05) au lieu de rester un titre seul.
+      const vide = avecEtatVide(r.jsx, 'events', 'Aucun événement annoncé dans votre ville pour le moment.');
+      return { jsx: vide ?? r.jsx, applied: true };
+    },
   ),
   pour(
     ['A01'],
