@@ -85,7 +85,9 @@ const AG_E01_MOIS = {
 
 /** ── E01 · « CRÉER UN ÉVÉNEMENT » ───────────────────────────────────────────── */
 const AG_E01_CREER = {
-  screens: ['E01'],
+  // E02, E03, E04 dessinent le même panneau de gauche (relevé de l'audit : le
+  // bouton y restait un <button> sans gestionnaire, alors que sur /agenda c'est un lien).
+  screens: ['E01', 'E02', 'E03', 'E04'],
   nom: 'AG_E01_CREER',
   why: 'Le bouton « Créer un événement » du panneau n’avait aucun gestionnaire : il mène à /agenda/nouveau (E03).',
   provides: [],
