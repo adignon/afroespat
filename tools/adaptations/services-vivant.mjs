@@ -181,7 +181,7 @@ function signetEntete(type, ident) {
     const m = re.exec(jsx.slice(h));
     if (m === null) return null;
     const at = h + m.index;
-    return jsx.slice(0, at) + `<SignetSujet type="${type}" id={${ident}} taille={19} />` + jsx.slice(at + m[0].length);
+    return jsx.slice(0, at) + `<BoutonEnregistrer type="${type}" id={${ident}} taille={19} />` + jsx.slice(at + m[0].length);
   };
 }
 
@@ -219,7 +219,7 @@ const SV_S01_CARTES = sur(
     const re = new RegExp(`<svg[^>]*>\\s*<path d="${MARQUE_SIGNET.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" />\\s*</svg>`, 'g');
     out = out.replace(re, () => {
       n += 1;
-      return '<SignetSujet type="HOUSING" id={a.id} />';
+      return '<BoutonEnregistrer type="HOUSING" id={a.id} />';
     });
     return n === 0 ? null : out;
   },
@@ -379,10 +379,10 @@ const SV_S02_MOBILE = sur(
     out =
       out.slice(0, droite) +
       reste.slice(0, ms.index) +
-      '<SignetSujet type="HOUSING" id={annonce.id} taille={19} />' +
+      '<BoutonEnregistrer type="HOUSING" id={annonce.id} taille={19} />' +
       reste.slice(ms.index + ms[0].length);
     // Le second rond de droite : partager.
-    const apres = out.indexOf('</SignetSujet>') >= 0 ? 0 : out.indexOf('taille={19} />', droite);
+    const apres = out.indexOf('</BoutonEnregistrer>') >= 0 ? 0 : out.indexOf('taille={19} />', droite);
     const secondRond = out.indexOf('<span', apres + 'taille={19} />'.length);
     const partage = changerBalise(out, secondRond, 'BoutonPartager', 'titre={annonce.titre}', NU);
     if (partage !== null) out = partage;
@@ -861,7 +861,7 @@ const SV_S04_OFFRES = sur(
     const neuf = carte < 0 ? null : changerBalise(jsx, carte, 'CadreCliquable', 'vers={o.href}', '');
     if (neuf === null) return null;
     const re = new RegExp(`<svg[^>]*>\\s*<path d="${MARQUE_SIGNET.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}" />\\s*</svg>`, 'g');
-    return neuf.replace(re, '<SignetSujet type="JOB" id={o.id} />');
+    return neuf.replace(re, '<BoutonEnregistrer type="JOB" id={o.id} />');
   },
 );
 
@@ -997,6 +997,6 @@ export const AJOUTS_SERVICES_VIVANT = {
   BoutonRetour: '@/components/services/bouton-retour',
   BoutonPartager: '@/components/services/partager',
   EncartPartenaire: '@/components/services/encart-partenaire',
-  SignetSujet: '@/components/services/signet-sujet',
+  BoutonEnregistrer: '@/components/services/bouton-enregistrer',
   MasquerMembre: '@/components/services/masquer-membre',
 };

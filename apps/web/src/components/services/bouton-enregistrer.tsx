@@ -32,7 +32,7 @@ function etatDuSignet(type: SujetSignet, id: string): Promise<boolean> {
     planifie.add(type);
     setTimeout(() => {
       planifie.delete(type);
-      const lot = [...(attente.get(type) ?? new Map()).entries()];
+      const lot = [...(attente.get(type) ?? new Map<string, (enregistre: boolean) => void>()).entries()];
       attente.delete(type);
       void (async () => {
         try {
@@ -57,7 +57,7 @@ const LIBELLES: Record<SujetSignet, string> = {
   PRO: 'cette fiche',
 };
 
-export function SignetSujet({
+export function BoutonEnregistrer({
   type,
   id,
   taille = 16,

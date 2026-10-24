@@ -390,7 +390,6 @@ export function useFormulaireAnnonce(modifierId: string | null): {
       enVerification,
       modification,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `champ` est recréé à chaque rendu
     [bloque, description, disponible, duree, echec, enVerification, enVol, kind, loyer, meuble, modification, occupe, onPhotos, onSens, peutPublier, phraseGrise, photos, onPublier, quartier, sens, titre, villeId, villes],
   );
 

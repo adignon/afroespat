@@ -17,7 +17,6 @@ export function PresenceEcran({ id }: { readonly id: string }) {
   const recharger = useCallback(() => {
     setVersion((n) => n + 1);
   }, []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `version` relance la lecture
   const charger = useCallback(() => chargerE04(id), [id, version]);
 
   return (

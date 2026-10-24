@@ -11,7 +11,7 @@ import { S09Mobile } from '@/screens/s09/mobile.generated';
 /** S09 — mes annonces : renouveler, pause, trouvé, supprimer (avec confirmation). */
 export function MesAnnoncesEcran() {
   const [version, setVersion] = useState(0);
-  const charger = useCallback(() => chargerS09(), [version]); // eslint-disable-line react-hooks/exhaustive-deps -- `version` relance la lecture
+  const charger = useCallback(() => chargerS09(), [version]);
   const recharger = useCallback(() => {
     setVersion((v) => v + 1);
   }, []);

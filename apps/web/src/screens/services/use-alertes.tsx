@@ -199,7 +199,6 @@ export function useAlertes(recharger: () => void): {
       occupe: enVol || occupe,
       onEnregistrer,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `champ` est recréé à chaque rendu
     [budget, contrat, echec, enVol, genre, logementKind, occupe, onEnregistrer, secteur, succes, villeId, villes],
   );
 

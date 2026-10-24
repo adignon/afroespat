@@ -296,7 +296,6 @@ export function useMaFichePro(): { readonly formulaire: FormulaireFicheProView; 
       occupe: enVol || occupe,
       onEnvoyer,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `champ` est recréé à chaque rendu
     [aDejaUnJustificatif, chargement, choisies, description, echec, enVol, etat, existe, justificatif, methode, metierId, metiers, nomCommercial, occupe, onEnvoyer, onJustificatif, siret, succes, tarifs, villes],
   );
 

@@ -291,7 +291,7 @@ describe('villes — vote, commerce, nouveaux arrivants, suppression (09 §2.3, 
       if (skills.length < 4) return;
       await prisma.userSkill.createMany({ data: skills.map((k) => ({ userId: m, skillId: k.id })) });
       const page = await cities.members(
-        { limit: 50, radiusKm: 0, cityId, skillId: (skills[0] as { id: string }).id } as never,
+        { limit: 50, radiusKm: 0, cityId, skillId: skills[0]?.id },
         m,
       );
       const carte = page.items[0];

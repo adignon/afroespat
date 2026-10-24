@@ -93,7 +93,6 @@ export function VilleScreen({
   const recharger = useCallback(() => {
     setVersion((n) => n + 1);
   }, []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `version` relance la lecture
   const charger = useCallback(() => chargerVille(slug, onglet), [slug, onglet, version]);
 
   return (

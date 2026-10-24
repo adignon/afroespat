@@ -16,7 +16,7 @@ import { S07Mobile } from '@/screens/s07/mobile.generated';
  */
 export function FicheProEcran({ id }: { readonly id: string }) {
   const [version, setVersion] = useState(0);
-  const charger = useCallback(() => chargerS07(id), [id, version]); // eslint-disable-line react-hooks/exhaustive-deps -- `version` relance la lecture
+  const charger = useCallback(() => chargerS07(id), [id, version]);
   const recharger = useCallback(() => {
     setVersion((v) => v + 1);
   }, []);

@@ -380,7 +380,6 @@ export function useFormulaireOffre(actif: boolean): {
       bloque,
       onPublier,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `champ` est recréé à chaque rendu
     [bloque, contrat, description, echec, enVol, entreprise, kind, lien, occupe, onPublier, secteur, sponsoriser, titre, villeId, villes],
   );
 

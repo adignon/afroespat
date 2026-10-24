@@ -388,8 +388,8 @@ export const eventCardSchema = z
     myCheckedIn: z.boolean(),
     isOrganizer: z.boolean(),
     /** 09 §3.4 : l'instant et le motif (facultatif) de l'annulation. */
-    cancelledAt: z.string().datetime().nullable(),
-    cancelReason: z.string().nullable(),
+    cancelledAt: z.string().datetime().nullable().default(null),
+    cancelReason: z.string().nullable().default(null),
   })
   .strict();
 

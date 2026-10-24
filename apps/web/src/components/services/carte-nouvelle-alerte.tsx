@@ -46,7 +46,7 @@ export function CarteNouvelleAlerte({ f }: { readonly f: FormulaireAlerteView })
               valeurs={TYPES}
               valeur={f.logementKind}
               onChoisir={(v) => {
-                f.onLogementKind(v as typeof f.logementKind);
+                f.onLogementKind(v);
               }}
               libelle="Type de logement"
             />

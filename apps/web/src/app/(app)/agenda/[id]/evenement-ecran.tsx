@@ -22,7 +22,6 @@ export function EvenementEcran({ id }: { readonly id: string }) {
   const recharger = useCallback(() => {
     setVersion((n) => n + 1);
   }, []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- `version` relance la lecture
   const charger = useCallback(() => chargerE02(id), [id, version]);
   const { actions, fenetres } = useActionsEvenement(id, recharger);
 

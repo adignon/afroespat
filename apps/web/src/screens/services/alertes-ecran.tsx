@@ -11,7 +11,7 @@ import { S10Mobile } from '@/screens/s10/mobile.generated';
 /** S10 — mes alertes : enregistrer, activer / mettre en pause, supprimer (10 §2.4). */
 export function AlertesEcran() {
   const [version, setVersion] = useState(0);
-  const charger = useCallback(() => chargerS10(), [version]); // eslint-disable-line react-hooks/exhaustive-deps -- `version` relance la lecture
+  const charger = useCallback(() => chargerS10(), [version]);
   const recharger = useCallback(() => {
     setVersion((v) => v + 1);
   }, []);
