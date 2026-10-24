@@ -179,7 +179,8 @@ export function messageCreationCompetence(cause: unknown): string {
   if (cause instanceof ApiError) {
     const raison = cause.details['reason'];
     if (raison === 'SKILL_LIMIT') {
-      return `Vous avez déjà ${String(cause.details['max'] ?? 20)} compétences à vous : retirez-en une avant d’en ajouter.`;
+      const max = cause.details['max'];
+      return `Vous avez déjà ${typeof max === 'number' ? String(max) : 'plusieurs'} compétences à vous : retirez-en une avant d’en ajouter.`;
     }
     if (raison === 'SKILL_NAME_TAKEN') {
       return 'Ce nom est déjà pris par une compétence personnelle d’un autre membre : précisez-le un peu.';
