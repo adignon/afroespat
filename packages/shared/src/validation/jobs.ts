@@ -256,14 +256,20 @@ export type JobCardView = z.infer<typeof jobCardSchema>;
  * emplacements est une règle de produit, et un front qui la coderait en dur
  * afficherait un jour trois emplacements sans le savoir.
  *
- * ÉCART SIGNALÉ AU PORTEUR : il n'y a AUCUN `total` dans ce `meta`, là où
- * `GET /housing` en porte un. La planche S04 écrit « 8 offres à Lyon et en
- * télétravail », et la barre latérale affiche « Bourses et emploi · 8 » sur les dix
- * cadres d'ordinateur : ces deux nombres ne sont atteignables par aucune route.
+ * `meta.total` (ajouté par le lot E2) est le nombre d'offres de la RECHERCHE, tête
+ * sponsorisée comprise, comme `GET /housing` en porte un. Il alimente « N offres »
+ * sous le titre de S04 et le compteur « Bourses et emploi » du panneau de gauche des
+ * dix cadres d'ordinateur : l'écart que ce commentaire signalait est comblé.
  */
 export const jobsListResponseSchema = pageSchema(jobCardSchema).extend({
   sponsored: z.array(jobCardSchema),
-  meta: z.object({ sponsoredLabel: z.string(), sponsoredHeadSlots: z.number().int() }).strict(),
+  meta: z
+    .object({
+      sponsoredLabel: z.string(),
+      sponsoredHeadSlots: z.number().int(),
+      total: z.number().int().nonnegative(),
+    })
+    .strict(),
 });
 
 export type JobsListResponse = z.infer<typeof jobsListResponseSchema>;

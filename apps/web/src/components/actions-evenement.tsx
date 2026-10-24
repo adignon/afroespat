@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
+import { rangFr } from '@/lib/rang';
 import type { ActionsEvenement, FicheEvenement } from '@/screens/agenda/data';
 
 /**
@@ -173,7 +174,7 @@ export function ActionsEvenementCartes({
               {surListe ? 'Quitter la liste d’attente' : 'Rejoindre la liste d’attente'}
             </button>
           </div>
-          {attente === null ? null : <div style={NOTE}>Vous êtes {attente}e sur la liste</div>}
+          {attente === null ? null : <div style={NOTE}>Vous êtes {rangFr(attente)} sur la liste d’attente</div>}
         </div>
       )}
 

@@ -3,11 +3,12 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
-import { cancelEventSchema } from '@app/shared';
+import { cancelEventSchema, rsvpResponseSchema, type RsvpResponse } from '@app/shared';
 import { useGeste } from '@/components/entraide/geste';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { FenetreSignalement } from '@/components/fenetre-signalement';
 import { memberApi } from '@/lib/api/index';
+import { rangFr } from '@/lib/rang';
 import type { ActionsEvenement } from './data';
 
 /**
@@ -36,6 +37,26 @@ import type { ActionsEvenement } from './data';
  */
 const MOTIF_MAX = cancelEventSchema.shape.reason.unwrap().maxLength ?? 500;
 
+/**
+ * La phrase affichée après un RSVP. Sur la liste d'attente, la POSITION renvoyée par
+ * le serveur est dite : « Complet : vous êtes 2e sur la liste d'attente. »
+ */
+export function phraseRsvp(
+  demande: 'GOING' | 'MAYBE' | 'DECLINED',
+  reponse: Pick<RsvpResponse, 'status' | 'waitlistPosition'> | null,
+): string {
+  if (reponse?.status === 'WAITLIST') {
+    return reponse.waitlistPosition === null
+      ? 'Complet : vous êtes sur la liste d’attente.'
+      : `Complet : vous êtes ${rangFr(reponse.waitlistPosition)} sur la liste d’attente.`;
+  }
+  return demande === 'GOING'
+    ? 'Votre réponse est enregistrée.'
+    : demande === 'MAYBE'
+      ? 'Noté : peut-être.'
+      : 'Noté : vous ne venez pas.';
+}
+
 export function useActionsEvenement(
   eventId: string,
   recharger: () => void,
@@ -57,19 +78,19 @@ export function useActionsEvenement(
 
   const onRsvp = useCallback(
     (statut: 'GOING' | 'MAYBE' | 'DECLINED'): void => {
+      // La réponse du serveur dit le statut RÉEL : un « Je viens » sur un événement
+      // complet revient en `WAITLIST` avec la position dans la file. On l'annonce
+      // telle quelle plutôt que de laisser croire à une place confirmée.
+      let reel: RsvpResponse | null = null;
       void lancer(
-        () =>
-          memberApi.put(`/events/${eventId}/rsvp`, z.unknown(), { body: { status: statut } }),
+        async () => {
+          reel = await memberApi.put(`/events/${eventId}/rsvp`, rsvpResponseSchema, {
+            body: { status: statut },
+          });
+        },
         { recharger: false, echecRepli: 'Votre réponse n’a pas pu être enregistrée.' },
       ).then((ok) => {
-        terminer(
-          ok,
-          statut === 'GOING'
-            ? 'Votre réponse est enregistrée.'
-            : statut === 'MAYBE'
-              ? 'Noté : peut-être.'
-              : 'Noté : vous ne venez pas.',
-        );
+        terminer(ok, phraseRsvp(statut, reel));
       });
     },
     [eventId, lancer, terminer],
