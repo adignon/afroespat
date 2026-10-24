@@ -90,6 +90,16 @@ export interface Moi {
   readonly prenom: string;
 }
 
+/** Les totaux des listes : logement, emploi, et « Mes annonces ». */
+export interface Compteurs {
+  readonly logement: number | null;
+  readonly emploi: number | null;
+  readonly mesAnnonces: number | null;
+}
+
+/** Aucun compteur connu : squelette de chargement, ou appel échoué. */
+export const COMPTEURS_INCONNUS: Compteurs = { logement: null, emploi: null, mesAnnonces: null };
+
 /**
  * LE QUOTA DU MOIS — la carte verte « MES QUOTAS DU MOIS », dix fois dessinée.
  *
@@ -108,6 +118,15 @@ export interface Moi {
  * 0 sur null ».
  */
 export interface Quotas {
+  /**
+   * LES TROIS COMPTEURS DU PANNEAU DE GAUCHE (lot E2) — `GET /services/counts`.
+   *
+   * Rangés ici parce que ce type est déjà celui que dix écrans reçoivent avec le
+   * bandeau d'identité, et qu'un champ de plus à chaque type d'écran aurait été
+   * dix fois la même ligne. `null` quand l'appel a échoué : l'écran ne montre alors
+   * AUCUN nombre plutôt qu'un zéro qui ferait croire à un marché vide.
+   */
+  readonly compteurs: Compteurs;
   readonly contactsPro: number;
   readonly plafondPro: string;
   readonly barre: string;

@@ -10,6 +10,8 @@ import {
   jobsListResponseSchema,
   myAlertsResponseSchema,
   mySubscriptionResponseSchema,
+  placesCitiesResponseSchema,
+  servicesCountsResponseSchema,
   plansResponseSchema,
   prosListResponseSchema,
   proDetailResponseSchema,
@@ -25,7 +27,7 @@ import {
   type ProTier,
   type SavedAlertView,
 } from '@app/shared';
-import { fetchMe, memberApi } from '@/lib/api/index';
+import { fetchMe, hasAccessToken, memberApi, resumeSession } from '@/lib/api/index';
 import type { CarteAnnonce, S01Data } from '@/screens/s01/data';
 import type { S02Charge } from '@/screens/s02/data';
 import type { S03Charge } from '@/screens/s03/data';
@@ -36,10 +38,10 @@ import type { Recommandation, S07Charge } from '@/screens/s07/data';
 import type { S08Charge } from '@/screens/s08/data';
 import type { LigneAnnonce, S09Charge } from '@/screens/s09/data';
 import type { LigneAlerte, S10Charge } from '@/screens/s10/data';
-import type { Moi, Quotas } from './data';
+import { COMPTEURS_INCONNUS, type Compteurs, type Moi, type Quotas } from './data';
 import { fondAvatar } from '@/lib/avatar';
 import { urlMedia } from '@/lib/api/base';
-import { filtresLogement, ongletsServices, type FiltreLogement } from './navigation';
+import { filtresLogement, ongletsServices, sousTitreOffres, type FiltreLogement } from './navigation';
 
 /**
  * LES APPELS DES ÉCRANS S01 À S10 — un chargeur par écran, et rien d'autre.
@@ -306,11 +308,33 @@ const enumeration = (valeurs: readonly string[]): string =>
  * plutôt qu'un chiffre faux.
  */
 async function moiEtQuotas(): Promise<{ moi: Moi; quotas: Quotas }> {
-  const [me, abonnement] = await Promise.all([
+  const [me, abonnement, compteurs] = await Promise.all([
     fetchMe(),
     memberApi.get('/me/subscription', mySubscriptionResponseSchema),
+    lireCompteurs(),
   ]);
-  return { moi: moiDe(me), quotas: quotasDe(abonnement, !me.monetisationActive) };
+  return { moi: moiDe(me), quotas: { ...quotasDe(abonnement, !me.monetisationActive), compteurs } };
+}
+
+/**
+ * Les trois compteurs du panneau de gauche (`GET /services/counts`).
+ *
+ * CONTRAIREMENT AU QUOTA, ILS SE PARDONNENT : un compteur absent est un panneau sans
+ * pastille, pas une décision faussée. L'échec ne fait donc pas échouer l'écran ; il
+ * retire les nombres (`null`), jamais un zéro qui ferait croire à un marché vide.
+ */
+async function lireCompteurs(): Promise<Compteurs> {
+  try {
+    // La route est PUBLIQUE (les listes le sont) : sans jeton elle réussit et rend
+    // `mine: null`. Mesuré — lancée en parallèle de `fetchMe()` à l'arrivée sur la
+    // page, elle partait avant la reprise de session et « Mes annonces » restait
+    // sans compteur. On attend donc la session, comme les écrans de publication.
+    if (!hasAccessToken()) await resumeSession();
+    const c = await memberApi.get('/services/counts', servicesCountsResponseSchema);
+    return { logement: c.housing, emploi: c.jobs, mesAnnonces: c.mine };
+  } catch {
+    return COMPTEURS_INCONNUS;
+  }
 }
 
 function moiDe(me: MeResponse): Moi {
@@ -333,7 +357,7 @@ function moiDe(me: MeResponse): Moi {
  * On affiche alors zéro sur le plafond GRATUIT du §4.4 — qui est la vérité pour un
  * membre sans compteur — plutôt qu'un tiret qui laisserait croire à une panne.
  */
-function quotasDe(abonnement: MySubscriptionResponse, gratuit: boolean): Quotas {
+function quotasDe(abonnement: MySubscriptionResponse, gratuit: boolean): Omit<Quotas, 'compteurs'> {
   const compteur = abonnement.usage.items.find((u) => u.metric === 'PRO_CONTACTS');
   const utilises = compteur?.used ?? 0;
   const plafond = compteur === undefined ? FREE_PRO_CONTACTS_PER_MONTH : compteur.limit;
@@ -379,7 +403,7 @@ export async function chargerS01(kind: FiltreLogement = null): Promise<S01Data> 
 
   return {
     ...commun,
-    onglets: ongletsServices('logement', liste.meta.total),
+    onglets: ongletsServices('logement', { ...commun.quotas.compteurs, logement: liste.meta.total }),
     filtres: filtresLogement(kind),
     liste: {
       total: liste.meta.total,
@@ -527,14 +551,37 @@ export async function chargerS04(): Promise<S04Charge> {
   const [commun, offres, profils] = await Promise.all([
     moiEtQuotas(),
     memberApi.get('/jobs?limit=20', jobsListResponseSchema),
-    memberApi.get('/job-seekers?limit=20', jobSeekersListResponseSchema),
+    memberApi.get(`/job-seekers?limit=${PAGE_PROFILS}`, jobSeekersListResponseSchema),
   ]);
 
   return {
     ...commun,
-    onglets: ongletsServices('emploi'),
-    offres: { liste: [...offres.sponsored, ...offres.items].map(carteOffre) },
-    profils: { liste: profils.items.map(carteProfil) },
+    pret: true,
+    onglets: ongletsServices('emploi', { ...commun.quotas.compteurs, emploi: offres.meta.total }),
+    offres: {
+      liste: [...offres.sponsored, ...offres.items].map(carteOffre),
+      total: offres.meta.total,
+      sousTitre: sousTitreOffres(offres.meta.total),
+    },
+    profils: { liste: profils.items.map(carteProfil), suite: profils.nextCursor },
+  };
+}
+
+/** Les profils disponibles se lisent par pages de vingt. */
+const PAGE_PROFILS = 20;
+
+/** La page suivante des profils disponibles (`Voir plus`). */
+export async function chargerProfilsSuivants(
+  curseur: string,
+  dejaAffiches: number,
+): Promise<{ readonly liste: readonly CarteProfil[]; readonly suite: string | null }> {
+  const page = await memberApi.get(
+    `/job-seekers?limit=${PAGE_PROFILS}&cursor=${encodeURIComponent(curseur)}`,
+    jobSeekersListResponseSchema,
+  );
+  return {
+    liste: page.items.map((p, i) => carteProfil(p, dejaAffiches + i)),
+    suite: page.nextCursor,
   };
 }
 
@@ -568,10 +615,14 @@ function carteProfil(p: JobSeekerCardView, rang: number): CarteProfil {
   return {
     handle: p.member.handle,
     prenom: prenomDe(p.member.displayName),
+    profil: `/@${p.member.handle}`,
     fond: fondDeRang(rang),
     initiales: initialesDe(p.member.displayName),
     nom: nomCourt(p.member.displayName),
     titre: p.headline,
+    secteurs: p.sectors,
+    contrats: p.contractTypes,
+    ville: p.member.city?.name ?? null,
   };
 }
 
@@ -656,21 +707,32 @@ export async function chargerS05Nouveau(): Promise<S05Charge> {
  * `proCardSchema` est `.strict()` — une réponse qui en porterait un serait refusée
  * avant d'arriver jusqu'à cette fonction.
  */
-export async function chargerS06(recherche = ''): Promise<S06Data> {
+export async function chargerS06(recherche = '', ville = ''): Promise<S06Data> {
   const q = recherche.trim();
-  const [commun, annuaire] = await Promise.all([
+  const params = new URLSearchParams({ limit: '20' });
+  if (q.length >= 2) params.set('q', q);
+  if (ville !== '') params.set('cityId', ville);
+  const [commun, annuaire, villes] = await Promise.all([
     moiEtQuotas(),
-    memberApi.get(q.length < 2 ? '/pros?limit=20' : `/pros?limit=20&q=${encodeURIComponent(q)}`, prosListResponseSchema),
+    memberApi.get(`/pros?${params.toString()}`, prosListResponseSchema),
+    // Le filtre de ville est un confort : sans la liste, la case dit « Toutes les villes ».
+    memberApi
+      .get('/places/cities?limit=100', placesCitiesResponseSchema)
+      .then((l) => l.items.map((c) => ({ valeur: c.id, libelle: c.name })))
+      .catch(() => []),
   ]);
 
+  const suffixeVille = ville === '' ? '' : `&ville=${encodeURIComponent(ville)}`;
   return {
     ...commun,
-    onglets: ongletsServices('annuaire'),
+    onglets: ongletsServices('annuaire', commun.quotas.compteurs),
     annuaire: {
       recherche: q,
+      ville,
+      villes: [{ valeur: '', libelle: 'Toutes les villes' }, ...villes],
       metiers: METIERS_PUCES.map((m) => ({
         libelle: m,
-        href: `/services/annuaire?q=${encodeURIComponent(m)}`,
+        href: `/services/annuaire?q=${encodeURIComponent(m)}${suffixeVille}`,
         actif: q.toLowerCase() === m.toLowerCase(),
       })),
       fiches: [...annuaire.featured, ...annuaire.items].map((p, rang) =>
@@ -1029,6 +1091,7 @@ function criteresAlerte(c: AlertCriteria): string {
 export const SQUELETTE_S01: S01Data = {
   moi: { initiales: '', prenom: '' },
   quotas: {
+    compteurs: COMPTEURS_INCONNUS,
     contactsPro: 0,
     plafondPro: String(FREE_PRO_CONTACTS_PER_MONTH),
     barre: '0%',
@@ -1062,6 +1125,7 @@ export const SQUELETTE_S01: S01Data = {
 const SOCLE_SERVICES = {
   moi: { initiales: '', prenom: '' },
   quotas: {
+    compteurs: COMPTEURS_INCONNUS,
     contactsPro: 0,
     plafondPro: String(FREE_PRO_CONTACTS_PER_MONTH),
     barre: '0%',
@@ -1072,15 +1136,16 @@ const SOCLE_SERVICES = {
 
 export const SQUELETTE_S04: S04Charge = {
   ...SOCLE_SERVICES,
+  pret: false,
   onglets: [],
-  offres: { liste: [] },
-  profils: { liste: [] },
+  offres: { liste: [], total: 0, sousTitre: '' },
+  profils: { liste: [], suite: null },
 };
 
 export const SQUELETTE_S06: S06Data = {
   ...SOCLE_SERVICES,
   onglets: [],
-  annuaire: { recherche: '', metiers: [], fiches: [] },
+  annuaire: { recherche: '', ville: '', villes: [], metiers: [], fiches: [] },
 };
 
 export const SQUELETTE_S08: S08Charge = { ...SOCLE_SERVICES, offrePro: { nom: '', prix: '' } };

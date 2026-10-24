@@ -142,11 +142,32 @@ export type JobsQuery = z.infer<typeof jobsQuerySchema>;
  * Le schéma ne porte donc AUCUN champ de fichier, et c'est volontaire : un champ
  * `cvAssetId` optionnel aurait suffi à faire naître la fonction par accident.
  */
+/**
+ * Les bornes du profil de recherche, NOMMÉES pour que le formulaire (S04, onglet
+ * « Mon profil de recherche ») les importe au lieu de les recopier : le front prévient
+ * avec ces nombres, le serveur décide avec le même schéma.
+ */
+export const JOB_SEEKER_LIMITS = {
+  headlineMin: 5,
+  headlineMax: 140,
+  /** Secteurs ou contrats : au plus dix entrées… */
+  listMax: 10,
+  /** …de deux à quatre-vingts caractères chacune. */
+  itemMin: 2,
+  itemMax: 80,
+} as const;
+
+const jobSeekerItemSchema = z
+  .string()
+  .trim()
+  .min(JOB_SEEKER_LIMITS.itemMin)
+  .max(JOB_SEEKER_LIMITS.itemMax);
+
 export const jobSeekerProfileSchema = z
   .object({
-    headline: z.string().trim().min(5).max(140),
-    sectors: z.array(z.string().trim().min(2).max(80)).max(10).default([]),
-    contractTypes: z.array(z.string().trim().min(2).max(80)).max(10).default([]),
+    headline: z.string().trim().min(JOB_SEEKER_LIMITS.headlineMin).max(JOB_SEEKER_LIMITS.headlineMax),
+    sectors: z.array(jobSeekerItemSchema).max(JOB_SEEKER_LIMITS.listMax).default([]),
+    contractTypes: z.array(jobSeekerItemSchema).max(JOB_SEEKER_LIMITS.listMax).default([]),
     isVisible: z.boolean().default(true),
   })
   .strict();
@@ -256,14 +277,20 @@ export type JobCardView = z.infer<typeof jobCardSchema>;
  * emplacements est une règle de produit, et un front qui la coderait en dur
  * afficherait un jour trois emplacements sans le savoir.
  *
- * ÉCART SIGNALÉ AU PORTEUR : il n'y a AUCUN `total` dans ce `meta`, là où
- * `GET /housing` en porte un. La planche S04 écrit « 8 offres à Lyon et en
- * télétravail », et la barre latérale affiche « Bourses et emploi · 8 » sur les dix
- * cadres d'ordinateur : ces deux nombres ne sont atteignables par aucune route.
+ * `meta.total` (ajouté par le lot E2) est le nombre d'offres de la RECHERCHE, tête
+ * sponsorisée comprise, comme `GET /housing` en porte un. Il alimente « N offres »
+ * sous le titre de S04 et le compteur « Bourses et emploi » du panneau de gauche des
+ * dix cadres d'ordinateur : l'écart que ce commentaire signalait est comblé.
  */
 export const jobsListResponseSchema = pageSchema(jobCardSchema).extend({
   sponsored: z.array(jobCardSchema),
-  meta: z.object({ sponsoredLabel: z.string(), sponsoredHeadSlots: z.number().int() }).strict(),
+  meta: z
+    .object({
+      sponsoredLabel: z.string(),
+      sponsoredHeadSlots: z.number().int(),
+      total: z.number().int().nonnegative(),
+    })
+    .strict(),
 });
 
 export type JobsListResponse = z.infer<typeof jobsListResponseSchema>;

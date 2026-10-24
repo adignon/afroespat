@@ -48,6 +48,7 @@ import { ModerationService } from './modules/moderation/moderation.service';
 import { HousingController } from './modules/housing/housing.controller';
 import { HousingService } from './modules/housing/housing.service';
 import { JobsController } from './modules/jobs/jobs.controller';
+import { ServicesCountsController } from './modules/jobs/services-counts.controller';
 import { JobsService } from './modules/jobs/jobs.service';
 import { ProsController } from './modules/pros/pros.controller';
 import { ProsService } from './modules/pros/pros.service';
@@ -158,7 +159,7 @@ import {
      */
     ...(loadEnv().APP_ROLE === 'api' ? [RealtimeModule] : []),
   ],
-  controllers: [HealthController, PlacesController, BookmarksController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ProsController, ModerationController,
+  controllers: [HealthController, PlacesController, BookmarksController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ServicesCountsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
     StaffAuthController, AdminController, AdminModerationController, AdminContentController, PublicContentController, AdminMemberController, AdminJourneysController, AdminGuidesController,
     // Module 02 — les référentiels, tenus par CONTENT_ADMIN (§4.2).

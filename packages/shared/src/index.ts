@@ -29,6 +29,7 @@ export * from './validation/moderation.js';
 export * from './validation/pros.js';
 export * from './validation/jobs.js';
 export * from './validation/housing.js';
+export * from './validation/services-counts.js';
 export * from './validation/events.js';
 export * from './validation/admin.js';
 export * from './validation/admin-content.js';

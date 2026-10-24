@@ -22,13 +22,29 @@ import type { Moi, Quotas } from '../services/data';
  * tâche `sponsored.expire` a du retard. Le recalculer ici demanderait de comparer
  * `sponsoredUntil` à l'horloge du navigateur.
  *
- * ── ÉCART SIGNALÉ AU PORTEUR ────────────────────────────────────────────────
+ * ── LE SOUS-TITRE ET LES TROIS ONGLETS (lot E2) ─────────────────────────────
  *
- * « 8 offres à Lyon et en télétravail » n'est PAS lié : le `meta` de `GET /jobs`
- * ne porte aucun `total`, là où `GET /housing` en porte un. Compter `items` côté
- * front donnerait le compte de la PAGE (20 au plus), pas celui de la recherche.
+ * « 8 offres à Lyon et en télétravail » est lié à `GET /jobs` → `meta.total`, qui
+ * existe désormais comme celui de `GET /housing` : « N offres en ligne ». « Lyon »
+ * était la ville de l'exemple et la requête ne filtre sur aucune.
+ *
+ * La bande « Offres | Profils disponibles | Mon profil de recherche » devient trois
+ * liens (`?onglet=`) : `onglet` dit lequel est montré. « Mon profil de recherche »
+ * est le formulaire `PUT /me/job-seeker-profile` (ajout hors maquette, composant
+ * `FormulaireProfilRecherche`) ; « Profils disponibles » montre `GET /job-seekers`
+ * en pleine colonne avec « Voir plus ».
  */
+export type OngletEmploi = 'offres' | 'profils' | 'recherche';
+
 export interface S04Data {
+  /** Lequel des trois onglets est montré — posé par la page, lu dans `?onglet=`. */
+  readonly onglet: OngletEmploi;
+  /**
+   * Faux pour le SQUELETTE affiché pendant le chargement. Les états vides (« Aucune
+   * offre », « Aucun profil ») et le formulaire ne se montrent que quand il est vrai :
+   * annoncer « aucun profil disponible » le temps d'un appel serait mentir.
+   */
+  readonly pret: boolean;
   readonly moi: Moi;
   readonly quotas: Quotas;
   /** « Contacter » un profil : posé par la page. */
@@ -37,9 +53,15 @@ export interface S04Data {
   readonly offres: {
     /** La TÊTE sponsorisée d'abord (au plus deux, §11), puis le classement naturel. */
     readonly liste: readonly CarteOffre[];
+    /** `meta.total` : toute la recherche, pas la page. */
+    readonly total: number;
+    /** « 8 offres en ligne », écrit à partir du total. */
+    readonly sousTitre: string;
   };
   readonly profils: {
     readonly liste: readonly CarteProfil[];
+    /** Le curseur de la page suivante, ou `null` quand il n'y en a plus. */
+    readonly suite: string | null;
   };
 }
 
@@ -89,7 +111,13 @@ export interface CarteProfil {
   readonly nom: string;
   /** `headline` — « Assistante RH · alternance », écrite par le membre. */
   readonly titre: string;
+  /** Les secteurs recherchés, tels que le membre les a écrits (§3.2). */
+  readonly secteurs: readonly string[];
+  /** Les types de contrat recherchés. */
+  readonly contrats: readonly string[];
+  /** La ville du membre (`member.city`), ou `null`. */
+  readonly ville: string | null;
 }
 
-/** Ce que `chargerS04` lit de l'API ; la page y ajoute `vivant`. */
-export type S04Charge = Omit<S04Data, 'vivant'>;
+/** Ce que `chargerS04` lit de l'API ; la page y ajoute `vivant` et `onglet`. */
+export type S04Charge = Omit<S04Data, 'vivant' | 'onglet'>;

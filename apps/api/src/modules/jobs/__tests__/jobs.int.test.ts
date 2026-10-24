@@ -145,6 +145,37 @@ describe('emploi (10 §3)', () => {
     expect(ordinary?.sponsoredLabel).toBeNull();
   });
 
+  it('[lot E2] meta.total compte la recherche entière — tête sponsorisée comprise, sans décroître de page en page', async () => {
+    const author = await member({ plan: 'PREMIUM' });
+    const sector = `Total-${newId().slice(-8)}`;
+    const ids: string[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      ids.push((await offer(author, { title: `Offre comptée ${index + 1}`, sector })).id);
+    }
+    await jobs.sponsor(ids[0]!, author);
+
+    const premiere = await jobs.list({ limit: 2, scope: 'all', sector }, null);
+    // 1 en tête + 2 dans la page, mais le total est celui de la RECHERCHE : 5.
+    expect(premiere.sponsored).toHaveLength(1);
+    expect(premiere.meta.total).toBe(5);
+    expect(premiere.nextCursor).not.toBeNull();
+
+    // La page suivante ne fait pas baisser le total (keyset exclu du comptage).
+    const seconde = await jobs.list(
+      { limit: 2, scope: 'all', sector, cursor: premiere.nextCursor as string },
+      null,
+    );
+    expect(seconde.meta.total).toBe(5);
+
+    // Un autre secteur ne compte pas ; une offre retirée ne compte plus.
+    expect((await jobs.list({ limit: 2, scope: 'all', sector: 'Inconnu-xyz' }, null)).meta.total).toBe(0);
+    await jobs.remove(ids[4]!, author);
+    expect((await jobs.list({ limit: 2, scope: 'all', sector }, null)).meta.total).toBe(4);
+
+    // « Mes annonces » compte les offres de l'auteur, expirées comprises, hors retirées.
+    expect((await jobs.list({ limit: 2, scope: 'mine', sector }, author)).meta.total).toBe(4);
+  });
+
   it('la tête n’existe que sur la première page : une page suivante n’offre pas deux emplacements de plus', async () => {
     const author = await member({ plan: 'PREMIUM' });
     const sector = `Secteur-${newId().slice(-8)}`;

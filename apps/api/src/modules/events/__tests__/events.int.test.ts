@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@app/db';
-import { CANCELLED_VISIBLE_DAYS, EVENT_MAX_LEAD_MS, EVENT_MIN_LEAD_MS, EVENT_ORGANIZED_MIN_CHECKINS, calendarQuerySchema, createEventSchema, rsvpSchema } from '@app/shared';
+import { CANCELLED_VISIBLE_DAYS, EVENT_MAX_LEAD_MS, EVENT_MIN_LEAD_MS, EVENT_ORGANIZED_MIN_CHECKINS, calendarQuerySchema, createEventSchema, rsvpResponseSchema, rsvpSchema } from '@app/shared';
 import { AuditService } from '../../../common/audit.service';
 import { OutboxService } from '../../../common/outbox.service';
 import { PrismaService } from '../../../common/prisma.service';
@@ -702,6 +702,50 @@ describe('agenda (09 §3)', () => {
       expect(
         emitted.some((e) => (e.payload as { promotedUserId?: string }).promotedUserId === second),
       ).toBe(true);
+    });
+
+    it('[lot E2] la réponse RSVP respecte rsvpResponseSchema et la position baisse quand quelqu’un devant se retire', async () => {
+      const organizer = await member();
+      const event = await newEvent(organizer, { capacity: 1 });
+      const a = await member();
+      const b = await member();
+
+      const rsvpA = await events.rsvp(event.id, a, { status: 'GOING' });
+      const rsvpB = await events.rsvp(event.id, b, { status: 'GOING' });
+      // Le contrat de la réponse : statut RÉEL, position, compteur — rien d'autre.
+      expect(rsvpResponseSchema.parse(rsvpA)).toEqual({ status: 'WAITLIST', waitlistPosition: 1, attendeeCount: 1 });
+      expect(rsvpResponseSchema.parse(rsvpB)).toEqual({ status: 'WAITLIST', waitlistPosition: 2, attendeeCount: 1 });
+
+      // Redemander « Je viens » ne fait pas perdre sa place dans la file.
+      expect((await events.rsvp(event.id, b, { status: 'GOING' })).waitlistPosition).toBe(2);
+
+      // `a` renonce : `b` devient premier. La position se recalcule, elle n'est pas figée.
+      await events.rsvp(event.id, a, { status: 'DECLINED' });
+      const detail = await events.detail(event.id, b);
+      expect(detail.myWaitlistPosition).toBe(1);
+
+      // Hors liste d'attente la position est nulle.
+      const declined = await events.rsvp(event.id, a, { status: 'DECLINED' });
+      expect(rsvpResponseSchema.parse(declined)).toMatchObject({ status: 'DECLINED', waitlistPosition: null });
+    });
+
+    it('[lot E2] deux inscrits en liste d’attente à la même milliseconde ont deux positions distinctes', async () => {
+      const organizer = await member();
+      const event = await newEvent(organizer, { capacity: 1 });
+      const a = await member();
+      const b = await member();
+      await events.rsvp(event.id, a, { status: 'GOING' });
+      await events.rsvp(event.id, b, { status: 'GOING' });
+      const instant = new Date();
+      await prisma.eventAttendee.updateMany({
+        where: { eventId: event.id, userId: { in: [a, b] } },
+        data: { respondedAt: instant },
+      });
+      const positions = [
+        (await events.detail(event.id, a)).myWaitlistPosition,
+        (await events.detail(event.id, b)).myWaitlistPosition,
+      ].sort();
+      expect(positions).toEqual([1, 2]);
     });
 
     it('ne promeut personne quand l’événement n’a pas de capacité', async () => {

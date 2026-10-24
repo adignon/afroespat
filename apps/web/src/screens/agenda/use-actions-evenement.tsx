@@ -3,12 +3,13 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
-import { cancelEventSchema } from '@app/shared';
+import { cancelEventSchema, rsvpResponseSchema, type RsvpResponse } from '@app/shared';
 import { useGeste } from '@/components/entraide/geste';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { FenetreSignalement } from '@/components/fenetre-signalement';
 import { memberApi } from '@/lib/api/index';
 import type { ActionsEvenement } from './data';
+import { phraseRsvp } from './rsvp';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -57,19 +58,19 @@ export function useActionsEvenement(
 
   const onRsvp = useCallback(
     (statut: 'GOING' | 'MAYBE' | 'DECLINED'): void => {
+      // La réponse du serveur dit le statut RÉEL : un « Je viens » sur un événement
+      // complet revient en `WAITLIST` avec la position dans la file. On l'annonce
+      // telle quelle plutôt que de laisser croire à une place confirmée.
+      let reel: RsvpResponse | null = null;
       void lancer(
-        () =>
-          memberApi.put(`/events/${eventId}/rsvp`, z.unknown(), { body: { status: statut } }),
+        async () => {
+          reel = await memberApi.put(`/events/${eventId}/rsvp`, rsvpResponseSchema, {
+            body: { status: statut },
+          });
+        },
         { recharger: false, echecRepli: 'Votre réponse n’a pas pu être enregistrée.' },
       ).then((ok) => {
-        terminer(
-          ok,
-          statut === 'GOING'
-            ? 'Votre réponse est enregistrée.'
-            : statut === 'MAYBE'
-              ? 'Noté : peut-être.'
-              : 'Noté : vous ne venez pas.',
-        );
+        terminer(ok, phraseRsvp(statut, reel));
       });
     },
     [eventId, lancer, terminer],

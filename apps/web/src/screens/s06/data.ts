@@ -30,6 +30,15 @@ export interface S06Data {
     readonly recherche: string;
     /** Les puces de métier : des liens `?q=`. */
     readonly metiers: readonly Onglet[];
+    /**
+     * LA VILLE FILTRÉE (lot E2) : l'identifiant retenu par `?ville=`, ou `''` pour
+     * « Toutes les villes ». La case « Lyon » de la maquette était le nom d'une ville
+     * d'exemple, écrit en dur ; c'est désormais une liste des villes du référentiel
+     * (`GET /places/cities`) qui filtre `GET /pros?cityId=`.
+     */
+    readonly ville: string;
+    /** Les villes proposées : `valeur` est l'identifiant, `''` pour « Toutes ». */
+    readonly villes: readonly { readonly valeur: string; readonly libelle: string }[];
     /** La tête mise en avant d'abord (au plus deux, §4.2), puis le classement naturel. */
     readonly fiches: readonly CarteFiche[];
   };

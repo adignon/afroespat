@@ -405,7 +405,12 @@ export class JobsService {
   async list(
     query: JobsQuery,
     viewerId: string | null,
-  ): Promise<Page<JobCard> & { sponsored: readonly JobCard[] }> {
+  ): Promise<
+    Page<JobCard> & {
+      sponsored: readonly JobCard[];
+      meta: { sponsoredLabel: string; sponsoredHeadSlots: number; total: number };
+    }
+  > {
     const now = new Date();
     const conditions: Prisma.JobListingWhereInput[] = [];
 
@@ -487,10 +492,20 @@ export class JobsService {
       (card) => card.createdAt.toISOString(),
     );
 
+    // Le total de la RECHERCHE, tête sponsorisée comprise, compté sur les mêmes
+    // conditions MOINS le keyset (sinon il décroîtrait de page en page) — comme
+    // `GET /housing`. Il sert « 8 offres » du sous-titre de S04 et le compteur du
+    // panneau de gauche des écrans Services.
+    const total = await this.prisma.jobListing.count({ where: { AND: conditions } });
+
     return {
       ...page,
       sponsored: sponsoredRows.map((row) => this.toCard(row, viewerId)),
-      meta: { sponsoredLabel: JOB_SPONSORED_LABEL, sponsoredHeadSlots: JOB_SPONSORED_HEAD_SLOTS },
+      meta: {
+        sponsoredLabel: JOB_SPONSORED_LABEL,
+        sponsoredHeadSlots: JOB_SPONSORED_HEAD_SLOTS,
+        total,
+      },
     };
   }
 

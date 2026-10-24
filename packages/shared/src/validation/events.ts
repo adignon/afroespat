@@ -168,6 +168,26 @@ export const rsvpSchema = z
 export type Rsvp = z.infer<typeof rsvpSchema>;
 
 /**
+ * Ce que `PUT /events/:id/rsvp` répond (lot E2).
+ *
+ * `status` est le statut RÉEL : un « Je viens » sur un événement complet revient en
+ * `WAITLIST`, et c'est `waitlistPosition` qui dit où — 1 = le prochain promu. Il
+ * n'existe pas de colonne `waitlist_position` : la position se RECALCULE sur
+ * `(responded_at, id)`, l'ordre même de la promotion, donc elle baisse d'elle-même
+ * quand quelqu'un devant se désinscrit. Elle vaut `null` pour tout autre statut.
+ * `.strict()` : un champ qui apparaîtrait un jour fait refuser la charge.
+ */
+export const rsvpResponseSchema = z
+  .object({
+    status: z.enum(['GOING', 'MAYBE', 'DECLINED', 'WAITLIST']),
+    waitlistPosition: z.number().int().positive().nullable(),
+    attendeeCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export type RsvpResponse = z.infer<typeof rsvpResponseSchema>;
+
+/**
  * Présence (§3.3). `userIds` est le geste de l'organisateur ; son absence est le
  * bouton « Je suis là » du participant.
  */

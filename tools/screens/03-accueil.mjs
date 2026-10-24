@@ -1444,6 +1444,17 @@ const FILET_BUDGET = 'border-top:1px solid #F0F3F2';
 
 const A12_MOBILE = [
   {
+    // LOT E2 — le titre de la fiche (« Lyon », 30 px à 1 440 px, 26 px à 390 px) était la
+    // seule valeur de l'en-tête que `VI_A12_ENTETE` n'attrapait pas : il cherchait `</h1>`,
+    // or le titre n'est promu en <h1> qu'APRÈS les adaptations. Mesuré au navigateur : la
+    // fiche d'Abomey-Calavi s'affichait sous le titre « Lyon ». Il se lie ici, comme sur
+    // les six planches A12T, et `retitrerSurDonnees` reprend le titre sur sa forme liée.
+    noeud: '>Lyon<',
+    devient: '>{{ ville.nom }}<',
+    fois: 1,
+    why: 'Le nom de la ville, de `GET /cities/:slug` : la fiche d’Abomey-Calavi s’affichait sous le titre « Lyon », aux deux largeurs.',
+  },
+  {
     noeud:
       BARRE_PAYS_MOBILE('Sénégal', '82%', '312') +
       BARRE_PAYS_MOBILE('Côte d’Ivoire', '64%', '246') +

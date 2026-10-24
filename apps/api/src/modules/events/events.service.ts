@@ -751,11 +751,21 @@ export class EventsService {
   private async waitlistPositionOf(eventId: string, userId: string): Promise<number | null> {
     const mine = await this.prisma.eventAttendee.findUnique({
       where: { eventId_userId: { eventId, userId } },
-      select: { status: true, respondedAt: true },
+      select: { id: true, status: true, respondedAt: true },
     });
     if (mine === null || mine.status !== 'WAITLIST') return null;
+    // MÊME ORDRE QUE `promoteWaitlist` : (responded_at, id). Avec le seul `lt`, deux
+    // inscrits arrivés dans la même milliseconde auraient tous deux affiché « 1re »
+    // alors qu'un seul est promu en premier.
     const ahead = await this.prisma.eventAttendee.count({
-      where: { eventId, status: 'WAITLIST', respondedAt: { lt: mine.respondedAt } },
+      where: {
+        eventId,
+        status: 'WAITLIST',
+        OR: [
+          { respondedAt: { lt: mine.respondedAt } },
+          { respondedAt: mine.respondedAt, id: { lt: mine.id } },
+        ],
+      },
     });
     return ahead + 1;
   }

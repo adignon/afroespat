@@ -544,7 +544,7 @@ test.describe('E02 — la fiche d’un événement', () => {
     await visiter(autrePage, `/agenda/${evenement.id}`, 1440);
     const vueAutre = cadre(autrePage, 1440);
     await expect(vueAutre.getByText('COMPLET')).toBeVisible();
-    await expect(vueAutre.getByText('Vous êtes 1e sur la liste')).toBeVisible();
+    await expect(vueAutre.getByText('Vous êtes 1re sur la liste d’attente')).toBeVisible();
     await autre.close();
   });
 });
