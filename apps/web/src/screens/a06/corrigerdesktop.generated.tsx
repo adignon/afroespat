@@ -14,7 +14,7 @@ import { Texte } from '@/components/valeurs-vives';
 import type { A06Data } from './data';
 
 export function A06CorrigerDesktop(props: A06Data) {
-  const { correction, panelGuides, rail } = props;
+  const { correction, guide, panelGuides, rail } = props;
 
   return (
     <>
@@ -47,14 +47,7 @@ export function A06CorrigerDesktop(props: A06Data) {
     <div data-zone="centre" style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", paddingRight: "24px" }}>
       <div style={{ height: "64px", flexShrink: "0" }}></div>
       <div data-zone="rangee" style={{ flex: "1", display: "flex", gap: "28px", padding: "12px 0 24px" }}>
-        <article data-zone="contenu" style={{ width: "688px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "28px", alignSelf: "flex-start" }}>
-          <div style={{ display: "flex", gap: "8px" }}><span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11.5px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px" }}>Logement</span><span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11.5px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px" }}>Universel</span></div>
-          <h1 style={{ margin: "14px 0 0", fontSize: "30px", fontWeight: "800", letterSpacing: "-1px" }}>Obtenir la garantie Visale sans CDI</h1>
-          <span style={{ display: "inline-block", marginTop: "12px", fontSize: "14px", fontWeight: "700", color: "#0F5C48", background: "#E3F0EB", padding: "6px 12px", borderRadius: "999px" }}>Mis à jour le 12 mars 2026</span>
-          <h2 style={{ margin: "24px 0 0", fontSize: "19px", fontWeight: "700" }}>1. Vérifier votre éligibilité</h2>
-          <p style={{ margin: "10px 0 0", fontSize: "15px", lineHeight: "1.72" }}>Visale est une caution gratuite proposée par Action Logement. Les étudiants de 18 à 30 ans y ont droit, <span style={{ background: "#CFE3DA", borderRadius: "4px", outline: "2px solid #16785E", outlineOffset: "1px" }}>quel que soit leur pays d'origine, dès l'obtention du VLS-TS</span>.</p>
-          <ul style={{ margin: "18px 0 0", paddingLeft: "20px", fontSize: "15px", lineHeight: "1.85" }}><li>Créer un compte sur visale.fr</li><li>Déposer votre VLS-TS et votre certificat de scolarité</li></ul>
-        </article>
+        <article data-zone="contenu" style={{ width: "688px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "28px", alignSelf: "flex-start" }}><h1 style={{ margin: "0", fontSize: "30px", fontWeight: "800", letterSpacing: "-1px" }}>{guide.title}</h1>{guide.misAJour === "" ? null : (<span style={{ display: "inline-block", marginTop: "12px", fontSize: "14px", fontWeight: "700", color: "#0F5C48", background: "#E3F0EB", padding: "6px 12px", borderRadius: "999px" }}>{guide.misAJour}</span>)}</article>
       </div>
       <div style={{ position: "absolute", inset: "0", background: "rgba(22,33,29,.45)" }}></div>
       <div style={{ position: "absolute", top: "0", right: "0", bottom: "0", width: "480px", background: "#fff", padding: "28px", display: "flex", flexDirection: "column", gap: "16px" }}>

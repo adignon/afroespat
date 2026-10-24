@@ -361,6 +361,88 @@ const E04_VIVANT = [
   ),
 ];
 
+// ─── S01–S10 · « 0 contacts sur illimité » ───────────────────────────────────
+
+/**
+ * Quand le plafond est « illimité » (`plafondPro`), « 3 contacts pro sur illimité »
+ * ne veut rien dire : la phrase tombe sur « 3 contacts pro ». (Avec « tout gratuit »
+ * le bloc n'est pas dessiné du tout — `quotas.gratuit` — ; ceci couvre le plan
+ * Premium quand les plans s'appliquent.)
+ */
+const SUR_PLAFOND = [
+  ['contacts pro sur {quotas.plafondPro}', 'contacts pro{quotas.plafondPro === "illimité" ? "" : ` sur ${quotas.plafondPro}`}'],
+  ['contacts sur {quotas.plafondPro} ce mois-ci', 'contacts{quotas.plafondPro === "illimité" ? "" : ` sur ${quotas.plafondPro}`} ce mois-ci'],
+];
+
+const CONTACTS_ILLIMITES = {
+  screens: ['*'],
+  nom: 'CONTACTS_PRO_ILLIMITES',
+  why: '« 0 contacts sur illimité » ne se dit pas : sans plafond, la phrase ne nomme pas de plafond.',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    let pris = false;
+    for (const [ancien, neuf] of SUR_PLAFOND) {
+      while (out.includes(ancien)) {
+        out = out.replace(ancien, () => neuf);
+        pris = true;
+      }
+    }
+    return { jsx: out, applied: pris };
+  },
+};
+
+// ─── Les exemples de saisie (placeholders) ───────────────────────────────────
+
+/**
+ * Un exemple de saisie n'est pas une donnée, mais il se lit comme une : « Entrepreneurs
+ * africains à Lyon » dit à un membre de Cotonou que ce réseau est lyonnais. Les
+ * exemples deviennent NEUTRES — ni ville, ni nom propre réel. (Ceux des champs promus
+ * par `adaptFields` — A10, O04 — sont neutralisés dans leur enregistrement, par la clé
+ * `placeholder` de `tools/generate-screens.mjs` ; ici, ceux que la planche dessine
+ * déjà en `placeholder`.)
+ */
+const PLACEHOLDERS = [
+  ['A05', 'placeholder="Mon arrivée étudiante à Lyon, étape par étape"', 'placeholder="Mon arrivée étudiante, étape par étape"'],
+  ['A05', 'placeholder="Mon arrivée étudiante à Lyon"', 'placeholder="Mon arrivée étudiante"'],
+];
+
+const PLACEHOLDERS_NEUTRES = pour(
+  [...new Set(PLACEHOLDERS.map(([section]) => section))],
+  'EXEMPLES_DE_SAISIE_NEUTRES',
+  'Les exemples de saisie (« …à Lyon », « Amina Diallo ») deviennent neutres : ni ville, ni nom propre réel.',
+  [],
+  (jsx, ctx) =>
+    serie(
+      jsx,
+      PLACEHOLDERS.filter(([section]) => section === ctx.section).map(([, ancien, neuf]) => [ancien, neuf]),
+    ),
+);
+
+// ─── A06 « Corriger » · la page derrière le panneau ──────────────────────────
+
+const A06_CORRIGER_ARTICLE = pour(
+  ['A06'],
+  'A06_CORRIGER_ARTICLE_DU_GUIDE',
+  'La page derrière le panneau « Proposer une correction » nommait le guide de la maquette (Visale) et en recopiait trois paragraphes : elle porte maintenant le titre et la date du guide réel, et rien d’autre.',
+  ['guide'],
+  (jsx) => {
+    // Le repère `data-zone` n'est posé que PLUS TARD (zones-mise-en-page) : on cherche l'article lui-même.
+    const visale = jsx.indexOf('Visale est une caution gratuite');
+    const debut = visale === -1 ? -1 : jsx.lastIndexOf('<article ', visale);
+    if (debut === -1) return { jsx, applied: false };
+    const fin = finElement(jsx, debut);
+    if (fin === -1) return { jsx, applied: false };
+    const ouvrante = jsx.slice(debut, jsx.indexOf('>', debut) + 1);
+    const neuf =
+      ouvrante +
+      '<h1 style={{ margin: "0", fontSize: "30px", fontWeight: "800", letterSpacing: "-1px" }}>{guide.title}</h1>' +
+      '{guide.misAJour === "" ? null : (<span style={{ display: "inline-block", marginTop: "12px", fontSize: "14px", fontWeight: "700", color: "#0F5C48", background: "#E3F0EB", padding: "6px 12px", borderRadius: "999px" }}>{guide.misAJour}</span>)}' +
+      '</article>';
+    return { jsx: jsx.slice(0, debut) + neuf + jsx.slice(fin), applied: true };
+  },
+);
+
 export const ADAPTATIONS_DONNEES_VIVES = [
   ...A01_VIVANT,
   ...K01_VIVANT,
@@ -370,6 +452,9 @@ export const ADAPTATIONS_DONNEES_VIVES = [
   ...S01_VIVANT,
   ...H01_VIVANT,
   ...E04_VIVANT,
+  PLACEHOLDERS_NEUTRES,
+  CONTACTS_ILLIMITES,
+  A06_CORRIGER_ARTICLE,
 ];
 
 export const AJOUTS_DONNEES_VIVES = {

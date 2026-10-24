@@ -504,7 +504,7 @@ const FIELD_ADAPTATIONS = [
     // champ la ferait partir vers l'API — où `handleSchema` la refuse.
     prefix: '@',
     sample: '@amina.d',
-    placeholder: 'amina.d',
+    placeholder: 'votre pseudo',
     why: 'Le pseudo devient saisissable.',
     attrs: [
       'type="text"',
@@ -520,6 +520,8 @@ const FIELD_ADAPTATIONS = [
   {
     screens: ['O04'],
     sample: 'Amina Diallo',
+    // W2A : l'exemple de saisie est neutre — ni nom propre, ni ville.
+    placeholder: 'Prénom et nom',
     why: 'Le nom d’affichage devient saisissable.',
     attrs: [
       'type="text"',
@@ -547,6 +549,7 @@ const FIELD_ADAPTATIONS = [
   {
     screens: ['A10'],
     sample: 'Entrepreneurs africains à Lyon',
+    placeholder: 'Entrepreneurs africains de la diaspora',
     why: 'Le nom du réseau devient saisissable — c’était un <div> portant l’exemple de la maquette.',
     provides: ['nomMax'],
     attrs: [

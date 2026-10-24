@@ -156,7 +156,7 @@ export function BoutonDemander({
             rows={6}
             maxLength={MENTORSHIP_MESSAGE_MAX}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Bonjour, je prépare mon arrivée à Lyon pour mes études et je cherche quelqu’un qui connaît les démarches…"
+            placeholder="Bonjour, je prépare mon arrivée pour mes études et je cherche quelqu’un qui connaît les démarches…"
             style={{ ...CHAMP, resize: 'vertical' }}
           />
           <Compteur n={message.trim().length} min={MENTORSHIP_MESSAGE_MIN} max={MENTORSHIP_MESSAGE_MAX} />
@@ -820,7 +820,7 @@ export function FormulaireParrain({ variante }: { readonly variante: 'bureau' | 
             value={bio}
             maxLength={MENTOR_BIO_MAX}
             onChange={(e) => setBio(e.target.value)}
-            placeholder="Arrivée comme étudiante en 2019, aujourd’hui comptable à Lyon…"
+            placeholder="Mon parcours en quelques mots : d’où je viens, ce que j’ai appris, comment je peux aider…"
             style={{ ...CHAMP, resize: 'vertical' }}
           />
           <Compteur n={bio.trim().length} min={20} max={MENTOR_BIO_MAX} />

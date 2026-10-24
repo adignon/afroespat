@@ -527,13 +527,38 @@ export function NouvelleStoryScreen({
         ]);
         if (!vivant) return;
         setPaysListe(pays.items);
-        const origine = pays.items.find((c) => c.id === me.user.originCountryId) ?? null;
+        /**
+         * LA VILLE PAR DÉFAUT EST CELLE DU MEMBRE (lot W2A, phase 2.22), quand il en a
+         * une : « Évry seulement » pour un membre d'Évry. Le premier choix du porteur
+         * — la première ville du pays d'origine — ne reste que le repli d'un membre
+         * sans ville, parce qu'il faisait publier « Abomey seulement » à qui vit ailleurs.
+         */
+        const maVille =
+          me.user.cityId !== null && me.user.cityName !== null && me.user.cityCountryId !== null
+            ? {
+                id: me.user.cityId,
+                countryId: me.user.cityCountryId,
+                name: me.user.cityName,
+                slug: '',
+                region: null,
+                isActive: true,
+                memberCount: 0,
+              }
+            : null;
+        const origine =
+          pays.items.find(
+            (c) => c.id === (maVille === null ? me.user.originCountryId : maVille.countryId),
+          ) ?? null;
         setPaysVille(origine);
         if (origine === null) return;
         const villesOrigine = await listCitiesOfCountry(origine.id, stop.signal);
         if (!vivant) return;
         setVilles(villesOrigine.items);
-        setVilleChoisie(villesOrigine.items[0] ?? null);
+        setVilleChoisie(
+          maVille === null
+            ? (villesOrigine.items[0] ?? null)
+            : (villesOrigine.items.find((v) => v.id === maVille.id) ?? maVille),
+        );
       } catch {
         // Voir ci-dessus : un confort qui échoue ne parle pas.
       } finally {
@@ -1081,8 +1106,9 @@ export function NouvelleStoryScreen({
      * rien, parce qu'il n'y a rien à choisir.
      *
      * Le libellé porte le NOM DE LA VILLE RETENUE. Sans ville — le pays d'origine
-     * n'en a aucune au référentiel, ou les appels ont échoué — on retombe sur le
-     * mot de la planche, « Lyon », plutôt que sur un onglet vide.
+     * n'en a aucune au référentiel, ou les appels ont échoué — l'onglet dit « Ma
+     * ville seulement » : la portée, jamais le « Lyon » de la planche, qui était le
+     * repli jusqu'au lot W2A.
      */
     audience: audienceFor(
       audience,
@@ -1093,7 +1119,7 @@ export function NouvelleStoryScreen({
         }
         setAudience(i);
       },
-      villeChoisie?.name ?? 'Lyon',
+      villeChoisie?.name ?? null,
     ),
     ...msgsFor(msgs),
     toggleMsgs: onToggleMsgs,

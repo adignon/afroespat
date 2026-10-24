@@ -1164,8 +1164,10 @@ export const attachTopics = ['Visale', 'Garant', 'CAF', 'Colocation', 'Banque'];
  * de la phrase, elle, est EXACTEMENT celle de la maquette : un nom de ville, un
  * espace, « seulement ». Seul le nom vient maintenant de l'état.
  *
- * `villeLabel` retombe sur `'Lyon'` : c'est ce que la planche écrit, donc les
- * appelants qui ne choisissent pas de ville voient ce qu'ils voyaient.
+ * `villeLabel` retombe sur « Ma ville » (lot W2A, phase 2.22) : le repli était
+ * `'Lyon'`, le mot de la planche, donc un membre sans ville connue publiait « Lyon
+ * seulement ». Sans nom à dire, l'onglet dit « Ma ville seulement » — la portée, pas
+ * une ville inventée.
  *
  * `chevron` ne vaut que pour le SECOND onglet, parce que lui seul ouvre quelque
  * chose. Le premier n'a rien à montrer : « tous les membres » n'a pas de liste.
@@ -1177,9 +1179,9 @@ export const attachTopics = ['Visale', 'Garant', 'CAF', 'Colocation', 'Banque'];
 export const audienceFor = (
   aud: number,
   onPick: (i: number) => void,
-  villeLabel = 'Lyon',
+  villeLabel: string | null = null,
 ) =>
-  ['Tous les membres', `${villeLabel} seulement`].map((label, i) => {
+  ['Tous les membres', `${villeLabel ?? 'Ma ville'} seulement`].map((label, i) => {
     const on = aud === i;
     return {
       label,
