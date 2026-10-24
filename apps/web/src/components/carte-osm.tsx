@@ -58,7 +58,7 @@ const DELAI_SANS_TUILE_MS = 7000;
 const ERREURS_TOLEREES = 4;
 
 /** Le diamètre d'un cercle, en pixels : l'aire suit `member_count`, comme dans le SVG. */
-function diametre(compte: number | null, max: number): number {
+export function diametre(compte: number | null, max: number): number {
   if (compte === null || compte <= 0) return 26;
   return Math.round(
     2 * Math.max(13, Math.min(34, 13 + (Math.sqrt(compte) / Math.sqrt(Math.max(1, max))) * 21)),
@@ -73,12 +73,12 @@ function echapper(texte: string): string {
     .replaceAll('"', '&quot;');
 }
 
-function libelleDe(p: PointCarte): string {
+export function libelleDe(p: PointCarte): string {
   return `${p.nom} · ${p.compte === null ? MOINS_DU_SEUIL : nombre(p.compte)}`;
 }
 
 /** Le HTML d'un repère : le cercle de la maquette et son étiquette blanche en dessous. */
-function repere(
+export function repere(
   p: PointCarte,
   max: number,
   moi: boolean,

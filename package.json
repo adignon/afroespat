@@ -14,7 +14,7 @@
     "db:generate": "pnpm --filter @app/db generate",
     "db:migrate": "pnpm --filter @app/db migrate",
     "db:seed": "pnpm --filter @app/db seed",
-    "guardrails": "node tools/check-duplicate-spread-keys.mjs --self-test && node tools/check-duplicate-spread-keys.mjs && node tools/generate-screens.mjs --self-test && node tools/__tests__/entraide-donnees.test.mjs && turbo run guardrails",
+    "guardrails": "node tools/check-duplicate-spread-keys.mjs --self-test && node tools/check-duplicate-spread-keys.mjs && node tools/generate-screens.mjs --self-test && node tools/__tests__/entraide-donnees.test.mjs && node tools/__tests__/feuilles-mobiles.test.mjs && turbo run guardrails",
     "up": "docker compose up -d",
     "down": "docker compose down"
   },

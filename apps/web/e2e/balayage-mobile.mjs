@@ -43,6 +43,7 @@
  *     --captures=/chemin    enregistre une capture pleine page par route
  *     --seulement=entraide  ne joue que les routes dont le chemin contient ce texte
  *     --admin               ajoute les routes /admin (réservées au personnel : non gérées ici)
+ *     --sans-feuilles       ne rouvre pas les fenêtres / feuilles (`data-modal-open`)
  *     --strict-textes       les ellipses comptent aussi comme erreurs
  *     CHROMIUM=/opt/pw-browsers/chromium   exécutable du navigateur
  *
@@ -543,6 +544,15 @@ function mesurer(L) {
     }
   }
 
+  // Une fenêtre ou une feuille ouverte : son panneau doit tenir dans l'écran.
+  for (const p of document.querySelectorAll('[data-modal-panel]')) {
+    if (!visible(p)) continue;
+    const r = p.getBoundingClientRect();
+    if (r.left < -1 || r.right > L + 1 || r.top < -1 || r.bottom > window.innerHeight + 1) {
+      out.coupes.push(`PANNEAU ${decrire(p)} x=[${Math.round(r.left)};${Math.round(r.right)}] y=[${Math.round(r.top)};${Math.round(r.bottom)}]`);
+    }
+  }
+
   for (const el of document.querySelectorAll('body *')) {
     if (!el.childNodes.length) continue;
     const aTexte = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 0);
@@ -572,7 +582,7 @@ async function main() {
   const ids = await semer(a, b);
   console.log('décor :', JSON.stringify(ids));
 
-  const fichiers = pages(APP)
+  let fichiers = pages(APP)
     .map(routeDe)
     .filter((r) => r.groupe === '(app)' || (ARGS.admin && r.groupe === '(admin)') || (!ARGS['sans-onboarding'] && r.groupe === '(onboarding)') || r.route === '/')
     .map((r) => r.route)
@@ -580,6 +590,8 @@ async function main() {
     // les fenêtres interceptées (@fenetre) doublent /stories/* : déjà couvertes
     .filter((r, i, t) => t.indexOf(r) === i)
     .sort();
+  // Variantes d'une même route que le fichier `page.tsx` ne distingue pas (`?vue=`).
+  fichiers.push('/villes?vue=carte');
 
   const navigateur = await chromium.launch({ executablePath: CHROMIUM });
   const contexte = await navigateur.newContext({
@@ -606,23 +618,47 @@ async function main() {
     if (ARGS.seulement && !modele.includes(String(ARGS.seulement))) continue;
     const url = resoudre(modele, ids, a, b);
     const page = modele.startsWith('/bienvenue') || modele.startsWith('/connexion') || modele.startsWith('/p/') ? pageB : pageA;
-    try {
-      await page.goto(`${WEB}${url}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
-      await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
-      await page.waitForTimeout(700);
+    const rapporter = async (etiquette, nomCapture) => {
       const m = await page.evaluate(mesurer, LARGEUR);
       const sansEllipse = m.tronques.filter((t) => !t.ellipse);
       const avecEllipse = m.tronques.filter((t) => t.ellipse);
       const echec = m.debordement || m.coupes.length > 0 || sansEllipse.length > 0 || (ARGS['strict-textes'] && avecEllipse.length > 0);
       if (echec) erreurs += 1;
-      lignes.push({ url, modele, m, sansEllipse, avecEllipse, echec, finale: new URL(page.url()).pathname });
-      console.log(`${echec ? 'ECHEC' : 'ok   '} ${url}${new URL(page.url()).pathname !== url ? ' → ' + new URL(page.url()).pathname : ''}  scrollWidth=${m.scrollWidth}/${m.L}${m.coupes.length ? ' coupés=' + m.coupes.length : ''}${sansEllipse.length ? ' rognés=' + sansEllipse.length : ''}${avecEllipse.length ? ' ellipses=' + avecEllipse.length : ''}`);
+      lignes.push({ url: etiquette, modele, m, sansEllipse, avecEllipse, echec });
+      const fin = new URL(page.url()).pathname;
+      console.log(`${echec ? 'ECHEC' : 'ok   '} ${etiquette}${fin !== url.split('?')[0] && !etiquette.includes('[feuille') ? ' → ' + fin : ''}  scrollWidth=${m.scrollWidth}/${m.L}${m.coupes.length ? ' coupés=' + m.coupes.length : ''}${sansEllipse.length ? ' rognés=' + sansEllipse.length : ''}${avecEllipse.length ? ' ellipses=' + avecEllipse.length : ''}`);
       for (const l of m.larges) console.log(`      large   ${l}`);
       for (const c of m.coupes.slice(0, 8)) console.log(`      coupé   ${c}`);
       for (const t of sansEllipse.slice(0, 6)) console.log(`      rogné   ${t.d} ${t.dims}`);
       if (ARGS['strict-textes'] || ARGS.verbeux) for (const t of avecEllipse.slice(0, 6)) console.log(`      ellipse ${t.d} ${t.dims}`);
       if (ARGS.captures) {
-        await page.screenshot({ path: join(String(ARGS.captures), `${modele.replace(/[^a-z0-9]+/gi, '_')}.png`), fullPage: true });
+        await page.screenshot({ path: join(String(ARGS.captures), `${nomCapture}.png`), fullPage: !etiquette.includes('[feuille') });
+      }
+    };
+    try {
+      await page.goto(`${WEB}${url}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await page.waitForLoadState('networkidle', { timeout: 6_000 }).catch(() => {});
+      await page.waitForTimeout(700);
+      await rapporter(url, modele.replace(/[^a-z0-9]+/gi, '_'));
+      // Chaque fenêtre / feuille que l'écran sait ouvrir (`data-modal-open`), l'une après l'autre.
+      if (!ARGS['sans-feuilles']) {
+        const cles = await page.$$eval('[data-modal-open]', (els) => [
+          ...new Set(els.filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.getAttribute('data-modal-open'))),
+        ]);
+        for (const cle of cles) {
+          const bouton = page.locator(`[data-modal-open="${cle}"]`).filter({ visible: true }).first();
+          const clique = await bouton.click({ timeout: 3_000 }).then(() => true, () => false);
+          if (!clique) continue;
+          await page.waitForTimeout(700);
+          await rapporter(`${url} [feuille ${cle}]`, `${modele.replace(/[^a-z0-9]+/gi, '_')}__${cle}`);
+          await page.keyboard.press('Escape');
+          await page.waitForTimeout(300);
+          // Une feuille qui ne se ferme pas à Échap : on recharge plutôt que de mesurer à travers elle.
+          if ((await page.locator('[data-modal-panel]').filter({ visible: true }).count()) > 0) {
+            await page.goto(`${WEB}${url}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+            await page.waitForTimeout(1500);
+          }
+        }
       }
     } catch (e) {
       erreurs += 1;
