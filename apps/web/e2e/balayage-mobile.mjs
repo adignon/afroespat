@@ -42,6 +42,9 @@
  *     --largeur=1440        autre largeur (défaut 390)
  *     --captures=/chemin    enregistre une capture pleine page par route
  *     --seulement=entraide  ne joue que les routes dont le chemin contient ce texte
+ *                           (plusieurs : `--seulement=parcours,parrainage`). `next dev` grossit à
+ *                           chaque route compilée (10 Go mesurés sur une passe complète) :
+ *                           en cas de manque de mémoire, jouer par morceaux et relancer le web
  *     --admin               ajoute les routes /admin (réservées au personnel : non gérées ici)
  *     --sans-feuilles       ne rouvre pas les fenêtres / feuilles (`data-modal-open`)
  *     --strict-textes       les ellipses comptent aussi comme erreurs
@@ -453,6 +456,18 @@ function resoudre(route, ids, a, b) {
   return t[route] ?? route;
 }
 
+/**
+ * Les boutons qui ouvrent une feuille sans porter `data-modal-open` (parcours : J03 à J08).
+ * [motif de la route, [noms accessibles des boutons]]. Liste BLANCHE, à compléter.
+ */
+const OUVREURS = [
+  [/^\/parcours\/\[id\]\/etapes\/\[etape\]$/, [/Je suis bloqu/, /Signaler une erreur/]],
+  [/^\/parcours\/\[id\]\/equipe$/, [/^Inviter/]],
+  [/^\/parcours\/\[id\]\/reglages$/, [/Arr[êe]ter ce parcours/, /Exporter/]],
+  [/^\/parcours$/, [/Mes parcours/]],
+  [/^\/parcours\/\[id\]$/, [/Mes parcours/, /Partager/]],
+];
+
 // ───────────────────────────── 4. mesures ──────────────────────────────────
 
 /** Exécutée DANS la page : rend un objet sérialisable. */
@@ -615,7 +630,7 @@ async function main() {
   let erreurs = 0;
   const lignes = [];
   for (const modele of fichiers) {
-    if (ARGS.seulement && !modele.includes(String(ARGS.seulement))) continue;
+    if (ARGS.seulement && !String(ARGS.seulement).split(',').some((x) => modele.includes(x))) continue;
     const url = resoudre(modele, ids, a, b);
     const page = modele.startsWith('/bienvenue') || modele.startsWith('/connexion') || modele.startsWith('/p/') ? pageB : pageA;
     const rapporter = async (etiquette, nomCapture) => {
@@ -645,12 +660,16 @@ async function main() {
         const cles = await page.$$eval('[data-modal-open]', (els) => [
           ...new Set(els.filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.getAttribute('data-modal-open'))),
         ]);
-        for (const cle of cles) {
-          const bouton = page.locator(`[data-modal-open="${cle}"]`).filter({ visible: true }).first();
+        // Les feuilles qu'aucun `data-modal-open` ne signale : des boutons ordinaires, nommés ici.
+        // LISTE BLANCHE : on ne clique jamais « tous les boutons » (Supprimer, Quitter…).
+        const nommes = OUVREURS.filter(([motif]) => motif.test(modele)).flatMap(([, noms]) => noms);
+        const ouvreurs = [...cles.map((cle) => ({ cle, lieu: page.locator(`[data-modal-open="${cle}"]`) })), ...nommes.map((nom) => ({ cle: nom.source, lieu: page.getByRole('button', { name: nom }) }))];
+        for (const { cle, lieu } of ouvreurs) {
+          const bouton = lieu.filter({ visible: true }).first();
           const clique = await bouton.click({ timeout: 3_000 }).then(() => true, () => false);
           if (!clique) continue;
           await page.waitForTimeout(700);
-          await rapporter(`${url} [feuille ${cle}]`, `${modele.replace(/[^a-z0-9]+/gi, '_')}__${cle}`);
+          await rapporter(`${url} [feuille ${cle}]`, `${modele.replace(/[^a-z0-9]+/gi, '_')}__${cle.replace(/[^a-z0-9]+/gi, '_')}`);
           await page.keyboard.press('Escape');
           await page.waitForTimeout(300);
           // Une feuille qui ne se ferme pas à Échap : on recharge plutôt que de mesurer à travers elle.

@@ -17,8 +17,9 @@ import { CartesFilVivantes } from '@/screens/accueil/cartes-fil-vivantes';
  *
  * T5 K02 : « Ajouter aux contacts (avec motif) ». Le motif est le choix
  * Entraide · Parrainage · Rencontre · Réseau que la planche de 420 px dessine,
- * avec un message facultatif. Elle n'a pas de forme mobile dans la maquette : la
- * même fenêtre sert aux deux largeurs.
+ * avec un message facultatif. Elle n'a pas de forme mobile dans la maquette : à 390 px
+ * le même contenu s'ouvre en feuille basse, dérivée de la fenêtre (AJOUT W3A, voir
+ * `tools/adaptations/feuilles-mobiles.mjs`).
  *
  * DEUX BOUTONS L'OUVRENT, un par cadre : « Ajouter aux contacts » sur ordinateur
  * et « Ajouter » sur mobile, parce que la maquette raccourcit le libellé quand la

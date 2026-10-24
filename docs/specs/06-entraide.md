@@ -144,3 +144,8 @@ Demandes : supprimées. Réponses : **conservées anonymisées** si `marked_help
 - `rule: la règle de non-paiement est renvoyée dans la réponse de liste`
 - `rule: une demande d'entraide de type logement ou emploi est refusée avec USE_SERVICES`
 - `rule: l'auteur ne peut pas répondre à sa propre demande`
+
+## 10. Précisions de mise en œuvre (lot W3A — mobile 390 px)
+
+- **H09 « Mes demandes »** : le débordement de 419 px venait de `Segments` et `Pastille` (`components/entraide/atomes.tsx`) : `font: inherit` placé APRÈS `fontSize` / `fontWeight` les réinitialisait, les onglets se peignaient à 16 px au lieu de 13 px. L'ordre est corrigé ; la page tient dans 390 px.
+- **H06 « Fiche d'un parrain »** : la maquette ne dessine pas de cadre téléphone (400 px mesurés avec le cadre d'ordinateur). AJOUT : `components/entraide/parrain-fiche-mobile.tsx`, mêmes briques et mêmes données que le bureau (`BoutonDemander`, `SignalerArgent`, grille de trois chiffres, évaluations), langage visuel de H08 (en-tête avec retour) et de H05 (cartes `#E6EBE9`, rayon 22), sans couleur nouvelle.

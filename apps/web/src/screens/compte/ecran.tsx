@@ -30,8 +30,9 @@ export type PlancheModale = {
   /**
    * Absent quand la maquette ne dessine pas de fenêtre distincte pour
    * l'ordinateur — c'est le cas des TROIS fenêtres de ce module, qui n'ont
-   * qu'une planche chacune (420, 380 et 440 px). La même sert aux deux largeurs,
-   * ce que `Modal` prévoit dans son type.
+   * qu'une planche chacune (420, 380 et 440 px). Cette planche est la fenêtre
+   * d'ordinateur ; le téléphone reçoit une FEUILLE BASSE dérivée d'elle (W3A,
+   * `tools/adaptations/feuilles-mobiles.mjs`) — une carte de 440 px débordait de 390.
    */
   readonly desktop?: ReactNode;
   readonly mobile: ReactNode;

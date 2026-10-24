@@ -229,3 +229,7 @@ Profil parrain : supprimé ; parrainages actifs → `ENDED` motif ADMIN avec not
 - **Contenus masqués.** Un message d'un membre séparé (`body: null`) ne fait plus de bulle vide dans le fil.
 - **Cloche entre onglets.** Voir `11-recherche-12-notifications.md` §14.
 
+## 15. Précisions de mise en œuvre (lot W3A — mobile 390 px)
+
+- **M01 menu de la conversation** : sur téléphone, le menu est une feuille basse (poignée, pleine largeur) dérivée du cadre d'ordinateur (`tools/adaptations/feuilles-mobiles.mjs`) — mêmes entrées : voir le profil, sourdine, bloquer, signaler.
+- **Parrainage (H06)** : cadre téléphone ajouté (AJOUT) — voir `06-entraide.md` §10.

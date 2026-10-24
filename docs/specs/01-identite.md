@@ -252,3 +252,9 @@ Règle de la phase : une valeur affichée vient de l'API ou du compte connecté 
 - **K08** : les délais (lien d'archive 7 jours, réactivation 6 mois, rétractation 7 jours) sont composés depuis `ACCOUNT_LIMITS` (`lib/textes-delais.ts`). La promesse « sous 48 h » est retirée : rien ne la tient (la génération est asynchrone, le membre est prévenu).
 - **K05 à 390 px** : la liste est celle des contacts (`GET /me/connections`) ; demandes reçues, suggestions et bloqués s'empilent dessous (AJOUT, `components/compte/sections-contacts-mobile.tsx`), chaque liste avec son état vide.
 - **Compteurs** : `cities.member_count` suit la ville du membre dans la transaction de `PATCH /me` (la tâche nocturne `city.member_count_recompute` reste le filet pour la désactivation, la suppression et le bannissement) ; `communities.member_count` suit l'adhésion et le départ. Migration de rattrapage idempotente `20261017140000_compteurs_membres_rattrapage`.
+
+## 12. Précisions de mise en œuvre (lot W3A — mobile 390 px)
+
+- **P01 (connexion) à 390 px** : le cadre téléphone de la maquette dessine « +229 » sans drapeau ni chevron. Le générateur (`ajoutDrapeau` de `DRAWN_SELECTS`, AJOUT) y pose la même pastille de drapeau (22 × 15 px) et le même chevron que le bureau ; le panneau des douze pays (`GET /places/countries`) s'ouvre comme à 1440 px, l'invite et la bordure du champ suivent l'indicatif (`analyserNumero` de `packages/shared`).
+- **K02 « Ajouter aux contacts » et K08 « Supprimer mon compte »** : feuilles basses sur téléphone (mêmes champs, mêmes gestes) — voir `tools/adaptations/feuilles-mobiles.mjs`.
+- **Balayage** : `apps/web/e2e/balayage-mobile.mjs` rejoue toutes les routes membre à 390 px et échoue sur tout débordement, bouton coupé ou texte rogné sans ellipse.
