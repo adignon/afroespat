@@ -836,7 +836,7 @@ export function useReseau(
   /**
    * « JE VIENS » — on TENTE, et le serveur tranche.
    *
-   * ⚠ AUCUN `if (niveau >= 2)` : `event.attend` est en N2, et le front PRÉVIENT
+   * ⚠ AUCUN `if (niveau >= 2)` : `event.attend` est en N1, et le front PRÉVIENT
    * sans autoriser (00 §5). Un refus `403 LEVEL_REQUIRED` pose `niveauRefuse`,
    * et c'est `components/fenetre-niveau.tsx` — posé une seule fois par l'écran —
    * qui écrit le niveau exigé, la fonctionnalité et les conditions, tous lus sur

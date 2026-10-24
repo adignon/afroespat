@@ -808,7 +808,7 @@ export interface EvenementsReseauView {
   /**
    * « Je viens » → `PUT /events/:id/rsvp` avec `{ status: 'GOING' }`.
    *
-   * ⚠ AUCUN CONTRÔLE DE NIVEAU ICI. `event.attend` est en N2 et le front
+   * ⚠ AUCUN CONTRÔLE DE NIVEAU ICI. `event.attend` est en N1 et le front
    * PRÉVIENT sans autoriser (00 §5) : on tente, le serveur refuse en
    * `403 LEVEL_REQUIRED`, et `components/fenetre-niveau.tsx` explique — voir
    * `niveauRefuse` juste en dessous.

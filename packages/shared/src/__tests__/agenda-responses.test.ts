@@ -16,8 +16,8 @@ import {
  *
  * Les dix fixtures de ce fichier ont été RELEVÉES OCTET POUR OCTET sur l'API qui
  * tourne (port 3192, base du dépôt), avec quatre membres créés pour l'occasion et
- * portés à L1 par le webhook KYC fictif — `event.create` et `event.attend`
- * l'exigent. Scénario joué : un événement avec capacité, lieu et description, deux
+ * portés à L1 par le webhook KYC fictif — `event.attend` l'exige (L1 depuis la
+ * décision du porteur du 2026-10-24) ; `event.create` demande L2 aujourd'hui. Scénario joué : un événement avec capacité, lieu et description, deux
  * RSVP (`GOING`, `MAYBE`), un second événement SANS capacité, description ni lieu,
  * un réseau et un événement qui lui est réservé, puis une présence cochée.
  *

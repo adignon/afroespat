@@ -56,7 +56,7 @@ import { FenetreAlbum } from '@/components/fenetre-album';
 /**
  * L'INVITATION À MONTER DE NIVEAU, pour le refus de « Je viens ».
  *
- * `event.attend` est en N2 et le front PRÉVIENT sans autoriser (mémo §5) : on
+ * `event.attend` est en N1 (un compte N0 est refusé) et le front PRÉVIENT sans autoriser (mémo §5) : on
  * tente, le serveur refuse en `403 LEVEL_REQUIRED`, et cette fenêtre écrit le
  * niveau exigé, la fonctionnalité et les conditions — tous lus sur la table que
  * le serveur applique, aucun mot écrit ici.

@@ -29,9 +29,11 @@ import { AuthService } from '../../auth/auth.service';
  *     de S04. MESURÉ : sans profil, `GET` répond `200` au corps VIDE (pas `null`) ;
  *     `PUT` est une publication, donc L1 (`post.create`) ;
  *   · `PUT /events/:id/rsvp` — la position en liste d'attente voyage dans la réponse,
- *     et `event.attend` est L2 : un L1 reçoit `403 LEVEL_REQUIRED`. C'est l'arbitrage
- *     du porteur du 2026-10-09 (« N2 : faire tout le reste »), qui prime sur la
- *     matrice L1 de 09 §3.2 — la spec a été corrigée, pas le serveur.
+ *     et `event.attend` est L1 : un L1 s'inscrit, un L0 reçoit `403 LEVEL_REQUIRED`, et créer
+ *     un événement (`event.create`) reste L2. Décision du porteur du 2026-10-24
+ *     (« L1 pour s'inscrire, L2 pour créer »). Ce cas figeait l'inverse — « un L1 reçoit
+ *     403 » — depuis l'arbitrage du 2026-10-09 (« N2 : faire tout le reste ») ; c'est le test
+ *     qu'on corrige, la matrice L1 de 09 §3.2 était la bonne pour l'inscription.
  */
 
 interface ErrorBody {
@@ -191,11 +193,12 @@ describe('services — compléments du lot E2 (HTTP)', () => {
 
   // ── PUT /events/:id/rsvp ──────────────────────────────────────────────────
 
-  it('RSVP : la position en liste d’attente voyage dans la réponse ; event.attend est L2 (un L1 reçoit 403)', async () => {
+  it('RSVP : la position en liste d’attente voyage dans la réponse ; event.attend est L1 (un L0 reçoit 403, un L1 ne peut pas créer)', async () => {
     const organisateur = await membre('L2');
-    const a = await membre('L2');
-    const b = await membre('L2');
+    const a = await membre('L1');
+    const b = await membre('L1');
     const l1 = await membre('L1');
+    const l0 = await membre('L0');
 
     const cree = await request(httpServer(app))
       .post('/v1/events')
@@ -212,10 +215,17 @@ describe('services — compléments du lot E2 (HTTP)', () => {
     const eventId = (cree.body as { id: string }).id;
     createdEvents.push(eventId);
 
-    // L'arbitrage du porteur : participer est « tout le reste », donc L2.
-    const refus = await request(httpServer(app)).put(`/v1/events/${eventId}/rsvp`).set('authorization', l1.bearer).send({ status: 'GOING' }).expect(403);
+    // La décision du porteur (2026-10-24) : s'inscrire est L1, créer reste L2.
+    const refus = await request(httpServer(app)).put(`/v1/events/${eventId}/rsvp`).set('authorization', l0.bearer).send({ status: 'GOING' }).expect(403);
     expect((refus.body as ErrorBody).error.code).toBe('LEVEL_REQUIRED');
-    expect((refus.body as ErrorBody).error.details).toMatchObject({ capability: 'event.attend' });
+    expect((refus.body as ErrorBody).error.details).toMatchObject({ capability: 'event.attend', requiredLevel: 'L1', currentLevel: 'L0' });
+    const refusCreation = await request(httpServer(app))
+      .post('/v1/events')
+      .set('authorization', l1.bearer)
+      .send({ type: 'PICNIC', title: 'Pique-nique refusé', cityId, addressText: 'Parc de la Tête d’Or, entrée nord', startsAt: new Date(Date.now() + 3 * 86_400_000).toISOString() })
+      .expect(403);
+    expect((refusCreation.body as ErrorBody).error.details).toMatchObject({ capability: 'event.create', requiredLevel: 'L2' });
+    // `a` et `b` sont L1 : leurs RSVP ci-dessous (200) prouvent qu'un L1 s'inscrit.
 
     // Capacité 2, l'organisateur occupe une place : `a` est confirmé, `b` attend en 1re position.
     const rsvpA = await request(httpServer(app)).put(`/v1/events/${eventId}/rsvp`).set('authorization', a.bearer).send({ status: 'GOING' }).expect(200);

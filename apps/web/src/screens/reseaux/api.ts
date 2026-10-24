@@ -807,7 +807,7 @@ export function fetchCommunityEvents(
 }
 
 /**
- * « JE VIENS » — `PUT /events/:id/rsvp`, capacité `event.attend`, N2.
+ * « JE VIENS » — `PUT /events/:id/rsvp`, capacité `event.attend`, N1 (décision du porteur, 2026-10-24 : s'inscrire en L1, créer en L2).
  *
  * ⚠ AUCUN CONTRÔLE DE NIVEAU AVANT L'APPEL : le front PRÉVIENT, il n'autorise
  * pas (00 §5). On tente, le serveur répond `403 LEVEL_REQUIRED` avec de quoi

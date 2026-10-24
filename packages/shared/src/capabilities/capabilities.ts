@@ -229,7 +229,23 @@ export const CAPABILITIES = {
     labelFr: 'proposer une mise à jour',
   },
   'event.create': { minLevel: 'L2', planLimit: 'eventsPerMonth', labelFr: 'créer un événement' },
-  'event.attend': { minLevel: 'L2', planLimit: null, labelFr: 'indiquer votre participation' },
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ DÉCISION DU PORTEUR (2026-10-24) — S'INSCRIRE À UN ÉVÉNEMENT EST EN N1  ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * « `event.attend` passe à L1 (s'inscrire à un événement) tandis que `event.create`
+   * reste L2. » La refonte du 2026-10-09 (« N2 : faire tout le reste ») l'avait rangée en
+   * L2 avec la création ; le porteur la sépare : venir à un événement ne charge pas la
+   * modération comme en créer un, et une identité vérifiée suffit pour être attendu·e.
+   *
+   * Ce que la route garde sous cette capacité : le RSVP (`PUT /events/:id/rsvp`), le retrait
+   * (`DELETE`) et le « Je suis là » (`POST /events/:id/check-in`). La feuille de présence de
+   * l'organisateur passe par la même route, mais l'organisateur a créé l'événement — il est
+   * donc L2 — et le service vérifie qu'il l'est (`organizerId`), pas le niveau.
+   * Un compte N0 reste refusé en `403 LEVEL_REQUIRED` (`details.capability: 'event.attend'`).
+   */
+  'event.attend': { minLevel: 'L1', planLimit: null, labelFr: 'indiquer votre participation' },
   'community.create': { minLevel: 'L2', planLimit: null, labelFr: 'créer un réseau' },
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗

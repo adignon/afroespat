@@ -53,8 +53,13 @@ describe('matrice des capacités (§7.3)', () => {
     }
   });
 
-  it('N1 ajoute la publication, l’offre d’entraide et la demande de parrain', () => {
-    for (const cap of ['post.create', 'help.offer', 'mentorship.request'] as const) {
+  /**
+   * `event.attend` EST EN N1 DEPUIS LE 2026-10-24 (décision du porteur : « s'inscrire à un
+   * événement » en L1, « créer » reste L2). Le lot précédent avait figé l'inverse — « L1 → 403
+   * LEVEL_REQUIRED » — et ce cas retourne cet arbitrage : c'est le test qu'on corrige.
+   */
+  it('N1 ajoute la publication, l’offre d’entraide, la demande de parrain et l’inscription à un événement', () => {
+    for (const cap of ['post.create', 'help.offer', 'mentorship.request', 'event.attend'] as const) {
       expect(levelSatisfies('L0', cap), `${cap} ne doit PAS être ouvert à L0`).toBe(false);
       expect(levelSatisfies('L1', cap), cap).toBe(true);
     }
@@ -79,7 +84,6 @@ describe('matrice des capacités (§7.3)', () => {
     const l2 = CAPABILITY_KEYS.filter((k) => CAPABILITIES[k].minLevel === 'L2');
     expect(l2.sort()).toEqual([
       'community.create',
-      'event.attend',
       'event.create',
       'guide.propose_revision',
       'guide.write',
@@ -95,6 +99,9 @@ describe('matrice des capacités (§7.3)', () => {
     // L'autre exception, nommée pour qu'un retour à L2 fasse tomber CE cas et
     // pas seulement la liste ci-dessus.
     expect(levelSatisfies('L0', 'guide.vote')).toBe(true);
+    // S'inscrire (L1) et créer (L2) sont deux niveaux : la séparation se lit ici.
+    expect(levelSatisfies('L1', 'event.attend')).toBe(true);
+    expect(levelSatisfies('L1', 'event.create')).toBe(false);
   });
 
   /**

@@ -59,7 +59,7 @@ import {
  *      deuxième source qui divergera ;
  *   3. AUCUN TYPE DE RÉPONSE ÉCRIT À LA MAIN : `z.infer` partout ;
  *   4. LE NIVEAU NE SERT JAMAIS À AUTORISER. Aucun `if (niveau >= 1)` ici, alors
- *      que `event.create` et `event.attend` exigent L1 : on tente l'action, et le
+ *      que `event.create` exige L2 et `event.attend` L1 (décision du porteur, 2026-10-24) : on tente l'action, et le
  *      serveur répond `403 LEVEL_REQUIRED` avec de quoi afficher l'invitation.
  *
  * ── AUCUN CHARGEUR NE REJOUE ────────────────────────────────────────────────

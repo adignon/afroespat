@@ -57,7 +57,7 @@ Membres `RECENT_ARRIVAL` de la ville avec `arrival_date` dans les 14 derniers jo
 
 ### 3.2 RSVP
 
-- Capacité `event.attend` (**L2** — voir §11, « Droits »). Statuts `GOING`, `MAYBE`, `DECLINED`. Si `capacity` atteinte : `WAITLIST`, promotion automatique en `GOING` à la première désinscription (notification). La réponse de `PUT /events/:id/rsvp` porte le statut RÉEL et la position : `{ status, waitlistPosition, attendeeCount }` (voir §12).
+- Capacité `event.attend` (**L1** — voir §11, « Droits »). Statuts `GOING`, `MAYBE`, `DECLINED`. Si `capacity` atteinte : `WAITLIST`, promotion automatique en `GOING` à la première désinscription (notification). La réponse de `PUT /events/:id/rsvp` porte le statut RÉEL et la position : `{ status, waitlistPosition, attendeeCount }` (voir §12).
 - Impossible de RSVP à l'événement d'un membre bloqué.
 - L'organisateur voit la liste ; les participants voient les avatars des `GOING` et le compteur.
 
@@ -170,7 +170,7 @@ Par l'organisateur, motif facultatif, notification à tous les inscrits. Un év�
 - **Contributions** : `city_tips.venue_name` (obligatoire pour un commerce) et `address_text` (texte libre, jamais géocodé). Les budgets sont **anonymes** : l'auteur n'est jamais renvoyé. Pas de catégorie ni de photo : un filtre sans colonne ment.
 - **Arrivants** : `user_profiles.show_as_newcomer` (défaut vrai) ; un membre qui le retire disparaît de « Arrivés récemment ».
 - **Carte** : SVG local, sans iframe ni service tiers ; le seuil `CITY_COUNT_PRIVACY_THRESHOLD` (3) est appliqué par le serveur et affiché « moins de 3 ».
-- **Droits** : `event.attend` et `event.create` exigent **L2**. ÉCART ARBITRÉ (lot E2) : la matrice historique de §3 et de `00 §7.3` disait L1 ; la refonte des niveaux du porteur (2026-10-09 — « N2 : faire tout le reste ») les a placés en L2, et `packages/shared/src/capabilities/capabilities.ts` est la source qui fait foi. Le serveur n'a PAS été aligné sur L1 : un test (`media.int.test.ts`, couverture d'événement) et le mémo d'amorçage §5 figent L2, et L1 rouvrirait la création d'événements à un membre sans numéro vérifié. C'est la spec qu'on a corrigée. Le front ne lit jamais le niveau : il tente, le serveur répond `LEVEL_REQUIRED` (`details.capability`).
+- **Droits** : **L1 pour s'inscrire** (`event.attend` : RSVP, retrait, « Je suis là »), **L2 pour créer** (`event.create`, avec son quota de plan). DÉCISION DU PORTEUR (2026-10-24) : « `event.attend` passe à L1 tandis que `event.create` reste L2. » Historique : la matrice de §3 et de `00 §7.3` disait L1 pour les deux ; la refonte des niveaux du 2026-10-09 (« N2 : faire tout le reste ») les avait placés tous deux en L2 et la présente section avait alors été corrigée en L2 ; le porteur a ensuite séparé les deux. `packages/shared/src/capabilities/capabilities.ts` est la source qui fait foi ; `media.int.test.ts` (couverture d'événement, `event.create`) reste en L2 et `services-complements-http.int.test.ts` fige « un L0 reçoit 403, un L1 s'inscrit, un L1 ne crée pas ». La feuille de présence de l'organisateur passe par la même route que « Je suis là » mais le service vérifie que l'appelant est l'organisateur (donc L2), pas le niveau. Le front ne lit jamais le niveau : il tente, le serveur répond `LEVEL_REQUIRED` (`details.capability`).
 - **Suppression de compte** : abonnés `user.deleted` des modules `events` (annule les événements à venir de l'organisateur, retire ses RSVP, promeut la file d'attente) et `cities` (retire ses votes, décrémente `helpful_count`).
 
 ## 12. Précisions de mise en œuvre (lot E2)

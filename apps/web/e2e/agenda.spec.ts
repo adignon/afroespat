@@ -21,7 +21,7 @@ import { connecter, type Membre } from './session';
  *
  * ── TROIS CONTRAINTES DE L'API, MESURÉES, QUI FAÇONNENT CE FICHIER ──────────
  *
- *   1. `event.create` et `event.attend` exigent L1 (00 §7.3). `connecter()` rend
+ *   1. `event.attend` exige L1 et `event.create` L2 (décision du porteur, 2026-10-24). `connecter()` rend
  *      un membre L0 : il faut donc passer par la vérification d'identité, et le
  *      fournisseur fictif la rend atteignable — session KYC puis webhook SIGNÉ.
  *   2. LE JETON PORTE LES DROITS. Au passage L0 → L1 il devient périmé

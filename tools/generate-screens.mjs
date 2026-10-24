@@ -16624,7 +16624,7 @@ const carteEvenement = (patron, styleVert, large) => {
  * signalements, et le même `textDecoration: "none"` ajouté pour la seule raison
  * qu'un `<a>` souligne là où un `<button>` ne le fait pas.
  *
- * ⚠ AUCUN CONTRÔLE DE NIVEAU DANS LE CADRE. `event.attend` est en N2 ; le front
+ * ⚠ AUCUN CONTRÔLE DE NIVEAU DANS LE CADRE. `event.attend` est en N1 ; le front
  * PRÉVIENT sans autoriser (mémo §5). On tente, le serveur refuse en
  * `403 LEVEL_REQUIRED`, et `components/fenetre-niveau.tsx` explique — posé par
  * l'écran, hors des deux cadres, pour la raison déjà mesurée sur
@@ -16656,7 +16656,7 @@ const carteEvenement = (patron, styleVert, large) => {
  * bouton sur le téléphone, c'est la maquette qui doit le dessiner.
  *
  * ⚠ LE « CRÉER UN ÉVÉNEMENT DU RÉSEAU » DES DEUX CADRES PROPRIÉTAIRE RESTE
- * INERTE. `event.create` est en N1 ET porte un quota de plan, et `POST /events`
+ * INERTE. `event.create` est en N2 ET porte un quota de plan, et `POST /events`
  * attend huit champs de saisie — type, titre, ville, adresse, début, fin,
  * capacité, couverture — que cette planche ne dessine NULLE PART. Le brancher
  * demanderait le formulaire entier, qui est un lot à lui seul. REMONTÉ.

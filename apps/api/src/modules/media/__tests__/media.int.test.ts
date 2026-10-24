@@ -409,6 +409,10 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
    * comme `HOUSING` et `PROOF` le font depuis toujours. `GUIDE`, arrivé avec les
    * images dans le corps des guides, demande `guide.write` — N2 lui aussi.
    *
+   * (Décision du porteur du 2026-10-24 : `event.attend` passe en L1 — s'inscrire — mais
+   * `event.create` RESTE en L2 : c'est lui qui garde la couverture, donc `EVENT_COVER` reste
+   * refusé à un L1 et ce cas n'a pas à bouger.)
+   *
    * CE N'EST DONC PAS LA RÈGLE QUI EST CORRIGÉE ICI, C'EST LE CAS : il figeait un
    * arbitrage que le porteur a remplacé, et un test qui survit à l'arbitrage qu'il
    * décrit transforme chaque décision du porteur en échec rouge.
