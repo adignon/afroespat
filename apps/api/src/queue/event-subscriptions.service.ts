@@ -566,6 +566,11 @@ export function registerNotificationSubscriptions(
   notifications: NotificationsService,
   events: NotificationEventsService,
 ): void {
+  // ── 03 Parcours — « la procédure a évolué » (lot F2) ──────────────────────
+  registry.on('journey.template_version_published', 'notifications', async (job) => {
+    await events.onJourneyTemplateVersionPublished(job.aggregateId, job.payload);
+  });
+
   // ── 06 Entraide ───────────────────────────────────────────────────────────
   registry.on('help_request.published', 'notifications', async (job) => {
     await events.onHelpPublished(job.aggregateId, job.payload);

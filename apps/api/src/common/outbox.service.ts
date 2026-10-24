@@ -60,6 +60,10 @@ export type DomainEventType =
   // (`step_paused`, `paused`, `abandoned`, `member_invited`,
   // `template_version_published`) restent ABSENTS faute de consommateur livré.
   | 'journey.member_removed'
+  // 03 §7 (« la procédure a évolué », lot F2) : émis à la PUBLICATION d'une version de
+  // modèle ; consommateur `notifications`, qui prévient le propriétaire de chaque
+  // parcours resté sur la version archivée. Le nom est celui de la spec 03 §7.
+  | 'journey.template_version_published'
   | 'guide.voted'
   | 'guide.published'
   // Le reste du §6 du module 05. Chacun a son consommateur nommé : search et

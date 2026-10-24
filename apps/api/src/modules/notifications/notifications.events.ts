@@ -42,6 +42,72 @@ export class NotificationEventsService {
     private readonly notifications: NotificationsService,
   ) {}
 
+  // ══ Parcours (03) ═════════════════════════════════════════════════════════
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « LA PROCÉDURE A ÉVOLUÉ » — 03 §2.2, §7 (lot F2)                         ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * `journey.template_version_published` : une version de modèle vient d'être
+   * publiée, les précédentes (`previousVersionIds`) archivées. Les parcours EN COURS
+   * restent sur leur version (03 §2.2, règle dure) ; leur PROPRIÉTAIRE est prévenu
+   * qu'une version plus récente existe, et le lien mène au parcours, où la bannière
+   * « La procédure a évolué » propose de migrer.
+   *
+   * CATÉGORIE `JOURNEY_DEADLINE` — la spec 12 n'en a pas de dédiée, et la liste est
+   * fermée. Une procédure qui change déplace des étapes et des échéances : c'est la
+   * catégorie des rappels de parcours, in-app + push, SANS courriel (celui-ci est
+   * réservé à `journey.step_due_j1`, `CATEGORY_CHANNELS`). L'équipe du parcours
+   * (`JOURNEY_TEAM`) n'est pas prévenue : la spec 03 dit « les parcours en cours »,
+   * et c'est le propriétaire qui décide de migrer.
+   *
+   * UNE NOTIFICATION PAR PROPRIÉTAIRE ET PAR VERSION : `deliver()` déduplique sur
+   * (membre, type, `ref_type`, `ref_id`) sans fenêtre, et `ref_id` est la version
+   * publiée — un rejeu ne double rien, et une version suivante prévient de nouveau.
+   * Un propriétaire de plusieurs parcours visés en reçoit UNE, qui mène à la liste.
+   */
+  async onJourneyTemplateVersionPublished(aggregateId: string, payload: unknown): Promise<void> {
+    const previous = readStringArray(payload, 'previousVersionIds');
+    if (previous.length === 0) return;
+    const versionId = readString(payload, 'templateVersionId') ?? aggregateId;
+
+    const journeys = await this.prisma.journey.findMany({
+      where: {
+        templateVersionId: { in: previous },
+        status: { in: ['ACTIVE', 'PAUSED'] },
+        deletedAt: null,
+      },
+      select: { id: true, title: true, ownerUserId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const parProprietaire = new Map<string, { id: string; title: string | null }[]>();
+    for (const j of journeys) {
+      const liste = parProprietaire.get(j.ownerUserId) ?? [];
+      liste.push({ id: j.id, title: j.title });
+      parProprietaire.set(j.ownerUserId, liste);
+    }
+
+    for (const [userId, liste] of parProprietaire) {
+      const unique = liste.length === 1 ? liste[0] : undefined;
+      await this.notifications.deliver({
+        userId,
+        category: 'JOURNEY_DEADLINE',
+        type: 'journey.template_version_published',
+        title:
+          unique === undefined
+            ? `La procédure de ${String(liste.length)} de vos parcours a évolué`
+            : unique.title !== null && unique.title !== ''
+              ? `La procédure de « ${unique.title} » a évolué`
+              : 'La procédure de votre parcours a évolué',
+        body: 'Votre parcours reste sur sa version ; vous pouvez voir les changements et migrer.',
+        refType: 'JOURNEY_TEMPLATE_VERSION',
+        refId: versionId,
+        url: unique === undefined ? '/parcours' : `/parcours/${unique.id}`,
+      });
+    }
+  }
+
   // ══ Entraide (06) ═════════════════════════════════════════════════════════
 
   /** Une réponse publique à ma demande — `HELP`, push autorisé (§2.1). */

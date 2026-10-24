@@ -17,6 +17,7 @@ import {
   type VersionSteps,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { OutboxService } from '../../common/outbox.service';
 import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { PrismaService } from '../../common/prisma.service';
@@ -59,9 +60,10 @@ export function hasDependencyCycle(count: number, deps: readonly { step: number;
  * avec le nom, la description et le gabarit de chaque définition, surcharges
  * appliquées.
  *
- * NON LIVRÉ : la notification « la procédure a évolué » aux parcours en cours (§2.2).
- * Elle demande un type de notification et un consommateur d'événement qui n'existent
- * pas ; l'écrire ici en appel direct violerait §3.3. Remonté dans le rapport.
+ * LA NOTIFICATION « LA PROCÉDURE A ÉVOLUÉ » (03 §2.2, lot F2) passe par l'événement
+ * `journey.template_version_published` (03 §7), émis dans la transaction de
+ * publication ; son consommateur est `NotificationEventsService`. Aucun appel direct
+ * (§3.3) : la publication ne sait pas qui est prévenu.
  */
 @Injectable()
 export class AdminJourneysService {
@@ -70,6 +72,7 @@ export class AdminJourneysService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly outbox: OutboxService,
   ) {}
 
   private async record(
@@ -502,8 +505,24 @@ export class AdminJourneysService {
         archived,
         journeysStayingOnOldVersion: affected,
       });
+      // Sans parcours resté sur une ancienne version, personne à prévenir : pas d'événement.
+      if (affected > 0) {
+        await this.outbox.emit(tx, {
+          type: 'journey.template_version_published',
+          aggregateId: id,
+          payload: {
+            templateVersionId: id,
+            templateId: v.templateId,
+            templateCode: v.template.code,
+            version: v.version,
+            previousVersionIds: previous.map((p) => p.id),
+          },
+        });
+      }
     });
-    return { ...(await this.versionView(id)), archivedVersions: archived, journeysNotified: 0, journeysStaying: affected };
+    // `journeysNotified` : les propriétaires de ces parcours reçoivent la notification
+    // par l'événement ci-dessus (asynchrone) ; le nombre est celui des parcours visés.
+    return { ...(await this.versionView(id)), archivedVersions: archived, journeysNotified: affected, journeysStaying: affected };
   }
 
   async archive(staff: StaffUser, id: string) {
