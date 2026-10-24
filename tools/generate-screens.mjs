@@ -20802,8 +20802,12 @@ const CHAINE_TESTS = [
      * de cadres PRODUITS monte donc de deux sans qu'aucune planche s'ajoute au
      * dossier. Voir le grand en-tête « LA MAQUETTE NE DESSINE AUCUNE PAGE DE
      * SIGNALEMENTS » dans `tools/screens/03-accueil.mjs`.
+     *
+     * 253 depuis le lot W1A (phase 0.4) : le cadre `DesktopFiche` de J09 — la fiche
+     * d'un parcours public à 1 440 px — est déclaré sur la planche d'ordinateur de la
+     * liste (occurrence 0), lue une seconde fois. Voir `tools/screens/04-parcours.mjs`.
      */
-    expect: '252 cadres, 0 écart',
+    expect: '253 cadres, 0 écart',
   },
 ];
 
