@@ -43,6 +43,11 @@ export function ContenuVilles() {
   const [vue, setVue] = useState('actives');
   const [geste, setGeste] = useState<Geste>(null);
   const action = useGeste();
+  /** Ouvre une fenêtre : le message du geste précédent ne doit pas s'y afficher. */
+  const ouvrir = (g: NonNullable<typeof geste>) => {
+    action.effacer();
+    setGeste(g);
+  };
   const [cible, setCible] = useState('');
   const [slug, setSlug] = useState('');
 
@@ -58,11 +63,37 @@ export function ContenuVilles() {
     if (vue === 'doublons') return v.mergedIntoCityId !== null;
     return true;
   });
+  const nActives = villes.filter((v) => v.isActive).length;
   const nomDe = (id: string | null) => villes.find((v) => v.id === id)?.name ?? '—';
 
-  const fermer = () => {
+  const actionsDe = (v: AdminCity) =>
+    v.mergedIntoCityId !== null ? (
+      <span style={{ fontWeight: 700 }}>Fusionnée avec {nomDe(v.mergedIntoCityId)}</span>
+    ) : (
+      <span style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {v.isActive ? (
+          <>
+            <Bouton petit disabled={!peut} onClick={() => ouvrir({ kind: 'fusionner', ville: v })}>
+              Fusionner
+            </Bouton>
+            {v.isPilot ? null : (
+              <Bouton petit ton="contour" disabled={!peut} onClick={() => ouvrir({ kind: 'fermer', ville: v })}>
+                Fermer
+              </Bouton>
+            )}
+          </>
+        ) : (
+          <Bouton petit ton="principal" disabled={!peut} onClick={() => ouvrir({ kind: 'activer', ville: v })}>
+            Activer
+          </Bouton>
+        )}
+      </span>
+    );
+
+  /** Ferme la fenêtre ; après un SUCCÈS on garde le message de confirmation. */
+  const fermer = (garderMessage = false) => {
     setGeste(null);
-    action.effacer();
+    if (!garderMessage) action.effacer();
     setCible('');
     setSlug('');
   };
@@ -75,16 +106,17 @@ export function ContenuVilles() {
       } else {
         await staffApi.post(`/ref/cities/${ville.id}/${kind === 'activer' ? 'activate' : 'deactivate'}`, okResponseSchema, { body: { reason: motif } });
       }
-    });
+    }, kind === 'fusionner' ? `${ville.name} est fusionnée.` : kind === 'activer' ? `${ville.name} est ouverte : son réseau est créé.` : `${ville.name} est fermée ; son réseau est conservé.`);
     if (ok) {
-      fermer();
+      fermer(true);
       recharger();
     }
   };
 
   return (
     <>
-      <Titre titre="Référentiels" sous={etat.phase === 'pret' ? `${villes.length} villes · ${villes.filter((v) => v.isActive).length} actives` : 'Villes'} />
+      <Titre titre="Référentiels" sous={etat.phase === 'pret' ? `${villes.length} villes · ${nActives} ${nActives > 1 ? 'actives' : 'active'}` : 'Villes'} />
+      {geste === null ? <Message message={action.message} /> : null}
       <Lecture etat={etat} recharger={recharger}>
         {() => (
           <>
@@ -97,7 +129,7 @@ export function ContenuVilles() {
                     Un réseau de ville sera créé et les {nombreFr(candidate.memberCount)} membres y seront rattachés automatiquement.
                   </div>
                 </div>
-                <Bouton ton="principal" disabled={!peut} titre={peut ? undefined : 'Réservé : contenu'} onClick={() => setGeste({ kind: 'activer', ville: candidate })}>
+                <Bouton ton="principal" disabled={!peut} titre={peut ? undefined : 'Réservé : contenu'} onClick={() => ouvrir({ kind: 'activer', ville: candidate })}>
                   Activer la ville
                 </Bouton>
               </Carte>
@@ -110,7 +142,29 @@ export function ContenuVilles() {
                 <Selecteur libelle="Afficher" valeur={vue} onChange={setVue} options={[{ valeur: 'actives', libelle: 'Actives' }, { valeur: 'fermees', libelle: 'À activer' }, { valeur: 'doublons', libelle: 'Doublons' }, { valeur: 'toutes', libelle: 'Toutes' }]} />
               </div>
             </div>
-            <Carte style={{ padding: 0, overflow: 'hidden' }}>
+            {/* Sous 1 024 px : une carte par ville, les gestes visibles sans défilement (admin.css). */}
+            <div className="admin-villes-cartes" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {affichees.length === 0 ? (
+                <Carte>
+                  <div style={{ textAlign: 'center', color: C.gris }}>Aucune ville ne correspond.</div>
+                </Carte>
+              ) : null}
+              {affichees.map((v) => (
+                <Carte key={v.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '14px' }}>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontWeight: 700, fontSize: '15px' }}>
+                      {v.name} <span style={{ color: C.grisClair, fontWeight: 400 }}>· {v.country.iso2}</span>
+                    </div>
+                    <Statut v={v} />
+                  </div>
+                  <div style={{ fontSize: '13px', color: C.gris }}>
+                    {v.region ?? '—'} · {nombreFr(v.memberCount)} {v.memberCount > 1 ? 'membres' : 'membre'}
+                  </div>
+                  {actionsDe(v)}
+                </Carte>
+              ))}
+            </div>
+            <Carte className="admin-villes-table" style={{ padding: 0, overflow: 'hidden' }}>
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
@@ -141,28 +195,7 @@ export function ContenuVilles() {
                           <Statut v={v} />
                         </td>
                         <td style={{ padding: '6px 14px' }}>
-                          {v.mergedIntoCityId !== null ? (
-                            <span style={{ fontWeight: 700 }}>Fusionnée avec {nomDe(v.mergedIntoCityId)}</span>
-                          ) : (
-                            <span style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                              {v.isActive ? (
-                                <>
-                                  <Bouton petit disabled={!peut} onClick={() => setGeste({ kind: 'fusionner', ville: v })}>
-                                    Fusionner
-                                  </Bouton>
-                                  {v.isPilot ? null : (
-                                    <Bouton petit ton="contour" disabled={!peut} onClick={() => setGeste({ kind: 'fermer', ville: v })}>
-                                      Fermer
-                                    </Bouton>
-                                  )}
-                                </>
-                              ) : (
-                                <Bouton petit ton="principal" disabled={!peut} onClick={() => setGeste({ kind: 'activer', ville: v })}>
-                                  Activer
-                                </Bouton>
-                              )}
-                            </span>
-                          )}
+                          {actionsDe(v)}
                         </td>
                       </tr>
                     ))}
@@ -182,11 +215,11 @@ export function ContenuVilles() {
               max={500}
               libelleConfirmer={geste?.kind === 'fermer' ? 'Fermer la ville' : 'Activer la ville'}
               onConfirmer={(m) => void confirmer(m)}
-              onFermer={fermer}
+              onFermer={() => fermer()}
               occupe={action.occupe}
               message={action.message}
             />
-            <Fenetre ouverte={geste?.kind === 'fusionner'} titre={`Fusionner ${geste?.ville.name ?? ''}`} onFermer={fermer}>
+            <Fenetre ouverte={geste?.kind === 'fusionner'} titre={`Fusionner ${geste?.ville.name ?? ''}`} onFermer={() => fermer()}>
               <div style={{ fontSize: '14px', color: C.gris }}>
                 IRRÉVERSIBLE : les membres de la ville absorbée passent dans la ville choisie, et la première devient un doublon.
               </div>
@@ -197,7 +230,7 @@ export function ContenuVilles() {
                 options={[{ valeur: '', libelle: 'Choisir…' }, ...villes.filter((v) => v.isActive && v.mergedIntoCityId === null && v.id !== geste?.ville.id).map((v) => ({ valeur: v.id, libelle: v.name }))]}
               />
               <Champ libelle={`Saisissez « ${geste?.ville.slug ?? ''} » pour confirmer`} valeur={slug} onChange={setSlug} />
-              <FusionMotif occupe={action.occupe || cible === '' || slug.trim() !== (geste?.ville.slug ?? '')} message={action.message} onConfirmer={(m) => void confirmer(m)} onAnnuler={fermer} />
+              <FusionMotif occupe={action.occupe || cible === '' || slug.trim() !== (geste?.ville.slug ?? '')} message={action.message} onConfirmer={(m) => void confirmer(m)} onAnnuler={() => fermer()} />
             </Fenetre>
           </>
         )}

@@ -48,8 +48,12 @@ export const carteStyle: CSSProperties = {
   minWidth: 0,
 };
 
-export function Carte({ children, style }: { readonly children: ReactNode; readonly style?: CSSProperties }) {
-  return <div style={{ ...carteStyle, ...style }}>{children}</div>;
+export function Carte({ children, style, className }: { readonly children: ReactNode; readonly style?: CSSProperties; readonly className?: string }) {
+  return (
+    <div className={className} style={{ ...carteStyle, ...style }}>
+      {children}
+    </div>
+  );
 }
 
 export function Etiquette({ children }: { readonly children: ReactNode }) {

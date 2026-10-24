@@ -96,3 +96,16 @@
     display: block !important;
   }
 }
+
+/* D08 : sur grand écran le tableau, sous 1 024 px une carte par ville (gestes sans défilement). */
+.admin-villes-cartes {
+  display: none !important;
+}
+@media (max-width: 1023px) {
+  .admin-villes-cartes {
+    display: flex !important;
+  }
+  .admin-villes-table {
+    display: none !important;
+  }
+}

@@ -53,6 +53,11 @@ export function ContenuGuidesEquipe() {
   );
   const [geste, setGeste] = useState<Geste>(null);
   const action = useGeste();
+  /** Ouvre une fenêtre : le message du geste précédent ne doit pas s'y afficher. */
+  const ouvrir = (g: NonNullable<typeof geste>) => {
+    action.effacer();
+    setGeste(g);
+  };
   const [versionId, setVersionId] = useState('');
   const versions = useCharge(
     () => (geste?.kind === 'retour' ? staffApi.get(`/guides/${geste.id}/versions`, adminGuideVersionsSchema) : Promise.resolve(null)),
@@ -64,20 +69,24 @@ export function ContenuGuidesEquipe() {
     escaladees.recharger();
     liste.recharger();
   };
-  const fermer = () => {
+  /** Ferme la fenêtre. Après un SUCCÈS on garde le message (« Proposition refusée. »). */
+  const fermer = (garderMessage = false) => {
     setGeste(null);
     setVersionId('');
-    action.effacer();
+    if (!garderMessage) action.effacer();
   };
   const decider = async (id: string, corps: { decision: 'ACCEPT' } | { decision: 'REJECT'; reason: string }) => {
     const ok = await action.lancer(() => staffApi.post(`/guides/proposals/${id}/decide`, okResponseSchema, { body: corps }), corps.decision === 'ACCEPT' ? 'Proposition acceptée : nouvelle version créée.' : 'Proposition refusée.');
     if (ok) {
-      fermer();
+      fermer(true);
       tout();
     }
   };
   const maintenu = async (id: string, valeur: boolean) => {
-    const ok = await action.lancer(() => staffApi.put(`/guides/${id}/maintained`, okResponseSchema, { body: { maintainedByCommunity: valeur } }));
+    const ok = await action.lancer(
+      () => staffApi.put(`/guides/${id}/maintained`, okResponseSchema, { body: { maintainedByCommunity: valeur } }),
+      valeur ? 'Guide marqué « maintenu par la communauté ».' : 'Guide repris par l’équipe : « maintenu par la communauté » retiré.',
+    );
     if (ok) tout();
   };
   const confirmer = async (motif: string) => {
@@ -87,9 +96,9 @@ export function ContenuGuidesEquipe() {
       if (g.kind === 'statut') await staffApi.post(`/guides/${g.id}/status`, okResponseSchema, { body: { status: g.statut, reason: motif } });
       else if (g.kind === 'retour') await staffApi.post(`/guides/${g.id}/revert`, okResponseSchema, { body: { versionId, reason: motif } });
       else if (g.kind === 'refuser') await staffApi.post(`/guides/proposals/${g.id}/decide`, okResponseSchema, { body: { decision: 'REJECT', reason: motif } });
-    });
+    }, g.kind === 'retour' ? 'Retour arrière fait : une nouvelle version reprend le corps choisi.' : g.kind === 'refuser' ? 'Proposition refusée : le proposant est prévenu.' : g.statut === 'PUBLISHED' ? 'Guide publié.' : 'Guide dépublié.');
     if (ok) {
-      fermer();
+      fermer(true);
       tout();
     }
   };
@@ -140,7 +149,7 @@ export function ContenuGuidesEquipe() {
                       <Bouton ton="principal" disabled={!peut || action.occupe} onClick={() => void decider(p.id, { decision: 'ACCEPT' })}>
                         Accepter
                       </Bouton>
-                      <Bouton disabled={!peut || action.occupe} onClick={() => setGeste({ kind: 'refuser', id: p.id })}>
+                      <Bouton disabled={!peut || action.occupe} onClick={() => ouvrir({ kind: 'refuser', id: p.id })}>
                         Refuser
                       </Bouton>
                       <span style={{ flex: 1 }} />
@@ -187,16 +196,16 @@ export function ContenuGuidesEquipe() {
                         <Interrupteur actif={g.maintainedByCommunity} onChange={(v) => void maintenu(g.id, v)} libelle={`Maintenu par la communauté : ${g.title}`} disabled={!peut || action.occupe} />
                       </span>
                       {g.status === 'PUBLISHED' ? null : (
-                        <Bouton petit disabled={!peut} onClick={() => setGeste({ kind: 'statut', id: g.id, statut: 'PUBLISHED', titre: g.title })}>
+                        <Bouton petit disabled={!peut} onClick={() => ouvrir({ kind: 'statut', id: g.id, statut: 'PUBLISHED', titre: g.title })}>
                           Forcer la publication
                         </Bouton>
                       )}
                       {g.status === 'PUBLISHED' || g.status === 'FLAGGED' ? (
-                        <Bouton petit ton="contour" disabled={!peut} onClick={() => setGeste({ kind: 'statut', id: g.id, statut: 'UNPUBLISHED', titre: g.title })}>
+                        <Bouton petit ton="contour" disabled={!peut} onClick={() => ouvrir({ kind: 'statut', id: g.id, statut: 'UNPUBLISHED', titre: g.title })}>
                           Dépublier
                         </Bouton>
                       ) : null}
-                      <Bouton petit ton="contour" disabled={!peut || !g.hasAuthor} titre={g.hasAuthor ? undefined : 'Guide sans auteur : retour arrière impossible'} onClick={() => setGeste({ kind: 'retour', id: g.id, titre: g.title })}>
+                      <Bouton petit ton="contour" disabled={!peut || !g.hasAuthor} titre={g.hasAuthor ? undefined : 'Guide sans auteur : retour arrière impossible'} onClick={() => ouvrir({ kind: 'retour', id: g.id, titre: g.title })}>
                         Retour arrière
                       </Bouton>
                     </li>
@@ -216,7 +225,7 @@ export function ContenuGuidesEquipe() {
         max={500}
         libelleConfirmer="Confirmer"
         onConfirmer={(m) => void confirmer(m)}
-        onFermer={fermer}
+        onFermer={() => fermer()}
         occupe={action.occupe}
         message={action.message}
       />
@@ -228,7 +237,7 @@ export function ContenuGuidesEquipe() {
         max={500}
         libelleConfirmer="Revenir à cette version"
         onConfirmer={(m) => (versionId === '' ? undefined : void confirmer(m))}
-        onFermer={fermer}
+        onFermer={() => fermer()}
         occupe={action.occupe || versionId === ''}
         message={action.message}
         enfants={
