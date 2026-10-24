@@ -16,9 +16,9 @@ export function O05SansParcours(props: O05Data) {
 
       <main style={{ display: "contents" }}>
 
-      <div style={{ width: "520px", margin: "48px auto 0", display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div style={{ width: "100%", maxWidth: "520px", margin: "48px auto 0", display: "flex", flexDirection: "column", gap: "14px" }}>
         <h1 style={{ margin: "0", fontSize: "32px", fontWeight: "800", letterSpacing: "-1px" }}>Bienvenue{lieu.ville === "" ? "" : ` à ${lieu.ville}`}</h1>
-        <div style={{ background: "#0F5C48", borderRadius: "22px", padding: "20px", color: "#fff", display: "flex", alignItems: "center", gap: "14px" }}><span style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#16785E", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "800" }}>{lieu.initiales}</span><span style={{ flex: "1" }}><span style={{ display: "block", fontSize: "16px", fontWeight: "700" }}>{lieu.reseau}</span><span style={{ display: "block", fontSize: "12.5px", color: "#A9CDBF" }}>{lieu.membres}</span></span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="m5 12 4.5 4.5L19 7" /></svg></div>
+        <div style={{ background: "#0F5C48", borderRadius: "22px", padding: "20px", color: "#fff", display: "flex", alignItems: "center", gap: "14px" }}><span style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#16785E", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "800" }}>{lieu.initiales}</span><span style={{ flex: "1" }}><span style={{ display: "block", fontSize: "16px", fontWeight: "700" }}>{lieu.reseau}</span><span style={{ display: "block", fontSize: "12.5px", color: "#A9CDBF" }}>{lieu.membres}</span></span>{lieu.rejoint ? (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="m5 12 4.5 4.5L19 7" /></svg>) : null}</div>
         <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px" }}>
           <div style={{ fontSize: "11px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>PROCHAINS ÉVÉNEMENTS</div>
           {(events ?? []).map((e, eIndex) => (

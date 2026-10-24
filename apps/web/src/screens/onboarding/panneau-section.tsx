@@ -221,7 +221,19 @@ export function PanneauDeSection({
       style={{
         ...g.coque,
         position: 'absolute',
-        inset: 0,
+        /**
+         * HAUTEUR MINIMALE SUR ORDINATEUR (lot W1A, phase 0.2).
+         *
+         * Le panneau recouvre la carte, et la carte de O02 ne fait que ~230 px : la
+         * liste des villes y tenait dans 70 px — une ligne et demie, mesuré au
+         * navigateur à 1 440 px, pour un sélecteur de plus de quarante villes. Le
+         * panneau garde donc la hauteur de la carte quand elle suffit, et descend à
+         * 400 px sinon, en recouvrant « Continuer » le temps du choix. Sur téléphone
+         * il occupe déjà la page.
+         */
+        ...(variante === 'desktop'
+          ? { top: -1, left: -1, right: -1, bottom: 'auto', height: 'max(100% + 2px, 400px)' }
+          : { inset: 0 }),
         zIndex: 1,
         display: 'flex',
         flexDirection: 'column',

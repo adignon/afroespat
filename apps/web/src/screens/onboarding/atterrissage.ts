@@ -54,6 +54,8 @@ export interface LieuAtterrissage {
   readonly initiales: string;
   readonly reseau: string;
   readonly membres: string;
+  /** Le membre a-t-il rejoint le réseau de sa ville ? La coche de la carte ne s'affiche qu'alors. */
+  readonly rejoint: boolean;
   readonly evenements: readonly EvenementAtterrissage[];
   /** `null` quand aucun parrain disponible n'est suggérable : la carte est alors masquée. */
   readonly parrain: ParrainSuggere | null;
@@ -65,6 +67,7 @@ export const LIEU_INCONNU: LieuAtterrissage = {
   initiales: '',
   reseau: '',
   membres: '',
+  rejoint: false,
   evenements: [],
   parrain: null,
 };
@@ -126,7 +129,8 @@ const aujourdhui = (): string => new Date().toISOString().slice(0, 10);
  * ville manquante rend `LIEU_INCONNU` (rien à montrer sans elle).
  */
 export async function chargerAtterrissage(): Promise<LieuAtterrissage> {
-  const me = await fetchMe();
+  // `force` : la copie en mémoire date d'AVANT l'enregistrement de la ville (écran du lieu).
+  const me = await fetchMe({ force: true });
   const cityId = me.user.cityId;
   if (cityId === null) return LIEU_INCONNU;
 
@@ -148,9 +152,11 @@ export async function chargerAtterrissage(): Promise<LieuAtterrissage> {
 
   return {
     ville: nomVille,
-    initiales: initialesDe(nomVille).slice(0, 2) || nomVille.slice(0, 2).toUpperCase(),
+    // Deux lettres du nom, comme la planche (« LY ») : « Aix-en-Provence » donne « AI ».
+    initiales: nomVille.slice(0, 2).toUpperCase(),
     reseau: reseauRejoint?.name ?? nomVille,
     membres: membresDepuis(ville, reseauRejoint !== undefined),
+    rejoint: reseauRejoint !== undefined,
     evenements: (evenements?.items ?? []).slice(0, 3).map(evenementDepuis),
     parrain: parrain === undefined ? null : parrainDepuis(parrain, nomVille),
   };

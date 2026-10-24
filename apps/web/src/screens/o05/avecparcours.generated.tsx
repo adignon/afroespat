@@ -15,7 +15,7 @@ export function O05AvecParcours(props: O05Data) {
 
       <main style={{ display: "contents" }}>
 
-      <div style={{ width: "520px" }}>
+      <div style={{ width: "100%", maxWidth: "520px" }}>
         <div style={{ width: "64px", height: "64px", borderRadius: "20px", background: "#16785E", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12 4.5 4.5L19 7" /></svg></div>
         <h1 style={{ margin: "22px 0 0", fontSize: "32px", fontWeight: "800", letterSpacing: "-1px" }}>Votre parcours est prêt</h1>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "14px", height: "52px", padding: "0 16px", borderRadius: "14px", background: "#fff", border: "1px solid #E6EBE9" }}><span style={{ flex: "1", fontSize: "16px", fontWeight: "700" }}>{parcours.titre}</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z" /></svg></div>
