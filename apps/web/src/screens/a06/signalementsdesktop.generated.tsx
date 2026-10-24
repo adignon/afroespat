@@ -11,7 +11,6 @@ import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
-import { OngletsPropositions } from '@/components/propositions-recues';
 import type { A06Data } from './data';
 
 export function A06SignalementsDesktop(props: A06Data) {
@@ -49,7 +48,7 @@ export function A06SignalementsDesktop(props: A06Data) {
         <main data-zone="contenu" style={{ flex: "1", minWidth: "0", maxWidth: "660px", display: "flex", flexDirection: "column", gap: "14px" }}>
           <Link href={guide.href} data-a06-retour="" style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: "700" }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg>{guide.title}</Link>
           <h1 style={{ margin: "0", fontSize: "28px", fontWeight: "800", letterSpacing: "-0.9px" }}>{signalements.titre}</h1>
-          <OngletsPropositions largeur="desktop" />
+          <div style={{ display: "flex", gap: "4px", background: "#EEF2F0", borderRadius: "14px", padding: "4px", alignSelf: "flex-start" }}><span style={{ padding: "9px 16px", borderRadius: "11px", fontSize: "13px", fontWeight: "700", background: "#fff" }}>{signalements.compte}</span></div>
 
 <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>{signalements.libelle}</div>{(signalements.items ?? []).map((f, fIndex) => (
 <Fragment key={fIndex}><div style={{ display: "flex", gap: "10px", marginTop: "12px", alignItems: "flex-start" }}><span style={{ width: "8px", height: "8px", borderRadius: "999px", background: f.dot, marginTop: "6px", flexShrink: "0" }}></span><span><span style={{ display: "block", fontSize: "13px", fontWeight: "600" }}>{f.quand}</span><span style={{ display: "block", fontSize: "11.5px", color: "#8A958F" }}>{f.dit}</span></span></div></Fragment>

@@ -18,6 +18,7 @@ import { signalementsFrom } from '@/screens/guides/from-api';
 import { echecDe } from '@/screens/guides/use-guides';
 import { useGuide } from '@/screens/guides/use-guides';
 import { notifyError } from '@/components/notifications';
+import { PropositionsProvider } from '@/components/propositions-recues';
 import type { GuideOutdatedFlagsResponse } from '@app/shared';
 
 /**
@@ -107,11 +108,36 @@ export function SignalementsScreen({ slug }: { readonly slug: string }) {
     correction: correctionMaquette,
   };
 
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LE FOURNISSEUR DES PROPOSITIONS — CETTE PAGE EN A BESOIN SANS LES AFFICHER ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * MESURÉ (audit, lot W1A phase 0.3) : `/guides/:slug/signalements` répondait
+   * 500, « PropositionsRecues : hors de PropositionsProvider », y compris en build
+   * de production. Les deux cadres de cette page EMPRUNTENT la planche « Propositions
+   * reçues » (voir l'en-tête de `page.tsx`) ; leurs composants `OngletsPropositions`
+   * et `ListePropositions` lisent le contexte du fournisseur, que seule la page
+   * voisine montait.
+   *
+   * Le fournisseur est monté ICI avec une liste VIDE et aucune décision possible :
+   * les signalements « a changé » ne sont pas des propositions, et les cadres
+   * retournés par `donnees` ne dessinent ni onglets ni cartes de décision. Si l'un
+   * d'eux en lisait un jour, il afficherait un état vide honnête plutôt que de
+   * faire tomber la page. `chargement` suit la réponse des signalements.
+   */
   return (
-    <ScreenFrames
-      screen="A06"
-      desktop={<A06SignalementsDesktop {...data} />}
-      mobile={<A06SignalementsMobile {...data} />}
-    />
+    <PropositionsProvider
+      items={[]}
+      decidable={false}
+      chargement={liste === null}
+      onDecision={() => undefined}
+    >
+      <ScreenFrames
+        screen="A06"
+        desktop={<A06SignalementsDesktop {...data} />}
+        mobile={<A06SignalementsMobile {...data} />}
+      />
+    </PropositionsProvider>
   );
 }

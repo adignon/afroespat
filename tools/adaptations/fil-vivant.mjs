@@ -201,12 +201,28 @@ const A01_FIL_ETATS = {
  * par la page. Seuls les cadres « Propositions reçues » (`Desktop`, `Mobile`) sont
  * concernés — les cadres Corriger et Signalements n'ont pas ces blocs.
  */
+/**
+ * LES DEUX CADRES « SIGNALEMENTS » DE A06 NE SONT PAS DES PROPOSITIONS.
+ *
+ * MESURÉ (lot W1A, phase 0.3) : `/guides/:slug/signalements` répondait 500 parce que
+ * ses cadres montaient `OngletsPropositions` et `ListePropositions`, qui lisent un
+ * fournisseur que la page ne posait pas. Le défaut avait une seconde moitié, plus
+ * grave : ces deux adaptations visent la planche « Propositions reçues » dont les
+ * cadres « Signalements » sont des COPIES retournées (`tools/screens/03-accueil.mjs`).
+ * Elles écrasaient donc les onglets et la liste que la déclaration avait mis à la
+ * place — à 390 px, la liste des PROPOSITIONS remplaçait même la carte des
+ * signalements. Les cadres retournés se reconnaissent à leur liaison
+ * `signalements.` : on ne les touche pas.
+ */
+const estCadreSignalements = (jsx) => jsx.includes('signalements.titre');
+
 const A06_ONGLETS = {
   screens: ['A06'],
   nom: 'A06_PROPOSITIONS_VIVANTES_ONGLETS',
   why: 'Les trois onglets de A06 deviennent de vrais onglets (En attente, Acceptées, Refusées) — la planche les dessinait inertes, avec « Refusées · 1 » en dur.',
   provides: [],
   apply(jsx) {
+    if (estCadreSignalements(jsx)) return { jsx, applied: false };
     // Ordinateur : un bandeau gris `#EEF2F0` ; téléphone : une rangée de puces sous le titre.
     const d = jsx.indexOf('<div style={{ display: "flex", gap: "4px", background: "#EEF2F0"');
     if (d >= 0) {
@@ -228,6 +244,7 @@ const A06_LISTE = {
   why: 'Les deux emplacements fixes de A06 deviennent `ListePropositions` : autant de cartes que de propositions, avec le diff réel — la planche en dessinait deux, et leur texte était écrit en dur.',
   provides: [],
   apply(jsx) {
+    if (estCadreSignalements(jsx)) return { jsx, applied: false };
     // Ordinateur : deux cartes sœurs, la première commence par la pastille de la proposition dépliée.
     const marque = jsx.indexOf('background: propositionDepliee.bg');
     const debut1 =
