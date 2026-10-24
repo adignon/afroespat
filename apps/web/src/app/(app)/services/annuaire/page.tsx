@@ -12,5 +12,14 @@ export default async function AnnuaireListePage({
   const ville = params['ville'];
   // Une ville qui n'est pas un identifiant est ignorée : le serveur la refuserait en 400.
   const villeValide = typeof ville === 'string' && uuidSchema.safeParse(ville).success ? ville : '';
-  return <AnnuaireEcran recherche={typeof q === 'string' ? q : ''} ville={villeValide} />;
+  const metier = params['metier'];
+  const metierValide = typeof metier === 'string' && uuidSchema.safeParse(metier).success ? metier : '';
+  return (
+    <AnnuaireEcran
+      recherche={typeof q === 'string' ? q : ''}
+      ville={villeValide}
+      metier={metierValide}
+      plus={params['plus'] === '1'}
+    />
+  );
 }

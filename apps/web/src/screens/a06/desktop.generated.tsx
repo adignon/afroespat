@@ -13,6 +13,7 @@ import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
 import { OngletsPropositions } from '@/components/propositions-recues';
 import { ListePropositions } from '@/components/propositions-recues';
+import { Texte } from '@/components/valeurs-vives';
 import type { A06Data } from './data';
 
 export function A06Desktop(props: A06Data) {
@@ -55,8 +56,8 @@ export function A06Desktop(props: A06Data) {
             <ListePropositions largeur="desktop" />
         </main>
         <aside data-zone="droite" style={{ width: "300px", display: "flex", flexDirection: "column", gap: "12px", flexShrink: "0", position: "sticky", top: "76px", alignSelf: "flex-start", maxHeight: "calc(100vh - 88px)", overflowY: "auto" }}>
-          <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VOTRE GUIDE</div><div style={{ fontSize: "15px", fontWeight: "700", marginTop: "8px" }}>{guide.title}</div><div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>Mis à jour le 12 mars · 84 ont trouvé utile</div><Link href={guide.href} data-a06-voir-guide="" style={{ display: "inline-block", marginTop: "12px", fontSize: "13px", fontWeight: "700" }}>Voir le guide</Link></div>
-          <div style={{ background: "#F3F7F5", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#0F5C48" }}>COMMENT ÇA MARCHE</div><div style={{ fontSize: "13px", lineHeight: "1.6", marginTop: "8px" }}>Vous avez 14 jours pour répondre à chaque proposition. Sans réponse, elle est transmise à la modération. Chaque proposition acceptée crédite son auteur comme contributeur.</div></div>
+          <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>VOTRE GUIDE</div><div style={{ fontSize: "15px", fontWeight: "700", marginTop: "8px" }}>{guide.title}</div><div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>{guide.misAJour}{guide.misAJour !== "" && guide.utiles !== "" ? " · " : ""}{guide.utiles}</div><Link href={guide.href} data-a06-voir-guide="" style={{ display: "inline-block", marginTop: "12px", fontSize: "13px", fontWeight: "700" }}>Voir le guide</Link></div>
+          <div style={{ background: "#F3F7F5", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#0F5C48" }}>COMMENT ÇA MARCHE</div><div style={{ fontSize: "13px", lineHeight: "1.6", marginTop: "8px" }}><Texte id="propositionsDelai" /></div></div>
         </aside>
       </div>
     </div>

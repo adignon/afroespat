@@ -39,6 +39,7 @@ import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/v
 import { ADAPTATIONS_INSCRIPTION_VIVANTE } from './adaptations/inscription-vivante.mjs';
 import { ADAPTATIONS_SERVICES_COMPLEMENTS, AJOUTS_SERVICES_COMPLEMENTS } from './adaptations/services-complements-vivants.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
+import { ADAPTATIONS_DONNEES_VIVES, AJOUTS_DONNEES_VIVES } from './adaptations/donnees-vives.mjs';
 import {
   ADAPTATIONS_PARCOURS_VIVANT,
   AJOUTS_PARCOURS_VIVANT,
@@ -18227,6 +18228,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_SERVICES_COMPLEMENTS,
     // W1A (inscription-vivante) : O05 sans parcours, ses données et ses deux gestes.
     ...ADAPTATIONS_INSCRIPTION_VIVANTE,
+    // W2A : les données statiques de la maquette rendues dynamiques (tools/adaptations/donnees-vives.mjs).
+    ...ADAPTATIONS_DONNEES_VIVES,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19509,6 +19512,7 @@ const AJOUTS = {
   ...AJOUTS_SERVICES_VIVANT,
   ...AJOUTS_SERVICES_COMPLEMENTS,
   ...AJOUTS_VILLES_VIVANT,
+  ...AJOUTS_DONNEES_VIVES,
 };
 
 /**

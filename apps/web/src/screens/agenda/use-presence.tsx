@@ -73,7 +73,10 @@ export function usePresence(
       .map((l) => {
         if (!base.estOrganisateur || l.userId === undefined) return l;
         const coche = l.figee === true || cochees.has(l.userId);
-        return { ...l, coche, vide: !coche };
+        // Coché ici mais pas envoyé : « À enregistrer », pas « Présent·e » (voir `statutDeLigne`).
+        const statut =
+          l.figee !== true && coche ? 'À enregistrer' : l.statut === 'À enregistrer' ? 'Inscrit·e' : l.statut;
+        return { ...l, coche, vide: !coche, statut };
       });
   }, [base.estOrganisateur, base.lignes, cochees, recherche]);
 

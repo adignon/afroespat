@@ -26,7 +26,12 @@ const data: A06Data = {
   rail,
   panelGuides,
   shortcuts,
-  guide: { title: 'Étudier en France', href: '/guides/etudier-en-france' },
+  guide: {
+    title: 'Étudier en France',
+    href: '/guides/etudier-en-france',
+    misAJour: 'Mis à jour le 3 oct.',
+    utiles: '4 membres ont trouvé utile',
+  },
   correction,
   signalements: {
     titre: 'Signalements « a changé »',

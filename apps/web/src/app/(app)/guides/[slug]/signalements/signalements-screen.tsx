@@ -97,7 +97,12 @@ export function SignalementsScreen({ slug }: { readonly slug: string }) {
     guide:
       enTete === null
         ? guideMaquette
-        : { title: enTete.title, href: `/guides/${encodeURIComponent(slug)}` },
+        : {
+            title: enTete.title,
+            href: `/guides/${encodeURIComponent(slug)}`,
+            misAJour: enTete.updated,
+            utiles: enTete.utiles,
+          },
     signalements: liste === null ? signalementsAvantReponse : signalementsFrom(titre, liste),
     /**
      * LES QUATRE PRISES QUE CES DEUX CADRES NE LISENT PAS. Les six cadres de la

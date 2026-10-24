@@ -28,7 +28,7 @@ import {
   updatePost,
   votePoll,
 } from './api';
-import { arrivalsFrom, eventsFrom, feedPostsFrom, onlineFrom, storiesFrom } from './from-api';
+import { alerteFrom, arrivalsFrom, eventsFrom, feedPostsFrom, onlineFrom, storiesFrom } from './from-api';
 import { ecouterStoriesVues } from '../story/vue';
 
 /**
@@ -291,6 +291,8 @@ export function useFil(storyFilter: number, postType: number) {
       events: etat.sidebar === null ? [] : eventsFrom(etat.sidebar),
       arrivals: etat.sidebar === null ? [] : arrivalsFrom(etat.sidebar),
       online: etat.sidebar === null ? [] : onlineFrom(etat.sidebar),
+      /** L'alerte arnaque publiée pour mon lieu, ou `null` : la carte disparaît. */
+      alerte: etat.sidebar === null ? null : alerteFrom(etat.sidebar),
       /** §2.4 : le composeur suit CE booléen, recalculé par le serveur. */
       canPost: etat.feed?.meta.canPost ?? false,
       canCreateStory: etat.bandeau?.meta.canCreate ?? false,

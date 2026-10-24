@@ -548,6 +548,42 @@ describe('annuaire professionnel (10 §4)', () => {
     expect(list.featured.map((card) => card.id)).not.toContain(hidden);
   });
 
+  /**
+   * LES PASTILLES DE L'ANNUAIRE VIENNENT DES FICHES (lot W2A, phase 2.14).
+   *
+   * Six noms écrits dans le front, dont « Auto-école » qui n'est pas dans le
+   * référentiel des métiers. `GET /pros/professions` ne rend que les métiers qui ont
+   * au moins une fiche VISIBLE : une fiche en attente de validation n'en fait pas
+   * exister un, et le plus représenté passe en premier.
+   */
+  it('professionsInUse : seulement les métiers qui ont une fiche visible, du plus représenté au moins représenté', async () => {
+    const [premier, deuxieme, troisieme] = [await member(), await member(), await member()];
+    const traducteur = await prisma.profession.findFirstOrThrow({
+      where: { isActive: true, nameFr: 'Traducteur assermenté' },
+      select: { id: true },
+    });
+    const enAttente = await registerPro(premier, { professionId: traducteur.id, cityIds: [cityId] });
+    const visibleA = await registerPro(deuxieme, { professionId: traducteur.id, cityIds: [cityId] });
+    const visibleB = await registerPro(troisieme, { professionId: traducteur.id, cityIds: [cityId] });
+    await approve(visibleA);
+    await approve(visibleB);
+
+    const avant = await pros.professionsInUse();
+    const ligne = avant.items.find((m) => m.id === traducteur.id);
+    expect(ligne).toBeDefined();
+    // La fiche non validée ne compte pas : deux fiches visibles de plus, pas trois.
+    await approve(enAttente);
+    const apres = await pros.professionsInUse();
+    expect(apres.items.find((m) => m.id === traducteur.id)?.count).toBe((ligne?.count ?? 0) + 1);
+
+    // Trié par effectif décroissant, puis par nom.
+    const comptes = apres.items.map((m) => m.count);
+    expect(comptes).toEqual([...comptes].sort((a, b) => b - a));
+    // Un nom hors référentiel ne peut pas y figurer.
+    expect(apres.items.map((m) => m.nameFr)).not.toContain('Auto-école');
+    expect(apres.items.every((m) => m.count > 0)).toBe(true);
+  });
+
   // ── RÈGLE DURE : quota de contact (§4.4, §11) ─────────────────────────────
 
   it('[TOUT GRATUIT] un membre gratuit contacte plus de 3 pros, sans plafond', async () => {

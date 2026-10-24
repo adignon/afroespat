@@ -272,6 +272,21 @@ export const prosListResponseSchema = pageSchema(proCardSchema).extend({
 export type ProsListResponse = z.infer<typeof prosListResponseSchema>;
 
 /**
+ * `GET /pros/professions` — les métiers qui ont AU MOINS une fiche visible, du plus
+ * représenté au moins représenté (lot W2A, phase 2.14).
+ *
+ * Les pastilles de l'annuaire (« Avocat », « Comptable »…) étaient six noms écrits
+ * dans le front — dont un, « Auto-école », qui n'est pas dans le référentiel des
+ * métiers. Elles viennent maintenant de cette liste : un métier sans fiche n'a pas
+ * de pastille, et celui qui en a le plus passe en premier.
+ */
+export const prosProfessionsResponseSchema = z.object({
+  items: z.array(z.object({ id: uuidSchema, nameFr: z.string(), count: z.number().int().positive() })),
+});
+
+export type ProsProfessionsResponse = z.infer<typeof prosProfessionsResponseSchema>;
+
+/**
  * `GET /pros/:id` — la fiche, ses recommandations et le quota de contact.
  *
  * `contactQuota` est la DÉCISION DU SERVEUR (§4.4, « 3 contacts distincts par mois

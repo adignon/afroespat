@@ -127,7 +127,12 @@ export function PropositionsScreen({ slug }: { readonly slug: string }) {
     /** Le guide dont on relit les propositions : son titre vient de `GET /guides/:slug`. */
     guide:
       servi && enTete !== null
-        ? { title: enTete.title, href: `/guides/${encodeURIComponent(slug)}` }
+        ? {
+            title: enTete.title,
+            href: `/guides/${encodeURIComponent(slug)}`,
+            misAJour: enTete.updated,
+            utiles: enTete.utiles,
+          }
         : guideMaquette,
     /**
      * NON LUE PAR LES DEUX CADRES DE CETTE PLANCHE : « Propositions reçues » ne

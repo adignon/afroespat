@@ -57,6 +57,13 @@ export class ProsController {
     return this.pros.list(query, viewer?.userId ?? null);
   }
 
+  @Get('pros/professions')
+  @PublicRead()
+  @ApiOperation({ summary: 'Métiers ayant au moins une fiche visible, du plus représenté au moins représenté' })
+  async professions() {
+    return this.pros.professionsInUse();
+  }
+
   @Get('pros/:id')
   @PublicRead()
   @ApiOperation({ summary: 'Une fiche, ses recommandations et vos contacts en commun' })

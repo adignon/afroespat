@@ -14,6 +14,7 @@ import {
   servicesCountsResponseSchema,
   plansResponseSchema,
   prosListResponseSchema,
+  prosProfessionsResponseSchema,
   proDetailResponseSchema,
   type AlertCriteria,
   type HousingCardView,
@@ -41,7 +42,13 @@ import type { LigneAlerte, S10Charge } from '@/screens/s10/data';
 import { COMPTEURS_INCONNUS, type Compteurs, type Moi, type Quotas } from './data';
 import { fondAvatar } from '@/lib/avatar';
 import { urlMedia } from '@/lib/api/base';
-import { filtresLogement, ongletsServices, sousTitreOffres, type FiltreLogement } from './navigation';
+import {
+  filtresLogement,
+  ongletsServices,
+  sousTitreOffres,
+  type FiltreLogement,
+  type Onglet,
+} from './navigation';
 
 /**
  * LES APPELS DES ÉCRANS S01 À S10 — un chargeur par écran, et rien d'autre.
@@ -389,9 +396,10 @@ function quotasDe(abonnement: MySubscriptionResponse, gratuit: boolean): Omit<Qu
  * « affiché en permanence » veut dire.
  *
  * LA VILLE n'est PAS devinée : `meta` n'en porte pas, et la requête ne filtre sur
- * aucune. On écrit donc la ville de la PREMIÈRE annonce quand toutes partagent la
- * même, et « France » sinon — ce qui est vrai dans les deux cas. Composer « Lyon »
- * parce que la maquette l'écrit aurait été le mensonge le plus facile de ce lot.
+ * aucune. On écrit donc la ville des annonces quand toutes partagent la même, et
+ * « dans votre pays » sinon (`phraseAnnonces`) — jamais « à France », qui nomme un
+ * pays là où la phrase attend une ville. Composer « Lyon » parce que la maquette
+ * l'écrit aurait été le mensonge le plus facile de ce lot.
  */
 export async function chargerS01(kind: FiltreLogement = null): Promise<S01Data> {
   const [commun, liste] = await Promise.all([
@@ -400,6 +408,7 @@ export async function chargerS01(kind: FiltreLogement = null): Promise<S01Data> 
   ]);
 
   const villes = new Set(liste.items.map((a) => a.city.name));
+  const villeUnique = villes.size === 1 ? ([...villes][0] ?? null) : null;
 
   return {
     ...commun,
@@ -407,11 +416,27 @@ export async function chargerS01(kind: FiltreLogement = null): Promise<S01Data> 
     filtres: filtresLogement(kind),
     liste: {
       total: liste.meta.total,
-      ville: villes.size === 1 ? ([...villes][0] ?? 'France') : 'France',
+      phrase: phraseAnnonces(liste.meta.total, villeUnique),
+      ville: villeUnique ?? '',
       bandeau: liste.meta.safetyBanner,
       annonces: liste.items.map(carteAnnonce),
     },
   };
+}
+
+/**
+ * « 3 annonces à Évry » · « 1 annonce dans votre pays » · « 0 annonce ».
+ *
+ * Lot W2A, phase 2.16. Sans annonce il n'y a pas de lieu à nommer, et une seule ville
+ * commune à toutes les annonces est dite telle quelle ; sinon la liste couvre le
+ * pays, et on le dit sans en écrire le nom à la place d'une ville.
+ */
+export function phraseAnnonces(total: number, villeUnique: string | null): string {
+  const mot = total > 1 ? 'annonces' : 'annonce';
+  if (total === 0) return `0 ${mot}`;
+  return villeUnique === null
+    ? `${String(total)} ${mot} dans votre pays`
+    : `${String(total)} ${mot} à ${villeUnique}`;
 }
 
 function carteAnnonce(a: HousingCardView, rang: number): CarteAnnonce {
@@ -707,12 +732,18 @@ export async function chargerS05Nouveau(): Promise<S05Charge> {
  * `proCardSchema` est `.strict()` — une réponse qui en porterait un serait refusée
  * avant d'arriver jusqu'à cette fonction.
  */
-export async function chargerS06(recherche = '', ville = ''): Promise<S06Data> {
+export async function chargerS06(
+  recherche = '',
+  ville = '',
+  metier = '',
+  plus = false,
+): Promise<S06Data> {
   const q = recherche.trim();
   const params = new URLSearchParams({ limit: '20' });
   if (q.length >= 2) params.set('q', q);
   if (ville !== '') params.set('cityId', ville);
-  const [commun, annuaire, villes] = await Promise.all([
+  if (metier !== '') params.set('professionId', metier);
+  const [commun, annuaire, villes, metiers] = await Promise.all([
     moiEtQuotas(),
     memberApi.get(`/pros?${params.toString()}`, prosListResponseSchema),
     // Le filtre de ville est un confort : sans la liste, la case dit « Toutes les villes ».
@@ -720,9 +751,13 @@ export async function chargerS06(recherche = '', ville = ''): Promise<S06Data> {
       .get('/places/cities?limit=100', placesCitiesResponseSchema)
       .then((l) => l.items.map((c) => ({ valeur: c.id, libelle: c.name })))
       .catch(() => []),
+    // Les pastilles de métier sont un confort aussi : sans la liste, il n'y en a pas.
+    memberApi
+      .get('/pros/professions', prosProfessionsResponseSchema)
+      .then((l) => l.items)
+      .catch(() => []),
   ]);
 
-  const suffixeVille = ville === '' ? '' : `&ville=${encodeURIComponent(ville)}`;
   return {
     ...commun,
     onglets: ongletsServices('annuaire', commun.quotas.compteurs),
@@ -730,11 +765,7 @@ export async function chargerS06(recherche = '', ville = ''): Promise<S06Data> {
       recherche: q,
       ville,
       villes: [{ valeur: '', libelle: 'Toutes les villes' }, ...villes],
-      metiers: METIERS_PUCES.map((m) => ({
-        libelle: m,
-        href: `/services/annuaire?q=${encodeURIComponent(m)}${suffixeVille}`,
-        actif: q.toLowerCase() === m.toLowerCase(),
-      })),
+      metiers: pastillesMetiers(metiers, { actif: metier, plus, ville }),
       fiches: [...annuaire.featured, ...annuaire.items].map((p, rang) =>
         carteFiche(p, rang, annuaire.meta.featuredLabel),
       ),
@@ -742,8 +773,54 @@ export async function chargerS06(recherche = '', ville = ''): Promise<S06Data> {
   };
 }
 
-/** Les puces de métier de la planche : des recherches `?q=` (la route sait chercher un mot). */
-const METIERS_PUCES = ['Avocat', 'Comptable', 'Traducteur', 'Coiffure', 'Plombier', 'Auto-école'] as const;
+/** Combien de pastilles avant « Plus » : une rangée, pas un mur. */
+export const METIERS_PUCES_MAX = 6;
+
+/**
+ * LES PASTILLES DE MÉTIER DE L'ANNUAIRE (lot W2A, phase 2.14).
+ *
+ * Elles étaient six noms écrits ici — « Avocat, Comptable, Traducteur, Coiffure,
+ * Plombier, Auto-école » — dont un n'existe pas dans le référentiel des métiers.
+ * Elles viennent de `GET /pros/professions` : les métiers qui ont au moins une
+ * fiche visible, du plus représenté au moins représenté. Chacune FILTRE par
+ * `?metier=<id>` (le filtre `professionId` de la route, et non une recherche de
+ * texte), et la pastille active se rappuie pour se retirer.
+ *
+ * Au-delà de `METIERS_PUCES_MAX`, la rangée se termine par « Plus » (`?plus=1`),
+ * qui les montre tous, puis « Moins ». Sans aucun métier, pas de pastille.
+ */
+export function pastillesMetiers(
+  metiers: readonly { readonly id: string; readonly nameFr: string }[],
+  options: { readonly actif: string; readonly plus: boolean; readonly ville: string },
+): Onglet[] {
+  const { actif, plus, ville } = options;
+  const lien = (extra: Record<string, string>): string => {
+    const p = new URLSearchParams();
+    if (ville !== '') p.set('ville', ville);
+    for (const [k, v] of Object.entries(extra)) p.set(k, v);
+    const texte = p.toString();
+    return texte === '' ? '/services/annuaire' : `/services/annuaire?${texte}`;
+  };
+  // Le métier actif reste visible même s'il serait au-delà de la coupe.
+  const visibles =
+    plus || metiers.length <= METIERS_PUCES_MAX
+      ? metiers
+      : metiers.filter((m, rang) => rang < METIERS_PUCES_MAX || m.id === actif);
+  const pastilles: Onglet[] = visibles.map((m) => ({
+    libelle: m.nameFr,
+    // Rappuyer sur le métier actif le retire.
+    href: m.id === actif ? lien(plus ? { plus: '1' } : {}) : lien({ metier: m.id, ...(plus ? { plus: '1' } : {}) }),
+    actif: m.id === actif,
+  }));
+  if (metiers.length > METIERS_PUCES_MAX) {
+    pastilles.push(
+      plus
+        ? { libelle: 'Moins', href: lien(actif === '' ? {} : { metier: actif }), actif: false }
+        : { libelle: 'Plus', href: lien({ ...(actif === '' ? {} : { metier: actif }), plus: '1' }), actif: false },
+    );
+  }
+  return pastilles;
+}
 
 function carteFiche(p: ProCardView, rang: number, mentionDeLaListe: string): CarteFiche {
   return {
@@ -1100,7 +1177,7 @@ export const SQUELETTE_S01: S01Data = {
   },
   onglets: [],
   filtres: [],
-  liste: { total: 0, ville: '', bandeau: HOUSING_SAFETY_BANNER, annonces: [] },
+  liste: { total: 0, phrase: '', ville: '', bandeau: HOUSING_SAFETY_BANNER, annonces: [] },
 };
 
 /**

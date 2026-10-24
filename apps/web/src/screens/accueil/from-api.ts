@@ -590,6 +590,16 @@ export function eventsFrom(sidebar: FeedSidebarResponse): readonly EvenementCart
 }
 
 /**
+ * L'alerte de vigilance de la colonne de droite (lot W2A) : `scamAlert` de
+ * `GET /feed/sidebar`, ou `null` quand le serveur n'en publie aucune pour ce lieu.
+ */
+export function alerteFrom(sidebar: FeedSidebarResponse): { titre: string; corps: string } | null {
+  const a = sidebar.scamAlert;
+  if (a === null) return null;
+  return { titre: a.title, corps: a.body };
+}
+
+/**
  * Les nouveaux arrivants. `canGreet` vient du SERVEUR (§2.7 : « bouton Saluer […]
  * si L1 ») et n'est qu'un affichage : le bouton tente l'envoi, et c'est le serveur
  * qui refuse avec l'invitation à monter de niveau s'il le faut.

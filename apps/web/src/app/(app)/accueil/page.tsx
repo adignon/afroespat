@@ -606,6 +606,7 @@ export default function FeedPage() {
     events: fil.events,
     arrivals: fil.arrivals,
     online: fil.online,
+    alerte: fil.alerte,
   };
 
   /**

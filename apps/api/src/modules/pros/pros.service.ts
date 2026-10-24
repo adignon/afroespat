@@ -347,6 +347,33 @@ export class ProsService {
    * objet en ferait taire une — le genre de bogue qui laisse fuir ce qu'il devrait
    * cacher.
    */
+  /**
+   * Les métiers qui ont au moins une fiche VISIBLE (même filtre que la liste), du plus
+   * représenté au moins représenté — départagés par le nom. Alimente les pastilles de
+   * l'annuaire (lot W2A, phase 2.14) : un métier du référentiel sans fiche n'y figure
+   * pas, et un nom absent du référentiel ne peut pas y figurer du tout.
+   */
+  async professionsInUse(): Promise<{
+    items: { id: string; nameFr: string; count: number }[];
+  }> {
+    const groupes = await this.prisma.proProfile.groupBy({
+      by: ['professionId'],
+      where: this.publiclyVisible(),
+      _count: { _all: true },
+    });
+    if (groupes.length === 0) return { items: [] };
+    const metiers = await this.prisma.profession.findMany({
+      where: { id: { in: groupes.map((g) => g.professionId) }, isActive: true },
+      select: { id: true, nameFr: true },
+    });
+    const noms = new Map(metiers.map((m) => [m.id, m.nameFr]));
+    const items = groupes
+      .filter((g) => noms.has(g.professionId))
+      .map((g) => ({ id: g.professionId, nameFr: noms.get(g.professionId) as string, count: g._count._all }))
+      .sort((a, b) => b.count - a.count || a.nameFr.localeCompare(b.nameFr, 'fr'));
+    return { items };
+  }
+
   async list(
     query: ProsQuery,
     viewerId: string | null,

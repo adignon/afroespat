@@ -1226,6 +1226,12 @@ export interface A01SData {
   sondageBloque: boolean;
 }
 
+/** Une alerte arnaque telle que la carte de vigilance l'écrit : un titre, puis le détail. */
+export interface AlerteVigilanceView {
+  readonly titre: string;
+  readonly corps: string;
+}
+
 export interface A01Data extends A01SData {
   rail: typeof rail;
   panelFil: typeof panelFil;
@@ -1240,6 +1246,13 @@ export interface A01Data extends A01SData {
    * quand il y en a (`echec`) et ceux-ci sinon (`vide`).
    */
   filEtat: { readonly chargement: boolean; readonly echec: string | null; readonly vide: string };
+  /**
+   * L'ALERTE DE VIGILANCE de la colonne de droite (lot W2A) : celle que le serveur
+   * publie pour la ville ou le pays du membre (`scamAlert` de `GET /feed/sidebar`),
+   * ou `null` — la carte n'existe alors pas. La planche écrivait « fausses offres
+   * de logement… » pour tout le monde, alerte ou non.
+   */
+  alerte: AlerteVigilanceView | null;
   /**
    * ╔════════════════════════════════════════════════════════════════════════╗
    * ║ LE COMPOSEUR DU FIL — IL N'AVAIT AUCUN ÉTAT                            ║
