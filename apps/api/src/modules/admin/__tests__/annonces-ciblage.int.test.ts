@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any -- le corps des réponses HTTP est lu tel quel. */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any -- le corps des réponses HTTP est lu tel quel. */
 import type { Server } from 'node:http';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -50,7 +50,7 @@ describe('annonces — ciblage pays, villes, phases, plans', () => {
   }
   const voit = async (m: { auth: Record<string, string> }): Promise<string | null> => {
     const r = await request(srv(app)).get('/v1/announcements/active').set(m.auth).expect(200);
-    return (r.body as any).announcement?.title ?? null;
+    return (r.body).announcement?.title ?? null;
   };
   const publier = async (titre: string, target: unknown, decalage: number) => {
     const r = await request(srv(app))
@@ -58,8 +58,8 @@ describe('annonces — ciblage pays, villes, phases, plans', () => {
       .set('cookie', cookie)
       .send({ title: titre, body: 'Texte de l’annonce ciblée.', target, startsAt: new Date(Date.now() - decalage).toISOString() })
       .expect(201);
-    annonces.push((r.body as any).id);
-    return r.body as any;
+    annonces.push((r.body).id);
+    return r.body;
   };
 
   beforeAll(async () => {
@@ -128,7 +128,7 @@ describe('annonces — ciblage pays, villes, phases, plans', () => {
     for (const m of [mauvaiseVille, mauvaisePhase, mauvaisPlan, autrePays]) expect(await voit(m)).not.toBe(titre);
     // La lecture d'équipe rend le ciblage tel qu'écrit : l'éditeur le rouvre à l'identique.
     const liste = await request(srv(app)).get('/v1/admin/announcements').set('cookie', cookie).expect(200);
-    expect((liste.body as any).items.find((x: any) => x.id === a.id).target).toEqual({
+    expect((liste.body).items.find((x: any) => x.id === a.id).target).toEqual({
       countryIds: [benin, expect.any(String)], cityIds: [villeB], phases: ['PRE_DEPARTURE', 'RECENT_ARRIVAL'], plans: ['PREMIUM', 'PRO'],
     });
   });

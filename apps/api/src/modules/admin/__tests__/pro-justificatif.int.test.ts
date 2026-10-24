@@ -80,9 +80,9 @@ describe('justificatif d’une fiche pro, lu par l’équipe', () => {
     const put = await request(srv(app))
       .put('/v1/me/pro-profile')
       .set(pro.auth)
-      .send({ professionId: profession.id, businessName: `Cabinet ${run}`, contactMethod: 'PLATFORM_MESSAGE', cityIds: [pro.cityId], proofAssetId: (up.body as any).id })
+      .send({ professionId: profession.id, businessName: `Cabinet ${run}`, contactMethod: 'PLATFORM_MESSAGE', cityIds: [pro.cityId], proofAssetId: (up.body).id })
       .expect(200);
-    fiche = (put.body as any).id;
+    fiche = (put.body).id;
   });
 
   afterAll(async () => {

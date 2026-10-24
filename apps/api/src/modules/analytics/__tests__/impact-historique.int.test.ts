@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any -- le corps des réponses HTTP est lu tel quel : le typer champ par champ doublerait chaque test sans rien prouver de plus. */
+import { readdirSync, readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
+import { join } from 'node:path';
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
@@ -349,9 +351,7 @@ describe('rapport d’impact : historique, témoignages, export (15 §5.3)', () 
 
   // ══ Ce que la table d’historique ne fait jamais ══════════════════════════
 
-  it('RÈGLE : aucun chemin de code n’écrase ni ne supprime un instantané du rapport', async () => {
-    const { readFileSync, readdirSync } = await import('node:fs');
-    const { join } = await import('node:path');
+  it('RÈGLE : aucun chemin de code n’écrase ni ne supprime un instantané du rapport', () => {
     const dir = join(__dirname, '..');
     const source = readdirSync(dir).filter((f) => f.endsWith('.ts')).map((f) => readFileSync(join(dir, f), 'utf8')).join('\n');
     expect(source).not.toMatch(/impactReportSnapshot\.(update|updateMany|upsert|delete|deleteMany)\(/);

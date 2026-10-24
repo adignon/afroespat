@@ -338,6 +338,9 @@ describe('tableau de bord complet et alertes d’équipe (15 §5.1)', () => {
     // encore eu lieu, personne n'est présent) puis hier (il est dans les 90 jours).
     const avant = new Date(Date.now() - 9 * DAY);
     const hier = new Date(Date.now() - 1 * DAY);
+    // Les instantanés qu'une autre suite (toutes les tâches rejouées) a pu poser pour ces jours, ou plus tard,
+    // sont des données DÉRIVÉES : on les écarte pour que « le plus récent » soit bien celui d'hier.
+    await prisma.metricSnapshot.deleteMany({ where: { metric: { startsWith: 'key_indicator.' }, periodStart: { gte: startOfDayUtc(avant) } } });
     await analytics.refreshKeyIndicator(avant);
     await analytics.refreshKeyIndicator(hier);
     snapshotDays.push(startOfDayUtc(avant), startOfDayUtc(hier));

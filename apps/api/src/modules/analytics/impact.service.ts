@@ -131,7 +131,7 @@ export class ImpactService {
             revision,
             periodStart: start,
             periodEnd: end,
-            items: items as unknown as Prisma.InputJsonValue,
+            items: items,
             ...(staffId === null ? {} : { computedByStaffId: staffId }),
           },
         });
@@ -208,7 +208,7 @@ export class ImpactService {
     return rows.map((r) => ({
       id: r.id,
       quote: r.quote,
-      kind: (r.guideId === null ? 'CITY_TIP' : 'GUIDE') as ImpactQuoteKind,
+      kind: (r.guideId === null ? 'CITY_TIP' : 'GUIDE'),
       cityName: r.city?.name ?? null,
     }));
   }
@@ -379,6 +379,6 @@ export class ImpactService {
         [report.trimestre, rev, `temoignage.${t.kind === 'GUIDE' ? 'guide' : 'conseil_de_ville'}`, t.cityName ?? '', t.quote].map(cell).join(','),
       ),
     ];
-    return { report, text: `﻿${lines.join('\r\n')}\r\n` };
+    return { report, text: `\uFEFF${lines.join('\r\n')}\r\n` };
   }
 }
