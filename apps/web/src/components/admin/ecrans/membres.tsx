@@ -22,7 +22,6 @@ import {
   Champ,
   Colonnes,
   Etiquette,
-  Fenetre,
   FenetreMotif,
   Lecture,
   Message,

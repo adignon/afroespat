@@ -220,7 +220,7 @@ function versLocal(iso: string | null | undefined): string {
 function Annonces() {
   const peut = useDroit('content');
   const liste = useCharge(() => staffApi.get('/announcements?limit=50', adminAnnouncementsResponseSchema), 'annonces');
-  const [sel, setSel] = useState<string | 'nouvelle' | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
   useEffect(() => {
     if (sel === null && liste.etat.phase === 'pret') setSel(liste.etat.donnees.items[0]?.id ?? 'nouvelle');
   }, [sel, liste.etat]);

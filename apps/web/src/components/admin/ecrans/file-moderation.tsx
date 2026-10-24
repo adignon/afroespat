@@ -71,7 +71,6 @@ export function ContenuFileModeration() {
   const [assigne, setAssigne] = useState('any');
   const [suivantes, setSuivantes] = useState<readonly AdminModerationCaseRow[]>([]);
   const [curseur, setCurseur] = useState<string | null>(null);
-  const [plus, setPlus] = useState<string | null>(null);
   const geste = useGeste();
 
   const filtres = `${statut}|${priorite}|${type}|${assigne}`;

@@ -1,7 +1,8 @@
 /**
  * Données des écrans D01 à D16, reprises de `docs/template/10 Administration.dc.html`.
  *
- * ET IL N'Y EN A AUCUNE — ce fichier existe pour le dire, pas pour combler un vide.
+ * Seul D02 garde des données ici : les autres écrans (D03 à D16) ont leur composant
+ * (`components/admin/ecrans/*`) et leurs schémas dans `@app/shared`.
  *
  * Les maquettes `01 Accès et Onboarding` et `03 Accueil v2` calculent leurs valeurs
  * d'affichage dans un `renderVals()` et les interpolent dans le HTML (`{{ p.comment }}`,
@@ -68,76 +69,6 @@
  * action : c'est un mensonge tracé nulle part. Les boutons restent inertes.
  */
 export type AdministrationData = Record<string, never>;
-
-/**
- * D08 — les référentiels, onglet Villes (`/admin/referentiels`).
- *
- * `GET /admin/ref/cities` via `staffApi`. Les trois états de 02 §4.2 sont des
- * BOOLÉENS SÉPARÉS et non une énumération, parce que la maquette dessine trois
- * colonnes d'action structurellement différentes et que chacune garde son dessin
- * sous son propre `<sc-if>`. Un seul champ `etat: 'active' | 'bientot' | 'doublon'`
- * aurait obligé le JSX à décider, et le JSX transcodé ne décide rien.
- */
-export interface VilleD08 {
-  readonly nom: string;
-  readonly region: string;
-  /** Déjà mis en forme — « 1 400 », espace insécable comprise. */
-  readonly membres: string;
-  /**
-   * Le libellé de la pastille, et ses DEUX couleurs.
-   *
-   * Lier le seul libellé laisserait « Bientôt » sur le fond vert d'une ville
-   * active. Les trois paires sont celles de la maquette, relevées sur ses propres
-   * planches et jamais assombries.
-   */
-  readonly statut: string;
-  readonly statutFond: string;
-  readonly statutTexte: string;
-  /** Une ville ouverte : la maquette lui laisse « Fusionner » en texte nu. */
-  readonly fusionnable: boolean;
-  /** Une ville à ouvrir : le bouton vert « Activer ». */
-  readonly activable: boolean;
-  /** Un doublon déjà rattaché : « Fusionner avec … ». */
-  readonly doublon: boolean;
-  /** Le nom de la ville cible de la fusion, vide hors du cas `doublon`. */
-  readonly fusionneAvec: string;
-}
-
-export interface D08Data {
-  readonly villes: readonly VilleD08[];
-  /**
-   * La carte « Activer … ? », qui porte la ville CANDIDATE.
-   *
-   * La maquette la dessine toujours : ce n'est pas une fenêtre, c'est une carte de
-   * la page. Quand aucune ville n'est candidate, les deux champs le disent plutôt
-   * que d'afficher « undefined ».
-   */
-  readonly activation: { readonly ville: string; readonly membres: string };
-}
-
-/**
- * D16 — le rapport d'impact (`/admin/impact`, 15 §5.3).
- *
- * Les cinq nombres de la première planche, plus le trimestre que le SERVEUR
- * nomme. Tous sont déjà mis en forme : « 5 820 », espace fine insécable comprise.
- *
- * CE TYPE NE PORTE AUCUN TÉMOIGNAGE, et c'est le point de l'écran : `guides.quotable`
- * et `city_tips.quotable` n'existent pas au schéma, donc rien ne dit qu'un membre a
- * donné son accord pour être cité. Un champ `temoignages` ici serait la première
- * marche vers une citation publiée sans accord — ce que ces colonnes manquantes
- * existent pour empêcher. Les deux citations de la maquette restent dessinées.
- */
-export interface D16Data {
-  readonly impact: {
-    readonly membres: string;
-    readonly parcours: string;
-    readonly presences: string;
-    readonly entraides: string;
-    readonly parrainages: string;
-    /** « T3 2026 », dans l'ordre que la maquette écrit — l'API dit « 2026-T3 ». */
-    readonly trimestre: string;
-  };
-}
 
 /**
  * D02 — le tableau de bord (`/admin`, 15 §5.1).
@@ -241,144 +172,6 @@ export interface D02Data {
 }
 
 /**
- * D04 — la file de modération (`/admin/moderation`, 13 §4.1).
- *
- * ─── UN SEUL NOMBRE, ET LE TABLEAU RESTE DESSINÉ ───────────────────────────────
- *
- * C'est peu, et c'est le résultat d'un arbitrage qu'il faut écrire en entier,
- * parce qu'il se reproduira sur presque tous les tableaux de ce module.
- *
- * La planche dessine sept colonnes : PRIO, SUJET, AUTEUR, SOURCE, SIGN., ASSIGNÉ,
- * SLA. La charge relevée de `GET /admin/moderation/cases` en sert TROIS —
- * `priority`, `source`, `sla` — et une quatrième à moitié (`subjectType` donne
- * « Publication », pas l'extrait « · « Vends attestation… » »). Manquent
- * entièrement :
- *
- *   · AUTEUR — aucun nom, aucun handle, pas même l'identifiant de l'auteur du
- *     contenu visé. Seuls `subjectId` et `subjectType` arrivent ;
- *   · SIGN. — le nombre de signalements n'est PAS dans la ligne de liste. Il n'est
- *     que dans le dossier (`reports` de `GET /moderation/cases/:id`) ;
- *   · ASSIGNÉ — `assignedStaffId` est un UUID. Le nom se lit dans
- *     `GET /admin/staff`, QUI EXIGE SUPER_ADMIN (`STAFF_SCOPES.staffAdmin`)
- *     tandis que la file est ouverte à MODERATOR. L'appeler d'ici rendrait la file
- *     403 pour le rôle dont c'est le métier — c'est la leçon de D02, et elle vaut
- *     deux fois ici.
- *
- * ─── POURQUOI ON NE LIE PAS « LES TROIS COLONNES QUI MARCHENT » ────────────────
- *
- * Parce qu'une LISTE n'est pas une carte. Lier la ligne en `<sc-for>` ferait
- * rendre les cellules non liées avec le texte de la ligne qui a servi de modèle :
- * les quarante-six dossiers afficheraient TOUS « Joël K. » comme auteur et TOUS
- * « 5 » signalements. Ce n'est pas une donnée figée, c'est une donnée FAUSSE
- * répétée quarante-six fois, et elle aurait l'air parfaitement normale.
- *
- * Un tableau entièrement dessiné se reconnaît pour ce qu'il est. Un tableau dont
- * la priorité et le SLA bougent pendant que l'auteur ne bouge pas serait lu comme
- * vrai en entier. Le tableau reste donc dessiné, et c'est remonté : si le porteur
- * veut cette file, c'est à la route de servir l'auteur et le nombre de
- * signalements.
- */
-export interface D04Data {
-  readonly file: {
-    /**
-     * Les dossiers DANS LA FILE — statut `OPEN` **ou** `IN_REVIEW`.
-     *
-     * Somme de `openByPriority` de `GET /admin/moderation/stats`, et c'est la
-     * bonne source : mesurée à 1847 là où `moderation.cases_by_status/OPEN` du
-     * tableau de bord vaut 1811. Les deux sont justes et ne comptent pas la même
-     * chose — 36 dossiers sont en cours d'examen, et ils sont bien dans la file.
-     *
-     * Déjà mis en forme : « 1 847 », espace fine insécable comprise.
-     */
-    readonly ouverts: string;
-  };
-}
-
-/**
- * D05 — le dossier de modération (`/admin/moderation/:id`, 13 §4.2).
- *
- * UNE SEULE LIGNE LIÉE, et c'est le sous-titre : « Publication · priorité 1 · SLA
- * dépassé ». Ses trois valeurs sont servies, toutes les trois, par
- * `GET /admin/moderation/cases/:id` — `subjectType`, `priority`, `sla`. C'est le
- * seul endroit de cette planche où c'est le cas.
- *
- * ─── CE QUI N'EST PAS LIÉ, ET LE NOMBRE QUI MANQUE À CHAQUE FOIS ──────────────
- *
- *   · CONTENU — ni le texte du contenu visé, ni son auteur, ni sa ville, ni son
- *     âge. La route rend `subjectId` et `subjectType` ; le CONTENU lui-même vit
- *     dans sa propre table et aucune route d'équipe ne le joint. C'est le manque
- *     le plus lourd de l'écran : un modérateur ne peut pas décider sans voir ce
- *     qu'il modère.
- *   · VERDICT IA — « Vente de faux documents · confiance 0,94 ». La confiance est
- *     servie (`aiScore`, relevée `0.95`), la DESCRIPTION non : `aiVerdict` vaut
- *     `ALLOW`, `QUEUE` ou `BLOCK`, ce qui est une décision, pas une description.
- *     Lier la seule confiance laisserait « Vente de faux documents » figé à côté
- *     d'un nombre vivant — la faute que ce lot refuse partout ailleurs.
- *   · SANCTIONS, DOSSIERS, SIGNALEMENTS — relevés VIDES sur tous les dossiers
- *     atteignables (`sanctions: []`, `reports: []`, `authorHistory: null`). Leur
- *     longueur serait lisible, mais afficher « 0 avertissement » et « 0
- *     signalement » sur un dossier de la base de développement ne prouverait rien
- *     et masquerait que ces listes n'ont jamais été observées remplies. On ne lie
- *     pas ce qu'on n'a pas vu.
- *   · Les deux pastilles « argent » et « document » correspondent à `aiLabels`
- *     (relevé `["SCAM","MONEY_REQUEST"]`), mais la maquette les écrit en français
- *     minuscule et la route rend des constantes d'énumération. Traduire
- *     demanderait un dictionnaire de tous les libellés IA, qu'aucune charge
- *     relevée n'énumère — en inventer la moitié ferait afficher `MONEY_REQUEST`
- *     tel quel sur le premier libellé non prévu.
- */
-export interface D05Data {
-  readonly dossier: {
-    /** « Publication » — `subjectType` dans les mots de la maquette. */
-    readonly sujet: string;
-    /** « 1 » à « 5 ». */
-    readonly priorite: string;
-    /** « dépassé », « bientôt dépassé » ou « respecté » — calculé par le SERVEUR. */
-    readonly slaEtat: string;
-  };
-}
-
-/**
- * D10 — les services (`/admin/services`, 10 §4.1).
- *
- * UN SEUL NOMBRE : le compte des justificatifs pro EN ATTENTE.
- *
- * ─── IL EST COMPTÉ EN SUIVANT LE CURSEUR, ET C'EST POSSIBLE ICI ───────────────
- *
- * `GET /admin/pro-profiles` pagine HONNÊTEMENT — `take: query.limit + 1` puis
- * `buildPage`, donc un `nextCursor` non nul quand il reste des pages. On peut donc
- * compter en suivant le curseur jusqu'au bout, ce qui est la seule façon d'être
- * complet sans `meta.count`.
- *
- * Ce n'est PAS le cas de toutes les listes de ce module, et c'est pourquoi la
- * remarque est ici : cinq routes d'équipe appliquent `take: query.limit` puis
- * rendent `nextCursor: null` EN DUR, donc tronquent en affirmant la fin. Le détail
- * est dans `appels.ts`, au-dessus de `lireToutesLesVilles`, qui en est la victime.
- *
- * ─── CE QUI N'EST PAS LIÉ ─────────────────────────────────────────────────────
- *
- *   · la LIGNE de justificatif (« MB · Me Mariam Bah · Avocate · carte
- *     professionnelle ») est une liste, et le TYPE du justificatif n'est pas servi :
- *     `proof` porte `mime`, `sizeBytes`, `status` et `storageKey`, pas « carte
- *     professionnelle ». Lier le nom laisserait le type figé sur toutes les lignes ;
- *   · ANNONCES LOGEMENT À RISQUE — aucune route d'équipe ne sert la file de risque
- *     logement. Les scores (82, 61) et les indices (« prix bas · compte récent ·
- *     photos réutilisées ») viennent de `housing.risk_weights`, qui est un RÉGLAGE
- *     de pondération, pas une liste d'annonces scorées ;
- *   · BORNES DE PRIX PAR VILLE — `GET /admin/settings` sert `housing.price_bounds`,
- *     mais c'est UNE SEULE paire GLOBALE (`minCents: 15000`, `maxCents: 800000`).
- *     La maquette dessine un tableau par VILLE et par TYPE de logement (chambre,
- *     studio, T2), soit six valeurs pour deux villes. Cette granularité n'existe
- *     pas. Lier la paire globale dans six cases serait inventer six bornes.
- */
-export interface D10Data {
-  readonly justificatifs: {
-    /** Les fiches pro en attente de validation, comptées en entier. */
-    readonly enAttente: string;
-  };
-}
-
-/**
  * ─── LES SIX SQUELETTES : LE CADRE SE REND TOUT DE SUITE, LA DONNÉE ARRIVE APRÈS ─
  *
  * ┌──────────────────────────────────────────────────────────────────────────┐
@@ -436,45 +229,4 @@ export const SQUELETTE_D02: D02Data = {
   entraide: { ouvertes: ATTENTE, resolues: ATTENTE, delaiMedian: ATTENTE },
   guides: { publies: ATTENTE, aVerifier: ATTENTE },
   services: { annonces: ATTENTE, fichesPro: ATTENTE },
-};
-
-/** D04 — le seul nombre lié de la file de modération, en attente. */
-export const SQUELETTE_D04: D04Data = { file: { ouverts: ATTENTE } };
-
-/** D05 — le sous-titre du dossier, en attente. */
-export const SQUELETTE_D05: D05Data = {
-  dossier: { sujet: ATTENTE, priorite: ATTENTE, slaEtat: ATTENTE },
-};
-
-/**
- * D08 — les référentiels, en attente.
- *
- * `villes: []` et non une ville d'exemple : le cadre généré itère
- * `(villes ?? []).map(…)`, donc une liste vide rend l'en-tête du tableau et tout
- * le reste de la planche SANS inventer de ligne. Une ligne d'attente, elle, aurait
- * nommé une ville qui n'existe pas — et avec son nombre de membres.
- *
- * C'est aussi ce qui garde ce squelette SANS COULEUR : `VilleD08` impose
- * `statutFond` et `statutTexte` à chaque ligne, et une ligne d'attente aurait donc
- * obligé à choisir deux hexadécimaux que la maquette ne dessine pour aucun état
- * d'attente. Zéro ligne, zéro couleur à inventer.
- */
-export const SQUELETTE_D08: D08Data = {
-  villes: [],
-  activation: { ville: ATTENTE, membres: ATTENTE },
-};
-
-/** D10 — le compte des justificatifs pro, en attente. */
-export const SQUELETTE_D10: D10Data = { justificatifs: { enAttente: ATTENTE } };
-
-/** D16 — les cinq nombres et le trimestre du rapport d'impact, en attente. */
-export const SQUELETTE_D16: D16Data = {
-  impact: {
-    membres: ATTENTE,
-    parcours: ATTENTE,
-    presences: ATTENTE,
-    entraides: ATTENTE,
-    parrainages: ATTENTE,
-    trimestre: ATTENTE,
-  },
 };

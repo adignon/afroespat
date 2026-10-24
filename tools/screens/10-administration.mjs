@@ -66,6 +66,25 @@
  * manque est réel et il est dit plutôt que maquillé.)
  */
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LOT « ADMINISTRATION VIVANTE » — CE QUE CE FICHIER NE DIT PLUS              ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Les commentaires ci-dessous décrivent la maquette TELLE QU'ELLE ÉTAIT TRANSCODÉE avant ce
+ * lot : « aucune écriture branchée », « liée en lecture seule », « remonté au porteur ».
+ * C'est PÉRIMÉ pour D01 et D03 à D16, et ils sont gardés pour l'historique des mesures :
+ *
+ *   · D01 : la carte devient `ConnexionEquipe` (mot de passe, TOTP, enrôlement) ;
+ *   · D03 à D16 : la zone de contenu devient un composant vivant, en lecture ET en
+ *     écriture (`components/admin/ecrans/*`), posé par l'adaptation `ADMIN_CONTENU` de
+ *     `tools/adaptations/administration-vivante.mjs` ; les clés `donnees` de D04, D05, D08,
+ *     D10 et D16 ont donc été retirées (rien n'interpole plus leurs valeurs) ;
+ *   · D02 : inchangé, son contenu reste celui de la maquette, branché en lecture ;
+ *   · TOUTES : la barre haute devient `BarreAdmin`, et le rail reçoit des repères pour
+ *     `admin.css` (la maquette n'a pas de cadre mobile).
+ */
+
 const FILE = 'docs/template/10 Administration.dc.html';
 
 /**

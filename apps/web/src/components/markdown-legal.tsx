@@ -90,7 +90,7 @@ export function CorpsMarkdown({ corps }: { readonly corps: string }) {
         }
         if (b.split('\n').every((l) => l.startsWith('- '))) {
           return (
-            <ul key={i} style={{ margin: '12px 0 0', paddingLeft: '20px', fontSize: '15px', lineHeight: 1.8 }}>
+            <ul key={i} style={{ margin: '12px 0 0', paddingLeft: '20px', fontSize: '15px', lineHeight: 1.8, listStyle: 'disc' }}>
               {b.split('\n').map((l, j) => (
                 <li key={j}>{enLigne(l.slice(2), `l${i}-${j}`)}</li>
               ))}

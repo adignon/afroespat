@@ -48,7 +48,7 @@ const libCible = (c: string) => CIBLES.find((x) => x.valeur === c)?.libelle ?? c
 
 function duree(jours: number | null): string {
   if (jours === null) return '—';
-  return jours >= 14 ? `${Math.round((jours / 7) * 10) / 10} sem.`.replace('.', ',') : `${jours} j`;
+  return jours >= 14 ? `${String(Math.round((jours / 7) * 10) / 10).replace('.', ',')} sem.` : `${jours} j`;
 }
 
 export function ContenuEtapes() {

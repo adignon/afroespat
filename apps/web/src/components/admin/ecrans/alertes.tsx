@@ -37,7 +37,7 @@ export function ContenuAlertes() {
   const peut = useDroit('content');
   const liste = useCharge(() => staffApi.get('/moderation/scam-alerts', adminScamAlertsResponseSchema), 'alertes');
   const villes = useCharge(() => toutesLesVilles(), 'villes');
-  const [sel, setSel] = useState<string | 'nouvelle' | null>(null);
+  const [sel, setSel] = useState<string | null>(null);
 
   useEffect(() => {
     if (sel === null && liste.etat.phase === 'pret') setSel(liste.etat.donnees.items[0]?.id ?? 'nouvelle');
@@ -132,7 +132,7 @@ function Editeur({
   const [titre, setTitre] = useState(alerte?.title ?? '');
   const [texte, setTexte] = useState(alerte?.body ?? '');
   const [gravite, setGravite] = useState<Gravite>(alerte?.severity ?? 'WARNING');
-  const [portee, setPortee] = useState<'global' | 'ville' | 'pays'>(alerte?.cityId != null ? 'ville' : alerte?.countryId != null ? 'pays' : 'global');
+  const [portee, setPortee] = useState<'global' | 'ville' | 'pays'>((alerte?.cityId ?? null) !== null ? 'ville' : (alerte?.countryId ?? null) !== null ? 'pays' : 'global');
   const [ville, setVille] = useState(alerte?.cityId ?? '');
   const [paysId, setPaysId] = useState(alerte?.countryId ?? '');
   const [expire, setExpire] = useState(alerte?.expiresAt?.slice(0, 10) ?? '');

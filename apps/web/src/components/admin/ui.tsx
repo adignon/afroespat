@@ -82,6 +82,7 @@ export function Titre({
 }
 
 const champBase: CSSProperties = {
+  font: 'inherit',
   minHeight: '48px',
   borderRadius: '14px',
   border: `1px solid ${C.trait}`,
@@ -89,7 +90,6 @@ const champBase: CSSProperties = {
   padding: '13px 14px',
   fontSize: '14px',
   lineHeight: 1.5,
-  font: 'inherit',
   color: C.encre,
   width: '100%',
   boxSizing: 'border-box',

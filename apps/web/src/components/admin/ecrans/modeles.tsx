@@ -120,7 +120,7 @@ export function ContenuModeles() {
                   onClick={() => setChoisie(v.id)}
                   style={{ height: '36px', padding: '0 14px', borderRadius: '999px', border: v.id === choisie ? 'none' : `1px solid ${C.trait}`, background: v.id === choisie ? C.encre : '#fff', color: v.id === choisie ? '#fff' : C.encre, font: 'inherit', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
                 >
-                  {v.modele.nameFr} · v{v.version} {STATUTS[v.status]}
+                  {v.modele.nameFr}{v.originCountry === null ? '' : ` (${v.originCountry})`} · v{v.version} {STATUTS[v.status]}
                 </button>
               ))}
               {peut ? <NouveauBrouillon modeles={donnees.items} onFait={(id) => { setChoisie(id); modeles.recharger(); }} /> : null}
