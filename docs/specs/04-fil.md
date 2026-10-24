@@ -180,3 +180,8 @@ Publications, images et stories : supprimées (les signets des autres membres af
 - **A02** : la vraie publication (`GET /posts/:id`) à la place de la publication de la maquette ; répondre, modifier (15 min) et supprimer son commentaire (`PATCH`/`DELETE /comments/:id`), réagir, enregistrer, signaler ; « Choisir un réseau » (`POST /posts/:id/move-to-topic`, offert selon `canMoveToTopic`) et « Suite dans le réseau X » ; guides liés et « Lier un guide » (`PATCH /posts/:id`) ; états « contenu en vérification » / « contenu retiré ».
 - **A01** : états chargement / erreur / « fil vide » ; `maxLength` sur le composeur et les commentaires (`FEED_LIMITS`) ; poids d'image contrôlé avant l'envoi (`MEDIA_MAX_IMAGE_BYTES`).
 - **Stories** : « Mes stories » (`/stories/mes-stories`, `GET /me/stories`, historique 30 jours), « Garder » (`POST /stories/:id/convert`) et « Supprimer » (`DELETE /stories/:id`) depuis la lecture et l'historique.
+
+## Livré — lot W2A (données vives)
+
+- **A01, colonne de droite** : « ÉVÉNEMENTS À {ville du membre} » (`GET /me`) ; la carte « ALERTE VIGILANCE » affiche `scamAlert` de `GET /feed/sidebar` (titre, puis détail) et **n'existe pas** quand le serveur n'en publie aucune ; à 390 px, la carte « Mon parcours » est le parcours actif réel (titre, avancement, étape courante, « Continuer »), ou « Aucun parcours en cours » + « Commencer » comme à 1 440 px.
+- Le repli « Lyon » du composeur de story est remplacé : l'onglet de ville porte la ville du membre (`GET /me`), à défaut « Ma ville seulement ».

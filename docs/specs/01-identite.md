@@ -240,3 +240,15 @@ Ce module est **appelé en dernier** par la tâche de suppression, après tous l
 - `rule: aucune donnée d'identité du webhook Didit n'est persistée`
 - `rule: la suppression appelle tous les gestionnaires enregistrés et anonymise users`
 - `rule: l'onboarding propose les deux choix sans parcours au même rang`
+
+---
+
+## 11. Précisions de mise en œuvre (lot W2A — données vives)
+
+Règle de la phase : une valeur affichée vient de l'API ou du compte connecté ; sinon un état vide honnête — jamais un nom, une ville ou un chiffre de maquette. Un test (`apps/web/src/screens/__tests__/donnees-vives.test.ts`) lit les écrans générés montés et refuse la liste noire (Lyon, noms de la maquette, « 58 % », « 1 400 membres », dates d'exemple).
+
+- **`GET /me`** rend en plus `user.cityName` et `user.cityCountryId` (la ville courante et son pays, `null` sans ville) et `user.handleChangedAt` (horodatage du dernier changement de pseudo, `null` s'il n'a jamais changé). L'accueil écrit « ÉVÉNEMENTS À ÉVRY » (« ÉVÉNEMENTS » sans ville) ; K01 écrit « Modifié le … · prochain changement possible le … » avec `HANDLE_CHANGE_INTERVAL_DAYS` (30, §2.6, constante partagée lue aussi par le refus serveur).
+- **K01** : la ligne « Déjà modifié une fois… » n'existe que si `originCountryLocked` ; « Apparaître dans les nouveaux arrivants » dit « Pendant 14 jours après votre arrivée » (`NEWCOMER_WINDOW_DAYS`, 09 §2.4 — la maquette écrivait trois mois) et, si l'arrivée est connue, la date de fin ; la liste « Ville » est celle du pays de la ville courante (sans ville : premier pays de destination), la ville courante y figurant toujours.
+- **K08** : les délais (lien d'archive 7 jours, réactivation 6 mois, rétractation 7 jours) sont composés depuis `ACCOUNT_LIMITS` (`lib/textes-delais.ts`). La promesse « sous 48 h » est retirée : rien ne la tient (la génération est asynchrone, le membre est prévenu).
+- **K05 à 390 px** : la liste est celle des contacts (`GET /me/connections`) ; demandes reçues, suggestions et bloqués s'empilent dessous (AJOUT, `components/compte/sections-contacts-mobile.tsx`), chaque liste avec son état vide.
+- **Compteurs** : `cities.member_count` suit la ville du membre dans la transaction de `PATCH /me` (la tâche nocturne `city.member_count_recompute` reste le filet pour la désactivation, la suppression et le bannissement) ; `communities.member_count` suit l'adhésion et le départ. Migration de rattrapage idempotente `20261017140000_compteurs_membres_rattrapage`.

@@ -161,3 +161,7 @@ Guides publiés : **conservés**, `author_user_id = null`, `maintained_by_commun
 - **A05** : « Partir d'un parcours » — choix du parcours terminé source (`POST /journeys/:id/to-guide`), puis ouverture du brouillon pré-rempli.
 - **`guides.view_count`** : conservé sans lecteur, par décision (§5 exige colonne et tâche `guide.view_count_flush`, 00 §1.2 interdit de l'exposer).
 - Les guides passent par le pipeline de modération (13 §14) : règles locales à la publication, analyse IA asynchrone après `guide.published`.
+
+## Livré — lot W2A (données vives)
+
+- **A06** : « Mis à jour le … · N membres ont trouvé utile » vient de `GET /guides/:slug` (`lastContentUpdateAt`, `helpfulCount`) ; avant la réponse, la prise `guide` est vide (la page ne nomme plus le guide de la maquette). Les « 14 jours » de l'encart et de la bande de correction sont `GUIDE_PROPOSAL_ESCALATION_DAYS`. Derrière le panneau « Proposer une correction », la page porte le titre et la date du guide réel, plus trois paragraphes de la maquette.
