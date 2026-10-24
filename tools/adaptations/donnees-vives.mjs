@@ -146,7 +146,7 @@ const A01_VIVANT = [
       if (debut === -1) return { jsx, applied: false };
       const fin = finElement(jsx, debut);
       if (fin === -1) return { jsx, applied: false };
-      return { jsx: jsx.slice(0, debut) + '<CarteMonParcoursMobile />' + jsx.slice(fin), applied: true };
+      return { jsx: jsx.slice(0, debut) + '<CarteParcoursTelephone />' + jsx.slice(fin), applied: true };
     },
   ),
 ];
@@ -527,7 +527,7 @@ export const AJOUTS_DONNEES_VIVES = {
   PhrasePseudo: '@/components/valeurs-vives',
   PhrasePaysOrigine: '@/components/valeurs-vives',
   PhraseNouvelArrivant: '@/components/valeurs-vives',
-  CarteMonParcoursMobile: '@/components/carte-mon-parcours',
+  CarteParcoursTelephone: '@/components/carte-mon-parcours',
   SectionsContactsMobile: '@/components/compte/sections-contacts-mobile',
   ChampsContribution: '@/components/champs-contribution',
 };

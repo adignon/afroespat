@@ -128,7 +128,7 @@ export function CarteMonParcours() {
  * pourcentage, l'étape courante et « Continuer » vers le parcours. Le dessin est
  * celui de la planche (fond `#0F5C48`, rayon 20, barre de 6 px).
  */
-export function CarteMonParcoursMobile() {
+export function CarteParcoursTelephone() {
   const parcours = useMonParcours();
   const pct = parcours === undefined || parcours === null ? 0 : Math.round(parcours.progressPct);
   const titre =

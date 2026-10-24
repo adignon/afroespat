@@ -13,8 +13,7 @@ import { MenuPublication } from '@/components/menu-publication';
 import { ApercuStory } from '@/components/apercu-story';
 import { RubanStories } from '@/components/ruban-stories';
 import { EtatVide } from '@/components/etat-vide';
-import { CarteMonParcours } from '@/components/carte-mon-parcours';
-import { CarteMonParcoursMobile } from '@/components/carte-mon-parcours';
+import { CarteParcoursTelephone } from '@/components/carte-mon-parcours';
 import type { A01Data } from './data';
 
 export function A01Mobile(props: A01Data) {
@@ -38,7 +37,7 @@ export function A01Mobile(props: A01Data) {
 ))}
     </div>
     <div style={{ flexGrow: "1", overflow: "visible", padding: "0 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-      <CarteMonParcoursMobile />
+      <CarteParcoursTelephone />
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "10px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>STORIES DU JOUR</span><Link href="/stories/mes-stories" style={{ height: "32px", padding: "0 12px", borderRadius: "999px", border: "1px solid #E6EBE9", background: "#fff", color: "#5D6B66", fontSize: "12px", fontWeight: "700", display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Mes stories</Link></div>
         <RubanStories><div style={{ display: "contents" }}>
