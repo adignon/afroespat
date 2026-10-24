@@ -288,7 +288,16 @@ const FD_J08A = transformation(
     // franchies… » restent LIÉS aux données (`chargerJ08`) : le titre est promu en <h2> par le
     // générateur, et la boîte de dialogue y trouve son nom accessible.
     return enchainer(jsx, [
-      (j) => alertesApres(j, 'étapes franchies restent dans votre historique'),
+      // Le pluriel suit le nombre (la maquette écrit « 6 étapes » ; un parcours qui en a franchi
+      // une lirait « Vos 1 étapes franchies restent »).
+      (j) =>
+        j.includes('Vos {parcours.franchies} étapes franchies restent')
+          ? j.replace(
+              'Vos {parcours.franchies} étapes franchies restent',
+              'Vos {parcours.franchies} {parcours.franchies === 1 ? "étape franchie reste" : "étapes franchies restent"}',
+            )
+          : null,
+      (j) => alertesApres(j, 'dans votre historique'),
       (j) => act(j, 'Garder', 'garder'),
       (j) => act(j, 'Arrêter', 'arreter'),
     ]);
