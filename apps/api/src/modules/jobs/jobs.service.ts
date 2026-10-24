@@ -405,7 +405,12 @@ export class JobsService {
   async list(
     query: JobsQuery,
     viewerId: string | null,
-  ): Promise<Page<JobCard> & { sponsored: readonly JobCard[] }> {
+  ): Promise<
+    Page<JobCard> & {
+      sponsored: readonly JobCard[];
+      meta: { sponsoredLabel: string; sponsoredHeadSlots: number; total: number };
+    }
+  > {
     const now = new Date();
     const conditions: Prisma.JobListingWhereInput[] = [];
 
