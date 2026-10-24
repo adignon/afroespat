@@ -883,6 +883,20 @@ export const adminModerationCaseRowSchema = z
     aiLabels: z.array(z.string()),
     /** Confiance dans [0,1], nulle sans passage IA. Jamais un pourcentage. */
     aiScore: z.number().min(0).max(1).nullable(),
+    /**
+     * AJOUTS du lot « administration et contenu légal » : ce que l'écran de file a besoin
+     * de LIRE pour décider — l'extrait du contenu visé, les NOMS d'affichage de l'auteur
+     * et du modérateur assigné, le nombre de signalements. Jusqu'ici la route ne rendait
+     * que des UUID. Facultatifs au schéma : une API plus ancienne ne les porte pas.
+     */
+    title: z.string().nullable().optional(),
+    excerpt: z.string().nullable().optional(),
+    authorName: z.string().nullable().optional(),
+    authorHandle: z.string().nullable().optional(),
+    authorCity: z.string().nullable().optional(),
+    authorSince: z.string().nullable().optional(),
+    assignedName: z.string().nullable().optional(),
+    reportCount: z.number().int().optional(),
   })
   .strict();
 export type AdminModerationCaseRow = z.infer<typeof adminModerationCaseRowSchema>;
@@ -954,6 +968,20 @@ export const adminModerationCaseDetailSchema = z
     aiChecks: z.array(z.unknown()),
     authorHistory: z.unknown().nullable(),
     conversation: z.unknown().nullable(),
+    /**
+     * AJOUTS du lot « administration et contenu légal » : ce que l'écran de file a besoin
+     * de LIRE pour décider — l'extrait du contenu visé, les NOMS d'affichage de l'auteur
+     * et du modérateur assigné, le nombre de signalements. Jusqu'ici la route ne rendait
+     * que des UUID. Facultatifs au schéma : une API plus ancienne ne les porte pas.
+     */
+    title: z.string().nullable().optional(),
+    excerpt: z.string().nullable().optional(),
+    authorName: z.string().nullable().optional(),
+    authorHandle: z.string().nullable().optional(),
+    authorCity: z.string().nullable().optional(),
+    authorSince: z.string().nullable().optional(),
+    assignedName: z.string().nullable().optional(),
+    reportCount: z.number().int().optional(),
   })
   .strict();
 export type AdminModerationCaseDetail = z.infer<typeof adminModerationCaseDetailSchema>;
@@ -1095,6 +1123,19 @@ export const adminMemberDetailSchema = z
     activeSessions: z.array(z.unknown()),
     moderationCases: z.array(z.unknown()),
     stats: z.unknown(),
+    /** Notes internes (15 §3.2), visibles de l'équipe seulement. Ajout du lot « administration ». */
+    notes: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            createdAt: z.string().datetime(),
+            body: z.string(),
+            author: z.object({ id: z.string().uuid(), displayName: z.string() }).strict(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 export type AdminMemberDetail = z.infer<typeof adminMemberDetailSchema>;
@@ -1259,6 +1300,8 @@ export const adminStaffSessionResponseSchema = z
     staffId: z.string().uuid(),
     role: staffRoleSchema,
     sessionId: z.string().uuid(),
+    /** Ajout du lot « administration » : le nom d'affichage, pour la barre d'équipe. */
+    displayName: z.string().optional(),
   })
   .strict();
 export type AdminStaffSessionResponse = z.infer<typeof adminStaffSessionResponseSchema>;

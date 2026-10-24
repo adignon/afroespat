@@ -2,19 +2,15 @@ import { ScreenFrames } from '@/screens/frames';
 import { D09Desktop } from '@/screens/d09/desktop.generated';
 
 /**
- * D09 — les guides côté équipe. `/admin/guides` (T5 D09).
+ * D09 — Les guides côté équipe (05 §4) : propositions escaladées, signalés obsolètes, statut, retour arrière.
  *
- * Trois onglets : propositions escaladées (avant / après, Accepter / Refuser),
- * signalés obsolètes (avec le délai avant dépublication), et Tous.
+ * Le châssis (rail, titre, emplacement) est celui de la maquette transcodée ; la zone de
+ * contenu et la barre haute sont posées par l'adaptation `administration-vivante`
+ * (`tools/adaptations/administration-vivante.mjs`) : composants vivants, lecture ET
+ * écriture réelles. La session d'équipe est gardée par `(admin)/layout.tsx`.
  *
- * L'AVANT / APRÈS est dessiné mot à mot par la maquette — « dès l'obtention du
- * VLS-TS » devient « dès la validation du VLS-TS sur l'ANEF », la partie retirée
- * barrée et la partie ajoutée soulignée. C'est le cœur de l'écran, et il est
- * transcrit tel quel.
- *
- * Le délai avant dépublication (« dépublication dans 6 jours ») est ce qui rend
- * « Forcer la publication » et « Retour arrière » compréhensibles : la décision a
- * une échéance. Aucun des six boutons n'est branché.
+ * Aucun cadre mobile n'est dessiné par la maquette : `admin.css` empile le rail sous
+ * 1 024 px.
  */
 export default function Page() {
   return <ScreenFrames screen="D09" desktop={<D09Desktop />} />;

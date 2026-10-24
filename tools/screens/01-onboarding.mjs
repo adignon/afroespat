@@ -56,63 +56,26 @@
  * porteur voudra que « Passer » enregistre, il faudra un `<button>` — ce qui
  * change le dessin, donc c'est son arbitrage. REMONTÉ.
  *
- * ── P01 : DEUX LIENS BRANCHÉS, DEUX REFUSÉS, ET C'EST LE MÊME ÉCRAN ────────
+ * ── P01 ET P03 : LES QUATRE LIENS LÉGAUX SONT BRANCHÉS (lot « contenu légal ») ──
  *
- * La case de consentement écrit quatre liens, deux par largeur : « conditions
- * d'utilisation » / « politique de confidentialité » sur 1440 px, « conditions » /
- * « confidentialité » sur 390 px — la maquette raccourcit les deux libellés au
- * téléphone, ce sont donc quatre discriminants distincts et non deux écrits deux
- * fois.
+ * La case de consentement de P01 écrit quatre liens, deux par largeur : « conditions
+ * d'utilisation » / « politique de confidentialité » sur 1 440 px, « conditions » /
+ * « confidentialité » sur 390 px. Les quatre mènent maintenant à un VRAI document :
+ * `/p/cgu` et `/p/confidentialite`, servis par `GET /pages/:slug` (le texte vit dans
+ * `static_pages`, il est édité et publié depuis l'administration, D12).
  *
- * LA CONFIDENTIALITÉ EST BRANCHÉE : `/p/confidentialite`, et le slug n'est PAS
- * déduit du mot. Il est lu dans la table `SLUGS` de
- * `app/(onboarding)/p/[slug]/page.tsx`, qui est une liste FERMÉE de deux entrées
- * (`confidentialite`, `ressources`) — tout autre slug rend `404`.
+ * Avant ce lot, `/p/cgu` répondait 404 : « aucune route ne sert la page », et le seul
+ * document de la maquette était la politique de confidentialité, transcodée en dur
+ * (« Version 3 » alors que la base disait 0). Le document est maintenant LE CORPS DE LA
+ * BASE : titre, pastille de version, date d'entrée en vigueur et sommaire en viennent.
+ * Les textes livrés sont des BROUILLONS marqués « à faire valider par un juriste » ; le
+ * porteur publiera le sien.
  *
- * ╔═════════════════════════════════════════════════════════════════════════╗
- * ║ LES CONDITIONS D'UTILISATION RESTENT MORTES, ET C'EST LE REFUS LE PLUS      ║
- * ║ COÛTEUX DE CE LOT : IL EST SUR L'ÉCRAN PAR LEQUEL TOUT MEMBRE ENTRE         ║
- * ╚═════════════════════════════════════════════════════════════════════════╝
- *
- * `/p/cgu` RÉPOND 404. La ligne existe en base (`static_pages` porte `cgu` et
- * `confidentialite`, publiées), mais aucune route ne la sert, et `SLUGS` ne la
- * porte pas — délibérément : l'en-tête de ce fichier-là explique que la SEULE
- * planche de document que la maquette dessine est la politique de confidentialité,
- * et que brancher `cgu` dessus afficherait « Politique de confidentialité » à qui
- * demande les conditions. Sur un écran que le membre consulte AVANT d'accepter,
- * c'est un faux document avec son titre et ses pastilles de version.
- *
- * Écrire `vers: '/p/cgu'` produirait donc un lien qui a l'air vivant et rend 404 ;
- * écrire `vers: '/p/confidentialite'` enverrait les deux liens au même document, ce
- * qui est précisément la dérive que l'en-tête de `markLinks` interdit (« “Voir
- * tout” est écrit sur une dizaine d'écrans et ne mène pas deux fois au même
- * endroit »). Les deux liens restent donc morts, et le manque est REMONTÉ : il
- * faut la route `GET /pages/:slug` et une planche de conditions.
- *
- * ── P03 : LES DEUX LIENS RESTENT MORTS, ET AUCUN NE PEUT ÊTRE DÉCLARÉ ──────
- *
- * 1. LE SOMMAIRE (`<sc-for list="{{ toc }}" as="t">`, cinq entrées). Ce sont de
- *    vrais `<a href="#">`, et la destination devrait être une donnée
- *    (`vers: '{{ t.href }}'`). Mais il n'y a RIEN À VISER : la maquette n'écrit
- *    que DEUX `<h2>` dans le corps du document (« 1. Ce que nous collectons »,
- *    « 2. Où sont vos données ») pour CINQ entrées de sommaire — « Vos droits »,
- *    « Durées de conservation » et « Nous contacter » ne correspondent à aucune
- *    section dessinée — et AUCUN de ces deux titres ne porte d'ancre. Une
- *    destination inventée changerait l'URL sans rien déplacer à l'écran, ce qui
- *    est un lien qui marche et qui ne va nulle part : pire qu'un lien mort.
- *    Le générateur ne sait d'ailleurs pas ajouter d'`id` : il n'en pose que sur
- *    les titres de fenêtre (`titleFor`), et `donnees` ne lie que du contenu.
- *
- * 2. « VOIR NOS SOUS-TRAITANTS ». 00-fondations §8.2 dit où ils vivent : « Les
- *    sous-traitants hors UE (Twilio, Stripe, Anthropic, Didit) sont listés DANS LA
- *    POLITIQUE DE CONFIDENTIALITÉ » — c'est-à-dire dans une section de la page
- *    qu'on est en train de lire, et que la maquette ne dessine pas. Même impasse
- *    que le sommaire, et pour la même raison. REMONTÉ.
- *
- * Ces deux manques ont la MÊME cause que l'écart déjà consigné dans
- * `p/[slug]/page-screen.tsx` : le corps du document est transcodé de la maquette
- * parce qu'aucune route ne le sert. Le jour où `GET /pages/:slug` existera, le
- * sommaire et ses ancres viendront avec le document — pas d'ici.
+ * P03 : le sommaire (cinq entrées mortes) et « Voir nos sous-traitants » n'avaient rien à
+ * viser. Le sommaire est maintenant calculé sur les titres `## ` du document, chacun avec
+ * son ancre, et « Voir nos sous-traitants » vise la section « Sous-traitants » de la
+ * politique de confidentialité. Voir `components/document-legal.tsx` et l'adaptation
+ * `P03_DOCUMENT` de `tools/adaptations/administration-vivante.mjs`.
  *
  * ── CE QU'AUCUNE DÉCLARATION NE PEUT ATTRAPER : LE BOUTON RETOUR ───────────
  *
@@ -217,10 +180,8 @@ const retour = {
  *                    octet de son cadre produit — le drapeau ne touche que le
  *                    garde-fou — et ferme le trou avant qu'il s'ouvre.
  *
- * P01 ET P03 NE L'ONT PAS, et ce n'est pas un oubli : il leur reste deux liens
- * morts chacun, et les quatre sont des manques de ROUTE ou de PLANCHE, pas de
- * déclaration. Le poser ferait échouer la génération — « et pas seulement pour
- * vous », dit la consigne. Ils l'auront quand `/p/cgu` existera.
+ * P01 PORTE `navigationDeclaree` depuis que ses quatre liens sont adressés. P03 ne l'a
+ * pas : son cadre « Ressources » (560 px) garde la maquette telle quelle.
  *
  * P02 ne l'a pas non plus, et pour la raison inverse : il n'a plus aucun
  * `href="#"` (son lot précédent les a tous traités) mais il n'est pas de ce lot-ci,
@@ -232,13 +193,22 @@ export const screens = [
     frames: [1440, 390],
     liens: [
       {
+        texte: 'conditions d\'utilisation',
+        vers: '/p/cgu',
+        frames: ['Desktop'],
+        why: 'Les conditions d’utilisation, servies par `GET /pages/cgu` (lot « administration et contenu légal »). Brouillon à faire valider par un juriste tant que le porteur n’a pas publié son texte.',
+      },
+      {
+        texte: 'conditions',
+        vers: '/p/cgu',
+        frames: ['Mobile'],
+        why: 'Les mêmes conditions, au libellé que la maquette raccourcit à 390 px.',
+      },
+      {
         texte: 'politique de confidentialité',
         vers: '/p/confidentialite',
         frames: ['Desktop'],
-        why:
-          'Le document de confidentialité, P03 : `/p/confidentialite`. Le slug est RECOPIÉ de ' +
-          'la table fermée `SLUGS` de `app/(onboarding)/p/[slug]/page.tsx` — les deux seules ' +
-          'valeurs servies sont `confidentialite` et `ressources`.',
+        why: 'Le document de confidentialité, P03 : `/p/confidentialite`, servi par `GET /pages/confidentialite`.',
       },
       {
         texte: 'confidentialité',
@@ -249,6 +219,7 @@ export const screens = [
           '(« confidentialité » et non « politique de confidentialité »). Même slug, même source.',
       },
     ],
+    navigationDeclaree: true,
   },
   { section: 'P02', frames: [1440, 390] },
   // 560 px : la variante « Ressources », pas un mobile.

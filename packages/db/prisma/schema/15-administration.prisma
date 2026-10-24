@@ -56,6 +56,8 @@ model StaffUser {
   sanctionsIssued     Sanction[]
   scamAlertsCreated   ScamAlert[]
   alerts              StaffAlert[]
+  memberNotes         MemberNote[]
+  pageVersions        StaticPageVersion[]
 
   @@index([role])
   @@map("staff_users")
@@ -134,6 +136,8 @@ model StaticPage {
   updatedByStaffId String?   @map("updated_by_staff_id") @db.Uuid
 
   updatedByStaff StaffUser? @relation(fields: [updatedByStaffId], references: [id], onDelete: SetNull)
+
+  versions StaticPageVersion[]
 
   @@map("static_pages")
 }
@@ -219,4 +223,63 @@ model MetricSnapshot {
   @@unique([metric, dimension, periodStart])
   @@index([metric, periodStart])
   @@map("metric_snapshots")
+}
+
+/// Les VERSIONS d'une page statique — 15 §4.1 : « Markdown, prévisualisation,
+/// versionnées (`version` référencée par `consents.version`) ».
+///
+/// `static_pages` ne porte que la version EN VIGUEUR (ce que lit `GET /pages/:slug`
+/// et ce que `consents.version` référence) ; cette table garde l'historique ET le
+/// brouillon en cours. Une version est un brouillon tant que `published_at` est
+/// nul ; la publier copie son titre et son corps dans `static_pages`, y pose
+/// `version = <numéro>` et redemande le consentement pour `cgu` et `confidentialite`.
+///
+/// AJOUT du lot « administration et contenu légal » : §6 ne la prévoyait pas, mais
+/// l'écran D12 dessine « Versions : v1 v2 v3 » et « brouillon v4 », ce qu'une seule
+/// ligne par page ne sait pas porter.
+model StaticPageVersion {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  pageId  String @map("page_id") @db.Uuid
+  /// Numéro croissant par page ; `static_pages.version` en est l'écriture en chaîne.
+  version Int
+  title   String
+  body    String
+
+  publishedAt DateTime? @map("published_at") @db.Timestamptz
+  /// Le motif ou le résumé des changements, montré à l'équipe.
+  changelog   String?
+
+  createdByStaffId String? @map("created_by_staff_id") @db.Uuid
+
+  page            StaticPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  createdByStaff  StaffUser? @relation(fields: [createdByStaffId], references: [id], onDelete: SetNull)
+
+  @@unique([pageId, version])
+  @@index([pageId])
+  @@map("static_page_versions")
+}
+
+/// Notes internes sur un membre — 15 §3.2 (« Ajouter une note interne : visible
+/// équipe seulement, journalisée ») et §6 (table `member_notes`, `std`).
+///
+/// §11 : supprimées avec le membre (`onDelete: Cascade`). C'est la raison pour
+/// laquelle elles ne vivent PAS dans `audit_logs.metadata` : le journal est en
+/// ajout seul et ne pourrait pas les effacer.
+model MemberNote {
+  id        String   @id @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  userId  String @map("user_id") @db.Uuid
+  staffId String @map("staff_id") @db.Uuid
+  body    String
+
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  staff StaffUser @relation(fields: [staffId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@map("member_notes")
 }

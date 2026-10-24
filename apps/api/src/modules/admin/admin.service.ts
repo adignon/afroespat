@@ -850,6 +850,20 @@ export class AdminService {
         verifiedAt: phone.verifiedAt,
       })),
       activeSessions: sessions,
+      // 15 §3.2 : « Ajouter une note interne — visible équipe seulement, journalisée ».
+      notes: (
+        await this.prisma.memberNote.findMany({
+          where: { userId },
+          orderBy: { id: 'desc' },
+          take: 50,
+          select: { id: true, createdAt: true, body: true, staff: { select: { id: true, displayName: true } } },
+        })
+      ).map((n) => ({
+        id: n.id,
+        createdAt: n.createdAt,
+        body: n.body,
+        author: { id: n.staff.id, displayName: n.staff.displayName },
+      })),
       moderationCases: await this.prisma.moderationCase.findMany({
         where: { subjectAuthorUserId: userId },
         select: { id: true, createdAt: true, subjectType: true, priority: true, status: true, resolution: true },

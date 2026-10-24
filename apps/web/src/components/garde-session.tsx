@@ -3,6 +3,8 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
+import { BandeauAnnonce } from './bandeau-annonce';
+import { FenetreConsentement } from './fenetre-consentement';
 
 /**
  * LA GARDE DE SESSION — un visiteur non identifié est renvoyé vers la connexion.
@@ -85,5 +87,17 @@ export function GardeSession({ children }: { readonly children: React.ReactNode 
     };
   }, [tranchee, router, chemin]);
 
-  return <>{children}</>;
+  /**
+   * Deux ajouts du lot « contenu légal », posés ICI parce que c'est le seul endroit où l'on
+   * sait qu'une session existe : le bandeau d'annonce d'équipe (15 §4.2) et la fenêtre qui
+   * redemande le consentement quand un document légal change (01 §2.10). Ni l'un ni l'autre
+   * ne s'ouvre sans session — le rendu serveur (`tranchee` faux) n'en montre rien.
+   */
+  return (
+    <>
+      {tranchee ? <BandeauAnnonce /> : null}
+      {children}
+      {tranchee ? <FenetreConsentement /> : null}
+    </>
+  );
 }

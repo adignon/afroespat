@@ -520,6 +520,8 @@ export class AccountService {
     await tx.userProfile.deleteMany({ where: { userId } });
     await tx.dataExport.deleteMany({ where: { userId } });
     await tx.bookmark.deleteMany({ where: { userId } });
+    // 15 §11 : « `member_notes` : supprimées » — les notes internes ne survivent pas au membre.
+    await tx.memberNote.deleteMany({ where: { userId } });
 
     /**
      * L'anonymisation de `users` (§2.8) : « `handle` remplacé par

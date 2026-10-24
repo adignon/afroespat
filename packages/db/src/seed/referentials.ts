@@ -299,7 +299,8 @@ export const PROFESSIONS: { nameFr: string; category: string }[] = [
  * Les pages statiques dont un consentement a besoin — 01 §2.10.
  *
  * Leur contenu est ÉDITORIAL et attend le porteur : ces entrées sont des
- * gabarits explicites, en version `0`.
+ * BROUILLONS explicites (« à faire valider par un juriste »), en version `0`.
+ * Le porteur publie son texte définitif depuis l'administration (D12), en version 1.
  *
  * Ce n'est pas un pis-aller mais le mécanisme prévu. §2.10 dit qu'« une nouvelle
  * version des CGU redemande le consentement à la prochaine connexion » : les
@@ -313,24 +314,12 @@ export const STATIC_PAGES: {
   version: string;
   body: string;
 }[] = [
-  {
-    slug: 'cgu',
-    title: 'Conditions générales d’utilisation',
-    version: '0',
-    body:
-      'Texte provisoire, en attente de rédaction.\n\n' +
-      'Cette page existe pour que le consentement enregistré à l’inscription porte ' +
-      'sur un document identifié. Dès que les conditions définitives seront publiées ' +
-      'en version 1, le consentement sera redemandé à la connexion suivante (§2.10).',
-  },
-  {
-    slug: 'confidentialite',
-    title: 'Politique de confidentialité',
-    version: '0',
-    body:
-      'Texte provisoire, en attente de rédaction.\n\n' +
-      'Cette page existe pour que le consentement enregistré à l’inscription porte ' +
-      'sur un document identifié. Dès que la politique définitive sera publiée en ' +
-      'version 1, le consentement sera redemandé à la connexion suivante (§2.10).',
-  },
+  { slug: 'cgu', title: 'Conditions générales d’utilisation', version: '0', body: 
+    "> **BROUILLON — à faire valider par un juriste avant toute publication.** Ce texte est un gabarit de travail : il décrit le fonctionnement prévu de la plateforme, il ne vaut pas conditions juridiques tant que le porteur n'a pas fourni le texte définitif.\n\n## 1. Objet\n\nLes présentes conditions encadrent l'utilisation de la plateforme d'entraide destinée aux personnes en parcours de migration entre l'Afrique et l'Europe. En créant un compte, vous reconnaissez les avoir lues.\n\n## 2. Votre compte\n\nVotre compte est personnel et lié à votre numéro de téléphone. Vous êtes responsable de l'usage qui en est fait. Les informations que vous donnez doivent être exactes.\n\n## 3. Règles de conduite\n\n- Respectez les autres membres : pas d'insultes, de harcèlement ni de discrimination.\n- Ne demandez ni n'envoyez d'argent à des inconnus ; méfiez-vous des offres trop belles.\n- Ne publiez aucun document d'identité, numéro de compte ou donnée personnelle d'un tiers.\n\n## 4. Contenus publiés\n\nVous restez propriétaire de ce que vous publiez. Vous nous autorisez à l'afficher aux autres membres selon la visibilité que vous avez choisie. L'équipe peut masquer ou retirer un contenu contraire aux règles.\n\n## 5. Sanctions\n\nUn manquement peut entraîner un avertissement, une suspension ou la fermeture du compte. Vous pouvez contester une sanction depuis votre compte.\n\n## 6. Responsabilité\n\nLes informations et guides sont fournis par des membres à titre indicatif ; ils ne remplacent pas l'avis d'un professionnel ni les sources officielles.\n\n## 7. Modification des conditions\n\nSi ces conditions changent, nous vous demanderons de les accepter à nouveau à votre prochaine visite.\n" },
+  { slug: 'confidentialite', title: 'Politique de confidentialité', version: '0', body: 
+    "> **BROUILLON — à faire valider par un juriste avant toute publication.** Ce texte est un gabarit de travail : il décrit le fonctionnement prévu de la plateforme, il ne vaut pas conditions juridiques tant que le porteur n'a pas fourni le texte définitif.\n\n## 1. Ce que nous collectons\n\nVotre numéro de téléphone sert uniquement à vous connecter. Il n'est jamais affiché aux autres membres, ni transmis à un partenaire.\n\n- Pseudo, nom d'affichage, ville et phase de parcours\n- Contenus que vous publiez\n- Préférences de notification\n\n## 2. Où sont vos données\n\nLes données sont hébergées dans l'Union européenne. [Voir nos sous-traitants](#3-sous-traitants).\n\n## 3. Sous-traitants\n\nCertains prestataires techniques traitent des données pour notre compte : envoi de SMS, vérification d'identité, stockage et modération assistée. La liste définitive, avec leur pays et leur rôle, sera inscrite ici par le porteur ; elle doit mentionner tout sous-traitant situé hors de l'Union européenne.\n\n## 4. Vos droits\n\nVous pouvez accéder à vos données, les rectifier, les exporter ou demander leur suppression depuis votre compte, ou en écrivant à l'équipe.\n\n## 5. Durées de conservation\n\nLes données d'un compte supprimé sont effacées ou anonymisées après un délai de sept jours. Les journaux de sécurité sont conservés cinq ans.\n\n## 6. Nous contacter\n\nPour toute question sur vos données, écrivez à l'adresse de contact indiquée dans les mentions légales.\n" },
+  { slug: 'cookies', title: 'Politique relative aux cookies', version: '0', body: 
+    "> **BROUILLON — à faire valider par un juriste avant toute publication.** Ce texte est un gabarit de travail : il décrit le fonctionnement prévu de la plateforme, il ne vaut pas conditions juridiques tant que le porteur n'a pas fourni le texte définitif.\n\n## 1. Ce que sont les témoins de connexion\n\nCe sont de petits fichiers déposés sur votre appareil pour faire fonctionner le service.\n\n## 2. Ceux que nous utilisons\n\n- Un témoin de session, nécessaire pour rester connecté·e.\n- Un témoin de préférences (par exemple, une annonce fermée).\n\nNous n'utilisons aucun témoin publicitaire.\n\n## 3. Les refuser\n\nLes témoins nécessaires ne se désactivent pas : sans eux, vous ne pourriez pas vous connecter. Vous pouvez effacer les autres depuis les réglages de votre navigateur.\n" },
+  { slug: 'mentions-legales', title: 'Mentions légales', version: '0', body: 
+    "> **BROUILLON — à faire valider par un juriste avant toute publication.** Ce texte est un gabarit de travail : il décrit le fonctionnement prévu de la plateforme, il ne vaut pas conditions juridiques tant que le porteur n'a pas fourni le texte définitif.\n\n## 1. Éditeur\n\nNom de l'éditeur, forme juridique, adresse et numéro d'immatriculation : à compléter par le porteur.\n\n## 2. Directeur de la publication\n\nÀ compléter par le porteur.\n\n## 3. Hébergeur\n\nNom, adresse et contact de l'hébergeur : à compléter par le porteur.\n\n## 4. Contact\n\nAdresse électronique de contact : à compléter par le porteur.\n" },
 ];

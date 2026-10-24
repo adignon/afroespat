@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ACCOUNT_ERROR_CODES, ACCOUNT_ERROR_MESSAGES } from '../validation/account.js';
 import { ADMIN_ERROR_CODES, ADMIN_ERROR_MESSAGES } from '../validation/admin.js';
+import { ADMIN_CONTENT_ERROR_CODES, ADMIN_CONTENT_ERROR_MESSAGES } from '../validation/admin-content.js';
 import { AUTH_ERROR_CODES, AUTH_ERROR_MESSAGES } from '../validation/auth.js';
 import { BILLING_ERROR_CODES, BILLING_ERROR_MESSAGES } from '../validation/billing.js';
 import { CITY_ERROR_CODES, CITY_ERROR_MESSAGES } from '../validation/cities.js';
@@ -54,6 +55,7 @@ import { TRANSVERSE_ERROR_CODES, TRANSVERSE_ERROR_MESSAGES } from './errors.js';
 const TABLES = [
   ACCOUNT_ERROR_CODES,
   ADMIN_ERROR_CODES,
+  ADMIN_CONTENT_ERROR_CODES,
   AUTH_ERROR_CODES,
   BILLING_ERROR_CODES,
   CITY_ERROR_CODES,
@@ -78,6 +80,7 @@ const TABLES = [
 const MESSAGE_TABLES = [
   ACCOUNT_ERROR_MESSAGES,
   ADMIN_ERROR_MESSAGES,
+  ADMIN_CONTENT_ERROR_MESSAGES,
   AUTH_ERROR_MESSAGES,
   BILLING_ERROR_MESSAGES,
   CITY_ERROR_MESSAGES,

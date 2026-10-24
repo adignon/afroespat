@@ -474,6 +474,72 @@ export class AnalyticsService {
     }));
   }
 
+  /** Le client, pour qu'un contrôleur de ce module écrive une trace d'audit. */
+  prismaClient(): PrismaService {
+    return this.prisma;
+  }
+
+  /**
+   * 15 §5.2 : « Migration : parcours restés sur une version archivée ».
+   *
+   * CALCULÉ À LA DEMANDE, pas lu dans `metric_snapshots` : c'est une question sur
+   * l'état courant (combien de parcours EN COURS restent figés sur une version que
+   * plus aucun nouveau parcours ne prend), et un instantané horaire la rendrait
+   * fausse juste après une publication — le moment précis où l'équipe la pose.
+   *
+   * AGRÉGÉ, jamais nominatif (§5.3) : un effectif par version, aucun identifiant de
+   * membre. Seuls les parcours ACTIVE et PAUSED comptent : un parcours terminé ou
+   * abandonné n'a aucune raison de migrer.
+   */
+  async migrations(): Promise<
+    {
+      templateId: string;
+      templateCode: string;
+      templateName: string;
+      versionId: string;
+      version: number;
+      originCountryId: string | null;
+      journeys: number;
+      currentVersion: number | null;
+    }[]
+  > {
+    const grouped = await this.prisma.journey.groupBy({
+      by: ['templateVersionId'],
+      where: { status: { in: ['ACTIVE', 'PAUSED'] }, templateVersion: { status: 'ARCHIVED' } },
+      _count: { _all: true },
+    });
+    if (grouped.length === 0) return [];
+    const versions = await this.prisma.journeyTemplateVersion.findMany({
+      where: { id: { in: grouped.map((g) => g.templateVersionId) } },
+      select: {
+        id: true,
+        version: true,
+        originCountryId: true,
+        template: { select: { id: true, code: true, nameFr: true } },
+      },
+    });
+    const published = await this.prisma.journeyTemplateVersion.findMany({
+      where: { status: 'PUBLISHED', templateId: { in: versions.map((v) => v.template.id) } },
+      select: { templateId: true, version: true, originCountryId: true },
+    });
+    const counts = new Map(grouped.map((g) => [g.templateVersionId, g._count._all]));
+    return versions
+      .map((v) => ({
+        templateId: v.template.id,
+        templateCode: v.template.code,
+        templateName: v.template.nameFr,
+        versionId: v.id,
+        version: v.version,
+        originCountryId: v.originCountryId,
+        journeys: counts.get(v.id) ?? 0,
+        currentVersion:
+          published.find((p) => p.templateId === v.template.id && p.originCountryId === v.originCountryId)?.version ??
+          published.find((p) => p.templateId === v.template.id && p.originCountryId === null)?.version ??
+          null,
+      }))
+      .sort((a, b) => b.journeys - a.journeys);
+  }
+
   /** La courbe d'une métrique — ce pour quoi §6 crée la table. */
   async series(
     metric: string,

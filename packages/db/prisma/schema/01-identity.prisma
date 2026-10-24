@@ -175,6 +175,7 @@ model User {
   skills                  UserSkill[]
   stats                   UserStats?
   consents                Consent[]
+  memberNotes             MemberNote[]
   deletionRequests        AccountDeletionRequest[]
   dataExports             DataExport[]
   mediaAssets             MediaAsset[]                 @relation("MediaOwner")

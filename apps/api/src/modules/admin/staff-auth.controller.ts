@@ -147,7 +147,8 @@ export class StaffAuthController {
   @Post('session')
   @RequiresStaffRole(...STAFF_SCOPES.memberRead)
   @ApiOperation({ summary: 'La session d’équipe courante : identifiant et rôle' })
-  session(@Staff() staff: StaffUser) {
-    return { staffId: staff.staffId, role: staff.role, sessionId: staff.sessionId };
+  async session(@Staff() staff: StaffUser) {
+    // Le nom d'affichage sert au rond d'avatar et au menu de la barre d'équipe.
+    return { staffId: staff.staffId, role: staff.role, sessionId: staff.sessionId, displayName: await this.auth.displayNameOf(staff.staffId) };
   }
 }

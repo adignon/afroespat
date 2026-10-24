@@ -1347,6 +1347,36 @@ describe('administration (15)', () => {
       // `moderation-pipeline.int.test.ts` (lot G) : marquer SA propre alerte comme lue
       // n'est pas une décision de modération — rien d'auditable, c'est un drapeau de lecture.
       'POST /v1/admin/moderation/alerts/{id}/read',
+      // Lot « administration et contenu légal » : pages, annonces, drapeaux, actions membre
+      // (note, suppression immédiate, export), modèles de parcours et guides côté équipe.
+      // Leurs traces d'audit sont vérifiées dans `admin-content.int.test.ts`, à côté de la
+      // logique qu'elles tracent.
+      'POST /v1/admin/pages',
+      'PUT /v1/admin/pages/{id}',
+      'DELETE /v1/admin/pages/{id}',
+      'POST /v1/admin/pages/{id}/publish',
+      'POST /v1/admin/announcements',
+      'PUT /v1/admin/announcements/{id}',
+      'DELETE /v1/admin/announcements/{id}',
+      'POST /v1/admin/flags',
+      'PATCH /v1/admin/flags/{id}',
+      'DELETE /v1/admin/flags/{id}',
+      'POST /v1/admin/users/{id}/note',
+      'POST /v1/admin/users/{id}/delete-now',
+      'POST /v1/admin/users/{id}/export',
+      'POST /v1/admin/journey-templates/templates',
+      'PATCH /v1/admin/journey-templates/templates/{id}',
+      'POST /v1/admin/journey-templates/templates/{id}/versions',
+      'POST /v1/admin/journey-templates/step-definitions',
+      'PATCH /v1/admin/journey-templates/step-definitions/{id}',
+      'PUT /v1/admin/journey-templates/versions/{id}/steps',
+      'POST /v1/admin/journey-templates/versions/{id}/publish',
+      'POST /v1/admin/journey-templates/versions/{id}/archive',
+      'POST /v1/admin/journey-templates/correction-proposals/{id}',
+      'POST /v1/admin/guides/proposals/{id}/decide',
+      'POST /v1/admin/guides/{id}/status',
+      'POST /v1/admin/guides/{id}/revert',
+      'PUT /v1/admin/guides/{id}/maintained',
       // Refusée par construction : elle n'écrit jamais rien (voir `deleteStaff`).
       'DELETE /v1/admin/staff/{id}',
       // Module 14. L'audit de ces sept routes est vérifié dans

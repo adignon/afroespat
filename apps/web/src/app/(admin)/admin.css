@@ -1,0 +1,88 @@
+/*
+ * L'APPLICATION D'ÉQUIPE SOUS 1 024 px — AJOUT, que la maquette ne dessine pas.
+ *
+ * `10 Administration` n'a QU'UN cadre de 1 440 px (« application d'ordinateur, plus
+ * dense, tableaux »). Mesuré avant ce lot : à 390 px la page faisait 603 px de large et
+ * le tableau de la file était coupé. Sous 1 024 px, donc :
+ *
+ *   · le cadre passe en colonne : le rail au-dessus, le contenu dessous ;
+ *   · le rail devient une BANDE défilante horizontalement (mêmes entrées, même ordre,
+ *     mêmes couleurs) — le logo « Admin » reste à gauche ;
+ *   · la colonne de contenu perd son retrait de droite et prend 16 px de gouttière ;
+ *   · les tableaux denses défilent DANS leur carte (`data-admin-defile`), jamais la page.
+ *
+ * `!important` est nécessaire : les styles de la maquette sont en ligne, donc plus
+ * spécifiques que n'importe quelle feuille.
+ */
+@media (max-width: 1023px) {
+  [data-admin] [data-frame='desktop'] {
+    flex-direction: column !important;
+  }
+  [data-admin] [data-admin-rail] {
+    width: 100% !important;
+    padding: 0 16px !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 8px;
+  }
+  [data-admin] [data-admin-rail] > div:first-child {
+    flex-shrink: 0;
+  }
+  [data-admin] [data-admin-rail] > div:first-child span {
+    display: none;
+  }
+  [data-admin] [data-admin-rail] nav {
+    flex-direction: row !important;
+    overflow-x: auto;
+    margin-top: 0 !important;
+    flex: 1;
+    min-width: 0;
+    border-radius: 16px !important;
+  }
+  [data-admin] [data-admin-rail] nav a {
+    white-space: nowrap;
+    flex-shrink: 0;
+    height: 38px !important;
+  }
+  [data-admin] [data-admin-main] {
+    padding: 0 16px 24px 16px !important;
+  }
+  [data-admin] [data-admin-bar] {
+    height: 56px !important;
+  }
+  [data-admin] [data-admin-defile] {
+    overflow-x: auto;
+  }
+}
+
+/* Les colonnes de contenu : une seule sous 1 024 px, le gabarit de la maquette au-delà. */
+.admin-colonnes {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 1024px) {
+  .admin-colonnes {
+    grid-template-columns: var(--cols);
+  }
+}
+
+/* Les cases de la fiche membre : deux colonnes dès 640 px, une seule en dessous. */
+.admin-cases {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 640px) {
+  .admin-cases {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Le rapport d'impact s'imprime (« Imprimer / PDF ») : ni rail, ni barre, ni boutons. */
+@media print {
+  [data-admin] [data-admin-rail],
+  [data-admin] [data-admin-bar],
+  [data-admin] [data-no-print] {
+    display: none !important;
+  }
+  [data-admin] [data-frame='desktop'] {
+    display: block !important;
+  }
+}

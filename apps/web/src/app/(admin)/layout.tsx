@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { FournisseurEquipe } from '@/components/admin/session-equipe';
+import './admin.css';
 
 /**
  * LE GROUPE DE ROUTES DE L'APPLICATION D'ÉQUIPE.
@@ -46,6 +48,16 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/**
+ * Lot « administration vivante » : le layout n'est plus vide. Il porte maintenant
+ * (1) la SESSION d'équipe — `FournisseurEquipe` lit le rôle et renvoie vers
+ * `/admin/connexion` sans session — et (2) `admin.css`, qui rend l'application lisible
+ * sous 1 024 px, largeur que la maquette ne dessine pas (voir ce fichier).
+ */
 export default function AdminLayout({ children }: { readonly children: React.ReactNode }) {
-  return children;
+  return (
+    <FournisseurEquipe>
+      <div data-admin="">{children}</div>
+    </FournisseurEquipe>
+  );
 }

@@ -107,6 +107,17 @@ async function main(): Promise<void> {
       update: { title: page.title },
       create: { id: newId(), ...page, publishedAt: new Date() },
     });
+    // Un gabarit encore en version « 0 » reçoit le brouillon à jour ; une page dont le porteur
+    // a publié une vraie version (≥ 1) n'est JAMAIS touchée.
+    await prisma.staticPage.updateMany({ where: { slug: page.slug, version: '0' }, data: { body: page.body } });
+    const row = await prisma.staticPage.findUniqueOrThrow({ where: { slug: page.slug }, select: { id: true, title: true, body: true, version: true, publishedAt: true } });
+    if (/^[0-9]+$/.test(row.version) && row.publishedAt !== null) {
+      await prisma.staticPageVersion.upsert({
+        where: { pageId_version: { pageId: row.id, version: Number(row.version) } },
+        update: row.version === '0' ? { body: row.body } : {},
+        create: { id: newId(), pageId: row.id, version: Number(row.version), title: row.title, body: row.body, publishedAt: row.publishedAt },
+      });
+    }
   }
   log(`  pages statiques : ${STATIC_PAGES.length} (gabarits en version 0 — texte à venir)`);
 

@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { CryptoService } from './crypto.service';
+import { FeatureFlagService } from './feature-flag.service';
 import { OutboxService } from './outbox.service';
 import { PrismaService } from './prisma.service';
 import { TokenService } from './token.service';
@@ -12,7 +13,7 @@ import { VisibilityService } from './visibility.service';
  */
 @Global()
 @Module({
-  providers: [PrismaService, CryptoService, OutboxService, AuditService, TokenService, VisibilityService],
-  exports: [PrismaService, CryptoService, OutboxService, AuditService, TokenService, VisibilityService],
+  providers: [PrismaService, CryptoService, OutboxService, AuditService, TokenService, VisibilityService, FeatureFlagService],
+  exports: [PrismaService, CryptoService, OutboxService, AuditService, TokenService, VisibilityService, FeatureFlagService],
 })
 export class CommonModule {}
