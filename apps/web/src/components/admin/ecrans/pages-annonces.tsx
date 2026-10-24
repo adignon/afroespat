@@ -19,7 +19,7 @@ import { staffApi } from '@/lib/api/index';
 import { CorpsMarkdown } from '../../markdown-legal';
 import { toutesLesVilles } from '../donnees';
 import { useDroit } from '../session-equipe';
-import { Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Fenetre, Lecture, Message, Onglets, Pastille, Titre, Vide, ZoneTexte, dateLongue, useCharge, useGeste } from '../ui';
+import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Fenetre, Lecture, Message, Onglets, Pastille, Titre, Vide, ZoneTexte, dateLongue, useCharge, useGeste } from '../ui';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -105,7 +105,7 @@ function Creation({ ouverte, onFermer, onFait }: { readonly ouverte: boolean; re
   const creer = async () => {
     const corps = pageCreateSchema.safeParse({ slug: slug.trim(), title: titre.trim(), body: '## 1. Titre de la première section\n\nTexte.' });
     if (!corps.success) {
-      await geste.lancer(() => Promise.reject(new Error('L’identifiant s’écrit en minuscules, chiffres et tirets (p. ex. a-propos).')));
+      geste.prevenir('L’identifiant s’écrit en minuscules, chiffres et tirets (p. ex. a-propos).');
       return;
     }
     let id = '';
@@ -221,34 +221,39 @@ function Annonces() {
   const peut = useDroit('content');
   const liste = useCharge(() => staffApi.get('/announcements?limit=50', adminAnnouncementsResponseSchema), 'annonces');
   const [sel, setSel] = useState<string | null>(null);
+  // Le message de succès vit ICI : le formulaire est remonté (clé) quand la liste recharge.
+  const [info, setInfo] = useState<string | null>(null);
   useEffect(() => {
     if (sel === null && liste.etat.phase === 'pret') setSel(liste.etat.donnees.items[0]?.id ?? 'nouvelle');
   }, [sel, liste.etat]);
   return (
     <Lecture etat={liste.etat} recharger={liste.recharger}>
       {(d) => (
+        <>
+        {info === null ? null : <Bandeau role="status">{info}</Bandeau>}
         <Colonnes gabarit="minmax(0,300px) minmax(0,1fr)">
           <Carte style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
             {d.items.map((a) => (
-              <button key={a.id} type="button" onClick={() => setSel(a.id)} style={{ textAlign: 'left', border: 'none', borderRadius: '12px', padding: '12px 14px', font: 'inherit', fontSize: '14px', fontWeight: a.id === sel ? 700 : 500, background: a.id === sel ? C.vertPale : 'transparent', cursor: 'pointer' }}>
+              <button key={a.id} type="button" onClick={() => { setInfo(null); setSel(a.id); }} style={{ textAlign: 'left', border: 'none', borderRadius: '12px', padding: '12px 14px', font: 'inherit', fontSize: '14px', fontWeight: a.id === sel ? 700 : 500, background: a.id === sel ? C.vertPale : 'transparent', cursor: 'pointer' }}>
                 {a.title}
                 <span style={{ color: a.state === 'active' ? C.vertFonce : C.gris, fontWeight: 600 }}> · {ETATS[a.state]}</span>
               </button>
             ))}
             <div style={{ padding: '8px 6px 4px' }}>
-              <Bouton petit ton="contour" plein disabled={!peut} onClick={() => setSel('nouvelle')}>
+              <Bouton petit ton="contour" plein disabled={!peut} onClick={() => { setInfo(null); setSel('nouvelle'); }}>
                 + Nouvelle annonce
               </Bouton>
             </div>
           </Carte>
-          <FormulaireAnnonce key={sel ?? 'rien'} annonce={d.items.find((a) => a.id === sel) ?? null} peut={peut} onFait={(id) => { if (id !== null) setSel(id); else setSel(null); liste.recharger(); }} />
+          <FormulaireAnnonce key={`${sel ?? 'rien'}:${d.items.find((a) => a.id === sel)?.id ?? 'absente'}`} annonce={d.items.find((a) => a.id === sel) ?? null} peut={peut} onFait={(id, texte) => { if (id !== null) setSel(id); else setSel(null); setInfo(texte); liste.recharger(); }} />
         </Colonnes>
+        </>
       )}
     </Lecture>
   );
 }
 
-function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminAnnouncement | null; readonly peut: boolean; readonly onFait: (id: string | null) => void }) {
+function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminAnnouncement | null; readonly peut: boolean; readonly onFait: (id: string | null, texte: string) => void }) {
   const geste = useGeste();
   const villes = useCharge(() => toutesLesVilles(), 'villes');
   const [titre, setTitre] = useState(annonce?.title ?? '');
@@ -274,13 +279,13 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
     const ok = await geste.lancer(async () => {
       if (annonce === null) id = (await staffApi.post('/announcements', adminAnnouncementSchema, { body: valide.data })).id;
       else await staffApi.put(`/announcements/${annonce.id}`, adminAnnouncementSchema, { body: valide.data });
-    }, 'Annonce enregistrée.');
-    if (ok) onFait(id);
+    });
+    if (ok) onFait(id, annonce === null ? 'Annonce publiée : les membres ciblés la voient en tête de l’accueil.' : 'Annonce enregistrée.');
   };
   const supprimer = async () => {
     if (annonce === null) return;
-    const ok = await geste.lancer(() => staffApi.del(`/announcements/${annonce.id}`, okResponseSchema), 'Annonce supprimée.');
-    if (ok) onFait(null);
+    const ok = await geste.lancer(() => staffApi.del(`/announcements/${annonce.id}`, okResponseSchema));
+    if (ok) onFait(null, 'Annonce supprimée.');
   };
   const nomsVilles = villes.etat.phase === 'pret' ? villes.etat.donnees.filter((v) => v.isActive) : [];
 
@@ -314,7 +319,7 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
         Aperçu : {titre === '' ? 'Titre de l’annonce' : titre}
         {texte === '' ? '' : ` — ${texte}`}
       </div>
-      {!valide.success && (titre !== '' || texte !== '') ? <Bandeau ton="attention">{valide.error.issues[0]?.message ?? 'Annonce incomplète.'}</Bandeau> : null}
+      {!valide.success && (titre !== '' || texte !== '') ? <Bandeau ton="attention">{premierDefaut(valide.error.issues, { title: 'Titre', body: 'Texte', startsAt: 'Début', endsAt: 'Fin' })}</Bandeau> : null}
       <Message message={geste.message} />
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <Bouton ton="principal" disabled={!peut || !valide.success || geste.occupe} onClick={() => void enregistrer()}>

@@ -55,6 +55,16 @@
   }
 }
 
+/* D02 : la rangée « indicateur clé / alertes » s'empile, les cartes passent à deux colonnes. */
+@media (max-width: 1023px) {
+  [data-admin] [data-admin-d02-haut] {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  [data-admin] [data-admin-d02-cartes] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
 /* Les colonnes de contenu : une seule sous 1 024 px, le gabarit de la maquette au-delà. */
 .admin-colonnes {
   grid-template-columns: minmax(0, 1fr);
@@ -84,5 +94,48 @@
   }
   [data-admin] [data-frame='desktop'] {
     display: block !important;
+  }
+}
+
+/* Tableaux à gestes (D08, D13) : sur grand écran le tableau, sous 1 024 px une carte par ville (gestes sans défilement). */
+.admin-cartes-mobile {
+  display: none !important;
+}
+@media (max-width: 1023px) {
+  .admin-cartes-mobile {
+    display: flex !important;
+  }
+  .admin-table-bureau {
+    display: none !important;
+  }
+}
+
+/*
+ * Tableaux à gestes SANS carte dédiée (flags, équipe, journal d'audit) : sous 1 024 px chaque
+ * ligne devient un bloc de cellules qui passent à la ligne — le geste (« Modifier », le rôle,
+ * l'interrupteur) reste visible sans faire défiler la table.
+ */
+@media (max-width: 1023px) {
+  [data-admin] table[data-admin-pile] {
+    min-width: 0 !important;
+    display: block;
+  }
+  [data-admin] table[data-admin-pile] thead {
+    display: none;
+  }
+  [data-admin] table[data-admin-pile] tbody {
+    display: block;
+  }
+  [data-admin] table[data-admin-pile] tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    padding: 10px 14px;
+  }
+  [data-admin] table[data-admin-pile] td {
+    display: block;
+    padding: 2px 0 !important;
+    min-width: 0 !important;
   }
 }

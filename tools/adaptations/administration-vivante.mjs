@@ -125,6 +125,68 @@ const ADMIN_CONNEXION = {
 
 
 /**
+ * ── D02 : AUCUN NOMBRE INVENTÉ SUR LE TABLEAU DE BORD ─────────────────────────
+ *
+ * Sept cartes de D02 ne sont pas liées à l'API (voir `screens/administration/data.ts`) et
+ * la maquette y dessine des nombres d'exemple (« 27,4 % », « 3 420 € », « 148 »…). Vues
+ * sur un vrai tableau de bord, elles se lisent comme des mesures — et c'est faux : une
+ * base neuve affichait « MRR 3 420 € » à côté de « Inscrits — ». Elles prennent donc le
+ * même tiret que les cartes liées en attente, et le bandeau d'alertes, qui n'a pas de
+ * source, dit qu'il n'a pas de mesure plutôt que de lister trois alertes d'exemple.
+ * La ligne d'objectif (30 %) est une règle de la spec : elle reste.
+ */
+const D02_FIXES = [
+  ['>File</span><strong>46</strong>', '>File</span><strong>—</strong>'],
+  ['>SLA respecté</span><strong>93 %</strong>', '>SLA respecté</span><strong>—</strong>'],
+  ['>MRR</span><strong>3 420 €</strong>', '>MRR</span><strong>—</strong>'],
+  ['>Mobile Money</span><strong>58 %</strong>', '>Mobile Money</span><strong>—</strong>'],
+  ['>Affiliation</span><strong>610 €</strong>', '>Affiliation</span><strong>—</strong>'],
+  ['>En cours</span><strong>148</strong>', '>En cours</span><strong>—</strong>'],
+  ['>Note</span><strong>4,7</strong>', '>Note</span><strong>—</strong>'],
+  ['>Ce mois</span><strong>94</strong>', '>Ce mois</span><strong>—</strong>'],
+  ['>Présences</span><strong>2 310</strong>', '>Présences</span><strong>—</strong>'],
+  ['>Actifs</span><strong>72</strong>', '>Actifs</span><strong>—</strong>'],
+  ['>Intérêt</span><strong>31</strong>', '>Intérêt</span><strong>—</strong>'],
+  ['>27,4 %</span>', '>—</span>'],
+];
+
+const D02_SANS_INVENTION = {
+  screens: ['D02'],
+  nom: 'D02_SANS_INVENTION',
+  why: 'Les sept cartes de D02 que l’API ne sert pas prennent un tiret au lieu des nombres d’exemple de la maquette ; la courbe, les trois villes et les trois alertes d’exemple disparaissent au profit d’une phrase « pas encore de mesure ».',
+  provides: [],
+  apply(jsx) {
+    let out = jsx;
+    for (const [de, vers] of D02_FIXES) {
+      if (out.split(de).length !== 2) return { jsx, applied: false };
+      out = out.replace(de, vers);
+    }
+    // « +2,1 pts » : un écart sans historique n'existe pas.
+    out = out.replace(/<span style=\{\{ fontSize: "13px", color: "#16785E", fontWeight: "700" \}\}>\+2,1 pts<\/span>/, '');
+    // La courbe d'exemple (on garde la ligne d'objectif, pointillée).
+    out = out.replace(/<polyline fill="none" stroke="#16785E"[^>]*\/>/, '');
+    // Les trois villes d'exemple.
+    out = out.replace(
+      /<div style=\{\{ display: "flex", gap: "8px", marginTop: "6px" \}\}>(<span style=\{\{ background: "#F2F5F4"[\s\S]*?<\/span>){3}<\/div>/,
+      '<div style={{ marginTop: "6px", fontSize: "12px", color: "#5D6B66" }}>Pas encore de mesure par ville.</div>',
+    );
+    // Les trois alertes d'exemple : de la première à la fin de la carte.
+    const marque = '>ALERTES</div>';
+    const a = out.indexOf(marque);
+    if (a < 0) return { jsx: out, applied: false };
+    const premiere = out.indexOf('<div style={{ display: "flex", gap: "10px", alignItems: "center", padding: "10px 0"', a);
+    const fermeture = out.indexOf('</div></div></div><div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)"', premiere);
+    if (premiere < 0 || fermeture < 0) return { jsx: out, applied: false };
+    out = `${out.slice(0, premiere)}<div style={{ marginTop: "10px", fontSize: "13px", color: "#5D6B66" }}>Aucune alerte mesurée pour l’instant.</div>${out.slice(fermeture + '</div>'.length)}`;
+    // Repères pour `admin.css` : D02 dessine une rangée 2fr/1fr et deux rangées de cinq cartes,
+    // que la maquette ne fait pas tenir sous 1 024 px (relevé : 583 px de large à 390).
+    out = out.replace('<div style={{ display: "grid", gridTemplateColumns: "2fr 1fr"', '<div data-admin-d02-haut="" style={{ display: "grid", gridTemplateColumns: "2fr 1fr"');
+    out = out.split('<div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)"').join('<div data-admin-d02-cartes="" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)"');
+    return { jsx: out, applied: true };
+  },
+};
+
+/**
  * ── P03 : LE DOCUMENT LÉGAL VIENT DE L'API ───────────────────────────────────
  *
  * Le cadre « Desktop » de P03 écrit « Politique de confidentialité · Version 3 · En
@@ -151,7 +213,7 @@ const P03_DOCUMENT = {
   },
 };
 
-export const ADAPTATIONS_ADMIN_VIVANTE = [ADMIN_CONNEXION, ADMIN_CONTENU, ADMIN_BARRE, ADMIN_REPERES, P03_DOCUMENT];
+export const ADAPTATIONS_ADMIN_VIVANTE = [ADMIN_CONNEXION, ADMIN_CONTENU, ADMIN_BARRE, ADMIN_REPERES, D02_SANS_INVENTION, P03_DOCUMENT];
 
 export const AJOUTS_ADMIN_VIVANTE = {
   BarreAdmin: '@/components/admin/barre-admin',

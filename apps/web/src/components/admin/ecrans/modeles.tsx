@@ -285,6 +285,8 @@ function Editeur({ versionId, peut, onChange, journeysOnCurrent }: { readonly ve
     const ok = await publication.lancer(() => staffApi.post(`/journey-templates/versions/${versionId}/publish`, adminPublishResponseSchema, { body: {} }), 'Version publiée.');
     if (ok) {
       setPublier(false);
+      // Le message de la page (« Brouillon enregistré. ») est périmé : on dit ce qui vient d'arriver.
+      geste.annoncer('Version publiée : les nouveaux parcours la prennent, la précédente est archivée.');
       version.recharger();
       onChange();
     }
@@ -308,7 +310,7 @@ function Editeur({ versionId, peut, onChange, journeysOnCurrent }: { readonly ve
                   </Bouton>
                 ) : null}
                 {editable ? (
-                  <Bouton ton="principal" onClick={() => setPublier(true)} disabled={etapes.length === 0}>
+                  <Bouton ton="principal" onClick={() => { geste.effacer(); publication.effacer(); setPublier(true); }} disabled={etapes.length === 0}>
                     Publier
                   </Bouton>
                 ) : null}
@@ -327,24 +329,24 @@ function Editeur({ versionId, peut, onChange, journeysOnCurrent }: { readonly ve
               {etapes.map((e, i) => (
                 <div
                   key={e.uid}
-                  style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', border: e.uid === sel ? `1.5px solid ${C.vert}` : `1px solid ${C.trait}`, borderRadius: '16px', padding: '8px 12px', minWidth: 0 }}
+                  style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px', background: '#fff', border: e.uid === sel ? `1.5px solid ${C.vert}` : `1px solid ${C.trait}`, borderRadius: '16px', padding: '8px 12px', minWidth: 0 }}
                 >
-                  <button type="button" onClick={() => setSel(e.uid)} style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px', border: 'none', background: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', padding: '6px 0' }}>
+                  <button type="button" onClick={() => setSel(e.uid)} style={{ flex: '1 1 220px', minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px', border: 'none', background: 'none', font: 'inherit', textAlign: 'left', cursor: 'pointer', padding: '6px 0' }}>
                     <span style={{ width: '20px', color: C.grisClair, fontSize: '12px', fontWeight: 700 }}>{i + 1}</span>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: '14px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.nom}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: '14px', fontWeight: 600 }}>{e.nom}</span>
                     {e.optionnelle ? <Pastille>Optionnel</Pastille> : null}
                     {e.risque ? <Pastille ton="terre">À risque</Pastille> : null}
                     <span style={{ fontSize: '12px', color: C.gris, minWidth: '52px', textAlign: 'right' }}>{libelleJours(e.jours)}</span>
                   </button>
                   {editable ? (
                     <span style={{ display: 'flex', gap: '2px' }}>
-                      <Bouton petit ton="contour" titre="Monter" disabled={i === 0} onClick={() => deplacer(i, -1)}>
+                      <Bouton petit ton="contour" titre="Monter" etiquette="Monter" disabled={i === 0} onClick={() => deplacer(i, -1)}>
                         ▲
                       </Bouton>
-                      <Bouton petit ton="contour" titre="Descendre" disabled={i === etapes.length - 1} onClick={() => deplacer(i, 1)}>
+                      <Bouton petit ton="contour" titre="Descendre" etiquette="Descendre" disabled={i === etapes.length - 1} onClick={() => deplacer(i, 1)}>
                         ▼
                       </Bouton>
-                      <Bouton petit ton="contour" titre="Retirer l’étape" onClick={() => retirer(e.uid)}>
+                      <Bouton petit ton="contour" titre="Retirer l’étape" etiquette="Retirer l’étape" onClick={() => retirer(e.uid)}>
                         ×
                       </Bouton>
                     </span>

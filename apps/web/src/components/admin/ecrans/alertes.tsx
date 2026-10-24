@@ -38,6 +38,8 @@ export function ContenuAlertes() {
   const liste = useCharge(() => staffApi.get('/moderation/scam-alerts', adminScamAlertsResponseSchema), 'alertes');
   const villes = useCharge(() => toutesLesVilles(), 'villes');
   const [sel, setSel] = useState<string | null>(null);
+  // Le message de succès vit ICI : l'éditeur est remonté (clé) dès que la liste recharge.
+  const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
     if (sel === null && liste.etat.phase === 'pret') setSel(liste.etat.donnees.items[0]?.id ?? 'nouvelle');
@@ -61,21 +63,23 @@ export function ContenuAlertes() {
               <Titre
                 titre="Alertes arnaques"
                 action={
-                  <Bouton ton="principal" disabled={!peut} titre={peut ? undefined : 'Réservé : contenu'} onClick={() => setSel('nouvelle')}>
+                  <Bouton ton="principal" disabled={!peut} titre={peut ? undefined : 'Réservé : contenu'} onClick={() => { setInfo(null); setSel('nouvelle'); }}>
                     + Nouvelle alerte
                   </Bouton>
                 }
               />
+              {info === null ? null : <Bandeau role="status">{info}</Bandeau>}
               <Colonnes gabarit="minmax(0,1.5fr) minmax(0,1fr)">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <Editeur
-                    key={sel ?? 'rien'}
+                    key={`${sel ?? 'rien'}:${courante?.id ?? 'absente'}`}
                     alerte={courante}
                     peut={peut}
                     villes={optionsVilles}
                     pays={pays}
-                    onFait={(id) => {
+                    onFait={(id, texte) => {
                       if (id !== null) setSel(id);
+                      setInfo(texte);
                       liste.recharger();
                     }}
                   />
@@ -91,7 +95,7 @@ export function ContenuAlertes() {
                       <button
                         key={a.id}
                         type="button"
-                        onClick={() => setSel(a.id)}
+                        onClick={() => { setInfo(null); setSel(a.id); }}
                         style={{ textAlign: 'left', border: a.id === sel ? `1.5px solid ${C.vert}` : `1px solid ${C.trait}`, background: '#fff', borderRadius: '16px', padding: '12px 14px', font: 'inherit', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '4px' }}
                       >
                         <span style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -126,7 +130,7 @@ function Editeur({
   readonly peut: boolean;
   readonly villes: readonly { valeur: string; libelle: string }[];
   readonly pays: readonly { valeur: string; libelle: string }[];
-  readonly onFait: (id: string | null) => void;
+  readonly onFait: (id: string | null, texte: string) => void;
 }) {
   const geste = useGeste();
   const [titre, setTitre] = useState(alerte?.title ?? '');
@@ -160,13 +164,13 @@ function Editeur({
       } else {
         await staffApi.put(`/moderation/scam-alerts/${alerte.id}`, okResponseSchema, { body: valide.data });
       }
-    }, alerte === null ? 'Alerte publiée.' : 'Alerte enregistrée.');
-    if (ok) onFait(id);
+    });
+    if (ok) onFait(id, alerte === null ? 'Alerte publiée : les membres du ciblage la voient.' : 'Alerte enregistrée.');
   };
   const retirer = async () => {
     if (alerte === null) return;
-    const ok = await geste.lancer(() => staffApi.post(`/moderation/scam-alerts/${alerte.id}/retire`, okResponseSchema), 'Alerte retirée de l’affichage.');
-    if (ok) onFait(null);
+    const ok = await geste.lancer(() => staffApi.post(`/moderation/scam-alerts/${alerte.id}/retire`, okResponseSchema));
+    if (ok) onFait(null, 'Alerte retirée de l’affichage.');
   };
 
   return (

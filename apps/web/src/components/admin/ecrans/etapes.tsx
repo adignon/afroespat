@@ -244,7 +244,7 @@ function Creation({ ouverte, onFermer, onFait }: { readonly ouverte: boolean; re
   const creer = async () => {
     const corps = stepDefinitionWriteSchema.safeParse({ code: code.trim().toUpperCase(), nameFr: nom.trim(), category: categorie });
     if (!corps.success) {
-      await geste.lancer(() => Promise.reject(new Error('Le code s’écrit en majuscules, chiffres et soulignés (p. ex. OUVRIR_COMPTE).')));
+      geste.prevenir('Le code s’écrit en majuscules, chiffres et soulignés (p. ex. OUVRIR_COMPTE).');
       return;
     }
     let id = '';

@@ -376,6 +376,13 @@ describe('GET /v1/admin/staff — les comptes d’équipe (D15, 15 §2.2)', () =
  * d'affichage.
  */
 describe('GET /v1/admin/moderation — la file et le dossier (D04, D05)', () => {
+  it('[RELEVÉ AU NAVIGATEUR] accepte un dossier sans passage IA (`aiVerdict` nul)', () => {
+    const base = adminModerationCasesResponseSchema.parse(lire('admin_moderation_cases.json'));
+    const ligne = { ...(base.items[0] ?? {}), aiVerdict: null, aiScore: null, aiLabels: [] };
+    const r = adminModerationCasesResponseSchema.safeParse({ items: [ligne], nextCursor: null });
+    expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
+  });
+
   it('la charge réelle de la file est acceptée', () => {
     const r = adminModerationCasesResponseSchema.safeParse(lire('admin_moderation_cases.json'));
     expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
@@ -530,6 +537,12 @@ describe('GET /v1/admin/audit — le journal (D15, 15 §2.3, §8.4)', () => {
 
   it('la charge réelle est acceptée', () => {
     const r = adminAuditResponseSchema.safeParse(charge);
+    expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
+  });
+
+  it('[RELEVÉ AU NAVIGATEUR] accepte une action système (sans acteur) et sans cible', () => {
+    const ligne = { id: '01a16d0c-241d-7000-a951-7163c608f668', createdAt: '2026-10-24T08:34:34.654Z', actorType: 'SYSTEM', actorId: null, action: 'metrics.refresh', targetType: 'system', targetId: null, metadata: null, ip: null };
+    const r = adminAuditResponseSchema.safeParse({ items: [ligne], nextCursor: null });
     expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
   });
 

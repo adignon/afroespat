@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { staffEnrollResponseSchema, staffLoginResponseSchema, staffOpenedSchema } from '@app/shared';
 import { ApiError, staffApi } from '@/lib/api/index';
+import { QrCode } from './qr-code';
 import { Bandeau, Bouton, C, Champ, useGeste } from './ui';
 
 /**
@@ -26,10 +27,9 @@ import { Bandeau, Bouton, C, Champ, useGeste } from './ui';
  * stocke RIEN — ni jeton, ni mot de passe, ni défi dans un stockage du navigateur. Le
  * défi ne vit que dans l'état du composant, et un rechargement recommence à l'étape 1.
  *
- * ⚠ ÉCART REMONTÉ : le secret d'enrôlement est montré en TEXTE (groupes de quatre) et
- * en lien `otpauth://`, sans code QR — aucune bibliothèque de QR n'est dans le dépôt et
- * en écrire une ici serait disproportionné. Les applications d'authentification
- * acceptent la saisie manuelle du secret.
+ * Le secret d'enrôlement est montré en CODE QR (rendu localement, `qr-code.tsx` : aucun
+ * service tiers ne voit le secret), puis en TEXTE (groupes de quatre) et en lien
+ * `otpauth://` pour la saisie manuelle ou l'ouverture directe sur mobile.
  *
  * Le verrouillage (« Compte verrouillé après 5 échecs ») est dit par le SERVEUR
  * (`STAFF_LOCKED`) : le compteur est compté côté serveur, jamais côté écran.
@@ -132,8 +132,10 @@ export function ConnexionEquipe() {
       {etape.nom === 'enrolement' ? (
         <>
           <div style={{ fontSize: '13.5px', color: C.gris }}>
-            La double authentification est obligatoire. Ajoutez ce compte dans votre application d’authentification avec la clé ci-dessous, puis saisissez le premier code.
+            La double authentification est obligatoire. Scannez le code ci-dessous avec votre application d’authentification (ou saisissez la clé), puis saisissez le premier code.
           </div>
+          <QrCode valeur={etape.uri} libelle="Code QR à scanner avec l’application d’authentification" />
+          <div style={{ fontSize: '12.5px', color: C.grisClair }}>Impossible de scanner ? Saisissez la clé :</div>
           <div data-admin-secret="" style={{ background: C.fond, borderRadius: '14px', padding: '12px 14px', fontFamily: 'ui-monospace, monospace', fontSize: '15px', fontWeight: 700, letterSpacing: '1px', wordBreak: 'break-all' }}>
             {groupes(etape.secret)}
           </div>

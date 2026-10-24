@@ -213,3 +213,65 @@ Toutes les routes exigent une session équipe valide et vérifient le rôle. Tou
 - `rule: aucun numéro de téléphone en clair dans une réponse admin`
 - `rule: le rapport d'impact ne contient aucune donnée nominative`
 - `rule: un SUPER_ADMIN ne peut pas retirer le dernier SUPER_ADMIN`
+
+---
+
+## 13. État de la livraison (relevé au navigateur, 1440 px et 390 px)
+
+Cette section dit ce qui est LIVRÉ et ce qui s'écarte du texte ci-dessus. Les écrans sont ceux
+de `docs/template/10 Administration` (D01 à D16) ; l'application d'équipe vit sous `/admin/*`
+du front (groupe de routes `(admin)`), pas dans une application `apps/admin` séparée, et tient
+l'étanchéité des deux domaines par le client `staffApi` (cookie `dp_staff` seul, jamais le jeton
+de membre — voir `lib/api/domains.ts`).
+
+### 13.1 Livré, écran par écran
+
+| Écran | Livré | Gestes d'écriture éprouvés |
+|---|---|---|
+| D01 Connexion | e-mail + mot de passe, TOTP, **enrôlement forcé avec code QR rendu localement** (`qrcode-generator`, SVG en ligne : le secret ne sort pas du navigateur), clé en texte et lien `otpauth://` en secours | connexion, enrôlement, première session |
+| D02 Tableau de bord | cinq cartes liées (membres, parcours, entraide, guides, services) lues de `GET /admin/dashboard` ; **base sans instantané = tirets et « Pas encore de mesure », jamais une erreur** ; les sept cartes sans source n'affichent plus les nombres d'exemple de la maquette | lecture |
+| D03 à D05 | membres, file de modération, dossier | (lot précédent) |
+| D06 Parcours | modèles et versions, éditeur d'étapes, aperçu, publication (la précédente est archivée), corrections proposées, parcours restés sur une version archivée | nouveau brouillon, édition, ordre, enregistrement, aperçu, publication |
+| D08 Référentiels | villes : activer, fermer, fusionner (irréversible, confirmation par le slug) ; cartes sur mobile | les trois gestes, avec motif tracé |
+| D09 Guides | propositions escaladées (accepter, refuser avec motif), signalés obsolètes, tous les guides, forçage de statut, retour arrière (la version actuelle n'est pas proposée), « maintenu par la communauté » | tous |
+| D10 Services | justificatifs pro, annonces logement à risque (publier / retirer), bornes de prix | bornes de prix, classement d'un dossier |
+| D11 Alertes arnaques | création, édition, retrait, ciblage ville / pays, aperçu membre | création, édition, retrait |
+| D12 Pages et annonces | pages versionnées ; annonces (ciblage villes et phases, période) | publication d'une annonce |
+| D13 Partenaires | partenaires, encarts par étape, import CSV des conversions (validé ligne à ligne côté écran, revalidé par le serveur) ; cartes sur mobile | création, bascule, encart (refus du doublon affiché), import |
+| D15 Réglages | feature flags, paramètres (registre fermé), seuils de modération, équipe, journal d'audit paginé (« Voir plus ») avec export CSV | création / modification de flag, paramètre, seuils, compte équipe, export |
+| D16 Impact | agrégats par ville et pays, impression | lecture |
+
+**Bandeau d'annonce (§4.2)** : une annonce publiée en D12 s'affiche en tête de l'accueil du
+membre ciblé ; la fermeture est mémorisée dans `localStorage` par identifiant d'annonce ; le
+drapeau `annonces.bandeau` le coupe (absent, il est ouvert). Éprouvé : annonce créée par l'écran,
+vue par un membre, fermée, absente après rechargement, absente quand le drapeau est coupé.
+
+### 13.2 Écarts avec le texte de ce module
+
+- **Pas de PDF d'impact** : `GET /admin/impact/export` rend un CSV (`indicateur;tranche;valeur`),
+  tracé à l'audit ; « Imprimer / PDF » ouvre la boîte d'impression du navigateur, qui enregistre
+  en PDF (rail, barre et boutons masqués à l'impression). Aucune bibliothèque de rendu PDF n'est
+  dans l'API.
+- **Pas de sélecteur de trimestre** : l'API ne garde que le dernier calcul par indicateur.
+- **Pas de témoignages** (`guides.quotable`, `city_tips.quotable` non livrés) : citer sans accord
+  est ce que ces colonnes existent pour empêcher.
+- **D02** : le bandeau d'alertes (SLA dépassé, justificatifs, villes à activer), l'indicateur clé
+  par ville, les revenus, le parrainage, les événements du mois et les réseaux ne sont pas liés
+  (aucune route d'équipe ne sert tous leurs nombres sans exiger un rôle plus fort que ce que le
+  tableau de bord autorise) ; ils affichent un tiret.
+- **Ciblage des annonces** : l'écran propose villes et phases ; pays et plans sont acceptés par le
+  serveur mais n'ont pas de commande à l'écran.
+- **`docs/flags.md`** (liste des flags) n'existe pas ; la liste vit à l'écran D15.
+- **Restriction IP** : portée par `StaffGuard` (`admin_allowed_cidrs`), modifiable en D15.
+- **Corrections de parcours (D06)** et **fiches pro en attente (D10)** : écrans rendus, geste
+  d'acceptation non éprouvé faute de donnée de membre correspondante dans la base d'essai.
+
+### 13.3 Défauts trouvés au navigateur, corrigés
+
+Le journal d'audit tombait en erreur dès qu'une ligne n'avait pas d'acteur ou de cible (actions
+système) ; la file de modération et les annonces à risque tombaient sur `aiVerdict` nul (dossier
+ouvert par signalement, sans passage IA) ; les validations d'écran (D13, D15) affichaient
+« Une erreur est survenue » au lieu du champ à corriger ; les messages de succès étaient effacés
+à la fermeture des fenêtres (D08, D09) ou perdus au remontage du formulaire (D11, D12) ; le
+bandeau d'annonce était recouvert par la barre haute fixe à 1440 px ; D02, D08, D13, D15 et D06
+débordaient ou perdaient leurs gestes à 390 px.

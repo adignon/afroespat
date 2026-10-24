@@ -879,7 +879,9 @@ export const adminModerationCaseRowSchema = z
     assignedStaffId: z.string().uuid().nullable(),
     slaDueAt: z.string().datetime(),
     sla: slaStateSchema,
-    aiVerdict: z.enum(AiVerdict),
+    // NULLABLE : un dossier ouvert par un signalement de membre n'a jamais passé par l'IA
+    // (relevé : tout le bloc « annonces à risque » de D10 et la file D04 tombaient en erreur).
+    aiVerdict: z.enum(AiVerdict).nullable(),
     aiLabels: z.array(z.string()),
     /** Confiance dans [0,1], nulle sans passage IA. Jamais un pourcentage. */
     aiScore: z.number().min(0).max(1).nullable(),
@@ -958,7 +960,7 @@ export const adminModerationCaseDetailSchema = z
     sla: slaStateSchema,
     resolution: z.string().nullable(),
     resolvedAt: z.string().datetime().nullable(),
-    aiVerdict: z.enum(AiVerdict),
+    aiVerdict: z.enum(AiVerdict).nullable(),
     aiLabels: z.array(z.string()),
     aiScore: z.number().min(0).max(1).nullable(),
     /** Relevées VIDES : forme d'élément inconnue, donc non affirmée. */
@@ -1233,10 +1235,14 @@ export const adminAuditEntrySchema = z
     id: z.string().uuid(),
     createdAt: z.string().datetime(),
     actorType: z.enum(AuditActorType),
-    actorId: z.string(),
+    // NULLABLES, relevé sur une vraie base : une action SYSTÈME n'a pas d'acteur et une
+    // action sans objet (connexion, export…) n'a pas de cible. Le schéma les exigeait
+    // `string` : une seule ligne ainsi suffisait à faire tomber tout le journal d'audit
+    // sur « Une erreur est survenue » (D15, onglet Journal).
+    actorId: z.string().nullable(),
     action: z.string(),
     targetType: z.string(),
-    targetId: z.string(),
+    targetId: z.string().nullable(),
     ip: z.string().nullable(),
     metadata: z.unknown().nullable(),
   })

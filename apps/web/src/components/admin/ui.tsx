@@ -48,8 +48,12 @@ export const carteStyle: CSSProperties = {
   minWidth: 0,
 };
 
-export function Carte({ children, style }: { readonly children: ReactNode; readonly style?: CSSProperties }) {
-  return <div style={{ ...carteStyle, ...style }}>{children}</div>;
+export function Carte({ children, style, className }: { readonly children: ReactNode; readonly style?: CSSProperties; readonly className?: string }) {
+  return (
+    <div className={className} style={{ ...carteStyle, ...style }}>
+      {children}
+    </div>
+  );
 }
 
 export function Etiquette({ children }: { readonly children: ReactNode }) {
@@ -72,7 +76,7 @@ export function Titre({
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', flexShrink: 0, flexWrap: 'wrap' }}>
-      <div style={{ flex: '1', minWidth: 0 }}>
+      <div style={{ flex: '1 1 280px', minWidth: 0 }}>
         <h1 style={{ margin: 0, fontSize: '28px', fontWeight: 800, letterSpacing: '-0.9px' }}>{titre}</h1>
         {sous === undefined ? null : <div style={{ fontSize: '14px', color: C.gris, marginTop: '4px' }}>{sous}</div>}
       </div>
@@ -210,6 +214,7 @@ export function Bouton({
   plein,
   petit,
   titre,
+  etiquette,
 }: {
   readonly children: ReactNode;
   readonly onClick?: () => void;
@@ -219,6 +224,8 @@ export function Bouton({
   readonly plein?: boolean;
   readonly petit?: boolean;
   readonly titre?: string | undefined;
+  /** Nom accessible d'un bouton qui ne porte qu'un symbole (▲ ▼ ✕) : il ne se lisait que « ▼ ». */
+  readonly etiquette?: string;
 }) {
   const palette: Record<Ton, CSSProperties> = {
     principal: { background: C.vert, color: '#fff', border: 'none' },
@@ -232,6 +239,7 @@ export function Bouton({
       onClick={onClick}
       disabled={disabled}
       title={titre}
+      {...(etiquette === undefined ? {} : { 'aria-label': etiquette })}
       style={{
         height: petit === true ? '34px' : '44px',
         padding: petit === true ? '0 14px' : '0 18px',
@@ -466,7 +474,17 @@ export function useGeste() {
     }
   }, []);
 
-  return { occupe, message, lancer, effacer: () => setMessage(null) };
+  /**
+   * Une validation faite CÔTÉ ÉCRAN, avant tout appel : le message est dit tel quel.
+   * (Avant, on faisait `lancer(() => Promise.reject(new Error(…)))`, et `displayMessageFor`
+   * remplaçait le texte par « Une erreur est survenue » — l'équipe ne savait pas quel champ
+   * corriger. Relevé au navigateur sur D13.)
+   */
+  const prevenir = useCallback((texte: string) => setMessage({ ton: 'attention', texte }), []);
+
+  const annoncer = useCallback((texte: string) => setMessage({ ton: 'info', texte }), []);
+
+  return { occupe, message, lancer, prevenir, annoncer, effacer: () => setMessage(null) };
 }
 
 export function Message({ message }: { readonly message: { ton: 'info' | 'attention'; texte: string } | null }) {
@@ -626,10 +644,12 @@ export function FenetreMotif({
       {enfants}
       {motifRequis ? (
         <>
-          <ZoneTexte libelle={`Motif · ${min} caractères minimum`} valeur={motif} onChange={setMotif} lignes={3} maxLength={max} />
-          <div style={{ fontSize: '12px', fontWeight: 700, color: suffisant ? C.vertFonce : C.gris }}>
-            {motif.trim().length} / {min}
-          </div>
+          <ZoneTexte libelle={min > 0 ? `Motif · ${min} caractères minimum` : 'Motif (facultatif, tracé dans le journal)'} valeur={motif} onChange={setMotif} lignes={3} maxLength={max} />
+          {min > 0 ? (
+            <div style={{ fontSize: '12px', fontWeight: 700, color: suffisant ? C.vertFonce : C.gris }}>
+              {motif.trim().length} / {min}
+            </div>
+          ) : null}
         </>
       ) : null}
       <Message message={message} />
@@ -643,4 +663,20 @@ export function FenetreMotif({
       </div>
     </Fenetre>
   );
+}
+
+/**
+ * Le premier défaut d'un `safeParse` Zod, dit en français : le message du schéma s'il en a
+ * écrit un (`custom`), sinon « libellé du champ : valeur non valide ».
+ */
+export function premierDefaut(
+  issues: readonly { readonly code: string; readonly message: string; readonly path: readonly (string | number)[] }[],
+  libelles: Readonly<Record<string, string>>,
+): string {
+  const i = issues[0];
+  if (i === undefined) return 'Formulaire incomplet.';
+  if (i.code === 'custom') return i.message;
+  const champ = libelles[String(i.path[0] ?? '')] ?? 'Un champ';
+  const raison = i.code === 'too_small' || i.code === 'too_big' ? 'valeur hors des bornes autorisées' : 'valeur non valide (trop courte, trop longue ou mal formée)';
+  return `${champ} : ${raison}.`;
 }

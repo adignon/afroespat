@@ -196,6 +196,7 @@ function sessionFinie(erreur: unknown): boolean {
 export function EcranDonneesEquipe<T>({
   charger,
   squelette,
+  note,
   children,
 }: {
   readonly charger: () => Promise<T>;
@@ -212,6 +213,12 @@ export function EcranDonneesEquipe<T>({
    * fichier du dessin — même place que `rail` et `panelFil` pour l'accueil.
    */
   readonly squelette: T;
+  /**
+   * Une NOTE d'état vide, posée quand le chargement a réussi mais qu'il n'y a rien à
+   * mesurer encore (« Pas encore de mesure »). Ce n'est ni une attente ni une erreur : le
+   * serveur a répondu, et la réponse est « rien pour l'instant ».
+   */
+  readonly note?: (donnees: T) => string | null;
   readonly children: (donnees: T) => ReactNode;
 }) {
   const etat = useDonneesEquipe(charger);
@@ -233,6 +240,11 @@ export function EcranDonneesEquipe<T>({
       {etat.phase === 'attente' ? (
         <div style={BANDEAU} role="status" aria-live="polite">
           Chargement…
+        </div>
+      ) : null}
+      {etat.phase === 'prêt' && note?.(etat.donnees) ? (
+        <div style={BANDEAU} role="status" data-admin-note-vide="">
+          {note(etat.donnees)}
         </div>
       ) : null}
       {etat.phase === 'échec' ? (

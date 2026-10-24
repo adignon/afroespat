@@ -55,6 +55,16 @@ export function BandeauAnnonce() {
     };
   }, [chemin]);
 
+  // Quand le bandeau est là, la barre haute FIXE (`header`, `position: fixed; top: 0`) descend
+  // de sa hauteur — `globals.css` lit `html[data-annonce]`. Sans cela elle recouvrait le bandeau :
+  // il était dans le DOM, à sa place, et invisible (relevé au navigateur à 1440 px).
+  const visible = annonce !== null && chemin === '/accueil';
+  useEffect(() => {
+    if (!visible) return;
+    document.documentElement.setAttribute('data-annonce', '');
+    return () => document.documentElement.removeAttribute('data-annonce');
+  }, [visible]);
+
   if (annonce === null || chemin !== '/accueil') return null;
 
   const fermer = () => {
@@ -67,7 +77,7 @@ export function BandeauAnnonce() {
   };
 
   return (
-    <div role="status" data-annonce="" style={{ background: '#E3F0EB', color: '#0F5C48', display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', fontSize: '13.5px' }}>
+    <div role="status" data-annonce="" style={{ background: '#E3F0EB', color: '#0F5C48', display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 16px', fontSize: '13.5px', position: 'sticky', top: 0, zIndex: 40, minHeight: '48px', boxSizing: 'border-box' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <strong>{annonce.title}</strong>
         <span> — {annonce.body}</span>

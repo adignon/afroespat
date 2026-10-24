@@ -12,13 +12,14 @@ import {
   moderationThresholdsSchema,
   okResponseSchema,
   staffCreateSchema,
+  type AdminAuditEntry,
   type AdminFlag,
   type AdminSetting,
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { PHASES, telechargerCsv, toutesLesVilles } from '../donnees';
 import { useDroit, useEquipe } from '../session-equipe';
-import { Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, FenetreMotif, Interrupteur, Lecture, Message, Onglets, Pastille, Selecteur, Titre, Vide, ZoneTexte, dateCourte, useCharge, useGeste } from '../ui';
+import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, FenetreMotif, Interrupteur, Lecture, Message, Onglets, Pastille, Selecteur, Titre, Vide, ZoneTexte, dateCourte, useCharge, useGeste } from '../ui';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -85,7 +86,7 @@ function Flags() {
   const noms = new Map(villes.etat.phase === 'pret' ? villes.etat.donnees.map((v) => [v.id, v.name]) : []);
 
   const basculer = async (f: AdminFlag, v: boolean) => {
-    const ok = await geste.lancer(() => staffApi.patch(`/flags/${f.id}`, okResponseSchema, { body: { isEnabled: v } }));
+    const ok = await geste.lancer(() => staffApi.patch(`/flags/${f.id}`, okResponseSchema, { body: { isEnabled: v } }), v ? `${f.key} activé.` : `${f.key} désactivé.`);
     if (ok) liste.recharger();
   };
   return (
@@ -98,7 +99,7 @@ function Flags() {
               <Vide>Aucun feature flag. Les fonctionnalités sans flag suivent le défaut du code.</Vide>
             ) : (
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <table data-admin-pile="" style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: C.grisClair, fontSize: '10.5px', letterSpacing: '1px', textTransform: 'uppercase' }}>
                       {['Clé', 'Activé', 'Pourcentage', 'Conditions', ''].map((h) => (
@@ -138,14 +139,14 @@ function Flags() {
           flag={edition === 'nouveau' ? null : edition}
           villes={villes.etat.phase === 'pret' ? villes.etat.donnees.filter((v) => v.isActive) : []}
           onFermer={() => setEdition(null)}
-          onFait={() => { setEdition(null); liste.recharger(); }}
+          onFait={(texte) => { setEdition(null); liste.recharger(); geste.annoncer(texte); }}
         />
       )}
     </>
   );
 }
 
-function EditionFlag({ flag, villes, onFermer, onFait }: { readonly flag: AdminFlag | null; readonly villes: readonly { id: string; name: string }[]; readonly onFermer: () => void; readonly onFait: () => void }) {
+function EditionFlag({ flag, villes, onFermer, onFait }: { readonly flag: AdminFlag | null; readonly villes: readonly { id: string; name: string }[]; readonly onFermer: () => void; readonly onFait: (texte: string) => void }) {
   const geste = useGeste();
   const [cle, setCle] = useState(flag?.key ?? '');
   const [actif, setActif] = useState(flag?.isEnabled ?? false);
@@ -165,12 +166,12 @@ function EditionFlag({ flag, villes, onFermer, onFait }: { readonly flag: AdminF
         await staffApi.patch(`/flags/${flag.id}`, okResponseSchema, { body: { isEnabled: actif, rolloutPct: n, conditions } });
       }
     });
-    if (ok) onFait();
+    if (ok) onFait(flag === null ? `Flag ${cle.trim()} créé.` : `Flag ${flag.key} enregistré.`);
   };
   const supprimer = async () => {
     if (flag === null) return;
     const ok = await geste.lancer(() => staffApi.del(`/flags/${flag.id}`, okResponseSchema));
-    if (ok) onFait();
+    if (ok) onFait(`Flag ${flag.key} supprimé.`);
   };
   return (
     <Fenetre ouverte titre={flag === null ? 'Nouveau flag' : flag.key} onFermer={onFermer} large>
@@ -229,16 +230,18 @@ function Parametres() {
     try {
       valeur = JSON.parse(json);
     } catch {
-      await geste.lancer(() => Promise.reject(new Error('La valeur n’est pas du JSON valide.')));
+      geste.prevenir('La valeur n’est pas du JSON valide.');
       return;
     }
-    const ok = await geste.lancer(() => staffApi.put(`/settings/${cible.key}`, okResponseSchema, { body: { value: valeur, ...(motif === '' ? {} : { reason: motif }) } }));
+    const ok = await geste.lancer(() => staffApi.put(`/settings/${cible.key}`, okResponseSchema, { body: { value: valeur, ...(motif === '' ? {} : { reason: motif }) } }), `Paramètre ${cible.key} enregistré.`);
     if (ok) {
       setCible(null);
       liste.recharger();
     }
   };
   return (
+    <>
+    {cible === null ? <Message message={geste.message} /> : null}
     <Lecture etat={liste.etat} recharger={liste.recharger}>
       {(d) => (
         <Carte style={{ padding: 0, overflow: 'hidden' }}>
@@ -273,6 +276,7 @@ function Parametres() {
         </Carte>
       )}
     </Lecture>
+    </>
   );
 }
 
@@ -315,7 +319,7 @@ function Seuils() {
               </div>
             ))}
           </div>
-          {!valide.success ? <Bandeau ton="attention">{valide.error.issues[0]?.message ?? 'Valeur hors bornes.'}</Bandeau> : null}
+          {!valide.success ? <Bandeau ton="attention">{premierDefaut(valide.error.issues, Object.fromEntries(SEUILS.map((x) => [x.cle, x.libelle])))}</Bandeau> : null}
           {peut ? null : <Bandeau>Les seuils se modifient avec le rôle contenu ou super-administrateur.</Bandeau>}
           <Message message={geste.message} />
           <div>
@@ -343,7 +347,7 @@ function Equipe() {
   const [creer, setCreer] = useState(false);
   const geste = useGeste();
   const patcher = async (id: string, corps: Record<string, unknown>) => {
-    const ok = await geste.lancer(() => staffApi.patch(`/staff/${id}`, okResponseSchema, { body: corps }));
+    const ok = await geste.lancer(() => staffApi.patch(`/staff/${id}`, okResponseSchema, { body: corps }), 'Compte mis à jour.');
     if (ok) liste.recharger();
   };
   if (!peut) return <Bandeau>La gestion des comptes équipe est réservée au super-administrateur.</Bandeau>;
@@ -355,7 +359,7 @@ function Equipe() {
           {(d) =>
             d === null ? null : (
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: '760px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <table data-admin-pile="" style={{ width: '100%', minWidth: '760px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: C.grisClair, fontSize: '10.5px', letterSpacing: '1px', textTransform: 'uppercase' }}>
                       {['Nom', 'E-mail', 'Rôle', 'Double auth.', 'Dernière connexion', 'Actif'].map((h) => (
@@ -390,7 +394,7 @@ function Equipe() {
       <div>
         <Bouton ton="principal" onClick={() => setCreer(true)}>+ Nouveau compte</Bouton>
       </div>
-      <CreationCompte ouverte={creer} onFermer={() => setCreer(false)} onFait={() => { setCreer(false); liste.recharger(); }} />
+      <CreationCompte ouverte={creer} onFermer={() => setCreer(false)} onFait={() => { setCreer(false); liste.recharger(); geste.annoncer('Compte créé : la double authentification est à enrôler à sa première connexion.'); }} />
     </>
   );
 }
@@ -404,7 +408,7 @@ function CreationCompte({ ouverte, onFermer, onFait }: { readonly ouverte: boole
   const creer = async () => {
     const corps = staffCreateSchema.safeParse({ email: email.trim(), displayName: nom.trim(), password: mdp, role });
     if (!corps.success) {
-      await geste.lancer(() => Promise.reject(new Error(corps.error.issues[0]?.message ?? 'Compte incomplet.')));
+      geste.prevenir(premierDefaut(corps.error.issues, { email: 'E-mail', displayName: 'Nom affiché', password: 'Mot de passe (12 caractères minimum)', role: 'Rôle' }));
       return;
     }
     const ok = await geste.lancer(() => staffApi.post('/staff', okResponseSchema, { body: corps.data }));
@@ -450,6 +454,20 @@ function Audit() {
     return staffApi.get(`/audit?${p.toString()}`, adminAuditResponseSchema);
   }, `${action}|${de}|${a}`);
   const geste = useGeste();
+  // « Voir plus » : les pages suivantes, par curseur, s'ajoutent à la première. Un changement de
+  // filtre repart de zéro (la clé de `useCharge` change, `suite` est remis à vide).
+  const [suite, setSuite] = useState<{ cle: string; lignes: AdminAuditEntry[]; curseur: string | null } | null>(null);
+  const cleFiltre = `${action}|${de}|${a}`;
+  const apres = suite !== null && suite.cle === cleFiltre ? suite : null;
+  const plus = async (curseur: string) => {
+    const p = requete();
+    p.set('limit', '50');
+    p.set('cursor', curseur);
+    await geste.lancer(async () => {
+      const page = await staffApi.get(`/audit?${p.toString()}`, adminAuditResponseSchema);
+      setSuite({ cle: cleFiltre, lignes: [...(apres?.lignes ?? []), ...page.items], curseur: page.nextCursor });
+    });
+  };
   const exporter = () => void geste.lancer(() => telechargerCsv(`/audit/export?${requete().toString()}`, 'audit.csv'), 'Export téléchargé.');
   return (
     <>
@@ -467,7 +485,7 @@ function Audit() {
               <Vide>Aucune entrée.</Vide>
             ) : (
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <table data-admin-pile="" style={{ width: '100%', minWidth: '720px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: C.grisClair, fontSize: '10.5px', letterSpacing: '1px', textTransform: 'uppercase' }}>
                       {['Date', 'Acteur', 'Action', 'Cible'].map((h) => (
@@ -476,7 +494,7 @@ function Audit() {
                     </tr>
                   </thead>
                   <tbody>
-                    {d.items.map((e) => (
+                    {[...d.items, ...(apres?.lignes ?? [])].map((e) => (
                       <tr key={e.id} style={{ borderTop: `1px solid ${C.traitLeger}` }}>
                         <td style={{ padding: '10px 14px', whiteSpace: 'nowrap' }}>{dateCourte(e.createdAt)}</td>
                         <td style={{ padding: '10px 14px' }}>{e.actorType === 'STAFF' ? 'Équipe' : e.actorType === 'SYSTEM' ? 'Système' : 'Membre'} {e.actorId === null ? '' : `· ${String(e.actorId).slice(-6)}`}</td>
@@ -491,6 +509,13 @@ function Audit() {
           }
         </Lecture>
       </Carte>
+      {liste.etat.phase === 'pret' && (apres === null ? liste.etat.donnees.nextCursor : apres.curseur) !== null ? (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <Bouton disabled={geste.occupe} onClick={() => void plus((apres === null ? (liste.etat.phase === 'pret' ? liste.etat.donnees.nextCursor : null) : apres.curseur) ?? '')}>
+            Voir plus
+          </Bouton>
+        </div>
+      ) : null}
     </>
   );
 }
