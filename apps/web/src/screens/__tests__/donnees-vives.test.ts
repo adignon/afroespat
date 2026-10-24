@@ -117,19 +117,7 @@ const LISTE_BLANCHE: readonly {
   readonly fichier: RegExp;
   readonly nom: string;
   readonly pourquoi: string;
-}[] = [
-  {
-    fichier: /^screens\/j03\//,
-    nom: 'Lyon (ville d’exemple de la maquette)',
-    pourquoi:
-      'Les cadres J03 (partage de parcours) sont retirés du générateur par le lot W2B ; tant que ce retrait n’est pas fusionné ils restent importés. Tombe avec lui.',
-  },
-  {
-    fichier: /^screens\/j03\//,
-    nom: 'prénoms et noms de la maquette',
-    pourquoi: 'Idem : « Aïcha, Moussa et Fanta recevront votre message » est le texte de ces mêmes cadres J03 (lot W2B).',
-  },
-];
+}[] = [];
 
 const montes = cadresMontes();
 
