@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { z } from 'zod';
 import { quotableSchema, uuidSchema } from '@app/shared';
@@ -21,6 +21,13 @@ import { ImpactService } from './impact.service';
 @Controller()
 export class ImpactQuotableController {
   constructor(private readonly impact: ImpactService) {}
+
+  @Get('guides/:id/quotable')
+  @RequiresCapability('guide.write')
+  @ApiOperation({ summary: 'Mon accord de citation sur mon guide' })
+  async guideAccord(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.impact.getGuideQuotable(auth.userId, id);
+  }
 
   @Put('guides/:id/quotable')
   @RequiresCapability('guide.write')

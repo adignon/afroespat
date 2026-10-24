@@ -326,6 +326,9 @@ describe('rapport d’impact : historique, témoignages, export (15 §5.3)', () 
       await request(srv(app)).put(`/v1/guides/${guideId}/quotable`).set(auteur.auth).send({ quotable: true }).expect(200);
       const autre = await member();
       await request(srv(app)).put(`/v1/guides/${guideId}/quotable`).set(autre.auth).send({ quotable: true }).expect(404);
+      // L'auteur relit son accord ; un autre membre ne le lit pas.
+      expect((await request(srv(app)).get(`/v1/guides/${guideId}/quotable`).set(auteur.auth).expect(200)).body).toEqual({ quotable: true });
+      await request(srv(app)).get(`/v1/guides/${guideId}/quotable`).set(autre.auth).expect(404);
 
       const liste = adminImpactCandidatesSchema.parse((await get(content.cookie, '/impact/testimonials?quarter=2024-T2').expect(200)).body);
       expect(liste.items.find((i) => i.sourceId === guideId)).toMatchObject({ kind: 'GUIDE', title: `Guide cité ${run}`, cityName });

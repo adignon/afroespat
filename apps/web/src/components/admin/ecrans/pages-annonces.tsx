@@ -17,7 +17,6 @@ import {
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { CorpsMarkdown } from '../../markdown-legal';
-import { toutesLesVilles } from '../donnees';
 import { SelecteursCiblage, depuisCible, versCible, type Selection } from './ciblage';
 import { useDroit } from '../session-equipe';
 import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Fenetre, Lecture, Message, Onglets, Pastille, Titre, Vide, ZoneTexte, dateLongue, useCharge, useGeste } from '../ui';
@@ -204,11 +203,6 @@ function Formulaire({ p, peut, recharger }: { readonly p: AdminPage; readonly pe
 
 // ─── Annonces ────────────────────────────────────────────────────────────────
 
-const PHASES = [
-  { id: 'PRE_DEPARTURE', libelle: 'Avant le départ' },
-  { id: 'RECENT_ARRIVAL', libelle: 'Arrivé·e récemment' },
-  { id: 'SETTLED', libelle: 'Installé·e' },
-];
 const ETATS = { active: 'En cours', upcoming: 'À venir', ended: 'Terminée' } as const;
 
 function versLocal(iso: string | null | undefined): string {

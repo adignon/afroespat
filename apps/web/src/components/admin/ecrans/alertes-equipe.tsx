@@ -27,7 +27,7 @@ const ROLES_LECTEURS = ['SUPER_ADMIN', 'CONTENT_ADMIN', 'MODERATOR'];
 
 type Filtre = 'non-lues' | 'toutes';
 
-export function ContenuAlertesEquipe() {
+export function ContenuEquipeAlertes() {
   const { equipe } = useEquipe();
   if (equipe !== null && !ROLES_LECTEURS.includes(equipe.role)) {
     return (

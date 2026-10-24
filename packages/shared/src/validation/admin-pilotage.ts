@@ -126,6 +126,8 @@ export type ImpactQuoteApprove = z.infer<typeof impactQuoteApproveSchema>;
 
 /** `PUT /guides/:id/quotable` · `PUT /tips/:id/quotable` — l'accord de l'auteur. */
 export const quotableSchema = z.object({ quotable: z.boolean() }).strict();
+/** La réponse des deux routes `quotable` (lecture et écriture) : l'accord tel que le serveur le garde. */
+export const quotableResponseSchema = z.object({ quotable: z.boolean() }).strict();
 
 export const impactPointSchema = z
   .object({ metric: z.string().min(1), dimension: z.string(), value: z.number() })

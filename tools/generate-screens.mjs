@@ -20769,7 +20769,7 @@ const CHAINE_TESTS = [
      * d'un parcours public à 1 440 px — est déclaré sur la planche d'ordinateur de la
      * liste (occurrence 0), lue une seconde fois. Voir `tools/screens/04-parcours.mjs`.
      */
-    expect: '251 cadres, 0 écart',
+    expect: '252 cadres, 0 écart',
   },
 ];
 

@@ -335,6 +335,16 @@ export class ImpactService {
     return { quotable };
   }
 
+  /** `GET /guides/:id/quotable` — l'AUTEUR seul : son accord actuel. */
+  async getGuideQuotable(userId: string, guideId: string) {
+    const g = await this.prisma.guide.findFirst({
+      where: { id: guideId, authorUserId: userId, deletedAt: null },
+      select: { quotable: true },
+    });
+    if (g === null) throw ApiError.notFound();
+    return { quotable: g.quotable };
+  }
+
   /** `PUT /tips/:id/quotable` — l'AUTEUR seul. */
   async setTipQuotable(userId: string, tipId: string, quotable: boolean) {
     const r = await this.prisma.cityTip.updateMany({
