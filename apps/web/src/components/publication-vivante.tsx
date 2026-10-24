@@ -326,12 +326,11 @@ export function PublicationProvider({
       },
       reagir,
       enregistrer,
-      reagi: lecteur.reagi ?? post?.reaction.mine != null,
+      reagi: lecteur.reagi ?? (post?.reaction.mine ?? null) !== null,
       signet: lecteur.signet ?? post?.bookmarked ?? false,
       occupe,
     }),
     // `pieces` change à chaque rendu (objet neuf) : seuls ses gestes servent ici.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [etat, postId, texte, envoi, envoyer, reponse, edition, enregistrerEdition, post, reagir, enregistrer, lecteur, occupe],
   );
 
@@ -659,7 +658,6 @@ export function PublicationVivante({ largeur }: { readonly largeur: 'desktop' | 
               }}
             >
               {post.media.map((m) => (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   key={m.id}
                   src={urlMedia(m.url)}
@@ -822,7 +820,7 @@ export function PublicationVivante({ largeur }: { readonly largeur: 'desktop' | 
       {fil.map((racine, i) => (
         <LigneCommentaire key={'removed' in racine ? `r${String(i)}` : racine.id} ligne={racine} profond={false} mobile={mobile} />
       ))}
-      {etat.fil?.nextCursor != null ? (
+      {(etat.fil?.nextCursor ?? null) !== null ? (
         <button
           type="button"
           disabled={etat.suiteEnCours}
