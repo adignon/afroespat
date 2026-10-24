@@ -6,7 +6,7 @@
 
 ## 1. Périmètre
 
-Données de référence administrées par l'équipe et lues par tous les modules : pays, villes, langues, compétences, métiers. Aucune écriture par les membres. Ce module porte aussi la logique **mono-pays au lancement**.
+Données de référence administrées par l'équipe et lues par tous les modules : pays, villes, langues, compétences, métiers. Aucune écriture par les membres — à une exception : un membre peut écrire **sa propre compétence** (`POST /places/skills`, §« Routes »), qui ne sort de son profil que si l'équipe la globalise. Ce module porte aussi la logique **mono-pays au lancement**.
 
 ---
 
@@ -63,6 +63,8 @@ Données de référence administrées par l'équipe et lues par tous les modules
 | GET | `/ref/cities` | Villes actives d'un pays. Paramètres `countryId`, `q` (préfixe, insensible aux accents), `nearCityId` + `radiusKm` |
 | GET | `/ref/cities/:slug` | Ville + `memberCount` + `communityId` + compteurs par pays d'origine |
 | GET | `/ref/languages` · `/ref/skills` · `/ref/professions` | Listes actives |
+| GET | `/places/skills` | Compétences que le lecteur peut choisir : les **globales** (`created_by_user_id` nul) et **les siennes** ; celles d'un autre membre restent visibles sur SON profil, jamais dans le champ |
+| POST | `/places/skills` | Un membre écrit **sa** compétence (« Autre… » du profil et de l'inscription). Corps `{ nameFr }`, schéma partagé `createPlacesSkillSchema` : 2 à 60 caractères, lettres/chiffres et `' ’ . - / + # & ( )`, une lettre au moins, ni lien, ni adresse, ni numéro (01 §2.1). Capacité `content.read` (L0), 10 créations par heure et par membre. **Déduplication sans casse ni accent** (`cleCompetence`) contre les globales et les siennes : la ligne existante est rendue, aucun doublon. `409` : `SKILL_RETIRED` (globale retirée des propositions, non ressuscitée), `SKILL_LIMIT` (plafond `MEMBER_SKILLS_MAX` = 20 compétences personnelles), `SKILL_NAME_TAKEN` (nom exact déjà pris par la compétence personnelle d'un autre membre). La compétence naît `is_active`, rattachée à son auteur ; **la globalisation est un geste d'équipe** (D08, `PATCH /admin/ref/skills/:id` avec `global`) et tient lieu de modération : aucune compétence personnelle n'est proposée à un autre membre avant relecture |
 | POST | `/ref/suggestions` | Suggestion libre (`kind`, `label`) → notification équipe, limite 5/jour |
 
 ### 4.2 Administration (`/v1/admin/ref/*`, rôle `CONTENT_ADMIN`)
