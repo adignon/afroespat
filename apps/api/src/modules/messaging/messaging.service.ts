@@ -848,8 +848,10 @@ export class MessagingService {
     readonly payload: unknown;
   }): Promise<void> {
     const charge = (job.payload ?? {}) as Record<string, unknown>;
-    const texte = (cle: string): string | null =>
-      typeof charge[cle] === 'string' ? (charge[cle] as string) : null;
+    const texte = (cle: string): string | null => {
+      const valeur = charge[cle];
+      return typeof valeur === 'string' ? valeur : null;
+    };
 
     let journeyId: string | null = null;
     let acteurId: string | null = null;

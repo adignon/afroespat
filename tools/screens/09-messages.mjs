@@ -1101,7 +1101,14 @@ export const screens = [
    * ce qu'un menu contextuel fait partout ailleurs. Le générateur signale « aucune
    * fermeture promue » à chaque exécution ; l'avertissement reste, il est juste.
    *
-   * ── MEMBRE BLOQUÉ · NON RÉSOLU, ET ON N'INVENTE PAS ─────────────────────────
+   * ── MEMBRE BLOQUÉ · HISTORIQUE (RÉSOLU depuis) ──────────────────────────────
+   *
+   * ⚠ CE PARAGRAPHE EST PÉRIMÉ SUR SA CONCLUSION : la phrase est venue du porteur
+   * (`PHRASE_DU_PORTEUR`, emprunt 3 plus haut), l'écran est livré, et « Débloquer »
+   * est branché (lot F2, `MV_DEBLOQUER`). Il reste comme relevé de ce que les
+   * maquettes dessinent — et ne dessinent pas.
+   *
+   * ── MEMBRE BLOQUÉ · CE QUE LES MAQUETTES DESSINENT ─────────────────────────
    *
    * Cherché dans les DIX maquettes de `docs/template/`. Ce qui existe :
    *

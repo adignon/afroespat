@@ -333,11 +333,13 @@ describe('cascade de blocage, par l’événement (08 §4)', () => {
     });
     expect(members).toHaveLength(2);
     for (const row of members) expect(row.leftAt).not.toBeNull();
-    // Et elle disparaît des deux listes de conversations.
-    for (const userId of [mentor.id, mentee.id]) {
-      const list = await messaging.listConversations(userId, { limit: 20 });
-      expect(list.items.map((c) => c.id)).not.toContain(direct.conversationId);
-    }
+    // Elle disparaît de la liste de CELUI QUI EST BLOQUÉ (le mentor) ; celui qui a bloqué
+    // (le filleul) la garde, fermée et marquée `blockedByMe` — c'est là que vit « Débloquer »
+    // (lot F2, 08 §14).
+    const chezLeBloque = await messaging.listConversations(mentor.id, { limit: 20 });
+    expect(chezLeBloque.items.map((c) => c.id)).not.toContain(direct.conversationId);
+    const chezLeBloqueur = await messaging.listConversations(mentee.id, { limit: 20 });
+    expect(chezLeBloqueur.items.find((c) => c.id === direct.conversationId)?.blockedByMe).toBe(true);
 
     // Effet 5 : les demandes de contact en attente entre les deux sont expirées.
     // (Celle d'`asker` vers `mentee` ne l'est PAS : elle ne concerne pas la paire.)
