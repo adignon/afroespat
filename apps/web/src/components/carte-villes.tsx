@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { cityProfileResponseSchema } from '@app/shared';
@@ -8,25 +9,32 @@ import type { PointCarte } from '@/screens/villes/data';
 import { MOINS_DU_SEUIL, barresPays, nombre } from '@/screens/villes/from-api';
 
 /**
- * AJOUT — la carte des villes, en SVG LOCAL.
+ * AJOUT — la carte des villes : un fond OpenStreetMap, et le SVG local en REPLI.
  *
  * La maquette dessine un `<iframe src="Carte Villes.html">` : une page de
  * `docs/template/` qui charge Leaflet et des tuiles OpenStreetMap, et que
- * l'application ne sert pas (404). 09 §2.1 interdit tout service de cartes tiers —
- * « aucune requête vers un service de cartes tiers » — et §2.1 veut « un fond de
- * carte vectoriel léger (France métropolitaine, sans tuiles externes) ». Ce composant
- * en est l'exécution : un contour de la France métropolitaine (quelques dizaines de
- * points, tracés à la main), les villes ACTIVES placées par leurs coordonnées du
- * référentiel (`cities.latitude/longitude`), un cercle par ville dont l'aire suit
- * `member_count`, et le libellé « Lyon · 340 ».
+ * l'application ne sert pas (404). 09 §2.1 interdisait tout service de cartes tiers ;
+ * LE PORTEUR A TRANCHÉ (lot W3A) : la carte est une vraie carte OpenStreetMap. Voir
+ * `carte-osm.tsx` pour la portée exacte de l'autorisation — AFFICHER des tuiles, avec
+ * l'attribution « © OpenStreetMap », sans géocodage ni donnée du membre.
  *
- * Aucune requête réseau n'en part. Aucun script, aucune police, aucune tuile.
+ * CE FICHIER porte ce qui est commun aux deux fonds :
+ *
+ *   · le cadre (fond `#EEF2F0`), le filtre posé en haut (mobile), la légende, et la
+ *     fiche de la ville touchée (280 px, rayon 20, barres par pays, « Voir la fiche
+ *     ville ») — la même que la carte soit OSM ou SVG ;
+ *   · le REPLI : un contour de la France métropolitaine tracé à la main (quelques
+ *     dizaines de points) où les villes ACTIVES sont placées par leurs coordonnées du
+ *     référentiel (`cities.latitude/longitude`), un cercle par ville dont l'aire suit
+ *     `member_count`, et le libellé « Lyon · 340 ». Il remplace la carte OSM dès que
+ *     ses tuiles ne se chargent pas (hors-ligne, serveur de tuiles en panne, CSP) :
+ *     aucune requête réseau, aucun script, aucune police — la carte n'est jamais
+ *     blanche.
  *
  * ── CE QUE LA MAQUETTE DESSINAIT, ET QU'ON GARDE ───────────────────────────
- * Le fond `#EEF2F0`, le cercle `rgba(22,120,94,.22)` au trait `#16785E` de 2 px,
- * la pastille du nombre `#16785E` à encre blanche, l'étiquette blanche au liseré
- * `#E6EBE9`, la fiche `#fff` de 280 px à rayon 20 avec ses barres par pays, et le
- * bouton « Voir la fiche ville » vert. Le cercle de MA ville est terre cuite.
+ * Le cercle `rgba(22,120,94,.22)` au trait `#16785E` de 2 px, l'étiquette blanche au
+ * liseré `#E6EBE9`, la fiche `#fff` de 280 px à rayon 20 avec ses barres par pays, et
+ * le bouton « Voir la fiche ville » vert. Le cercle de MA ville est terre cuite.
  *
  * ── LA RÈGLE DURE ───────────────────────────────────────────────────────────
  * Une ville dont le compteur est sous le seuil (filtre par pays) arrive en `compte:
@@ -86,6 +94,9 @@ export function rayon(compte: number | null, max: number): number {
   return Math.max(14, Math.min(46, 14 + (Math.sqrt(compte) / Math.sqrt(Math.max(1, max))) * 32));
 }
 
+/** Leaflet n'est chargé que dans le navigateur, et seulement quand la carte s'affiche. */
+const CarteOsm = dynamic(() => import('./carte-osm'), { ssr: false });
+
 export function CarteVilles({
   points,
   maVilleId = null,
@@ -100,78 +111,29 @@ export function CarteVilles({
   readonly filtre?: React.ReactNode;
 }) {
   const [choisie, setChoisie] = useState<string | null>(null);
-  const max = useMemo(() => Math.max(1, ...points.map((p) => p.compte ?? 0)), [points]);
-  // Les gros cercles d'abord : les petits restent cliquables par-dessus.
-  const ordre = useMemo(
-    () => [...points].sort((a, b) => (b.compte ?? 0) - (a.compte ?? 0)),
-    [points],
-  );
+  // `osm` tant que les tuiles se chargent ; `svg` dès qu'elles ne le peuvent pas.
+  const [fond, setFond] = useState<'osm' | 'svg'>('osm');
   const selection = points.find((p) => p.id === choisie) ?? null;
 
   return (
     <div
       data-carte-villes=""
-      style={{ position: 'relative', width: '100%', height: '100%', minHeight: `${hauteurMin}px`, background: '#EEF2F0' }}
+      data-carte-fond={fond}
+      style={{ position: 'relative', width: '100%', height: '100%', minHeight: `max(${hauteurMin}px, calc(100dvh - 290px))`, background: '#EEF2F0' }}
     >
-      <svg
-        viewBox={`0 0 ${LARGEUR.toFixed(0)} ${HAUTEUR.toFixed(0)}`}
-        preserveAspectRatio="xMidYMid meet"
-        role="group"
-        aria-label="Carte des villes de France et de leurs membres"
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
-      >
-        <path d={chemin(CONTOUR)} fill="#fff" stroke="#CBD5D1" strokeWidth="1.5" strokeLinejoin="round" />
-        <path d={chemin(CORSE)} fill="#fff" stroke="#CBD5D1" strokeWidth="1.5" strokeLinejoin="round" />
-        {ordre.map((p) => {
-          const [x, y] = projeter(p.longitude, p.latitude);
-          const r = rayon(p.compte, max);
-          const moi = p.id === maVilleId;
-          const actif = p.id === choisie;
-          const libelle = `${p.nom} · ${p.compte === null ? MOINS_DU_SEUIL : nombre(p.compte)}`;
-          const largeur = Math.max(70, libelle.length * 7.4 + 20);
-          return (
-            <g
-              key={p.id}
-              role="button"
-              tabIndex={0}
-              aria-label={`${p.nom}, ${p.compte === null ? MOINS_DU_SEUIL : `${nombre(p.compte)} membres`}`}
-              aria-pressed={actif}
-              data-ville-pin={p.slug}
-              onClick={() => {
-                setChoisie(actif ? null : p.id);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setChoisie(actif ? null : p.id);
-                }
-              }}
-              style={{ cursor: 'pointer', outline: 'none' }}
-            >
-              <circle
-                cx={x}
-                cy={y}
-                r={r}
-                fill={moi ? 'rgba(224,115,58,.2)' : 'rgba(22,120,94,.22)'}
-                stroke={moi ? '#E0733A' : '#16785E'}
-                strokeWidth={actif ? 4 : 2}
-              />
-              <rect x={x - largeur / 2} y={y + r + 6} width={largeur} height={24} rx={12} fill="#fff" stroke="#E6EBE9" />
-              <text
-                x={x}
-                y={y + r + 22}
-                textAnchor="middle"
-                fontSize="12"
-                fontWeight="700"
-                fill="#16211D"
-                style={{ fontFamily: 'inherit' }}
-              >
-                {libelle}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+      {fond === 'osm' ? (
+        <CarteOsm
+          points={points}
+          maVilleId={maVilleId}
+          choisie={choisie}
+          onChoisir={setChoisie}
+          onEchec={() => {
+            setFond('svg');
+          }}
+        />
+      ) : (
+        <CarteSvg points={points} maVilleId={maVilleId} choisie={choisie} onChoisir={setChoisie} />
+      )}
 
       {filtre === null ? null : (
         <div style={{ position: 'absolute', top: '14px', left: '14px', right: '14px', zIndex: 2 }}>{filtre}</div>
@@ -181,7 +143,8 @@ export function CarteVilles({
         style={{
           position: 'absolute',
           left: '14px',
-          bottom: '14px',
+          bottom: '34px',
+          zIndex: 2,
           background: '#fff',
           border: '1px solid #E6EBE9',
           borderRadius: '16px',
@@ -189,8 +152,10 @@ export function CarteVilles({
           fontSize: '12px',
           color: '#5D6B66',
           display: 'flex',
-          gap: '14px',
+          flexWrap: 'wrap',
+          gap: '4px 14px',
           alignItems: 'center',
+          maxWidth: 'calc(100% - 28px)',
         }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -198,10 +163,85 @@ export function CarteVilles({
           Un cercle par ville
         </span>
         <span>Aucune position individuelle</span>
+        {fond === 'svg' ? <span data-carte-repli="">Fond de carte simplifié</span> : null}
       </div>
 
       {selection === null ? null : <FicheCarte point={selection} onFermer={() => { setChoisie(null); }} />}
     </div>
+  );
+}
+
+/** Le repli : le contour de la France et un cercle par ville, sans aucune requête. */
+function CarteSvg({
+  points,
+  maVilleId,
+  choisie,
+  onChoisir,
+}: {
+  readonly points: readonly PointCarte[];
+  readonly maVilleId: string | null;
+  readonly choisie: string | null;
+  readonly onChoisir: (id: string | null) => void;
+}) {
+  const max = useMemo(() => Math.max(1, ...points.map((p) => p.compte ?? 0)), [points]);
+  // Les gros cercles d'abord : les petits restent cliquables par-dessus.
+  const ordre = useMemo(
+    () => [...points].sort((a, b) => (b.compte ?? 0) - (a.compte ?? 0)),
+    [points],
+  );
+
+  return (
+    <svg
+      viewBox={`0 0 ${LARGEUR.toFixed(0)} ${HAUTEUR.toFixed(0)}`}
+      preserveAspectRatio="xMidYMid meet"
+      role="group"
+      aria-label="Carte des villes de France et de leurs membres"
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}
+    >
+      <path d={chemin(CONTOUR)} fill="#fff" stroke="#CBD5D1" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d={chemin(CORSE)} fill="#fff" stroke="#CBD5D1" strokeWidth="1.5" strokeLinejoin="round" />
+      {ordre.map((p) => {
+        const [x, y] = projeter(p.longitude, p.latitude);
+        const r = rayon(p.compte, max);
+        const moi = p.id === maVilleId;
+        const actif = p.id === choisie;
+        const libelle = `${p.nom} · ${p.compte === null ? MOINS_DU_SEUIL : nombre(p.compte)}`;
+        const largeur = Math.max(70, libelle.length * 7.4 + 20);
+        return (
+          <g
+            key={p.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`${p.nom}, ${p.compte === null ? MOINS_DU_SEUIL : `${nombre(p.compte)} membres`}`}
+            aria-pressed={actif}
+            data-ville-pin={p.slug}
+            onClick={() => {
+              onChoisir(actif ? null : p.id);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onChoisir(actif ? null : p.id);
+              }
+            }}
+            style={{ cursor: 'pointer', outline: 'none' }}
+          >
+            <circle
+              cx={x}
+              cy={y}
+              r={r}
+              fill={moi ? 'rgba(224,115,58,.2)' : 'rgba(22,120,94,.22)'}
+              stroke={moi ? '#E0733A' : '#16785E'}
+              strokeWidth={actif ? 4 : 2}
+            />
+            <rect x={x - largeur / 2} y={y + r + 6} width={largeur} height={24} rx={12} fill="#fff" stroke="#E6EBE9" />
+            <text x={x} y={y + r + 22} textAnchor="middle" fontSize="12" fontWeight="700" fill="#16211D" style={{ fontFamily: 'inherit' }}>
+              {libelle}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
@@ -231,7 +271,7 @@ function FicheCarte({ point, onFermer }: { readonly point: PointCarte; readonly 
       style={{
         position: 'absolute',
         right: '14px',
-        bottom: '14px',
+        bottom: '34px',
         zIndex: 3,
         width: '280px',
         maxWidth: 'calc(100% - 28px)',
@@ -240,7 +280,7 @@ function FicheCarte({ point, onFermer }: { readonly point: PointCarte; readonly 
         borderRadius: '20px',
         padding: '16px',
         boxSizing: 'border-box',
-        maxHeight: 'calc(100% - 28px)',
+        maxHeight: 'calc(100% - 48px)',
         overflowY: 'auto',
       }}
     >

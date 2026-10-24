@@ -16,8 +16,9 @@
  *     d'entraide, événement, story, annonce, offre, parcours, réseau, parrain) afin
  *     que les routes dynamiques (`[id]`, `[slug]`, `[handle]`) se résolvent sur du
  *     VRAI contenu et pas sur un « introuvable » ;
- *  3. liste les routes membre (`find src/app -name page.tsx`, sans `(admin)` ni
- *     `(onboarding)` — voir `--admin` / `--onboarding`), les résout, et ouvre
+ *  3. liste les routes membre (`find src/app -name page.tsx`, sans `(admin)` ;
+ *     l'onboarding est joué par le compte SANS parcours, `--sans-onboarding` pour
+ *     l'exclure), les résout, et ouvre
  *     chacune à 390 px de large ;
  *  4. sur chaque page, mesure :
  *       · DÉBORDEMENT : `document.documentElement.scrollWidth > innerWidth` ;
@@ -41,7 +42,7 @@
  *     --largeur=1440        autre largeur (défaut 390)
  *     --captures=/chemin    enregistre une capture pleine page par route
  *     --seulement=entraide  ne joue que les routes dont le chemin contient ce texte
- *     --admin               ajoute les routes /admin (compte personnel requis : non géré)
+ *     --admin               ajoute les routes /admin (réservées au personnel : non gérées ici)
  *     --strict-textes       les ellipses comptent aussi comme erreurs
  *     CHROMIUM=/opt/pw-browsers/chromium   exécutable du navigateur
  *
@@ -445,6 +446,7 @@ function resoudre(route, ids, a, b) {
     '/services/emploi/[id]': `/services/emploi/${ids.emploi ?? 'inconnu'}`,
     '/services/logement/[id]': `/services/logement/${ids.logement ?? 'inconnu'}`,
     '/stories/[id]': `/stories/${ids.story ?? 'inconnu'}`,
+    '/p/[slug]': '/p/conditions',
     '/villes/[slug]': `/villes/${a.ville?.slug ?? 'evry'}`,
   };
   return t[route] ?? route;
@@ -572,7 +574,7 @@ async function main() {
 
   const fichiers = pages(APP)
     .map(routeDe)
-    .filter((r) => r.groupe === '(app)' || (ARGS.admin && r.groupe === '(admin)') || (ARGS.onboarding && r.groupe === '(onboarding)') || r.route === '/')
+    .filter((r) => r.groupe === '(app)' || (ARGS.admin && r.groupe === '(admin)') || (!ARGS['sans-onboarding'] && r.groupe === '(onboarding)') || r.route === '/')
     .map((r) => r.route)
     .filter((r) => !r.includes('(.)'))
     // les fenêtres interceptées (@fenetre) doublent /stories/* : déjà couvertes
@@ -587,7 +589,15 @@ async function main() {
     hasTouch: LARGEUR < 700,
   });
   await contexte.addCookies([a.cookie]);
-  const page = await contexte.newPage();
+  const pageA = await contexte.newPage();
+  // L'onboarding se joue avec le compte SANS parcours (variante « sans parcours » de O05).
+  const contexteB = await navigateur.newContext({
+    viewport: { width: LARGEUR, height: 844 },
+    isMobile: LARGEUR < 700,
+    hasTouch: LARGEUR < 700,
+  });
+  await contexteB.addCookies([b.cookie]);
+  const pageB = await contexteB.newPage();
   if (ARGS.captures) mkdirSync(String(ARGS.captures), { recursive: true });
 
   let erreurs = 0;
@@ -595,6 +605,7 @@ async function main() {
   for (const modele of fichiers) {
     if (ARGS.seulement && !modele.includes(String(ARGS.seulement))) continue;
     const url = resoudre(modele, ids, a, b);
+    const page = modele.startsWith('/bienvenue') || modele.startsWith('/connexion') || modele.startsWith('/p/') ? pageB : pageA;
     try {
       await page.goto(`${WEB}${url}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
       await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});

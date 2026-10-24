@@ -14,7 +14,7 @@ Carte de France avec compteurs, annuaire des membres, fiche ville communautaire,
 
 ### 2.1 Carte
 
-- Composant unique réutilisé (accueil, réseau, admin) : fond de carte vectoriel léger (France métropolitaine, sans tuiles externes — **aucune requête vers un service de cartes tiers**), un cercle par ville active, taille proportionnelle à `member_count`, libellé « Lyon · 340 ».
+- Composant unique réutilisé (accueil, réseau, admin) : fond de carte **OpenStreetMap** (tuiles `https://tile.openstreetmap.org`, voir §14 : DÉCISION DU PORTEUR, l'affichage de tuiles est le seul service tiers autorisé), un cercle par ville active, taille proportionnelle à `member_count`, libellé « Lyon · 340 ».
 - Filtre par pays d'origine : « Tous » / un pays → compteurs recalculés (`Lyon · 85 Bénin`).
 - Clic sur une ville → fiche ville. Villes inactives non affichées.
 - **[RÈGLE DURE]** Aucune position individuelle ; la carte ne montre que des agrégats par ville, et jamais en dessous de **3 membres** pour un filtre pays (sinon « moins de 3 »), pour ne pas identifier une personne.
@@ -158,7 +158,7 @@ Par l'organisateur, motif facultatif, notification à tous les inscrits. Un év�
 ## 10. Tests des règles dures
 
 - `rule: la carte ne renvoie jamais un compteur inférieur à 3 pour un filtre pays`
-- `rule: aucune adresse d'événement n'est envoyée à un service de géocodage`
+- `rule: aucune adresse d'événement n'est envoyée à un service de géocodage` (toujours vraie : l'autorisation OSM de §14 ne couvre que l'AFFICHAGE de tuiles)
 - `rule: la limite d'un événement par mois est appliquée côté serveur en gratuit`
 - `rule: EVENT_ORGANIZED n'est crédité qu'avec au moins 3 présents cochés`
 - `rule: un événement réservé à un réseau n'est pas renvoyé à un non-membre`
@@ -169,7 +169,7 @@ Par l'organisateur, motif facultatif, notification à tous les inscrits. Un év�
 - **Vote utile sur une contribution** : table `city_tip_votes` (unique `city_tip_id` + `user_id`), `PUT/DELETE /tips/:id/vote` (idempotents, capacité `comment.create`), événement `city_tip.voted`. On ne vote pas sa propre contribution (409). `helpful_count` est tenu dans la même transaction.
 - **Contributions** : `city_tips.venue_name` (obligatoire pour un commerce) et `address_text` (texte libre, jamais géocodé). Les budgets sont **anonymes** : l'auteur n'est jamais renvoyé. Pas de catégorie ni de photo : un filtre sans colonne ment.
 - **Arrivants** : `user_profiles.show_as_newcomer` (défaut vrai) ; un membre qui le retire disparaît de « Arrivés récemment ».
-- **Carte** : SVG local, sans iframe ni service tiers ; le seuil `CITY_COUNT_PRIVACY_THRESHOLD` (3) est appliqué par le serveur et affiché « moins de 3 ».
+- **Carte** : fond OpenStreetMap (§14) avec le SVG local en repli, sans iframe ; le seuil `CITY_COUNT_PRIVACY_THRESHOLD` (3) est appliqué par le serveur et affiché « moins de 3 ».
 - **Droits** : **L1 pour s'inscrire** (`event.attend` : RSVP, retrait, « Je suis là »), **L2 pour créer** (`event.create`, avec son quota de plan). DÉCISION DU PORTEUR (2026-10-24) : « `event.attend` passe à L1 tandis que `event.create` reste L2. » Historique : la matrice de §3 et de `00 §7.3` disait L1 pour les deux ; la refonte des niveaux du 2026-10-09 (« N2 : faire tout le reste ») les avait placés tous deux en L2 et la présente section avait alors été corrigée en L2 ; le porteur a ensuite séparé les deux. `packages/shared/src/capabilities/capabilities.ts` est la source qui fait foi ; `media.int.test.ts` (couverture d'événement, `event.create`) reste en L2 et `services-complements-http.int.test.ts` fige « un L0 reçoit 403, un L1 s'inscrit, un L1 ne crée pas ». La feuille de présence de l'organisateur passe par la même route que « Je suis là » mais le service vérifie que l'appelant est l'organisateur (donc L2), pas le niveau. Le front ne lit jamais le niveau : il tente, le serveur répond `LEVEL_REQUIRED` (`details.capability`).
 - **Suppression de compte** : abonnés `user.deleted` des modules `events` (annule les événements à venir de l'organisateur, retire ses RSVP, promeut la file d'attente) et `cities` (retire ses votes, décrémente `helpful_count`).
 
@@ -182,3 +182,15 @@ Par l'organisateur, motif facultatif, notification à tous les inscrits. Un év�
 
 - **E04 — statut de chaque inscrit** : la ligne dit « Présent·e » (présence enregistrée, `checkedIn`), « À enregistrer » (case cochée, pas encore envoyée), « Absent·e » (non pointé, événement terminé — fin déclarée, ou début + fenêtre de pointage) ou « Inscrit·e ». Un lecteur qui n'est pas l'organisateur (présence inconnue) ne voit jamais « Absent·e ». Le compteur « N présents sur M inscrits » compte les seules présences enregistrées : ce sont exactement les lignes « Présent·e ».
 - **`cities.member_count`** suit la ville du membre (voir 01 §11) : l'écran d'arrivée ne lit plus « 0 membre » pour la ville où l'on vient de s'inscrire.
+
+## 14. Précisions de mise en œuvre (lot W3A) — carte OpenStreetMap et mobile
+
+- **DÉCISION DU PORTEUR (2026-10-24) : une vraie carte OpenStreetMap.** La spec interdisait « toute requête vers un service de cartes tiers » et le géocodage. Elle est désormais précisée ainsi : **seul l'AFFICHAGE de tuiles est autorisé** — le navigateur demande des images `https://tile.openstreetmap.org/{z}/{x}/{y}.png`, comme n'importe quel visiteur. Restent **interdits** : tout géocodage ou recherche d'adresse (Nominatim compris), toute donnée du membre dans une requête (une tuile se demande par numéro, jamais par position), toute position individuelle. Les coordonnées des villes sont **celles du référentiel** (`cities.latitude/longitude`, rendues par `GET /cities`) ; la vue de départ cadre la France, et `maxBounds` empêche de s'en éloigner.
+- **Réalisation.** `components/carte-osm.tsx` (Leaflet 1.9.4, `import()` dynamique : chargé dans le navigateur seulement, et seulement quand le cadre est visible — l'écran rend deux cadres et en masque un, une carte masquée ne demande aucune tuile). Un repère par ville active (cercle dont l'aire suit `member_count`, étiquette « Lyon · 340 », terre cuite pour ma ville), la fiche de ville et la légende restent celles de la maquette (`components/carte-villes.tsx`). Le seuil de 3 membres reste appliqué par le serveur (« moins de 3 »).
+- **Attribution.** « © OpenStreetMap » (lien vers `openstreetmap.org/copyright`, licence ODbL) est affichée en permanence en bas à droite de la carte ; la légende et la fiche de ville sont remontées de 20 px pour ne jamais la couvrir.
+- **En-têtes.** Les tuiles sont demandées sans cookie ni jeton, avec le `User-Agent` d'origine du navigateur et un `Referer` limité à l'origine du site (`referrerPolicy: 'strict-origin-when-cross-origin'`, la politique de l'en-tête `Referrer-Policy` du site).
+- **CSP.** `apps/web/next.config.mjs` ajoute **un seul hôte** à `img-src` : `https://tile.openstreetmap.org` (pas de joker : OSM sert ses tuiles depuis cet hôte seul). `connect-src`, `script-src` et `frame-src` ne changent pas.
+- **Repli.** Si aucune tuile ne se charge au bout de 7 s, après 4 erreurs de tuile sans succès, ou hors-ligne, la carte revient au SVG local d'avant (`data-carte-fond="svg"`, légende « Fond de carte simplifié ») : elle n'est jamais blanche.
+- **Politique de confidentialité.** Son gabarit (`packages/db/src/seed/referentials.ts`) ne liste pas les tiers un par un (« la liste définitive sera inscrite par le porteur »). **À faire par le porteur** : y inscrire la Fondation OpenStreetMap (tuiles de la carte des villes : adresse IP du visiteur et zone regardée, aucune donnée de compte). Le texte juridique n'est pas réécrit ici.
+- **Fiche ville (A12).** Elle ne dessine aucune carte dans la maquette : rien à remplacer. Seul l'annuaire des villes (A11, onglet « Carte », bureau et téléphone) porte la carte OSM.
+- **Mobile (390 px).** Pas de débordement horizontal sur aucune route membre (script `apps/web/e2e/balayage-mobile.mjs`) ; la carte occupe la hauteur de l'écran (`max(360 px, 100dvh − 290 px)`).

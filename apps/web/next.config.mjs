@@ -36,6 +36,9 @@ const API_PROXY = process.env['API_PROXY']?.replace(/\/+$/, '');
  *     ferme les injections de balises, les formulaires détournés et l'encadrement.
  *     `'unsafe-eval'` n'est accordé qu'en DÉVELOPPEMENT : le rechargement à chaud de
  *     Next évalue du code, la production non ;
+ *   · `img-src` accorde aussi `https://tile.openstreetmap.org` (et lui seul) : les
+ *     tuiles de la carte des villes, voulue par le porteur. Leaflet ne demande que des
+ *     images : aucune ouverture de `connect-src`, de `script-src` ni de `frame-src` ;
  *   · les polices viennent de `next/font/google`, auto-hébergées sous `/_next` :
  *     `font-src 'self'` suffit, aucun appel à fonts.googleapis.com.
  *
@@ -64,7 +67,10 @@ function politiqueDeSecurite() {
     "default-src 'self'",
     `script-src 'self' 'unsafe-inline'${ESTPROD ? '' : " 'unsafe-eval'"}`,
     "style-src 'self' 'unsafe-inline'",
-    `img-src ${avecApi("'self'", 'data:', 'blob:')}`,
+    // `tile.openstreetmap.org` : les TUILES de la carte des villes (09 §2.1, décision du
+    // porteur) — des images publiques, affichées sans aucune donnée du membre. Un seul
+    // hôte, précis : pas de joker, pas de `script-src` ni de `connect-src` associés.
+    `img-src ${avecApi("'self'", 'data:', 'blob:', 'https://tile.openstreetmap.org')}`,
     `media-src ${avecApi("'self'", 'blob:')}`,
     "font-src 'self' data:",
     // Développement : le rechargement à chaud de Next parle en WebSocket sur la page.

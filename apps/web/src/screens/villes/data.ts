@@ -7,8 +7,9 @@ import type { AccueilData, CityHeadView } from '../accueil/data';
  *
  * Ces écrans étaient ENTIÈREMENT en démonstration : `accueilData()` leur servait
  * « Lyon · 1 400 membres », trois bons plans, deux commerces et un `<iframe>` vers
- * `Carte Villes.html`, qui renvoie 404 — et qu'un service de cartes tiers (OpenStreetMap)
- * alimentait, ce que 09 §2.1 interdit en toutes lettres.
+ * `Carte Villes.html`, qui renvoie 404 — et qui chargeait OpenStreetMap sans qu'aucune
+ * règle ne l'autorise. Depuis, le porteur a TRANCHÉ (09 §14) : l'affichage de tuiles OSM est
+ * autorisé, le géocodage ne l'est toujours pas ; voir `components/carte-osm.tsx`.
  *
  * Les cadres sont toujours ceux de la maquette (`CityHeadView`, `MembreAnnuaire`,
  * `budgets`, `arrivals`… gardent leurs formes), mais leurs valeurs viennent de
