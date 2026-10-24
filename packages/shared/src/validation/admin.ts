@@ -524,6 +524,7 @@ export const AUDIT_ACTIONS = {
   staffUpdated: 'staff.updated',
   settingChanged: 'setting.changed',
   proApproved: 'pro.approved',
+  proProofViewed: 'pro.proof_viewed',
   proRejected: 'pro.rejected',
   userSessionsRevoked: 'user.sessions_revoked',
   userDeactivated: 'user.deactivated',

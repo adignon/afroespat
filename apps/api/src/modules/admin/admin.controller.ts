@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Put, Query, StreamableFile } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   STAFF_SCOPES,
@@ -23,6 +23,7 @@ import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { Staff, type StaffUser } from '../../common/staff.guard';
 import { zodPipe } from '../../common/zod.pipe';
 import { KycService } from '../kyc/kyc.service';
+import { MediaService } from '../media/media.service';
 import { SearchService } from '../search/search.service';
 import { AdminService } from './admin.service';
 
@@ -45,6 +46,7 @@ export class AdminController {
     private readonly admin: AdminService,
     private readonly kyc: KycService,
     private readonly search: SearchService,
+    private readonly media: MediaService,
   ) {}
 
   // ── §2.2 — Comptes équipe ─────────────────────────────────────────────────
@@ -165,6 +167,22 @@ export class AdminController {
   @ApiOperation({ summary: 'Une fiche pro, son justificatif et l’historique de ses décisions' })
   async proProfile(@Param('id', zodPipe(uuidSchema)) id: string) {
     return this.admin.proProfileDetail(id);
+  }
+
+  /**
+   * Le JUSTIFICATIF d'une fiche, pour la valider. Sans cette route l'équipe approuvait « à l'aveugle » :
+   * l'écran D10 ne montrait que le type et la taille du fichier. Rôles `proReview` ; la consultation est
+   * TRACÉE (`pro.proof_viewed`) ; en-têtes qui interdisent à un fichier déposé par un tiers de s'exécuter.
+   */
+  @Get('pro-profiles/:id/proof')
+  @RequiresStaffRole(...STAFF_SCOPES.proReview)
+  @Header('Cache-Control', 'private, no-store')
+  @Header('X-Content-Type-Options', 'nosniff')
+  @Header('Content-Security-Policy', "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'")
+  @ApiOperation({ summary: 'Le justificatif d’une fiche pro (lecture équipe, tracée)' })
+  async proProofBytes(@Staff() staff: StaffUser, @Param('id', zodPipe(uuidSchema)) id: string) {
+    const { body, mime } = await this.admin.readProProof(staff, id, (assetId) => this.media.proofBytesForStaff(assetId));
+    return new StreamableFile(body, { type: mime, disposition: 'inline' });
   }
 
   @Post('pro-profiles/:id/approve')
