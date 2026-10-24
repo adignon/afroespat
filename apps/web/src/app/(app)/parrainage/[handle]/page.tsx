@@ -7,15 +7,12 @@ import { ParrainEcran } from '@/screens/entraide/parrain-ecran';
  * Transcodé de `docs/template/05 Entraide.dc.html`. Composant SERVEUR : les
  * paramètres de route arrivent en propriété, et l'écran client les reçoit.
  *
- * PAS DE CADRE MOBILE, et ce n'est pas un oubli : la maquette n'en dessine pas. Sa
- * planche « MOBILE » ne montre pas la fiche sur téléphone mais la FEUILLE DE DEMANDE
- * posée sur un voile — c'est-à-dire la modale, pas l'écran. Voir `parrain-ecran.tsx`.
+ * CADRE MOBILE = AJOUT : la maquette n'en dessine pas (sa planche « MOBILE » montre la
+ * FEUILLE DE DEMANDE sur un voile, pas l'écran). Il est composé dans
+ * `components/entraide/parrain-fiche-mobile.tsx`. Voir `parrain-ecran.tsx`.
  *
- * LA FEUILLE DE DEMANDE N'EST TOUJOURS PAS MONTÉE. Son cadre d'ordinateur est
- * dessiné en carte nue de 540 px — sans voile, sans panneau positionné — là où les
- * quatre modales du fil (`03 Accueil v2`) dessinent les deux. Il n'y a donc rien à
- * marquer pour `Modal`, et lui ajouter un voile serait dessiner à la place du
- * porteur. Remonté dans le rapport, pas comblé.
+ * LA FEUILLE DE DEMANDE est montée par `BoutonDemander` (`components/entraide/parrainage-vivant.tsx`),
+ * sur le bureau comme sur téléphone : message de cinquante caractères, parcours facultatif.
  *
  * LE SEGMENT EST DÉCODÉ AVANT D'ÊTRE PASSÉ, et le pseudo est VALIDÉ : `handleSchema`
  * n'accepte que minuscules, chiffres, tiret et souligné. Sans ce filtre, un chemin

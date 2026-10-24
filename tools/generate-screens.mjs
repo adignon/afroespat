@@ -604,6 +604,7 @@ const DRAWN_SELECTS = [
     screens: ['P01'],
     literal: '+229',
     label: 'Indicatif du pays',
+    ajoutDrapeau: true,
     value: 'dialCode',
     selected: 'countryIso2',
     options: 'countryOptions',
@@ -729,7 +730,21 @@ function applyDrawnSelect(jsx, spec) {
     const pastille = content
       .replace('<span style={{ width: "22px"', '<span aria-hidden="true" style={{ width: "22px"')
       .replace('lineHeight: 1 }}></span>', `lineHeight: 1 }}>{${p.emoji}}</span>`);
-    const ligne = `<div ${style}>${pastille}${bouton}</div>{${p.selecteur}}`;
+    /**
+     * AJOUT (W3A, P01 à 390 px) — LE CADRE TÉLÉPHONE NE DESSINE NI DRAPEAU NI
+     * CHEVRON : « +229 » y est du texte nu, dans une pastille blanche, et rien ne
+     * dit qu'on peut la toucher alors que le panneau des douze pays s'ouvre bien.
+     * Sur ce cadre seulement (celui d'ordinateur dessine déjà les deux), on
+     * ajoute la même pastille de drapeau (22 × 15 px, rayon 3) et le même chevron
+     * (14 px, `#5D6B66`) que le bureau — mêmes valeurs, aucune couleur nouvelle.
+     */
+    const dessineLeDrapeau = pastille.includes('<span aria-hidden="true" style={{ width: "22px"');
+    const avecDrapeau =
+      spec.ajoutDrapeau === true && !dessineLeDrapeau
+        ? `<span aria-hidden="true" style={{ width: "22px", height: "15px", borderRadius: "3px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: "15px", lineHeight: 1 }}>{${p.emoji}}</span>${pastille}` +
+          '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg>'
+        : pastille;
+    const ligne = `<div ${style}>${avecDrapeau}${bouton}</div>{${p.selecteur}}`;
     /**
      * `carte` n'existe que dans le cadre d'ordinateur : la maquette ne dessine
      * aucune carte à 390 px. Son absence n'est donc pas une erreur, et le

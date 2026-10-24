@@ -87,12 +87,13 @@ export function Pastille({
       disabled={eteinte}
       aria-pressed={actif}
       style={{
+        // `font: inherit` d'abord : après `fontSize`, le raccourci l'effaçait (voir `Segments`).
+        font: 'inherit',
         padding: '8px 13px',
         borderRadius: '999px',
         fontSize: '12.5px',
         fontWeight: 700,
         whiteSpace: 'nowrap',
-        font: 'inherit',
         cursor: eteinte ? 'default' : 'pointer',
         background: actif ? '#16785E' : '#fff',
         color: actif ? '#fff' : '#16211D',
@@ -136,13 +137,19 @@ export function Segments<T extends string>({
             onChoisir(o.cle);
           }}
           style={{
+            /*
+             * `font: inherit` VIENT EN PREMIER : le raccourci réinitialise `fontSize` et
+             * `fontWeight`, et placé après eux il les écrasait — les segments se
+             * peignaient à 16 px au lieu de 13 px, et « Toutes Ouvertes Résolues
+             * Expirées » faisait 403 px de large, soit 419 px de page à 390 (H09).
+             */
+            font: 'inherit',
             padding: '9px 16px',
             borderRadius: '11px',
             fontSize: '13px',
             fontWeight: 700,
             whiteSpace: 'nowrap',
             border: 'none',
-            font: 'inherit',
             cursor: 'pointer',
             background: valeur === o.cle ? '#fff' : 'transparent',
             color: valeur === o.cle ? '#16211D' : '#5D6B66',
