@@ -14,7 +14,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MESSAGE_BODY_MAX, messagesResponseSchema, type Message } from '@app/shared';
+import {
+  MESSAGE_BODY_MAX,
+  journeyConversationResponseSchema,
+  messagesResponseSchema,
+  type Message,
+} from '@app/shared';
 import { z } from 'zod';
 import { memberApi, displayMessageFor } from '@/lib/api/index';
 import { Avis, Attente, Bouton, C, Etiquette, carte } from './ui';
@@ -108,6 +113,68 @@ function Fil({ conversationId, compact }: { readonly conversationId: string; rea
   );
 }
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LA DISCUSSION QUI N'EXISTE PAS ENCORE — ON LA FAIT NAÎTRE (lot W1A, 0.5)  ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Cet écran affichait « La discussion de ce parcours est en cours de création.
+ * Revenez dans un instant. » SANS FIN : la conversation naissait d'un événement lu
+ * par le worker, et sans lui elle n'existait jamais. Le serveur la crée maintenant
+ * à la création du parcours ; ce composant couvre les parcours qui n'en ont pas
+ * (nés avant, ou échec ponctuel) en appelant `POST /journeys/:id/conversation`, qui
+ * est idempotent, puis recharge le parcours.
+ *
+ * Trois états, et aucun n'est une attente sans issue : création en cours, échec avec
+ * « Réessayer », puis le fil. Le déclenchement est automatique, UNE fois par
+ * montage et par essai (`essai` relance), pour qu'un double rendu de React ne
+ * lance pas deux créations.
+ */
+function DiscussionAbsente({
+  journeyId,
+  onCree,
+}: {
+  readonly journeyId: string;
+  readonly onCree: () => void;
+}) {
+  const [essai, setEssai] = useState(0);
+  const [echec, setEchec] = useState<string | null>(null);
+
+  useEffect(() => {
+    let annule = false;
+    setEchec(null);
+    memberApi
+      .post(`/journeys/${journeyId}/conversation`, journeyConversationResponseSchema)
+      .then(
+        () => {
+          if (!annule) onCree();
+        },
+        (cause: unknown) => {
+          if (!annule) setEchec(displayMessageFor(cause));
+        },
+      );
+    return () => {
+      annule = true;
+    };
+  }, [journeyId, essai, onCree]);
+
+  if (echec !== null) {
+    return (
+      <div role="alert" style={{ ...carte(20), display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px', lineHeight: 1.5 }}>
+        <div>{echec}</div>
+        <div>
+          <Bouton compact onClick={() => setEssai((n) => n + 1)}>Réessayer</Bouton>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div style={{ ...carte(20) }}>
+      <Attente texte="Création de la discussion du parcours…" />
+    </div>
+  );
+}
+
 function VueDiscussionInterne({ compact }: { readonly compact: boolean }) {
   return (
     <Chargeur
@@ -116,11 +183,13 @@ function VueDiscussionInterne({ compact }: { readonly compact: boolean }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <EnteteParcours parcours={parcours} compact={compact} />
             {parcours.journey.groupConversationId === null ? (
-              <div style={{ ...carte(20), color: C.gris, fontSize: '14px', lineHeight: 1.5 }}>
-                {parcours.viewerRole === 'OBSERVER'
-                  ? 'En tant qu’observateur·rice, vous suivez la progression mais ne participez pas à la discussion.'
-                  : 'La discussion de ce parcours est en cours de création. Revenez dans un instant.'}
-              </div>
+              parcours.viewerRole === 'OBSERVER' ? (
+                <div style={{ ...carte(20), color: C.gris, fontSize: '14px', lineHeight: 1.5 }}>
+                  En tant qu’observateur·rice, vous suivez la progression mais ne participez pas à la discussion.
+                </div>
+              ) : (
+                <DiscussionAbsente journeyId={parcours.journey.id} onCree={vue.recharger} />
+              )
             ) : (
               <Fil conversationId={parcours.journey.groupConversationId} compact={compact} />
             )}

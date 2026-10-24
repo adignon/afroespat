@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, Req } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import {
@@ -163,6 +163,14 @@ export class JourneysController {
     @Body(zodPipe(createJourneySchema)) body: z.infer<typeof createJourneySchema>,
   ) {
     return this.journeys.create(this.actor(auth), body);
+  }
+
+  @Post('journeys/:id/conversation')
+  @HttpCode(200)
+  @RequiresCapability('content.read')
+  @ApiOperation({ summary: 'La discussion du parcours, créée si elle manque (idempotent)' })
+  async ensureConversation(@Auth() auth: AuthContext, @Param('id', zodPipe(uuidSchema)) id: string) {
+    return this.journeys.ensureConversation(auth.userId, id);
   }
 
   @Patch('journeys/:id')

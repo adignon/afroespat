@@ -1019,7 +1019,22 @@ export class MessagingService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
-      let conversationId = journey.groupConversationId;
+      /**
+       * VERROU SUR LE PARCOURS, PUIS RELECTURE (lot W1A, phase 0.5).
+       *
+       * La conversation naît maintenant de TROIS chemins — l'événement du worker, la
+       * création du parcours et la première ouverture de la discussion — et deux
+       * peuvent se croiser. Sans verrou, chacun lit « pas de conversation » avant la
+       * transaction de l'autre et en crée une : au mieux la contrainte d'unicité
+       * refuse la seconde (erreur 500), au pire deux fils orphelins. Le verrou
+       * sérialise ; la relecture rend alors la conversation du gagnant.
+       */
+      await tx.$queryRaw`SELECT id FROM journeys WHERE id = ${journeyId}::uuid FOR UPDATE`;
+      const fresh = await tx.journey.findUnique({
+        where: { id: journeyId },
+        select: { groupConversationId: true },
+      });
+      let conversationId = fresh?.groupConversationId ?? null;
       if (conversationId === null) {
         conversationId = newId();
         await tx.conversation.create({

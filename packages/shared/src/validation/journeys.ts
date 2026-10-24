@@ -1017,6 +1017,13 @@ export type JourneyTeamMember = z.infer<typeof journeyTeamMemberSchema>;
  * c'est « pas pour vous » — l'écran doit donc masquer l'entrée, pas afficher un
  * fil vide.
  */
+/**
+ * `POST /journeys/:id/conversation` — la discussion du parcours, créée si elle manque
+ * (lot W1A, phase 0.5). Idempotent : un deuxième appel rend la même conversation.
+ */
+export const journeyConversationResponseSchema = z.object({ conversationId: uuidSchema }).strict();
+export type JourneyConversationResponse = z.infer<typeof journeyConversationResponseSchema>;
+
 export const journeyDetailSchema = journeySummarySchema.extend({
   /** §3.1 — la date d'arrivée cible, librement modifiable. */
   targetArrivalDate: z.string().nullable(),

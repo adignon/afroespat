@@ -437,9 +437,11 @@ export class JourneysService {
    * transaction laisserait passer les deux — un quota de un est la course la plus
    * facile à gagner.
    *
-   * Aucune conversation n'est créée ici : `journey.created` est écouté par la
-   * messagerie, qui la recalcule (08 §5.1). Un appel direct recréerait le
-   * couplage que la boîte d'envoi existe pour défaire (00 §3.3).
+   * La conversation du parcours est recalculée par la messagerie à l'événement
+   * `journey.created` (08 §5.1) ET, depuis le lot W1A, directement après la
+   * transaction : sans worker, l'événement ne part jamais et la discussion restait
+   * « en cours de création » pour toujours. Le recalcul est idempotent, les deux
+   * chemins convergent. Voir plus bas.
    */
   async create(actor: JourneyActor, input: CreateJourney) {
     const me = await this.prisma.user.findUniqueOrThrow({
@@ -615,7 +617,59 @@ export class JourneysService {
     // L'état dérivé se calcule après la copie : la première étape non franchie
     // devient l'étape en cours de la carte d'accueil.
     await this.recomputeState(journeyId);
+
+    /**
+     * ╔════════════════════════════════════════════════════════════════════════╗
+     * ║ LA DISCUSSION EXISTE DÈS QUE LE PARCOURS EXISTE (lot W1A, phase 0.5)   ║
+     * ╚════════════════════════════════════════════════════════════════════════╝
+     *
+     * MESURÉ : « La discussion de ce parcours est en cours de création » ne
+     * finissait jamais. La conversation naissait UNIQUEMENT de l'événement
+     * `journey.created`, lu par le worker via la boîte d'envoi : sans worker (le
+     * développement local, mais aussi tout retard ou toute panne du relais), le
+     * parcours n'avait jamais de `group_conversation_id` et l'écran attendait pour
+     * toujours.
+     *
+     * Elle est donc créée ICI aussi, juste après la transaction. C'est le même
+     * recalcul idempotent que celui de l'événement (`syncJourneyConversation` ne
+     * crée la conversation que si la colonne est vide) : l'événement, quand le
+     * worker le traite, ne change rien. Un échec n'annule PAS la création du
+     * parcours — le parcours est l'objet que le membre a demandé, la discussion en
+     * est un accessoire — et `ensureConversation` la recrée à la première ouverture.
+     */
+    await this.messaging.syncJourneyConversation(journeyId).catch((cause: unknown) => {
+      this.logger.warn(
+        `Conversation du parcours ${journeyId} non créée à la création : ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`,
+      );
+    });
     return this.detail(actor.userId, journeyId);
+  }
+
+  /**
+   * `POST /journeys/:id/conversation` — la discussion du parcours, créée si absente.
+   *
+   * IDEMPOTENT : une conversation existante est rendue telle quelle, et deux appels
+   * simultanés convergent sur la même (le recalcul pose la colonne dans une
+   * transaction, et la relit). Réservé à ceux qui ont une discussion (§3.4) : le
+   * propriétaire et les accompagnants ; un OBSERVATEUR n'en a pas
+   * (`groupConversationId` nul sur sa vue) et reçoit `403`.
+   *
+   * Pourquoi une route et pas seulement la création : un parcours né avant ce
+   * correctif (ou un échec ponctuel à la création) n'a pas de conversation, et
+   * l'écran « Discussion » doit pouvoir la faire naître à la première ouverture
+   * plutôt que d'attendre un événement que rien ne garantit.
+   */
+  async ensureConversation(userId: string, journeyId: string): Promise<{ conversationId: string }> {
+    const journey = await this.loadForViewer(userId, journeyId);
+    if (journey.viewerRole === 'OBSERVER') throw ApiError.transverse('FORBIDDEN');
+    if (journey.groupConversationId !== null) {
+      return { conversationId: journey.groupConversationId };
+    }
+    const conversationId = await this.messaging.syncJourneyConversation(journeyId);
+    if (conversationId === null) throw ApiError.notFound();
+    return { conversationId };
   }
 
   /**
@@ -2314,6 +2368,10 @@ export class JourneysService {
 
     if (joined) await this.notifyAcceptance(userId, journeyId);
 
+    // Les membres de la discussion suivent l'équipe : recalcul idempotent tout de
+    // suite (lot W1A), pour ne pas dépendre du worker — l'événement du dessus fait
+    // la même chose, et un rejeu ne change rien.
+    await this.messaging.syncJourneyConversation(journeyId).catch(() => undefined);
     return this.detail(userId, journeyId);
   }
 
@@ -2520,11 +2578,12 @@ export class JourneysService {
 
     if (input.isPrivate) {
       // §3.5 : « envoi aux SUPPORTER et au parrain via la discussion du parcours,
-      // rien de public ». La conversation est recalculée d'abord : elle naît d'un
-      // événement, et le relais n'est pas forcément passé.
-      const conversationId =
-        blocker.journey.groupConversationId ??
-        (await this.messaging.syncJourneyConversation(blocker.journeyId));
+      // rien de public ». La conversation est recalculée d'abord : ses membres
+      // suivent l'équipe, et le relais n'est pas forcément passé.
+      // TOUJOURS recalculée, et non plus seulement quand elle manque : depuis que la
+      // conversation naît avec le parcours (lot W1A), elle peut exister sans les
+      // accompagnants arrivés depuis — et le message doit leur parvenir.
+      const conversationId = await this.messaging.syncJourneyConversation(blocker.journeyId);
       if (conversationId === null) throw ApiError.transverse('CONFLICT', { reason: 'NO_CONVERSATION' });
 
       const sent = await this.messaging.sendMessage({ userId: actor.userId, level: actor.level }, conversationId, {

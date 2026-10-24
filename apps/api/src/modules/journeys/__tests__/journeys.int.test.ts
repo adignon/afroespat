@@ -381,6 +381,96 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
   });
 
   /**
+   * LA DISCUSSION DU PARCOURS EXISTE DÈS LA CRÉATION — W1A, phase 0.5.
+   *
+   * Mesuré : « La discussion de ce parcours est en cours de création » ne finissait
+   * jamais, parce que la conversation naissait seulement de l'événement
+   * `journey.created`, lu par le worker. Ici AUCUN worker ne tourne : si la
+   * conversation existe, c'est que la création l'a faite elle-même.
+   *
+   * MUTATION : en retirant l'appel à `syncJourneyConversation` de `create`,
+   * `groupConversationId` redevient nul et ce test tombe.
+   */
+  it('[0.5] la conversation du parcours est créée avec le parcours, sans worker', async () => {
+    const member = await newMember();
+    const created = await journeys.create(member, { templateId: model.templateId });
+
+    const conversationId = created.journey.groupConversationId;
+    expect(conversationId).not.toBeNull();
+    const conversation = await prisma.conversation.findUniqueOrThrow({
+      where: { id: conversationId as string },
+      select: { kind: true, journeyId: true, members: { select: { userId: true } } },
+    });
+    expect(conversation.kind).toBe('JOURNEY');
+    expect(conversation.journeyId).toBe(created.journey.id);
+    expect(conversation.members.map((m) => m.userId)).toEqual([member.userId]);
+  });
+
+  /**
+   * `POST /journeys/:id/conversation` : la première ouverture la fait naître si elle
+   * manque, et deux appels (même simultanés) rendent la MÊME conversation.
+   *
+   * MUTATION : sans le `if (journey.groupConversationId !== null)` de
+   * `ensureConversation`, le second appel passe par la synchro — qui, elle aussi
+   * idempotente, ne crée rien ; la vraie protection est que la colonne est posée
+   * dans la même transaction que la création (un seul gagnant sur la ligne).
+   */
+  it('[0.5] ensureConversation recrée la discussion absente, une seule fois', async () => {
+    const member = await newMember();
+    const jid = await journeyFor(member);
+
+    // La prémisse : on rejoue un parcours né SANS conversation (avant le correctif).
+    const initial = await prisma.journey.findUniqueOrThrow({
+      where: { id: jid },
+      select: { groupConversationId: true },
+    });
+    await prisma.journey.update({ where: { id: jid }, data: { groupConversationId: null } });
+    await prisma.conversation.delete({ where: { id: initial.groupConversationId as string } });
+    expect(await prisma.conversation.count({ where: { journeyId: jid } })).toBe(0);
+
+    const [a, b] = await Promise.all([
+      journeys.ensureConversation(member.userId, jid),
+      journeys.ensureConversation(member.userId, jid),
+    ]);
+    // Même identifiant, et une seule ligne en base (la course n'en crée pas deux).
+    const again = await journeys.ensureConversation(member.userId, jid);
+    expect(new Set([a.conversationId, b.conversationId, again.conversationId]).size).toBe(1);
+    expect(await prisma.conversation.count({ where: { journeyId: jid } })).toBe(1);
+
+    const after = await journeys.detail(member.userId, jid);
+    expect(after.journey.groupConversationId).toBe(a.conversationId);
+  });
+
+  it('[0.5] ensureConversation refuse un observateur et un étranger', async () => {
+    const owner = await newMember();
+    const observer = await newMember();
+    const stranger = await newMember();
+    const jid = await journeyFor(owner);
+    await prisma.journeyMember.create({
+      data: {
+        id: newId(),
+        journeyId: jid,
+        userId: observer.userId,
+        role: 'OBSERVER',
+        status: 'ACTIVE',
+        invitedByUserId: owner.userId,
+        acceptedAt: new Date(),
+      },
+    });
+
+    await expect(journeys.ensureConversation(observer.userId, jid)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    await expect(journeys.ensureConversation(stranger.userId, jid)).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+    });
+    // Le propriétaire, lui, y accède.
+    await expect(journeys.ensureConversation(owner.userId, jid)).resolves.toMatchObject({
+      conversationId: expect.any(String) as string,
+    });
+  });
+
+  /**
    * RÈGLE DURE §10 : « la limite d'un parcours actif en gratuit est appliquée
    * côté serveur ».
    *
