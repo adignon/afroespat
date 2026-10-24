@@ -125,7 +125,41 @@ const BI_K09_LISTE = {
   },
 };
 
-export const ADAPTATIONS_BOUTONS_INERTES = [BI_J11_CREER, BI_A01_SALUER, BI_A01_PARRAINS, BI_K09_LISTE];
+// ─── A14 · le bandeau d'étapes ───────────────────────────────────────────────
+
+/**
+ * « 1 · Écrire / 2 · Rattacher / 3 · Publier » (A14, 1440 px) : trois `<button>`
+ * sans gestionnaire. Ils deviennent la navigation entre étapes : retour sur une
+ * étape franchie, étape courante marquée, étapes futures inactives (les prises
+ * `current`, `locked`, `onGo` viennent de `webFrameFor`). Les cadres mobiles ne
+ * dessinent pas ce bandeau (relevé : une seule occurrence).
+ */
+const BI_A14_BANDEAU = {
+  screens: ['A14'],
+  nom: 'BI_A14_BANDEAU',
+  why: 'Le bandeau d’étapes de la création de story n’avait aucun geste : retour sur les étapes franchies, étape courante marquée, étapes futures inactives.',
+  provides: ['w'],
+  apply(jsx) {
+    const re =
+      /<button style=\{\{ (border: "none", background: "none", padding: "0", font: "inherit", textAlign: "left", cursor: "pointer", )(display: "flex", flexDirection: "column", gap: "8px") \}\}>(<span style=\{\{ height: "5px", borderRadius: "999px", background: s\.bar \}\}><\/span>)/;
+    const m = re.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const neuf =
+      `<button type="button" onClick={s.onGo} aria-current={s.current ? "step" : undefined} ` +
+      `aria-disabled={s.locked && !s.current ? "true" : undefined} data-etape-bandeau="" ` +
+      `style={{ border: "none", background: "none", padding: "0", font: "inherit", textAlign: "left", ` +
+      `cursor: s.locked ? "default" : "pointer", ${m[2]} }}>${m[3]}`;
+    return { jsx: jsx.slice(0, m.index) + neuf + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+export const ADAPTATIONS_BOUTONS_INERTES = [
+  BI_J11_CREER,
+  BI_A01_SALUER,
+  BI_A01_PARRAINS,
+  BI_K09_LISTE,
+  BI_A14_BANDEAU,
+];
 export const AJOUTS_BOUTONS_INERTES = {
   SanctionsListe: '@/components/compte/sanctions-liste',
   BoutonSaluer: '@/components/accueil-voisins',

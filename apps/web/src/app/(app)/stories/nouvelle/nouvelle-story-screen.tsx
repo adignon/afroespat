@@ -1121,6 +1121,9 @@ export function NouvelleStoryScreen({
     w: webFrameFor(step, photo, onPhoto, {
       onNext: step === 2 ? onPublish : onContinue,
       onPrev: step === 0 ? () => router.push('/accueil') : () => setStep((s) => Math.max(0, s - 1)),
+      onStep: (i) => {
+        if (!busy && i < step) setStep(i);
+      },
       busy,
     }),
   };
