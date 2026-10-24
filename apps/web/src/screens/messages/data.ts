@@ -134,6 +134,8 @@ export interface SignalementVue {
   readonly onDetails?: (e: { readonly target: { readonly value: string } }) => void;
   readonly onEnvoyer?: () => void;
   readonly envoiBloque?: boolean;
+  /** La feuille vient de se refermer (croix, voile, Échap) : remet à zéro sa cible. */
+  readonly onFermee?: () => void;
 }
 
 export interface MessagesData {

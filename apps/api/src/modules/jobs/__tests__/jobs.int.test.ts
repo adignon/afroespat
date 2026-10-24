@@ -360,6 +360,21 @@ describe('emploi (10 §3)', () => {
     expect(count).toBe(1);
   });
 
+  it('[11 §2.5] chaque modification, renouvellement et retrait émet job.updated pour la réindexation', async () => {
+    const author = await member();
+    const job = await offer(author, {});
+    await jobs.update(job.id, author, { title: 'Titre corrigé pour la recherche' });
+    const events = await prisma.domainEvent.findMany({
+      where: { type: 'job.updated', aggregateId: job.id },
+      select: { payload: true },
+    });
+    expect(events).toHaveLength(1);
+    expect(JSON.stringify(events[0]?.payload)).toContain('title');
+
+    await jobs.remove(job.id, author);
+    expect(await prisma.domainEvent.count({ where: { type: 'job.updated', aggregateId: job.id } })).toBe(2);
+  });
+
   // ── Profils disponibles (§3.2) ────────────────────────────────────────────
 
   it('un profil de recherche invisible n’apparaît pour personne, filtre compris', async () => {

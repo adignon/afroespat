@@ -16,6 +16,10 @@ import {
 } from './adaptations/reseau-vivant.mjs';
 import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
 import {
+  ADAPTATIONS_MESSAGERIE_VIVANTE,
+  AJOUTS_MESSAGERIE_VIVANTE,
+} from './adaptations/messagerie-vivante.mjs';
+import {
   ADAPTATIONS_ENTRAIDE_VIVANT,
   AJOUTS_ENTRAIDE_VIVANT,
 } from './adaptations/entraide-vivant.mjs';
@@ -18253,6 +18257,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_CHROME_GAUCHE,
     // Lot G : A02 (la vraie publication), le fil, les stories, les guides.
     ...ADAPTATIONS_FIL_VIVANT,
+    // Lot F : messagerie, notifications, recherche (tools/adaptations/messagerie-vivante.mjs).
+    ...ADAPTATIONS_MESSAGERIE_VIVANTE,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19527,6 +19533,7 @@ const AJOUTS = {
   ...AJOUTS_PARCOURS_VIVANT,
   ...AJOUTS_CHROME_GAUCHE,
   ...AJOUTS_FIL_VIVANT,
+  ...AJOUTS_MESSAGERIE_VIVANTE,
 };
 
 /**

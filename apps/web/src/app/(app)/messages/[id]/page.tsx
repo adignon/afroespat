@@ -27,12 +27,12 @@ import { feuilleDemandee } from '@/screens/messages/feuilles';
  * dessine qu'un, avec ses deux volets. C'est le cadre MOBILE qui change — « MOBILE ·
  * CONVERSATION » au lieu de « MOBILE · LISTE ».
  *
- * TROIS FENÊTRES, et l'URL peut en demander une : le MENU DE LA CONVERSATION
+ * QUATRE FENÊTRES, et l'URL peut en demander une : le MENU DE LA CONVERSATION
  * (`?feuille=menu`, qui s'ouvre aussi au « ··· » de l'en-tête), la feuille
- * « Signaler » (`?feuille=signaler`) et sa confirmation (`?feuille=merci`). Les deux
- * dernières n'ont aucun déclencheur dans un cadre : « Signaler » ne vit que DANS le
- * menu, où la maquette le dessine en `<span>`, et `POST /reports` existe mais ce lot
- * ne branche aucune écriture.
+ * « Signaler » (`?feuille=signaler`) et sa confirmation (`?feuille=merci`), plus la
+ * confirmation de suppression d'un message (état local, sans URL). « Signaler »
+ * s'ouvre aussi depuis le lien sous une bulle, qui vise alors CE message
+ * (`POST /reports`, `subjectType: MESSAGE`) et non le membre.
  *
  * `?etat=bloque` — LA CONVERSATION AVEC UN MEMBRE BLOQUÉ.
  *

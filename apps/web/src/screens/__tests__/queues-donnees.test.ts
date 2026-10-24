@@ -102,6 +102,8 @@ const LIAISONS: readonly Liaison[] = [
   },
   {
     fichier: 'k07/mobile.generated.tsx',
+    // Lot F : les bornes réelles passent encore au composant `ReglageHeuresCalmes`,
+    // qui les montre le temps de relire (et d'écrire) le réglage.
     lit: ['{prefs.calmeDebut}', '{prefs.calmeFin}'],
     nePlus: ['22 h – 7 h'],
   },

@@ -22,6 +22,7 @@ export * from './validation/feed.js';
 export * from './validation/bookmarks.js';
 export * from './validation/member-content.js';
 export * from './validation/messaging.js';
+export * from './validation/realtime.js';
 export * from './validation/connections.js';
 export * from './validation/mentorship.js';
 export * from './validation/moderation.js';

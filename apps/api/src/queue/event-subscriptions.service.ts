@@ -155,8 +155,13 @@ export class EventSubscriptionsService implements OnModuleInit {
     }
 
     this.registry.on('message.sent', 'realtime', async (job) => {
-      const payload = job.payload as { conversationId?: unknown; messageId?: unknown; recipientUserIds?: unknown };
-      const recipients = Array.isArray(payload?.recipientUserIds) ? payload.recipientUserIds : [];
+      const payload = job.payload as {
+        conversationId?: unknown;
+        messageId?: unknown;
+        recipientUserIds?: unknown;
+        senderUserId?: unknown;
+      };
+      const recipients: unknown[] = Array.isArray(payload?.recipientUserIds) ? (payload.recipientUserIds as unknown[]) : [];
       for (const userId of recipients) {
         if (typeof userId !== 'string') continue;
         await this.realtime.publish(userId, 'message.new', {
@@ -164,6 +169,36 @@ export class EventSubscriptionsService implements OnModuleInit {
           messageId: payload.messageId,
         });
       }
+      // `conversation.updated` va à TOUS, expéditeur compris : la liste se
+      // réordonne chez chacun (la conversation remonte), et les autres onglets de
+      // l'expéditeur voient arriver leur propre message. Les destinataires reçoivent
+      // donc deux événements pour un message ; le client les fusionne en un seul
+      // rechargement (`lib/temps-reel`).
+      const everyone = [...recipients, payload?.senderUserId];
+      for (const userId of everyone) {
+        if (typeof userId !== 'string') continue;
+        await this.realtime.publish(userId, 'conversation.updated', {
+          conversationId: payload.conversationId,
+          reason: 'message',
+        });
+      }
+    });
+
+    // 08 §3.1 : deux présents au même événement, un auteur et son contributeur →
+    // « Ajouter X à vos contacts ? ». Voir `ConnectionsService.emitSuggestions`.
+    this.registry.on('event.checked_in', 'connections', async (job) => {
+      const userIds = (job.payload as { userIds?: unknown } | null)?.userIds;
+      if (!Array.isArray(userIds)) return;
+      await this.connections.emitSuggestions(
+        userIds.filter((u): u is string => typeof u === 'string'),
+        'EVENT',
+        job.aggregateId,
+      );
+    });
+    this.registry.on('guide.proposal_accepted', 'connections', async (job) => {
+      const p = job.payload as { guideId?: unknown; proposerUserId?: unknown } | null;
+      if (typeof p?.guideId !== 'string' || typeof p.proposerUserId !== 'string') return;
+      await this.connections.emitSuggestions([p.proposerUserId], 'GUIDE', p.guideId);
     });
 
     this.registry.on('user.deleted', 'help', async (job) => {
@@ -540,6 +575,9 @@ export function registerNotificationSubscriptions(
   registry.on('connection.requested', 'notifications', async (job) => {
     await events.onConnectionRequested(job.payload);
   });
+  registry.on('connection.suggested', 'notifications', async (job) => {
+    await events.onConnectionSuggested(job.payload);
+  });
 
   // ── 04 Fil — le regroupement du §2.3 ──────────────────────────────────────
   registry.on('post.reacted', 'notifications', async (job) => {
@@ -703,11 +741,10 @@ export function registerNotificationSubscriptions(
  *     entre parenthèses : le blocage s'applique à la REQUÊTE. Réindexer serait faux
  *     de toute façon — un document n'est pas caché en soi, il est caché POUR un
  *     demandeur ;
- *   · `user.profile_updated` n'existe pas dans `DomainEventType` et aucun service ne
- *     l'émet. On s'abonne donc à ce qui existe (`user.onboarded`,
- *     `user.phase_changed`, `user.deactivated`, `user.reactivated`), et un
- *     changement de bio ne réindexe rien jusqu'à la réindexation d'admin. Voir le
- *     rapport.
+ *   · `user.profile_updated` EXISTE désormais : `UsersService.writeMe` l'émet à
+ *     chaque `PATCH /me`, et il réindexe la fiche USER — une bio modifiée n'attend
+ *     plus la réindexation d'admin. (Il manquait au catalogue ; la phrase d'origine
+ *     de ce commentaire le consignait comme un écart.)
  *
  * Tous les gestionnaires passent par `enqueueReindex`, qui RELIT LA SOURCE : aucun
  * ne reçoit de titre dans sa charge, donc l'ordre d'arrivée des événements n'a pas
@@ -750,7 +787,7 @@ export function registerSearchSubscriptions(
     });
   }
 
-  for (const type of ['job.published', 'job.sponsored'] as const) {
+  for (const type of ['job.published', 'job.sponsored', 'job.updated'] as const) {
     registry.on(type, 'search', async (job) => {
       await search.enqueueReindex('JOB', job.aggregateId);
     });
@@ -767,6 +804,19 @@ export function registerSearchSubscriptions(
       await search.enqueueReindex('TOPIC', job.aggregateId);
     });
   }
+
+  // « Réindexer un sujet à chaque réponse » : le document TOPIC porte le corps du
+  // sujet ET ses premières réponses (§2.1). Deux chemins en produisent — un
+  // commentaire posé sur le sujet, une publication déplacée vers lui.
+  registry.on('post.commented', 'search', async (job) => {
+    const payload = job.payload as { subjectType?: unknown } | null;
+    if (payload?.subjectType !== 'TOPIC') return;
+    await search.enqueueReindex('TOPIC', job.aggregateId);
+  });
+  registry.on('post.moved_to_topic', 'search', async (job) => {
+    const topicId = (job.payload as { topicId?: unknown } | null)?.topicId;
+    if (typeof topicId === 'string') await search.enqueueReindex('TOPIC', topicId);
+  });
 
   // Un réseau archivé ou réactivé change la visibilité de TOUS ses sujets et
   // événements : la cascade est portée ici, parce qu'aucun événement ne concerne les
@@ -785,7 +835,13 @@ export function registerSearchSubscriptions(
     await search.enqueueReindex('PRO', job.aggregateId);
   });
 
-  for (const type of ['user.onboarded', 'user.phase_changed', 'user.deactivated', 'user.reactivated'] as const) {
+  for (const type of [
+    'user.onboarded',
+    'user.phase_changed',
+    'user.profile_updated',
+    'user.deactivated',
+    'user.reactivated',
+  ] as const) {
     registry.on(type, 'search', async (job) => {
       await search.enqueueReindex('USER', job.aggregateId);
     });

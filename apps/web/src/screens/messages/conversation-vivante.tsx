@@ -1,15 +1,22 @@
 'use client';
 
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError } from '@/lib/api/index';
 import { notifyError, notifySuccess as notifySucces } from '@/components/notifications';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { FenetreNiveau } from '@/components/fenetre-niveau';
 import { useCapacites } from '@/lib/capacites';
-import type { Capability } from '@app/shared';
+import { REALTIME_TYPING_EMIT_INTERVAL_MS, REALTIME_TYPING_TTL_MS, type Capability } from '@app/shared';
+import { ActionsBulle } from '@/components/messagerie/actions-bulle';
+import { PiedConversation } from '@/components/messagerie/pied-conversation';
+import { signalerFrappe } from '@/lib/temps-reel';
+import { useEvenements, useRepliPolling } from '@/lib/use-temps-reel';
 import {
+  accepterDemande,
   bloquerMembre,
+  ignorerDemande,
+  supprimerMessage,
   deposerImageDeMessage,
   envoyerMessage,
   mettreEnSourdine,
@@ -35,6 +42,17 @@ import type { M01Data } from '../m01/data';
  * qui n'ont ni routeur ni annonces. Les cadres, eux, ne portent que du dessin.
  * Les gestes ont besoin des deux : d'un état qui survit aux rechargements, et du
  * routeur. Ils vivent donc ici, dans la seule couche qui a les deux.
+ *
+ * ── LE TEMPS RÉEL (08 §7.3) ──────────────────────────────────────────────
+ *
+ * La conversation ouverte reçoit les nouveaux messages SANS rechargement : le client
+ * (`lib/temps-reel`) écoute `message.new`, `message.read`, `conversation.updated` et
+ * relit — la liste se réordonne et le fil s'allonge d'un seul appel, parce que les
+ * deux viennent du même chargeur. Rien de ce qui voyage sur la socket n'est un
+ * contenu : le fil est relu par l'API, qui applique les mêmes contrôles qu'ailleurs.
+ * Socket coupée : le polling de 15 s (`MESSAGE_POLL_INTERVAL_MS`) prend le relais.
+ * Un onglet MASQUÉ ne relit pas : relire marque lu, et « Vu » ne doit pas s'afficher
+ * chez l'autre pour un message que personne n'a sous les yeux.
  *
  * ── CE QUI SE PASSE APRÈS UN ENVOI ───────────────────────────────────────
  *
@@ -118,6 +136,103 @@ export function ConversationVivante({
   const [motif, setMotif] = useState<string | null>(null);
   const [details, setDetails] = useState('');
   const choisirFichier = useRef<HTMLInputElement>(null);
+  /** Le message dont on demande la suppression (fenêtre de confirmation). */
+  const [aSupprimer, setASupprimer] = useState<string | null>(null);
+  /** Le message qu'on signale ; `null` = on signale le MEMBRE (entrée du menu). */
+  const [messageSignale, setMessageSignale] = useState<string | null>(null);
+  /** Qui est en train d'écrire (prénom), et jusqu'à quand. */
+  const [frappe, setFrappe] = useState<{ readonly jusqua: number } | null>(null);
+
+  // ── Temps réel ───────────────────────────────────────────────────────────
+  const enAttenteDeVue = useRef(false);
+  const minuteurRecharge = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Relit, au plus une fois par rafale ; différé tant que l'onglet est masqué. */
+  const relireBientot = useCallback(() => {
+    if (document.visibilityState !== 'visible') {
+      enAttenteDeVue.current = true;
+      return;
+    }
+    if (minuteurRecharge.current !== null) return;
+    minuteurRecharge.current = setTimeout(() => {
+      minuteurRecharge.current = null;
+      onRecharger();
+    }, 250);
+  }, [onRecharger]);
+
+  useEvenements(
+    ['message.new', 'message.read', 'conversation.updated', 'conversation.typing', 'resync'],
+    (evenement, payload) => {
+      const dans = (payload as { conversationId?: unknown } | null)?.conversationId;
+      if (evenement === 'conversation.typing') {
+        if (dans === cible) {
+          setFrappe({ jusqua: Date.now() + REALTIME_TYPING_TTL_MS });
+        }
+        return;
+      }
+      relireBientot();
+    },
+  );
+  useRepliPolling(relireBientot);
+
+  useEffect(() => {
+    const auRetour = (): void => {
+      if (document.visibilityState === 'visible' && enAttenteDeVue.current) {
+        enAttenteDeVue.current = false;
+        relireBientot();
+      }
+    };
+    document.addEventListener('visibilitychange', auRetour);
+    return () => {
+      document.removeEventListener('visibilitychange', auRetour);
+      if (minuteurRecharge.current !== null) clearTimeout(minuteurRecharge.current);
+    };
+  }, [relireBientot]);
+
+  /** L'indicateur s'éteint de lui-même : aucun « a cessé d'écrire » n'existe. */
+  useEffect(() => {
+    if (frappe === null) return;
+    const reste = frappe.jusqua - Date.now();
+    const minuteur = setTimeout(() => {
+      setFrappe(null);
+    }, Math.max(reste, 0));
+    return () => {
+      clearTimeout(minuteur);
+    };
+  }, [frappe]);
+
+  /** Au plus une émission par intervalle — la passerelle en refuse davantage. */
+  const derniereFrappe = useRef(0);
+  const frappeEnCours = useCallback((): void => {
+    if (cible === null) return;
+    const maintenant = Date.now();
+    if (maintenant - derniereFrappe.current < REALTIME_TYPING_EMIT_INTERVAL_MS) return;
+    derniereFrappe.current = maintenant;
+    signalerFrappe(cible);
+  }, [cible]);
+
+  /**
+   * LE FIL SE POSE EN BAS quand un message arrive ou à l'ouverture. Le repère est
+   * posé par l'adaptation `MV_FIL` sur le conteneur des bulles ; on ne défile que
+   * si le lecteur était déjà près du bas, pour ne pas arracher quelqu'un qui relit
+   * un message plus ancien.
+   */
+  const nbBulles = donnees.messages.length;
+  const dernierNb = useRef(0);
+  useEffect(() => {
+    const fil = [...document.querySelectorAll<HTMLElement>('[data-fil-messages]')].find(
+      (e) => e.offsetParent !== null,
+    );
+    const derniere = fil?.lastElementChild;
+    if (derniere instanceof HTMLElement) {
+      const premier = dernierNb.current === 0;
+      const proche = derniere.getBoundingClientRect().top < window.innerHeight * 1.6;
+      if ((premier || proche) && nbBulles >= dernierNb.current) {
+        derniere.scrollIntoView({ block: 'end' });
+      }
+    }
+    dernierNb.current = nbBulles;
+  }, [nbBulles]);
 
   /**
    * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -211,8 +326,27 @@ export function ConversationVivante({
     [texte],
   );
 
-  const bulles = donnees.messages.map((m) => {
-    const avec = m as BulleAvecStory;
+  const bulles = donnees.messages.map((brute) => {
+    const avec = brute as BulleAvecStory;
+    // Les gestes par bulle : pas sur un message supprimé, il n'y a plus rien à faire.
+    const m =
+      avec.id === undefined || avec.supprime === true
+        ? brute
+        : {
+            ...brute,
+            actions: (
+              <ActionsBulle
+                mine={brute.cote === 'flex-end'}
+                onSupprimer={() => {
+                  setASupprimer(avec.id);
+                }}
+                onSignaler={() => {
+                  setMessageSignale(avec.id);
+                  routeur.push('?feuille=signaler');
+                }}
+              />
+            ),
+          };
     if (avec.storyId === null || avec.storyId === undefined) return m;
     const id = avec.storyId;
     return {
@@ -231,12 +365,73 @@ export function ConversationVivante({
     };
   });
 
+  const confirmerSuppression = (): void => {
+    if (aSupprimer === null || enVol) return;
+    setEnVol(true);
+    supprimerMessage(aSupprimer)
+      .then(() => {
+        notifySucces('Message supprimé.');
+        onRecharger();
+      })
+      .catch((cause: unknown) => {
+        notifyError(
+          cause instanceof ApiError ? cause.displayMessage : 'Le message n’a pas pu être supprimé.',
+        );
+      })
+      .finally(() => {
+        setEnVol(false);
+        setASupprimer(null);
+      });
+  };
+
+  /** Accepter ou ignorer la demande de la conversation ouverte (08 §5.2). */
+  const repondreDemande = (accepter: boolean): void => {
+    if (cible === null || enVol) return;
+    setEnVol(true);
+    (accepter ? accepterDemande(cible) : ignorerDemande(cible))
+      .then(() => {
+        if (accepter) {
+          notifySucces('Demande acceptée : vous pouvez répondre.');
+          onRecharger();
+        } else {
+          notifySucces('Demande ignorée.');
+          routeur.push('/messages');
+          onRecharger();
+        }
+      })
+      .catch((cause: unknown) => {
+        notifyError(
+          cause instanceof ApiError ? cause.displayMessage : 'La réponse à la demande n’a pas pu partir.',
+        );
+      })
+      .finally(() => {
+        setEnVol(false);
+      });
+  };
+
+  const demande = donnees.conversationDemande ?? null;
+  const prenom = donnees.conversationPrenom ?? null;
   const enrichies: M01Data = {
     ...donnees,
     messages: bulles,
+    pied: (
+      <PiedConversation
+        demande={demande}
+        prenom={prenom}
+        ecritPar={frappe === null ? null : (prenom ?? 'Quelqu’un')}
+        occupe={enVol}
+        onAccepter={() => {
+          repondreDemande(true);
+        }}
+        onIgnorer={() => {
+          repondreDemande(false);
+        }}
+      />
+    ),
     composeurTexte: texte,
     onComposeurTexte: (e) => {
       setTexte(e.target.value);
+      if (e.target.value !== '') frappeEnCours();
     },
     onComposeurTouche: (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -246,8 +441,13 @@ export function ConversationVivante({
     },
     onEnvoyer: envoyer,
     /** Rien à envoyer : ni texte, ni image. L'un des deux suffit désormais. */
-    envoiBloque: enVol || cible === null || (texte.trim() === '' && images.length === 0),
-    composeurBloque: enVol || cible === null,
+    envoiBloque:
+      enVol ||
+      cible === null ||
+      demande === 'recue' ||
+      demande === 'envoyee' ||
+      (texte.trim() === '' && images.length === 0),
+    composeurBloque: enVol || cible === null || demande === 'recue' || demande === 'envoyee',
     onJoindreImage: () => {
       choisirFichier.current?.click();
     },
@@ -377,7 +577,14 @@ export function ConversationVivante({
     onDetails: (e) => {
       setDetails(e.target.value);
     },
-    envoiBloque: motif === null || enVol || (donnees.conversationUserId ?? null) === null,
+    envoiBloque:
+      motif === null ||
+      enVol ||
+      (messageSignale === null && (donnees.conversationUserId ?? null) === null),
+    /** La feuille se referme : le prochain « Signaler » du menu vise de nouveau le membre. */
+    onFermee: () => {
+      setMessageSignale(null);
+    },
     onEnvoyer: () => {
       /**
        * ── SIGNALER DEMANDE N2 DEPUIS LE 2026-10-09 ────────────────────────
@@ -390,13 +597,14 @@ export function ConversationVivante({
         setNiveauRefuse('report.create');
         return;
       }
-      const sujet = donnees.conversationUserId ?? null;
+      const sujet = messageSignale ?? donnees.conversationUserId ?? null;
       if (motif === null || sujet === null || enVol) return;
       setEnVol(true);
-      signaler('USER', sujet, motif, details)
+      signaler(messageSignale === null ? 'USER' : 'MESSAGE', sujet, motif, details)
         .then(() => {
           setMotif(null);
           setDetails('');
+          setMessageSignale(null);
           routeur.push('?feuille=merci');
         })
         .catch((cause: unknown) => {
@@ -498,6 +706,19 @@ export function ConversationVivante({
         onConfirmer={confirmerBlocage}
         onAnnuler={() => {
           setBlocageDemande(false);
+        }}
+      />
+      <FenetreConfirmation
+        ouverte={aSupprimer !== null}
+        nom="SUPPRESSION_MESSAGE"
+        titre="Supprimer ce message ?"
+        question="Il sera remplacé par « Message supprimé » pour tous les membres de la conversation."
+        precision="La modération peut toujours consulter une conversation signalée."
+        libelleConfirmer="Supprimer"
+        occupe={enVol}
+        onConfirmer={confirmerSuppression}
+        onAnnuler={() => {
+          setASupprimer(null);
         }}
       />
       <FenetreNiveau

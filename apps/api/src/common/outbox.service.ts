@@ -121,6 +121,7 @@ export type DomainEventType =
   // avec le contact. Le producteur est le module 08, non encore livré —
   // l'abonnement l'attend plutôt que d'être oublié le jour où il arrivera.
   | 'connection.removed'
+  | 'connection.suggested'
   // ── 10-services.md §8 ─────────────────────────────────────────────────────
   //
   // `pro.approved` et `pro.rejected` ONT désormais leur producteur : la validation
@@ -145,6 +146,7 @@ export type DomainEventType =
   | 'housing.contacted'
   | 'job.published'
   | 'job.sponsored'
+  | 'job.updated'
   | 'pro.registered'
   | 'pro.contacted'
   | 'pro.recommended'
@@ -165,6 +167,7 @@ export type DomainEventType =
   | 'user.onboarded'
   | 'user.onboarded_location'
   | 'user.phase_changed'
+  | 'user.profile_updated'
   | 'user.deactivated'
   | 'user.reactivated'
   | 'user.deletion_requested'

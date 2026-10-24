@@ -31,12 +31,14 @@ import { X03MobileConfirmation } from '@/screens/x03confirmation/mobileconfirmat
  * au chargement, et une boîte de dialogue montée dans un portail n'existe pas au
  * rendu serveur.
  *
- * « ENVOYER LE SIGNALEMENT » RESTE INERTE, et la confirmation n'est donc PAS
- * enchaînée derrière lui. Le signalement part par `POST /reports` (module 13), que
- * ce lot ne branche pas ; faire apparaître « Merci. Nous regardons sous 24 heures. »
- * sans que rien ne soit parti serait mentir au membre — la même règle que pour le
- * « Publier » de J03. Les quatre entrées du menu sont inertes pour la même raison,
- * et parce que la maquette les dessine en `<span>`, pas en boutons.
+ * LE SIGNALEMENT PART, ET LA CONFIRMATION SUIT. « Envoyer le signalement » écrit
+ * `POST /reports` (module 13) — sur le MEMBRE depuis l'entrée du menu, sur UN MESSAGE
+ * précis depuis « Signaler » sous sa bulle (`subjectType: MESSAGE`) — puis pousse
+ * `?feuille=merci`. (Ce paragraphe disait l'inverse tant que rien ne partait : « le
+ * rendre actif sans que rien ne parte mentirait au membre ». Cela a été branché, et
+ * la règle d'origine reste vraie : la confirmation n'apparaît qu'APRÈS l'écriture.)
+ * Les quatre entrées du menu sont des gestes réels (profil, sourdine, blocage,
+ * signalement) ; la fenêtre porte maintenant une croix de fermeture (`MV_MENU_CROIX`).
  *
  * CE QUI TRAVERSE LA FRONTIÈRE CLIENT/SERVEUR — le type d'une feuille, la table des
  * `titleId`, la lecture du paramètre d'URL — vit dans `./feuilles.ts`, qui n'est PAS
@@ -104,7 +106,11 @@ export function EcranMessages({
   useEffect(() => {
     setCourante(ouverte);
   }, [ouverte]);
-  const fermer = useCallback((): void => setCourante(null), []);
+  const onFermee = signalement?.onFermee;
+  const fermer = useCallback((): void => {
+    setCourante(null);
+    onFermee?.();
+  }, [onFermee]);
 
   /**
    * LE NOM LU DANS L'ATTRIBUT EST VÉRIFIÉ contre la table. Sans cette garde, une

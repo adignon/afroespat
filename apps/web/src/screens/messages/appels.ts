@@ -25,7 +25,7 @@ import {
   type NotificationCategory,
 } from '@app/shared';
 import { z } from 'zod';
-import { fetchMe, memberApi } from '@/lib/api/index';
+import { fetchMe, memberApi, voidResponse } from '@/lib/api/index';
 import { urlMedia } from '@/lib/api/base';
 import { photoFondFor } from '../a14/data';
 import {
@@ -43,9 +43,10 @@ import type {
   RangeeConversation,
 } from '../m01/data';
 import type { M01BloqueData } from '../m01bloque/data';
-import type { X01Data } from '../x01/data';
+import type { ValeursFiltresRecherche, X01Data } from '../x01/data';
+import { FILTRES_VIDES } from '../x01/filtres';
 import {
-  GLYPHES_X02,
+  glypheDe,
   type FiltreNotification,
   type LigneNotification,
   type X02Data,
@@ -298,12 +299,10 @@ const BULLE_SIENNE = {
  * `null` veut dire masqué (§4), et la bulle reste vide plutôt que de porter un
  * substitut composé ici.
  *
- * `mention` PORTE L'HEURE, JAMAIS « Vu ». La maquette écrit « Vu » sous la dernière
- * bulle envoyée, et aucun accusé de lecture par message n'est exposé :
- * `conversation_members.last_read_at` existe en base, la réponse ne le rend pas.
- * Inventer un « Vu » dirait au membre que son message a été lu, ce que personne ne
- * sait ici. Signalé au porteur.
- */
+ * `mention` PORTE L'HEURE, ET « Vu » SOUS MA DERNIÈRE BULLE LUE. Le serveur rend
+ * maintenant `meta.seenAt` (`conversation_members.last_read_at` des autres
+ * membres) : `bullesDuFil` y pose « Vu » une fois, sous ma dernière bulle non
+ * supprimée dont l'envoi précède cette lecture. Tant que personne n'a lu, rien. */
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ LA BULLE PORTE LA STORY, MAIS PAS ENCORE LE GESTE                         ║
@@ -319,9 +318,16 @@ const BULLE_SIENNE = {
 export interface BulleAvecStory extends BulleMessage {
   readonly storyId: string | null;
   readonly storyVivante: boolean;
+  /** Pour les gestes par bulle (supprimer, signaler). */
+  readonly id: string;
+  readonly supprime: boolean;
 }
 
-function bulleDe(m: Message, nomsParHandle: ReadonlyMap<string, string>): BulleAvecStory {
+function bulleDe(
+  m: Message,
+  nomsParHandle: ReadonlyMap<string, string>,
+  vu = false,
+): BulleAvecStory {
   const style = m.mine ? BULLE_MIENNE : BULLE_SIENNE;
   return {
     cote: style.cote,
@@ -331,7 +337,13 @@ function bulleDe(m: Message, nomsParHandle: ReadonlyMap<string, string>): BulleA
     trait: style.trait,
     auteur: m.mine ? '' : (nomsParHandle.get(m.senderHandle) ?? m.senderHandle),
     corps: m.body ?? '',
-    mention: heureRelative(m.sentAt, 'heure-du-jour'),
+    // « Vu » : renvoyé de `meta.seenAt` (`conversation_members.last_read_at` de
+    // l'AUTRE) — voir `bullesDuFil`. L'heure d'abord, « Vu » ensuite.
+    mention: vu
+      ? `${heureRelative(m.sentAt, 'heure-du-jour')} · Vu`
+      : heureRelative(m.sentAt, 'heure-du-jour'),
+    id: m.id,
+    supprime: m.deletedAt !== null,
     /**
      * L'IMAGE JOINTE — `photoFondFor` et non une recette de plus.
      *
@@ -380,11 +392,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * n'est pas une demande en attente. C'est ce que la planche montre, pas une
  * préférence.
  *
- * `MESSAGE_POLL_INTERVAL_MS` (15 s) existe dans `packages/shared` pour le repli en
- * polling de §5.3, et il n'est PAS employé : ce lot charge une fois, au montage.
- * Rafraîchir en boucle sans que la maquette dessine d'état de rafraîchissement
- * ferait clignoter le fil sans le dire.
- */
+ * `MESSAGE_POLL_INTERVAL_MS` (15 s) sert maintenant : `ConversationVivante` relit par
+ * le temps réel (`lib/temps-reel`) et, socket coupée, par ce polling de repli (§5.3).
+ * Ce chargeur reste une fonction PURE appelée une fois par relecture ; c'est
+ * l'appelant qui décide quand. */
 export async function chargerM01(conversationId: string | null): Promise<M01Data> {
   const [me, page] = await Promise.all([
     fetchMe(),
@@ -432,7 +443,13 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
      * discret : les bulles alterneraient toujours de côté, et seul le sens des
      * phrases trahirait l'inversion.
      */
-    messages: fil === null ? [] : [...fil.items].reverse().map((m) => bulleDe(m, nomsParHandle)),
+    messages: fil === null ? [] : bullesDuFil(fil, nomsParHandle),
+    conversationDemande:
+      ouverte === null ? null : ouverte.pendingForMe ? 'recue' : ouverte.awaitingReply ? 'envoyee' : null,
+    conversationPrenom:
+      ouverte === null || ouverte.title !== null
+        ? null
+        : ((ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.displayName ?? '').split(' ')[0] ?? null),
     /**
      * CELLE QU'ON A RÉELLEMENT OUVERTE, et pas celle que l'URL demandait.
      *
@@ -456,6 +473,28 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
         ? null
         : (ouverte.members.find((m) => m.userId !== me.user.id && !m.hidden)?.userId ?? null),
   };
+}
+
+/**
+ * LE FIL, DANS L'ORDRE DE LECTURE, avec « Vu » sur la dernière bulle que j'ai
+ * envoyée et que l'autre a lue.
+ *
+ * `meta.seenAt` est la lecture des AUTRES membres (`last_read_at`, le plus ancien
+ * à plusieurs : « vu par tous »). « Vu » va sous MA dernière bulle non supprimée
+ * dont l'heure d'envoi n'est pas postérieure à cette lecture — pas sous toutes :
+ * Messenger écrit « Vu » une fois, au bout du fil, et la maquette n'en dessine
+ * qu'un.
+ */
+export function bullesDuFil(
+  fil: { readonly items: readonly Message[]; readonly meta: { readonly seenAt: string | null } },
+  nomsParHandle: ReadonlyMap<string, string>,
+): BulleAvecStory[] {
+  const chrono = [...fil.items].reverse();
+  const lu = fil.meta.seenAt === null ? null : Date.parse(fil.meta.seenAt);
+  const derniere = [...chrono].reverse().find((m) => m.mine && m.deletedAt === null) ?? null;
+  return chrono.map((m) =>
+    bulleDe(m, nomsParHandle, lu !== null && m.id === derniere?.id && Date.parse(m.sentAt) <= lu),
+  );
 }
 
 /**
@@ -570,7 +609,11 @@ export async function chargerM01Bloque(conversationId: string | null): Promise<M
  * affiche alors ce que le membre a saisi, et c'est tout ce qu'il peut faire
  * honnêtement.
  */
-export async function chargerX01(requete: string, type: string | null = null): Promise<X01Data> {
+export async function chargerX01(
+  requete: string,
+  type: string | null = null,
+  filtres: ValeursFiltresRecherche = FILTRES_VIDES,
+): Promise<X01Data> {
   const q = requete.trim();
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
@@ -636,11 +679,11 @@ export async function chargerX01(requete: string, type: string | null = null): P
    */
   const [groupes, plats] = assezPourChercher
     ? await Promise.all([
-        memberApi.get(`/search?q=${encodeURIComponent(q)}`, groupedSearchResponseSchema),
+        memberApi.get(`/search?q=${encodeURIComponent(q)}${filtresEnRequete(filtres)}`, groupedSearchResponseSchema),
         typeRetenu === null
           ? Promise.resolve(null)
           : memberApi.get(
-              `/search?q=${encodeURIComponent(q)}&type=${typeRetenu}`,
+              `/search?q=${encodeURIComponent(q)}&type=${typeRetenu}${filtresEnRequete(filtres)}`,
               typedSearchResponseSchema,
             ),
       ])
@@ -655,7 +698,25 @@ export async function chargerX01(requete: string, type: string | null = null): P
     filtres: filtresDe(groupes, q, typeRetenu),
     resultats,
     vide: videDe(groupes, q, resultats),
+    filtresAvances: filtres,
+    typeActif: typeRetenu,
   };
+}
+
+/**
+ * Les filtres de la recherche en paramètres d'API (11 §3) : ville, rayon, pays,
+ * période, état — les noms du schéma partagé `searchQuerySchema`. Le rayon n'est
+ * envoyé qu'avec une ville ; la période « toute » est le défaut du serveur.
+ */
+function filtresEnRequete(f: ValeursFiltresRecherche): string {
+  const p = new URLSearchParams();
+  if (f.ville !== null) p.set('cityId', f.ville);
+  if (f.ville !== null && f.rayon !== null) p.set('radiusKm', String(f.rayon));
+  if (f.pays !== null) p.set('countryId', f.pays);
+  if (f.periode !== 'all') p.set('period', f.periode);
+  if (f.etat !== null) p.set('state', f.etat);
+  const texte = p.toString();
+  return texte === '' ? '' : `&${texte}`;
 }
 
 // ─── X02 · les notifications ─────────────────────────────────────────────────
@@ -686,46 +747,35 @@ function ligneDe(n: Notification): LigneNotification {
   return {
     fond: fonds.fond,
     fondIcone: fonds.fondIcone,
-    glyphe: GLYPHES_X02[n.category] ?? '',
+    glyphe: glypheDe(n.category),
     titre: n.title,
     corps: n.body === null ? '' : ` ${n.body}`,
     quand: heureRelative(n.createdAt, 'minutes'),
     nonLu: !lu,
+    // La cible posée par le serveur (colonne `url`). Les gestionnaires la calculent
+    // en chemins du front ; `null` pour les lignes sans page.
+    href: n.url,
+    id: n.id,
   };
+}
+
+/** `POST /notifications/read` : des lignes, ou toutes (12 §4). */
+export function marquerLues(
+  quoi: { readonly ids: readonly string[] } | { readonly all: true },
+): Promise<{ readonly unread: number }> {
+  return memberApi.post(
+    '/notifications/read',
+    z.object({ updated: z.number(), unread: z.number() }).strict(),
+    { body: 'all' in quoi ? { all: true } : { ids: quoi.ids } },
+  );
 }
 
 /**
  * X02 — les notifications du membre.
  *
- * `meta.unread` est lu et validé, puis N'EST AFFICHÉ NULLE PART : aucune des trois
- * planches ne dessine le compteur que 12 §2.7 demande. La raison complète est dans
- * `screens/x02/data.ts` ; elle est signalée au porteur plutôt que contournée.
- *
-/**
- * ╔════════════════════════════════════════════════════════════════════════════╗
- * ║ LES FILTRES ENVOIENT MAINTENANT — ET UN LIBELLÉ VAUT PARFOIS DEUX          ║
- * ╚════════════════════════════════════════════════════════════════════════════╝
- *
- * Le porteur : « Les filtres sur la page notification marchent ? » Ils ne
- * marchaient pas, et ce commentaire disait pourquoi : « aucune n'est un bouton ».
- * Elles sont maintenant des liens, et ce chargeur reçoit ce qu'elles portent.
- *
- * LE LIBELLÉ DESSINÉ N'EST PAS UNE CATÉGORIE, et c'est le point délicat.
- * `NOTIFICATION_CATEGORIES` en compte quatorze, la maquette dessine sept
- * pastilles : « Parcours » couvre à lui seul `JOURNEY_DEADLINE` ET
- * `JOURNEY_TEAM`. La correspondance est donc une TABLE, et elle est écrite ici
- * plutôt que devinée à l'écran.
- *
- * ── UNE CATÉGORIE : LE SERVEUR FILTRE. PLUSIEURS : ON TRIE ICI ──────────────
- *
- * `notificationListQuerySchema.category` prend UNE catégorie. Pour « Parcours »,
- * demander deux pages et les recoudre donnerait un ordre faux au premier
- * `nextCursor` ; on demande donc la page SANS filtre et on garde les lignes des
- * deux catégories. C'est le même arbitrage que l'onglet « Annonces » des
- * enregistrés, et il porte la même limite : au-delà d'une page, une catégorie
- * rare peut tomber hors de la fenêtre lue. Signalé plutôt que caché — la vraie
- * correction serait un `category` répétable côté serveur.
- */
+ * `meta.unread` est affiché : « N non lues » près du titre (`CompteurNonLues`), et
+ * la cloche de la barre haute le suit en direct. Les lignes mènent à leur cible (la
+ * colonne `url`) et « Tout marquer lu » écrit `POST /notifications/read`. */
 const CATEGORIES_DU_FILTRE: Readonly<Record<string, readonly NotificationCategory[]>> = {
   Parcours: ['JOURNEY_DEADLINE', 'JOURNEY_TEAM'],
   Entraide: ['HELP'],
@@ -933,6 +983,20 @@ export function mettreEnSourdine(
     z.object({ muted: z.boolean() }).strict(),
     { body: { muted } },
   );
+}
+
+export function supprimerMessage(messageId: string): Promise<unknown> {
+  return memberApi.del(`/messages/${messageId}`, voidResponse);
+}
+
+/** Accepter la demande de conversation (08 §5.2). */
+export function accepterDemande(conversationId: string): Promise<unknown> {
+  return memberApi.post(`/conversations/${conversationId}/accept`, z.unknown());
+}
+
+/** L'ignorer : elle quitte ma liste, l'autre ne voit rien. */
+export function ignorerDemande(conversationId: string): Promise<unknown> {
+  return memberApi.post(`/conversations/${conversationId}/ignore`, z.unknown());
 }
 
 export function bloquerMembre(handle: string): Promise<unknown> {

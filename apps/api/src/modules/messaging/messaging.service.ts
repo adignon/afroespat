@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { newId, type Prisma } from '@app/db';
 import {
   CONVERSATION_PREVIEW_MAX,
@@ -28,6 +28,8 @@ import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
 import { ConnectionsService } from '../connections/connections.service';
+import { RealtimeRelayService } from '../realtime/realtime.relay';
+import type { RealtimeEvent } from '../realtime/realtime.channel';
 
 /**
  * Messagerie — 08-parrainage-messagerie.md §5.
@@ -94,7 +96,29 @@ export class MessagingService {
     private readonly audit: AuditService,
     private readonly visibility: VisibilityService,
     private readonly connections: ConnectionsService,
+    /**
+     * LA POUSSÉE TEMPS RÉEL (08 §7.3), FACULTATIVE : les épreuves qui construisent
+     * ce service à la main n'en ont pas, et un navigateur sans socket retombe sur
+     * le polling (`MESSAGE_POLL_INTERVAL_MS`). Elle ne lève jamais — voir
+     * `RealtimeRelayService.publish`.
+     */
+    @Optional() @Inject(RealtimeRelayService) private readonly realtime: RealtimeRelayService | null = null,
   ) {}
+
+  /**
+   * Pousse un événement à ces membres. Ne lève jamais, n'attend pas les
+   * destinataires un par un : la requête HTTP qui l'a déclenché ne doit pas
+   * dépendre de Redis pour répondre.
+   */
+  private async push(
+    userIds: readonly string[],
+    event: RealtimeEvent,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const relais = this.realtime;
+    if (relais === null) return;
+    await Promise.all([...new Set(userIds)].map((id) => relais.publish(id, event, payload)));
+  }
 
   private fail(code: MessagingErrorCode, details?: Record<string, unknown>): never {
     throw new ApiError(code, MESSAGING_ERROR_MESSAGES[code], MESSAGING_ERROR_CODES[code], details);
@@ -337,8 +361,39 @@ export class MessagingService {
           where: { conversationId_userId: { conversationId, userId } },
           data: { lastReadAt: readAt },
         });
+        // « Vu » EN DIRECT : les autres membres apprennent que j'ai lu, et mes
+        // autres onglets que mon compteur de non-lus a baissé. Seulement quand la
+        // lecture AVANCE : un rechargement qui ne change rien ne pousse rien.
+        const others = conversation.members
+          .filter((m) => m.userId !== userId && m.leftAt === null)
+          .map((m) => m.userId);
+        void this.push(others, 'message.read', {
+          conversationId,
+          readerUserId: userId,
+          readAt: readAt.toISOString(),
+        });
+        void this.push([userId], 'conversation.updated', { conversationId, reason: 'read' });
       }
     }
+
+    /**
+     * ── « VU » ──────────────────────────────────────────────────────────────
+     *
+     * Où en est la lecture des AUTRES membres, renvoyée telle quelle depuis
+     * `last_read_at`. À deux, c'est celle de l'interlocuteur ; à plusieurs, la
+     * plus ancienne (« vu par tous »). Un membre qui a quitté ne compte pas, et
+     * un membre qui n'a jamais lu rend `null` pour tout le monde : mieux vaut ne
+     * pas afficher « Vu » que l'afficher trop tôt.
+     *
+     * Lue APRÈS ma propre mise à jour et sans elle : ma ligne n'y entre pas.
+     */
+    const lecturesDesAutres = conversation.members
+      .filter((m) => m.userId !== userId && m.leftAt === null)
+      .map((m) => m.lastReadAt);
+    const seenAt =
+      lecturesDesAutres.length === 0 || lecturesDesAutres.some((d) => d === null)
+        ? null
+        : new Date(Math.min(...lecturesDesAutres.map((d) => (d as Date).getTime())));
 
     return {
       items: page.items.map((message) => ({
@@ -373,6 +428,7 @@ export class MessagingService {
         kind: conversation.kind,
         pendingForMe: iAmPendingRecipient,
         awaitingReply: pending.pending && pending.initiatorUserId === userId,
+        seenAt: seenAt === null ? null : seenAt.toISOString(),
       },
     };
   }
@@ -419,6 +475,9 @@ export class MessagingService {
       where: { conversationId_userId: { conversationId, userId } },
       data: { isMuted: muted },
     });
+    // Mes autres onglets suivent : l'icône de sourdine de la liste doit changer
+    // sans rechargement.
+    void this.push([userId], 'conversation.updated', { conversationId, reason: 'muted' });
     return { muted };
   }
 
@@ -547,11 +606,63 @@ export class MessagingService {
       return { accepted: true };
     }
 
+    const now = new Date();
     await this.prisma.conversationMember.update({
       where: { conversationId_userId: { conversationId, userId } },
-      data: { lastReadAt: new Date() },
+      data: { lastReadAt: now },
     });
+
+    // L'initiateur apprend l'acceptation EN DIRECT : son bandeau « en attente de
+    // réponse » tombe, son champ se rouvre, et son message passe à « Vu ».
+    const initiator = pending.initiatorUserId;
+    if (initiator !== null) {
+      void this.push([initiator], 'conversation.updated', { conversationId, reason: 'accepted' });
+      void this.push([initiator], 'message.read', {
+        conversationId,
+        readerUserId: userId,
+        readAt: now.toISOString(),
+      });
+    }
+    void this.push([userId], 'conversation.updated', { conversationId, reason: 'accepted' });
     return { accepted: true };
+  }
+
+  /**
+   * `POST /conversations/:id/ignore` — l'autre moitié de « l'autre accepte ou
+   * IGNORE » (08 §5.2), que la spec nomme et qu'aucune route ne portait.
+   *
+   * IGNORER, C'EST SORTIR DE LA CONVERSATION, SANS UN MOT À L'AUTRE. `left_at` est
+   * posé sur MA ligne : la demande quitte ma liste (`listConversations` écarte les
+   * conversations quittées), et elle n'est plus lisible par moi. L'initiateur,
+   * lui, ne voit RIEN changer — il reste « en attente de réponse » et ne peut pas
+   * écrire un second message (`PENDING_CONVERSATION`, la règle dure du §12). C'est
+   * exactement « sans réponse, pas de second message » ; lui annoncer un refus
+   * serait une pression de plus sur celui qui a choisi de ne pas répondre.
+   *
+   * RIEN À IGNORER = NON ÉCHEC : déjà acceptée, déjà ignorée, ou c'est moi qui
+   * attends. Un double clic ne doit pas produire un 409, comme `acceptDirect`.
+   *
+   * ⚠ LIMITE ASSUMÉE, remontée : `left_at` est aussi ce que la cascade de blocage
+   * pose. Un membre qui a ignoré une demande ne peut donc pas, plus tard, écrire
+   * lui-même dans CE fil (`CONVERSATION_CLOSED`) ; il le peut en revanche après un
+   * déblocage de sa part ou une demande de contact, qui passent par une autre voie.
+   * Une colonne `ignored_at` serait plus juste, mais le schéma de ce module est
+   * figé (§6) et la migration d'une colonne pour ce seul cas n'est pas justifiée.
+   */
+  async ignoreDirect(userId: string, conversationId: string) {
+    const { conversation, member } = await this.memberOf(conversationId, userId);
+    if (conversation.kind !== 'DIRECT') throw ApiError.notFound();
+    if (member.leftAt !== null) return { ignored: true };
+
+    const pending = await this.pendingState(conversationId, userId);
+    if (!pending.pending || pending.initiatorUserId === userId) return { ignored: false };
+
+    await this.prisma.conversationMember.update({
+      where: { conversationId_userId: { conversationId, userId } },
+      data: { leftAt: new Date() },
+    });
+    void this.push([userId], 'conversation.updated', { conversationId, reason: 'deleted' });
+    return { ignored: true };
   }
 
   /**
@@ -639,7 +750,7 @@ export class MessagingService {
   async deleteMessage(userId: string, messageId: string): Promise<void> {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, senderUserId: true, deletedAt: true },
+      select: { id: true, senderUserId: true, deletedAt: true, conversationId: true },
     });
     if (message === null || message.senderUserId !== userId) throw ApiError.notFound();
     if (message.deletedAt !== null) return;
@@ -648,6 +759,17 @@ export class MessagingService {
       where: { id: messageId },
       data: { deletedAt: new Date() },
     });
+
+    // « Message supprimé » apparaît chez les autres sans qu'ils rechargent.
+    const members = await this.prisma.conversationMember.findMany({
+      where: { conversationId: message.conversationId, leftAt: null },
+      select: { userId: true },
+    });
+    void this.push(
+      members.map((m) => m.userId),
+      'conversation.updated',
+      { conversationId: message.conversationId, reason: 'deleted' },
+    );
   }
 
   // ── Conversations créées par d'autres modules ─────────────────────────────

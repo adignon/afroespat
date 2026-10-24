@@ -57,6 +57,7 @@ const GROUPES = groupedSearchResponseSchema.parse({
           rank: 0.4,
           updatedAt: '2026-01-02T10:00:00.000Z',
           url: '/reseaux/benin-lyon/sujets/t1',
+          subline: '3 réponses · Béninois de Lyon',
         },
       ],
     },
@@ -78,6 +79,7 @@ const GROUPES = groupedSearchResponseSchema.parse({
           rank: 0.3,
           updatedAt: '2026-01-01T10:00:00.000Z',
           url: '/guides/visale-sans-cdi',
+          subline: '84 utiles',
         },
       ],
     },
@@ -100,6 +102,7 @@ const PLATS = typedSearchResponseSchema.parse({
       rank: 0.2,
       updatedAt: '2026-01-03T10:00:00.000Z',
       url: null,
+      subline: null,
     },
   ],
   nextCursor: null,
@@ -114,6 +117,12 @@ const SUGGESTIONS = suggestResponseSchema.parse({
 });
 
 describe('X01 — la colonne de filtres', () => {
+  it('[lot F] la sous-ligne de la carte est celle du serveur, jamais composée ici', () => {
+    const cartes = cartesGroupees(GROUPES);
+    expect(cartes.map((c) => c.sousLigne)).toContain('84 utiles');
+    expect(cartes.some((c) => c.sousLigne === null)).toBe(false);
+  });
+
   it('la charge porte de quoi éprouver — sinon tout ce qui suit est creux', () => {
     expect(GROUPES.items).toHaveLength(2);
     expect(GROUPES.items[0]?.count).toBe(7);
@@ -263,7 +272,7 @@ describe('X01 — les cartes de résultat', () => {
    * maintenant le leur, pris dans Feather.
    */
   it('les neuf types ont neuf tracés distincts', () => {
-    const faux = { id: 'x', title: 't', excerpt: 'e', url: null };
+    const faux = { id: 'x', title: 't', excerpt: 'e', url: null, subline: null };
     const traces = (['GUIDE', 'TOPIC', 'HELP_REQUEST', 'HOUSING', 'JOB', 'EVENT', 'USER', 'CITY', 'PRO'] as const).map(
       (t) => cartesPlates({ ...PLATS, items: [{ ...PLATS.items[0]!, ...faux, subjectType: t }] }, t)[0]?.trace,
     );

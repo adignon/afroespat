@@ -398,16 +398,18 @@ export const notificationListQuerySchema = cursorQuerySchema.extend({
  * atteint le navigateur, et rien ne l'aurait dit. Un champ de trop sur une
  * notification de message est une FUITE, jamais un enrichissement.
  *
- * ── CE QUE CETTE RÉPONSE NE PORTE PAS, ET QUI MANQUE À L'ÉCRAN ───────────────
+ * ── `url` : OÙ MÈNE LA LIGNE ────────────────────────────────────────────────
  *
- * AUCUN `url`. Les gestionnaires d'événements en calculent un (`/messages/:id`) et
- * le passent au push et à l'email, mais la table `notifications` n'a PAS de colonne
- * `url` — vérifié sur le schéma Prisma. La ligne arrive donc au front avec
- * `refType` et `refId` pour toute destination, et pour une notification de message
- * `refType` vaut `CONVERSATION` tandis que `refId` porte l'identifiant du
- * MESSAGE — pas celui de la conversation. Un front qui construirait
- * `/messages/${refId}` ouvrirait une conversation qui n'existe pas. Écart remonté
- * au porteur, pas contourné : les lignes de X02 ne sont donc pas cliquables.
+ * La table n'avait AUCUNE colonne pour la destination : les gestionnaires
+ * d'événements en calculaient une (`/messages/:id`), la passaient au push, puis la
+ * jetaient, et la ligne arrivait au front avec `refType` et `refId` pour toute
+ * destination. Pour une notification de message `refId` est le MESSAGE et non la
+ * conversation — construire `/messages/${refId}` ouvrait une conversation qui
+ * n'existe pas — d'où des lignes non cliquables. La colonne `url` (migration
+ * `notifications_cible`) garde maintenant l'adresse, CHEMIN RELATIF du front.
+ * `null` pour les lignes antérieures à la colonne et pour celles qui n'ont pas de
+ * page (« Bienvenue », un changement de niveau) : l'écran ne les rend pas
+ * cliquables plutôt que d'inventer une destination.
  */
 export const notificationSchema = z
   .object({
@@ -420,8 +422,18 @@ export const notificationSchema = z
     body: z.string().nullable(),
     refType: z.string().nullable(),
     refId: z.string().nullable(),
+    url: z.string().startsWith('/').nullable(),
     readAt: z.string().datetime().nullable(),
-    channelsSent: z.array(z.enum(NOTIFICATION_DELIVERY_CHANNELS)),
+    /**
+     * `PUSH_DEFERRED` EST ACCEPTÉ ICI, et son absence cassait la page entière : le
+     * serveur écrit ce marqueur dans `channels_sent` quand le push est retenu par les
+     * HEURES CALMES (en attendant `quiet_hours_flush`). Le schéma ne connaissait que
+     * les trois canaux ; toute notification créée pendant la plage calme — 22 h à 8 h
+     * par défaut — faisait donc échouer `GET /notifications` côté front
+     * (`ApiShapeError`), et avec elle la page X02 ET le compteur de la cloche. Le
+     * défaut était invisible en journée.
+     */
+    channelsSent: z.array(z.enum([...NOTIFICATION_DELIVERY_CHANNELS, PUSH_DEFERRED])),
   })
   .strict()
   .refine((n) => n.category !== 'MESSAGE' || n.body === null, {

@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { conversationsResponseSchema, notificationsResponseSchema } from '@app/shared';
 import { hasAccessToken, memberApi, resumeSession } from '@/lib/api/member';
+import { RESYNCHRONISER } from '@/lib/temps-reel';
+import { useEvenements, useRepliPolling } from '@/lib/use-temps-reel';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -25,13 +27,10 @@ import { hasAccessToken, memberApi, resumeSession } from '@/lib/api/member';
  * soixante-cinq planches. Le compte est donc mémoïsé LE TEMPS DE LA PAGE : la
  * première icône déclenche l'appel, la seconde s'abonne à la même promesse.
  *
- * ── CE QUI N'EST PAS FAIT, ET POURQUOI ────────────────────────────────────
+ * ── LE RAFRAÎCHISSEMENT ────────────────────────────────────────────────────
  *
- * Aucun rafraîchissement en boucle. §5.3 décrit un repli en polling toutes les
- * quinze secondes pour la MESSAGERIE OUVERTE ; la barre, elle, n'a pas d'état de
- * rafraîchissement dessiné, et faire clignoter une pastille sans le dire serait
- * pire que de la laisser juste au chargement. Le compte se met à jour en changeant
- * de page, ce qui est le geste qui l'amène à regarder.
+ * Voir `useCompteursBarre` plus bas : les comptes suivent le temps réel, avec le
+ * polling de 15 s (§5.3) comme filet quand la socket est coupée.
  */
 export interface CompteursBarre {
   /** Conversations non lues — `meta.unreadTotal` de `GET /conversations`. */
@@ -85,27 +84,80 @@ async function demander(): Promise<CompteursBarre> {
 }
 
 /**
- * Les compteurs, pour la page courante.
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES COMPTEURS SONT MAINTENANT EN DIRECT (08 §7.3, T4 §7)                   ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
  *
- * Rend `0` tant que la réponse n'est pas là — donc AUCUNE pastille. C'est le sens
- * juste de l'attente : annoncer du non-lu qu'on n'a pas encore compté serait
- * exactement le défaut qu'on corrige.
+ * Le paragraphe « ce qui n'est pas fait » plus haut disait : aucun rafraîchissement.
+ * C'était vrai tant que le front n'avait aucun client temps réel. Il en a un
+ * (`lib/temps-reel`), et la barre s'y abonne :
+ *
+ *   · `notification.new` porte le compte de non-lues — la cloche le prend TEL
+ *     QUEL, sans relire la liste ;
+ *   · `message.new`, `message.read`, `conversation.updated` obligent à relire
+ *     `GET /conversations` (le total de non-lus est une somme que le client ne
+ *     peut pas deviner) — au plus une relecture par rafale, d'où le délai ;
+ *   · à chaque (re)connexion, tout est relu : un événement manqué pendant la
+ *     coupure n'est jamais rejoué ;
+ *   · socket coupée : le polling de 15 s prend le relais (`useRepliPolling`).
+ *
+ * L'état est UN, au niveau du module, et chaque icône s'y abonne : la cloche et
+ * la bulle de la même page restent cohérentes, et la barre de la page suivante
+ * repart de la dernière valeur connue au lieu de clignoter à zéro.
  */
+let courants: CompteursBarre = VIDE;
+const abonnes = new Set<(c: CompteursBarre) => void>();
+let relecture: ReturnType<typeof setTimeout> | null = null;
+
+function publier(suite: CompteursBarre): void {
+  if (suite.messages === courants.messages && suite.notifications === courants.notifications) return;
+  courants = suite;
+  abonnes.forEach((a) => {
+    a(suite);
+  });
+}
+
+/** Relit les deux comptes, au plus une fois par rafale d'événements. */
+function relireBientot(): void {
+  if (relecture !== null) return;
+  relecture = setTimeout(() => {
+    relecture = null;
+    enCours = demander();
+    void enCours.then(publier).catch(() => undefined);
+  }, 250);
+}
+
+/** Les écrans qui changent un compte (marquer lu) demandent à la barre de le relire. */
+export function relireCompteursBarre(): void {
+  relireBientot();
+}
+
 export function useCompteursBarre(): CompteursBarre {
-  const [compteurs, setCompteurs] = useState<CompteursBarre>(VIDE);
+  const [compteurs, setCompteurs] = useState<CompteursBarre>(courants);
 
   useEffect(() => {
-    let vivant = true;
+    abonnes.add(setCompteurs);
     enCours ??= demander();
-    void enCours
-      .then((valeurs) => {
-        if (vivant) setCompteurs(valeurs);
-      })
-      .catch(() => undefined);
+    void enCours.then(publier).catch(() => undefined);
     return () => {
-      vivant = false;
+      abonnes.delete(setCompteurs);
     };
   }, []);
+
+  useEvenements(
+    ['notification.new', 'message.new', 'message.read', 'conversation.updated', RESYNCHRONISER],
+    (evenement, payload) => {
+      if (evenement === 'notification.new') {
+        const unread = (payload as { unread?: unknown } | null)?.unread;
+        if (typeof unread === 'number') {
+          publier({ ...courants, notifications: unread });
+          return;
+        }
+      }
+      relireBientot();
+    },
+  );
+  useRepliPolling(relireBientot);
 
   return compteurs;
 }
@@ -113,4 +165,7 @@ export function useCompteursBarre(): CompteursBarre {
 /** Pour les épreuves : oublie ce qui a été demandé. */
 export function oublierCompteursBarre(): void {
   enCours = null;
+  courants = VIDE;
+  if (relecture !== null) clearTimeout(relecture);
+  relecture = null;
 }

@@ -117,7 +117,7 @@ const MESSAGES = {
     },
   ],
   nextCursor: null,
-  meta: { kind: 'DIRECT', pendingForMe: false, awaitingReply: false },
+  meta: { kind: 'DIRECT', pendingForMe: false, awaitingReply: false, seenAt: null },
 };
 
 /** `GET /v1/notifications` — trois lignes réelles, dont une de catégorie MESSAGE. */
@@ -132,6 +132,7 @@ const NOTIFICATIONS = {
       body: 'ont trouve votre conseil utile',
       refType: 'POST',
       refId: null,
+      url: null,
       readAt: null,
       channelsSent: ['IN_APP'],
     },
@@ -145,6 +146,7 @@ const NOTIFICATIONS = {
       body: null,
       refType: 'CONVERSATION',
       refId: null,
+      url: null,
       readAt: null,
       channelsSent: ['IN_APP', 'PUSH'],
     },
@@ -205,6 +207,7 @@ const RECHERCHE_GROUPEE = {
            * `"url": "/services/logement/01a11025-…"` pour un logement.
            */
           url: '/guides/obtenir-la-garantie-visale-sans-cdi',
+          subline: '84 utiles',
         },
       ],
     },
@@ -279,6 +282,19 @@ describe('le corps des messages ne fuit pas', () => {
    * c'est-à-dire le corps d'un message privé lisible sans ouvrir la conversation,
    * et sur un écran verrouillé si la ligne part aussi en push.
    */
+  it('[lot F] une notification retenue par les heures calmes (PUSH_DEFERRED) est ACCEPTÉE — sinon la page X02 et la cloche tombent', () => {
+    const calme = {
+      ...NOTIFICATIONS,
+      items: [{ ...NOTIFICATIONS.items[0], url: '/messages/abc', channelsSent: ['IN_APP', 'PUSH_DEFERRED'] }],
+    };
+    expect(notificationsResponseSchema.parse(calme).items[0]?.channelsSent).toContain('PUSH_DEFERRED');
+  });
+
+  it('[lot F] `url` doit être un chemin relatif du front, jamais une adresse absolue', () => {
+    const ext = { ...NOTIFICATIONS, items: [{ ...NOTIFICATIONS.items[0], url: 'https://evil.example/x' }] };
+    expect(() => notificationsResponseSchema.parse(ext)).toThrow();
+  });
+
   it('une notification MESSAGE portant un corps est REFUSÉE', () => {
     const fuite = {
       ...NOTIFICATIONS,

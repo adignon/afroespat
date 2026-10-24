@@ -5,7 +5,8 @@ import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import type { BarreHaute } from './data';
 import type { M01Data } from '@/screens/m01/data';
-import type { EtatVideRecherche, X01Data } from '@/screens/x01/data';
+import type { EtatVideRecherche, ValeursFiltresRecherche, X01Data } from '@/screens/x01/data';
+import { FILTRES_VIDES } from '@/screens/x01/filtres';
 import type { X02Data } from '@/screens/x02/data';
 import { M01Desktop } from '@/screens/m01/desktop.generated';
 import { M01Mobile } from '@/screens/m01/mobile.generated';
@@ -26,6 +27,7 @@ import {
 } from './appels';
 import { EcranMessages } from './ecran';
 import { ConversationVivante } from './conversation-vivante';
+import { NotificationsVivantes } from './notifications-vivantes';
 import type { FeuilleMessages } from './feuilles';
 
 /**
@@ -171,8 +173,10 @@ export function EcranMessagerie({
  * ⚠ AUCUNE SAISIE N'EST BRANCHÉE, donc. Le champ reste ce que la maquette en
  * dessine, comme le composeur du fil et comme « Publier ».
  */
-export function EcranRecherche({ requete, type }: {
+export function EcranRecherche({ requete, type, filtres = FILTRES_VIDES }: {
   readonly requete: string;
+  /** Ville, rayon, pays, période, état — lus de l'URL par la page (voir `x01/filtres.ts`). */
+  readonly filtres?: ValeursFiltresRecherche;
   /**
    * LE FILTRE DE TYPE, de `?type=` — « il faut que la left side bar contienne
    * plutôt les filtres […] avec le nombre matché ». Il voyage par l'URL et non par
@@ -183,7 +187,7 @@ export function EcranRecherche({ requete, type }: {
    */
   readonly type: string | null;
 }) {
-  const charger = useCallback(() => chargerX01(requete, type), [requete, type]);
+  const charger = useCallback(() => chargerX01(requete, type, filtres), [requete, type, filtres]);
 
   return (
     <EcranDonnees
@@ -246,7 +250,15 @@ export function EcranNotifications({
   readonly panneau: boolean;
   readonly filtre?: string;
 }) {
-  const charger = useCallback(() => chargerX02(filtre), [filtre]);
+  /** Recharger : voir `EcranMessagerie` — un compteur qui change l'identité de `charger`. */
+  const [recharge, setRecharge] = useState(0);
+  const charger = useCallback(() => {
+    void recharge;
+    return chargerX02(filtre);
+  }, [filtre, recharge]);
+  const recharger = useCallback(() => {
+    setRecharge((n) => n + 1);
+  }, []);
   return (
     <EcranDonnees
       charger={charger}
@@ -258,13 +270,17 @@ export function EcranNotifications({
       squelette={SQUELETTE_X02}
     >
       {(donnees) => (
-        <ScreenFrames
-          screen="X02"
-          desktop={
-            panneau ? <X02DesktopPanneau {...donnees} /> : <X02Desktop {...donnees} />
-          }
-          mobile={<X02Mobile {...donnees} />}
-        />
+        <NotificationsVivantes donnees={donnees} onRecharger={recharger}>
+          {(vivantes) => (
+            <ScreenFrames
+              screen="X02"
+              desktop={
+                panneau ? <X02DesktopPanneau {...vivantes} /> : <X02Desktop {...vivantes} />
+              }
+              mobile={<X02Mobile {...vivantes} />}
+            />
+          )}
+        </NotificationsVivantes>
       )}
     </EcranDonnees>
   );

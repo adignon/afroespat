@@ -82,6 +82,8 @@ export interface SearchHit {
   readonly updatedAt: Date;
   /** Où mène ce résultat — composé par `destinations`, `null` si la source a disparu. */
   readonly url: string | null;
+  /** Le fait écrit sous le titre — composé par `sublines`. */
+  readonly subline: string | null;
 }
 
 /** Une suggestion de titre, telle que `GET /search/suggest` la rend. */
@@ -261,6 +263,7 @@ export class SearchService {
      * par type présent, et non une par ligne. Voir `destinations`.
      */
     const urls = await this.destinations(visible);
+    const lignes = await this.sublines(visible);
 
     const groups = new Map<string, { type: string; label: string; count: number; capped: boolean; items: SearchHit[] }>();
     for (const row of visible) {
@@ -280,7 +283,7 @@ export class SearchService {
         };
       group.count += 1;
       if (group.items.length < SEARCH_GROUP_PREVIEW_SIZE) {
-        group.items.push(this.toHit(row, urls.get(row.subject_id) ?? null));
+        group.items.push(this.toHit(row, urls.get(row.subject_id) ?? null, lignes.get(row.subject_id) ?? null));
       }
       groups.set(key, group);
     }
@@ -317,7 +320,10 @@ export class SearchService {
 
     const visible = await this.dropBlockedAuthors(rows, separated);
     const urls = await this.destinations(visible);
-    const hits = visible.map((row) => this.toHit(row, urls.get(row.subject_id) ?? null));
+    const lignes = await this.sublines(visible);
+    const hits = visible.map((row) =>
+      this.toHit(row, urls.get(row.subject_id) ?? null, lignes.get(row.subject_id) ?? null),
+    );
 
     const page = buildPage(hits, query.limit, scope, this.cursorSecret, (hit) => hit.rank);
     return { ...page, meta: this.meta(query, hits.length === 0) };
@@ -543,7 +549,7 @@ export class SearchService {
     });
   }
 
-  private toHit(row: RawHit, url: string | null = null): SearchHit {
+  private toHit(row: RawHit, url: string | null = null, subline: string | null = null): SearchHit {
     return {
       id: row.id,
       subjectType: row.subject_type,
@@ -556,6 +562,7 @@ export class SearchService {
       rank: Number(row.rank),
       updatedAt: row.updated_at,
       url,
+      subline,
     };
   }
 
@@ -664,6 +671,122 @@ export class SearchService {
     }
 
     return urls;
+  }
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ LA SOUS-LIGNE D'UNE CARTE — LES FAITS QUE L'INDEX NE PORTE PAS            ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La maquette écrit sous chaque titre un fait : « 84 utiles » (guide), « 14
+   * réponses » (entraide), « Ouverte · Lyon 7e », « 620 € ». L'index ne porte que
+   * du texte ; ces faits sont des colonnes des sources. Comme `destinations`, la
+   * résolution se fait EN UNE REQUÊTE PAR TYPE PRÉSENT, jamais une par ligne.
+   *
+   * Seuls des champs DÉJÀ PUBLICS sur la carte de la source (un compte, un prix, un
+   * statut, une ville) y entrent : la sous-ligne n'ouvre rien que la page du
+   * résultat ne montrerait pas à celui qui peut déjà ouvrir le résultat.
+   */
+  private async sublines(
+    rows: readonly { readonly subject_type: string; readonly subject_id: string }[],
+  ): Promise<Map<string, string>> {
+    const parType = new Map<string, string[]>();
+    for (const row of rows) {
+      const liste = parType.get(row.subject_type) ?? [];
+      liste.push(row.subject_id);
+      parType.set(row.subject_type, liste);
+    }
+    const lignes = new Map<string, string>();
+    const pluriel = (n: number, un: string, plusieurs: string): string =>
+      `${String(n)} ${n > 1 ? plusieurs : un}`;
+    const joindre = (...morceaux: (string | null | undefined)[]): string =>
+      morceaux.filter((m): m is string => m !== null && m !== undefined && m !== '').join(' · ');
+    const jour = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' });
+
+    for (const [type, ids] of parType) {
+      switch (type) {
+        case 'GUIDE': {
+          for (const g of await this.prisma.guide.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, helpfulCount: true },
+          })) {
+            lignes.set(g.id, pluriel(g.helpfulCount, 'utile', 'utiles'));
+          }
+          break;
+        }
+        case 'HELP_REQUEST': {
+          for (const h of await this.prisma.helpRequest.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, status: true, responseCount: true, city: { select: { name: true } } },
+          })) {
+            lignes.set(
+              h.id,
+              joindre(
+                pluriel(h.responseCount, 'réponse', 'réponses'),
+                h.status === 'OPEN' ? 'Ouverte' : h.status === 'RESOLVED' ? 'Résolue' : 'Archivée',
+                h.city.name,
+              ),
+            );
+          }
+          break;
+        }
+        case 'HOUSING': {
+          for (const h of await this.prisma.housingListing.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, priceCents: true, currency: true, city: { select: { name: true } } },
+          })) {
+            const prix =
+              h.priceCents === null
+                ? null
+                : `${new Intl.NumberFormat('fr-FR', { style: 'currency', currency: h.currency, maximumFractionDigits: 0 }).format(h.priceCents / 100)}`;
+            lignes.set(h.id, joindre(prix, h.city.name));
+          }
+          break;
+        }
+        case 'JOB': {
+          for (const j of await this.prisma.jobListing.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, companyName: true, contractType: true, city: { select: { name: true } } },
+          })) {
+            lignes.set(j.id, joindre(j.companyName, j.contractType, j.city?.name));
+          }
+          break;
+        }
+        case 'EVENT': {
+          for (const e of await this.prisma.event.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, startsAt: true, attendeeCount: true, city: { select: { name: true } } },
+          })) {
+            lignes.set(
+              e.id,
+              joindre(jour.format(e.startsAt), e.city.name, pluriel(e.attendeeCount, 'inscrit', 'inscrits')),
+            );
+          }
+          break;
+        }
+        case 'TOPIC': {
+          for (const t of await this.prisma.topic.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, replyCount: true, community: { select: { name: true } } },
+          })) {
+            lignes.set(t.id, joindre(pluriel(t.replyCount, 'réponse', 'réponses'), t.community.name));
+          }
+          break;
+        }
+        case 'USER': {
+          for (const u of await this.prisma.user.findMany({
+            where: { id: { in: ids } },
+            select: { id: true, handle: true, city: { select: { name: true } } },
+          })) {
+            lignes.set(u.id, joindre(`@${u.handle}`, u.city?.name));
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    }
+    return lignes;
   }
 
   private meta(query: SearchQuery, empty: boolean) {
@@ -1250,14 +1373,33 @@ export class SearchService {
             // sont les publications déplacées vers lui : la table de réponses de
             // sujet n'existe pas dans le schéma figé (07 §6 le note aussi).
             postsMovedHere: {
-              select: { body: true },
+              select: { body: true, createdAt: true },
               orderBy: { createdAt: 'asc' },
               take: SEARCH_TOPIC_REPLIES_INDEXED,
             },
           },
         });
         if (topic === null) return null;
-        const replies = topic.postsMovedHere.map((p) => p.body).join('\n');
+        // Les réponses d'un sujet sont de DEUX origines : les publications déplacées
+        // vers lui, et les commentaires posés dessus (`POST /comments`,
+        // `subjectType: 'TOPIC'`). Seul le premier chemin était lu ; une réponse
+        // directe ne faisait donc jamais partie du document, et la réindexer à
+        // chaque réponse n'aurait rien changé. Les `SEARCH_TOPIC_REPLIES_INDEXED`
+        // premières, toutes origines confondues, dans l'ordre d'arrivée.
+        const comments = await this.prisma.comment.findMany({
+          where: { subjectType: 'TOPIC', subjectId: topic.id, deletedAt: null, status: 'PUBLISHED' },
+          orderBy: { createdAt: 'asc' },
+          take: SEARCH_TOPIC_REPLIES_INDEXED,
+          select: { body: true, createdAt: true },
+        });
+        const replies = [
+          ...topic.postsMovedHere.map((p) => ({ body: p.body, at: p.createdAt })),
+          ...comments.map((c) => ({ body: c.body, at: c.createdAt })),
+        ]
+          .sort((a, b) => a.at.getTime() - b.at.getTime())
+          .slice(0, SEARCH_TOPIC_REPLIES_INDEXED)
+          .map((r) => r.body)
+          .join('\n');
         return {
           subjectType,
           subjectId: topic.id,

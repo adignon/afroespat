@@ -36,6 +36,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { loadEnv } from '../../config/env';
 import { vapidPublicKeyFor } from '../../providers/webpush.provider';
 import { EMAIL_PROVIDER, PUSH_PROVIDER, type EmailProvider, type PushProvider } from '../../providers/providers';
+import { RealtimeRelayService } from '../realtime/realtime.relay';
 
 /**
  * Notifications — 12-notifications.md.
@@ -198,6 +199,8 @@ export class NotificationsService {
     @Inject(PUSH_PROVIDER) private readonly pushProvider: PushProvider,
     @Optional() @Inject(EMAIL_ADDRESS) private readonly addresses: EmailAddressPort = new NoEmailAddressPort(),
     @Optional() @Inject(OUTBOUND_QUEUE) private readonly queue: OutboundQueuePort | null = null,
+    /** La poussée temps réel (`notification.new`). Facultative : voir `MessagingService`. */
+    @Optional() @Inject(RealtimeRelayService) private readonly realtime: RealtimeRelayService | null = null,
   ) {}
 
   // ══ Le cœur : livrer une notification ═════════════════════════════════════
@@ -291,6 +294,7 @@ export class NotificationsService {
           data: {
             title: input.title,
             body: input.body ?? null,
+            ...(input.url === undefined || input.url === null ? {} : { url: input.url }),
             readAt: null,
             channelsSent: this.mergeChannels(existing.channelsSent, channels),
           },
@@ -309,6 +313,7 @@ export class NotificationsService {
           body: input.body ?? null,
           refType: input.refType ?? null,
           refId: input.refId ?? null,
+          url: input.url ?? null,
           channelsSent: channels,
         },
       });
@@ -350,7 +355,30 @@ export class NotificationsService {
     });
 
     if (result.outcome === 'CREATED') await this.enqueue(jobs);
+
+    // 12 §2.7 / T4 §7 : `notification.new` — la cloche bouge sans rechargement. Pour
+    // une ligne CRÉÉE ou REGROUPÉE (elle redevient non lue), jamais pour un rejeu.
+    // Le compteur voyage avec l'événement : le client n'a pas besoin de relire la
+    // liste pour afficher le bon nombre. Aucun titre, aucun corps — la charge dit
+    // qu'il y a du nouveau, la liste se lit par l'API.
+    if (result.outcome === 'CREATED' || result.outcome === 'GROUPED') {
+      await this.pushNew(input.userId, result.id, input.category);
+    }
     return { outcome: result.outcome, notificationId: result.id, channels: result.channels };
+  }
+
+  /** Ne lève jamais : un incident Redis ne doit pas faire rejouer une notification déjà écrite. */
+  private async pushNew(userId: string, notificationId: string, category: string): Promise<void> {
+    if (this.realtime === null) return;
+    try {
+      await this.realtime.publish(userId, 'notification.new', {
+        notificationId,
+        category,
+        unread: await this.unreadCount(userId),
+      });
+    } catch (error) {
+      this.logger.warn(`poussée notification.new perdue : ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** Plusieurs destinataires. INDÉPENDANTS : l'échec de l'un n'arrête pas les autres. */
@@ -604,6 +632,7 @@ export class NotificationsService {
         body: true,
         refType: true,
         refId: true,
+        url: true,
         readAt: true,
         channelsSent: true,
       },

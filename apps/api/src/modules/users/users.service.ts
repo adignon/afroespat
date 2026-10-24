@@ -322,6 +322,18 @@ export class UsersService {
           payload: { from: phaseAvant, to: data['phase'] as string, manual: true },
         });
       }
+
+      // 11 §2.5 : « abonné à `user.profile_updated` ». La fiche indexée d'un membre
+      // porte son nom, sa bio et ses compétences ; sans cet événement, une bio
+      // modifiée restait cherchable sous son ancienne forme jusqu'à la
+      // réindexation d'admin. NOMS de champs seulement, jamais les valeurs : la
+      // charge d'un événement est stockée (`domain_events`), et une bio n'a pas à
+      // y finir en clair.
+      await this.outbox.emit(tx, {
+        type: 'user.profile_updated',
+        aggregateId: userId,
+        payload: { fields: Object.keys(data) },
+      });
     });
   }
 
@@ -409,6 +421,15 @@ export class UsersService {
           });
         }
       }
+
+      // La bio, les langues et les compétences sont dans la fiche USER indexée
+      // (11 §2.1) : sans cet événement, une bio modifiée restait cherchable sous
+      // son ancienne forme. Noms de champs seulement, jamais les valeurs.
+      await this.outbox.emit(tx, {
+        type: 'user.profile_updated',
+        aggregateId: userId,
+        payload: { fields: Object.keys(patch) },
+      });
     });
 
     return this.me(userId);

@@ -213,3 +213,11 @@ Profil parrain : supprimé ; parrainages actifs → `ENDED` motif ADMIN avec not
 - `rule: le nombre de contacts n'est jamais renvoyé sur le profil d'un autre membre`
 - `rule: la demande de contact manuelle exige un message, pas la même ville`
 - `rule: un premier message non accepté n'autorise pas de second message`
+
+## 13. Messagerie vivante — ce qui est livré (lot F)
+
+- **Temps réel.** `WS /ws` (socket.io, jeton d'accès) pousse `message.new`, `message.read`, `conversation.updated`, `notification.new` et `conversation.typing` (éphémère, jamais stocké, limité par socket). Les charges ne portent jamais de contenu : le client relit par l'API. Les noms d'événements et les bornes vivent dans `@app/shared` (`validation/realtime.ts`). Le navigateur n'ouvre **qu'une** connexion par onglet (`lib/temps-reel.ts`), reprend la session à chaque refus de jeton et retombe sur le polling de 15 s (§5.3) si la socket est coupée.
+- **« Vu ».** `GET /conversations/:id/messages` rend `meta.seenAt` : la lecture (`last_read_at`) des autres membres, la plus ancienne à plusieurs ; `null` tant que l'un n'a rien lu (une demande non acceptée ne marque pas lu). L'écran l'écrit une fois, sous ma dernière bulle non supprimée lue.
+- **Demande de conversation.** `POST /conversations/:id/accept` (existant) et **`POST /conversations/:id/ignore`** : ignorer pose `left_at` sur la ligne du destinataire, sans rien annoncer à l'initiateur, qui reste « en attente » et ne peut pas relancer (§5.2, règle dure). Limite : le destinataire qui a ignoré ne peut plus écrire dans ce fil (`CONVERSATION_CLOSED`) ; une colonne `ignored_at` serait plus juste.
+- **Par message.** « Supprimer » (`DELETE /messages/:id`, confirmation) et « Signaler » (`POST /reports`, `subjectType: MESSAGE`). Le serveur exige d'être membre de la conversation (404 sinon) et refuse de signaler son propre message.
+- **Contacts suggérés.** `connection.suggested` est émis (dans les deux sens) par les gestionnaires de `event.checked_in` et de `guide.proposal_accepted`, et devient la notification « Ajouter X à vos contacts ? » qui mène au profil.

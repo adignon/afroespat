@@ -1,5 +1,6 @@
 import { SEARCH_MAX_QUERY_LENGTH } from '@app/shared';
 import { EcranRecherche } from '@/screens/messages/ecran-donnees';
+import { filtresDeLUrl } from '@/screens/x01/filtres';
 
 /**
  * X01 — Recherche (`/recherche`, 11 §4, T5 §10).
@@ -27,10 +28,10 @@ import { EcranRecherche } from '@/screens/messages/ecran-donnees';
  * dès 3 caractères ». Ce n'est pas un état à part : la maquette les dessine DANS le
  * cadre, en carte positionnée par-dessus la page, et elles sont LIÉES.
  *
- * ⚠ LE CADRE MOBILE N'A TOUJOURS PAS DE TITRE. La maquette n'y écrit que la requête,
- * dans le champ de recherche ; elle est désormais liée, mais la PROMOUVOIR en `<h1>`
- * resterait un titre inventé — ce qui a coûté A01. Le générateur le signale à chaque
- * exécution. Consigné au rapport.
+ * LE CADRE MOBILE PORTE UN <h1> MASQUÉ À L'ŒIL (« Résultats pour « … » », `MV_X01_H1_MOBILE`) :
+ * un titre VISIBLE y serait inventé, une page sans titre est muette pour un lecteur
+ * d'écran. Les filtres ville, rayon, pays, période, état sont de vrais contrôles
+ * (`?ville=&rayon=&pays=&periode=&etat=`, lus par `x01/filtres.ts`).
  *
  * LES FILTRES SONT DANS LA COLONNE DE GAUCHE, et c'est une demande du porteur :
  * « Lorsqu'on est sur la page du search, il faut que la left side bar contienne
@@ -39,16 +40,12 @@ import { EcranRecherche } from '@/screens/messages/ecran-donnees';
  * mortes sur une page de recherche. Elles reviennent au SURVOL DU RAIL, l'autre
  * moitié de la même demande. `?type=` porte le filtre retenu.
  *
- * ⚠ LES SOUS-LIGNES DES CARTES RESTENT NON LIÉES — « 84 utiles », « 14 réponses »,
- * « Ouverte · Lyon 7e », « 620 € » n'ont AUCUNE source dans `SearchHit`. La carte
- * affiche l'extrait que le serveur rend. Le détail est dans `screens/x01/data.ts`.
- *
- * L'ÉTAT VIDE — « Aucun résultat. Posez la question à la communauté ? » (11 §2.4) —
- * est dessiné par la maquette en COMPOSANT, dans une carte « ÉTATS » posée à côté
- * des planches, sans écran autour. Il n'est donc pas monté ici : il n'y a pas de
- * cadre à extraire, et lui en fabriquer un reviendrait à dessiner l'écran manquant.
- * `meta.zeroResult` porte pourtant déjà sa phrase et son bouton, côté API.
- */
+ * LES SOUS-LIGNES DES CARTES SONT LIÉES : le serveur compose `SearchHit.subline`
+ * (« 84 utiles », « 14 réponses · Ouverte · Lyon », « 620 € · Lyon »). Sur zéro
+ * résultat, `POST /search/zero` part une fois par requête ; « Poser la question »
+ * mène au composeur d'entraide SANS pré-remplissage (il ne lit aucun paramètre —
+ * écart remonté). Les recherches récentes vivent dans le navigateur (`localStorage`,
+ * sous `try/catch`). */
 export default async function SearchPage({
   searchParams,
 }: {
@@ -71,5 +68,12 @@ export default async function SearchPage({
   const typeBrut = params['type'];
   const type = typeof typeBrut === 'string' ? typeBrut : null;
 
-  return <EcranRecherche requete={requete} type={type} />;
+  /**
+   * LES FILTRES (ville, rayon, pays, période, état) viennent aussi de l'URL, validés
+   * par les schémas partagés du serveur : une valeur forgée est ignorée plutôt
+   * qu'envoyée pour y prendre un `400`.
+   */
+  const filtres = filtresDeLUrl(params);
+
+  return <EcranRecherche requete={requete} type={type} filtres={filtres} />;
 }

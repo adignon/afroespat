@@ -192,3 +192,10 @@ Notifications, préférences, abonnements push, email : supprimés. `outbound_me
 - `rule: un push MESSAGE ne contient jamais le corps du message`
 - `rule: les catégories ACCOUNT sécurité et MODERATION ne sont pas désactivables`
 - `rule: le lien de désabonnement fonctionne sans connexion`
+
+## 13. Recherche, notifications — ce qui est livré (lot F)
+
+- **Notifications.** Colonne `notifications.url` (migration `notifications_cible`) : chemin relatif du front, posé par les gestionnaires d'événements (slugs résolus pour réseaux et guides). Les lignes de X02 mènent à leur cible ; « Tout marquer lu » = `POST /notifications/read { all: true }` ; le compteur de non-lues est affiché et suit `notification.new` en direct. `channels_sent` peut contenir `PUSH_DEFERRED` (heures calmes) : le schéma partagé l'accepte — son absence faisait échouer toute la page pendant la plage calme. Heures calmes (`quietHours`) et résumé hebdomadaire (`weeklyDigest`) sont éditables dans K07.
+- **Recherche.** Filtres ville, rayon, pays, période, état (`?ville=&rayon=&pays=&periode=&etat=`, validés par les schémas partagés). `SearchHit.subline` : le fait écrit sous le titre de la carte (« 84 utiles », « 14 réponses · Ouverte · Lyon », « 620 € · Lyon »), composé par le serveur. `POST /search/zero` part une fois par requête restée sans résultat ; recherches récentes dans le navigateur (`localStorage`).
+- **Indexation.** `user.profile_updated` (émis par `PATCH /me` et `PATCH /me/profile`) réindexe la fiche USER ; `job.updated` (modification, renouvellement, retrait) l'offre ; `post.commented` sur un sujet et `post.moved_to_topic` réindexent le sujet, dont le document porte désormais les trois premières réponses de **toutes** origines (commentaires compris).
+- **Débit.** `GET /search` 30/min, `GET /search/suggest` 60/min, `POST /search/zero` 10/min, par membre (`SEARCH_RATE_LIMITS`).

@@ -158,7 +158,7 @@ export class NotificationEventsService {
       title: `${menteeName} vous demande comme parrain`,
       refType: 'MENTORSHIP',
       refId: mentorshipId,
-      url: `/parrainage/${mentorshipId}`,
+      url: '/parrainage/mes-parrainages',
       emailTemplate: 'mentorship_request_received',
       emailVariables: { menteeName, mentorshipId },
     });
@@ -177,7 +177,7 @@ export class NotificationEventsService {
       title: `${await this.displayName(mentor)} a accepté de vous parrainer`,
       refType: 'MENTORSHIP',
       refId: mentorshipId,
-      url: `/parrainage/${mentorshipId}`,
+      url: '/parrainage/mes-parrainages',
     });
   }
 
@@ -301,7 +301,31 @@ export class NotificationEventsService {
       title: `${await this.displayName(from)} souhaite entrer en contact`,
       refType: 'CONNECTION_REQUEST',
       refId: requestId,
-      url: '/contacts/demandes',
+      url: '/compte/contacts',
+    });
+  }
+
+  /**
+   * « Ajouter X à vos contacts ? » (08 §3.1). `SOCIAL`, in-app seulement. La ligne
+   * mène au PROFIL de X, où le bouton « Ajouter » vit. `refId` est X : une seconde
+   * suggestion du même membre (autre événement) est absorbée comme doublon plutôt
+   * que de remplir la cloche.
+   */
+  async onConnectionSuggested(payload: unknown): Promise<void> {
+    const to = readString(payload, 'userId');
+    const about = readString(payload, 'suggestedUserId');
+    if (to === null || about === null || to === about) return;
+
+    const row = await this.prisma.user.findUnique({ where: { id: about }, select: { handle: true } });
+    if (row === null) return;
+    await this.notifications.deliver({
+      userId: to,
+      category: 'SOCIAL',
+      type: 'social.connection_suggested',
+      title: `Ajouter ${await this.displayName(about)} à vos contacts ?`,
+      refType: 'USER',
+      refId: about,
+      url: `/${row.handle}`,
     });
   }
 
@@ -343,7 +367,7 @@ export class NotificationEventsService {
       ),
       refType: 'POST',
       refId: postId,
-      url: `/fil/${postId}`,
+      url: `/publications/${postId}`,
     });
   }
 
@@ -390,7 +414,7 @@ export class NotificationEventsService {
       ),
       refType: 'POST',
       refId: subjectId,
-      url: `/fil/${subjectId}`,
+      url: `/publications/${subjectId}`,
     });
   }
 
@@ -465,6 +489,7 @@ export class NotificationEventsService {
 
     const recipients = author === null ? members.map((m) => m.userId) : await this.withoutSeparated(members.map((m) => m.userId), author);
 
+    const lien = await this.communityUrl(communityId);
     await this.notifications.deliverMany(
       recipients.map((userId) => ({
         userId,
@@ -473,7 +498,7 @@ export class NotificationEventsService {
         title: `Annonce dans ${community.name}`,
         refType: 'COMMUNITY_ANNOUNCEMENT',
         refId: announcementId,
-        url: `/reseaux/${communityId}`,
+        url: lien,
       })),
     );
   }
@@ -497,7 +522,7 @@ export class NotificationEventsService {
       title: `Vous avez rejoint ${community.name}`,
       refType: 'COMMUNITY',
       refId: communityId,
-      url: `/reseaux/${communityId}`,
+      url: await this.communityUrl(communityId),
     });
   }
 
@@ -515,6 +540,7 @@ export class NotificationEventsService {
 
     const recipients = owner === null ? invited : await this.withoutSeparated(invited, owner);
 
+    const lien = await this.communityUrl(aggregateId);
     await this.notifications.deliverMany(
       recipients.map((userId) => ({
         userId,
@@ -523,7 +549,7 @@ export class NotificationEventsService {
         title: `Vous êtes invité·e dans ${community.name}`,
         refType: 'COMMUNITY',
         refId: aggregateId,
-        url: `/reseaux/${aggregateId}`,
+        url: lien,
       })),
     );
   }
@@ -547,7 +573,7 @@ export class NotificationEventsService {
       body: 'Vous pouvez le réactiver depuis sa page.',
       refType: 'COMMUNITY',
       refId: aggregateId,
-      url: `/reseaux/${aggregateId}`,
+      url: await this.communityUrl(aggregateId),
     });
   }
 
@@ -770,7 +796,7 @@ export class NotificationEventsService {
             : 'Une nouvelle offre correspond à votre alerte emploi',
         refType: 'SAVED_ALERT',
         refId: alert.id,
-        url: kind === 'HOUSING' ? `/logement/${listingId}` : `/emploi/${listingId}`,
+        url: kind === 'HOUSING' ? `/services/logement/${listingId}` : `/services/emploi/${listingId}`,
       });
 
       if (result.outcome === 'CREATED' || result.outcome === 'GROUPED') {
@@ -1007,7 +1033,7 @@ export class NotificationEventsService {
       body: 'Vous pouvez la renouveler depuis vos annonces.',
       refType: 'HOUSING',
       refId: listingId,
-      url: `/logement/${listingId}`,
+      url: `/services/logement/${listingId}`,
     });
   }
 
@@ -1028,7 +1054,7 @@ export class NotificationEventsService {
       title: `${proposerName} propose une mise à jour de votre guide`,
       refType: 'GUIDE_PROPOSAL',
       refId: proposalId,
-      url: `/guides/${guideId ?? ''}/propositions/${proposalId}`,
+      url: guideId === null ? null : `${await this.guideUrl(guideId)}/propositions`,
       emailTemplate: 'guide_proposal_received',
       emailVariables: { proposerName, proposalId },
     });
@@ -1071,7 +1097,7 @@ export class NotificationEventsService {
       body: 'Mettez-le à jour pour qu’il reste publié.',
       refType: 'GUIDE',
       refId: guideId,
-      url: `/guides/${guideId}`,
+      url: await this.guideUrl(guideId),
     });
   }
 
@@ -1328,6 +1354,23 @@ export class NotificationEventsService {
    * « Nouveau message de ». Un `??` ne l'attrapait pas : la valeur n'est pas nulle,
    * elle est vide.
    */
+  /**
+   * Les pages d'un réseau et d'un guide se désignent par leur SLUG
+   * (`/reseaux/[slug]`, `/guides/[slug]`), pas par leur identifiant : une
+   * notification qui y menait par l'identifiant ouvrait une page « introuvable ».
+   * `null` si l'objet a disparu entre l'événement et sa consommation — la ligne
+   * s'écrit alors sans lien plutôt que d'en promettre un mort.
+   */
+  private async communityUrl(communityId: string): Promise<string | null> {
+    const row = await this.prisma.community.findUnique({ where: { id: communityId }, select: { slug: true } });
+    return row === null ? null : `/reseaux/${row.slug}`;
+  }
+
+  private async guideUrl(guideId: string): Promise<string> {
+    const row = await this.prisma.guide.findUnique({ where: { id: guideId }, select: { slug: true } });
+    return row === null ? '/guides' : `/guides/${row.slug}`;
+  }
+
   private async displayName(userId: string): Promise<string> {
     const row = await this.prisma.user.findUnique({
       where: { id: userId },

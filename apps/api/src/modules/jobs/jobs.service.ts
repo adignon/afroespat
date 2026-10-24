@@ -250,6 +250,14 @@ export class JobsService {
         targetType: 'job_listing',
         targetId: jobId,
       });
+      // 11 §2.5 : une offre modifiée est RÉINDEXÉE. Le titre, la description et
+      // l'employeur sont dans le document ; avant cet événement, seul `job.published`
+      // déclenchait l'indexation et une correction restait invisible à la recherche.
+      await this.outbox.emit(tx, {
+        type: 'job.updated',
+        aggregateId: jobId,
+        payload: { fields: Object.keys(patch) },
+      });
       return updated;
     });
 
@@ -272,6 +280,13 @@ export class JobsService {
         targetType: 'job_listing',
         targetId: jobId,
       });
+      // Une offre retirée sort de l'index : `readSource` ne la rend plus, et
+      // `reindexSubject` supprime alors le document.
+      await this.outbox.emit(tx, {
+        type: 'job.updated',
+        aggregateId: jobId,
+        payload: { removed: true },
+      });
       return updated;
     });
     return this.toCard(row, authorUserId);
@@ -289,13 +304,22 @@ export class JobsService {
       this.fail('RENEW_TOO_SOON', { renewableAt: new Date(renewableFrom).toISOString() });
     }
 
-    const row = await this.prisma.jobListing.update({
-      where: { id: jobId },
-      data: {
-        expiresAt: new Date(now + JOB_LIFETIME_DAYS * 86_400_000),
-        ...(job.status === 'EXPIRED' ? { status: 'ACTIVE' as const } : {}),
-      },
-      select: JOB_SELECT,
+    const row = await this.prisma.$transaction(async (tx) => {
+      const renewed = await tx.jobListing.update({
+        where: { id: jobId },
+        data: {
+          expiresAt: new Date(now + JOB_LIFETIME_DAYS * 86_400_000),
+          ...(job.status === 'EXPIRED' ? { status: 'ACTIVE' as const } : {}),
+        },
+        select: JOB_SELECT,
+      });
+      // Une offre EXPIRÉE puis renouvelée doit REVENIR dans l'index.
+      await this.outbox.emit(tx, {
+        type: 'job.updated',
+        aggregateId: jobId,
+        payload: { renewed: true },
+      });
+      return renewed;
     });
     return this.toCard(row, authorUserId);
   }

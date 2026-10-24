@@ -51,13 +51,14 @@ import { EcranNotifications } from '@/screens/messages/ecran-donnees';
  * La passerelle temps réel fait déjà bien sa part — `message.new` ne transporte que
  * `conversationId` et `messageId` — et rien ici ne l'ajoute.
  *
- * ⚠ DEUX ÉCARTS CONSIGNÉS. `meta.unread` est lu et validé mais N'EST AFFICHÉ NULLE
- * PART : aucune planche ne dessine le compteur de la cloche que §2.7 demande. Et les
- * lignes NE SONT PAS CLIQUABLES : la table `notifications` n'a pas de colonne `url`,
- * et pour une notification de message `refType` vaut `CONVERSATION` tandis que
- * `refId` porte l'identifiant du MESSAGE — construire `/messages/${refId}` ouvrirait
- * une conversation qui n'existe pas. Les deux sont signalés au porteur.
- */
+ * LES DEUX ÉCARTS QUE CE COMMENTAIRE CONSIGNAIT SONT FERMÉS. `meta.unread` est
+ * affiché (« N non lues ») ; les lignes sont cliquables : la table `notifications`
+ * a maintenant une colonne `url` (migration `notifications_cible`), posée par les
+ * gestionnaires d'événements en chemins du front. Une notification de message mène
+ * à `/messages/<conversation>` — le `refId` (le MESSAGE) n'est plus employé à cet
+ * usage. Les lignes sans page (« Bienvenue ») ne promettent pas de lien. « Tout
+ * marquer lu » écrit `POST /notifications/read`, et la page se relit à
+ * `notification.new`. */
 const VUES = { panneau: 'panneau' } as const;
 
 /**

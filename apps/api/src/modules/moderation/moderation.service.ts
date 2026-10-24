@@ -622,6 +622,22 @@ export class ModerationService {
       this.fail('SELF_REPORT');
     }
 
+    // Signaler UN message précis (bulle) : il faut en être un lecteur légitime. Sans
+    // ce contrôle, n'importe quel membre pouvait ouvrir un dossier sur un message
+    // dont il ne connaît que l'identifiant — et la modération, qui peut lire la
+    // conversation signalée (08 §5.2), l'aurait ouverte. 404, jamais 403 (T4 §3).
+    // Son propre message ne se signale pas : il se supprime.
+    if (input.subjectType === 'MESSAGE') {
+      const message = await this.prisma.message.findUnique({
+        where: { id: input.subjectId },
+        select: { senderUserId: true, conversation: { select: { members: { select: { userId: true } } } } },
+      });
+      if (message === null || !message.conversation.members.some((m) => m.userId === reporterUserId)) {
+        throw ApiError.notFound();
+      }
+      if (message.senderUserId === reporterUserId) this.fail('SELF_REPORT');
+    }
+
     const already = await this.prisma.report.findUnique({
       where: {
         reporterUserId_subjectType_subjectId: {
