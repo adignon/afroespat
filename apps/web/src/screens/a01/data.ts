@@ -181,11 +181,15 @@ export const panel = (actif: PanelLabel) => {
 
 export const panelFil = panel("Fil d'actualité");
 
-export const shortcuts = [
-  { name: 'Lyon & Rhône', sub: '1 400 membres', i: 'LY', bg: '#16785E' },
-  { name: 'Béninois en France', sub: '890 membres', i: 'BN', bg: '#E0733A' },
-  { name: 'Recherche Colocation', sub: '210 membres', i: 'RC', bg: '#0F5C48' },
-];
+/**
+ * LES RACCOURCIS D'EXEMPLE SONT RETIRÉS (lot W2A, phase 2.22). La planche dessinait
+ * « Lyon & Rhône · 1 400 membres », « Béninois en France · 890 membres » et
+ * « Recherche Colocation · 210 membres » ; la carte « Vos raccourcis » lit depuis
+ * longtemps MES réseaux (`RaccourcisReseaux`, `GET /communities`). Cette liste n'est
+ * plus rendue nulle part : elle ne reste que parce que la signature des cadres
+ * (`shortcuts`) la demande encore, vide.
+ */
+export const shortcuts: readonly { name: string; sub: string; i: string; bg: string }[] = [];
 
 // ─── Stories ─────────────────────────────────────────────────────────────────
 
