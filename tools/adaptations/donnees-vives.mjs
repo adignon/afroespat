@@ -132,7 +132,7 @@ const A01_VIVANT = [
       serie(jsx, [
         [
           ALERTE_A01,
-          '{alerte ? (<div style={{ background: "#FDF0E7", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#B4581F" }}>ALERTE VIGILANCE</div><p style={{ margin: "6px 0 0", fontSize: "13px", lineHeight: "1.6" }}><strong>{alerte.titre}</strong>{alerte.corps === "" ? null : (<>{" "}{alerte.corps}</>)}</p></div>) : null}',
+          '{alerte ? (<div style={{ background: "#FDF0E7", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#B4581F" }}>ALERTE VIGILANCE</div><p style={{ margin: "6px 0 0", fontSize: "13px", lineHeight: "1.6" }}><strong style={{ display: "block" }}>{alerte.titre}</strong>{alerte.corps}</p></div>) : null}',
         ],
       ]),
   ),

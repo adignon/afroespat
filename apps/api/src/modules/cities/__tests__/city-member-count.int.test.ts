@@ -1,6 +1,8 @@
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { newId } from '@app/db';
 import { AppModule } from '../../../app.module';
 import { PrismaService } from '../../../common/prisma.service';
@@ -160,6 +162,42 @@ describe('recalcul de `cities.member_count` (02 §2.2)', () => {
     });
     expect(city.isActive).toBe(false);
     expect(city.memberCount).toBe(3);
+  });
+
+  /**
+   * LA MIGRATION DE RATTRAPAGE (lot W2A, phase 2.4).
+   *
+   * `20261017140000_compteurs_membres_rattrapage` recalcule UNE fois les compteurs
+   * de villes et de réseaux que des écritures antérieures avaient laissés faux
+   * (« Évry · 1 membre » pour cinq inscrits). Ce test l'EXÉCUTE — le fichier tel
+   * qu'il est livré, pas une copie — sur un compteur volontairement faussé, puis
+   * une seconde fois : elle doit corriger, puis ne plus rien écrire.
+   */
+  it('la migration de rattrapage corrige un compteur faux, puis n’écrit plus rien', async () => {
+    const dossier = resolve(__dirname, '../../../../../../packages/db/prisma/migrations');
+    const nom = readdirSync(dossier).find((d) => d.endsWith('_compteurs_membres_rattrapage'));
+    expect(nom).toBeDefined();
+    const sql = readFileSync(join(dossier, nom as string, 'migration.sql'), 'utf8')
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('--'))
+      .join('\n');
+    const instructions = sql
+      .split(';')
+      .map((i) => i.trim())
+      .filter((i) => i !== '');
+    expect(instructions).toHaveLength(2);
+    // Une migration additive : aucune de ces quatre instructions n'y figure.
+    expect(sql).not.toMatch(/\b(DROP|TRUNCATE|ALTER|DELETE)\b/i);
+
+    await prisma.city.update({ where: { id: cityId }, data: { memberCount: 99 } });
+    const premier = await Promise.all(instructions.map((i) => prisma.$executeRawUnsafe(i)));
+    expect(premier.reduce((a, b) => a + b, 0)).toBeGreaterThanOrEqual(1);
+    expect(await countOf(cityId)).toBe(
+      await prisma.user.count({ where: { cityId, status: 'ACTIVE', deletedAt: null } }),
+    );
+
+    const second = await Promise.all(instructions.map((i) => prisma.$executeRawUnsafe(i)));
+    expect(second).toEqual([0, 0]);
   });
 
   it('la tâche planifiée est enregistrée sous le nom de la spec', () => {
