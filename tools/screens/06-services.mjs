@@ -1557,6 +1557,8 @@ export const screens = [
     section: 'S05',
     out: 's05recommander',
     modal: true,
+    dataType: 'S05Data',
+    dataModule: '../s05/data',
     modalTitle: 'Recommander un membre',
     frames: [f(440, 'Recommander', 1)],
   }),

@@ -27,6 +27,7 @@ import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations
 import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/chrome-gauche-vivant.mjs';
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
 import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
+import { ADAPTATIONS_SERVICES_VIVANT, AJOUTS_SERVICES_VIVANT } from './adaptations/services-vivant.mjs';
 import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/villes-vivant.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
 import {
@@ -18256,6 +18257,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_AGENDA_VIVANT,
     // Lot E (villes-vivant).
     ...ADAPTATIONS_VILLES_VIVANT,
+    // Lot E (services-vivant).
+    ...ADAPTATIONS_SERVICES_VIVANT,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19530,6 +19533,7 @@ const AJOUTS = {
   ...AJOUTS_PARCOURS_VIVANT,
   ...AJOUTS_CHROME_GAUCHE,
   ...AJOUTS_AGENDA_VIVANT,
+  ...AJOUTS_SERVICES_VIVANT,
   ...AJOUTS_VILLES_VIVANT,
 };
 

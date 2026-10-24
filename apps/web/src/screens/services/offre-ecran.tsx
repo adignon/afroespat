@@ -55,7 +55,7 @@ function OffreVivante({
         onFermer={onFermer}
         modales={{
           S05L: { mobile: <S05LienExterne {...avec} /> },
-          S05R: { mobile: <S05Recommander /> },
+          S05R: { mobile: <S05Recommander {...avec} /> },
         }}
       />
       {fenetres}
