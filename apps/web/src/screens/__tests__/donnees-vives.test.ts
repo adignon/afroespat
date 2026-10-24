@@ -98,7 +98,7 @@ function rendu(fichier: string): string {
  * Chaque motif porte la raison pour laquelle il est interdit.
  */
 const LISTE_NOIRE: readonly { readonly nom: string; readonly motif: RegExp }[] = [
-  { nom: 'Lyon (ville d’exemple de la maquette)', motif: /\bLyon\b|\bLYON\b/ },
+  { nom: 'Lyon (ville d’exemple de la maquette)', motif: /\bLyon\b|\bLYON\b|\bTCL\b/ },
   { nom: 'Rhône', motif: /Rh[ôo]ne/ },
   { nom: 'Paris / Marseille / Nantes / Rennes en dur', motif: />[^<>{}]*\b(?:Paris|Marseille|Nantes|Rennes)\b[^<>{}]*</ },
   { nom: 'prénoms et noms de la maquette', motif: /\b(?:Fatou|Aïcha|Aicha|Marc Koudou|Sandra|Moussa|Fanta|Kofi|Yasmine|Théo Adjovi|Amina|Diallo|Ndiaye|Boateng)\b/ },

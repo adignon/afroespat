@@ -201,6 +201,23 @@ const K08_VIVANT = [
   ),
 ];
 
+// ─── H05 · H06 · le parrainage ───────────────────────────────────────────────
+
+const PARRAINAGE_VIVANT = [
+  pour(
+    ['H05', 'H06'],
+    'PARRAINAGE_DELAIS',
+    'La durée d’un parrainage (3 mois) et l’ancienneté du parrain (12 mois) sont `MENTORSHIP_DURATION_DAYS` et `MENTOR_SETTLED_MONTHS`, pas du texte de maquette.',
+    [],
+    (jsx) =>
+      serie(jsx, [
+        ['>Un membre installé vous accompagne pendant 3 mois. Gratuit, sans argent ni garantie.</div>', '><Texte id="parrainageDuree" /></div>'],
+        ['>Vous êtes installé·e depuis 12 mois ?</div>', '><Texte id="parrainAnciennete" /></div>'],
+        ["Identité et numéro français vérifiés, parcours abouti ou 12 mois d'installation.</div>", '<Texte id="parrainCriteres" /></div>'],
+      ]),
+  ),
+];
+
 // ─── A06 · propositions reçues ───────────────────────────────────────────────
 
 const A06_VIVANT = [
@@ -248,6 +265,13 @@ const ANCRES_K05 = {
 };
 
 const K05_VIVANT = [
+  pour(
+    ['K05'],
+    'K05_ESPACEMENT_DES_CARTES',
+    'La maquette écrit `padding:4px 20pxpx` (deux « px ») : la déclaration est invalide, le navigateur la jette, et les lignes de contact touchaient le bord de leur carte. Corrigé sur K05 seulement, où les états vides ajoutés ci-dessous en ont besoin.',
+    [],
+    (jsx) => (jsx.includes('pxpx"') ? { jsx: jsx.replaceAll('pxpx"', 'px"'), applied: true } : { jsx, applied: false }),
+  ),
   pour(
     ['K05'],
     'K05_ETATS_VIDES',
@@ -361,6 +385,44 @@ const E04_VIVANT = [
   ),
 ];
 
+// ─── A12C · la feuille « Contribuer » à 390 px ────────────────────────────────
+
+/**
+ * La feuille du téléphone dessine « Votre bon plan » et « Détail » comme deux `<div>`
+ * de texte d'exemple — « Abonnement TCL à 25 € pour les moins de 26 ans », une
+ * contribution lyonnaise pour tout le monde, et rien à saisir. Le lot E (villes) avait
+ * prévu de les remplacer par `ChampsContribution`, mais son repérage cherchait un
+ * conteneur qui n'existe pas dans ce cadre : l'adaptation restait « attendue
+ * introuvable » et la feuille ne pouvait RIEN recevoir.
+ *
+ * On repère les deux blocs frères eux-mêmes — le premier porte « Votre bon plan », le
+ * suivant « Détail » — et on les remplace d'un seul geste. Le grand écran, lui, est déjà
+ * traité (étape 2).
+ */
+const A12C_CHAMPS_MOBILE = pour(
+  ['A12C'],
+  'A12C_CHAMPS_MOBILE',
+  'La feuille « Contribuer » du téléphone porte les vrais champs du genre choisi (`ChampsContribution`), pas deux <div> dont l’un disait « Abonnement TCL à 25 € ».',
+  ['vivant', 'ville'],
+  (jsx) => {
+    const repere = jsx.indexOf('>Votre bon plan</div>');
+    if (repere === -1) return { jsx, applied: false };
+    const debut = jsx.lastIndexOf('<div>', repere);
+    if (debut === -1) return { jsx, applied: false };
+    const finPremier = finElement(jsx, debut);
+    if (finPremier === -1 || !jsx.startsWith('<div>', finPremier)) return { jsx, applied: false };
+    const finSecond = finElement(jsx, finPremier);
+    if (finSecond === -1 || !jsx.slice(finPremier, finSecond).includes('>Détail</div>')) return { jsx, applied: false };
+    return {
+      jsx:
+        jsx.slice(0, debut) +
+        '<ChampsContribution c={vivant.contribution} ville={ville.nom} />' +
+        jsx.slice(finSecond),
+      applied: true,
+    };
+  },
+);
+
 // ─── S01–S10 · « 0 contacts sur illimité » ───────────────────────────────────
 
 /**
@@ -448,6 +510,7 @@ export const ADAPTATIONS_DONNEES_VIVES = [
   ...K01_VIVANT,
   ...K08_VIVANT,
   ...A06_VIVANT,
+  ...PARRAINAGE_VIVANT,
   ...K05_VIVANT,
   ...S01_VIVANT,
   ...H01_VIVANT,
@@ -455,6 +518,7 @@ export const ADAPTATIONS_DONNEES_VIVES = [
   PLACEHOLDERS_NEUTRES,
   CONTACTS_ILLIMITES,
   A06_CORRIGER_ARTICLE,
+  A12C_CHAMPS_MOBILE,
 ];
 
 export const AJOUTS_DONNEES_VIVES = {
@@ -465,4 +529,5 @@ export const AJOUTS_DONNEES_VIVES = {
   PhraseNouvelArrivant: '@/components/valeurs-vives',
   CarteMonParcoursMobile: '@/components/carte-mon-parcours',
   SectionsContactsMobile: '@/components/compte/sections-contacts-mobile',
+  ChampsContribution: '@/components/champs-contribution',
 };

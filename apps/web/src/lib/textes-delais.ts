@@ -2,6 +2,8 @@ import {
   ACCOUNT_LIMITS,
   GUIDE_PROPOSAL_ESCALATION_DAYS,
   HANDLE_CHANGE_INTERVAL_DAYS,
+  MENTORSHIP_DURATION_DAYS,
+  MENTOR_SETTLED_MONTHS,
   NEWCOMER_WINDOW_DAYS,
 } from '@app/shared';
 
@@ -50,6 +52,11 @@ export const TEXTES_DELAIS = {
   propositionsDelai: `Vous avez ${jours(GUIDE_PROPOSAL_ESCALATION_DAYS)} pour répondre à chaque proposition. Sans réponse, elle est transmise à la modération. Chaque proposition acceptée crédite son auteur comme contributeur.`,
   /** A06 « Corriger » : la bande sous le formulaire. */
   correctionDelai: `L’auteur a ${jours(GUIDE_PROPOSAL_ESCALATION_DAYS)} pour répondre. Sans réponse, la modération tranche.`,
+  /** H05 : la durée d'un parrainage (`MENTORSHIP_DURATION_DAYS`, 90 jours = 3 mois). */
+  parrainageDuree: `Un membre installé vous accompagne pendant ${mois(Math.round(MENTORSHIP_DURATION_DAYS / 30))}. Gratuit, sans argent ni garantie.`,
+  /** H06 : l'ancienneté qui ouvre le rôle de parrain (`MENTOR_SETTLED_MONTHS`). */
+  parrainAnciennete: `Vous êtes installé·e depuis ${mois(MENTOR_SETTLED_MONTHS)} ?`,
+  parrainCriteres: `Identité et numéro français vérifiés, parcours abouti ou ${mois(MENTOR_SETTLED_MONTHS)} d'installation.`,
   /** K01 : la ligne sous « Apparaître dans les nouveaux arrivants ». */
   nouvelArrivant: `Pendant ${jours(NEWCOMER_WINDOW_DAYS)} après votre arrivée`,
 } as const;

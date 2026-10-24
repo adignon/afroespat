@@ -31,6 +31,12 @@ describe('textes-delais — les délais viennent des règles (lot W2A)', () => {
     expect(TEXTES_DELAIS.nouvelArrivant).not.toMatch(/mois/);
   });
 
+  it('H05/H06 : la durée et l’ancienneté d’un parrainage viennent de mentorship.ts', () => {
+    expect(TEXTES_DELAIS.parrainageDuree).toMatch(/^Un membre installé vous accompagne pendant 3 mois\./);
+    expect(TEXTES_DELAIS.parrainAnciennete).toBe('Vous êtes installé·e depuis 12 mois ?');
+    expect(TEXTES_DELAIS.parrainCriteres).toMatch(/12 mois d'installation\.$/);
+  });
+
   it('K01 : un pseudo jamais changé ne porte aucune date', () => {
     expect(phrasePseudo(null, MAINTENANT)).toBe('Modifiable une fois tous les 30 jours.');
   });
