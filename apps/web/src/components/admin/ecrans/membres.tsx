@@ -58,6 +58,17 @@ import {
 
 type Action = 'retrograder' | 'corriger' | 'revoquer' | 'desactiver' | 'reactiver' | 'exporter' | 'supprimer';
 
+/** Ce que l'équipe lit une fois la fenêtre de motif refermée. */
+const CONFIRMATIONS: Record<'retrograder' | 'revoquer' | 'desactiver' | 'reactiver' | 'exporter' | 'supprimer' | 'corriger', string> = {
+  retrograder: 'Niveau rétrogradé : le KYC est marqué refusé et le niveau recalculé.',
+  revoquer: 'Sessions révoquées : le membre devra se reconnecter.',
+  desactiver: 'Compte désactivé.',
+  reactiver: 'Compte réactivé.',
+  exporter: 'Export généré : le membre le retrouve dans son compte.',
+  supprimer: 'Compte supprimé.',
+  corriger: 'Phase ou ville corrigée.',
+};
+
 export function ContenuMembres() {
   return (
     <Suspense fallback={null}>
@@ -199,6 +210,7 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
     setConfirmation('');
   };
 
+  const [retour, setRetour] = useState<string | null>(null);
   const executer = async (motif: string) => {
     if (action === null) return;
     const ok = await geste.lancer(async () => {
@@ -231,6 +243,9 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
     });
     if (ok) {
       fermer();
+      // La confirmation vit HORS de la fenêtre (qui se ferme) : sans elle, l'équipe ne savait pas si le geste avait abouti.
+      setRetour(CONFIRMATIONS[action]);
+      noteGeste.effacer();
       recharger();
     }
   };
@@ -238,6 +253,7 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
   const ajouterNote = async () => {
     const corps = memberNoteSchema.safeParse({ body: note });
     if (!corps.success) return;
+    setRetour(null);
     const ok = await noteGeste.lancer(() => staffApi.post(`/users/${m.id}/note`, okResponseSchema, { body: corps.data }), 'Note ajoutée.');
     if (ok) {
       setNote('');
@@ -327,6 +343,7 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
           Supprimer maintenant
         </Bouton>
       </div>
+      {retour === null ? null : <Bandeau role="status">{retour}</Bandeau>}
       <div style={{ fontSize: '12px', color: C.grisClair }}>Chaque action demande un motif. Aucun numéro n’est affiché en clair.</div>
       {supprime ? <Bandeau>Ce compte est supprimé : aucune action n’est possible.</Bandeau> : null}
 

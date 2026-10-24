@@ -178,6 +178,12 @@
     gap: 4px 14px;
     padding: 10px 14px;
   }
+  /* La colonne qui n'a plus d'en-tête se nomme elle-même : « Auteur : — », « Source : IA ». */
+  [data-admin] table[data-admin-pile] td[data-etiquette]::before {
+    content: attr(data-etiquette) ' : ';
+    color: #8A958F;
+    font-size: 11.5px;
+  }
   [data-admin] table[data-admin-pile] td {
     display: block;
     padding: 2px 0 !important;
