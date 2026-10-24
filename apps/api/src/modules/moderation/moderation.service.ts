@@ -2330,7 +2330,9 @@ export class ModerationService {
         caseOpen: r.refType === 'moderation_case' ? openIds.has(r.refId) : null,
         read: r.readAt !== null,
       })),
-      unread: rows.filter((r) => r.readAt === null).length,
+      // Le compte est FAIT sur toute la table du compte, pas sur les 50 lignes rendues : au-delà de 50
+      // alertes, « N non lues » dirait 50 pour toujours.
+      unread: await this.prisma.staffAlert.count({ where: { staffId: staff.staffId, readAt: null } }),
     };
   }
 

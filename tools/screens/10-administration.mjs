@@ -190,6 +190,7 @@ const RAIL_AJOUTS = [
   ['Contenu', 'Guides', 'D09'],
   ['Guides', 'Alertes arnaques', 'D11'],
   ['Revenus', 'Partenaires', 'D13'],
+  ['Modération', 'Alertes d’équipe', 'D17'],
 ].map(([apres, libelle, planche]) => ({
   apres,
   libelle,
@@ -218,6 +219,7 @@ const PAGE_COURANTE = {
   D03: 'Membres',
   D04: 'Modération',
   D05: 'Modération',
+  D17: 'Alertes d’équipe',
   D06: 'Parcours',
   D07: 'Bibliothèque d’étapes',
   D08: 'Référentiels',
@@ -246,6 +248,7 @@ const RAIL_EQUIPE = [
   ['Rapport d’impact', '/admin/impact'],
   ['Membres', '/admin/membres'],
   ['Modération', '/admin/moderation'],
+  ['Alertes d’équipe', '/admin/alertes-equipe'],
   ['Parcours', '/admin/parcours'],
   ['Bibliothèque d’étapes', '/admin/etapes'],
   ['Contenu', '/admin/contenu'],
@@ -736,5 +739,17 @@ export const screens = [
     section: 'D16',
     frames: pleinEcran(titre('Rapport d’impact')),
     // Lot H : la zone de contenu est un composant vivant (tools/adaptations/administration-vivante.mjs).
+  }),
+
+  /**
+   * ── D17 · `/admin/alertes-equipe` — LES ALERTES D'ÉQUIPE (13 §4.4, 15 §2.1) ──
+   *
+   * AJOUT : la maquette ne dessine pas de page pour `staff_alerts` (alerte de délai de modération,
+   * verrouillage de compte). Le CHÂSSIS (rail, barre) est celui de D04 (`frame.section`) ; la zone de
+   * contenu est le composant `ContenuAlertesEquipe`, posé par `ADMIN_CONTENU`.
+   */
+  screen({
+    section: 'D17',
+    frames: [{ width: 1440, name: 'Desktop', occurrence: 0, section: 'D04', title: titre('Modération') }],
   }),
 ];

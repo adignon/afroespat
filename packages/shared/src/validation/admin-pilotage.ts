@@ -211,3 +211,14 @@ export const adminStaffAlertsResponseSchema = z
   })
   .passthrough();
 export type AdminStaffAlerts = z.infer<typeof adminStaffAlertsResponseSchema>;
+
+// ── Pays du référentiel, côté équipe (ciblage des annonces, D12) ─────────────
+
+export const adminCountriesResponseSchema = z
+  .object({
+    items: z.array(
+      z.object({ id: z.string(), iso2: z.string(), nameFr: z.string(), kind: z.string(), isActive: z.boolean() }).passthrough(),
+    ),
+  })
+  .passthrough();
+export type AdminCountries = z.infer<typeof adminCountriesResponseSchema>;

@@ -52,6 +52,7 @@ const CONTENUS = {
   D14: 'ContenuMonetisation',
   D15: 'ContenuReglages',
   D16: 'ContenuImpact',
+  D17: 'ContenuAlertesEquipe',
 };
 
 const TOUS = Object.keys(CONTENUS);
@@ -176,6 +177,7 @@ export const AJOUTS_ADMIN_VIVANTE = {
       ContenuMonetisation: 'monetisation',
       ContenuReglages: 'reglages',
       ContenuImpact: 'impact',
+      ContenuAlertesEquipe: 'alertes-equipe',
     }).map(([nom, fichier]) => [nom, `@/components/admin/ecrans/${fichier}`]),
   ),
 };

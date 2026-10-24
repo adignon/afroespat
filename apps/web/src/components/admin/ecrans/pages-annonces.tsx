@@ -18,6 +18,7 @@ import {
 import { staffApi } from '@/lib/api/index';
 import { CorpsMarkdown } from '../../markdown-legal';
 import { toutesLesVilles } from '../donnees';
+import { SelecteursCiblage, depuisCible, versCible, type Selection } from './ciblage';
 import { useDroit } from '../session-equipe';
 import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Fenetre, Lecture, Message, Onglets, Pastille, Titre, Vide, ZoneTexte, dateLongue, useCharge, useGeste } from '../ui';
 
@@ -255,19 +256,16 @@ function Annonces() {
 
 function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminAnnouncement | null; readonly peut: boolean; readonly onFait: (id: string | null, texte: string) => void }) {
   const geste = useGeste();
-  const villes = useCharge(() => toutesLesVilles(), 'villes');
   const [titre, setTitre] = useState(annonce?.title ?? '');
   const [texte, setTexte] = useState(annonce?.body ?? '');
-  const [villesIds, setVillesIds] = useState<readonly string[]>(annonce?.target?.cityIds ?? []);
-  const [phases, setPhases] = useState<readonly string[]>(annonce?.target?.phases ?? []);
+  const [ciblage, setCiblage] = useState<Selection>(depuisCible(annonce?.target));
   const [debut, setDebut] = useState(versLocal(annonce?.startsAt ?? new Date().toISOString()));
   const [fin, setFin] = useState(versLocal(annonce?.endsAt));
-  const bascule = (liste: readonly string[], v: string) => (liste.includes(v) ? liste.filter((x) => x !== v) : [...liste, v]);
 
   const corps = {
     title: titre.trim(),
     body: texte.trim(),
-    target: villesIds.length === 0 && phases.length === 0 ? null : { ...(villesIds.length === 0 ? {} : { cityIds: villesIds }), ...(phases.length === 0 ? {} : { phases }) },
+    target: versCible(ciblage),
     startsAt: debut === '' ? '' : new Date(debut).toISOString(),
     endsAt: fin === '' ? null : new Date(fin).toISOString(),
   };
@@ -287,30 +285,13 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
     const ok = await geste.lancer(() => staffApi.del(`/announcements/${annonce.id}`, okResponseSchema));
     if (ok) onFait(null, 'Annonce supprimée.');
   };
-  const nomsVilles = villes.etat.phase === 'pret' ? villes.etat.donnees.filter((v) => v.isActive) : [];
 
   return (
     <Carte style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <Etiquette>Annonce · bandeau</Etiquette>
       <Champ libelle="Titre" valeur={titre} onChange={setTitre} disabled={!peut} maxLength={ANNOUNCEMENT_TITLE_MAX} />
       <ZoneTexte libelle="Texte" valeur={texte} onChange={setTexte} lignes={3} disabled={!peut} maxLength={ANNOUNCEMENT_BODY_MAX} />
-      <div>
-        <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '6px' }}>Ciblage · vide = tous les membres</div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '8px' }}>
-          {PHASES.map((ph) => (
-            <button key={ph.id} type="button" disabled={!peut} aria-pressed={phases.includes(ph.id)} onClick={() => { setPhases((l) => bascule(l, ph.id)); }} style={{ height: '34px', padding: '0 14px', borderRadius: '999px', border: phases.includes(ph.id) ? 'none' : `1px solid ${C.trait}`, background: phases.includes(ph.id) ? C.vert : '#fff', color: phases.includes(ph.id) ? '#fff' : C.encre, font: 'inherit', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}>
-              {ph.libelle}
-            </button>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', maxHeight: '120px', overflowY: 'auto' }}>
-          {nomsVilles.map((v) => (
-            <button key={v.id} type="button" disabled={!peut} aria-pressed={villesIds.includes(v.id)} onClick={() => setVillesIds((l) => bascule(l, v.id))} style={{ height: '30px', padding: '0 12px', borderRadius: '999px', border: villesIds.includes(v.id) ? 'none' : `1px solid ${C.trait}`, background: villesIds.includes(v.id) ? C.vert : '#fff', color: villesIds.includes(v.id) ? '#fff' : C.encre, font: 'inherit', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
-              {v.name}
-            </button>
-          ))}
-        </div>
-      </div>
+      <SelecteursCiblage valeur={ciblage} onChange={setCiblage} peut={peut} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
         <Champ libelle="Début" valeur={debut} onChange={setDebut} type="datetime-local" disabled={!peut} />
         <Champ libelle="Fin (facultative)" valeur={fin} onChange={setFin} type="datetime-local" disabled={!peut} />
