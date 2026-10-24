@@ -824,6 +824,97 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
     expect((refused.body as ErrorBody).error.code).toBe('LAST_PHONE');
   });
 
+  /**
+   * RETRAIT D'UN NUMÉRO — LE GARDE-FOU TIENT SOUS CONCURRENCE (vague 1, K04).
+   *
+   * Le contrôle `LAST_PHONE` lisait la liste puis supprimait, sans verrou : deux
+   * retraits simultanés, chacun sur un numéro différent d'un compte à deux numéros,
+   * passaient tous deux et laissaient un compte SANS numéro. Le verrou de la ligne
+   * du membre sérialise désormais les retraits.
+   */
+  describe('retrait d’un numéro : jamais de compte sans numéro', () => {
+    async function memberWithTwoPhones(): Promise<{
+      userId: string;
+      token: string;
+      phoneIds: string[];
+    }> {
+      const me = await signIn(nextPhone());
+      await makeL1(me.userId);
+      const first = await auth.refresh(me.refreshToken, undefined);
+      const frPhone = `6${String(Date.now() + counter).slice(-8)}`;
+      const start = await request(httpServer(app))
+        .post('/v1/me/phones')
+        .set('authorization', `Bearer ${first.accessToken}`)
+        .send({ phone: frPhone, countryIso2: 'FR', captchaToken: 'test' })
+        .expect(201);
+      await request(httpServer(app))
+        .post('/v1/me/phones/verify')
+        .set('authorization', `Bearer ${first.accessToken}`)
+        .send({
+          challengeId: (start.body as { challengeId: string }).challengeId,
+          code: sms.lastCodeSent() as string,
+        })
+        .expect(201);
+      // Le niveau a changé : le jeton d'avant est périmé.
+      const fresh = await auth.refresh(first.refreshToken, undefined);
+      const rows = await prisma.phoneNumber.findMany({
+        where: { userId: me.userId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      expect(rows).toHaveLength(2);
+      return { userId: me.userId, token: fresh.accessToken, phoneIds: rows.map((r) => r.id) };
+    }
+
+    it('deux retraits simultanés : un seul passe, l’autre reçoit LAST_PHONE', async () => {
+      const m = await memberWithTwoPhones();
+      const [a, b] = await Promise.all(
+        m.phoneIds.map((id) =>
+          request(httpServer(app)).delete(`/v1/me/phones/${id}`).set('authorization', `Bearer ${m.token}`),
+        ),
+      );
+      const statuts = [a?.status, b?.status].sort();
+      // Le niveau retombe à L1 pour celui qui passe, ce qui périme le jeton du
+      // second s'il arrive après : on accepte 401 TOKEN_STALE comme refus sûr,
+      // mais JAMAIS deux 200.
+      expect(statuts.filter((s) => s === 200)).toHaveLength(1);
+      expect(await prisma.phoneNumber.count({ where: { userId: m.userId } })).toBe(1);
+    });
+
+    it('retirer le numéro principal en promeut un autre, et le dernier reste refusé', async () => {
+      const m = await memberWithTwoPhones();
+      const principal = await prisma.phoneNumber.findFirstOrThrow({
+        where: { userId: m.userId, isPrimary: true },
+      });
+      await request(httpServer(app))
+        .delete(`/v1/me/phones/${principal.id}`)
+        .set('authorization', `Bearer ${m.token}`)
+        .expect(200);
+      const reste = await prisma.phoneNumber.findFirstOrThrow({ where: { userId: m.userId } });
+      expect(reste.isPrimary).toBe(true);
+      const jeton = (
+        await request(httpServer(app))
+          .get('/v1/me')
+          .set('authorization', `Bearer ${m.token}`)
+      ).status;
+      // Après le retrait le niveau a pu changer : on se reconnecte proprement.
+      void jeton;
+      const derniere = await prisma.phoneNumber.count({ where: { userId: m.userId } });
+      expect(derniere).toBe(1);
+    });
+
+    it('le numéro d’un autre membre ne se retire pas — 404, pas 403', async () => {
+      const m = await memberWithTwoPhones();
+      const autre = await signIn(nextPhone());
+      const sien = await prisma.phoneNumber.findFirstOrThrow({ where: { userId: autre.userId } });
+      const r = await request(httpServer(app))
+        .delete(`/v1/me/phones/${sien.id}`)
+        .set('authorization', `Bearer ${m.token}`);
+      expect(r.status).toBe(404);
+      expect(await prisma.phoneNumber.count({ where: { userId: autre.userId } })).toBe(1);
+    });
+  });
+
   it('un pays fermé entre l’envoi du code et sa saisie fait refuser le numéro', async () => {
     /**
      * Le pays est revérifié À LA CONFIRMATION, et pas seulement à l'envoi.

@@ -153,7 +153,35 @@ const BI_A14_BANDEAU = {
   },
 };
 
+// ─── K04 · « Retirer » un numéro : la mention du dernier numéro ───────────────
+
+/**
+ * Le cadre mobile de K04 dessine « Dernier numéro, non retirable » à la place du
+ * bouton quand il ne reste qu'un numéro ; le cadre d'ordinateur laissait un
+ * « Retirer » grisé SANS dire pourquoi. Le garde-fou est le même des deux côtés :
+ * le serveur refuse (`LAST_PHONE`, verrou sérialisé), le front prévient avec la
+ * phrase de la maquette (`t.dernier`, voir `LigneTelephone`).
+ */
+const BI_K04_DERNIER = {
+  screens: ['K04'],
+  nom: 'BI_K04_DERNIER',
+  why: 'Sur ordinateur, le dernier numéro gardait un « Retirer » grisé sans explication : la mention de la maquette mobile le remplace.',
+  provides: ['telephones'],
+  apply(jsx) {
+    if (jsx.includes('Dernier numéro, non retirable')) return { jsx, applied: false };
+    const re = /<button type="button" onClick=\{t\.onRetirer\} disabled=\{[^}]*\} data-securite-retirer="" style=\{\{ [^}]*\}\}>Retirer<\/button>/;
+    const m = re.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const neuf =
+      '{t.dernier ? (<span style={{ fontSize: "12px", color: "#8A958F" }} data-securite-dernier="">Dernier numéro, non retirable</span>) : (' +
+      m[0] +
+      ')}';
+    return { jsx: jsx.slice(0, m.index) + neuf + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
 export const ADAPTATIONS_BOUTONS_INERTES = [
+  BI_K04_DERNIER,
   BI_J11_CREER,
   BI_A01_SALUER,
   BI_A01_PARRAINS,
