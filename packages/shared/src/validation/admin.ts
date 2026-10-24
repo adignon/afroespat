@@ -879,7 +879,9 @@ export const adminModerationCaseRowSchema = z
     assignedStaffId: z.string().uuid().nullable(),
     slaDueAt: z.string().datetime(),
     sla: slaStateSchema,
-    aiVerdict: z.enum(AiVerdict),
+    // NULLABLE : un dossier ouvert par un signalement de membre n'a jamais passé par l'IA
+    // (relevé : tout le bloc « annonces à risque » de D10 et la file D04 tombaient en erreur).
+    aiVerdict: z.enum(AiVerdict).nullable(),
     aiLabels: z.array(z.string()),
     /** Confiance dans [0,1], nulle sans passage IA. Jamais un pourcentage. */
     aiScore: z.number().min(0).max(1).nullable(),
@@ -958,7 +960,7 @@ export const adminModerationCaseDetailSchema = z
     sla: slaStateSchema,
     resolution: z.string().nullable(),
     resolvedAt: z.string().datetime().nullable(),
-    aiVerdict: z.enum(AiVerdict),
+    aiVerdict: z.enum(AiVerdict).nullable(),
     aiLabels: z.array(z.string()),
     aiScore: z.number().min(0).max(1).nullable(),
     /** Relevées VIDES : forme d'élément inconnue, donc non affirmée. */

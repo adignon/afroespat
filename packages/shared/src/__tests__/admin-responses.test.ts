@@ -376,6 +376,13 @@ describe('GET /v1/admin/staff — les comptes d’équipe (D15, 15 §2.2)', () =
  * d'affichage.
  */
 describe('GET /v1/admin/moderation — la file et le dossier (D04, D05)', () => {
+  it('[RELEVÉ AU NAVIGATEUR] accepte un dossier sans passage IA (`aiVerdict` nul)', () => {
+    const base = adminModerationCasesResponseSchema.parse(lire('admin_moderation_cases.json'));
+    const ligne = { ...(base.items[0] ?? {}), aiVerdict: null, aiScore: null, aiLabels: [] };
+    const r = adminModerationCasesResponseSchema.safeParse({ items: [ligne], nextCursor: null });
+    expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
+  });
+
   it('la charge réelle de la file est acceptée', () => {
     const r = adminModerationCasesResponseSchema.safeParse(lire('admin_moderation_cases.json'));
     expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
