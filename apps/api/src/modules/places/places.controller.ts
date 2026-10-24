@@ -2,16 +2,24 @@ import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import { PrismaService } from '../../common/prisma.service';
-import { PublicRead, RequiresCapability } from '../../common/capability.decorator';
+import { PublicRead, RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { Auth, MaybeAuth, type AuthContext } from '../../common/auth.guard';
 import { newId } from '@app/db';
 import { ApiError } from '../../common/api-error';
 import { zodPipe } from '../../common/zod.pipe';
+import {
+  MEMBER_SKILLS_MAX,
+  cleCompetence,
+  createPlacesSkillSchema,
+  type CreatePlacesSkill,
+} from '@app/shared';
 
 /**
- * Module 02 — Référentiels. Lecture seule, mise en cache 1 h côté client.
+ * Module 02 — Référentiels. Lecture seule, mise en cache 1 h côté client — à UNE exception :
+ * `POST /places/skills`, par lequel un membre écrit SA compétence (elle reste à lui tant que
+ * l'équipe ne l'a pas globalisée en back-office).
  *
- * Aucune écriture membre : ces listes sont administrées par l'équipe (02 §1).
+ * Ces listes sont administrées par l'équipe (02 §1).
  *
  * RÈGLE (02 §2.1) : un pays inactif n'apparaît NULLE PART côté membres — ni à
  * l'inscription, ni dans les filtres, ni sur la carte. Le filtre `is_active` est
@@ -21,17 +29,6 @@ import { zodPipe } from '../../common/zod.pipe';
  * Activer un second pays est une écriture en back-office, jamais un déploiement —
  * d'où l'absence totale de constante de pays dans ce code.
  */
-
-/**
- * Le nom d'une compétence écrite à la main.
- *
- * Soixante caractères : les soixante compétences semées vont de « Excel » à
- * « Électricité générale », la plus longue en faisant 21. La borne laisse trois
- * fois cette place sans ouvrir un champ libre de taille indéfinie dans un
- * référentiel.
- */
-const skillCreate = z.object({ nameFr: z.string().trim().min(2).max(60) }).strict();
-type SkillCreate = z.infer<typeof skillCreate>;
 
 const citiesQuery = z.object({
   countryId: z.string().uuid().optional(),
@@ -146,54 +143,93 @@ export class PlacesController {
    * ÉCRIRE SA PROPRE COMPÉTENCE — « le free typing qui crée de nouvelles
    * compétences ».
    *
-   * ── CE QUE LA ROUTE NE FAIT PAS, ET POURQUOI ──────────────────────────────
+   * ── LES RÈGLES, DANS L'ORDRE OÙ ELLES S'APPLIQUENT ─────────────────────────
    *
-   * Elle ne crée PAS de doublon. `skills.name_fr` est UNIQUE : si le nom existe
-   * déjà — globale, ou écrite par ce membre, ou par un autre — on rend la ligne
-   * existante au lieu d'échouer. Rendre la ligne d'un AUTRE membre serait une
-   * fuite : on vérifie donc, et dans ce seul cas on refuse.
+   * 1. LA FORME (`createPlacesSkillSchema`, dans `@app/shared`) : 2 à 60 caractères, des
+   *    lettres, des chiffres et quelques signes simples, une lettre au moins, ni lien ni
+   *    adresse ni numéro de téléphone (01 §2.1 — la compétence s'affiche sur le profil public).
+   *    Les espaces sont normalisés AVANT la validation : « Soudure   TIG » et « Soudure TIG »
+   *    sont le même nom.
    *
-   * Elle n'ACTIVE pas une compétence pour tout le monde : `isActive` est vrai
-   * (sans quoi le membre ne la verrait pas lui-même) mais `createdByUserId` la
-   * borne à son auteur. La globalisation est un geste d'ÉQUIPE, en back-office.
+   * 2. LA DÉDUPLICATION, sans casse ni accent (`cleCompetence`). `skills.name_fr` est unique à
+   *    l'octet près, ce qui laissait passer « excel » à côté d'« Excel ». On compare donc la
+   *    clé du nom à celle des compétences que le membre PEUT CHOISIR — les globales et les
+   *    siennes — et on rend la ligne existante au lieu d'en créer une seconde : pas de doublon,
+   *    et le membre obtient quand même ce qu'il voulait. Une compétence GLOBALE que l'équipe a
+   *    retirée des propositions (`is_active` faux) n'est pas ressuscitée : `409 SKILL_RETIRED`.
    *
-   * `content.read` est la capacité des écritures de profil dans ce dépôt —
-   * `PATCH /me` et `PUT /me/avatar` la portent déjà. Une compétence écrite à la
-   * main est une donnée de profil, pas une publication.
+   * 3. LE PLAFOND : `MEMBER_SKILLS_MAX` compétences personnelles par membre. Un profil n'en
+   *    retient que dix ; au-delà, c'est une boucle qui remplit le référentiel.
+   *    `409 SKILL_LIMIT`, avec le plafond dans `details`.
+   *
+   * 4. LA COLLISION D'UN AUTRE MEMBRE : si le nom EXACT est celui de la compétence personnelle
+   *    d'un autre membre, la rendre dirait au lecteur qu'elle est à lui — exactement ce que le
+   *    porteur exclut. `409 SKILL_NAME_TAKEN`. (Un nom qui ne diffère que par la casse ou les
+   *    accents, lui, est créé : il n'y a pas de fuite, la ligne est à son auteur.)
+   *
+   * ── CE QUE LA ROUTE NE FAIT PAS ──────────────────────────────────────────
+   *
+   * Elle n'ACTIVE pas une compétence pour tout le monde : `isActive` est vrai (sans quoi le
+   * membre ne la verrait pas lui-même) mais `createdByUserId` la borne à son auteur. La
+   * globalisation est un geste d'ÉQUIPE, en back-office (D08), et c'est aussi la MODÉRATION :
+   * aucune compétence personnelle n'est proposée à un autre membre avant qu'elle l'ait relue.
+   * Avant cela, elle n'est vue que sur le profil de son auteur, où le signalement d'un
+   * profil (13) s'applique comme pour toute autre mention libre.
+   *
+   * ── NIVEAU ET DÉBIT ─────────────────────────────────────────────────────
+   *
+   * `content.read` (L0) est la capacité des écritures de profil dans ce dépôt — `PATCH /me` et
+   * `PUT /me/avatar` la portent déjà, et l'inscription (O04) appelle cette route avant même
+   * qu'un compte soit vérifié. Une compétence est une donnée de profil, pas une publication.
+   * Le débit est de dix créations par heure et par membre : bien au-dessus d'un usage réel
+   * (le plafond de vingt ne s'atteint pas en une séance), bien en dessous d'un script.
    */
   @Post('skills')
   @RequiresCapability('content.read')
+  @RateLimit(10, 'hour')
   @ApiOperation({ summary: 'Créer une compétence à soi (globalisable par l’équipe)' })
-  async createSkill(@Auth() auth: AuthContext, @Body(zodPipe(skillCreate)) body: SkillCreate) {
-    const nameFr = body.nameFr.trim();
-    const existante = await this.prisma.skill.findUnique({
-      where: { nameFr },
-      select: { id: true, nameFr: true, category: true, createdByUserId: true, isActive: true },
-    });
+  async createSkill(
+    @Auth() auth: AuthContext,
+    @Body(zodPipe(createPlacesSkillSchema)) body: CreatePlacesSkill,
+  ) {
+    const nameFr = body.nameFr;
+    const cle = cleCompetence(nameFr);
+    const choix = { id: true, nameFr: true, category: true, createdByUserId: true, isActive: true } as const;
 
-    if (existante !== null) {
-      /**
-       * Une compétence d'un AUTRE membre porte le nom demandé. La rendre
-       * dirait au lecteur qu'elle est à lui, et la lui laisserait choisir —
-       * exactement ce que le porteur exclut. On refuse par le même code que le
-       * reste du dépôt pour un conflit de nom.
-       */
-      const aMoi = existante.createdByUserId === null || existante.createdByUserId === auth.userId;
-      if (!aMoi) throw ApiError.transverse('CONFLICT', { reason: 'SKILL_NAME_TAKEN' });
-      return { id: existante.id, nameFr: existante.nameFr, category: existante.category };
+    // Les compétences que ce membre peut choisir : les globales et les siennes (actives ou non,
+    // pour reconnaître une globale retirée). Quatre-vingts lignes au plus.
+    const visibles = await this.prisma.skill.findMany({
+      where: { OR: [{ createdByUserId: null }, { createdByUserId: auth.userId }] },
+      select: choix,
+    });
+    const memeCle = visibles.find((s) => cleCompetence(s.nameFr) === cle);
+    if (memeCle !== undefined) {
+      if (!memeCle.isActive) throw ApiError.transverse('CONFLICT', { reason: 'SKILL_RETIRED' });
+      return { id: memeCle.id, nameFr: memeCle.nameFr, category: memeCle.category };
     }
 
-    const cree = await this.prisma.skill.create({
-      data: {
-        id: newId(),
-        nameFr,
-        category: null,
-        isActive: true,
-        createdByUserId: auth.userId,
-      },
-      select: { id: true, nameFr: true, category: true },
-    });
-    return cree;
+    const miennes = visibles.filter((s) => s.createdByUserId === auth.userId && s.isActive).length;
+    if (miennes >= MEMBER_SKILLS_MAX) {
+      throw ApiError.transverse('CONFLICT', { reason: 'SKILL_LIMIT', max: MEMBER_SKILLS_MAX });
+    }
+
+    // Le nom EXACT d'un autre membre : l'index unique le refuserait de toute façon, et on veut le
+    // dire d'un code lisible plutôt que d'une erreur de base.
+    const exacte = await this.prisma.skill.findUnique({ where: { nameFr }, select: { id: true } });
+    if (exacte !== null) throw ApiError.transverse('CONFLICT', { reason: 'SKILL_NAME_TAKEN' });
+
+    try {
+      return await this.prisma.skill.create({
+        data: { id: newId(), nameFr, category: null, isActive: true, createdByUserId: auth.userId },
+        select: { id: true, nameFr: true, category: true },
+      });
+    } catch (cause) {
+      // Deux envois simultanés du même nom : le second perd la course sur l'index unique.
+      if (typeof cause === 'object' && cause !== null && (cause as { code?: string }).code === 'P2002') {
+        throw ApiError.transverse('CONFLICT', { reason: 'SKILL_NAME_TAKEN' });
+      }
+      throw cause;
+    }
   }
 
   @Get('professions')

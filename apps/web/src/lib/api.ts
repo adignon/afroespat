@@ -172,6 +172,25 @@ export function creerCompetence(nameFr: string): Promise<PlacesSkill> {
 }
 
 /**
+ * Le refus de `POST /places/skills` dit en français. Le serveur répond `409 CONFLICT` avec
+ * `details.reason` ; la phrase générique de ce code (« conflit ») ne dirait pas quoi faire.
+ */
+export function messageCreationCompetence(cause: unknown): string {
+  if (cause instanceof ApiError) {
+    const raison = cause.details['reason'];
+    if (raison === 'SKILL_LIMIT') {
+      return `Vous avez déjà ${String(cause.details['max'] ?? 20)} compétences à vous : retirez-en une avant d’en ajouter.`;
+    }
+    if (raison === 'SKILL_NAME_TAKEN') {
+      return 'Ce nom est déjà pris par une compétence personnelle d’un autre membre : précisez-le un peu.';
+    }
+    if (raison === 'SKILL_RETIRED') return 'Cette compétence n’est plus proposée.';
+    return cause.displayMessage;
+  }
+  return 'Cette compétence n’a pas pu être ajoutée.';
+}
+
+/**
  * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ LE PSEUDO EST-IL LIBRE ? — ET POURQUOI AUCUNE ROUTE NEUVE                  ║
  * ╚════════════════════════════════════════════════════════════════════════════╝

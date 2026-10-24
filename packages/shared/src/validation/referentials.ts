@@ -481,6 +481,72 @@ export type PlacesSkill = z.infer<typeof placesSkillSchema>;
 
 export const placesSkillsResponseSchema = pageSchema(placesSkillSchema);
 
+// ── Écrire SA compétence — `POST /v1/places/skills` ─────────────────────────
+
+/**
+ * Les bornes d'une compétence écrite à la main (02, « Compétences d'un membre »).
+ *
+ * Soixante caractères : les soixante compétences semées vont de « Excel » à
+ * « Électricité générale », la plus longue en faisant 21 ; la borne laisse trois fois cette
+ * place sans ouvrir un champ libre de taille indéfinie dans un référentiel.
+ *
+ * `MEMBER_SKILLS_MAX` plafonne le nombre de compétences PERSONNELLES (non globalisées) d'un
+ * membre : un profil n'en retient que dix (`updateProfileSchema`), et sans plafond une boucle
+ * remplirait le référentiel de lignes que personne d'autre ne verra jamais.
+ */
+export const SKILL_NAME_MIN = 2;
+export const SKILL_NAME_MAX = 60;
+export const MEMBER_SKILLS_MAX = 20;
+
+/** Espaces de bord retirés, espaces internes réduits à un seul, forme Unicode composée. */
+export function normaliserNomCompetence(brut: string): string {
+  return brut.normalize('NFC').replace(/\s+/gu, ' ').trim();
+}
+
+/**
+ * La CLÉ DE DOUBLON d'une compétence : « Électricité  générale », « electricite generale » et
+ * « ÉLECTRICITÉ GÉNÉRALE » en ont la même. La colonne `skills.name_fr` est unique à
+ * l'octet près ; cette clé est ce qui empêche « excel » d'être créée à côté de « Excel ».
+ */
+export function cleCompetence(nom: string): string {
+  return normaliserNomCompetence(nom)
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLocaleLowerCase('fr-FR')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+/**
+ * Le corps de `POST /places/skills`.
+ *
+ * Ce que le nom doit être : du TEXTE de métier ou de savoir-faire. Les caractères permis sont
+ * les lettres, les chiffres, l'espace et ' ’ . - / + # & ( ) — de quoi écrire « C++ »,
+ * « Soudure TIG/MIG » ou « Aide-soignant(e) ». Il doit contenir une lettre au moins (« C++ », « C# »). Sont
+ * refusés ce qui ressemble à un moyen de contact — une adresse, un lien, un numéro : une
+ * compétence s'affiche sur le profil public, et 01 §2.1 interdit qu'un téléphone y figure.
+ */
+export const createPlacesSkillSchema = z
+  .object({
+    nameFr: z
+      .string()
+      .transform(normaliserNomCompetence)
+      .pipe(
+        z
+          .string()
+          .min(SKILL_NAME_MIN, `Une compétence compte au moins ${SKILL_NAME_MIN} caractères.`)
+          .max(SKILL_NAME_MAX, `Une compétence compte ${SKILL_NAME_MAX} caractères au plus.`)
+          .regex(/^[\p{L}\p{N} '’.\-/+#&()]+$/u, 'Une compétence ne contient que des lettres, des chiffres et quelques signes simples.')
+          .refine((v) => /\p{L}/u.test(v), 'Une compétence contient au moins une lettre.')
+          .refine(
+            (v) => !/(https?:|www\.|\.(com|fr|net|org)\b)/iu.test(v) && !/\d{6,}/u.test(v.replace(/[\s.\-]/gu, '')),
+            'Une compétence ne contient ni lien, ni adresse, ni numéro de téléphone.',
+          ),
+      ),
+  })
+  .strict();
+export type CreatePlacesSkill = z.infer<typeof createPlacesSkillSchema>;
+
 // ── La vue d'ÉQUIPE d'une ville — `GET /v1/admin/ref/cities` (D08) ──────────
 //
 // DISTINCTE de `placesCitySchema`, et il faut dire pourquoi plutôt que de

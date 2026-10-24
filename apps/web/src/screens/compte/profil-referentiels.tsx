@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { FenetreChoix } from '@/components/fenetre-choix';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { ApiError, memberApi } from '@/lib/api/index';
-import { listLanguages, listSkills } from '@/lib/api';
+import { creerCompetence, listLanguages, listSkills, messageCreationCompetence } from '@/lib/api';
 import { z } from 'zod';
 import type { K01Lecture } from './data';
 
@@ -87,6 +87,25 @@ export function ProfilReferentiels({
     [onRecharger],
   );
 
+  /**
+   * « Autre… » — `POST /places/skills`. Le serveur crée la compétence À SOI (ou rend la ligne
+   * qui portait déjà ce nom, sans casse ni accent) ; on l'ajoute au catalogue de la fenêtre
+   * pour qu'elle s'affiche, et `FenetreChoix` la coche. Un refus (plafond, nom pris, forme)
+   * s'écrit par son message, jamais en silence.
+   */
+  const creer = useCallback(async (nom: string) => {
+    try {
+      const creee = await creerCompetence(nom);
+      setCompetences((avant) =>
+        avant.some((c) => c.id === creee.id) ? avant : [...avant, { id: creee.id, nameFr: creee.nameFr }],
+      );
+      return { id: creee.id, nameFr: creee.nameFr };
+    } catch (cause: unknown) {
+      notifyError(messageCreationCompetence(cause));
+      return null;
+    }
+  }, []);
+
   /** Les langues cochées : on part des CODES du profil et on les convertit. */
   const languesChoisies = langues
     .filter((l) => (donnees.languesIds ?? []).includes(l.code ?? ''))
@@ -111,6 +130,7 @@ export function ProfilReferentiels({
         items={competences}
         choisis={donnees.competencesIds ?? []}
         occupe={enVol}
+        onCreer={creer}
         onValider={(ids) => {
           enregistrer('skillIds', ids);
         }}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { SKILL_NAME_MAX, createPlacesSkillSchema } from '@app/shared';
 import { Modal } from '@/components/modal';
 import { PanneauFenetre } from '@/components/panneau-fenetre';
 
@@ -28,6 +29,15 @@ import { PanneauFenetre } from '@/components/panneau-fenetre';
  * cochées à la borne plutôt que de prendre un refus — et on le DIT, sans quoi le
  * membre croirait l'écran cassé.
  *
+ * ── « AUTRE… » : ÉCRIRE SA PROPRE COMPÉTENCE ──────────────────────────────
+ *
+ * Quand l'appelant passe `onCreer`, une dernière ligne en pointillés, « Autre… », ouvre un
+ * champ pour écrire une compétence absente de la liste — c'est `POST /places/skills`, qui
+ * la crée À SOI (elle n'est proposée aux autres que si l'équipe la globalise) ou rend la ligne
+ * qui existait déjà sous ce nom. La bordure en pointillés, le vert et la hauteur de 44 px sont
+ * ceux de « Nouveau parcours » dans J01M. La forme du nom est celle du serveur
+ * (`createPlacesSkillSchema`, importé de `@app/shared`) : le front PRÉVIENT, le serveur DÉCIDE.
+ *
  * ── LE FILTRE EST À L'ÉCRAN, PAS AU SERVEUR ───────────────────────────────
  *
  * Soixante compétences et vingt-quatre langues arrivent en une réponse, triées
@@ -41,6 +51,7 @@ export function FenetreChoix({
   choisis,
   max = 10,
   occupe = false,
+  onCreer,
   onValider,
   onFermer,
 }: {
@@ -50,10 +61,15 @@ export function FenetreChoix({
   readonly choisis: readonly string[];
   readonly max?: number;
   readonly occupe?: boolean;
+  /** Présent = la ligne « Autre… » est offerte. Rend la ligne créée, ou `null` si le serveur refuse. */
+  readonly onCreer?: (nom: string) => Promise<{ readonly id: string; readonly nameFr: string } | null>;
   readonly onValider: (ids: readonly string[]) => void;
   readonly onFermer: () => void;
 }) {
   const [selection, setSelection] = useState<readonly string[]>(choisis);
+  const [autreOuvert, setAutreOuvert] = useState(false);
+  const [autre, setAutre] = useState('');
+  const [autreOccupe, setAutreOccupe] = useState(false);
   const [filtre, setFiltre] = useState('');
   const [cle, setCle] = useState(0);
 
@@ -190,8 +206,93 @@ export function FenetreChoix({
         );
       })}
       {visibles.length === 0 ? (
-        <div style={{ fontSize: '13px', color: '#8A958F' }}>Aucun résultat.</div>
+        <div style={{ fontSize: '13px', color: '#8A958F' }}>
+          Aucun résultat{onCreer === undefined ? '.' : ' : ajoutez-la avec « Autre… ».'}
+        </div>
       ) : null}
+      {onCreer === undefined ? null : autreOuvert ? (
+        <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+          <input
+            value={autre}
+            onChange={(e) => {
+              setAutre(e.target.value);
+            }}
+            maxLength={SKILL_NAME_MAX}
+            placeholder="Nom de la compétence"
+            aria-label="Nom de la compétence"
+            data-choix-autre=""
+            autoFocus
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: '44px',
+              borderRadius: '14px',
+              border: '1.5px solid #16785E',
+              background: '#fff',
+              padding: '0 14px',
+              fontSize: '13.5px',
+              fontFamily: 'inherit',
+              color: '#16211D',
+              outline: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+          <button
+            type="button"
+            data-choix-autre-ajouter=""
+            disabled={autreOccupe || !createPlacesSkillSchema.safeParse({ nameFr: autre }).success}
+            onClick={() => {
+              setAutreOccupe(true);
+              void onCreer(autre).then((creee) => {
+                setAutreOccupe(false);
+                if (creee === null) return;
+                setAutre('');
+                setAutreOuvert(false);
+                setSelection((liste) =>
+                  liste.includes(creee.id) || liste.length >= max ? liste : [...liste, creee.id],
+                );
+              });
+            }}
+            style={{
+              ...ACTION,
+              flex: 'none',
+              background: '#16785E',
+              color: '#fff',
+              cursor: 'pointer',
+              opacity: autreOccupe || !createPlacesSkillSchema.safeParse({ nameFr: autre }).success ? 0.5 : 1,
+            }}
+          >
+            Ajouter
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          data-choix-autre-ouvrir=""
+          onClick={() => {
+            setAutre(filtre.trim());
+            setAutreOuvert(true);
+          }}
+          style={{
+            height: '44px',
+            borderRadius: '16px',
+            border: '1.5px dashed #9FB3AB',
+            background: '#fff',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            fontSize: '13.5px',
+            fontWeight: 700,
+            fontFamily: 'inherit',
+            color: '#0F5C48',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          Autre…
+        </button>
+      )}
     </PanneauFenetre>
   );
 

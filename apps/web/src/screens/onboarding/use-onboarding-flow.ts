@@ -14,6 +14,7 @@ import {
   advanceOnboarding,
   fetchMe,
   creerCompetence,
+  messageCreationCompetence,
   listCities,
   listCountries,
   listLanguages,
@@ -1087,11 +1088,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
           patch({ skillIds: [...deja, creee.id] });
         }
       } catch (cause) {
-        notifyError(
-          cause instanceof ApiError
-            ? cause.displayMessage
-            : 'Cette compétence n’a pas pu être créée.',
-        );
+        notifyError(messageCreationCompetence(cause));
       }
     },
     [patch],
