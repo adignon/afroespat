@@ -95,6 +95,9 @@ export interface EventCard {
   readonly myWaitlistPosition: number | null;
   readonly myCheckedIn: boolean;
   readonly isOrganizer: boolean;
+  /** 09 §3.4 : posés à l'annulation (`cancelled_at`, `cancel_reason`). */
+  readonly cancelledAt: Date | null;
+  readonly cancelReason: string | null;
 }
 
 /** Mon RSVP sur un événement, tel que les listes le projettent. */
@@ -122,6 +125,8 @@ const EVENT_SELECT = {
   organizerUserId: true,
   createdAt: true,
   updatedAt: true,
+  cancelledAt: true,
+  cancelReason: true,
   city: {
     select: {
       id: true,
@@ -143,6 +148,10 @@ const EVENT_SELECT = {
 } satisfies Prisma.EventSelect;
 
 type EventRow = Prisma.EventGetPayload<{ select: typeof EVENT_SELECT }>;
+
+/** 09 §9 : le motif posé sur un événement dont l'organisateur supprime son compte. */
+export const ORGANIZER_DELETED_REASON =
+  'L’organisateur a supprimé son compte : l’événement est annulé.';
 
 @Injectable()
 export class EventsService {
@@ -508,7 +517,10 @@ export class EventsService {
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.event.update({
         where: { id: eventId },
-        data: { status: 'CANCELLED' },
+        // 09 §3.4 et §4 : l'instant et le motif vivent maintenant sur la ligne.
+        // `cancelled_at` borne les sept jours « barrés » ; `updated_at` ne le
+        // pouvait pas, une modification postérieure le déplaçant.
+        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: input.reason ?? null },
         select: EVENT_SELECT,
       });
 
@@ -538,8 +550,8 @@ export class EventsService {
       await this.outbox.emit(tx, {
         type: 'event.cancelled',
         aggregateId: eventId,
-        // Le MOTIF vit ici et dans le journal : `events` ne porte ni
-        // `cancelled_at` ni `cancel_reason` (colonnes de §4 absentes du schéma).
+        // Le MOTIF vit sur la ligne (`cancel_reason`), et ici pour les
+        // consommateurs (notifications) qui ne relisent pas l'événement.
         payload: {
           organizerUserId,
           reason: input.reason ?? null,
@@ -1132,15 +1144,22 @@ export class EventsService {
   /**
    * `event.hide_cancelled` (§8, quotidienne).
    *
-   * §3.4 : « Un événement annulé reste visible 7 jours barré, puis masqué. » Sans
-   * colonne `cancelled_at`, la borne est `updated_at` — l'annulation est la
-   * dernière écriture d'un événement annulé. Le masquage est donc aussi APPLIQUÉ
-   * à la lecture (`visibleWhere`) : la tâche ne fait qu'alléger les requêtes.
+   * §3.4 : « Un événement annulé reste visible 7 jours barré, puis masqué. » La
+   * borne est `cancelled_at` (09 §4, colonne ajoutée) : `updated_at` ne la
+   * portait pas, puisqu'une modification postérieure le déplaçait. Le masquage
+   * est aussi APPLIQUÉ à la lecture (`visibleWhere`) : la tâche ne fait
+   * qu'alléger les requêtes.
    */
   async hideCancelled(now = new Date()): Promise<{ hidden: number }> {
     const cutoff = new Date(now.getTime() - CANCELLED_VISIBLE_DAYS * 86_400_000);
     const result = await this.prisma.event.updateMany({
-      where: { status: 'CANCELLED', deletedAt: null, updatedAt: { lt: cutoff } },
+      where: {
+        status: 'CANCELLED',
+        deletedAt: null,
+        // `cancelled_at` d'abord ; `updated_at` seulement pour une ligne annulée
+        // avant la colonne et non reprise par la migration.
+        OR: [{ cancelledAt: { lt: cutoff } }, { cancelledAt: null, updatedAt: { lt: cutoff } }],
+      },
       data: { deletedAt: now },
     });
     this.calendarCache.clear();
@@ -1194,6 +1213,80 @@ export class EventsService {
     return { notified: due.length };
   }
 
+  // ── Suppression de compte (09 §9) ─────────────────────────────────────────
+
+  /**
+   * Gestionnaire de `user.deleted` (09 §9).
+   *
+   *   · événements organisés À VENIR : annulés, avec notification des inscrits
+   *     (`event.cancelled`, comme une annulation volontaire) et un motif qui ne
+   *     nomme personne ;
+   *   · événements organisés PASSÉS : conservés — la ligne `users` reste,
+   *     anonymisée, et la fiche dit « Organisé par un membre supprimé » ;
+   *   · RSVP du membre : supprimés ; une place GOING libérée promeut la file ;
+   *   · PRÉSENCES (`checked_in`) : l'indicateur d'impact ne doit pas être effacé.
+   *     Elles sont donc gardées sur les événements PASSÉS ; seules les lignes des
+   *     événements À VENIR (où il n'y a, par construction, aucune présence) sont
+   *     supprimées.
+   *
+   * IDEMPOTENT : un rejeu ne trouve plus ni événement à annuler ni RSVP à retirer,
+   * et n'émet donc rien (la livraison « au moins une fois » le suppose).
+   */
+  async handleUserDeleted(userId: string): Promise<void> {
+    const now = new Date();
+
+    const organised = await this.prisma.event.findMany({
+      where: { organizerUserId: userId, status: 'SCHEDULED', startsAt: { gt: now } },
+      select: { id: true },
+    });
+    for (const { id } of organised) {
+      await this.prisma.$transaction(async (tx) => {
+        const done = await tx.event.updateMany({
+          where: { id, status: 'SCHEDULED' },
+          data: { status: 'CANCELLED', cancelledAt: now, cancelReason: ORGANIZER_DELETED_REASON },
+        });
+        if (done.count === 0) return;
+        await this.outbox.emit(tx, {
+          type: 'event.cancelled',
+          aggregateId: id,
+          payload: {
+            organizerUserId: userId,
+            reason: ORGANIZER_DELETED_REASON,
+            cancelledAt: now.toISOString(),
+            withinGrace: false,
+            organizerDeleted: true,
+          },
+        });
+      });
+    }
+
+    const mine = await this.prisma.eventAttendee.findMany({
+      where: { userId, event: { startsAt: { gt: now } } },
+      select: { id: true, eventId: true, status: true },
+    });
+    for (const rsvp of mine) {
+      await this.prisma.$transaction(async (tx) => {
+        const gone = await tx.eventAttendee.deleteMany({ where: { id: rsvp.id } });
+        if (gone.count === 0) return;
+        let promoted: string | null = null;
+        if (rsvp.status === 'GOING') {
+          await tx.event.update({
+            where: { id: rsvp.eventId },
+            data: { attendeeCount: { decrement: 1 } },
+          });
+          promoted = await this.promoteWaitlist(tx, rsvp.eventId);
+        }
+        await this.outbox.emit(tx, {
+          type: 'event.rsvp_changed',
+          aggregateId: rsvp.eventId,
+          payload: { userId, from: rsvp.status, to: null, promotedUserId: promoted },
+        });
+      });
+    }
+
+    this.calendarCache.clear();
+  }
+
   // ── Visibilité et outils ──────────────────────────────────────────────────
 
   /**
@@ -1227,7 +1320,7 @@ export class EventsService {
     // §3.4 : passé 7 jours, un événement annulé est masqué.
     if (event.status === 'CANCELLED') {
       const cutoff = Date.now() - CANCELLED_VISIBLE_DAYS * 86_400_000;
-      if (event.updatedAt.getTime() < cutoff) throw ApiError.notFound();
+      if ((event.cancelledAt ?? event.updatedAt).getTime() < cutoff) throw ApiError.notFound();
     }
 
     return event;
@@ -1272,7 +1365,8 @@ export class EventsService {
       {
         OR: [
           { status: { in: ['SCHEDULED', 'DONE'] } },
-          { status: 'CANCELLED', updatedAt: { gte: cancelledCutoff } },
+          { status: 'CANCELLED', cancelledAt: { gte: cancelledCutoff } },
+          { status: 'CANCELLED', cancelledAt: null, updatedAt: { gte: cancelledCutoff } },
         ],
       },
     ];
@@ -1552,6 +1646,8 @@ export class EventsService {
       myWaitlistPosition: mine?.waitlistPosition ?? null,
       myCheckedIn: mine?.myCheckedIn ?? false,
       isOrganizer: viewerId !== null && event.organizerUserId === viewerId,
+      cancelledAt: event.cancelledAt,
+      cancelReason: event.cancelReason,
     };
   }
 }

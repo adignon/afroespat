@@ -8,6 +8,7 @@ import {
   EVENT_MIN_LEAD_MS,
   EventType,
   createEventSchema,
+  eventDetailResponseSchema,
   mediaAssetSchema,
   placesCitiesResponseSchema,
 } from '@app/shared';
@@ -39,8 +40,16 @@ export function useFormulaireEvenement(options: {
   readonly reseauId?: string;
   readonly actif: boolean;
   readonly onCree: (eventId: string) => void;
+  /**
+   * MODIFIER au lieu de créer (09 §3.1 : « Modifiable par l'organisateur jusqu'au
+   * début »). Le formulaire se remplit depuis `GET /events/:id` et « Enregistrer »
+   * envoie `PATCH /events/:id`. `onCree` reçoit alors l'identifiant modifié.
+   */
+  readonly modifierId?: string;
 }): FormulaireEvenementView {
-  const { reseauId, actif, onCree } = options;
+  const { reseauId, actif, onCree, modifierId } = options;
+  const modification = modifierId !== undefined;
+  const [debutOrigine, setDebutOrigine] = useState('');
   const [type, setType] = useState<(typeof EventType)[number]>('NETWORKING');
   const [titre, setTitre] = useState('');
   const [description, setDescription] = useState('');
@@ -101,6 +110,50 @@ export function useFormulaireEvenement(options: {
     if (reseauId !== undefined) setReseauChoisi(reseauId);
   }, [reseauId]);
 
+  /**
+   * LA MODIFICATION PART DE L'ÉVÉNEMENT TEL QUE LE SERVEUR LE REND : jamais d'un
+   * brouillon recopié. Les instants arrivent en ISO ; `datetime-local` les veut
+   * en heure locale du navigateur, « AAAA-MM-JJTHH:mm ».
+   */
+  useEffect(() => {
+    if (modifierId === undefined) return;
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        if (!hasAccessToken()) await resumeSession();
+        const e = await memberApi.get(`/events/${modifierId}`, eventDetailResponseSchema, {
+          signal: ac.signal,
+        });
+        if (ac.signal.aborted) return;
+        const local = (iso: string): string => {
+          const d = new Date(iso);
+          const deux = (n: number): string => String(n).padStart(2, '0');
+          return `${d.getFullYear()}-${deux(d.getMonth() + 1)}-${deux(d.getDate())}T${deux(d.getHours())}:${deux(d.getMinutes())}`;
+        };
+        setType(e.type);
+        setTitre(e.title);
+        setDescription(e.description ?? '');
+        setVilleId(e.city.id);
+        setLieu(e.venueName ?? '');
+        setAdresse(e.addressText ?? '');
+        setDebut(local(e.startsAt));
+        setDebutOrigine(local(e.startsAt));
+        setFin(e.endsAt === null ? '' : local(e.endsAt));
+        setCapacite(e.capacity === null ? '' : String(e.capacity));
+        setReseauChoisi(e.communityId ?? '');
+      } catch (cause: unknown) {
+        if (!ac.signal.aborted) {
+          setEchec(
+            cause instanceof ApiError ? cause.displayMessage : 'L’événement n’a pas pu être chargé.',
+          );
+        }
+      }
+    })();
+    return () => {
+      ac.abort();
+    };
+  }, [modifierId]);
+
   const champ =
     (poser: (v: string) => void) =>
     (event: { readonly target: { readonly value: string } }): void => {
@@ -154,11 +207,15 @@ export function useFormulaireEvenement(options: {
       setEchec('La date de début n’est pas valide.');
       return;
     }
-    if (delai < EVENT_MIN_LEAD_MS) {
+    // En modification, le délai de deux heures ne s'applique qu'à un début CHANGÉ :
+    // corriger un lieu à une heure de l'événement doit rester possible (le serveur
+    // refuse de toute façon une fois l'événement commencé, `EVENT_STARTED`).
+    const debutChange = !modification || debut !== debutOrigine;
+    if (debutChange && delai < EVENT_MIN_LEAD_MS) {
       setEchec(EVENT_ERROR_MESSAGES.TOO_SOON);
       return;
     }
-    if (delai > EVENT_MAX_LEAD_MS) {
+    if (debutChange && delai > EVENT_MAX_LEAD_MS) {
       setEchec(EVENT_ERROR_MESSAGES.TOO_FAR);
       return;
     }
@@ -190,10 +247,14 @@ export function useFormulaireEvenement(options: {
       ...(fin === '' ? {} : { endsAt: new Date(fin).toISOString() }),
       ...(Number.isFinite(capaciteNombre) && capaciteNombre > 0 ? { capacity: capaciteNombre } : {}),
       ...(couverture === null ? {} : { coverAssetId: couverture.id }),
-      ...(reseauChoisi === '' ? {} : { communityId: reseauChoisi }),
+      ...(reseauChoisi === '' || modification ? {} : { communityId: reseauChoisi }),
     };
-    void memberApi
-      .post('/events', z.object({ id: z.string() }).passthrough(), { body: corps })
+    const appel = modification
+      ? memberApi.patch(`/events/${modifierId}`, z.object({ id: z.string() }).passthrough(), {
+          body: corps,
+        })
+      : memberApi.post('/events', z.object({ id: z.string() }).passthrough(), { body: corps });
+    void appel
       .then((cree) => {
         setTitre('');
         setDescription('');
@@ -207,7 +268,11 @@ export function useFormulaireEvenement(options: {
       })
       .catch((cause: unknown) => {
         setEchec(
-          cause instanceof ApiError ? cause.displayMessage : 'L’événement n’a pas pu être publié.',
+          cause instanceof ApiError
+            ? cause.displayMessage
+            : modification
+              ? 'Les modifications n’ont pas pu être enregistrées.'
+              : 'L’événement n’a pas pu être publié.',
         );
       })
       .finally(() => {
@@ -219,9 +284,12 @@ export function useFormulaireEvenement(options: {
     capacite,
     couverture,
     debut,
+    debutOrigine,
     description,
     fin,
     lieu,
+    modification,
+    modifierId,
     onCree,
     reseauChoisi,
     titre,
@@ -270,11 +338,12 @@ export function useFormulaireEvenement(options: {
     reseaux,
     reseauId: reseauChoisi,
     onReseau: champ(setReseauChoisi),
-    reseauFige: reseauId !== undefined,
+    reseauFige: reseauId !== undefined || modification,
     couverture: couverture?.nom ?? '',
     onCouverture,
     bloque,
     onPublier,
     echec,
+    modification,
   };
 }

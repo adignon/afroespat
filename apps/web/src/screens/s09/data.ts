@@ -1,3 +1,4 @@
+import type { GestesMesAnnonces } from '../services/use-mes-annonces';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -27,6 +28,8 @@ import type { Moi, Quotas } from '../services/data';
 export interface S09Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** Renouveler, pause, trouvé, supprimer, onglet : posé par la page. */
+  readonly gestes: GestesMesAnnonces;
   readonly mesAnnonces: {
     /** `meta.total` de `GET /housing?scope=mine`. */
     readonly logement: number;
@@ -52,6 +55,13 @@ export interface S09Data {
  * de `status`.
  */
 export interface LigneAnnonce {
+  readonly id: string;
+  /** L'onglet où la ligne se range. */
+  readonly genre: 'logement' | 'emploi';
+  /** La fiche publique de l'annonce. */
+  readonly href: string;
+  /** Le formulaire de modification (logement seulement : une offre ne se modifie pas ici). */
+  readonly hrefModifier: string;
   readonly active: boolean;
   readonly enVerification: boolean;
   readonly trouvee: boolean;
@@ -61,3 +71,6 @@ export interface LigneAnnonce {
   /** « expire dans 12 jours », de `expiresAt` — jamais un compteur de vues (§49). */
   readonly sousTitre: string;
 }
+
+/** Ce que `chargerS09` lit de l'API ; la page y ajoute `gestes`. */
+export type S09Charge = Omit<S09Data, 'gestes'>;

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   cityMapQuerySchema,
@@ -103,6 +103,23 @@ export class CitiesController {
     @Body(zodPipe(createCityTipSchema)) body: z.infer<typeof createCityTipSchema>,
   ) {
     return this.cities.createTip(slug, auth.userId, body);
+  }
+
+  @Put('tips/:id/vote')
+  // 09 §2.3 : le vote « utile » n'est pas une publication, mais il écrit : il
+  // exige un compte (L0 suffit : c'est la capacité « commenter et réagir »).
+  @RequiresCapability('comment.create')
+  @RateLimit(60)
+  @ApiOperation({ summary: 'Marque une contribution « utile » (idempotent)' })
+  async vote(@Param('id', zodPipe(uuidSchema)) id: string, @Auth() auth: AuthContext) {
+    return this.cities.vote(id, auth.userId);
+  }
+
+  @Delete('tips/:id/vote')
+  @RequiresCapability('comment.create')
+  @ApiOperation({ summary: 'Retire mon vote « utile » (idempotent)' })
+  async unvote(@Param('id', zodPipe(uuidSchema)) id: string, @Auth() auth: AuthContext) {
+    return this.cities.unvote(id, auth.userId);
   }
 
   @Patch('tips/:id')

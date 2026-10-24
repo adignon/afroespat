@@ -1,3 +1,4 @@
+import type { Onglet } from '../services/navigation';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -13,6 +14,10 @@ import type { Moi, Quotas } from '../services/data';
 export interface S01Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  /** La bande d'onglets des cadres de 390 px (liens). */
+  readonly onglets: readonly Onglet[];
+  /** Les puces de genre (liens `?kind=`). */
+  readonly filtres: readonly Onglet[];
   readonly liste: {
     /** `meta.total` — le compte de la RECHERCHE, pas celui de la page. */
     readonly total: number;
@@ -44,6 +49,11 @@ export interface S01Data {
  * faire — et « Gratuit » n'est pas un nombre.
  */
 export interface CarteAnnonce {
+  readonly id: string;
+  /** Le fond de la tuile : la première photo de l'annonce, ou les rayures de la maquette. */
+  readonly fondPhoto: string;
+  /** Le niveau d'identité de l'auteur (« L2 »), tel que le serveur le rend. */
+  readonly niveau: string;
   /**
    * L'ADRESSE DU DÉTAIL, ou absente.
    *

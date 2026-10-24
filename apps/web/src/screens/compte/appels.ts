@@ -40,6 +40,7 @@ import { construireCarte } from '@/screens/agenda/data';
 import { eventsResponseSchema, housingListResponseSchema } from '@app/shared';
 import type { HousingCardView } from '@app/shared';
 import type { CarteAnnonce } from '@/screens/s01/data';
+import { fondDePhoto } from '@/screens/services/appels';
 import { publicJourneysResponseSchema } from '@app/shared';
 import type { PublicJourneysResponse } from '@app/shared';
 import type { CarteParcours as CarteParcoursView } from '@/screens/parcours/data';
@@ -52,6 +53,9 @@ type PublicJourneyCardView = PublicJourneysResponse['items'][number];
  */
 function carteAnnoncePublique(a: HousingCardView, rang: number): CarteAnnonce {
   return {
+    id: a.id,
+    fondPhoto: fondDePhoto(a.photos[0]?.url),
+    niveau: a.author.verificationLevel,
     href: `/services/logement/${a.id}`,
     genre: a.kind,
     titre: a.title,

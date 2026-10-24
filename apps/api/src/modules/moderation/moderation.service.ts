@@ -849,6 +849,15 @@ export class ModerationService {
         });
         return row?.createdByUserId ?? null;
       }
+      case 'CITY_TIP': {
+        // 09 §2.3 : une contribution de fiche ville est signalable ; son auteur
+        // (peut-être effacé : `SetOnDelete`) répond de ce qu'il a écrit.
+        const row = await this.prisma.cityTip.findUnique({
+          where: { id: subjectId },
+          select: { authorUserId: true, deletedAt: true },
+        });
+        return row === null || row.deletedAt !== null ? null : row.authorUserId;
+      }
       default:
         return null;
     }

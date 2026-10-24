@@ -33,6 +33,8 @@ enum ReportSubjectType {
   /// AJOUTÉ (lot G) : le pipeline de modération couvre désormais les stories et
   /// les astuces de ville, qui n'avaient pas de type de sujet.
   STORY
+  /// 09 §2.3 : une contribution de fiche ville (bon plan, produit, budget,
+  /// témoignage) est « signalable ». Son auteur est `city_tips.author_user_id`.
   CITY_TIP
 }
 

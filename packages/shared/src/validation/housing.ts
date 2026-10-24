@@ -236,6 +236,10 @@ export const updateHousingSchema = z
 
 export type UpdateHousing = z.infer<typeof updateHousingSchema>;
 
+/** 10 §2.3 et §6.1 : masquer l'annonce à UN membre (blocage léger, local à l'annonce). */
+export const hideHousingFromSchema = z.object({ userId: uuidSchema }).strict();
+export type HideHousingFrom = z.infer<typeof hideHousingFromSchema>;
+
 // ── Lecture (§2.4) ───────────────────────────────────────────────────────────
 
 /**

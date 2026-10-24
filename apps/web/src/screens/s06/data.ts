@@ -1,3 +1,4 @@
+import type { Onglet } from '../services/navigation';
 import type { Moi, Quotas } from '../services/data';
 
 /**
@@ -23,7 +24,12 @@ import type { Moi, Quotas } from '../services/data';
 export interface S06Data {
   readonly moi: Moi;
   readonly quotas: Quotas;
+  readonly onglets: readonly Onglet[];
   readonly annuaire: {
+    /** La recherche en cours (`?q=`). */
+    readonly recherche: string;
+    /** Les puces de métier : des liens `?q=`. */
+    readonly metiers: readonly Onglet[];
     /** La tête mise en avant d'abord (au plus deux, §4.2), puis le classement naturel. */
     readonly fiches: readonly CarteFiche[];
   };
@@ -39,6 +45,8 @@ export interface S06Data {
  * la règle du §4.2.
  */
 export interface CarteFiche {
+  /** `/services/annuaire/:id` — la fiche. */
+  readonly href: string;
   /**
    * L'ADRESSE DU PROFIL PUBLIC — `/@handle`, ou absente.
    *

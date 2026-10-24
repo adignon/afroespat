@@ -125,5 +125,5 @@ export function useServices(ouverteInitiale: NomModale | null = null) {
 
   const onFermer = useCallback((): void => setOuverte(null), []);
 
-  return { ouverte, onOuvrir, onFermer };
+  return { ouverte, onOuvrir, onFermer, ouvrir: setOuverte };
 }

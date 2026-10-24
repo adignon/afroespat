@@ -4,7 +4,9 @@ import { useCallback } from 'react';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranServices, useServices } from '@/screens/services/ecran';
 import { SQUELETTE_S02, chargerS02 } from '@/screens/services/appels';
-import type { NiveauContact } from '@/screens/services/data';
+import type { NiveauContact, NomModale } from '@/screens/services/data';
+import { useAnnonceLogement, vivantAnnonceVide } from '@/screens/services/use-annonce-logement';
+import type { S02Charge } from '@/screens/s02/data';
 import { S02Desktop } from '@/screens/s02/desktop.generated';
 import { S02Mobile } from '@/screens/s02/mobile.generated';
 import { S02DesktopContact } from '@/screens/s02contact/desktopcontact.generated';
@@ -14,80 +16,63 @@ import { S02MobileVerification } from '@/screens/s02verification/mobileverificat
 /**
  * S02 — une annonce de logement, et les deux états de « Contacter » (10 §2.3).
  *
- * LA MAQUETTE DESSINE DEUX FEUILLES, et elle les nomme elle-même :
+ * « Envoyer » ouvre (ou rouvre) la conversation avec l'auteur et y dépose le
+ * message (`useAnnonceLogement`). Le niveau n'est jamais lu : l'état L0 (« Contacter
+ * demande une identité vérifiée ») est la CONSÉQUENCE d'un `403 LEVEL_REQUIRED` du
+ * serveur ; `?niveau=l0` reste un lien profond de test qui n'affirme rien.
  *
- *   · « MOBILE · L1+ » — la feuille « Présentez-vous », pré-remplie depuis le
- *     parcours, avec le rappel « Aucun versement avant visite » juste au-dessus
- *     du bouton d'envoi. Elle a AUSSI une planche d'ordinateur, de 480 px.
- *   · « MOBILE · L0 » — « Contacter demande une identité vérifiée », avec
- *     « Vérifier mon identité » et « Ou demandez à un parrain de visiter pour
- *     vous ». C'est mot pour mot ce que §2.3 exige de l'interface.
- *
- * CE QUI CHOISIT ENTRE LES DEUX, C'EST LE NIVEAU DU MEMBRE — ET ON NE LE LIT PAS.
- * La règle du socle est sans exception : on tente l'action, et le serveur répond
- * `403 LEVEL_REQUIRED` avec de quoi afficher l'invitation du §7.3. Or ce lot ne
- * branche AUCUN bouton de contact : il n'y a donc pas d'action à tenter, et lire
- * le niveau de `GET /me` pour choisir la feuille aurait été exactement l'interdit
- * — une décision d'autorisation prise dans le front. Le bouton « Contacter » ouvre
- * la feuille L1+, le cas courant ; `?niveau=l0` ouvre l'autre. Le paramètre
- * n'affirme rien et se teste, comme `?paiement=` côté Compte.
- *
- * LA FEUILLE L0 EST `mobileOnly`, et ce n'est pas une économie : le cadre
- * d'ORDINATEUR porte déjà ce message en place, dans sa colonne de contexte
- * (planche « ÉTAT L0 · APRÈS “CONTACTER” »). Superposer la feuille par-dessus
- * l'afficherait deux fois.
- *
- * « ENVOYER » EST INERTE. Le message ouvre une conversation avec l'auteur de
- * l'annonce (§2.3) ; un `onClick` qui refermerait la feuille ferait croire au
- * membre que son message est parti. Même règle que « Publier » côté Parcours.
- *
- * `useCallback` SUR L'IDENTIFIANT, et il est obligatoire : `EcranDonnees` déclare
- * `charger` dans les dépendances de son effet — délibérément, pour qu'un appelant
- * qui changerait de cible recharge. Une fonction anonyme rechargerait en boucle,
- * et c'est une propriété qu'on veut VISIBLE plutôt que masquée.
+ * Les hooks vivent dans `AnnonceVivante`, rendu DANS la fonction-enfant d'`EcranDonnees`
+ * : ils ont besoin du prénom de l'auteur et de `estMienne`, qui viennent de la donnée.
  */
-export function AnnonceEcran({
-  id,
-  niveau,
-}: {
-  readonly id: string;
-  readonly niveau: NiveauContact | null;
-}) {
-  const { ouverte, onOuvrir, onFermer } = useServices(niveau === 'l0' ? 'S02V' : null);
+export function AnnonceEcran({ id, niveau }: { readonly id: string; readonly niveau: NiveauContact | null }) {
+  const services = useServices(niveau === 'l0' ? 'S02V' : null);
   const charger = useCallback(() => chargerS02(id), [id]);
 
   return (
     <EcranDonnees
-      /*
-       * LE CADRE EST SERVI AVANT LA DONNEE : sans squelette, cette route repond 200
-       * en servant cinq mots et aucune entree de rail. Voir
-       * `screens/compte/ecran-donnees.tsx`.
-       */
-      squelette={SQUELETTE_S02} charger={charger} attente="Chargement de l’annonce…">
-      {(donnees) => (
-        <EcranServices
-          screen="S02"
-          desktop={<S02Desktop {...donnees} />}
-          mobile={<S02Mobile {...donnees} />}
-          ouverte={ouverte}
-          onOuvrir={onOuvrir}
-          onFermer={onFermer}
-          modales={{
-            /**
-             * LES TROIS FEUILLES REÇOIVENT LA CHARGE DE L'ÉCRAN, et il le faut :
-             * elles nomment l'annonce et son auteur (« Studio meublé Lyon 7e ·
-             * Sarah T. », « Contacter Sarah »). Figés, ces textes disaient Sarah
-             * par-dessus l'annonce de quelqu'un d'autre — la fenêtre aurait menti
-             * pendant que l'écran derrière elle disait vrai.
-             */
-            S02C: {
-              desktop: <S02DesktopContact {...donnees} />,
-              mobile: <S02MobileContact {...donnees} />,
-            },
-            S02V: { mobile: <S02MobileVerification {...donnees} />, mobileOnly: true },
-          }}
-        />
-      )}
+      squelette={SQUELETTE_S02}
+      charger={charger}
+      attente="Chargement de l’annonce…"
+    >
+      {(donnees) => <AnnonceVivante id={id} donnees={donnees} services={services} />}
     </EcranDonnees>
+  );
+}
+
+function AnnonceVivante({
+  id,
+  donnees,
+  services,
+}: {
+  readonly id: string;
+  readonly donnees: S02Charge;
+  readonly services: ReturnType<typeof useServices>;
+}) {
+  const { ouverte, onOuvrir, onFermer, ouvrir } = services;
+  const { vivant, fenetres } = useAnnonceLogement(
+    id,
+    { prenomAuteur: donnees.annonce.prenomAuteur, estMienne: donnees.annonce.estMienne },
+    { ouvrir: (nom: 'S02C' | 'S02V') => { ouvrir(nom satisfies NomModale); }, fermer: onFermer },
+  );
+  const avec = { ...donnees, vivant: id === '' ? vivantAnnonceVide : vivant };
+  return (
+    <>
+      <EcranServices
+        screen="S02"
+        desktop={<S02Desktop {...avec} />}
+        mobile={<S02Mobile {...avec} />}
+        ouverte={ouverte}
+        onOuvrir={onOuvrir}
+        onFermer={onFermer}
+        modales={{
+          S02C: {
+            desktop: <S02DesktopContact {...avec} />,
+            mobile: <S02MobileContact {...avec} />,
+          },
+          S02V: { mobile: <S02MobileVerification {...avec} />, mobileOnly: true },
+        }}
+      />
+      {fenetres}
+    </>
   );
 }

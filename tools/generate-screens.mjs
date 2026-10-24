@@ -32,6 +32,9 @@ import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/c
 import { ADAPTATIONS_FIL_VIVANT, AJOUTS_FIL_VIVANT } from './adaptations/fil-vivant.mjs';
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
 import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/administration-vivante.mjs';
+import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
+import { ADAPTATIONS_SERVICES_VIVANT, AJOUTS_SERVICES_VIVANT } from './adaptations/services-vivant.mjs';
+import { ADAPTATIONS_VILLES_VIVANT, AJOUTS_VILLES_VIVANT } from './adaptations/villes-vivant.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
 import {
   ADAPTATIONS_PARCOURS_VIVANT,
@@ -18262,6 +18265,12 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_MESSAGERIE_VIVANTE,
     // Lot H : l'administration vivante (D01 à D16), tools/adaptations/administration-vivante.mjs.
     ...ADAPTATIONS_ADMIN_VIVANTE,
+    // Lot E (agenda-vivant).
+    ...ADAPTATIONS_AGENDA_VIVANT,
+    // Lot E (villes-vivant).
+    ...ADAPTATIONS_VILLES_VIVANT,
+    // Lot E (services-vivant).
+    ...ADAPTATIONS_SERVICES_VIVANT,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19539,6 +19548,9 @@ const AJOUTS = {
   ...AJOUTS_MESSAGERIE_VIVANTE,
   // Lot H — les composants de l'administration vivante.
   ...AJOUTS_ADMIN_VIVANTE,
+  ...AJOUTS_AGENDA_VIVANT,
+  ...AJOUTS_SERVICES_VIVANT,
+  ...AJOUTS_VILLES_VIVANT,
 };
 
 /**

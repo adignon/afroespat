@@ -1,4 +1,5 @@
 import { VilleScreen } from './ville-screen';
+import { ongletDeUrl } from '@/screens/villes/appels';
 import { voletContribution } from '@/screens/accueil/data';
 
 /**
@@ -6,20 +7,29 @@ import { voletContribution } from '@/screens/accueil/data';
  *
  * Composant SERVEUR, pour la raison écrite dans `(app)/villes/page.tsx`.
  *
- * `?contribution=type|produit|budget` ouvre A12C dès l'arrivée — même motif que
- * `?paiement=` sur `/compte/abonnement`.
+ * LE SLUG EST LU : il part dans `GET /cities/:slug`. L'ancienne page ignorait
+ * `params` et rendait la fiche de « Lyon » pour toute adresse. Une ville
+ * inexistante, fusionnée ou inactive répond 404 / `CITY_INACTIVE`, et l'écran
+ * l'affiche tel quel.
+ *
+ * `?onglet=bons-plans|produits|budgets|temoignages` choisit l'onglet (« budgets »
+ * par défaut, comme la maquette) ; `?contribution=type|produit|budget` ouvre la
+ * fenêtre de contribution dès l'arrivée.
  */
 export default async function Page({
+  params,
   searchParams,
 }: {
+  params: Promise<{ slug: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const params = await searchParams;
-  const onglet = params['onglet'];
+  const [{ slug }, requete] = await Promise.all([params, searchParams]);
+  const onglet = requete['onglet'];
   return (
     <VilleScreen
-      onglet={typeof onglet === 'string' ? onglet : 'budgets'}
-      contribution={voletContribution(params['contribution'])}
+      slug={slug}
+      onglet={ongletDeUrl(typeof onglet === 'string' ? onglet : null)}
+      contribution={voletContribution(requete['contribution'])}
     />
   );
 }

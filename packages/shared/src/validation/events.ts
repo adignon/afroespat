@@ -387,6 +387,9 @@ export const eventCardSchema = z
     myWaitlistPosition: z.number().int().nullable(),
     myCheckedIn: z.boolean(),
     isOrganizer: z.boolean(),
+    /** 09 §3.4 : l'instant et le motif (facultatif) de l'annulation. */
+    cancelledAt: z.string().datetime().nullable().default(null),
+    cancelReason: z.string().nullable().default(null),
   })
   .strict();
 

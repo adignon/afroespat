@@ -229,6 +229,7 @@ model User {
   conversationsOpened     Conversation[]               @relation("ConversationOpenedBy")
   messages                Message[]
   cityTips                CityTip[]
+  cityTipVotes            CityTipVote[]
   eventsOrganized         Event[]
   eventAttendances        EventAttendee[]
   housingListings         HousingListing[]
@@ -424,6 +425,9 @@ model UserProfile {
   helpTypes        HelpType[]       @map("help_types")
   /// Profil visible hors connexion. Par défaut non — l'option la plus protectrice.
   isPublic         Boolean          @default(false) @map("is_public")
+  /// 09 §2.4 : « Apparaître dans les nouveaux arrivants » de la fiche ville.
+  /// Défaut vrai, comme la spec ; le membre peut s'en retirer (K01).
+  showAsNewcomer   Boolean          @default(true) @map("show_as_newcomer")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

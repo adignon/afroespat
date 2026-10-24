@@ -162,3 +162,13 @@ Par l'organisateur, motif facultatif, notification à tous les inscrits. Un év�
 - `rule: la limite d'un événement par mois est appliquée côté serveur en gratuit`
 - `rule: EVENT_ORGANIZED n'est crédité qu'avec au moins 3 présents cochés`
 - `rule: un événement réservé à un réseau n'est pas renvoyé à un non-membre`
+
+## 11. Précisions de mise en œuvre (lot E)
+
+- **Annulation d'un événement** : `events.cancelled_at` et `events.cancel_reason` (colonnes). `event.hide_cancelled` lit `cancelled_at` (repli sur `updated_at` pour les lignes antérieures). L'organisateur annule avec un motif ; l'événement apparaît « annulé » pendant 7 jours.
+- **Vote utile sur une contribution** : table `city_tip_votes` (unique `city_tip_id` + `user_id`), `PUT/DELETE /tips/:id/vote` (idempotents, capacité `comment.create`), événement `city_tip.voted`. On ne vote pas sa propre contribution (409). `helpful_count` est tenu dans la même transaction.
+- **Contributions** : `city_tips.venue_name` (obligatoire pour un commerce) et `address_text` (texte libre, jamais géocodé). Les budgets sont **anonymes** : l'auteur n'est jamais renvoyé. Pas de catégorie ni de photo : un filtre sans colonne ment.
+- **Arrivants** : `user_profiles.show_as_newcomer` (défaut vrai) ; un membre qui le retire disparaît de « Arrivés récemment ».
+- **Carte** : SVG local, sans iframe ni service tiers ; le seuil `CITY_COUNT_PRIVACY_THRESHOLD` (3) est appliqué par le serveur et affiché « moins de 3 ».
+- **Droits** : `event.attend` et `event.create` exigent L2 côté serveur (la matrice de §3 dit L1 : écart à arbitrer). Le front ne lit jamais le niveau : il tente, le serveur répond `LEVEL_REQUIRED`.
+- **Suppression de compte** : abonnés `user.deleted` des modules `events` (annule les événements à venir de l'organisateur, retire ses RSVP, promeut la file d'attente) et `cities` (retire ses votes, décrémente `helpful_count`).

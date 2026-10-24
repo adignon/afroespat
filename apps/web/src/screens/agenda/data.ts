@@ -78,7 +78,42 @@ export interface MoiAgenda {
  * doux, numéro vert foncé, titre en gras) — et le point terre cuite quand j'y
  * participe, qui l'emporte sur le vert parce que §3.5 le veut distinct.
  */
+/**
+ * LE FILTRE DE LA PAGE (09 §3.5) : « Tous · Mes participations · Mes
+ * organisations ». Les mots du serveur (`scope`), pas ceux de l'écran.
+ */
+export type ScopeAgenda = 'all' | 'mine' | 'organized';
+
+export const SCOPES_AGENDA: readonly ScopeAgenda[] = ['all', 'mine', 'organized'];
+
+/** Le filtre demandé par l'URL, ou « tous » si le paramètre est absent ou inconnu. */
+export function scopeDeUrl(valeur: string | null): ScopeAgenda {
+  return (SCOPES_AGENDA as readonly (string | null)[]).includes(valeur)
+    ? (valeur as ScopeAgenda)
+    : 'all';
+}
+
+/**
+ * L'adresse d'un état de l'agenda. Tout vit dans l'URL — jour, mois, filtre —
+ * pour qu'un jour, un mois et un filtre se partagent, se rechargent et se
+ * retrouvent avec le bouton Retour.
+ */
+export function hrefAgenda(etat: {
+  readonly jour?: string | null;
+  readonly mois?: string | null;
+  readonly scope?: ScopeAgenda;
+}): string {
+  const requete = new URLSearchParams();
+  if (etat.jour !== undefined && etat.jour !== null) requete.set('jour', etat.jour);
+  if (etat.mois !== undefined && etat.mois !== null) requete.set('mois', etat.mois);
+  if (etat.scope !== undefined && etat.scope !== 'all') requete.set('scope', etat.scope);
+  const texte = requete.toString();
+  return texte === '' ? '/agenda' : `/agenda?${texte}`;
+}
+
 export interface JourCalendrier {
+  /** La destination du jour : `/agenda?jour=…`. */
+  readonly href: string;
   readonly abbr: string;
   readonly numero: string;
   readonly titre: string;
@@ -110,6 +145,9 @@ export interface QuotaEvenements {
 
 /** Le panneau de gauche, dessiné à l'identique sur les quatre cadres d'ordinateur. */
 export interface PanneauAgenda {
+  /** Les flèches du mois (09 §3.5 : « Navigation par mois »). */
+  readonly precedent: string;
+  readonly suivant: string;
   readonly mois: string;
   readonly aujourdhui: string;
   readonly totalMois: number;
@@ -147,6 +185,8 @@ export interface CarteEvenement {
 
 /** Une pastille de la bande de dates du mobile (§3.5). */
 export interface JourBande {
+  /** La destination de la pastille : `/agenda?jour=…`. */
+  readonly href: string;
   readonly abbr: string;
   readonly numero: string;
   readonly fond: string;
@@ -163,7 +203,26 @@ export interface LigneWeekEnd {
   readonly quand: string;
 }
 
+/** Une pastille de filtre : sa destination et ses trois couleurs (fond, encre, liseré). */
+export interface FiltreAgenda {
+  readonly href: string;
+  readonly bg: string;
+  readonly fg: string;
+  readonly bd: string;
+}
+
+export interface FiltresAgenda {
+  readonly tous: FiltreAgenda;
+  readonly mes: FiltreAgenda;
+  readonly organises: FiltreAgenda;
+}
+
 export interface E01Data {
+  /** « Voir la fiche ville » : `/villes/:slug`, ou `null` si la ville n'a pas de fiche. */
+  readonly villeHref: string | null;
+  /** Ce que dit la page quand le jour est vide, selon le filtre. */
+  readonly videTexte: string;
+  readonly filtres: FiltresAgenda;
   readonly moi: MoiAgenda;
   readonly panneau: PanneauAgenda;
   readonly jour: string;
@@ -192,7 +251,52 @@ export interface AvatarEmpile {
   readonly initiales: string;
 }
 
+/**
+ * LES GESTES DE E02, tels que la fiche les appelle (09 §3.2, §3.3, §3.4).
+ *
+ * Tous passent par le serveur, qui décide : le front n'allume ni n'éteint rien
+ * d'après le niveau ou l'horloge. `occupe` éteint les boutons pendant un appel
+ * (jamais deux fois le même RSVP), `retour` porte la phrase du dernier refus ou
+ * succès (en français, celle du serveur).
+ */
+export interface ActionsEvenement {
+  readonly occupe: boolean;
+  readonly retour: string;
+  readonly onRsvp: (statut: 'GOING' | 'MAYBE' | 'DECLINED') => void;
+  readonly onRetirer: () => void;
+  readonly onPresent: () => void;
+  readonly onSignaler: () => void;
+  readonly onAnnuler: () => void;
+  readonly onModifier: () => void;
+  /** Vers la feuille de présence : `/agenda/:id/presence`. */
+  readonly presenceHref: string;
+}
+
+const AUCUN_GESTE = (): void => {};
+
+/** Les gestes d'un squelette : tous sans effet. */
+export const actionsVides: ActionsEvenement = {
+  occupe: false,
+  retour: '',
+  onRsvp: AUCUN_GESTE,
+  onRetirer: AUCUN_GESTE,
+  onPresent: AUCUN_GESTE,
+  onSignaler: AUCUN_GESTE,
+  onAnnuler: AUCUN_GESTE,
+  onModifier: AUCUN_GESTE,
+  presenceHref: '#',
+};
+
 export interface FicheEvenement {
+  readonly id: string;
+  /** Posé quand l'événement est annulé : le motif (facultatif) et le jour. */
+  readonly annule: { readonly motif: string | null; readonly quand: string } | null;
+  /** Mon RSVP (`GOING`, `MAYBE`, `DECLINED`, `WAITLIST`) ou `null`. */
+  readonly monStatut: 'GOING' | 'MAYBE' | 'DECLINED' | 'WAITLIST' | null;
+  /** Vrai une fois l'événement terminé ou commencé : plus de RSVP, mais la présence. */
+  readonly commence: boolean;
+  /** La ville de l'événement : `/villes/:slug` (la fiche n'existe que si la ville est active). */
+  readonly villeNom: string;
   readonly titre: string;
   readonly type: string;
   /** Le nom du réseau réservé, ou `null` : la pastille disparaît alors. */
@@ -221,6 +325,7 @@ export interface FicheEvenement {
 }
 
 export interface E02Data {
+  readonly actions: ActionsEvenement;
   readonly moi: MoiAgenda;
   readonly panneau: PanneauAgenda;
   readonly evenement: FicheEvenement;
@@ -316,6 +421,8 @@ export interface FormulaireEvenementView {
   readonly onCouverture: (e: { target: { files: FileList | null; value: string } }) => void;
   readonly bloque: boolean;
   readonly onPublier: () => void;
+  /** Vrai en modification : le titre devient « Modifier l'événement », le bouton « Enregistrer ». */
+  readonly modification: boolean;
   /** Le refus du serveur, déjà en français — `TOO_SOON`, `TOO_FAR`, le quota. */
   readonly echec: string;
 }
@@ -351,6 +458,7 @@ export const formulaireVide: FormulaireEvenementView = {
   bloque: true,
   onPublier: RIEN,
   echec: '',
+  modification: false,
 };
 
 /**
@@ -378,9 +486,42 @@ export interface LignePresence {
   readonly nom: string;
   readonly coche: boolean;
   readonly vide: boolean;
+  /** L'identifiant du membre, pour `POST /check-in` (organisateur seulement). */
+  readonly userId?: string;
+  /** Vrai si la présence est DÉJÀ enregistrée côté serveur : la case ne se décoche plus. */
+  readonly figee?: boolean;
 }
 
+/** La feuille de présence vivante (E04) : cases, recherche, enregistrement. */
+export interface PresenceView {
+  readonly recherche: string;
+  readonly onRecherche: (event: { readonly target: { readonly value: string } }) => void;
+  readonly onBascule: (userId: string) => void;
+  readonly onEnregistrer: () => void;
+  readonly occupe: boolean;
+  /** Le nombre de nouvelles cases cochées, pas encore enregistrées. */
+  readonly enAttente: number;
+  readonly retour: string;
+  readonly estOrganisateur: boolean;
+  /** Les lignes visibles après la recherche, cases à jour. */
+  readonly lignes: readonly LignePresence[];
+}
+
+export const presenceVide: PresenceView = {
+  recherche: '',
+  onRecherche: AUCUN_GESTE,
+  onBascule: AUCUN_GESTE,
+  onEnregistrer: AUCUN_GESTE,
+  occupe: false,
+  enAttente: 0,
+  retour: '',
+  estOrganisateur: false,
+  lignes: [],
+};
+
 export interface E04Data {
+  readonly presence: PresenceView;
+  /** Cet événement est-il celui de l'organisateur ? Sinon la feuille est en lecture. */
   readonly moi: MoiAgenda;
   readonly panneau: PanneauAgenda;
   readonly evenement: { readonly titre: string; readonly quand: string };
@@ -640,8 +781,12 @@ export function construirePanneau(
   jourChoisi: string,
   aujourdhuiCivil: string,
   gratuit = false,
+  nav: { readonly mois?: string; readonly scope?: ScopeAgenda } = {},
 ): PanneauAgenda {
-  const mois = aujourdhuiCivil.slice(0, 7);
+  // Le mois AFFICHÉ : celui que l'URL demande, sinon le mois courant. « Aujourd'hui »
+  // reste le vrai jour, même quand on feuillette un autre mois.
+  const mois = nav.mois ?? aujourdhuiCivil.slice(0, 7);
+  const scope = nav.scope ?? 'all';
   const duMois = calendrier.items.filter((j) => j.date.startsWith(mois));
 
   const semaines: SemaineCalendrier[] = [];
@@ -669,6 +814,7 @@ export function construirePanneau(
       couleur: jetons.couleur,
       poids: choisi ? '700' : jetons.poids,
       point: jour.attending > 0 ? POINT_JY_VAIS : jour.total > 0 ? POINT_PRES : null,
+      href: hrefAgenda({ jour: jour.date, mois: jour.date.startsWith(mois) ? null : jour.date.slice(0, 7), scope }),
     });
   }
 
@@ -682,7 +828,9 @@ export function construirePanneau(
   );
 
   return {
-    mois: moisLong(aujourdhuiCivil),
+    precedent: hrefAgenda({ mois: moisVoisin(mois, -1), scope }),
+    suivant: hrefAgenda({ mois: moisVoisin(mois, 1), scope }),
+    mois: moisLong(`${mois}-01`),
     aujourdhui: jourEtNumero(aujourdhuiCivil),
     totalMois: duMois.reduce((n, j) => n + j.total, 0),
     semaines,
@@ -698,10 +846,44 @@ export function construirePanneau(
   };
 }
 
+/** Le mois d'avant (−1) ou d'après (+1) un mois `AAAA-MM`. Arithmétique civile pure. */
+export function moisVoisin(mois: string, sens: -1 | 1): string {
+  const [an, m] = mois.split('-').map(Number) as [number, number];
+  const d = new Date(Date.UTC(an, m - 1 + sens, 1));
+  return d.toISOString().slice(0, 7);
+}
+
+/** Le premier jour d'un mois `AAAA-MM`, au format civil. */
+export const premierDuMois = (mois: string): string => `${mois}-01`;
+
+const FILTRE_ACTIF = { bg: '#16785E', fg: '#fff', bd: '#16785E' } as const;
+const FILTRE_REPOS = { bg: '#fff', fg: '#16211D', bd: '#E6EBE9' } as const;
+
+/**
+ * Les trois pastilles de filtre de E01. Les couleurs sont CELLES de la maquette
+ * (la première pastille active, les autres blanches au liseré gris) ; seul
+ * change celle qui est active.
+ */
+export function construireFiltres(jour: string, mois: string | null, scope: ScopeAgenda): FiltresAgenda {
+  const fait = (valeur: ScopeAgenda): FiltreAgenda => ({
+    href: hrefAgenda({ jour, mois, scope: valeur }),
+    ...(valeur === scope ? FILTRE_ACTIF : FILTRE_REPOS),
+  });
+  return { tous: fait('all'), mes: fait('mine'), organises: fait('organized') };
+}
+
+/** Ce que dit un jour sans événement, selon le filtre. */
+export function texteJourVide(scope: ScopeAgenda): string {
+  if (scope === 'mine') return 'Vous ne participez à aucun événement ce jour-là.';
+  if (scope === 'organized') return 'Vous n’organisez aucun événement ce jour-là.';
+  return 'Aucun événement ce jour-là près de chez vous.';
+}
+
 /** La bande de dates du mobile : les mêmes jours, autour du jour sélectionné. */
 export function construireBande(
   calendrier: CalendarResponse,
   jourChoisi: string,
+  scope: ScopeAgenda = 'all',
 ): JourBande[] {
   const jours = calendrier.items;
   const at = jours.findIndex((j) => j.date === jourChoisi);
@@ -710,6 +892,7 @@ export function construireBande(
   return jours.slice(debut, debut + 7).map((j) => {
     const choisi = j.date === jourChoisi;
     return {
+      href: hrefAgenda({ jour: j.date, scope }),
       abbr: abbrJour(j.date),
       numero: numeroJour(j.date),
       fond: choisi ? '#16785E' : '#fff',
@@ -758,6 +941,17 @@ export function construireFiche(
   const reste = detail.attendeeCount - montres.length;
 
   return {
+    id: detail.id,
+    annule:
+      detail.status === 'CANCELLED'
+        ? {
+            motif: detail.cancelReason,
+            quand: detail.cancelledAt === null ? '' : dateCourte(detail.cancelledAt, detail.timeZone),
+          }
+        : null,
+    monStatut: detail.myStatus,
+    commence: new Date(detail.startsAt).getTime() <= Date.now(),
+    villeNom: detail.city.name,
     titre: detail.title,
     type: TYPES_FR[detail.type] ?? detail.type,
     reseau: detail.communityId === null ? null : (reseaux.get(detail.communityId) ?? null),
@@ -861,6 +1055,9 @@ export function construireFeuille(
         nom: p.displayName,
         coche: presente === true,
         vide: presente === false,
+        ...(p.handle === null ? {} : { profil: `/@${p.handle}` }),
+        ...('userId' in p ? { userId: (p as { userId: string }).userId } : {}),
+        figee: presente === true,
       };
     }),
     presents: coches ?? 0,
