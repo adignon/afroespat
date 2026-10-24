@@ -630,9 +630,18 @@ export class ModerationService {
     if (input.subjectType === 'MESSAGE') {
       const message = await this.prisma.message.findUnique({
         where: { id: input.subjectId },
-        select: { senderUserId: true, conversation: { select: { members: { select: { userId: true } } } } },
+        select: {
+          senderUserId: true,
+          systemKind: true,
+          conversation: { select: { members: { select: { userId: true } } } },
+        },
       });
-      if (message === null || !message.conversation.members.some((m) => m.userId === reporterUserId)) {
+      // Une ligne système ne se signale pas : 404, comme un message qu'on ne peut pas lire.
+      if (
+        message === null ||
+        message.systemKind !== null ||
+        !message.conversation.members.some((m) => m.userId === reporterUserId)
+      ) {
         throw ApiError.notFound();
       }
       if (message.senderUserId === reporterUserId) this.fail('SELF_REPORT');
@@ -836,9 +845,11 @@ export class ModerationService {
       case 'MESSAGE': {
         const row = await this.prisma.message.findUnique({
           where: { id: subjectId },
-          select: { senderUserId: true },
+          select: { senderUserId: true, systemKind: true },
         });
-        return row?.senderUserId ?? null;
+        // Une ligne système (« X a rejoint le parcours ») n'a pas d'auteur à qui
+        // reprocher quoi que ce soit : elle ne se signale pas (lot F2).
+        return row === null || row.systemKind !== null ? null : row.senderUserId;
       }
       case 'COMMUNITY': {
         // « Signaler le réseau » : le créateur répond du réseau qu'il a ouvert.

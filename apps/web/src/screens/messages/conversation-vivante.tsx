@@ -331,7 +331,7 @@ export function ConversationVivante({
     const avec = brute as BulleAvecStory;
     // Les gestes par bulle : pas sur un message supprimé, il n'y a plus rien à faire.
     const m =
-      avec.id === undefined || avec.supprime === true
+      avec.id === undefined || avec.supprime === true || avec.systeme === true
         ? brute
         : {
             ...brute,

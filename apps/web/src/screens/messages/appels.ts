@@ -300,6 +300,19 @@ const BULLE_SIENNE = {
 } as const;
 
 /**
+ * LA LIGNE SYSTÈME (lot F2) : « X a rejoint le parcours ». Centrée, dans le vert
+ * pâle et l'encre du bandeau de demande de M01 (`#F3F7F5` / `#0F5C48`) : aucune
+ * couleur nouvelle, et elle ne ressemble ni à ma bulle ni à celle de l'autre.
+ */
+const BULLE_SYSTEME = {
+  cote: 'center',
+  rayon: '14px',
+  fond: '#F3F7F5',
+  encre: '#0F5C48',
+  trait: 'none',
+} as const;
+
+/**
  * UNE BULLE DU FIL.
  *
  * `corps` ARRIVE DÉSCELLÉ. Il peut valoir « Message supprimé » ou « Message d'un
@@ -330,6 +343,8 @@ export interface BulleAvecStory extends BulleMessage {
   /** Pour les gestes par bulle (supprimer, signaler). */
   readonly id: string;
   readonly supprime: boolean;
+  /** Une ligne système (`kind: 'SYSTEM'`) : ni « Supprimer » ni « Signaler ». */
+  readonly systeme?: boolean;
 }
 
 function bulleDe(
@@ -337,14 +352,16 @@ function bulleDe(
   nomsParHandle: ReadonlyMap<string, string>,
   vu = false,
 ): BulleAvecStory {
-  const style = m.mine ? BULLE_MIENNE : BULLE_SIENNE;
+  const systeme = m.kind === 'SYSTEM';
+  const style = systeme ? BULLE_SYSTEME : m.mine ? BULLE_MIENNE : BULLE_SIENNE;
   return {
+    systeme,
     cote: style.cote,
     rayon: style.rayon,
     fond: style.fond,
     encre: style.encre,
     trait: style.trait,
-    auteur: m.mine ? '' : (nomsParHandle.get(m.senderHandle) ?? m.senderHandle),
+    auteur: systeme || m.mine ? '' : (nomsParHandle.get(m.senderHandle) ?? m.senderHandle),
     corps: m.body ?? '',
     // « Vu » : renvoyé de `meta.seenAt` (`conversation_members.last_read_at` de
     // l'AUTRE) — voir `bullesDuFil`. L'heure d'abord, « Vu » ensuite.
@@ -510,7 +527,7 @@ export function bullesDuFil(
 ): BulleAvecStory[] {
   const chrono = [...fil.items].reverse();
   const lu = fil.meta.seenAt === null ? null : Date.parse(fil.meta.seenAt);
-  const derniere = [...chrono].reverse().find((m) => m.mine && m.deletedAt === null) ?? null;
+  const derniere = [...chrono].reverse().find((m) => m.mine && m.kind !== 'SYSTEM' && m.deletedAt === null) ?? null;
   return chrono.map((m) =>
     bulleDe(m, nomsParHandle, lu !== null && m.id === derniere?.id && Date.parse(m.sentAt) <= lu),
   );

@@ -330,12 +330,22 @@ model Message {
   /// l'écran dit « cette story a expiré » — ce qui est exactement vrai.
   storyId        String?  @map("story_id") @db.Uuid
   sentAt         DateTime @map("sent_at") @db.Timestamptz
+  /// MESSAGE SYSTÈME (lot F2) : « X a rejoint le parcours », « Étape terminée »…
+  /// `NULL` = un message écrit par un membre. Sinon le genre d'événement
+  /// (`JOURNEY_MEMBER_JOINED`, `JOURNEY_MEMBER_LEFT`, `JOURNEY_STEP_DONE`,
+  /// `JOURNEY_COMPLETED`). `sender_user_id` reste le membre CONCERNÉ (la colonne est
+  /// NOT NULL) ; le texte est dans `body_encrypted` comme tous les corps.
+  systemKind     String?  @map("system_kind")
+  /// L'identifiant de l'événement d'outbox qui l'a produit : `(conversation, ref)`
+  /// est unique, donc une livraison « au moins une fois » n'écrit qu'une ligne.
+  systemRef      String?  @map("system_ref")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderUserId], references: [id], onDelete: Cascade)
   mediaAsset   MediaAsset?  @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
   story        Story?       @relation(fields: [storyId], references: [id], onDelete: SetNull)
 
+  @@unique([conversationId, systemRef])
   @@index([conversationId])
   @@index([senderUserId])
   @@index([sentAt])

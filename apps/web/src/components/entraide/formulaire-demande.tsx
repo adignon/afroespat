@@ -65,8 +65,17 @@ export function FormulaireDemande({
   const [refus, setRefus] = useState<string | null>(null);
 
   useEffect(() => {
-    const parametre = new URLSearchParams(window.location.search).get('etape');
+    const recherche = new URLSearchParams(window.location.search);
+    const parametre = recherche.get('etape');
     if (parametre !== null && parametre !== '') setEtape(parametre);
+    /**
+     * `?titre=` — « POSER LA QUESTION » DEPUIS UNE RECHERCHE SANS RÉSULTAT (X01).
+     * L'URL est publique : le titre est borné à `HELP_LIMITS.titleMax` et ne remplace
+     * jamais ce que le membre a déjà écrit. Le schéma partagé tranche ensuite
+     * (`titleMin`) comme pour n'importe quelle saisie.
+     */
+    const titre = recherche.get('titre')?.trim() ?? '';
+    if (titre !== '') setTitle((deja) => (deja === '' ? titre.slice(0, HELP_LIMITS.titleMax) : deja));
   }, []);
 
   useEffect(() => {

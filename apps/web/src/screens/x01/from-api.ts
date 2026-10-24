@@ -179,6 +179,12 @@ export function filtresDe(
  * et non un texte recomposé ici : changer la phrase côté API change les deux
  * lignes.
  */
+/** `/entraide/nouveau`, avec la question cherchée en `?titre=` quand il y en a une. */
+export function adresseDemande(titre: string): string {
+  const t = titre.trim();
+  return t === '' ? '/entraide/nouveau' : `/entraide/nouveau?titre=${encodeURIComponent(t)}`;
+}
+
 export function videDe(
   groupes: GroupedSearchResponse | null,
   q: string,
@@ -215,16 +221,14 @@ export function videDe(
      */
     bouton: groupes.meta.zeroResult?.cta ?? '',
     /**
-     * LE BOUTON MÈNE AU COMPOSEUR D'ENTRAIDE, SANS PRÉ-REMPLISSAGE.
+     * LE BOUTON MÈNE AU COMPOSEUR D'ENTRAIDE, PRÉ-REMPLI (lot F2).
      *
-     * §4 dit « pré-remplit le composeur d'entraide », et le serveur rend même
-     * `helpTitle` pour cela. MESURÉ : `app/(app)/entraide/nouveau/page.tsx` ne lit
-     * AUCUN paramètre d'URL — il n'y a rien à pré-remplir avec. Passer `?titre=`
-     * ferait une adresse que personne ne lit, donc une promesse muette. On mène à
-     * la page, et le pré-remplissage est REMONTÉ : il demande que le composeur
-     * accepte le paramètre.
+     * §4 : « pré-remplit le composeur d'entraide ». Le serveur rend `helpTitle`
+     * pour cela, et le composeur (`FormulaireDemande`) lit maintenant `?titre=` :
+     * la question cherchée devient le titre de la demande, que le membre complète.
+     * Sans `helpTitle`, l'adresse reste nue — jamais un `?titre=` vide.
      */
-    href: '/entraide/nouveau',
+    href: adresseDemande(groupes.meta.zeroResult?.helpTitle ?? ''),
   };
 }
 

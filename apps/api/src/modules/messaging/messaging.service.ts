@@ -231,6 +231,8 @@ export class MessagingService {
               conversationId: conversation.id,
               senderUserId: { not: userId },
               deletedAt: null,
+              // Un message système (« X a rejoint le parcours ») n'est pas un non-lu.
+              systemKind: null,
               ...(lastReadAt === null ? {} : { sentAt: { gt: lastReadAt } }),
             },
           });
@@ -789,9 +791,12 @@ export class MessagingService {
   async deleteMessage(userId: string, messageId: string): Promise<void> {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
-      select: { id: true, senderUserId: true, deletedAt: true, conversationId: true },
+      select: { id: true, senderUserId: true, deletedAt: true, conversationId: true, systemKind: true },
     });
-    if (message === null || message.senderUserId !== userId) throw ApiError.notFound();
+    // Un message système n'appartient à personne : on ne le supprime pas.
+    if (message === null || message.senderUserId !== userId || message.systemKind !== null) {
+      throw ApiError.notFound();
+    }
     if (message.deletedAt !== null) return;
 
     await this.prisma.message.update({
@@ -808,6 +813,135 @@ export class MessagingService {
       members.map((m) => m.userId),
       'conversation.updated',
       { conversationId: message.conversationId, reason: 'deleted' },
+    );
+  }
+
+  // ── Messages système d'un parcours (lot F2) ───────────────────────────────
+
+  /**
+   * ╔══════════════════════════════════════════════════════════════════════════╗
+   * ║ « X A REJOINT LE PARCOURS » — LES ÉVÉNEMENTS DU PARCOURS DANS LE FIL     ║
+   * ╚══════════════════════════════════════════════════════════════════════════╝
+   *
+   * La conversation d'un parcours (JOURNEY) reçoit une ligne grise quand le
+   * parcours bouge : un membre rejoint (`journey.member_joined`), n'en fait plus
+   * partie (`journey.member_removed`), une étape est franchie
+   * (`journey.step_completed`), le parcours se termine (`journey.completed`).
+   * Ces quatre événements existent déjà, avec leurs producteurs ; aucune entrée
+   * n'est ajoutée au vocabulaire d'événements.
+   *
+   * UNE LIGNE `messages` AVEC `system_kind`, pas un message d'un membre : le texte
+   * est composé ICI (jamais saisi), scellé comme tout corps, et `sender_user_id`
+   * est le membre CONCERNÉ (colonne NOT NULL). Un message système ne compte pas
+   * comme non-lu, ne se supprime pas, ne se signale pas, et ne déclenche aucune
+   * notification : c'est un journal, pas une parole.
+   *
+   * IDEMPOTENT : `system_ref` porte l'identifiant de l'événement d'outbox, et
+   * `(conversation, system_ref)` est unique — un rejeu (livraison « au moins une
+   * fois ») n'écrit qu'une ligne. Pas de blocage `BLOCKED` annoncé : un retrait
+   * décidé par la cascade de blocage ne doit pas dire pourquoi.
+   */
+  async annoncerEvenementParcours(job: {
+    readonly id: string;
+    readonly type: string;
+    readonly aggregateId: string;
+    readonly payload: unknown;
+  }): Promise<void> {
+    const charge = (job.payload ?? {}) as Record<string, unknown>;
+    const texte = (cle: string): string | null =>
+      typeof charge[cle] === 'string' ? (charge[cle] as string) : null;
+
+    let journeyId: string | null = null;
+    let acteurId: string | null = null;
+    let genre: string;
+    let phrase: (nom: string) => string;
+    switch (job.type) {
+      case 'journey.member_joined':
+        journeyId = job.aggregateId;
+        acteurId = texte('userId');
+        genre = 'JOURNEY_MEMBER_JOINED';
+        phrase = (nom) => `${nom} a rejoint le parcours`;
+        break;
+      case 'journey.member_removed':
+        if (texte('reason') === 'BLOCKED') return;
+        journeyId = job.aggregateId;
+        acteurId = texte('userId');
+        genre = 'JOURNEY_MEMBER_LEFT';
+        phrase = (nom) => `${nom} ne fait plus partie du parcours`;
+        break;
+      case 'journey.step_completed': {
+        journeyId = texte('journeyId');
+        acteurId = texte('ownerUserId');
+        genre = 'JOURNEY_STEP_DONE';
+        const etape =
+          journeyId === null
+            ? null
+            : await this.prisma.journeyStep.findUnique({
+                where: { id: job.aggregateId },
+                select: { title: true },
+              });
+        if (etape === null) return;
+        phrase = (nom) => `${nom} a terminé l’étape « ${etape.title} »`;
+        break;
+      }
+      case 'journey.completed':
+        journeyId = job.aggregateId;
+        acteurId = texte('ownerUserId');
+        genre = 'JOURNEY_COMPLETED';
+        phrase = (nom) => `${nom} a terminé le parcours`;
+        break;
+      default:
+        return;
+    }
+    if (journeyId === null || acteurId === null) return;
+
+    const [journey, acteur] = await Promise.all([
+      this.prisma.journey.findUnique({
+        where: { id: journeyId },
+        select: { groupConversationId: true, deletedAt: true },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: acteurId },
+        select: { displayName: true, deletedAt: true },
+      }),
+    ]);
+    if (journey === null || journey.deletedAt !== null || journey.groupConversationId === null) return;
+    if (acteur === null || acteur.deletedAt !== null) return;
+    const conversationId = journey.groupConversationId;
+
+    const ref = `${job.type}:${job.id}`;
+    const deja = await this.prisma.message.findUnique({
+      where: { conversationId_systemRef: { conversationId, systemRef: ref } },
+      select: { id: true },
+    });
+    if (deja !== null) return;
+
+    try {
+      await this.prisma.message.create({
+        data: {
+          id: newId(),
+          conversationId,
+          senderUserId: acteurId,
+          bodyEncrypted: this.crypto.encryptContent(phrase(acteur.displayName)),
+          sentAt: new Date(),
+          systemKind: genre,
+          systemRef: ref,
+        },
+      });
+    } catch (cause: unknown) {
+      // Deux livraisons simultanées : l'index unique a refusé la seconde, c'est le but.
+      if ((cause as { code?: string }).code === 'P2002') return;
+      throw cause;
+    }
+
+    const membres = await this.prisma.conversationMember.findMany({
+      where: { conversationId, leftAt: null },
+      select: { userId: true },
+    });
+    void this.push(
+      membres.map((m) => m.userId),
+      'conversation.updated',
+      { conversationId, reason: 'system' },
     );
   }
 
@@ -1504,13 +1638,14 @@ export class MessagingService {
   }
 
   /**
-   * Le kind de §6 (`messages.kind`, colonne absente du schéma figé), DÉDUIT.
+   * Le kind de §6 (`messages.kind`), DÉDUIT.
    *
-   * `IMAGE` quand une image accompagne le message, `TEXT` sinon. `SYSTEM` n'est
-   * pas représentable sans la colonne, et aucune route n'en produit : un message
-   * système écrit aujourd'hui serait indistinguable d'un message du membre.
+   * `SYSTEM` quand `system_kind` est renseigné (lot F2, migration
+   * `messages_systeme`) ; sinon `IMAGE` si une image accompagne le message, `TEXT`
+   * sinon.
    */
-  private kindOf(message: { mediaAssetId: string | null }): MessageKind {
+  private kindOf(message: { mediaAssetId: string | null; systemKind?: string | null }): MessageKind {
+    if (message.systemKind !== null && message.systemKind !== undefined) return 'SYSTEM';
     return message.mediaAssetId === null ? 'TEXT' : 'IMAGE';
   }
 

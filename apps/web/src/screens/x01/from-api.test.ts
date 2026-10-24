@@ -339,7 +339,7 @@ describe('X01 — ce que la page dit quand elle ne montre rien', () => {
     expect(vide?.titre).toBe('Aucun résultat');
     expect(vide?.invite).toBe('Posez la question à la communauté ?');
     expect(vide?.bouton).toBe('Poser la question');
-    expect(vide?.href).toBe('/entraide/nouveau');
+    expect(vide?.href).toBe('/entraide/nouveau?titre=siple');
 
     // La phrase CHANGE côté serveur : les deux lignes suivent.
     const autre = videDe(

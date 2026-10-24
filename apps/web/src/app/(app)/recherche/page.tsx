@@ -43,8 +43,7 @@ import { filtresDeLUrl } from '@/screens/x01/filtres';
  * LES SOUS-LIGNES DES CARTES SONT LIÉES : le serveur compose `SearchHit.subline`
  * (« 84 utiles », « 14 réponses · Ouverte · Lyon », « 620 € · Lyon »). Sur zéro
  * résultat, `POST /search/zero` part une fois par requête ; « Poser la question »
- * mène au composeur d'entraide SANS pré-remplissage (il ne lit aucun paramètre —
- * écart remonté). Les recherches récentes vivent dans le navigateur (`localStorage`,
+ * mène au composeur d'entraide PRÉ-REMPLI (`?titre=`, lu par `FormulaireDemande`). Les recherches récentes vivent dans le navigateur (`localStorage`,
  * sous `try/catch`). */
 export default async function SearchPage({
   searchParams,

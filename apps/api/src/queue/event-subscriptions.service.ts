@@ -381,6 +381,8 @@ export class EventSubscriptionsService implements OnModuleInit {
 
     this.registry.on('journey.member_joined', 'messaging', async (job) => {
       await this.messaging.syncJourneyConversation(job.aggregateId);
+      // Lot F2 : « X a rejoint le parcours », après la synchro (la conversation existe).
+      await this.messaging.annoncerEvenementParcours(job);
     });
 
     this.registry.on('user.deleted', 'mentorship', async (job) => {
@@ -473,6 +475,14 @@ export class EventSubscriptionsService implements OnModuleInit {
     // un accompagnant retiré de l'équipe continuerait de lire la discussion.
     this.registry.on('journey.member_removed', 'messaging', async (job) => {
       await this.messaging.syncJourneyConversation(job.aggregateId);
+      await this.messaging.annoncerEvenementParcours(job);
+    });
+    // Lot F2 : les deux autres événements du parcours qui s'écrivent dans son fil.
+    this.registry.on('journey.step_completed', 'messaging', async (job) => {
+      await this.messaging.annoncerEvenementParcours(job);
+    });
+    this.registry.on('journey.completed', 'messaging', async (job) => {
+      await this.messaging.annoncerEvenementParcours(job);
     });
     // ── Notifications (12) et recherche (11) ────────────────────────
     //
