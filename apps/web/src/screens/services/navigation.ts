@@ -33,7 +33,7 @@ export function ongletsServices(
   const total: Partial<Record<Rubrique, number | null>> =
     compteurs === null ? {} : { logement: compteurs.logement, emploi: compteurs.emploi };
   return RUBRIQUES.map((r) => ({
-    libelle: total[r.rubrique] == null ? r.libelle : `${r.libelle} · ${total[r.rubrique]}`,
+    libelle: (total[r.rubrique] ?? null) === null ? r.libelle : `${r.libelle} · ${total[r.rubrique]}`,
     href: r.href,
     actif: r.rubrique === actif,
   }));
