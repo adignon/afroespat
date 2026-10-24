@@ -181,7 +181,10 @@ function signetEntete(type, ident) {
     const m = re.exec(jsx.slice(h));
     if (m === null) return null;
     const at = h + m.index;
-    return jsx.slice(0, at) + `<BoutonEnregistrer type="${type}" id={${ident}} taille={19} />` + jsx.slice(at + m[0].length);
+    const bouton = `<BoutonEnregistrer type="${type}" id={${ident}} taille={19} />`;
+    // Sur `/emploi/nouveau` il n'y a pas d'offre à enregistrer.
+    const pose = type === 'JOB' ? `{offre.mode === "detail" ? ${bouton} : null}` : bouton;
+    return jsx.slice(0, at) + pose + jsx.slice(at + m[0].length);
   };
 }
 
@@ -733,6 +736,27 @@ const SV_S09 = sur(
   (jsx) => {
     let out = jsx;
     let n = 0;
+    // Le cadre d'ordinateur ne dessine PAS l'état « en pause » (celui de 390 px, si) :
+    // une annonce suspendue y disparaîtrait sans moyen de la reprendre. On le clone
+    // depuis la carte « Active », avec « Reprendre » et « Supprimer ».
+    if (!out.includes('{a.enPause ? (<>') && out.includes('{a.active ? (<>')) {
+      const debut = out.indexOf('{a.active ? (<>');
+      const carte = debut + '{a.active ? (<>'.length;
+      const finCarte = finElement(out, carte);
+      const finBloc = finCarte < 0 ? -1 : finCarte + '</>) : null}'.length;
+      if (finBloc > 0 && out.slice(finCarte, finBloc) === '</>) : null}') {
+        let clone = out
+          .slice(debut, finBloc)
+          .replace('{a.active ? (<>', '{a.enPause ? (<>')
+          .replace('background: "#E3F0EB", color: "#0F5C48"', 'background: "#F2F5F4", color: "#5D6B66"')
+          .replace('>Active</span>', '>En pause</span>')
+          .replace(/<span style=\{\{ (height: "34px"[^}]*) \}\}>Renouveler<\/span>/, '<span style={{ $1 }}>Reprendre</span>')
+          .replace(/<span style=\{\{ height: "34px"[^}]*\}\}>Pause<\/span>/, '')
+          .replace(/<span style=\{\{ height: "34px"[^}]*\}\}>Logement trouvé<\/span>/, '');
+        out = out.slice(0, finBloc) + clone + out.slice(finBloc);
+        n += 1;
+      }
+    }
     out = out.replace('(mesAnnonces.liste ?? []).map(', () => {
       n += 1;
       return '(mesAnnonces.liste ?? []).filter((a) => a.genre === gestes.onglet).map(';

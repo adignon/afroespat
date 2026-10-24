@@ -195,3 +195,16 @@ Annonces logement et emploi : supprimées. Profil de recherche : supprimé. Fich
 - `rule: le quota de 3 contacts pro par mois est appliqué côté serveur`
 - `rule: une offre sponsorisée porte toujours la pastille et n'occupe jamais plus de 2 emplacements de tête`
 - `rule: le téléphone n'est jamais stocké ni renvoyé sur une fiche pro`
+
+## 12. Précisions de mise en œuvre (lot E)
+
+- **Masquer une annonce à un membre** (§2.3) : `housing_listings.hidden_from_user_ids` (UUID[]), `POST /housing/:id/hide-from` `{ userId }` (idempotent, 400 si soi-même). Le membre masqué ne voit plus l'annonce (liste, détail, contact) ; ce n'est pas un blocage.
+- **Publier** (§2.1, §2.2) : `LISTING_UNDER_REVIEW` n'est pas un échec : l'annonce existe, retenue. L'écran dit « en vérification », jamais « publiée ». Le formulaire est grisé (phrase du serveur) quand `meta.canPublish` est faux. `?modifier=<id>` ouvre la même planche en modification (`PATCH`).
+- **Contacter une annonce** : `POST /housing/:id/contact` puis `POST /conversations/:id/messages`. L'état « identité à vérifier » (L0) n'est affiché qu'après un `403 LEVEL_REQUIRED` réel.
+- **Offres d'emploi** : `POST /jobs` ; la mise en avant (`POST /jobs/:id/sponsor`) est demandée après la création, et son refus ne défait pas la publication. « Postuler » passe par l'interstitiel de sortie puis ouvre `externalUrl` sans référent.
+- **Recommander un membre** (§3.3) : le membre se désigne par son pseudo (`GET /users/:handle`), puis `POST /recommendations/members`.
+- **Fiche pro** (§4.1) : `PUT /me/pro-profile` ; sans fiche, `GET /me/pro-profile` répond 200 au corps vide. Justificatif déposé par `/media` (`kind: PROOF`), jamais renvoyé. Contact : `POST /pros/:id/contact` (quota du mois tenu par le serveur).
+- **Alertes** (§2.4) : `POST /me/alerts` (au moins un critère), `PATCH` (`isActive`), `DELETE`. « Annuaire » n'est pas un genre d'alerte.
+- **Mes annonces** : onglets Logement et Emploi (la liste réunit `GET /housing?scope=mine` et `GET /jobs?scope=mine`) ; renouveler, pause, reprendre, trouvé, supprimer (avec confirmation).
+- **Encart partenaire** (§5) : `GET /placements?section=HOUSING`, mention « Partenaire » et lien de transparence fournis par le serveur ; sans encart, rien n'est dessiné.
+- **Signets** : `HOUSING`, `JOB` et `PRO` sont des sujets d'enregistrés.

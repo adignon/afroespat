@@ -151,14 +151,15 @@ export function useMaFichePro(): { readonly formulaire: FormulaireFicheProView; 
       try {
         if (!hasAccessToken()) await resumeSession();
         const [ma, liste, villesListe] = await Promise.all([
-          memberApi.get('/me/pro-profile', myProProfileResponseSchema, { signal: ac.signal }),
+          // Sans fiche, le serveur répond 200 au corps VIDE (et non `null`) : `optional()` le tolère.
+          memberApi.get('/me/pro-profile', myProProfileResponseSchema.optional(), { signal: ac.signal }),
           memberApi.get('/places/professions', metiersSchema, { signal: ac.signal }),
           memberApi.get('/places/cities?limit=100', placesCitiesResponseSchema, { signal: ac.signal }),
         ]);
         if (ac.signal.aborted) return;
         setMetiers(liste.items.map((m) => ({ id: m.id, nom: m.nameFr })));
         setVilles(villesListe.items.map((c) => ({ id: c.id, nom: c.name })));
-        if (ma !== null) {
+        if (ma !== null && ma !== undefined) {
           setExiste(true);
           setEtat(ETATS[ma.verificationStatus] ?? ma.verificationStatus);
           setMetierId(ma.profession.id);
