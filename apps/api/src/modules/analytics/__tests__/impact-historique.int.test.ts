@@ -192,11 +192,16 @@ describe('rapport d’impact : historique, témoignages, export (15 §5.3)', () 
       expect(res.body.error.code).toBe('IMPACT_QUARTER_OPEN');
     });
 
-    it('sans `quarter`, le rapport est celui du trimestre conservé le plus récent', async () => {
+    it('sans `quarter`, le rapport est celui du dernier trimestre CLOS conservé (jamais un trimestre en cours)', async () => {
       const staff = await as('MODERATOR');
       const res = await get(staff.cookie, '/impact').expect(200);
-      const attendu = (await impact.quarters())[0]!.quarter;
-      expect(res.body.trimestre).toBe(attendu);
+      const maintenant = Date.now();
+      const clos = (await impact.quarters()).find((q) => {
+        const [annee, t] = q.quarter.split('-T').map(Number) as [number, number];
+        return Date.UTC(annee, t * 3, 1) <= maintenant;
+      });
+      expect(clos).toBeDefined();
+      expect(res.body.trimestre).toBe(clos!.quarter);
     });
 
     it('aucune donnée nominative : ni identifiant ni nom de membre dans le rapport', async () => {

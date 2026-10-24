@@ -145,6 +145,11 @@ export class ImpactService {
     throw new Error(`Impossible de poser une révision pour ${label} après 5 tentatives.`);
   }
 
+  private quarterEnd(quarter: string): Date {
+    const start = this.parseQuarter(quarter);
+    return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 1));
+  }
+
   private parseQuarter(quarter: string): Date {
     const m = /^(\d{4})-T([1-4])$/.exec(quarter);
     if (m === null) throw ApiError.notFound();
@@ -168,7 +173,10 @@ export class ImpactService {
   /** Le rapport d'un trimestre : sa dernière révision et ses témoignages encore consentis. */
   async report(quarter: string | undefined, now: Date = new Date()) {
     const quarters = await this.quarters();
-    const label = quarter ?? quarters[0]?.quarter ?? quarterLabel(this.lastClosedQuarterStart(now));
+    // Sans trimestre demandé : le plus récent trimestre CLOS qui a été conservé. Un instantané d'un
+    // trimestre qui n'est pas clos n'est pas « le rapport » (il changerait à chaque lecture).
+    const closed = quarters.find((q) => this.quarterEnd(q.quarter).getTime() <= now.getTime());
+    const label = quarter ?? closed?.quarter ?? quarterLabel(this.lastClosedQuarterStart(now));
     const snapshot = await this.prisma.impactReportSnapshot.findFirst({
       where: { quarter: label },
       orderBy: { revision: 'desc' },
