@@ -533,6 +533,12 @@ describe('GET /v1/admin/audit — le journal (D15, 15 §2.3, §8.4)', () => {
     expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
   });
 
+  it('[RELEVÉ AU NAVIGATEUR] accepte une action système (sans acteur) et sans cible', () => {
+    const ligne = { id: '01a16d0c-241d-7000-a951-7163c608f668', createdAt: '2026-10-24T08:34:34.654Z', actorType: 'SYSTEM', actorId: null, action: 'metrics.refresh', targetType: 'system', targetId: null, metadata: null, ip: null };
+    const r = adminAuditResponseSchema.safeParse({ items: [ligne], nextCursor: null });
+    expect(r.success ? '' : JSON.stringify(r.error.issues)).toBe('');
+  });
+
   it('[MESURÉ] l’acteur est un IDENTIFIANT, jamais un nom — la colonne ACTEUR de D15', () => {
     /**
      * Ce test garde l'absence qui explique pourquoi le journal de D15 reste

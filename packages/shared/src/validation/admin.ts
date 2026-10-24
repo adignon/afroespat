@@ -1233,10 +1233,14 @@ export const adminAuditEntrySchema = z
     id: z.string().uuid(),
     createdAt: z.string().datetime(),
     actorType: z.enum(AuditActorType),
-    actorId: z.string(),
+    // NULLABLES, relevé sur une vraie base : une action SYSTÈME n'a pas d'acteur et une
+    // action sans objet (connexion, export…) n'a pas de cible. Le schéma les exigeait
+    // `string` : une seule ligne ainsi suffisait à faire tomber tout le journal d'audit
+    // sur « Une erreur est survenue » (D15, onglet Journal).
+    actorId: z.string().nullable(),
     action: z.string(),
     targetType: z.string(),
-    targetId: z.string(),
+    targetId: z.string().nullable(),
     ip: z.string().nullable(),
     metadata: z.unknown().nullable(),
   })

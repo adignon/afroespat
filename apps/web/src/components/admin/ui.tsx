@@ -478,7 +478,9 @@ export function useGeste() {
    */
   const prevenir = useCallback((texte: string) => setMessage({ ton: 'attention', texte }), []);
 
-  return { occupe, message, lancer, prevenir, effacer: () => setMessage(null) };
+  const annoncer = useCallback((texte: string) => setMessage({ ton: 'info', texte }), []);
+
+  return { occupe, message, lancer, prevenir, annoncer, effacer: () => setMessage(null) };
 }
 
 export function Message({ message }: { readonly message: { ton: 'info' | 'attention'; texte: string } | null }) {
@@ -638,10 +640,12 @@ export function FenetreMotif({
       {enfants}
       {motifRequis ? (
         <>
-          <ZoneTexte libelle={`Motif · ${min} caractères minimum`} valeur={motif} onChange={setMotif} lignes={3} maxLength={max} />
-          <div style={{ fontSize: '12px', fontWeight: 700, color: suffisant ? C.vertFonce : C.gris }}>
-            {motif.trim().length} / {min}
-          </div>
+          <ZoneTexte libelle={min > 0 ? `Motif · ${min} caractères minimum` : 'Motif (facultatif, tracé dans le journal)'} valeur={motif} onChange={setMotif} lignes={3} maxLength={max} />
+          {min > 0 ? (
+            <div style={{ fontSize: '12px', fontWeight: 700, color: suffisant ? C.vertFonce : C.gris }}>
+              {motif.trim().length} / {min}
+            </div>
+          ) : null}
         </>
       ) : null}
       <Message message={message} />
@@ -669,5 +673,6 @@ export function premierDefaut(
   if (i === undefined) return 'Formulaire incomplet.';
   if (i.code === 'custom') return i.message;
   const champ = libelles[String(i.path[0] ?? '')] ?? 'Un champ';
-  return `${champ} : valeur non valide (trop courte, trop longue ou mal formée).`;
+  const raison = i.code === 'too_small' || i.code === 'too_big' ? 'valeur hors des bornes autorisées' : 'valeur non valide (trop courte, trop longue ou mal formée)';
+  return `${champ} : ${raison}.`;
 }

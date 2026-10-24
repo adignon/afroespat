@@ -109,3 +109,33 @@
     display: none !important;
   }
 }
+
+/*
+ * Tableaux à gestes SANS carte dédiée (flags, équipe, journal d'audit) : sous 1 024 px chaque
+ * ligne devient un bloc de cellules qui passent à la ligne — le geste (« Modifier », le rôle,
+ * l'interrupteur) reste visible sans faire défiler la table.
+ */
+@media (max-width: 1023px) {
+  [data-admin] table[data-admin-pile] {
+    min-width: 0 !important;
+    display: block;
+  }
+  [data-admin] table[data-admin-pile] thead {
+    display: none;
+  }
+  [data-admin] table[data-admin-pile] tbody {
+    display: block;
+  }
+  [data-admin] table[data-admin-pile] tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    padding: 10px 14px;
+  }
+  [data-admin] table[data-admin-pile] td {
+    display: block;
+    padding: 2px 0 !important;
+    min-width: 0 !important;
+  }
+}
