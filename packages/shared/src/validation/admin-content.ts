@@ -336,6 +336,9 @@ export const ADMIN_CONTENT_ERROR_CODES = {
   CORRECTION_ALREADY_DECIDED: 409,
   MEMBER_DELETE_CONFIRMATION: 422,
   GUIDE_NOT_ESCALATED: 409,
+  IMPACT_QUARTER_OPEN: 409,
+  IMPACT_QUOTE_NOT_CONSENTED: 409,
+  IMPACT_SOURCE_NOT_FOUND: 404,
 } as const;
 export type AdminContentErrorCode = keyof typeof ADMIN_CONTENT_ERROR_CODES;
 
@@ -354,6 +357,9 @@ export const ADMIN_CONTENT_ERROR_MESSAGES: Record<AdminContentErrorCode, string>
   CORRECTION_ALREADY_DECIDED: 'Cette proposition a déjà été traitée.',
   MEMBER_DELETE_CONFIRMATION: 'Saisissez le pseudo du membre pour confirmer la suppression.',
   GUIDE_NOT_ESCALATED: 'Cette proposition n’a pas été escaladée à l’équipe.',
+  IMPACT_QUARTER_OPEN: 'Ce trimestre n’est pas clos : son rapport ne peut pas encore être calculé.',
+  IMPACT_QUOTE_NOT_CONSENTED: 'L’auteur n’a pas donné son accord pour être cité : le contenu ne peut pas figurer au rapport.',
+  IMPACT_SOURCE_NOT_FOUND: 'Ce contenu n’existe pas ou n’est plus publié.',
 };
 
 // ── Actions d'audit de ce module ────────────────────────────────────────────
@@ -386,6 +392,9 @@ export const ADMIN_CONTENT_AUDIT_ACTIONS = {
   guideMaintainedToggled: 'guide.maintained_toggled',
   guideProposalDecided: 'guide.proposal_decided_by_staff',
   impactExported: 'impact.exported',
+  impactRecomputed: 'impact.recomputed',
+  impactQuoteApproved: 'impact.quote_approved',
+  impactQuoteWithdrawn: 'impact.quote_withdrawn',
 } as const;
 
 // ── Consentement redemandé (01 §2.10) ───────────────────────────────────────

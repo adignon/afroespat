@@ -30,6 +30,9 @@ import { ConnectionsController } from './modules/connections/connections.control
 import { ConnectionsService } from './modules/connections/connections.service';
 import { AnalyticsService } from './modules/analytics/analytics.service';
 import { AnalyticsAdminController } from './modules/analytics/analytics-admin.controller';
+import { DashboardOverviewService } from './modules/analytics/dashboard-overview.service';
+import { ImpactQuotableController } from './modules/analytics/impact-quotable.controller';
+import { ImpactService } from './modules/analytics/impact.service';
 import { DataExportController } from './modules/exports/data-export.controller';
 import { DataExportService } from './modules/exports/data-export.service';
 import { RealtimeModule } from './modules/realtime/realtime.module';
@@ -177,6 +180,8 @@ import {
     DataExportController,
     // Module 15 §7 — le pilotage. `/v1/admin/dashboard`, `/stats/*`, `/impact`.
     AnalyticsAdminController,
+    // 15 §5.3 — l'accord de citation de l'auteur (guides, contributions de ville).
+    ImpactQuotableController,
     /**
      * TRANSVERSE (00 §8.1 à §8.3, 01 §4.2) — l'envoi de fichiers.
      *
@@ -239,6 +244,9 @@ import {
     JourneysService,
     // Module 15 §5 — les instantanés d'indicateurs et les quatre tâches de §10.
     AnalyticsService,
+    // 15 §5 — le tableau de bord complet, l'historique du rapport d'impact et ses citations.
+    DashboardOverviewService,
+    ImpactService,
     // Module 01 §2.8 — l'export RGPD.
     DataExportService,
     // Transverse — l'envoi de média (voir `MediaController` ci-dessus).

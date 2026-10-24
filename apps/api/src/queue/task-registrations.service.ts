@@ -19,6 +19,7 @@ import { StaffAuthService } from '../modules/admin/staff-auth.service';
 import { BillingService } from '../modules/billing/billing.service';
 import { AccountService } from '../modules/users/account.service';
 import { KycService } from '../modules/kyc/kyc.service';
+import { ImpactService } from '../modules/analytics/impact.service';
 import { AnalyticsService } from '../modules/analytics/analytics.service';
 import { DataExportService } from '../modules/exports/data-export.service';
 import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, quarterlyAt, weeklyAt } from './scheduled-tasks';
@@ -83,6 +84,7 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly account: AccountService,
     private readonly kyc: KycService,
     private readonly analytics: AnalyticsService,
+    private readonly impact: ImpactService,
     private readonly dataExports: DataExportService,
     private readonly journeys: JourneysService,
     private readonly bookmarks: BookmarksService,
@@ -683,7 +685,7 @@ export class TaskRegistrationsService implements OnModuleInit {
       name: 'impact.quarterly_prepare',
       module: '15',
       schedule: quarterlyAt(6, 0),
-      handle: (ctx) => this.analytics.prepareQuarterlyImpact(ctx.now),
+      handle: (ctx) => this.impact.prepareQuarter(ctx.now),
     });
 
     /**

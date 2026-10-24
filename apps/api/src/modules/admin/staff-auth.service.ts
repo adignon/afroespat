@@ -420,6 +420,7 @@ export class StaffAuthService {
       metadata: { failures, windowMinutes: STAFF_LOCKOUT_MINUTES },
     });
     await this.notifyLock(staffId, failures);
+    await this.raiseLockAlerts(staffId, failures);
     fail('STAFF_LOCKED', { retryAfterMinutes: STAFF_LOCKOUT_MINUTES });
   }
 
@@ -453,6 +454,44 @@ export class StaffAuthService {
       }
     } catch (error) {
       this.logger.error(`Notification de verrouillage non envoyée : ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * L'alerte d'équipe d'un verrouillage — la même liste que « dossier prioritaire hors
+   * délai » (`staff_alerts`), lue dans la page « Alertes d'équipe » de l'administration.
+   *
+   * Pour chaque SUPER_ADMIN actif AUTRE que le compte verrouillé (§2.1 : « notification à
+   * l'équipe SUPER_ADMIN »). L'unicité (compte, genre, cible) fait qu'une alerte porte UN
+   * compte verrouillé ; chaque tentative bloquée repasse ici, donc :
+   *   · pas d'alerte → on la crée ;
+   *   · alerte déjà là et non lue → on n'y touche pas (pas de bruit) ;
+   *   · alerte LUE et vieille de plus de la durée du verrouillage → c'est un NOUVEAU
+   *     verrouillage : elle redevient non lue. Une alerte lue il y a une minute pour ce
+   *     même verrouillage reste lue.
+   * Une panne ici ne change jamais la réponse à la tentative de connexion.
+   */
+  private async raiseLockAlerts(lockedStaffId: string, failures: number): Promise<void> {
+    try {
+      const [target, admins] = await Promise.all([
+        this.prisma.staffUser.findUnique({ where: { id: lockedStaffId }, select: { displayName: true } }),
+        this.prisma.staffUser.findMany({ where: { role: 'SUPER_ADMIN', isActive: true, id: { not: lockedStaffId } }, select: { id: true } }),
+      ]);
+      const body = `Le compte « ${target?.displayName ?? 'équipe'} » est verrouillé ${STAFF_LOCKOUT_MINUTES} minutes après ${failures} échecs de connexion.`;
+      const stale = new Date(Date.now() - STAFF_LOCKOUT_MINUTES * 60_000);
+      for (const admin of admins) {
+        const key = { staffId_kind_refId: { staffId: admin.id, kind: 'STAFF_LOCKED', refId: lockedStaffId } };
+        const existing = await this.prisma.staffAlert.findUnique({ where: key, select: { readAt: true, createdAt: true } });
+        if (existing === null) {
+          await this.prisma.staffAlert.create({
+            data: { id: newId(), staffId: admin.id, kind: 'STAFF_LOCKED', title: 'Compte équipe verrouillé', body, refType: 'staff_user', refId: lockedStaffId },
+          });
+        } else if (existing.readAt !== null && existing.createdAt < stale) {
+          await this.prisma.staffAlert.update({ where: key, data: { readAt: null, createdAt: new Date(), body } });
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Alerte de verrouillage non écrite : ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

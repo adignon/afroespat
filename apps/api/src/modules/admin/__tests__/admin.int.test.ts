@@ -1421,6 +1421,15 @@ describe('administration (15)', () => {
       'POST /v1/admin/ref/cities/{id}/merge',
       'POST /v1/admin/ref/cities/import',
       /**
+       * `analytics/__tests__/impact-historique.int.test.ts` : le recalcul d'un trimestre,
+       * l'approbation et le retrait d'une citation y sont éprouvés avec leur trace
+       * d'audit (`impact.recomputed`, `impact.quote_approved`, `impact.quote_withdrawn`),
+       * à côté de la règle d'historique et du consentement qu'ils servent.
+       */
+      'POST /v1/admin/impact/recompute',
+      'PUT /v1/admin/impact/quotes',
+      'DELETE /v1/admin/impact/quotes/{id}',
+      /**
        * `moderation/__tests__/banned-phones.int.test.ts` : la levée d'un
        * bannissement y est éprouvée avec sa trace d'audit, à côté de la règle
        * qu'elle sert — « un banni ne peut pas se réinscrire » traverse trois
