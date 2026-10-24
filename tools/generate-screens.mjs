@@ -13494,6 +13494,11 @@ const A13_NAVIGATION = {
      * ║ LES DEUX BOUTONS DE VOTE — ILS N'ÉTAIENT PAS CLIQUABLES               ║
      * ╚════════════════════════════════════════════════════════════════════════╝
      *
+     * ⚠ LA HAUTEUR EST CAPTURÉE (`(?<h>\d+)`), pas figée : 50 px sur la planche
+     * d'ordinateur, 48 px sur celle du téléphone. Le motif écrit en dur avec
+     * `50px` ne trouvait RIEN à 390 px — les deux votes y restaient des `<span>`
+     * inertes (audit de la vague 1), exactement le piège n° 1 de l'amorçage.
+     *
      * Le porteur : « Les boutons utile et pas utile permettent à l'utilisateur de
      * voter donc ils doivent être cliquables. Donc selon le clic de l'utilisateur
      * une icône check ou close s'affiche sur le bouton cliqué ainsi que le
@@ -13520,16 +13525,16 @@ const A13_NAVIGATION = {
       '<path d="M18 6 6 18M6 6l12 12" /></svg>';
 
     const utile =
-      /<span style=\{\{ height: "50px", borderRadius: "999px", background: "#fff", color: "#0F5C48",([^}]*)\}\}>\{st\.useful \?[\s\S]*?\{st\.a1\}<span style=\{\{ color: "#6FA893", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n1\}<\/span><\/span>/;
+      /<span style=\{\{ height: "(?<h>\d+)px", borderRadius: "999px", background: "#fff", color: "#0F5C48",([^}]*)\}\}>\{st\.useful \?[\s\S]*?\{st\.a1\}<span style=\{\{ color: "#6FA893", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n1\}<\/span><\/span>/;
     const mUtile = utile.exec(out);
     if (mUtile !== null) {
       const bouton =
         '<button type="button" onClick={st.onVoteUtile} aria-pressed={st.voteUtileIcone} ' +
-        `style={{ height: "50px", borderRadius: "999px", background: st.voteUtileBg, ` +
+        `style={{ height: "${mUtile.groups.h}px", borderRadius: "999px", background: st.voteUtileBg, ` +
         // Le groupe capturé s'arrête AVANT le ` }}` et n'a donc pas de virgule
         // finale : on la pose, sinon deux propriétés se collent et le JSX ne
         // compile pas — ce que le compilateur a dit tout de suite.
-        `color: st.voteUtileFg, border: st.voteUtileBd,${mUtile[1].trimEnd()}, ` +
+        `color: st.voteUtileFg, border: st.voteUtileBd,${mUtile[2].trimEnd()}, ` +
         'fontFamily: "inherit", cursor: "pointer" }}>' +
         `{st.voteUtileIcone ? (${COCHE}) : null}{st.a1}` +
         '<span style={{ color: st.voteUtileCompteFg, fontSize: "12.5px", fontWeight: "700" }}>' +
@@ -13539,13 +13544,13 @@ const A13_NAVIGATION = {
     }
 
     const pasUtile =
-      /<span style=\{\{ height: "50px", borderRadius: "999px", border: "1\.5px solid rgba\(255,255,255,\.7\)",([^}]*)\}\}>\{st\.a2\}<span style=\{\{ opacity: "\.55", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n2\}<\/span><\/span>/;
+      /<span style=\{\{ height: "(?<h>\d+)px", borderRadius: "999px", border: "1\.5px solid rgba\(255,255,255,\.7\)",([^}]*)\}\}>\{st\.a2\}<span style=\{\{ opacity: "\.55", fontSize: "12\.5px", fontWeight: "700" \}\}>\{st\.n2\}<\/span><\/span>/;
     const mPas = pasUtile.exec(out);
     if (mPas !== null) {
       const bouton =
         '<button type="button" onClick={st.onVotePasUtile} aria-pressed={st.votePasUtileIcone} ' +
-        'style={{ height: "50px", borderRadius: "999px", background: st.votePasUtileBg, ' +
-        `color: st.votePasUtileFg, border: st.votePasUtileBd,${mPas[1].trimEnd()}, ` +
+        `style={{ height: "${mPas.groups.h}px", borderRadius: "999px", background: st.votePasUtileBg, ` +
+        `color: st.votePasUtileFg, border: st.votePasUtileBd,${mPas[2].trimEnd()}, ` +
         'fontFamily: "inherit", cursor: "pointer" }}>' +
         `{st.votePasUtileIcone ? (${CROIX}) : null}{st.a2}` +
         '<span style={{ color: st.votePasUtileCompteFg, fontSize: "12.5px", fontWeight: "700" }}>' +

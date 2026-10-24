@@ -8,6 +8,7 @@ import { A13Mobile } from '@/screens/a13/mobile.generated';
 import { useStory } from '@/screens/story/use-story';
 import { useVoisinsDeStory } from '@/screens/story/use-voisins';
 import { ActionsStoryAuteur } from '@/components/actions-story-auteur';
+import { ActionsStoryLecteur } from '@/components/actions-story-lecteur';
 
 /**
  * A13 — une story en lecture plein écran, BRANCHÉE SUR L'API.
@@ -289,7 +290,10 @@ export function StoryEcran({
           expiree={story.expired}
           onSupprimee={onFermer}
         />
-      ) : null}
+      ) : (
+        /* Le lecteur signale ; l'auteur, lui, ne se signale pas. AJOUT vague 1. */
+        <ActionsStoryLecteur storyId={idCourant} />
+      )}
     </>
   );
 }
