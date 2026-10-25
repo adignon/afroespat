@@ -49,10 +49,17 @@ export function demoProfile(demoUrl: string): Readonly<Record<string, string>> {
 }
 
 /**
- * Applique le profil : les variables ABSENTES (ou vides) prennent la valeur démo, les
- * autres sont conservées. Ne modifie pas `source`.
+ * Applique le profil. PRÉCÉDENCE : variable posée dans le SHELL > profil démo > `.env`.
+ *
+ * Le `.env` du dépôt porte des valeurs de développement (`SMS_PROVIDER=fake`, un MinIO
+ * local dans `S3_ENDPOINT`…) : le mode démo doit les supplanter, sinon il ne
+ * démarrerait qu'à moitié. Mais ce qu'on pose explicitement dans le shell (ou dans un
+ * fichier sourcé : `. .env.demo.example`) gagne toujours — c'est ainsi qu'on change une
+ * clé de test. `shellKeys` = les noms présents dans l'environnement AVANT la lecture du
+ * `.env` ; sans lui (source explicite, tests), seules les variables absentes ou vides
+ * prennent la valeur du profil. Ne modifie pas `source`.
  */
-export function applyProviderMode(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function applyProviderMode(source: NodeJS.ProcessEnv, shellKeys?: ReadonlySet<string>): NodeJS.ProcessEnv {
   if (source['PROVIDER_MODE'] !== 'demo') return source;
   if (source['NODE_ENV'] === 'production') {
     throw new Error(
@@ -63,7 +70,8 @@ export function applyProviderMode(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
   const defaults = demoProfile(source['DEMO_BASE_URL'] ?? 'http://localhost:3077');
   const merged: NodeJS.ProcessEnv = { ...source };
   for (const [name, value] of Object.entries(defaults)) {
-    if (merged[name] === undefined || merged[name] === '') merged[name] = value;
+    const setByCaller = shellKeys === undefined ? merged[name] !== undefined : shellKeys.has(name);
+    if (!setByCaller || merged[name] === undefined || merged[name] === '') merged[name] = value;
   }
   return merged;
 }

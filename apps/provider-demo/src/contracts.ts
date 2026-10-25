@@ -20,8 +20,8 @@ export interface RouteContract {
   readonly method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'HEAD';
   /** Gabarit lisible ; `:x` = un segment, `*` = le reste du chemin. */
   readonly path: string;
-  /** Qui l'appelle : `Classe.méthode` de l'adaptateur réel, ou `null` si documenté seulement. */
-  readonly usedBy: string | null;
+  /** Qui l'appelle : `Classe.méthode` de l'adaptateur réel (une liste si plusieurs), ou `null` si documenté seulement. */
+  readonly usedBy: string | readonly string[] | null;
   readonly summary: string;
 }
 
@@ -34,8 +34,8 @@ export const CONTRACTS: readonly RouteContract[] = [
   { provider: 'didit', method: 'GET', path: '/v2/session/:id/decision/', usedBy: 'DiditKycProvider.getStatus', summary: 'Décision d’une session' },
   { provider: 'didit', method: 'GET', path: '/__demo/kyc/:id', usedBy: null, summary: 'Page hébergée de vérification (formulaire : le NOM décide du verdict)' },
   { provider: 'turnstile', method: 'POST', path: '/turnstile/v0/siteverify', usedBy: 'TurnstileCaptchaProvider.verify', summary: 'Vérification serveur du jeton (formulaire secret/response/remoteip)' },
-  { provider: 's3', method: 'PUT', path: '/:bucket/*', usedBy: 'S3StorageProvider.put', summary: 'Dépôt d’objet (SigV4 en-tête ou URL pré-signée)' },
-  { provider: 's3', method: 'GET', path: '/:bucket/*', usedBy: 'S3StorageProvider.get', summary: 'Lecture d’objet (404 NoSuchKey en XML)' },
+  { provider: 's3', method: 'PUT', path: '/:bucket/*', usedBy: ['S3StorageProvider.put', 'S3StorageProvider.createUploadUrl'], summary: 'Dépôt d’objet (SigV4 en-tête ou URL pré-signée)' },
+  { provider: 's3', method: 'GET', path: '/:bucket/*', usedBy: ['S3StorageProvider.get', 'S3StorageProvider.createDownloadUrl'], summary: 'Lecture d’objet (404 NoSuchKey en XML)' },
   { provider: 's3', method: 'DELETE', path: '/:bucket/*', usedBy: 'S3StorageProvider.delete', summary: 'Suppression idempotente (204)' },
   { provider: 's3', method: 'HEAD', path: '/:bucket/*', usedBy: null, summary: 'Métadonnées d’objet' },
   { provider: 'clamav', method: 'POST', path: 'tcp:INSTREAM', usedBy: 'ClamAvAntivirusProvider.scan', summary: 'clamd INSTREAM sur TCP (même port que HTTP, détecté au premier octet) ; PING et VERSION aussi' },

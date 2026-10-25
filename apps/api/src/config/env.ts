@@ -309,9 +309,11 @@ let cached: Env | undefined;
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   if (cached !== undefined) return cached;
 
+  // Les noms posés par le shell AVANT le `.env` : le profil démo ne doit pas les écraser.
+  const shellKeys = source === process.env ? new Set(Object.keys(process.env)) : undefined;
   if (source === process.env) loadDotEnvFromRepoRoot();
 
-  const result = envSchema.safeParse(applyProviderMode(source));
+  const result = envSchema.safeParse(applyProviderMode(source, shellKeys));
   if (!result.success) {
     const problems = result.error.issues
       .map((i) => `  · ${i.path.join('.')} — ${i.message}`)

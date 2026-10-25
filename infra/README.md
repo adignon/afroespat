@@ -21,6 +21,16 @@ tout fournisseur fictif — sauf le paiement, qui reste fictif tant que tout est
 Les services tiers à joindre en production : Postgres 16, Redis 7 (`appendonly yes`),
 un stockage S3 **en région UE**, ClamAV (`clamd` sur `ANTIVIRUS_HOST:ANTIVIRUS_PORT`).
 
+### Fournisseurs de démonstration (`pnpm demo:providers`)
+
+Tant qu'aucun compte fournisseur n'existe, `apps/provider-demo` émule Twilio, Brevo, Didit, Turnstile,
+S3, ClamAV, Web Push et Anthropic (mêmes routes, authentifications et erreurs) avec des clés de test :
+`pnpm demo:providers`, puis l'API avec `PROVIDER_MODE=demo` (voir `.env.demo.example`). Les SMS et
+e-mails « envoyés » se lisent sur `http://localhost:3077/__demo/inbox`. En production : retirer
+`PROVIDER_MODE`, poser les vraies clés et supprimer les `*_BASE_URL` — aucun changement de code ;
+`PROVIDER_MODE=demo` est refusé si `NODE_ENV=production`. Détail, liste des routes et limites de fidélité :
+`docs/provider-demo.md`.
+
 ### Première construction
 
 Les images n'ont pas été construites au moment de leur écriture (environnement sans
