@@ -340,6 +340,7 @@ describe('le contexte de parcours ne porte jamais le titre personnel', () => {
       journeyTypeName: 'Études',
       dueDate: null,
       dueInDays: null,
+      own: null,
     };
     expect(helpDetailResponseSchema.safeParse(detail).success).toBe(true);
 
@@ -348,6 +349,7 @@ describe('le contexte de parcours ne porte jamais le titre personnel', () => {
       journeyTypeName: 'Études',
       dueDate: null,
       dueInDays: null,
+      own: null,
       journeyTitle: 'Mes études à Lyon',
     };
     expect(

@@ -13,6 +13,7 @@
       "endedAt": null,
       "expiresAt": "2026-10-08T00:28:42.875Z",
       "extended": false,
+      "canExtend": false,
       "canReview": false,
       "myReview": null,
       "theirReview": null,

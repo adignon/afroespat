@@ -13,6 +13,7 @@
       "endedAt": null,
       "expiresAt": null,
       "extended": false,
+      "canExtend": true,
       "canReview": false,
       "myReview": null,
       "theirReview": null,
