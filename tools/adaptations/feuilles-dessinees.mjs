@@ -190,6 +190,11 @@ const FD_J03 = transformation(
         (j) => val(j, 'on me demande un garant français.', 'texte'),
         (j) => val(j, '>AD<', 'initiales'),
         (j) => val(j, 'Amina D.', 'auteur'),
+        // La coche « identité vérifiée » : dynamique (niveau du propriétaire), plus statique.
+        (j) => {
+          const e = enveloppe(j, '<path d="m8 12 3 3 5-6"', 0);
+          return e === null || balise(j, e.debut) !== 'svg' ? null : remplacer(j, e, '<FSlot k="verifie" />');
+        },
         (j) => val(j, 'Étudiante · Lyon', 'profil'),
         (j) => act(j, 'Annuler', 'annuler'),
         (j) => act(j, 'Publier', 'publier'),

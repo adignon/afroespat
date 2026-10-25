@@ -203,14 +203,32 @@ describe('la matrice des rôles d’équipe (15 §2.2)', () => {
       service: lire('moderation/moderation.service.ts'),
     };
     // Une liste littérale qui nomme MODERATOR ET CONTENT_ADMIN.
-    const copie = /\[[^\]]*'MODERATOR'[^\]]*'CONTENT_ADMIN'[^\]]*\]|\([^)]*'MODERATOR'[^)]*'CONTENT_ADMIN'[^)]*\)/;
+    const copie = /\[[^\]]*'MODERATOR'[^\]]*'CONTENT_ADMIN'[^\]]*\]|\([^)]*'MODERATOR'[^)]*'CONTENT_ADMIN'[^)]*\)/g;
+
+    /**
+     * ── DEUXIÈME EXCEPTION DOCUMENTÉE : LES ALERTES D'ÉQUIPE (lot G, spec 15 §13.2) ──
+     *
+     * `GET /admin/moderation/alerts`, `POST /admin/moderation/alerts/:id/read` et la tâche
+     * `moderation.sla_alert` s'adressent à « MODERATOR, CONTENT_ADMIN, SUPER_ADMIN » :
+     * l'alerte de délai prévient aussi le CONTENT_ADMIN, qui ne traite PAS la file mais
+     * doit savoir qu'elle déborde. C'est écrit dans la spec 15 et vérifié par
+     * `moderation-pipeline.int.test.ts` (le compte CONTENT_ADMIN reçoit son alerte). Ce
+     * test était donc périmé : il ignorait cet arbitrage et rougissait sur ces listes.
+     * Elles ne sont tolérées que si le mot « alert » figure dans les 250 caractères
+     * alentour — une copie dans la file ou les actions, elle, échoue toujours.
+     */
+    const horsAlertes = (source: string): string[] =>
+      [...source.matchAll(copie)]
+        .filter((m) => {
+          const i = m.index ?? 0;
+          return !/alert/i.test(source.slice(Math.max(0, i - 250), i + 250));
+        })
+        .map((m) => m[0]);
 
     it('aucune liste littérale ne redonne la modération à CONTENT_ADMIN', () => {
       for (const [nom, source] of Object.entries(fichiers)) {
         const sansCommentaires = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
-        expect(copie.test(sansCommentaires), `${nom} : liste littérale MODERATOR + CONTENT_ADMIN`).toBe(
-          false,
-        );
+        expect(horsAlertes(sansCommentaires), `${nom} : liste littérale MODERATOR + CONTENT_ADMIN`).toEqual([]);
       }
     });
 

@@ -16,6 +16,8 @@
     "resolvedAt": null,
     "resolvedByResponseId": null,
     "fromJourney": false,
+    "journeyStep": null,
+    "reopenedAt": null,
     "author": {
       "id": "01a0f4df-1592-7000-8284-d93b8a313174",
       "handle": "h-01a0f4df1592",
@@ -29,7 +31,9 @@
     },
     "isAuthor": true,
     "body": "On me demande un document que je n’ai pas, et l’échéance approche vite.",
-    "updatedAt": "2026-10-01T00:30:55.971Z"
+    "updatedAt": "2026-10-01T00:30:55.971Z",
+    "canEdit": true,
+    "canReopen": false
   },
   "journeyContext": null,
   "responses": [],

@@ -159,7 +159,7 @@ const SV_RETOUR_S05 = sur(
 );
 const SV_RETOUR_S07 = sur(
   'SV_RETOUR_S07',
-  [ENTETE_MOBILE, 'Contacter · {pro.quotaCourt}'],
+  [ENTETE_MOBILE, 'Contacter {pro.quotaCourt ?'],
   'S07 (390 px) : la flèche de l’en-tête revient à la page précédente.',
   [],
   retour('/services/annuaire', 'Retour'),
@@ -197,7 +197,7 @@ const SV_SIGNET_S05 = sur(
 );
 const SV_SIGNET_S07 = sur(
   'SV_SIGNET_S07',
-  [ENTETE_MOBILE, 'Contacter · {pro.quotaCourt}'],
+  [ENTETE_MOBILE, 'Contacter {pro.quotaCourt ?'],
   'S07 (390 px) : le signet de l’en-tête enregistre la fiche (`PUT /me/bookmarks`).',
   [],
   signetEntete('PRO', 'pro.id'),
@@ -674,11 +674,11 @@ const SV_S07_BUREAU = sur(
 
 const SV_S07_MOBILE = sur(
   'SV_S07_MOBILE',
-  [ENTETE_MOBILE, 'Contacter · {pro.quotaCourt}'],
+  [ENTETE_MOBILE, 'Contacter {pro.quotaCourt ?'],
   'S07 (390 px) : « Contacter » ouvre la conversation.',
   ['vivant'],
   (jsx) =>
-    brancher(jsx, 'Contacter · {pro.quotaCourt}</button>', 'button', 'type="button" onClick={vivant.onContacter} disabled={vivant.occupe || pro.estMienne}'),
+    brancher(jsx, '{pro.quotaCourt}</>) : null}</button>', 'button', 'type="button" onClick={vivant.onContacter} disabled={vivant.occupe || pro.estMienne}'),
 );
 
 // ─── S08 ─────────────────────────────────────────────────────────────────────

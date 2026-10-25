@@ -21,7 +21,8 @@
       "PAPERWORK",
       "JOB"
     ],
-    "isPublic": true
+    "isPublic": true,
+    "showAsNewcomer": true
   },
   "phones": [
     {

@@ -12,7 +12,7 @@
  *
  * « Écrire » ouvre la fenêtre de premier message (`POST /conversations/direct`, la
  * même que sur un profil) ; « Proposer comme parrain » n'apparaît que si JE suis un
- * parrain disponible (`GET /mentors/:monPseudo`) et ouvre la même fenêtre avec une
+ * parrain disponible (`GET /me/mentor-profile`, appelé seulement à partir du N2) et ouvre la même fenêtre avec une
  * proposition à compléter — il n'existe pas de route « offre de parrainage » : le
  * parrainage part du filleul (08 §2.2), donc l'offre est un message.
  */
@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { z } from 'zod';
-import type { PublicJourney } from '@app/shared';
+import { levelSatisfies, type PublicJourney } from '@app/shared';
 import { memberApi, displayMessageFor, fetchMe } from '@/lib/api/index';
 import { conversationAvec, ouvrirConversation, prenomDe } from '@/components/ecrire';
 import { FenetreEcrire } from '@/components/fenetre-ecrire';
@@ -79,13 +79,37 @@ export function useEcrire() {
   return { ouvrir, fenetre };
 }
 
+/**
+ * « Suis-je un parrain disponible ? » — sans sonde qui échoue.
+ *
+ * La version précédente appelait `GET /mentors/<mon pseudo>` et lisait la réponse comme un
+ * oui/non : chez tout non-parrain c'était un `404` dans la console de chaque page de parcours
+ * public. On interroge maintenant `GET /me/mentor-profile`, qui répond toujours `200`
+ * (`profile: null` pour un non-parrain) — et seulement si le niveau permet de l'être
+ * (`mentor.become`, N2) : un N0 ou N1 ne peut pas avoir de profil, on n'appelle pas.
+ * Le niveau ne décide rien ici (le serveur reste seul juge) : il évite un appel sans objet.
+ */
 function useSuisParrain(): boolean {
   const [oui, setOui] = useState(false);
   useEffect(() => {
+    let vivant = true;
     fetchMe().then(
-      (me) => memberApi.get(`/mentors/${me.user.handle}`, z.unknown()).then(() => setOui(true), () => setOui(false)),
-      () => setOui(false),
+      (me) => {
+        if (!levelSatisfies(me.user.verificationLevel, 'mentor.become')) return;
+        return memberApi.get('/me/mentor-profile', z.object({ profile: z.object({ isAvailable: z.boolean() }).passthrough().nullable() }).passthrough()).then(
+          (r) => {
+            if (vivant) setOui(r.profile !== null && r.profile.isAvailable);
+          },
+          () => {
+            if (vivant) setOui(false);
+          },
+        );
+      },
+      () => undefined,
     );
+    return () => {
+      vivant = false;
+    };
   }, []);
   return oui;
 }

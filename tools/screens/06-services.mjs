@@ -1727,7 +1727,7 @@ export const screens = [
       },
       {
         noeud: '>Utilise 1 de vos 3 contacts du mois<',
-        devient: '>Utilise 1 de vos {{ pro.contactsRestants }} contacts du mois<',
+        devient: '><sc-if value="{{ pro.contactsRestants }}">Utilise 1 de vos {{ pro.contactsRestants }} contacts du mois</sc-if><',
         fois: 1,
         frames: ['Desktop'],
         why: 'Le quota du §4.4, de `contactQuota` — décidé par le serveur, jamais recalculé ici.',
@@ -1783,10 +1783,10 @@ export const screens = [
       },
       {
         noeud: '>Contacter · 1/3<',
-        devient: '>Contacter · {{ pro.quotaCourt }}<',
+        devient: '>Contacter <sc-if value="{{ pro.quotaCourt }}">· {{ pro.quotaCourt }}</sc-if><',
         fois: 1,
         frames: ['Mobile'],
-        why: 'Le quota de contacts pro, dans la forme courte du bouton mobile.',
+        why: 'Le quota de contacts pro, dans la forme courte du bouton mobile. Quand le serveur ne chiffre aucun quota (`pro.quotaCourt` vide : tout est gratuit), le bouton dit « Contacter » tout court — « Contacter · illimité » annonçait un plafond que personne n’a.',
       },
     ],
   }),

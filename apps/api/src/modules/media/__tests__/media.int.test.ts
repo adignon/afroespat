@@ -17,6 +17,7 @@ import {
 import { AppModule } from '../../../app.module';
 import { ApiErrorFilter } from '../../../common/error.filter';
 import { PrismaService } from '../../../common/prisma.service';
+import { villeActiveDeTest } from '../../../common/__tests__/villes-de-test';
 import { TokenService } from '../../../common/token.service';
 import { EXIF_IDENTIFIER } from '../media-bytes';
 
@@ -678,10 +679,7 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
     const photo2 = (await envoyer(token, 'HOUSING', pngAvecTexte(), 'b.png', 'image/png'))
       .body as MediaResponse;
 
-    const city = await prisma.city.findFirstOrThrow({
-      where: { isActive: true, mergedIntoCityId: null },
-      select: { id: true },
-    });
+    const city = { id: await villeActiveDeTest(prisma) };
 
     const annonce = await request(server())
       .post('/v1/housing')
@@ -755,10 +753,7 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
     const photoDeA = (await envoyer(a.token, 'HOUSING', jpegAvecExif(), 'a.jpg', 'image/jpeg'))
       .body as MediaResponse;
 
-    const city = await prisma.city.findFirstOrThrow({
-      where: { isActive: true, mergedIntoCityId: null },
-      select: { id: true },
-    });
+    const city = { id: await villeActiveDeTest(prisma) };
 
     const vol = await request(server())
       .post('/v1/housing')
@@ -799,10 +794,7 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
       select: { id: true },
     });
 
-    const city = await prisma.city.findFirstOrThrow({
-      where: { isActive: true, mergedIntoCityId: null },
-      select: { id: true },
-    });
+    const city = { id: await villeActiveDeTest(prisma) };
     const res = await request(server())
       .post('/v1/housing')
       .set('authorization', `Bearer ${token}`)
@@ -832,10 +824,7 @@ describe('envoi de média (00 §8.1–§8.3, 01 §4.2)', () => {
     const media = (await envoyer(token, 'POST', jpegAvecExif(), 'a.jpg', 'image/jpeg'))
       .body as MediaResponse;
 
-    const city = await prisma.city.findFirstOrThrow({
-      where: { isActive: true, mergedIntoCityId: null },
-      select: { id: true },
-    });
+    const city = { id: await villeActiveDeTest(prisma) };
     const res = await request(server())
       .post('/v1/housing')
       .set('authorization', `Bearer ${token}`)

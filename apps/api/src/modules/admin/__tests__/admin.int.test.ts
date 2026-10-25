@@ -439,6 +439,34 @@ describe('administration (15)', () => {
   // ══════════════════════════════════════════════════════════════════════════
 
   describe('paramètres système (§4.4)', () => {
+    /**
+     * LE TEST POSE LUI-MÊME L'ÉTAT QU'IL SUPPOSE. Deux assertions de ce bloc lisent
+     * `community_city_threshold` : « défaut du code = 50 » et « avant = null ». Elles
+     * échouaient dès qu'une ligne traînait dans `system_settings` — typiquement la valeur 0
+     * qu'on réinsère « par habitude » en développement pour ouvrir les réseaux de ville
+     * sans attendre cinquante membres. On met donc la ligne de côté, on laisse le défaut
+     * du code s'appliquer, et on la rétablit à l'identique en sortie.
+     */
+    let seuilMisDeCote: { readonly value: unknown } | null = null;
+    beforeAll(async () => {
+      const ligne = await prisma.systemSetting.findUnique({
+        where: { key: COMMUNITY_CITY_THRESHOLD_SETTING_KEY },
+      });
+      seuilMisDeCote = ligne === null ? null : { value: ligne.value };
+      await prisma.systemSetting.deleteMany({ where: { key: COMMUNITY_CITY_THRESHOLD_SETTING_KEY } });
+    });
+    afterAll(async () => {
+      await prisma.systemSetting.deleteMany({ where: { key: COMMUNITY_CITY_THRESHOLD_SETTING_KEY } });
+      if (seuilMisDeCote !== null) {
+        await prisma.systemSetting.create({
+          data: { key: COMMUNITY_CITY_THRESHOLD_SETTING_KEY, value: seuilMisDeCote.value as never },
+        });
+      }
+      // Le nettoyage général du fichier ne doit pas reprendre la ligne qu'on vient de rendre.
+      const reste = createdSettings.filter((k) => k !== COMMUNITY_CITY_THRESHOLD_SETTING_KEY);
+      createdSettings.splice(0, createdSettings.length, ...reste);
+    });
+
     it('rend toutes les clés du registre, défaut du code compris', async () => {
       const staff = await as('SUPPORT');
       const res = await request(httpServer(app))

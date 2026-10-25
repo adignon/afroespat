@@ -134,6 +134,12 @@ export interface SignalementVue {
   readonly onDetails?: (e: { readonly target: { readonly value: string } }) => void;
   readonly onEnvoyer?: () => void;
   readonly envoiBloque?: boolean;
+  /**
+   * La note du bas de la feuille. « La conversation sera visible des modérateurs. »
+   * (08 §5.2) ne vaut que pour un signalement fait depuis une conversation : la
+   * messagerie la pose, tout autre sujet reçoit la phrase neutre du cadre.
+   */
+  readonly note?: string;
   /** La feuille vient de se refermer (croix, voile, Échap) : remet à zéro sa cible. */
   readonly onFermee?: () => void;
 }

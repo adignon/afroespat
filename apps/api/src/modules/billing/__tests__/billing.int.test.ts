@@ -1,5 +1,6 @@
 import { reglerMonetisation } from '../../../common/__tests__/monetisation';
 import { newId } from '@app/db';
+import { villeActiveDeTest } from '../../../common/__tests__/villes-de-test';
 import {
   MOBILE_MONEY_GRACE_DAYS,
   PLAN_SEED,
@@ -151,7 +152,8 @@ describe('facturation (14 §3, §4, §12)', () => {
   it('[TOUT GRATUIT] limitsFor rend les droits Premium à tous, sauf hidePartners', async () => {
     await reglerMonetisation(prisma, false);
     try {
-      const gratuit = await prisma.user.findFirstOrThrow({ where: { plan: 'FREE' }, select: { id: true } });
+      // Le membre est créé ICI : la base d'épreuve peut n'en contenir aucun (base fraîche).
+      const gratuit = { id: await newMember() };
       const limites = await plans.limitsFor(gratuit.id);
       const premium = await plans.limitsOf('PREMIUM');
       expect({ ...limites, hidePartners: premium.hidePartners }).toEqual(premium);
@@ -161,9 +163,7 @@ describe('facturation (14 §3, §4, §12)', () => {
     } finally {
       await reglerMonetisation(prisma, true);
     }
-    const reel = await plans.limitsFor(
-      (await prisma.user.findFirstOrThrow({ where: { plan: 'FREE' }, select: { id: true } })).id,
-    );
+    const reel = await plans.limitsFor(await newMember());
     expect(reel.maxActiveJourneys).toBe(1);
   });
 
@@ -1128,7 +1128,7 @@ async function journeyFor(prisma: PrismaService, userId: string): Promise<string
     where: { id: userId },
     select: { originCountryId: true },
   });
-  const city = await prisma.city.findFirstOrThrow({ select: { id: true } });
+  const city = { id: await villeActiveDeTest(prisma) };
 
   const template = await prisma.journeyTemplate.create({
     data: {

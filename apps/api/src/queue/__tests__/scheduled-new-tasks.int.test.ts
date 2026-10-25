@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { newId } from '@app/db';
+import { villeActiveDeTest } from '../../common/__tests__/villes-de-test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma.service';
@@ -631,11 +632,7 @@ describe('les neuf tâches ajoutées par ce lot', () => {
       select: { id: true },
     });
     paysId = pays.id;
-    const ville = await prisma.city.findFirstOrThrow({
-      where: { isActive: true },
-      select: { id: true },
-    });
-    villeId = ville.id;
+    villeId = await villeActiveDeTest(prisma);
     const version = await prisma.journeyTemplateVersion.findFirstOrThrow({ select: { id: true } });
     versionId = version.id;
 

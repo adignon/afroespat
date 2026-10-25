@@ -16,6 +16,8 @@
     "resolvedAt": null,
     "resolvedByResponseId": null,
     "fromJourney": false,
+    "journeyStep": null,
+    "reopenedAt": null,
     "author": {
       "id": "01a0f4db-673f-7000-aac4-a20178a3c88a",
       "handle": "h-01a0f4db673f",
@@ -29,7 +31,9 @@
     },
     "isAuthor": true,
     "body": "Charge réelle relevée pour écrire les schémas de réponse de ce module, et rien d’autre.",
-    "updatedAt": "2026-10-01T00:26:54.871Z"
+    "updatedAt": "2026-10-01T00:26:54.871Z",
+    "canEdit": true,
+    "canReopen": false
   },
   "journeyContext": null,
   "responses": [],

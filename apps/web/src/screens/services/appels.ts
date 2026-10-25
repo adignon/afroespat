@@ -897,8 +897,12 @@ export async function chargerS07(id: string): Promise<S07Charge> {
        * quota sans plafond, plutôt que d'inventer une phrase que la maquette n'a
        * pas dessinée. Il faudrait une seconde formulation côté maquette.
        */
-      contactsRestants: plafond === null ? '∞' : String(plafond),
-      quotaCourt: plafond === null ? 'illimité' : `${utilises + 1}/${plafond}`,
+      // Vide quand tout est gratuit : la phrase « Utilise 1 de vos … contacts du mois » disparaît.
+      contactsRestants: commun.quotas.gratuit ? '' : plafond === null ? '∞' : String(plafond),
+      // Tout gratuit (`quotas.gratuit`) : AUCUN quota n'existe, donc rien à dire. Le
+      // bouton mobile lit « Contacter » tout court au lieu de « Contacter · illimité »,
+      // qui annonçait un plafond que personne n'a.
+      quotaCourt: commun.quotas.gratuit ? '' : plafond === null ? 'illimité' : `${utilises + 1}/${plafond}`,
       recommandations: pro.recommendations.map(recommandation),
     },
   };
