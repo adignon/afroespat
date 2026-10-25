@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument --
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unnecessary-type-assertion --
    corps de réponse de supertest et du serveur démo : non typés par nature dans un fichier d'épreuve. */
 import type { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -19,6 +19,8 @@ import { newId } from '@app/db';
  *   KYC accepté (webhook signé livré par le démo à l'API) puis refusé ·
  *   numéro de destination (L2) · justificatif · fiche pro · e-mail (Brevo) · push (VAPID).
  */
+// vitest attend ce bloc avant d'importer l'application (TS1378 : tsc compile en CommonJS, vitest en ESM).
+// @ts-expect-error top-level await
 const env = await vi.hoisted(async () => {
   const { startDemoServer } = await import('@app/provider-demo');
   const { demoProfile } = await import('../../config/provider-demo-profile');
@@ -50,7 +52,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { ModerationService } from '../../modules/moderation/moderation.service';
 import { NotificationsService } from '../../modules/notifications/notifications.service';
 
-const { demo, apiPort } = env;
+const { demo, apiPort } = env as { demo: import('@app/provider-demo').DemoServer; apiPort: number };
 const CAPTCHA = 'XXXX.DUMMY.TOKEN.XXXX';
 const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
 
