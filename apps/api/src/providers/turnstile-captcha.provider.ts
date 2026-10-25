@@ -22,7 +22,7 @@ import { callProviderJson, type HttpOptions } from './http';
 export class TurnstileCaptchaProvider implements CaptchaProvider {
   constructor(
     private readonly secretKey: string,
-    private readonly http: HttpOptions = {},
+    private readonly http: HttpOptions & { readonly baseUrl?: string | undefined } = {},
   ) {}
 
   async verify(token: string, ip?: string): Promise<boolean> {
@@ -32,7 +32,7 @@ export class TurnstileCaptchaProvider implements CaptchaProvider {
     try {
       const result = await callProviderJson<{ success?: boolean }>(
         'turnstile',
-        'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+        `${this.http.baseUrl ?? 'https://challenges.cloudflare.com'}/turnstile/v0/siteverify`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

@@ -65,6 +65,7 @@ const env = loadEnv();
           authToken: env.TWILIO_AUTH_TOKEN as string,
           from: env.TWILIO_FROM,
           messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
+          baseUrl: env.TWILIO_BASE_URL,
         }),
     }),
     pick(EMAIL_PROVIDER, 'EMAIL_PROVIDER', env.EMAIL_PROVIDER, () => new FakeEmailProvider(), {
@@ -74,6 +75,7 @@ const env = loadEnv();
           fromAddress: env.EMAIL_FROM_ADDRESS,
           fromName: env.EMAIL_FROM_NAME,
           appName: env.APP_NAME,
+          baseUrl: env.BREVO_BASE_URL,
         }),
     }),
     pick(PUSH_PROVIDER, 'PUSH_PROVIDER', env.PUSH_PROVIDER, () => new FakePushProvider(), {
@@ -101,10 +103,11 @@ const env = loadEnv();
         new AnthropicModerationProvider({
           apiKey: env.ANTHROPIC_API_KEY as string,
           model: env.AI_MODERATION_MODEL,
+          baseUrl: env.ANTHROPIC_BASE_URL,
         }),
     }),
     pick(CAPTCHA_PROVIDER, 'CAPTCHA_PROVIDER', env.CAPTCHA_PROVIDER, () => new FakeCaptchaProvider(), {
-      turnstile: () => new TurnstileCaptchaProvider(env.TURNSTILE_SECRET_KEY as string),
+      turnstile: () => new TurnstileCaptchaProvider(env.TURNSTILE_SECRET_KEY as string, { baseUrl: env.TURNSTILE_BASE_URL }),
     }),
     pick(STORAGE_PROVIDER, 'STORAGE_PROVIDER', env.STORAGE_PROVIDER, () => new FakeStorageProvider(), {
       s3: () =>

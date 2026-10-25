@@ -99,6 +99,9 @@ importers:
       '@app/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@app/provider-demo':
+        specifier: workspace:*
+        version: link:../provider-demo
       '@eslint/js':
         specifier: ^9.17.0
         version: 9.39.5
@@ -147,6 +150,36 @@ importers:
       unplugin-swc:
         specifier: ^2.0.0
         version: 2.0.0(@swc/core@1.16.2)(esbuild@0.28.2)(rollup@4.63.5)(vite@5.4.21(@types/node@22.20.4))
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.20.4)(jsdom@25.0.1)
+
+  apps/provider-demo:
+    devDependencies:
+      '@app/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@eslint/js':
+        specifier: ^9.17.0
+        version: 9.39.5
+      '@swc-node/register':
+        specifier: ^1.10.9
+        version: 1.12.1(@swc/core@1.16.2)(@swc/types@0.1.28)(typescript@5.9.3)
+      '@swc/core':
+        specifier: ^1.10.1
+        version: 1.16.2
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.20.4
+      eslint:
+        specifier: ^9.17.0
+        version: 9.39.5(jiti@2.7.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      typescript-eslint:
+        specifier: ^8.18.1
+        version: 8.70.1(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.4)(jsdom@25.0.1)

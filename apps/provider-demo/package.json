@@ -1,0 +1,25 @@
+{
+  "name": "@app/provider-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Serveur démo des fournisseurs externes (Twilio, Brevo, Didit, Turnstile, S3, ClamAV, Web Push, Anthropic) — mêmes routes, clés de test.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "start": "node -r @swc-node/register src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src",
+    "test": "vitest run --passWithNoTests"
+  },
+  "devDependencies": {
+    "@app/config": "workspace:*",
+    "@eslint/js": "^9.17.0",
+    "@swc-node/register": "^1.10.9",
+    "@swc/core": "^1.10.1",
+    "@types/node": "^22.10.2",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^2.1.8"
+  }
+}

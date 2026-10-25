@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
+import { applyProviderMode } from './provider-demo-profile';
 
 /**
  * Configuration — 00-fondations.md §11.2.
@@ -180,6 +181,20 @@ export const envSchema = z.object({
   S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
 
   // ── Fournisseurs externes. `fake` partout en local et en test (§11.3). ─────
+  /**
+   * `demo` : adaptateurs réels pointés sur le serveur démo (`apps/provider-demo`) avec
+   * des clés de test — voir `provider-demo-profile.ts` et `docs/provider-demo.md`. Ne
+   * fait que fournir des VALEURS PAR DÉFAUT ; refusé en production.
+   */
+  PROVIDER_MODE: z.enum(['standard', 'demo']).default('standard'),
+  /**
+   * URLs de base des API de fournisseurs. Le défaut est l'adresse de PRODUCTION : seul le
+   * mode démo (ou un test) les change. `DIDIT_BASE_URL` et `S3_ENDPOINT` existent déjà.
+   */
+  TWILIO_BASE_URL: z.string().url().default('https://api.twilio.com'),
+  BREVO_BASE_URL: z.string().url().default('https://api.brevo.com'),
+  TURNSTILE_BASE_URL: z.string().url().default('https://challenges.cloudflare.com'),
+  ANTHROPIC_BASE_URL: z.string().url().default('https://api.anthropic.com'),
   SMS_PROVIDER: providerMode('twilio'),
   SMS_FAKE_FIXED_CODE: z.string().regex(/^\d{6}$/).default('123456'),
   /**
@@ -296,7 +311,7 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 
   if (source === process.env) loadDotEnvFromRepoRoot();
 
-  const result = envSchema.safeParse(source);
+  const result = envSchema.safeParse(applyProviderMode(source));
   if (!result.success) {
     const problems = result.error.issues
       .map((i) => `  · ${i.path.join('.')} — ${i.message}`)

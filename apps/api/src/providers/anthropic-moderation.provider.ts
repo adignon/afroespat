@@ -72,6 +72,8 @@ export interface AnthropicModerationConfig {
   readonly apiKey: string;
   readonly model: string;
   readonly timeoutMs?: number;
+  /** Adresse de l'API ; défaut = production. Le serveur démo la change. */
+  readonly baseUrl?: string;
 }
 
 export class AnthropicModerationProvider implements AiModerationProvider {
@@ -85,6 +87,7 @@ export class AnthropicModerationProvider implements AiModerationProvider {
       client ??
       (new Anthropic({
         apiKey: config.apiKey,
+        ...(config.baseUrl === undefined ? {} : { baseURL: config.baseUrl }),
         timeout: config.timeoutMs ?? 20_000,
         maxRetries: 1,
       }) as unknown as AnthropicLike);
