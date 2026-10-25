@@ -106,6 +106,8 @@ export default defineConfig({
     locale: 'fr-FR',
     timezoneId: 'Europe/Paris',
     colorScheme: 'light',
+    // `CHROMIUM=/opt/pw-browsers/chromium` : le navigateur installé sur la machine d'agent (pas de téléchargement).
+    ...(process.env['CHROMIUM'] ? { launchOptions: { executablePath: process.env['CHROMIUM'] } } : {}),
   },
 
   // Références suffixées par plateforme : macOS et Linux ne rendent pas pareil.

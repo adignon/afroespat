@@ -217,8 +217,9 @@ test.describe('la barre haute', () => {
       '/stories/nouvelle',
       '/publications/nouvelle',
       '/guides/nouveau',
-      '/entraide/nouvelle',
-      '/services/nouveau',
+      // Destinations actuelles des raccourcis (le « + » mène aux vraies routes de création).
+      '/entraide/nouveau',
+      '/services/mes-annonces',
       '/agenda/nouveau',
     ]);
 
