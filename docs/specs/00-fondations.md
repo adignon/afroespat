@@ -4078,26 +4078,30 @@ Source unique dans `packages/shared`. Le back l'applique par un décorateur sur 
 | Capacité | L0 | L1 | L2 | Limite de plan |
 |---|:-:|:-:|:-:|---|
 | `content.read` — lire fil, guides, entraide, réseaux, annonces | ✓ | ✓ | ✓ | — |
-| `journey.create` — créer un parcours | ✓ | ✓ | ✓ | 1 actif en gratuit, illimité en Premium |
+| `journey.create` — créer un parcours | ✓ | ✓ | ✓ | `maxActiveJourneys` (plan gratuit) |
 | `journey.manage` — éditer ses étapes, cocher, inviter | ✓ | ✓ | ✓ | — |
 | `comment.create` — commenter, réagir | ✓ | ✓ | ✓ | — |
+| `guide.vote` — voter « ça m'a aidé » | ✓ | ✓ | ✓ | — |
 | `help.ask` — publier une **question** d'entraide | ✓ | ✓ | ✓ | — |
-| `mentorship.request` — demander un parrain | ✓ | ✓ | ✓ | — |
-| `post.create` — publier dans le fil | | ✓ | ✓ | — |
-| `help.offer` — publier une **offre** d'entraide | | ✓ | ✓ | — |
-| `guide.write` — rédiger un guide | | ✓ | ✓ | — |
-| `guide.vote` — voter « ça m'a aidé » | | ✓ | ✓ | — |
-| `guide.propose_revision` | | ✓ | ✓ | — |
-| `event.create` | | ✓ | ✓ | 1 par mois en gratuit, illimité en Premium |
-| `event.attend` — RSVP | | ✓ | ✓ | — |
-| `community.create` | | ✓ | ✓ | — |
-| `message.send` — messagerie privée | | ✓ | ✓ | — |
-| `connection.request` | | ✓ | ✓ | — |
-| `job.publish` | | ✓ | ✓ | Sponsorisée : Premium |
-| `pro.contact` — contacter une fiche pro | | ✓ | ✓ | 3 par mois en gratuit, illimité en Premium |
-| `housing.publish` — publier une annonce logement | | | ✓ | — |
-| `mentor.become` — devenir parrain | | | ✓ | — |
-| `pro.register` — se référencer dans l'annuaire | | | ✓ | + justificatif d'activité |
+| `message.send` — messagerie privée | ✓ | ✓ | ✓ | — |
+| `connection.request` — demander un contact | ✓ | ✓ | ✓ | — |
+| `mentorship.request` — demander un parrain |  | ✓ | ✓ | — |
+| `post.create` — publier dans le fil et les stories (donc `POST /media`) |  | ✓ | ✓ | — |
+| `help.offer` — publier une **offre** d'entraide |  | ✓ | ✓ | — |
+| `event.attend` — RSVP |  | ✓ | ✓ | — |
+| `report.create` — signaler un contenu ou un profil |  |  | ✓ | — |
+| `sanction.appeal` — contester une sanction |  |  | ✓ | — |
+| `guide.write` — rédiger un guide |  |  | ✓ | — |
+| `guide.propose_revision` — proposer une mise à jour |  |  | ✓ | — |
+| `event.create` — créer un événement |  |  | ✓ | `eventsPerMonth` |
+| `community.create` — créer un réseau |  |  | ✓ | — |
+| `job.publish` — publier une offre d'emploi |  |  | ✓ | `sponsoredJobsPerMonth` (sponsorisée) |
+| `pro.contact` — contacter une fiche pro |  |  | ✓ | `proContactsPerMonth` |
+| `housing.publish` — publier une annonce logement |  |  | ✓ | — |
+| `mentor.become` — devenir parrain |  |  | ✓ | — |
+| `pro.register` — se référencer dans l'annuaire (+ justificatif d'activité) |  |  | ✓ | — |
+
+*Les niveaux sont cumulatifs. La table à jour est `packages/shared/src/capabilities/capabilities.ts` (source unique) : en cas d'écart, le code fait foi et cette matrice se corrige. Arbitrage du porteur : L0 lit, commente, réagit, vote, demande de l'aide et gère ses parcours ; L1 publie (fil, stories, offres d'entraide), répond, demande un parrain et participe aux événements ; L2 ouvre tout le reste, signaler et contester compris. Les limites de plan existent encore comme clés mais le chantier « tout gratuit » les lève (lot 1, 14).*
 
 **[RÈGLE DURE]** Toute route d'écriture déclare une capacité requise. Un test d'intégration parcourt toutes les routes et échoue si une route non-GET n'en déclare pas.
 
@@ -4159,11 +4163,11 @@ Les **modérateurs bénévoles** issus des membres sont un rôle contextuel (`co
 | Sessions expirées | 30 jours |
 | Contenus d'un compte supprimé | Supprimés, sauf guides et réponses utiles : **anonymisés** |
 | Signalements traités | 3 ans |
-| Journal d'audit | 5 ans |
+| Journal d'audit | **Illimitée** : « on ne supprime jamais » (décision du porteur, 15 §2.3) ; aucune purge |
 | Journaux applicatifs | 90 jours |
 | Données de paiement | Selon obligations comptables (10 ans pour les factures) |
 
-Une tâche quotidienne `retention.purge` applique ces durées.
+Une tâche quotidienne `retention.purge` applique ces durées (le journal d'audit en est exclu : aucune tâche ne le purge).
 
 ### 8.5 Journal d'audit
 

@@ -600,6 +600,9 @@ export function ConversationVivante({
     onDetails: (e) => {
       setDetails(e.target.value);
     },
+    // 13 §6 / 08 §5.2 : la mention n'est faite que « sur un message ». Signaler le membre
+    // (menu de la conversation) reçoit la phrase neutre de la feuille.
+    ...(messageSignale === null ? {} : { note: 'La conversation sera visible des modérateurs.' }),
     envoiBloque:
       motif === null ||
       enVol ||

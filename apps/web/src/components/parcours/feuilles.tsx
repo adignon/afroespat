@@ -416,6 +416,19 @@ function FeuilleBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
       }
     },
     slot: (cle, s: Styles) => {
+      if (cle === 'verifie') {
+        // La coche de l'aperçu : elle dit l'identité vérifiée de l'AUTEUR (le propriétaire du
+        // parcours, qui voit son propre aperçu), de `journey.owner.verificationLevel`. La
+        // maquette la dessinait pour tout le monde ; un membre L0 n'est pas vérifié, et la
+        // lui poser serait lui faire annoncer ce qu'il n'est pas. Pas de niveau lu : pas de coche.
+        if (proprietaire === undefined || proprietaire.verificationLevel === 'L0') return null;
+        return (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="#16785E" role="img" aria-label="Identité vérifiée">
+            <circle cx="12" cy="12" r="10" />
+            <path d="m8 12 3 3 5-6" stroke="#fff" strokeWidth="2.2" fill="none" />
+          </svg>
+        );
+      }
       if (cle === 'brouillon') {
         return (
           <ZoneDessinee

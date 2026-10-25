@@ -277,11 +277,11 @@ const SC_SIGNALER_S05 = sur(
 const SC_SIGNALER_S07 = sur(
   'SC_SIGNALER_S07',
   ['S07'],
-  ['Contacter · {pro.quotaCourt}</button>', 'safe-area-inset-top'],
+  ['{pro.quotaCourt}</>) : null}</button>', 'safe-area-inset-top'],
   'S07 (390 px) — AJOUT hors maquette : le bouton « Signaler » (la planche mobile ne le dessine pas ; celle d’ordinateur l’a) ouvre la fenêtre de signalement, comme à 1 440 px. Rond de 40 px du pied de S02.',
   ['vivant'],
   (jsx) => {
-    const marque = 'Contacter · {pro.quotaCourt}</button>';
+    const marque = '{pro.quotaCourt}</>) : null}</button>';
     const at = jsx.indexOf(marque);
     const apres = at + marque.length;
     return jsx.slice(0, apres) + SIGNALER_MOBILE + jsx.slice(apres);

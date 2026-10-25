@@ -202,6 +202,13 @@ const K08_VIVANT = [
           '>Vous avez 7 jours pour changer d\'avis.</div>',
           '><Texte id="suppressionRepit" /></div>',
         ],
+        // LES CASES DU CODE SMS : la maquette y dessine « 4 8 2 » comme exemple de
+        // saisie en cours. Ce n'est le code de personne — un membre qui lit ces
+        // chiffres croit qu'ils sont déjà tapés. Les six cases restent, vides ; la
+        // case active (bordure verte) garde son tracé.
+        ['fontWeight: "800" }}>4</div>', 'fontWeight: "800" }}></div>'],
+        ['fontWeight: "800" }}>8</div>', 'fontWeight: "800" }}></div>'],
+        ['fontWeight: "800" }}>2</div>', 'fontWeight: "800" }}></div>'],
       ]),
   ),
 ];

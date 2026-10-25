@@ -6034,6 +6034,24 @@ const X03_SIGNALEMENT = {
       out = out.slice(0, mE.index) + bouton + out.slice(mE.index + mE[0].length);
     }
 
+    /**
+     * ── LA NOTE DU BAS NE VAUT PAS POUR TOUS LES SUJETS ──────────────────
+     *
+     * « La conversation sera visible des modérateurs. » est la règle de 08 §5.2 :
+     * elle ne vaut que pour un signalement fait DEPUIS une conversation. Signaler une
+     * annonce, un guide ou un commentaire ne rend aucune conversation visible, et la
+     * phrase mentait au membre sur ce qu'il envoyait. Le texte vient maintenant de
+     * `signalement.note` (la messagerie y met la phrase de 08 §5.2) ; sans note, la
+     * phrase neutre — vraie de tout signalement, c'est celle de `REPORT_CONFIRMATION`.
+     */
+    const note = />La conversation sera visible des modérateurs\.</;
+    if (note.test(out)) {
+      out = out.replace(
+        note,
+        '>{signalement?.note ?? "Votre signalement sera examiné par l’équipe de modération."}<',
+      );
+    }
+
     return { jsx: out, applied: true };
   },
 };
