@@ -46,9 +46,28 @@ describe('instantanés d’indicateurs (15 §5, §10)', () => {
     });
     countryId = country.id;
 
-    const cities = await prisma.city.findMany({ take: 2, select: { id: true } });
-    cityId = cities[0]?.id ?? '';
-    otherCityId = cities[1]?.id ?? '';
+    /**
+     * DEUX VILLES À SOI. Le test lisait `findMany({ take: 2 })` : les deux premières villes
+     * de la base, avec les membres que d'autres suites ou le développement y avaient mis.
+     * Or l'indicateur compte les membres de la ville — « quatre membres, un présent →
+     * 25 % » n'est vrai que si ce sont LES SEULS. MESURÉ : sur une base qui avait d'autres
+     * membres à Lyon, `city_members` valait 9 au lieu de 4 et le test échouait sans que
+     * rien ne soit cassé. Les deux villes sont créées ici, vides, et retirées en fin de fichier.
+     */
+    const marque = newId().slice(-10);
+    const creerVille = async (rang: number): Promise<string> => {
+      const id = newId();
+      await prisma.city.create({
+        data: {
+          id, countryId: (await prisma.country.findUniqueOrThrow({ where: { iso2: 'FR' }, select: { id: true } })).id,
+          name: `Analytics ${marque} ${rang}`, slug: `analytics-${marque}-${rang}`,
+          latitude: 45.75, longitude: 4.85, isActive: true, memberCount: 0,
+        },
+      });
+      return id;
+    };
+    cityId = await creerVille(1);
+    otherCityId = await creerVille(2);
 
     // QUATRE membres dans la ville, UN seul coché présent → 25 %, écrit en dur
     // plus bas. Les trois autres couvrent les trois façons de se tromper :
@@ -86,6 +105,11 @@ describe('instantanés d’indicateurs (15 §5, §10)', () => {
       await prisma.user.deleteMany({ where: { id: { in: users } } });
     }
     await prisma.metricSnapshot.deleteMany({ where: { dimension: { in: [cityId, otherCityId] } } });
+    // `refreshKeyIndicator(demain)` écrit un point pour CHAQUE ville active de la base, daté du
+    // futur : une ligne que rien ne reprendra jamais et qui fausserait toute lecture « dernier
+    // point » d'un autre fichier. On retire tout ce qui est daté après maintenant.
+    await prisma.metricSnapshot.deleteMany({ where: { periodStart: { gt: new Date() } } });
+    await prisma.city.deleteMany({ where: { id: { in: [cityId, otherCityId] } } });
     await prisma.$disconnect();
   });
 

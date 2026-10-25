@@ -82,6 +82,20 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
     await prisma.domainEvent.deleteMany({
       where: { aggregateId: { in: [ids.reseau, ids.storyEchue, ids.storyVivante] } },
     });
+    /**
+     * ── CE QUE LE REJEU À +100 JOURS LAISSE DERRIÈRE LUI ─────────────────────
+     *
+     * Les tâches `metrics.refresh` et `impact.quarterly_prepare` rejouées « dans cent
+     * jours » écrivent des points DATÉS DU FUTUR : des `metric_snapshots` à 2027, et la
+     * révision 1 d'un trimestre qui n'est pas encore clos (« 2026-T4 » un 25 octobre).
+     * Rien ne les reprendra jamais — la table est en ajout seul, la tâche réelle
+     * trouverait la ligne déjà là et n'écrirait pas la vraie — et le tableau de bord
+     * des fichiers suivants lisait « le dernier trimestre clos » ou « le dernier point »
+     * dans ce futur. On retire donc exactement ce que ce fichier a pu écrire : tout ce
+     * qui est daté après maintenant, et tout trimestre dont la fin n'est pas passée.
+     */
+    await prisma.metricSnapshot.deleteMany({ where: { periodStart: { gt: new Date() } } });
+    await prisma.$executeRaw`delete from impact_report_snapshots where period_end > now()`;
     await app?.close();
   });
 

@@ -8,6 +8,7 @@ import {
   helpMineResponseSchema,
   helpMyResponsesResponseSchema,
   journeyTemplatesResponseSchema,
+  levelSatisfies,
   mentorCardResponseSchema,
   myMentorshipsResponseSchema,
   publicProfileResponseSchema,
@@ -289,11 +290,20 @@ async function chargerCompteurs(
     decoratif(
       memberApi.get('/help/can-help?limit=20', helpCanHelpResponseSchema).then((r) => r.items.length),
     ),
-    decoratif(
-      memberApi
-        .get('/me/mentorships', myMentorshipsResponseSchema)
-        .then((r) => r.items.filter((m) => m.status === 'ACTIVE' || m.status === 'REQUESTED').length),
-    ),
+    /**
+     * `GET /me/mentorships` demande `mentorship.request` (N1). Un membre N0 y prenait un
+     * `403` à CHAQUE page de la section — une ligne rouge dans la console, pour une pastille
+     * décorative. On n'appelle pas ce que la table des capacités refuse : pas de parrainage
+     * à compter, la pastille reste vide. (Le niveau n'autorise rien ici : il évite un appel
+     * sans objet, et le serveur reste seul juge.)
+     */
+    levelSatisfies(me.user.verificationLevel, 'mentorship.request')
+      ? decoratif(
+          memberApi
+            .get('/me/mentorships', myMentorshipsResponseSchema)
+            .then((r) => r.items.filter((m) => m.status === 'ACTIVE' || m.status === 'REQUESTED').length),
+        )
+      : Promise.resolve(0),
   ]);
 
   const { avertissement, ...villeEtMois } = metaFil;
