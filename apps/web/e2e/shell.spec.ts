@@ -210,16 +210,16 @@ test.describe('cadre ordinateur', () => {
      *
      * Le chiffre de 1 200 px avait été calibré sur les cinq publications d'exemple
      * que la maquette dessinait en dur, dont deux portaient une photo de 260 px. Le
-     * fil venant maintenant de l'API, sa hauteur suit la charge : avec quatre
-     * publications sans photo, la page ne peut défiler que de 431 px, et
-     * l'assertion `> 800` échouait sur une page dont les colonnes étaient
-     * parfaitement collantes. Le test mesurait la hauteur du contenu en croyant
-     * mesurer le collage.
+     * fil venant maintenant de l'API, sa hauteur suit la charge : on défile donc
+     * AUTANT QUE LA PAGE LE PERMET, puis on exige deux choses distinctes : qu'il y
+     * ait bien eu un défilement RÉEL — sans quoi le reste ne prouverait rien, une
+     * page qui ne bouge pas gardant trivialement ses colonnes en place — et que les
+     * trois repères n'aient pas bougé d'un pixel.
      *
-     * On défile donc AUTANT QUE LA PAGE LE PERMET, puis on exige deux choses
-     * distinctes : qu'il y ait bien eu un défilement RÉEL — sans quoi le reste ne
-     * prouverait rien, une page qui ne bouge pas gardant trivialement ses colonnes
-     * en place — et que les trois repères n'aient pas bougé d'un pixel.
+     * VAGUE 5 — LA BARRE HAUTE N'EST PLUS UN `<div>` COLLANT mais un `<header>`
+     * `position: fixed` de 64 px sur TOUTE la largeur (décision du porteur, voir
+     * `tools/adaptations/entete-global.mjs`). Le test la désigne donc par sa balise
+     * et sa position, pas par `sticky`, et exige aussi qu'elle soit pleine largeur.
      */
     const defilement = await page.evaluate(() => {
       const max = document.documentElement.scrollHeight - window.innerHeight;
@@ -235,61 +235,126 @@ test.describe('cadre ordinateur', () => {
 
     const positions = await page.evaluate(() => {
       const frame = document.querySelector('[data-frame="desktop"]')!;
-      const top = (el: Element | null) =>
-        el === null ? null : Math.round(el.getBoundingClientRect().top);
-
-      const bar = Array.from(frame.querySelectorAll('div')).find(
-        (d) => getComputedStyle(d).position === 'sticky' && d.offsetHeight === 64,
-      );
-      const rail = frame.querySelector('nav');
-      const panel = rail?.parentElement?.parentElement ?? null;
+      const rect = (el: Element | null) => {
+        if (el === null) return null;
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), left: Math.round(r.left), width: Math.round(r.width) };
+      };
+      const bar = frame.querySelector('header');
 
       return {
-        barreHaute: top(bar ?? null),
-        colonneGauche: top(panel),
-        colonneDroite: top(frame.querySelector('aside')),
+        barre: rect(bar),
+        position: bar === null ? null : getComputedStyle(bar).position,
+        hauteur: bar === null ? null : Math.round(bar.getBoundingClientRect().height),
+        colonneGauche: rect(frame.querySelector('[data-zone="gauche"]')),
+        colonneDroite: rect(frame.querySelector('[data-zone="droite"]')),
+        fenetre: window.innerWidth,
         defile: Math.round(window.scrollY),
       };
     });
 
     expect(positions.defile, 'la page doit avoir réellement défilé').toBeGreaterThan(200);
 
-    // Sans `sticky`, les trois seraient remontées hors de l'écran, de tout le
+    // Sans `fixed`/`sticky`, les trois seraient remontées hors de l'écran, de tout le
     // défilement : leur `top` vaudrait un nombre négatif, pas 0 ni 76.
-    expect(positions.barreHaute, 'la barre haute a suivi le défilement').toBe(0);
-    expect(positions.colonneGauche, 'la colonne de gauche a suivi').toBe(0);
+    expect(positions.position, 'la barre haute est fixe').toBe('fixed');
+    expect(positions.hauteur, 'la barre haute fait 64 px').toBe(64);
+    expect(positions.barre?.top, 'la barre haute a suivi le défilement').toBe(0);
+    expect(positions.barre?.left, 'la barre haute part du bord gauche').toBe(0);
+    expect(positions.barre?.width, 'la barre haute prend toute la largeur').toBe(positions.fenetre);
+    expect(positions.colonneGauche?.top, 'la colonne de gauche a suivi').toBe(0);
+    expect(positions.colonneGauche?.left, 'la colonne de gauche est collée au bord').toBe(0);
     // La colonne de contexte s'arrête SOUS la barre haute, pas dessous elle.
-    expect(positions.colonneDroite, 'la colonne de contexte a suivi').toBe(76);
+    expect(positions.colonneDroite?.top, 'la colonne de contexte a suivi').toBe(76);
   });
 
   /**
-   * Une barre collante sans fond laisse voir le contenu défiler au travers.
+   * LA RECHERCHE EST CENTRÉE SUR LA FENÊTRE, pas sur la colonne du milieu.
+   *
+   * La barre haute pleine largeur le permet : le champ de recherche se centre sur
+   * l'axe de la fenêtre, aux deux largeurs d'ordinateur — c'est la mise en page
+   * VOULUE. Le test le mesure à 1440 et à 1800 px.
+   */
+  test('la recherche est centrée sur la fenêtre', async ({ page }) => {
+    for (const largeur of [1440, 1800]) {
+      await page.setViewportSize({ width: largeur, height: 900 });
+      await page.waitForTimeout(150);
+      const centre = await page.evaluate(() => {
+        const champ = document.querySelector('[data-frame="desktop"] header input');
+        if (champ === null) return null;
+        const r = champ.closest('form, [role="search"], div')!.getBoundingClientRect();
+        return r.left + r.width / 2;
+      });
+      expect(centre, `le champ de recherche existe à ${largeur} px`).not.toBeNull();
+      expect(Math.abs((centre ?? 0) - largeur / 2), `centré sur la fenêtre à ${largeur} px`).toBeLessThanOrEqual(
+        2,
+      );
+    }
+  });
+
+  /**
+   * Une barre fixe sans fond laisse voir le contenu défiler au travers.
    * La maquette n'en a pas besoin — rien n'y défile — donc l'oubli est facile.
    */
-  test('la barre haute collante porte un fond opaque', async ({ page }) => {
+  test('la barre haute fixe porte un fond opaque', async ({ page }) => {
     const bg = await page.evaluate(() => {
-      const frame = document.querySelector('[data-frame="desktop"]')!;
-      const bar = Array.from(frame.querySelectorAll('div')).find(
-        (d) => getComputedStyle(d).position === 'sticky' && d.offsetHeight === 64,
-      );
-      return bar === undefined ? null : getComputedStyle(bar).backgroundColor;
+      const bar = document.querySelector('[data-frame="desktop"] header');
+      return bar === null ? null : getComputedStyle(bar).backgroundColor;
     });
     expect(bg).toBe(TOKENS.bg);
   });
 
   /**
-   * La maquette est dessinée à 1440 px. Au-delà, on centre plutôt que d'étirer :
-   * le contenu est déjà borné à 660 px, et l'étirement ne ferait qu'éloigner
-   * les colonnes l'une de l'autre.
+   * LA MISE EN PAGE VOULUE AU-DELÀ DE 1440 PX (décision du porteur) :
+   *
+   *   · les sidebars restent COLLÉES AUX BORDS, sans `max-width` — la colonne de
+   *     gauche part de x = 0, celle de droite finit à la marge de 24 px du bord ;
+   *   · seul `[data-zone="contenu"]` est borné (1 036 px au plus) et se CENTRE entre
+   *     les deux colonnes.
+   *
+   * L'ancienne règle (« le cadre fait 1 440 px et se centre ») est ABANDONNÉE : elle
+   * éloignait les colonnes des bords à mesure que la fenêtre grandissait.
    */
-  test('au-delà de 1440 px, la mise en page est centrée', async ({ page }) => {
+  test('au-delà de 1440 px, les sidebars restent aux bords et seul le contenu est centré', async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1800, height: 900 });
-    await page.goto('/accueil', { waitUntil: 'networkidle' });
+    await page.goto('/accueil', { waitUntil: 'load' });
+    await page.locator('[data-frame="desktop"] [data-zone="contenu"]').waitFor({ state: 'attached' });
 
-    const frame = (await page.locator('[data-frame="desktop"]').boundingBox())!;
-    expect(frame.width).toBe(1440);
-    // Marges égales de part et d'autre, à un pixel près.
-    expect(Math.abs(frame.x - (1800 - frame.width - frame.x))).toBeLessThanOrEqual(1);
+    const m = await page.evaluate(() => {
+      const f = document.querySelector('[data-frame="desktop"]')!;
+      const r = (s: string) => {
+        const e = f.querySelector(s);
+        if (e === null) return null;
+        const b = e.getBoundingClientRect();
+        return { gauche: b.left, droite: b.right, largeur: b.width };
+      };
+      return {
+        cadre: r(':scope'),
+        colonneGauche: r('[data-zone="gauche"]'),
+        colonneDroite: r('[data-zone="droite"]'),
+        contenu: r('[data-zone="contenu"]'),
+        cadreLargeur: f.getBoundingClientRect().width,
+      };
+    });
+
+    expect(m.cadreLargeur, 'le cadre n’est plus borné à 1 440 px').toBe(1800);
+    expect(m.colonneGauche?.gauche, 'la colonne de gauche est collée au bord gauche').toBe(0);
+    expect(m.colonneGauche?.largeur, 'et garde sa largeur de 400 px').toBe(400);
+    expect(
+      1800 - (m.colonneDroite?.droite ?? 0),
+      'la colonne de droite finit à sa marge de 24 px du bord droit',
+    ).toBeLessThanOrEqual(24);
+    expect(m.colonneDroite?.largeur, 'et garde sa largeur de 300 px').toBe(300);
+
+    expect(m.contenu?.largeur, 'le contenu reste borné').toBeLessThanOrEqual(1036);
+    const milieu = ((m.colonneGauche?.droite ?? 0) + (m.colonneDroite?.gauche ?? 0)) / 2;
+    const centreContenu = (m.contenu?.gauche ?? 0) + (m.contenu?.largeur ?? 0) / 2;
+    expect(
+      Math.abs(centreContenu - milieu),
+      'le contenu est centré entre les deux colonnes',
+    ).toBeLessThanOrEqual(16);
   });
 
   /**
@@ -601,21 +666,29 @@ test.describe('rendu serveur', () => {
    * est listé ici est l'ensemble de ce qui servait une COQUILLE — dix-huit routes
    * mesurées à quatre ou cinq mots.
    */
+  /**
+   * VAGUE 5 — DEUX REPÈRES ONT CHANGÉ PAR DÉCISION. « MES QUOTAS DU MOIS » (services)
+   * a disparu avec les limites de plan : le porteur a tranché « tout sera gratuit pour
+   * le moment », il n'y a plus de quota à montrer. Les routes gardent un repère qui leur
+   * appartient vraiment (« MON ESPACE », « CONDITIONS »). Et « VOUS POUVEZ AIDER » est
+   * écrit « Vous pouvez aider » dans le DOM — la capitale vient d'une règle CSS, que le
+   * détecteur (qui lit le texte, pas le rendu) ne voit pas.
+   */
   const ROUTES_SERVIES = [
     // ── Parcours, Entraide, Services, Agenda — le périmètre de ce lot ──
     ['/parcours', 'MON PARCOURS'],
     ['/entraide', 'MA RÉPUTATION'],
-    ['/entraide/aider', 'VOUS POUVEZ AIDER'],
+    ['/entraide/aider', 'Vous pouvez aider'],
     ['/entraide/mes-demandes', 'MA RÉPUTATION'],
     ['/entraide/mes-reponses', 'MA RÉPUTATION'],
     ['/entraide/nouveau', 'MA RÉPUTATION'],
     ['/parrainage', 'DEVENIR PARRAIN'],
     ['/parrainage/mes-parrainages', 'PARRAINAGE'],
     ['/parrainage/devenir', 'GUIDE DU PARRAIN'],
-    ['/services/logement', 'MES QUOTAS DU MOIS'],
+    ['/services/logement', 'MON ESPACE'],
     ['/services/emploi', 'PROFILS DISPONIBLES'],
     ['/services/annuaire', 'MON ESPACE'],
-    ['/services/annuaire/ma-fiche', 'MES QUOTAS DU MOIS'],
+    ['/services/annuaire/ma-fiche', 'CONDITIONS'],
     ['/services/mes-annonces', 'MON ESPACE'],
     ['/services/alertes', 'NOUVELLE ALERTE'],
     ['/agenda', 'CALENDRIER'],
