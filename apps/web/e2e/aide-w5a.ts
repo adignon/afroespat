@@ -191,3 +191,33 @@ export async function ouvrirConversationBloquee(
 
   return { conversationId, prenomAutre: nomAutre.split(' ')[0] ?? nomAutre, handleAutre: autre.handle };
 }
+
+/**
+ * Un parcours dont une ÉTAPE MAJEURE est franchie et dont le partage n'a pas été refusé :
+ * c'est l'état où la colonne du parcours propose « Partager » (J04, §3.6). Décor réel :
+ * `monterParcours`, puis la première étape majeure passe EN COURS puis FAITE par la route
+ * du produit. Rend l'identifiant du parcours (le membre propriétaire est connecté dans
+ * le `context`).
+ */
+export async function monterJalonPartageable(
+  context: BrowserContext,
+  request: APIRequestContext,
+): Promise<{ readonly journeyId: string; readonly stepId: string }> {
+  const { monterParcours } = await import('./parcours-session');
+  const m = await monterParcours(context, request);
+  const entete = { authorization: `Bearer ${m.proprietaire.accessToken}` };
+  const detail = await request.get(`${API}/journeys/${m.journeyId}`, { headers: entete });
+  const { steps } = (await detail.json()) as {
+    steps: { id: string; status: string; isMajorMilestone: boolean }[];
+  };
+  const majeure = steps.find((s) => s.isMajorMilestone && s.status === 'TODO');
+  if (majeure === undefined) throw new Error('le modèle ne porte aucune étape majeure à franchir.');
+  for (const status of ['IN_PROGRESS', 'DONE']) {
+    const r = await request.patch(`${API}/journeys/${m.journeyId}/steps/${majeure.id}`, {
+      headers: entete,
+      data: { status },
+    });
+    if (!r.ok()) throw new Error(`PATCH step ${status} ${r.status()} : ${await r.text()}`);
+  }
+  return { journeyId: m.journeyId, stepId: majeure.id };
+}
