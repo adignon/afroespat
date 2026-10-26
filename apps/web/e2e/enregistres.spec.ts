@@ -93,6 +93,15 @@ test.describe('les enregistrés', () => {
       .filter({ visible: true })
       .first();
     await expect(ongletVilles).toBeVisible({ timeout: 25_000 });
+    /**
+     * ON ATTEND LA DONNÉE AVANT DE CLIQUER (lot w5b, instabilité mesurée : rouge une fois sur deux
+     * sur le projet mobile). Les dix onglets sont dessinés par le SQUELETTE, avant la réponse de
+     * l'API ; leur `onChoisir` n'y est branché sur rien. Cliquer sur ce squelette ne filtrait donc
+     * rien, et la liste restait à deux lignes. Les deux lignes arrivées, les onglets sont ceux de la donnée.
+     */
+    await expect(page.locator('[data-enregistres-lien]').filter({ visible: true })).toHaveCount(2, {
+      timeout: 25_000,
+    });
     await ongletVilles.click();
     await expect(
       page.locator('[data-enregistres-lien]').filter({ visible: true }),

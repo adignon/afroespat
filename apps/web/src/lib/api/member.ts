@@ -63,6 +63,16 @@ async function refreshOnce(): Promise<boolean> {
         // Le cookie `dp_refresh` est `httpOnly` et son chemin est `/v1/auth` : il
         // ne part que si on le demande, l'API étant sur une autre origine.
         credentials: 'include',
+        /**
+         * `keepalive` (lot w5b) : LA ROTATION NE DOIT PAS ÊTRE INTERROMPUE PAR UNE NAVIGATION.
+         * Le serveur fait tourner le jeton de rafraîchissement AVANT de répondre. Si la page est
+         * quittée pendant l'aller-retour, le navigateur abandonne la requête sans enregistrer le
+         * nouveau cookie : la page suivante présente l'ANCIEN jeton, que la détection de rejeu
+         * (§2.1, volontairement stricte) prend pour un vol — et révoque toute la chaîne. Mesuré :
+         * cinq sessions légitimes coupées en une batterie, « génération 2 contre 3 ». Une requête
+         * `keepalive` survit à la navigation et le cookie est posé.
+         */
+        keepalive: true,
       });
     } catch {
       /**
