@@ -103,6 +103,13 @@ const A02_MOBILE = {
 const PUCE_MES_STORIES =
   'height: "32px", padding: "0 12px", borderRadius: "999px", border: "1px solid #E6EBE9", background: "#fff", color: "#5D6B66", fontSize: "12px", fontWeight: "700", display: "inline-flex", alignItems: "center", textDecoration: "none"';
 
+/**
+ * Sur le cadre MOBILE la puce fait 44 px (T1 §2.3, cible tactile) : la batterie e2e
+ * (`responsive.spec.ts`) mesurait 32 px. L'ordinateur garde les 32 px du dessin — la souris
+ * n'exige que 24 px (WCAG 2.5.8).
+ */
+const PUCE_MES_STORIES_MOBILE = PUCE_MES_STORIES.replace('height: "32px"', 'height: "44px"');
+
 const A01_MES_STORIES = {
   screens: ['A01'],
   nom: 'A01_MES_STORIES',
@@ -120,7 +127,7 @@ const A01_MES_STORIES = {
     const neuf =
       '<div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "10px" }}>' +
       '<span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>STORIES DU JOUR</span>' +
-      `<Link href="/stories/mes-stories" style={{ ${PUCE_MES_STORIES} }}>Mes stories</Link></div>`;
+      `<Link href="/stories/mes-stories" style={{ ${PUCE_MES_STORIES_MOBILE} }}>Mes stories</Link></div>`;
     return { jsx: jsx.slice(0, m.index) + neuf + jsx.slice(m.index + m[0].length), applied: true };
   },
 };

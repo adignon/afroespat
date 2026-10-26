@@ -67,6 +67,18 @@ export async function ouvrirSessionEquipe(
   context: BrowserContext,
   request: APIRequestContext,
 ): Promise<{ readonly email: string }> {
+  const { email } = await ouvrirSessionEquipeApi(request);
+  const cookies = await request.storageState();
+  const equipe = cookies.cookies.find((c) => c.name === 'dp_staff');
+  if (equipe === undefined) throw new Error('le cookie dp_staff n’a pas été posé.');
+  await context.addCookies([equipe]);
+  return { email };
+}
+
+/** La même session, SANS navigateur : le contexte d'API porte alors le cookie `dp_staff`. */
+export async function ouvrirSessionEquipeApi(
+  request: APIRequestContext,
+): Promise<{ readonly email: string }> {
   const { email, password } = creerCompteEquipe();
 
   const login = await request.post(`${API}/admin/auth/login`, { data: { email, password } });
@@ -81,11 +93,6 @@ export async function ouvrirSessionEquipe(
     data: { challenge: defi, code: codeTotp(secret) },
   });
   if (!confirm.ok()) throw new Error(`totp/confirm ${confirm.status()} : ${await confirm.text()}`);
-
-  const cookies = await request.storageState();
-  const equipe = cookies.cookies.find((c) => c.name === 'dp_staff');
-  if (equipe === undefined) throw new Error('le cookie dp_staff n’a pas été posé.');
-  await context.addCookies([equipe]);
   return { email };
 }
 
@@ -220,4 +227,54 @@ export async function monterJalonPartageable(
     if (!r.ok()) throw new Error(`PATCH step ${status} ${r.status()} : ${await r.text()}`);
   }
   return { journeyId: m.journeyId, stepId: majeure.id };
+}
+
+/**
+ * S'assure qu'un encart partenaire est posé en pied de la section Logement (14 §17) — par les
+ * routes d'ÉQUIPE : un partenaire (`POST /admin/billing/partners`) puis son placement
+ * (`POST /admin/billing/placements`, section `HOUSING`). Idempotent : si `GET /placements`
+ * en rend déjà un au membre, rien n'est créé.
+ */
+export async function garantirEncartLogement(
+  membre: APIRequestContext,
+  jetonMembre: string,
+): Promise<void> {
+  const { request: moteur } = await import('@playwright/test');
+  const existant = await membre.get(`${API}/placements?section=HOUSING`, {
+    headers: { authorization: `Bearer ${jetonMembre}` },
+  });
+  if (existant.ok()) {
+    const corps = (await existant.json()) as { items?: unknown[] };
+    if ((corps.items?.length ?? 0) > 0) return;
+  }
+  const equipe = await moteur.newContext();
+  try {
+    await ouvrirSessionEquipeApi(equipe);
+    const part = await equipe.post(`${API}/admin/billing/partners`, {
+      data: {
+        name: 'Assur Diaspora',
+        category: 'HOUSING_GUARANTEE',
+        affiliateUrlTemplate: 'https://partenaire.example/offre?clic={click_id}',
+        payoutModel: 'CPC',
+        isActive: true,
+      },
+    });
+    if (!part.ok()) throw new Error(`POST partners ${part.status()} : ${await part.text()}`);
+    const { id } = (await part.json()) as { id: string };
+    const place = await equipe.post(`${API}/admin/billing/placements`, {
+      data: {
+        partnerId: id,
+        section: 'HOUSING',
+        headline: 'Garantie loyer pour les nouveaux arrivants',
+        ctaLabel: 'Découvrir l’offre',
+        isActive: true,
+      },
+    });
+    // 409 `PLACEMENT_EXISTS` : un encart actif existe déjà pour la section — c'est l'état voulu.
+    if (!place.ok() && place.status() !== 409) {
+      throw new Error(`POST placements ${place.status()} : ${await place.text()}`);
+    }
+  } finally {
+    await equipe.dispose();
+  }
 }
