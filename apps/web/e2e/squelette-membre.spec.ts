@@ -264,7 +264,7 @@ for (const forme of DEPARTS) {
 }
 
 /**
- * ─── LE PANNEAU DE SECTION : SES SEPT ENTRÉES ───────────────────────────────
+ * ─── LE PANNEAU DE SECTION : SES QUATRE ENTRÉES (sept avant le lot w5b) ───────────────────────────────
  *
  * Il n'est dessiné que par les treize cadres de `03 Accueil v2.dc.html`, et c'est
  * `/accueil` qui en porte la variante « Fil d'actualité » (`panelFil`).
@@ -274,14 +274,18 @@ for (const forme of DEPARTS) {
  * égalité : le compteur est une DONNÉE, et l'exiger ferait échouer le test le jour
  * où il change, pour une raison qui n'a rien à voir avec la navigation.
  */
+/**
+ * MISE À JOUR PAR DÉCISION (lot w5b) : le panneau COMMUNAUTÉ de `/accueil` ne porte plus que
+ * QUATRE entrées. « Fil d'entraide », « Parrainage » et « Événements » en sont sorties : elles
+ * ont leur rubrique propre dans le rail (Entraide, Agenda) et leurs panneaux de section. Les
+ * trois cas qui cherchaient ces liens dans ce panneau expiraient sur un lien qui n'existe plus ;
+ * la table suit le produit voulu.
+ */
 const PANNEAU = [
   { libelle: "Fil d'actualité", vers: '/accueil' },
   { libelle: 'Guides & Démarches', vers: '/guides' },
-  { libelle: "Fil d'entraide", vers: '/entraide' },
   { libelle: 'Réseaux', vers: '/reseaux' },
-  { libelle: 'Parrainage', vers: '/parrainage' },
   { libelle: 'Villes & Membres', vers: '/villes' },
-  { libelle: 'Événements', vers: '/agenda' },
 ] as const;
 
 test.describe('panneau de section — A01 /accueil', () => {

@@ -59,7 +59,31 @@ test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test'
  * précharge les liens visibles — le réseau ne retombe donc jamais au calme. Voir la
  * même note dans `administration.spec.ts`.
  */
+/**
+ * UNE SESSION D'ÉQUIPE SERVIE (lot w5b). `FournisseurEquipe` interroge `POST /admin/auth/session`
+ * au montage et renvoie vers `/admin/connexion` sur un `401` : sans session, la page se
+ * recharge sur la connexion au bout de quelques millisecondes, le rail disparaît, et chaque
+ * cas de ce fichier mesurait une page de connexion en croyant mesurer la navigation. Ce
+ * fichier éprouve le RAIL, pas l'authentification d'équipe (TOTP, mot de passe) : la réponse
+ * « qui suis-je ? » est donc servie, au format exact du contrat (`adminStaffSessionResponseSchema`).
+ */
+async function servirUneSessionEquipe(page: Page): Promise<void> {
+  await page.route('**/v1/admin/auth/session', (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        staffId: '01a1ffff-0000-7000-8000-000000000001',
+        role: 'SUPER_ADMIN',
+        sessionId: '01a1ffff-0000-7000-8000-000000000002',
+        displayName: 'Équipe éprouvée',
+      }),
+    }),
+  );
+}
+
 async function visiter(page: Page, url: string): Promise<void> {
+  await servirUneSessionEquipe(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(url, { waitUntil: 'load' });
 }
@@ -78,6 +102,8 @@ const ENTREES = [
   { libelle: 'Rapport d’impact', route: '/admin/impact', ecran: 'D16', litLApi: true },
   { libelle: 'Membres', route: '/admin/membres', ecran: 'D03', litLApi: false },
   { libelle: 'Modération', route: '/admin/moderation', ecran: 'D04', litLApi: true },
+  // AJOUTÉE (lot w5b) : D17, « Alertes d'équipe » (13 §4.4, 15 §2.1), quinzième entrée du rail.
+  { libelle: 'Alertes d’équipe', route: '/admin/alertes-equipe', ecran: 'D17', litLApi: false },
   { libelle: 'Parcours', route: '/admin/parcours', ecran: 'D06', litLApi: false },
   { libelle: 'Bibliothèque d’étapes', route: '/admin/etapes', ecran: 'D07', litLApi: false },
   { libelle: 'Contenu', route: '/admin/contenu', ecran: 'D12', litLApi: false },
@@ -155,6 +181,7 @@ const SURBRILLANCE = [
   { url: '/admin/membres', attendu: '/admin/membres' },
   { url: '/admin/moderation', attendu: '/admin/moderation' },
   { url: '/admin/moderation/4812', attendu: '/admin/moderation' },
+  { url: '/admin/alertes-equipe', attendu: '/admin/alertes-equipe' },
   { url: '/admin/parcours', attendu: '/admin/parcours' },
   { url: '/admin/etapes', attendu: '/admin/etapes' },
   { url: '/admin/contenu', attendu: '/admin/contenu' },
@@ -250,7 +277,7 @@ test('le rail se parcourt et s’actionne AU CLAVIER', async ({ page }) => {
  * ce cas mesure le résultat de ce refus dans l'arbre d'accessibilité réel, où un
  * `aria-hidden` mal placé ou un `<svg>` bavard se verrait.
  */
-test('les quatorze entrées du rail portent un nom accessible, et seulement quatorze', async ({
+test('les quinze entrées du rail portent un nom accessible, et seulement quinze', async ({
   page,
 }) => {
   await visiter(page, '/admin/reglages');
@@ -497,7 +524,7 @@ test('AUCUNE page d’équipe n’est injoignable depuis le rail', async ({ page
  * long que les neuf d'origine — et c'est exactement le genre de chose qu'un calcul
  * ne voit pas. On DEMANDE DONC AU NAVIGATEUR.
  */
-test('le rail à quatorze entrées tient dans le cadre, à 1440 px', async ({ page }) => {
+test('le rail à quinze entrées tient dans le cadre, à 1440 px', async ({ page }) => {
   await visiter(page, '/admin/reglages');
 
   const mesure = await rail(page).evaluate((nav) => {

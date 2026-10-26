@@ -70,6 +70,8 @@ const ROUTES_EQUIPE = [
   { url: '/admin/impact', libelle: 'Rapport d’impact', litLApi: true },
   { url: '/admin/membres', libelle: 'Membres', litLApi: false },
   { url: '/admin/moderation', libelle: 'Modération', litLApi: true },
+  // AJOUTÉE (lot w5b) : D17, quinzième entrée du rail (13 §4.4, 15 §2.1).
+  { url: '/admin/alertes-equipe', libelle: 'Alertes d’équipe', litLApi: false },
   { url: '/admin/parcours', libelle: 'Parcours', litLApi: false },
   { url: '/admin/etapes', libelle: 'Bibliothèque d’étapes', litLApi: false },
   { url: '/admin/contenu', libelle: 'Contenu', litLApi: false },
@@ -388,7 +390,9 @@ test.describe('un chargement en échec laisse une navigation', () => {
        * nommer son identifiant, qui est un détail d'implémentation du cadre.
        */
       await expect(
-        page.getByRole('alert').filter({ hasText: /\S/ }),
+        // `.first()` (lot w5b) : D10 charge deux sections indépendantes (statistiques, liste), chacune
+        // porte son bandeau — deux `role="alert"` visibles, tous deux légitimes.
+        page.getByRole('alert').filter({ hasText: /\S/ }).first(),
         'aucun bandeau d’échec : le 500 n’est pas arrivé jusqu’à l’écran, et ce cas ne mesure rien',
       ).toBeVisible({ timeout: 20_000 });
 
