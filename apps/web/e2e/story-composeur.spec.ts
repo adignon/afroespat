@@ -47,14 +47,48 @@ import { monterEnL1 } from './niveau';
  * refusée en même temps que la publication. La décision et ce qu'elle ouvre sont
  * écrites sur `post.create` dans `capabilities.ts`.
  */
-test.describe('A14 — un compte NON VÉRIFIÉ publie', () => {
-  test('le composeur s’ouvre et la story part, sans vérification', async ({ page, request }) => {
-    // PAS de `monterEnL1` : c'est tout l'objet du cas.
+/**
+ * MISE À JOUR PAR DÉCISION (lot w5b) — LE NIVEAU N1 EST EXIGÉ POUR PUBLIER, À NOUVEAU.
+ *
+ * Le bloc ci-dessus garde l'histoire : le porteur avait ouvert les stories à tout le monde. Le
+ * 2026-10-09 il a REFONDU les niveaux (`capabilities.ts`, « Pour les niveaux on va revoir ») :
+ * « N1 : publier dans le fil d'actualité et stories ». L'instruction la plus récente l'emporte,
+ * et `post.create` repasse à L1. Le cas « un compte NON VÉRIFIÉ publie » mesurait l'inverse ;
+ * il est remplacé par ses deux moitiés :
+ *   · à N0, le composeur S'OUVRE mais le produit répond par la fenêtre « Niveau N1 requis »
+ *     (« Passer au niveau N1 ») au lieu de publier, et aucune requête `POST /stories` ne part ;
+ *   · à N1, la story part (201).
+ */
+test.describe('A14 — publier demande le niveau N1', () => {
+  test('à N0 : le composeur s’ouvre, mais la fenêtre « Niveau N1 requis » remplace la publication', async ({
+    page,
+    request,
+  }) => {
     await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    const partis: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/stories') && r.method() === 'POST') partis.push(r.url());
+    });
 
     await page.goto('/stories/nouvelle');
     const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
-    await cadre.getByRole('textbox').first().fill('Un conseil publié sans vérification.');
+    await cadre.getByRole('textbox').first().fill('Un conseil que le produit ne doit pas publier.');
+
+    // La fenêtre de niveau (`fenetre-niveau.tsx`) : modale « Niveau N1 requis » au large, feuille basse
+    // « Cette action demande une identité vérifiée » (planche X04) au téléphone. On tient donc le
+    // CONTENANT commun — `data-fenetre-niveau` — et sa sortie « Plus tard », pas les deux libellés.
+    const fenetre = page.locator('[data-fenetre-niveau]').filter({ visible: true });
+    await expect(fenetre).toBeVisible({ timeout: 15_000 });
+    await expect(fenetre.locator('[data-niveau-plus-tard]')).toBeVisible();
+    expect(partis, 'une story est partie alors que le membre est N0').toEqual([]);
+  });
+
+  test('à N1 : le composeur s’ouvre et la story part', async ({ page, request }) => {
+    await membreQuiPeutPublier(page.context(), request);
+
+    await page.goto('/stories/nouvelle');
+    const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
+    await cadre.getByRole('textbox').first().fill('Un conseil publié par un membre vérifié.');
 
     await cadre.getByRole('button', { name: /Suivant|Continuer/ }).first().click();
     await cadre.getByRole('button', { name: 'Logement', exact: true }).click();
@@ -65,7 +99,7 @@ test.describe('A14 — un compte NON VÉRIFIÉ publie', () => {
     );
     await cadre.getByRole('button', { name: 'Publier', exact: true }).click();
     const reponse = await (await requete).response();
-    expect(reponse?.status(), 'la publication exige encore une vérification').toBe(201);
+    expect(reponse?.status(), 'la publication a été refusée à un membre N1').toBe(201);
   });
 });
 
@@ -85,7 +119,7 @@ test.describe('A14 — un compte NON VÉRIFIÉ publie', () => {
  */
 test.describe('A14 — la découverte et son lieu', () => {
   test('le champ de lieu existe, et sans lui le refus NOMME le lieu', async ({ page, request }) => {
-    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    await membreQuiPeutPublier(page.context(), request);
     await page.goto('/stories/nouvelle');
 
     const cadre = page.locator('[data-frame]').filter({ visible: true }).first();
@@ -128,7 +162,7 @@ test.describe('A14 — la découverte et son lieu', () => {
    * FOIS ; vérifié en retirant `lieu` de la liste et en rejouant.
    */
   test('avec le lieu, la découverte part', async ({ page, request }) => {
-    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    await membreQuiPeutPublier(page.context(), request);
     await page.route('**/places/countries**', (route) => route.abort());
     await page.goto('/stories/nouvelle');
 
@@ -475,7 +509,13 @@ test.describe('A14 — le composeur de story', () => {
     );
 
     await allerALEtape3(page);
-    await bouton(page, 'Lyon seulement').click();
+    // MISE À JOUR (lot w5b) : l'audience porte la VILLE DU MEMBRE (« Aix-en-Provence seulement »),
+    // plus l'exemple de la maquette (« Lyon seulement ») — l'écran lit `cityName` de `/me`.
+    await page
+      .getByRole('button', { name: / seulement$/ })
+      .filter({ visible: true })
+      .first()
+      .click();
     /**
      * L'INTERRUPTEUR EST UN `switch`, PAS UN `button`, depuis ce lot. Il n'avait NI
      * nom NI rôle NI état — un `<button>` nu piloté par deux styles — donc ce test
