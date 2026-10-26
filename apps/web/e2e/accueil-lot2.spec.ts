@@ -98,6 +98,17 @@ import {
  */
 const ATTENTE = '—';
 
+/**
+ * MISE À JOUR (lot w5b) : SOUS L'API COUPÉE, TOUT TITRE QUI VIENT DE L'API EST LE TIRET.
+ *
+ * Étaient attendus ici « Lyon », « Renouveler son passeport… », « Obtenir la garantie Visale… » :
+ * des noms que la maquette dessinait. Ils viennent de l'API (la ville, le sujet, le guide), que
+ * ce bloc coupe exprès ; l'écran porte alors le tiret des écrans de réseau (`'—'`), qui n'affirme
+ * aucun nom mais garde un `<h1>` lisible. Avant ce lot ces quatre écrans peignaient `<h1></h1>`,
+ * la violation `empty-heading` d'axe — défaut produit corrigé dans les têtes d'attente
+ * (`SQUELETTE_VILLE`, `teteVide`, `guide`). Le nom RÉEL est tenu par les cas « RÉEL · … » plus bas.
+ */
+
 const ROUTES = [
   { path: '/guides', screen: 'A03', h1: 'Guides et Démarches', h1Mobile: 'Guides et Démarches' },
   {
@@ -156,8 +167,8 @@ const ROUTES = [
   {
     path: '/guides/visale-sans-cdi/corriger',
     screen: 'A06-corriger',
-    h1: 'Obtenir la garantie Visale sans CDI',
-    h1Mobile: 'Obtenir la garantie Visale sans CDI',
+    h1: ATTENTE,
+    h1Mobile: ATTENTE,
   },
   { path: '/reseaux', screen: 'A07', h1: 'Réseaux', h1Mobile: 'Réseaux' },
   {
@@ -181,13 +192,13 @@ const ROUTES = [
     // largeurs ne dépendent donc pas de la même chose, et c'est la donnée qui le
     // dit — pas une préférence.
     h1: ATTENTE,
-    h1Mobile: 'Gérer le réseau',
+    h1Mobile: ATTENTE,
   },
   {
     path: '/reseaux/beninois-en-france/sujets/passeport',
     screen: 'A09',
-    h1: 'Renouveler son passeport béninois depuis la France',
-    h1Mobile: 'Renouveler son passeport béninois depuis la France',
+    h1: ATTENTE,
+    h1Mobile: ATTENTE,
   },
   {
     path: '/reseaux/nouveau',
@@ -202,8 +213,8 @@ const ROUTES = [
     h1: 'Villes et Membres',
     h1Mobile: 'Villes et Membres',
   },
-  { path: '/villes/lyon', screen: 'A12', h1: 'Lyon', h1Mobile: 'Lyon' },
-  { path: '/villes/lyon?onglet=produits', screen: 'A12T-produits', h1: 'Lyon', h1Mobile: 'Lyon' },
+  { path: '/villes/lyon', screen: 'A12', h1: ATTENTE, h1Mobile: ATTENTE },
+  { path: '/villes/lyon?onglet=produits', screen: 'A12T-produits', h1: ATTENTE, h1Mobile: ATTENTE },
   { path: '/publications/repas-partage', screen: 'A02', h1: null, h1Mobile: null },
   { path: '/stories/visale', screen: 'A13', h1: null, h1Mobile: null },
   { path: '/stories/nouvelle', screen: 'A14-1', h1: null, h1Mobile: null },
@@ -584,7 +595,8 @@ test.describe('RÉEL · A08 — deux onglets montrent deux contenus', () => {
     const d = await decorDeLOuvrier(browser, playwright);
     await ouvrirSessionDe(page.context(), d.reseau.proprietaire);
 
-    await page.goto(`/reseaux/${d.reseau.slug}`, { waitUntil: 'networkidle' });
+    // L'onglet par défaut d'un réseau est « Fil » (A08T) ; les sujets sont l'onglet `sujets`.
+    await page.goto(`/reseaux/${d.reseau.slug}?onglet=sujets`, { waitUntil: 'networkidle' });
     await expect(frame(page).getByText(d.reseau.sujet.titre).first()).toBeVisible({ timeout: 25_000 });
     const sujets = await frame(page).innerText();
 
@@ -597,9 +609,13 @@ test.describe('RÉEL · A08 — deux onglets montrent deux contenus', () => {
     expect(sujets.length, `l’onglet Sujets a du contenu (plancher ${plancher})`).toBeGreaterThan(plancher);
     expect(evenements, 'un autre onglet, un autre contenu').not.toBe(sujets);
 
-    const temoinSujets = etroit ? 'Sourdine' : 'Épingler';
-    expect(sujets, `l’onglet Sujets porte « ${temoinSujets} »`).toContain(temoinSujets);
-    expect(evenements, `l’onglet Événements ne porte pas « ${temoinSujets} »`).not.toContain(temoinSujets);
+    // « Épingler » (le menu d'un sujet, pour qui gère le réseau) n'existe qu'au large : la ligne de
+    // sujet du téléphone ne porte plus « Sourdine » (lot w5b) — le titre du sujet, vérifié plus haut,
+    // en est le témoin de ce côté-là.
+    if (!etroit) {
+      expect(sujets, 'l’onglet Sujets porte « Épingler »').toContain('Épingler');
+      expect(evenements, 'l’onglet Événements ne porte pas « Épingler »').not.toContain('Épingler');
+    }
     expect(evenements, 'l’onglet Événements porte son événement').toContain(d.evenement);
     expect(sujets, 'l’onglet Sujets ne porte pas l’événement').not.toContain(d.evenement);
     expect(evenements, 'l’onglet Événements ne porte pas le sujet').not.toContain(d.reseau.sujet.titre);
@@ -641,7 +657,14 @@ test.describe('RÉEL · A02 — une publication', () => {
 
     await page.goto(`/publications/${d.publication}`, { waitUntil: 'networkidle' });
 
-    await expect(frame(page).getByText('GUIDES LIÉS', { exact: false })).toBeVisible({ timeout: 25_000 });
+    // La publication est là (le texte vient de l'API)…
+    await expect(frame(page).getByText('Un repas partagé samedi : qui vient ?').first()).toBeVisible({
+      timeout: 25_000,
+    });
+    // … et, faute de guide lié, l'écran n'en affirme AUCUN : ni la carte « GUIDES LIÉS » (elle n'est
+    // plus dessinée d'office, la colonne ne paraît que s'il y a des guides à y mettre), ni la pastille
+    // « Pertinent » de la maquette.
+    await expect(frame(page).getByText('GUIDES LIÉS', { exact: false })).toHaveCount(0);
     await expect(frame(page).getByTitle('Pertinent')).toHaveCount(0);
   });
 });
