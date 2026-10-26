@@ -1,6 +1,6 @@
-import { createHmac } from 'node:crypto';
 import { expect, test, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { connecter, type Membre } from './session';
+import { monterEnL2 } from './niveau';
 
 /**
  * Les quatre écrans de l'agenda — E01 à E04 — BRANCHÉS SUR L'API.
@@ -62,7 +62,6 @@ test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test'
 test.describe.configure({ timeout: 120_000 });
 
 const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
-const SECRET = process.env['DIDIT_WEBHOOK_SECRET'] ?? 'dev-didit-webhook-secret-change-me';
 
 /** Un membre L1, sa session installée dans le navigateur, et son jeton d'API. */
 interface MembreL1 extends Membre {
@@ -82,52 +81,18 @@ async function connecterL1(
   profil: { readonly displayName?: string } = {},
 ): Promise<MembreL1> {
   const membre = await connecter(context, request, profil);
-
-  const session = await request.post(`${API}/me/kyc/session`, {
-    headers: { authorization: `Bearer ${membre.accessToken}` },
-  });
-  if (!session.ok()) throw new Error(`kyc/session ${session.status()} : ${await session.text()}`);
-  const { sessionId } = (await session.json()) as { sessionId: string };
-
-  const corps = JSON.stringify({ sessionId, status: 'APPROVED', isAdult: true });
-  const hook = await request.post(`${API}/webhooks/didit`, {
-    headers: {
-      'content-type': 'application/json',
-      'x-signature': createHmac('sha256', SECRET).update(Buffer.from(corps, 'utf8')).digest('hex'),
-    },
-    data: corps,
-  });
-  if (!hook.ok()) throw new Error(`webhooks/didit ${hook.status()} : ${await hook.text()}`);
-
-  // Le jeton porte les droits : périmé par la promotion, il faut en reprendre un.
-  const demande = await request.post(`${API}/auth/otp/request`, {
-    data: { phone: membre.phone, countryIso2: 'BJ', captchaToken: 'fake', acceptTerms: true },
-  });
-  if (!demande.ok()) throw new Error(`otp/request ${demande.status()} : ${await demande.text()}`);
-  const { challengeId } = (await demande.json()) as { challengeId: string };
-  const verif = await request.post(`${API}/auth/otp/verify`, {
-    data: { challengeId, code: process.env['SMS_FAKE_FIXED_CODE'] ?? '123456' },
-  });
-  if (!verif.ok()) throw new Error(`otp/verify ${verif.status()} : ${await verif.text()}`);
-  const { accessToken } = (await verif.json()) as { accessToken: string };
-
+  /**
+   * MISE À JOUR (lot w5b) : `event.create` exige désormais le niveau N2
+   * (`packages/shared/src/capabilities`) — à N1, `POST /events` répondait
+   * `403 LEVEL_REQUIRED` et chacun des cas qui crée un événement tombait. Le membre
+   * passe donc par `monterEnL2`, le même chemin que le produit (KYC approuvé puis
+   * numéro de destination vérifié), et non par une écriture directe en base.
+   */
+  const { accessToken } = await monterEnL2(context, request, membre.accessToken);
   const me = await request.get(`${API}/me`, { headers: { authorization: `Bearer ${accessToken}` } });
   const niveau = ((await me.json()) as { user: { verificationLevel: string } }).user
     .verificationLevel;
-  expect(niveau, 'le membre devait être porté à L1 pour créer un événement').toBe('L1');
-
-  /**
-   * LE COOKIE DE LA SESSION NEUVE REMPLACE CELUI DE `connecter`, et il le doit :
-   * `dp_refresh` TOURNE à chaque rafraîchissement et porte un numéro de
-   * génération. Deux sessions du même membre dans le même navigateur présentent
-   * une génération dépassée, le serveur y voit un REJEU — ce pour quoi il est
-   * fait — et RÉVOQUE LA CHAÎNE. Mesuré pendant ce lot, journal de l'API mot pour
-   * mot : « Rejeu de jeton sur la chaîne … (génération 0 contre 4) ».
-   */
-  const cookies = await request.storageState();
-  const refresh = cookies.cookies.filter((c) => c.name === 'dp_refresh').at(-1);
-  if (refresh === undefined) throw new Error('aucun dp_refresh après la reprise de session');
-  await context.addCookies([refresh]);
+  expect(niveau, 'le membre devait être porté à L2 pour créer un événement').toBe('L2');
 
   return { ...membre, jeton: accessToken };
 }
@@ -350,9 +315,9 @@ test.describe('E01 — l’agenda lit l’API', () => {
 
     const mesures = await page.evaluate(() => {
       const frame = document.querySelector('[data-frame="desktop"]')!;
-      const lignes = [...frame.querySelectorAll<HTMLElement>('div')].filter(
-        (el) => el.style.height === '40px' && el.style.borderRadius === '12px',
-      );
+      // MISE À JOUR (lot w5b) : chaque jour du calendrier est un lien `data-agenda-jour`
+      // (il mène à `/agenda?jour=…`), plus un <div> dessiné — même géométrie 40 px / 12 px.
+      const lignes = [...frame.querySelectorAll<HTMLElement>('[data-agenda-jour]')];
       return lignes.map((el) => ({
         texte: el.innerText.replace(/\s+/g, ' ').trim(),
         opacite: getComputedStyle(el).opacity,
@@ -445,7 +410,9 @@ test.describe('E02 — la fiche d’un événement', () => {
     const couleurs = async () =>
       page.evaluate(() => {
         const frame = document.querySelector('[data-frame="desktop"]')!;
-        const boutons = [...frame.querySelectorAll<HTMLElement>('span')].filter(
+        // MISE À JOUR (lot w5b) : les trois réponses sont maintenant de vrais <button>
+        // (`ActionsEvenement`), plus des <span> dessinés — même géométrie 46 px / 14 px.
+        const boutons = [...frame.querySelectorAll<HTMLElement>('button')].filter(
           (el) => el.style.height === '46px' && el.style.borderRadius === '14px',
         );
         return boutons.map((el) => [el.innerText.trim(), getComputedStyle(el).backgroundColor]);
@@ -483,7 +450,8 @@ test.describe('E02 — la fiche d’un événement', () => {
     const evenement = await creerEvenement(request, hote.jeton, 'Permanence CAF du quartier');
 
     await visiter(page, `/agenda/${evenement.id}`, 1440);
-    await expect(page.getByText('VUE ORGANISATEUR')).toBeVisible();
+    // Le cadre d'ordinateur seul : la carte est aussi dans le cadre mobile, masqué.
+    await expect(cadre(page, 1440).getByText('VUE ORGANISATEUR')).toBeVisible();
     /**
      * LA LIGNE ENTIÈRE DOIT AVOIR DISPARU, pas seulement son chiffre.
      *
@@ -531,7 +499,10 @@ test.describe('E02 — la fiche d’un événement', () => {
      */
     await visiter(page, `/agenda/${evenement.id}`, 1440);
     const vue = cadre(page, 1440);
-    await expect(vue.getByText('COMPLET')).toBeVisible();
+    // MISE À JOUR (lot w5b) : la carte « COMPLET » s'adresse à qui n'a PAS de place
+    // (`actions-evenement.tsx` : `!complet || monStatut === 'GOING'` la masque). L'hôte est
+    // inscrit d'office, donc il ne la voit pas ; seul l'invité en attente la voit, plus bas.
+    await expect(vue.getByText('COMPLET')).toHaveCount(0);
     // AU SINGULIER : une place, « 1 sur 1 place ». La planche écrit « 40 places »
     // et ne pouvait pas montrer ce cas — c'est ce test qui l'a trouvé.
     await expect(vue.getByText('1 sur 1 place').first()).toBeVisible();
@@ -558,8 +529,16 @@ test.describe('E03 — créer un événement', () => {
    * La planche écrit « 1 événement sur 1 » — donc un écran resté figé passerait un
    * test écrit sur « 1 », et échoue sur celui-ci.
    */
+  /**
+   * MISE À JOUR PAR DÉCISION (lot w5b) : « tout est gratuit pour le moment » (décision du
+   * porteur, adaptation `tools/adaptations/gratuit-vivant.mjs`). Le compteur « N événement
+   * sur X ce mois-ci » et la carte « QUOTA / Découvrir Premium » ont disparu de E03 : il
+   * n'existe plus de plafond à annoncer. Le cas qui exigeait « 0 événement sur 1 » mesurait
+   * un plafond retiré ; il affirme maintenant l'inverse — aucun plafond, aucune offre —
+   * avant ET après une création, ce qui garde la décision.
+   */
   for (const largeur of LARGEURS) {
-    test(`${largeur} px — le quota affiché est celui du membre, pas celui de la planche`, async ({
+    test(`${largeur} px — aucun quota ni offre Premium : tout est gratuit`, async ({
       page,
       context,
       request,
@@ -568,20 +547,16 @@ test.describe('E03 — créer un événement', () => {
 
       await visiter(page, '/agenda/nouveau', largeur);
       const vue = cadre(page, largeur);
-      await expect(vue.getByText('0 événement sur 1 ce mois-ci')).toBeVisible();
+      await expect(vue.getByText(/sur \d+ ce mois-ci/)).toHaveCount(0);
+      await expect(vue.getByText('Découvrir Premium')).toHaveCount(0);
 
-      // Après une création, le même écran dit « 1 ». La donnée bouge, le dessin non.
       await creerEvenement(request, membre.jeton, 'Apéro du quartier Croix-Rousse');
       await visiter(page, '/agenda/nouveau', largeur);
-      await expect(cadre(page, largeur).getByText('1 événement sur 1 ce mois-ci')).toBeVisible();
+      await expect(cadre(page, largeur).getByText(/sur \d+ ce mois-ci/)).toHaveCount(0);
+      await expect(cadre(page, largeur).getByText('Découvrir Premium')).toHaveCount(0);
     });
   }
 
-  /**
-   * 09 §3.1, RÈGLE DURE : « adresse en texte libre, jamais géolocalisée ». La
-   * note est du TEXTE DE RÈGLE — vrai pour tout le monde, en tout temps — donc
-   * elle n'est pas liée, et elle doit rester affichée.
-   */
   test('1440 px — la note « jamais géolocalisée » reste affichée', async ({
     page,
     context,
