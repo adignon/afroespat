@@ -120,11 +120,14 @@ test.describe('les douze routes du module', () => {
         titre: m.titre,
         ecran: 'J01S',
       },
-      { url: `/parcours/${m.journeyId}/discussion`, titre: 'Discussion du parcours', ecran: 'J01D' },
-      { url: `/parcours/${m.journeyId}/equipe`, titre: 'Équipe', ecran: 'J05' },
-      { url: `/parcours/${m.journeyId}/documents`, titre: 'Checklist de documents', ecran: 'J06' },
-      { url: `/parcours/${m.journeyId}/historique`, titre: 'Historique', ecran: 'J07' },
-      { url: `/parcours/${m.journeyId}/reglages`, titre: 'Réglages du parcours', ecran: 'J08' },
+      // VAGUE 5 — toutes les sous-pages d'un parcours portent le TITRE DU PARCOURS en <h1> (le nom
+      // de la rubrique est dans la barre de sections), sauf « abouti ». La planche écrivait le nom
+      // de la rubrique ; l'écran vivant garde le repère du parcours courant.
+      { url: `/parcours/${m.journeyId}/discussion`, titre: m.titre, ecran: 'J01D' },
+      { url: `/parcours/${m.journeyId}/equipe`, titre: m.titre, ecran: 'J05' },
+      { url: `/parcours/${m.journeyId}/documents`, titre: m.titre, ecran: 'J06' },
+      { url: `/parcours/${m.journeyId}/historique`, titre: m.titre, ecran: 'J07' },
+      { url: `/parcours/${m.journeyId}/reglages`, titre: m.titre, ecran: 'J08' },
       { url: `/parcours/${m.journeyId}/abouti`, titre: 'Vous y êtes arrivé·e !', ecran: 'J10' },
       { url: '/parcours/publics', titre: 'Parcours publics', ecran: 'J09' },
       { url: `/parcours/publics/${m.journeyPublicId}`, titre: 'Parcours de Ibrahim', ecran: 'J09F' },
@@ -174,10 +177,13 @@ test.describe('les écrans affichent les valeurs du SERVEUR, pas celles de la pl
     await expect(cadre.getByText(/Bénin → .+ · départ prévu/)).toBeVisible();
     // §3.4 — le propriétaire D'ABORD, puis les membres. Le propriétaire n'est pas
     // dans `members` : un écran qui lirait `members` seul l'omettrait.
-    await expect(cadre.getByText('Awa Porteuse (vous)')).toBeVisible();
-    await expect(cadre.getByText('Aicha Accompagnante')).toBeVisible();
+    // VAGUE 5 — l'ÉQUIPE n'est plus listée sur la vue d'ensemble (elle a son écran, J05, éprouvé
+    // plus bas) : la pastille « Équipe » de la barre de sections porte seulement le nombre.
+    await expect(cadre.getByRole('link', { name: /^Équipe/ }).first()).toBeVisible();
     await expect(cadre.getByText(m.etapeCourante.titre).first()).toBeVisible();
-    // La frise ne montre QUE les étapes franchies : la première, et elle seule.
+    // La frise ne montre QUE les étapes franchies, repliées derrière « 1 étape franchie » : on
+    // déplie, et la première y est, seule.
+    await cadre.getByRole('button', { name: /étape franchie/ }).first().click();
     await expect(cadre.getByText(m.etapeFranchie.titre).first()).toBeVisible();
 
     // ET LE TEXTE DE LA PLANCHE A DISPARU.
@@ -214,7 +220,7 @@ test.describe('les écrans affichent les valeurs du SERVEUR, pas celles de la pl
       await expect(cadre.getByText(doc, { exact: true }).first()).toBeVisible();
     }
     // La phrase de §3.3 vient du SERVEUR (`meta.checklistNotice`).
-    await expect(cadre.getByText('Les documents restent chez vous')).toBeVisible();
+    await expect(cadre.getByText('Les documents restent chez vous').first()).toBeVisible();
     // Et les libellés de la planche ne sont plus là.
     await expect(cadre.getByText('Attestation Visale')).toHaveCount(0);
   });
@@ -234,8 +240,8 @@ test.describe('les écrans affichent les valeurs du SERVEUR, pas celles de la pl
     const cadre = desktop(page);
     await expect(cadre.getByText('Awa Porteuse (vous)')).toBeVisible();
     await expect(cadre.getByText('Propriétaire', { exact: true }).first()).toBeVisible();
-    await expect(cadre.getByText('Aicha Accompagnante')).toBeVisible();
-    await expect(cadre.getByText('Accompagnant').first()).toBeVisible();
+    await expect(cadre.getByText('Aicha Accompagnante').first()).toBeVisible();
+    await expect(cadre.getByText('Accompagnant', { exact: true }).first()).toBeVisible();
     /**
      * `JourneyMemberRole` NE CONNAÎT QUE `OBSERVER` ET `SUPPORTER`.
      *
@@ -410,12 +416,12 @@ test.describe('les états de §6 sont atteignables', () => {
      * VAGUE 5 — SUR ORDINATEUR LE SÉLECTEUR S'OUVRE EN FENÊTRE (menu du parcours courant,
      * rôle `dialog`), et plus « dans la page » : l'interdiction de la feuille au-dessus de
      * 1024 px (`mobileOnly`) a été levée avec le menu de la barre de parcours. La liste y est,
-     * avec ses deux sorties — « Nouveau parcours » et « Voir tous mes parcours ».
+     * avec sa sortie « Nouveau parcours ».
      */
     const menu = page.getByRole('dialog');
     await expect(menu).toHaveCount(1);
     await expect(menu.getByText(m.titre).first()).toBeVisible();
-    await expect(menu.getByText('Voir tous mes parcours')).toBeVisible();
+    await expect(menu.getByText('Mes parcours', { exact: true })).toBeVisible();
     await expect(menu.getByText('Nouveau parcours')).toBeVisible();
     // Mon parcours y est, et les deux parcours d'exemple de la planche n'y sont
     // plus : la liste vient de `GET /journeys`.
@@ -847,13 +853,22 @@ test.describe('les règles dures du module', () => {
     // « Voir l'aperçu » reste éteint tant que le titre (10 à 120 caractères) n'est pas saisi.
     await dialogue.locator('input').first().fill('Comment obtenir mon dossier Campus France ?');
     await dialogue.getByText('Voir l’aperçu', { exact: true }).first().click();
-    // TROISIÈME VOLET : il y est. On clique.
+    // TROISIÈME VOLET : il y est. Rien n'est encore parti : le geste explicite reste à faire.
     const publier = dialogue.getByText('Publier', { exact: true }).first();
     await expect(publier).toBeVisible();
+    expect(await journal(), 'traverser les volets ne publie rien (§3.5)').toBe(0);
     await publier.click();
     await page.waitForTimeout(1200);
 
-    expect(await journal(), 'cliquer « Publier » n’a rien promu (§3.5)').toBe(0);
+    /**
+     * VAGUE 5 — LE BOUTON « PUBLIER » EST BRANCHÉ. L'ancienne attente (« cliquer Publier ne
+     * publie rien ») décrivait un bouton INERTE, faute de prise dans le cadre transcodé. La
+     * règle dure de §3.5 est ailleurs : rien n'est publié tant que le membre n'a pas lui-même
+     * traversé les trois volets et cliqué — c'est ce clic, explicite, qui appelle la route
+     * de publication, une seule fois. Avant le clic le journal était à zéro (mesuré plus haut,
+     * après les deux volets) ; après, il compte exactement une publication.
+     */
+    await expect.poll(journal, { timeout: 15_000 }).toBe(1);
   });
 
   /**
