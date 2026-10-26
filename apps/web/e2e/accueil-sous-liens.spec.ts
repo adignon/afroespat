@@ -235,7 +235,7 @@ async function cliquerEtVerifier(
   largeur: number,
   nom: string | RegExp,
   arrivee: string,
-  options: { readonly dans?: string } = {},
+  options: { readonly dans?: string; readonly ignorerVue?: boolean } = {},
 ): Promise<void> {
   await visiter(page, depart, largeur);
   const avant = new URL(page.url());
@@ -255,6 +255,27 @@ async function cliquerEtVerifier(
    * inerte n'arrive JAMAIS, quelle que soit l'attente.
    */
 
+  if (options.ignorerVue === true) {
+    /**
+     * VAGUE 5 — `?vue=proprietaire` EST UN PARAMÈTRE MORT. La page ne le lit plus : la vue
+     * de gestion suit le rôle que la fiche du réseau porte (`myRole`), pas l'URL (voir
+     * `app/(app)/reseaux/[slug]/page.tsx`). Les planches d'onglets de la maquette
+     * l'écrivent pourtant encore dans leurs liens ; l'attente « l'adresse d'arrivée n'en
+     * porte pas » décrivait l'ancien mécanisme. Ces cas mesurent donc ce qui compte —
+     * le chemin et l'onglet —, sans figer un paramètre ignoré.
+     */
+    await expect
+      .poll(
+        () => {
+          const u = new URL(page.url());
+          u.searchParams.delete('vue');
+          return `${u.pathname}${u.search}`;
+        },
+        { timeout: 120_000 },
+      )
+      .toBe(arrivee);
+    return;
+  }
   await expect(page).toHaveURL(arrivee, { timeout: 120_000 });
   const apres = new URL(page.url());
   expect(`${apres.pathname}${apres.search}`).toBe(arrivee);
@@ -324,11 +345,15 @@ test.describe('la barre d’onglets BASSE navigue — cadre mobile, 390 px', () 
    * dans un commentaire : si quelqu'un lui donne une destination un jour, ce sera
    * une décision, pas une dérive — et ce test la lui fera nommer.
    */
-  test('« Compte » reste SANS destination : aucune route /compte n’existe', async ({ page }) => {
-    await visiter(page, '/accueil', 390);
-    const barre = cadre(page, 390);
-    await expect(barre.getByRole('link', { name: 'Accueil', exact: true }).first()).toHaveCount(1);
-    expect(await barre.getByRole('link', { name: 'Compte', exact: true }).count()).toBe(0);
+  test('« Compte » mène à /compte, qui redirige vers le profil (K01)', async ({ page }) => {
+    /**
+     * ATTENTE RETOURNÉE PAR DÉCISION. Ce cas disait « aucune route /compte n'existe » et
+     * épinglait le manque (« le jour où le porteur tranche, ce cas rougira »). Il a
+     * tranché : `app/(app)/compte/page.tsx` existe, et « Compte » est un lien comme les
+     * quatre autres entrées de la barre basse. `/compte` redirige côté serveur vers le profil
+     * (K01), première planche du module : c'est donc `/compte/profil` qu'on atteint.
+     */
+    await cliquerEtVerifier(page, '/accueil', 390, 'Compte', '/compte/profil');
   });
 });
 
@@ -339,12 +364,18 @@ test.describe('la barre d’onglets BASSE navigue — cadre mobile, 390 px', () 
  * l'ordinateur. « Fil d'actualité » mène à `/accueil`, qui EST le départ : il est
  * donc vérifié comme lien et non comme navigation, et c'est dit.
  */
+/**
+ * VAGUE 5 — TROIS PASTILLES ONT QUITTÉ LA BARRE, PAR DÉCISION DU PORTEUR (2026-10-11,
+ * `screens/a01/data.ts`, « TROIS ENTRÉES RETIRÉES ») : « Retire parrainage, fil d'entraide
+ * et événements du sous-menu d'Accueil. C'est déjà dans entraide et événements. » La barre
+ * de section de A01 n'offre plus que Guides, Réseaux et Villes (et « Fil d'actualité », ci-
+ * dessous). Les trois autres destinations restent atteignables par la barre basse (Entraide)
+ * et le rail (Agenda) ; l'absence des pastilles est éprouvée plus bas.
+ */
 const ONGLETS_SECTION = [
   { libelle: 'Guides', route: '/guides' },
   { libelle: 'Réseaux', route: '/reseaux' },
-  { libelle: 'Parrainage', route: '/parrainage' },
   { libelle: 'Villes', route: '/villes' },
-  { libelle: 'Événements', route: '/agenda' },
 ] as const;
 
 test.describe('la barre d’onglets DE SECTION navigue — cadre mobile de A01', () => {
@@ -361,21 +392,18 @@ test.describe('la barre d’onglets DE SECTION navigue — cadre mobile de A01',
    * serait passé en mesurant l'autre contrôle. On le vise donc par son compteur,
    * qui est ce qui le distingue.
    */
-  test('« Entraide 12 » (avec son compteur) → /entraide', async ({ page }) => {
-    await cliquerEtVerifier(page, '/accueil', 390, /Entraide\s*12/, '/entraide');
+  test('« Parrainage », « Entraide 12 » et « Événements » ne sont plus dans la barre de section', async ({
+    page,
+  }) => {
+    await visiter(page, '/accueil', 390);
+    const barre = cadre(page, 390);
+    // Ni la pastille de parrainage, ni celle des événements, ni « Entraide » AVEC son compteur
+    // (la barre BASSE porte « Entraide » sans compteur : elle n'est pas concernée).
+    await expect(barre.getByRole('link', { name: /^Parrainage/ })).toHaveCount(0);
+    await expect(barre.getByRole('link', { name: /^Événements/ })).toHaveCount(0);
+    await expect(barre.getByRole('link', { name: /Entraide\s*\d+/ })).toHaveCount(0);
   });
 
-  /**
-   * ── LE SEUL CAS QUE CE FICHIER NE PEUT PAS MESURER EN CLIQUANT ─────────────
-   *
-   * « Fil d'actualité » mène à `/accueil`, et cette barre n'existe QUE sur le
-   * cadre mobile de A01, c'est-à-dire sur `/accueil`. Le départ serait l'arrivée :
-   * un clic ne changerait rien, et un cas qui l'affirmerait passerait aussi bien
-   * sur un lien mort. On mesure donc ce qui est mesurable — que l'affordance soit
-   * devenue un LIEN et porte la bonne adresse — et on DIT que la navigation n'est
-   * pas éprouvée ici. C'est la même limite que « Réglages » dans
-   * `navigation-rail.spec.ts`, et elle se nomme plutôt qu'elle ne se cache.
-   */
   test('« Fil d’actualité » est devenu un LIEN vers /accueil (navigation non mesurable : départ = arrivée)', async ({
     page,
   }) => {
@@ -427,6 +455,7 @@ test.describe('les onglets du RÉSEAU naviguent — 1440 px', () => {
       1440,
       'Membres',
       '/reseaux/pays-bj?onglet=membres',
+      { ignorerVue: true },
     );
   });
 
@@ -488,6 +517,7 @@ test.describe('les onglets du RÉSEAU naviguent aussi au doigt — 390 px', () =
       390,
       'Album',
       '/reseaux/pays-bj?onglet=album',
+      { ignorerVue: true },
     );
   });
 });
@@ -571,16 +601,19 @@ test.describe('les href="#" qui ont reçu leur destination', () => {
    * ne sait pas désigner un CONTENEUR, et l'inventer sortirait du périmètre.
    * REMONTÉ ; ce cas tient le constat pour qu'il ne se perde pas.
    */
-  test('A03 mobile — la carte entière reste SANS lien : le mécanisme ne promeut pas un conteneur', async ({
-    page,
-  }) => {
+  test('A03 mobile — la carte entière est un LIEN vers le guide', async ({ page }) => {
+    /**
+     * ATTENTE RETOURNÉE. La carte mobile « restait SANS lien : le mécanisme ne promeut pas
+     * un conteneur » — un manque mesuré, pas une règle. Il est comblé : le titre porte
+     * maintenant le lien du guide, comme « Lire le guide » sur ordinateur. Le cas exige
+     * donc la destination, celle du guide de la charge servie.
+     */
     await visiter(page, '/guides', 390);
-    const titre = (objet('guides_list')['items'] as { title: string }[])[0]?.title ?? '';
-    expect(titre).not.toBe('');
-    // Le titre est bien SERVI — la carte existe, ce n'est pas un écran vide.
-    await expect(cadre(page, 390).getByText(titre, { exact: false }).first()).toHaveCount(1);
-    // Et il n'est PAS un lien : c'est le manque, mesuré.
-    expect(await cadre(page, 390).getByRole('link', { name: titre }).count()).toBe(0);
+    const premier = (objet('guides_list')['items'] as { title: string; slug: string }[])[0];
+    expect(premier?.title ?? '').not.toBe('');
+    const lien = cadre(page, 390).getByRole('link', { name: premier!.title }).first();
+    await expect(lien).toHaveCount(1);
+    await expect(lien).toHaveAttribute('href', `/guides/${premier!.slug}`);
   });
 });
 
