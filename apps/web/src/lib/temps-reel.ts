@@ -111,12 +111,19 @@ async function ouvrir(): Promise<void> {
   });
   socket = s;
 
-  s.on('connect', () => {
-    echecsDeSuite = 0;
-  });
+  /**
+   * DÉFAUT CORRIGÉ (révélé par la batterie e2e) : le compteur d'échecs était remis à
+   * zéro à `connect`, c'est-à-dire à la POIGNÉE DE MAIN. Or la passerelle accepte la
+   * poignée de main puis chasse le client si le jeton est refusé (`io server
+   * disconnect`) : chaque tour remettait le compteur à zéro, et la boucle
+   * « refus → /auth/refresh → connect → refus » tournait sans fin — MESURÉ : 530
+   * `POST /auth/refresh` en huit secondes, sur une route limitée à 30. Le compteur
+   * ne retombe désormais qu'à `ready`, quand le jeton est vraiment ADMIS.
+   */
   // La passerelle dit « ready » une fois le jeton ADMIS : c'est là que le temps
   // réel est vraiment disponible, pas à la poignée de main.
   s.on('ready', () => {
+    echecsDeSuite = 0;
     emettreEtat(true);
     diffuser(RESYNCHRONISER, null);
   });

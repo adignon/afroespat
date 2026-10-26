@@ -124,7 +124,13 @@ describe('adresse email et push — routes /me/email et /me/push-subscriptions',
     expect(JSON.stringify(get.body)).not.toContain('a.b@example.org');
 
     const row = await prisma.user.findUniqueOrThrow({ where: { id: me.userId }, select: { emailEncrypted: true } });
-    expect(Buffer.from(row.emailEncrypted as Uint8Array).toString('latin1')).not.toContain('@');
+    // CAUSE DE L'INSTABILITÉ (mesurée) : la colonne est un chiffré AEAD de ~45 octets
+    // pseudo-aléatoires ; chercher un « @ » (0x40) y réussit au hasard une fois sur six
+    // environ, sans que l'adresse soit lisible pour autant. On cherche donc l'adresse
+    // elle-même et son domaine, qui ne peuvent apparaître par hasard.
+    const brut = Buffer.from(row.emailEncrypted as Uint8Array).toString('latin1');
+    expect(brut).not.toContain('a.b@example.org');
+    expect(brut).not.toContain('example.org');
   });
 
   it('un code de 6 chiffres exact : forme invalide → 400', async () => {

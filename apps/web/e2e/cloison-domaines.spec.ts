@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { connecter } from './session';
 
 /**
  * LA CLOISON ENTRE LES DEUX DOMAINES, VUE DU NAVIGATEUR.
@@ -63,7 +64,27 @@ test('[RÈGLE DURE] une page d’équipe n’appelle aucune route du domaine mem
  * exige qu'elle ait bien lieu LÀ OÙ ELLE DOIT — sur l'accès membre. Les deux
  * ensemble disent « au bon endroit », là où un seul dirait « nulle part ».
  */
-test('[RÈGLE DURE] la page d’accès membre, elle, reprend bien la session', async ({ page }) => {
+test('[RÈGLE DURE] la page d’accès membre, elle, reprend bien la session', async ({
+  page,
+  request,
+}) => {
+  /**
+   * MISE À JOUR PAR DÉCISION (lot w5b) : `SessionBoot` ne reprend plus la session d'un
+   * visiteur qui n'en a jamais ouvert (`sessionEstAttendue()` : l'indicateur
+   * `dp_session`, voir `lib/api/session.ts`) — un `/auth/refresh` de plus ne rendrait
+   * qu'un `401` dans la console. Le test supposait la reprise « à froid » ; il pose
+   * maintenant ce que le produit pose après une vraie connexion : un cookie de
+   * session ET l'indicateur. La moitié symétrique reste entière : la reprise a lieu
+   * là où elle doit, et nulle part ailleurs.
+   */
+  await connecter(page.context(), request, { displayName: 'Awa Konate' });
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('dp_session', '1');
+    } catch {
+      // Sans stockage, la page n'attend aucune session : le test échouera, à raison.
+    }
+  });
   const vues: string[] = [];
   page.on('request', (requete) => {
     if (new URL(requete.url()).pathname.startsWith('/v1/auth/refresh')) {
