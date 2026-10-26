@@ -419,10 +419,24 @@ test.describe('14 §4.1 — aucune donnée de carte', () => {
  * sont des fenêtres. Le transcodeur pose le voile et le centrage ; ces tests
  * éprouvent que les deux sont bien là et qu'ils servent.
  */
+/**
+ * MISE À JOUR (lot w5b) : « Ajouter aux contacts » n'existe que sur le profil d'un
+ * AUTRE membre — on ne s'ajoute pas soi-même, et le produit ne dessine alors pas le
+ * bouton. Les trois cas visaient pourtant `/@${membre.handle}`, le profil du membre
+ * connecté, et expiraient sur un bouton qui ne pouvait pas exister. Un second membre
+ * est donc créé par les vraies routes, et c'est SON profil qu'on ouvre.
+ */
+let autre: Membre;
 test.describe('K02 — « Ajouter aux contacts »', () => {
+  test.beforeEach(async ({ browser, request }) => {
+    const ctx = await browser.newContext();
+    autre = await connecter(ctx, request, { displayName: 'Fatou Ndiaye' });
+    await ctx.close();
+  });
+
   for (const width of [1440, 390]) {
     test(`${width} px — le bouton du cadre visible ouvre la fenêtre`, async ({ page }) => {
-      await visiter(page, `/@${membre.handle}`, width);
+      await visiter(page, `/@${autre.handle}`, width);
       await page.locator(`${cadre(width)} [data-modal-open="K02C"]`).first().click();
 
       /**
@@ -435,7 +449,7 @@ test.describe('K02 — « Ajouter aux contacts »', () => {
        * « Ajouter Awa aux contacts ». Même défaut, même correction que
        * « Contacter Sarah » dans `e2e/services.spec.ts`.
        */
-      const prenom = membre.displayName.split(' ')[0] ?? membre.displayName;
+      const prenom = autre.displayName.split(' ')[0] ?? autre.displayName;
       const dialog = page.getByRole('dialog', { name: `Ajouter ${prenom} aux contacts` });
       await expect(dialog).toBeVisible();
 
@@ -444,12 +458,13 @@ test.describe('K02 — « Ajouter aux contacts »', () => {
       const box = await dialog.locator('[data-modal-panel]').boundingBox();
       expect(box).not.toBeNull();
       if (box === null) return;
-      expect(Math.round(box.width)).toBe(420);
+      // Au téléphone la fenêtre ne peut pas dépasser l'écran : 420 px bornés par la vue.
+      expect(Math.round(box.width)).toBe(Math.min(420, width));
     });
   }
 
   test('le voile ferme au clic hors du panneau', async ({ page }) => {
-    await visiter(page, `/@${membre.handle}`, 1440);
+    await visiter(page, `/@${autre.handle}`, 1440);
     await page.locator('[data-frame="desktop"] [data-modal-open="K02C"]').first().click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
@@ -465,7 +480,7 @@ test.describe('K02 — « Ajouter aux contacts »', () => {
   });
 
   test('Échap ferme, et le focus revient sur le bouton d’origine', async ({ page }) => {
-    await visiter(page, `/@${membre.handle}`, 1440);
+    await visiter(page, `/@${autre.handle}`, 1440);
     const bouton = page.locator('[data-frame="desktop"] [data-modal-open="K02C"]').first();
     await bouton.click();
     await expect(page.getByRole('dialog')).toBeVisible();
@@ -483,111 +498,37 @@ test.describe('K02 — « Ajouter aux contacts »', () => {
  * aucun clic ne fait avancer le paiement, parce que rien n'est envoyé. Le volet
  * vient de l'URL, qui n'affirme rien.
  */
-test.describe('K06 — Mobile Money', () => {
-  const VOLETS = [
-    { param: 'numero', repere: 'Étape 1 sur 3' },
-    { param: 'attente', repere: 'Étape 2 sur 3' },
-    { param: 'succes', repere: 'Étape 3 sur 3' },
-  ] as const;
-
-  for (const { param, repere } of VOLETS) {
-    test(`?paiement=${param} ouvre le volet « ${repere} »`, async ({ page }) => {
-      await visiter(page, `/compte/abonnement?paiement=${param}`, 1440);
-      const dialog = page.getByRole('dialog', { name: 'Payer avec Mobile Money' });
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByText(repere)).toBeVisible();
-    });
-  }
-
-  test('« Passer à Premium » ouvre le PREMIER volet, jamais un autre', async ({ page }) => {
-    await visiter(page, '/compte/abonnement', 1440);
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-
-    await page.locator('[data-frame="desktop"] [data-modal-open="K06M"]').first().click();
-    const dialog = page.getByRole('dialog', { name: 'Payer avec Mobile Money' });
-    await expect(dialog.getByText('Étape 1 sur 3')).toBeVisible();
-  });
-
-  /**
-   * LA RÈGLE DURE DE CET ÉCRAN, et la raison d'être de son paramètre d'URL.
-   *
-   * 14 §4.2 fait avancer le paiement par le RÉSEAU — notification de l'opérateur,
-   * webhook de confirmation. Ce lot ne branche aucune route d'écriture : « Payer
-   * 2 600 F » est donc inerte, et « Premium activé » ne doit être atteignable par
-   * AUCUNE suite de clics. Un bouton qui ferait avancer la fenêtre annoncerait un
-   * paiement que personne n'a demandé.
-   */
-  test('aucune suite de clics n’atteint « Premium activé »', async ({ page }) => {
-    await visiter(page, '/compte/abonnement', 1440);
-    await page.locator('[data-frame="desktop"] [data-modal-open="K06M"]').first().click();
-
-    const dialog = page.getByRole('dialog', { name: 'Payer avec Mobile Money' });
-    const payer = dialog.getByRole('button', { name: 'Payer 2 600 F' });
-    await expect(payer).toBeVisible();
-
-    for (let i = 0; i < 3; i += 1) {
-      await payer.click();
-      await expect(dialog.getByText('Étape 1 sur 3')).toBeVisible();
-      await expect(dialog.getByText('Premium activé')).toHaveCount(0);
-    }
-  });
-
-  /**
-   * LE PRIX EST CELUI DU SERVEUR, dans les DEUX devises.
-   *
-   * §8 : « bouton Premium (prix EUR/XOF selon pays) », et le serveur envoie les
-   * deux — « le membre peut être béninois en France, ou français au Bénin ». Ce
-   * test compare l'écran à `GET /plans` plutôt qu'à un nombre écrit ici : un prix
-   * en dur dans un test ne vérifie que lui-même, et les deux se figeraient
-   * ensemble le jour où le porteur change de tarif.
-   */
-  test('le prix affiché est celui que `GET /plans` renvoie, pas une constante du front', async ({
-    page,
-    request,
-  }) => {
-    const base = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
-    const plans = (await (await request.get(`${base}/plans`)).json()) as {
-      items: {
-        code: string;
-        month: { eur: { amountCents: number }; xof: { amountCents: number } };
-      }[];
-    };
-    const premium = plans.items.find((p) => p.code === 'PREMIUM');
-    expect(premium, 'aucun plan PREMIUM : le test ne prouverait rien').toBeDefined();
-    if (premium === undefined) return;
-
+/**
+ * K06 — L'ABONNEMENT EST GRATUIT POUR LE MOMENT (mise à jour par DÉCISION, lot w5b).
+ *
+ * Décision du porteur : « On va laisser les paiements. Tout sera gratuit pour le
+ * moment. » L'écran K06 ne propose donc plus « Passer à Premium » ni le parcours
+ * Mobile Money en trois volets ; il dit que tout est ouvert et ne demande aucun
+ * paiement. Les anciens cas (ouvrir le volet « Étape 1 sur 3 », « Payer 2 600 F »,
+ * prix issu de `GET /plans`) mesuraient un parcours volontairement retiré : les
+ * garder aurait obligé à le ressusciter. Ils sont remplacés par l'attente inverse,
+ * qui tient la décision. (Le parcours de paiement lui-même, y compris l'ouverture de
+ * ses volets par `?paiement=`, est HORS PÉRIMÈTRE de ce chantier et n'est pas éprouvé.)
+ */
+test.describe('K06 — tout est gratuit, aucun paiement n’est proposé', () => {
+  test('l’écran le dit, sans prix ni bouton de paiement', async ({ page }) => {
     await visiter(page, '/compte/abonnement', 1440);
     const bureau = page.locator('[data-frame="desktop"]');
+    await expect(bureau).toContainText('Tout est gratuit pour le moment');
+    await expect(bureau).toContainText('Aucun paiement n’est demandé');
+    await expect(bureau.locator('[data-modal-open="K06M"]'), 'un bouton de paiement').toHaveCount(0);
+    await expect(bureau.getByRole('button', { name: /Passer à Premium/i })).toHaveCount(0);
+    expect(await bureau.innerText(), 'un prix est affiché').not.toMatch(/€\/mois|F\s?CFA|\d\s*F\b/);
+  });
 
-    const euros = new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'EUR',
-      currencyDisplay: 'narrowSymbol',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 2,
-    }).format(premium.month.eur.amountCents / 100);
-    await expect(bureau).toContainText(`${euros}/mois`);
-
-    // Les francs CFA sont CALCULÉS par le serveur : l'écran ne refait pas la
-    // conversion, sinon deux taux de change cohabiteraient dans le produit.
-    const francs = new Intl.NumberFormat('fr-FR', {
-      style: 'currency',
-      currency: 'XOF',
-      currencyDisplay: 'narrowSymbol',
-      maximumFractionDigits: 0,
-      minimumFractionDigits: 0,
-    }).format(premium.month.xof.amountCents);
-    await expect(bureau).toContainText(`Au Bénin : ${francs}/mois`);
+  test('le même constat au téléphone', async ({ page }) => {
+    await visiter(page, '/compte/abonnement', 390);
+    const mobile = page.locator('[data-frame="mobile"]');
+    await expect(mobile).toContainText('Tout est gratuit pour le moment');
+    await expect(mobile.locator('[data-modal-open="K06M"]')).toHaveCount(0);
   });
 });
 
-/**
- * ─── K08 · LA SUPPRESSION DE COMPTE ────────────────────────────────────────
- *
- * 01 §5 : définitive après sept jours, confirmée par un code SMS. Le bouton de
- * confirmation est INERTE dans ce lot — il ne referme même pas la fenêtre, parce
- * que la refermer ferait croire que la demande est partie.
- */
 test.describe('K08 — supprimer mon compte', () => {
   test('« Supprimer » ouvre la confirmation détaillée', async ({ page }) => {
     await visiter(page, '/compte/donnees', 1440);
