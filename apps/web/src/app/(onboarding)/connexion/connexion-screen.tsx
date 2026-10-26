@@ -7,6 +7,7 @@ import { ScreenFrames } from '@/screens/frames';
 import { FlowError } from '@/screens/onboarding/flow-error';
 import { LevelInvitation } from '@/components/level-invitation';
 import { SelecteurPays } from '@/screens/onboarding/selecteur-pays';
+import { BandeauSuppression } from '@/components/compte/bandeau-suppression';
 
 /**
  * P01 — Votre numéro de téléphone. Écran 1 des six de §5.
@@ -15,7 +16,14 @@ import { SelecteurPays } from '@/screens/onboarding/selecteur-pays';
  * le champ dessiné en `<div>` y devient un vrai `<input>`, et son exemple
  * « 97 12 34 42 » devient le `placeholder` — ce qu'il était déjà.
  */
-export function ConnexionScreen({ initialError }: { readonly initialError: string | null }) {
+export function ConnexionScreen({
+  initialError,
+  suppressionPrevue,
+}: {
+  readonly initialError: string | null;
+  /** L'échéance (ISO) d'une suppression de compte que le membre vient de demander, ou `null`. */
+  readonly suppressionPrevue: string | null;
+}) {
   const { vals, error, levelRequired, dismissLevelRequired } = useOnboardingFlow(1, initialError);
 
   /**
@@ -67,6 +75,7 @@ export function ConnexionScreen({ initialError }: { readonly initialError: strin
         desktop={<P01Desktop {...vals} paysIndicatifSelecteur={selecteur('desktop')} />}
         mobile={<P01Mobile {...vals} paysIndicatifSelecteur={selecteur('mobile')} />}
       />
+      {suppressionPrevue === null ? null : <BandeauSuppression echeance={suppressionPrevue} />}
       <FlowError message={error} />
       <LevelInvitation details={levelRequired} onClose={dismissLevelRequired} />
     </>

@@ -540,35 +540,30 @@ test.describe('K08 — supprimer mon compte', () => {
     await expect(dialog.getByText('Conservé sans votre nom')).toBeVisible();
   });
 
-  test('« Confirmer la suppression » ne referme rien : il n’envoie rien', async ({ page }) => {
+  /**
+   * RETOURNÉ PAR DÉCISION (lot w5b, mission B). Ce cas gardait l'INERTIE du bouton : « Confirmer la
+   * suppression » ne refermait rien et n'envoyait rien, parce que la suppression irréversible
+   * n'était pas branchée. Le porteur a décidé de la brancher : le bouton n'existe plus qu'APRÈS
+   * le pseudo et le code SMS, et n'envoie rien avant. Le parcours complet — pseudo, code, refus,
+   * demande, déconnexion, annulation par reconnexion — est éprouvé aux deux largeurs par
+   * `e2e/suppression-compte.spec.ts` ; ce cas-ci tient seulement que la fenêtre ne peut PAS
+   * supprimer d'un clic.
+   */
+  test('« Confirmer la suppression » n’existe pas avant le code, et rien ne part avant', async ({ page }) => {
+    const partis: string[] = [];
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && /\/me\/deletion/.test(r.url())) partis.push(r.url());
+    });
     await visiter(page, '/compte/donnees', 1440);
     await page.locator('[data-frame="desktop"] [data-modal-open="K08S"]').first().click();
 
     const dialog = page.getByRole('dialog', { name: 'Supprimer mon compte' });
-    await dialog.getByRole('button', { name: 'Confirmer la suppression' }).click();
+    await expect(dialog.getByRole('button', { name: 'Confirmer la suppression' })).toHaveCount(0);
+    await expect(dialog.locator('[data-suppression-envoyer]')).toBeDisabled();
     await expect(dialog).toBeVisible();
+    expect(partis, 'une demande de suppression est partie sans pseudo ni code').toEqual([]);
   });
 
-  /**
-   * ╔══════════════════════════════════════════════════════════════════════════╗
-   * ║ LE BOUTON EST MAINTENANT SUR LES DEUX PLANCHES                          ║
-   * ╚══════════════════════════════════════════════════════════════════════════╝
-   *
-   * CE QUE CE CAS DISAIT AVANT : « le cadre MOBILE ne dessine aucun bouton
-   * Supprimer : la maquette n'en met qu'au premier de ses trois blocs. Le
-   * déclencheur est donc borné à l'ordinateur, et ce test empêche qu'un lot
-   * suivant l'élargisse sans le voir. »
-   *
-   * IL S'EST VU, et c'était bien un manque et non un choix. Le porteur : « La
-   * page des sanctions et ses options ? (suppression de compte, désactivation et
-   * lancement de téléchargement de données) » — et sur la planche de 390 px,
-   * « Désactiver » et « Supprimer » n'étaient que des TITRES DE CARTE. Un membre
-   * sur téléphone ne pouvait ni désactiver ni supprimer son compte.
-   *
-   * Les deux cartes ont maintenant leur bouton, dans le dessin de celui de
-   * « Demander » juste au-dessus. Ce cas vérifie la nouvelle règle : le
-   * déclencheur de la fenêtre K08S existe sur les DEUX planches.
-   */
   test('390 px — « Supprimer » déclenche la fenêtre, comme sur l’ordinateur', async ({ page }) => {
     await visiter(page, '/compte/donnees', 390);
     await expect(

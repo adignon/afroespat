@@ -42,6 +42,7 @@ import { ADAPTATIONS_INSCRIPTION_VIVANTE } from './adaptations/inscription-vivan
 import { ADAPTATIONS_SERVICES_COMPLEMENTS, AJOUTS_SERVICES_COMPLEMENTS } from './adaptations/services-complements-vivants.mjs';
 import { ADAPTATIONS_ZONES } from './adaptations/zones-mise-en-page.mjs';
 import { ADAPTATIONS_DONNEES_VIVES, AJOUTS_DONNEES_VIVES } from './adaptations/donnees-vives.mjs';
+import { ADAPTATIONS_COMPTE_SUPPRESSION, AJOUTS_COMPTE_SUPPRESSION } from './adaptations/compte-suppression-vivante.mjs';
 import {
   ADAPTATIONS_PARCOURS_VIVANT,
   AJOUTS_PARCOURS_VIVANT,
@@ -18270,6 +18271,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_FEUILLES_DESSINEES,
     // W2A : les données statiques de la maquette rendues dynamiques (tools/adaptations/donnees-vives.mjs).
     ...ADAPTATIONS_DONNEES_VIVES,
+    // W5B : K08, « Confirmer la suppression » branché (tools/adaptations/compte-suppression-vivante.mjs).
+    ...ADAPTATIONS_COMPTE_SUPPRESSION,
     // L'en-tête global : TOUT dernier, il lit la barre déjà branchée (recherche, ronds).
     // Les lots suivants ajoutent leurs adaptations AVANT cette ligne.
     ...ADAPTATIONS_ENTETE_GLOBAL,
@@ -19554,6 +19557,7 @@ const AJOUTS = {
   ...AJOUTS_VILLES_VIVANT,
   ...AJOUTS_FEUILLES_DESSINEES,
   ...AJOUTS_DONNEES_VIVES,
+  ...AJOUTS_COMPTE_SUPPRESSION,
 };
 
 /**

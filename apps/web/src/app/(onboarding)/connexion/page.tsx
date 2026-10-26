@@ -13,8 +13,17 @@ export default async function Page({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const reason = (await searchParams)['reprise'];
+  const parametres = await searchParams;
+  const reason = parametres['reprise'];
   const message = typeof reason === 'string' ? (RESUME_MESSAGES[reason] ?? null) : null;
+  // `?suppression=<échéance ISO>` : le membre vient de demander la suppression de son compte
+  // (K08, lot w5b). La bande l'annonce ; l'écran de connexion reste celui d'un visiteur.
+  const suppression = parametres['suppression'];
 
-  return <ConnexionScreen initialError={message} />;
+  return (
+    <ConnexionScreen
+      initialError={message}
+      suppressionPrevue={typeof suppression === 'string' ? suppression : null}
+    />
+  );
 }

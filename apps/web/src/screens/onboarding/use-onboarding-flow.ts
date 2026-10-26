@@ -664,6 +664,12 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         sessionStorage.removeItem(COUNTRY_KEY);
         sessionStorage.removeItem(RESEND_AT_KEY);
 
+        // §2.8 : cette connexion a ANNULÉ une suppression de compte en attente. Le membre doit
+        // l'apprendre — sans cela il se reconnecte sans savoir que son compte est sauvé (lot w5b).
+        if (session.deletionCancelled === true) {
+          notifySuccess('La suppression de votre compte est annulée. Content de vous revoir.');
+        }
+
         // On reprend là où le membre s'est arrêté, au lieu de le renvoyer
         // systématiquement à l'écran 2 : c'est toute la raison d'être de
         // `onboarding_step`.
