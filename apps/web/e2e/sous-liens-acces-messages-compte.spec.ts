@@ -435,10 +435,24 @@ test.describe('la barre d’onglets basse clique', () => {
        */
       test('« Compte » mène au module Compte', async ({ page }) => {
         await page.goto(cadre.depuis, { waitUntil: 'load' });
-        await barreBasse(page);
+        const haut = (await barreBasse(page)).y;
+        /**
+         * LE LIEN DE LA BARRE, pas une pastille homonyme (lot w5b) : sur `/notifications` une
+         * pastille de filtre s'appelle aussi « Compte » (`?type=Compte`). On retient, comme pour
+         * les quatre autres onglets, le lien posé sur le MÊME RANG vertical que « Accueil ».
+         */
         const compte = page.getByRole('link', { name: 'Compte', exact: true });
-        await expect(compte).toHaveCount(1);
-        await compte.first().click();
+        const n = await compte.count();
+        let clique = false;
+        for (let i = 0; i < n; i += 1) {
+          const boite = await compte.nth(i).boundingBox();
+          if (boite !== null && Math.abs(boite.y - haut) < 4) {
+            await compte.nth(i).click();
+            clique = true;
+            break;
+          }
+        }
+        if (!clique) throw new Error('« Compte » absent de la barre basse');
         await expect(page).toHaveURL(/\/compte(\/profil)?$/);
       });
     });

@@ -178,7 +178,12 @@ test.describe('A13 — lire une story', () => {
     const ids = await deuxStories(request, accessToken);
     await page.goto(`/stories/${ids[0] ?? ''}`);
 
-    const boutons = a13(page).locator('button[aria-pressed]').filter({ hasText: /utile/i });
+    // `visible: true` (lot w5b) : le document porte les DEUX cadres, l'un masqué — sans ce
+    // filtre le sélecteur trouvait quatre boutons (deux par cadre).
+    const boutons = a13(page)
+      .locator('button[aria-pressed]')
+      .filter({ hasText: /utile/i })
+      .filter({ visible: true });
     await expect(boutons).toHaveCount(2);
     const utile = boutons.first();
     const pasUtile = boutons.last();
@@ -1067,7 +1072,9 @@ test('la photo de fond est peinte, cadrée, et sans l’étiquette de la maquett
   page,
   request,
 }) => {
-  const membre = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+  const ouvert = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+  // MISE À JOUR (lot w5b) : l'envoi d'un média demande le niveau N1 (`POST /media` → 403 à N0).
+  const membre = { ...ouvert, accessToken: (await monterEnL1(page.context(), request, ouvert.accessToken)).accessToken };
   const entete = { authorization: `Bearer ${membre.accessToken}` };
 
   /** Un JPEG minimal mais VALIDE : le serveur refuse ce qu'il ne sait pas lire. */

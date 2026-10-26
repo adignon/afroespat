@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { connecter } from './session';
+import { publierGuide, villeActive } from './aide-w5b';
 
 const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
 
@@ -23,7 +24,10 @@ test.describe('les enregistrés', () => {
   test('la liste vient du serveur, l’onglet filtre et le signet retire', async ({
     page,
     request,
+    browser,
+    playwright,
   }) => {
+    test.setTimeout(120_000);
     const membre = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
     const auth = { authorization: `Bearer ${membre.accessToken}` };
 
@@ -39,11 +43,16 @@ test.describe('les enregistrés', () => {
     ).toHaveCount(0);
 
     // ── DEUX SIGNETS POSÉS PAR L'API, DE DEUX ESPÈCES ────────────────────
-    const guides = await request.get(`${API}/guides?limit=1`, { headers: auth });
-    const villes = await request.get(`${API}/places/cities?q=Lyon`, { headers: auth });
-    const guide = ((await guides.json()) as { items: { id: string; title: string }[] }).items[0];
-    const ville = ((await villes.json()) as { items: { id: string; name: string }[] }).items[0];
-    if (guide === undefined || ville === undefined) throw new Error('aucun guide ou ville à enregistrer');
+    /**
+     * LE DÉCOR EST CRÉÉ ICI (lot w5b). Le test prenait « le premier guide » et « Lyon » du
+     * référentiel : une base fraîche n'a aucun guide, et Lyon y est inactive. Un guide est
+     * donc publié par un membre N2 neuf (`aide-w5b.ts`), et la ville est la première ville
+     * ACTIVE — celle où `connecter()` installe ses membres.
+     */
+    const decor = await publierGuide(browser, playwright, 'Obtenir la garantie Visale sans CDI');
+    const guide = { id: decor.id, title: decor.titre };
+    const cite = await villeActive(request);
+    const ville = { id: cite.id, name: cite.name };
 
     for (const [subjectType, subjectId] of [
       ['GUIDE', guide.id],

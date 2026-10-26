@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { connecter } from './session';
+import { creerMembreDecor, publierDemande } from './aide-w5b';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -159,16 +161,42 @@ test.describe('le déclencheur flottant reçoit le pointeur', () => {
 
 test('un contenu plus haut que la vue DÉFILE toujours — la correction pose un flex-grow, pas une hauteur', async ({
   page,
+  request,
+  browser,
+  playwright,
 }) => {
   test.skip((page.viewportSize()?.width ?? 0) !== 390, 'mesuré sur le cadre mobile');
+  test.setTimeout(120_000);
 
   /**
-   * `/parrainage` est la route MESURÉE comme débordante : 1 077 px de document
-   * pour une vue de 844. C'est le témoin de la correction — si quelqu'un
-   * remettait `flex: 1` (donc `flex-basis: 0%`), le contenu serait replafonné à
-   * la vue et ce cas tomberait, alors que les deux précédents resteraient verts.
+   * MISE À JOUR (lot w5b) : ce cas ouvrait `/parrainage` sous l'API coupée (503) et comptait
+   * sur le dessin pour être plus haut que la vue. Sans donnée, l'écran ne remplit PAS la vue
+   * (844 px pour 844) : le cas ne pouvait plus prouver ce qu'il prouve — « un contenu plus
+   * haut que la vue défile, et la barre reste collée ». Il rend donc au contenu sa hauteur par
+   * la donnée : huit demandes d'entraide publiées par deux autres membres (vraies routes), lues
+   * sur `/entraide` par un membre connecté. On retire pour ce cas l'API coupée du `beforeEach`.
    */
-  await page.goto('/parrainage', { waitUntil: 'load' });
+  await page.unroute('**/v1/**');
+  await page.unroute('**/v1/auth/refresh');
+
+  // Deux auteurs de quatre demandes : `help.requestsPerDay` plafonne à CINQ par membre et par jour.
+  for (const nom of ['Kofi Boateng', 'Aïcha Diop']) {
+    const auteur = await creerMembreDecor(browser, playwright, nom);
+    for (let i = 1; i <= 4; i += 1) {
+      await publierDemande(
+        auteur,
+        `Besoin d’un coup de main pour une démarche numéro ${i}`,
+        'Je cherche quelqu’un qui connaît la procédure et peut m’accompagner au guichet cette semaine.',
+      );
+    }
+    await auteur.fermer();
+  }
+  await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+
+  await page.goto('/entraide', { waitUntil: 'load' });
+  await expect(page.getByText(/Besoin d’un coup de main pour une démarche numéro/).filter({ visible: true }).first()).toBeVisible({
+    timeout: 25_000,
+  });
 
   const m = await page.evaluate(() => ({
     document: document.scrollingElement?.scrollHeight ?? 0,
@@ -177,10 +205,9 @@ test('un contenu plus haut que la vue DÉFILE toujours — la correction pose un
 
   expect(
     m.document,
-    `le contenu de /parrainage est replafonné : ${m.document} px pour une vue de ${m.vue}`,
+    `le contenu de /entraide est replafonné : ${m.document} px pour une vue de ${m.vue}`,
   ).toBeGreaterThan(m.vue);
 
-  // Et la barre reste visible malgré le défilement : c'est son `position: sticky`.
   const barre = await mesureBarre(page);
   expect(barre.trouvee).toBe(true);
   if (barre.trouvee) expect(Math.abs(barre.bas - barre.vue)).toBeLessThanOrEqual(1);
