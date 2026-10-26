@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { connecter } from './session';
+import { monterParcours } from './parcours-session';
+import { monterJalonPartageable } from './aide-w5a';
 
 /**
  * « JE SUIS BLOQUÉ·E » — J03, et la règle qui commande tout le module.
@@ -47,8 +48,16 @@ test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test'
  * atteint — et Playwright a dit la vérité : « element was detached from the DOM »,
  * le squelette cédant la place à l'écran de connexion.
  */
-async function session(page: Page, request: APIRequestContext): Promise<void> {
-  await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+async function session(page: Page, request: APIRequestContext): Promise<{ readonly url: string }> {
+  /**
+   * VAGUE 5 — `/parcours/1/etapes/7` EST UNE URL DE PLANCHE D'ILLUSTRATION : le segment
+   * n'est pas un UUID, l'écran répond « Ce parcours n'est pas ouvert » et ne monte plus
+   * aucun déclencheur de fenêtre (mesuré : dix-sept cas expiraient sur un clic dans le
+   * vide). Le décor est celui du produit — un vrai parcours et une vraie étape en cours
+   * (`monterParcours`, routes publiques, aucun accès direct à la base).
+   */
+  const m = await monterParcours(page.context(), request);
+  return { url: `/parcours/${m.journeyId}/etapes/${m.etapeCourante.id}` };
 }
 
 async function pret(page: Page): Promise<void> {
@@ -61,7 +70,7 @@ async function pret(page: Page): Promise<void> {
 }
 
 async function ouvrir(page: Page, request: APIRequestContext, width = 1440): Promise<void> {
-  await session(page, request);
+  const { url } = await session(page, request);
   await page.setViewportSize({ width, height: 900 });
   /**
    * `load` ET NON `networkidle` : Next précharge les liens visibles d'une page App
@@ -70,14 +79,36 @@ async function ouvrir(page: Page, request: APIRequestContext, width = 1440): Pro
    * été EXÉCUTÉS. Même cause et même correction que `e2e/services.spec.ts`,
    * `e2e/a11y.spec.ts` et `visual/screens.spec.ts`.
    */
-  await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
+  await page.goto(url, { waitUntil: 'load' });
   await pret(page);
   const cadre = width >= 1024 ? 'desktop' : 'mobile';
-  await page.locator(`[data-frame="${cadre}"] [data-modal-open="J03"]`).first().click();
+  /**
+   * VAGUE 5 — SUR MOBILE LE BOUTON N'EST PAS MARQUÉ `data-modal-open` (le générateur ne
+   * pose le marqueur que sur la planche d'ordinateur) mais il OUVRE bien la feuille :
+   * mesuré au navigateur. On vise donc le bouton par son rôle et son nom, ce qu'un membre
+   * voit — ce qui vaut aussi pour l'ordinateur.
+   */
+  await page
+    .locator(`[data-frame="${cadre}"]`)
+    .getByRole('button', { name: 'Je suis bloqué·e' })
+    .first()
+    .click();
   await expect(page.getByRole('dialog', { name: /Je suis bloqué/ })).toBeVisible();
+  // L'ouverture s'anime (échelle / glissement) : on mesure APRÈS, pas pendant.
+  await page.waitForTimeout(500);
 }
 
 const dialogue = (page: Page) => page.getByRole('dialog', { name: /Je suis bloqué/ });
+
+/**
+ * VAGUE 5 — « Voir l'aperçu » EST ÉTEINT TANT QUE LE TITRE N'EST PAS SAISI (10 à 120
+ * caractères, §3.5 : le membre écrit, rien n'est pré-rédigé). Le chemin vers le troisième
+ * volet passe donc par la saisie du titre — comme pour un vrai membre.
+ */
+async function versApercu(page: Page): Promise<void> {
+  await dialogue(page).locator('input').first().fill('Comment obtenir mon dossier Campus France ?');
+  await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
+}
 
 test.describe('la règle dure : jamais de publication en un clic (§3.5)', () => {
   test('« Publier » n’existe PAS au premier volet', async ({ page, request }) => {
@@ -99,8 +130,8 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
   test('« Publier » n’existe PAS au deuxième volet non plus', async ({ page, request }) => {
     await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
-    await expect(dialogue(page).getByText('Publier dans Annonces logement')).toBeVisible();
-    // « Publier dans Annonces logement » est le libellé d'un CHOIX DE PORTÉE,
+    await expect(dialogue(page).getByText('Publier dans Entraide')).toBeVisible();
+    // « Publier dans Entraide » est le libellé d'un CHOIX DE PORTÉE,
     // pas un bouton de publication — et c'est précisément le piège : un test qui
     // chercherait le TEXTE « Publier » le trouverait ici et croirait la règle
     // violée. On cherche donc le RÔLE bouton avec ce nom exact.
@@ -110,7 +141,7 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
   test('« Publier » n’apparaît qu’au TROISIÈME volet, après l’aperçu', async ({ page, request }) => {
     await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
-    await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
+    await versApercu(page);
 
     // L'aperçu montre la carte telle qu'elle apparaîtra (T5 J03, volet 3).
     await expect(dialogue(page).getByText('Depuis un parcours')).toBeVisible();
@@ -120,7 +151,7 @@ test.describe('la règle dure : jamais de publication en un clic (§3.5)', () =>
   test('refermer et rouvrir REVIENT au premier volet', async ({ page, request }) => {
     await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
-    await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
+    await versApercu(page);
     await expect(dialogue(page).getByRole('button', { name: 'Publier', exact: true })).toBeVisible();
 
     await page.keyboard.press('Escape');
@@ -234,7 +265,7 @@ test.describe('le clavier garde la main après un changement de volet', () => {
   test('le focus ne quitte jamais la boîte, dès le changement de volet', async ({ page, request }) => {
     await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
-    await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
+    await versApercu(page);
 
     const boite = dialogue(page);
     for (let n = 0; n <= 20; n += 1) {
@@ -256,7 +287,7 @@ test.describe('le clavier garde la main après un changement de volet', () => {
   test('le focus revient sur le bouton d’origine, même après trois volets', async ({ page, request }) => {
     await ouvrir(page, request);
     await dialogue(page).getByRole('button', { name: 'Suivant' }).click();
-    await dialogue(page).getByRole('button', { name: 'Voir l’aperçu' }).click();
+    await versApercu(page);
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
@@ -322,13 +353,27 @@ test.describe('fenêtre sur ordinateur, feuille sur mobile', () => {
  * « Proposition "Partager cette victoire ?" avec un champ de texte VIDE (pas de
  * texte pré-rédigé — c'est le membre qui écrit). »
  */
+/**
+ * VAGUE 5 — J04 S'OUVRE SUR UN VRAI JALON. La planche d'illustration (`/parcours/1/etapes/7`)
+ * ne monte plus de déclencheur : « Partager » n'est proposé, dans la colonne du parcours,
+ * que pour une étape MAJEURE franchie dont le partage n'a pas été refusé. Le décor est
+ * donc fabriqué par les routes du produit (`monterJalonPartageable`).
+ */
+async function ouvrirPartage(page: Page, request: APIRequestContext): Promise<void> {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const jalon = await monterJalonPartageable(page.context(), request);
+  await page.goto(`/parcours/${jalon.journeyId}`, { waitUntil: 'load' });
+  await pret(page);
+  await page
+    .locator('[data-frame="desktop"]')
+    .getByRole('button', { name: 'Partager', exact: true })
+    .first()
+    .click();
+}
+
 test.describe('§3.6 — partager un jalon', () => {
   test('« Marquer comme franchie » PROPOSE le partage, il ne publie pas', async ({ page, request }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await session(page, request);
-    await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
-    await pret(page);
-    await page.locator('[data-frame="desktop"] [data-modal-open="J04"]').first().click();
+    await ouvrirPartage(page, request);
 
     const jalon = page.getByRole('dialog', { name: /Partager un jalon/ });
     await expect(jalon).toBeVisible();
@@ -337,11 +382,7 @@ test.describe('§3.6 — partager un jalon', () => {
   });
 
   test('le champ de texte est VIDE — aucun texte pré-rédigé', async ({ page, request }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await session(page, request);
-    await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
-    await pret(page);
-    await page.locator('[data-frame="desktop"] [data-modal-open="J04"]').first().click();
+    await ouvrirPartage(page, request);
 
     const jalon = page.getByRole('dialog', { name: /Partager un jalon/ });
     /**
@@ -349,16 +390,14 @@ test.describe('§3.6 — partager un jalon', () => {
      * disparaître dès que le membre écrit. Un texte pré-rédigé, lui, partirait
      * tel quel dans la publication — et §3.6 l'interdit nommément.
      */
-    await expect(jalon.getByText('Racontez-la avec vos mots…')).toBeVisible();
-    await expect(jalon.locator('textarea')).toHaveCount(0);
+    const champ = jalon.locator('input, textarea');
+    await expect(champ).toHaveCount(1);
+    await expect(champ).toHaveValue('');
+    await expect(champ).toHaveAttribute('placeholder', /Racontez-la avec vos mots/);
   });
 
   test('« Plus tard » referme sans publier (§3.6 → share_prompt_dismissed_at)', async ({ page, request }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await session(page, request);
-    await page.goto('/parcours/1/etapes/7', { waitUntil: 'load' });
-    await pret(page);
-    await page.locator('[data-frame="desktop"] [data-modal-open="J04"]').first().click();
+    await ouvrirPartage(page, request);
     await page
       .getByRole('dialog', { name: /Partager un jalon/ })
       .getByRole('button', { name: 'Plus tard' })
