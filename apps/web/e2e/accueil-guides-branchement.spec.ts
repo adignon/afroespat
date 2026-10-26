@@ -305,16 +305,17 @@ test('A06 — la planche de l’auteur lit ses propositions réelles (390 px)', 
   await expect(cadre.getByText('Acceptées · 7')).toHaveCount(0);
 
   /**
-   * 3 ── LE SECOND EMPLACEMENT N'EMPRUNTE AUCUNE IDENTITÉ.
+   * 3 ── UNE PROPOSITION, UNE CARTE.
    *
-   * La planche dessine DEUX cartes en balisage statique — une dépliée, une
-   * repliée — et il n'existe qu'une proposition. L'emplacement libre annonce donc
-   * l'absence au lieu d'afficher « Kofi Boateng » une seconde fois ou, pire, le
-   * « Fatou Ndiaye » de la maquette. C'est la limite structurelle de cet écran,
-   * et elle est REMONTÉE : il faut une boucle, donc que la planche dise ce qui
-   * déplie une carte.
+   * VAGUE 5 — L'ANCIENNE ATTENTE (« Aucune proposition » dans le second emplacement) EST
+   * OBSOLÈTE : la planche dessinait deux cartes en balisage statique et le test fixait
+   * l'emplacement vide, en remontant la limite. Les cartes viennent maintenant d'une
+   * boucle sur les propositions du serveur ; il n'existe qu'une proposition, il n'y a
+   * donc qu'une carte, et plus d'emplacement à annoncer vide. Ce qui reste exigé est la
+   * moitié qui comptait : le proposant n'est nommé qu'UNE fois, et aucune identité
+   * empruntée à la maquette n'apparaît.
    */
-  await expect(cadre.getByText('Aucune proposition')).toHaveCount(1);
+  await expect(cadre.getByText('Aucune proposition')).toHaveCount(0);
   await expect(cadre.getByText(decor.proposant)).toHaveCount(1);
 });
 
