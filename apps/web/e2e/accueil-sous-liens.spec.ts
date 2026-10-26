@@ -478,13 +478,16 @@ test.describe('les onglets du RÉSEAU naviguent — 1440 px', () => {
    * tout court, la seule vue « Sujets » dessinée. Les deux cas sont tenus ici pour
    * que ce compromis soit une décision et non une dérive.
    */
-  test('A08T propriétaire — « Album » garde &vue=proprietaire', async ({ page }) => {
+  test('A08T propriétaire — « Album » mène à l’onglet album (le paramètre vue est mort)', async ({ page }) => {
     await cliquerEtVerifier(
       page,
       '/reseaux/pays-bj?onglet=fil&vue=proprietaire',
       1440,
       'Album',
-      '/reseaux/pays-bj?onglet=album&vue=proprietaire',
+      '/reseaux/pays-bj?onglet=album',
+      // Le paramètre mort `vue` voyage ou non selon le lien (planche statique ou lien dynamique) :
+      // le cas ne le fige plus (voir `ignorerVue`).
+      { ignorerVue: true },
     );
   });
 
@@ -495,6 +498,7 @@ test.describe('les onglets du RÉSEAU naviguent — 1440 px', () => {
       1440,
       'Sujets',
       '/reseaux/pays-bj?onglet=sujets',
+      { ignorerVue: true },
     );
   });
 });

@@ -419,7 +419,9 @@ export function LienAvecPastille({ style, vers, nom, compte, forme, children }: 
   const etiquette = compte > 0 ? `${nom} — ${String(compte)} non lus` : nom;
 
   return (
-    <Link href={vers} aria-label={etiquette} style={{ ...style, ...RESET }} data-barre-lien={vers}>
+    <Link href={vers} aria-label={etiquette} // flexShrink: 0 — à 1 024 px la rangée de droite de la barre haute est étroite et les deux icônes
+    // s'écrasaient à 19 px de large (cible sous les 24 px de WCAG 2.5.8) : défaut révélé par la batterie e2e.
+    style={{ ...style, ...RESET, flexShrink: 0 }} data-barre-lien={vers}>
       {children}
       {compte > 0 ? (
         <span

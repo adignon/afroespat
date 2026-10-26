@@ -136,6 +136,10 @@ test('publier une offre, la retrouver, créer sa fiche pro', async ({ page, cont
     mimeType: 'image/png',
     buffer: PNG,
   });
+  // On ATTEND que le justificatif soit déposé avant d'envoyer : l'envoi part de l'état du
+  // formulaire, et un clic lancé avant la fin du dépôt est refusé côté écran (« Déposez un
+  // justificatif ») — le cas passait ou échouait selon la vitesse de la machine.
+  await expect(page.getByText(/Justificatif déposé : justificatif\.png/).locator('visible=true').first()).toBeVisible({ timeout: 30_000 });
   await page.locator('[data-fiche-envoyer]:visible').click();
   await expect(page.locator('[data-fiche-succes]:visible')).toBeVisible({ timeout: 30_000 });
   await capture(page, 's08-envoyee');
