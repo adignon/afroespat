@@ -151,7 +151,8 @@ function Echeance({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <Champ id={`echeance-${etape.id}`} etiquette="Échéance" type="date" valeur={date} onChange={setDate} aide={etape.dueDateManual === true ? 'Saisie à la main : le rétro-planning ne la modifie plus.' : 'Calculée à partir de votre date d’arrivée cible.'} />
-      <div style={{ display: 'flex', gap: '8px' }}>
+      {/* flexWrap : « Fixer l'échéance » + « Rendre au rétro-planning » débordaient la fenêtre sous 390 px (388 px pour 360) — défaut révélé par la batterie e2e. */}
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         <Bouton compact disabled={geste.occupe || date === (etape.dueDate?.slice(0, 10) ?? '') || date === ''} onClick={() => void geste.executer(async () => { onParcours(await updateStep(parcours.journey.id, etape.id, { dueDate: date })); }, { majPanneau: true })}>
           Fixer l’échéance
         </Bouton>

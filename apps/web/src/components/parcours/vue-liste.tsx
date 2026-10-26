@@ -90,7 +90,7 @@ function VueListeInterne({ compact, vide = false }: { readonly compact: boolean;
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
       <div style={{ ...carte(compact ? 16 : 24), display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0, flex: 1, fontSize: compact ? '20px' : '26px', fontWeight: 800, letterSpacing: '-0.8px' }}>Mes parcours</h1>
-        <Link href="/parcours/nouveau" style={{ height: '42px', padding: '0 18px', borderRadius: '12px', background: C.vert, color: '#fff', fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>Nouveau parcours</Link>
+        <Link href="/parcours/nouveau" style={{ height: '44px', padding: '0 18px', borderRadius: '12px', background: C.vert, color: '#fff', fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>Nouveau parcours</Link>
       </div>
       <Invitations onChange={charger} />
       {liste === null && echec === null ? <Attente texte="Chargement de vos parcours…" /> : null}

@@ -285,6 +285,13 @@ function VueFichePubliqueInterne({ compact }: { readonly compact: boolean }) {
               </div>
             ))}
           </div>
+          {/*
+            * §3.7 — LA FICHE ANNONCE CE QU'ELLE NE MONTRE PAS. La maquette (04 Parcours, J09F) écrit
+            * cette ligne ; la vue écrite à la main l'avait perdue, et seule la batterie e2e s'en est
+            * aperçue : un visiteur ne savait plus que notes, checklist, équipe et discussion existent
+            * mais lui restent fermés.
+            */}
+          <div style={{ fontSize: '12.5px', color: C.grisClair }}>Lecture seule · aucune note, checklist, équipe ni discussion</div>
         </>
       )}
       {ecrire.fenetre}

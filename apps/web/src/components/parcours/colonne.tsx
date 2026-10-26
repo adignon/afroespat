@@ -50,7 +50,7 @@ function Corps({ parcours }: { readonly parcours: JourneyFullResponse }) {
           </div>
         ))}
         {parcours.journey.groupConversationId === null ? null : (
-          <Link href={`/parcours/${parcours.journey.id}/discussion`} style={{ marginTop: '14px', height: '42px', borderRadius: '12px', background: C.fond, color: C.texte, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13.5px', fontWeight: 700, textDecoration: 'none' }}>
+          <Link href={`/parcours/${parcours.journey.id}/discussion`} style={{ marginTop: '14px', height: '44px', borderRadius: '12px', background: C.fond, color: C.texte, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13.5px', fontWeight: 700, textDecoration: 'none' }}>
             <Icone d={ICONES.discussion} /> Discussion
           </Link>
         )}
