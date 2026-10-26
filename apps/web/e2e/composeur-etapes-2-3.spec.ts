@@ -375,8 +375,21 @@ test.describe('A14 — étape 3', () => {
     await expect(panneau).toHaveAttribute('role', 'dialog');
     const bFen = await fenetre.boundingBox();
     const bPan = await panneau.boundingBox();
-    expect(Math.abs((bPan?.width ?? 0) - (bFen?.width ?? 0))).toBeLessThan(2);
-    expect(Math.abs((bPan?.height ?? 0) - (bFen?.height ?? 0))).toBeLessThan(2);
+    /**
+     * VAGUE 5 — « À LA PIXEL PRÈS » ÉTAIT FAUX PAR CONSTRUCTION. Le panneau est partagé
+     * avec O02 (`screens/onboarding/panneau-section.tsx`), dont la carte porte une
+     * bordure de 1 px : il déborde donc de 1 px de chaque côté (`top/left/right: -1`)
+     * pour la recouvrir, et sa hauteur est `max(100% + 2px, 400px)` (plancher posé au
+     * lot W1A pour qu'une liste de quarante villes tienne). L'écart légitime est donc
+     * de 2 px en largeur, et d'au plus `max(2 px, 400 − hauteur)` en hauteur. On mesure
+     * CELA — recouvrir la fenêtre, sans la dépasser de plus que ce débord — plutôt
+     * qu'une égalité que le composant ne promet pas.
+     */
+    expect(Math.abs((bPan?.width ?? 0) - (bFen?.width ?? 0))).toBeLessThanOrEqual(2.5);
+    expect((bPan?.height ?? 0) - (bFen?.height ?? 0)).toBeGreaterThanOrEqual(-2.5);
+    expect((bPan?.height ?? 0) - (bFen?.height ?? 0)).toBeLessThanOrEqual(
+      Math.max(2.5, 400 - (bFen?.height ?? 0)),
+    );
 
     // Changer de pays change la liste de villes.
     const autrePays = panneau.locator('button[aria-pressed="false"]').first();

@@ -143,3 +143,51 @@ export async function ouvrirDossierModeration(
     await Promise.all([ctxA.close(), apiA.dispose(), ctxB.close(), apiB.dispose()]);
   }
 }
+
+/**
+ * Une conversation que le membre connecté a BLOQUÉE — par les vraies routes.
+ *
+ * `?etat=bloque` sur un identifiant de maquette (`/messages/1`) n'existe plus : l'état
+ * « conversation bloquée » est dérivé du serveur (`blockedByMe`). Le décor est donc
+ * celui du produit : le membre du `context` passe en L1 (écrire exige L1), ouvre une
+ * conversation directe avec un second membre (`POST /conversations/direct`), puis le
+ * bloque (`POST /blocks`). Rend l'identifiant de la conversation.
+ *
+ * L'ORDRE COMPTE : le second membre est connecté APRÈS le premier, et le jeton du
+ * premier est déjà frais — un `connecter` de plus changerait le cookie de rafraîchissement
+ * que détient `request`, mais pas la session du navigateur, déjà installée.
+ */
+export async function ouvrirConversationBloquee(
+  context: BrowserContext,
+  request: APIRequestContext,
+  browser: import('@playwright/test').Browser,
+  noms: { readonly moi?: string; readonly autre?: string } = {},
+): Promise<{ readonly conversationId: string; readonly prenomAutre: string; readonly handleAutre: string }> {
+  const { connecter } = await import('./session');
+  const { monterEnL1 } = await import('./niveau');
+
+  const ouvert = await connecter(context, request, { displayName: noms.moi ?? 'Awa Konaté' });
+  const moi = await monterEnL1(context, request, ouvert.accessToken);
+  const entete = { authorization: `Bearer ${moi.accessToken}` };
+
+  const ctxAutre = await browser.newContext();
+  const nomAutre = noms.autre ?? 'Fatim Sow';
+  const autre = await connecter(ctxAutre, request, { displayName: nomAutre });
+  await ctxAutre.close();
+
+  const depart = await request.post(`${API}/conversations/direct`, {
+    headers: entete,
+    data: { toHandle: autre.handle, firstMessage: 'Bonjour, une question sur le logement.' },
+  });
+  if (depart.status() !== 201) {
+    throw new Error(`POST /conversations/direct ${depart.status()} : ${await depart.text()}`);
+  }
+  const corps = (await depart.json()) as { conversationId?: string; id?: string };
+  const conversationId = corps.conversationId ?? corps.id;
+  if (conversationId === undefined) throw new Error(`pas d’identifiant de conversation : ${JSON.stringify(corps)}`);
+
+  const blocage = await request.post(`${API}/blocks`, { headers: entete, data: { handle: autre.handle } });
+  if (!blocage.ok()) throw new Error(`POST /blocks ${blocage.status()} : ${await blocage.text()}`);
+
+  return { conversationId, prenomAutre: nomAutre.split(' ')[0] ?? nomAutre, handleAutre: autre.handle };
+}
