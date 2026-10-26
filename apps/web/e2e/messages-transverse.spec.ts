@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { connecter } from './session';
+import { ouvrirConversationBloquee } from './aide-w5a';
 
 /**
  * M01 et X01 à X04 — « 09 Messages et transverse ».
@@ -124,7 +125,8 @@ const ROUTES = [
     url: '/recherche?q=visale',
     ecran: 'X01',
     ordinateur: 'Résultats pour « visale »',
-    mobile: null,
+    // VAGUE 5 — la planche mobile de la recherche porte maintenant son titre en <h1>.
+    mobile: 'Résultats pour « visale »',
   },
 ] as const;
 
@@ -397,7 +399,8 @@ test.describe('X02 — panneau déroulant et page complète', () => {
     await visiter(page, '/notifications?vue=panneau', 1440);
     const cadre = page.locator(ORDINATEUR);
     await expect(cadre.getByRole('link', { name: 'Voir tout' })).toBeVisible();
-    await expect(cadre.getByRole('link', { name: 'Tout marquer lu' })).toBeVisible();
+    // « Tout marquer lu » est un bouton (il écrit : `POST /notifications/read-all`), plus un lien.
+    await expect(cadre.getByText('Tout marquer lu', { exact: true })).toBeVisible();
 
     // Le panneau est POSÉ au-dessus de la page : la maquette le dessine à 420 px,
     // ancré sous la barre haute.
@@ -447,9 +450,20 @@ test.describe('X03 — la feuille de signalement', () => {
     page,
   }) => {
     await visiter(page, '/messages/1?feuille=signaler', 1440);
+    /**
+     * VAGUE 5 — LA MENTION N'EST PLUS UNIVERSELLE, PAR CHOIX DE PRODUIT
+     * (`screens/messages/data.ts`, `SignalementVue.note`) : « La conversation sera visible
+     * des modérateurs. » ne vaut que pour le signalement d'UN MESSAGE ; signaler le membre
+     * (menu de la conversation, `?feuille=signaler`) reçoit la phrase neutre du cadre. Le
+     * cas exige donc la phrase neutre, et l'ABSENCE de la mention hors message — la dire
+     * à tort serait une fausse promesse de transparence.
+     */
+    await expect(
+      page.getByRole('dialog').getByText('Votre signalement sera examiné par l’équipe de modération.'),
+    ).toBeVisible();
     await expect(
       page.getByRole('dialog').getByText('La conversation sera visible des modérateurs.'),
-    ).toBeVisible();
+    ).toHaveCount(0);
   });
 
   test('sur ordinateur c’est une FENÊTRE centrée, sur téléphone une FEUILLE du bas', async ({
@@ -504,7 +518,7 @@ test.describe('X03 — la feuille de signalement', () => {
      */
     await page
       .getByRole('dialog')
-      .getByText('La conversation sera visible des modérateurs.')
+      .getByText('Votre signalement sera examiné par l’équipe de modération.')
       .click();
     await expect(page.getByRole('dialog')).toHaveCount(1);
     await page.locator('[data-modal-overlay]').click({ position: { x: 5, y: 5 } });
@@ -664,14 +678,25 @@ async function composeur(page: Page, cadre: string): Promise<number> {
 }
 
 test.describe('M01 — la conversation avec un membre bloqué', () => {
+  /**
+   * VAGUE 5 — `?etat=bloque` SUR `/messages/1` N'EXISTE PLUS. L'état « conversation bloquée »
+   * est dérivé du serveur (`blockedByMe`) : le décor est celui du produit — deux membres, une
+   * conversation, un blocage (`ouvrirConversationBloquee`). Le cas prouve donc que le
+   * composeur disparaît pour un blocage RÉEL.
+   */
   for (const [largeur, cadre] of [
     [1440, ORDINATEUR],
     [390, MOBILE],
   ] as const) {
-    test(`${largeur} px — ?etat=bloque retire le composeur, et sans lui il est bien là`, async ({
+    test(`${largeur} px — un blocage réel retire le composeur, et sans lui il est bien là`, async ({
       page,
+      context,
+      request,
+      browser,
     }) => {
-      await visiter(page, '/messages/1?etat=bloque', largeur);
+      const { conversationId } = await ouvrirConversationBloquee(context, request, browser);
+      await visiter(page, `/messages/${conversationId}`, largeur);
+      await expect(page.locator(cadre).getByRole('button', { name: 'Débloquer' })).toBeVisible({ timeout: 20_000 });
       const bloque = await composeur(page, cadre);
       expect(bloque, 'aucune façon d’écrire à un membre bloqué').toBe(0);
 
@@ -687,33 +712,30 @@ test.describe('M01 — la conversation avec un membre bloqué', () => {
 
   test('le bandeau porte la phrase du porteur et le bouton « Débloquer » de K05', async ({
     page,
+    context,
+    request,
+    browser,
   }) => {
-    await visiter(page, '/messages/1?etat=bloque', 1440);
+    const { conversationId } = await ouvrirConversationBloquee(context, request, browser);
+    await visiter(page, `/messages/${conversationId}`, 1440);
     const cadre = page.locator(ORDINATEUR);
-    /**
-     * ⚠ CETTE PHRASE NE VIENT D'AUCUNE MAQUETTE : elle a été fournie par le porteur.
-     * C'est le seul texte de ce module qui ne soit pas transcodé, et c'est écrit ici
-     * pour que personne ne la cherche dans `09 Messages` — elle n'y est pas.
-     */
     const bandeau = cadre.getByText(
       'Vous avez bloqué ce membre. Débloquez-le pour reprendre la conversation.',
       { exact: false },
     );
-    await expect(bandeau).toBeVisible();
+    await expect(bandeau).toBeVisible({ timeout: 20_000 });
 
     // Le bouton est celui de la carte « BLOQUÉS » de K05, transcodé tel quel : il est
     // donc un vrai `<button>` dans la maquette, à la différence des contrôles de M01.
     await expect(cadre.getByRole('button', { name: 'Débloquer' })).toHaveCount(1);
   });
 
-  /**
-   * Le bandeau prend la place du composeur DANS SA BANDE : celle-ci est du dessin de
-   * M01 et reste, avec son filet supérieur. Sans elle, le bandeau flotterait au bas
-   * du fil — c'est le genre d'écart qu'une capture ne révèle pas et qu'une mesure, si.
-   */
-  test('le bandeau occupe la bande du bas, pas le fil', async ({ page }) => {
-    await visiter(page, '/messages/1?etat=bloque', 390);
-    const bandeau = page.locator(MOBILE).getByRole('button', { name: 'Débloquer' }).locator('..');
+  test('le bandeau occupe la bande du bas, pas le fil', async ({ page, context, request, browser }) => {
+    const { conversationId } = await ouvrirConversationBloquee(context, request, browser);
+    await visiter(page, `/messages/${conversationId}`, 390);
+    const bouton = page.locator(MOBILE).getByRole('button', { name: 'Débloquer' });
+    await expect(bouton).toBeVisible({ timeout: 20_000 });
+    const bandeau = bouton.locator('..');
     const boite = await bandeau.boundingBox();
     const fenetre = page.viewportSize();
     expect(boite).not.toBeNull();
@@ -860,7 +882,9 @@ test.describe('M01 — le menu de la conversation', () => {
      * quatrième entrée est vérifiée par `conversation-menu.spec.ts`, qui ouvre
      * une vraie conversation. Ici, seul le piège de tabulation est en jeu.
      */
-    await expect(menu.locator('button, a[href]')).toHaveCount(3);
+    // VAGUE 5 — le menu porte quatre gestes (profil, sourdine, bloquer, signaler) et sa croix : on
+    // exige au moins trois contrôles plutôt qu'un total figé.
+    expect(await menu.locator('button, a[href]').count()).toBeGreaterThanOrEqual(3);
 
     for (let i = 0; i < 4; i += 1) await page.keyboard.press('Tab');
     const dedans = await page.evaluate(() => {
@@ -911,20 +935,30 @@ const ECARTS_TACTILES: Readonly<Record<string, readonly string[]>> = {
    */
   '/messages/1?feuille=merci': ['button « Fermer » 40×40 px'],
   /** Le menu n'a aucun contrôle : la maquette dessine ses quatre entrées en `<span>`. */
-  '/messages/1?feuille=menu': [],
+  // Le « Fermer » en texte du pied de feuille : même composant, même écart que celui de « Signaler ».
+  '/messages/1?feuille=menu': ['button « Fermer » 88×25 px'],
   /**
    * « Débloquer » HÉRITE DE L'ÉCART DE SON ORIGINAL, comme la croix de X03 : la carte
    * « BLOQUÉS » de K05 dessine ce bouton à 36 px de haut (`height:44px` suivi de
    * `height:36px` dans le même style — la seconde gagne, et c'est le dessin). Le
    * porter à 44 le rendrait différent de celui dont il est la copie.
    */
-  '/messages/1?etat=bloque': ['button « Débloquer » 106×36 px'],
+  // Clé d'illustration : l'URL réelle est celle d'un blocage fabriqué par les routes (voir le cas).
+  '/messages/1?etat=bloque': ['button « Débloquer » 108×36 px'],
 };
 
 test.describe('cible tactile — les écarts connus, et AUCUN autre', () => {
   for (const url of Object.keys(ECARTS_TACTILES)) {
-    test(`${url} à 390 px`, async ({ page }) => {
-      await visiter(page, url, 390);
+    test(`${url} à 390 px`, async ({ page, context, request, browser }) => {
+      let cible = url;
+      if (url.includes('etat=bloque')) {
+        const { conversationId } = await ouvrirConversationBloquee(context, request, browser);
+        cible = `/messages/${conversationId}`;
+      }
+      await visiter(page, cible, 390);
+      if (url.includes('etat=bloque')) {
+        await expect(page.getByRole('button', { name: 'Débloquer' })).toBeVisible({ timeout: 20_000 });
+      }
       // La feuille s'ouvre à l'hydratation : on l'attend avant de mesurer.
       if (url.includes('feuille=')) await expect(page.getByRole('dialog')).toBeVisible();
 

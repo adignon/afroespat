@@ -179,7 +179,7 @@ test.describe('les écrans affichent les valeurs du SERVEUR, pas celles de la pl
     // dans `members` : un écran qui lirait `members` seul l'omettrait.
     // VAGUE 5 — l'ÉQUIPE n'est plus listée sur la vue d'ensemble (elle a son écran, J05, éprouvé
     // plus bas) : la pastille « Équipe » de la barre de sections porte seulement le nombre.
-    await expect(cadre.getByRole('link', { name: /^Équipe/ }).first()).toBeVisible();
+    await expect(cadre.getByRole('button', { name: /^Équipe/ }).first()).toBeVisible();
     await expect(cadre.getByText(m.etapeCourante.titre).first()).toBeVisible();
     // La frise ne montre QUE les étapes franchies, repliées derrière « 1 étape franchie » : on
     // déplie, et la première y est, seule.

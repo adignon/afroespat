@@ -118,7 +118,7 @@ function CarteMini({ p, onEcrire, parrain }: { readonly p: PublicJourney; readon
   const type = typeCourt(p.template.code, p.template.nameFr);
   return (
     <article style={{ ...carte(16), display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <Link href={`/parcours/publics/${p.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none', color: C.texte }}>
+      <Link href={`/parcours/publics/${p.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', minHeight: '44px', textDecoration: 'none', color: C.texte }}>
         <Avatar nom={nomDe(p)} />
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: '14.5px', fontWeight: 700 }}>{nomDe(p)}</span>
