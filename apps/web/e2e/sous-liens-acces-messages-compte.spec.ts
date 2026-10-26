@@ -152,7 +152,13 @@ test.describe('P01 /connexion — les liens de la case de consentement', () => {
    * jusqu'à ce que la route arrive — le jour où elle arrivera, il échouera, et
    * c'est ce qu'on veut de lui.
    */
-  test('⚠ « conditions » n’a toujours aucune destination — route absente', async ({
+  /**
+   * RETOURNÉ (lot w5b), comme le demande le commentaire ci-dessus : « le jour où la route
+   * arrivera, il échouera, et c'est ce qu'on veut de lui ». `/p/cgu` est servie (document
+   * « Conditions générales d'utilisation », version 0 provisoire) et le lien y mène. Le test
+   * garde maintenant la PRÉSENCE : la destination, puis le document réellement servi.
+   */
+  test('« conditions » mène au document des conditions générales', async ({
     page,
     viewport,
   }) => {
@@ -161,7 +167,13 @@ test.describe('P01 /connexion — les liens de la case de consentement', () => {
     const libelle = ordinateur({ viewport }) ? "conditions d'utilisation" : 'conditions';
     const lien = page.getByRole('link', { name: libelle, exact: true });
     await expect(lien).toHaveCount(1);
-    await expect(lien).toHaveAttribute('href', '#');
+    await expect(lien).toHaveAttribute('href', '/p/cgu');
+    await lien.click();
+    await expect(page).toHaveURL(/\/p\/cgu$/);
+    await expect(
+      page.getByRole('heading', { name: 'Conditions générales d’utilisation' }),
+      '`notFound()` ne change pas l’URL : le document doit être servi',
+    ).toBeVisible();
   });
 });
 
@@ -252,12 +264,17 @@ test.describe('X02 /notifications — le panneau déroulant', () => {
    * `action` sur une balise `<a>`. Mesuré ici pour que le trou soit CONSTATÉ et
    * non deviné.
    */
-  test('⚠ « Tout marquer lu » n’est toujours branché sur rien', async ({ page }) => {
+  /**
+   * RETOURNÉ (lot w5b) : « Tout marquer lu » est un BOUTON branché (`messagerie/notifications.tsx`,
+   * `POST /notifications/read { all: true }`), plus un lien mort. Le cas garde maintenant que
+   * ce n'est PAS un `<a href="#">` et que le geste est offert.
+   */
+  test('« Tout marquer lu » est un bouton, plus un lien mort', async ({ page }) => {
     await page.goto('/notifications?vue=panneau', { waitUntil: 'load' });
 
-    const lien = page.getByRole('link', { name: 'Tout marquer lu', exact: true });
-    await expect(lien).toHaveCount(1);
-    await expect(lien).toHaveAttribute('href', '#');
+    await expect(page.getByRole('link', { name: 'Tout marquer lu', exact: true })).toHaveCount(0);
+    const bouton = page.getByRole('button', { name: 'Tout marquer lu', exact: true }).filter({ visible: true });
+    await expect(bouton).toHaveCount(1);
   });
 });
 

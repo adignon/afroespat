@@ -146,9 +146,26 @@ const SC_ROUE = sur(
  * d'ordinateur y mène déjà). Bornée à ces écrans : les autres modules règlent la
  * barre de leurs propres cadres.
  */
+/**
+ * ÉTENDUE À TOUS LES CADRES MOBILES QUI DESSINENT CETTE BARRE (lot w5b). « Bornée à ces écrans »
+ * laissait le `<div>` mort sur QUARANTE cadres — messagerie, recherche, notifications, fil
+ * d'entraide, parrainage, agenda, guides, réseaux, parcours, compte : sur un téléphone, depuis
+ * ces écrans, « Compte » ne menait nulle part (la batterie e2e l'a mesuré : onze cas
+ * `« Compte » mène au module Compte` rouges). Aucun de ces cadres ne règle sa barre ailleurs :
+ * la marque exigée (`>Compte</div>` + son icône) n'existe plus dès que l'un d'eux le fait.
+ */
+const ECRANS_BARRE_COMPTE = [
+  ...SERIE, 'A11', 'A12', 'A12T',
+  'A03', 'A07', 'A08', 'A08T', 'E01',
+  'H01', 'H04', 'H05', 'H07', 'H09', 'H10',
+  'J01', 'J01S', 'J01E', 'J05', 'J06', 'J07', 'J08', 'J09', 'J11',
+  'K01', 'K03', 'K04', 'K05', 'K07', 'K08', 'K09', 'K10',
+  'M01', 'X01', 'X02',
+];
+
 const SC_COMPTE_BARRE = sur(
   'SC_COMPTE_BARRE',
-  [...SERIE, 'A11', 'A12', 'A12T'],
+  ECRANS_BARRE_COMPTE,
   ['>Compte</div>', 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0'],
   'L’entrée « Compte » de la barre basse mène à `/compte` : c’était un <div> sans geste, la seule des cinq entrées qui n’était pas un lien (S01 à S10, A11, A12).',
   [],
