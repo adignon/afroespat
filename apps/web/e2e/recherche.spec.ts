@@ -35,6 +35,23 @@ import { connecter } from './session';
  */
 const cadre = (page: Page) => page.locator('[data-frame]').filter({ visible: true }).first();
 
+/**
+ * MISE À JOUR (lot w5b) — LE TERME CHERCHÉ ET LE WORKER.
+ *
+ * Ces cas cherchaient « lyon », ville que le jeu de référence d'une base fraîche porte
+ * INACTIVE : le moteur n'indexe que les villes actives (`search_documents`), donc la recherche
+ * ne rendait rien et chaque cas accusait l'écran. Le terme est maintenant « aix » — Aix-en-
+ * Provence, la ville où `connecter()` installe ses membres, active et indexée — qui rend une
+ * VILLE (filtre « Villes », carte `/villes/aix-en-provence`, proposition de la barre).
+ *
+ * ⚠ L'INDEX SE REMPLIT PAR LE WORKER (`apps/worker`, relais de la boîte d'envoi puis file
+ * `search_index`). Sans lui, les événements de domaine restent en attente et la recherche ne
+ * voit que ce qu'un ancien passage a indexé : lancer `APP_ROLE=worker node -r
+ * @swc-node/register apps/worker/src/main.ts` avec les mêmes variables que l'API.
+ *
+ * Les libellés de rubrique sont ceux du produit (« Guides & Démarches »), plus ceux de la
+ * maquette (« Guides et Démarches »).
+ */
 test.describe('la recherche', () => {
   test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'les planches d’ordinateur');
 
@@ -44,7 +61,7 @@ test.describe('la recherche', () => {
   }) => {
     await connecter(page.context(), request, { displayName: 'Awa Konate' });
     await page.setViewportSize({ width: 1700, height: 1000 });
-    await page.goto('/recherche?q=lyon');
+    await page.goto('/recherche?q=aix');
 
     const vue = cadre(page);
     await expect(vue.getByText('FILTRES')).toBeVisible();
@@ -55,7 +72,7 @@ test.describe('la recherche', () => {
      * menu « ACCUEIL » que la planche dessinait dans cette colonne.
      */
     await expect(vue.getByText('ACCUEIL', { exact: true })).toHaveCount(0);
-    await expect(vue.getByText('Guides et Démarches')).toHaveCount(0);
+    await expect(vue.getByText('Guides & Démarches')).toHaveCount(0);
 
     /**
      * LE COMPTE VIENT DU SERVEUR. « Tout · 24 » et « Guides · 5 » étaient les
@@ -80,7 +97,7 @@ test.describe('la recherche', () => {
   test('un filtre de la colonne filtre vraiment, et se montre retenu', async ({ page, request }) => {
     await connecter(page.context(), request, { displayName: 'Awa Konate' });
     await page.setViewportSize({ width: 1700, height: 1000 });
-    await page.goto('/recherche?q=lyon');
+    await page.goto('/recherche?q=aix');
 
     /**
      * ── POURQUOI « VILLES » ET PAS « MEMBRES » ────────────────────────────
@@ -119,7 +136,7 @@ test.describe('la recherche', () => {
   }) => {
     await connecter(page.context(), request, { displayName: 'Awa Konate' });
     await page.setViewportSize({ width: 1700, height: 1000 });
-    await page.goto('/recherche?q=lyon&type=CITY');
+    await page.goto('/recherche?q=aix&type=CITY');
 
     const premiere = cadre(page).locator('[data-cadre-cliquable]').first();
     const vers = await premiere.getAttribute('data-cadre-cliquable');
@@ -150,10 +167,10 @@ test.describe('la recherche', () => {
     await page.goto('/accueil');
 
     const champ = cadre(page).locator('form[role="search"] input');
-    await champ.fill('ly');
+    await champ.fill('ai');
     await expect(page.locator('[data-recherche-suggestions]')).toHaveCount(0);
 
-    await champ.fill('lyon');
+    await champ.fill('aix');
     const panneau = page.locator('[data-recherche-suggestions]');
     await expect(panneau).toBeVisible({ timeout: 5000 });
 
@@ -182,7 +199,7 @@ test.describe('la recherche', () => {
     await page.goto('/accueil');
 
     const champ = cadre(page).locator('form[role="search"] input');
-    await champ.fill('lyon');
+    await champ.fill('aix');
     await expect(page.locator('[data-recherche-suggestions]')).toBeVisible({ timeout: 5000 });
 
     await cadre(page).locator('[data-recherche-effacer]').click();
@@ -205,7 +222,7 @@ test.describe('la recherche', () => {
   }) => {
     await connecter(page.context(), request, { displayName: 'Awa Konate' });
     await page.setViewportSize({ width: 1700, height: 1000 });
-    await page.goto('/recherche?q=lyon');
+    await page.goto('/recherche?q=aix');
 
     const vue = cadre(page);
     await expect(page.locator('[data-rail-survol]')).toHaveCount(0);
@@ -215,7 +232,7 @@ test.describe('la recherche', () => {
 
     const volet = page.locator('[data-rail-survol="Accueil"]');
     await expect(volet).toBeVisible();
-    await expect(volet.getByText('Guides et Démarches')).toBeVisible();
+    await expect(volet.getByText('Guides & Démarches')).toBeVisible();
 
     /**
      * LE VOLET FLOTTE À DROITE DU RAIL, par-dessus la colonne de contexte. Sans
@@ -225,7 +242,7 @@ test.describe('la recherche', () => {
     const boiteVolet = await volet.boundingBox();
     expect(boiteVolet?.x ?? 0).toBeGreaterThanOrEqual((boiteRail?.x ?? 0) + (boiteRail?.width ?? 0));
 
-    await volet.getByText('Guides et Démarches').click();
+    await volet.getByText('Guides & Démarches').click();
     await expect(page).toHaveURL(/\/guides$/);
   });
 
@@ -268,7 +285,7 @@ test.describe('la recherche', () => {
   }) => {
     await connecter(page.context(), request, { displayName: 'Awa Konate' });
     await page.setViewportSize({ width: 1700, height: 1000 });
-    await page.goto('/recherche?q=lyon');
+    await page.goto('/recherche?q=aix');
 
     const rail = cadre(page).locator('nav').first();
     await rail.getByText('Services', { exact: true }).hover();
