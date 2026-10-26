@@ -244,7 +244,8 @@ export interface GuideCorrigeView {
  * des guides, la seule qui soit vraie sans connaître le guide.
  */
 export const guide: GuideCorrigeView = {
-  title: '',
+  // `'—'` et non `''` (lot w5b) : le titre du guide est un `<h1>` ; vide, c'est `empty-heading`.
+  title: '—',
   href: '/guides',
   misAJour: '',
   utiles: '',

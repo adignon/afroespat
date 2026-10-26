@@ -92,7 +92,13 @@ export class AuthController {
     // et ce deuxième aller-retour se verrait à l'écran.
     const me = await this.users.me(result.userId);
 
-    return { accessToken: result.accessToken, isNewUser: result.isNewUser, ...me };
+    return {
+      accessToken: result.accessToken,
+      isNewUser: result.isNewUser,
+      // Le membre doit apprendre que SA reconnexion a annulé la suppression (§2.8).
+      deletionCancelled: result.deletionCancelled,
+      ...me,
+    };
   }
 
   @Post('refresh')

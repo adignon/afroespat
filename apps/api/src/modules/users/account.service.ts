@@ -6,11 +6,14 @@ import {
   ACCOUNT_LIMITS,
   SYSTEM_AUDIT_ACTIONS,
   type AccountErrorCode,
+  type DeletionCodeResponse,
+  type DeletionCodeStart,
   type DeletionStatusResponse,
   type OtpConfirm,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
+import { CryptoService } from '../../common/crypto.service';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import { AuthService } from '../auth/auth.service';
@@ -54,6 +57,7 @@ export class AccountService {
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
     private readonly auth: AuthService,
+    private readonly crypto: CryptoService,
   ) {}
 
   private fail(code: AccountErrorCode, details?: Record<string, unknown>): never {
@@ -115,6 +119,59 @@ export class AccountService {
 
     this.logger.log(`Compte ${userId} désactivé à la demande du membre (§2.8)`);
     return { status: 'DEACTIVATED' };
+  }
+
+  // ── POST /me/deletion/code (§2.8) ─────────────────────────────────────────
+
+  /**
+   * Envoie au numéro PRINCIPAL du membre le code qui confirmera sa suppression
+   * (`purpose = DELETE_ACCOUNT`).
+   *
+   * POURQUOI UNE ROUTE À PART, et non `POST /auth/otp/request` : le client ne connaît pas
+   * son numéro en clair — `GET /me` ne rend que des masques, c'est une règle dure (01 §2.1).
+   * Pour l'employer, l'écran devrait faire retaper le numéro, au risque d'une faute qui
+   * enverrait le code ailleurs. Le serveur, lui, déchiffre le numéro du membre et s'adresse à
+   * lui seul : on ne peut ni choisir le destinataire, ni confirmer avec le téléphone d'autrui
+   * (`confirmWithOtp` exige déjà `ownedBy`).
+   *
+   * LES LIMITES SONT CELLES DE `requestOtp` : captcha, trois codes par numéro et par heure.
+   * Une demande déjà en attente refuse tout de suite (`DELETION_ALREADY_PENDING`) — inutile
+   * de dépenser un SMS pour un geste qui sera refusé.
+   */
+  async sendDeletionCode(
+    userId: string,
+    input: DeletionCodeStart,
+    ip: string | undefined,
+  ): Promise<DeletionCodeResponse> {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { status: true, deletedAt: true },
+    });
+    if (user.deletedAt !== null || user.status === 'DELETED') throw ApiError.notFound();
+    if (user.status === 'DELETION_PENDING') this.fail('DELETION_ALREADY_PENDING');
+
+    const phone = await this.prisma.phoneNumber.findFirst({
+      where: { userId },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+      select: { phoneEncrypted: true, country: { select: { iso2: true, dialCode: true } } },
+    });
+    // Un membre sans numéro ne peut pas recevoir de code : il n'existe pas de compte actif dans
+    // ce cas (l'inscription en pose un), mais le refus doit être net plutôt qu'une erreur 500.
+    if (phone === null) throw ApiError.notFound();
+
+    const e164 = this.crypto.decryptPhone(phone.phoneEncrypted);
+    const defi = await this.auth.requestOtp({
+      phone: e164,
+      countryIso2: phone.country.iso2,
+      captchaToken: input.captchaToken,
+      purpose: 'DELETE_ACCOUNT',
+      ip,
+    });
+    return {
+      challengeId: defi.challengeId,
+      expiresAt: defi.expiresAt.toISOString(),
+      masked: this.crypto.maskPhone(e164, phone.country.dialCode),
+    };
   }
 
   // ── POST /me/deletion (§2.8) ──────────────────────────────────────────────

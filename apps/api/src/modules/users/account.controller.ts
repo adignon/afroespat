@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, HttpCode, Ip, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { addPhoneStartSchema, otpConfirmSchema, uuidSchema } from '@app/shared';
+import { addPhoneStartSchema, deletionCodeStartSchema, otpConfirmSchema, uuidSchema } from '@app/shared';
 import { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
 import { AllowSuspended, RateLimit, RequiresCapability } from '../../common/capability.decorator';
@@ -79,6 +79,25 @@ export class AccountController {
   }
 
   /**
+   * Le code SMS qui confirmera la suppression — envoyé au numéro principal du membre, jamais à
+   * un numéro fourni par le client (voir `AccountService.sendDeletionCode`). `@AllowSuspended()`
+   * pour la même raison que `POST /me/deletion` juste en dessous : partir n'est pas publier.
+   */
+  @Post('me/deletion/code')
+  @RequiresCapability('content.read')
+  @AllowSuspended()
+  @HttpCode(200)
+  @RateLimit(3)
+  @ApiOperation({ summary: 'Envoie le code SMS de confirmation de suppression (numéro principal)' })
+  async sendDeletionCode(
+    @Auth() auth: AuthContext,
+    @Body(zodPipe(deletionCodeStartSchema)) body: z.infer<typeof deletionCodeStartSchema>,
+    @Ip() ip: string,
+  ) {
+    return this.account.sendDeletionCode(auth.userId, body, ip);
+  }
+
+  /**
    * `@AllowSuspended()` — un compte SUSPENDU doit pouvoir partir.
    *
    * §7.3 retire toute écriture à un compte suspendu, et c'est juste pour publier.
@@ -128,6 +147,10 @@ export class AccountController {
    * suppression) et parce que §2.8 est la section qui décrit le comportement, là où le
    * tableau du §4.2 en est le résumé. Le chemin d'annulation livré est donc celui que
    * §2.8 nomme : la connexion OTP, implémentée dans `AuthService.resumeAccount`.
+   *
+   * (LOT W5B — l'écran K08 est branché sur ce chemin : `POST /me/deletion/code` envoie le
+   * code, `POST /me/deletion` confirme, et « Annuler la suppression » est la RECONNEXION, dont
+   * `POST /auth/otp/verify` rend `deletionCancelled: true` pour que l'écran le dise.)
    *
    * Livrer ces deux routes quand même aurait été pire qu'un manque : elles ne
    * pourraient répondre que `401` ou `409`, et le front croirait tenir un bouton

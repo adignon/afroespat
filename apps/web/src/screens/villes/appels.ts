@@ -85,7 +85,13 @@ export const SQUELETTE_VILLE: VilleBase = {
   cityTabs: cityTabsFor(2),
   cityPills: cityPillsFor(2),
   ville: {
-    nom: '',
+    /**
+     * `'—'` ET NON `''` (lot w5b) : le titre de la fiche est un `<h1>`, et un titre VIDE est la
+     * violation `empty-heading` d'axe — peinte pendant l'aller-retour, et pour de bon quand
+     * l'API répond en erreur. Même parti que l'en-tête de réseau (`a08t/data.ts`) : un tiret
+     * ne nomme aucune ville, donc n'affirme rien, mais l'écran garde un titre lisible.
+     */
+    nom: '—',
     region: '',
     membres: '',
     contributions: '',

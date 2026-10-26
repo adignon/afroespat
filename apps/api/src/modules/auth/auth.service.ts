@@ -320,7 +320,14 @@ export class AuthService {
     code: string;
     ip: string | undefined;
     userAgent: string | undefined;
-  }): Promise<{ accessToken: string; refreshToken: string; isNewUser: boolean; userId: string }> {
+  }): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    isNewUser: boolean;
+    userId: string;
+    /** Vrai si cette connexion a annulé une suppression de compte en attente (§2.8). */
+    deletionCancelled: boolean;
+  }> {
     const challenge = await this.consumeChallenge(input.challengeId, input.code);
 
     /**
@@ -352,6 +359,7 @@ export class AuthService {
 
     let userId: string;
     let isNewUser: boolean;
+    let deletionCancelled = false;
     if (existing === null) {
       /**
        * UN NUMÉRO BANNI NE SE RÉINSCRIT PAS — 13 §4.2, et §11 : « un banni supprimé
@@ -387,11 +395,11 @@ export class AuthService {
       isNewUser = false;
       // §2.8 : une connexion OTP réveille un compte désactivé et ANNULE une
       // suppression en attente. Elle refuse en revanche un mineur et un banni.
-      await this.resumeAccount(userId);
+      deletionCancelled = await this.resumeAccount(userId);
     }
 
     const session = await this.openSession(userId, input.ip, input.userAgent);
-    return { ...session, isNewUser, userId };
+    return { ...session, isNewUser, userId, deletionCancelled };
   }
 
   /**
@@ -504,7 +512,7 @@ export class AuthService {
    *   · mineur → une ligne `kyc_verifications` avec `is_adult = false` ;
    *   · banni → une `sanctions` de type `BAN` non levée.
    */
-  private async resumeAccount(userId: string): Promise<void> {
+  private async resumeAccount(userId: string): Promise<boolean> {
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
       select: { status: true, deletedAt: true, deactivatedAt: true },
@@ -565,7 +573,7 @@ export class AuthService {
         });
       });
       this.logger.log(`Compte ${userId} réactivé par connexion OTP (§2.8)`);
-      return;
+      return false;
     }
 
     if (user.status === 'DELETION_PENDING') {
@@ -597,7 +605,9 @@ export class AuthService {
         });
       });
       this.logger.log(`Suppression du compte ${userId} annulée par connexion OTP (§2.8)`);
+      return true;
     }
+    return false;
   }
 
   /**

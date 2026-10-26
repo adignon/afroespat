@@ -395,6 +395,13 @@ export type OtpRequestResponse = z.infer<typeof otpRequestResponseSchema>;
 export const otpVerifyResponseSchema = meResponseSchema.extend({
   accessToken: z.string().min(1),
   isNewUser: z.boolean(),
+  /**
+   * Vrai quand CETTE connexion a annulé une suppression de compte en attente (§2.8,
+   * « pendant 7 jours, une connexion OTP annule la demande »). L'écran le dit au membre —
+   * sans ce champ il ne saurait pas que sa reconnexion a sauvé son compte. Facultatif :
+   * les réponses enregistrées avant le lot w5b ne le portent pas.
+   */
+  deletionCancelled: z.boolean().optional(),
 });
 
 export type OtpVerifyResponse = z.infer<typeof otpVerifyResponseSchema>;

@@ -256,6 +256,29 @@ export type OtpConfirm = z.infer<typeof otpConfirmSchema>;
 
 // ── Suppression de compte (§2.8) ────────────────────────────────────────────
 
+/**
+ * `POST /me/deletion/code` — demande le code SMS qui confirmera la suppression.
+ *
+ * LE CLIENT NE CONNAÎT PAS LE NUMÉRO EN CLAIR : `GET /me` ne rend que des masques (01 §2.1,
+ * règle dure). Le serveur envoie donc le code au numéro PRINCIPAL du membre, et c'est ce
+ * qui rend la route possible — `POST /auth/otp/request` demanderait de retaper le numéro.
+ * Le captcha est exigé comme pour tout envoi d'OTP (§2.1) : la route est authentifiée, mais
+ * le SMS coûte de l'argent et un compte volé sert à en envoyer.
+ */
+export const deletionCodeStartSchema = z
+  .object({ captchaToken: z.string().min(1) })
+  .strict();
+
+export type DeletionCodeStart = z.infer<typeof deletionCodeStartSchema>;
+
+/** Ce que `POST /me/deletion/code` renvoie : le défi, son échéance, et le MASQUE du numéro. */
+export interface DeletionCodeResponse {
+  readonly challengeId: string;
+  readonly expiresAt: string;
+  /** « +229 •• •• •• 28 » — jamais le numéro. */
+  readonly masked: string;
+}
+
 /** Ce que `POST /me/deletion` et `GET /me/deletion` renvoient. */
 export interface DeletionStatusResponse {
   readonly requestedAt: string;

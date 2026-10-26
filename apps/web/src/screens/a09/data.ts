@@ -192,7 +192,9 @@ export interface SujetTeteView {
  * ce repli que le temps de l'appel.
  */
 export const teteVide: SujetTeteView = {
-  titre: '',
+  // `'—'` et non `''` (lot w5b) : le titre du sujet est un `<h1>` ; vide, c'est `empty-heading`.
+  // Un tiret n'affirme aucun titre — voir l'en-tête de réseau, `a08t/data.ts`.
+  titre: '—',
   corps: '',
   etat: '',
   etatBg: '#F2F5F4',

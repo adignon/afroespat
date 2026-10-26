@@ -1,4 +1,15 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page, type Playwright } from '@playwright/test';
+import { connecter } from './session';
+import {
+  ajouterBudget,
+  creerEvenementDeDemain,
+  creerMembreDecor,
+  creerReseau,
+  ouvrirSessionDe,
+  publierPublication,
+  villeActive,
+  type ReseauDecor,
+} from './aide-w5b';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -210,7 +221,9 @@ const ROUTES = [
  * Playwright donne la main au DERNIER motif inscrit : l'ordre est donc le contraire
  * de l'intuition, et l'inverser ferait avaler la route précise par le fourre-tout.
  */
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
+  // Les `describe` « RÉEL · … » lisent de vraies données : l'API n'y est pas coupée.
+  if (testInfo.titlePath.some((titre) => titre.startsWith('RÉEL ·'))) return;
   await page.route('**/v1/**', (route) =>
     route.fulfill({
       status: 503,
@@ -338,7 +351,9 @@ test.describe('le serveur rend le contenu, pas une coquille', () => {
   const SERVER_RENDERED = [
     { path: '/villes', text: 'Villes et Membres' },
     { path: '/villes?vue=carte', text: 'Villes et Membres' },
-    { path: '/villes/lyon?onglet=produits', text: 'Lyon' },
+    // MISE À JOUR (lot w5b) : le nom de la ville vient de l'API (appel client), donc il n'est plus dans
+    // le HTML servi ; le CADRE, lui, l'est : ses onglets prouvent qu'aucune coquille n'est servie.
+    { path: '/villes/lyon?onglet=produits', text: 'Produits du pays' },
     { path: '/guides/visale-sans-cdi?vue=auteur', text: 'Obtenir la garantie Visale sans CDI' },
     /**
      * LE MOT-TÉMOIN N'EST PAS LE NOM DU RÉSEAU, ET C'EST UNE CORRECTION.
@@ -360,7 +375,8 @@ test.describe('le serveur rend le contenu, pas une coquille', () => {
      * disparaîtrait si cette route repassait en rendu client — ce que ce bloc
      * surveille — sans rien affirmer sur la donnée.
      */
-    { path: '/reseaux/beninois-en-france?onglet=fil', text: 'ANNONCE DU RÉSEAU' },
+    // Idem : « ANNONCE DU RÉSEAU » était un texte de maquette. L'état vide du fil est servi avec le cadre.
+    { path: '/reseaux/beninois-en-france?onglet=fil', text: 'Aucune publication dans ce réseau' },
     { path: '/stories/nouvelle?etape=2', text: 'Ce conseil concerne' },
   ] as const;
 
@@ -500,208 +516,160 @@ test.describe('A14 · la coque du cadre', () => {
 });
 
 /**
- * A08 — CHANGER D'ONGLET CHANGE LE CONTENU.
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ LES CAS QUI LISENT DE VRAIES DONNÉES — LOT W5B                             ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
  *
- * Les treize planches A08T sont des variantes d'état de cet écran, choisies par
- * `?onglet=`. Ce qu'on vérifie n'est pas « le bon composant est importé » — ça, le
- * compilateur le dit — mais que deux onglets différents MONTRENT deux choses
- * différentes. Un aiguillage qui retombe toujours sur le même défaut compile
- * parfaitement et se voit d'une seule façon : en comparant.
+ * Ces cas (« deux onglets montrent deux contenus » pour un réseau et pour une ville, « aucun
+ * guide n'est affirmé rattaché », « Contribuer à la fiche ») cherchaient du contenu de LA
+ * MAQUETTE — « Épingler », « Repas partagé béninois », « Chambre en coloc », la ville de Lyon —
+ * sous une API coupée en 503. Depuis que ces écrans sont vivants, l'API coupée ne montre plus
+ * que leurs états vides, et la maquette n'est plus nulle part : ces cas ne pouvaient plus être
+ * verts, et la cause n'était pas un défaut du produit.
+ *
+ * ILS LISENT MAINTENANT CE QU'ILS ONT CRÉÉ, par les routes du produit (`aide-w5b.ts`) :
+ *   · un réseau public, son sujet et un événement qui lui est réservé ;
+ *   · la première ville ACTIVE (Lyon est inactive sur une base fraîche), avec un budget ;
+ *   · une publication.
+ * Le décor est bâti UNE fois par ouvrier ; le titre de ces `describe` porte « RÉEL » : c'est ce
+ * qui retire, pour eux seuls, la coupure de l'API du `beforeEach` en tête de fichier.
+ *
+ * Les libellés du dessin qui n'ont PAS changé de sens sont gardés : « Épingler » (le menu d'un
+ * sujet, pour le propriétaire) au large, « Sourdine » au téléphone.
  */
-test('A08 · deux onglets montrent deux contenus', async ({ page }) => {
-  await page.goto('/reseaux/beninois-en-france', { waitUntil: 'networkidle' });
-  const sujets = await frame(page).innerText();
+interface DecorReel {
+  readonly reseau: ReseauDecor;
+  readonly evenement: string;
+  readonly ville: { readonly slug: string; readonly nom: string };
+  readonly budget: string;
+  readonly publication: string;
+}
 
-  await page.goto('/reseaux/beninois-en-france?onglet=evenements', { waitUntil: 'networkidle' });
-  const evenements = await frame(page).innerText();
+let decorReel: Promise<DecorReel> | null = null;
 
-  /**
-   * ╔══════════════════════════════════════════════════════════════════════════╗
-   * ║ LE PLANCHER ET LES TÉMOINS SONT PAR LARGEUR, ET C'EST LA MAQUETTE QUI   ║
-   * ║ L'IMPOSE                                                                 ║
-   * ╚══════════════════════════════════════════════════════════════════════════╝
-   *
-   * Un seul plancher à 200 caractères servait les deux largeurs, et il était
-   * faux en mobile : mesuré, le cadre mobile de l'onglet Sujets sert 149
-   * caractères SANS RIEN QUI MANQUE —
-   *
-   *   « · — 890 membres · vous êtes membre · Réseau automatique · Sourdine ·
-   *     Fil · Sujets · Événements · Membres · Album · À propos ·
-   *     Accueil · Parcours · Entraide · Services · Compte »
-   *
-   * c'est-à-dire la pastille, le titre, la ligne de résumé, les six onglets de
-   * section et les cinq de la barre basse : TOUT ce que la maquette dessine à
-   * cette largeur quand l'API ne donne pas de sujet. Son homologue d'ordinateur
-   * en sert 452, parce que la maquette y ajoute les actions de propriétaire. Deux
-   * dessins différents, donc deux planchers — comme `h1` et `h1Mobile` plus haut.
-   *
-   * ── CE PLANCHER A DÉJÀ SERVI, ET IL NE DOIT PAS DEVENIR DÉCORATIF ─────────
-   *
-   * C'est lui qui a fait trouver la coquille vide : il est tombé quand
-   * `reseau-screen.tsx` renvoyait un paquet d'attente à la place du cadre. Il
-   * reste donc, serré sous la valeur mesurée et très au-dessus des quatre mots
-   * d'une coquille.
-   */
-  const etroit = (page.viewportSize()?.width ?? 0) < 1024;
-  const plancher = etroit ? 140 : 400;
-  expect(sujets.length, `l’onglet Sujets a du contenu (plancher ${plancher})`).toBeGreaterThan(
-    plancher,
-  );
-  expect(evenements, 'un autre onglet, un autre contenu').not.toBe(sujets);
+function decorDeLOuvrier(browser: Browser, playwright: Playwright): Promise<DecorReel> {
+  decorReel ??= (async (): Promise<DecorReel> => {
+    const reseau = await creerReseau(
+      browser,
+      playwright,
+      'Béninois en France',
+      'Renouveler son passeport béninois depuis la France',
+    );
+    const evenementTitre = 'Repas partagé béninois';
+    await creerEvenementDeDemain(reseau.proprietaire, evenementTitre, { communityId: reseau.id });
+    const cite = await villeActive(reseau.proprietaire.request);
+    const budget = 'Chambre en coloc';
+    const contributeur = await creerMembreDecor(browser, playwright, 'Kofi Boateng', { niveau: 'L2' });
+    await ajouterBudget(contributeur, cite.slug, budget, 45_000);
+    const publication = await publierPublication(contributeur, 'Un repas partagé samedi : qui vient ?');
+    await contributeur.fermer();
+    return {
+      reseau,
+      evenement: evenementTitre,
+      ville: { slug: cite.slug, nom: cite.name },
+      budget,
+      publication,
+    };
+  })();
+  return decorReel;
+}
 
-  /**
-   * ── LES TÉMOINS NE SONT PLUS UN TITRE DE SUJET, ET C'EST UNE CORRECTION ───
-   *
-   * Ce cas exigeait « Renouveler son passeport depuis la France » sur l'onglet
-   * Sujets. C'était un TITRE DE SUJET, que la maquette écrivait en dur et qu'un
-   * lot de branchement a délibérément cessé de peindre : il vient maintenant de
-   * `GET /communities/:slug/topics`, et le `beforeEach` de ce fichier coupe
-   * l'API. Le cas demandait donc une donnée que la suite s'interdit de fournir.
-   *
-   * Le premier `expect` ci-dessus a servi, lui : il est tombé à 147 caractères
-   * quand `reseau-screen.tsx` renvoyait un paquet d'attente à la place du cadre,
-   * et il est la raison pour laquelle la coquille vide a été trouvée. Il reste.
-   *
-   * Les deux témoins sont désormais des mots que la MAQUETTE dessine, et chacun
-   * est vérifié DANS LES DEUX SENS — présent chez l'un, absent chez l'autre.
-   * C'est ce qui empêche un aiguillage cassé de passer : rendre deux fois le même
-   * onglet ferait tomber la seconde moitié de chaque paire.
-   *
-   *   · « Épingler » est une action de PROPRIÉTAIRE que seul le cadre complet de
-   *     A08 dessine — la planche d'événements ne la porte pas ;
-   *   · « Repas partagé béninois » est un événement que seule la planche
-   *     d'événements dessine.
-   *
-   * Mesuré au `curl` sur le serveur de production, les quatre comptes : 1 / 0 et
-   * 1 / 0.
-   */
-  /**
-   * Le témoin de l'onglet Sujets diffère selon la largeur, parce que la maquette
-   * y dessine deux choses : les ACTIONS DE PROPRIÉTAIRE sur l'ordinateur
-   * (« Annonce · Épingler · Gérer »), qu'elle ne porte pas sur le téléphone, et
-   * la bascule « Sourdine » de l'en-tête mobile. Mesurés tous les quatre au
-   * navigateur, cadre par cadre et largeur par largeur.
-   */
-  const temoinSujets = etroit ? 'Sourdine' : 'Épingler';
-  expect(sujets, `l’onglet Sujets porte « ${temoinSujets} »`).toContain(temoinSujets);
-  expect(evenements, `la planche d’événements ne porte pas « ${temoinSujets} »`).not.toContain(
-    temoinSujets,
-  );
-  expect(evenements, 'la planche d’événements porte ses événements').toContain(
-    'Repas partagé béninois',
-  );
-  expect(sujets, 'l’onglet Sujets n’en porte pas').not.toContain('Repas partagé béninois');
+test.describe('RÉEL · A08 — deux onglets montrent deux contenus', () => {
+  test('le réseau montre ses sujets d’un côté, ses événements de l’autre', async ({
+    page,
+    browser,
+    playwright,
+  }) => {
+    test.setTimeout(180_000);
+    const d = await decorDeLOuvrier(browser, playwright);
+    await ouvrirSessionDe(page.context(), d.reseau.proprietaire);
+
+    await page.goto(`/reseaux/${d.reseau.slug}`, { waitUntil: 'networkidle' });
+    await expect(frame(page).getByText(d.reseau.sujet.titre).first()).toBeVisible({ timeout: 25_000 });
+    const sujets = await frame(page).innerText();
+
+    await page.goto(`/reseaux/${d.reseau.slug}?onglet=evenements`, { waitUntil: 'networkidle' });
+    await expect(frame(page).getByText(d.evenement).first()).toBeVisible({ timeout: 25_000 });
+    const evenements = await frame(page).innerText();
+
+    const etroit = (page.viewportSize()?.width ?? 0) < 1024;
+    const plancher = etroit ? 140 : 400;
+    expect(sujets.length, `l’onglet Sujets a du contenu (plancher ${plancher})`).toBeGreaterThan(plancher);
+    expect(evenements, 'un autre onglet, un autre contenu').not.toBe(sujets);
+
+    const temoinSujets = etroit ? 'Sourdine' : 'Épingler';
+    expect(sujets, `l’onglet Sujets porte « ${temoinSujets} »`).toContain(temoinSujets);
+    expect(evenements, `l’onglet Événements ne porte pas « ${temoinSujets} »`).not.toContain(temoinSujets);
+    expect(evenements, 'l’onglet Événements porte son événement').toContain(d.evenement);
+    expect(sujets, 'l’onglet Sujets ne porte pas l’événement').not.toContain(d.evenement);
+    expect(evenements, 'l’onglet Événements ne porte pas le sujet').not.toContain(d.reseau.sujet.titre);
+  });
 });
 
-/**
- * A12 — MÊME PROPRIÉTÉ sur la fiche ville : quatre onglets, quatre contenus.
- */
-test('A12 · deux onglets montrent deux contenus', async ({ page }) => {
-  await page.goto('/villes/lyon', { waitUntil: 'networkidle' });
-  const budgets = await frame(page).innerText();
+test.describe('RÉEL · A12 — deux onglets montrent deux contenus', () => {
+  test('les budgets d’un côté, les produits du pays de l’autre', async ({ page, browser, playwright, request }) => {
+    test.setTimeout(180_000);
+    const d = await decorDeLOuvrier(browser, playwright);
+    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
 
-  await page.goto('/villes/lyon?onglet=produits', { waitUntil: 'networkidle' });
-  const produits = await frame(page).innerText();
+    await page.goto(`/villes/${d.ville.slug}`, { waitUntil: 'networkidle' });
+    await expect(frame(page).getByText(d.budget).first()).toBeVisible({ timeout: 25_000 });
+    const budgets = await frame(page).innerText();
 
-  expect(produits).not.toBe(budgets);
-  // « Chambre en coloc » est une ligne de budget, et n'existe que là.
-  expect(budgets).toContain('Chambre en coloc');
-  expect(produits).not.toContain('Chambre en coloc');
+    await page.goto(`/villes/${d.ville.slug}?onglet=produits`, { waitUntil: 'networkidle' });
+    await expect(frame(page).getByRole('heading', { level: 1 })).toHaveText(d.ville.nom);
+    const produits = await frame(page).innerText();
+
+    expect(produits).not.toBe(budgets);
+    // Un budget est une ligne de l'onglet « Budgets réels », et n'existe que là.
+    expect(budgets).toContain(d.budget);
+    expect(produits).not.toContain(d.budget);
+  });
 });
 
-/**
- * A02 — AUCUN GUIDE N'EST AFFIRMÉ RATTACHÉ À UNE PUBLICATION.
- *
- * ── CE TEST A REMPLACÉ « VOTER “UTILE” SUR UN GUIDE SE VOIT », ET IL FAUT DIRE
- *    POURQUOI ─────────────────────────────────────────────────────────────────
- *
- * L'ancien test gardait un vrai comportement — le fond du pouce passait du gris au
- * vert — mais il le gardait sur des guides d'EXEMPLE. Au branchement, la question
- * s'est posée autrement : aucune route ne rattache un guide à une publication.
- * Vérifié route par route et schéma par schéma — ni `postCardSchema`, ni
- * `postDetailResponseSchema`, ni le module `guides`. Le vote « utile / pas utile »
- * n'avait donc rien à enregistrer, et les trois guides affichés affirmaient un
- * rattachement à une publication réelle.
- *
- * Ce test garde maintenant le CONSTAT, qui est ce qui doit rester vrai tant que le
- * back n'a pas tranché : la liste arrive vide. Il rougira le jour où quelqu'un la
- * remplira de nouveau avec les guides de la maquette — ce qui remettrait à l'écran
- * trois affirmations sans source — et il rougira aussi, utilement, le jour où le
- * back branchera vraiment la route : il faudra alors venir lire ce commentaire et
- * rendre au pouce son comportement.
- */
-test('A02 · aucun guide n’est affirmé rattaché tant que l’API n’en donne pas', async ({ page }) => {
-  /**
-   * Le bloc « GUIDES LIÉS » n'existe que dans le cadre d'ORDINATEUR : le cadre
-   * mobile de A02 ne dessine que la publication et ses réponses. Ce n'est pas une
-   * omission du transcodage, c'est la maquette — un téléphone n'a pas la place de
-   * la colonne de contexte.
-   */
-  test.skip(
-    (page.viewportSize()?.width ?? 0) < 1024,
-    'les guides liés sont dans la colonne de contexte',
-  );
+test.describe('RÉEL · A02 — une publication', () => {
+  test('aucun guide n’est affirmé rattaché tant que l’API n’en donne pas', async ({
+    page,
+    browser,
+    playwright,
+    request,
+  }) => {
+    test.skip((page.viewportSize()?.width ?? 0) < 1024, 'les guides liés sont dans la colonne de contexte');
+    test.setTimeout(180_000);
+    const d = await decorDeLOuvrier(browser, playwright);
+    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
 
-  await page.goto('/publications/repas-partage', { waitUntil: 'networkidle' });
+    await page.goto(`/publications/${d.publication}`, { waitUntil: 'networkidle' });
 
-  /**
-   * L'EN-TÊTE DE SECTION RESTE : c'est du dessin de la maquette, et le retirer
-   * serait redessiner. C'est la LISTE qui est vide, et c'est ce qui est vérifié.
-   *
-   * `title="Pertinent"` est le nom que la maquette donne au pouce — un bouton qui
-   * ne porte autrement qu'un pictogramme. Le viser par son nom accessible plutôt
-   * que par sa position veut dire que ce test suit le libellé, et tombe s'il
-   * réapparaît.
-   */
-  await expect(frame(page).getByText('GUIDES LIÉS', { exact: false })).toBeVisible();
-  await expect(frame(page).getByTitle('Pertinent')).toHaveCount(0);
+    await expect(frame(page).getByText('GUIDES LIÉS', { exact: false })).toBeVisible({ timeout: 25_000 });
+    await expect(frame(page).getByTitle('Pertinent')).toHaveCount(0);
+  });
 });
 
-/**
- * ─── A12C · LA FENÊTRE DE CONTRIBUTION ──────────────────────────────────────
- *
- * Elle avait été MANQUÉE par le lot précédent, et la cause tient en une ligne :
- * `extractFrame` ancre son motif sur le début du style (`<div style="width:760px`),
- * alors que les trois planches d'ordinateur de cette fenêtre écrivent
- * `position:relative;width:760px…`. Elles étaient introuvables sans qu'aucune erreur
- * ne le dise. D'où ces tests : ce qui a disparu une fois en silence doit être tenu
- * par quelque chose qui crie.
- *
- * Ce qu'ils éprouvent n'est pas le dessin — il est transcodé — mais ce qu'une image
- * ne contient pas : que le bouton ouvre, que le voile ferme, qu'Échap ferme ET rende
- * le focus, et que l'URL choisisse le volet sans qu'un clic puisse y sauter.
- */
-test.describe('A12C — « Contribuer à la fiche Lyon »', () => {
+test.describe('RÉEL · A12C — « Contribuer à la fiche de la ville »', () => {
+  const nomDeLaFenetre = (ville: string, largeur: number): string =>
+    largeur >= 1024 ? `Contribuer à la fiche ${ville}` : `Contribuer à ${ville}`;
+
   for (const width of [1440, 390]) {
-    test(`${width} px — « Contribuer » ouvre la fenêtre`, async ({ page }) => {
+    test(`${width} px — « Contribuer » ouvre la fenêtre`, async ({ page, browser, playwright, request }) => {
       test.skip((page.viewportSize()?.width ?? 0) !== width, 'piloté par le projet');
-      await page.goto('/villes/lyon', { waitUntil: 'load' });
+      const d = await decorDeLOuvrier(browser, playwright);
+      await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+      await page.goto(`/villes/${d.ville.slug}`, { waitUntil: 'load' });
 
       // Rien n'est ouvert tant qu'on n'a rien demandé.
       await expect(page.getByRole('dialog')).toHaveCount(0);
 
       await frame(page).locator('[data-modal-open="A12C"]').first().click();
-
-      /**
-       * Le nom accessible vient du titre VISIBLE, par `aria-labelledby` : la planche
-       * d'ordinateur écrit « Contribuer à la fiche Lyon », la feuille mobile
-       * « Contribuer à Lyon ». Deux textes, parce que la maquette en dessine deux —
-       * et c'est précisément ce que `modalTitle` par cadre rend possible.
-       */
-      const attendu = width >= 1024 ? 'Contribuer à la fiche Lyon' : 'Contribuer à Lyon';
-      await expect(page.getByRole('dialog', { name: attendu })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: nomDeLaFenetre(d.ville.nom, width) })).toBeVisible();
     });
   }
 
-  /**
-   * LE VOILE FERME. Il est DESSINÉ PAR LA MAQUETTE ici — `rgba(22,33,29,.5)`, compté
-   * huit fois dans le fichier — et non emprunté comme celui des fenêtres de
-   * `08 Compte`. Sans lui, `Modal` ne verrait qu'un panneau et un clic à côté ne
-   * fermerait rien.
-   */
-  test('le voile ferme au clic hors du panneau', async ({ page }) => {
+  test('le voile ferme au clic hors du panneau', async ({ page, browser, playwright, request }) => {
     test.skip((page.viewportSize()?.width ?? 0) < 1024, 'mesuré une fois, sur ordinateur');
-    await page.goto('/villes/lyon', { waitUntil: 'load' });
+    const d = await decorDeLOuvrier(browser, playwright);
+    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    await page.goto(`/villes/${d.ville.slug}`, { waitUntil: 'load' });
     await page.locator('[data-frame="desktop"] [data-modal-open="A12C"]').first().click();
 
     const dialog = page.getByRole('dialog');
@@ -712,16 +680,16 @@ test.describe('A12C — « Contribuer à la fiche Lyon »', () => {
     await expect(dialog).toBeHidden();
   });
 
-  /**
-   * ÉCHAP FERME, ET LE FOCUS REVIENT AU BOUTON D'ORIGINE.
-   *
-   * Le retour est la moitié qu'on oublie : sans lui, un membre au clavier repart au
-   * début du document et doit re-parcourir toute la fiche pour retrouver le bouton
-   * qu'il venait d'actionner.
-   */
-  test('Échap ferme, et le focus revient sur le bouton d’origine', async ({ page }) => {
+  test('Échap ferme, et le focus revient sur le bouton d’origine', async ({
+    page,
+    browser,
+    playwright,
+    request,
+  }) => {
     test.skip((page.viewportSize()?.width ?? 0) < 1024, 'mesuré une fois, sur ordinateur');
-    await page.goto('/villes/lyon', { waitUntil: 'load' });
+    const d = await decorDeLOuvrier(browser, playwright);
+    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    await page.goto(`/villes/${d.ville.slug}`, { waitUntil: 'load' });
 
     const bouton = page.locator('[data-frame="desktop"] [data-modal-open="A12C"]').first();
     await bouton.click();
@@ -732,14 +700,6 @@ test.describe('A12C — « Contribuer à la fiche Lyon »', () => {
     await expect(bouton).toBeFocused();
   });
 
-  /**
-   * LE VOLET VIENT DE L'URL, et rien d'autre ne l'atteint.
-   *
-   * Même règle qu'en K06 : ce qui fait avancer une démarche est un envoi au serveur,
-   * et ce lot n'en branche aucun. Un clic sur « Contribuer » ouvre donc TOUJOURS
-   * l'étape 1 — sauter au formulaire d'un type que personne n'a choisi serait
-   * inventer un raccourci que la maquette ne dessine pas.
-   */
   const VOLETS = [
     { param: 'type', repere: 'Étape 1 sur 2' },
     { param: 'produit', repere: 'Étape 2 sur 2' },
@@ -747,9 +707,11 @@ test.describe('A12C — « Contribuer à la fiche Lyon »', () => {
   ] as const;
 
   for (const { param, repere } of VOLETS) {
-    test(`?contribution=${param} ouvre le volet « ${repere} »`, async ({ page }) => {
+    test(`?contribution=${param} ouvre le volet « ${repere} »`, async ({ page, browser, playwright, request }) => {
       test.skip((page.viewportSize()?.width ?? 0) < 1024, 'les volets sont dessinés sur ordinateur');
-      await page.goto(`/villes/lyon?contribution=${param}`, { waitUntil: 'load' });
+      const d = await decorDeLOuvrier(browser, playwright);
+      await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+      await page.goto(`/villes/${d.ville.slug}?contribution=${param}`, { waitUntil: 'load' });
 
       const dialog = page.getByRole('dialog');
       await expect(dialog).toBeVisible();
@@ -757,27 +719,24 @@ test.describe('A12C — « Contribuer à la fiche Lyon »', () => {
     });
   }
 
-  test('« Contribuer » ouvre l’ÉTAPE 1, jamais un formulaire', async ({ page }) => {
+  test('« Contribuer » ouvre l’ÉTAPE 1, jamais un formulaire', async ({ page, browser, playwright, request }) => {
     test.skip((page.viewportSize()?.width ?? 0) < 1024, 'mesuré une fois, sur ordinateur');
-    await page.goto('/villes/lyon', { waitUntil: 'load' });
+    const d = await decorDeLOuvrier(browser, playwright);
+    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    await page.goto(`/villes/${d.ville.slug}`, { waitUntil: 'load' });
     await page.locator('[data-frame="desktop"] [data-modal-open="A12C"]').first().click();
 
-    const dialog = page.getByRole('dialog', { name: 'Contribuer à la fiche Lyon' });
+    const dialog = page.getByRole('dialog', { name: nomDeLaFenetre(d.ville.nom, 1440) });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText('Étape 1 sur 2')).toBeVisible();
     await expect(dialog.getByText('Étape 2 sur 2')).toHaveCount(0);
   });
 
-  /**
-   * LE BOUTON EXISTE SUR LES QUATRE ONGLETS, et pas seulement sur celui que A12
-   * dessine en cadre complet. Trois des quatre onglets sont des planches A12T
-   * séparées : un déclencheur posé sur la seule planche de A12 aurait laissé la
-   * fenêtre inatteignable depuis « Bons plans », « Produits » et « Témoignages » —
-   * et rien ne l'aurait dit, puisque chaque onglet s'affiche correctement.
-   */
   for (const onglet of ['budgets', 'bons-plans', 'produits', 'temoignages']) {
-    test(`l’onglet « ${onglet} » porte le déclencheur de A12C`, async ({ page }) => {
-      await page.goto(`/villes/lyon?onglet=${onglet}`, { waitUntil: 'load' });
+    test(`l’onglet « ${onglet} » porte le déclencheur de A12C`, async ({ page, browser, playwright, request }) => {
+      const d = await decorDeLOuvrier(browser, playwright);
+      await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+      await page.goto(`/villes/${d.ville.slug}?onglet=${onglet}`, { waitUntil: 'load' });
       await expect(frame(page).locator('[data-modal-open="A12C"]')).toHaveCount(1);
     });
   }

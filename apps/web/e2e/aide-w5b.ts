@@ -327,3 +327,82 @@ export function poserSanction(
   `;
   execFileSync('psql', [adresseDeLaBase(), '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], { stdio: 'pipe' });
 }
+
+// ── Ouvrir, dans le navigateur, la session d'un membre du décor ─────────────
+
+/**
+ * Installe dans `context` le cookie `dp_refresh` du membre : le navigateur reprend alors SA
+ * session, exactement comme après une connexion. On prend le DERNIER cookie du pot du membre
+ * (`dp_refresh` tourne ; voir `session.ts`).
+ */
+export async function ouvrirSessionDe(context: BrowserContext, membre: MembreDecor): Promise<void> {
+  const pot = await membre.request.storageState();
+  const refresh = pot.cookies.filter((c) => c.name === 'dp_refresh').at(-1);
+  if (refresh === undefined) throw new Error('aucun dp_refresh : la session du membre serait muette');
+  await context.clearCookies();
+  await context.addCookies([refresh]);
+}
+
+// ── Contenus de décor courants ───────────────────────────────────────────────
+
+/** Une publication (type `QUESTION`) d'un membre N2 ; rend son identifiant. */
+export async function publierPublication(membre: MembreDecor, texte: string): Promise<string> {
+  const cree = await lire<{ post: { id: string } }>(
+    await membre.request.post(`${API}/posts`, {
+      headers: entete(membre),
+      data: { type: 'QUESTION', body: texte },
+    }),
+    'POST /posts',
+  );
+  return cree.post.id;
+}
+
+/** Un événement de demain dans la première ville active, réservé ou non à un réseau. */
+export async function creerEvenementDeDemain(
+  membre: MembreDecor,
+  titre: string,
+  options: { readonly communityId?: string } = {},
+): Promise<string> {
+  const ville = await villeActive(membre.request);
+  const jour = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Europe/Paris',
+  }).format(new Date(Date.now() + 26 * 3_600_000));
+  const cree = await lire<{ id: string }>(
+    await membre.request.post(`${API}/events`, {
+      headers: entete(membre),
+      data: {
+        type: 'COOKING',
+        title: titre,
+        description: 'Chacun apporte un plat du pays.',
+        cityId: ville.id,
+        venueName: 'Maison des Associations',
+        addressText: '28 rue Denfert-Rochereau',
+        startsAt: `${jour}T12:00:00+02:00`,
+        endsAt: `${jour}T16:00:00+02:00`,
+        capacity: 40,
+        ...(options.communityId === undefined ? {} : { communityId: options.communityId }),
+      },
+    }),
+    'POST /events',
+  );
+  return cree.id;
+}
+
+/** Un budget partagé sur la fiche d'une ville (`kind: 'BUDGET'`, montant obligatoire). */
+export async function ajouterBudget(
+  membre: MembreDecor,
+  villeSlug: string,
+  libelle: string,
+  montantCentimes: number,
+): Promise<void> {
+  await lire(
+    await membre.request.post(`${API}/cities/${encodeURIComponent(villeSlug)}/tips`, {
+      headers: entete(membre),
+      data: { kind: 'BUDGET', body: libelle, amountCents: montantCentimes },
+    }),
+    'POST /cities/:slug/tips',
+  );
+}

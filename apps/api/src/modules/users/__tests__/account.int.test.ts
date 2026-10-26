@@ -408,6 +408,117 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
     ).toBe('ACTIVE');
   });
 
+  /**
+   * LE CODE DE SUPPRESSION PART AU NUMÉRO DU MEMBRE — lot w5b (branchement de K08).
+   *
+   * L'écran ne connaît que des masques (01 §2.1) : il ne peut pas demander le code avec
+   * `POST /auth/otp/request`, qui veut le numéro en clair. `POST /me/deletion/code` le fait à sa
+   * place, et ce qui compte à éprouver est qu'on ne choisit PAS le destinataire : le défi porte
+   * l'empreinte du numéro principal du membre, rien d'autre.
+   */
+  it('POST /me/deletion/code envoie le code au numéro principal, sans jamais le rendre', async () => {
+    const phone = nextPhone();
+    const me = await signIn(phone);
+    const avant = sms.sentCount();
+
+    const reponse = await request(httpServer(app))
+      .post('/v1/me/deletion/code')
+      .set('authorization', `Bearer ${me.accessToken}`)
+      .send({ captchaToken: 'test' })
+      .expect(200);
+    const corps = reponse.body as { challengeId: string; expiresAt: string; masked: string };
+
+    // Un SMS est parti, et la réponse ne porte que le MASQUE du numéro.
+    expect(sms.sentCount()).toBe(avant + 1);
+    expect(corps.masked).toContain('•');
+    expect(JSON.stringify(corps)).not.toContain(phone.replace(/^0/, ''));
+    expect(new Date(corps.expiresAt).getTime()).toBeGreaterThan(Date.now());
+
+    // Le défi est celui d'une SUPPRESSION et porte l'empreinte du numéro DU MEMBRE.
+    const defi = await prisma.otpChallenge.findUniqueOrThrow({ where: { id: corps.challengeId } });
+    const numero = await prisma.phoneNumber.findFirstOrThrow({ where: { userId: me.userId, isPrimary: true } });
+    expect(defi.purpose).toBe('DELETE_ACCOUNT');
+    expect(defi.phoneHmac).toBe(numero.phoneHmac);
+
+    // Et ce code confirme bien la suppression, sept jours de rétractation à la clé.
+    const code = sms.lastCodeSent() as string;
+    const demande = await request(httpServer(app))
+      .post('/v1/me/deletion')
+      .set('authorization', `Bearer ${me.accessToken}`)
+      .send({ challengeId: corps.challengeId, code })
+      .expect(201);
+    expect((demande.body as { executeAfter: string }).executeAfter).toBeTruthy();
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: me.userId }, select: { status: true } })).status,
+    ).toBe('DELETION_PENDING');
+  });
+
+  it('POST /me/deletion/code exige une session, et refuse une demande déjà en attente', async () => {
+    await request(httpServer(app)).post('/v1/me/deletion/code').send({ captchaToken: 'test' }).expect(401);
+
+    const phone = nextPhone();
+    const me = await signIn(phone);
+    const otp = await otpFor(phone, 'DELETE_ACCOUNT');
+    await account.requestDeletion(me.userId, { challengeId: otp.challengeId, code: otp.code });
+
+    // Pas de SMS dépensé pour un geste qui sera refusé.
+    const avant = sms.sentCount();
+    await expect(
+      account.sendDeletionCode(me.userId, { captchaToken: 'test' }, undefined),
+    ).rejects.toMatchObject({ code: 'DELETION_ALREADY_PENDING' });
+    expect(sms.sentCount()).toBe(avant);
+  });
+
+  it('un code de CONNEXION ne confirme pas la suppression, même demandé juste avant', async () => {
+    const phone = nextPhone();
+    const me = await signIn(phone);
+    const login = await otpFor(phone, 'LOGIN');
+    const refus = await request(httpServer(app))
+      .post('/v1/me/deletion')
+      .set('authorization', `Bearer ${me.accessToken}`)
+      .send({ challengeId: login.challengeId, code: login.code })
+      .expect(422);
+    expect((refus.body as ErrorBody).error.code).toBe('OTP_PURPOSE_MISMATCH');
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: me.userId }, select: { status: true } })).status,
+    ).toBe('ACTIVE');
+  });
+
+  /**
+   * « ANNULER LA SUPPRESSION » EST UNE RECONNEXION, ET L'ÉCRAN DOIT L'APPRENDRE.
+   *
+   * §2.8 : « pendant 7 jours, une connexion OTP annule la demande ». La session étant révoquée
+   * dès la demande, il n'existe pas de `DELETE /me/deletion` atteignable (voir le contrôleur) :
+   * l'annulation passe par `POST /auth/otp/verify`, qui rend maintenant `deletionCancelled`.
+   * Sans ce champ, le membre se reconnecte et ne sait pas que son compte est sauvé.
+   */
+  it('POST /auth/otp/verify dit deletionCancelled quand la reconnexion annule la suppression', async () => {
+    // Trois codes par numéro et par heure (§2.1) : un membre pour la connexion ordinaire…
+    const autre = nextPhone();
+    await signIn(autre);
+    const ordinaire = await otpFor(autre, 'LOGIN');
+    const lue = await request(httpServer(app))
+      .post('/v1/auth/otp/verify')
+      .send({ challengeId: ordinaire.challengeId, code: ordinaire.code })
+      .expect(200);
+    expect((lue.body as { deletionCancelled: boolean }).deletionCancelled).toBe(false);
+
+    // … et un autre pour la suppression demandée puis annulée par la reconnexion.
+    const phone = nextPhone();
+    const me = await signIn(phone);
+    const otp = await otpFor(phone, 'DELETE_ACCOUNT');
+    await account.requestDeletion(me.userId, { challengeId: otp.challengeId, code: otp.code });
+    const retour = await otpFor(phone, 'LOGIN');
+    const annulee = await request(httpServer(app))
+      .post('/v1/auth/otp/verify')
+      .send({ challengeId: retour.challengeId, code: retour.code })
+      .expect(200);
+    expect((annulee.body as { deletionCancelled: boolean }).deletionCancelled).toBe(true);
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: me.userId }, select: { status: true } })).status,
+    ).toBe('ACTIVE');
+  });
+
   it('[RÈGLE DURE] un compte SUSPENDU peut demander sa suppression, et rien d’autre', async () => {
     const phone = nextPhone();
     const me = await signIn(phone);
