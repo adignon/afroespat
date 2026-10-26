@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
-import { connecter, connecterPartage, type Membre } from './session';
+import { connecter, connecterPartage, numeroNational, type Membre } from './session';
 
 /**
  * Les dix écrans d'entraide et de parrainage — H01 à H10 — DEPUIS QU'ILS LISENT
@@ -84,10 +84,14 @@ interface MembreApi {
   readonly cityId: string | null;
 }
 
+/**
+ * MISE À JOUR (lot w5b) : un numéro béninois valide commence par `01` et compte DIX
+ * chiffres (libphonenumber) ; l'ancien générateur fabriquait huit chiffres, que le
+ * serveur refuse (`PHONE_INVALID`). On emploie le point unique de `session.ts`.
+ */
 function numeroNeuf(): string {
   compteur += 1;
-  const suffixe = String((Date.now() % 1_000_000) * 10 + (compteur % 10)).padStart(8, '0');
-  return `+229${suffixe.slice(-8)}`;
+  return `+229${numeroNational()}`;
 }
 
 async function creerMembreApi(
@@ -255,6 +259,21 @@ async function visiterAttendreEchecOuCadre(
 
   const cible = page.locator(`[data-screen], ${ALERTE}`).first();
   await cible.waitFor({ state: 'attached', timeout: 25_000 });
+  /**
+   * MISE À JOUR (lot w5b) : le cadre est servi AVANT la donnée (squelette, voir
+   * `screens/compte/ecran-donnees.tsx`) — `[data-screen]` existe donc dès le premier
+   * rendu, et lire l'état à cet instant mesurait le squelette (« cadre ») avant que le
+   * `404` du blocage n'arrive. On attend la FIN du chargement : soit l'alerte, soit le
+   * cadre sans bande « Chargement ».
+   */
+  await expect
+    .poll(
+      async () =>
+        (await page.locator(ALERTE).count()) > 0 ||
+        (await page.locator('[role="status"]').filter({ hasText: /Chargement/ }).count()) === 0,
+      { timeout: 25_000, message: 'la page reste en chargement' },
+    )
+    .toBe(true);
 
   const etat = (await page.locator(ALERTE).count()) > 0 ? 'alerte' : 'cadre';
   const texte = (await cible.innerText()).replace(/\s+/g, ' ');
@@ -375,7 +394,11 @@ test.describe('H02 lit la demande que l’API renvoie', () => {
     expect(texte, 'le nombre de réponses dessiné est encore là').not.toContain(
       '3 RÉPONSES · VUE AUTEUR',
     );
-    expect(texte).toContain('0 RÉPONSES · VUE AUTEUR');
+    // MISE À JOUR (lot w5b) : le compteur suit l'accord du pluriel (« 0 RÉPONSE », « 1
+    // RÉPONSE ») et la mention « VUE AUTEUR » n'est plus écrite à qui n'est PAS l'auteur :
+    // ce lecteur est Awa, la demande est celle de Binta.
+    expect(texte).toContain('0 RÉPONSE');
+    expect(texte, 'la mention « VUE AUTEUR » est peinte à un lecteur qui n’est pas l’auteur').not.toContain('VUE AUTEUR');
 
     // Aucune réponse : les trois réponses dessinées ont disparu, avec leurs auteurs.
     expect(texte).not.toContain('Sandra M.');
@@ -410,7 +433,8 @@ test.describe('H02 lit la demande que l’API renvoie', () => {
     // La réponse réelle est là, avec son auteur réel.
     expect(texte).toContain('Je connais la procédure, je peux relire ton dossier ce soir.');
     expect(texte).toContain('Moussa Traoré');
-    expect(texte).toContain('1 RÉPONSES · VUE AUTEUR');
+    expect(texte).toContain('1 RÉPONSE');
+    expect(texte, 'la mention « VUE AUTEUR » est peinte à un lecteur qui n’est pas l’auteur').not.toContain('VUE AUTEUR');
 
     /**
      * ET AUCUNE PASTILLE : le lecteur n'est pas l'auteur de la demande, donc
