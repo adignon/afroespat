@@ -555,6 +555,13 @@ describe('notifications (12)', () => {
         where: { userId: user },
         data: { quietHours: { start: '00:00', end: '00:00' } },
       });
+      /**
+       * CAUSE DE L'INSTABILITÉ (lot w5b, mesurée) : `flushQuietHours` lisait UNE fenêtre de 500
+       * lignes différées, sans ordre. Cette base en garde des milliers, laissées par des épreuves
+       * précédentes dont le membre dort encore (plage 00:00–23:59) : elles occupaient la fenêtre,
+       * la nôtre n'était pas atteinte (`sent` valait 0) et le cas était vert ou rouge selon l'âge
+       * de la base. Le service parcourt maintenant TOUTE la file, page par page.
+       */
       const flushed = await notifications.flushQuietHours();
       expect(flushed.sent).toBeGreaterThanOrEqual(1);
 

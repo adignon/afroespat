@@ -36,7 +36,11 @@ export function BandeauSuppression({ echeance }: { readonly echeance: string }) 
   if (jour === null) return null;
 
   const vers = (): void => {
-    const champ = document.querySelector<HTMLInputElement>('input[name="phone"]');
+    // Les DEUX cadres sont dans le document, l'un masqué : on vise le champ qu'on VOIT.
+    const champ =
+      [...document.querySelectorAll<HTMLInputElement>('input[name="phone"]')].find(
+        (c) => c.offsetParent !== null,
+      ) ?? null;
     champ?.scrollIntoView({ block: 'center' });
     champ?.focus();
   };

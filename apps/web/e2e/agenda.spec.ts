@@ -98,8 +98,8 @@ async function connecterL1(
 }
 
 /** Le jour civil de demain, à Paris : l'événement doit commencer dans plus de 2 h. */
-function demain(): string {
-  const dans26h = new Date(Date.now() + 26 * 3_600_000);
+function demain(decalageJours = 0): string {
+  const dans26h = new Date(Date.now() + 26 * 3_600_000 + decalageJours * 86_400_000);
   return new Intl.DateTimeFormat('en-CA', {
     year: 'numeric',
     month: '2-digit',
@@ -129,13 +129,14 @@ async function creerEvenement(
   jeton: string,
   titre: string,
   capacite = 40,
+  decalageJours = 0,
 ): Promise<Evenement> {
   const villes = await request.get(`${API}/places/cities?limit=100`);
   const items = ((await villes.json()) as { items: { id: string; name: string }[] }).items;
   const lyon = items.find((c) => c.name === 'Lyon') ?? items[0];
   if (lyon === undefined) throw new Error('aucune ville dans le référentiel');
 
-  const jour = demain();
+  const jour = demain(decalageJours);
   const lieu = 'Maison des Associations';
   const adresse = '28 rue Denfert-Rochereau, Lyon 7e';
   const cree = await request.post(`${API}/events`, {
@@ -232,7 +233,19 @@ test.describe('E01 — l’agenda lit l’API', () => {
       request,
     }) => {
       const membre = await connecterL1(context, request, { displayName: 'Fatim Sow' });
-      const evenement = await creerEvenement(request, membre.jeton, 'Thiéboudienne du dimanche');
+      /**
+       * UN JOUR LOINTAIN, TIRÉ AU HASARD (lot w5b). La liste du jour est bornée, et chaque passage de
+       * la batterie ajoute ses événements à « demain » : sur une base qui a vécu, le nôtre tombait
+       * hors de la liste et le cas devenait rouge ou vert selon l'âge de la base. Un jour entre
+       * 20 et 160 jours d'ici (le serveur refuse au-delà de six mois) ne porte que ce que ce cas y crée.
+       */
+      const evenement = await creerEvenement(
+        request,
+        membre.jeton,
+        'Thiéboudienne du dimanche',
+        40,
+        20 + Math.floor(Math.random() * 140),
+      );
 
       await visiter(page, `/agenda?jour=${evenement.jour}`, largeur);
       const vue = cadre(page, largeur);

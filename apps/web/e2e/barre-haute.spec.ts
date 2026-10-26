@@ -186,7 +186,14 @@ test.describe('la barre haute', () => {
     // On attend que les compteurs soient revenus : avant, il n'y a rien à dire.
     await expect(barre.locator('[data-barre-lien="/messages"]')).toHaveCount(1);
     await page.waitForTimeout(1_500);
-    await expect(barre.locator('[data-barre-pastille]')).toHaveCount(0);
+    // MISE À JOUR (lot w5b) : quand le worker tourne, l'inscription dépose la notification
+    // `account.welcome` — la cloche porte alors UNE pastille légitime. Ce qui doit rester vrai
+    // d'un compte neuf : aucun message non lu, donc aucune pastille sur « Messages » ; et la cloche
+    // n'en porte qu'une (la bienvenue), jamais un nombre inventé.
+    await expect(
+      barre.locator('[data-barre-lien="/messages"] [data-barre-pastille]'),
+    ).toHaveCount(0);
+    expect(await barre.locator('[data-barre-pastille]').count()).toBeLessThanOrEqual(1);
     // Et le nom du lien ne promet aucun non-lu.
     await expect(barre.locator('[data-barre-lien="/messages"]')).toHaveAttribute(
       'aria-label',

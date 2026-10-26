@@ -954,17 +954,13 @@ export class NotificationsService {
 
   // ══ Tâches planifiées (§6) ════════════════════════════════════════════════
 
-  /**
-   * `notifications.quiet_hours_flush` — horaire. « Envoie les push différés. »
-   *
-   * Les push différés sont retrouvés par le marqueur `PUSH_DEFERRED` de
-   * `channels_sent`, et la notification porte déjà titre, corps et référence —
-   * c'est ce qui permet de composer le push une heure plus tard sans colonne de
-   * charge utile.
-   */
-  async flushQuietHours(now = new Date()): Promise<{ sent: number; stillQuiet: number }> {
-    const pending = await this.prisma.notification.findMany({
-      where: { channelsSent: { has: PUSH_DEFERRED } },
+  /** Une page (500 au plus) de notifications dont le push est différé, après `apres` (un `id`, ou `''`). */
+  private lireDifferees(apres: string) {
+    return this.prisma.notification.findMany({
+      where: {
+        channelsSent: { has: PUSH_DEFERRED },
+        ...(apres === '' ? {} : { id: { gt: apres } }),
+      },
       select: {
         id: true,
         userId: true,
@@ -977,11 +973,35 @@ export class NotificationsService {
         channelsSent: true,
         user: { select: { timezone: true, status: true, deletedAt: true } },
       },
+      orderBy: { id: 'asc' },
       take: 500,
     });
+  }
 
+  /**
+   * `notifications.quiet_hours_flush` — horaire. « Envoie les push différés. »
+   *
+   * Les push différés sont retrouvés par le marqueur `PUSH_DEFERRED` de
+   * `channels_sent`, et la notification porte déjà titre, corps et référence —
+   * c'est ce qui permet de composer le push une heure plus tard sans colonne de
+   * charge utile.
+   */
+  async flushQuietHours(now = new Date()): Promise<{ sent: number; stillQuiet: number }> {
     let sent = 0;
     let stillQuiet = 0;
+    /**
+     * PAR PAGES DE 500, JUSQU'À ÉPUISEMENT (lot w5b). La première version lisait UNE fenêtre de 500
+     * lignes sans ordre : des lignes encore « calmes » (leur membre dort) restaient en tête de
+     * file à chaque passage, et une notification différée plus récente pouvait ne jamais être
+     * atteinte. Le curseur (`id` > dernier lu, les identifiants étant ordonnés dans le temps) fait
+     * parcourir TOUTE la file ; la borne de 100 pages (50 000 lignes) garde la tâche finie.
+     */
+    let curseur = '';
+    for (let page = 0; page < 100; page += 1) {
+    const pending = await this.lireDifferees(curseur);
+
+    if (pending.length === 0) break;
+    curseur = pending[pending.length - 1]?.id ?? curseur;
 
     for (const row of pending) {
       if (row.user.deletedAt !== null || row.user.status === 'DELETED') continue;
@@ -1014,6 +1034,8 @@ export class NotificationsService {
         body: (row.body ?? '').slice(0, PUSH_BODY_MAX),
       });
       sent += 1;
+    }
+    if (pending.length < 500) break;
     }
 
     return { sent, stillQuiet };

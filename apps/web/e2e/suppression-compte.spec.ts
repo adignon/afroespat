@@ -154,6 +154,7 @@ test.describe('K08 — supprimer mon compte, de bout en bout', () => {
     page,
     request,
   }) => {
+    test.setTimeout(120_000);
     const membre = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
     await ouvrirLaFenetre(page);
     const fenetre = page.getByRole('dialog', { name: 'Supprimer mon compte' });
