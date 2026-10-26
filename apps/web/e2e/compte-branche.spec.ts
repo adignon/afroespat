@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { connecter } from './session';
 import { monterEnL1 } from './niveau';
+import { poserSanction } from './aide-w5b';
 
 const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
 
@@ -26,7 +27,11 @@ const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
  */
 test.describe('le module Compte répond', () => {
   test('les sept pages offrent leurs contrôles', async ({ page, request }, infos) => {
-    await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    const membre = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
+    // Une sanction à contester : sans elle, la page dit « Aucune sanction » à raison, et le
+    // formulaire de contestation n'existe pas (lot w5b : décor par `poserSanction`, voir aide-w5b.ts).
+    // Un AVERTISSEMENT issu d'un dossier de modération : c'est lui que le membre peut contester.
+    poserSanction(membre.id);
 
     // ── LE KYC AVANT VÉRIFICATION : « Commencer », et il est ACTIF ────────
     await page.goto('/compte/verification');
@@ -167,17 +172,25 @@ test.describe('le module Compte répond', () => {
     // décider comment — en fenêtre, ou dépliée sous la sanction. C'est un choix
     // de dessin, pas une correction — REMONTÉ au porteur.
     await page.goto('/compte/sanctions');
-    if ((page.viewportSize()?.width ?? 0) >= 1024) {
-      const texte = page.locator('[data-sanction-texte]').filter({ visible: true }).first();
-      await expect(texte, 'la contestation est restée un texte d’exemple').toBeVisible({
-        timeout: 25_000,
-      });
-      /** `appealSchema` : vingt caractères au moins. Le bouton reste éteint en dessous. */
-      await texte.fill('Trop court');
-      await expect(
-        page.locator('[data-sanction-envoyer]').filter({ visible: true }).first(),
-      ).toBeDisabled();
-    }
+    /**
+     * MISE À JOUR (lot w5b) : le formulaire n'est plus dessiné d'office. Il s'ouvre par le bouton
+     * « Contester » (`data-sanction-contester`) d'une sanction CONTESTABLE (issue d'un dossier,
+     * pas encore contestée), et il existe maintenant sur les DEUX largeurs — la planche de 390 px
+     * ne portait qu'un bouton, le formulaire y a été ajouté (`components/compte/sanctions-liste.tsx`).
+     */
+    const contester = page.locator('[data-sanction-contester]').filter({ visible: true }).first();
+    await expect(contester, 'aucune sanction contestable : le bouton « Contester » manque').toBeVisible({
+      timeout: 25_000,
+    });
+    await contester.click();
+    const texte = page.locator('[data-sanction-texte]').filter({ visible: true }).first();
+    await expect(texte, 'la contestation est restée un texte d’exemple').toBeVisible({
+      timeout: 25_000,
+    });
+    await texte.fill('Trop court');
+    await expect(
+      page.locator('[data-sanction-envoyer]').filter({ visible: true }).first(),
+    ).toBeDisabled();
 
     // ── PROFIL : compétences et langues s'ouvrent, et listent ─────────────
     await page.goto('/compte/profil');

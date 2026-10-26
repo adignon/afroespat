@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { APIRequestContext, Browser, BrowserContext, Playwright } from '@playwright/test';
 import { connecter, type Membre } from './session';
 import { monterEnL2 } from './niveau';
@@ -267,4 +270,60 @@ export async function creerParrain(
     'PUT /me/mentor-profile',
   );
   return parrain;
+}
+
+// ── Ce qu'aucune route de membre ne crée : une sanction ──────────────────────
+
+/**
+ * L'adresse de la base que l'API interroge : `DATABASE_URL` de l'environnement, sinon celle du
+ * `.env` de la racine (le même fichier que l'API lit). Le `?schema=` de Prisma n'est pas une
+ * option de `psql`.
+ */
+function adresseDeLaBase(): string {
+  let url = process.env['DATABASE_URL'];
+  if (url === undefined) {
+    const env = readFileSync(resolve(__dirname, '../../../.env'), 'utf8');
+    url = /^DATABASE_URL=(.+)$/m.exec(env)?.[1]?.trim().replace(/^"|"$/g, '');
+  }
+  if (url === undefined) throw new Error('DATABASE_URL introuvable : ni environnement ni .env');
+  return url.replace(/\?.*$/, '');
+}
+
+/**
+ * POSE UNE SANCTION À UN MEMBRE — par SQL, et c'est le SEUL décor écrit ainsi.
+ *
+ * Une sanction n'a pas de route de membre : elle naît d'une décision de l'équipe (modération,
+ * `POST /admin/moderation/cases/:id/act`), derrière un compte d'équipe protégé par mot de passe
+ * ET code TOTP. Ces comptes se provisionnent hors application (jeu d'essai, CLI) ; aucun
+ * chemin de test ne les crée. Le décor insère donc UN compte d'équipe de test (idempotent, sur
+ * l'adresse `e2e-w5b@equipe.test`) puis la sanction. Le MEMBRE, lui, lit la sanction et la
+ * conteste par les vraies routes (`GET /me/sanctions`, `POST /me/sanctions/:id/appeal`).
+ *
+ * `psql` doit être sur le PATH (c'est le cas partout où la base de test tourne).
+ */
+export function poserSanction(
+  userId: string,
+  options: { readonly type?: 'WARNING' | 'SUSPENSION' | 'BAN'; readonly motif?: string } = {},
+): void {
+  const type = options.type ?? 'WARNING';
+  const motif = (options.motif ?? 'Propos déplacés envers un autre membre, relevés par la modération.').replace(/'/g, "''");
+  /**
+   * UN DOSSIER DE MODÉRATION EST LIÉ À LA SANCTION : `appealable` vaut « la sanction vient d'un
+   * dossier et n'a pas déjà été contestée » (`moderation.service.ts`). Sans dossier, la page
+   * affiche la sanction sans bouton « Contester » — comme une sanction posée à la main.
+   */
+  const sql = `
+    INSERT INTO staff_users (id, updated_at, email, display_name, password_hash, totp_secret_encrypted, role, is_active)
+    VALUES (gen_random_uuid(), now(), 'e2e-w5b@equipe.test', 'Équipe e2e', 'x', '\\x00', 'MODERATOR', true)
+    ON CONFLICT (email) DO NOTHING;
+    WITH dossier AS (
+      INSERT INTO moderation_cases (id, updated_at, subject_type, subject_id, subject_author_user_id, source, priority, status, sla_due_at, resolution, resolved_at)
+      VALUES (gen_random_uuid(), now(), 'POST', gen_random_uuid(), '${userId}', 'REPORT', 3, 'RESOLVED', now() + interval '1 day', NULL, now())
+      RETURNING id
+    )
+    INSERT INTO sanctions (id, updated_at, user_id, type, reason, starts_at, ends_at, issued_by_staff_id, case_id)
+    SELECT gen_random_uuid(), now(), '${userId}', '${type}', '${motif}', now(), ${type === 'SUSPENSION' ? "now() + interval '7 days'" : 'NULL'}, s.id, d.id
+    FROM staff_users s, dossier d WHERE s.email = 'e2e-w5b@equipe.test';
+  `;
+  execFileSync('psql', [adresseDeLaBase(), '-v', 'ON_ERROR_STOP=1', '-q', '-c', sql], { stdio: 'pipe' });
 }
