@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { connecter } from './session';
-import { monterEnL1 } from './niveau';
+import { monterEnL1, monterEnL2 } from './niveau';
 
 const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
 
@@ -99,7 +99,12 @@ test.describe('confirmer et signaler, sur le fil', () => {
     request,
   }, infos) => {
     const ouvert = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
-    const moi = await monterEnL1(page.context(), request, ouvert.accessToken);
+    /**
+     * MISE À JOUR (lot w5b) : signaler demande le niveau N2 (`report.create`, voir
+     * `packages/shared/src/capabilities`). Le lecteur qui signale monte donc en N2 ;
+     * à N1 le produit répond, à raison, par la fenêtre « Niveau N2 requis ».
+     */
+    const moi = await monterEnL2(page.context(), request, ouvert.accessToken);
     const entete = { authorization: `Bearer ${moi.accessToken}` };
 
     const marque = `E2E-SIGN-${Date.now().toString(36)}`;

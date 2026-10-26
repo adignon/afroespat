@@ -56,10 +56,18 @@ const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
  * le serveur rend.
  */
 
-const RESEAUX = [
-  { slug: 'pays-bj', nom: 'Bénin', genre: 'réseau de pays', cat: 'Pays' },
-  { slug: 'ville-lyon', nom: 'Lyon', genre: 'réseau de ville', cat: 'Ville' },
-] as const;
+/**
+ * Le réseau de VILLE est celui de la première ville ACTIVE du référentiel — celle où
+ * `connecter()` installe ses membres, donc la seule dont le réseau existe sur une base
+ * fraîche (lot w5b : « ville-lyon » supposait une ville de Lyon active, ce que le jeu
+ * de référence n'offre pas — Lyon y est inactive et n'a aucun réseau).
+ */
+interface ReseauAttendu {
+  readonly slug: string;
+  readonly nom: string;
+  readonly genre: string;
+  readonly cat: string;
+}
 
 /** Les cinq onglets A08T, plus « sujets » qui est le cadre complet de A08. */
 /**
@@ -108,111 +116,16 @@ test('l’en-tête de réseau dit le réseau ouvert, sur les six onglets', async
   });
   const page = await ctx.newPage();
 
-  for (const reseau of RESEAUX) {
-    /**
-     * LE COMPTE, DEMANDÉ AU SERVEUR AVANT D'OUVRIR L'ÉCRAN. `GET /communities/:slug`
-     * est la route que la page emploie elle-même ; on la lit en tant que ce membre.
-     */
-    const fiche = await ctx.request.get(`${API}/communities/${reseau.slug}`, {
-      headers: { authorization: `Bearer ${jeton}` },
-    });
-    expect(fiche.ok(), `GET /communities/${reseau.slug} : ${fiche.status()}`).toBe(true);
-    /**
-     * `memberCount`, et JAMAIS `counters.members` : c'est le choix de
-     * `a08t/data.ts`, et sa note dit pourquoi — `counters.members` arrive masqué
-     * sous le seuil de confidentialité, `memberCount` est public et vrai pour
-     * tout le monde. Lire l'autre ici comparerait l'écran à un nombre qu'il ne
-     * montre pas.
-     */
-    const detail = (await fiche.json()) as { memberCount: number };
-    /**
-     * ╔════════════════════════════════════════════════════════════════════════╗
-     * ║ LE NOMBRE EST FORMATÉ À LA FRANÇAISE À L'ÉCRAN — défaut LATENT          ║
-     * ╚════════════════════════════════════════════════════════════════════════╝
-     *
-     * L'API rend `2360` ; l'écran écrit « 2 360 membres », avec une espace fine
-     * insécable (U+202F) — c'est `Intl.NumberFormat('fr-FR')`. Comparés bruts, les
-     * deux ne se rencontrent JAMAIS au-dessus de 999.
-     *
-     * CE DÉFAUT DORMAIT : tant que les réseaux du jeu de données comptaient moins de
-     * mille membres, les deux formes coïncidaient. Il s'est réveillé quand le
-     * réseau de pays a dépassé le millier — chaque membre créé par une suite
-     * rejoint le réseau de son pays d'origine, et les suites en créent beaucoup.
-     *
-     * ON COMPARE DONC SUR UN TEXTE NORMALISÉ, et non sur une chaîne formatée. Node
-     * et le navigateur n'emploient pas la MÊME espace : selon la version d'ICU,
-     * `Intl.NumberFormat('fr-FR')` sépare les milliers par une espace insécable
-     * (U+00A0) ou par une espace fine insécable (U+202F). Deux chaînes identiques
-     * à l'œil, jamais égales — relevé : « Expected "2 360 membres" / Received
-     * "… 2 360 membres …" », les deux étant visuellement les mêmes. `espaces()`
-     * ramène toute espace Unicode à l'espace ordinaire, des deux côtés.
-     */
-    const membres = `${new Intl.NumberFormat('fr-FR').format(detail.memberCount)} membres`;
-    const membresNus = espaces(membres);
-
-    for (const onglet of ONGLETS) {
-      await page.goto(`/reseaux/${reseau.slug}?onglet=${onglet}`);
-
-      /**
-       * ON ATTEND LE NOM, et non un délai fixe.
-       *
-       * L'en-tête n'est plus peint avant que l'appel soit revenu — c'est le
-       * correctif du premier défaut — donc attendre le nom attend l'écran réel.
-       * Un `waitForTimeout` mesurerait parfois l'écran de chargement, et le test
-       * serait vert ou rouge selon la charge de la machine.
-       */
-      const ou = `${reseau.slug} / ${onglet}`;
-      /**
-       * ON ATTEND LE NOMBRE DE MEMBRES, PAS LE NOM — et ce choix est un défaut
-       * attrapé puis corrigé dans ce fichier même.
-       *
-       * Attendre « Lyon » passait IMMÉDIATEMENT sur n'importe quelle page : le
-       * panneau de gauche écrit « Mes études à Lyon » dans le parcours du membre.
-       * Le test mesurait donc l'écran de chargement en croyant mesurer l'écran, et
-       * c'est très exactement la forme de témoin troué décrite en tête de
-       * `a08t/entete.test.ts`. « 99 membres » n'existe que dans l'en-tête.
-       */
-      /**
-       * LE CADRE VISIBLE, ET LUI SEUL. `ScreenFrames` rend les DEUX cadres et en
-       * masque un : viser le texte dans le document trouve d'abord celui du cadre
-       * CACHÉ, et l'attente expire sur un élément qui existe mais ne s'affiche
-       * pas. C'est ce qui faisait tomber ce cas sur le projet mobile — « resolved
-       * to <div>105 membres · réseau de pays</div> », quarante-deux fois.
-       */
-      await expect(
-        page
-          .getByText(new RegExp(membresNus.replace(/ /g, '\\s')), { exact: false })
-          .filter({ visible: true })
-          .first(),
-        ou,
-      ).toBeVisible({ timeout: 20_000 });
-
-      const corps = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-
-      // PRÉSENCE — l'écran dit bien ce réseau-ci.
-      expect(corps, ou).toContain(reseau.nom);
-      expect(espaces(corps), ou).toContain(membresNus);
-      expect(corps, ou).toContain(reseau.genre);
-
-      // ABSENCE — et plus aucun littéral de la maquette. C'est la moitié qui
-      // aurait rougi sur le dépôt d'avant ce lot, et la seule qui le distingue.
-      for (const littéral of LITTERAUX_DE_MAQUETTE) {
-        expect(corps, `${ou} — littéral de maquette « ${littéral} »`).not.toContain(littéral);
-      }
-
-      /**
-       * AUCUN SÉPARATEUR ORPHELIN — le défaut vu à l'écran, figé.
-       *
-       * « · · » accolés, ou une ligne qui se termine par « · », veut dire qu'une
-       * interpolation est vide entre deux séparateurs DESSINÉS. C'est ce que
-       * donnait l'en-tête de repli, et ce que donnerait un passant si la ligne
-       * était liée en trois morceaux au lieu d'un.
-       */
-      expect(corps, `${ou} — séparateur orphelin`).not.toMatch(/·\s*·/);
-      // Et le « 0 modérateurs » qu'un compteur inconnu écrivait.
-      expect(corps, ou).not.toContain('0 modérateurs');
-    }
-  }
+  const villes = (await (await ctx.request.get(`${API}/places/cities?limit=50`)).json()) as {
+    items: { name: string; slug: string; isActive: boolean }[];
+  };
+  const ville = villes.items.find((v) => v.isActive);
+  if (ville === undefined) throw new Error('aucune ville active : aucun réseau de ville à éprouver');
+  const RESEAUX: readonly ReseauAttendu[] = [
+    { slug: 'pays-bj', nom: 'Bénin', genre: 'réseau de pays', cat: 'Pays' },
+    { slug: `ville-${ville.slug}`, nom: ville.name, genre: 'réseau de ville', cat: 'Ville' },
+  ];
+  const SLUG_VILLE = `ville-${ville.slug}`;
 
   /**
    * LA CARTE « À PROPOS » LIT LE MÊME RÉSEAU QUE SON EN-TÊTE.
@@ -222,56 +135,80 @@ test('l’en-tête de réseau dit le réseau ouvert, sur les six onglets', async
    * « 890 / membres » et « Pays / catégorie » dans la carte. La catégorie est le
    * discriminant le plus net entre les deux réseaux : « Pays » contre « Ville ».
    */
-  for (const reseau of RESEAUX) {
-    const fiche = await ctx.request.get(`${API}/communities/${reseau.slug}`, {
+  /**
+   * LE COMPTE DÉRIVE PENDANT LA MESURE (lot w5b) — et ce n'est pas un défaut du produit.
+   *
+   * Ces réseaux sont AUTOMATIQUES : tout membre du Bénin entre dans « pays-bj », et la
+   * batterie en inscrit en continu sur d'autres ouvriers. Lire le compte du serveur AVANT
+   * l'écran et exiger l'égalité exacte rougissait dès qu'un membre arrivait entre les
+   * deux lectures (« 50 membres » attendus, 70 à l'écran). On encadre donc : le compte de
+   * l'écran doit se trouver entre le compte lu AVANT et celui lu APRÈS. Le littéral de la
+   * maquette (« 890 membres ») reste attrapé, puisqu'il sort de cet intervalle.
+   */
+  const compteDe = async (slug: string): Promise<number> => {
+    const fiche = await ctx.request.get(`${API}/communities/${slug}`, {
       headers: { authorization: `Bearer ${jeton}` },
     });
-    const { memberCount } = (await fiche.json()) as { memberCount: number };
-    /** Même raison qu'au-dessus : l'écran formate à la française, Node aussi, et
-     * leurs espaces de milliers diffèrent selon la version d'ICU. */
-    const membresNus = espaces(
-      `${new Intl.NumberFormat('fr-FR').format(memberCount)} membres`,
-    );
+    expect(fiche.ok(), `GET /communities/${slug} : ${fiche.status()}`).toBe(true);
+    return ((await fiche.json()) as { memberCount: number }).memberCount;
+  };
+  /** Le nombre qui précède « membres · réseau de … » dans l'en-tête de la page. */
+  const membresDeLEntete = async (): Promise<number> => {
+    const entete = page.getByText(/\d[\d\s]*membres\s*·\s*réseau de/).filter({ visible: true }).first();
+    await expect(entete).toBeVisible({ timeout: 20_000 });
+    const texte = espaces(await entete.innerText());
+    const m = /(\d[\d ]*)\s*membres\s*·\s*réseau de/.exec(texte);
+    return Number((m?.[1] ?? '').replace(/ /g, ''));
+  };
 
-    await page.goto(`/reseaux/${reseau.slug}?onglet=a-propos`);
-    await expect(
-      page
-        .getByText(new RegExp(membresNus.replace(/ /g, '\\s')), { exact: false })
-        .filter({ visible: true })
-        .first(),
-    ).toBeVisible({ timeout: 20_000 });
-    const corps = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
-    expect(corps, `${reseau.slug} — tuile catégorie`).toContain(`${reseau.cat} catégorie`);
-    expect(espaces(corps), `${reseau.slug} — tuile membres`).toContain(membresNus);
+  for (const reseau of RESEAUX) {
+    for (const onglet of ONGLETS) {
+      const avant = await compteDe(reseau.slug);
+      await page.goto(`/reseaux/${reseau.slug}?onglet=${onglet}`);
+      const ou = `${reseau.slug} / ${onglet}`;
+
+      const affiche = await membresDeLEntete();
+      const apres = await compteDe(reseau.slug);
+      expect(affiche, `${ou} — le compte de l'en-tête sort de [${avant}, ${apres}]`).toBeGreaterThanOrEqual(avant);
+      expect(affiche, `${ou} — le compte de l'en-tête sort de [${avant}, ${apres}]`).toBeLessThanOrEqual(apres);
+
+      const corps = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+
+      // PRÉSENCE — l'écran dit bien ce réseau-ci.
+      expect(corps, ou).toContain(reseau.nom);
+      expect(corps, ou).toContain(reseau.genre);
+
+      // ABSENCE — et plus aucun littéral de la maquette. C'est la moitié qui
+      // aurait rougi sur le dépôt d'avant ce lot, et la seule qui le distingue.
+      for (const littéral of LITTERAUX_DE_MAQUETTE) {
+        expect(corps, `${ou} — littéral de maquette « ${littéral} »`).not.toContain(littéral);
+      }
+
+      expect(corps, `${ou} — séparateur orphelin`).not.toMatch(/·\s*·/);
+      // Et le « 0 modérateurs » qu'un compteur inconnu écrivait.
+      expect(corps, ou).not.toContain('0 modérateurs');
+    }
   }
 
-  /**
-   * ── LE PREMIER COUP DE PINCEAU, ET POURQUOI IL A FALLU LE PROVOQUER ──────
-   *
-   * Le défaut de l'en-tête peint avant d'être su est INVISIBLE à tout ce qui
-   * précède — et ce n'est pas une faiblesse de ces assertions, c'est structurel :
-   * elles ATTENDENT « 99 membres », donc elles attendent précisément que l'état
-   * fautif soit passé. Vérifié par mutation : en retirant la garde `!pret` de
-   * `reseau-screen.tsx`, tout ce qui est au-dessus reste VERT.
-   *
-   * Un témoin vert n'est pas un succès, c'est une question — et la réponse était
-   * qu'il manquait une assertion sur l'ÉTAT INTERMÉDIAIRE. On retient donc la
-   * réponse de la fiche pour la rendre observable, et on affirme sur ce que
-   * l'écran montre PENDANT ce temps-là.
-   *
-   * Ce que l'écran ne doit pas montrer : le repli peint. Il se reconnaît à la
-   * pastille d'initiales réduite à « · » et aux séparateurs du résumé laissés
-   * seuls — c'est exactement ce qui s'affichait sur l'onglet « À propos », et
-   * c'est ce qu'une capture d'écran a montré là où aucun test ne regardait.
-   */
-  await page.route('**/v1/communities/ville-lyon', async (route) => {
+  for (const reseau of RESEAUX) {
+    const avant = await compteDe(reseau.slug);
+    await page.goto(`/reseaux/${reseau.slug}?onglet=a-propos`);
+    const affiche = await membresDeLEntete();
+    const apres = await compteDe(reseau.slug);
+    expect(affiche, `${reseau.slug} — tuile membres`).toBeGreaterThanOrEqual(avant);
+    expect(affiche, `${reseau.slug} — tuile membres`).toBeLessThanOrEqual(apres);
+    const corps = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
+    expect(corps, `${reseau.slug} — tuile catégorie`).toContain(`${reseau.cat} catégorie`);
+  }
+
+  await page.route(`**/v1/communities/${SLUG_VILLE}`, async (route) => {
     await new Promise((r) => setTimeout(r, 2500));
     await route.continue();
   });
-  await page.goto('/reseaux/ville-lyon?onglet=a-propos');
+  await page.goto(`/reseaux/${SLUG_VILLE}?onglet=a-propos`);
 
   // Pendant que la fiche est retenue : l'écran dit qu'il charge…
-  await expect(page.getByRole('status')).toContainText('Chargement', { timeout: 2_000 });
+  await expect(page.getByRole('status').filter({ hasText: 'Chargement' })).toBeVisible({ timeout: 2_000 });
   // … et ne peint AUCUN en-tête de repli.
   const pendant = (await page.locator('body').innerText()).replace(/\s+/g, ' ');
   expect(pendant, 'en-tête de repli peint pendant le chargement').not.toMatch(/·\s*·/);
@@ -279,24 +216,14 @@ test('l’en-tête de réseau dit le réseau ouvert, sur les six onglets', async
     'Béninois en France',
   );
 
-  // Puis l'écran réel arrive, et il dit le bon réseau — avec le compte du
-  // serveur, pas le « 72 » figé qu'une base partagée dément.
-  const ficheLyon = await ctx.request.get(`${API}/communities/ville-lyon`, {
-    headers: { authorization: `Bearer ${jeton}` },
-  });
-  const { memberCount: membresLyon } = (await ficheLyon.json()) as { memberCount: number };
-  await expect(
-    page
-      .getByText(
-        new RegExp(espaces(`${new Intl.NumberFormat('fr-FR').format(membresLyon)} membres`).replace(/ /g, '\\s')),
-        { exact: false },
-      )
-      .filter({ visible: true })
-      .first(),
-  ).toBeVisible({
-    timeout: 20_000,
-  });
-  await page.unroute('**/v1/communities/ville-lyon');
+  // Puis l'écran réel arrive, et il dit le bon réseau — avec un compte du serveur
+  // (encadré, voir plus haut), pas le « 72 » figé qu'une base partagée dément.
+  const avantLyon = await compteDe(SLUG_VILLE);
+  const afficheLyon = await membresDeLEntete();
+  const apresLyon = await compteDe(SLUG_VILLE);
+  expect(afficheLyon).toBeGreaterThanOrEqual(avantLyon);
+  expect(afficheLyon).toBeLessThanOrEqual(apresLyon);
+  await page.unroute(`**/v1/communities/${SLUG_VILLE}`);
 
   await ctx.close();
 });

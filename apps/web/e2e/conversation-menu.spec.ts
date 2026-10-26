@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { connecter } from './session';
-import { monterEnL1 } from './niveau';
+import { monterEnL1, monterEnL2 } from './niveau';
 
 const API = process.env['NEXT_PUBLIC_API_URL'] ?? 'http://localhost:3001/v1';
 const PNG = Buffer.from(
@@ -270,7 +270,9 @@ test.describe('signaler depuis une conversation', () => {
     request,
   }, infos) => {
     const ouvert = await connecter(page.context(), request, { displayName: 'Awa Konaté' });
-    const moi = await monterEnL1(page.context(), request, ouvert.accessToken);
+    // MISE À JOUR (lot w5b) : signaler demande le niveau N2 (`report.create`) ; à N1 le
+    // produit ouvre « Niveau N2 requis » au lieu de la feuille, à raison.
+    const moi = await monterEnL2(page.context(), request, ouvert.accessToken);
     const entete = { authorization: `Bearer ${moi.accessToken}` };
 
     const ctx = await browser.newContext();
