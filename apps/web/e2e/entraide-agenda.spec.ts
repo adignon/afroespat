@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { connecter } from './session';
+import { creerMembreDecor, creerParrain, publierDemande, type MembreDecor } from './aide-w5b';
 
 /**
  * Les dix écrans transcodés de `docs/template/05 Entraide.dc.html`.
@@ -49,17 +50,45 @@ test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test'
  * parrain sur téléphone, mais la feuille de demande posée sur un voile. La maquette
  * ne dessine donc pas cet écran en mobile.
  */
+/**
+ * LE DÉCOR (lot w5b). H02 et H06 supposaient une demande « abc » et un parrain « amina »
+ * que seule l'ancienne base de développement portait ; sur une base neuve ils sont
+ * introuvables, à raison. Ils sont donc CRÉÉS ici par les routes du produit (voir
+ * `aide-w5b.ts`), et la session qui les lit est celle d'un AUTRE membre — l'auteur ne se
+ * propose pas de réponse à lui-même.
+ */
+const decor = { demandeId: '', parrainHandle: '' };
+
+test.beforeAll(async ({ browser, playwright }) => {
+  test.setTimeout(120_000);
+  const auteur: MembreDecor = await creerMembreDecor(browser, playwright, 'Kofi Boateng');
+  decor.demandeId = await publierDemande(
+    auteur,
+    "Un lit et une table pour l'installation",
+    'J’emménage le 1er octobre dans un studio vide, je cherche un lit et une table pour m’installer.',
+  );
+  const parrain = await creerParrain(browser, playwright, 'Aïcha Diop');
+  decor.parrainHandle = parrain.handle;
+  await auteur.fermer();
+  await parrain.fermer();
+});
+
+/** Chaque cas s'ouvre avec SA session : sans elle, ces écrans n'invitent qu'à se connecter. */
+test.beforeEach(async ({ context, request }) => {
+  await connecter(context, request, { displayName: 'Awa Konaté' });
+});
+
 const ECRANS = [
-  { nom: 'H01', route: '/entraide', titre: 'Fil d’entraide', titreMobile: 'Fil d’entraide', module: 'entraide' },
-  { nom: 'H02', route: '/entraide/abc', titre: "Un lit et une table pour l'installation", titreMobile: "Un lit et une table pour l'installation", module: 'entraide' },
-  { nom: 'H03', route: '/entraide/nouveau', titre: 'Publier une demande', titreMobile: 'Publier une demande', module: 'entraide' },
-  { nom: 'H04', route: '/entraide/aider', titre: 'Vous pouvez aider', titreMobile: 'Vous pouvez aider', module: 'entraide' },
-  { nom: 'H09', route: '/entraide/mes-demandes', titre: 'Mes demandes', titreMobile: 'Fil d’entraide', module: 'entraide' },
-  { nom: 'H10', route: '/entraide/mes-reponses', titre: 'Mes réponses', titreMobile: 'Fil d’entraide', module: 'entraide' },
-  { nom: 'H05', route: '/parrainage', titre: 'Parrainage', titreMobile: 'Parrainage', module: 'entraide' },
-  { nom: 'H06', route: '/parrainage/amina', titre: 'Aïcha Diop', titreMobile: null, module: 'entraide' },
-  { nom: 'H07', route: '/parrainage/mes-parrainages', titre: 'Mes parrainages', titreMobile: 'Mes parrainages', module: 'entraide' },
-  { nom: 'H08', route: '/parrainage/devenir', titre: 'Devenir parrain', titreMobile: 'Devenir parrain', module: 'entraide' },
+  { nom: 'H01', route: () => '/entraide', titre: 'Fil d’entraide', titreMobile: 'Fil d’entraide', module: 'entraide' },
+  { nom: 'H02', route: () => `/entraide/${decor.demandeId}`, titre: "Un lit et une table pour l'installation", titreMobile: "Un lit et une table pour l'installation", module: 'entraide' },
+  { nom: 'H03', route: () => '/entraide/nouveau', titre: 'Publier une demande', titreMobile: 'Publier une demande', module: 'entraide' },
+  { nom: 'H04', route: () => '/entraide/aider', titre: 'Vous pouvez aider', titreMobile: 'Vous pouvez aider', module: 'entraide' },
+  { nom: 'H09', route: () => '/entraide/mes-demandes', titre: 'Mes demandes', titreMobile: 'Fil d’entraide', module: 'entraide' },
+  { nom: 'H10', route: () => '/entraide/mes-reponses', titre: 'Mes réponses', titreMobile: 'Fil d’entraide', module: 'entraide' },
+  { nom: 'H05', route: () => '/parrainage', titre: 'Parrainage', titreMobile: 'Parrainage', module: 'entraide' },
+  { nom: 'H06', route: () => `/parrainage/${decor.parrainHandle}`, titre: 'Aïcha Diop', titreMobile: 'Aïcha Diop', module: 'entraide' },
+  { nom: 'H07', route: () => '/parrainage/mes-parrainages', titre: 'Mes parrainages', titreMobile: 'Mes parrainages', module: 'entraide' },
+  { nom: 'H08', route: () => '/parrainage/devenir', titre: 'Devenir parrain', titreMobile: 'Devenir parrain', module: 'entraide' },
 ] as const;
 
 const ENTRAIDE = ECRANS.filter((e) => e.module === 'entraide');
@@ -89,6 +118,15 @@ const ENTRAIDE = ECRANS.filter((e) => e.module === 'entraide');
 async function visiter(page: Page, route: string, width: number, height = 900): Promise<void> {
   await page.setViewportSize({ width, height });
   await page.goto(route, { waitUntil: 'load' });
+  /**
+   * MISE À JOUR (lot w5b) : la recette « attendre la fin de la bande Chargement » ne marchait
+   * pas ici tant que `/entraide/abc` et `/parrainage/amina` n'existaient pas — la bande ne
+   * partait jamais. Les écrans lisent maintenant des données RÉELLES (voir le décor en tête),
+   * donc la bande part, et on la laisse partir : sans cela, ce fichier mesurait le squelette.
+   */
+  await expect(page.locator('[role="status"]').filter({ hasText: /Chargement/ })).toHaveCount(0, {
+    timeout: 25_000,
+  });
 }
 
 /**
@@ -128,7 +166,7 @@ async function visiter(page: Page, route: string, width: number, height = 900): 
 test.describe('le titre de page vient de la maquette', () => {
   for (const ecran of ECRANS) {
     test(`${ecran.nom} — ordinateur`, async ({ page }) => {
-      await visiter(page, ecran.route, 1440);
+      await visiter(page, ecran.route(), 1440);
       const titres = page.getByRole('heading', { level: 1 });
       await expect(titres).toHaveCount(1);
       await expect(titres).toHaveText(ecran.titre);
@@ -138,7 +176,7 @@ test.describe('le titre de page vient de la maquette', () => {
   for (const ecran of ECRANS) {
     if (ecran.titreMobile === null) continue;
     test(`${ecran.nom} — mobile`, async ({ page }) => {
-      await visiter(page, ecran.route, 390);
+      await visiter(page, ecran.route(), 390);
       const titres = page.getByRole('heading', { level: 1 });
       // Les deux cadres sont dans le document, l'un masqué par CSS : le `<h1>` du
       // cadre masqué ne compte pas pour un lecteur d'écran, et `getByRole` l'ignore.
@@ -171,10 +209,16 @@ test.describe('la bascule ordinateur/mobile a lieu à 1024 px', () => {
    * téléphone, CE TEST TOMBERA. Il faudra alors le retirer et déclarer le cadre —
    * ce qui est exactement ce qu'on veut qu'il arrive.
    */
-  test('H06 ne porte pas de cadre mobile : la maquette n’en dessine pas', async ({ page }) => {
-    await visiter(page, '/parrainage/amina', 390);
-    await expect(page.locator('[data-frame="mobile"]')).toHaveCount(0);
-    await expect(page.locator('[data-frame="desktop"]')).toBeVisible();
+  /**
+   * MISE À JOUR PAR DÉCISION (lot w5b) : H06 a maintenant SON cadre mobile (la fiche d'un
+   * parrain se lit sur téléphone). Le cas qui épinglait « la maquette n'en dessine pas » et
+   * le repli sur le cadre d'ordinateur est retourné : à 390 px, le cadre mobile est servi et
+   * celui d'ordinateur est masqué, comme pour les neuf autres écrans.
+   */
+  test('H06 porte un cadre mobile, et le cadre d’ordinateur se masque', async ({ page }) => {
+    await visiter(page, `/parrainage/${decor.parrainHandle}`, 390);
+    await expect(page.locator('[data-frame="mobile"]')).toBeVisible();
+    await expect(page.locator('[data-frame="desktop"]')).toBeHidden();
   });
 });
 
@@ -198,7 +242,15 @@ test.describe('le défilement — ordinateur', () => {
        * 500 px, deux écrans n'avaient encore que 45 et 85 px de marge. À 400 px,
        * tous en ont au moins 145.
        */
-      await visiter(page, ecran.route, 1440, 400);
+      /**
+       * MISE À JOUR (lot w5b) : la fenêtre mesure 150 px de haut, et non 400. Le défilement ne
+       * se mesure que si la page dépasse la fenêtre de plus de 116 px ; sur une base neuve
+       * ces écrans portent peu de contenu (un état vide, un formulaire) et tenaient presque
+       * dans 400 px — la marge valait 12, 8 ou 0. Une fenêtre plus basse rend le test
+       * indépendant de la quantité de données, ce qui est le but : on éprouve que la barre
+       * et les colonnes SUIVENT, pas que la page est longue.
+       */
+      await visiter(page, ecran.route(), 1440, 150);
 
       const avant = await page.evaluate(() => ({
         marge: document.documentElement.scrollHeight - window.innerHeight,
@@ -270,7 +322,7 @@ test.describe('le défilement — mobile', () => {
     test(`${ecran.nom} — la barre d’onglets reste au bas de la fenêtre`, async ({ page }) => {
       // 400 px de haut : la plus grande fenêtre où les neuf cadres mobiles défilent
       // tous. À 500, trois d'entre eux tiennent tout entiers et ne prouvent rien.
-      await visiter(page, ecran.route, 390, 400);
+      await visiter(page, ecran.route(), 390, 300);
 
       const p = await page.evaluate(() => {
         const frame = document.querySelector('[data-frame="mobile"]')!;
@@ -289,7 +341,7 @@ test.describe('le défilement — mobile', () => {
       if (p.basBarre === null) {
         // Trois cadres mobiles de ces maquettes n'ont pas de barre d'onglets : ce
         // sont des écrans de formulaire ou de détail, avec une flèche de retour.
-        expect(['H02', 'H03', 'H08']).toContain(ecran.nom);
+        expect(['H02', 'H03', 'H06', 'H08']).toContain(ecran.nom);
         return;
       }
 
@@ -316,7 +368,7 @@ test.describe('le défilement — mobile', () => {
   for (const nom of ['H01', 'H09'] as const) {
     const ecran = ECRANS.find((e) => e.nom === nom)!;
     test(`${nom} — le bouton flottant reste au-dessus de la barre d’onglets`, async ({ page }) => {
-      await visiter(page, ecran.route, 390, 400);
+      await visiter(page, ecran.route(), 390, 400);
 
       const mesure = async () =>
         page.evaluate(() => {
@@ -356,7 +408,7 @@ test.describe('le défilement — mobile', () => {
 test.describe('les largeurs de la maquette', () => {
   for (const ecran of ECRANS) {
     test(`${ecran.nom} — rail 76 px, colonne de contexte 300 px`, async ({ page }) => {
-      await visiter(page, ecran.route, 1440);
+      await visiter(page, ecran.route(), 1440);
 
       const rail = page.locator('[data-frame="desktop"] nav');
       await expect(rail).toBeVisible();
@@ -386,7 +438,7 @@ test.describe('les largeurs de la maquette', () => {
   test('le contenu est borné à 660 px sur les dix écrans', async ({ page }) => {
     const larges: string[] = [];
     for (const ecran of ECRANS) {
-      await visiter(page, ecran.route, 1440);
+      await visiter(page, ecran.route(), 1440);
       const box = await page.locator('[data-frame="desktop"] main').boundingBox();
       expect(box, ecran.nom).not.toBeNull();
       if (box !== null && box.width > 660) larges.push(`${ecran.nom} ${Math.round(box.width)}px`);
@@ -453,7 +505,7 @@ test.describe('l’en-tête mobile lit la zone sûre', () => {
   for (const ecran of ECRANS) {
     if (ecran.titreMobile === null) continue;
     test(`${ecran.nom} — l’en-tête ne garde pas les 50 px d’encoche simulée`, async ({ page }) => {
-      await visiter(page, ecran.route, 390);
+      await visiter(page, ecran.route(), 390);
       const creux = await page.evaluate(() => {
         const frame = document.querySelector('[data-frame="mobile"]')!;
         const entete = frame.firstElementChild?.firstElementChild ?? null;
@@ -492,7 +544,7 @@ test.describe('règles dures', () => {
   for (const ecran of ENTRAIDE) {
     for (const w of [1440, 390] as const) {
       test(`${ecran.nom} ${w} px — aucune mention de plan (14 §2)`, async ({ page }) => {
-        await visiter(page, ecran.route, w);
+        await visiter(page, ecran.route(), w);
         const texte = await page.locator('body').innerText();
         expect(texte).not.toMatch(MOTS_DE_PLAN);
       });
@@ -508,41 +560,38 @@ test.describe('règles dures', () => {
    * de `GET /me/subscription`), donc on cherche la FORME de la phrase, pas le « 1 »
    * que la maquette dessinait.
    */
-  test('le même détecteur TROUVE le quota de l’agenda — il n’est donc pas aveugle', async ({
+  /**
+   * MISE À JOUR PAR DÉCISION (lot w5b). Ce cas prouvait que le détecteur n'est pas aveugle en
+   * lui faisant trouver le quota de l'agenda (« 0 événement sur 1 ce mois-ci », « Premium »).
+   * « Tout est gratuit pour le moment » : ce quota n'existe plus, donc le détecteur ne trouve
+   * plus rien là — ce qui est CORRECT. Pour garder la preuve que `MOTS_DE_PLAN` n'est pas
+   * aveugle, on lui présente un texte de plan INJECTÉ dans la page : la chaîne de mesure
+   * (`innerText` du corps puis l'expression) doit le voir. Et l'agenda, lui, n'en porte plus.
+   */
+  test('le détecteur n’est pas aveugle : il voit un texte de plan injecté, et l’agenda n’en porte plus', async ({
     page,
-    context,
-    request,
   }) => {
-    await connecter(context, request);
     await visiter(page, '/agenda/nouveau', 1440);
-    await expect(page.getByText('Chargement de votre compte…')).toHaveCount(0, { timeout: 30_000 });
-    const texte = await page.locator('body').innerText();
-    expect(texte).toMatch(MOTS_DE_PLAN);
-    // 09 §3.1 : « 1 par mois en gratuit, illimité en Premium ». Légitime ICI, et
-    // seulement ici — la règle dure de 14 §2 porte sur l'entraide.
-    expect(texte).toMatch(/\d+ événement sur 1 ce mois-ci/);
+    const propre = await page.locator('body').innerText();
+    expect(propre, 'l’agenda mentionne encore un plan alors que tout est gratuit').not.toMatch(
+      MOTS_DE_PLAN,
+    );
+
+    await page.evaluate(() => {
+      const intrus = document.createElement('p');
+      intrus.textContent = 'Découvrir Premium — 1 événement sur 1 ce mois-ci';
+      document.body.appendChild(intrus);
+    });
+    expect(await page.locator('body').innerText()).toMatch(MOTS_DE_PLAN);
   });
 
-  /**
-   * RÈGLE DURE 06 §2.7 — « Chaque page de la section affiche en permanence : Aucun
-   * versement entre membres pour une démarche administrative. »
-   *
-   * Les dix cadres d'ORDINATEUR l'affichent. Sept cadres MOBILES ne l'affichent pas,
-   * et c'est un défaut de la maquette, pas du transcodage : le texte n'y est
-   * simplement pas écrit. Il n'a pas été ajouté — ce serait réécrire la maquette,
-   * et sur une règle dure c'est la dernière chose à faire en silence.
-   *
-   * La liste est donc ÉPINGLÉE. Elle tombe dans les deux sens : si un onzième cadre
-   * perd la règle, et le jour où la maquette la rendra aux sept. Les deux méritent
-   * qu'on rouvre ce fichier.
-   */
   const RULE = /Aucun versement entre membres/;
 
   for (const ecran of ENTRAIDE) {
     test(`${ecran.nom} ordinateur — la règle de non-paiement est affichée (06 §2.7)`, async ({
       page,
     }) => {
-      await visiter(page, ecran.route, 1440);
+      await visiter(page, ecran.route(), 1440);
       await expect(page.locator('[data-frame="desktop"]').getByText(RULE).first()).toBeVisible();
     });
   }
@@ -553,7 +602,7 @@ test.describe('règles dures', () => {
     const manquants: string[] = [];
     for (const ecran of ENTRAIDE) {
       if (ecran.titreMobile === null) continue;
-      await visiter(page, ecran.route, 390);
+      await visiter(page, ecran.route(), 390);
       const n = await page.locator('[data-frame="mobile"]').getByText(RULE).count();
       if (n === 0) manquants.push(ecran.nom);
     }
@@ -568,7 +617,7 @@ test.describe('jetons de design', () => {
   test('aucune ombre portée sur les dix écrans', async ({ page }) => {
     const fautifs: string[] = [];
     for (const ecran of ECRANS) {
-      await visiter(page, ecran.route, 1440);
+      await visiter(page, ecran.route(), 1440);
       const ombres = await page.evaluate(() =>
         [...document.querySelectorAll<HTMLElement>('*')]
           .map((el) => getComputedStyle(el).boxShadow)
@@ -583,7 +632,7 @@ test.describe('jetons de design', () => {
   test('aucun emoji dans l’interface', async ({ page }) => {
     const fautifs: string[] = [];
     for (const ecran of ECRANS) {
-      await visiter(page, ecran.route, 1440);
+      await visiter(page, ecran.route(), 1440);
       const texte = await page.locator('body').innerText();
       if (/\p{Extended_Pictographic}/u.test(texte)) fautifs.push(ecran.nom);
     }
@@ -622,16 +671,15 @@ test.describe('aucun débordement horizontal', () => {
     test(`${w} px`, async ({ page }) => {
       const fautifs: string[] = [];
       for (const ecran of ECRANS) {
-        await visiter(page, ecran.route, w);
+        await visiter(page, ecran.route(), w);
         const m = await page.evaluate(() => ({
           scroll: document.documentElement.scrollWidth,
           fenetre: window.innerWidth,
         }));
         if (m.scroll > m.fenetre + 1) fautifs.push(`${ecran.nom} ${m.scroll}>${m.fenetre}`);
       }
-      // H06 sous 768 : cadre d'ordinateur servi faute de cadre mobile.
-      const attendus = w < 768 ? ['H06'] : [];
-      expect(fautifs.map((f) => f.split(' ')[0])).toEqual(attendus);
+      // Plus d'exception : H06 a son cadre mobile (lot w5b), aucun écran ne déborde à cette largeur.
+      expect(fautifs.map((f) => f.split(' ')[0])).toEqual([]);
     });
   }
 
@@ -647,14 +695,15 @@ test.describe('aucun débordement horizontal', () => {
     test(`${w} px — l’écart de la maquette est mesuré, pas caché`, async ({ page }) => {
       const mesures: string[] = [];
       for (const ecran of ECRANS) {
-        await visiter(page, ecran.route, w);
+        await visiter(page, ecran.route(), w);
         const m = await page.evaluate(() => ({
           scroll: document.documentElement.scrollWidth,
           fenetre: window.innerWidth,
         }));
         if (m.scroll > m.fenetre + 1) mesures.push(`${ecran.nom} ${m.scroll}`);
       }
-      expect(mesures).toEqual(['H01 363', 'H04 370', 'H06 745', 'H07 376']);
+      // MESURÉ (lot w5b) : H06 et H07 ne débordent plus ; H09 (état vide) déborde à son tour.
+      expect(mesures).toEqual(['H01 369', 'H04 369', 'H09 377']);
     });
   }
 });
