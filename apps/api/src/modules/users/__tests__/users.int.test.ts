@@ -576,6 +576,9 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     const events = await prisma.domainEvent.findMany({
       where: { type: 'user.profile_updated', aggregateId: userId },
       select: { payload: true },
+      // Sans ordre, `events[0]` était celui que la base rendait en premier : l'événement du nom
+      // (sans « bio ») une fois sur quelques-unes — instabilité mesurée dans la suite complète.
+      orderBy: { id: 'asc' },
     });
     expect(events).toHaveLength(2);
     expect(JSON.stringify(events)).not.toContain('secrète');
