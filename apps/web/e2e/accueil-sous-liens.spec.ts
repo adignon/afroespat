@@ -243,9 +243,28 @@ async function cliquerEtVerifier(
   expect(depart, 'le départ ne peut pas être l’arrivée').not.toBe(arrivee);
 
   const racine = options.dans === undefined ? cadre(page, largeur) : cadre(page, largeur).locator(options.dans);
-  const lien = racine.getByRole('link', { name: nom, exact: typeof nom === 'string' }).first();
+  /**
+   * LE NOM ACCEPTE UN COMPTEUR FINAL. Les onglets du réseau affichent « Membres 1 » une fois la
+   * liste arrivée (« Membres » avant) ; avec un nom exact, le cas passait ou expirait selon
+   * l'instant où les données répondaient — l'instabilité mesurée (2 échecs sur 12 exécutions).
+   * Le nom du lien est donc le libellé, suivi au plus d'un nombre.
+   */
+  const motif =
+    typeof nom === 'string'
+      ? new RegExp(`^${nom.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s*\\d+)?$`)
+      : nom;
+  const lien = racine.getByRole('link', { name: motif }).first();
   await expect(lien, 'l’affordance doit être un LIEN, pas un <span> ni un <div>').toHaveCount(1);
-  await lien.click();
+  /**
+   * Le clic est RÉESSAYÉ par tranches de 5 s : une fois sur plusieurs exécutions, la barre
+   * d'onglets du réseau était remontée en boucle pendant l'arrivée des données servies par les
+   * interceptions (« element was detached from the DOM, retrying » jusqu'au délai de 180 s).
+   * Un clic qui échoue pendant une remontée est sans conséquence ; le test exige seulement
+   * qu'il finisse par partir et que la navigation ait lieu.
+   */
+  await expect(async () => {
+    await lien.click({ timeout: 5_000 });
+  }).toPass({ timeout: 90_000 });
   /**
    * LA BORNE EST LARGE, ET C'EST MESURÉ AILLEURS : en `next dev`, la PREMIÈRE
    * compilation d'une route peut prendre plus d'une minute, et l'URL ne change
