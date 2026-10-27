@@ -329,7 +329,9 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
      * la première étape du parcours de l'autre.
      */
     await page.goto('/bienvenue/fin?parcours=non');
-    await expect(page.locator('main:visible')).toContainText('PROCHAINS ÉVÉNEMENTS');
+    // (Le départ « sans parcours » n'est PAS asserté : il dure moins que le délai d'une assertion
+    // quand l'API répond vite, et le cas échouait alors sur un état déjà dépassé — course mesurée.
+    // L'arrivée sur « Votre parcours est prêt » depuis `?parcours=non` prouve à elle seule le branchement.)
     await expect
       .poll(
         async () =>
