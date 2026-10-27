@@ -1,6 +1,7 @@
 import { createHmac } from 'node:crypto';
 import type { APIRequestContext, BrowserContext, Cookie } from '@playwright/test';
 import { connecter, type Membre } from './session';
+import { garantirEncartLogement, ouvrirSessionEquipeApi } from './aide-w5a';
 
 /**
  * ─── LE JEU DE DONNÉES DES ÉCRANS SERVICES, CRÉÉ PAR LES SEULES ROUTES ──────
@@ -277,7 +278,69 @@ async function construire(
     items: { id: string; displayName: string }[];
     featured: { id: string; displayName: string }[];
   };
-  const fiche = annuaire.featured[0] ?? annuaire.items[0] ?? null;
+  // Un encart partenaire en pied de Logement (14 §17) : posé par l'équipe si absent.
+  await garantirEncartLogement(request, jeton);
+
+  let fiche = annuaire.featured[0] ?? annuaire.items[0] ?? null;
+
+  /**
+   * VAGUE 5 — LA FICHE SE CRÉE, MAINTENANT. L'en-tête de ce bloc disait « aucune route ne sait
+   * recevoir un justificatif » : `POST /media` (genre `PROOF`) existe. Sur une base fraîche
+   * l'annuaire est vide, donc la suite fabrique sa fiche par les routes du produit — envoi du
+   * justificatif, `PUT /me/pro-profile`, puis validation par l'ÉQUIPE (session d'équipe réelle,
+   * `POST /admin/pro-profiles/:id/approve`) : une fiche non validée n'est pas listée.
+   */
+  if (fiche === null) {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const depot = (await corps(
+      await request.post(`${API}/media`, {
+        headers: auth(jeton),
+        multipart: { kind: 'PROOF', file: { name: 'justificatif.png', mimeType: 'image/png', buffer: png } },
+      }),
+      'POST /media',
+    )) as { id: string };
+    const metiers = (await corps(await request.get(`${API}/places/professions?limit=5`), 'GET /professions')) as {
+      items: { id: string }[];
+    };
+    const metier = metiers.items[0];
+    if (metier === undefined) throw new Error('aucun métier : le seed n’a pas tourné.');
+    const creee = (await corps(
+      await request.put(`${API}/me/pro-profile`, {
+        headers: auth(jeton),
+        data: {
+          professionId: metier.id,
+          businessName: 'Atelier Awa Services',
+          description: 'Aide aux démarches administratives et accompagnement des nouveaux arrivants.',
+          contactMethod: 'PLATFORM_MESSAGE',
+          cityIds: [ville.id],
+          proofAssetId: depot.id,
+        },
+      }),
+      'PUT /me/pro-profile',
+    )) as { id?: string; profile?: { id: string } };
+    const idFicheCreee = creee.id ?? creee.profile?.id;
+    if (idFicheCreee === undefined) throw new Error(`fiche sans identifiant : ${JSON.stringify(creee)}`);
+
+    const { request: moteur } = await import('@playwright/test');
+    const equipe = await moteur.newContext();
+    try {
+      await ouvrirSessionEquipeApi(equipe);
+      await corps(
+        await equipe.post(`${API}/admin/pro-profiles/${idFicheCreee}/approve`, { data: {} }),
+        'POST /admin/pro-profiles/:id/approve',
+      );
+    } finally {
+      await equipe.dispose();
+    }
+    const apres = (await corps(
+      await request.get(`${API}/pros?limit=5`, { headers: auth(jeton) }),
+      'GET /pros',
+    )) as { items: { id: string; displayName: string }[]; featured: { id: string; displayName: string }[] };
+    fiche = apres.featured[0] ?? apres.items[0] ?? null;
+  }
 
   /**
    * LE COOKIE EST REPRIS DU CONTEXTE D'API, jamais reconstruit — même raison que

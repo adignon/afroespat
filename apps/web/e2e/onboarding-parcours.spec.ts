@@ -1,7 +1,6 @@
 import { type Page, expect, test } from '@playwright/test';
 import { connecter, numeroNational } from './session';
 import { monterEnL1 } from './niveau';
-import { codesDepuis, marqueDuJournal } from './sms';
 
 /**
  * L'ONBOARDING BRANCHÉ SUR L'API, ET LE PARCOURS QU'IL CRÉE — 01 §5, 03 §3.1.
@@ -43,7 +42,14 @@ import { codesDepuis, marqueDuJournal } from './sms';
  */
 
 const API = process.env['API_URL'] ?? 'http://localhost:3001/v1';
-const API_LOG = process.env['API_LOG'] ?? '';
+/**
+ * VAGUE 5 — LE CODE EST CELUI DE DÉVELOPPEMENT (`SMS_FAKE_FIXED_CODE`, 123456), pas
+ * celui qu'on lirait dans le journal de l'API. Ce fichier exigeait `API_LOG` et SAUTAIT
+ * dix-sept cas quand la variable manquait : un saut silencieux est un test qui ne
+ * prouve rien, et il ne se lit pas comme une panne. Le code fixe rend le journal inutile ;
+ * l'API absente fait désormais ÉCHOUER les cas, au lieu de les taire.
+ */
+const CODE_OTP = process.env['SMS_FAKE_FIXED_CODE'] ?? '123456';
 
 /** La bannière du parcours, et elle seule : Next pose son propre `role="alert"`. */
 const BANNER = '[data-flow-error]';
@@ -120,11 +126,9 @@ async function signUp(page: Page): Promise<void> {
   await page.goto('/connexion');
   await page.locator('input[name="phone"]:visible').fill(phone);
   await page.locator('main:visible [role="checkbox"]').click();
-  const marque = marqueDuJournal();
   await page.getByRole('button', { name: 'Recevoir le code' }).click();
   await page.waitForURL('**/connexion/code', { timeout: 20_000 });
-  await expect.poll(() => codesDepuis(phone, marque).length, { timeout: 15_000 }).toBe(1);
-  await page.locator('input[autocomplete="one-time-code"]:visible').fill(codesDepuis(phone, marque)[0] as string);
+  await page.locator('input[autocomplete="one-time-code"]:visible').fill(CODE_OTP);
   await page.waitForURL('**/bienvenue/phase', { timeout: 20_000 });
 }
 
@@ -174,10 +178,6 @@ async function etapesAffichees(page: Page): Promise<number | null> {
  * envois d'OTP par heure et par IP (voir l'en-tête).
  */
 test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
-  test.skip(
-    async () => !(await apiUp()) || API_LOG === '',
-    'API ou journal absents : lancer l’API et passer API_LOG',
-  );
   // Un seul projet : les deux partageraient l'IP, donc le compteur d'OTP.
   test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
@@ -185,6 +185,7 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
   let journeyId: string | null = null;
 
   test.beforeAll(async ({ browser }) => {
+    expect(await apiUp(), `l’API ne répond pas sur ${API}/health`).toBe(true);
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   });
 
@@ -286,7 +287,20 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
      */
     const pseudo = page.locator('input[name="handle"]:visible');
     const suffixe = String(Date.now()).slice(-6);
+    /**
+     * VAGUE 5 — LA SAISIE N'EST PLUS « SLUGIFIÉE » (lot A, `saisieHandle`). L'ancienne
+     * attente — « Aïcha SÈGBÉDJI 123456 » devenait `aicha-segbedji-123456` — décrivait une
+     * fonction qui MODIFIAIT en silence ce que le membre tapait, et le schéma partagé
+     * refuse ce qu'elle produisait parfois. Décision : l'écran ne retire que ce qui ne peut
+     * jamais appartenir à un pseudo (espaces, ponctuation) et translittère les accents ;
+     * la casse est laissée telle quelle, et le schéma la REFUSE avec son propre message.
+     * Le cas mesure donc les deux moitiés : la translittération, puis le refus d'une
+     * majuscule — avant de saisir un pseudo valide pour continuer.
+     */
     await pseudo.fill(`Aïcha SÈGBÉDJI ${suffixe}`);
+    await expect(pseudo).toHaveValue(`AichaSEGBEDJI${suffixe}`);
+    await expect(page.locator('main:visible')).toContainText('minuscules');
+    await pseudo.fill(`aicha-segbedji-${suffixe}`);
     await expect(pseudo).toHaveValue(`aicha-segbedji-${suffixe}`);
     await page.getByRole('button', { name: 'Continuer' }).click();
     await page.waitForURL('**/bienvenue/fin', { timeout: 25_000 });
@@ -315,7 +329,9 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
      * la première étape du parcours de l'autre.
      */
     await page.goto('/bienvenue/fin?parcours=non');
-    await expect(page.locator('main:visible')).toContainText('PROCHAINS ÉVÉNEMENTS');
+    // (Le départ « sans parcours » n'est PAS asserté : il dure moins que le délai d'une assertion
+    // quand l'API répond vite, et le cas échouait alors sur un état déjà dépassé — course mesurée.
+    // L'arrivée sur « Votre parcours est prêt » depuis `?parcours=non` prouve à elle seule le branchement.)
     await expect
       .poll(
         async () =>
@@ -374,23 +390,23 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
     await expect(page.locator(BANNER)).toHaveCount(0);
   });
 
-  test('J02 : un second parcours en gratuit est REFUSÉ, et le refus se voit', async () => {
+  test('J02 : « tout est gratuit » — un second parcours n’est PLUS refusé', async () => {
+    /**
+     * ATTENTE RETOURNÉE PAR DÉCISION DU PORTEUR : « On va laisser les paiements. Tout sera
+     * gratuit pour le moment. » Tant que `monetisation_active` est faux, tous les membres
+     * ont les droits Premium et AUCUNE limite de plan ne s'applique : `PLAN_LIMIT_REACHED`
+     * (03 §3.1, « un parcours actif en gratuit ») ne peut plus se produire. Le refus et sa
+     * bannière restent éprouvés côté serveur, monétisation allumée, par les tests
+     * d'intégration de l'API ; ici on prouve l'état présent — le second parcours est créé,
+     * sans bannière d'erreur, et le membre en compte bien deux.
+     */
     // La variante « Régulariser » n'existe QUE sur le cadre mobile.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto('/parcours/nouveau?etape=regulariser');
-    await page.locator('main:visible button', { hasText: 'Continuer' }).click();
+    await page.getByRole('button', { name: 'Créer le parcours' }).click();
 
-    /**
-     * §3.1 : `PLAN_LIMIT_REACHED`. Le refus DOIT se voir ici, contrairement à O03 où
-     * il est avalé — sur J02 le membre vient de demander explicitement un parcours,
-     * et l'ignorer laisserait un bouton qui a l'air cassé. Sur O03, au contraire,
-     * l'avaler évite de bloquer une inscription au quatrième écran sur six pour un
-     * parcours que le membre a déjà.
-     */
-    await expect(page.locator(BANNER)).toBeVisible({ timeout: 25_000 });
-    await expect(page).toHaveURL(/\/parcours\/nouveau/);
-    // Toujours un seul parcours : le refus n'en a pas créé un second.
-    expect(await nombreDeParcours(page)).toBe(1);
+    await expect.poll(() => nombreDeParcours(page), { timeout: 25_000 }).toBe(2);
+    await expect(page.locator(BANNER)).toHaveCount(0);
     await page.setViewportSize({ width: 1440, height: 1000 });
   });
 });
@@ -403,12 +419,12 @@ test.describe.serial('un membre s’inscrit, et son parcours existe', () => {
  * déjà un. Deux inscriptions au total pour ce fichier ; la limite en autorise dix.
  */
 test.describe.serial('un membre refuse le parcours, et rien n’est créé', () => {
-  test.skip(async () => !(await apiUp()) || API_LOG === '', 'API ou journal absents');
   test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'piloté par le test');
 
   let page: Page;
 
   test.beforeAll(async ({ browser }) => {
+    expect(await apiUp(), `l’API ne répond pas sur ${API}/health`).toBe(true);
     page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   });
 
@@ -425,7 +441,16 @@ test.describe.serial('un membre refuse le parcours, et rien n’est créé', () 
 
   test('décocher la case ne crée rien, et l’inscription continue', async () => {
     await signUp(page);
-    await page.goto('/bienvenue/lieu');
+    /**
+     * VAGUE 5 — ON PASSE PAR L'ÉCRAN DE LA PHASE, on n'ouvre plus `/bienvenue/lieu` d'un
+     * coup. Les villes proposées au lieu dépendent de la phase du membre (`villesProposees`) :
+     * un membre sans phase choisie est « avant le départ » côté serveur et se voit proposer
+     * les villes de son pays d'ORIGINE — le comportement voulu, et c'est précisément ce que
+     * l'accès direct montrait (douze villes béninoises, pas de Lyon).
+     */
+    await page.locator('main:visible button').filter({ hasText: 'Je suis installé·e' }).click();
+    await page.getByRole('button', { name: 'Continuer' }).click();
+    await page.waitForURL('**/bienvenue/lieu', { timeout: 20_000 });
     await choisirLyon(page);
 
     // §1.2, règle dure : « le parcours n'est jamais imposé ».
@@ -573,7 +598,14 @@ test.describe('J03 sur une planche d’illustration : aucun appel ne part', () =
     const appels: string[] = [];
     page.on('request', (r) => {
       const chemin = new URL(r.url()).pathname;
-      if (chemin.includes('/journeys') || chemin.includes('/blockers')) appels.push(chemin);
+      /**
+       * VAGUE 5 — LA COLONNE LATÉRALE DEMANDE `/journeys/public` (parcours publics à
+       * suggérer), appel légitime et sans rapport avec le segment « 1 » : la règle porte
+       * sur ce segment, donc sur `/journeys/1…` et sur les blocages, pas sur toute route
+       * `/journeys`. Garder l'ancien filtre aurait fait échouer le cas sur un appel
+       * que la page DOIT faire.
+       */
+      if (/\/journeys\/1(\/|$)/.test(chemin) || chemin.includes('/blockers')) appels.push(chemin);
     });
 
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -598,8 +630,16 @@ test.describe('P03 — la page statique, `/p/:slug`', () => {
      */
     const response = await page.goto('/p/confidentialite');
     const html = (await response?.text()) ?? '';
+    /**
+     * VAGUE 5 — LE TEXTE VIENT DU BACK (`static_pages`), plus de la maquette. Sur une
+     * base fraîche la confidentialité est un texte PROVISOIRE (version 0) : « Ce que nous
+     * collectons » n'existe plus nulle part. Ce que la propriété « HTML initial » exige
+     * n'a pas changé : le titre, la version et la date d'entrée en vigueur du document
+     * servi par le serveur sont dans les octets de la première réponse.
+     */
     expect(html).toContain('Politique de confidentialité');
-    expect(html).toContain('Ce que nous collectons');
+    expect(html).toContain('En vigueur depuis le');
+    expect(html).toMatch(/Version <!-- -->\d+/);
   });
 
   test('sert la variante RESSOURCES avec ses numéros réels', async ({ page }) => {
@@ -624,17 +664,19 @@ test.describe('P03 — la page statique, `/p/:slug`', () => {
     expect(response?.status()).toBe(404);
   });
 
-  test('`cgu` rend 404 tant que la route du back n’existe pas', async ({ page }) => {
+  test('`cgu` est servi par la route du back, avec SON titre', async ({ page }) => {
     /**
-     * `static_pages` porte bien une ligne `cgu` publiée, mais AUCUNE route ne la
-     * sert et la maquette ne dessine qu'un document — la confidentialité. Brancher
-     * `cgu` dessus afficherait le MAUVAIS document, titre et version comprises, sur
-     * un écran que le membre lit avant d'accepter.
-     *
-     * Ce test tombera le jour où la route arrivera. C'est voulu : il dit « ce slug
-     * attend un back », et il doit être relu à ce moment-là.
+     * L'ancienne attente (« `cgu` rend 404 tant que la route du back n'existe pas »)
+     * disait elle-même : « ce test tombera le jour où la route arrivera, il doit être
+     * relu à ce moment-là ». La route est arrivée : `static_pages` sert `cgu` comme
+     * `confidentialite`. Le garde-fou qu'elle portait reste : ne jamais afficher le
+     * MAUVAIS document sous ce slug — on exige donc le titre des conditions, et
+     * l'absence du titre de la confidentialité.
      */
     const response = await page.goto('/p/cgu');
-    expect(response?.status()).toBe(404);
+    expect(response?.status()).toBe(200);
+    const html = (await response?.text()) ?? '';
+    expect(html).toContain('Conditions générales d’utilisation');
+    expect(html).not.toContain('Politique de confidentialité');
   });
 });

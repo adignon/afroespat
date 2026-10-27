@@ -186,7 +186,9 @@ async function servirLeFil(page: Page): Promise<void> {
 async function visit(page: Page, width: number): Promise<void> {
   await page.setViewportSize({ width, height: 900 });
   await servirLeFil(page);
-  await page.goto('/accueil', { waitUntil: 'networkidle' });
+  // `load` et non `networkidle` : Next précharge les liens visibles et le réseau ne retombe jamais au calme
+  // (le cas expirait à 180 s sans avoir rien mesuré). Le déclencheur est attendu juste après.
+  await page.goto('/accueil', { waitUntil: 'load' });
   // Le fil arrive après le premier rendu : les déclencheurs n'existent qu'ensuite.
   await page.locator('[data-modal-open="A01C"]').first().waitFor({ state: 'attached' });
 }

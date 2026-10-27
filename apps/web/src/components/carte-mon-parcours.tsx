@@ -154,7 +154,7 @@ export function CarteParcoursTelephone() {
       {parcours === undefined ? null : (
         <Link
           href={parcours === null ? '/parcours/nouveau' : `/parcours/${parcours.id}`}
-          style={{ background: '#fff', color: '#0F5C48', fontWeight: 700, fontSize: '12.5px', padding: '9px 14px', borderRadius: '999px', textDecoration: 'none', whiteSpace: 'nowrap' }}
+          style={{ background: '#fff', color: '#0F5C48', fontWeight: 700, fontSize: '12.5px', padding: '0 14px', minHeight: '44px', display: 'inline-flex', alignItems: 'center', borderRadius: '999px', textDecoration: 'none', whiteSpace: 'nowrap' }}
         >
           {parcours === null ? 'Commencer' : 'Continuer'}
         </Link>

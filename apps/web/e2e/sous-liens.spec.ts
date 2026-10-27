@@ -1,4 +1,6 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { monterParcours } from './parcours-session';
+import { monterJalonPartageable } from './aide-w5a';
 
 /**
  * ─── « LES SOUS LIENS », ÉPROUVÉS EN CLIQUANT ────────────────────────────────
@@ -266,8 +268,6 @@ test.describe('les liens balisés mais non adressés NAVIGUENT (ordinateur)', ()
 
   const CAS = [
     { depart: '/parcours/1', libelle: 'Nouveau parcours', vers: '/parcours/nouveau' },
-    { depart: '/parcours/1', libelle: 'Voir tous', vers: '/parcours/publics' },
-    { depart: '/services/logement', libelle: 'Premium', vers: '/premium' },
   ] as const;
 
   for (const { depart, libelle, vers } of CAS) {
@@ -278,6 +278,40 @@ test.describe('les liens balisés mais non adressés NAVIGUENT (ordinateur)', ()
       expect(await cliquerEtLireLUrl(page, depart, lien, vers)).toBe(vers);
     });
   }
+});
+
+test.describe('deux liens qui ont changé de nature avec les données vives (ordinateur)', () => {
+  test.skip(({ viewport }) => (viewport?.width ?? 0) < 1024, 'cadre d’ordinateur');
+
+  test('un vrai parcours · clic sur « Voir tous » → /parcours/publics', async ({ page, context, request }) => {
+    /**
+     * `/parcours/1` (planche d'illustration) répond « Ce parcours n'est pas ouvert » et ne
+     * dessine plus la colonne des parcours publics : « Voir tous » n'existe que sur un
+     * VRAI parcours. Le décor est donc réel (`monterParcours`), et les interceptions de ce
+     * fichier — qui répondent 503 à toute l'API — sont retirées pour ce cas.
+     */
+    await page.unroute('**/v1/**');
+    await page.unroute('**/v1/auth/refresh');
+    const m = await monterParcours(context, request);
+    const lien = cadreOrdinateur(page).getByRole('link', { name: /^Voir tous$/ }).first();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(`/parcours/${m.journeyId}`, { waitUntil: 'load' });
+    await expect(lien).toHaveCount(1, { timeout: 20_000 });
+    await lien.click();
+    await expect(page).toHaveURL(/\/parcours\/publics$/, { timeout: 60_000 });
+  });
+
+  test('/services/logement · aucune offre « Premium » n’est promue : tout est gratuit', async ({ page }) => {
+    /**
+     * ATTENTE RETOURNÉE PAR DÉCISION DU PORTEUR (« Tout sera gratuit pour le moment »).
+     * Le lien « Premium » → /premium de la colonne des services était une promotion de
+     * plan payant ; elle a été retirée avec les limites de plan. Le cas garde sa valeur
+     * dans l'autre sens : s'il revenait, l'écran se remettrait à vendre un plan que
+     * personne ne peut acheter.
+     */
+    await visiter(page, '/services/logement');
+    await expect(cadreOrdinateur(page).getByRole('link', { name: /^Premium$/ })).toHaveCount(0);
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -360,7 +394,13 @@ const panneau = (page: Page): Locator => page.locator('[data-modal-panel]');
  */
 const FENETRES = [
   { nom: 'J03 · Je suis bloqué·e', depart: '/parcours/1', controle: /Je suis bloqué/ },
-  { nom: 'J04 · Partager un jalon', depart: '/parcours/1', controle: /^Partager$/ },
+  /**
+   * VAGUE 5 — J04 N'EST PLUS UNE PLANCHE D'ILLUSTRATION : « Partager » n'est proposé que
+   * pour une étape MAJEURE franchie, sur un VRAI parcours (`colonne.tsx`). `depart: null`
+   * veut dire « décor réel » : `monterJalonPartageable`, et les interceptions 503 de ce
+   * fichier sont retirées pour ce cas.
+   */
+  { nom: 'J04 · Partager un jalon', depart: null, controle: /^Partager$/ },
 ] as const;
 
 for (const { nom, depart, controle } of FENETRES) {
@@ -371,23 +411,32 @@ for (const { nom, depart, controle } of FENETRES) {
     const declencheur = (page: Page): Locator =>
       cadreOrdinateur(page).getByRole('button', { name: controle }).first();
 
-    test('elle s’OUVRE au clic sur le contrôle que la maquette dessine', async ({ page }) => {
-      await visiter(page, depart);
+    const aller = async (page: Page, context: BrowserContext, request: APIRequestContext): Promise<void> => {
+      if (depart !== null) return visiter(page, depart);
+      await page.unroute('**/v1/**');
+      await page.unroute('**/v1/auth/refresh');
+      const jalon = await monterJalonPartageable(context, request);
+      await visiter(page, `/parcours/${jalon.journeyId}`);
+      await expect(declencheur(page)).toHaveCount(1, { timeout: 20_000 });
+    };
+
+    test('elle s’OUVRE au clic sur le contrôle que la maquette dessine', async ({ page, context, request }) => {
+      await aller(page, context, request);
       await expect(panneau(page)).toHaveCount(0);
       await declencheur(page).click();
       await expect(panneau(page).first()).toBeVisible();
     });
 
-    test('elle se FERME par la croix', async ({ page }) => {
-      await visiter(page, depart);
+    test('elle se FERME par la croix', async ({ page, context, request }) => {
+      await aller(page, context, request);
       await declencheur(page).click();
       await expect(panneau(page).first()).toBeVisible();
       await page.locator('[data-modal-close]').first().click();
       await expect(panneau(page)).toHaveCount(0);
     });
 
-    test('elle se FERME par Échap', async ({ page }) => {
-      await visiter(page, depart);
+    test('elle se FERME par Échap', async ({ page, context, request }) => {
+      await aller(page, context, request);
       await declencheur(page).click();
       await expect(panneau(page).first()).toBeVisible();
       await page.keyboard.press('Escape');
@@ -400,8 +449,8 @@ for (const { nom, depart, controle } of FENETRES) {
      * voile est seul — ce que l'assertion sur la boîte vérifie d'abord. Un
      * sélecteur de voile passerait même si le panneau le recouvrait entièrement.
      */
-    test('elle se FERME au clic hors du panneau', async ({ page }) => {
-      await visiter(page, depart);
+    test('elle se FERME au clic hors du panneau', async ({ page, context, request }) => {
+      await aller(page, context, request);
       await declencheur(page).click();
       await expect(panneau(page).first()).toBeVisible();
       const boite = await panneau(page).first().boundingBox();
@@ -418,8 +467,8 @@ for (const { nom, depart, controle } of FENETRES) {
      * ce qui force au moins un tour complet — et on lit `document.activeElement` à
      * CHAQUE coup. Sortir une seule fois suffit à faire rougir.
      */
-    test('elle PIÈGE le Tab à l’intérieur', async ({ page }) => {
-      await visiter(page, depart);
+    test('elle PIÈGE le Tab à l’intérieur', async ({ page, context, request }) => {
+      await aller(page, context, request);
       await declencheur(page).click();
       await expect(panneau(page).first()).toBeVisible();
 
@@ -451,8 +500,8 @@ for (const { nom, depart, controle } of FENETRES) {
      * sans elle, refermer renvoie le focus au début du document et un membre au
      * clavier doit re-parcourir toute la page.
      */
-    test('elle REND le focus au contrôle qui l’a ouverte', async ({ page }) => {
-      await visiter(page, depart);
+    test('elle REND le focus au contrôle qui l’a ouverte', async ({ page, context, request }) => {
+      await aller(page, context, request);
       const bouton = declencheur(page);
       await bouton.focus();
       await expect(bouton).toBeFocused();
@@ -504,7 +553,7 @@ const bandeEchec = (page: Page): Locator =>
   page.getByRole('alert').filter({ hasText: 'Réessayer' });
 
 test.describe('un chargement en échec laisse une navigation au membre', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context, request }) => {
     // Posée APRÈS celles du `beforeEach` global, donc elle gagne : l'ordre des
     // `page.route` est l'inverse de l'enregistrement.
     await page.route('**/v1/help*', (route) =>
@@ -516,7 +565,7 @@ test.describe('un chargement en échec laisse une navigation au membre', () => {
     );
   });
 
-  test('l’échec est annoncé, et le rail reste à l’écran', async ({ page }) => {
+  test('l’échec est annoncé, et le rail reste à l’écran', async ({ page, context, request }) => {
     await visiter(page, '/entraide');
     // L'échec est ANNONCÉ : `role="alert"`, pas un texte muet.
     await expect(bandeEchec(page)).toBeVisible();
@@ -547,7 +596,7 @@ test.describe('un chargement en échec laisse une navigation au membre', () => {
    * serait de quitter la page — donc de perdre le contexte pour une panne d'une
    * seconde.
    */
-  test('« Réessayer » relance le chargement', async ({ page }) => {
+  test('« Réessayer » relance le chargement', async ({ page, context, request }) => {
     /**
      * ON COMPTE SUR LE FOURRE-TOUT, ET LA MESURE L'A IMPOSÉ.
      *

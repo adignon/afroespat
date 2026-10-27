@@ -103,7 +103,9 @@ export function Bouton({
       aria-label={label}
       style={{
         ...BASE_BOUTON,
-        height: compact ? '42px' : '48px',
+        // 44 px et non 42 : cible tactile minimale de T1 §2.3 (la batterie e2e mesurait 42 sur
+        // quinze boutons compacts des écrans de parcours).
+        height: compact ? '44px' : '48px',
         padding: '0 18px',
         borderRadius: compact ? '12px' : '14px',
         background: disabled ? C.grisClair : fond,

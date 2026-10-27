@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { codeTotp, creerCompteEquipe, ouvrirDossierModeration, ouvrirSessionEquipe } from './aide-w5a';
+import { connecter } from './session';
 
 /**
  * Les seize écrans de l'application d'ÉQUIPE — D01 à D16.
@@ -30,44 +32,93 @@ async function visiter(page: Page, url: string, width = 1440, height = 1000): Pr
 }
 
 /**
- * Les seize routes de T5 §11, avec le titre que la MAQUETTE écrit sur chacune.
+ * Les routes de l'application d'ÉQUIPE, avec le titre que l'écran porte AUJOURD'HUI.
  *
- * `titre: null` n'est pas un oubli : D02 et D03 ne portent aucun titre dans leur
- * contenu — le seul endroit où « Tableau de bord » et « Membres » sont écrits est
- * l'entrée ACTIVE du menu latéral, et promouvoir un élément de `<nav>` en `<h1>`
- * dirait que la page parle de son propre menu. Le manque est ÉPINGLÉ ici plutôt
- * que maquillé : le jour où la maquette leur donne un titre, ce test tombe et
- * demande qu'on le déclare.
+ * VAGUE 5 — CE FICHIER SUPPOSAIT UNE MAQUETTE STATIQUE, et l'application d'équipe est
+ * devenue VIVANTE : toute page d'équipe exige une session (`FournisseurEquipe` renvoie
+ * vers `/admin/connexion` sans elle), donc chaque cas OUVRE une vraie session — compte
+ * jetable, connexion, enrôlement TOTP, confirmation — avant de visiter. Trois choses
+ * ont changé avec elle, et chacune est une DÉCISION, pas une dérive :
+ *
+ *   · `?etape=totp` et `?etape=enrolement` n'existent plus (voir l'en-tête de
+ *     `app/(admin)/admin/connexion/page.tsx`) : un état de connexion ne s'adresse pas
+ *     par l'URL. Les deux états sont éprouvés plus bas en PARCOURANT la carte ;
+ *   · `/admin/moderation/4812` n'existe plus : un dossier se désigne par son UUID,
+ *     celui d'un VRAI dossier ouvert par un signalement (`ouvrirDossierModeration`) ;
+ *   · les titres qui dépendent de la donnée (« Parcours <nom> · version <n> ») ne sont
+ *     plus des constantes : ils s'écrivent comme des motifs.
+ *
+ * `titre: null` : D02 ne porte aucun titre dans son contenu — le seul endroit où
+ * « Tableau de bord » est écrit est l'entrée ACTIVE du menu latéral, et promouvoir un
+ * élément de `<nav>` en `<h1>` dirait que la page parle de son propre menu. Le manque
+ * est ÉPINGLÉ ici plutôt que maquillé.
+ *
+ * `titreServi` : le titre que la réponse HTML BRUTE (sans script, sans session)
+ * contient. `null` quand le titre vient de la donnée ou de la session : il n'existe
+ * alors qu'après hydratation, et c'est le cas navigateur qui le tient.
  */
 const ROUTES = [
-  { url: '/admin', ecran: 'D02', titre: null },
-  { url: '/admin/membres', ecran: 'D03', titre: null },
-  { url: '/admin/connexion', ecran: 'D01', titre: 'Administration' },
-  { url: '/admin/connexion?etape=totp', ecran: 'D01T', titre: 'Administration' },
-  {
-    url: '/admin/connexion?etape=enrolement',
-    ecran: 'D01E',
-    titre: 'Activer la double authentification',
-  },
-  { url: '/admin/moderation', ecran: 'D04', titre: 'Modération' },
-  { url: '/admin/moderation/4812', ecran: 'D05', titre: 'Dossier #4812' },
-  { url: '/admin/parcours', ecran: 'D06', titre: 'Parcours Études · version 2026' },
-  { url: '/admin/etapes', ecran: 'D07', titre: 'Bibliothèque d’étapes' },
-  { url: '/admin/referentiels', ecran: 'D08', titre: 'Référentiels' },
-  { url: '/admin/guides', ecran: 'D09', titre: 'Guides' },
-  { url: '/admin/services', ecran: 'D10', titre: 'Services' },
-  { url: '/admin/alertes', ecran: 'D11', titre: 'Alertes arnaques' },
-  { url: '/admin/contenu', ecran: 'D12', titre: 'Pages et annonces' },
-  { url: '/admin/partenaires', ecran: 'D13', titre: 'Partenaires' },
-  { url: '/admin/revenus', ecran: 'D14', titre: 'Abonnements et revenus' },
-  { url: '/admin/reglages', ecran: 'D15', titre: 'Réglages' },
-  { url: '/admin/impact', ecran: 'D16', titre: 'Rapport d’impact' },
+  { url: '/admin', ecran: 'D02', titre: null, titreServi: null },
+  { url: '/admin/membres', ecran: 'D03', titre: 'Membres', titreServi: null },
+  { url: '/admin/connexion', ecran: 'D01', titre: 'Administration', titreServi: 'Administration' },
+  { url: '/admin/moderation', ecran: 'D04', titre: 'Modération', titreServi: 'Modération' },
+  { url: '/admin/moderation/:dossier', ecran: 'D05', titre: 'Dossier de modération', titreServi: null },
+  { url: '/admin/parcours', ecran: 'D06', titre: /^Parcours .+ · version \d+$/, titreServi: null },
+  { url: '/admin/etapes', ecran: 'D07', titre: 'Bibliothèque d’étapes', titreServi: null },
+  { url: '/admin/referentiels', ecran: 'D08', titre: 'Référentiels', titreServi: 'Référentiels' },
+  { url: '/admin/guides', ecran: 'D09', titre: 'Guides', titreServi: 'Guides' },
+  { url: '/admin/services', ecran: 'D10', titre: 'Services', titreServi: 'Services' },
+  { url: '/admin/alertes', ecran: 'D11', titre: 'Alertes arnaques', titreServi: null },
+  { url: '/admin/contenu', ecran: 'D12', titre: 'Pages et annonces', titreServi: 'Pages et annonces' },
+  { url: '/admin/partenaires', ecran: 'D13', titre: 'Partenaires', titreServi: 'Partenaires' },
+  { url: '/admin/revenus', ecran: 'D14', titre: 'Abonnements et revenus', titreServi: 'Abonnements et revenus' },
+  { url: '/admin/reglages', ecran: 'D15', titre: 'Réglages', titreServi: 'Réglages' },
+  { url: '/admin/impact', ecran: 'D16', titre: 'Rapport d’impact', titreServi: null },
 ] as const;
 
-test.describe('les seize routes de T5 §11', () => {
-  for (const { url, ecran, titre } of ROUTES) {
-    test(`${url} rend ${ecran} et porte SON titre`, async ({ page }) => {
-      await visiter(page, url);
+/** Les pages qui exigent une session, dans l'ordre. D01 est la seule à s'ouvrir sans. */
+const AVEC_SESSION = ROUTES.filter((r) => r.ecran !== 'D01');
+
+/**
+ * UNE SESSION D'ÉQUIPE RÉELLE avant chaque cas qui visite une page protégée.
+ * `dossier` : l'identifiant d'un vrai dossier de modération, ouvert une fois par
+ * processus (un signalement coûte deux comptes L2).
+ */
+let dossierOuvert: string | null = null;
+async function equipe(
+  page: Page,
+  fixtures: Parameters<typeof ouvrirSessionEquipe>[1],
+): Promise<void> {
+  await ouvrirSessionEquipe(page.context(), fixtures);
+}
+async function dossier(
+  browser: Parameters<typeof ouvrirDossierModeration>[0],
+  fixtures: Parameters<typeof ouvrirDossierModeration>[1],
+): Promise<string> {
+  dossierOuvert ??= (await ouvrirDossierModeration(browser, fixtures)).dossierId;
+  return dossierOuvert;
+}
+
+test.describe('les routes de l’application d’équipe', () => {
+  test('/admin/connexion rend D01 et porte SON titre, sans session', async ({ page }) => {
+    await visiter(page, '/admin/connexion');
+    await expect(page.locator('[data-screen="D01"]')).toHaveCount(1);
+    await expect(page.locator('[data-frame="desktop"]').getByRole('heading', { level: 1 })).toHaveText(
+      'Administration',
+    );
+  });
+
+  test('sans session, une page protégée renvoie vers la connexion', async ({ page }) => {
+    await visiter(page, '/admin/reglages');
+    await page.waitForURL(/\/admin\/connexion/);
+    await expect(page.locator('[data-screen="D01"]')).toHaveCount(1);
+  });
+
+  for (const { url, ecran, titre } of AVEC_SESSION) {
+    test(`${url} rend ${ecran} et porte SON titre`, async ({ page, request, browser }) => {
+      await equipe(page, request);
+      const cible = url.replace(':dossier', await dossier(browser, request));
+      await visiter(page, cible);
       await expect(page.locator(`[data-screen="${ecran}"]`)).toHaveCount(1);
 
       const h1 = page.locator('[data-frame="desktop"]').getByRole('heading', { level: 1 });
@@ -78,6 +129,42 @@ test.describe('les seize routes de T5 §11', () => {
       }
     });
   }
+});
+
+/**
+ * LA CONNEXION PARCOURT SES ÉTATS — ce que `?etape=totp` et `?etape=enrolement`
+ * prétendaient atteindre par l'URL. Compte neuf, donc jamais enrôlé : le serveur
+ * impose l'enrôlement (15 §2.1), l'écran change de titre, affiche la clé à saisir,
+ * et le premier code — calculé ici depuis cette clé, comme le ferait l'application
+ * d'authentification — ouvre la session et mène au tableau de bord.
+ */
+test('la connexion enchaîne mot de passe, enrôlement TOTP forcé, puis la session', async ({ page }) => {
+  const { email, password } = creerCompteEquipe();
+  await visiter(page, '/admin/connexion');
+  await page.getByLabel('Email professionnel').fill(email);
+  await page.getByLabel('Mot de passe').fill(password);
+  await page.getByRole('button', { name: 'Continuer' }).click();
+
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Activer la double authentification');
+  const cle = ((await page.locator('[data-admin-secret]').innerText()) ?? '').replace(/\s+/g, '');
+  expect(cle, 'la clé à saisir est affichée').toMatch(/^[A-Z2-7]{16,}$/);
+
+  await page.getByLabel('Premier code').fill(codeTotp(cle));
+  await page.getByRole('button', { name: 'Activer et me connecter' }).click();
+  await page.waitForURL(/\/admin$/);
+  await expect(page.locator('[data-screen="D02"]')).toHaveCount(1);
+});
+
+/** Un mot de passe faux ne dit pas lequel des deux champs est faux (15 §2.1). */
+test('un mot de passe faux est refusé sans désigner le champ fautif', async ({ page }) => {
+  const { email } = creerCompteEquipe();
+  await visiter(page, '/admin/connexion');
+  await page.getByLabel('Email professionnel').fill(email);
+  await page.getByLabel('Mot de passe').fill('pas-le-bon-mot-de-passe');
+  await page.getByRole('button', { name: 'Continuer' }).click();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Administration');
+  await expect(page.locator('[data-admin-secret]')).toHaveCount(0);
 });
 
 /**
@@ -94,13 +181,13 @@ test.describe('les seize routes de T5 §11', () => {
  * si l'un d'eux devient client un jour.
  */
 test.describe('les écrans d’équipe sont rendus par le SERVEUR', () => {
-  for (const { url, titre } of ROUTES.filter((r) => r.titre !== null)) {
+  for (const { url, titreServi } of ROUTES.filter((r) => r.titreServi !== null)) {
     test(`${url} sert son titre dans le HTML, sans JavaScript`, async ({ request }) => {
       const reponse = await request.get(url);
       expect(reponse.status()).toBe(200);
       const html = await reponse.text();
       expect(html, 'le titre doit être dans la réponse, pas seulement après hydratation').toContain(
-        `>${titre}</h1>`,
+        `>${titreServi}</h1>`,
       );
     });
   }
@@ -119,19 +206,36 @@ test.describe('les écrans d’équipe sont rendus par le SERVEUR', () => {
  * aussi. Chercher le masque laisserait passer un numéro complet ajouté À CÔTÉ ;
  * compter les chiffres ne le laisse pas passer.
  */
-test('15 §3.1 — aucun numéro de téléphone en clair sur la fiche membre', async ({ page }) => {
+test('15 §3.1 — aucun numéro de téléphone en clair sur la fiche membre', async ({
+  page,
+  request,
+  browser,
+}) => {
+  // Un VRAI membre, avec un VRAI numéro : sans lui, la fiche ne montrerait rien et la
+  // mesure ne prouverait rien. La recherche se fait par pseudo, la fiche s'ouvre au clic.
+  const contexte = await browser.newContext();
+  const membre = await connecter(contexte, request, { displayName: 'Awa Fichée' });
+  await contexte.close();
+
+  await equipe(page, request);
   await visiter(page, '/admin/membres');
-  const texte = (await page.locator('[data-frame="desktop"]').innerText()).replace(/ /g, ' ');
+  await page.getByPlaceholder(/@pseudo/).fill(membre.handle);
+  await page.getByRole('button', { name: 'Chercher' }).click();
+  await page.getByText('Awa Fichée').first().click();
+  await expect(page.getByText('NUMÉROS')).toBeVisible();
+
+  const texte = (await page.locator('[data-frame="desktop"]').innerText()).replace(/ /g, ' ');
+  // Le numéro est BIEN là, mais masqué : l'indicatif et les deux derniers chiffres.
+  expect(texte, 'la fiche montre le numéro masqué').toContain(membre.masque.replace(/\s+/g, ' '));
 
   // Un indicatif suivi d'au moins neuf chiffres, espaces et points compris.
   const enClair = texte.match(/\+\d{1,3}(?:[\s.]*\d){9,}/g) ?? [];
   expect(enClair, `numéro(s) en clair trouvé(s) : ${enClair.join(', ')}`).toEqual([]);
+  expect(texte).not.toContain(membre.phone);
 
-  // Et la recherche dit par quoi elle passe, ce que §3.1 exige.
-  await expect(page.getByText('Recherche par empreinte')).toBeVisible();
-  // L'apostrophe est DROITE ici, alors que la maquette emploie la courbe ailleurs.
-  // C'est elle qui l'écrit ainsi ; la corriger ferait échouer la recherche.
-  await expect(page.getByText("Aucun numéro n'est affiché en clair.")).toBeVisible();
+  // Et l'écran dit par quoi la recherche passe, ce que §3.1 exige.
+  await expect(page.getByText(/empreinte, jamais affiché/)).toBeVisible();
+  await expect(page.getByText('Aucun numéro n’est affiché en clair.')).toBeVisible();
 });
 
 /**
@@ -142,8 +246,12 @@ test('15 §3.1 — aucun numéro de téléphone en clair sur la fiche membre', a
  * suite ne décroît jamais. C'est la propriété de §4.1, et elle tombe dès que deux
  * lignes sont interverties dans la maquette.
  */
-test('13 §4.1 — la file est ordonnée par priorité croissante', async ({ page }) => {
+test('13 §4.1 — la file est ordonnée par priorité croissante', async ({ page, request, browser }) => {
+  // Un dossier NEUF garantit une file non vide sur une base fraîche.
+  await equipe(page, request);
+  await dossier(browser, request);
   await visiter(page, '/admin/moderation');
+  await expect(page.getByText(/^prio$/i).first()).toBeVisible();
 
   const priorites = await page.evaluate(() =>
     [...document.querySelectorAll('span')]
@@ -154,12 +262,12 @@ test('13 §4.1 — la file est ordonnée par priorité croissante', async ({ pag
       .map((el) => Number(el.textContent)),
   );
 
-  expect(priorites.length, 'cinq dossiers sont dessinés dans la file').toBe(5);
+  expect(priorites.length, 'la file porte au moins un dossier').toBeGreaterThanOrEqual(1);
   expect(priorites.every((p) => p >= 1 && p <= 5), 'les priorités vont de 1 à 5').toBe(true);
   expect([...priorites].sort((a, b) => a - b)).toEqual(priorites);
 
-  // Le SLA est affiché avec son état : c'est ce qui rend §4.1 vérifiable à l'œil.
-  await expect(page.getByText('dépassé', { exact: true })).toBeVisible();
+  // Le SLA est une colonne de la file : c'est ce qui rend §4.1 vérifiable à l'œil.
+  await expect(page.getByText('SLA').first()).toBeVisible();
 });
 
 /**
@@ -171,12 +279,18 @@ test('13 §4.1 — la file est ordonnée par priorité croissante', async ({ pag
  */
 test('13 §4.2 — le dossier annonce le motif minimal et le rôle du bannissement', async ({
   page,
+  request,
+  browser,
 }) => {
-  await visiter(page, '/admin/moderation/4812');
-  await expect(page.getByText('Motif · 20 caractères minimum')).toBeVisible();
-  // Le compteur montre que le motif saisi dépasse le minimum.
-  await expect(page.getByText('48 / 20', { exact: true })).toBeVisible();
+  await equipe(page, request);
+  const id = await dossier(browser, request);
+  await visiter(page, `/admin/moderation/${id}`);
   await expect(page.getByText('Bannir · super-admin')).toBeVisible();
+  // Le minimum du motif DÉPEND de l'action : 3 caractères pour conserver, 20 pour une
+  // suspension ou un bannissement. L'écran le dit dès qu'on choisit l'action.
+  await page.getByRole('button', { name: 'Suspendre 7 j' }).click();
+  await expect(page.getByText('Motif · 20 caractères minimum')).toBeVisible();
+  await expect(page.getByText('0 / 20', { exact: true })).toBeVisible();
 });
 
 /**
@@ -192,7 +306,9 @@ test('13 §4.2 — le dossier annonce le motif minimal et le rôle du bannisseme
  */
 test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application membres', async ({
   page,
+  request,
 }) => {
+  await equipe(page, request);
   /**
    * ON MESURE LE RAIL SUR UNE PLANCHE STATIQUE, et c'est un choix, pas un hasard.
    *
@@ -202,9 +318,10 @@ test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application 
    * DONNÉES tout en prétendant parler du rail, et ce fichier n'intercepte rien, par
    * choix assumé (voir son en-tête).
    *
-   * D15 (`/admin/reglages`) est transcodé sans aucun appel : son rail arrive dans le
-   * HTML. Et le rail est IDENTIQUE sur les quinze planches — à la surbrillance près —
-   * donc le mesurer là ne perd rien et ne peut plus échouer pour la mauvaise cause.
+   * D15 (`/admin/reglages`) : le rail est IDENTIQUE sur toutes les planches — à la
+   * surbrillance près — donc le mesurer là ne perd rien. Vague 5 : la session d'équipe
+   * est ouverte pour de vrai (voir `equipe()`), le rail n'est plus la seule chose qui
+   * se rende sans elle.
    */
   await visiter(page, '/admin/reglages');
 
@@ -215,7 +332,8 @@ test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application 
   expect(boite?.width).toBe(208);
 
   /**
-   * LES QUATORZE ENTRÉES — neuf dessinées par la maquette, cinq AJOUTÉES.
+   * LES QUINZE ENTRÉES — neuf dessinées par la maquette, six AJOUTÉES (la sixième,
+   * « Alertes d'équipe », avec la page D17).
    *
    * Cette liste en comptait NEUF, et le rail n'en offrait que neuf pour quinze
    * pages : cinq pages existaient, répondaient, et AUCUNE entrée n'y menait. Le
@@ -231,6 +349,7 @@ test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application 
     'Rapport d’impact',
     'Membres',
     'Modération',
+    'Alertes d’équipe',
     'Parcours',
     'Bibliothèque d’étapes',
     'Contenu',
@@ -262,14 +381,14 @@ test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application 
   const liens = page.locator('[data-frame="desktop"] a');
   const combien = await liens.count();
   /**
-   * QUATORZE, et le chiffre n'est plus la propriété intéressante : ce qui compte est
-   * que les quatorze pointent SOUS `/admin/`. Le nombre reste mesuré pour qu'une
+   * QUINZE, et le chiffre n'est plus la propriété intéressante : ce qui compte est
+   * que les quinze pointent SOUS `/admin/`. Le nombre reste mesuré pour qu'une
    * entrée perdue en silence se voie — mais la règle « aucune page d'équipe n'est
    * injoignable » est gelée par ENSEMBLES dans `e2e/navigation-rail.spec.ts`, qui
    * compare les routes de `(admin)` aux destinations du rail. Un compte, lui,
    * resterait vert si on retirait une entrée en ajoutant une autre.
    */
-  expect(combien, 'le rail d’équipe doit être fait de vrais liens').toBe(14);
+  expect(combien, 'le rail d’équipe doit être fait de vrais liens').toBe(15);
   for (let i = 0; i < combien; i += 1) {
     expect(await liens.nth(i).getAttribute('href')).toMatch(/^\/admin(\/|$)/);
   }
@@ -286,7 +405,8 @@ test('15 §2.1 — le rail est celui de l’équipe, et rien de l’application 
  * adaptation qu'on croit appliquée — c'est exactement ainsi que la barre d'onglets
  * basse a défilé hors de l'écran sur onze cadres sans que rien ne le dise.
  */
-test('la barre haute reste à l’écran quand la page défile', async ({ page }) => {
+test('la barre haute reste à l’écran quand la page défile', async ({ page, request }) => {
+  await equipe(page, request);
   // Fenêtre courte : sans cela, ces écrans tiennent d'un bloc et rien ne défile.
   await visiter(page, '/admin/reglages', 1440, 420);
 
@@ -352,24 +472,53 @@ const estRouge = (rgb: string): boolean => {
   return hue >= 345 || hue <= 15;
 };
 
-test('00 §1.2 — aucun rouge, pas même sur « Impayé » ni sur une alerte urgente', async ({
+test('00 §1.2 — aucun rouge, pas même sur une alerte urgente ni sur la monétisation', async ({
   page,
+  request,
 }) => {
-  for (const { url, textes } of [
-    { url: '/admin/revenus', textes: ['Impayé', 'Remboursé'] },
-    { url: '/admin/alertes', textes: ['Urgente', 'Vigilance'] },
+  await equipe(page, request);
+  /**
+   * VAGUE 5 — LES PASTILLES « Impayé » ET « Remboursé » N'EXISTENT PLUS : tout est
+   * gratuit pour le moment (décision du porteur), D14 annonce « Monétisation
+   * désactivée » et ne dessine ni abonnement ni revenu. La règle ne change pas — elle
+   * change de cible : on mesure donc TOUT ce que ces écrans peignent, pas deux mots.
+   * C'est plus strict que l'ancienne mesure, qui ne regardait que deux pastilles.
+   *
+   * Sur D11 on choisit en plus la gravité « Urgente » : c'est l'état où un rouge serait
+   * le plus tentant, et il n'est pas peint tant qu'on n'a pas cliqué.
+   */
+  for (const { url, avant } of [
+    { url: '/admin/revenus', avant: async () => {} },
+    {
+      url: '/admin/alertes',
+      avant: async () => {
+        await page.getByText('Urgente', { exact: true }).first().click();
+      },
+    },
+    { url: '/admin/moderation', avant: async () => {} },
   ]) {
     await visiter(page, url);
-    for (const texte of textes) {
-      const pastille = page.getByText(texte, { exact: true }).first();
-      const couleurs = await pastille.evaluate((el) => {
+    await avant();
+    const couleurs = await page.evaluate(() => {
+      const trouvees: { sel: string; couleur: string }[] = [];
+      for (const el of document.querySelectorAll<HTMLElement>('[data-frame="desktop"] *')) {
         const s = getComputedStyle(el);
-        return [s.backgroundColor, s.color];
-      });
-      for (const couleur of couleurs) {
-        if (couleur.startsWith('rgba(0, 0, 0, 0)')) continue;
-        expect(estRouge(couleur), `« ${texte} » sur ${url} peint ${couleur} — un rouge`).toBe(false);
+        const aTexte = (el.textContent ?? '').trim().length > 0;
+        const candidates = [
+          s.backgroundColor,
+          aTexte ? s.color : '',
+          parseFloat(s.borderTopWidth) > 0 ? s.borderTopColor : '',
+        ];
+        for (const couleur of candidates) {
+          if (couleur === '' || couleur.startsWith('rgba(0, 0, 0, 0)')) continue;
+          trouvees.push({ sel: `${el.tagName.toLowerCase()} « ${(el.textContent ?? '').trim().slice(0, 30)} »`, couleur });
+        }
       }
+      return trouvees;
+    });
+    expect(couleurs.length, `${url} peint au moins une couleur`).toBeGreaterThan(0);
+    for (const { sel, couleur } of couleurs) {
+      expect(estRouge(couleur), `${sel} sur ${url} peint ${couleur} — un rouge`).toBe(false);
     }
   }
 });
@@ -384,7 +533,9 @@ test('00 §1.2 — aucun rouge, pas même sur « Impayé » ni sur une alerte ur
  */
 test('02 §4.2 — la confirmation d’activation d’une ville est une carte, pas une boîte de dialogue', async ({
   page,
+  request,
 }) => {
+  await equipe(page, request);
   await visiter(page, '/admin/referentiels');
   /**
    * ── LA VILLE ET LE NOMBRE SONT DEVENUS DES DONNÉES ───────────────────────
@@ -414,12 +565,17 @@ test('02 §4.2 — la confirmation d’activation d’une ville est une carte, p
  * chose. C'est la seule garantie qu'un écran peut offrir avant que la route soit
  * branchée, et elle vaut d'être tenue.
  */
-test('15 §4.1 — l’écran de contenu prévient avant de republier les conditions', async ({ page }) => {
+test('15 §4.1 — l’écran de contenu prévient avant de republier les conditions', async ({
+  page,
+  request,
+}) => {
+  await equipe(page, request);
   await visiter(page, '/admin/contenu');
   await expect(
-    page.getByText('Publier cette version redemandera le consentement de tous les membres.'),
+    page.getByText(/^Publier cette version redemandera le consentement de tous les membres/),
   ).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Publier la v4' })).toBeVisible();
+  // Le numéro de version est celui du serveur (la prochaine à publier), plus « v4 » dessiné.
+  await expect(page.getByRole('button', { name: /^Publier la v\d+$/ })).toBeVisible();
 });
 
 /**
@@ -430,12 +586,27 @@ test('15 §4.1 — l’écran de contenu prévient avant de republier les condit
  * l'export sont dessinés ; aucun bouton de suppression ne l'est, et ce test le dit
  * dans les deux sens.
  */
-test('15 §2.3 — le journal d’audit se filtre, s’exporte, et ne se supprime pas', async ({ page }) => {
+test('15 §2.3 — le journal d’audit se filtre, s’exporte, et ne se supprime pas', async ({
+  page,
+  request,
+}) => {
+  await equipe(page, request);
   await visiter(page, '/admin/reglages');
+  await page.getByText('Journal d’audit', { exact: true }).first().click();
   const journal = page.locator('[data-frame="desktop"]');
-  for (const filtre of ['Acteur ▾', 'Action ▾', 'Cible ▾', 'Période ▾']) {
-    await expect(journal.getByText(filtre, { exact: true })).toBeVisible();
+  /**
+   * VAGUE 5 — LES FILTRES SONT CEUX DU SERVEUR : l'action (texte libre), et la période
+   * (« Du » / « Au »). La maquette dessinait quatre listes « Acteur ▾ / Action ▾ /
+   * Cible ▾ / Période ▾ » qu'aucune route ne servait ; `GET /admin/audit` filtre par
+   * action et par dates, et l'écran n'offre que ce qui marche (« chaque bouton fait
+   * quelque chose de réel »). Acteur et cible restent LISIBLES dans chaque ligne.
+   */
+  await expect(journal.getByLabel(/^Action/)).toBeVisible();
+  await expect(journal.getByLabel('Du')).toBeVisible();
+  await expect(journal.getByLabel('Au')).toBeVisible();
+  for (const colonne of ['DATE', 'ACTEUR', 'ACTION', 'CIBLE']) {
+    await expect(journal.getByText(new RegExp(`^${colonne}$`, 'i')).first()).toBeVisible();
   }
-  await expect(journal.getByText('Exporter', { exact: true })).toBeVisible();
+  await expect(journal.getByRole('button', { name: /Exporter/ })).toBeVisible();
   await expect(journal.getByText(/Supprimer|Effacer/)).toHaveCount(0);
 });

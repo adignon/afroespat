@@ -118,7 +118,7 @@ function CarteMini({ p, onEcrire, parrain }: { readonly p: PublicJourney; readon
   const type = typeCourt(p.template.code, p.template.nameFr);
   return (
     <article style={{ ...carte(16), display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <Link href={`/parcours/publics/${p.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none', color: C.texte }}>
+      <Link href={`/parcours/publics/${p.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', minHeight: '44px', textDecoration: 'none', color: C.texte }}>
         <Avatar nom={nomDe(p)} />
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: '14.5px', fontWeight: 700 }}>{nomDe(p)}</span>
@@ -285,6 +285,13 @@ function VueFichePubliqueInterne({ compact }: { readonly compact: boolean }) {
               </div>
             ))}
           </div>
+          {/*
+            * §3.7 — LA FICHE ANNONCE CE QU'ELLE NE MONTRE PAS. La maquette (04 Parcours, J09F) écrit
+            * cette ligne ; la vue écrite à la main l'avait perdue, et seule la batterie e2e s'en est
+            * aperçue : un visiteur ne savait plus que notes, checklist, équipe et discussion existent
+            * mais lui restent fermés.
+            */}
+          <div style={{ fontSize: '12.5px', color: C.grisClair }}>Lecture seule · aucune note, checklist, équipe ni discussion</div>
         </>
       )}
       {ecrire.fenetre}

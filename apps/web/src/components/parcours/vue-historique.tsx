@@ -98,7 +98,7 @@ function VueHistoriqueInterne({ compact }: { readonly compact: boolean }) {
                   <Bouton compact ton="calme" onClick={() => ouvrirFeuille('exporter')}>
                     Exporter mon parcours
                   </Bouton>
-                  <Link href="/guides/nouveau" style={{ height: '42px', padding: '0 18px', borderRadius: '12px', background: C.fond, color: C.texte, fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
+                  <Link href="/guides/nouveau" style={{ height: '44px', padding: '0 18px', borderRadius: '12px', background: C.fond, color: C.texte, fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
                     Écrire un guide à partir de ce parcours
                   </Link>
                 </div>

@@ -77,14 +77,14 @@ export function PropositionsApresEtape({
         )}
         <Link
           href={`/stories/nouvelle?etape=${propositions.tip.stepId}`}
-          style={{ height: '42px', padding: '0 18px', borderRadius: '12px', background: C.fond, color: C.texte, fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
+          style={{ height: '44px', padding: '0 18px', borderRadius: '12px', background: C.fond, color: C.texte, fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
         >
           Donner un conseil sur cette étape
         </Link>
         {propositions.goPublic === null ? null : (
           <Link
             href={`/parcours/${parcoursId}/reglages`}
-            style={{ height: '42px', padding: '0 18px', borderRadius: '12px', background: C.fond, color: C.texte, fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
+            style={{ height: '44px', padding: '0 18px', borderRadius: '12px', background: C.fond, color: C.texte, fontSize: '13.5px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
           >
             Rendre mon parcours public
           </Link>

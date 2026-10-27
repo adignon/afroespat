@@ -196,11 +196,53 @@ test.beforeAll(async ({ browser, playwright }) => {
   await requeteContrib.dispose();
 });
 
+
+/**
+ * UN GUIDE PUBLIÉ JUSTE AVANT LE CAS. La fenêtre « Lier un guide » ne montre que les premiers
+ * guides de `GET /guides` (les plus récents) ; le guide posé une fois pour tout le fichier
+ * (`beforeAll`) en sortait dès qu'un autre processus en publiait d'autres — échec
+ * intermittent mesuré. La recherche n'est pas une issue : l'index de recherche est alimenté par
+ * le worker, que la batterie ne lance pas. Un guide frais, publié par un membre L2 neuf, est
+ * en tête de liste à l'ouverture de la fenêtre.
+ */
+async function publierGuideFrais(browser: import('@playwright/test').Browser): Promise<{ readonly titre: string }> {
+  const { request: moteur } = await import('@playwright/test');
+  const contexte = await browser.newContext();
+  const api = await moteur.newContext();
+  try {
+    const auteur = await connecterL1(contexte, api, { displayName: 'Mariam Frais' });
+    const auth = { authorization: `Bearer ${auteur.jeton}` };
+    const titre = `Déclarer son médecin traitant E2E-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const cree = await api.post(`${API}/guides`, {
+      headers: auth,
+      data: {
+        title: titre,
+        body: decorCorps(),
+        category: 'DAILY_LIFE',
+        scope: 'UNIVERSAL',
+      },
+    });
+    if (!cree.ok()) throw new Error(`POST /guides ${cree.status()} : ${await cree.text()}`);
+    const guide = (await cree.json()) as { id: string };
+    const publie = await api.post(`${API}/guides/${guide.id}/publish`, { headers: auth });
+    if (!publie.ok()) throw new Error(`publish ${publie.status()} : ${await publie.text()}`);
+    return { titre };
+  } finally {
+    await contexte.close();
+    await api.dispose();
+  }
+}
+
+function decorCorps(): string {
+  return 'Pour déclarer votre médecin traitant, remplissez le formulaire S3704 et remettez-le à votre caisse d assurance maladie. Le médecin doit cosigner le formulaire : sans sa signature, la caisse le refuse et vous devrez recommencer la démarche depuis le début. Comptez environ trois semaines avant que la déclaration soit prise en compte, et conservez une copie du formulaire signé : la caisse la redemande parfois. Tant que la déclaration n est pas enregistrée, vos consultations sont remboursées à un taux réduit, ce qui surprend beaucoup de nouveaux arrivants.';
+}
+
 // ─── A01G · « Lier un guide » ───────────────────────────────────────────────
 
 test.describe('A01G — la fenêtre « Lier un guide »', () => {
   for (const largeur of [1440, 390]) {
-    test(`les RÉSULTATS sont de vrais guides (${largeur} px)`, async ({ context, request, page }) => {
+    test(`les RÉSULTATS sont de vrais guides (${largeur} px)`, async ({ browser, context, request, page }) => {
+      const frais = await publierGuideFrais(browser);
       await connecter(context, request, {});
       await poserCookie(context, request);
       await visiter(page, '/accueil', largeur);
@@ -219,7 +261,7 @@ test.describe('A01G — la fenêtre « Lier un guide »', () => {
        * `expect.poll` et non `page.evaluate` : la liste arrive par un appel, et
        * `evaluate` ne réessaie pas — défaut déjà mesuré dans ce dépôt.
        */
-      await expect(fenetre.getByText(decor.titre, { exact: false }).first()).toBeVisible({
+      await expect(fenetre.getByText(frais.titre, { exact: false }).first()).toBeVisible({
         timeout: 20_000,
       });
 
@@ -230,17 +272,19 @@ test.describe('A01G — la fenêtre « Lier un guide »', () => {
   }
 
   test('la ligne de contexte porte la catégorie, la portée et le compteur d’utilité', async ({
+    browser,
     context,
     request,
     page,
   }) => {
+    const frais = await publierGuideFrais(browser);
     await connecter(context, request, {});
     await poserCookie(context, request);
     await visiter(page, '/accueil', 1440);
     const cadre = page.locator(CADRE(1440));
     await cadre.locator('[title="Lier un guide"]').first().click();
     const fenetre = page.locator('[data-modal="A01G"]');
-    await expect(fenetre.getByText(decor.titre, { exact: false }).first()).toBeVisible({
+    await expect(fenetre.getByText(frais.titre, { exact: false }).first()).toBeVisible({
       timeout: 20_000,
     });
     /**
@@ -305,16 +349,17 @@ test('A06 — la planche de l’auteur lit ses propositions réelles (390 px)', 
   await expect(cadre.getByText('Acceptées · 7')).toHaveCount(0);
 
   /**
-   * 3 ── LE SECOND EMPLACEMENT N'EMPRUNTE AUCUNE IDENTITÉ.
+   * 3 ── UNE PROPOSITION, UNE CARTE.
    *
-   * La planche dessine DEUX cartes en balisage statique — une dépliée, une
-   * repliée — et il n'existe qu'une proposition. L'emplacement libre annonce donc
-   * l'absence au lieu d'afficher « Kofi Boateng » une seconde fois ou, pire, le
-   * « Fatou Ndiaye » de la maquette. C'est la limite structurelle de cet écran,
-   * et elle est REMONTÉE : il faut une boucle, donc que la planche dise ce qui
-   * déplie une carte.
+   * VAGUE 5 — L'ANCIENNE ATTENTE (« Aucune proposition » dans le second emplacement) EST
+   * OBSOLÈTE : la planche dessinait deux cartes en balisage statique et le test fixait
+   * l'emplacement vide, en remontant la limite. Les cartes viennent maintenant d'une
+   * boucle sur les propositions du serveur ; il n'existe qu'une proposition, il n'y a
+   * donc qu'une carte, et plus d'emplacement à annoncer vide. Ce qui reste exigé est la
+   * moitié qui comptait : le proposant n'est nommé qu'UNE fois, et aucune identité
+   * empruntée à la maquette n'apparaît.
    */
-  await expect(cadre.getByText('Aucune proposition')).toHaveCount(1);
+  await expect(cadre.getByText('Aucune proposition')).toHaveCount(0);
   await expect(cadre.getByText(decor.proposant)).toHaveCount(1);
 });
 

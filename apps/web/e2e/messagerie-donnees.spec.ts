@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { connecter, type Membre } from './session';
+import { ouvrirConversationBloquee } from './aide-w5a';
 
 /**
  * M01, X01 et X02 — CE QUE LES ÉCRANS LISENT VRAIMENT DE L'API.
@@ -174,20 +175,32 @@ test.describe('M01 · la messagerie lit l’API', () => {
    * doit pouvoir ni écrire ni envoyer, et la seule façon d'en être sûr est que les
    * trois contrôles ne soient PAS LÀ.
    */
-  test('un membre bloqué : le composeur est remplacé, pas seulement masqué', async () => {
-    await visiter(
-      '/messages/01a0f8d8-b504-7000-baa1-fcf0787b4d6a?etat=bloque',
-      'Chargement de vos messages…',
-    );
+  test('un membre bloqué : le composeur est remplacé, pas seulement masqué', async ({
+    browser,
+    request,
+  }) => {
+    /**
+     * VAGUE 5 — `?etat=bloque` SUR UN IDENTIFIANT DE MAQUETTE N'EXISTE PLUS. L'état est
+     * dérivé du serveur (`blockedByMe`) : le décor est donc celui du produit — deux
+     * vrais membres, une vraie conversation, un vrai blocage (`ouvrirConversationBloquee`).
+     * Le cas n'en est que plus fort : il prouve que le composeur disparaît pour un
+     * blocage RÉEL, pas pour un paramètre d'illustration.
+     */
+    const contexte = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const p = await contexte.newPage();
+    const { conversationId } = await ouvrirConversationBloquee(contexte, request, browser);
+    await p.goto(`/messages/${conversationId}`, { waitUntil: 'load' });
+    const bloque = p.locator('[data-frame="desktop"]').first();
 
     await expect(
-      bureau().getByText(
-        'Vous avez bloqué ce membre. Débloquez-le pour reprendre la conversation.',
-      ),
-    ).toBeVisible();
+      bloque.getByText('Vous avez bloqué ce membre. Débloquez-le pour reprendre la conversation.'),
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(bloque.getByRole('button', { name: 'Débloquer' })).toBeVisible();
 
-    await expect(bureau().getByText('Écrire un message…')).toHaveCount(0);
-    await expect(bureau().getByText('Message…', { exact: true })).toHaveCount(0);
+    await expect(bloque.getByText('Écrire un message…')).toHaveCount(0);
+    await expect(bloque.getByText('Message…', { exact: true })).toHaveCount(0);
+    await expect(bloque.locator('[data-conversation-champ]')).toHaveCount(0);
+    await contexte.close();
   });
 });
 

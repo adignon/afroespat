@@ -201,7 +201,7 @@ function Frise({
             type="button"
             aria-expanded={franchiesOuvertes}
             onClick={() => setFranchiesOuvertes((v) => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', minHeight: '44px', background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left' }}
           >
             <span style={{ width: '24px', height: '24px', borderRadius: '999px', background: C.vert, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Icone d={ICONES.coche} taille={13} couleur="#fff" />
@@ -228,7 +228,7 @@ function Frise({
                     type="button"
                     onClick={() => ouvrirFeuille('partage', e.id)}
                     hidden={!e.isMajorMilestone || e.sharePromptDismissedAt !== null}
-                    style={{ background: 'none', border: 'none', font: 'inherit', fontSize: '12px', fontWeight: 700, color: C.vertFonce, cursor: 'pointer' }}
+                    style={{ background: 'none', border: 'none', font: 'inherit', fontSize: '12px', fontWeight: 700, color: C.vertFonce, cursor: 'pointer', minHeight: '44px', padding: '0 8px' }}
                   >
                     Partager
                   </button>
@@ -259,12 +259,12 @@ function Frise({
           {suivantes.map((e, i) => {
             const sur = ouverte === e.id;
             return (
-              <div key={e.id} style={{ borderTop: i === 0 ? 'none' : '1px solid #F0F3F2', padding: '10px 0' }}>
+              <div key={e.id} style={{ borderTop: i === 0 ? 'none' : '1px solid #F0F3F2', padding: '2px 0' }}>
                 <button
                   type="button"
                   aria-expanded={sur}
                   onClick={() => setOuverte(sur ? null : e.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left', color: C.texte }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', minHeight: '44px', background: 'none', border: 'none', padding: 0, font: 'inherit', cursor: 'pointer', textAlign: 'left', color: C.texte }}
                 >
                   <span style={{ width: '14px', height: '14px', borderRadius: '999px', background: e.status === 'PAUSED' ? C.grisClair : C.jalon, flexShrink: 0 }} />
                   <span style={{ flex: 1, fontSize: '13.5px', fontWeight: 600, color: C.gris }}>

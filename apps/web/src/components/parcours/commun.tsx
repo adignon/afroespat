@@ -132,7 +132,8 @@ export function OngletsMobile({ id, actif }: { readonly id: string; readonly act
             aria-current={sur ? 'page' : undefined}
             style={{
               flexShrink: 0,
-              height: '36px',
+              // 44 px : cible tactile minimale (T1 §2.3) — les pastilles de section mesuraient 36.
+              height: '44px',
               padding: '0 14px',
               borderRadius: '999px',
               display: 'flex',
