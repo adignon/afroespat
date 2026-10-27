@@ -278,6 +278,24 @@ export const MV_X01_FILTRES = {
   },
 };
 
+/**
+ * Les pastilles de TYPE du téléphone (« Tout · 0 », « Guides · 0 »…) mesuraient 36 px de haut :
+ * sous la cible tactile de 44 px (T1 §2.3). Défaut révélé par la batterie e2e
+ * (`messages-transverse.spec.ts`, « /recherche à 390 px ») dès que les facettes arrivent.
+ * Seule la planche mobile est touchée ; sur ordinateur la souris n'exige que 24 px.
+ */
+export const MV_X01_PASTILLES_44 = {
+  screens: ['X01'],
+  nom: 'MV_X01_PASTILLES_44',
+  why: 'Les pastilles de type de la recherche (36 px) passent à 44 px sur téléphone (cible tactile).',
+  provides: [],
+  apply(jsx) {
+    const motif = 'aria-current={f.active ? "page" : undefined} style={{ height: "36px", padding: "0 13px"';
+    if (!jsx.includes(motif)) return { jsx, applied: false };
+    return { jsx: jsx.replace(motif, motif.replace('height: "36px"', 'height: "44px"')), applied: true };
+  },
+};
+
 /** Le fait écrit sous le titre d'une carte, composé par le serveur. */
 export const MV_X01_SOUSLIGNE = {
   screens: ['X01'],
@@ -403,6 +421,7 @@ export const ADAPTATIONS_MESSAGERIE_VIVANTE = [
   MV_K07_REGLAGES,
   MV_X01_FILTRES,
   MV_X01_SOUSLIGNE,
+  MV_X01_PASTILLES_44,
   MV_X01_MEMOIRE,
   MV_X01_H1_MOBILE,
   MV_FIL,
