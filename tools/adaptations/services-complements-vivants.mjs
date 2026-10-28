@@ -391,7 +391,61 @@ const SC_S10 = sur(
 
 // ─── Registre ────────────────────────────────────────────────────────────────
 
+
+// ─── Les titres des deux formulaires de publication (S03, S05) ───────────────
+
+/**
+ * S03 (1 440 px) et S05 (les deux largeurs, sur `/nouveau`) écrivaient le titre du
+ * formulaire en simple texte : la page n'avait AUCUN `<h1>` (axe : `page-has-heading-one`,
+ * et un lecteur d'écran n'avait pas de titre à annoncer). Même dessin, vrai titre :
+ * on change la BALISE et on ajoute `margin: "0"` (un `<h1>` en a une par défaut).
+ *
+ *   · S03 bureau : le `<div>` de 28 px « Publier une annonce » / « Modifier l’annonce » ;
+ *   · S05 bureau : le libellé « PUBLIER UNE OFFRE » (10,5 px) — c'est le titre de la
+ *     colonne du formulaire, le `<h1>` du détail (`offre.titre`) n'existe qu'en mode détail ;
+ *   · S05 mobile : l'intitulé de l'en-tête, « Offre » (détail, où le `<h1>` est dans le
+ *     corps) ou « Publier une offre » (formulaire) : seul ce dernier devient `<h1>`.
+ */
+const SC_H1_S03 = sur(
+  'SC_H1_S03',
+  ['S03'],
+  ['formulaire.modification ? "Modifier l’annonce" : "Publier une annonce"}</div>'],
+  'S03 (1 440 px) : le titre du formulaire est un vrai `<h1>`, au même dessin.',
+  [],
+  (jsx) => {
+    const m = /<div style=\{\{( fontSize: "28px", fontWeight: "800", letterSpacing: "-0\.9px") \}\}>(\{formulaire\.modification \? "Modifier l’annonce" : "Publier une annonce"\})<\/div>/.exec(jsx);
+    if (m === null) return null;
+    return coupe(jsx, [m.index, m.index + m[0].length], `<h1 style={{ margin: "0",${m[1]} }}>${m[2]}</h1>`);
+  },
+);
+
+const SC_H1_S05 = sur(
+  'SC_H1_S05',
+  ['S05'],
+  ['<ChampsOffre f={formulaire}'],
+  'S05 (formulaire de publication) : le titre du formulaire est un vrai `<h1>`, au même dessin, aux deux largeurs.',
+  [],
+  (jsx) => {
+    let out = jsx;
+    const bureau = /<div style=\{\{( fontSize: "10\.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F") \}\}>PUBLIER UNE OFFRE<\/div>/.exec(out);
+    if (bureau !== null) {
+      out = coupe(out, [bureau.index, bureau.index + bureau[0].length], `<h1 style={{ margin: "0",${bureau[1]} }}>PUBLIER UNE OFFRE</h1>`);
+    }
+    const mobile = /<span style=\{\{( fontSize: "16px", fontWeight: "700", flex: "1", minWidth: "0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis") \}\}>\{offre\.mode === "detail" \? "Offre" : "Publier une offre"\}<\/span>/.exec(out);
+    if (mobile !== null) {
+      out = coupe(
+        out,
+        [mobile.index, mobile.index + mobile[0].length],
+        `{offre.mode === "detail" ? (<span style={{${mobile[1]} }}>Offre</span>) : (<h1 style={{ margin: "0",${mobile[1]} }}>Publier une offre</h1>)}`,
+      );
+    }
+    return bureau === null && mobile === null ? null : out;
+  },
+);
+
 export const ADAPTATIONS_SERVICES_COMPLEMENTS = [
+  SC_H1_S03,
+  SC_H1_S05,
   SC_COMPTEURS,
   SC_CREER_FICHE,
   SC_ROUE,

@@ -323,3 +323,52 @@ for (const entree of PAGES) {
     expect(summary, `Violations sur ${adresse} :\n${summary.join('\n')}`).toEqual([]);
   });
 }
+
+/**
+ * ╔═════════════════════════════════════════════════════════════════════════╗
+ * ║ LES DEUX FORMULAIRES DE PUBLICATION (S03, S05) — AVEC SESSION ET UN <h1>  ║
+ * ╚═════════════════════════════════════════════════════════════════════════╝
+ *
+ * Vague 6. Les deux formulaires écrivaient leur titre en simple texte : la page n'avait
+ * aucun `<h1>`, et l'audit général ci-dessus ne le voyait pas (la règle
+ * `page-has-heading-one` est une règle « best-practice », hors des quatre étiquettes WCAG
+ * qu'il active ; `/services/emploi/nouveau` n'y figurait pas, la route `:id` le masquait).
+ * Le titre est maintenant un vrai `<h1>`, au même dessin (adaptation `SC_H1_S03` / `SC_H1_S05`
+ * du générateur).
+ *
+ * Ici : avec une session (sans elle, axe auditerait l'invitation à se reconnecter), toutes les
+ * règles WCAG PLUS `best-practice`, et la preuve qu'il y a exactement UN `<h1>` visible.
+ * Le contraste reste exclu pour la raison écrite plus haut.
+ */
+const FORMULAIRES = [
+  { path: '/services/logement/nouveau', name: 'S03 Publier une annonce', titre: /^Publier une annonce$/ },
+  { path: '/services/emploi/nouveau', name: 'S05 Publier une offre', titre: /^(Publier une offre|PUBLIER UNE OFFRE)$/ },
+] as const;
+
+for (const { path, name, titre } of FORMULAIRES) {
+  test(`${name} : un seul <h1> visible et aucune violation (WCAG + bonnes pratiques)`, async ({ context, page, request }) => {
+    await connecter(context, request, { displayName: 'Awa Konaté' });
+    await page.goto(path, { waitUntil: 'load' });
+    await page.locator('[data-screen]').first().waitFor({ state: 'attached', timeout: 20_000 });
+    await page.locator('[data-publier]:visible').first().waitFor({ state: 'visible', timeout: 20_000 });
+
+    const h1 = page.getByRole('heading', { level: 1 });
+    await expect(h1).toHaveCount(1);
+    await expect(h1).toHaveText(titre);
+
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'])
+      .disableRules([
+        'color-contrast',
+        // `region` (bonne pratique) : le panneau de gauche des dix écrans Services d'ordinateur
+        // (compteurs « Annonces logement », etc.) n'est pas dans un repère. Défaut partagé du
+        // panneau, étranger au formulaire ; REMONTÉ au rapport, pas masqué en silence.
+        'region',
+      ])
+      .analyze();
+    const summary = results.violations.map(
+      (v) => `${v.id} (${v.impact ?? 'n/a'}) — ${v.help}\n    ${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('\n    ')}`,
+    );
+    expect(summary, `Violations sur ${path} :\n${summary.join('\n')}`).toEqual([]);
+  });
+}

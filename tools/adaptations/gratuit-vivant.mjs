@@ -189,8 +189,42 @@ const K06_GRATUIT = {
   },
 };
 
+
+/**
+ * S08 — LES PALIERS PAYANTS DE « MA FICHE PRO » DEVIENNENT « INCLUSE ».
+ *
+ * Ordinateur : la grille « Gratuite 0 € / Pro 9 €/mois / Pro+ 19 €/mois » ; téléphone :
+ * la carte « Pro » et son prix. Quand tout est gratuit, `FicheProIncluse` les remplace ;
+ * le dessin des paliers reste dans la condition pour le jour du rallumage.
+ */
+const S08_GRATUIT = {
+  screens: ['S08'],
+  nom: 'S08_GRATUIT',
+  why: 'Les paliers payants (Pro 9 €/mois, Pro+ 19 €/mois) de « Ma fiche pro » n’ont pas de sens quand tout est gratuit : une carte « incluse » les remplace tant que `monetisation_active` est faux.',
+  provides: ['quotas'],
+  apply(jsx) {
+    if (jsx.includes('<FicheProIncluse')) return { jsx, applied: false };
+    let debut = jsx.indexOf('<div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)"');
+    if (debut < 0 || !jsx.slice(debut).includes('>Gratuite</div>')) {
+      const nom = jsx.indexOf('>{offrePro.nom}</div>');
+      debut = nom < 0 ? -1 : jsx.lastIndexOf('<div style={{ padding: "16px", borderRadius: "18px"', nom);
+    }
+    if (debut < 0) return { jsx, applied: false };
+    const fin = finElement(jsx, debut);
+    if (fin < 0) return { jsx, applied: false };
+    return {
+      jsx:
+        jsx.slice(0, debut) +
+        `{quotas.gratuit ? (<FicheProIncluse />) : (${jsx.slice(debut, fin)})}` +
+        jsx.slice(fin),
+      applied: true,
+    };
+  },
+};
+
 export const ADAPTATIONS_GRATUIT_VIVANT = [
   GRATUIT_QUOTAS_SERVICES,
+  S08_GRATUIT,
   GRATUIT_QUOTA_AGENDA,
   GRATUIT_PLAN_PARCOURS,
   GRATUIT_EXPORT,
@@ -200,4 +234,5 @@ export const ADAPTATIONS_GRATUIT_VIVANT = [
 /** Le composant que ces adaptations posent, pour le registre d'imports. */
 export const AJOUTS_GRATUIT_VIVANT = {
   PremiumGratuit: '@/components/premium-gratuit',
+  FicheProIncluse: '@/components/services/fiche-pro-incluse',
 };

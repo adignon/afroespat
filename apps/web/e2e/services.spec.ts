@@ -629,19 +629,6 @@ test.describe('les dix routes du module', () => {
          * l'ignore — mais le scoper au cadre visible rend l'échec lisible.
          */
         const h1 = page.locator(cadre(width)).getByRole('heading', { level: 1 });
-        /**
-         * VAGUE 5 — S03 ET S05 (formulaires de publication) NE PORTENT PAS DE <h1> : leur titre
-         * est un simple texte (« Publier une annonce »). C'est un manque d'accessibilité
-         * REMONTÉ, pas une règle ; on exige donc le titre en TEXTE visible, en attendant
-         * que le dessin lui donne son niveau de titre.
-         */
-        if (titre !== null && (await h1.count()) === 0 && (ecran.nom === 'S03' || ecran.nom === 'S05')) {
-          await expect(
-            page.locator(cadre(width)).getByText(titre, { exact: true }).first(),
-            `${ecran.route} à ${width} px`,
-          ).toBeVisible();
-          continue;
-        }
         if (titre === null) {
           await expect(h1, `${ecran.route} à ${width} px`).not.toHaveText('');
         } else {
@@ -680,8 +667,8 @@ test.describe('les dix routes du module', () => {
     const frame = page.locator('[data-frame="desktop"]');
     await expect(frame.getByText('PUBLIER UNE OFFRE', { exact: true })).toBeVisible();
     await expect(frame.getByRole('button', { name: 'Publier l’offre' })).toBeVisible();
-    // (Le formulaire n'a pas de <h1> — voir « les dix routes du module » ; son titre est le texte
-    // « PUBLIER UNE OFFRE » vérifié plus haut.)
+    // Vague 6 : le titre du formulaire est un vrai <h1> (adaptation SC_H1_S05).
+    await expect(frame.getByRole('heading', { level: 1 })).toHaveText('PUBLIER UNE OFFRE');
   });
 });
 
