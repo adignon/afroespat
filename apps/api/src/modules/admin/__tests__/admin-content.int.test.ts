@@ -124,6 +124,16 @@ describe('administration — contenu et modèles', () => {
     await prisma.announcement.deleteMany({ where: { createdByStaffId: { in: staffIds } } });
     await prisma.featureFlag.deleteMany({ where: { key: { startsWith: `t.${run}` } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
+    /**
+     * VAGUE 6 — LES MODÈLES DE PARCOURS QUE CE FICHIER CRÉE (« Essai » `T…`, « Cycle » `C…`)
+     * restaient dans la base de dev à chaque lancement. Les parcours qui les référencent
+     * partent avec leurs membres (ci-dessus), les versions et leurs étapes en cascade. Le
+     * filtre porte sur le code de CE lancement (`run`), jamais sur un nom : un modèle réel
+     * ne s'appelle pas `T`/`C` suivi de notre horodatage.
+     */
+    await prisma.journeyTemplate.deleteMany({
+      where: { code: { in: [`T${run.toUpperCase()}`, `C${run.toUpperCase()}`] } },
+    });
     for (const id of staffIds) {
       try {
         await prisma.staffUser.delete({ where: { id } });

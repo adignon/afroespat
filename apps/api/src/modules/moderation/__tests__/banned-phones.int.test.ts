@@ -1,3 +1,4 @@
+import { numeroFrancaisDEpreuve } from '../../../common/__tests__/numeros';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -49,7 +50,15 @@ describe('liste noire des numéros bannis (13 §4.2)', () => {
   const createdHashes: string[] = [];
 
   /** Un numéro français distinct par test : l'empreinte est unique en base. */
-  const nextPhone = (): string => `06${run}${String(counter++).padStart(2, '0')}`;
+  /**
+   * VAGUE 6 — `06` + six chiffres d'horodatage + deux de rang n'était PAS toujours un mobile
+   * français : libphonenumber refuse certaines plages (`63 9x`, `69 0-4`…), et selon la
+   * milliseconde du lancement le cas `requestOtp` échouait en `PHONE_INVALID` — deux cas de
+   * ce fichier, au hasard, sur une base fraîche comme sur une autre. `numeroFrancaisDEpreuve`
+   * préfixe en « 061 » (valide quels que soient les chiffres qui suivent) et rend unique par
+   * processus, instant et rang.
+   */
+  const nextPhone = (): string => numeroFrancaisDEpreuve(counter++);
 
   /**
    * L'EMPREINTE PORTE SUR L'E.164, et ma première version l'a oublié.

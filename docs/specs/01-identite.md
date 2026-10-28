@@ -258,3 +258,17 @@ Règle de la phase : une valeur affichée vient de l'API ou du compte connecté 
 - **P01 (connexion) à 390 px** : le cadre téléphone de la maquette dessine « +229 » sans drapeau ni chevron. Le générateur (`ajoutDrapeau` de `DRAWN_SELECTS`, AJOUT) y pose la même pastille de drapeau (22 × 15 px) et le même chevron que le bureau ; le panneau des douze pays (`GET /places/countries`) s'ouvre comme à 1440 px, l'invite et la bordure du champ suivent l'indicatif (`analyserNumero` de `packages/shared`).
 - **K02 « Ajouter aux contacts » et K08 « Supprimer mon compte »** : feuilles basses sur téléphone (mêmes champs, mêmes gestes) — voir `tools/adaptations/feuilles-mobiles.mjs`.
 - **Balayage** : `apps/web/e2e/balayage-mobile.mjs` rejoue toutes les routes membre à 390 px et échoue sur tout débordement, bouton coupé ou texte rogné sans ellipse.
+
+## 13. Décision à prendre — rejeu du jeton de rafraîchissement (§2.1)
+
+**État : EN ATTENTE DE LA DÉCISION DU PORTEUR. La règle stricte de §2.1 est inchangée** (rotation à chaque usage, révocation de la chaîne de sessions dès qu'un jeton déjà tourné est présenté — `AuthService.refresh`, `SESSION_REVOKED`).
+
+**Symptôme observé.** Quand deux onglets, ou deux rechargements de page, présentent le même jeton de rafraîchissement presque en même temps, le premier gagne la rotation ; le second présente un jeton déjà remplacé, la règle y voit un rejeu et révoque toute la chaîne. Le membre est alors déconnecté sans avoir rien fait de louche. Mesuré en e2e mobile : de rares sessions révoquées au rechargement de la page, sans que le symptôme désigne la cause (l'écran retombe sur « Se reconnecter »). Le même phénomène explique pourquoi on ne peut pas réinstaller le même cookie dans un second contexte de navigateur.
+
+**Option à trancher : un délai de grâce de N secondes réutilisant la même rotation.**
+- Si un jeton déjà tourné est présenté moins de N secondes après sa rotation, l'API ne révoque pas : elle rend les mêmes jeton d'accès et jeton de rafraîchissement que ceux déjà émis pour cette rotation (la nouvelle génération), sans en frapper une troisième.
+- Au-delà de N secondes, le comportement actuel s'applique : révocation de la chaîne.
+- Valeur proposée : N = 10 à 30 s. Coût de sécurité : un jeton volé et rejoué dans cette fenêtre obtient la même paire que le propriétaire (pas une nouvelle chaîne) ; le rejeu après la fenêtre reste détecté. Coût d'implémentation : conserver, pendant N secondes, le hachage de la génération précédente et la paire émise (chiffrée) ; un test d'intégration pour chaque côté de la fenêtre.
+- Alternative sans changement de règle : sérialiser côté client le rafraîchissement entre onglets (verrou `navigator.locks`), ce qui réduit le symptôme sans l'éliminer (deux appareils, requêtes rejouées par un proxy).
+
+**À décider** : garder la règle stricte telle quelle, ou accepter le délai de grâce (et fixer N).
