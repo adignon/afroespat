@@ -40,7 +40,17 @@ describe('POST /places/skills', () => {
   const sms = new FakeSmsProvider();
   let counter = 700;
   const utilisateurs: string[] = [];
-  const marque = `Épreuve${newId().slice(-6)}`;
+  /**
+   * VAGUE 6 — LA MARQUE NE PORTE QUE DES LETTRES (hors du « É » initial). Elle était
+   * `Épreuve` + les six derniers caractères d'un UUID, soit des chiffres hexadécimaux : dans
+   * ~6 % des lancements les six sont des chiffres (`Épreuve048213`), et la règle « pas de
+   * numéro de téléphone » du schéma (`\d{6,}` une fois les espaces ôtés) refusait alors
+   * CHAQUE création en 400 — sept épreuves sur huit tombaient, sur n'importe quelle base,
+   * au hasard du tirage. Chiffres remplacés par des lettres : le tirage reste unique.
+   */
+  const marque = `Épreuve${newId()
+    .slice(-6)
+    .replace(/\d/g, (c) => 'ghijklmnop'.charAt(Number(c)))}`;
   const nomsCrees: string[] = [];
 
   async function construire(config?: { enabled: boolean; requestsPerMinute: number; writesPerMinute: number }) {
