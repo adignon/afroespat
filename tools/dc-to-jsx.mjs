@@ -1631,7 +1631,20 @@ function markClosers(html) {
     const openEnd = m.index + m[0].length;
     const close = findMatchingClose(out, openEnd, 'span');
     if (!out.slice(openEnd, close.start).includes('M18 6 6 18M6 6l12 12')) continue;
-    promote(m.index, openEnd, close.start, close.end, 'Fermer');
+    /**
+     * VAGUE 6 — LA CROIX DE 40 px PORTÉE À 44, SANS DÉPLACER UN PIXEL (T1 §2.3).
+     * Même calcul que `cibleTactileRonde` du générateur : `content-box` garde 40 × 40,
+     * `padding: 2px` porte la cible à 44, `margin: -2px` rend au voisinage les 4 px pris,
+     * `background-clip: content-box` ne peint que le rond de 40. Aucune couleur nouvelle.
+     */
+    promote(
+      m.index,
+      openEnd,
+      close.start,
+      close.end,
+      'Fermer',
+      ';box-sizing:content-box;padding:2px;margin:-2px;background-clip:content-box',
+    );
     break;
   }
 
@@ -1650,13 +1663,16 @@ function markClosers(html) {
      *
      * La barre visible reste à 40 × 5 px, au pixel près. Ce qui grandit est la
      * zone cliquable, par du remplissage : `box-sizing: content-box` laisse la
-     * boîte de contenu à 40 × 5, le remplissage porte la cible à 88 × 25, et
+     * boîte de contenu à 40 × 5, le remplissage porte la cible à 88 × 45 (VAGUE 6 : elle
+     * faisait 88 × 25, sous les 44 px du dossier ; le remplissage vertical passe de 10 à
+     * 20 px et deux marges négatives de 10 px rendent au voisinage ce qu'il a pris, donc la
+     * barre ne bouge pas d'un pixel), et
      * `background-clip: content-box` ne peint le fond QUE dans la boîte de contenu
      * — sans quoi la pastille grise s'étendrait sur tout le remplissage et la
      * poignée deviendrait un gros rectangle.
      *
-     * `margin-top` passe à 0 : les 10 px d'origine séparaient la poignée du bord,
-     * et le remplissage les fournit désormais. Les garder décalerait la feuille.
+     * `margin-top` passe à −10 px : les 10 px d'origine séparaient la poignée du bord,
+     * et le remplissage les fournit désormais (et 10 de plus, repris par la marge).
      */
     promote(
       h.index,
@@ -1664,7 +1680,7 @@ function markClosers(html) {
       close.start,
       close.end,
       'Fermer',
-      ';box-sizing:content-box;padding:10px 24px;margin-top:0;background-clip:content-box',
+      ';box-sizing:content-box;padding:20px 24px;margin-top:-10px;margin-bottom:-10px;background-clip:content-box',
     );
   }
 

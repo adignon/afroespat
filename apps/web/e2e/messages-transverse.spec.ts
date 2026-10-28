@@ -905,9 +905,13 @@ test.describe('M01 — le menu de la conversation', () => {
  * écrans sur l'API, les boutons apparaîtront, et c'est ce jour-là qu'il faudra
  * regarder leur taille.
  *
- * La feuille de signalement, elle, a DEUX écarts, et ils sont nommés avec leur
- * mesure — même discipline que `check-contrast.mjs`, qui liste ses paires sous le
- * seuil AA plutôt que d'abaisser le seuil.
+ * VAGUE 6 — PLUS AUCUN ÉCART « HÉRITÉ DE LA MAQUETTE ». La liste en comptait cinq
+ * (poignée 88 × 25, croix 40 × 40, « Débloquer » 108 × 36). Ils sont tous portés à 44 px
+ * sans nouvelle couleur : la poignée et la croix par du remplissage compensé par une marge
+ * négative (zone de clic seule : la barre et le rond sont peints au pixel près, la mise en
+ * page ne bouge pas — `tools/dc-to-jsx.mjs`, `markClosers`), « Débloquer » par une hauteur
+ * minimale de 44 px (`MV_DEBLOQUER`). Chaque entrée vide ci-dessous est une preuve ; si un
+ * contrôle repasse sous 44 px, c'est ici qu'il se nomme.
  */
 const ECARTS_TACTILES: Readonly<Record<string, readonly string[]>> = {
   '/messages': [],
@@ -915,36 +919,11 @@ const ECARTS_TACTILES: Readonly<Record<string, readonly string[]>> = {
   '/recherche': [],
   '/notifications': [],
   '/notifications?vue=panneau': [],
-  /**
-   * · la POIGNÉE de la feuille : 40 × 5 px dessinés, portés à 88 × 25 par le
-   *   transcodeur (remplissage en `content-box`, peinture bornée au contenu). Elle
-   *   n'atteint toujours pas 44 px de haut — l'agrandir davantage décollerait la
-   *   feuille de son bord, donc la mesure reste nommée ici ;
-   * · la CROIX : 40 × 40 px, c'est ce que la maquette dessine. La porter à 44
-   *   déplacerait des pixels, ce que le transcodage refuse.
-   *
-   * Les deux tiennent WCAG 2.5.8 AA (24 px), pas la règle du dossier. Au porteur de
-   * trancher — voir `docs/decisions.md`.
-   */
-  '/messages/1?feuille=signaler': ['button « Fermer » 88×25 px', 'button « Fermer » 40×40 px'],
-  /**
-   * LA CROIX EMPRUNTÉE HÉRITE DE L'ÉCART DE SON ORIGINAL, et c'est la preuve que
-   * c'est bien le même objet : 40 × 40 px, ce que la maquette dessine. La porter à
-   * 44 déplacerait des pixels — et la porterait, elle, plus loin que celle dont
-   * elle est la copie.
-   */
-  '/messages/1?feuille=merci': ['button « Fermer » 40×40 px'],
-  /** Le menu n'a aucun contrôle : la maquette dessine ses quatre entrées en `<span>`. */
-  // Le « Fermer » en texte du pied de feuille : même composant, même écart que celui de « Signaler ».
-  '/messages/1?feuille=menu': ['button « Fermer » 88×25 px'],
-  /**
-   * « Débloquer » HÉRITE DE L'ÉCART DE SON ORIGINAL, comme la croix de X03 : la carte
-   * « BLOQUÉS » de K05 dessine ce bouton à 36 px de haut (`height:44px` suivi de
-   * `height:36px` dans le même style — la seconde gagne, et c'est le dessin). Le
-   * porter à 44 le rendrait différent de celui dont il est la copie.
-   */
+  '/messages/1?feuille=signaler': [],
+  '/messages/1?feuille=merci': [],
+  '/messages/1?feuille=menu': [],
   // Clé d'illustration : l'URL réelle est celle d'un blocage fabriqué par les routes (voir le cas).
-  '/messages/1?etat=bloque': ['button « Débloquer » 108×36 px'],
+  '/messages/1?etat=bloque': [],
 };
 
 test.describe('cible tactile — les écarts connus, et AUCUN autre', () => {

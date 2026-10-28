@@ -134,7 +134,9 @@ export const MV_DEBLOQUER = {
         // valeurs déjà employées par la maquette voisine, aucune couleur nouvelle.
         const style = m[1]
           .replace('background: "#F2F5F4"', 'background: "#fff"')
-          .replace('border: "none"', 'border: "1px solid #E6EBE9"');
+          .replace('border: "none"', 'border: "1px solid #E6EBE9"')
+          // VAGUE 6 : 36 px de haut, sous les 44 px du dossier (T1 §2.3) — la hauteur seule change.
+          .replace('height: "36px"', 'minHeight: "44px"');
         return `<button type="button" data-debloquer="" onClick={onDebloquer} disabled={debloquerBloque === true} style={{ ${style}, marginTop: "10px", cursor: "pointer", opacity: debloquerBloque === true ? 0.6 : 1 }}>Débloquer</button>`;
       },
     );

@@ -38,7 +38,7 @@ const PANNEAU =
   /style=\{\{ position: "fixed", left: "50%", top: "50%", transform: "translate\(-50%,-50%\)", width: "\d+px", background: "#fff", border: "1px solid #DDE3E0", borderRadius: "28px", padding: "24px", display: "flex", flexDirection: "column", gap: "16px", flexShrink: "0", maxHeight: "calc\(100vh - 48px\)", (overflow(?:Y)?: "(?:hidden|auto)") \}\} data-modal-panel=""/;
 
 const POIGNEE =
-  '<button type="button" aria-label="Fermer" data-modal-close="" style={{ alignSelf: "center", width: "40px", height: "5px", borderRadius: "999px", background: "#DDE3E0", border: "none", padding: "10px 24px", font: "inherit", cursor: "pointer", boxSizing: "content-box", marginTop: "0", backgroundClip: "content-box", flexShrink: "0" }}></button>';
+  '<button type="button" aria-label="Fermer" data-modal-close="" style={{ alignSelf: "center", width: "40px", height: "5px", borderRadius: "999px", background: "#DDE3E0", border: "none", padding: "20px 24px", font: "inherit", cursor: "pointer", boxSizing: "content-box", marginTop: "-10px", marginBottom: "-10px", backgroundClip: "content-box", flexShrink: "0" }}></button>';
 
 /** Rend `null` si le cadre n'a pas la forme attendue : le générateur le dit alors. */
 export function enFeuille(body, nom) {
