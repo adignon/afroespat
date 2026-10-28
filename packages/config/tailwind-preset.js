@@ -17,7 +17,9 @@ module.exports = {
     borderRadius: radius,
     fontSize,
     fontFamily: {
-      sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+      // « Twemoji Country Flags » d'abord : @font-face (globals.css) limité par unicode-range aux seuls
+      // indicateurs régionaux, donc il n'habille que les drapeaux (Windows n'en dessine aucun).
+      sans: ['"Twemoji Country Flags"', '"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
       mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
     },
     extend: {

@@ -60,7 +60,7 @@
   body {
     background: var(--c-bg);
     color: var(--c-text);
-    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    font-family: 'Twemoji Country Flags', 'Plus Jakarta Sans', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 

@@ -1,6 +1,25 @@
 @import '@app/ui/styles.css';
 
 /*
+ * LES DRAPEAUX (émojis de pays) SUR WINDOWS.
+ *
+ * Les drapeaux sont dérivés du code ISO du pays (`screens/onboarding/drapeau.ts`) :
+ * deux « indicateurs régionaux » Unicode. macOS, iOS et Android les dessinent ;
+ * Windows n'embarque aucun glyphe de drapeau et affichait les deux lettres (« BJ »).
+ * Cette police (Twemoji Country Flags, MIT, ~78 Ko), servie par l'application elle-même
+ * — aucun service tiers, `font-src 'self'` suffit — ne contient QUE les drapeaux : la
+ * plage `unicode-range` la réserve aux indicateurs régionaux et au drapeau noir de
+ * Tag-sequence, donc elle ne touche à aucun autre caractère. Les systèmes qui ont déjà
+ * leurs drapeaux n'en ont pas besoin, mais la rendent à l'identique.
+ */
+@font-face {
+  font-family: 'Twemoji Country Flags';
+  unicode-range: U+1F1E6-1F1FF, U+1F3F4, U+E0062-E007F;
+  src: url('/fonts/TwemojiCountryFlags.woff2') format('woff2');
+  font-display: swap;
+}
+
+/*
  * ╔══════════════════════════════════════════════════════════════════════════╗
  * ║ LES TROIS ZONES D'UNE PAGE D'ORDINATEUR                                  ║
  * ╚══════════════════════════════════════════════════════════════════════════╝
