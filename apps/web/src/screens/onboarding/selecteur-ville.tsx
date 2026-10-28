@@ -45,6 +45,7 @@ export interface VilleVue {
   readonly fg: string;
   readonly metaFg: string;
   readonly metaBg: string;
+  readonly bientot?: boolean;
   readonly onPick: () => void;
 }
 
@@ -184,6 +185,22 @@ export function SelecteurVille({
       onFermer={onFermer}
       entete={entete}
     >
+      {villes.some((v) => v.bientot === true) ? (
+        /**
+         * « BIENTÔT » — CE QUE ÇA VEUT DIRE (02 §2.2). Une ville sans réseau ouvert reste
+         * choisissable : c'est ainsi que le membre dit où il vit, et que l'équipe voit
+         * où se trouvent les inscrits. Elle n'a ni réseau, ni carte, ni fiche tant que
+         * l'équipe ne l'a pas activée (en général à 20 membres). On ne promet PAS de
+         * prévenir le membre : aucune notification d'ouverture n'existe.
+         */
+        <p
+          data-aide-bientot=""
+          style={{ margin: 0, padding: '4px 12px 10px', fontSize: '12px', lineHeight: 1.5, color: '#5D6B66' }}
+        >
+          « bientôt » : pas encore de réseau dans cette ville. Vous pouvez la choisir pour indiquer où vous vivez ; le réseau d’une ville
+          ouvre quand l’équipe l’active.
+        </p>
+      ) : null}
       {villes.length === 0 ? (
         /**
          * DEUX CAS, UN SEUL MOT — et c'est voulu : que la recherche ne trouve rien

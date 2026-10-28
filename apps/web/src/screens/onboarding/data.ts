@@ -850,6 +850,8 @@ export interface OnboardingVals extends ScreenActions {
     readonly fg: string;
     readonly metaFg: string;
     readonly metaBg: string;
+    /** Vrai quand le réseau de la ville n'est pas ouvert (grisée, mais choisissable). */
+    readonly bientot: boolean;
     readonly onPick: () => void;
   }[];
   /**
@@ -1211,6 +1213,7 @@ export function onboardingVals(
         fg: city.isActive || chosen ? '#16211D' : '#8A958F',
         metaFg: chosen ? '#0F5C48' : city.isActive ? '#5D6B66' : '#8A958F',
         metaBg: chosen ? '#fff' : '#F2F5F4',
+        bientot: !city.isActive,
         /**
          * CHOISIR UNE VILLE REFERME LE PANNEAU — un seul geste, comme pour le
          * pays. `citySearch` est vidé plutôt que rempli du nom : la recherche a

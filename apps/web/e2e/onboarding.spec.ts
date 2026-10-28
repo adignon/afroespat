@@ -111,20 +111,23 @@ test.describe('O01 — choix de la phase', () => {
 
 test.describe('O04 — interrupteur de disponibilité', () => {
   /**
-   * L'interrupteur n'existe QUE dans le cadre ordinateur.
-   *
-   * Ce n'est pas un oubli de transcodage : la maquette ne dessine pas la ligne
-   * « je suis disponible pour aider » dans son cadre de 390 px. Le test le
-   * constate explicitement, pour qu'un jour où la maquette l'ajoutera, l'écart
-   * se voie ici plutôt que de passer inaperçu.
+   * L'interrupteur existe dans les DEUX cadres (lot W7). La planche de 390 px le
+   * dessine en `<span>` inerte (« Disponible pour aider ») : il devient un vrai
+   * bouton `role="switch"`, branché sur la même donnée que celui de l'ordinateur —
+   * sans cela, le membre sur téléphone ne pouvait pas couper sa disponibilité.
    */
-  test('n’est présent que dans le cadre que la maquette lui donne', async ({ page }) => {
+  test('est présent dans les deux cadres, et branché', async ({ page }) => {
     await page.goto('/bienvenue/profil');
     const counts = await page.evaluate(() => ({
       desktop: document.querySelectorAll('[data-frame="desktop"] [role="switch"]').length,
       mobile: document.querySelectorAll('[data-frame="mobile"] [role="switch"]').length,
     }));
-    expect(counts).toEqual({ desktop: 1, mobile: 0 });
+    expect(counts).toEqual({ desktop: 1, mobile: 1 });
+    const cadre = await visibleFrame(page);
+    const toggle = page.locator(`${cadre} [role="switch"]`);
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await toggle.evaluate((el: HTMLElement) => el.click());
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
   });
 
   test('annonce son nom et son état, et les fait suivre', async ({ page }) => {
@@ -152,39 +155,35 @@ test.describe('O04 — interrupteur de disponibilité', () => {
   /**
    * LE test qui protège le design.
    *
-   * La cible fait 44 px pour satisfaire `T1` §2.3, mais la piste PEINTE garde
-   * les 48 × 28 de la maquette : le remplissage porte la boîte à 44 px et
-   * `background-clip: content-box` empêche la couleur de s'y étendre. Sans cette
-   * assertion, n'importe qui « corrigerait » la cible en grossissant la piste.
+   * La cible fait 44 px pour satisfaire `T1` §2.3, mais la piste PEINTE garde les
+   * 48 × 28 de la maquette. Depuis le lot W7 la cible est le bouton transparent et la
+   * piste un `<span>` à part (le remplissage + `background-clip` d'avant déformait les
+   * extrémités en ellipses) : on mesure donc la piste, pas le bouton.
    */
   test('agrandit la cible sans grossir la piste', async ({ page }) => {
     await page.goto('/bienvenue/profil');
-    // La mesure n'a de sens que si le cadre est affiché : sous 1024 px il est en
-    // `display: none`, et toutes ses boîtes valent zéro. Le test porte donc sur
-    // le seul cadre où la maquette dessine l'interrupteur.
-    test.skip((await visibleFrame(page)) !== '[data-frame="desktop"]', 'interrupteur absent du cadre mobile');
-
-    const measured = await page.evaluate(() => {
-      const sw = document.querySelector<HTMLElement>('[data-frame="desktop"] [role="switch"]');
-      if (sw === null) throw new Error('interrupteur introuvable');
+    const cadre = await visibleFrame(page);
+    const measured = await page.evaluate((c) => {
+      const sw = document.querySelector<HTMLElement>(`${c} [role="switch"]`);
+      const piste = sw?.querySelector<HTMLElement>('[data-interrupteur-piste]');
+      if (sw === null || sw === undefined || piste === null || piste === undefined) throw new Error('interrupteur introuvable');
       const box = sw.getBoundingClientRect();
-      const style = getComputedStyle(sw);
-      const knob = sw.querySelector('span')?.getBoundingClientRect();
+      const p = piste.getBoundingClientRect();
       return {
         targetHeight: Math.round(box.height),
-        paintedWidth: parseFloat(style.width),
-        paintedHeight: parseFloat(style.height),
-        backgroundClip: style.backgroundClip,
-        knobCentre: knob === undefined ? -1 : Math.round(knob.top + knob.height / 2 - box.top),
+        paintedWidth: Math.round(p.width),
+        paintedHeight: Math.round(p.height),
+        backgroundClip: getComputedStyle(piste).backgroundClip,
+        pisteCentre: Math.round(p.top + p.height / 2 - box.top),
       };
-    });
+    }, cadre);
 
     expect(measured.targetHeight).toBeGreaterThanOrEqual(44);
     expect(measured.paintedWidth).toBe(48);
     expect(measured.paintedHeight).toBe(28);
-    expect(measured.backgroundClip).toBe('content-box');
-    // Le curseur reste centré : la boîte fait 44 px, son milieu est à 22 px.
-    expect(measured.knobCentre).toBe(Math.round(measured.targetHeight / 2));
+    expect(measured.backgroundClip).toBe('border-box');
+    // La piste reste centrée dans la cible.
+    expect(measured.pisteCentre).toBe(Math.round(measured.targetHeight / 2));
   });
 });
 
