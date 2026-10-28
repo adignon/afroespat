@@ -1,6 +1,7 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { ECART_PANNEAU, placerPanneau, type PlacementPanneau } from './placement-panneau';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -99,6 +100,37 @@ export function ChoixReferentiel({
   const [ouvert, setOuvert] = useState(false);
   const [creation, setCreation] = useState(false);
   const listeId = useId();
+  const saisieRef = useRef<HTMLInputElement | null>(null);
+  const [place, setPlace] = useState<PlacementPanneau>({ cote: 'dessous', hauteurMax: 220 });
+
+  /**
+   * LE PANNEAU SUIT SON CHAMP. Posé sous la boîte qui porte la saisie (son parent, rendu
+   * `position: relative` par le générateur — voir `interrupteur-vivant.mjs`), à sa largeur ;
+   * au-dessus si le bas de la fenêtre est trop près. Recalculé à l'ouverture, au
+   * défilement et au redimensionnement : un panneau qui garde sa place pendant que la page
+   * bouge finit hors du champ.
+   */
+  const replacer = useCallback(() => {
+    const boite = saisieRef.current?.parentElement;
+    if (!boite) return;
+    const r = boite.getBoundingClientRect();
+    setPlace((avant) => {
+      const suivant = placerPanneau(r, window.innerHeight);
+      return avant.cote === suivant.cote && avant.hauteurMax === suivant.hauteurMax ? avant : suivant;
+    });
+  }, []);
+  useLayoutEffect(() => {
+    if (ouvert) replacer();
+  }, [ouvert, replacer, choisis.length, saisie]);
+  useEffect(() => {
+    if (!ouvert) return;
+    window.addEventListener('scroll', replacer, true);
+    window.addEventListener('resize', replacer);
+    return () => {
+      window.removeEventListener('scroll', replacer, true);
+      window.removeEventListener('resize', replacer);
+    };
+  }, [ouvert, replacer]);
 
   const net = plier(saisie);
   const dejaPris = new Set(choisis.map((c) => c.id));
@@ -184,7 +216,14 @@ export function ChoixReferentiel({
           setSaisie(event.target.value);
           setOuvert(true);
         }}
+        ref={saisieRef}
         onFocus={() => setOuvert(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && ouvert) {
+            event.stopPropagation();
+            setOuvert(false);
+          }
+        }}
         /**
          * `onBlur` DIFFÉRÉ : un clic sur une suggestion déclenche le `blur` du
          * champ AVANT son propre `click`. Fermer tout de suite démonterait la
@@ -220,13 +259,16 @@ export function ChoixReferentiel({
             position: 'absolute',
             left: 0,
             right: 0,
-            top: 'calc(100% + 4px)',
-            zIndex: 2,
+            ...(place.cote === 'dessous'
+              ? { top: `calc(100% + ${ECART_PANNEAU}px)` }
+              : { bottom: `calc(100% + ${ECART_PANNEAU}px)` }),
+            zIndex: 20,
+            boxSizing: 'border-box',
             background: '#fff',
             border: '1px solid #EAEEEC',
             borderRadius: '16px',
             padding: '6px',
-            maxHeight: '220px',
+            maxHeight: `${place.hauteurMax}px`,
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',

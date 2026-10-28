@@ -15,6 +15,7 @@ import {
   AJOUTS_RESEAU_VIVANT,
 } from './adaptations/reseau-vivant.mjs';
 import { ADAPTATIONS_PROFIL_VIVANT } from './adaptations/profil-vivant.mjs';
+import { ADAPTATIONS_INTERRUPTEUR_VIVANT, AJOUTS_INTERRUPTEUR_VIVANT } from './adaptations/interrupteur-vivant.mjs';
 import {
   ADAPTATIONS_MESSAGERIE_VIVANTE,
   AJOUTS_MESSAGERIE_VIVANTE,
@@ -18278,6 +18279,8 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_ENTETE_GLOBAL,
     // Les rôles de la page (gauche, contenu, droite) : après l'en-tête, qu'il sort de la colonne.
     ...ADAPTATIONS_ZONES,
+    // W7 : interrupteur à vraie piste, panneau de choix ancré (tools/adaptations/interrupteur-vivant.mjs).
+    ...ADAPTATIONS_INTERRUPTEUR_VIVANT,
   ]) {
     /**
      * `['*']` — LA TRANSFORMATION VAUT POUR TOUS LES ÉCRANS.
@@ -19558,6 +19561,7 @@ const AJOUTS = {
   ...AJOUTS_FEUILLES_DESSINEES,
   ...AJOUTS_DONNEES_VIVES,
   ...AJOUTS_COMPTE_SUPPRESSION,
+  ...AJOUTS_INTERRUPTEUR_VIVANT,
 };
 
 /**

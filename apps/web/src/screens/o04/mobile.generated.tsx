@@ -8,7 +8,7 @@ import { Fragment } from 'react';
 import type { OnboardingVals } from '../onboarding/data';
 
 export function O04Mobile(props: OnboardingVals) {
-  const { busy, displayNameValue, handleValue, onContinue, onDisplayNameChange, onHandleChange, seg4, statuses } = props;
+  const { busy, displayNameValue, handleValue, help, helpKnob, helpTrack, onContinue, onDisplayNameChange, onHandleChange, seg4, statuses, toggleHelp } = props;
 
   return (
     <>
@@ -26,7 +26,7 @@ export function O04Mobile(props: OnboardingVals) {
       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>{(statuses ?? []).map((s, sIndex) => (
 <Fragment key={sIndex}><button type="button" onClick={s.onPick} aria-pressed={s.on} style={{ padding: "8px 13px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "600", background: s.bg, color: s.fg, border: `1px solid ${s.bd}`, font: "inherit", cursor: "pointer", lineHeight: "normal" }}>{s.label}</button></Fragment>
 ))}</div>
-      <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "16px", padding: "14px", display: "flex", alignItems: "center", gap: "10px" }}><span style={{ flex: "1", fontSize: "14px", fontWeight: "700" }}>Disponible pour aider</span><span style={{ width: "48px", height: "28px", borderRadius: "999px", background: "#16785E", position: "relative" }}><span style={{ position: "absolute", top: "3px", left: "23px", width: "22px", height: "22px", borderRadius: "999px", background: "#fff" }}></span></span></div>
+      <div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "16px", padding: "14px", display: "flex", alignItems: "center", gap: "10px" }}><span style={{ flex: "1", fontSize: "14px", fontWeight: "700" }}>Disponible pour aider</span><button type="button" onClick={toggleHelp} style={{ width: "48px", height: "44px", padding: "0", border: "none", background: "transparent", display: "flex", alignItems: "center", flexShrink: "0", cursor: "pointer", borderRadius: "22px" }} role="switch" aria-checked={help} aria-label="Disponible pour aider"><span data-interrupteur-piste="" style={{ position: "relative", display: "block", boxSizing: "border-box", width: "48px", height: "28px", borderRadius: "999px", backgroundColor: helpTrack }}><span style={{ position: "absolute", top: "3px", left: helpKnob, width: "22px", height: "22px", borderRadius: "999px", background: "#fff" }}></span></span></button></div>
       <div style={{ flex: "1" }}></div>
       <button style={{ width: "100%", height: "52px", borderRadius: "14px", background: "#16785E", color: "#fff", border: "none", font: "inherit", fontSize: "15px", fontWeight: "700" }} onClick={onContinue} disabled={busy}>Continuer</button>
     

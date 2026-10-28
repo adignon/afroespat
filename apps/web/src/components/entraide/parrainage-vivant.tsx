@@ -29,7 +29,7 @@ import {
   type MyMentorshipsResponse,
 } from '@app/shared';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
-import { fetchMe, memberApi, voidResponse } from '@/lib/api/index';
+import { ApiError, fetchMe, memberApi, voidResponse } from '@/lib/api/index';
 import { useVersionEntraide } from '@/lib/entraide-recharge';
 import { Alerte, BOUTON_DISCRET, BOUTON_PLEIN, CHAMP, Compteur, EtatListe, Feuille, LIBELLE, Pastille, Segments, eteint, initiales } from './atomes';
 import { useGeste } from './geste';
@@ -720,8 +720,17 @@ export function FormulaireParrain({ variante }: { readonly variante: 'bureau' | 
   const { lancer, occupe, fenetre } = useGeste();
   const version = useVersionEntraide();
   const [moi, setMoi] = useState<MyMentorProfileResponse | null>(null);
-  const [echec, setEchec] = useState(false);
+  /**
+   * L'ÉCHEC DU PROFIL A DEUX VISAGES, et les confondre est le défaut signalé : « la
+   * liste ne se charge pas ». `GET /me/mentor-profile` exige le niveau 1 (capacité
+   * `mentorship.request`) : un membre non vérifié reçoit `403 LEVEL_REQUIRED`, ce
+   * n'est PAS une panne et « Réessayer » n'y changerait rien. Il lui faut l'invitation
+   * à vérifier son compte. Tout autre refus est une vraie panne : « Réessayer ».
+   */
+  const [echec, setEchec] = useState<null | 'niveau' | 'panne'>(null);
   const [modeles, setModeles] = useState<readonly { id: string; nom: string }[]>([]);
+  const [modelesEchec, setModelesEchec] = useState(false);
+  const [relance, setRelance] = useState(0);
   const [bio, setBio] = useState('');
   const [choix, setChoix] = useState<readonly string[]>([]);
   const [max, setMax] = useState<number>(MENTOR_DEFAULT_MAX_MENTEES);
@@ -737,11 +746,12 @@ export function FormulaireParrain({ variante }: { readonly variante: 'bureau' | 
     ]).then(([p, m]) => {
       if (!vivant) return;
       if (p.status === 'rejected') {
-        setEchec(true);
+        setEchec(p.reason instanceof ApiError && p.reason.code === 'LEVEL_REQUIRED' ? 'niveau' : 'panne');
         return;
       }
-      setEchec(false);
+      setEchec(null);
       setMoi(p.value);
+      setModelesEchec(m.status === 'rejected');
       if (m.status === 'fulfilled') setModeles(m.value.items.filter((t) => t.createsJourney).map((t) => ({ id: t.id, nom: t.nameFr })));
       // Le formulaire reprend le profil existant, UNE fois : relire après un
       // enregistrement ne doit pas écraser ce que le membre est en train de taper.
@@ -757,7 +767,7 @@ export function FormulaireParrain({ variante }: { readonly variante: 'bureau' | 
       vivant = false;
     };
     // `initialise` ne relance pas la lecture : il ne sert qu'à ne pas réécrire le formulaire.
-  }, [version]);
+  }, [version, relance]);
 
   const brouillon = { ...(bio.trim() === '' ? {} : { bio: bio.trim() }), journeyTemplateIds: choix, maxMentees: max, isAvailable: dispo };
   const verdict = mentorProfileSchema.safeParse(brouillon);
@@ -784,7 +794,22 @@ export function FormulaireParrain({ variante }: { readonly variante: 'bureau' | 
     </div>
   );
 
-  if (echec) return <EtatListe etat="echec" vide={null} onReessayer={() => window.location.reload()} />;
+  if (echec === 'niveau') {
+    return (
+      <div role="status" style={{ background: '#fff', border: '1px solid #E6EBE9', borderRadius: mobile ? '20px' : '22px', padding: mobile ? '16px' : '20px', flexShrink: 0 }}>
+        <div style={{ fontSize: '14.5px', fontWeight: 700 }}>Devenir parrain demande un compte vérifié</div>
+        <div style={{ fontSize: '13px', color: '#5D6B66', marginTop: '6px', lineHeight: 1.55 }}>
+          Un parrain accompagne un nouvel arrivant : votre identité doit d’abord être vérifiée (niveau 1). Rien n’est cassé, cette page s’ouvre dès que c’est fait.
+        </div>
+        <Link href="/compte/verification" style={{ ...BOUTON_PLEIN, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', height: mobile ? '44px' : '48px', padding: '0 20px', marginTop: '14px' }}>
+          Vérifier mon compte
+        </Link>
+      </div>
+    );
+  }
+  if (echec === 'panne') {
+    return <EtatListe etat="echec" vide={null} onReessayer={() => { setEchec(null); setRelance((n) => n + 1); }} />;
+  }
   if (moi === null) return <EtatListe etat="attente" vide={null} onReessayer={() => undefined} />;
 
   const enregistrer = (): void => {
@@ -825,7 +850,17 @@ export function FormulaireParrain({ variante }: { readonly variante: 'bureau' | 
           />
           <Compteur n={bio.trim().length} min={20} max={MENTOR_BIO_MAX} />
         </div>
-        {modeles.length === 0 ? null : (
+        {modeles.length === 0 ? (
+          <div role={modelesEchec ? 'alert' : 'status'} style={{ fontSize: '12.5px', color: '#5D6B66' }}>
+            <div style={LIBELLE}>Parcours que vous connaissez</div>
+            {modelesEchec ? 'La liste des parcours n’a pas pu être chargée. ' : 'Aucun parcours n’est proposé pour le moment. '}
+            {modelesEchec ? (
+              <button type="button" onClick={() => setRelance((n) => n + 1)} style={{ ...BOUTON_DISCRET, display: 'inline-flex', marginTop: '6px' }}>
+                Réessayer
+              </button>
+            ) : null}
+          </div>
+        ) : (
           <div>
             <div style={LIBELLE}>Parcours que vous connaissez</div>
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }} role="group" aria-label="Parcours que vous connaissez">
