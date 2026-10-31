@@ -113,7 +113,29 @@ function lireIndicateur(): boolean {
   }
 }
 
+/**
+ * Le MÊME indicateur, en cookie de l'origine du site : c'est le seul moyen pour que le
+ * SERVEUR de rendu sache, sur `/`, qu'un visiteur n'a jamais ouvert de session et l'envoie
+ * à la connexion sans lui faire voir le fil. Ce n'est qu'un indice d'affichage — un « 1 »,
+ * lisible par le script, sans aucune valeur d'authentification : le serveur ne s'y fie
+ * pour aucun droit, et un indice périmé retombe sur la garde de session, comme avant.
+ */
+const DUREE_INDICATEUR_COOKIE = 60 * 60 * 24 * 30;
+
+function ecrireCookieIndicateur(present: boolean): void {
+  try {
+    if (typeof document === 'undefined') return;
+    const securise = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = present
+      ? `${INDICATEUR_SESSION}=1; Path=/; Max-Age=${DUREE_INDICATEUR_COOKIE}; SameSite=Lax${securise}`
+      : `${INDICATEUR_SESSION}=; Path=/; Max-Age=0; SameSite=Lax${securise}`;
+  } catch {
+    // Cookies bloqués : `/` retombe sur la garde de session.
+  }
+}
+
 function ecrireIndicateur(present: boolean): void {
+  ecrireCookieIndicateur(present);
   try {
     if (typeof localStorage === 'undefined') return;
     if (present) localStorage.setItem(INDICATEUR_SESSION, '1');
