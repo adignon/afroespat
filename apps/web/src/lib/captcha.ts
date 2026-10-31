@@ -121,11 +121,10 @@ export async function obtenirJetonCaptcha(): Promise<string> {
         'after-interactive-callback': () => { cadre.style.display = 'none'; },
         callback: (jeton: string) => { fin(); resolve(jeton); },
         // Cloudflare donne un code (`110200` : domaine non autorisé pour cette clé de site,
-        // `110100`/`110110` : clé invalide…). Le garder dans le message et la console évite de
-        // deviner ; `true` dit à Turnstile que l'erreur est traitée.
+        // `110100`/`110110` : clé invalide…). Le garder dans le message évite de deviner ;
+        // `true` dit à Turnstile que l'erreur est traitée.
         'error-callback': (code?: unknown): boolean => {
           fin();
-          console.warn('[turnstile] erreur', code);
           const suffixe = typeof code === 'string' || typeof code === 'number' ? ` (code ${String(code)})` : '';
           reject(new CaptchaError(`La vérification anti-robot a échoué${suffixe}. Réessayez.`));
           return true;
