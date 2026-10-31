@@ -1,0 +1,11 @@
+# HTTPS automatique (Let's Encrypt). Les deux domaines doivent pointer vers ce serveur.
+diasporyplus.com {
+	encode zstd gzip
+	reverse_proxy web:3000
+}
+
+api.diasporyplus.com {
+	encode zstd gzip
+	# WebSocket (socket.io, /ws) compris : reverse_proxy le gère sans réglage.
+	reverse_proxy api:3001
+}

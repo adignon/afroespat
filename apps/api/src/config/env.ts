@@ -78,8 +78,12 @@ const previousKeys = z
 export const REQUIRED_BY_PROVIDER: Readonly<
   Record<string, Readonly<Record<string, readonly string[]>>>
 > = {
-  SMS_PROVIDER: { twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'] },
-  EMAIL_PROVIDER: { brevo: ['BREVO_API_KEY'] },
+  SMS_PROVIDER: {
+    twilio: ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN'],
+    whatsapp: ['WHATSAPP_ACCESS_TOKEN', 'WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_TEMPLATE_NAME'],
+    testers: ['OTP_TEST_PHONES'],
+  },
+  EMAIL_PROVIDER: { brevo: ['BREVO_API_KEY'], mailjet: ['MAILJET_API_KEY', 'MAILJET_SECRET_KEY'] },
   PUSH_PROVIDER: { webpush: ['VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY'] },
   KYC_PROVIDER: { didit: ['DIDIT_API_KEY', 'DIDIT_WORKFLOW_ID', 'DIDIT_WEBHOOK_SECRET'] },
   AI_MODERATION_PROVIDER: { anthropic: ['ANTHROPIC_API_KEY'] },
@@ -193,10 +197,24 @@ export const envSchema = z.object({
    */
   TWILIO_BASE_URL: z.string().url().default('https://api.twilio.com'),
   BREVO_BASE_URL: z.string().url().default('https://api.brevo.com'),
+  MAILJET_BASE_URL: z.string().url().default('https://api.mailjet.com'),
   TURNSTILE_BASE_URL: z.string().url().default('https://challenges.cloudflare.com'),
   ANTHROPIC_BASE_URL: z.string().url().default('https://api.anthropic.com'),
-  SMS_PROVIDER: providerMode('twilio'),
+  SMS_PROVIDER: providerMode('twilio', 'whatsapp', 'testers'),
   SMS_FAKE_FIXED_CODE: z.string().regex(/^\d{6}$/).default('123456'),
+  /**
+   * `SMS_PROVIDER=testers` — accepté en production, EN ATTENDANT un vrai canal : le code
+   * fixe `SMS_FAKE_FIXED_CODE` ne vaut que pour ces numéros (E.164, séparés par des
+   * virgules) ; tout autre numéro est refusé. Rien n'est envoyé à personne.
+   */
+  OTP_TEST_PHONES: z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    z
+      .string()
+      .transform((s) => s.split(',').map((x) => x.trim()).filter((x) => x !== ''))
+      .pipe(z.array(z.string().regex(/^\+\d{8,15}$/, 'doit être un numéro E.164 (+33612345678)')).min(1))
+      .optional(),
+  ),
   /**
    * Twilio — API Messages, et NON Verify. Le code OTP reste tiré, haché, borné en
    * tentatives et lié à son `purpose` par NOUS (`auth.service.ts`) : Verify
@@ -212,10 +230,26 @@ export const envSchema = z.object({
   TWILIO_AUTH_TOKEN: optionalSecret,
   TWILIO_FROM: optionalSecret,
   TWILIO_MESSAGING_SERVICE_SID: optionalSecret,
-  EMAIL_PROVIDER: providerMode('brevo'),
+  /**
+   * WhatsApp — API Cloud de Meta (`SMS_PROVIDER=whatsapp`). Le code part dans un MODÈLE
+   * « Authentication » approuvé (`WHATSAPP_TEMPLATE_NAME`), seul message autorisé hors
+   * de la fenêtre de 24 h. `WHATSAPP_OTP_BUTTON` : le modèle standard porte un bouton
+   * « Copier le code » qui reçoit le code en second paramètre.
+   */
+  WHATSAPP_ACCESS_TOKEN: optionalSecret,
+  WHATSAPP_PHONE_NUMBER_ID: optionalSecret,
+  WHATSAPP_TEMPLATE_NAME: optionalSecret,
+  WHATSAPP_TEMPLATE_LANGUAGE: z.string().min(2).default('fr'),
+  WHATSAPP_OTP_BUTTON: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  WHATSAPP_API_VERSION: z.string().regex(/^v\d+\.\d+$/).default('v21.0'),
+  WHATSAPP_BASE_URL: z.string().url().default('https://graph.facebook.com'),
+  EMAIL_PROVIDER: providerMode('brevo', 'mailjet'),
   EMAIL_SMTP_URL: z.string().optional(),
   /** Brevo — API transactionnelle (`POST /v3/smtp/email`), 12 §2.5. */
   BREVO_API_KEY: optionalSecret,
+  /** Mailjet — API Send v3.1 ; authentification Basic clé publique : clé secrète. */
+  MAILJET_API_KEY: optionalSecret,
+  MAILJET_SECRET_KEY: optionalSecret,
   /** « Expéditeur unique » (12 §2.5). */
   EMAIL_FROM_ADDRESS: z.string().email().default('no-reply@localhost.test'),
   EMAIL_FROM_NAME: z.string().min(1).default('DisaporyPlus'),
@@ -269,7 +303,7 @@ export const envSchema = z.object({
    */
   STRIPE_WEBHOOK_SECRET: z.string().min(32).optional(),
   MOBILE_MONEY_WEBHOOK_SECRET: z.string().min(32).optional(),
-  AI_MODERATION_PROVIDER: providerMode('anthropic'),
+  AI_MODERATION_PROVIDER: providerMode('anthropic', 'off'),
   /** Clé de l'API Claude. Le texte envoyé est TOUJOURS masqué avant (13 §2). */
   ANTHROPIC_API_KEY: optionalSecret,
   AI_MODERATION_MODEL: z.string().min(1).default('claude-opus-5-5'),

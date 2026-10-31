@@ -1,0 +1,106 @@
+# Production — un seul serveur, derrière Caddy (HTTPS automatique). Voir infra/README.md.
+#
+#   docker compose --env-file prod.env -f docker-compose.prod.yml build
+#   docker compose --env-file prod.env -f docker-compose.prod.yml up -d
+#
+# `prod.env` n'est PAS dans le dépôt (secrets). Modèle : `.env.example`. Il sert deux fois :
+# interpolation de ce fichier (--env-file) et variables des conteneurs (env_file).
+# Seul Caddy publie des ports : Postgres, Redis et ClamAV restent sur le réseau interne.
+name: diasporyplus
+
+x-app: &app
+  env_file: prod.env
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans prod.env}
+      POSTGRES_DB: app
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U app -d app']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  antivirus:
+    image: clamav/clamav:stable
+    restart: unless-stopped
+    volumes: [clamdata:/var/lib/clamav]
+    healthcheck:
+      test: ['CMD-SHELL', 'clamdcheck.sh || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
+  # Une fois par déploiement, AVANT api et worker. Quitte à la fin (restart: no).
+  migrate:
+    <<: *app
+    restart: 'no'
+    build: { context: ., target: migrate }
+    image: disaporyplus-migrate
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    <<: *app
+    build: { context: ., target: api }
+    image: disaporyplus-api
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      antivirus: { condition: service_started }
+
+  worker:
+    <<: *app
+    build: { context: ., target: worker }
+    image: disaporyplus-worker
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      antivirus: { condition: service_started }
+
+  # `NEXT_PUBLIC_*` sont figées au BUILD (Next les inline dans le JavaScript du navigateur).
+  web:
+    restart: unless-stopped
+    build:
+      context: .
+      target: web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL manquant dans prod.env}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+    image: disaporyplus-web
+    depends_on: [api]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443', '443:443/udp']
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on: [web, api]
+
+volumes:
+  pgdata:
+  redisdata:
+  clamdata:
+  caddydata:
+  caddyconfig:

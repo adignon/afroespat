@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Logger } from '@nestjs/common';
+import { ProviderError } from './http';
 
 /**
  * Fournisseurs externes — 00-fondations.md §11.3.
@@ -28,6 +29,26 @@ export interface SmsProvider {
 }
 
 export const SMS_PROVIDER = Symbol('SmsProvider');
+
+/**
+ * Pont de production en attendant un vrai canal (`SMS_PROVIDER=testers`).
+ *
+ * Le code fixe `SMS_FAKE_FIXED_CODE` ne vaut QUE pour les numéros de `OTP_TEST_PHONES`
+ * (voir `otpCodeFixe`, auth.service) : rien n'est envoyé, le testeur connaît le code.
+ * Tout autre numéro est refusé ICI, avant qu'un défi ne survive : sans cette liste,
+ * un code prédictible ouvrirait le compte de n'importe qui. Le numéro n'est jamais
+ * recopié dans l'erreur (§8.1).
+ */
+export class TestersSmsProvider implements SmsProvider {
+  constructor(private readonly allowed: readonly string[]) {}
+
+  send(to: string): Promise<{ providerRef: string }> {
+    if (!this.allowed.includes(to)) {
+      return Promise.reject(new ProviderError('testers', null, 'numéro hors de la liste de test', false));
+    }
+    return Promise.resolve({ providerRef: `testers-${Date.now()}` });
+  }
+}
 
 /**
  * SMS fictif : rien n'est envoyé, le message part au journal.
@@ -367,6 +388,19 @@ export class FakeAiModerationProvider implements AiModerationProvider {
 
     const score = labels.includes('OK') ? 0.05 : 0.85;
     return Promise.resolve({ labels, score, model: 'fake-moderation-v1', latencyMs: 1 });
+  }
+}
+
+/**
+ * Modération IA DÉSACTIVÉE (`AI_MODERATION_PROVIDER=off`), choix assumé et visible en
+ * production — à la différence de `fake`, que `loadEnv` y refuse. Rien n'est envoyé
+ * à un tiers et le verdict est toujours « OK » : les contenus restent publiés, comme
+ * quand le fournisseur est en panne (`moderation.service.ts`). Les signalements des
+ * membres et la file de l'équipe, eux, continuent de fonctionner.
+ */
+export class DisabledAiModerationProvider implements AiModerationProvider {
+  classify(): Promise<{ labels: ModerationLabel[]; score: number; model: string; latencyMs: number }> {
+    return Promise.resolve({ labels: ['OK'], score: 0, model: 'disabled', latencyMs: 0 });
   }
 }
 

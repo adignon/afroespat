@@ -89,9 +89,14 @@ function loadEnvOrDefault(): string {
  * « un OTP prédictible ne protège rien, et c'est exactement le genre de raccourci
  * qui survit ». Celui-ci ne survit pas à la production, par construction.
  */
-function otpCodeFixe(): string | null {
+function otpCodeFixe(e164: string): string | null {
   try {
     const env = loadEnv();
+    // Seule exception en production : `SMS_PROVIDER=testers`, le pont en attendant un
+    // vrai canal. Le code fixe ne vaut alors que pour les numéros de `OTP_TEST_PHONES`.
+    if (env.SMS_PROVIDER === 'testers') {
+      return env.OTP_TEST_PHONES?.includes(e164) === true ? env.SMS_FAKE_FIXED_CODE : null;
+    }
     if (env.NODE_ENV === 'production') return null;
     if (env.SMS_PROVIDER !== 'fake') return null;
     return env.SMS_FAKE_FIXED_CODE;
@@ -205,7 +210,7 @@ export class AuthService {
     //    `otpCodeFixe()` ne rend un code que hors production ET avec le
     //    fournisseur SMS fictif — voir son commentaire, et pourquoi ce réglage
     //    déclaré n'était branché à rien.
-    const code = otpCodeFixe() ?? String(randomInt(0, 1_000_000)).padStart(6, '0');
+    const code = otpCodeFixe(e164) ?? String(randomInt(0, 1_000_000)).padStart(6, '0');
     const expiresAt = new Date(Date.now() + RATE_LIMITS.otpTtlSeconds * 1000);
     const challengeId = newId();
 
