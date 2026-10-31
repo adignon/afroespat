@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Link from 'next/link';
 import { MENUS_RAIL } from './menus';
 
@@ -18,9 +18,23 @@ import { MENUS_RAIL } from './menus';
  * tombait jamais sur elle, et ses entrées étaient décalées de quelques pixels à
  * la verticale comme à l'horizontale.
  *
- * Le volet est maintenant posé SUR cette carte : même bord gauche, même largeur,
- * même haut. Ses entrées (rangées de 44 px, 2 px d'écart, titre sur la même
- * ligne) retombent exactement sur celles de la page.
+ * Le volet est posé sur cette carte : même bord gauche, même largeur. Ses entrées
+ * (rangées de 44 px, 2 px d'écart, titre sur la même ligne) retombent exactement sur
+ * celles de la page.
+ *
+ * ── MAIS IL SE POSE À LA HAUTEUR DU BOUTON SURVOLÉ ───────────────────────
+ *
+ * Le porteur : « le hover menu d'Entraide et des autres ne se positionne pas bien à
+ * droite, à hauteur de leur bouton : c'est difficile de mettre ensuite le curseur sur le
+ * menu. »
+ *
+ * Il avait raison. Le haut du volet suivait celui de la carte de la page, souvent bien
+ * au-dessus du bouton : à droite du bouton Entraide il n'y avait RIEN, et pour atteindre
+ * le volet il fallait remonter en diagonale — en quittant le rail, donc en le refermant.
+ * Le haut du volet est maintenant celui du bouton : le curseur n'a qu'à aller tout droit,
+ * à travers le pont de quelques pixels, et il tombe sur le volet. Le bord gauche et la
+ * largeur restent ceux de la carte. Le volet est ensuite remonté, si besoin, pour ne pas
+ * dépasser le bas du rail (voir le `useLayoutEffect` du composant).
  *
  * ── COMMENT ON TROUVE LA CARTE ───────────────────────────────────────────
  *
@@ -40,8 +54,8 @@ function caler(
   readonly ecart: number;
   readonly largeur: number;
   readonly intervalle: number;
-  readonly hauteur: number;
 } {
+  const haut = icone.offsetTop;
   const colonne = rail.nextElementSibling;
   if (colonne instanceof HTMLElement) {
     const cartes = Array.from(colonne.children).filter(
@@ -68,17 +82,15 @@ function caler(
               )
             : 2;
         return {
-          haut: Math.round(m.top - r.top),
+          haut,
           ecart: Math.max(0, Math.round(m.left - r.right)),
           largeur: Math.round(m.width),
           intervalle,
-          // Au moins la hauteur de la carte recouverte : sinon sa dernière rangée dépasse sous le volet.
-          hauteur: Math.round(m.height),
         };
       }
     }
   }
-  return { haut: icone.offsetTop, ecart: 8, largeur: 236, intervalle: 2, hauteur: 0 };
+  return { haut, ecart: 8, largeur: 236, intervalle: 2 };
 }
 
 /**
@@ -141,9 +153,23 @@ export function RailSurvol({
     readonly ecart: number;
     readonly largeur: number;
     readonly intervalle: number;
-    readonly hauteur: number;
   } | null>(null);
   const nav = useRef<HTMLElement | null>(null);
+  const panneau = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Le volet part de la hauteur du bouton ; s'il déborderait sous le rail (un bouton bas, un
+   * écran court), on le remonte juste assez. Mesuré après le rendu, car sa hauteur dépend de
+   * son contenu. Une seule passe : la seconde trouve la position déjà bonne et s'arrête.
+   */
+  useLayoutEffect(() => {
+    const p = panneau.current;
+    const n = nav.current;
+    if (ouvert === null || p === null || n === null) return;
+    const maximum = n.clientHeight - p.offsetHeight - 8;
+    const cible = Math.max(8, Math.min(ouvert.haut, maximum));
+    if (cible !== ouvert.haut) setOuvert({ ...ouvert, haut: cible });
+  }, [ouvert]);
 
   /** La rubrique sous le pointeur, ou rien si ce n'est pas une entrée connue. */
   const viser = (cible: EventTarget | null): void => {
@@ -234,6 +260,7 @@ export function RailSurvol({
       {children}
       {ouvert === null || menu === undefined ? null : (
         <div
+          ref={panneau}
           data-rail-survol={ouvert.rubrique}
           style={{
             position: 'absolute',
@@ -248,7 +275,6 @@ export function RailSurvol({
             style={{
               width: `${String(ouvert.largeur)}px`,
               boxSizing: 'border-box',
-              minHeight: ouvert.hauteur === 0 ? undefined : `${String(ouvert.hauteur)}px`,
               background: '#fff',
               border: '1px solid #E6EBE9',
               borderRadius: '22px',

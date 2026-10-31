@@ -61,6 +61,33 @@
   max-width: 1036px;
 }
 
+/*
+ * ── LA COLONNE DE GAUCHE FAIT LA HAUTEUR DE L'ÉCRAN ──────────────────────
+ *
+ * Le porteur : « sur toutes les pages la side bar doit avoir la taille de l'écran de
+ * l'utilisateur, avec un scroll auto dedans ».
+ *
+ * Les cadres posent à cette colonne `position: sticky` et `max-height: 100vh` : elle
+ * restait donc aussi haute que son contenu, et le rail vert s'arrêtait en plein écran
+ * sur une page courte. Elle prend maintenant TOUTE la hauteur de la fenêtre (`!important`
+ * : le style en ligne du cadre l'emporterait) ; la rangée « rail · colonne de contexte »
+ * remplit ce qui reste, et le rail, étiré, va jusqu'en bas. Si le contenu dépasse,
+ * c'est la colonne qui défile, dans son coin — `overscroll-behavior` empêche ce défilement
+ * d'entraîner la page quand on arrive au bout.
+ */
+[data-frame='desktop'] [data-zone='gauche'] {
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+}
+
+[data-frame='desktop'] [data-zone='gauche'] > :has(> nav) {
+  flex: 1 0 auto;
+  padding-bottom: 12px;
+}
+
 /* Bandeau d'annonce d'équipe (components/bandeau-annonce.tsx) : la barre haute fixe descend de sa hauteur. */
 html[data-annonce] header {
   top: 48px !important;

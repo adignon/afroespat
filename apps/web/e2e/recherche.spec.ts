@@ -247,6 +247,42 @@ test.describe('la recherche', () => {
   });
 
   /**
+   * LE RAIL FAIT LA HAUTEUR DE L'ÉCRAN, ET LE VOLET SE POSE À LA HAUTEUR DU BOUTON.
+   *
+   * Le porteur : « la side bar doit avoir la taille de l'écran, avec un scroll auto dedans »,
+   * et « le hover menu d'Entraide ne se positionne pas à hauteur de son bouton : c'est
+   * difficile de mettre le curseur dessus ». Le volet doit donc couvrir la hauteur du bouton
+   * survolé, pour que le curseur y aille tout droit sans quitter le rail.
+   */
+  test('le rail va jusqu’en bas de l’écran, et le volet couvre la hauteur du bouton survolé', async ({
+    page,
+    request,
+  }) => {
+    await connecter(page.context(), request, { displayName: 'Awa Konate' });
+    await page.setViewportSize({ width: 1700, height: 1000 });
+    await page.goto('/recherche?q=aix');
+
+    const rail = cadre(page).locator('nav').first();
+    const boiteRail = await rail.boundingBox();
+    expect((boiteRail?.y ?? 0) + (boiteRail?.height ?? 0)).toBeGreaterThanOrEqual(1000 - 16);
+
+    const bouton = rail.getByText('Entraide', { exact: true });
+    await bouton.hover();
+    const volet = page.locator('[data-rail-survol="Entraide"]');
+    await expect(volet).toBeVisible();
+
+    const boiteBouton = await bouton.boundingBox();
+    const boiteVolet = await volet.boundingBox();
+    const centre = (boiteBouton?.y ?? 0) + (boiteBouton?.height ?? 0) / 2;
+    expect(boiteVolet?.y ?? 0).toBeLessThanOrEqual(centre);
+    expect((boiteVolet?.y ?? 0) + (boiteVolet?.height ?? 0)).toBeGreaterThanOrEqual(centre);
+
+    // Le curseur va tout droit du bouton au volet : il ne se referme pas en chemin.
+    await page.mouse.move((boiteVolet?.x ?? 0) + 40, centre);
+    await expect(volet).toBeVisible();
+  });
+
+  /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
    * ║ LA RUBRIQUE OÙ L'ON EST DÉJÀ NE DÉPLIE RIEN                             ║
    * ╚══════════════════════════════════════════════════════════════════════════╝
