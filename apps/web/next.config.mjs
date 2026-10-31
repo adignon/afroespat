@@ -61,6 +61,10 @@ function originesApi() {
 }
 
 const CLOUDFLARE_TURNSTILE = 'https://challenges.cloudflare.com';
+// Cloudflare ajoute lui-même son script de statistiques (Web Analytics) aux pages qu'il sert ;
+// sans ces deux hôtes, la console affichait une violation de CSP à chaque page.
+const CLOUDFLARE_STATS_SCRIPT = 'https://static.cloudflareinsights.com';
+const CLOUDFLARE_STATS_COLLECTE = 'https://cloudflareinsights.com';
 
 function politiqueDeSecurite() {
   const api = originesApi();
@@ -71,7 +75,7 @@ function politiqueDeSecurite() {
     // Il charge son script, rend son widget dans un cadre et parle à son propre serveur : les
     // trois directives, et UN seul hôte précis. Sans lui, le script était refusé par notre
     // propre CSP et la connexion affichait « vérification anti-robot bloquée ».
-    `script-src 'self' 'unsafe-inline' ${CLOUDFLARE_TURNSTILE}${ESTPROD ? '' : " 'unsafe-eval'"}`,
+    `script-src 'self' 'unsafe-inline' ${CLOUDFLARE_TURNSTILE} ${CLOUDFLARE_STATS_SCRIPT}${ESTPROD ? '' : " 'unsafe-eval'"}`,
     `frame-src ${CLOUDFLARE_TURNSTILE}`,
     "style-src 'self' 'unsafe-inline'",
     // `tile.openstreetmap.org` : les TUILES de la carte des villes (09 §2.1, décision du
@@ -86,6 +90,7 @@ function politiqueDeSecurite() {
       api.http,
       api.ws,
       CLOUDFLARE_TURNSTILE,
+      CLOUDFLARE_STATS_COLLECTE,
       ...(ESTPROD ? [] : ['ws://localhost:*', 'ws://127.0.0.1:*']),
     ]
       .filter(Boolean)

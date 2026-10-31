@@ -88,6 +88,23 @@
   padding-bottom: 12px;
 }
 
+/*
+ * ── ÉCRAN MOYEN : PAS DE COLONNE DE DROITE ───────────────────────────────
+ *
+ * Le porteur : « sur un écran medium rien ne s'affiche bien : il faut retirer la right side
+ * bar pour donner au contenu plus d'espace ».
+ *
+ * MESURÉ : la colonne de gauche prend 400 px et celle de droite 300 + 24 d'écart ; à 1 300 px il
+ * ne restait que 550 px au contenu, pour des cartes pensées à 660 px — le champ de saisie, les
+ * stories, tout se comprimait. En dessous de 1 440 px (là où le contenu repasse sous ~690 px),
+ * la colonne de droite disparaît ; le contenu, borné à sa largeur, se centre dans l'espace libéré.
+ */
+@media (max-width: 1439px) {
+  [data-frame='desktop'] [data-zone='droite'] {
+    display: none;
+  }
+}
+
 /* Bandeau d'annonce d'équipe (components/bandeau-annonce.tsx) : la barre haute fixe descend de sa hauteur. */
 html[data-annonce] header {
   top: 48px !important;

@@ -41,7 +41,7 @@ describe('le volet du rail', () => {
     expect(MENUS_RAIL.Accueil?.entrees.map((e) => e.href)).toEqual(panelFil.map((m) => m.href));
   });
 
-  it('« Accueil » : les pages Messages et Notifications montrent cette liste, cliquable', () => {
+  it('« Accueil » : les pages Messages et Notifications ne portent plus la carte « ACCUEIL » (le menu vit au survol du rail)', () => {
     for (const f of [
       'm01/desktop',
       'm01bloque/bloquedesktop',
@@ -49,7 +49,8 @@ describe('le volet du rail', () => {
       'x02/desktoppanneau',
     ]) {
       const jsx = cadre(`${f}.generated.tsx`);
-      expect(jsx, f).toContain('<MenuAccueil />');
+      expect(jsx.includes('>ACCUEIL</div>'), f).toBe(false);
+      expect(jsx.includes('<MenuAccueil />'), f).toBe(false);
       expect(jsx.includes('Fil d’entraide'), f).toBe(false);
     }
     expect(ENTREES_ACCUEIL).toHaveLength(4);

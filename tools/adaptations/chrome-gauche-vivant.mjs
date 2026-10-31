@@ -66,8 +66,8 @@ export const ADAPTATIONS_CHROME_GAUCHE = [
   },
   {
     screens: ['*'],
-    nom: 'ACCUEIL_ENTREES',
-    why: 'La carte « ACCUEIL » des pages Messages et Notifications montre les mêmes entrées, cliquables, que le menu de la page d’accueil (une seule liste), au lieu de six <span> dont un « 12 » écrit en dur.',
+    nom: 'ACCUEIL_CARTE_RETIREE',
+    why: 'Le porteur : « retire la section Accueil au niveau des messages, l’utilisateur fera le hover ». La carte « ACCUEIL » des pages Messages et Notifications est retirée ; la navigation vit dans le menu qui se déplie au survol du rail (comme sur la page de recherche).',
     provides: [],
     apply(jsx) {
       const titre = '>ACCUEIL</div></div>';
@@ -78,14 +78,9 @@ export const ADAPTATIONS_CHROME_GAUCHE = [
       if (debut === -1) return { jsx, applied: false };
       const fin = finElement(jsx, debut);
       if (fin === -1) return { jsx, applied: false };
-      // Les entrées : tout ce qui suit le titre, jusqu'à la fermeture de la carte.
-      const apresTitre = i + titre.length;
-      const fermeture = fin - '</div>'.length;
-      if (apresTitre >= fermeture) return { jsx, applied: false };
-      const entrees = jsx.slice(apresTitre, fermeture);
-      // Garde-fou : on ne remplace que l'ancienne liste de <span>, rien d'autre.
-      if (!entrees.includes('Fil d’entraide') || entrees.includes('<a ')) return { jsx, applied: false };
-      return { jsx: jsx.slice(0, apresTitre) + '<MenuAccueil />' + jsx.slice(fermeture), applied: true };
+      // Garde-fou : on ne retire que la liste d'entrées de la maquette (« Fil d’entraide »), rien d'autre.
+      if (!jsx.slice(i, fin).includes('Fil d’entraide')) return { jsx, applied: false };
+      return { jsx: jsx.slice(0, debut) + jsx.slice(fin), applied: true };
     },
   },
 ];
