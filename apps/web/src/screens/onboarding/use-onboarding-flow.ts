@@ -471,6 +471,18 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
    */
   const fired = useRef<string | null>(null);
 
+  /**
+   * P01 — à la sortie du champ numéro. Le MÊME contrôle et le MÊME message que l'envoi, mais
+   * sans rien envoyer : le membre sait tout de suite ce qu'il doit corriger. Un champ vide ne
+   * reçoit aucun reproche.
+   */
+  const verifierNumero = useCallback(() => {
+    const phone = latest.current?.phone ?? '';
+    if (phone.replace(/D/g, '') === '') return;
+    const analyse = analyserNumero(phone, latest.current?.countryIso2 ?? 'BJ');
+    if (!analyse.ok) notifyError(messageRefusNumero(analyse.code));
+  }, []);
+
   /** P01 — envoi du code. */
   const onSubmit = useCallback(() => {
     void run(async () => {
@@ -874,6 +886,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     () => ({
       busy,
       onSubmit,
+      verifierNumero,
       onContinue,
       onBack,
       countryOptions,
@@ -889,6 +902,7 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
     [
       busy,
       onSubmit,
+      verifierNumero,
       onContinue,
       onBack,
       countryOptions,
