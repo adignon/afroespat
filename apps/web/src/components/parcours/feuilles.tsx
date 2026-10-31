@@ -296,16 +296,29 @@ function FeuilleBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
   // Pas de drapeau « annulé » : en développement React monte l'effet DEUX fois, et
   // `executer` refuse le second appel tant que le premier est en vol — un drapeau levé par
   // le premier nettoyage aurait jeté sa réponse, et la feuille serait restée vide.
+  //
+  // SUR LA LISTE « MES PARCOURS » (`/parcours`), l'adresse ne porte AUCUN identifiant : la
+  // carte « Je suis bloqué·e » y concerne le parcours actif. L'effet sortait alors sans rien
+  // dire, et la feuille restait sur « Préparation du brouillon… » pour toujours. On prend donc le
+  // parcours actif du membre — le même choix que le reste de l'écran — et, s'il n'y en a pas,
+  // on le dit.
   useEffect(() => {
-    if (idParcours === null) return;
     void geste.executer(async () => {
-      const complet = await readJourney(idParcours);
+      const idEffectif =
+        idParcours ??
+        (await listJourneys()).items.find((i) => i.isOwner && i.status === 'ACTIVE')?.id ??
+        null;
+      if (idEffectif === null) {
+        geste.signaler('Vous n’avez pas de parcours en cours : il n’y a rien à débloquer.');
+        return;
+      }
+      const complet = await readJourney(idEffectif);
       const cible = stepId ?? complet.journey.currentStepId;
       if (cible === null) {
         geste.signaler('Toutes les étapes de ce parcours sont franchies : il n’y a rien à débloquer.');
         return;
       }
-      const { blocker } = await createBlockerDraft(idParcours, cible);
+      const { blocker } = await createBlockerDraft(idEffectif, cible);
       setParcours(complet);
       setBrouillon(blocker);
       setTexte(blocker.draftText);
@@ -353,9 +366,9 @@ function FeuilleBlocage({ stepId, onFermer }: { readonly stepId: string | undefi
           ? 'Votre message a été envoyé à votre équipe, dans la discussion du parcours.'
           : `Votre demande est publiée : ${CIBLES[cible] ?? 'votre demande'}.`,
         lien: prive
-          ? idParcours === null
+          ? (idParcours ?? parcours?.journey.id ?? null) === null
             ? null
-            : `/parcours/${idParcours}/discussion`
+            : `/parcours/${idParcours ?? parcours?.journey.id ?? ''}/discussion`
           : type === 'help_request'
             ? `/entraide/${ref.publishedRefId}`
             : type === 'housing_listing'

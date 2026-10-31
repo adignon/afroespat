@@ -114,7 +114,10 @@ export function Bouton({
         cursor: disabled ? 'default' : 'pointer',
         // `flex: 1` et non `width: 100%` : deux boutons « pleins » côte à côte (Fermer / Voir,
         // Retour / Publier) se partagent la rangée au lieu de la déborder chacun de sa largeur.
-        ...(plein ? { flexGrow: 1, flexBasis: 0, minWidth: 0 } : {}),
+        //
+        // `minHeight` : dans une COLONNE, `flex-basis: 0` écrase la hauteur (le bouton devenait une
+        // barre de 25 px) — la hauteur minimale la rend, sans rien changer dans une rangée.
+        ...(plein ? { flexGrow: 1, flexBasis: 0, minWidth: 0, minHeight: compact ? '44px' : '48px' } : {}),
       }}
     >
       {children}
