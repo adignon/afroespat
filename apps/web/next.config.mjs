@@ -60,12 +60,19 @@ function originesApi() {
   }
 }
 
+const CLOUDFLARE_TURNSTILE = 'https://challenges.cloudflare.com';
+
 function politiqueDeSecurite() {
   const api = originesApi();
   const avecApi = (...base) => [...base, api.http].filter(Boolean).join(' ');
   const directives = [
     "default-src 'self'",
-    `script-src 'self' 'unsafe-inline'${ESTPROD ? '' : " 'unsafe-eval'"}`,
+    // `challenges.cloudflare.com` : Turnstile (captcha avant tout envoi d'OTP, `lib/captcha.ts`).
+    // Il charge son script, rend son widget dans un cadre et parle à son propre serveur : les
+    // trois directives, et UN seul hôte précis. Sans lui, le script était refusé par notre
+    // propre CSP et la connexion affichait « vérification anti-robot bloquée ».
+    `script-src 'self' 'unsafe-inline' ${CLOUDFLARE_TURNSTILE}${ESTPROD ? '' : " 'unsafe-eval'"}`,
+    `frame-src ${CLOUDFLARE_TURNSTILE}`,
     "style-src 'self' 'unsafe-inline'",
     // `tile.openstreetmap.org` : les TUILES de la carte des villes (09 §2.1, décision du
     // porteur) — des images publiques, affichées sans aucune donnée du membre. Un seul
@@ -78,6 +85,7 @@ function politiqueDeSecurite() {
       "'self'",
       api.http,
       api.ws,
+      CLOUDFLARE_TURNSTILE,
       ...(ESTPROD ? [] : ['ws://localhost:*', 'ws://127.0.0.1:*']),
     ]
       .filter(Boolean)
