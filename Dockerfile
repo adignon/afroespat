@@ -80,7 +80,9 @@ FROM build AS worker
 ENV NODE_ENV=production APP_ROLE=worker
 USER node
 WORKDIR /app/apps/worker
-CMD ["node", "dist/main.js"]
+# `@app/api` a pour entrée `src/index.ts` (TypeScript) : Node ne peut pas le charger
+# depuis `dist/`. Comme en développement, le worker passe par @swc-node/register.
+CMD ["node", "-r", "@swc-node/register", "src/main.ts"]
 
 # ── Web : Next.js ───────────────────────────────────────────────────────────
 FROM deps AS web-build
