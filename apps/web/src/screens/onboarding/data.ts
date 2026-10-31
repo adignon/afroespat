@@ -53,6 +53,11 @@ export interface OnboardingState {
   readonly goal: number;
   /** Le numéro en cours de saisie (P01), tel que le membre le tape. */
   readonly phone: string;
+  /**
+   * Le champ a-t-il été QUITTÉ au moins une fois ? Tant que non, on ne reproche rien : le trait
+   * ne passe au refus qu'à la sortie du champ (`onBlur`), puis suit la saisie.
+   */
+  readonly phoneTouched: boolean;
   /** Le pays de l'INDICATIF choisi en P01. Distinct du pays d'origine (§2.7). */
   readonly countryIso2: string;
   /** Le pays d'ORIGINE choisi en O02. Modifiable une seule fois ensuite (§2.7). */
@@ -124,6 +129,7 @@ export const INITIAL_ONBOARDING_STATE: OnboardingState = {
   // des EXEMPLES, faits pour illustrer une image. Un écran réel s'ouvre vide, et
   // l'exemple du téléphone survit en `placeholder`.
   phone: '',
+  phoneTouched: false,
   // La maquette dessine « +229 » : c'est le pays d'origine ouvert au lancement
   // (02 §2.1), donc un défaut raisonnable — et le membre peut en changer.
   countryIso2: 'BJ',
@@ -572,6 +578,8 @@ export interface ScreenActions {
   readonly busy: boolean;
   /** P01 — envoyer le code. */
   readonly onSubmit: () => void;
+  /** P01 — à la sortie du champ : dit POURQUOI le numéro est refusé (même message que l'envoi). */
+  readonly verifierNumero?: () => void;
   /**
    * P02 — les secondes qui restent avant de pouvoir redemander un code.
    *
@@ -775,6 +783,8 @@ export interface OnboardingVals extends ScreenActions {
   /** `updateProfileSchema` : dix au plus, pour chacune des deux listes. */
   readonly choixMax: number;
   readonly onPhoneChange: (event: { target: { value: string } }) => void;
+  /** Sortie du champ numéro : active la validation (trait et message), voir `phoneTouched`. */
+  readonly onPhoneBlur: () => void;
   /**
    * ── LE NUMÉRO, VALIDÉ PAR `libphonenumber` ───────────────────────────────
    *
@@ -973,6 +983,10 @@ export function onboardingVals(
       // numéro tel quel et le ramène au format international.
       patch({ phone: formaterSaisieNumero(event.target.value, state.countryIso2) });
     },
+    onPhoneBlur: () => {
+      patch({ phoneTouched: true });
+      actions.verifierNumero?.();
+    },
     /**
      * Le pays de l'INDICATIF (P01), et non celui d'origine : c'est lui qui décide
      * du plan de numérotation. Les deux sont distincts depuis toujours (§2.7).
@@ -980,7 +994,7 @@ export function onboardingVals(
     phoneExemple: exempleNational(state.countryIso2),
     phoneValide: numeroValide(state.phone, state.countryIso2),
     phoneBordure:
-      state.phone.trim() === '' || numeroValide(state.phone, state.countryIso2)
+      !state.phoneTouched || state.phone.trim() === '' || numeroValide(state.phone, state.countryIso2)
         ? '1.5px solid #16785E'
         : '1.5px solid #B4581F',
     phoneMasque: masqueNumero(state.phone, state.countryIso2),

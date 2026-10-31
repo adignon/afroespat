@@ -497,6 +497,9 @@ const FIELD_ADAPTATIONS = [
       'aria-label="Votre numéro de téléphone"',
       'value={phoneValue}',
       'onChange={onPhoneChange}',
+      // La validation (trait de refus + message) n'apparaît qu'à la SORTIE du champ : pas de
+      // reproche pendant la frappe d'un numéro encore incomplet.
+      'onBlur={onPhoneBlur}',
     ],
   },
   {
