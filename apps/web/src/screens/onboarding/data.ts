@@ -860,8 +860,6 @@ export interface OnboardingVals extends ScreenActions {
     readonly fg: string;
     readonly metaFg: string;
     readonly metaBg: string;
-    /** Vrai quand le réseau de la ville n'est pas ouvert (grisée, mais choisissable). */
-    readonly bientot: boolean;
     readonly onPick: () => void;
   }[];
   /**
@@ -1203,8 +1201,9 @@ export function onboardingVals(
      * catalogue, filtrée SANS ACCENT ni casse.
      *
      * Les couleurs suivent celles de la maquette : la ville retenue est sur fond
-     * vert pâle, une ville sans réseau ouvert est grisée et porte « bientôt » —
-     * elle reste sélectionnable, comme 02 §2.2 l'exige.
+     * vert pâle. Une ville sans réseau ouvert reste sélectionnable (02 §2.2) et se lit
+     * comme les autres : ni grisée ni étiquetée « bientôt » — seule une ville au réseau
+     * ouvert porte la pastille « N membres ».
      */
     villeNom:
       actions.cityCatalogue.find((c) => c.id === state.cityId)?.name ?? 'Votre ville',
@@ -1222,12 +1221,11 @@ export function onboardingVals(
         /** L'identifiant : le panneau en a besoin pour sa clé et sa coche. */
         id: city.id,
         name: city.name,
-        meta: city.isActive ? `${city.memberCount} membres` : 'bientôt',
+        meta: city.isActive ? `${city.memberCount} membres` : '',
         bg: chosen ? '#E3F0EB' : 'transparent',
-        fg: city.isActive || chosen ? '#16211D' : '#8A958F',
-        metaFg: chosen ? '#0F5C48' : city.isActive ? '#5D6B66' : '#8A958F',
+        fg: '#16211D',
+        metaFg: chosen ? '#0F5C48' : '#5D6B66',
         metaBg: chosen ? '#fff' : '#F2F5F4',
-        bientot: !city.isActive,
         /**
          * CHOISIR UNE VILLE REFERME LE PANNEAU — un seul geste, comme pour le
          * pays. `citySearch` est vidé plutôt que rempli du nom : la recherche a

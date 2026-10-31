@@ -12,7 +12,7 @@ import { monterEnL1 } from './niveau';
  *     (il s'ouvrait à 1004 px sur une fenêtre de 1000).
  *  3. /parrainage/devenir : un membre non vérifié lit pourquoi, au lieu de « la liste n'a
  *     pas pu être chargée » ; un membre L1 voit le formulaire. Les deux largeurs.
- *  4. L'étape « D'où venez-vous ? » : l'aide « bientôt » dit la vérité du produit.
+ *  4. L'étape « D'où venez-vous ? » : aucune ville n'est étiquetée « bientôt » ni grisée.
  */
 
 const rect = async (l: Locator) => {
@@ -186,14 +186,12 @@ test.describe('/parrainage/devenir', () => {
   });
 });
 
-test.describe('O02 — « bientôt »', () => {
-  test('l’aide dit ce que « bientôt » veut dire, sans promettre de notification', async ({ page, request }) => {
+test.describe('O02 — villes sans réseau ouvert', () => {
+  test('aucune pastille « bientôt » et aucun message d’aide : la ville se lit comme les autres', async ({ page, request }) => {
     await connecter(page.context(), request);
     await page.goto('/bienvenue/lieu');
     await page.getByRole('button', { name: 'Votre ville' }).locator('visible=true').click();
-    const aide = page.locator('[data-aide-bientot]:visible');
-    await expect(aide).toHaveCount(1);
-    await expect(aide).toContainText('pas encore de réseau');
-    await expect(aide).not.toContainText(/prévenu|notifi/i);
+    await expect(page.locator('[data-aide-bientot]')).toHaveCount(0);
+    await expect(page.getByText('bientôt', { exact: true })).toHaveCount(0);
   });
 });

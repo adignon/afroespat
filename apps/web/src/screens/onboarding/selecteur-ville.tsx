@@ -32,8 +32,8 @@ import {
  * `panneau-section.tsx`, qui les tient de cette même planche. Les LIGNES sont
  * celles que O02 dessine déjà pour ses villes, verbatim : 48 px sur ordinateur et
  * 46 px sur téléphone, rayon 12, `#E3F0EB` pour la ligne retenue, le nom en
- * 14 px / 600 et la pastille de droite en 12 px / 700 — « 128 membres », ou
- * « bientôt » quand le réseau n'est pas ouvert.
+ * 14 px / 600 et la pastille de droite en 12 px / 700 — « 128 membres » quand le
+ * réseau est ouvert, aucune pastille sinon.
  */
 
 /** Ce que l'écran sait d'une ville, une fois peinte. */
@@ -45,7 +45,6 @@ export interface VilleVue {
   readonly fg: string;
   readonly metaFg: string;
   readonly metaBg: string;
-  readonly bientot?: boolean;
   readonly onPick: () => void;
 }
 
@@ -82,19 +81,21 @@ function LigneVille({
       <span style={{ flex: '1', minWidth: '0', fontSize: '14px', fontWeight: 600 }}>
         {ville.name}
       </span>
-      <span
-        style={{
-          fontSize: '12px',
-          fontWeight: 700,
-          color: ville.metaFg,
-          background: ville.metaBg,
-          padding: '4px 10px',
-          borderRadius: '999px',
-          flexShrink: 0,
-        }}
-      >
-        {ville.meta}
-      </span>
+      {ville.meta === '' ? null : (
+        <span
+          style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: ville.metaFg,
+            background: ville.metaBg,
+            padding: '4px 10px',
+            borderRadius: '999px',
+            flexShrink: 0,
+          }}
+        >
+          {ville.meta}
+        </span>
+      )}
     </button>
   );
 }
@@ -185,22 +186,6 @@ export function SelecteurVille({
       onFermer={onFermer}
       entete={entete}
     >
-      {villes.some((v) => v.bientot === true) ? (
-        /**
-         * « BIENTÔT » — CE QUE ÇA VEUT DIRE (02 §2.2). Une ville sans réseau ouvert reste
-         * choisissable : c'est ainsi que le membre dit où il vit, et que l'équipe voit
-         * où se trouvent les inscrits. Elle n'a ni réseau, ni carte, ni fiche tant que
-         * l'équipe ne l'a pas activée (en général à 20 membres). On ne promet PAS de
-         * prévenir le membre : aucune notification d'ouverture n'existe.
-         */
-        <p
-          data-aide-bientot=""
-          style={{ margin: 0, padding: '4px 12px 10px', fontSize: '12px', lineHeight: 1.5, color: '#5D6B66' }}
-        >
-          « bientôt » : pas encore de réseau dans cette ville. Vous pouvez la choisir pour indiquer où vous vivez ; le réseau d’une ville
-          ouvre quand l’équipe l’active.
-        </p>
-      ) : null}
       {villes.length === 0 ? (
         /**
          * DEUX CAS, UN SEUL MOT — et c'est voulu : que la recherche ne trouve rien

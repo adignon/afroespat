@@ -91,7 +91,7 @@ function LigneVille({
         borderRadius: '12px',
         background: retenue ? '#E3F0EB' : 'transparent',
         /** Une ville sans réseau ouvert se lit en gris — comme à l'inscription. */
-        color: ville.isActive || retenue ? '#16211D' : '#8A958F',
+        color: '#16211D',
         border: 'none',
         font: 'inherit',
         textAlign: 'left',
@@ -103,19 +103,21 @@ function LigneVille({
       <span style={{ flex: '1', minWidth: '0', fontSize: '14px', fontWeight: 600 }}>
         {ville.name}
       </span>
-      <span
-        style={{
-          fontSize: '12px',
-          fontWeight: 700,
-          color: retenue ? '#0F5C48' : ville.isActive ? '#5D6B66' : '#8A958F',
-          background: retenue ? '#fff' : '#F2F5F4',
-          padding: '4px 10px',
-          borderRadius: '999px',
-          flexShrink: 0,
-        }}
-      >
-        {ville.isActive ? `${String(ville.memberCount)} membres` : 'bientôt'}
-      </span>
+      {ville.isActive ? (
+        <span
+          style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: retenue ? '#0F5C48' : '#5D6B66',
+            background: retenue ? '#fff' : '#F2F5F4',
+            padding: '4px 10px',
+            borderRadius: '999px',
+            flexShrink: 0,
+          }}
+        >
+          {`${String(ville.memberCount)} membres`}
+        </span>
+      ) : null}
     </button>
   );
 }
