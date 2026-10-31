@@ -26,6 +26,18 @@ describe('variables des fournisseurs réels', () => {
     expect(m.join('\n')).toContain('BREVO_API_KEY');
     expect(m.join('\n')).toContain('TURNSTILE_SECRET_KEY');
   });
+  it('AI_MODERATION_PROVIDER=off est accepté, sans clé Anthropic', () => {
+    const env = parse({ AI_MODERATION_PROVIDER: 'off' });
+    expect(env.AI_MODERATION_PROVIDER).toBe('off');
+    expect(missingProviderSettings(env)).toEqual([]);
+  });
+  it('SMS_PROVIDER=testers exige la liste de numéros, au format E.164', () => {
+    expect(missingProviderSettings(parse({ SMS_PROVIDER: 'testers' })).join('\n')).toContain('OTP_TEST_PHONES');
+    const env = parse({ SMS_PROVIDER: 'testers', OTP_TEST_PHONES: '+33612345678, +22997000000' });
+    expect(env.OTP_TEST_PHONES).toEqual(['+33612345678', '+22997000000']);
+    expect(missingProviderSettings(env)).toEqual([]);
+    expect(() => parse({ SMS_PROVIDER: 'testers', OTP_TEST_PHONES: '0612345678' })).toThrow();
+  });
   it('une chaîne vide vaut absence', () => {
     expect(parse({ BREVO_API_KEY: '' }).BREVO_API_KEY).toBeUndefined();
   });

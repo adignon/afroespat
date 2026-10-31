@@ -2,11 +2,12 @@ import { Global, Module, type Provider } from '@nestjs/common';
 import { loadEnv } from '../config/env';
 import { AnthropicModerationProvider } from './anthropic-moderation.provider';
 import { BrevoEmailProvider } from './brevo-email.provider';
+import { MailjetEmailProvider } from './mailjet-email.provider';
 import { ClamAvAntivirusProvider } from './clamav-antivirus.provider';
 import { DiditKycProvider } from './didit-kyc.provider';
 import {
   AI_MODERATION_PROVIDER, ANTIVIRUS_PROVIDER, CAPTCHA_PROVIDER, EMAIL_PROVIDER,
-  FakeAiModerationProvider, FakeAntivirusProvider, FakeCaptchaProvider, FakeEmailProvider,
+  DisabledAiModerationProvider, FakeAiModerationProvider, TestersSmsProvider, FakeAntivirusProvider, FakeCaptchaProvider, FakeEmailProvider,
   FakeKycProvider, FakeMobileMoneyProvider, FakePaymentProvider, FakePushProvider,
   FakeSmsProvider, FakeStorageProvider,
   KYC_PROVIDER, MOBILE_MONEY_PROVIDER, PAYMENT_PROVIDER, PUSH_PROVIDER,
@@ -16,6 +17,7 @@ import { S3StorageProvider } from './s3-storage.provider';
 import { TurnstileCaptchaProvider } from './turnstile-captcha.provider';
 import { TwilioSmsProvider } from './twilio-sms.provider';
 import { WebPushProvider } from './webpush.provider';
+import { WhatsAppSmsProvider } from './whatsapp-sms.provider';
 
 /**
  * Choix des implémentations selon la configuration (§11.3).
@@ -67,6 +69,17 @@ const env = loadEnv();
           messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
           baseUrl: env.TWILIO_BASE_URL,
         }),
+      testers: () => new TestersSmsProvider(env.OTP_TEST_PHONES ?? []),
+      whatsapp: () =>
+        new WhatsAppSmsProvider({
+          accessToken: env.WHATSAPP_ACCESS_TOKEN as string,
+          phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID as string,
+          templateName: env.WHATSAPP_TEMPLATE_NAME as string,
+          templateLanguage: env.WHATSAPP_TEMPLATE_LANGUAGE,
+          otpButton: env.WHATSAPP_OTP_BUTTON,
+          apiVersion: env.WHATSAPP_API_VERSION,
+          baseUrl: env.WHATSAPP_BASE_URL,
+        }),
     }),
     pick(EMAIL_PROVIDER, 'EMAIL_PROVIDER', env.EMAIL_PROVIDER, () => new FakeEmailProvider(), {
       brevo: () =>
@@ -76,6 +89,15 @@ const env = loadEnv();
           fromName: env.EMAIL_FROM_NAME,
           appName: env.APP_NAME,
           baseUrl: env.BREVO_BASE_URL,
+        }),
+      mailjet: () =>
+        new MailjetEmailProvider({
+          apiKey: env.MAILJET_API_KEY as string,
+          secretKey: env.MAILJET_SECRET_KEY as string,
+          fromAddress: env.EMAIL_FROM_ADDRESS,
+          fromName: env.EMAIL_FROM_NAME,
+          appName: env.APP_NAME,
+          baseUrl: env.MAILJET_BASE_URL,
         }),
     }),
     pick(PUSH_PROVIDER, 'PUSH_PROVIDER', env.PUSH_PROVIDER, () => new FakePushProvider(), {
@@ -105,6 +127,7 @@ const env = loadEnv();
           model: env.AI_MODERATION_MODEL,
           baseUrl: env.ANTHROPIC_BASE_URL,
         }),
+      off: () => new DisabledAiModerationProvider(),
     }),
     pick(CAPTCHA_PROVIDER, 'CAPTCHA_PROVIDER', env.CAPTCHA_PROVIDER, () => new FakeCaptchaProvider(), {
       turnstile: () => new TurnstileCaptchaProvider(env.TURNSTILE_SECRET_KEY as string, { baseUrl: env.TURNSTILE_BASE_URL }),

@@ -5,16 +5,18 @@ import { describe, expect, it } from 'vitest';
 import webpush from 'web-push';
 import { AnthropicModerationProvider, type AnthropicLike } from '../anthropic-moderation.provider';
 import { BrevoEmailProvider } from '../brevo-email.provider';
+import { MailjetEmailProvider } from '../mailjet-email.provider';
 import { buildInstream, ClamAvAntivirusProvider, parseClamdReply } from '../clamav-antivirus.provider';
 import { DiditKycProvider, isAdultFromDecision, normalizeDiditWebhook } from '../didit-kyc.provider';
 import { renderEmail } from '../email-templates';
 import { ProviderError, type FetchLike } from '../http';
 import { pick } from '../providers.module';
-import { FakeSmsProvider, maskCodeOutsideDev } from '../providers';
+import { FakeSmsProvider, maskCodeOutsideDev, TestersSmsProvider } from '../providers';
 import { S3StorageProvider } from '../s3-storage.provider';
 import { TurnstileCaptchaProvider } from '../turnstile-captcha.provider';
 import { TwilioSmsProvider } from '../twilio-sms.provider';
 import { WebPushProvider } from '../webpush.provider';
+import { WhatsAppSmsProvider } from '../whatsapp-sms.provider';
 
 /**
  * Les adaptateurs réels, éprouvés SANS compte fournisseur : un `fetch` simulé
@@ -91,6 +93,63 @@ describe('Twilio', () => {
   });
 });
 
+describe('Testers (pont en production)', () => {
+  it('accepte un numéro de la liste, refuse les autres sans les recopier', async () => {
+    const sms = new TestersSmsProvider(['+33612345678']);
+    await expect(sms.send('+33612345678')).resolves.toHaveProperty('providerRef');
+    const error = await sms.send('+33699999999').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).retryable).toBe(false);
+    expect((error as Error).message).not.toContain('699999999');
+  });
+});
+
+describe('WhatsApp (API Cloud de Meta)', () => {
+  const cfg = {
+    accessToken: 'tok',
+    phoneNumberId: '1234567890',
+    templateName: 'code_connexion',
+    templateLanguage: 'fr',
+    otpButton: true,
+  };
+
+  it('envoie le modèle avec le code en corps et en bouton, numéro sans « + »', async () => {
+    const calls: Call[] = [];
+    const sms = new WhatsAppSmsProvider(cfg, { fetch: fakeFetch({ body: { messages: [{ id: 'wamid.X' }] } }, calls) });
+    const out = await sms.send('+33612345678', 'Votre code de connexion : 482913');
+    expect(out.providerRef).toBe('wamid.X');
+    expect(calls[0]?.url).toBe('https://graph.facebook.com/v21.0/1234567890/messages');
+    expect((calls[0]?.init.headers as Record<string, string>)['Authorization']).toBe('Bearer tok');
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, any>;
+    expect(body.to).toBe('33612345678');
+    expect(body.type).toBe('template');
+    expect(body.template.name).toBe('code_connexion');
+    expect(body.template.language).toEqual({ code: 'fr' });
+    expect(body.template.components).toEqual([
+      { type: 'body', parameters: [{ type: 'text', text: '482913' }] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: '482913' }] },
+    ]);
+  });
+
+  it('sans bouton quand otpButton est faux', async () => {
+    const calls: Call[] = [];
+    const sms = new WhatsAppSmsProvider({ ...cfg, otpButton: false }, { fetch: fakeFetch({}, calls) });
+    await sms.send('+33612345678', 'Votre code de connexion : 482913');
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, any>;
+    expect(body.template.components).toHaveLength(1);
+  });
+
+  it('refuse un texte sans code, et ne recopie ni numéro ni code dans l’erreur 5xx', async () => {
+    const none = new WhatsAppSmsProvider(cfg, { fetch: fakeFetch({}, []) });
+    await expect(none.send('+33612345678', 'Bonjour')).rejects.toBeInstanceOf(ProviderError);
+    const down = new WhatsAppSmsProvider(cfg, { fetch: fakeFetch({ status: 503, body: { error: 'indisponible' } }, []) });
+    const error = await down.send('+33612345678', 'Votre code : 482913').catch((e: unknown) => e);
+    expect((error as ProviderError).retryable).toBe(true);
+    expect((error as Error).message).not.toContain('612345678');
+    expect((error as Error).message).not.toContain('482913');
+  });
+});
+
 describe('Brevo', () => {
   it('compose texte et HTML, échappe, et pose List-Unsubscribe', async () => {
     const calls: Call[] = [];
@@ -112,6 +171,41 @@ describe('Brevo', () => {
     expect(body.htmlContent).not.toContain('<b>Salut');
     expect(body.headers['List-Unsubscribe']).toBe('<https://app.test/unsubscribe?token=t>');
     expect(body.tags).toEqual(['welcome']);
+  });
+
+  it('Mailjet : Basic clé:secret, texte et HTML, List-Unsubscribe, MessageID rendu', async () => {
+    const calls: Call[] = [];
+    const email = new MailjetEmailProvider(
+      { apiKey: 'pub', secretKey: 'sec', fromAddress: 'no-reply@x.test', fromName: 'App', appName: 'App' },
+      { fetch: fakeFetch({ body: { Messages: [{ Status: 'success', To: [{ MessageID: 12345 }] }] } }, calls) },
+    );
+    const out = await email.send('a@b.test', 'welcome', {
+      title: '<b>Salut</b>',
+      body: 'Corps',
+      unsubscribeUrl: 'https://app.test/unsubscribe?token=t',
+    });
+    expect(out.providerRef).toBe('12345');
+    expect(calls[0]?.url).toBe('https://api.mailjet.com/v3.1/send');
+    expect((calls[0]?.init.headers as Record<string, string>)['Authorization']).toBe(
+      `Basic ${Buffer.from('pub:sec').toString('base64')}`,
+    );
+    const msg = (JSON.parse(String(calls[0]?.init.body)) as Record<string, any>).Messages[0];
+    expect(msg.To).toEqual([{ Email: 'a@b.test' }]);
+    expect(msg.HTMLPart).toContain('&lt;b&gt;Salut&lt;/b&gt;');
+    expect(msg.Headers['List-Unsubscribe']).toBe('<https://app.test/unsubscribe?token=t>');
+    expect(msg.CustomCampaign).toBe('welcome');
+  });
+
+  it('Mailjet : un statut ≠ success lève une erreur non réessayable, sans le destinataire', async () => {
+    const email = new MailjetEmailProvider(
+      { apiKey: 'pub', secretKey: 'sec', fromAddress: 'no-reply@x.test', fromName: 'App', appName: 'App' },
+      { fetch: fakeFetch({ body: { Messages: [{ Status: 'error', Errors: [{ ErrorMessage: 'sender not verified' }] }] } }, []) },
+    );
+    const error = await email.send('secret@b.test', 'welcome', { title: 't', body: 'b' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect((error as ProviderError).retryable).toBe(false);
+    expect((error as Error).message).toContain('sender not verified');
+    expect((error as Error).message).not.toContain('secret@b.test');
   });
 
   it('le modèle de vérification porte le code', () => {
