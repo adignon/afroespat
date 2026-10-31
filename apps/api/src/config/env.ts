@@ -307,7 +307,7 @@ export const envSchema = z.object({
   /** Clé de l'API Claude. Le texte envoyé est TOUJOURS masqué avant (13 §2). */
   ANTHROPIC_API_KEY: optionalSecret,
   AI_MODERATION_MODEL: z.string().min(1).default('claude-opus-5-5'),
-  CAPTCHA_PROVIDER: providerMode('turnstile'),
+  CAPTCHA_PROVIDER: providerMode('turnstile', 'off'),
   /** Cloudflare Turnstile, vérification serveur (`/turnstile/v0/siteverify`). */
   TURNSTILE_SECRET_KEY: optionalSecret,
   /**
