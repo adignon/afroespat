@@ -413,6 +413,18 @@ export interface CaptchaProvider {
 
 export const CAPTCHA_PROVIDER = Symbol('CaptchaProvider');
 
+/**
+ * Captcha DÉSACTIVÉ (`CAPTCHA_PROVIDER=off`), choix assumé et visible en production — à la
+ * différence de `fake`, que `loadEnv` y refuse. Tout jeton est accepté : l'envoi d'un code n'est
+ * alors protégé que par les limites de débit (3 envois par numéro et par heure, 10 par IP).
+ * À réactiver (`turnstile`) avant d'ouvrir un vrai canal d'envoi payant.
+ */
+export class DisabledCaptchaProvider implements CaptchaProvider {
+  verify(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+}
+
 export class FakeCaptchaProvider implements CaptchaProvider {
   verify(token: string): Promise<boolean> {
     // `fail` permet de tester le chemin d'échec sans dépendre du réseau.

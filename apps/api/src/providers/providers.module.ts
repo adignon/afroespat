@@ -7,7 +7,7 @@ import { ClamAvAntivirusProvider } from './clamav-antivirus.provider';
 import { DiditKycProvider } from './didit-kyc.provider';
 import {
   AI_MODERATION_PROVIDER, ANTIVIRUS_PROVIDER, CAPTCHA_PROVIDER, EMAIL_PROVIDER,
-  DisabledAiModerationProvider, FakeAiModerationProvider, TestersSmsProvider, FakeAntivirusProvider, FakeCaptchaProvider, FakeEmailProvider,
+  DisabledAiModerationProvider, DisabledCaptchaProvider, FakeAiModerationProvider, TestersSmsProvider, FakeAntivirusProvider, FakeCaptchaProvider, FakeEmailProvider,
   FakeKycProvider, FakeMobileMoneyProvider, FakePaymentProvider, FakePushProvider,
   FakeSmsProvider, FakeStorageProvider,
   KYC_PROVIDER, MOBILE_MONEY_PROVIDER, PAYMENT_PROVIDER, PUSH_PROVIDER,
@@ -131,6 +131,7 @@ const env = loadEnv();
     }),
     pick(CAPTCHA_PROVIDER, 'CAPTCHA_PROVIDER', env.CAPTCHA_PROVIDER, () => new FakeCaptchaProvider(), {
       turnstile: () => new TurnstileCaptchaProvider(env.TURNSTILE_SECRET_KEY as string, { baseUrl: env.TURNSTILE_BASE_URL }),
+      off: () => new DisabledCaptchaProvider(),
     }),
     pick(STORAGE_PROVIDER, 'STORAGE_PROVIDER', env.STORAGE_PROVIDER, () => new FakeStorageProvider(), {
       s3: () =>

@@ -38,6 +38,11 @@ describe('variables des fournisseurs réels', () => {
     expect(missingProviderSettings(env)).toEqual([]);
     expect(() => parse({ SMS_PROVIDER: 'testers', OTP_TEST_PHONES: '0612345678' })).toThrow();
   });
+  it('CAPTCHA_PROVIDER=off est accepté, sans clé Turnstile', () => {
+    const env = parse({ CAPTCHA_PROVIDER: 'off' });
+    expect(env.CAPTCHA_PROVIDER).toBe('off');
+    expect(missingProviderSettings(env)).toEqual([]);
+  });
   it('une chaîne vide vaut absence', () => {
     expect(parse({ BREVO_API_KEY: '' }).BREVO_API_KEY).toBeUndefined();
   });
