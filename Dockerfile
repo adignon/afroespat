@@ -92,7 +92,11 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY} \
     NEXT_TELEMETRY_DISABLED=1
 COPY . .
-RUN pnpm --filter @app/shared build && pnpm --filter @app/web build
+# Le cache de Next (`.next/cache`) survit d'une construction à l'autre : sans lui, chaque
+# déploiement recompile tout le site, même pour un changement de trois lignes. Il n'entre pas
+# dans l'image (montage de cache) ; s'il manque, la construction fait simplement plus long.
+RUN --mount=type=cache,id=next-cache,target=/app/apps/web/.next/cache \
+    pnpm --filter @app/shared build && pnpm --filter @app/web build
 
 FROM web-build AS web
 ENV NODE_ENV=production
