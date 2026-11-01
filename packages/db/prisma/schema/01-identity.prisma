@@ -30,6 +30,14 @@ enum UserStatus {
   DELETED
 }
 
+/// D'où vient le compte. `MEMBER` : inscrit par la personne elle-même. `SEED` : créé par le chargement de
+/// données de départ. L'information n'est lue que par l'administration (filtre, suppression en lot) : elle ne
+/// sort JAMAIS vers les membres.
+enum UserOrigin {
+  MEMBER
+  SEED
+}
+
 enum OtpPurpose {
   SIGNUP
   LOGIN
@@ -135,6 +143,9 @@ model User {
   plan     UserPlan
   status   UserStatus
   timezone String     @default("Europe/Paris")
+
+  /// Voir `UserOrigin` : visible de l'administration seulement.
+  origin UserOrigin @default(MEMBER)
 
   lastSeenAt    DateTime? @map("last_seen_at") @db.Timestamptz
   deactivatedAt DateTime? @map("deactivated_at") @db.Timestamptz

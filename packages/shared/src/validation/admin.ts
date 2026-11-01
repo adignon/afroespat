@@ -15,6 +15,7 @@ import {
   ProVerificationStatus,
   ReportSubjectType,
   StaffRole,
+  UserOrigin,
   UserStatus,
   VerificationLevel,
 } from '../enums/generated.js';
@@ -273,7 +274,20 @@ export const memberSearchQuerySchema = cursorQuerySchema
      * et ne contient que des chiffres est traité comme un numéro, et son
      * empreinte seule part en base.
      */
-    q: z.string().trim().min(2).max(120),
+    q: z.string().trim().min(2).max(120).optional(),
+    /**
+     * LES FILTRES FONT DE CETTE ROUTE UNE LISTE. Sans `q`, elle rend les membres qui correspondent aux filtres,
+     * du plus récent au plus ancien, par pages : c'est ce qu'il faut à l'administration pour retrouver des comptes
+     * (inscrits un jour donné, d'une origine donnée, d'une ville) sans connaître leur pseudo. Aucun numéro n'y
+     * figure, ni masqué : la liste ne montre que ce que la recherche montrait déjà.
+     */
+    level: z.enum(VerificationLevel).optional(),
+    cityId: z.string().uuid().optional(),
+    /** `SEED` : comptes créés par un chargement de données de départ. Réservé à l'administration. */
+    origin: z.enum(UserOrigin).optional(),
+    /** Jours inclus, au format AAAA-MM-JJ (fuseau UTC). */
+    createdFrom: z.string().regex(/^d{4}-d{2}-d{2}$/).optional(),
+    createdTo: z.string().regex(/^d{4}-d{2}-d{2}$/).optional(),
     /**
      * `z.enum` et NON `z.string()`.
      *
@@ -1026,6 +1040,8 @@ export const adminMemberRowSchema = z
     verificationLevel: z.enum(VerificationLevel),
     plan: z.enum(PlanCode),
     status: z.enum(UserStatus),
+    /** Vue de l'administration seulement. */
+    origin: z.enum(UserOrigin),
     lastSeenAt: z.string().datetime().nullable(),
     deletedAt: z.string().datetime().nullable(),
     /** Nulle tant que le membre n'a pas choisi sa ville. */
@@ -1110,6 +1126,7 @@ export const adminMemberDetailSchema = z
     verificationLevel: z.enum(VerificationLevel),
     plan: z.enum(PlanCode),
     status: z.enum(UserStatus),
+    origin: z.enum(UserOrigin),
     timezone: z.string(),
     lastSeenAt: z.string().datetime().nullable(),
     deactivatedAt: z.string().datetime().nullable(),

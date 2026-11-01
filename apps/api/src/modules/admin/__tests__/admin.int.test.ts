@@ -1040,6 +1040,41 @@ describe('administration (15)', () => {
       expect((byHandle.body as PageBody<{ id: string }>).items.map((i) => i.id)).toContain(userId);
     });
 
+    /**
+     * SANS `q`, LA ROUTE EST UNE LISTE FILTRÉE (le plus récent d'abord), et l'origine d'un compte est une
+     * information d'ADMINISTRATION : filtrable ici, jamais lue côté membre.
+     */
+    it('liste les membres sans recherche, filtre par origine et par jour d’inscription', async () => {
+      const staff = await as('MODERATOR');
+      const ordinaire = await memberId();
+      const depart = await memberId();
+      await prisma.user.update({ where: { id: depart }, data: { origin: 'SEED' } });
+
+      const tous = await request(httpServer(app)).get('/v1/admin/users').set('cookie', staff.cookie).expect(200);
+      const idsTous = (tous.body as PageBody<{ id: string }>).items.map((i) => i.id);
+      expect(idsTous).toEqual(expect.arrayContaining([ordinaire, depart]));
+
+      const seulementDepart = await request(httpServer(app))
+        .get('/v1/admin/users?origin=SEED')
+        .set('cookie', staff.cookie)
+        .expect(200);
+      const lignes = (seulementDepart.body as PageBody<{ id: string; origin: string }>).items;
+      expect(lignes.map((i) => i.id)).toContain(depart);
+      expect(lignes.map((i) => i.id)).not.toContain(ordinaire);
+      expect(lignes.every((i) => i.origin === 'SEED')).toBe(true);
+
+      // Un jour d'inscription dans le futur ne rend rien.
+      const demain = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+      const aucun = await request(httpServer(app))
+        .get(`/v1/admin/users?createdFrom=${demain}`)
+        .set('cookie', staff.cookie)
+        .expect(200);
+      expect((aucun.body as PageBody<unknown>).items).toEqual([]);
+
+      // Une origine inconnue est refusée proprement (400), pas par une erreur de base (500).
+      await request(httpServer(app)).get('/v1/admin/users?origin=AUTRE').set('cookie', staff.cookie).expect(400);
+    });
+
     it('révoque les sessions d’un membre, avec motif et trace', async () => {
       const staff = await as('SUPPORT');
       const userId = await memberId();

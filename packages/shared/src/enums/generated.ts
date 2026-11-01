@@ -1,7 +1,7 @@
 // GÉNÉRÉ depuis packages/db/prisma/schema/*.prisma — ne pas modifier à la main.
 // Régénérer : pnpm --filter @app/shared generate
 //
-// 96 enums, 16 fichiers de schéma.
+// 97 enums, 16 fichiers de schéma.
 
 /** Module 13-moderation. */
 export const AiVerdict = [
@@ -862,6 +862,13 @@ export const UsageMetric = [
 export type UsageMetric = (typeof UsageMetric)[number];
 
 /** Module 01-identity. */
+export const UserOrigin = [
+  'MEMBER',
+  'SEED',
+] as const;
+export type UserOrigin = (typeof UserOrigin)[number];
+
+/** Module 01-identity. */
 export const UserPlan = [
   'FREE',
   'PREMIUM',
@@ -981,6 +988,7 @@ export const ALL_ENUMS = {
   TopicPinKind,
   TopicStatus,
   UsageMetric,
+  UserOrigin,
   UserPlan,
   UserStatus,
   VerificationLevel,

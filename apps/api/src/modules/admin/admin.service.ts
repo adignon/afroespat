@@ -718,8 +718,9 @@ export class AdminService {
    * parcourir la base par tâtonnement.
    */
   async searchMembers(query: MemberSearchQuery): Promise<Page<unknown>> {
-    const q = query.q.trim();
-    const byPhone = looksLikePhone(q);
+    // Sans `q`, la route est une LISTE filtrée (voir `memberSearchQuerySchema`).
+    const q = (query.q ?? '').trim();
+    const byPhone = q !== '' && looksLikePhone(q);
 
     let userIds: string[] | null = null;
     if (byPhone) {
@@ -734,22 +735,45 @@ export class AdminService {
     // UN seul objet `where`. Le filtre de texte et les filtres d'énumération
     // portent sur des clés différentes, mais la règle est la même partout dans ce
     // fichier : on assemble, on n'empile pas de diffusions.
+    const jour = 86_400_000;
+    const depuis = query.createdFrom === undefined ? undefined : new Date(`${query.createdFrom}T00:00:00.000Z`);
+    // Jour de fin INCLUS : on borne au début du lendemain.
+    const avant =
+      query.createdTo === undefined ? undefined : new Date(Date.parse(`${query.createdTo}T00:00:00.000Z`) + jour);
     const where: Prisma.UserWhereInput = {
-      ...(userIds === null
-        ? {
-            OR: [
-              { handle: { contains: q, mode: 'insensitive' } },
-              { displayName: { contains: q, mode: 'insensitive' } },
-            ],
-          }
-        : // Une liste vide donne `in: []`, donc zéro résultat — ce qui est juste :
-          // « ce numéro n'est pas connu ». Pas de repli sur la recherche texte, qui
-          // renverrait des membres sans rapport avec la saisie.
-          { id: { in: userIds } }),
+      ...(q === ''
+        ? {}
+        : userIds === null
+          ? {
+              OR: [
+                { handle: { contains: q, mode: 'insensitive' } },
+                { displayName: { contains: q, mode: 'insensitive' } },
+              ],
+            }
+          : // Une liste vide donne `in: []`, donc zéro résultat — ce qui est juste :
+            // « ce numéro n'est pas connu ». Pas de repli sur la recherche texte, qui
+            // renverrait des membres sans rapport avec la saisie.
+            { id: { in: userIds } }),
       ...(query.phase === undefined ? {} : { phase: query.phase }),
       ...(query.status === undefined ? {} : { status: query.status }),
+      ...(query.level === undefined ? {} : { verificationLevel: query.level }),
+      ...(query.cityId === undefined ? {} : { cityId: query.cityId }),
+      ...(query.origin === undefined ? {} : { origin: query.origin }),
+      ...(depuis === undefined && avant === undefined
+        ? {}
+        : { createdAt: { ...(depuis === undefined ? {} : { gte: depuis }), ...(avant === undefined ? {} : { lt: avant }) } }),
     };
-    const scope = `admin:users:${byPhone ? 'phone' : q}:${query.phase ?? ''}:${query.status ?? ''}`;
+    const scope = [
+      'admin:users',
+      byPhone ? 'phone' : q,
+      query.phase ?? '',
+      query.status ?? '',
+      query.level ?? '',
+      query.cityId ?? '',
+      query.origin ?? '',
+      query.createdFrom ?? '',
+      query.createdTo ?? '',
+    ].join(':');
 
     const rows = await this.prisma.user.findMany({
       where: this.paginate(where, query.cursor, scope),
@@ -764,6 +788,7 @@ export class AdminService {
         verificationLevel: true,
         plan: true,
         status: true,
+        origin: true,
         lastSeenAt: true,
         deletedAt: true,
         city: { select: { id: true, name: true } },
@@ -800,6 +825,7 @@ export class AdminService {
         verificationLevel: true,
         plan: true,
         status: true,
+        origin: true,
         timezone: true,
         lastSeenAt: true,
         deactivatedAt: true,

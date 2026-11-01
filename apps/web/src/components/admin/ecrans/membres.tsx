@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import {
   MAX_PAGE_LIMIT,
+  VerificationLevel,
   adminMemberDetailSchema,
   adminMembersResponseSchema,
   memberNoteSchema,
@@ -77,63 +78,149 @@ export function ContenuMembres() {
   );
 }
 
+/** Les filtres de la liste. Une chaîne vide = pas de filtre. */
+interface Filtres {
+  readonly q: string;
+  readonly origine: string;
+  readonly niveau: string;
+  readonly statut: string;
+  readonly du: string;
+  readonly au: string;
+}
+
+const SANS_FILTRE: Filtres = { q: '', origine: '', niveau: '', statut: '', du: '', au: '' };
+
+const ORIGINES = [
+  { valeur: '', libelle: 'Toutes les origines' },
+  { valeur: 'MEMBER', libelle: 'Inscrits par eux-mêmes' },
+  { valeur: 'SEED', libelle: 'Données de départ' },
+];
+const NIVEAUX = [
+  { valeur: '', libelle: 'Tous les niveaux' },
+  ...VerificationLevel.map((v) => ({ valeur: v, libelle: v.replace('L', 'N') })),
+];
+const STATUTS = [
+  { valeur: '', libelle: 'Tous les statuts' },
+  { valeur: 'ACTIVE', libelle: 'Actifs' },
+  { valeur: 'DEACTIVATED', libelle: 'Désactivés' },
+  { valeur: 'SUSPENDED', libelle: 'Suspendus' },
+  { valeur: 'DELETED', libelle: 'Supprimés' },
+];
+
+function requete(f: Filtres, curseur?: string | null): string {
+  const p = new URLSearchParams();
+  if (f.q.trim().length >= 2) p.set('q', f.q.trim());
+  if (f.statut !== '') p.set('status', f.statut);
+  if (f.niveau !== '') p.set('level', f.niveau);
+  if (f.origine !== '') p.set('origin', f.origine);
+  if (f.du !== '') p.set('createdFrom', f.du);
+  if (f.au !== '') p.set('createdTo', f.au);
+  p.set('limit', String(MAX_PAGE_LIMIT));
+  if (curseur !== undefined && curseur !== null) p.set('cursor', curseur);
+  return `/users?${p.toString()}`;
+}
+
 function Interne() {
   const params = useSearchParams();
   const initial = params.get('q') ?? '';
-  const [saisie, setSaisie] = useState(initial);
-  const [q, setQ] = useState(initial);
+  const [saisie, setSaisie] = useState<Filtres>({ ...SANS_FILTRE, q: initial });
+  const [filtres, setFiltres] = useState<Filtres>({ ...SANS_FILTRE, q: initial });
   const [choisi, setChoisi] = useState<string | null>(null);
 
   useEffect(() => {
-    setSaisie(initial);
-    setQ(initial);
+    setSaisie((s) => ({ ...s, q: initial }));
+    setFiltres((f) => ({ ...f, q: initial }));
     setChoisi(null);
   }, [initial]);
 
-  const recherche = useCharge(
-    () =>
-      q.trim().length < 2
-        ? Promise.resolve(null)
-        : staffApi.get(`/users?q=${encodeURIComponent(q.trim())}&limit=${MAX_PAGE_LIMIT}`, adminMembersResponseSchema),
-    q,
-  );
+  // Sans `q`, la route est une LISTE filtrée, la plus récente d'abord : l'écran n'est plus vide à l'ouverture.
+  const cle = JSON.stringify(filtres);
+  const premiere = useCharge(() => staffApi.get(requete(filtres), adminMembersResponseSchema), cle);
+  const [plus, setPlus] = useState<{ readonly cle: string; readonly items: readonly AdminMemberRow[]; readonly curseur: string | null } | null>(null);
+  const suite = useGeste();
+  const page = premiere.etat.phase === 'pret' ? premiere.etat.donnees : null;
+  const ajoutes = plus !== null && plus.cle === cle ? plus : null;
+  const lignes = page === null ? [] : [...page.items, ...(ajoutes?.items ?? [])];
+  const curseur = page === null ? null : ajoutes !== null ? ajoutes.curseur : page.nextCursor;
+
+  const chargerPlus = async () => {
+    if (curseur === null) return;
+    await suite.lancer(async () => {
+      const p = await staffApi.get(requete(filtres, curseur), adminMembersResponseSchema);
+      setPlus({ cle, items: [...(ajoutes?.items ?? []), ...p.items], curseur: p.nextCursor });
+    });
+  };
+
+  const maj = (patch: Partial<Filtres>) => setSaisie((s) => ({ ...s, ...patch }));
+  const filtre = saisie.origine !== '' || saisie.niveau !== '' || saisie.statut !== '' || saisie.du !== '' || saisie.au !== '' || saisie.q !== '';
 
   return (
     <>
-      <Titre titre="Membres" sous="Recherche par pseudo, nom, e-mail ou numéro (empreinte, jamais affiché)." />
+      <Titre titre="Membres" sous="Liste filtrable, la plus récente d'abord. Recherche par pseudo, nom ou numéro (empreinte, jamais affiché)." />
       <Colonnes gabarit="minmax(0,5fr) minmax(0,7fr)">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
           <form
             role="search"
             onSubmit={(e) => {
               e.preventDefault();
-              setQ(saisie);
+              setFiltres(saisie);
+              setPlus(null);
               setChoisi(null);
             }}
-            style={{ display: 'flex', gap: '8px' }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
           >
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <Champ libelle="Rechercher" valeur={saisie} onChange={setSaisie} placeholder="@pseudo, nom, +33 6 12…" />
+            <Champ libelle="Rechercher" valeur={saisie.q} onChange={(q) => maj({ q })} placeholder="@pseudo, nom, +33 6 12…" />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '10px' }}>
+              <Selecteur libelle="Origine" valeur={saisie.origine} onChange={(origine) => maj({ origine })} options={ORIGINES} />
+              <Selecteur libelle="Niveau" valeur={saisie.niveau} onChange={(niveau) => maj({ niveau })} options={NIVEAUX} />
+              <Selecteur libelle="Statut" valeur={saisie.statut} onChange={(statut) => maj({ statut })} options={STATUTS} />
+              <span />
+              <Champ libelle="Inscrit du" type="date" valeur={saisie.du} onChange={(du) => maj({ du })} />
+              <Champ libelle="au" type="date" valeur={saisie.au} onChange={(au) => maj({ au })} />
             </div>
-            <div style={{ alignSelf: 'flex-end' }}>
-              <Bouton type="submit" ton="principal" disabled={saisie.trim().length < 2}>
-                Chercher
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Bouton type="submit" ton="principal" disabled={saisie.q.trim().length === 1}>
+                Appliquer
+              </Bouton>
+              <Bouton
+                ton="contour"
+                disabled={!filtre}
+                onClick={() => {
+                  setSaisie(SANS_FILTRE);
+                  setFiltres(SANS_FILTRE);
+                  setPlus(null);
+                  setChoisi(null);
+                }}
+              >
+                Réinitialiser
               </Bouton>
             </div>
           </form>
           <Carte style={{ padding: '6px 0', overflow: 'hidden' }}>
-            <Lecture etat={recherche.etat} recharger={recherche.recharger}>
-              {(page) =>
-                page === null ? (
-                  <Vide>Saisissez au moins deux caractères pour chercher un membre.</Vide>
-                ) : page.items.length === 0 ? (
+            <Lecture etat={premiere.etat} recharger={premiere.recharger}>
+              {() =>
+                lignes.length === 0 ? (
                   <Vide>Aucun membre ne correspond.</Vide>
                 ) : (
-                  <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                    {page.items.map((m) => (
-                      <Ligne key={m.id} m={m} actif={m.id === choisi} onChoisir={() => setChoisi(m.id)} />
-                    ))}
-                  </ul>
+                  <>
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                      {lignes.map((m) => (
+                        <Ligne key={m.id} m={m} actif={m.id === choisi} onChoisir={() => setChoisi(m.id)} />
+                      ))}
+                    </ul>
+                    <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '12.5px', color: C.gris }}>
+                        {lignes.length} membre{lignes.length > 1 ? 's' : ''} affiché{lignes.length > 1 ? 's' : ''}
+                        {curseur === null ? '' : ' — il en reste'}
+                      </span>
+                      {curseur === null ? null : (
+                        <Bouton petit onClick={() => void chargerPlus()} disabled={suite.occupe}>
+                          Afficher la suite
+                        </Bouton>
+                      )}
+                      <Message message={suite.message} />
+                    </div>
+                  </>
                 )
               }
             </Lecture>
@@ -166,6 +253,7 @@ function Ligne({ m, actif, onChoisir }: { readonly m: AdminMemberRow; readonly a
             @{m.handle} · {m.verificationLevel.replace('L', 'N')} · {m.city?.name ?? 'sans ville'}
           </span>
         </span>
+        {m.origin === 'SEED' ? <Pastille ton="sombre">Départ</Pastille> : null}
         {m.status === 'ACTIVE' ? null : <Pastille ton="terre">{m.status === 'DEACTIVATED' ? 'Désactivé' : m.status === 'SUSPENDED' ? 'Suspendu' : m.status}</Pastille>}
       </button>
     </li>
