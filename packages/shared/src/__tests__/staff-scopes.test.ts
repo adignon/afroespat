@@ -80,6 +80,12 @@ const SELON_LA_SPEC: Record<keyof typeof STAFF_SCOPES, readonly StaffRoleValue[]
   dashboard: ['SUPER_ADMIN', 'CONTENT_ADMIN', 'MODERATOR', 'SUPPORT'],
   /** Paramètres système. Le registre resserre ensuite clé par clé. */
   settings: ['SUPER_ADMIN', 'CONTENT_ADMIN'],
+  /**
+   * AJOUT HORS §2.2 — suppression DÉFINITIVE d'un compte et de ses contenus (données de départ, comptes de test ou
+   * abandonnés). Rien n'est conservé et rien ne se défait : le périmètre le plus étroit, le seul SUPER_ADMIN. La
+   * suppression RGPD (anonymisation) reste dans « rgpd ».
+   */
+  erase: ['SUPER_ADMIN'],
 };
 
 const trie = (roles: readonly string[]): string[] => [...roles].sort();

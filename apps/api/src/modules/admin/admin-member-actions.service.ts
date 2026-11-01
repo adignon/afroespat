@@ -4,6 +4,10 @@ import {
   ADMIN_CONTENT_AUDIT_ACTIONS as ACTIONS,
   ADMIN_CONTENT_ERROR_CODES,
   ADMIN_CONTENT_ERROR_MESSAGES,
+  type MemberBulkErase,
+  type MemberBulkEraseResult,
+  type MemberErase,
+  type MemberEraseResult,
   type MemberNoteInput,
   type MemberReason,
 } from '@app/shared';
@@ -13,6 +17,13 @@ import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
 import type { StaffUser } from '../../common/staff.guard';
 import { AccountService } from '../users/account.service';
+
+/** Levée à la fin d'un aperçu pour ANNULER la transaction : le décompte part avec l'exception. */
+class ErasePreview extends Error {
+  constructor(readonly removed: Record<string, number>) {
+    super('aperçu de suppression');
+  }
+}
 
 /**
  * Les trois actions de la fiche membre que 15 §7 promettait et que l'API n'avait
@@ -138,6 +149,218 @@ export class AdminMemberActionsService {
       });
     });
     return { userId, deleted: true };
+  }
+
+  /**
+   * SUPPRESSION DÉFINITIVE d'un compte ET de ses contenus (périmètre `erase`, SUPER_ADMIN).
+   *
+   * Ce n'est PAS `deleteNow` : celle-ci anonymise (la ligne reste, « Membre supprimé », et les contenus restent
+   * lisibles). Ici la ligne `users` disparaît. La base fait presque tout seule — 70 relations vers `users` sont en
+   * cascade (publications, événements, parcours, annonces, messages, demandes d'aide…) — mais DOUZE ne le sont pas
+   * (`SetNull`) et laisseraient des lignes orphelines : guides, conseils de ville, réseaux créés, conversations,
+   * médias… On les traite donc ICI, explicitement, avant de supprimer le compte.
+   *
+   * Refus d'un compte qui porte une PREUVE À CONSERVER (consentements, 3 ans ; sanctions) : pour lui, la bonne
+   * suppression est l'anonymisation RGPD. Les comptes créés par un chargement de données de départ n'en portent pas.
+   *
+   * `dryRun` : tout le travail est fait, puis la transaction est ANNULÉE — la réponse dit ce qui serait supprimé.
+   */
+  async erase(staff: StaffUser, userId: string, input: MemberErase): Promise<MemberEraseResult> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, handle: true } });
+    if (user === null) throw ApiError.notFound();
+    if (input.confirmHandle.trim().toLowerCase() !== user.handle.toLowerCase()) {
+      throw new ApiError(
+        'MEMBER_DELETE_CONFIRMATION',
+        ADMIN_CONTENT_ERROR_MESSAGES.MEMBER_DELETE_CONFIRMATION,
+        ADMIN_CONTENT_ERROR_CODES.MEMBER_DELETE_CONFIRMATION,
+      );
+    }
+    return this.eraseOne(staff, user, input.reason, input.dryRun === true);
+  }
+
+  /** La même chose pour une sélection : comptes traités UN PAR UN, chacun dans sa transaction, refus rapportés. */
+  async eraseMany(staff: StaffUser, input: MemberBulkErase): Promise<MemberBulkEraseResult> {
+    const ids = [...new Set(input.ids)];
+    if (input.confirmCount !== ids.length) {
+      throw new ApiError(
+        'MEMBER_ERASE_COUNT',
+        ADMIN_CONTENT_ERROR_MESSAGES.MEMBER_ERASE_COUNT,
+        ADMIN_CONTENT_ERROR_CODES.MEMBER_ERASE_COUNT,
+      );
+    }
+    const dryRun = input.dryRun === true;
+    const users = await this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, handle: true } });
+    const parId = new Map(users.map((u) => [u.id, u]));
+    const erased: MemberEraseResult[] = [];
+    const refused: MemberBulkEraseResult['refused'] = [];
+    for (const id of ids) {
+      const user = parId.get(id);
+      if (user === undefined) {
+        refused.push({ userId: id, code: 'NOT_FOUND', message: 'Ce compte n’existe pas.' });
+        continue;
+      }
+      try {
+        erased.push(await this.eraseOne(staff, user, input.reason, dryRun));
+      } catch (error) {
+        refused.push({
+          userId: id,
+          code: error instanceof ApiError ? error.code : 'ERASE_FAILED',
+          message: error instanceof ApiError ? error.message : 'La suppression a échoué.',
+        });
+      }
+    }
+    return { dryRun, erased, refused };
+  }
+
+  private async eraseOne(
+    staff: StaffUser,
+    user: { readonly id: string; readonly handle: string },
+    reason: string,
+    dryRun: boolean,
+  ): Promise<MemberEraseResult> {
+    const preuves =
+      (await this.prisma.consent.count({ where: { userId: user.id } })) +
+      (await this.prisma.sanction.count({ where: { userId: user.id } }));
+    if (preuves > 0) {
+      throw new ApiError(
+        'MEMBER_ERASE_NOT_ALLOWED',
+        ADMIN_CONTENT_ERROR_MESSAGES.MEMBER_ERASE_NOT_ALLOWED,
+        ADMIN_CONTENT_ERROR_CODES.MEMBER_ERASE_NOT_ALLOWED,
+      );
+    }
+
+    try {
+      const removed = await this.prisma.$transaction(
+        async (tx) => {
+          const retire = await this.removeMemberAndContent(tx, user.id);
+          await this.audit.record(
+            tx,
+            this.auditEntry(staff, ACTIONS.userErased, user.id, { reason, handle: user.handle, removed: retire }),
+          );
+          if (dryRun) throw new ErasePreview(retire);
+          return retire;
+        },
+        // Un compte chargé de contenus peut dépasser les 5 s par défaut d'une transaction interactive.
+        { timeout: 60_000, maxWait: 10_000 },
+      );
+      return { userId: user.id, handle: user.handle, dryRun: false, removed };
+    } catch (error) {
+      if (error instanceof ErasePreview) {
+        return { userId: user.id, handle: user.handle, dryRun: true, removed: error.removed };
+      }
+      throw error;
+    }
+  }
+
+  /** Le travail de la suppression, dans la transaction de l'appelant. Rend le décompte de ce qui part. */
+  private async removeMemberAndContent(tx: Prisma.TransactionClient, userId: string): Promise<Record<string, number>> {
+    const removed: Record<string, number> = {};
+    const compter = (nom: string, n: number) => {
+      if (n > 0) removed[nom] = n;
+    };
+
+    const compte = await tx.user.findUnique({
+      where: { id: userId },
+      select: { cityId: true, status: true },
+    });
+
+    // ── Ce que la cascade emportera : compté d'avance, pour que l'aperçu soit parlant.
+    compter('publications', await tx.post.count({ where: { authorUserId: userId } }));
+    compter('événements organisés', await tx.event.count({ where: { organizerUserId: userId } }));
+    compter('parcours', await tx.journey.count({ where: { ownerUserId: userId } }));
+    compter('demandes d’entraide', await tx.helpRequest.count({ where: { authorUserId: userId } }));
+    compter('annonces de logement', await tx.housingListing.count({ where: { authorUserId: userId } }));
+    compter('offres d’emploi', await tx.jobListing.count({ where: { authorUserId: userId } }));
+    compter('fiches professionnelles', await tx.proProfile.count({ where: { userId } }));
+    compter('messages envoyés', await tx.message.count({ where: { senderUserId: userId } }));
+
+    // ── Les identifiants dont l'index de recherche doit être purgé (aucune clé étrangère ne s'en charge).
+    const guides = await tx.guide.findMany({ where: { authorUserId: userId }, select: { id: true } });
+    const sujets = await tx.topic.findMany({ where: { authorUserId: userId }, select: { id: true } });
+    const entraide = await tx.helpRequest.findMany({ where: { authorUserId: userId }, select: { id: true } });
+    const logements = await tx.housingListing.findMany({ where: { authorUserId: userId }, select: { id: true } });
+    const emplois = await tx.jobListing.findMany({ where: { authorUserId: userId }, select: { id: true } });
+    const evenements = await tx.event.findMany({ where: { organizerUserId: userId }, select: { id: true } });
+    const pros = await tx.proProfile.findMany({ where: { userId }, select: { id: true } });
+    const parcours = await tx.journey.findMany({ where: { ownerUserId: userId }, select: { id: true } });
+    const ids = (l: readonly { id: string }[]) => l.map((x) => x.id);
+
+    // ── Les réseaux créés par ce compte : supprimés s'ils n'ont aucun autre membre que des comptes de départ.
+    const crees = await tx.community.findMany({ where: { createdByUserId: userId }, select: { id: true } });
+    const autres = await tx.communityMember.findMany({
+      where: { communityId: { in: ids(crees) }, userId: { not: userId } },
+      select: { communityId: true, userId: true },
+    });
+    const originesAutres = new Map(
+      (await tx.user.findMany({ where: { id: { in: [...new Set(autres.map((a) => a.userId))] } }, select: { id: true, origin: true } })).map(
+        (u) => [u.id, u.origin],
+      ),
+    );
+    const reseauxASupprimer = ids(crees).filter((id) =>
+      autres.filter((a) => a.communityId === id).every((a) => originesAutres.get(a.userId) === 'SEED'),
+    );
+    const sujetsDesReseaux = await tx.topic.findMany({ where: { communityId: { in: reseauxASupprimer } }, select: { id: true } });
+
+    // ── L'index de recherche.
+    await tx.searchDocument.deleteMany({
+      where: {
+        OR: [
+          { subjectType: 'GUIDE', subjectId: { in: ids(guides) } },
+          { subjectType: 'TOPIC', subjectId: { in: [...ids(sujets), ...ids(sujetsDesReseaux)] } },
+          { subjectType: 'HELP_REQUEST', subjectId: { in: ids(entraide) } },
+          { subjectType: 'HOUSING', subjectId: { in: ids(logements) } },
+          { subjectType: 'JOB', subjectId: { in: ids(emplois) } },
+          { subjectType: 'EVENT', subjectId: { in: ids(evenements) } },
+          { subjectType: 'PRO', subjectId: { in: ids(pros) } },
+          { subjectType: 'USER', subjectId: userId },
+        ],
+      },
+    });
+
+    // ── Les contenus que la cascade LAISSERAIT (relations `SetNull`).
+    compter('guides', (await tx.guide.deleteMany({ where: { id: { in: ids(guides) } } })).count);
+    compter('conseils de ville', (await tx.cityTip.deleteMany({ where: { authorUserId: userId } })).count);
+
+    // Conversations : celles qu'il a ouvertes, celles d'un parcours qu'il possédait, celles d'un réseau supprimé,
+    // et les échanges à deux dont il fait partie (il ne resterait à l'autre qu'un monologue).
+    const aDeux = await tx.conversation.findMany({
+      where: { members: { some: { userId } } },
+      select: { id: true, _count: { select: { members: true } } },
+    });
+    const conversations = await tx.conversation.deleteMany({
+      where: {
+        OR: [
+          { openedByUserId: userId },
+          { journeyId: { in: ids(parcours) } },
+          { communityId: { in: reseauxASupprimer } },
+          { id: { in: aDeux.filter((c) => c._count.members <= 2).map((c) => c.id) } },
+        ],
+      },
+    });
+    compter('conversations', conversations.count);
+
+    // Compteurs : les réseaux qui restent perdent un membre (la ville aussi). Le recalcul nocturne rattrape le reste.
+    const adhesions = await tx.communityMember.findMany({
+      where: { userId, status: 'ACTIVE', communityId: { notIn: reseauxASupprimer } },
+      select: { communityId: true },
+    });
+    if (adhesions.length > 0) {
+      await tx.community.updateMany({
+        where: { id: { in: adhesions.map((a) => a.communityId) }, memberCount: { gt: 0 } },
+        data: { memberCount: { decrement: 1 } },
+      });
+    }
+    if (compte !== null && compte.cityId !== null && compte.status === 'ACTIVE') {
+      await tx.city.updateMany({ where: { id: compte.cityId, memberCount: { gt: 0 } }, data: { memberCount: { decrement: 1 } } });
+    }
+
+    compter('réseaux créés', (await tx.community.deleteMany({ where: { id: { in: reseauxASupprimer } } })).count);
+    await tx.outboundMessage.deleteMany({ where: { userId } });
+
+    // ── Le compte : la cascade emporte le reste.
+    await tx.user.delete({ where: { id: userId } });
+    removed['compte'] = 1;
+    return removed;
   }
 
   /**

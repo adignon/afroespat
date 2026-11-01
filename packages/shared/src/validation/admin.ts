@@ -93,6 +93,8 @@ export const STAFF_SCOPES = {
   dashboard: ['SUPER_ADMIN', 'CONTENT_ADMIN', 'MODERATOR', 'SUPPORT'],
   /** Paramètres système. Le registre resserre clé par clé. */
   settings: ['SUPER_ADMIN', 'CONTENT_ADMIN'],
+  /** Suppression DÉFINITIVE d'un compte et de ses contenus (rien n'est conservé, rien ne se défait). */
+  erase: ['SUPER_ADMIN'],
 } as const satisfies Record<string, readonly StaffRoleValue[]>;
 
 // ── Authentification d'équipe (§2.1) ────────────────────────────────────────

@@ -1075,6 +1075,91 @@ describe('administration (15)', () => {
       await request(httpServer(app)).get('/v1/admin/users?origin=AUTRE').set('cookie', staff.cookie).expect(400);
     });
 
+    /**
+     * LA SUPPRESSION DÉFINITIVE (≠ l'anonymisation RGPD) : le compte disparaît, l'aperçu n'efface rien, un compte qui
+     * porte une preuve légale est refusé, et seul le SUPER_ADMIN y a droit.
+     */
+    it('supprime définitivement un compte : aperçu sans effet, pseudo confirmé, trace, preuves protégées', async () => {
+      const motif = 'Suppression définitive du compte de test, demandée par l’équipe.';
+      const staff = await as('SUPER_ADMIN');
+      const support = await as('SUPPORT');
+      const userId = await memberId();
+      const { handle } = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { handle: true } });
+
+      // Un SUPPORT n'a pas ce périmètre.
+      await request(httpServer(app))
+        .post(`/v1/admin/users/${userId}/erase`)
+        .set('cookie', support.cookie)
+        .send({ reason: motif, confirmHandle: handle })
+        .expect(403);
+
+      // L'aperçu dit ce qui partirait, et n'efface rien.
+      const apercu = await request(httpServer(app))
+        .post(`/v1/admin/users/${userId}/erase`)
+        .set('cookie', staff.cookie)
+        .send({ reason: motif, confirmHandle: handle, dryRun: true })
+        .expect(200);
+      expect(apercu.body).toMatchObject({ userId, dryRun: true, removed: { compte: 1 } });
+      expect(await prisma.user.count({ where: { id: userId } })).toBe(1);
+      expect(await prisma.auditLog.count({ where: { targetId: userId, action: 'user.erased' } })).toBe(0);
+
+      // Un mauvais pseudo est refusé.
+      await request(httpServer(app))
+        .post(`/v1/admin/users/${userId}/erase`)
+        .set('cookie', staff.cookie)
+        .send({ reason: motif, confirmHandle: 'autre-pseudo' })
+        .expect(422);
+
+      // Une preuve à conserver (consentement) interdit la suppression définitive : on anonymise à la place.
+      const protege = await memberId();
+      const { handle: handleProtege } = await prisma.user.findUniqueOrThrow({ where: { id: protege }, select: { handle: true } });
+      await prisma.consent.create({
+        data: { id: newId(), userId: protege, type: 'TERMS', version: '1', granted: true },
+      });
+      const refus = await request(httpServer(app))
+        .post(`/v1/admin/users/${protege}/erase`)
+        .set('cookie', staff.cookie)
+        .send({ reason: motif, confirmHandle: handleProtege })
+        .expect(409);
+      expect((refus.body as ErrorBody).error.code).toBe('MEMBER_ERASE_NOT_ALLOWED');
+      expect(await prisma.user.count({ where: { id: protege } })).toBe(1);
+
+      // La vraie suppression : le compte n'existe plus, et la trace demeure.
+      await request(httpServer(app))
+        .post(`/v1/admin/users/${userId}/erase`)
+        .set('cookie', staff.cookie)
+        .send({ reason: motif, confirmHandle: handle })
+        .expect(200);
+      expect(await prisma.user.count({ where: { id: userId } })).toBe(0);
+      expect(await prisma.auditLog.count({ where: { targetId: userId, action: 'user.erased' } })).toBe(1);
+    });
+
+    it('supprime une sélection de comptes, confirmée par leur nombre, et rapporte les refus', async () => {
+      const motif = 'Suppression définitive de comptes de départ, demandée par l’équipe.';
+      const staff = await as('SUPER_ADMIN');
+      const a = await memberId();
+      const b = await memberId();
+      await prisma.user.updateMany({ where: { id: { in: [a, b] } }, data: { origin: 'SEED' } });
+
+      // Le nombre confirmé doit être celui de la sélection.
+      await request(httpServer(app))
+        .post('/v1/admin/users/bulk-erase')
+        .set('cookie', staff.cookie)
+        .send({ ids: [a, b], reason: motif, confirmCount: 1 })
+        .expect(422);
+
+      const inconnu = newId();
+      const res = await request(httpServer(app))
+        .post('/v1/admin/users/bulk-erase')
+        .set('cookie', staff.cookie)
+        .send({ ids: [a, b, inconnu], reason: motif, confirmCount: 3 })
+        .expect(200);
+      const body = res.body as { erased: { userId: string }[]; refused: { userId: string; code: string }[] };
+      expect(body.erased.map((e) => e.userId).sort()).toEqual([a, b].sort());
+      expect(body.refused).toEqual([expect.objectContaining({ userId: inconnu, code: 'NOT_FOUND' })]);
+      expect(await prisma.user.count({ where: { id: { in: [a, b] } } })).toBe(0);
+    });
+
     it('révoque les sessions d’un membre, avec motif et trace', async () => {
       const staff = await as('SUPPORT');
       const userId = await memberId();

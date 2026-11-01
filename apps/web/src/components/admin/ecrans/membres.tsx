@@ -7,10 +7,12 @@ import {
   VerificationLevel,
   adminMemberDetailSchema,
   adminMembersResponseSchema,
+  memberBulkEraseResultSchema,
   memberNoteSchema,
   okResponseSchema,
   type AdminMemberDetail,
   type AdminMemberRow,
+  type MemberBulkEraseResult,
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { libellePhase, libellePlan, PHASES, toutesLesVilles } from '../donnees';
@@ -120,12 +122,37 @@ function requete(f: Filtres, curseur?: string | null): string {
   return `/users?${p.toString()}`;
 }
 
+/** Ce que l'équipe lit après un aperçu ou une suppression : les comptes, ce qui part avec eux, les refus. */
+function resumer(r: MemberBulkEraseResult): string {
+  const total: Record<string, number> = {};
+  for (const e of r.erased) {
+    for (const [nom, n] of Object.entries(e.removed)) {
+      if (nom !== 'compte') total[nom] = (total[nom] ?? 0) + n;
+    }
+  }
+  const detail = Object.entries(total)
+    .map(([nom, n]) => `${n} ${nom}`)
+    .join(', ');
+  const refus =
+    r.refused.length === 0
+      ? ''
+      : ` ${r.refused.length} refusé${r.refused.length > 1 ? 's' : ''} : ${[...new Set(r.refused.map((x) => x.message))].join(' ; ')}`;
+  const n = r.erased.length;
+  return `${r.dryRun ? 'Aperçu — rien n’est supprimé. Seraient supprimés : ' : 'Supprimé définitivement : '}${n} compte${n > 1 ? 's' : ''}${detail === '' ? '' : `, avec ${detail}`}.${refus}`;
+}
+
 function Interne() {
   const params = useSearchParams();
   const initial = params.get('q') ?? '';
   const [saisie, setSaisie] = useState<Filtres>({ ...SANS_FILTRE, q: initial });
   const [filtres, setFiltres] = useState<Filtres>({ ...SANS_FILTRE, q: initial });
   const [choisi, setChoisi] = useState<string | null>(null);
+  const peutEffacer = useDroit('erase');
+  const [coches, setCoches] = useState<ReadonlySet<string>>(new Set());
+  const [confirmer, setConfirmer] = useState(false);
+  const [nombre, setNombre] = useState('');
+  const [rapport, setRapport] = useState<string | null>(null);
+  const effacement = useGeste();
 
   useEffect(() => {
     setSaisie((s) => ({ ...s, q: initial }));
@@ -150,6 +177,30 @@ function Interne() {
       setPlus({ cle, items: [...(ajoutes?.items ?? []), ...p.items], curseur: p.nextCursor });
     });
   };
+
+  const basculer = (id: string) =>
+    setCoches((c) => {
+      const n = new Set(c);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  // Un compte déjà supprimé (anonymisé) ne se coche pas : il porte des preuves à conserver.
+  const toutCocher = () => setCoches(new Set(lignes.filter((m) => m.status !== 'DELETED').map((m) => m.id)));
+
+  const effacer = async (dryRun: boolean, motif: string): Promise<boolean> =>
+    effacement.lancer(async () => {
+      const r = await staffApi.post('/users/bulk-erase', memberBulkEraseResultSchema, {
+        body: { ids: [...coches], reason: motif, confirmCount: coches.size, dryRun },
+      });
+      setRapport(resumer(r));
+      if (!dryRun) {
+        setCoches(new Set());
+        setPlus(null);
+        setChoisi(null);
+        premiere.recharger();
+      }
+    });
 
   const maj = (patch: Partial<Filtres>) => setSaisie((s) => ({ ...s, ...patch }));
   const filtre = saisie.origine !== '' || saisie.niveau !== '' || saisie.statut !== '' || saisie.du !== '' || saisie.au !== '' || saisie.q !== '';
@@ -196,6 +247,39 @@ function Interne() {
               </Bouton>
             </div>
           </form>
+          {!peutEffacer ? null : (
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <Bouton petit onClick={toutCocher} disabled={lignes.length === 0}>
+                Tout sélectionner
+              </Bouton>
+              <Bouton petit ton="contour" onClick={() => setCoches(new Set())} disabled={coches.size === 0}>
+                Tout désélectionner
+              </Bouton>
+              <span style={{ fontSize: '12.5px', color: C.gris }}>
+                {coches.size} sélectionné{coches.size > 1 ? 's' : ''}
+              </span>
+              <Bouton
+                petit
+                disabled={coches.size === 0 || effacement.occupe}
+                onClick={() => void effacer(true, 'Aperçu avant suppression définitive (simulation, rien n’est supprimé).')}
+              >
+                Aperçu de la suppression
+              </Bouton>
+              <Bouton
+                petit
+                ton="sombre"
+                disabled={coches.size === 0 || effacement.occupe}
+                onClick={() => {
+                  setNombre('');
+                  setConfirmer(true);
+                }}
+              >
+                Supprimer définitivement
+              </Bouton>
+            </div>
+          )}
+          {rapport === null ? null : <Bandeau role="status">{rapport}</Bandeau>}
+          <Message message={confirmer ? null : effacement.message} />
           <Carte style={{ padding: '6px 0', overflow: 'hidden' }}>
             <Lecture etat={premiere.etat} recharger={premiere.recharger}>
               {() =>
@@ -205,7 +289,13 @@ function Interne() {
                   <>
                     <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
                       {lignes.map((m) => (
-                        <Ligne key={m.id} m={m} actif={m.id === choisi} onChoisir={() => setChoisi(m.id)} />
+                        <Ligne
+                          key={m.id}
+                          m={m}
+                          actif={m.id === choisi}
+                          onChoisir={() => setChoisi(m.id)}
+                          selection={peutEffacer && m.status !== 'DELETED' ? { coche: coches.has(m.id), basculer: () => basculer(m.id) } : undefined}
+                        />
                       ))}
                     </ul>
                     <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -234,18 +324,57 @@ function Interne() {
           <Fiche key={choisi} id={choisi} />
         )}
       </Colonnes>
+      <FenetreMotif
+        ouverte={confirmer}
+        titre={`Supprimer définitivement ${coches.size} compte${coches.size > 1 ? 's' : ''}`}
+        consigne={`Chaque compte part avec ses publications, événements, parcours, annonces et conversations privées. Rien ne se défait. Un compte qui porte des preuves à conserver (consentements, sanctions) est refusé : il se supprime par l’anonymisation RGPD. Saisissez ${coches.size} pour confirmer, et lancez d’abord l’aperçu si vous avez un doute.`}
+        min={20}
+        libelleConfirmer="Supprimer définitivement"
+        onConfirmer={(motif) => {
+          void effacer(false, motif).then((ok) => {
+            if (ok) setConfirmer(false);
+          });
+        }}
+        onFermer={() => {
+          setConfirmer(false);
+          effacement.effacer();
+        }}
+        occupe={effacement.occupe || nombre.trim() !== String(coches.size)}
+        message={effacement.message}
+        enfants={<Champ libelle={`Nombre de comptes (${coches.size})`} valeur={nombre} onChange={setNombre} inputMode="numeric" />}
+      />
     </>
   );
 }
 
-function Ligne({ m, actif, onChoisir }: { readonly m: AdminMemberRow; readonly actif: boolean; readonly onChoisir: () => void }) {
+function Ligne({
+  m,
+  actif,
+  onChoisir,
+  selection,
+}: {
+  readonly m: AdminMemberRow;
+  readonly actif: boolean;
+  readonly onChoisir: () => void;
+  readonly selection?: { readonly coche: boolean; readonly basculer: () => void } | undefined;
+}) {
   return (
-    <li>
+    <li style={{ display: 'flex', alignItems: 'stretch', borderBottom: `1px solid ${C.traitLeger}` }}>
+      {selection === undefined ? null : (
+        <label style={{ display: 'flex', alignItems: 'center', padding: '0 4px 0 16px', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={selection.coche}
+            onChange={selection.basculer}
+            aria-label={`Sélectionner @${m.handle}`}
+          />
+        </label>
+      )}
       <button
         type="button"
         onClick={onChoisir}
         aria-current={actif}
-        style={{ width: '100%', textAlign: 'left', border: 'none', borderBottom: `1px solid ${C.traitLeger}`, background: actif ? C.fond : '#fff', padding: '12px 16px', font: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
+        style={{ flex: 1, minWidth: 0, textAlign: 'left', border: 'none', background: actif ? C.fond : '#fff', padding: '12px 16px', font: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px' }}
       >
         <span style={{ flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.displayName}</span>

@@ -1,6 +1,14 @@
 import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { STAFF_SCOPES, memberDeleteNowSchema, memberNoteSchema, memberReasonSchema, uuidSchema } from '@app/shared';
+import {
+  STAFF_SCOPES,
+  memberBulkEraseSchema,
+  memberDeleteNowSchema,
+  memberEraseSchema,
+  memberNoteSchema,
+  memberReasonSchema,
+  uuidSchema,
+} from '@app/shared';
 import type { z } from 'zod';
 import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { Staff, type StaffUser } from '../../common/staff.guard';
@@ -41,6 +49,29 @@ export class AdminMemberController {
     @Body(zodPipe(memberDeleteNowSchema)) body: z.infer<typeof memberDeleteNowSchema>,
   ) {
     return this.actions.deleteNow(staff, id, body);
+  }
+
+  @Post(':id/erase')
+  @HttpCode(200)
+  @RequiresStaffRole(...STAFF_SCOPES.erase)
+  @ApiOperation({ summary: 'Suppression DÉFINITIVE du compte et de ses contenus (SUPER_ADMIN) ; dryRun = aperçu annulé' })
+  erase(
+    @Staff() staff: StaffUser,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(memberEraseSchema)) body: z.infer<typeof memberEraseSchema>,
+  ) {
+    return this.actions.erase(staff, id, body);
+  }
+
+  @Post('bulk-erase')
+  @HttpCode(200)
+  @RequiresStaffRole(...STAFF_SCOPES.erase)
+  @ApiOperation({ summary: 'Suppression définitive d’une sélection de comptes (confirmée par leur nombre) ; dryRun = aperçu' })
+  bulkErase(
+    @Staff() staff: StaffUser,
+    @Body(zodPipe(memberBulkEraseSchema)) body: z.infer<typeof memberBulkEraseSchema>,
+  ) {
+    return this.actions.eraseMany(staff, body);
   }
 
   @Post(':id/export')

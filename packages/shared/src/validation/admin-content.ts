@@ -150,6 +150,56 @@ export const memberDeleteNowSchema = z
   })
   .strict();
 export type MemberDeleteNow = z.infer<typeof memberDeleteNowSchema>;
+
+/**
+ * SUPPRESSION DÉFINITIVE d'un compte et de ses contenus — pas l'anonymisation RGPD ci-dessus, qui garde la ligne
+ * du membre (« Membre supprimé ») et laisse ses contenus lisibles. Ici tout part : le compte, ses publications,
+ * événements, guides, parcours, annonces, conversations privées. Elle n'est permise que pour un compte qui ne
+ * porte aucune preuve légale à conserver (voir `MEMBER_ERASE_NOT_ALLOWED`).
+ *
+ * `dryRun` : le travail est fait dans une transaction qu'on ANNULE à la fin, et la réponse dit ce qui aurait été
+ * supprimé. C'est l'aperçu avant de confirmer.
+ */
+export const memberEraseSchema = z
+  .object({
+    reason: z.string().trim().min(20).max(500),
+    confirmHandle: z.string().trim().min(1).max(60),
+    dryRun: z.boolean().optional(),
+  })
+  .strict();
+export type MemberErase = z.infer<typeof memberEraseSchema>;
+
+/** Le même geste sur plusieurs comptes : on confirme par le NOMBRE de comptes, pas par un pseudo. */
+export const MEMBER_BULK_ERASE_MAX = 100;
+export const memberBulkEraseSchema = z
+  .object({
+    ids: z.array(z.string().uuid()).min(1).max(MEMBER_BULK_ERASE_MAX),
+    reason: z.string().trim().min(20).max(500),
+    confirmCount: z.number().int().min(1).max(MEMBER_BULK_ERASE_MAX),
+    dryRun: z.boolean().optional(),
+  })
+  .strict();
+export type MemberBulkErase = z.infer<typeof memberBulkEraseSchema>;
+
+/** Ce qu'une suppression définitive a retiré (ou retirerait, en aperçu), compte par compte. */
+export const memberEraseResultSchema = z
+  .object({
+    userId: z.string().uuid(),
+    handle: z.string(),
+    dryRun: z.boolean(),
+    removed: z.record(z.number().int()),
+  })
+  .strict();
+export type MemberEraseResult = z.infer<typeof memberEraseResultSchema>;
+
+export const memberBulkEraseResultSchema = z
+  .object({
+    dryRun: z.boolean(),
+    erased: z.array(memberEraseResultSchema),
+    refused: z.array(z.object({ userId: z.string().uuid(), code: z.string(), message: z.string() }).strict()),
+  })
+  .strict();
+export type MemberBulkEraseResult = z.infer<typeof memberBulkEraseResultSchema>;
 export const memberNoteSchema = z.object({ body: z.string().trim().min(1).max(MEMBER_NOTE_MAX) }).strict();
 export type MemberNoteInput = z.infer<typeof memberNoteSchema>;
 
@@ -335,6 +385,8 @@ export const ADMIN_CONTENT_ERROR_CODES = {
   VERSION_SLOT_TAKEN: 409,
   CORRECTION_ALREADY_DECIDED: 409,
   MEMBER_DELETE_CONFIRMATION: 422,
+  MEMBER_ERASE_NOT_ALLOWED: 409,
+  MEMBER_ERASE_COUNT: 422,
   GUIDE_NOT_ESCALATED: 409,
   IMPACT_QUARTER_OPEN: 409,
   IMPACT_QUOTE_NOT_CONSENTED: 409,
@@ -356,6 +408,9 @@ export const ADMIN_CONTENT_ERROR_MESSAGES: Record<AdminContentErrorCode, string>
   VERSION_SLOT_TAKEN: 'Un brouillon existe déjà pour ce type et ce pays.',
   CORRECTION_ALREADY_DECIDED: 'Cette proposition a déjà été traitée.',
   MEMBER_DELETE_CONFIRMATION: 'Saisissez le pseudo du membre pour confirmer la suppression.',
+  MEMBER_ERASE_NOT_ALLOWED:
+    'Ce compte porte des preuves à conserver (consentements, sanctions) : utilisez la suppression RGPD, qui l’anonymise.',
+  MEMBER_ERASE_COUNT: 'Le nombre saisi ne correspond pas au nombre de comptes sélectionnés.',
   GUIDE_NOT_ESCALATED: 'Cette proposition n’a pas été escaladée à l’équipe.',
   IMPACT_QUARTER_OPEN: 'Ce trimestre n’est pas clos : son rapport ne peut pas encore être calculé.',
   IMPACT_QUOTE_NOT_CONSENTED: 'L’auteur n’a pas donné son accord pour être cité : le contenu ne peut pas figurer au rapport.',
@@ -377,6 +432,7 @@ export const ADMIN_CONTENT_AUDIT_ACTIONS = {
   flagDeleted: 'flag.deleted',
   memberNoteAdded: 'user.note_added',
   userDeletedNow: 'user.deleted_now',
+  userErased: 'user.erased',
   userExported: 'user.exported',
   templateCreated: 'template.created',
   templateUpdated: 'template.updated',
