@@ -34,7 +34,7 @@ import { MENUS_RAIL } from './menus';
  * Le haut du volet est maintenant celui du bouton : le curseur n'a qu'à aller tout droit,
  * à travers le pont de quelques pixels, et il tombe sur le volet. Le bord gauche et la
  * largeur restent ceux de la carte. Le volet est ensuite remonté, si besoin, pour ne pas
- * dépasser le bas du rail (voir le `useLayoutEffect` du composant).
+ * dépasser le bas de la fenêtre (voir le `useLayoutEffect` du composant).
  *
  * ── COMMENT ON TROUVE LA CARTE ───────────────────────────────────────────
  *
@@ -51,11 +51,15 @@ function caler(
   icone: HTMLElement,
 ): {
   readonly haut: number;
+  readonly gauche: number;
   readonly ecart: number;
   readonly largeur: number;
   readonly intervalle: number;
 } {
-  const haut = icone.offsetTop;
+  // Coordonnées de la FENÊTRE : le volet est en `position: fixed` (voir plus bas), donc ni la
+  // colonne de gauche — qui défile et rogne ce qui dépasse — ni sa largeur ne le limitent.
+  const haut = Math.round(icone.getBoundingClientRect().top);
+  const gauche = Math.round(rail.getBoundingClientRect().right);
   const colonne = rail.nextElementSibling;
   if (colonne instanceof HTMLElement) {
     const cartes = Array.from(colonne.children).filter(
@@ -83,6 +87,7 @@ function caler(
             : 2;
         return {
           haut,
+          gauche,
           ecart: Math.max(0, Math.round(m.left - r.right)),
           largeur: Math.round(m.width),
           intervalle,
@@ -90,7 +95,7 @@ function caler(
       }
     }
   }
-  return { haut, ecart: 8, largeur: 236, intervalle: 2 };
+  return { haut, gauche, ecart: 8, largeur: 236, intervalle: 2 };
 }
 
 /**
@@ -150,6 +155,7 @@ export function RailSurvol({
   const [ouvert, setOuvert] = useState<{
     readonly rubrique: string;
     readonly haut: number;
+    readonly gauche: number;
     readonly ecart: number;
     readonly largeur: number;
     readonly intervalle: number;
@@ -158,15 +164,14 @@ export function RailSurvol({
   const panneau = useRef<HTMLDivElement | null>(null);
 
   /**
-   * Le volet part de la hauteur du bouton ; s'il déborderait sous le rail (un bouton bas, un
+   * Le volet part de la hauteur du bouton ; s'il déborderait sous la fenêtre (un bouton bas, un
    * écran court), on le remonte juste assez. Mesuré après le rendu, car sa hauteur dépend de
    * son contenu. Une seule passe : la seconde trouve la position déjà bonne et s'arrête.
    */
   useLayoutEffect(() => {
     const p = panneau.current;
-    const n = nav.current;
-    if (ouvert === null || p === null || n === null) return;
-    const maximum = n.clientHeight - p.offsetHeight - 8;
+    if (ouvert === null || p === null) return;
+    const maximum = window.innerHeight - p.offsetHeight - 8;
     const cible = Math.max(8, Math.min(ouvert.haut, maximum));
     if (cible !== ouvert.haut) setOuvert({ ...ouvert, haut: cible });
   }, [ouvert]);
@@ -263,8 +268,12 @@ export function RailSurvol({
           ref={panneau}
           data-rail-survol={ouvert.rubrique}
           style={{
-            position: 'absolute',
-            left: '100%',
+            // `fixed` et non `absolute` : la colonne de gauche est à la hauteur de l'écran avec son
+            // propre défilement, donc elle rogne ce qui dépasse de sa largeur — et sur les pages sans
+            // colonne de contexte elle ne fait que la largeur du rail. Le volet reste un ENFANT du
+            // `<nav>` : le pointeur qui passe du rail au volet ne quitte donc jamais la zone.
+            position: 'fixed',
+            left: `${String(ouvert.gauche)}px`,
             top: `${String(ouvert.haut)}px`,
             // Le pont entre le rail et la carte : un retrait du conteneur, pas une marge.
             paddingLeft: `${String(ouvert.ecart)}px`,

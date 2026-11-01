@@ -100,9 +100,31 @@
  * la colonne de droite disparaît ; le contenu, borné à sa largeur, se centre dans l'espace libéré.
  */
 @media (max-width: 1439px) {
+  /* `!important` : la colonne porte `display: flex` en style en ligne, qui l'emporterait sinon. */
   [data-frame='desktop'] [data-zone='droite'] {
-    display: none;
+    display: none !important;
   }
+}
+
+/*
+ * ── SANS COLONNE DE CONTEXTE : LA ZONE DE GAUCHE N'EST QUE LE RAIL ───────
+ *
+ * Le porteur : « le container de la side bar left devrait être diminué, et la section des
+ * messages devrait occuper parfaitement l'espace sur tous les écrans ».
+ *
+ * Les pages Messages et Notifications n'ont plus de carte de menu à côté du rail (le menu se
+ * déplie au survol). Leur zone de gauche gardait pourtant 400 px, d'où un grand blanc, et leur
+ * contenu restait borné à 1 036 px et centré. Quand le rail est seul dans la zone (`nav` sans
+ * frère), la zone se réduit à sa propre largeur et le contenu prend tout le reste.
+ */
+[data-frame='desktop'] [data-zone='gauche']:has(nav:only-child) {
+  width: auto !important;
+  flex: 0 0 auto;
+}
+
+[data-frame='desktop']:has([data-zone='gauche'] nav:only-child) [data-zone='contenu'] {
+  max-width: none;
+  margin-inline: 0;
 }
 
 /* Bandeau d'annonce d'équipe (components/bandeau-annonce.tsx) : la barre haute fixe descend de sa hauteur. */

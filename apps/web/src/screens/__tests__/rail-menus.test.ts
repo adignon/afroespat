@@ -52,6 +52,9 @@ describe('le volet du rail', () => {
       expect(jsx.includes('>ACCUEIL</div>'), f).toBe(false);
       expect(jsx.includes('<MenuAccueil />'), f).toBe(false);
       expect(jsx.includes('Fil d’entraide'), f).toBe(false);
+      // Plus de colonne de contexte VIDE à côté du rail : la zone de gauche n'est que le rail
+      // (`globals.css`, `nav:only-child`), et la page prend toute la largeur.
+      expect(jsx.includes('flexDirection: "column", gap: "12px" }}></div>'), f).toBe(false);
     }
     expect(ENTREES_ACCUEIL).toHaveLength(4);
   });

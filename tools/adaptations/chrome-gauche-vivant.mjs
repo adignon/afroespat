@@ -80,7 +80,14 @@ export const ADAPTATIONS_CHROME_GAUCHE = [
       if (fin === -1) return { jsx, applied: false };
       // Garde-fou : on ne retire que la liste d'entrées de la maquette (« Fil d’entraide »), rien d'autre.
       if (!jsx.slice(i, fin).includes('Fil d’entraide')) return { jsx, applied: false };
-      return { jsx: jsx.slice(0, debut) + jsx.slice(fin), applied: true };
+      let out = jsx.slice(0, debut) + jsx.slice(fin);
+      // La colonne de contexte, désormais VIDE, disparaît aussi : la zone de gauche n'est plus que le
+      // rail, et la page prend toute la largeur (`globals.css`, « sans colonne de contexte »).
+      out = out.replace(
+        '<div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "12px" }}></div>',
+        '',
+      );
+      return { jsx: out, applied: true };
     },
   },
 ];
