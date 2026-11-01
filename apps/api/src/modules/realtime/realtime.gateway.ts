@@ -144,11 +144,17 @@ export class RealtimeGateway
    * voir.
    */
   async handleConnection(client: AuthedSocket): Promise<void> {
+    // Le MOTIF de chaque coupure est journalisé : sans lui, une socket qui retombe en boucle (et
+    // fait relire toute la page à chaque tour) ne laisse aucune trace côté serveur.
+    client.once('disconnect', (motif: string) => {
+      this.logger.log(`socket ${client.id} déconnecté : ${motif}`);
+    });
     try {
       const context = await this.admission.admit(tokenOf(client));
       client.data.auth = context;
       await client.join(userRoom(context.userId));
       client.emit('ready', { userId: context.userId });
+      this.logger.log(`socket ${client.id} admis (membre ${context.userId})`);
       this.startRevalidation();
     } catch (error) {
       this.refuse(client, error);
@@ -258,6 +264,7 @@ export class RealtimeGateway
 
   private refuse(client: AuthedSocket, error: unknown): void {
     const code = error instanceof ApiError ? error.code : 'UNAUTHENTICATED';
+    this.logger.warn(`socket ${client.id} refusé : ${code}`);
     // Le code part AVANT la fermeture : T4 §7 veut que le client sache s'il doit
     // rafraîchir son jeton (`TOKEN_STALE`) ou cesser d'essayer (`UNAUTHENTICATED`).
     client.emit('refused', { code });

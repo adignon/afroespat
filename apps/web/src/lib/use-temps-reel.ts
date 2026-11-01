@@ -50,6 +50,8 @@ export function useRepliPolling(recharger: () => void, actif = true): void {
   useEffect(() => {
     if (!actif || connecte) return;
     const minuteur = setInterval(() => {
+      // Onglet masqué : personne ne lit. À son retour, les écrans relisent d'eux-mêmes.
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
       ref.current();
     }, MESSAGE_POLL_INTERVAL_MS);
     return () => {

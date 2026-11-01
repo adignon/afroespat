@@ -3,6 +3,7 @@ import { REALTIME_TYPING_CLIENT_EVENT, type RealtimeEventName } from '@app/share
 import { API_BASE } from '@/lib/api/base';
 import { bearerHeader, hasAccessToken, isSessionDead } from '@/lib/api/session';
 import { resumeSession } from '@/lib/api/member';
+import { DisjoncteurTempsReel } from './disjoncteur-temps-reel';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -55,6 +56,12 @@ let connecte = false;
 let reprise: Promise<boolean> | null = null;
 let echecsDeSuite = 0;
 const ECHECS_MAX = 3;
+/** Voir `disjoncteur-temps-reel.ts` : une socket qui retombe aussitôt, en boucle, est suspendue. */
+const disjoncteur = new DisjoncteurTempsReel();
+let reouverture: ReturnType<typeof setTimeout> | null = null;
+/** La resynchronisation générale (« resync ») ne part pas plus d'une fois toutes les 5 s. */
+let dernierResync = 0;
+const RESYNC_MIN_MS = 5_000;
 
 function origineDeLApi(): string {
   return API_BASE.replace(/\/v\d+$/, '');
@@ -93,6 +100,7 @@ async function reprendre(): Promise<boolean> {
 
 async function ouvrir(): Promise<void> {
   if (socket !== null || typeof window === 'undefined') return;
+  if (disjoncteur.suspendu(Date.now())) return;
   if (!hasAccessToken()) {
     if (isSessionDead() || !(await reprendre())) return;
   }
@@ -124,11 +132,20 @@ async function ouvrir(): Promise<void> {
   // réel est vraiment disponible, pas à la poignée de main.
   s.on('ready', () => {
     echecsDeSuite = 0;
+    const maintenant = Date.now();
+    disjoncteur.etabli(maintenant);
     emettreEtat(true);
-    diffuser(RESYNCHRONISER, null);
+    if (maintenant - dernierResync >= RESYNC_MIN_MS) {
+      dernierResync = maintenant;
+      diffuser(RESYNCHRONISER, null);
+    }
   });
   s.on('disconnect', (raison) => {
     emettreEtat(false);
+    if (disjoncteur.perdu(Date.now())) {
+      suspendre();
+      return;
+    }
     // Fermeture voulue par le serveur (jeton vieilli, niveau changé) : socket.io ne
     // retente pas de lui-même dans ce cas. On reprend la session puis on rouvre.
     if (raison === 'io server disconnect') void rouvrirApresRefus();
@@ -156,6 +173,16 @@ async function rouvrirApresRefus(): Promise<void> {
   const ok = await reprendre();
   if (!ok || socket !== s || abonnes === 0) return;
   s.connect();
+}
+
+/** Le disjoncteur s'est ouvert : plus de socket pour un temps, le polling de repli travaille seul. */
+function suspendre(): void {
+  fermer();
+  if (reouverture !== null) clearTimeout(reouverture);
+  reouverture = setTimeout(() => {
+    reouverture = null;
+    if (abonnes > 0) void ouvrir();
+  }, disjoncteur.restant(Date.now()) + 50);
 }
 
 function fermer(): void {
