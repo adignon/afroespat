@@ -37,6 +37,9 @@ describe('variables des fournisseurs réels', () => {
     expect(env.OTP_TEST_PHONES).toEqual(['+33612345678', '+22997000000']);
     expect(missingProviderSettings(env)).toEqual([]);
     expect(() => parse({ SMS_PROVIDER: 'testers', OTP_TEST_PHONES: '0612345678' })).toThrow();
+    // `*` : tous les numéros sont testeurs (option explicite).
+    expect(parse({ SMS_PROVIDER: 'testers', OTP_TEST_PHONES: '*' }).OTP_TEST_PHONES).toEqual(['*']);
+    expect(missingProviderSettings(parse({ SMS_PROVIDER: 'testers', OTP_TEST_PHONES: '*' }))).toEqual([]);
   });
   it('CAPTCHA_PROVIDER=off est accepté, sans clé Turnstile', () => {
     const env = parse({ CAPTCHA_PROVIDER: 'off' });

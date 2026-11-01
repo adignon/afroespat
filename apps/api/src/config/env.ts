@@ -206,13 +206,21 @@ export const envSchema = z.object({
    * `SMS_PROVIDER=testers` — accepté en production, EN ATTENDANT un vrai canal : le code
    * fixe `SMS_FAKE_FIXED_CODE` ne vaut que pour ces numéros (E.164, séparés par des
    * virgules) ; tout autre numéro est refusé. Rien n'est envoyé à personne.
+   *
+   * `*` : TOUS les numéros sont testeurs. Option EXPLICITE, à n'employer que tant que la plateforme n'a que des
+   * comptes de test : n'importe qui peut alors ouvrir le compte de n'importe qui avec le code fixe. Un avertissement
+   * part au journal à chaque démarrage.
    */
   OTP_TEST_PHONES: z.preprocess(
     (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
     z
       .string()
       .transform((s) => s.split(',').map((x) => x.trim()).filter((x) => x !== ''))
-      .pipe(z.array(z.string().regex(/^\+\d{8,15}$/, 'doit être un numéro E.164 (+33612345678)')).min(1))
+      .pipe(
+        z
+          .array(z.string().regex(/^(\+\d{8,15}|\*)$/, 'doit être un numéro E.164 (+33612345678), ou * pour tous les numéros'))
+          .min(1),
+      )
       .optional(),
   ),
   /**

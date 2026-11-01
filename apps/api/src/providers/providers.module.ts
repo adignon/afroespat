@@ -1,4 +1,4 @@
-import { Global, Module, type Provider } from '@nestjs/common';
+import { Global, Logger, Module, type Provider } from '@nestjs/common';
 import { loadEnv } from '../config/env';
 import { AnthropicModerationProvider } from './anthropic-moderation.provider';
 import { BrevoEmailProvider } from './brevo-email.provider';
@@ -69,7 +69,14 @@ const env = loadEnv();
           messagingServiceSid: env.TWILIO_MESSAGING_SERVICE_SID,
           baseUrl: env.TWILIO_BASE_URL,
         }),
-      testers: () => new TestersSmsProvider(env.OTP_TEST_PHONES ?? []),
+      testers: () => {
+        if (env.OTP_TEST_PHONES?.includes('*') === true) {
+          new Logger('OtpTesteurs').warn(
+            'OTP_TEST_PHONES=* : TOUS les numéros sont testeurs, le code fixe ouvre n’importe quel compte. À retirer avant l’ouverture au public.',
+          );
+        }
+        return new TestersSmsProvider(env.OTP_TEST_PHONES ?? []);
+      },
       whatsapp: () =>
         new WhatsAppSmsProvider({
           accessToken: env.WHATSAPP_ACCESS_TOKEN as string,

@@ -102,6 +102,12 @@ describe('Testers (pont en production)', () => {
     expect((error as ProviderError).retryable).toBe(false);
     expect((error as Error).message).not.toContain('699999999');
   });
+
+  it('avec « * », tous les numéros sont acceptés', async () => {
+    const sms = new TestersSmsProvider(['*']);
+    await expect(sms.send('+33699999999')).resolves.toHaveProperty('providerRef');
+    await expect(sms.send('+22901913229')).resolves.toHaveProperty('providerRef');
+  });
 });
 
 describe('WhatsApp (API Cloud de Meta)', () => {

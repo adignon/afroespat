@@ -95,7 +95,8 @@ function otpCodeFixe(e164: string): string | null {
     // Seule exception en production : `SMS_PROVIDER=testers`, le pont en attendant un
     // vrai canal. Le code fixe ne vaut alors que pour les numéros de `OTP_TEST_PHONES`.
     if (env.SMS_PROVIDER === 'testers') {
-      return env.OTP_TEST_PHONES?.includes(e164) === true ? env.SMS_FAKE_FIXED_CODE : null;
+      const testeur = env.OTP_TEST_PHONES?.some((n) => n === '*' || n === e164) === true;
+      return testeur ? env.SMS_FAKE_FIXED_CODE : null;
     }
     if (env.NODE_ENV === 'production') return null;
     if (env.SMS_PROVIDER !== 'fake') return null;

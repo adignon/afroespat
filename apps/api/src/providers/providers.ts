@@ -43,7 +43,8 @@ export class TestersSmsProvider implements SmsProvider {
   constructor(private readonly allowed: readonly string[]) {}
 
   send(to: string): Promise<{ providerRef: string }> {
-    if (!this.allowed.includes(to)) {
+    // `*` : tous les numéros sont testeurs (voir `OTP_TEST_PHONES` dans config/env.ts).
+    if (!this.allowed.includes('*') && !this.allowed.includes(to)) {
       return Promise.reject(new ProviderError('testers', null, 'numéro hors de la liste de test', false));
     }
     return Promise.resolve({ providerRef: `testers-${Date.now()}` });
