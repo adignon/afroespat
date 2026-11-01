@@ -5,8 +5,9 @@ import {
   Phase,
   PlanCode,
   StepCategory,
+  UserOrigin,
 } from '../enums/generated.js';
-import { cursorQuerySchema, uuidSchema } from './pagination.js';
+import { cursorQuerySchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Administration — contenu, annonces, drapeaux, modèles de parcours et guides.
@@ -369,6 +370,75 @@ export const impactExportQuerySchema = z
   .object({ quarter: z.string().regex(/^\d{4}-[TQ][1-4]$/).optional() })
   .strict();
 
+// ── Contenus des membres : liste, retrait, suppression ─────────────────────
+
+/** Les contenus que l'administration gère directement, hors dossier de modération. */
+export const ADMIN_CONTENT_TYPES = ['GUIDE', 'EVENT', 'POST', 'HELP_REQUEST', 'HOUSING', 'JOB', 'PRO', 'COMMUNITY'] as const;
+export const adminContentTypeSchema = z.enum(ADMIN_CONTENT_TYPES);
+export type AdminContentType = z.infer<typeof adminContentTypeSchema>;
+
+const jourSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/**
+ * `GET /admin/contents` : UN type à la fois (les champs diffèrent), filtrable, du plus récent au plus ancien.
+ * `state` : les contenus en ligne (défaut), les contenus retirés, ou les deux. `origin` est celle de l'AUTEUR.
+ */
+export const adminContentQuerySchema = cursorQuerySchema
+  .extend({
+    type: adminContentTypeSchema,
+    q: z.string().trim().min(2).max(120).optional(),
+    origin: z.enum(UserOrigin).optional(),
+    state: z.enum(['active', 'removed', 'all']).default('active'),
+    createdFrom: jourSchema.optional(),
+    createdTo: jourSchema.optional(),
+  })
+  .strict();
+export type AdminContentQuery = z.infer<typeof adminContentQuerySchema>;
+
+export const adminContentRowSchema = z
+  .object({
+    id: uuidSchema,
+    type: adminContentTypeSchema,
+    title: z.string(),
+    authorHandle: z.string().nullable(),
+    authorOrigin: z.enum(UserOrigin).nullable(),
+    cityName: z.string().nullable(),
+    createdAt: z.string().datetime(),
+    removed: z.boolean(),
+  })
+  .strict();
+export type AdminContentRow = z.infer<typeof adminContentRowSchema>;
+export const adminContentPageSchema = pageSchema(adminContentRowSchema);
+export type AdminContentPage = z.infer<typeof adminContentPageSchema>;
+
+export const ADMIN_CONTENT_BULK_MAX = 100;
+
+/**
+ * Retirer, rétablir, supprimer définitivement : la même charge. `confirmCount` n'est EXIGÉ que pour la suppression
+ * définitive (le nombre d'éléments, saisi par l'équipe) ; `dryRun` compte sans rien changer.
+ */
+export const adminContentActionSchema = z
+  .object({
+    items: z
+      .array(z.object({ type: adminContentTypeSchema, id: uuidSchema }).strict())
+      .min(1)
+      .max(ADMIN_CONTENT_BULK_MAX),
+    reason: z.string().trim().min(10).max(500),
+    confirmCount: z.number().int().min(1).max(ADMIN_CONTENT_BULK_MAX).optional(),
+    dryRun: z.boolean().optional(),
+  })
+  .strict();
+export type AdminContentAction = z.infer<typeof adminContentActionSchema>;
+
+export const adminContentActionResultSchema = z
+  .object({
+    dryRun: z.boolean(),
+    done: z.number().int(),
+    refused: z.array(z.object({ type: adminContentTypeSchema, id: uuidSchema, message: z.string() }).strict()),
+  })
+  .strict();
+export type AdminContentActionResult = z.infer<typeof adminContentActionResultSchema>;
+
 // ── Codes d'erreur ──────────────────────────────────────────────────────────
 
 export const ADMIN_CONTENT_ERROR_CODES = {
@@ -387,6 +457,7 @@ export const ADMIN_CONTENT_ERROR_CODES = {
   MEMBER_DELETE_CONFIRMATION: 422,
   MEMBER_ERASE_NOT_ALLOWED: 409,
   MEMBER_ERASE_COUNT: 422,
+  CONTENT_ERASE_COUNT: 422,
   GUIDE_NOT_ESCALATED: 409,
   IMPACT_QUARTER_OPEN: 409,
   IMPACT_QUOTE_NOT_CONSENTED: 409,
@@ -411,6 +482,7 @@ export const ADMIN_CONTENT_ERROR_MESSAGES: Record<AdminContentErrorCode, string>
   MEMBER_ERASE_NOT_ALLOWED:
     'Ce compte porte des preuves à conserver (consentements, sanctions) : utilisez la suppression RGPD, qui l’anonymise.',
   MEMBER_ERASE_COUNT: 'Le nombre saisi ne correspond pas au nombre de comptes sélectionnés.',
+  CONTENT_ERASE_COUNT: 'Le nombre saisi ne correspond pas au nombre de contenus sélectionnés.',
   GUIDE_NOT_ESCALATED: 'Cette proposition n’a pas été escaladée à l’équipe.',
   IMPACT_QUARTER_OPEN: 'Ce trimestre n’est pas clos : son rapport ne peut pas encore être calculé.',
   IMPACT_QUOTE_NOT_CONSENTED: 'L’auteur n’a pas donné son accord pour être cité : le contenu ne peut pas figurer au rapport.',
@@ -433,6 +505,9 @@ export const ADMIN_CONTENT_AUDIT_ACTIONS = {
   memberNoteAdded: 'user.note_added',
   userDeletedNow: 'user.deleted_now',
   userErased: 'user.erased',
+  contentRemoved: 'content.removed',
+  contentRestored: 'content.restored',
+  contentErased: 'content.erased',
   userExported: 'user.exported',
   templateCreated: 'template.created',
   templateUpdated: 'template.updated',

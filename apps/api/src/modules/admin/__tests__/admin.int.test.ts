@@ -1160,6 +1160,87 @@ describe('administration (15)', () => {
       expect(await prisma.user.count({ where: { id: { in: [a, b] } } })).toBe(0);
     });
 
+    /**
+     * LES CONTENUS DES MEMBRES, gérés par l'administration : liste filtrée par origine de l'auteur, retrait logique
+     * (réversible), rétablissement, suppression définitive confirmée par le nombre et réservée au SUPER_ADMIN.
+     */
+    it('liste, retire, rétablit et supprime des contenus de membres', async () => {
+      const motif = 'Nettoyage de contenus de départ, demandé par l’équipe.';
+      const admin = await as('SUPER_ADMIN');
+      const editeur = await as('CONTENT_ADMIN');
+      const auteur = await memberId();
+      await prisma.user.update({ where: { id: auteur }, data: { origin: 'SEED' } });
+      const post = async (body: string) => {
+        const id = newId();
+        await prisma.post.create({
+          data: { id, authorUserId: auteur, type: 'DISCUSSION', body, status: 'PUBLISHED', moderationStatus: 'CLEARED' },
+        });
+        return id;
+      };
+      const a = await post('Un message de départ numéro un');
+      const b = await post('Un message de départ numéro deux');
+
+      // La liste : par origine de l'auteur.
+      const liste = await request(httpServer(app))
+        .get('/v1/admin/contents?type=POST&origin=SEED')
+        .set('cookie', editeur.cookie)
+        .expect(200);
+      const ids = (liste.body as PageBody<{ id: string }>).items.map((i) => i.id);
+      expect(ids).toEqual(expect.arrayContaining([a, b]));
+
+      // Retrait logique : la ligne reste, marquée retirée, et n'apparaît plus parmi les contenus en ligne.
+      const retrait = await request(httpServer(app))
+        .post('/v1/admin/contents/remove')
+        .set('cookie', editeur.cookie)
+        .send({ items: [{ type: 'POST', id: a }], reason: motif })
+        .expect(200);
+      expect(retrait.body).toMatchObject({ dryRun: false, done: 1, refused: [] });
+      expect((await prisma.post.findUniqueOrThrow({ where: { id: a } })).deletedAt).not.toBeNull();
+      const enLigne = await request(httpServer(app))
+        .get('/v1/admin/contents?type=POST&origin=SEED')
+        .set('cookie', editeur.cookie)
+        .expect(200);
+      expect((enLigne.body as PageBody<{ id: string }>).items.map((i) => i.id)).not.toContain(a);
+
+      // Rétablissement.
+      await request(httpServer(app))
+        .post('/v1/admin/contents/restore')
+        .set('cookie', editeur.cookie)
+        .send({ items: [{ type: 'POST', id: a }], reason: motif })
+        .expect(200);
+      expect((await prisma.post.findUniqueOrThrow({ where: { id: a } })).deletedAt).toBeNull();
+
+      // La suppression définitive : refusée à un CONTENT_ADMIN, et exige le nombre exact.
+      await request(httpServer(app))
+        .post('/v1/admin/contents/erase')
+        .set('cookie', editeur.cookie)
+        .send({ items: [{ type: 'POST', id: a }], reason: motif, confirmCount: 1 })
+        .expect(403);
+      await request(httpServer(app))
+        .post('/v1/admin/contents/erase')
+        .set('cookie', admin.cookie)
+        .send({ items: [{ type: 'POST', id: a }, { type: 'POST', id: b }], reason: motif, confirmCount: 1 })
+        .expect(422);
+
+      // Un aperçu compte sans rien supprimer.
+      const apercu = await request(httpServer(app))
+        .post('/v1/admin/contents/erase')
+        .set('cookie', admin.cookie)
+        .send({ items: [{ type: 'POST', id: a }, { type: 'POST', id: b }], reason: motif, dryRun: true })
+        .expect(200);
+      expect(apercu.body).toMatchObject({ dryRun: true, done: 2 });
+      expect(await prisma.post.count({ where: { id: { in: [a, b] } } })).toBe(2);
+
+      const suppression = await request(httpServer(app))
+        .post('/v1/admin/contents/erase')
+        .set('cookie', admin.cookie)
+        .send({ items: [{ type: 'POST', id: a }, { type: 'POST', id: b }], reason: motif, confirmCount: 2 })
+        .expect(200);
+      expect(suppression.body).toMatchObject({ done: 2, refused: [] });
+      expect(await prisma.post.count({ where: { id: { in: [a, b] } } })).toBe(0);
+      expect(await prisma.auditLog.count({ where: { action: 'content.erased', actorId: admin.staffId } })).toBe(1);
+    });
+
     it('révoque les sessions d’un membre, avec motif et trace', async () => {
       const staff = await as('SUPPORT');
       const userId = await memberId();

@@ -17,6 +17,7 @@ import {
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { CorpsMarkdown } from '../../markdown-legal';
+import { ContenusMembres } from './contenus-membres';
 import { SelecteursCiblage, depuisCible, versCible, type Selection } from './ciblage';
 import { useDroit } from '../session-equipe';
 import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Fenetre, Lecture, Message, Onglets, Pastille, Titre, Vide, ZoneTexte, dateLongue, useCharge, useGeste } from '../ui';
@@ -42,15 +43,23 @@ import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, F
  * (fermable, la fermeture est mémorisée côté client).
  */
 
-type Onglet = 'pages' | 'annonces';
+type Onglet = 'pages' | 'annonces' | 'contenus';
 
 export function ContenuPagesAnnonces() {
   const [onglet, setOnglet] = useState<Onglet>('pages');
   return (
     <>
       <Titre titre="Pages et annonces" />
-      <Onglets onglets={[{ id: 'pages', libelle: 'Pages' }, { id: 'annonces', libelle: 'Annonces' }]} actif={onglet} onChange={setOnglet} />
-      {onglet === 'pages' ? <Pages /> : <Annonces />}
+      <Onglets
+        onglets={[
+          { id: 'pages', libelle: 'Pages' },
+          { id: 'annonces', libelle: 'Annonces' },
+          { id: 'contenus', libelle: 'Contenus des membres' },
+        ]}
+        actif={onglet}
+        onChange={setOnglet}
+      />
+      {onglet === 'pages' ? <Pages /> : onglet === 'annonces' ? <Annonces /> : <ContenusMembres />}
     </>
   );
 }
