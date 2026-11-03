@@ -131,3 +131,55 @@
 html[data-annonce] header {
   top: 48px !important;
 }
+
+/*
+ * ── LE RETOUR DES BOUTONS D'ACTION (components/retour-boutons.tsx) ───────
+ *
+ * APPUYÉ : le bouton s'assombrit et s'enfonce pendant le clic, même quand sa couleur est écrite en ligne
+ * (`!important` l'emporte sur le style en ligne).
+ * EN COURS : `aria-busy` est posé par `retour-boutons.tsx` tant que la requête lancée par le clic n'est pas finie ;
+ * le libellé s'efface et un rond tourne, dans la couleur du texte du bouton (`--rond-couleur`).
+ */
+button:not(:disabled):not([aria-busy='true']):active,
+[role='button']:not([aria-disabled='true']):not([aria-busy='true']):active {
+  filter: brightness(0.88) !important;
+  transform: scale(0.97) !important;
+}
+button,
+[role='button'] {
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+button[aria-busy='true'],
+[role='button'][aria-busy='true'] {
+  cursor: progress !important;
+  color: transparent !important;
+}
+button[aria-busy='true'] > *,
+[role='button'][aria-busy='true'] > * {
+  visibility: hidden;
+}
+button[aria-busy='true']::after,
+[role='button'][aria-busy='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 2px solid var(--rond-couleur, currentColor);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: rond-bouton 0.7s linear infinite;
+}
+@keyframes rond-bouton {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  button[aria-busy='true']::after,
+  [role='button'][aria-busy='true']::after {
+    animation-duration: 2s;
+  }
+}

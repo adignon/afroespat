@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Caveat, Plus_Jakarta_Sans } from 'next/font/google';
 import { PRODUCT_NAME, PWA_THEME_COLOR } from '@app/shared';
 import { Notifications } from '@/components/notifications';
+import { RetourBoutons } from '@/components/retour-boutons';
 import './globals.css';
 
 /** Plus Jakarta Sans, les graisses employées par le design (T1 §2.2). */
@@ -70,6 +71,7 @@ export default function RootLayout({ children }: { readonly children: React.Reac
          * zone donnerait trois files pour une seule.
          */}
         <Notifications />
+        <RetourBoutons />
       </body>
     </html>
   );
