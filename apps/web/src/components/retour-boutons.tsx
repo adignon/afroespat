@@ -20,9 +20,13 @@ import { useEffect } from 'react';
  */
 
 /** Le délai entre le clic et la requête : un captcha, un rafraîchissement de session peuvent s'intercaler. */
-const FENETRE_MS = 2500;
+const FENETRE_MS = 6000;
 /** Le rond reste au moins ce temps : un aller-retour très court ne doit pas faire clignoter le bouton. */
 const DUREE_MIN_MS = 350;
+/** Un bouton que l'écran désactive dans ce délai après le clic est « en cours » (c'est le geste de l'écran). */
+const ATTENTE_DESACTIVATION_MS = 600;
+/** Garde-fou : un bouton qui reste désactivé plus longtemps n'est plus « en cours », il est simplement indisponible. */
+const DUREE_MAX_DESACTIVE_MS = 20000;
 
 const ECRITURES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
@@ -87,6 +91,33 @@ export function RetourBoutons() {
       return promesse;
     };
 
+    /**
+     * LES ÉCRANS QUI DÉSACTIVENT LEUR PROPRE BOUTON (« Continuer » → `disabled` pendant l'envoi) : le bouton devient
+     * « en cours » dès qu'il est désactivé juste après le clic, et le reste jusqu'à ce qu'il se réactive. Cela couvre
+     * aussi le temps passé AVANT la requête (jeton anti-robot, validation) que la fenêtre de `fetch` ne voit pas.
+     */
+    const suivreDesactivation = (b: HTMLElement) => {
+      if (!(b instanceof HTMLButtonElement)) return;
+      let engage = false;
+      let garde: ReturnType<typeof setTimeout> | undefined;
+      const finir = () => {
+        observateur.disconnect();
+        if (garde !== undefined) clearTimeout(garde);
+        if (engage) liberer(b);
+      };
+      const observateur = new MutationObserver(() => {
+        if (!engage && b.disabled && b.getAttribute('aria-busy') !== 'true') {
+          engage = true;
+          occuper(b);
+          garde = setTimeout(finir, DUREE_MAX_DESACTIVE_MS);
+        } else if (engage && !b.disabled) finir();
+      });
+      observateur.observe(b, { attributes: true, attributeFilter: ['disabled'] });
+      setTimeout(() => {
+        if (!engage) observateur.disconnect();
+      }, ATTENTE_DESACTIVATION_MS);
+    };
+
     // En capture : un bouton déjà en cours ne doit pas relancer son action (ni par la souris, ni par le clavier).
     const surClic = (e: MouseEvent) => {
       const b = boutonDe(e.target);
@@ -97,6 +128,7 @@ export function RetourBoutons() {
         return;
       }
       dernier = { bouton: b, a: Date.now() };
+      suivreDesactivation(b);
     };
     document.addEventListener('click', surClic, true);
 
