@@ -33,6 +33,7 @@ export * from './validation/services-counts.js';
 export * from './validation/events.js';
 export * from './validation/admin.js';
 export * from './validation/admin-content.js';
+export * from './validation/public-landing.js';
 export * from './validation/admin-responses.js';
 export * from './validation/admin-pilotage.js';
 export * from './validation/phone-refus.js';
