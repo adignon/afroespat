@@ -78,5 +78,21 @@ export function FournisseurEquipe({ children }: { readonly children: ReactNode }
   }, [router]);
 
   const valeur = useMemo(() => ({ equipe, deconnecter }), [equipe, deconnecter]);
-  return <Ctx.Provider value={valeur}>{children}</Ctx.Provider>;
+  /**
+   * RIEN N'EST MONTRÉ AVANT QUE LA SESSION SOIT CONNUE.
+   *
+   * Constat : sans session, le tableau de bord s'affichait quelques secondes, puis la page de connexion le remplaçait
+   * (la réponse 401 n'arrive qu'après le premier rendu). Les écrans d'administration n'apparaissent donc qu'une fois
+   * l'équipe identifiée ; d'ici là, un simple rond d'attente. La page de connexion, elle, s'affiche tout de suite.
+   */
+  const contenu = surConnexion || equipe !== null ? children : <AttenteSession />;
+  return <Ctx.Provider value={valeur}>{contenu}</Ctx.Provider>;
+}
+
+function AttenteSession() {
+  return (
+    <div role="status" aria-label="Vérification de la session" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#F6F8F7' }}>
+      <span style={{ width: 28, height: 28, boxSizing: 'border-box', border: '3px solid #16785E', borderRightColor: 'transparent', borderRadius: '50%', animation: 'rond-bouton 0.7s linear infinite' }} />
+    </div>
+  );
 }
