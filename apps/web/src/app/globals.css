@@ -183,3 +183,16 @@ button[aria-busy='true']::after,
     animation-duration: 2s;
   }
 }
+
+/*
+ * ── BARRE HAUTE : LES BOUTONS NE PASSENT PLUS SOUS LA RECHERCHE ──────────
+ *
+ * Le porteur : « les boutons du haut, quand l'écran est medium, s'affichent mal ».
+ * MESURÉ : la barre est une grille « 1fr · 560 px · 1fr ». À ~1 100 px chaque colonne latérale ne fait
+ * qu'environ 230 px, alors que les boutons (+, messages, alertes, pastille du membre) en demandent ~300 :
+ * ils débordaient vers la gauche, SOUS le champ de recherche, qui les masquait à moitié.
+ * Les colonnes latérales ne descendent plus sous la largeur de leur contenu ; c'est la recherche qui se resserre.
+ */
+header[data-entete-globale] {
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 560px) minmax(max-content, 1fr) !important;
+}
