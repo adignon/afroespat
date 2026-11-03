@@ -99,6 +99,13 @@ let corps = source.slice(apresHelmet + '</helmet>'.length, finDc);
     if (!corps.slice(d, f).includes('PARCOURS ÉTUDES')) echec('adaptation « avancement » : mauvaise carte');
     corps = retirer(corps, 'avancement', d, f);
   }
+
+// 0 bis. Le crédit « Portraits : … sur Unsplash » du pied de page est retiré (demande du porteur).
+{
+  const credit = /<span>Portraits : [\s\S]*?sur <a [^>]*>Unsplash<\/a><\/span>/;
+  if (!credit.test(corps)) echec('adaptation « crédit portraits » : le crédit est introuvable');
+  corps = corps.replace(credit, '');
+}
 }
 
 // 1. Les histoires.
