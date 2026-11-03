@@ -54,6 +54,7 @@ describe('la page d’accueil publique — fonctions pures et contrats', () => {
       entraide: { medianFirstReplyMinutes: null, resolvedPercent: null, publishedGuides: null },
       events: [],
       cities: [],
+      places: [],
       quotes: [],
       generatedAt: new Date().toISOString(),
     };

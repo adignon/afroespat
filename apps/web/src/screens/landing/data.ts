@@ -160,6 +160,10 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   const [q, setQ] = useState('');
   const [cq, setCq] = useState('');
   const [ville, setVille] = useState('*');
+  /** Le pays choisi (code ISO) — « tout le pays » quand aucune ville n'est retenue ; `null` : tous les pays. */
+  const [pays, setPays] = useState<string | null>(null);
+  /** L'étape du sélecteur de lieu : la liste des pays, puis les villes du pays choisi. */
+  const [etapeLieu, setEtapeLieu] = useState<'pays' | 'villes'>('pays');
   const [onglet, setOnglet] = useState<Onglet>('all');
   const [resultats, setResultats] = useState<PublicSearchResponse | null>(null);
   const [guideSel, setGuideSel] = useState<{ slug: string; titre: string } | null>(null);
@@ -198,6 +202,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     const t = setTimeout(() => {
       const params = new URLSearchParams({ q: terme });
       if (ville !== '*') params.set('city', ville);
+      else if (pays !== null) params.set('country', pays);
       lirePublic(`/public/search?${params.toString()}`, publicSearchResponseSchema, { signal: controle.signal }).then(
         setResultats,
         () => {
@@ -209,7 +214,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       clearTimeout(t);
       controle.abort();
     };
-  }, [q, ville, couche]);
+  }, [q, ville, pays, couche]);
 
   useEffect(() => {
     if (guideSel === null) return;
@@ -234,7 +239,8 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   const wide = w >= 900;
   const hero3 = w >= 1080;
   const { stats, entraide } = landing;
-  const nomVille = landing.cities.find((c) => c.slug === ville)?.name ?? ville;
+  const lieuDuPays = landing.places.find((p) => p.code === pays);
+  const nomVille = landing.places.flatMap((p) => p.cities).find((c) => c.slug === ville)?.name ?? ville;
 
   // ── Les résultats de la recherche.
   const groups = useMemo(() => {
@@ -303,22 +309,66 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   const aRecherche = q.trim().length >= PUBLIC_SEARCH_MIN_CHARS;
   const norm = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const cqNorm = norm(cq).trim();
-  const cityList = [
-    { slug: '*', n: 'Toute la France', s: stats.members === null ? '' : `${String(stats.members)} membres` },
-    ...landing.cities.map((c) => ({ slug: c.slug, n: c.name, s: c.memberCount === null ? '' : `${String(c.memberCount)} membres` })),
-  ]
+  const membresDe = (n: number | null): string => (n === null ? '' : `${String(n)} membres`);
+  const lieux: { n: string; s: string; on: boolean; pick: () => void }[] =
+    etapeLieu === 'pays' || lieuDuPays === undefined
+      ? [
+          {
+            n: 'Tous les pays',
+            s: membresDe(stats.members),
+            on: pays === null && ville === '*',
+            pick: () => {
+              setPays(null);
+              setVille('*');
+              setCq('');
+              setCouche('search');
+            },
+          },
+          ...landing.places.map((p) => ({
+            n: p.name,
+            s: [`${String(p.cities.length)} ${p.cities.length > 1 ? 'villes' : 'ville'}`, membresDe(p.memberCount)].filter(Boolean).join(' · '),
+            on: pays === p.code,
+            pick: () => {
+              setPays(p.code);
+              setEtapeLieu('villes');
+              setCq('');
+            },
+          })),
+        ]
+      : [
+          {
+            n: '← Tous les pays',
+            s: '',
+            on: false,
+            pick: () => {
+              setEtapeLieu('pays');
+              setCq('');
+            },
+          },
+          {
+            n: `Tout : ${lieuDuPays.name}`,
+            s: membresDe(lieuDuPays.memberCount),
+            on: ville === '*' && pays === lieuDuPays.code,
+            pick: () => {
+              setVille('*');
+              setCq('');
+              setCouche('search');
+            },
+          },
+          ...lieuDuPays.cities.map((c) => ({
+            n: c.name,
+            s: membresDe(c.memberCount),
+            on: ville === c.slug,
+            pick: () => {
+              setVille(c.slug);
+              setCq('');
+              setCouche('search');
+            },
+          })),
+        ];
+  const cityList = lieux
     .filter((c) => cqNorm === '' || norm(c.n).includes(cqNorm))
-    .map((c) => ({
-      n: c.n,
-      s: c.s,
-      on: ville === c.slug,
-      bg: ville === c.slug ? '#EFF7F3' : 'transparent',
-      pick: () => {
-        setVille(c.slug);
-        setCq('');
-        setCouche('search');
-      },
-    }));
+    .map((c) => ({ ...c, bg: c.on ? '#EFF7F3' : 'transparent' }));
 
   // ── La lecture libre d'un guide.
   const guide: LandingVals['guide'] = (() => {
@@ -403,7 +453,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       credit: PHOTOS_VILLES[c.slug]?.credit ?? '',
       href: PHOTOS_VILLES[c.slug]?.href ?? '',
     })),
-    cityLabel: ville === '*' ? 'Toute la France' : `${nomVille}, FR`,
+    cityLabel: ville !== '*' ? nomVille : lieuDuPays !== undefined ? `Tout : ${lieuDuPays.name}` : 'Tous les pays',
     cityList,
     close: () => setCouche(null),
     countriesLabel: stats.countries === null ? '' : `Des membres venus de ${String(stats.countries)} pays`,
@@ -460,6 +510,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     onCq: (e) => setCq(e.target.value),
     onQ: (e) => setQ(e.target.value),
     openCity: () => {
+      setEtapeLieu(pays === null ? 'pays' : 'villes');
       setVilleDepuis(couche);
       setCouche('city');
     },

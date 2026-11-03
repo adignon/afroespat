@@ -67,6 +67,24 @@ export const publicLandingSchema = z
         })
         .strict(),
     ),
+    /**
+     * Les lieux du sélecteur : chaque pays qui a au moins une ville active, avec ces villes. Le visiteur choisit
+     * d'abord un pays, puis une ville de ce pays.
+     */
+    places: z.array(
+      z
+        .object({
+          /** Code ISO-3166 alpha-2 du pays (`FR`). */
+          code: z.string(),
+          name: z.string(),
+          /** Somme des membres de ses villes ; `null` sous le seuil. */
+          memberCount: z.number().int().nullable(),
+          cities: z.array(
+            z.object({ slug: z.string(), name: z.string(), memberCount: z.number().int().nullable() }).strict(),
+          ),
+        })
+        .strict(),
+    ),
     quotes: z.array(
       z
         .object({
@@ -88,6 +106,8 @@ export const publicSearchQuerySchema = z
     q: z.string().trim().min(PUBLIC_SEARCH_MIN_CHARS).max(80),
     /** Slug d'une ville : restreint guides et réseaux à cette ville (les guides universels restent). */
     city: z.string().trim().min(1).max(80).optional(),
+    /** Code ISO d'un pays : restreint aux villes de ce pays (sans effet si `city` est donné). */
+    country: z.string().trim().length(2).optional(),
   })
   .strict();
 export type PublicSearchQuery = z.infer<typeof publicSearchQuerySchema>;

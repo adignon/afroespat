@@ -110,6 +110,21 @@ describe('lecture publique : réseaux de ville et recherche', () => {
     expect(noms).not.toContain(`Réseau ${run} cache`);
   });
 
+  it('les lieux groupent les villes par pays, et la recherche se restreint à un pays', async () => {
+    await community({ suffix: 'pays' });
+    const l = await service.landing(new Date(Date.now() + 10 * 60_000));
+    const ville = await prisma.city.findFirstOrThrow({ where: { id: cityId }, select: { slug: true, country: { select: { iso2: true } } } });
+    const lieu = l.places.find((p) => p.code === ville.country.iso2);
+    expect(lieu?.cities.map((c) => c.slug)).toContain(ville.slug);
+    const dedans = await service.search({ q: `Réseau ${run}`, country: ville.country.iso2 });
+    expect(dedans.communities.map((c) => c.name)).toContain(`Réseau ${run} pays`);
+    const autre = await prisma.country.findFirst({ where: { iso2: { not: ville.country.iso2 } }, select: { iso2: true } });
+    if (autre !== null) {
+      const dehors = await service.search({ q: `Réseau ${run}`, country: autre.iso2 });
+      expect(dehors.communities.map((c) => c.name)).not.toContain(`Réseau ${run} pays`);
+    }
+  });
+
   it('la page d’accueil ne montre aucun compteur sous le seuil de membres', async () => {
     const l = await service.landing(new Date());
     const membres = await prisma.user.count({ where: { status: 'ACTIVE', deletedAt: null } });

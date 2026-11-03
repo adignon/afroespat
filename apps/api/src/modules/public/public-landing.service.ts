@@ -111,6 +111,24 @@ export class PublicLandingService {
       select: { slug: true, name: true, memberCount: true },
     });
 
+    // ── Les lieux : chaque pays qui a des villes actives, avec ses villes (le sélecteur « pays puis ville »).
+    const villesDesPays = await this.prisma.city.findMany({
+      where: { isActive: true, mergedIntoCityId: null },
+      orderBy: [{ memberCount: 'desc' }, { name: 'asc' }],
+      take: 500,
+      select: { slug: true, name: true, memberCount: true, country: { select: { iso2: true, nameFr: true, sortOrder: true } } },
+    });
+    const parCode = new Map<string, { code: string; name: string; sortOrder: number; total: number; cities: { slug: string; name: string; memberCount: number | null }[] }>();
+    for (const v of villesDesPays) {
+      const p = parCode.get(v.country.iso2) ?? { code: v.country.iso2, name: v.country.nameFr, sortOrder: v.country.sortOrder, total: 0, cities: [] };
+      p.total += v.memberCount;
+      p.cities.push({ slug: v.slug, name: v.name, memberCount: sinon(v.memberCount) });
+      parCode.set(v.country.iso2, p);
+    }
+    const lieux = [...parCode.values()]
+      .sort((a, b) => b.total - a.total || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, 'fr'))
+      .map((p) => ({ code: p.code, name: p.name, memberCount: sinon(p.total), cities: p.cities }));
+
     // ── Citations approuvées, non retirées : la source garde son auteur.
     const citations = await this.prisma.impactQuote.findMany({
       where: { approvedByStaffId: { not: null }, withdrawnAt: null },
@@ -147,6 +165,7 @@ export class PublicLandingService {
         attendeeCount: e.attendeeCount,
       })),
       cities: listeVilles.map((v) => ({ slug: v.slug, name: v.name, memberCount: sinon(v.memberCount) })),
+      places: lieux,
       quotes: citations.map((c) => {
         const auteur = c.guide?.author ?? c.cityTip?.author ?? null;
         return {
@@ -169,13 +188,20 @@ export class PublicLandingService {
         : await this.prisma.city.findFirst({ where: { slug: query.city, isActive: true }, select: { id: true } });
     // Une ville inconnue ne restreint rien : elle ne doit pas faire croire qu'il n'y a pas de résultat.
     const villeId = ville?.id;
+    // Un pays restreint aux villes de ce pays, sauf si une ville précise est déjà choisie.
+    const paysCode = villeId === undefined ? query.country?.toUpperCase() : undefined;
+    const dansLePays = paysCode === undefined ? {} : { country: { is: { iso2: paysCode } } };
 
     const guides = await this.prisma.guide.findMany({
       where: {
         status: 'PUBLISHED',
         deletedAt: null,
         title: contient(q),
-        ...(villeId === undefined ? {} : { OR: [{ cityId: null }, { cityId: villeId }] }),
+        ...(villeId !== undefined
+          ? { OR: [{ cityId: null }, { cityId: villeId }] }
+          : paysCode === undefined
+            ? {}
+            : { OR: [{ cityId: null }, { city: { is: dansLePays } }] }),
       },
       orderBy: [{ helpfulCount: 'desc' }, { createdAt: 'desc' }],
       take: PUBLIC_SEARCH_LIMIT,
@@ -185,14 +211,14 @@ export class PublicLandingService {
       where: {
         ...this.reseauPublicDeVille(),
         name: contient(q),
-        ...(villeId === undefined ? {} : { cityId: villeId }),
+        ...(villeId !== undefined ? { cityId: villeId } : paysCode === undefined ? {} : { city: { is: dansLePays } }),
       },
       orderBy: { memberCount: 'desc' },
       take: PUBLIC_SEARCH_LIMIT,
       select: { id: true, name: true, memberCount: true, city: { select: { name: true } } },
     });
     const villes = await this.prisma.city.findMany({
-      where: { isActive: true, mergedIntoCityId: null, name: contient(q) },
+      where: { isActive: true, mergedIntoCityId: null, name: contient(q), ...dansLePays },
       orderBy: { name: 'asc' },
       take: PUBLIC_SEARCH_LIMIT,
       select: { slug: true, name: true },

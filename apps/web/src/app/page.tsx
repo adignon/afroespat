@@ -13,6 +13,7 @@ const VIDE: PublicLanding = {
   entraide: { medianFirstReplyMinutes: null, resolvedPercent: null, publishedGuides: null },
   events: [],
   cities: [],
+  places: [],
   quotes: [],
   generatedAt: new Date(0).toISOString(),
 };
