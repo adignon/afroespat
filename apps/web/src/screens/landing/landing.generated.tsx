@@ -104,14 +104,7 @@ export function LandingView(props: LandingVals) {
   <div style={{ maxWidth: "1140px", margin: "0 auto", padding: "96px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,420px),1fr))", gap: "56px", alignItems: "center" }}>
     <div style={{ position: "relative" }}>
       <ImageLanding id="v4-parcours" credit="Photo by Divaris Shirichena on Unsplash" creditHref="https://unsplash.com/@divaris" src="/landing/1686213011642-b25f94b95b96-1000.jpg" shape="rounded" radius="32" placeholder="Photo : étudiante" style={{ width: "100%", aspectRatio: "4/5", maxHeight: "620px" }}></ImageLanding>
-      <div style={{ position: "absolute", left: "clamp(12px,4%,28px)", right: "clamp(12px,4%,28px)", bottom: "clamp(12px,4%,28px)", background: "#fff", borderRadius: "22px", padding: "18px", maxWidth: "340px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#16785E" }}>PARCOURS ÉTUDES · LYON</span><span style={{ fontSize: "20px", fontWeight: "800", whiteSpace: "nowrap" }}>58&nbsp;%</span></div>
-        <div style={{ height: "8px", borderRadius: "999px", background: "#EEF2F0", marginTop: "10px", overflow: "hidden" }}><div style={{ width: "58%", height: "100%", background: "#E0733A", borderRadius: "999px" }}></div></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "14px" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", color: "#8A958F" }}><span style={{ width: "20px", height: "20px", borderRadius: "999px", background: "#16785E", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><path d="m5 12 4.5 4.5L19 7" /></svg></span>Visa étudiant · 4 semaines</span>
-          <span style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13.5px", fontWeight: "700" }}><span style={{ width: "20px", height: "20px", borderRadius: "999px", border: "5px solid #E0733A" }}></span>Logement · dans 9 jours</span>
-        </div>
-      </div>
+      
     </div>
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
       <span style={{ fontFamily: "Caveat,cursive", fontSize: "24px", fontWeight: "700", color: "#E0733A" }}>étape par étape</span>
@@ -267,7 +260,7 @@ export function LandingView(props: LandingVals) {
 <section>
   <div style={{ maxWidth: "1240px", margin: "0 auto", padding: "88px 20px" }}>
     <div style={{ position: "relative", borderRadius: "36px", overflow: "hidden", minHeight: "420px", display: "flex", alignItems: "flex-end" }}>
-      <ImageLanding id="v4-final" credit="Photo by Romain Girot on Unsplash" creditHref="https://unsplash.com/@romaingirot" src="/landing/1569087306794-db9947393580-1600.jpg" shape="rect" placeholder="Photo : quais de Lyon" style={{ position: "absolute", inset: "0", width: "100%", height: "100%" }}></ImageLanding>
+      <ImageLanding id="v4-final" credit="Photo by Romain Girot on Unsplash" creditHref="https://unsplash.com/@romaingirot" src="/landing/1569087306794-db9947393580-1600.jpg" shape="rect" placeholder="Photo : quais au bord de l’eau" style={{ position: "absolute", inset: "0", width: "100%", height: "100%" }}></ImageLanding>
       <span style={{ position: "absolute", inset: "0", background: "linear-gradient(90deg,rgba(15,92,72,.92),rgba(15,92,72,.55) 55%,rgba(15,92,72,.1))", pointerEvents: "none" }}></span>
       <div style={{ position: "relative", padding: "clamp(28px,5vw,64px)", maxWidth: "560px", display: "flex", flexDirection: "column", gap: "16px", color: "#fff" }}>
         <h2 style={{ margin: "0", fontSize: "clamp(28px,3.6vw,44px)", fontWeight: "800", letterSpacing: "-1.3px", lineHeight: "1.08" }}>Votre prochaine étape commence ici</h2>

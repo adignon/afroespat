@@ -91,6 +91,14 @@ let corps = source.slice(apresHelmet + '</helmet>'.length, finDc);
   const fin = secondeDebut + finDeBloc(corps.slice(secondeDebut), 0, '<div', '</div>');
   if (!corps.slice(secondeDebut, fin).includes('132 utiles')) echec('adaptation « conversation » : la seconde carte est introuvable');
   corps = retirer(corps, 'conversation', debut, fin);
+  {
+    // Le faux avancement de parcours (« PARCOURS ÉTUDES · LYON », 58 %) : un chiffre et une ville inventés.
+    const d = corps.indexOf('<div style="position:absolute;left:clamp(12px,4%,28px);right:clamp(12px,4%,28px);bottom:clamp(12px,4%,28px);background:#fff;border-radius:22px;padding:18px;max-width:340px">');
+    if (d < 0) echec('adaptation « avancement » : la carte est introuvable');
+    const f = d + finDeBloc(corps.slice(d), 0, '<div', '</div>');
+    if (!corps.slice(d, f).includes('PARCOURS ÉTUDES')) echec('adaptation « avancement » : mauvaise carte');
+    corps = retirer(corps, 'avancement', d, f);
+  }
 }
 
 // 1. Les histoires.
@@ -290,6 +298,7 @@ const NOMS = [
   ['fontWeight: "800", color: "#0F5C48", letterSpacing: "-0.4px" }}>afroexpates<span style={{ color: "#E0733A" }}>.</span>com', 'fontWeight: "600", color: "#0F5C48", letterSpacing: "-0.4px" }}>Diaspory<span style={{ color: "#E0733A" }}>plus</span>'],
   ['afroexpates. <span style={{ color: "#7FC4A8" }}>', 'Diaspory<span style={{ color: "#F0C3A4" }}>plus</span> <span style={{ color: "#7FC4A8" }}>'],
   ['afroexpates.com</span>', 'DiasporyPlus</span>'],
+  ['placeholder="Photo : quais de Lyon"', 'placeholder="Photo : quais au bord de l’eau"'],
 ];
 let finale = remplacerLogo(entete);
 for (const [a, b] of NOMS) {
