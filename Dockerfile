@@ -62,7 +62,7 @@ FROM build AS migrate
 ENV NODE_ENV=production
 USER node
 WORKDIR /app/packages/db
-CMD ["pnpm", "exec", "prisma", "migrate", "deploy"]
+CMD ["sh", "/app/infra/migrate.sh"]
 
 # ── API ─────────────────────────────────────────────────────────────────────
 FROM build AS api
