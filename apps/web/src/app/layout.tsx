@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Plus_Jakarta_Sans } from 'next/font/google';
+import { Caveat, Plus_Jakarta_Sans } from 'next/font/google';
 import { PRODUCT_NAME, PWA_THEME_COLOR } from '@app/shared';
 import { Notifications } from '@/components/notifications';
 import './globals.css';
@@ -11,6 +11,9 @@ const jakarta = Plus_Jakarta_Sans({
   display: 'swap',
   variable: '--font-jakarta',
 });
+
+/** L'écriture manuscrite des accents de la page d'accueil publique. */
+const caveat = Caveat({ subsets: ['latin'], weight: ['600', '700'], display: 'swap', variable: '--font-caveat' });
 
 export const metadata: Metadata = {
   title: PRODUCT_NAME,
@@ -28,7 +31,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { readonly children: React.ReactNode }) {
   return (
-    <html lang="fr" className={jakarta.variable}>
+    <html lang="fr" className={`${jakarta.variable} ${caveat.variable}`}>
       <body className="font-sans antialiased">
         {/**
          * LA REPRISE DE SESSION MEMBRE N'EST PLUS ICI, et c'est une correction.

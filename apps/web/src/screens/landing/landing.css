@@ -1,0 +1,30 @@
+/* Les règles de base de la page d'accueil (le survol est généré dans landing.generated.css). */
+.lp-root {
+  background: #fbfcfb;
+  color: #16211d;
+  min-height: 100vh;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
+}
+.lp-root a {
+  color: inherit;
+  text-decoration: none;
+}
+.lp-root button {
+  font-family: inherit;
+}
+.lp-root [style*='Caveat'] {
+  font-family: var(--font-caveat), cursive !important;
+}
+@keyframes lpmarq {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-root [style*='lpmarq'] {
+    animation: none !important;
+  }
+}
