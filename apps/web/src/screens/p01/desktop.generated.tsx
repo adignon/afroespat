@@ -15,7 +15,7 @@ export function P01Desktop(props: OnboardingVals) {
 
       <main style={{ display: "contents" }}>
 
-      <div style={{ height: "72px", padding: "0 40px", display: "flex", alignItems: "center", gap: "10px" }}><div style={{ width: "38px", height: "38px", borderRadius: "12px", background: "#0F5C48", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none" /></svg></div><span style={{ fontSize: "21px", fontWeight: "800", color: "#0F5C48", letterSpacing: "-0.5px" }}>Diaspora</span></div>
+      <div style={{ height: "72px", padding: "0 40px", display: "flex", alignItems: "center", gap: "10px" }}><div style={{ width: "38px", height: "38px", borderRadius: "12px", background: "#0F5C48", display: "flex", alignItems: "center", justifyContent: "center" }}><svg width="26" height="26" viewBox="-6 -18 60 60"><g transform="rotate(-35 24 12)"><path d="M0 0H10V14H34V24H0Z" fill="#fff" /><path d="M14 0H48V24H38V10H14Z" fill="#E0733A" /></g></svg></div><span style={{ fontSize: "21px", fontWeight: "600", color: "#0F5C48", letterSpacing: "-0.5px" }}>Diaspory<span style={{ color: "#E0733A" }}>plus</span></span></div>
       <div style={{ flex: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "20px" }}>
         <div style={{ position: "relative", width: "420px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "32px" }}>
           <h1 style={{ margin: "0", fontSize: "28px", fontWeight: "800", letterSpacing: "-0.8px" }}>Votre numéro de téléphone</h1>

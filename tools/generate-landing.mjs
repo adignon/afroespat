@@ -34,6 +34,7 @@
  *      (aucune page) et icônes de réseaux sociaux (aucune adresse) retirés.
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { remplacerLogo } from './logo-marque.mjs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { transcode } from './dc-to-jsx.mjs';
@@ -76,6 +77,21 @@ const apresHelmet = source.indexOf('</helmet>');
 const finDc = source.indexOf('</x-dc>');
 if (apresHelmet < 0 || finDc < 0) echec('structure <x-dc>/<helmet> introuvable');
 let corps = source.slice(apresHelmet + '</helmet>'.length, finDc);
+
+// 0. Aucune personne ni aucun chiffre inventé : la légende « premier jour à Lyon » et la conversation d'exemple
+//    (« Kofi B. », « Fatou N. », « 132 utiles ») n'existent pas dans la base ; seule la photo reste.
+{
+  const legende = /\n\s*<span style="position:absolute;left:-20px;bottom:10px;[^>]*>premier jour à Lyon<\/span>/;
+  if (!legende.test(corps)) echec('adaptation « légende » : la légende « premier jour à Lyon » est introuvable');
+  corps = corps.replace(legende, '');
+  const debut = corps.indexOf('<div style="position:absolute;left:clamp(12px,4%,28px);top:clamp(12px,4%,28px);right:clamp(12px,4%,28px);max-width:330px;background:#fff');
+  if (debut < 0) echec('adaptation « conversation » : la première carte est introuvable');
+  const finPremiere = debut + finDeBloc(corps.slice(debut), 0, '<div', '</div>');
+  const secondeDebut = corps.indexOf('<div', finPremiere);
+  const fin = secondeDebut + finDeBloc(corps.slice(secondeDebut), 0, '<div', '</div>');
+  if (!corps.slice(secondeDebut, fin).includes('132 utiles')) echec('adaptation « conversation » : la seconde carte est introuvable');
+  corps = retirer(corps, 'conversation', debut, fin);
+}
 
 // 1. Les histoires.
 {
@@ -269,8 +285,23 @@ ${jsx}
 }
 `;
 
+// Le logo DiasporyPlus (4a) remplace l'ancienne marque et le nom provisoire « afroexpates » de la maquette.
+const NOMS = [
+  ['fontWeight: "800", color: "#0F5C48", letterSpacing: "-0.4px" }}>afroexpates<span style={{ color: "#E0733A" }}>.</span>com', 'fontWeight: "600", color: "#0F5C48", letterSpacing: "-0.4px" }}>Diaspory<span style={{ color: "#E0733A" }}>plus</span>'],
+  ['afroexpates. <span style={{ color: "#7FC4A8" }}>', 'Diaspory<span style={{ color: "#F0C3A4" }}>plus</span> <span style={{ color: "#7FC4A8" }}>'],
+  ['afroexpates.com</span>', 'DiasporyPlus</span>'],
+];
+let finale = remplacerLogo(entete);
+for (const [a, b] of NOMS) {
+  if (finale.split(a).length !== 2) {
+    console.error(`adaptation du nom : « ${a.slice(0, 50)}… » doit apparaître exactement une fois`);
+    process.exit(1);
+  }
+  finale = finale.replace(a, b);
+}
+
 mkdirSync(SORTIE, { recursive: true });
-writeFileSync(resolve(SORTIE, 'landing.generated.tsx'), entete);
+writeFileSync(resolve(SORTIE, 'landing.generated.tsx'), finale);
 writeFileSync(resolve(SORTIE, 'landing.generated.css'), css);
 writeFileSync(resolve(SORTIE, 'landing.bindings.json'), `${JSON.stringify(noms, null, 2)}\n`);
 console.log(`✓ landing.generated.tsx (${jsx.length} caractères JSX), ${regles.size} règles de survol, ${noms.length} liaisons :`);

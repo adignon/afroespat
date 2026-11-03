@@ -103,10 +103,11 @@ export function ConnexionEquipe() {
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
         <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: C.vertFonce, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <circle cx="12" cy="12" r="4" />
-            <circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none" />
+          <svg width="26" height="26" viewBox="-6 -18 60 60" aria-hidden="true">
+            <g transform="rotate(-35 24 12)">
+              <path d="M0 0H10V14H34V24H0Z" fill="#fff" />
+              <path d="M14 0H48V24H38V10H14Z" fill="#E0733A" />
+            </g>
           </svg>
         </div>
         <h1 style={{ margin: 0, fontSize: '17px', fontWeight: 800 }}>

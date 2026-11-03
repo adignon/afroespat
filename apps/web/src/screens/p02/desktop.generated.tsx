@@ -15,7 +15,7 @@ export function P02Desktop(props: OnboardingVals) {
 
       <main style={{ display: "contents" }}>
 
-      <div style={{ height: "72px", padding: "0 40px", display: "flex", alignItems: "center", gap: "10px" }}><div style={{ width: "38px", height: "38px", borderRadius: "12px", background: "#0F5C48" }}></div><span style={{ fontSize: "21px", fontWeight: "800", color: "#0F5C48", letterSpacing: "-0.5px" }}>Diaspora</span></div>
+      <div style={{ height: "72px", padding: "0 40px", display: "flex", alignItems: "center", gap: "10px" }}><div style={{ width: "38px", height: "38px", borderRadius: "12px", background: "#0F5C48" }}></div><span style={{ fontSize: "21px", fontWeight: "600", color: "#0F5C48", letterSpacing: "-0.5px" }}>Diaspory<span style={{ color: "#E0733A" }}>plus</span></span></div>
       <div style={{ flex: "1", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ width: "420px", background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "32px" }}>
           <button type="button" onClick={onChangeNumber} style={{ font: "inherit", display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "13px", fontWeight: "700", color: "#16785E", border: "none", background: "none", padding: 0, cursor: "pointer" }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m15 18-6-6 6-6" /></svg>Changer de numéro</button>

@@ -41,7 +41,7 @@ export const RAIL_SECTIONS = [
 
 export type RailSection = (typeof RAIL_SECTIONS)[number]['key'];
 
-/** Le logo : trois cercles, dont un point terre cuite. Porté tel quel. */
+/** Le logo DiasporyPlus (variante 4a) : deux pièces décalées, l'une blanche sur la pastille, l'autre orange. */
 export function Logo({ size = 38 }: { readonly size?: number }) {
   return (
     <span
@@ -49,10 +49,11 @@ export function Logo({ size = 38 }: { readonly size?: number }) {
       style={{ width: size, height: size }}
       aria-hidden
     >
-      <svg width={size * 0.55} height={size * 0.55} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7">
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="12" r="4" />
-        <circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none" />
+      <svg width={size * 0.68} height={size * 0.68} viewBox="-6 -18 60 60">
+        <g transform="rotate(-35 24 12)">
+          <path d="M0 0H10V14H34V24H0Z" fill="#fff" />
+          <path d="M14 0H48V24H38V10H14Z" fill="#E0733A" />
+        </g>
       </svg>
     </span>
   );

@@ -49,6 +49,7 @@ import {
   AJOUTS_PARCOURS_VIVANT,
 } from './adaptations/parcours-vivant.mjs';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { remplacerLogo } from './logo-marque.mjs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -21407,14 +21408,14 @@ ${shelled}
 `;
     mkdirSync(resolve(OUT_ROOT, screen.out), { recursive: true });
     const path = resolve(OUT_ROOT, screen.out, `${frame.name.toLowerCase()}.generated.tsx`);
-    writeFileSync(path, body, 'utf8');
+    writeFileSync(path, remplacerLogo(body), 'utf8');
     // AJOUT W3A : les fenêtres sans planche mobile reçoivent leur feuille basse dérivée.
     if (FEUILLES_MOBILES.has(screen.out.split('/').pop())) {
       const nomFeuille = `${screen.section}${frame.name}Feuille`;
       const feuille = enFeuille(body, nomFeuille);
       if (feuille === null) console.log(`      ⚠ feuille mobile non dérivée pour ${screen.out} : le panneau n'a pas la forme attendue.`);
       else {
-        writeFileSync(resolve(OUT_ROOT, screen.out, `${frame.name.toLowerCase()}feuille.generated.tsx`), feuille, 'utf8');
+        writeFileSync(resolve(OUT_ROOT, screen.out, `${frame.name.toLowerCase()}feuille.generated.tsx`), remplacerLogo(feuille), 'utf8');
         console.log(`      Feuille basse mobile dérivée : ${screen.out}/${frame.name.toLowerCase()}feuille.generated.tsx`);
       }
     }
@@ -21568,7 +21569,7 @@ ${corps}
         screen.out,
         `${composant.nom.toLowerCase()}-${frame.name.toLowerCase()}.generated.tsx`,
       );
-      writeFileSync(cheminC, corpsComposant, 'utf8');
+      writeFileSync(cheminC, remplacerLogo(corpsComposant), 'utf8');
       console.log(
         `      Composant extrait : ${nomComposant} → ${cheminC.replace(OUT_ROOT + '/', '')} (${corps.length} caractères)`,
       );
