@@ -53,7 +53,7 @@ async function main(): Promise<number> {
     for (const [nom, n] of Object.entries(r.compte)) log(`  ${nom} : ${n}`);
     return 0;
   } catch (erreur) {
-    process.stderr.write(`Échec : ${erreur instanceof Error ? erreur.message : String(erreur)}\n`);
+    process.stderr.write(`Échec : ${(erreur instanceof Error ? erreur.message : String(erreur)).trim().slice(-900)}\n`);
     return 1;
   } finally {
     await prisma.$disconnect();

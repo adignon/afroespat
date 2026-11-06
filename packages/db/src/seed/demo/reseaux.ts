@@ -108,6 +108,8 @@ export async function genererReseaux(c: Contexte): Promise<void> {
   let adhesions = 0;
 
   for (const r of RESEAUX) {
+    // Un réseau du même identifiant existe déjà : on ne le double pas (l'identifiant d'adresse est unique).
+    if ((await tx.community.findUnique({ where: { slug: r.slug }, select: { id: true } })) !== null) continue;
     const proprio = rng.pick(anciens);
     const mod = rng.pick(anciens.filter((m) => m.id !== proprio.id));
     const creeLe = ilYa(now, rng.int(30, 140), rng);

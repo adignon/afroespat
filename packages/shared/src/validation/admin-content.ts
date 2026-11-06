@@ -373,7 +373,39 @@ export const impactExportQuerySchema = z
 // ── Contenus des membres : liste, retrait, suppression ─────────────────────
 
 /** Les contenus que l'administration gère directement, hors dossier de modération. */
-export const ADMIN_CONTENT_TYPES = ['GUIDE', 'EVENT', 'POST', 'HELP_REQUEST', 'HOUSING', 'JOB', 'PRO', 'COMMUNITY'] as const;
+/** Les contenus ÉCRITS PAR DES MEMBRES. */
+export const ADMIN_MEMBER_CONTENT_TYPES = [
+  'GUIDE',
+  'EVENT',
+  'POST',
+  'HELP_REQUEST',
+  'HOUSING',
+  'JOB',
+  'PRO',
+  'COMMUNITY',
+  'STORY',
+  'CITY_TIP',
+  'JOURNEY',
+  'CONVERSATION',
+  'MODERATION_CASE',
+] as const;
+/**
+ * Les éléments GÉRÉS PAR L'ÉQUIPE : alertes arnaques, référentiels, modèles et étapes de parcours, partenaires. Leur
+ * suppression est RÉELLE mais refusée tant que l'élément est utilisé quelque part (le refus dit combien de fois).
+ */
+export const ADMIN_TEAM_CONTENT_TYPES = [
+  'SCAM_ALERT',
+  'LANGUAGE',
+  'SKILL',
+  'PROFESSION',
+  'COUNTRY',
+  'CITY',
+  'STEP_DEFINITION',
+  'JOURNEY_TEMPLATE',
+  'PARTNER',
+  'PLACEMENT',
+] as const;
+export const ADMIN_CONTENT_TYPES = [...ADMIN_MEMBER_CONTENT_TYPES, ...ADMIN_TEAM_CONTENT_TYPES] as const;
 export const adminContentTypeSchema = z.enum(ADMIN_CONTENT_TYPES);
 export type AdminContentType = z.infer<typeof adminContentTypeSchema>;
 
@@ -548,6 +580,64 @@ export const ADMIN_CONTENT_EDIT_FIELDS: Readonly<Record<AdminContentType, readon
     { key: 'name', label: 'Nom', kind: 'text', max: 100 },
     { key: 'description', label: 'Description', kind: 'textarea', max: 2000, optional: true },
   ],
+  STORY: [
+    { key: 'body', label: 'Texte', kind: 'textarea', max: 500 },
+    { key: 'placeLabel', label: 'Lieu', kind: 'text', max: 100, optional: true },
+  ],
+  CITY_TIP: [
+    { key: 'body', label: 'Texte', kind: 'textarea', max: 2000 },
+    { key: 'venueName', label: 'Lieu', kind: 'text', max: 140, optional: true },
+  ],
+  JOURNEY: [
+    { key: 'title', label: 'Titre', kind: 'text', max: 140 },
+    {
+      key: 'status',
+      label: 'État',
+      kind: 'select',
+      options: opt(['ACTIVE', 'Actif'], ['PAUSED', 'En pause'], ['COMPLETED', 'Abouti'], ['ARCHIVED', 'Archivé']),
+    },
+    { key: 'visibility', label: 'Visibilité', kind: 'select', options: opt(['PRIVATE', 'Privé'], ['SHARED', 'Partagé'], ['PUBLIC', 'Public']) },
+  ],
+  // Rien à corriger : ces éléments se suppriment ou se gèrent depuis leur écran dédié.
+  CONVERSATION: [],
+  MODERATION_CASE: [],
+  SCAM_ALERT: [],
+  LANGUAGE: [],
+  SKILL: [],
+  PROFESSION: [],
+  COUNTRY: [],
+  CITY: [],
+  STEP_DEFINITION: [],
+  JOURNEY_TEMPLATE: [],
+  PARTNER: [],
+  PLACEMENT: [],
+};
+
+/** Ce que l'équipe peut faire de chaque type (liste et suppression définitive : tous). Source du tableau de l'écran. */
+export const ADMIN_CONTENT_CAPACITES: Readonly<Record<AdminContentType, { readonly retirer: boolean; readonly modifier: boolean }>> = {
+  GUIDE: { retirer: true, modifier: true },
+  EVENT: { retirer: true, modifier: true },
+  POST: { retirer: true, modifier: true },
+  HELP_REQUEST: { retirer: true, modifier: true },
+  HOUSING: { retirer: true, modifier: true },
+  JOB: { retirer: true, modifier: true },
+  PRO: { retirer: true, modifier: true },
+  COMMUNITY: { retirer: true, modifier: true },
+  STORY: { retirer: true, modifier: true },
+  CITY_TIP: { retirer: true, modifier: true },
+  JOURNEY: { retirer: true, modifier: true },
+  CONVERSATION: { retirer: false, modifier: false },
+  MODERATION_CASE: { retirer: false, modifier: false },
+  SCAM_ALERT: { retirer: false, modifier: false },
+  LANGUAGE: { retirer: false, modifier: false },
+  SKILL: { retirer: false, modifier: false },
+  PROFESSION: { retirer: false, modifier: false },
+  COUNTRY: { retirer: false, modifier: false },
+  CITY: { retirer: false, modifier: false },
+  STEP_DEFINITION: { retirer: false, modifier: false },
+  JOURNEY_TEMPLATE: { retirer: false, modifier: false },
+  PARTNER: { retirer: false, modifier: false },
+  PLACEMENT: { retirer: false, modifier: false },
 };
 
 /** Le contenu tel que le formulaire le montre : les valeurs actuelles, par clé de champ. */

@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import {
+  ADMIN_CONTENT_CAPACITES,
   ADMIN_CONTENT_EDIT_FIELDS,
+  ADMIN_TEAM_CONTENT_TYPES,
   ADMIN_CONTENT_TYPES,
   MAX_PAGE_LIMIT,
   adminContentActionResultSchema,
@@ -43,6 +45,21 @@ const TYPES: Record<AdminContentType, string> = {
   JOB: 'Emplois',
   PRO: 'Professionnels',
   COMMUNITY: 'Réseaux',
+  STORY: 'Stories',
+  CITY_TIP: 'Conseils de ville',
+  JOURNEY: 'Parcours des membres',
+  CONVERSATION: 'Conversations',
+  MODERATION_CASE: 'Dossiers de modération',
+  SCAM_ALERT: 'Équipe · Alertes arnaques',
+  LANGUAGE: 'Équipe · Langues',
+  SKILL: 'Équipe · Compétences',
+  PROFESSION: 'Équipe · Métiers',
+  COUNTRY: 'Équipe · Pays',
+  CITY: 'Équipe · Villes',
+  STEP_DEFINITION: 'Équipe · Étapes de parcours',
+  JOURNEY_TEMPLATE: 'Équipe · Modèles de parcours',
+  PARTNER: 'Équipe · Partenaires',
+  PLACEMENT: 'Équipe · Placements partenaires',
 };
 
 const ORIGINES = [
@@ -94,6 +111,8 @@ export function ContenusMembres() {
   const peutGerer = useDroit('content');
   const peutEffacer = useDroit('erase');
   const [type, setType] = useState<AdminContentType>('POST');
+  const capacites = ADMIN_CONTENT_CAPACITES[type];
+  const deLEquipe = (ADMIN_TEAM_CONTENT_TYPES as readonly string[]).includes(type);
   const [saisie, setSaisie] = useState<Filtres>(SANS_FILTRE);
   const [filtres, setFiltres] = useState<Filtres>(SANS_FILTRE);
   const [coches, setCoches] = useState<ReadonlySet<string>>(new Set());
@@ -178,8 +197,8 @@ export function ContenusMembres() {
             }}
             options={ADMIN_CONTENT_TYPES.map((t) => ({ valeur: t, libelle: TYPES[t] }))}
           />
-          <Selecteur libelle="Origine de l’auteur" valeur={saisie.origine} onChange={(origine) => setSaisie((s) => ({ ...s, origine }))} options={ORIGINES} />
-          <Selecteur libelle="État" valeur={saisie.etat} onChange={(etat) => setSaisie((s) => ({ ...s, etat }))} options={ETATS} />
+          {deLEquipe ? null : <Selecteur libelle="Origine de l’auteur" valeur={saisie.origine} onChange={(origine) => setSaisie((s) => ({ ...s, origine }))} options={ORIGINES} />}
+          {deLEquipe || !capacites.retirer ? null : <Selecteur libelle="État" valeur={saisie.etat} onChange={(etat) => setSaisie((s) => ({ ...s, etat }))} options={ETATS} />}
           <Champ libelle="Titre ou texte contient" valeur={saisie.q} onChange={(q) => setSaisie((s) => ({ ...s, q }))} placeholder="deux caractères au moins" />
           <Champ libelle="Créé du" type="date" valeur={saisie.du} onChange={(du) => setSaisie((s) => ({ ...s, du }))} />
           <Champ libelle="au" type="date" valeur={saisie.au} onChange={(au) => setSaisie((s) => ({ ...s, au }))} />
@@ -212,12 +231,16 @@ export function ContenusMembres() {
           <span style={{ fontSize: '12.5px', color: C.gris }}>
             {coches.size} sélectionné{coches.size > 1 ? 's' : ''}
           </span>
-          <Bouton petit disabled={coches.size === 0 || geste.occupe} onClick={() => setDialogue('retirer')}>
-            Retirer
-          </Bouton>
-          <Bouton petit disabled={coches.size === 0 || geste.occupe} onClick={() => setDialogue('retablir')}>
-            Rétablir
-          </Bouton>
+          {!capacites.retirer ? null : (
+            <>
+              <Bouton petit disabled={coches.size === 0 || geste.occupe} onClick={() => setDialogue('retirer')}>
+                Retirer
+              </Bouton>
+              <Bouton petit disabled={coches.size === 0 || geste.occupe} onClick={() => setDialogue('retablir')}>
+                Rétablir
+              </Bouton>
+            </>
+          )}
           {!peutEffacer ? null : (
             <>
               <Bouton
@@ -265,7 +288,7 @@ export function ContenusMembres() {
                         </span>
                       </span>
                       {l.authorOrigin === 'SEED' ? <Pastille ton="sombre">Départ</Pastille> : null}
-                      {!peutGerer ? null : (
+                      {!peutGerer || !capacites.modifier ? null : (
                         <Bouton petit ton="contour" onClick={() => setAModifier(l)}>
                           Modifier
                         </Bouton>

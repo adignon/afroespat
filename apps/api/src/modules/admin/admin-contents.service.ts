@@ -16,27 +16,9 @@ import { buildPage, decodeCursor } from '../../common/cursor';
 import { PrismaService } from '../../common/prisma.service';
 import type { StaffUser } from '../../common/staff.guard';
 import { loadEnv } from '../../config/env';
+import { gestionEtendue, lireEtendu, nettoyerLiens, type Brut, type Gestion } from './admin-contents-types';
 
 /** Un contenu tel que la liste le lit, avant d'y joindre l'auteur et la ville. */
-interface Brut {
-  readonly id: string;
-  readonly title: string;
-  readonly authorUserId: string | null;
-  readonly cityId: string | null;
-  readonly createdAt: Date;
-  readonly removed: boolean;
-}
-
-/** Ce que sait faire l'administration d'un type de contenu. Un type sans `retirer` ne se supprime que définitivement. */
-interface Gestion {
-  /** Parmi `ids`, ceux qui existent. */
-  existants(ids: string[]): Promise<string[]>;
-  retirer?(ids: string[], now: Date): Promise<void>;
-  retablir?(ids: string[]): Promise<void>;
-  supprimer(ids: string[]): Promise<void>;
-}
-
-/** Les types dont l'index de recherche porte une ligne par contenu. */
 const SUJET_DE_RECHERCHE: Partial<Record<AdminContentType, SearchSubjectType>> = {
   GUIDE: 'GUIDE',
   EVENT: 'EVENT',
@@ -45,6 +27,12 @@ const SUJET_DE_RECHERCHE: Partial<Record<AdminContentType, SearchSubjectType>> =
   JOB: 'JOB',
   PRO: 'PRO',
 };
+
+class ApercuSuppression extends Error {
+  constructor() {
+    super('aperçu de suppression : transaction annulée');
+  }
+}
 
 const contient = (q: string) => ({ contains: q, mode: 'insensitive' as const });
 
@@ -254,6 +242,8 @@ export class AdminContentsService {
           removed: x.archivedAt !== null,
         }));
       }
+      default:
+        return lireEtendu(this.prisma, type, f);
     }
   }
 
@@ -394,6 +384,8 @@ export class AdminContentsService {
             await db.community.deleteMany({ where: { id: { in: ids } } });
           },
         };
+      default:
+        return gestionEtendue(db, type);
     }
   }
 
@@ -440,10 +432,18 @@ export class AdminContentsService {
           for (const id of ids) refused.push({ type, id, message: 'Ce type de contenu ne se rétablit pas.' });
           continue;
         }
-        if (!dryRun) {
+        // L'aperçu d'une suppression EXÉCUTE la suppression puis l'annule : seul moyen de dire, élément par élément,
+        // lesquels seraient refusés (encore utilisés) — un simple décompte annoncerait des suppressions impossibles.
+        if (!dryRun || geste === 'supprimer') {
           if (geste === 'retirer') await g.retirer?.(ids, now);
           else if (geste === 'retablir') await g.retablir?.(ids);
-          else await g.supprimer(ids);
+          else {
+            await nettoyerLiens(tx, type, ids);
+            const refuses = (await g.supprimer(ids)) ?? [];
+            for (const r of refuses) refused.push({ type, id: r.id, message: r.message });
+            done += ids.length - refuses.length;
+            continue;
+          }
         }
         done += ids.length;
       }
@@ -464,8 +464,20 @@ export class AdminContentsService {
       }
     };
 
-    // Un aperçu ne change rien : il lit seulement.
-    if (dryRun) {
+    // Un aperçu ne change rien : il lit seulement — sauf l'aperçu d'une suppression, exécuté puis annulé.
+    if (dryRun && geste === 'supprimer') {
+      try {
+        await this.prisma.$transaction(
+          async (tx) => {
+            await travail(tx);
+            throw new ApercuSuppression();
+          },
+          { timeout: 60_000, maxWait: 10_000 },
+        );
+      } catch (erreur) {
+        if (!(erreur instanceof ApercuSuppression)) throw erreur;
+      }
+    } else if (dryRun) {
       await this.prisma.$transaction(travail);
     } else {
       await this.prisma.$transaction(travail, { timeout: 60_000, maxWait: 10_000 });

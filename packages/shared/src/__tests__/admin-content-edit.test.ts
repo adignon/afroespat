@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { ADMIN_CONTENT_EDIT_FIELDS, ADMIN_CONTENT_TYPES, validateAdminContentChanges } from '../validation/admin-content.js';
+import { ADMIN_CONTENT_CAPACITES, ADMIN_CONTENT_EDIT_FIELDS, ADMIN_CONTENT_TYPES, validateAdminContentChanges } from '../validation/admin-content.js';
 
 describe('validateAdminContentChanges', () => {
-  it('chaque type de contenu déclare au moins un champ modifiable', () => {
-    for (const type of ADMIN_CONTENT_TYPES) expect(ADMIN_CONTENT_EDIT_FIELDS[type].length).toBeGreaterThan(0);
+  it('un type est modifiable si et seulement si il déclare des champs', () => {
+    for (const type of ADMIN_CONTENT_TYPES) {
+      expect(ADMIN_CONTENT_CAPACITES[type].modifier).toBe(ADMIN_CONTENT_EDIT_FIELDS[type].length > 0);
+    }
+  });
+
+  it('un type sans champ refuse toute modification', () => {
+    expect(validateAdminContentChanges('LANGUAGE', { nameFr: 'x' })).toMatchObject({ ok: false });
   });
 
   it('accepte un titre et le rogne', () => {

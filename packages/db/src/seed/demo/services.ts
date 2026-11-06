@@ -118,10 +118,13 @@ export async function genererServices(c: Contexte): Promise<void> {
   // ── Professionnels : dix fiches, chacune dans une ou deux villes.
   const metiers = new Map((await tx.profession.findMany({ select: { id: true, nameFr: true } })).map((p) => [p.nameFr, p.id]));
   let pros = 0;
-  for (const p of PROS) {
+  // Un membre n'a qu'une fiche professionnelle (clé unique) : des titulaires DISTINCTS.
+  const titulaires = rng.shuffle(membres.filter((m) => m.ancien));
+  for (const [i, p] of PROS.entries()) {
     const professionId = metiers.get(p.metier);
     if (professionId === undefined) continue;
-    const titulaire = rng.pick(membres.filter((m) => m.ancien));
+    const titulaire = titulaires[i];
+    if (titulaire === undefined) continue;
     const id = newId();
     await tx.proProfile.create({
       data: {

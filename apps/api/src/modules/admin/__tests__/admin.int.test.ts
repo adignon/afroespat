@@ -1302,6 +1302,67 @@ describe('administration (15)', () => {
       await request(httpServer(app)).get(`/v1/admin/contents/POST/${newId()}`).set('cookie', editeur.cookie).expect(404);
     });
 
+    /**
+     * LA SUPPRESSION, DE TOUT : stories, conseils de ville et conversations de membres ; alertes arnaques et langues de
+     * l'équipe. Un élément de référence encore utilisé est REFUSÉ avec le nombre de références ; un élément libre part.
+     */
+    it('supprime stories, conseils, conversations, alertes et référentiels libres ; refuse un référentiel utilisé', async () => {
+      const motif = 'Suppression de contrôle, demandée par l’équipe.';
+      const admin = await as('SUPER_ADMIN');
+      const editeur = await as('CONTENT_ADMIN');
+      const auteur = await memberId();
+      const user = await prisma.user.findUniqueOrThrow({ where: { id: auteur }, select: { cityId: true } });
+      const cityId = user.cityId ?? (await prisma.city.findFirstOrThrow({ select: { id: true } })).id;
+
+      const storyId = newId();
+      await prisma.story.create({
+        data: { id: storyId, authorUserId: auteur, type: 'CONSEIL', body: 'Une story à retirer', textStyle: 'BOLD', cityId, expiresAt: new Date(Date.now() + 3_600_000), audience: 'ALL', allowMessages: true, status: 'ACTIVE', moderationStatus: 'CLEARED' },
+      });
+      const tipId = newId();
+      await prisma.cityTip.create({ data: { id: tipId, cityId, authorUserId: auteur, kind: 'TIP', body: 'Un conseil à supprimer', status: 'PUBLISHED' } });
+      const conversationId = newId();
+      await prisma.conversation.create({ data: { id: conversationId, kind: 'DIRECT', openedByUserId: auteur } });
+      const alerteId = newId();
+      await prisma.scamAlert.create({ data: { id: alerteId, title: 'Alerte de contrôle', body: 'Texte', severity: 'INFO', isPinned: false, createdByStaffId: admin.staffId } });
+      const langueLibre = newId();
+      await prisma.language.create({ data: { id: langueLibre, code: `t${langueLibre.slice(-6)}`, nameFr: 'Langue de contrôle' } });
+      const langueUtilisee = await prisma.language.create({ data: { id: newId(), code: `u${newId().slice(-6)}`, nameFr: 'Langue utilisée' } });
+      await prisma.userLanguage.create({ data: { userId: auteur, languageId: langueUtilisee.id } });
+
+      // Retrait et rétablissement d'une story ; la conversation, elle, ne se retire pas.
+      const post = (chemin: string, corps: object, cookie: string) => request(httpServer(app)).post(chemin).set('cookie', cookie).send(corps);
+      await post('/v1/admin/contents/remove', { items: [{ type: 'STORY', id: storyId }], reason: motif }, editeur.cookie).expect(200);
+      expect((await prisma.story.findUniqueOrThrow({ where: { id: storyId } })).deletedAt).not.toBeNull();
+      await post('/v1/admin/contents/restore', { items: [{ type: 'STORY', id: storyId }], reason: motif }, editeur.cookie).expect(200);
+      const refusRetrait = await post('/v1/admin/contents/remove', { items: [{ type: 'CONVERSATION', id: conversationId }], reason: motif }, editeur.cookie).expect(200);
+      expect((refusRetrait.body as { refused: unknown[] }).refused).toHaveLength(1);
+
+      // Un aperçu dit déjà ce qui serait refusé.
+      const items = [
+        { type: 'STORY', id: storyId }, { type: 'CITY_TIP', id: tipId }, { type: 'CONVERSATION', id: conversationId },
+        { type: 'SCAM_ALERT', id: alerteId }, { type: 'LANGUAGE', id: langueLibre }, { type: 'LANGUAGE', id: langueUtilisee.id },
+      ];
+      const apercu = await post('/v1/admin/contents/erase', { items, reason: motif, dryRun: true }, admin.cookie).expect(200);
+      expect(apercu.body).toMatchObject({ dryRun: true, done: 5 });
+      expect((apercu.body as { refused: { message: string }[] }).refused[0]?.message).toMatch(/Encore utilisé : 1 référence/);
+      expect(await prisma.story.count({ where: { id: storyId } })).toBe(1);
+
+      // Le nombre exact est exigé ; un CONTENT_ADMIN n'efface pas.
+      await post('/v1/admin/contents/erase', { items, reason: motif, confirmCount: 6 }, editeur.cookie).expect(403);
+      await post('/v1/admin/contents/erase', { items, reason: motif, confirmCount: 5 }, admin.cookie).expect(422);
+      const reel = await post('/v1/admin/contents/erase', { items, reason: motif, confirmCount: 6 }, admin.cookie).expect(200);
+      expect(reel.body).toMatchObject({ done: 5 });
+      expect(await prisma.story.count({ where: { id: storyId } })).toBe(0);
+      expect(await prisma.cityTip.count({ where: { id: tipId } })).toBe(0);
+      expect(await prisma.conversation.count({ where: { id: conversationId } })).toBe(0);
+      expect(await prisma.scamAlert.count({ where: { id: alerteId } })).toBe(0);
+      expect(await prisma.language.count({ where: { id: langueLibre } })).toBe(0);
+      // La langue utilisée est toujours là.
+      expect(await prisma.language.count({ where: { id: langueUtilisee.id } })).toBe(1);
+      await prisma.userLanguage.deleteMany({ where: { languageId: langueUtilisee.id } });
+      await prisma.language.delete({ where: { id: langueUtilisee.id } });
+    });
+
     it('révoque les sessions d’un membre, avec motif et trace', async () => {
       const staff = await as('SUPPORT');
       const userId = await memberId();

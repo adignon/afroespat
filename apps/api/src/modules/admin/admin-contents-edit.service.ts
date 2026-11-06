@@ -138,7 +138,42 @@ export class AdminContentsEditService {
         const c = await db.community.findUnique({ where: { id }, select: { name: true, description: true } });
         return c === null ? null : { ...c };
       }
+      case 'STORY': {
+        const x = await db.story.findUnique({ where: { id }, select: { body: true, placeLabel: true } });
+        return x === null ? null : { ...x };
+      }
+      case 'CITY_TIP': {
+        const x = await db.cityTip.findUnique({ where: { id }, select: { body: true, venueName: true } });
+        return x === null ? null : { ...x };
+      }
+      case 'JOURNEY': {
+        const x = await db.journey.findUnique({ where: { id }, select: { title: true, status: true, visibility: true } });
+        return x === null ? null : { ...x };
+      }
+      // Rien à corriger : on dit seulement si l'élément existe (le formulaire est alors vide).
+      default:
+        return (await this.existe(db, type, id)) ? {} : null;
     }
+  }
+
+  /** Les types sans champ modifiable : seule l'existence compte (le formulaire est vide, toute modification est refusée). */
+  private async existe(db: Prisma.TransactionClient | PrismaService, type: AdminContentType, id: string): Promise<boolean> {
+    const tables: Partial<Record<AdminContentType, { findUnique(a: { where: { id: string }; select: { id: true } }): Promise<unknown> }>> = {
+      CONVERSATION: db.conversation,
+      MODERATION_CASE: db.moderationCase,
+      SCAM_ALERT: db.scamAlert,
+      LANGUAGE: db.language,
+      SKILL: db.skill,
+      PROFESSION: db.profession,
+      COUNTRY: db.country,
+      CITY: db.city,
+      STEP_DEFINITION: db.stepDefinition,
+      JOURNEY_TEMPLATE: db.journeyTemplate,
+      PARTNER: db.partner,
+      PLACEMENT: db.partnerPlacement,
+    };
+    const t = tables[type];
+    return t === undefined ? false : (await t.findUnique({ where: { id }, select: { id: true } })) !== null;
   }
 
   // ── Écriture ───────────────────────────────────────────────────────────────
@@ -184,6 +219,17 @@ export class AdminContentsEditService {
       case 'COMMUNITY':
         await tx.community.update({ where: { id }, data: reste });
         return;
+      case 'STORY':
+        await tx.story.update({ where: { id }, data: { ...reste, ...(typeof body === 'string' ? { body } : {}) } });
+        return;
+      case 'CITY_TIP':
+        await tx.cityTip.update({ where: { id }, data: { ...reste, ...(typeof body === 'string' ? { body } : {}) } });
+        return;
+      case 'JOURNEY':
+        await tx.journey.update({ where: { id }, data: reste });
+        return;
+      default:
+        throw this.introuvable();
     }
   }
 
