@@ -84,6 +84,7 @@ import { AdminGuidesService } from './modules/admin/admin-guides.service';
 import { AdminMemberController } from './modules/admin/admin-member.controller';
 import { AdminMemberActionsService } from './modules/admin/admin-member-actions.service';
 import { AdminContentsController } from './modules/admin/admin-contents.controller';
+import { AdminContentsEditService } from './modules/admin/admin-contents-edit.service';
 import { AdminContentsService } from './modules/admin/admin-contents.service';
 import { PublicLandingController } from './modules/public/public-landing.controller';
 import { PublicLandingService } from './modules/public/public-landing.service';
@@ -234,6 +235,7 @@ import {
     AdminContentService,
     AdminMemberActionsService,
     AdminContentsService,
+    AdminContentsEditService,
     PublicLandingService,
     AdminJourneysService,
     AdminGuidesService,

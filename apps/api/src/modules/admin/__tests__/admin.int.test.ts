@@ -1241,6 +1241,67 @@ describe('administration (15)', () => {
       expect(await prisma.auditLog.count({ where: { action: 'content.erased', actorId: admin.staffId } })).toBe(1);
     });
 
+    /**
+     * LA CORRECTION D'UN CONTENU par l'équipe : le formulaire se remplit depuis `GET /contents/:type/:id`, `PATCH`
+     * écrit les champs autorisés (jamais les autres), un texte de guide devient une NOUVELLE version, chaque correction
+     * est tracée avec son motif.
+     */
+    it('corrige un contenu de membre : champs autorisés, nouvelle version de guide, audit', async () => {
+      const motif = 'Correction demandée par l’équipe éditoriale.';
+      const editeur = await as('CONTENT_ADMIN');
+      const support = await as('SUPPORT');
+      const auteur = await memberId();
+      const postId = newId();
+      await prisma.post.create({
+        data: { id: postId, authorUserId: auteur, type: 'DISCUSSION', body: 'Texte d’origine', status: 'PUBLISHED', moderationStatus: 'CLEARED' },
+      });
+
+      const detail = await request(httpServer(app)).get(`/v1/admin/contents/POST/${postId}`).set('cookie', editeur.cookie).expect(200);
+      expect(detail.body).toMatchObject({ id: postId, type: 'POST', values: { body: 'Texte d’origine', type: 'DISCUSSION', status: 'PUBLISHED' } });
+
+      // Un rôle sans la portée « contenu » ne corrige pas.
+      await request(httpServer(app)).patch(`/v1/admin/contents/POST/${postId}`).set('cookie', support.cookie).send({ reason: motif, changes: { body: 'x' } }).expect(403);
+      // Un champ qui ne se modifie pas est refusé (l'auteur ne change jamais par ce chemin).
+      await request(httpServer(app)).patch(`/v1/admin/contents/POST/${postId}`).set('cookie', editeur.cookie).send({ reason: motif, changes: { authorUserId: newId() } }).expect(422);
+      // Une valeur hors liste est refusée.
+      await request(httpServer(app)).patch(`/v1/admin/contents/POST/${postId}`).set('cookie', editeur.cookie).send({ reason: motif, changes: { status: 'REMOVED' } }).expect(422);
+      // Le motif est obligatoire.
+      await request(httpServer(app)).patch(`/v1/admin/contents/POST/${postId}`).set('cookie', editeur.cookie).send({ reason: 'court', changes: { body: 'x' } }).expect(400);
+
+      const corrige = await request(httpServer(app))
+        .patch(`/v1/admin/contents/POST/${postId}`)
+        .set('cookie', editeur.cookie)
+        .send({ reason: motif, changes: { body: 'Texte corrigé', status: 'HIDDEN' } })
+        .expect(200);
+      expect(corrige.body).toMatchObject({ values: { body: 'Texte corrigé', status: 'HIDDEN' } });
+      expect(await prisma.post.findUniqueOrThrow({ where: { id: postId } })).toMatchObject({ body: 'Texte corrigé', status: 'HIDDEN', authorUserId: auteur });
+      expect(await prisma.auditLog.count({ where: { action: 'content.updated', targetId: postId, actorId: editeur.staffId } })).toBe(1);
+
+      // Un guide : le nouveau texte est une version de plus, la page et le guide pointent dessus.
+      const guideId = newId();
+      const pageId = newId();
+      const v1 = newId();
+      await prisma.guide.create({
+        data: { id: guideId, authorUserId: auteur, title: 'Guide d’origine', slug: `guide-edition-${guideId.slice(-8)}`, category: 'ARRIVAL', scope: 'UNIVERSAL', status: 'PUBLISHED', lastContentUpdateAt: new Date() },
+      });
+      await prisma.guidePage.create({ data: { id: pageId, guideId, position: 1, title: 'Guide d’origine', slug: 'principal' } });
+      await prisma.guideVersion.create({ data: { id: v1, guideId, pageId, version: 1, body: 'Corps d’origine', createdByUserId: auteur } });
+      await prisma.guidePage.update({ where: { id: pageId }, data: { currentVersionId: v1 } });
+      await request(httpServer(app))
+        .patch(`/v1/admin/contents/GUIDE/${guideId}`)
+        .set('cookie', editeur.cookie)
+        .send({ reason: motif, changes: { title: 'Guide corrigé', body: 'Corps corrigé' } })
+        .expect(200);
+      const versions = await prisma.guideVersion.findMany({ where: { guideId }, orderBy: { version: 'asc' } });
+      expect(versions.map((v) => v.version)).toEqual([1, 2]);
+      expect(versions[0]?.body).toBe('Corps d’origine');
+      expect((await prisma.guidePage.findUniqueOrThrow({ where: { id: pageId } })).currentVersionId).toBe(versions[1]?.id);
+      expect(await prisma.guide.findUniqueOrThrow({ where: { id: guideId } })).toMatchObject({ title: 'Guide corrigé', revision: 1 });
+
+      // Un contenu inconnu : 404.
+      await request(httpServer(app)).get(`/v1/admin/contents/POST/${newId()}`).set('cookie', editeur.cookie).expect(404);
+    });
+
     it('révoque les sessions d’un membre, avec motif et trace', async () => {
       const staff = await as('SUPPORT');
       const userId = await memberId();

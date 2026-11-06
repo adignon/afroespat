@@ -283,6 +283,8 @@ export class AdminMemberActionsService {
     const evenements = await tx.event.findMany({ where: { organizerUserId: userId }, select: { id: true } });
     const pros = await tx.proProfile.findMany({ where: { userId }, select: { id: true } });
     const parcours = await tx.journey.findMany({ where: { ownerUserId: userId }, select: { id: true } });
+    const publications = await tx.post.findMany({ where: { authorUserId: userId }, select: { id: true } });
+    const histoires = await tx.story.findMany({ where: { authorUserId: userId }, select: { id: true } });
     const ids = (l: readonly { id: string }[]) => l.map((x) => x.id);
 
     // ── Les réseaux créés par ce compte : supprimés s'ils n'ont aucun autre membre que des comptes de départ.
@@ -316,6 +318,48 @@ export class AdminMemberActionsService {
         ],
       },
     });
+
+    // ── Les liens POLYMORPHES, que la cascade ne voit pas faute de clé étrangère : sans ce nettoyage, les commentaires
+    //    d'autres membres, les favoris, les signalements et les dossiers de modération survivraient à leur sujet.
+    const lier = <T extends string>(paires: readonly (readonly [T, readonly string[]])[]) =>
+      paires.filter(([, liste]) => liste.length > 0).map(([subjectType, liste]) => ({ subjectType, subjectId: { in: [...liste] } }));
+    const sujetsDesTopics = [...ids(sujets), ...ids(sujetsDesReseaux)];
+    const commentaires = lier<'POST' | 'TOPIC' | 'GUIDE' | 'EVENT'>([
+      ['POST', ids(publications)],
+      ['TOPIC', sujetsDesTopics],
+      ['GUIDE', ids(guides)],
+      ['EVENT', ids(evenements)],
+    ]);
+    if (commentaires.length > 0) {
+      compter('commentaires sur ces contenus', (await tx.comment.deleteMany({ where: { OR: commentaires } })).count);
+    }
+    const favoris = lier<'STORY' | 'GUIDE' | 'POST' | 'HELP_REQUEST' | 'EVENT' | 'HOUSING' | 'JOB' | 'PRO'>([
+      ['POST', ids(publications)],
+      ['GUIDE', ids(guides)],
+      ['EVENT', ids(evenements)],
+      ['HELP_REQUEST', ids(entraide)],
+      ['HOUSING', ids(logements)],
+      ['JOB', ids(emplois)],
+      ['PRO', ids(pros)],
+      ['STORY', ids(histoires)],
+    ]);
+    if (favoris.length > 0) await tx.bookmark.deleteMany({ where: { OR: favoris } });
+    const signales = lier<'POST' | 'TOPIC' | 'GUIDE' | 'EVENT' | 'HELP_REQUEST' | 'HOUSING' | 'JOB' | 'PRO' | 'STORY'>([
+      ['POST', ids(publications)],
+      ['TOPIC', sujetsDesTopics],
+      ['GUIDE', ids(guides)],
+      ['EVENT', ids(evenements)],
+      ['HELP_REQUEST', ids(entraide)],
+      ['HOUSING', ids(logements)],
+      ['JOB', ids(emplois)],
+      ['PRO', ids(pros)],
+      ['STORY', ids(histoires)],
+    ]);
+    if (signales.length > 0) await tx.report.deleteMany({ where: { OR: signales } });
+    compter(
+      'dossiers de modération',
+      (await tx.moderationCase.deleteMany({ where: { OR: [{ subjectAuthorUserId: userId }, ...signales] } })).count,
+    );
 
     // ── Les contenus que la cascade LAISSERAIT (relations `SetNull`).
     compter('guides', (await tx.guide.deleteMany({ where: { id: { in: ids(guides) } } })).count);

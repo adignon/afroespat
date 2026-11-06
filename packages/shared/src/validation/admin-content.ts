@@ -439,6 +439,137 @@ export const adminContentActionResultSchema = z
   .strict();
 export type AdminContentActionResult = z.infer<typeof adminContentActionResultSchema>;
 
+// ── Modification d'un contenu (édition par l'équipe) ────────────────────────
+
+export type AdminContentFieldKind = 'text' | 'textarea' | 'number' | 'datetime' | 'select';
+
+export interface AdminContentField {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: AdminContentFieldKind;
+  /** Longueur maximale (texte) ou valeur maximale (nombre). */
+  readonly max?: number;
+  readonly options?: readonly { readonly value: string; readonly label: string }[];
+  /** Un champ facultatif peut être vidé (`null`). */
+  readonly optional?: boolean;
+}
+
+const opt = (...paires: readonly (readonly [string, string])[]) => paires.map(([value, label]) => ({ value, label }));
+
+/**
+ * LES CHAMPS QUE L'ÉQUIPE PEUT CORRIGER, par type de contenu. Source unique : l'API valide contre cette table, l'écran
+ * en tire son formulaire. Rien d'autre ne se modifie par ce chemin (auteur, ville, dates de création, compteurs…).
+ */
+export const ADMIN_CONTENT_EDIT_FIELDS: Readonly<Record<AdminContentType, readonly AdminContentField[]>> = {
+  GUIDE: [
+    { key: 'title', label: 'Titre', kind: 'text', max: 140 },
+    {
+      key: 'category',
+      label: 'Catégorie',
+      kind: 'select',
+      options: opt(
+        ['PRE_DEPARTURE', 'Avant le départ'],
+        ['ARRIVAL', 'Arrivée'],
+        ['HOUSING', 'Logement'],
+        ['DAILY_LIFE', 'Vie quotidienne'],
+        ['WORK_STUDIES', 'Travail et études'],
+        ['SCAM_ALERTS', 'Alertes arnaques'],
+      ),
+    },
+    { key: 'body', label: 'Texte (première page)', kind: 'textarea', max: PAGE_BODY_MAX },
+    {
+      key: 'status',
+      label: 'État',
+      kind: 'select',
+      options: opt(['PUBLISHED', 'Publié'], ['UNPUBLISHED', 'Dépublié'], ['ARCHIVED', 'Archivé']),
+    },
+  ],
+  EVENT: [
+    { key: 'title', label: 'Titre', kind: 'text', max: 140 },
+    { key: 'description', label: 'Description', kind: 'textarea', max: 5000, optional: true },
+    { key: 'venueName', label: 'Lieu', kind: 'text', max: 140, optional: true },
+    { key: 'addressText', label: 'Adresse', kind: 'text', max: 200, optional: true },
+    { key: 'startsAt', label: 'Début', kind: 'datetime' },
+    { key: 'endsAt', label: 'Fin', kind: 'datetime', optional: true },
+    { key: 'capacity', label: 'Places', kind: 'number', max: 100000, optional: true },
+    {
+      key: 'status',
+      label: 'État',
+      kind: 'select',
+      options: opt(['SCHEDULED', 'Prévu'], ['CANCELLED', 'Annulé'], ['DONE', 'Terminé']),
+    },
+  ],
+  POST: [
+    { key: 'body', label: 'Texte', kind: 'textarea', max: 5000 },
+    {
+      key: 'type',
+      label: 'Type',
+      kind: 'select',
+      options: opt(['VICTORY', 'Victoire'], ['QUESTION', 'Question'], ['INFO', 'Information'], ['DISCUSSION', 'Discussion']),
+    },
+    { key: 'status', label: 'État', kind: 'select', options: opt(['PUBLISHED', 'Publiée'], ['HIDDEN', 'Masquée']) },
+  ],
+  HELP_REQUEST: [
+    { key: 'title', label: 'Titre', kind: 'text', max: 140 },
+    { key: 'body', label: 'Texte', kind: 'textarea', max: 5000 },
+    {
+      key: 'status',
+      label: 'État',
+      kind: 'select',
+      options: opt(['OPEN', 'Ouverte'], ['RESOLVED', 'Résolue'], ['ARCHIVED', 'Archivée']),
+    },
+  ],
+  HOUSING: [
+    { key: 'title', label: 'Titre', kind: 'text', max: 140 },
+    { key: 'description', label: 'Description', kind: 'textarea', max: 5000 },
+    { key: 'district', label: 'Quartier', kind: 'text', max: 100, optional: true },
+    { key: 'priceCents', label: 'Loyer (centimes)', kind: 'number', max: 100_000_000, optional: true },
+    {
+      key: 'status',
+      label: 'État',
+      kind: 'select',
+      options: opt(['ACTIVE', 'Active'], ['PAUSED', 'En pause'], ['TAKEN', 'Pourvue'], ['EXPIRED', 'Expirée']),
+    },
+  ],
+  JOB: [
+    { key: 'title', label: 'Titre', kind: 'text', max: 140 },
+    { key: 'description', label: 'Description', kind: 'textarea', max: 5000 },
+    { key: 'companyName', label: 'Entreprise', kind: 'text', max: 140, optional: true },
+    { key: 'contractType', label: 'Contrat', kind: 'text', max: 60, optional: true },
+    { key: 'status', label: 'État', kind: 'select', options: opt(['ACTIVE', 'Active'], ['EXPIRED', 'Expirée']) },
+  ],
+  PRO: [
+    { key: 'businessName', label: 'Nom de l’activité', kind: 'text', max: 140, optional: true },
+    { key: 'description', label: 'Description', kind: 'textarea', max: 3000, optional: true },
+    { key: 'priceHint', label: 'Indication de prix', kind: 'text', max: 100, optional: true },
+    { key: 'status', label: 'État', kind: 'select', options: opt(['ACTIVE', 'Active'], ['PAUSED', 'En pause']) },
+  ],
+  COMMUNITY: [
+    { key: 'name', label: 'Nom', kind: 'text', max: 100 },
+    { key: 'description', label: 'Description', kind: 'textarea', max: 2000, optional: true },
+  ],
+};
+
+/** Le contenu tel que le formulaire le montre : les valeurs actuelles, par clé de champ. */
+export const adminContentDetailSchema = z
+  .object({
+    id: uuidSchema,
+    type: adminContentTypeSchema,
+    values: z.record(z.string(), z.union([z.string(), z.number(), z.null()])),
+  })
+  .strict();
+export type AdminContentDetail = z.infer<typeof adminContentDetailSchema>;
+
+export const adminContentUpdateSchema = z
+  .object({
+    reason: z.string().trim().min(10).max(500),
+    changes: z
+      .record(z.string(), z.union([z.string(), z.number(), z.null()]))
+      .refine((c) => Object.keys(c).length > 0, 'Aucune modification.'),
+  })
+  .strict();
+export type AdminContentUpdate = z.infer<typeof adminContentUpdateSchema>;
+
 // ── Codes d'erreur ──────────────────────────────────────────────────────────
 
 export const ADMIN_CONTENT_ERROR_CODES = {
@@ -458,6 +589,8 @@ export const ADMIN_CONTENT_ERROR_CODES = {
   MEMBER_ERASE_NOT_ALLOWED: 409,
   MEMBER_ERASE_COUNT: 422,
   CONTENT_ERASE_COUNT: 422,
+  CONTENT_NOT_FOUND: 404,
+  CONTENT_FIELD_INVALID: 422,
   GUIDE_NOT_ESCALATED: 409,
   IMPACT_QUARTER_OPEN: 409,
   IMPACT_QUOTE_NOT_CONSENTED: 409,
@@ -483,6 +616,8 @@ export const ADMIN_CONTENT_ERROR_MESSAGES: Record<AdminContentErrorCode, string>
     'Ce compte porte des preuves à conserver (consentements, sanctions) : utilisez la suppression RGPD, qui l’anonymise.',
   MEMBER_ERASE_COUNT: 'Le nombre saisi ne correspond pas au nombre de comptes sélectionnés.',
   CONTENT_ERASE_COUNT: 'Le nombre saisi ne correspond pas au nombre de contenus sélectionnés.',
+  CONTENT_NOT_FOUND: 'Ce contenu n’existe pas.',
+  CONTENT_FIELD_INVALID: 'Une valeur ne respecte pas le format attendu.',
   GUIDE_NOT_ESCALATED: 'Cette proposition n’a pas été escaladée à l’équipe.',
   IMPACT_QUARTER_OPEN: 'Ce trimestre n’est pas clos : son rapport ne peut pas encore être calculé.',
   IMPACT_QUOTE_NOT_CONSENTED: 'L’auteur n’a pas donné son accord pour être cité : le contenu ne peut pas figurer au rapport.',
@@ -508,6 +643,7 @@ export const ADMIN_CONTENT_AUDIT_ACTIONS = {
   contentRemoved: 'content.removed',
   contentRestored: 'content.restored',
   contentErased: 'content.erased',
+  contentUpdated: 'content.updated',
   userExported: 'user.exported',
   templateCreated: 'template.created',
   templateUpdated: 'template.updated',
@@ -541,3 +677,62 @@ export type MyConsents = z.infer<typeof myConsentsSchema>;
 
 /** Le document que chaque type de consentement référence (01 §2.10). */
 export const CONSENT_DOCUMENT_SLUGS = { TERMS: 'cgu', PRIVACY: 'confidentialite' } as const;
+
+export type AdminContentChangesResult =
+  | { readonly ok: true; readonly data: Readonly<Record<string, string | number | Date | null>> }
+  | { readonly ok: false; readonly field: string; readonly message: string };
+
+/**
+ * Valide les modifications demandées contre `ADMIN_CONTENT_EDIT_FIELDS` : clés connues, bornes, valeurs de liste, dates.
+ * PURE (aucun accès base) : l'API s'en sert avant d'écrire, et un test l'éprouve sans base.
+ */
+export function validateAdminContentChanges(
+  type: AdminContentType,
+  changes: Readonly<Record<string, string | number | null>>,
+): AdminContentChangesResult {
+  const champs = new Map(ADMIN_CONTENT_EDIT_FIELDS[type].map((f) => [f.key, f]));
+  const data: Record<string, string | number | Date | null> = {};
+  for (const [key, brute] of Object.entries(changes)) {
+    const champ = champs.get(key);
+    if (champ === undefined) return { ok: false, field: key, message: 'Ce champ ne se modifie pas.' };
+    if (brute === null || (typeof brute === 'string' && brute.trim() === '')) {
+      if (champ.optional !== true) return { ok: false, field: key, message: 'Ce champ est obligatoire.' };
+      data[key] = null;
+      continue;
+    }
+    switch (champ.kind) {
+      case 'text':
+      case 'textarea': {
+        if (typeof brute !== 'string') return { ok: false, field: key, message: 'Un texte est attendu.' };
+        const t = brute.trim();
+        if (champ.max !== undefined && t.length > champ.max) {
+          return { ok: false, field: key, message: `Au plus ${champ.max} caractères.` };
+        }
+        data[key] = t;
+        break;
+      }
+      case 'number': {
+        const n = typeof brute === 'number' ? brute : Number(brute);
+        if (!Number.isInteger(n) || n < 0 || (champ.max !== undefined && n > champ.max)) {
+          return { ok: false, field: key, message: 'Un entier positif est attendu.' };
+        }
+        data[key] = n;
+        break;
+      }
+      case 'datetime': {
+        const d = new Date(String(brute));
+        if (Number.isNaN(d.getTime())) return { ok: false, field: key, message: 'Une date valide est attendue.' };
+        data[key] = d;
+        break;
+      }
+      case 'select': {
+        if (typeof brute !== 'string' || !(champ.options ?? []).some((o) => o.value === brute)) {
+          return { ok: false, field: key, message: 'Valeur non autorisée.' };
+        }
+        data[key] = brute;
+        break;
+      }
+    }
+  }
+  return { ok: true, data };
+}

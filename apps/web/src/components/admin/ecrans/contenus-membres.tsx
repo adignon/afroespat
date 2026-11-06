@@ -1,18 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
+  ADMIN_CONTENT_EDIT_FIELDS,
   ADMIN_CONTENT_TYPES,
   MAX_PAGE_LIMIT,
   adminContentActionResultSchema,
+  adminContentDetailSchema,
   adminContentPageSchema,
   type AdminContentActionResult,
+  type AdminContentField,
   type AdminContentRow,
   type AdminContentType,
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { useDroit } from '../session-equipe';
-import { Bandeau, Bouton, C, Carte, Champ, FenetreMotif, Lecture, Message, Pastille, Selecteur, Vide, dateCourte, useCharge, useGeste } from '../ui';
+import { Bandeau, Bouton, C, Carte, Champ, FenetreMotif, Lecture, Message, Pastille, Selecteur, Vide, ZoneTexte, dateCourte, useCharge, useGeste } from '../ui';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -97,6 +100,7 @@ export function ContenusMembres() {
   const [dialogue, setDialogue] = useState<Geste | null>(null);
   const [nombre, setNombre] = useState('');
   const [rapport, setRapport] = useState<string | null>(null);
+  const [aModifier, setAModifier] = useState<AdminContentRow | null>(null);
   const [plus, setPlus] = useState<{ readonly cle: string; readonly items: readonly AdminContentRow[]; readonly curseur: string | null } | null>(null);
   const geste = useGeste();
   const suite = useGeste();
@@ -261,6 +265,11 @@ export function ContenusMembres() {
                         </span>
                       </span>
                       {l.authorOrigin === 'SEED' ? <Pastille ton="sombre">Départ</Pastille> : null}
+                      {!peutGerer ? null : (
+                        <Bouton petit ton="contour" onClick={() => setAModifier(l)}>
+                          Modifier
+                        </Bouton>
+                      )}
                       {l.removed ? <Pastille ton="terre">Retiré</Pastille> : null}
                     </li>
                   ))}
@@ -282,6 +291,17 @@ export function ContenusMembres() {
           }
         </Lecture>
       </Carte>
+
+      <FenetreModification
+        ligne={aModifier}
+        onFermer={() => setAModifier(null)}
+        onEnregistre={() => {
+          setAModifier(null);
+          setRapport('Contenu modifié. La correction est tracée au journal d’audit.');
+          setPlus(null);
+          premiere.recharger();
+        }}
+      />
 
       <FenetreMotif
         ouverte={dialogue !== null}
@@ -306,5 +326,146 @@ export function ContenusMembres() {
         }
       />
     </div>
+  );
+}
+
+// ── La correction d'un contenu ─────────────────────────────────────────────
+
+type Valeurs = Record<string, string>;
+
+/** « 2026-11-06T17:30:00.000Z » → « 2026-11-06T18:30 » (heure locale, pour un champ datetime-local). */
+function versChampDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const deux = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${deux(d.getMonth() + 1)}-${deux(d.getDate())}T${deux(d.getHours())}:${deux(d.getMinutes())}`;
+}
+
+function Formulaire({
+  champs,
+  valeurs,
+  onChange,
+}: {
+  readonly champs: readonly AdminContentField[];
+  readonly valeurs: Valeurs;
+  readonly onChange: (cle: string, v: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {champs.map((c) => {
+        const v = valeurs[c.key] ?? '';
+        const libelle = c.optional === true ? `${c.label} (facultatif)` : c.label;
+        if (c.kind === 'textarea') {
+          return <ZoneTexte key={c.key} libelle={libelle} valeur={v} onChange={(x) => onChange(c.key, x)} lignes={c.key === 'body' ? 8 : 4} {...(c.max === undefined ? {} : { maxLength: c.max })} />;
+        }
+        if (c.kind === 'select') {
+          return (
+            <Selecteur
+              key={c.key}
+              libelle={libelle}
+              valeur={v}
+              onChange={(x) => onChange(c.key, x)}
+              options={(c.options ?? []).map((o) => ({ valeur: o.value, libelle: o.label }))}
+            />
+          );
+        }
+        return (
+          <Champ
+            key={c.key}
+            libelle={libelle}
+            valeur={v}
+            onChange={(x) => onChange(c.key, x)}
+            type={c.kind === 'datetime' ? 'datetime-local' : c.kind === 'number' ? 'number' : 'text'}
+            {...(c.kind === 'number' ? { inputMode: 'numeric' as const } : {})}
+            {...(c.kind === 'text' && c.max !== undefined ? { maxLength: c.max } : {})}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function FenetreModification({
+  ligne,
+  onFermer,
+  onEnregistre,
+}: {
+  readonly ligne: AdminContentRow | null;
+  readonly onFermer: () => void;
+  readonly onEnregistre: () => void;
+}) {
+  const champs = ligne === null ? [] : ADMIN_CONTENT_EDIT_FIELDS[ligne.type];
+  const [initiales, setInitiales] = useState<Valeurs | null>(null);
+  const [valeurs, setValeurs] = useState<Valeurs>({});
+  const lecture = useGeste();
+  const envoi = useGeste();
+
+  useEffect(() => {
+    if (ligne === null) {
+      setInitiales(null);
+      setValeurs({});
+      return;
+    }
+    let annule = false;
+    void lecture.lancer(async () => {
+      const d = await staffApi.get(`/contents/${ligne.type}/${ligne.id}`, adminContentDetailSchema);
+      if (annule) return;
+      const v: Valeurs = {};
+      for (const c of ADMIN_CONTENT_EDIT_FIELDS[ligne.type]) {
+        const brut = d.values[c.key];
+        v[c.key] = brut === null || brut === undefined ? '' : c.kind === 'datetime' ? versChampDate(String(brut)) : String(brut);
+      }
+      setInitiales(v);
+      setValeurs(v);
+    });
+    return () => {
+      annule = true;
+    };
+  }, [ligne]);
+
+  const enregistrer = (motif: string) => {
+    if (ligne === null || initiales === null) return;
+    const changes: Record<string, string | number | null> = {};
+    for (const c of champs) {
+      const nouveau = valeurs[c.key] ?? '';
+      if (nouveau === (initiales[c.key] ?? '')) continue;
+      if (nouveau.trim() === '') changes[c.key] = null;
+      else if (c.kind === 'number') changes[c.key] = Number(nouveau);
+      else if (c.kind === 'datetime') changes[c.key] = new Date(nouveau).toISOString();
+      else changes[c.key] = nouveau;
+    }
+    if (Object.keys(changes).length === 0) {
+      envoi.prevenir('Aucune modification à enregistrer.');
+      return;
+    }
+    void envoi
+      .lancer(() => staffApi.patch(`/contents/${ligne.type}/${ligne.id}`, adminContentDetailSchema, { body: { reason: motif, changes } }))
+      .then((ok) => {
+        if (ok) onEnregistre();
+      });
+  };
+
+  return (
+    <FenetreMotif
+      ouverte={ligne !== null}
+      titre={ligne === null ? '' : `Modifier : ${ligne.title}`}
+      consigne="La correction s'applique tout de suite. Le motif est conservé au journal d'audit avec les anciennes et nouvelles valeurs."
+      min={10}
+      libelleConfirmer="Enregistrer"
+      onConfirmer={enregistrer}
+      onFermer={() => {
+        envoi.effacer();
+        onFermer();
+      }}
+      occupe={envoi.occupe || initiales === null}
+      message={envoi.message ?? lecture.message}
+      enfants={
+        initiales === null ? (
+          <div style={{ fontSize: '13px', color: C.gris }}>Chargement…</div>
+        ) : (
+          <Formulaire champs={champs} valeurs={valeurs} onChange={(cle, v) => setValeurs((x) => ({ ...x, [cle]: v }))} />
+        )
+      }
+    />
   );
 }

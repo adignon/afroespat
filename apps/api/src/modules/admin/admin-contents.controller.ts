@@ -1,10 +1,18 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { STAFF_SCOPES, adminContentActionSchema, adminContentQuerySchema } from '@app/shared';
+import {
+  STAFF_SCOPES,
+  adminContentActionSchema,
+  adminContentQuerySchema,
+  adminContentTypeSchema,
+  adminContentUpdateSchema,
+  uuidSchema,
+} from '@app/shared';
 import type { z } from 'zod';
 import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { Staff, type StaffUser } from '../../common/staff.guard';
 import { zodPipe } from '../../common/zod.pipe';
+import { AdminContentsEditService } from './admin-contents-edit.service';
 import { AdminContentsService } from './admin-contents.service';
 
 /**
@@ -14,7 +22,10 @@ import { AdminContentsService } from './admin-contents.service';
 @ApiTags('admin')
 @Controller('admin/contents')
 export class AdminContentsController {
-  constructor(private readonly contents: AdminContentsService) {}
+  constructor(
+    private readonly contents: AdminContentsService,
+    private readonly edition: AdminContentsEditService,
+  ) {}
 
   @Get()
   @RequiresStaffRole(...STAFF_SCOPES.content)
@@ -45,5 +56,26 @@ export class AdminContentsController {
   @ApiOperation({ summary: 'Supprime DÉFINITIVEMENT des contenus (SUPER_ADMIN), confirmé par leur nombre ; dryRun = compte' })
   erase(@Staff() staff: StaffUser, @Body(zodPipe(adminContentActionSchema)) body: z.infer<typeof adminContentActionSchema>) {
     return this.contents.supprimer(staff, body);
+  }
+  @Get(':type/:id')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Les valeurs modifiables d’un contenu (formulaire de correction)' })
+  detail(
+    @Param('type', zodPipe(adminContentTypeSchema)) type: z.infer<typeof adminContentTypeSchema>,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+  ) {
+    return this.edition.detail(type, id);
+  }
+
+  @Patch(':type/:id')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Corrige un contenu (titre, texte, état…) ; motif obligatoire, tracé' })
+  update(
+    @Staff() staff: StaffUser,
+    @Param('type', zodPipe(adminContentTypeSchema)) type: z.infer<typeof adminContentTypeSchema>,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(adminContentUpdateSchema)) body: z.infer<typeof adminContentUpdateSchema>,
+  ) {
+    return this.edition.update(staff, type, id, body);
   }
 }
