@@ -135,6 +135,33 @@ export const envSchema = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 
+  /**
+   * Lancement « dégradé » ASSUMÉ. En production, `OTP_TEST_PHONES=*` et `SMS_PROVIDER=testers` avec le code fixe par
+   * défaut (123456) ouvrent n'importe quel compte à n'importe qui : `loadEnv` les REFUSE, sauf si cette variable vaut
+   * `true` (choix explicite du porteur, journalisé en avertissement à chaque démarrage). `CAPTCHA_PROVIDER=off` et
+   * `AI_MODERATION_PROVIDER=off` restent acceptés sans elle (usage volontaire), mais avertissent aussi.
+   */
+  ALLOW_INSECURE_LAUNCH: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+
+  /**
+   * Nombre de relais de confiance devant l'API (Caddy = 1). Sert à `app.set('trust proxy', N)` : l'IP cliente est
+   * alors celle que `req.ip` déduit de `X-Forwarded-For` en retirant N relais par la droite — un en-tête forgé par
+   * le client, placé à gauche, n'est jamais pris. 0 si l'API est exposée directement.
+   */
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
+
+  /**
+   * `/v1/ready` rend 503 quand le plus ancien événement de la boîte d'envoi non publié a plus que ce délai
+   * (le relais est bloqué : notifications, e-mails et files ne partent plus). 0 = seuil désactivé.
+   */
+  OUTBOX_MAX_PENDING_AGE_SECONDS: z.coerce.number().int().min(0).default(300),
+
+  /** Conservation des événements de domaine DÉJÀ publiés (tâche `outbox.purge`). Jamais les non publiés. */
+  DOMAIN_EVENTS_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
+
   /** api : serveur HTTP. worker : mêmes modules, processeurs de files actifs (§3.1). */
   APP_ROLE: z.enum(['api', 'worker']).default('api'),
   APP_NAME: z.string().min(1),
@@ -390,6 +417,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
       );
     }
 
+    const problems = productionProblems(result.data);
+    if (problems.length > 0) {
+      throw new Error(
+        'Configuration de production dangereuse : l’application refuse de démarrer.\n' +
+          problems.map((m) => `  · ${m}`).join('\n'),
+      );
+    }
+
     /**
      * Le webhook KYC doit être vérifiable. Sans ce secret, `POST /webhooks/didit`
      * refuse tout — donc aucun membre ne passerait jamais L1 —, et le découvrir en
@@ -406,6 +441,96 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
 
   cached = result.data;
   return cached;
+}
+
+/** Les URL de base par défaut (production) : toute autre valeur est un détournement hors mode démo. */
+export const DEFAULT_BASE_URLS: Readonly<Record<string, string>> = {
+  TWILIO_BASE_URL: 'https://api.twilio.com',
+  BREVO_BASE_URL: 'https://api.brevo.com',
+  MAILJET_BASE_URL: 'https://api.mailjet.com',
+  TURNSTILE_BASE_URL: 'https://challenges.cloudflare.com',
+  ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
+  DIDIT_BASE_URL: 'https://verification.didit.me',
+  WHATSAPP_BASE_URL: 'https://graph.facebook.com',
+};
+
+/** Valeurs de `.env.example` : valables en développement, REFUSÉES comme secrets de production. */
+const EXAMPLE_VALUES: Readonly<Record<string, string>> = {
+  DATABASE_URL: 'postgresql://app:app@localhost:5432/app?schema=public',
+  S3_ACCESS_KEY_ID: 'minioadmin',
+  S3_SECRET_ACCESS_KEY: 'minioadmin',
+};
+
+const SECRET_KEYS = [
+  'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET', 'CURSOR_SECRET', 'PHONE_ENCRYPTION_KEY', 'PHONE_HMAC_KEY',
+  'CONTENT_ENCRYPTION_KEY', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY', 'STRIPE_WEBHOOK_SECRET',
+  'MOBILE_MONEY_WEBHOOK_SECRET', 'DIDIT_WEBHOOK_SECRET',
+] as const;
+
+const isLocalHost = (url: string): boolean => {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]' || h.endsWith('.localhost');
+  } catch {
+    return false;
+  }
+};
+
+/** Un secret « de développement » : marqueur `dev-` / `change-me` (aussi dans une clé base64 décodée) ou valeur d'exemple. */
+function looksLikeDevSecret(value: string): boolean {
+  const decoded = Buffer.from(value, 'base64').toString('utf8');
+  return [value, decoded].some((v) => v.includes('dev-') || v.includes('change-me'));
+}
+
+/**
+ * Ce qui doit EMPÊCHER le démarrage en production (liste vide = rien à redire). `ALLOW_INSECURE_LAUNCH=true` lève
+ * seulement les deux refus d'OTP ouvert ; tout le reste est ferme. Exporté pour être éprouvé.
+ */
+export function productionProblems(data: Env): string[] {
+  const out: string[] = [];
+  const record = data as unknown as Record<string, unknown>;
+
+  if (!data.ALLOW_INSECURE_LAUNCH) {
+    if (data.OTP_TEST_PHONES?.includes('*') === true) {
+      out.push('OTP_TEST_PHONES contient « * » : n’importe qui ouvrirait le compte de n’importe qui avec le code fixe. Retirez-le, ou posez ALLOW_INSECURE_LAUNCH=true si c’est voulu (comptes de test uniquement).');
+    }
+    if (data.SMS_PROVIDER === 'testers' && data.SMS_FAKE_FIXED_CODE === '123456') {
+      out.push('SMS_PROVIDER=testers avec le code fixe par défaut 123456 : choisissez un SMS_FAKE_FIXED_CODE propre, ou posez ALLOW_INSECURE_LAUNCH=true si c’est voulu.');
+    }
+  }
+  if (!data.RATE_LIMIT_ENABLED) out.push('RATE_LIMIT_ENABLED=false : la limite de débit doit être active en production.');
+
+  for (const k of ['WEB_ORIGIN', 'ADMIN_ORIGIN', 'S3_ENDPOINT'] as const) {
+    if (isLocalHost(data[k])) out.push(`${k} pointe vers localhost (${data[k]}) : posez l’adresse publique de production.`);
+  }
+
+  // Le mode démo est déjà refusé en production (provider-demo-profile) : toute URL de base différente est un détournement.
+  for (const [k, def] of Object.entries(DEFAULT_BASE_URLS)) {
+    const v = String(record[k]);
+    if (v.replace(/\/+$/, '') !== def) out.push(`${k}=${v} : les *_BASE_URL ne se surchargent qu’avec PROVIDER_MODE=demo (interdit en production). Retirez la variable.`);
+  }
+
+  for (const k of SECRET_KEYS) {
+    const v = record[k];
+    if (typeof v !== 'string') continue;
+    if (looksLikeDevSecret(v) || EXAMPLE_VALUES[k] === v) out.push(`${k} est une valeur de développement (« dev- », « change-me » ou valeur de .env.example) : générez un vrai secret.`);
+  }
+  if (data.DATABASE_URL === EXAMPLE_VALUES['DATABASE_URL']) out.push('DATABASE_URL est celle de .env.example.');
+  return out;
+}
+
+/**
+ * Avertissements de démarrage : options volontairement dégradées, ACCEPTÉES en production mais à ne pas oublier.
+ * Journalisés par `main.ts` à chaque démarrage.
+ */
+export function insecureLaunchWarnings(data: Env): string[] {
+  const out: string[] = [];
+  if (data.CAPTCHA_PROVIDER === 'off') out.push('CAPTCHA_PROVIDER=off : aucun captcha, tout jeton est accepté (inscriptions automatisables).');
+  if (data.AI_MODERATION_PROVIDER === 'off') out.push('AI_MODERATION_PROVIDER=off : aucune modération automatique, tout reste publié.');
+  if (data.OTP_TEST_PHONES?.includes('*') === true) out.push('OTP_TEST_PHONES=* : tous les numéros acceptent le code fixe — n’importe qui peut ouvrir n’importe quel compte.');
+  if (data.SMS_PROVIDER === 'testers') out.push('SMS_PROVIDER=testers : aucun SMS réel, code fixe pour les numéros testeurs.');
+  if (data.ALLOW_INSECURE_LAUNCH) out.push('ALLOW_INSECURE_LAUNCH=true : lancement dégradé assumé.');
+  return out;
 }
 
 /**

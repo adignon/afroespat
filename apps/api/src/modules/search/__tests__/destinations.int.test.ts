@@ -260,7 +260,7 @@ describe('recherche — les destinations (11 §2.1, §2.3)', () => {
     helps.push(id);
     await search.reindexSubject('HELP_REQUEST', id);
 
-    const { items } = await search.suggest(mot);
+    const { items } = await search.suggest(auteur.id, mot);
     const propose = items.find((s) => s.subjectId === id);
     expect(propose).toBeDefined();
     expect(propose?.url).toBe(`/entraide/${id}`);

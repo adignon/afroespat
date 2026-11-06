@@ -26,6 +26,7 @@ import {
 import { shareContactsDe, shareButtonFor } from '@/screens/a01p/data';
 import { shareOut as SORTIES } from '@/screens/a01/data';
 import { useMesReseaux } from '@/screens/accueil/use-mes-reseaux';
+import { useContactsPartage } from '@/screens/accueil/use-contacts-partage';
 import { FEED_LIMITS, PostType as POST_TYPES } from '@app/shared';
 import { ApiError } from '@/lib/api/index';
 import { notifyError, notifySuccess } from '@/components/notifications';
@@ -586,6 +587,7 @@ export default function FeedPage() {
       echec: fil.echec?.message ?? null,
       vide:
         'Aucune publication pour l’instant. Soyez la première personne à partager quelque chose avec la diaspora.',
+      plus: fil.plus,
     },
     feedPosts: fil.feedPosts.map((carte) => ({
       ...carte,
@@ -1110,10 +1112,13 @@ export default function FeedPage() {
     window.open(destination, '_blank', 'noopener,noreferrer');
   };
 
+  // Tous les contacts (et non les seuls « en ligne ») : la sélection est un rang dans CETTE liste.
+  const contactsPartageListe = useContactsPartage(open === 'A01P', fil.online);
+
   const onPartager = useCallback((): void => {
     if (shareSel.length === 0 || partageEnCours || sujet === null) return;
     const destinataires = shareSel
-      .map((i) => fil.online[i]?.handle)
+      .map((i) => contactsPartageListe[i]?.handle)
       .filter((h): h is string => h !== undefined && h !== '');
     if (destinataires.length === 0) return;
 
@@ -1139,7 +1144,7 @@ export default function FeedPage() {
         setOpen(null);
       })
       .finally(() => setPartageEnCours(false));
-  }, [fil.online, partageEnCours, shareSel, sujet]);
+  }, [contactsPartageListe, partageEnCours, shareSel, sujet]);
 
   /**
    * ╔═══════════════════════════════════════════════════════════════════════╗
@@ -1160,7 +1165,7 @@ export default function FeedPage() {
    * sélection est une liste de rangs dans `fil.online`, et l'envoi les y relit.
    * Le pourquoi en entier est sur `contactsFiltres`.
    */
-  const contactsVisibles = contactsFiltres(fil.online, partageRecherche);
+  const contactsVisibles = contactsFiltres(contactsPartageListe, partageRecherche);
 
   const mesReseaux = useMesReseaux(open === 'A01P');
 

@@ -178,8 +178,10 @@ export async function lireEtendu(db: Db, type: AdminContentType, f: FiltreListe)
       const r = await db.conversation.findMany({
         where: {
           ...commun,
-          ...(q === undefined ? {} : { members: { some: { user: { is: { handle: contient(q) } } } } }),
-          ...(origin === undefined ? {} : { members: { some: { user: { is: { origin } } } } }),
+          AND: [
+            q === undefined ? null : { members: { some: { user: { is: { handle: contient(q) } } } } },
+            origin === undefined ? null : { members: { some: { user: { is: { origin } } } } },
+          ].filter((c): c is NonNullable<typeof c> => c !== null),
         },
         orderBy, take,
         select: { id: true, kind: true, openedByUserId: true, createdAt: true, members: { select: { user: { select: { handle: true } } } } },

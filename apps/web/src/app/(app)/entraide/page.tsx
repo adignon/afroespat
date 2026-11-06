@@ -2,7 +2,9 @@
 
 import { useCallback, useState } from 'react';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
-import { chargerH01, SQUELETTE_H01, type PorteeChoisie } from '@/screens/entraide/appels';
+import { useListeAPages } from '@/lib/use-liste-pages';
+import { chargerDemandesSuivantes, chargerH01, SQUELETTE_H01, type PorteeChoisie } from '@/screens/entraide/appels';
+import type { H01Data } from '@/screens/h01/data';
 import { ScreenFrames } from '@/screens/frames';
 import { H01Desktop } from '@/screens/h01/desktop.generated';
 import { H01Mobile } from '@/screens/h01/mobile.generated';
@@ -80,6 +82,7 @@ export default function HelpListPage() {
   return (
     <EcranDonnees
       charger={charger}
+      cle={`${portee}|${type}`}
       attente="Chargement du fil d’entraide…"
       /*
        * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est mesuré : sans cela,
@@ -88,13 +91,32 @@ export default function HelpListPage() {
        */
       squelette={SQUELETTE_H01}
     >
-      {(donnees) => (
-        <ScreenFrames
-          screen="H01"
-          desktop={<H01Desktop {...donnees} />}
-          mobile={<H01Mobile {...donnees} />}
-        />
-      )}
+      {(donnees) => <H01AvecSuite donnees={donnees} type={type} portee={portee} />}
     </EcranDonnees>
   );
+}
+
+/**
+ * H01 avec « Voir plus » (lot E2) : la page suivante de `GET /help`, avec le même type.
+ * Sous « Vous pouvez aider », `/help/can-help` n'a pas de curseur : aucun bouton.
+ */
+function H01AvecSuite({
+  donnees,
+  type,
+  portee,
+}: {
+  readonly donnees: H01Data;
+  readonly type: string;
+  readonly portee: PorteeChoisie;
+}) {
+  const demandes = donnees.demandes ?? [];
+  const { items, plus } = useListeAPages({
+    cle: [portee, type].join('|'),
+    initiaux: demandes,
+    curseurInitial: donnees.suite ?? null,
+    identifiant: (d) => d.href,
+    charger: (curseur, signal) => chargerDemandesSuivantes(type, curseur, demandes.length, signal),
+  });
+  const complet: H01Data = { ...donnees, demandes: items, plusDemandes: plus };
+  return <ScreenFrames screen="H01" desktop={<H01Desktop {...complet} />} mobile={<H01Mobile {...complet} />} />;
 }

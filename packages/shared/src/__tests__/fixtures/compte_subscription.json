@@ -1,4 +1,6 @@
 {
+  "paiementsDisponibles": false,
+  "moyensPaiement": [],
   "items": [],
   "history": [],
   "trial": {

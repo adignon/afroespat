@@ -498,7 +498,15 @@ export class HelpService {
     }
 
     if (Object.keys(data).length > 0) {
-      await this.prisma.helpRequest.update({ where: { id }, data });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.helpRequest.update({ where: { id }, data });
+        // La recherche relit la source : titre, corps ou ville modifiés.
+        await this.outbox.emit(tx, {
+          type: 'help_request.updated',
+          aggregateId: id,
+          payload: { requestId: id, authorUserId: actor.userId },
+        });
+      });
     }
     return this.detail(actor, id);
   }
@@ -815,6 +823,11 @@ export class HelpService {
         targetType: 'help_request',
         targetId: id,
         metadata: { status: request.status, responseCount: request.responseCount },
+      });
+      await this.outbox.emit(tx, {
+        type: 'help_request.deleted',
+        aggregateId: id,
+        payload: { requestId: id, authorUserId: actor.userId },
       });
     });
   }

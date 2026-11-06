@@ -192,7 +192,7 @@ const A01_FIL_ETATS = {
     const fin = finAccolade(jsx, debut);
     if (fin < 0) return { jsx, applied: false };
     const etats =
-      '{filEtat.chargement ? (<EtatVide texte="Chargement du fil…" />) : filEtat.echec !== null ? (<EtatVide texte={filEtat.echec} />) : (feedPosts ?? []).length === 0 ? (<EtatVide texte={filEtat.vide} />) : null}';
+      '{filEtat.chargement ? (<EtatVide texte="Chargement du fil…" />) : filEtat.echec !== null ? (<EtatVide texte={filEtat.echec} />) : (feedPosts ?? []).length === 0 ? (<EtatVide texte={filEtat.vide} />) : null}<VoirPlus plus={filEtat.plus} />';
     return { jsx: jsx.slice(0, fin) + etats + jsx.slice(fin), applied: true };
   },
 };
@@ -310,6 +310,7 @@ export const AJOUTS_FIL_VIVANT = {
   GuidesLiesPublication: '@/components/publication-vivante',
   TitrePublication: '@/components/publication-vivante',
   FEED_LIMITS: '@app/shared',
+  VoirPlus: '@/components/voir-plus',
   OngletsPropositions: '@/components/propositions-recues',
   ListePropositions: '@/components/propositions-recues',
 };

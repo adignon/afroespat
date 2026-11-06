@@ -1,7 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { newId } from '@app/db';
 import type { BookmarkState, BookmarkSubjectType } from '@app/db';
+import { ApiError } from '../../common/api-error';
+import {
+  buildPage,
+  createdAtDescAfter,
+  createdAtDescSort,
+  decodeCreatedAtDesc,
+} from '../../common/cursor';
 import { PrismaService } from '../../common/prisma.service';
+import { loadEnv } from '../../config/env';
+
+/** 01 §2.9 : au plus 500 signets par membre. */
+export const BOOKMARKS_MAX = 500;
+const CURSOR_SCOPE = 'bookmarks';
 
 /**
  * L'état des contenus enregistrés — 01-identite.md §2.9, et la tâche horaire
@@ -86,6 +98,8 @@ export class BookmarksService {
    */
   private static readonly BATCH = 2_000;
 
+  private readonly cursorSecret = loadEnv().CURSOR_SECRET;
+
   constructor(private readonly prisma: PrismaService) {}
 
 
@@ -136,11 +150,13 @@ export class BookmarksService {
       ...(query.subjectType === undefined ? {} : { subjectType: query.subjectType }),
     };
 
-    const [lignes, total, groupes] = await Promise.all([
+    // Pagination HONNÊTE par curseur (createdAt desc, id desc) : `nextCursor` n'est plus écrit en dur.
+    const resume = decodeCreatedAtDesc(query.cursor, this.cursorSecret, CURSOR_SCOPE);
+    const [rawLignes, total, groupes] = await Promise.all([
       this.prisma.bookmark.findMany({
-        where: ou,
-        orderBy: { createdAt: 'desc' },
-        take: query.limit,
+        where: { AND: [ou, ...createdAtDescAfter(resume)] },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
         select: {
           id: true,
           subjectType: true,
@@ -157,6 +173,8 @@ export class BookmarksService {
       }),
     ]);
 
+    const page = buildPage(rawLignes, query.limit, CURSOR_SCOPE, this.cursorSecret, createdAtDescSort);
+    const lignes = page.items;
     const apercus = await this.apercus(lignes);
     const parType: Record<string, number> = {};
     for (const g of groupes) parType[g.subjectType] = g._count._all;
@@ -179,7 +197,7 @@ export class BookmarksService {
           href: vu?.lien ?? null,
         };
       }),
-      nextCursor: null,
+      nextCursor: page.nextCursor,
       meta: { total, parType },
     };
   }
@@ -196,6 +214,27 @@ export class BookmarksService {
    * d'enregistrer est, par construction, celui qu'on vient de voir.
    */
   async put(userId: string, input: { subjectType: BookmarkSubjectType; subjectId: string }) {
+    // Le sujet doit EXISTER et être VISIBLE (ni supprimé, ni masqué, ni en attente de validation) :
+    // enregistrer un identifiant inventé, ou un contenu retiré, créerait un signet « fantôme ».
+    const resolvers = await this.resolversOf(input.subjectType, [input.subjectId], new Date());
+    const resolve = resolvers.get(input.subjectId);
+    if (resolve === undefined || resolve(new Date()) === 'REMOVED') throw ApiError.notFound();
+
+    const existing = await this.prisma.bookmark.findUnique({
+      where: {
+        userId_subjectType_subjectId: { userId, subjectType: input.subjectType, subjectId: input.subjectId },
+      },
+      select: { id: true, state: true },
+    });
+    if (existing !== null) return { id: existing.id, state: existing.state };
+
+    // Plafond de 500 signets (§2.9). Contrôle avant écriture ; la course entre deux ajouts simultanés
+    // ne dépasse le plafond que d'une unité, ce qui est sans conséquence pour un confort personnel.
+    const count = await this.prisma.bookmark.count({ where: { userId } });
+    if (count >= BOOKMARKS_MAX) {
+      throw ApiError.transverse('CONFLICT', { reason: 'BOOKMARK_LIMIT', max: BOOKMARKS_MAX });
+    }
+
     const ligne = await this.prisma.bookmark.upsert({
       where: {
         userId_subjectType_subjectId: {
@@ -263,7 +302,9 @@ export class BookmarksService {
     }
 
     for (const [type, ids] of parType) {
-      const where = { id: { in: ids } };
+      // Un contenu supprimé ou masqué ne livre NI titre NI lien : l'aperçu retombe sur « Contenu retiré ».
+      const where = { id: { in: ids }, deletedAt: null };
+      const idOnly = { id: { in: ids } };
       const poser = (id: string, titre: string, sous: string, lien: string | null): void => {
         out.set(`${type}:${id}`, { titre, sous, lien });
       };
@@ -271,7 +312,7 @@ export class BookmarksService {
       switch (type) {
         case 'STORY': {
           const rows = await this.prisma.story.findMany({
-            where,
+            where: { ...where, status: { notIn: ['HIDDEN', 'REMOVED'] } },
             select: { id: true, body: true },
           });
           for (const r of rows) poser(r.id, r.body.slice(0, 80), 'Story', `/stories/${r.id}`);
@@ -279,7 +320,7 @@ export class BookmarksService {
         }
         case 'GUIDE': {
           const rows = await this.prisma.guide.findMany({
-            where,
+            where: { ...where, status: { not: 'UNPUBLISHED' } },
             select: { id: true, title: true, slug: true },
           });
           for (const r of rows) poser(r.id, r.title, 'Guide', `/guides/${r.slug}`);
@@ -287,7 +328,7 @@ export class BookmarksService {
         }
         case 'POST': {
           const rows = await this.prisma.post.findMany({
-            where,
+            where: { ...where, status: 'PUBLISHED', awaitingApproval: false },
             select: { id: true, body: true },
           });
           for (const r of rows) poser(r.id, r.body.slice(0, 80), 'Publication', `/publications/${r.id}`);
@@ -344,7 +385,7 @@ export class BookmarksService {
         case 'MENTOR':
         case 'USER': {
           const rows = await this.prisma.user.findMany({
-            where,
+            where: { ...where, status: { not: 'DELETED' } },
             select: { id: true, displayName: true, handle: true },
           });
           const sous = type === 'MENTOR' ? 'Parrain' : 'Membre';
@@ -361,7 +402,7 @@ export class BookmarksService {
         }
         case 'CITY': {
           const rows = await this.prisma.city.findMany({
-            where,
+            where: idOnly,
             select: { id: true, name: true, slug: true },
           });
           for (const r of rows) poser(r.id, r.name, 'Ville', `/villes/${r.slug}`);
@@ -381,13 +422,9 @@ export class BookmarksService {
    * requêtes de lecture par passage, quelle que soit la taille du lot — là où une
    * boucle sur deux mille signets en ferait deux mille.
    *
-   * N'ÉCRIT QUE LES CHANGEMENTS. Deux raisons, et la seconde est la vraie : réécrire
-   * deux mille lignes identiques chaque heure gonfle les WAL pour rien, et surtout
-   * un test ne pourrait plus distinguer « la tâche a tourné, rien n'a changé » de
-   * « la tâche a réécrit ». `state_checked_at` suit le même sort — sinon la
-   * distinction serait perdue par la colonne même qui devait l'établir, et savoir
-   * QUAND un état a changé vaut mieux que savoir quand une tâche est passée : ça,
-   * le journal du planificateur le dit déjà.
+   * L'ÉTAT n'est réécrit que s'il CHANGE (pas de WAL gonflé par des lignes identiques) ;
+   * `state_checked_at`, lui, est écrit pour TOUT signet examiné, en une écriture groupée par type : c'est
+   * ce qui fait tourner le lot (« le plus anciennement vérifié d'abord ») au lieu de repasser sur les mêmes.
    */
   async refreshStates(now: Date = new Date()): Promise<{ examines: number; changes: number }> {
     const bookmarks = await this.prisma.bookmark.findMany({
@@ -410,6 +447,7 @@ export class BookmarksService {
       const ids = [...new Set(lot.map((b) => b.subjectId))];
       const resolvers = await this.resolversOf(subjectType, ids, now);
 
+      const verifies: string[] = [];
       for (const bookmark of lot) {
         // Un sujet ABSENT de la carte est un sujet qui n'existe plus : « contenu
         // retiré » (§2.9). C'est le repli, et il est volontairement le dernier — un
@@ -418,13 +456,25 @@ export class BookmarksService {
         // compilateur.
         const resolve = resolvers.get(bookmark.subjectId);
         const wanted = resolve === undefined ? 'REMOVED' : resolve(bookmark.createdAt);
-        if (wanted === bookmark.state) continue;
+        if (wanted === bookmark.state) {
+          verifies.push(bookmark.id);
+          continue;
+        }
 
         await this.prisma.bookmark.update({
           where: { id: bookmark.id },
           data: { state: wanted, stateCheckedAt: now },
         });
         changes += 1;
+      }
+      // `state_checked_at` est écrit À CHAQUE PASSAGE, changement ou non : le tri « le plus anciennement
+      // vérifié d'abord » ne tourne en équité que si un signet examiné sort de la tête de file. Sans cela,
+      // les mêmes 2 000 signets sans changement monopolisaient chaque lot. Une seule écriture groupée.
+      if (verifies.length > 0) {
+        await this.prisma.bookmark.updateMany({
+          where: { id: { in: verifies } },
+          data: { stateCheckedAt: now },
+        });
       }
     }
 
@@ -504,9 +554,13 @@ export class BookmarksService {
       case 'POST': {
         const rows = await this.prisma.post.findMany({
           where: { ...where, deletedAt: null },
-          select: { id: true },
+          select: { id: true, status: true, awaitingApproval: true },
         });
-        for (const row of rows) out.set(row.id, fixed('AVAILABLE'));
+        for (const row of rows) {
+          // Masquée, retirée par la modération, ou en attente de validation : « retiré » pour qui l'a gardée.
+          const visible = row.status === 'PUBLISHED' && !row.awaitingApproval;
+          out.set(row.id, fixed(visible ? 'AVAILABLE' : 'REMOVED'));
+        }
         return out;
       }
 

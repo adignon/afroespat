@@ -25,6 +25,20 @@ function isApiErrorBody(body: unknown): body is { error: { code: string; message
   return typeof err === 'object' && err !== null && 'code' in err && 'message' in err;
 }
 
+/**
+ * Violation d'unicité Prisma (P2002), reconnue SANS importer le client : un test
+ * unitaire du filtre n'a pas à charger la base. Deux requêtes concurrentes qui
+ * créent la même ligne produisent ceci ; c'est un conflit d'état (409), pas une
+ * panne (500).
+ */
+export function isUniqueViolation(exception: unknown): boolean {
+  return (
+    exception instanceof Error &&
+    exception.name === 'PrismaClientKnownRequestError' &&
+    (exception as { code?: unknown }).code === 'P2002'
+  );
+}
+
 @Catch()
 export class ApiErrorFilter implements ExceptionFilter {
   private readonly logger = new Logger(ApiErrorFilter.name);
@@ -83,6 +97,13 @@ export class ApiErrorFilter implements ExceptionFilter {
                   ? 'VALIDATION_FAILED'
                   : 'INTERNAL_ERROR';
       res.status(status).json(transverseError(code));
+      return;
+    }
+
+    if (isUniqueViolation(exception)) {
+      // Pas de détail (colonnes, valeurs) au client : §8.3. La trace reste au journal.
+      this.logger.warn(`${req.method} ${req.url} — conflit d’unicité`);
+      res.status(409).json(transverseError('CONFLICT'));
       return;
     }
 

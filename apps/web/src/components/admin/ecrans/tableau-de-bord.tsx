@@ -6,6 +6,8 @@ import { staffApi } from '@/lib/api/index';
 import { vueD02 } from '@/screens/administration/appels';
 import type { D02Data } from '@/screens/administration/data';
 import { lireOverview } from '../a-traiter';
+import { peutOuvrir } from '../navigation-admin';
+import { useEquipe } from '../session-equipe';
 import { C, Lecture, useCharge } from '../ui';
 import { ABSENT, cartesOverview, courbe, lignesAlertes, objectif, pourcentage, pourcentageEntier, variation, type AlerteLigne, type Rangee } from './tableau-de-bord-vue';
 
@@ -235,9 +237,10 @@ const TON: Record<AlerteLigne['ton'], string> = { encre: C.encre, terre: C.terre
  * nombre de dossiers dans la file de modération (de l'overview) ; sans alerte ni dossier, un constat sobre.
  */
 export function Alertes({ alertes, file = 0 }: { readonly alertes: AdminDashboardOverview['alerts']; readonly file?: number }) {
-  const lignes = lignesAlertes(alertes);
+  const { equipe } = useEquipe();
+  const lignes = lignesAlertes(alertes, equipe === null ? undefined : equipe.role);
   const enFile: AlerteLigne | null =
-    file > 0
+    file > 0 && (equipe === null || peutOuvrir(equipe.role, { href: '/admin/moderation', libelle: '', description: '', scope: 'moderation', icone: '' }))
       ? { cle: 'file', ton: 'terre', titre: 'File de modération', detail: `${new Intl.NumberFormat('fr-FR').format(file)} dossier${file > 1 ? 's' : ''} ouvert${file > 1 ? 's' : ''}`, vers: '/admin/moderation' }
       : null;
   const toutes = enFile === null ? lignes : [enFile, ...lignes];

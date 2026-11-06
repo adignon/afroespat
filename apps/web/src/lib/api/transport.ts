@@ -93,6 +93,11 @@ export interface TransportConfig {
   readonly credentials: Credentials;
   /** Refuse un chemin qui sortirait du domaine. Voir `domains.ts`. */
   readonly assertPath: (path: string) => void;
+  /**
+   * Appelé sur un `401 STAFF_SESSION_REQUIRED` (domaine équipe) : la session est finie. Le transport prévient seulement ;
+   * l'application décide de la redirection.
+   */
+  readonly onSessionLost?: (path: string) => void;
 }
 
 /**
@@ -312,6 +317,8 @@ export function createTransport(config: TransportConfig): Transport {
       if (credentials.kind === 'bearer' && failure.code === 'LEVEL_REQUIRED') {
         credentials.onRightsChanged();
       }
+
+      if (response.status === 401 && failure.code === 'STAFF_SESSION_REQUIRED') config.onSessionLost?.(path);
 
       throw toApiError(response, failure);
     }

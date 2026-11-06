@@ -64,6 +64,11 @@ export const publicLandingSchema = z
           name: z.string(),
           /** `null` sous le seuil. */
           memberCount: z.number().int().nullable(),
+          /**
+           * Le réseau PUBLIC de la ville (créé à l'activation) : la page d'accueil ouvre sa fiche « À propos ».
+           * `null` si la ville n'en a pas (ou si son réseau n'est pas public).
+           */
+          communityId: z.string().uuid().nullable(),
         })
         .strict(),
     ),

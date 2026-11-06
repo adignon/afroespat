@@ -57,6 +57,9 @@ export interface S04Data {
     readonly total: number;
     /** « 8 offres en ligne », écrit à partir du total. */
     readonly sousTitre: string;
+    /** `nextCursor` de la première page (lot E2). */
+    readonly suite: string | null;
+    readonly plus?: import('@/components/voir-plus').PlusListe;
   };
   readonly profils: {
     readonly liste: readonly CarteProfil[];

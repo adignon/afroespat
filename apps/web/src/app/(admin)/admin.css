@@ -193,6 +193,27 @@
   .admin-rail {
     width: 92px;
   }
+  /* Rail replié : le libellé s'affiche au survol ET au focus (clavier, tactile après un appui). */
+  .admin-nav-lien {
+    position: relative;
+  }
+  .admin-nav-lien:hover::after,
+  .admin-nav-lien:focus-visible::after {
+    content: attr(data-libelle);
+    position: absolute;
+    left: calc(100% + 8px);
+    top: 50%;
+    transform: translateY(-50%);
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #16211d;
+    color: #fff;
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+    z-index: 40;
+    pointer-events: none;
+  }
   .admin-marque-nom,
   .admin-nav-titre,
   .admin-nav-libelle {

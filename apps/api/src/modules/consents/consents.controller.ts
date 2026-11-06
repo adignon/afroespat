@@ -5,6 +5,7 @@ import { consentSchema } from '@app/shared';
 import type { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
 import { RequiresCapability } from '../../common/capability.decorator';
+import { clientIp } from '../../common/client-ip';
 import { PrismaService } from '../../common/prisma.service';
 import { zodPipe } from '../../common/zod.pipe';
 import { ConsentsService } from './consents.service';
@@ -46,17 +47,13 @@ export class ConsentsController {
       // écrirait n'importe quoi dans la preuve ; du jeton, elle serait celle de
       // la connexion — or un jeton dure quinze minutes et un téléphone change de
       // réseau en marchant.
-      ip: clientIp(request),
+      ip: clientIpOrUndefined(request),
     });
     return { recorded: true };
   }
 }
 
 /** L'IP du client. Voir le commentaire de `record` : elle sert de preuve (§5). */
-function clientIp(request: Request): string | undefined {
-  const forwarded = request.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0]?.trim();
-  }
-  return request.ip;
+function clientIpOrUndefined(request: Request): string | undefined {
+  return clientIp(request) ?? undefined;
 }

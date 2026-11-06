@@ -38,6 +38,8 @@ import {
   propositionFrom,
   versionsFrom,
 } from './from-api';
+import { fusionner, useSuiteCurseur } from '@/lib/use-pages-curseur';
+import { plusDe } from '@/components/voir-plus';
 
 /**
  * L'ÉTAT DES ÉCRANS DE GUIDES — A03 et A04.
@@ -232,6 +234,43 @@ export function useGuides(
     return () => ac.abort();
   }, [charger, actif]);
 
+  /**
+   * LA SUITE DE LA LISTE (lot E2) : `nextCursor` était exposé mais personne ne le
+   * consommait — au-delà de 20 guides, le reste n'existait pas. La clé reprend
+   * l'onglet et les trois filtres : en changer abandonne la page en vol.
+   */
+  const curseurListe = etat.page?.nextCursor ?? null;
+  const suite = useSuiteCurseur<GuideListResponse['items'][number]>({
+    curseur: curseurListe,
+    cle: [onglet, category, countryId, cityId].join('|'),
+    charger: (curseur, signal) =>
+      fetchGuides(
+        {
+          tab: onglet,
+          ...(category === '' ? {} : { category }),
+          ...(countryId === '' ? {} : { countryId }),
+          ...(cityId === '' ? {} : { cityId }),
+          cursor: curseur,
+        },
+        signal,
+      ),
+    surPage: (suivante) => {
+      setEtat((p) =>
+        p.page === null
+          ? p
+          : {
+              ...p,
+              page: {
+                ...p.page,
+                items: fusionner(p.page.items, suivante.items, (g) => g.id),
+                nextCursor: suivante.nextCursor,
+              },
+            },
+      );
+    },
+  });
+  const plus = plusDe(suite, { curseur: curseurListe, affiches: etat.page?.items.length ?? 0 });
+
   const donnees = useMemo(
     () => ({
       guides: etat.page === null ? [] : guideCardsFrom(etat.page),
@@ -242,7 +281,7 @@ export function useGuides(
     [etat.page],
   );
 
-  return { ...etat, ...donnees };
+  return { ...etat, ...donnees, plus };
 }
 
 export interface GuideEtat {

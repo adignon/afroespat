@@ -344,8 +344,8 @@ export class AccountService {
    *     de valeur `BANNED` dans l'enum : sans cette exclusion, tout banni serait
    *     supprimé six mois plus tard, et la suppression vidant `phone_numbers`, son
    *     empreinte de numéro redeviendrait libre. Il se réinscrirait avec le même
-   *     téléphone. C'est le seul rempart disponible : la table
-   *     `banned_phone_hashes` que 13 §4.2 nomme n'existe PAS dans le schéma figé.
+   *     téléphone. La table `banned_phone_hashes` (13 §4.2) existe
+   *     désormais ; cette exclusion reste une ceinture de sécurité.
    *   · `deactivated_at IS NULL`. La colonne est nullable, et `<= cutoff` sur NULL
    *     rend NULL, donc faux : ces comptes ne sont jamais purgés. C'est le bon
    *     comportement — sans date de désactivation, on ne sait pas depuis quand — et
@@ -578,6 +578,8 @@ export class AccountService {
     await tx.bookmark.deleteMany({ where: { userId } });
     // 15 §11 : « `member_notes` : supprimées » — les notes internes ne survivent pas au membre.
     await tx.memberNote.deleteMany({ where: { userId } });
+    // RGPD : l'e-mail est une donnée personnelle, sa vérification en cours aussi.
+    await tx.emailVerification.deleteMany({ where: { userId } });
 
     /**
      * L'anonymisation de `users` (§2.8) : « `handle` remplacé par
@@ -595,6 +597,8 @@ export class AccountService {
         handle: `deleted_${newId().replace(/-/g, '').slice(0, 12)}`,
         displayName: 'Membre supprimé',
         avatarAssetId: null,
+        emailEncrypted: null,
+        emailVerifiedAt: null,
         cityId: null,
         arrivalDate: null,
         plannedDepartureDate: null,
@@ -611,14 +615,32 @@ export class AccountService {
       },
     });
 
-    // Les médias du membre perdent leur propriétaire (§8.1 : minimisation), et
-    // l'avatar est retiré de la circulation.
-    await tx.mediaAsset.updateMany({ where: { ownerUserId: userId }, data: { ownerUserId: null } });
+    // Les médias personnels (avatar, justificatifs, photos d'album) sont marqués
+    // supprimés : `retention.purge` (`MediaService.purgeOrphans`) efface ensuite leurs
+    // OCTETS du stockage objet. Les autres médias perdent seulement leur propriétaire.
+    await tx.mediaAsset.updateMany({
+      where: { ownerUserId: userId, kind: { in: ['AVATAR', 'PROOF', 'ALBUM'] }, deletedAt: null },
+      data: { deletedAt: now },
+    });
     if (user.avatarAssetId !== null) {
       await tx.mediaAsset.updateMany({
         where: { id: user.avatarAssetId, deletedAt: null },
         data: { deletedAt: now },
       });
     }
+    await tx.mediaAsset.updateMany({ where: { ownerUserId: userId }, data: { ownerUserId: null } });
+  }
+
+  /**
+   * Les consentements d'un compte supprimé sont conservés 3 ans comme preuve (§2.8),
+   * puis purgés. Idempotente : un `deleteMany` borné par la date de suppression.
+   */
+  async purgeConsentsOfDeletedAccounts(now: Date = new Date()): Promise<{ consents: number }> {
+    const cutoff = new Date(now);
+    cutoff.setUTCFullYear(cutoff.getUTCFullYear() - ACCOUNT_LIMITS.consentRetentionYears);
+    const removed = await this.prisma.consent.deleteMany({
+      where: { user: { status: 'DELETED', deletedAt: { lt: cutoff } } },
+    });
+    return { consents: removed.count };
   }
 }

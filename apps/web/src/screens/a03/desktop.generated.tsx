@@ -12,10 +12,11 @@ import { CadreCliquable } from '@/components/cadre-cliquable';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
+import { VoirPlus } from '@/components/voir-plus';
 import type { A03Data } from './data';
 
 export function A03Desktop(props: A03Data) {
-  const { guideFilters, guideTabs, guides, missing, panelGuides, rail } = props;
+  const { guideFilters, guideTabs, guides, missing, panelGuides, plusGuides, rail } = props;
 
   return (
     <>
@@ -63,7 +64,7 @@ export function A03Desktop(props: A03Data) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", fontSize: "12.5px", color: "#5D6B66" }}><span style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ width: "26px", height: "26px", borderRadius: "999px", background: g.bg, color: "#fff", fontSize: "9.5px", fontWeight: "700", display: "flex", alignItems: "center", justifyContent: "center" }}>{g.i}</span>{g.author}<svg width="13" height="13" viewBox="0 0 24 24" fill="#16785E"><circle cx="12" cy="12" r="10" /><path d="m8 12 3 3 5-6" stroke="#fff" strokeWidth="2.2" fill="none" /></svg></span><span><strong style={{ color: "#16211D" }}>{g.useful}</strong> ont trouvé utile</span></div>
               </div>
             </CadreCliquable></Fragment>
-))}
+))}<VoirPlus plus={plusGuides} />
         </main>
         <aside data-zone="droite" style={{ width: "300px", display: "flex", flexDirection: "column", gap: "12px" }}>
           {(missing ?? []).length === 0 ? null : (<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "18px" }}><div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>GUIDES MANQUANTS</div><div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>Recherché sans résultat ce mois-ci</div>{(missing ?? []).map((m, mIndex) => (

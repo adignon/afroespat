@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { conversationsResponseSchema, notificationsResponseSchema } from '@app/shared';
 import { hasAccessToken, memberApi, resumeSession } from '@/lib/api/member';
+import { surFinDeSession } from '@/lib/api/session';
 import { RESYNCHRONISER } from '@/lib/temps-reel';
 import { useEvenements, useRepliPolling } from '@/lib/use-temps-reel';
 import { diffuserCompteurs, useAutresOnglets } from '@/lib/entre-onglets';
@@ -110,6 +111,19 @@ let courants: CompteursBarre = VIDE;
 const abonnes = new Set<(c: CompteursBarre) => void>();
 let relecture: ReturnType<typeof setTimeout> | null = null;
 
+/**
+ * Compte les valeurs « plus fraîches qu'une lecture en vol » : un `notification.new` ou
+ * un autre onglet donnent un compte EXACT. Une lecture partie avant eux ne doit pas
+ * l'écraser en arrivant après.
+ */
+let versionDirecte = 0;
+
+/** Publie un compte reçu en direct (événement, autre onglet) : il prime sur toute lecture en vol. */
+function publierDirect(suite: CompteursBarre): void {
+  versionDirecte += 1;
+  publier(suite);
+}
+
 function publier(suite: CompteursBarre): void {
   if (suite.messages === courants.messages && suite.notifications === courants.notifications) return;
   courants = suite;
@@ -125,9 +139,12 @@ function relireBientot(): void {
     relecture = null;
     const aDiffuser = diffuserApresRelecture;
     diffuserApresRelecture = false;
+    const version = versionDirecte;
     enCours = demander();
     void enCours
       .then((suite) => {
+        // Un compte exact est arrivé pendant la lecture : elle est périmée, on la jette.
+        if (version !== versionDirecte) return;
         publier(suite);
         // Lot F2 : le geste vient de CET onglet, les autres doivent suivre (voir `lib/entre-onglets`).
         if (aDiffuser) diffuserCompteurs(suite);
@@ -153,8 +170,17 @@ export function useCompteursBarre(): CompteursBarre {
 
   useEffect(() => {
     abonnes.add(setCompteurs);
-    enCours ??= demander();
-    void enCours.then(publier).catch(() => undefined);
+    // Seul le PREMIER montage lit : les suivants repartent de `courants`. Republier la
+    // promesse déjà résolue à chaque page écraserait un compte reçu en direct depuis.
+    if (enCours === null) {
+      const version = versionDirecte;
+      enCours = demander();
+      void enCours
+        .then((suite) => {
+          if (version === versionDirecte) publier(suite);
+        })
+        .catch(() => undefined);
+    }
     return () => {
       abonnes.delete(setCompteurs);
     };
@@ -166,7 +192,7 @@ export function useCompteursBarre(): CompteursBarre {
       if (evenement === 'notification.new') {
         const unread = (payload as { unread?: unknown } | null)?.unread;
         if (typeof unread === 'number') {
-          publier({ ...courants, notifications: unread });
+          publierDirect({ ...courants, notifications: unread });
           return;
         }
       }
@@ -175,15 +201,21 @@ export function useCompteursBarre(): CompteursBarre {
   );
   useRepliPolling(relireBientot);
   // Un autre onglet vient de marquer lu : on prend ses comptes tels quels.
-  useAutresOnglets(publier);
+  useAutresOnglets(publierDirect);
 
   return compteurs;
 }
+
+// Fin de session : les compteurs d'un membre ne s'affichent pas chez le suivant.
+surFinDeSession(() => {
+  oublierCompteursBarre();
+});
 
 /** Pour les épreuves : oublie ce qui a été demandé. */
 export function oublierCompteursBarre(): void {
   enCours = null;
   courants = VIDE;
+  versionDirecte = 0;
   if (relecture !== null) clearTimeout(relecture);
   relecture = null;
 }

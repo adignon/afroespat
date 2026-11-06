@@ -5,6 +5,7 @@ import { ProvidersModule } from './providers/providers.module';
 import { QueueModule } from './queue/queue.module';
 import { HealthController } from './modules/health/health.controller';
 import { PlacesController } from './modules/places/places.controller';
+import { RefSuggestionsController } from './modules/places/ref-suggestions.controller';
 import { AuthController } from './modules/auth/auth.controller';
 import { AuthService } from './modules/auth/auth.service';
 import { UsersController } from './modules/users/users.controller';
@@ -90,7 +91,7 @@ import { PublicLandingController } from './modules/public/public-landing.control
 import { PublicLandingService } from './modules/public/public-landing.service';
 import { StaffAuthController } from './modules/admin/staff-auth.controller';
 import { StaffAuthService } from './modules/admin/staff-auth.service';
-import { SearchController } from './modules/search/search.controller';
+import { SearchAdminController, SearchController } from './modules/search/search.controller';
 import { SearchService, SEARCH_INDEX_QUEUE } from './modules/search/search.service';
 import { BullSearchIndexQueue, SearchIndexConsumer } from './modules/search/search.consumer';
 import {
@@ -167,12 +168,12 @@ import {
      */
     ...(loadEnv().APP_ROLE === 'api' ? [RealtimeModule] : []),
   ],
-  controllers: [HealthController, PlacesController, BookmarksController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ServicesCountsController, ProsController, ModerationController,
+  controllers: [HealthController, PlacesController, RefSuggestionsController, BookmarksController, AuthController, UsersController, AccountController, KycController, BlocksController, ConsentsController, HelpController, GuidesController, CommunitiesController, EventsController, CitiesController, HousingController, JobsController, ServicesCountsController, ProsController, ModerationController,
     // Module 15 — l'équipe. Trois contrôleurs sous `/v1/admin`, derrière `StaffGuard`.
     StaffAuthController, AdminController, AdminModerationController, AdminContentController, PublicContentController, AdminMemberController, AdminContentsController, PublicLandingController, AdminJourneysController, AdminGuidesController,
     // Module 02 — les référentiels, tenus par CONTENT_ADMIN (§4.2).
     ReferentialsController,
-    SearchController, NotificationsController, NotificationSettingsController,
+    SearchController, SearchAdminController, NotificationsController, NotificationSettingsController,
     FeedController, PostsController, CommentsController, StoriesController, MyStoriesController,
     CommunityPendingPostsController,
     MentorshipController, ConnectionsController, MessagingController, JourneysController,

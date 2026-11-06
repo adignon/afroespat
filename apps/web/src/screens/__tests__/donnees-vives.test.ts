@@ -124,8 +124,10 @@ const montes = cadresMontes();
 describe('aucune valeur de maquette sur un écran monté (lot W2A, phase 2)', () => {
   it('le balayage trouve bien les cadres montés (sinon il ne garde rien)', () => {
     expect(montes.length).toBeGreaterThan(150);
-    expect(montes.some((f) => f.endsWith('a01/desktop.generated.tsx'))).toBe(true);
-    expect(montes.some((f) => f.endsWith('k08/mobile.generated.tsx'))).toBe(true);
+    // Séparateurs normalisés : sous Windows `join`/`resolve` rendent des antislashs, et l'assertion échouait pour cette seule raison.
+    const posix = montes.map((f) => f.replaceAll('\\', '/'));
+    expect(posix.some((f) => f.endsWith('a01/desktop.generated.tsx'))).toBe(true);
+    expect(posix.some((f) => f.endsWith('k08/mobile.generated.tsx'))).toBe(true);
   });
 
   for (const { nom, motif } of LISTE_NOIRE) {

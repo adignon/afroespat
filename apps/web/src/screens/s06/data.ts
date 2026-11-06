@@ -41,6 +41,10 @@ export interface S06Data {
     readonly villes: readonly { readonly valeur: string; readonly libelle: string }[];
     /** La tête mise en avant d'abord (au plus deux, §4.2), puis le classement naturel. */
     readonly fiches: readonly CarteFiche[];
+    /** `nextCursor` de la première page (lot E2). */
+    readonly suite: string | null;
+    readonly total: number | null;
+    readonly plus?: import('@/components/voir-plus').PlusListe;
   };
 }
 

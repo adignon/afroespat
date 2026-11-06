@@ -3878,6 +3878,43 @@ export class CommunitiesService {
     return { archived: stale.map((c) => c.id), warned: toWarn.map((c) => c.id) };
   }
 
+  /**
+   * Consommateur de `post.commented` pour un commentaire posé sur un SUJET.
+   *
+   * Le module du fil écrit le commentaire mais ne touche pas aux compteurs du sujet
+   * (`topics.reply_count`, `last_reply_at`) : c'est ici. Sans ce consommateur,
+   * `community.topic_archive` archivait à tort un sujet vivant, et
+   * `community.archive_inactive` endormait un réseau où l'on discute.
+   *
+   * RECALCULE au lieu d'incrémenter : la livraison est « au moins une fois », un
+   * rejeu ne doit pas faire dériver le compteur. L'activité du réseau ne recule jamais.
+   */
+  async handleTopicCommented(topicId: string): Promise<void> {
+    const topic = await this.prisma.topic.findUnique({
+      where: { id: topicId },
+      select: { id: true, communityId: true, deletedAt: true },
+    });
+    if (topic === null || topic.deletedAt !== null) return;
+
+    const agg = await this.prisma.comment.aggregate({
+      where: { subjectType: 'TOPIC', subjectId: topicId, deletedAt: null, status: 'PUBLISHED' },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    });
+    const now = new Date();
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.topic.update({
+        where: { id: topicId },
+        data: { replyCount: agg._count._all, lastReplyAt: agg._max.createdAt },
+      });
+      await tx.community.updateMany({
+        where: { id: topic.communityId, lastActivityAt: { lt: now } },
+        data: { lastActivityAt: now, warningSentAt: null },
+      });
+    });
+  }
+
   /** `community.topic_archive` — quotidienne : 90 jours sans réponse (§2.3, §7). */
   async archiveStaleTopics(now = new Date()): Promise<number> {
     const before = new Date(now.getTime() - TOPIC_ARCHIVE_AFTER_DAYS * DAY_MS);

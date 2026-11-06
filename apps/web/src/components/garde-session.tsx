@@ -1,9 +1,10 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
-import { attendreSession } from '@/lib/api/session';
+import { attendreSession, surSessionMorte } from '@/lib/api/session';
+import { adresseConnexion } from '@/lib/suite-connexion';
 import { BandeauAnnonce } from './bandeau-annonce';
 import { FenetreConsentement } from './fenetre-consentement';
 
@@ -59,6 +60,8 @@ export function GardeSession({ children }: { readonly children: React.ReactNode 
   const router = useRouter();
   const chemin = usePathname();
   const [tranchee, setTranchee] = useState(() => hasAccessToken());
+  /** Une seule redirection par montage : la reprise ratée et le verdict « morte » arrivent ensemble. */
+  const renvoye = useRef(false);
   // Déclaré AU RENDU, avant tout effet : les effets des enfants partent d'abord, et
   // leurs appels doivent déjà attendre la reprise (voir `lib/api/session.ts`).
   attendreSession();
@@ -82,14 +85,34 @@ export function GardeSession({ children }: { readonly children: React.ReactNode 
        * est encodée, et c'est la connexion qui devra vérifier qu'elle est bien un
        * chemin interne : une redirection ouverte se construit exactement comme ça.
        */
-      const suite = chemin === null ? '' : `?suite=${encodeURIComponent(chemin)}`;
-      router.replace(`/connexion${suite}`);
+      if (renvoye.current) return;
+      renvoye.current = true;
+      router.replace(adresseConnexion(chemin));
     });
 
     return () => {
       vivant = false;
     };
   }, [tranchee, router, chemin]);
+
+  /**
+   * ── LA SESSION MEURT EN COURS DE ROUTE ─────────────────────────────────────
+   *
+   * Le transport marque la session « morte » quand `/auth/refresh` répond 401/403
+   * (session révoquée, appareil retiré, compte suspendu). Le garde ne regardait que
+   * la reprise du MONTAGE : passé ce cap, le membre restait sur son écran, devant des
+   * erreurs sans issue. Il est maintenant renvoyé, UNE fois, vers la connexion avec
+   * l'écran où il était (`?suite=`, validé par la connexion comme chemin interne).
+   * `replace` : l'écran quitté n'est plus consultable.
+   */
+  useEffect(() => {
+    return surSessionMorte(() => {
+      if (renvoye.current) return;
+      renvoye.current = true;
+      const courant = `${window.location.pathname}${window.location.search}`;
+      router.replace(adresseConnexion(courant));
+    });
+  }, [router]);
 
   /**
    * Deux ajouts du lot « contenu légal », posés ICI parce que c'est le seul endroit où l'on

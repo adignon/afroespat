@@ -31,6 +31,7 @@ import { AuditService } from '../../common/audit.service';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
+import { bumpUserStat } from '../../common/user-stats';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
@@ -360,7 +361,7 @@ export class EventsService {
   /**
    * La limite du plan gratuit, lue dans `plans.limits` quand la ligne existe.
    *
-   * La table `plans` n'est pas encore amorcée (le module 14 n'existe pas) : on
+   * La table `plans` n'est pas encore amorcée (ou pas encore configurée) : on
    * retombe alors sur la valeur de la spec, 1. Ne PAS retomber signifierait
    * qu'aucune limite ne s'applique tant que la facturation n'est pas livrée — or
    * c'est une règle dure, et elle doit tenir dès maintenant.
@@ -597,11 +598,6 @@ export class EventsService {
       await this.visibility.assertVisible(userId, event.organizerUserId);
     }
 
-    const existing = await this.prisma.eventAttendee.findUnique({
-      where: { eventId_userId: { eventId, userId } },
-      select: { id: true, status: true, respondedAt: true },
-    });
-
     const result = await this.prisma.$transaction(async (tx) => {
       // Verrou de ligne sur l'événement : sans lui, deux inscriptions
       // simultanées sur la dernière place passeraient toutes les deux en GOING.
@@ -609,6 +605,13 @@ export class EventsService {
         SELECT attendee_count, capacity FROM events WHERE id = ${eventId}::uuid FOR UPDATE`;
       const snapshot = locked[0];
       if (snapshot === undefined) throw ApiError.notFound();
+
+      // Lue APRÈS le verrou : un double clic voit la ligne créée par le premier
+      // au lieu de tenter une seconde création (violation d'unicité, 500).
+      const existing = await tx.eventAttendee.findUnique({
+        where: { eventId_userId: { eventId, userId } },
+        select: { id: true, status: true, respondedAt: true },
+      });
 
       const wasGoing = existing?.status === 'GOING';
       let status: AttendeeStatus = input.status;
@@ -1118,7 +1121,7 @@ export class EventsService {
         if (eligible) {
           // `createMany` + `skipDuplicates` plutôt que `create` : la contrainte
           // d'unicité fait foi, et une ligne déjà là n'est pas une erreur.
-          await tx.reputationEvent.createMany({
+          const organized = await tx.reputationEvent.createMany({
             data: [
               {
                 id: newId(),
@@ -1130,6 +1133,7 @@ export class EventsService {
             ],
             skipDuplicates: true,
           });
+          await bumpUserStat(tx, event.organizerUserId, 'eventsOrganized', organized.count);
           credited += 1;
         }
 

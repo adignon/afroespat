@@ -8,6 +8,7 @@ import { newId } from '@app/db';
 import { ApiError } from '../../common/api-error';
 import { zodPipe } from '../../common/zod.pipe';
 import {
+  LANDING_MIN_MEMBERS,
   MEMBER_SKILLS_MAX,
   cleCompetence,
   createPlacesSkillSchema,
@@ -32,6 +33,11 @@ import {
 
 const citiesQuery = z.object({
   countryId: z.string().uuid().optional(),
+  /** 02 §4.1 : préfixe du nom, insensible à la casse et aux accents. */
+  q: z.string().trim().min(1).max(80).optional(),
+  /** 02 §4.1 : les villes à moins de `radiusKm` de cette ville (elle-même comprise). */
+  nearCityId: z.string().uuid().optional(),
+  radiusKm: z.coerce.number().positive().max(2_000).optional(),
   /** `false` inclut les villes inactives : nécessaire à l'onboarding, où le
    *  membre doit pouvoir indiquer où il vit même sans réseau ouvert (02 §2.2). */
   activeOnly: z
@@ -39,6 +45,20 @@ const citiesQuery = z.object({
     .default('true')
     .transform((v) => v === 'true'),
 });
+
+/** Minuscules sans diacritiques : « Évry » et « evry » se confondent. */
+function sansAccents(text: string): string {
+  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/** Distance orthodromique (formule de haversine), en kilomètres. */
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
 
 @ApiTags('places')
 @Controller('places')
@@ -68,8 +88,11 @@ export class PlacesController {
   @Get('cities')
   @PublicRead()
   @ApiOperation({ summary: 'Villes d’un pays de destination' })
-  async cities(@Query(zodPipe(citiesQuery)) query: z.infer<typeof citiesQuery>) {
-    const items = await this.prisma.city.findMany({
+  async cities(
+    @MaybeAuth() auth: AuthContext | null,
+    @Query(zodPipe(citiesQuery)) query: z.infer<typeof citiesQuery>,
+  ) {
+    const rows = await this.prisma.city.findMany({
       where: {
         ...(query.activeOnly ? { isActive: true } : {}),
         ...(query.countryId === undefined ? {} : { countryId: query.countryId }),
@@ -85,8 +108,34 @@ export class PlacesController {
         region: true,
         isActive: true,
         memberCount: true,
+        latitude: true,
+        longitude: true,
       },
     });
+
+    let kept = rows;
+    if (query.q !== undefined) {
+      const wanted = sansAccents(query.q);
+      kept = kept.filter((c) => sansAccents(c.name).startsWith(wanted));
+    }
+    if (query.nearCityId !== undefined) {
+      const centre = await this.prisma.city.findUnique({
+        where: { id: query.nearCityId },
+        select: { latitude: true, longitude: true },
+      });
+      if (centre === null) throw ApiError.notFound();
+      const radius = query.radiusKm ?? 50;
+      const lat = Number(centre.latitude);
+      const lon = Number(centre.longitude);
+      kept = kept.filter((c) => distanceKm(lat, lon, Number(c.latitude), Number(c.longitude)) <= radius);
+    }
+
+    // Un effectif n'est montré à un visiteur SANS compte qu'au-dessus du seuil de la page d'accueil
+    // (un réseau de trois personnes n'est pas une vitrine). Un membre connecté voit le vrai chiffre.
+    const items = kept.map(({ latitude: _lat, longitude: _lon, ...c }) => ({
+      ...c,
+      memberCount: auth === null && c.memberCount < LANDING_MIN_MEMBERS ? 0 : c.memberCount,
+    }));
     return { items, nextCursor: null };
   }
 

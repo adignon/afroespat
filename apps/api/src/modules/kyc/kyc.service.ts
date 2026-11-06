@@ -1,3 +1,4 @@
+import { isKycEventStale, isKycTransitionAllowed, type KycStatusName } from './kyc-transitions';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId, type Prisma } from '@app/db';
@@ -80,56 +81,18 @@ export class KycService {
     userId: string,
     now: Date = new Date(),
   ): Promise<{ sessionId: string; verificationUrl: string; expiresAt: Date }> {
-    const history = await this.prisma.kycVerification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        status: true,
-        isAdult: true,
-        createdAt: true,
-        decidedAt: true,
-      },
-    });
-
-    // §2.3 : un mineur est écarté définitivement. Le garde refuse déjà son jeton
-    // (compte désactivé), mais la règle se redit ici : ce service est aussi appelé
-    // par la file et par l'équipe.
-    if (history.some((v) => v.isAdult === false)) {
-      throw new ApiError(
-        'ACCOUNT_MINOR',
-        AUTH_ERROR_MESSAGES.ACCOUNT_MINOR,
-        AUTH_ERROR_CODES.ACCOUNT_MINOR,
-      );
-    }
-
-    const latest = history[0];
-    if (latest !== undefined) {
-      if (latest.status === 'APPROVED') this.fail('KYC_ALREADY_APPROVED');
-      if (latest.status === 'IN_REVIEW') this.fail('KYC_IN_REVIEW');
-    }
-
-    const windowStart = new Date(
-      now.getTime() - ACCOUNT_LIMITS.kycAttemptWindowDays * 86_400_000,
-    );
-    const attemptsUsed = history.filter((v) => v.createdAt.getTime() >= windowStart.getTime()).length;
-    if (attemptsUsed >= ACCOUNT_LIMITS.kycMaxAttempts) {
-      this.fail('KYC_MAX_ATTEMPTS', {
-        attemptsUsed,
-        attemptsMax: ACCOUNT_LIMITS.kycMaxAttempts,
-        windowDays: ACCOUNT_LIMITS.kycAttemptWindowDays,
-      });
-    }
-
-    const retryAt = this.retryAvailableAt(latest ?? null);
-    if (retryAt !== null && retryAt.getTime() > now.getTime()) {
-      this.fail('KYC_RETRY_TOO_SOON', { retryAvailableAt: retryAt.toISOString() });
-    }
+    // Pré-contrôle SANS verrou (refus rapide, avant l'appel réseau au fournisseur) ; il est RÉPÉTÉ sous
+    // verrou dans la transaction d'écriture, seule garantie contre deux ouvertures simultanées.
+    await this.assertEligible(this.prisma, userId, now);
 
     const created = await this.provider.createSession(userId);
     const expiresAt = new Date(now.getTime() + ACCOUNT_LIMITS.kycSessionExpiryHours * 3_600_000);
 
     await this.prisma.$transaction(async (tx) => {
+      // Verrou consultatif propre au membre, tenu jusqu'à la fin de la transaction : la limite
+      // « 3 sessions / 30 jours » et le délai de 24 h ne se contournent plus par des requêtes parallèles.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'kyc_session:' + userId}))`;
+      const latest = await this.assertEligible(tx, userId, now);
       /**
        * Une session laissée en route devient `ABANDONED`, et non `EXPIRED`.
        *
@@ -175,6 +138,60 @@ export class KycService {
       verificationUrl: created.verificationUrl,
       expiresAt,
     };
+  }
+
+  /** Les refus d'ouverture de session (§2.3). Rend la dernière vérification. */
+  private async assertEligible(
+    db: Prisma.TransactionClient | PrismaService,
+    userId: string,
+    now: Date,
+  ): Promise<{ id: string; status: string } | undefined> {
+    const history = await db.kycVerification.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        isAdult: true,
+        createdAt: true,
+        decidedAt: true,
+      },
+    });
+
+    // §2.3 : un mineur est écarté définitivement. Le garde refuse déjà son jeton
+    // (compte désactivé), mais la règle se redit ici : ce service est aussi appelé
+    // par la file et par l'équipe.
+    if (history.some((v) => v.isAdult === false)) {
+      throw new ApiError(
+        'ACCOUNT_MINOR',
+        AUTH_ERROR_MESSAGES.ACCOUNT_MINOR,
+        AUTH_ERROR_CODES.ACCOUNT_MINOR,
+      );
+    }
+
+    const latest = history[0];
+    if (latest !== undefined) {
+      if (latest.status === 'APPROVED') this.fail('KYC_ALREADY_APPROVED');
+      if (latest.status === 'IN_REVIEW') this.fail('KYC_IN_REVIEW');
+    }
+
+    const windowStart = new Date(
+      now.getTime() - ACCOUNT_LIMITS.kycAttemptWindowDays * 86_400_000,
+    );
+    const attemptsUsed = history.filter((v) => v.createdAt.getTime() >= windowStart.getTime()).length;
+    if (attemptsUsed >= ACCOUNT_LIMITS.kycMaxAttempts) {
+      this.fail('KYC_MAX_ATTEMPTS', {
+        attemptsUsed,
+        attemptsMax: ACCOUNT_LIMITS.kycMaxAttempts,
+        windowDays: ACCOUNT_LIMITS.kycAttemptWindowDays,
+      });
+    }
+
+    const retryAt = this.retryAvailableAt(latest ?? null);
+    if (retryAt !== null && retryAt.getTime() > now.getTime()) {
+      this.fail('KYC_RETRY_TOO_SOON', { retryAvailableAt: retryAt.toISOString() });
+    }
+    return latest;
   }
 
   // ── GET /me/kyc (§4.3) ────────────────────────────────────────────────────
@@ -289,20 +306,23 @@ export class KycService {
       this.fail('WEBHOOK_SIGNATURE_INVALID');
     }
 
-    if (!this.signatureMatches(rawBody, headers, secret)) {
+    const signed = this.verifySignature(rawBody, headers, secret);
+    if (signed === null) {
       this.fail('WEBHOOK_SIGNATURE_INVALID');
     }
 
     /**
      * ANTI-REJEU. Une signature valide prouve l'ORIGINE d'un message, pas sa
      * FRAÎCHEUR : quiconque a vu passer un « APPROVED » signé pourrait le rejouer
-     * indéfiniment. Didit date chaque envoi (`X-Timestamp`, secondes Unix) ; un
-     * message hors de la fenêtre `DIDIT_WEBHOOK_TOLERANCE_SECONDS` est refusé,
-     * même correctement signé. Avec le fournisseur réel l'en-tête est EXIGÉ ;
-     * avec la doublure et les bancs d'essai, il est facultatif mais vérifié s'il
-     * est présent.
+     * indéfiniment. L'horodatage n'a de valeur que s'il est COUVERT par la signature :
+     * un `X-Timestamp` hors HMAC se réécrit à volonté. `verifySignature` ne rend donc que
+     * l'horodatage LIÉ à la signature (HMAC de `<X-Timestamp>.<corps>`, ou champ
+     * `timestamp` du corps signé). Hors de la fenêtre `DIDIT_WEBHOOK_TOLERANCE_SECONDS`,
+     * le message est refusé. Avec le fournisseur réel l'horodatage lié est EXIGÉ ; avec la
+     * doublure et les bancs d'essai il est facultatif.
      */
-    this.assertFresh(headers, now);
+    this.assertFresh(signed.boundTimestamp, now);
+    const eventAt = signed.boundTimestamp === null ? null : new Date(signed.boundTimestamp * 1000);
 
     let parsedJson: unknown;
     try {
@@ -338,7 +358,7 @@ export class KycService {
 
     const existing = await this.prisma.kycVerification.findUnique({
       where: { providerSessionId: payload.sessionId },
-      select: { id: true, userId: true, status: true, isAdult: true },
+      select: { id: true, userId: true, status: true, isAdult: true, decidedAt: true },
     });
     if (existing === null) {
       this.logger.warn(`Webhook Didit pour une session inconnue : ${payload.sessionId}`);
@@ -356,6 +376,19 @@ export class KycService {
       payload.isAdult === undefined || payload.isAdult === existing.isAdult;
     if (existing.status === payload.status && adultUnchanged) {
       return { received: true, applied: false, reason: 'ALREADY_APPLIED' };
+    }
+
+    // Message plus ANCIEN que la dernière décision, ou transition interdite (IN_REVIEW / EXPIRED tardif
+    // sur un APPROVED, ABANDONED / EXPIRED qui redeviendrait APPROVED…) : 200, sans effet.
+    if (isKycEventStale(eventAt, existing.decidedAt)) {
+      this.logger.warn(`Webhook Didit périmé ignoré (${payload.sessionId}, ${payload.status}).`);
+      return { received: true, applied: false, reason: 'STALE_EVENT' };
+    }
+    if (!isKycTransitionAllowed(existing.status, payload.status)) {
+      this.logger.warn(
+        `Webhook Didit : transition ${existing.status} → ${payload.status} refusée (${payload.sessionId}).`,
+      );
+      return { received: true, applied: false, reason: 'TRANSITION_NOT_ALLOWED' };
     }
 
     await this.applyStatus({
@@ -380,35 +413,62 @@ export class KycService {
    * n'en accepter qu'un se découvre en production, quand le premier webhook réel
    * repart en 401 et qu'aucun membre ne passe L1.
    */
-  private assertFresh(headers: Record<string, unknown>, now: Date): void {
+  private assertFresh(boundTimestamp: number | null, now: Date): void {
     const env = loadEnv();
-    const raw = headers['x-timestamp'];
-    if (raw === undefined) {
-      if (env.KYC_PROVIDER !== 'fake') this.fail('WEBHOOK_SIGNATURE_INVALID');
+    if (boundTimestamp === null) {
+      if (env.KYC_PROVIDER !== 'fake') {
+        this.logger.warn('Webhook Didit sans horodatage lié à la signature : refusé (anti-rejeu).');
+        this.fail('WEBHOOK_SIGNATURE_INVALID');
+      }
       return;
     }
-    const seconds = Number(Array.isArray(raw) ? raw[0] : raw);
-    const skew = Math.abs(now.getTime() / 1000 - seconds);
-    if (!Number.isFinite(seconds) || skew > env.DIDIT_WEBHOOK_TOLERANCE_SECONDS) {
+    const skew = Math.abs(now.getTime() / 1000 - boundTimestamp);
+    if (!Number.isFinite(boundTimestamp) || skew > env.DIDIT_WEBHOOK_TOLERANCE_SECONDS) {
       this.logger.warn('Webhook Didit hors fenêtre d’horodatage : refusé (anti-rejeu).');
       this.fail('WEBHOOK_SIGNATURE_INVALID');
     }
   }
 
-  private signatureMatches(
+  /**
+   * Vérifie la signature HMAC-SHA256, en temps constant, et rend l'horodatage qu'elle COUVRE.
+   *
+   * Deux formes acceptées :
+   *   1. `HMAC(<X-Timestamp>.<corps brut>)` — l'en-tête est lié au HMAC ;
+   *   2. `HMAC(<corps brut>)` — l'horodatage est alors celui du champ `timestamp` (secondes
+   *      Unix) du CORPS, signé avec lui. Un `X-Timestamp` seul, hors signature, n'est JAMAIS cru.
+   * Rend `null` si aucune signature ne correspond ; `boundTimestamp: null` si rien de signé ne date le message.
+   *
+   * Deux en-têtes de signature : Didit a documenté `x-signature`, et certaines
+   * intégrations envoient `x-didit-signature`.
+   */
+  private verifySignature(
     rawBody: Buffer,
     headers: Record<string, unknown>,
     secret: string,
-  ): boolean {
-    const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
-    for (const name of SIGNATURE_HEADERS) {
-      const given = headers[name];
-      if (typeof given !== 'string' || given.length === 0) continue;
+  ): { boundTimestamp: number | null } | null {
+    const header = headers['x-timestamp'];
+    const tsRaw: unknown = Array.isArray(header) ? header[0] : header;
+    const tsText = typeof tsRaw === 'string' || typeof tsRaw === 'number' ? String(tsRaw) : null;
+
+    const matches = (expected: string): boolean => {
       const a = Buffer.from(expected, 'utf8');
-      const b = Buffer.from(given.trim().toLowerCase(), 'utf8');
-      if (a.length === b.length && timingSafeEqual(a, b)) return true;
+      for (const name of SIGNATURE_HEADERS) {
+        const given = headers[name];
+        if (typeof given !== 'string' || given.length === 0) continue;
+        const b = Buffer.from(given.trim().toLowerCase(), 'utf8');
+        if (a.length === b.length && timingSafeEqual(a, b)) return true;
+      }
+      return false;
+    };
+
+    if (tsText !== null) {
+      const bound = createHmac('sha256', secret).update(`${tsText}.`).update(rawBody).digest('hex');
+      if (matches(bound)) return { boundTimestamp: Number(tsText) };
     }
-    return false;
+    if (matches(createHmac('sha256', secret).update(rawBody).digest('hex'))) {
+      return { boundTimestamp: signedBodyTimestamp(rawBody) };
+    }
+    return null;
   }
 
   // ── Application d'un statut ───────────────────────────────────────────────
@@ -529,7 +589,9 @@ export class KycService {
    * faux — sur ces lignes : elles resteraient `IN_PROGRESS` pour toujours. D'où le
    * second membre de l'`OR`, qui retombe sur `created_at`.
    */
-  async expireStaleSessions(now: Date = new Date()): Promise<{ expired: number }> {
+  async expireStaleSessions(
+    now: Date = new Date(),
+  ): Promise<{ expired: number; reconciled: number; deferred: number }> {
     const cutoff = new Date(now.getTime() - ACCOUNT_LIMITS.kycSessionExpiryHours * 3_600_000);
 
     const stale = await this.prisma.kycVerification.findMany({
@@ -539,10 +601,43 @@ export class KycService {
       },
       orderBy: { createdAt: 'asc' },
       take: 200,
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, providerSessionId: true },
     });
 
+    let expired = 0;
+    let reconciled = 0;
+    let deferred = 0;
     for (const row of stale) {
+      // Avant d'expirer, on INTERROGE le fournisseur : un webhook perdu aurait sinon fait expirer un
+      // membre pourtant approuvé (ou refusé). En cas de panne du fournisseur, on diffère au prochain passage.
+      let remote: { status: string; isAdult?: boolean };
+      try {
+        remote = await this.provider.getStatus(row.providerSessionId);
+      } catch (error) {
+        deferred += 1;
+        this.logger.warn(
+          `Session KYC ${row.id} : état distant illisible, expiration différée — ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        continue;
+      }
+      if (
+        remote.status !== 'EXPIRED' &&
+        isKycTransitionAllowed('IN_PROGRESS', remote.status as KycStatusName)
+      ) {
+        await this.applyStatus({
+          verificationId: row.id,
+          userId: row.userId,
+          from: 'IN_PROGRESS',
+          status: remote.status as (typeof diditWebhookSchema)['_output']['status'],
+          isAdult: remote.isAdult,
+          now,
+          source: 'task',
+        });
+        reconciled += 1;
+        continue;
+      }
       await this.applyStatus({
         verificationId: row.id,
         userId: row.userId,
@@ -551,9 +646,10 @@ export class KycService {
         now,
         source: 'task',
       });
+      expired += 1;
     }
 
-    return { expired: stale.length };
+    return { expired, reconciled, deferred };
   }
 
   // ── 15 §3.2 : « Rétrograder le niveau » ───────────────────────────────────
@@ -620,4 +716,16 @@ export class KycService {
    * transaction ultérieure : il ne trouverait rien, et sa ligne de journal ferait
    * croire qu'il sert à quelque chose.
    */
+}
+
+/** Le champ `timestamp` (secondes Unix) du corps signé, s'il existe. */
+function signedBodyTimestamp(rawBody: Buffer): number | null {
+  try {
+    const parsed = JSON.parse(rawBody.toString('utf8')) as unknown;
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const value = (parsed as Record<string, unknown>)['timestamp'];
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+  } catch {
+    return null;
+  }
 }

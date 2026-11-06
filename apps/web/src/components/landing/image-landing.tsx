@@ -25,10 +25,11 @@ export function ImageLanding({
   readonly style?: CSSProperties;
 }) {
   const arrondi = shape === 'rounded' ? `${radius ?? '24'}px` : undefined;
+  const aUnePhoto = src !== undefined && src !== '';
+  // Sans photo, l'emplacement n'est qu'un fond : il n'a rien à annoncer. Avec une photo, il porte son texte alternatif.
   return (
     <div
-      role="img"
-      aria-label={placeholder ?? credit ?? ''}
+      {...(aUnePhoto ? { role: 'img', 'aria-label': placeholder ?? credit ?? '' } : { 'aria-hidden': true })}
       style={{
         position: 'relative',
         overflow: 'hidden',

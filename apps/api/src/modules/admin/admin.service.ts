@@ -36,6 +36,7 @@ import { PrismaService } from '../../common/prisma.service';
 import type { StaffUser } from '../../common/staff.guard';
 import { loadEnv } from '../../config/env';
 import { hashStaffPassword } from './staff-password';
+import { motDePasseCompromis } from './password-breach';
 import { StaffAuthService } from './staff-auth.service';
 
 /**
@@ -156,6 +157,8 @@ export class AdminService {
       select: { id: true },
     });
     if (existing !== null) fail('STAFF_EMAIL_TAKEN');
+    // Vérification en ligne (k-anonymat) ; hors ligne, seule la liste locale du schéma s'applique.
+    if (await motDePasseCompromis(input.password)) fail('STAFF_PASSWORD_COMPROMISED');
 
     const id = newId();
     const passwordHash = await hashStaffPassword(input.password);
@@ -326,7 +329,15 @@ export class AdminService {
         ip: true,
       },
     });
-    return buildPage(rows, query.limit, scope, this.cursorSecret);
+    // Les noms d'équipe : un identifiant de compte ne dit rien à qui relit le journal.
+    const staffIds = [...new Set(rows.filter((r) => r.actorType === 'STAFF' && r.actorId !== null).map((r) => r.actorId as string))];
+    const noms = new Map(
+      staffIds.length === 0
+        ? []
+        : (await this.prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, displayName: true } })).map((s) => [s.id, s.displayName] as const),
+    );
+    const enrichies = rows.map((r) => ({ ...r, actorName: r.actorType === 'STAFF' && r.actorId !== null ? (noms.get(r.actorId) ?? null) : null }));
+    return buildPage(enrichies, query.limit, scope, this.cursorSecret);
   }
 
   /**
@@ -389,14 +400,19 @@ export class AdminService {
    * seuils n'existent pas, et c'est ainsi qu'on finit par recréer en dur une valeur
    * qui était déjà réglable.
    */
-  async listSettings() {
+  async listSettings(staff?: StaffUser) {
     const rows = await this.prisma.systemSetting.findMany({
       select: { key: true, value: true, updatedAt: true, updatedByStaffId: true },
     });
     const stored = new Map(rows.map((row) => [row.key, row]));
 
+    // Une clé n'est rendue (valeur comprise) qu'au rôle qui peut l'écrire : `admin_allowed_cidrs`, les poids de
+    // risque ou les prix n'ont pas à sortir vers un rôle qui n'y a aucun droit. Sans `staff` (appel interne) : tout.
+    const visibles = SETTING_KEYS.filter(
+      (key) => staff === undefined || (SETTINGS_REGISTRY[key].role as readonly StaffRoleValue[]).includes(staff.role),
+    );
     return {
-      items: SETTING_KEYS.map((key) => {
+      items: visibles.map((key) => {
         const definition = SETTINGS_REGISTRY[key];
         const row = stored.get(key);
         return {
@@ -413,13 +429,19 @@ export class AdminService {
       // Les clés présentes en base mais ABSENTES du registre. Elles existent — le
       // module 13 en écrit une — et les taire donnerait une page de réglages qui
       // ment sur l'état réel de la table.
-      unregistered: rows.filter((row) => !isSettingKey(row.key)).map((row) => row.key),
+      unregistered:
+        staff === undefined || staff.role === 'SUPER_ADMIN'
+          ? rows.filter((row) => !isSettingKey(row.key)).map((row) => row.key)
+          : [],
     };
   }
 
-  async getSetting(key: string) {
+  async getSetting(key: string, staff?: StaffUser) {
     if (!isSettingKey(key)) fail('UNKNOWN_SETTING', { key });
     const definition = SETTINGS_REGISTRY[key];
+    if (staff !== undefined && !(definition.role as readonly StaffRoleValue[]).includes(staff.role)) {
+      fail('STAFF_ROLE_REQUIRED', { key, role: staff.role, allowed: [...definition.role] });
+    }
     const row = await this.prisma.systemSetting.findUnique({
       where: { key },
       select: { value: true, updatedAt: true, updatedByStaffId: true },
@@ -637,10 +659,13 @@ export class AdminService {
 
     const decidedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await tx.proProfile.update({
-        where: { id: proProfileId },
+      // Écriture CONDITIONNELLE : la lecture de plus haut est hors transaction, deux décisions simultanées s'y voient
+      // toutes deux « en attente ». Seule celle qui change réellement la ligne PENDING gagne ; l'autre est refusée.
+      const { count } = await tx.proProfile.updateMany({
+        where: { id: proProfileId, verificationStatus: 'PENDING' },
         data: { verificationStatus: decision.status },
       });
+      if (count === 0) fail('PRO_NOT_PENDING', { verificationStatus: 'DECIDED' });
       await this.record(tx, staff, {
         action: decision.action,
         targetType: 'pro_profile',

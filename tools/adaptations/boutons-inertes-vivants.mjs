@@ -42,6 +42,36 @@ const BI_J11_CREER = {
   },
 };
 
+// ─── J11 · E01 à E04 · « Découvrir Premium » ─────────────────────────────────
+
+/**
+ * Lot D : J11 (« N parcours actif sur 1 avec le plan gratuit ») et les panneaux de l'agenda
+ * (carte « QUOTA ») dessinaient un bouton « Découvrir Premium » sans gestionnaire. Il mène à
+ * `/premium` (K06). Ces cartes ne s'affichent que si `monetisationActive` ET
+ * `paiementsDisponibles` (voir `fetchMe`) : quand rien n'est payable, elles disparaissent,
+ * et le lien n'est donc jamais offert vers une page qui dirait « tout est gratuit ».
+ */
+const BI_DECOUVRIR_PREMIUM = {
+  screens: ['J11', 'E01', 'E02', 'E03', 'E04'],
+  nom: 'BI_DECOUVRIR_PREMIUM',
+  why: 'Le bouton « Découvrir Premium » (J11, panneau de l’agenda) n’avait aucun gestionnaire : il mène à /premium.',
+  provides: [],
+  apply(jsx) {
+    let sortie = jsx;
+    let compte = 0;
+    for (let garde = 0; garde < 20; garde += 1) {
+      const at = sortie.indexOf('>Découvrir Premium</button>');
+      if (at === -1) break;
+      const debut = ouvranteAvant(sortie, at, 'button');
+      const neuf = changerBalise(sortie, debut, 'Link', 'href="/premium" data-decouvrir-premium=""', 'textDecoration: "none", cursor: "pointer"');
+      if (neuf === null) break;
+      sortie = neuf;
+      compte += 1;
+    }
+    return compte === 0 ? { jsx, applied: false } : { jsx: sortie, applied: true };
+  },
+};
+
 // ─── A01 · « Saluer » et « Parrains et contacts » ────────────────────────────
 
 /**
@@ -183,6 +213,7 @@ const BI_K04_DERNIER = {
 export const ADAPTATIONS_BOUTONS_INERTES = [
   BI_K04_DERNIER,
   BI_J11_CREER,
+  BI_DECOUVRIR_PREMIUM,
   BI_A01_SALUER,
   BI_A01_PARRAINS,
   BI_K09_LISTE,

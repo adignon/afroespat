@@ -109,11 +109,32 @@ export function EcranMessagerie({
    * chaque message envoyé.
    */
   const [recharge, setRecharge] = useState(0);
+  /**
+   * La profondeur (pages de messages / de conversations déjà chargées) appartient à
+   * UNE conversation : changer d'adresse la remet à une page, sans effet à écrire.
+   */
+  const [profondeur, setProfondeur] = useState({ id: conversationId, messages: 1, conversations: 1 });
+  const pagesMessages = profondeur.id === conversationId ? profondeur.messages : 1;
+  const pagesConversations = profondeur.conversations;
   const charger = useCallback(
-    () => chargerM01(conversationId),
+    () => chargerM01(conversationId, { pagesMessages, pagesConversations }),
     /** `recharge` n'est lu par personne : il est là POUR changer l'identité. */
-    [conversationId, recharge],
+    [conversationId, recharge, pagesMessages, pagesConversations],
   );
+  const plusAnciens = useCallback(() => {
+    setProfondeur((p) => ({
+      id: conversationId,
+      conversations: p.conversations,
+      messages: (p.id === conversationId ? p.messages : 1) + 1,
+    }));
+  }, [conversationId]);
+  const plusConversations = useCallback(() => {
+    setProfondeur((p) => ({
+      id: conversationId,
+      messages: p.id === conversationId ? p.messages : 1,
+      conversations: p.conversations + 1,
+    }));
+  }, [conversationId]);
   const recharger = useCallback(() => {
     setRecharge((n) => n + 1);
   }, []);
@@ -122,6 +143,8 @@ export function EcranMessagerie({
     <EcranDonnees
       charger={charger}
       attente="Chargement de vos messages…"
+      /* Une autre conversation est une autre question : on ne montre pas le fil de la précédente. */
+      cle={conversationId ?? ''}
       /*
        * LE CADRE EST SERVI AVANT LA DONNEE : `/messages` repondait 200 avec
        * QUATRE mots et zero entree de rail. Voir `SQUELETTE_M01`.
@@ -133,6 +156,8 @@ export function EcranMessagerie({
           donnees={donnees}
           conversationId={conversationId}
           onRecharger={recharger}
+          onPlusAnciens={plusAnciens}
+          onPlusConversations={plusConversations}
         >
           {(vivantes, menu, signalement) => (
             <EcranMessages
@@ -194,6 +219,7 @@ export function EcranRecherche({ requete, type, filtres = FILTRES_VIDES }: {
   return (
     <EcranDonnees
       charger={charger}
+      cle={JSON.stringify([requete, type, filtres])}
       attente="Recherche en cours…"
       /**
        * ╔══════════════════════════════════════════════════════════════════════╗
@@ -264,6 +290,7 @@ export function EcranNotifications({
   return (
     <EcranDonnees
       charger={charger}
+      cle={filtre}
       attente="Chargement de vos notifications…"
       /*
        * LE CADRE EST SERVI AVANT LA DONNEE : `/notifications` repondait 200 avec

@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import Link from 'next/link';
 import { meResponseSchema } from '@app/shared';
 import { hasAccessToken, memberApi, resumeSession } from '@/lib/api/member';
+import { surFinDeSession } from '@/lib/api/session';
 import { fondAvatar } from '@/lib/avatar';
 
 /**
@@ -52,6 +53,8 @@ interface Membre {
 
 /** La promesse en cours, partagée par tout ce qui affiche le membre sur la page. */
 let enCours: Promise<Membre | null> | null = null;
+/** Le dernier membre lu : il survit à la navigation (le module n'est pas rechargé). */
+let derniere: Membre | null = null;
 
 function initiales(nom: string): string {
   const mots = nom.trim().split(/\s+/).filter((m) => m !== '');
@@ -86,9 +89,15 @@ async function demander(): Promise<Membre | null> {
   }
 }
 
+// Fin de session : le nom du membre ne survit pas à sa déconnexion.
+surFinDeSession(() => {
+  oublierMembreBarre();
+});
+
 /** Pour les épreuves : oublie ce qui a été demandé. */
 export function oublierMembreBarre(): void {
   enCours = null;
+  derniere = null;
 }
 
 /**
@@ -158,12 +167,22 @@ export function CarteMembre({ styleAvatar, styleNom, styleLien, libelle }: {
 
 /** Le membre courant, demandé une fois par page et partagé. */
 export function useMembreBarre(): Membre | null {
-  const [membre, setMembre] = useState<Membre | null>(null);
+  /**
+   * ── LA COQUILLE N'EST PAS PERSISTANTE, LA DONNÉE L'EST ──────────────────────
+   *
+   * Chaque page générée remonte sa barre (le rail, le panneau et la barre font partie
+   * du même arbre transcodé, avec leur état actif propre à la page : les remonter dans
+   * le layout du groupe exigerait de réécrire tous les cadres). Pour que la navigation
+   * ne fasse pas clignoter le nom du membre, la DERNIÈRE valeur connue (module) sert de
+   * valeur initiale ; les compteurs de la barre font de même (`compteurs.ts`).
+   */
+  const [membre, setMembre] = useState<Membre | null>(derniere);
 
   useEffect(() => {
     let vivant = true;
     enCours ??= demander();
     void enCours.then((valeur) => {
+      if (valeur !== null) derniere = valeur;
       if (vivant) setMembre(valeur);
     });
     return () => {

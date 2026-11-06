@@ -19,7 +19,12 @@ import { loadEnv } from '../../config/env';
 import { CryptoService } from '../../common/crypto.service';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
-import { CAPTCHA_PROVIDER, SMS_PROVIDER, type CaptchaProvider, type SmsProvider } from '../../providers/providers';
+import {
+  CAPTCHA_PROVIDER,
+  SMS_PROVIDER,
+  type CaptchaProvider,
+  type SmsProvider,
+} from '../../providers/providers';
 
 /**
  * Authentification — 01-identite.md §2.1.
@@ -147,6 +152,10 @@ export class AuthService {
     // s'en apercevoir.
     ip: string | undefined;
   }): Promise<{ challengeId: string; expiresAt: Date }> {
+    // 0. Une inscription sans CGU / confidentialité publiées échouerait APRÈS l'envoi du SMS et la
+    //    consommation du code : refus clair, avant tout coût.
+    if (input.purpose === 'SIGNUP') await this.consents.assertSignupDocumentsPublished();
+
     // 1. Le pays est-il ouvert ? Refusé AVANT tout envoi (§2.1).
     const country = await this.prisma.country.findUnique({
       where: { iso2: input.countryIso2 },
@@ -189,8 +198,8 @@ export class AuthService {
      * ── LE NUMÉRO ENREGISTRÉ EST CELUI DE LA BIBLIOTHÈQUE ──────────────────
      *
      * Le porteur : « il faut que ce soit le format international qu'il faut
-     * enregistrer ». `toE164` le faisait déjà à la main — concaténer l'indicatif
-     * au numéro débarrassé de son zéro — et c'était juste pour les cas simples.
+     * enregistrer ». l'ancienne conversion manuelle (indicatif + numéro sans son
+     * zéro, supprimée) était juste pour les cas simples.
      * `libphonenumber` connaît les exceptions : préfixes de service, longueurs
      * par type de ligne, plans renumérotés. On enregistre donc CE qu'elle rend,
      * et plus ce qu'on déduisait.
@@ -199,8 +208,15 @@ export class AuthService {
     const fingerprint = this.crypto.phoneFingerprint(e164);
 
     // 2. Captcha obligatoire (§2.1). Turnstile en production, fictif en local.
-    if (!(await this.captcha.verify(input.captchaToken, input.ip))) {
-      this.fail('CAPTCHA_FAILED');
+    const captchaOutcome =
+      this.captcha.check !== undefined
+        ? await this.captcha.check(input.captchaToken, input.ip)
+        : (await this.captcha.verify(input.captchaToken, input.ip))
+          ? 'ok'
+          : 'refused';
+    if (captchaOutcome !== 'ok') {
+      // `unavailable` : la panne du fournisseur ferme aussi, mais l'écran peut le dire autrement.
+      this.fail('CAPTCHA_FAILED', { reason: captchaOutcome });
     }
 
     // 3. Limites de débit : 3 par numéro et par heure, 10 par IP.
@@ -251,7 +267,7 @@ export class AuthService {
      * consommer l'un des trois envois horaires du membre pour un SMS jamais parti.
      */
     try {
-      await this.sendWithOneRetry(e164, `Votre code de connexion : ${code}`);
+      await this.sendWithOneRetry(e164, smsBodyFor(input.purpose, code));
     } catch (error) {
       await this.prisma.otpChallenge.delete({ where: { id: challengeId } }).catch(() => undefined);
       this.logger.warn(`SMS non envoyé : ${error instanceof Error ? error.message : 'erreur'}`);
@@ -296,8 +312,7 @@ export class AuthService {
     // l'ENVOI et le second à la VÉRIFICATION. Les confondre faisait lire au
     // membre « Trop de tentatives, demandez un nouveau code » au moment précis
     // où on venait de lui refuser un nouveau code.
-    const tooMany = () =>
-      ApiError.transverse('RATE_LIMITED', { retryAfterSeconds: 3600 });
+    const tooMany = () => ApiError.transverse('RATE_LIMITED', { retryAfterSeconds: 3600 });
 
     const byPhone = await this.prisma.otpChallenge.count({
       where: { phoneHmac: fingerprint, createdAt: { gte: since } },
@@ -334,6 +349,8 @@ export class AuthService {
     /** Vrai si cette connexion a annulé une suppression de compte en attente (§2.8). */
     deletionCancelled: boolean;
   }> {
+    // Numéro inconnu + documents légaux non publiés : refus AVANT de consommer le code.
+    await this.assertSignupPossible(input.challengeId);
     const challenge = await this.consumeChallenge(input.challengeId, input.code);
 
     /**
@@ -394,8 +411,9 @@ export class AuthService {
           ACCOUNT_ERROR_CODES.ACCOUNT_BANNED,
         );
       }
-      userId = await this.createAccount(challenge);
-      isNewUser = true;
+      const created = await this.createAccount(challenge);
+      userId = created.userId;
+      isNewUser = created.created;
     } else {
       userId = existing.userId;
       isNewUser = false;
@@ -406,6 +424,21 @@ export class AuthService {
 
     const session = await this.openSession(userId, input.ip, input.userAgent);
     return { ...session, isNewUser, userId, deletionCancelled };
+  }
+
+  /** Ne consomme rien : lève si ce défi créerait un compte alors que les CGU / la confidentialité ne sont pas publiées. */
+  private async assertSignupPossible(challengeId: string): Promise<void> {
+    const pending = await this.prisma.otpChallenge.findUnique({
+      where: { id: challengeId },
+      select: { phoneHmac: true, purpose: true, consumedAt: true },
+    });
+    if (pending === null || pending.consumedAt !== null) return;
+    if (!PURPOSES_DE_CONNEXION.includes(pending.purpose)) return;
+    const known = await this.prisma.phoneNumber.findUnique({
+      where: { phoneHmac: pending.phoneHmac },
+      select: { userId: true },
+    });
+    if (known === null) await this.consents.assertSignupDocumentsPublished();
   }
 
   /**
@@ -433,18 +466,29 @@ export class AuthService {
     if (!this.crypto.verifyToken(code, challenge.codeHash)) {
       // On incrémente AVANT de répondre : sinon un attaquant coupe la connexion
       // après chaque essai et le compteur ne monte jamais.
-      await this.prisma.otpChallenge.update({
-        where: { id: challenge.id },
+      // Incrément CONDITIONNEL et atomique : cinquante essais simultanés ne dépassent pas le plafond.
+      await this.prisma.otpChallenge.updateMany({
+        where: { id: challenge.id, consumedAt: null, attempts: { lt: RATE_LIMITS.otpAttempts } },
         data: { attempts: { increment: 1 } },
       });
-      this.fail('OTP_INVALID', { attemptsLeft: RATE_LIMITS.otpAttempts - challenge.attempts - 1 });
+      this.fail('OTP_INVALID', {
+        attemptsLeft: Math.max(0, RATE_LIMITS.otpAttempts - challenge.attempts - 1),
+      });
     }
 
-    // Code bon : le défi est consommé, quoi qu'il arrive ensuite.
-    await this.prisma.otpChallenge.update({
-      where: { id: challenge.id },
-      data: { consumedAt: new Date() },
+    // Code bon : le défi est consommé, quoi qu'il arrive ensuite. Compare-and-swap : de deux
+    // requêtes simultanées avec le bon code, UNE SEULE passe (l'autre voit `count === 0`).
+    const now = new Date();
+    const claimed = await this.prisma.otpChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        consumedAt: null,
+        expiresAt: { gt: now },
+        attempts: { lt: RATE_LIMITS.otpAttempts },
+      },
+      data: { consumedAt: now },
     });
+    if (claimed.count === 0) this.fail('OTP_INVALID');
 
     return challenge;
   }
@@ -471,7 +515,11 @@ export class AuthService {
     purpose: OtpPurpose;
     /** Identifiant du membre dont le défi doit porter un numéro, ou `null`. */
     ownedBy: string | null;
-  }): Promise<{ phoneHmac: string; countryId: string; phoneEncrypted: Uint8Array<ArrayBuffer> | null }> {
+  }): Promise<{
+    phoneHmac: string;
+    countryId: string;
+    phoneEncrypted: Uint8Array<ArrayBuffer> | null;
+  }> {
     const challenge = await this.consumeChallenge(input.challengeId, input.code);
 
     if (challenge.purpose !== input.purpose) {
@@ -632,15 +680,13 @@ export class AuthService {
    * Le pays d'origine n'est demandé qu'à l'écran 3 de l'onboarding (§5). Ici on
    * ne pose qu'une valeur provisoire, non figée, que cet écran remplacera.
    */
-  private async createAccount(
-    challenge: {
-      phoneHmac: string;
-      countryId: string;
-      phoneEncrypted: Uint8Array<ArrayBuffer> | null;
-      /** L'IP du moment où la case a été cochée — la preuve porte celle-là. */
-      ip: string | null;
-    },
-  ): Promise<string> {
+  private async createAccount(challenge: {
+    phoneHmac: string;
+    countryId: string;
+    phoneEncrypted: Uint8Array<ArrayBuffer> | null;
+    /** L'IP du moment où la case a été cochée — la preuve porte celle-là. */
+    ip: string | null;
+  }): Promise<{ userId: string; created: boolean }> {
     // Un défi sans numéro chiffré ne peut pas créer de compte : le membre ne
     // pourrait plus jamais voir son propre numéro masqué. Mieux vaut échouer
     // ici que fabriquer un compte estropié.
@@ -672,55 +718,75 @@ export class AuthService {
       phoneCountry.isActive &&
       (phoneCountry.kind === 'DESTINATION' || phoneCountry.kind === 'BOTH');
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.user.create({
-        data: {
-          id: userId,
-          handle: provisionalHandle(userId),
-          displayName: '',
-          phase: 'PRE_DEPARTURE',
-          verificationLevel: 'L0',
-          originCountryId,
-          plan: 'FREE',
-          status: 'ACTIVE',
-          timezone: 'Europe/Paris',
-          // L'écran 1 de §5 — téléphone et OTP — vient d'être franchi. Laisser 0
-          // renverrait le membre sur l'écran qu'il vient de terminer.
-          onboardingStep: 1,
-          // `userId` est implicite : Prisma le déduit de la relation parente.
-          stats: { create: { computedAt: new Date() } },
-        },
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.create({
+          data: {
+            id: userId,
+            handle: provisionalHandle(userId),
+            displayName: '',
+            phase: 'PRE_DEPARTURE',
+            verificationLevel: 'L0',
+            originCountryId,
+            plan: 'FREE',
+            status: 'ACTIVE',
+            timezone: 'Europe/Paris',
+            // L'écran 1 de §5 — téléphone et OTP — vient d'être franchi. Laisser 0
+            // renverrait le membre sur l'écran qu'il vient de terminer.
+            onboardingStep: 1,
+            // `userId` est implicite : Prisma le déduit de la relation parente.
+            stats: { create: { computedAt: new Date() } },
+          },
+        });
+
+        await tx.phoneNumber.create({
+          data: {
+            id: newId(),
+            userId,
+            countryId: challenge.countryId,
+            phoneEncrypted,
+            phoneHmac: challenge.phoneHmac,
+            isPrimary: true,
+            isDestination,
+            verifiedAt: new Date(),
+          },
+        });
+
+        // §5 : `TERMS` et `PRIVACY` sont recueillis à l'écran 1, case obligatoire.
+        // Ils s'écrivent DANS la transaction de création : un compte sans preuve de
+        // consentement serait un compte qu'on n'a pas le droit d'avoir ouvert.
+        // L'IP du DÉFI, c'est-à-dire du moment où le membre a coché la case, et non
+        // celle de la vérification quelques secondes plus tard. La preuve doit dire
+        // quand et d'où l'acceptation a eu lieu.
+        await this.consents.recordSignupConsents(tx, userId, challenge.ip ?? undefined);
+
+        await this.outbox.emit(tx, {
+          type: 'user.registered',
+          aggregateId: userId,
+          payload: { level: 'L0' },
+        });
       });
+    } catch (cause) {
+      /**
+       * DEUX VÉRIFICATIONS SIMULTANÉES DU MÊME NUMÉRO : la seconde heurte l'unicité de
+       * `phone_numbers.phone_hmac` (P2002). Ce n'est pas une erreur 500 : le compte vient d'être
+       * créé par l'autre requête, et celle-ci devient une simple connexion.
+       */
+      if (
+        typeof cause === 'object' &&
+        cause !== null &&
+        (cause as { code?: string }).code === 'P2002'
+      ) {
+        const winner = await this.prisma.phoneNumber.findUnique({
+          where: { phoneHmac: challenge.phoneHmac },
+          select: { userId: true },
+        });
+        if (winner !== null) return { userId: winner.userId, created: false };
+      }
+      throw cause;
+    }
 
-      await tx.phoneNumber.create({
-        data: {
-          id: newId(),
-          userId,
-          countryId: challenge.countryId,
-          phoneEncrypted,
-          phoneHmac: challenge.phoneHmac,
-          isPrimary: true,
-          isDestination,
-          verifiedAt: new Date(),
-        },
-      });
-
-      // §5 : `TERMS` et `PRIVACY` sont recueillis à l'écran 1, case obligatoire.
-      // Ils s'écrivent DANS la transaction de création : un compte sans preuve de
-      // consentement serait un compte qu'on n'a pas le droit d'avoir ouvert.
-      // L'IP du DÉFI, c'est-à-dire du moment où le membre a coché la case, et non
-      // celle de la vérification quelques secondes plus tard. La preuve doit dire
-      // quand et d'où l'acceptation a eu lieu.
-      await this.consents.recordSignupConsents(tx, userId, challenge.ip ?? undefined);
-
-      await this.outbox.emit(tx, {
-        type: 'user.registered',
-        aggregateId: userId,
-        payload: { level: 'L0' },
-      });
-    });
-
-    return userId;
+    return { userId, created: true };
   }
 
   /**
@@ -860,8 +926,11 @@ export class AuthService {
 
     const nextGeneration = session.tokenGeneration + 1;
     const next = formatRefreshToken(session.chainId, nextGeneration);
-    await this.prisma.authSession.update({
-      where: { id: session.id },
+    // COMPARE-AND-SWAP sur la génération : de deux rafraîchissements simultanés avec le même jeton,
+    // un seul fait avancer la chaîne. Le perdant est refusé SANS couper la chaîne (c'est le plus souvent
+    // le même navigateur dans deux onglets : il reprendra avec le cookie du gagnant).
+    const rotated = await this.prisma.authSession.updateMany({
+      where: { id: session.id, tokenGeneration: session.tokenGeneration, revokedAt: null },
       data: {
         refreshTokenHash: this.crypto.hashToken(next),
         tokenGeneration: nextGeneration,
@@ -871,6 +940,7 @@ export class AuthService {
         levelRefreshRequired: false,
       },
     });
+    if (rotated.count === 0) this.fail('SESSION_REVOKED');
 
     return {
       accessToken: await this.issueAccessToken(session.userId, session.id),
@@ -920,12 +990,6 @@ export class AuthService {
 
   // ── Outils ────────────────────────────────────────────────────────────────
 
-  private toE164(phone: string, dialCode: string): string {
-    const digits = phone.replace(/[\s.\-–—()]/g, '');
-    if (digits.startsWith('+')) return digits;
-    return `${dialCode}${digits.replace(/^0+/, '')}`;
-  }
-
   /** Libellé lisible, sans empreinte de navigateur : « Chrome sur Android ». */
   private describeDevice(userAgent: string | null): string {
     if (userAgent === null) return 'Appareil inconnu';
@@ -957,6 +1021,20 @@ export class AuthService {
  * La chaîne et la génération sont EN CLAIR, et c'est sans danger : elles ne
  * donnent aucun accès. Seul le secret le fait, et il n'est stocké que haché.
  */
+/** Le libellé du SMS suit l'usage du code : un code de suppression ne se présente pas comme un code de connexion. */
+function smsBodyFor(purpose: OtpPurpose, code: string): string {
+  switch (purpose) {
+    case 'ADD_PHONE':
+      return `Votre code pour ajouter ce numéro : ${code}`;
+    case 'DELETE_ACCOUNT':
+      return `Votre code pour confirmer la suppression de votre compte : ${code}. Ne le communiquez à personne.`;
+    case 'REACTIVATE':
+      return `Votre code pour réactiver votre compte : ${code}`;
+    default:
+      return `Votre code de connexion : ${code}`;
+  }
+}
+
 function formatRefreshToken(chainId: string, generation: number): string {
   return `${chainId}.${generation}.${newId()}${newId().replace(/-/g, '')}`;
 }

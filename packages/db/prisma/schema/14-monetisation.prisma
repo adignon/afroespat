@@ -158,6 +158,13 @@ model Payment {
   invoiceAssetId String?   @map("invoice_asset_id") @db.Uuid
   paidAt         DateTime? @map("paid_at") @db.Timestamptz
 
+  /// Ce que le paiement ACHÈTE, mémorisé à l'ouverture du checkout (lot D) : le plan, la période,
+  /// et la fiche pour un Pro. Sans cela, le webhook devait deviner le plan (et retombait sur PREMIUM).
+  /// NULL pour les paiements antérieurs : le service retombe alors sur l'ancienne déduction.
+  planCode     PlanCode?     @map("plan_code")
+  period       PlanInterval?
+  proProfileId String?       @map("pro_profile_id") @db.Uuid
+
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
   invoiceAsset MediaAsset?   @relation("PaymentInvoice", fields: [invoiceAssetId], references: [id], onDelete: SetNull)

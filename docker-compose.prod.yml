@@ -3,19 +3,30 @@
 #   docker compose --env-file prod.env -f docker-compose.prod.yml build
 #   docker compose --env-file prod.env -f docker-compose.prod.yml up -d
 #
-# `prod.env` n'est PAS dans le dépôt (secrets). Modèle : `.env.example`. Il sert deux fois :
-# interpolation de ce fichier (--env-file) et variables des conteneurs (env_file).
+# `prod.env` est LE fichier d'environnement de production (nom unique, partout : ce compose, infra/*.sh, infra/README.md).
+# Il n'est PAS dans le dépôt (secrets ; ignoré par .gitignore). Modèle : `.env.example`. Il sert deux fois : interpolation
+# de ce fichier (--env-file) et variables des conteneurs (env_file). Si votre copie locale s'appelle `.env.prod`, envoyez-la
+# sur le serveur sous le nom `prod.env`.
 # Seul Caddy publie des ports : Postgres, Redis et ClamAV restent sur le réseau interne.
 name: diasporyplus
+
+# Les journaux Docker grossissent sans limite par défaut : 5 fichiers de 10 Mo par conteneur au plus.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: '10m'
+    max-file: '5'
 
 x-app: &app
   env_file: prod.env
   restart: unless-stopped
+  logging: *logging
 
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant dans prod.env}
@@ -27,13 +38,19 @@ services:
       timeout: 5s
       retries: 20
 
+  # Redis protégé par mot de passe (REDIS_PASSWORD dans prod.env : hexadécimal, `openssl rand -hex 24`, sans caractère
+  # à encoder dans une URL). Il n'est joignable que sur le réseau interne, mais un second verrou ne coûte rien.
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: ['redis-server', '--appendonly', 'yes']
+    logging: *logging
+    command: ['sh', '-c', 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD manquant dans prod.env}
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
     volumes: [redisdata:/data]
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ['CMD-SHELL', 'redis-cli ping | grep -q PONG']
       interval: 5s
       timeout: 3s
       retries: 20
@@ -41,6 +58,7 @@ services:
   antivirus:
     image: clamav/clamav:stable
     restart: unless-stopped
+    logging: *logging
     volumes: [clamdata:/var/lib/clamav]
     healthcheck:
       test: ['CMD-SHELL', 'clamdcheck.sh || exit 1']
@@ -62,23 +80,44 @@ services:
     <<: *app
     build: { context: ., target: api }
     image: disaporyplus-api
+    environment:
+      # Prime sur `env_file` : l'URL Redis suit REDIS_PASSWORD, une seule valeur à tenir à jour.
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       antivirus: { condition: service_started }
+    # `/v1/ready` : base, Redis ET boîte d'envoi non bloquée (503 sinon).
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:'+(process.env.API_PORT||3001)+'/v1/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
+  # Pas de serveur HTTP : la sonde vérifie que le processus du worker tourne (lecture de /proc, sans outil à installer).
+  # Un worker bloqué mais vivant se voit par `/v1/ready` de l'api (âge du plus ancien événement de la boîte d'envoi).
   worker:
     <<: *app
     build: { context: ., target: worker }
     image: disaporyplus-worker
+    environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
       antivirus: { condition: service_started }
+    healthcheck:
+      test: ['CMD-SHELL', 'for p in /proc/[0-9]*; do tr "\0" " " < $$p/cmdline 2>/dev/null | grep -q "src/[m]ain.ts" && exit 0; done; exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # `NEXT_PUBLIC_*` sont figées au BUILD (Next les inline dans le JavaScript du navigateur).
   web:
     restart: unless-stopped
+    logging: *logging
     build:
       context: .
       target: web
@@ -86,17 +125,61 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL manquant dans prod.env}
         NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
     image: disaporyplus-web
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    logging: *logging
     ports: ['80:80', '443:443', '443:443/udp']
     volumes:
       - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddydata:/data
       - caddyconfig:/config
-    depends_on: [web, api]
+    depends_on:
+      web: { condition: service_healthy }
+      api: { condition: service_healthy }
+    # L'API d'administration de Caddy écoute en local (127.0.0.1:2019) : elle répond tant que Caddy est chargé.
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:2019/config/ || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # Sauvegarde planifiée (chaque nuit, BACKUP_HOUR UTC, 03:00 par défaut) : dump chiffré avec age, rotation, copie S3
+  # facultative. Variables lues dans prod.env : BACKUP_AGE_RECIPIENT (clé PUBLIQUE age, obligatoire), KEEP_DAILY/WEEKLY/
+  # MONTHLY, BACKUP_S3_* (seau DISTINCT). Dossier : ./backups (hôte). Sonde : une sauvegarde réussie depuis moins de 26 h.
+  # Le service ne démarre pas sans BACKUP_AGE_RECIPIENT : pas de sauvegarde en clair par inadvertance.
+  backup:
+    env_file: prod.env
+    restart: unless-stopped
+    logging: *logging
+    build: { context: ., dockerfile: infra/backup.Dockerfile }
+    image: disaporyplus-backup
+    environment:
+      PGHOST: postgres
+      PGUSER: app
+      PGDATABASE: app
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:?BACKUP_AGE_RECIPIENT (clé publique age) manquant dans prod.env}
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ['CMD-SHELL', 'find /backups -maxdepth 1 -name .last-success -mmin -1560 | grep -q .']
+      interval: 10m
+      timeout: 10s
+      retries: 1
+      start_period: 2h
 
 volumes:
   pgdata:

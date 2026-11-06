@@ -237,3 +237,14 @@ describe('le tableau de bord entier', () => {
     expect((html.match(/data-admin-d02-cartes/g) ?? []).length).toBe(2);
   });
 });
+
+describe('lignesAlertes — filtrées par rôle', () => {
+  it('un rôle sans accès à l’écran n’y est pas renvoyé', () => {
+    const alertes = { ...VIDE.alerts, moderationOverdue: { count: 2 }, proPending: { count: 1 }, citiesToActivate: { count: 1, names: ['Lyon'] } };
+    const vers = (r: Parameters<typeof lignesAlertes>[1]) => lignesAlertes(alertes, r).map((l) => l.vers);
+    expect(vers('SUPER_ADMIN')).toEqual(['/admin/moderation', '/admin/services', '/admin/referentiels']);
+    expect(vers('MODERATOR')).toEqual(['/admin/moderation']);
+    expect(vers('SUPPORT')).toEqual(['/admin/services']);
+    expect(lignesAlertes(alertes)).toHaveLength(3);
+  });
+});

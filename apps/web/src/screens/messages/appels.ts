@@ -25,7 +25,8 @@ import {
   type NotificationCategory,
 } from '@app/shared';
 import { z } from 'zod';
-import { fetchMe, memberApi, voidResponse } from '@/lib/api/index';
+import { ApiError, fetchMe, memberApi, voidResponse } from '@/lib/api/index';
+import { choisirOuverte, estIdentifiantConversation, lirePages } from './ouverture';
 import { urlMedia } from '@/lib/api/base';
 import { photoFondFor } from '../a14/data';
 import {
@@ -393,9 +394,6 @@ function bulleDe(
   };
 }
 
-/** Un identifiant de conversation est un UUID, et rien d'autre n'entre dans un chemin. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * M01 — la liste, les demandes, l'en-tête et le fil.
  *
@@ -422,17 +420,54 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * le temps réel (`lib/temps-reel`) et, socket coupée, par ce polling de repli (§5.3).
  * Ce chargeur reste une fonction PURE appelée une fois par relecture ; c'est
  * l'appelant qui décide quand. */
-export async function chargerM01(conversationId: string | null): Promise<M01Data> {
-  const [me, page] = await Promise.all([
+/** Combien de pages de 50 on charge : la profondeur grandit avec « messages plus anciens » / « voir plus ». */
+export interface ProfondeurM01 {
+  readonly pagesMessages?: number;
+  readonly pagesConversations?: number;
+}
+
+/** Au plus 20 pages de 50 conversations (1 000) pour retrouver celle que l'URL nomme. */
+const PLAFOND_RECHERCHE_CONVERSATION = 20;
+
+/** Page d'API par curseur : « ?limit=50&cursor=… ». */
+function avecCurseur(chemin: string, curseur: string | null): string {
+  return `${chemin}?limit=50${curseur === null ? '' : `&cursor=${encodeURIComponent(curseur)}`}`;
+}
+
+function conversationIntrouvable(): ApiError {
+  return new ApiError('NOT_FOUND', 'Conversation introuvable.', 404, {}, null);
+}
+
+export async function chargerM01(
+  conversationId: string | null,
+  profondeur: ProfondeurM01 = {},
+): Promise<M01Data> {
+  const pagesConversations = Math.max(profondeur.pagesConversations ?? 1, 1);
+  const pagesMessages = Math.max(profondeur.pagesMessages ?? 1, 1);
+  // L'identifiant de l'URL entre dans un chemin : sa forme est vérifiée AVANT tout appel.
+  if (conversationId !== null && !estIdentifiantConversation(conversationId)) {
+    throw conversationIntrouvable();
+  }
+  const [me, lues] = await Promise.all([
     fetchMe(),
-    memberApi.get('/conversations', conversationsResponseSchema),
+    lirePages(
+      (curseur) =>
+        memberApi.get(avecCurseur('/conversations', curseur), conversationsResponseSchema),
+      {
+        pages: pagesConversations,
+        plafond: Math.max(pagesConversations, PLAFOND_RECHERCHE_CONVERSATION),
+        // Une conversation nommée par l'URL mais pas encore lue : on tourne les pages jusqu'à elle.
+        assez: (items) => conversationId === null || items.some((c) => c.id === conversationId),
+      },
+    ),
   ]);
+  const page = { items: lues.items };
+  const plusDeConversations = lues.nextCursor !== null;
 
   // §5.2 : le premier message EST la demande. Les deux listes de la maquette.
   const conversations = page.items.filter((c) => !c.pendingForMe);
   const demandes = page.items.filter((c) => c.pendingForMe);
 
-  const demande = conversationId !== null && UUID.test(conversationId);
   /**
    * LA CONVERSATION DE REPLI NE EST JAMAIS UNE CONVERSATION QUE J'AI BLOQUÉE
    * (lot F2) : le serveur les laisse listées pour que « Débloquer » ait un
@@ -440,15 +475,25 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
    * bandeau de blocage à qui n'a rien demandé. Elle ne s'ouvre que par son URL
    * ou en cliquant sa rangée.
    */
-  const ouverte =
-    (demande ? page.items.find((c) => c.id === conversationId) : undefined) ??
-    conversations.find((c) => !c.blockedByMe) ??
-    null;
+  // JAMAIS une autre conversation que celle de l'adresse : absente → « introuvable ».
+  const choix = choisirOuverte(page.items, conversationId);
+  if (choix.etat === 'introuvable') throw conversationIntrouvable();
+  const ouverte = choix.conversation;
 
-  const fil =
+  const luFil =
     ouverte === null
       ? null
-      : await memberApi.get(`/conversations/${ouverte.id}/messages`, messagesResponseSchema);
+      : await lirePages(
+          (curseur) =>
+            memberApi.get(
+              avecCurseur(`/conversations/${ouverte.id}/messages`, curseur),
+              messagesResponseSchema,
+            ),
+          { pages: pagesMessages },
+        );
+  // `meta` (vu, demande…) vient de la page la plus récente ; les messages, de toutes les pages lues.
+  const fil =
+    luFil === null ? null : { ...luFil.premiere, items: luFil.items, nextCursor: luFil.nextCursor };
 
   const bloquee = ouverte?.blockedByMe === true;
   const nomsParHandle = new Map(
@@ -478,6 +523,8 @@ export async function chargerM01(conversationId: string | null): Promise<M01Data
      * phrases trahirait l'inversion.
      */
     messages: fil === null ? [] : bullesDuFil(fil, nomsParHandle),
+    messagesAnterieurs: fil?.nextCursor !== null && fil?.nextCursor !== undefined,
+    conversationsSuivantes: plusDeConversations,
     conversationDemande:
       ouverte === null ? null : ouverte.pendingForMe ? 'recue' : ouverte.awaitingReply ? 'envoyee' : null,
     conversationPrenom:

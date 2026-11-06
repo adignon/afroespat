@@ -1,4 +1,4 @@
-import { monetisationActive } from '../../common/monetisation';
+import { moyensDePaiement, paiementsDisponibles, quotasApplicables } from '../../common/monetisation';
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@app/db';
 import {
@@ -47,8 +47,14 @@ import { PrismaService } from '../../common/prisma.service';
 export class PlanService {
   private readonly logger = new Logger(PlanService.name);
 
-  /** Cinq minutes, comme le veut §3. */
-  private static readonly TTL_MS = 5 * 60 * 1_000;
+  /**
+   * Quinze secondes, et non les cinq minutes du §3 : le cache est PAR PROCESSUS, et une
+   * bascule d'activation d'un plan faite par l'équipe doit atteindre les autres instances
+   * en un instant, pas dans cinq minutes (lot D). La table `plans` tient en quatre lignes ;
+   * une relecture toutes les quinze secondes ne coûte rien. L'instance qui reçoit
+   * l'écriture purge, elle, tout de suite.
+   */
+  private static readonly TTL_MS = 15 * 1_000;
 
   private cache: { readonly at: number; readonly rows: ReadonlyMap<PlanCode, PlanRow> } | null = null;
 
@@ -66,12 +72,44 @@ export class PlanService {
   async limitsFor(userId: string): Promise<PlanLimits> {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { plan: true } });
     const reel = await this.limitsOf(user?.plan ?? 'FREE');
-    if (await monetisationActive(this.prisma)) return reel;
     // LOT A : « tout gratuit » — les droits de PREMIUM pour tous. Une seule
     // exception, `hidePartners` : ce n'est pas un droit de plus mais la
     // disparition des encarts partenaires, une recette que le porteur n'a pas
     // demandé de supprimer. Elle suit le plan RÉEL (donc : encarts visibles).
-    return { ...(await this.limitsOf('PREMIUM')), hidePartners: reel.hidePartners };
+    //
+    // LOT D : la règle est PAR OPTION. Les avantages à quota ne s'appliquent que si la
+    // monétisation, le plan Premium ET l'option « avantages à quota » sont allumés ; les
+    // offres sponsorisées ont leur propre option. Une option éteinte rend le droit
+    // Premium correspondant à tout le monde.
+    const premium = await this.limitsOf('PREMIUM');
+    const quotas = await quotasApplicables(this.prisma, 'PREMIUM_PERKS');
+    const sponsorisees = await quotasApplicables(this.prisma, 'SPONSORED_JOBS');
+    if (quotas && sponsorisees) return reel;
+    const base = quotas ? reel : premium;
+    return {
+      ...base,
+      hidePartners: reel.hidePartners,
+      sponsoredJobsPerMonth: sponsorisees ? reel.sponsoredJobsPerMonth : premium.sponsoredJobsPerMonth,
+    };
+  }
+
+  /** Le plan est-il proposé à la souscription ? Un plan absent de la table ne l'est pas. */
+  async isPlanActive(code: PlanCode): Promise<boolean> {
+    const rows = await this.rows();
+    return rows.get(code)?.isActive ?? false;
+  }
+
+  /**
+   * Peut-on payer aujourd'hui ? Monétisation allumée, au moins un moyen allumé ET au moins
+   * une formule payante proposée. C'est le `paiementsDisponibles` que les écrans lisent.
+   */
+  async paymentsAvailable(): Promise<boolean> {
+    return paiementsDisponibles(this.prisma);
+  }
+
+  /** Les moyens de paiement allumés. */
+  async enabledMethods() {
+    return (await moyensDePaiement(this.prisma)).filter((m) => m.enabled);
   }
 
   /** Les limites d'un code de plan, depuis `plans.limits`. */

@@ -1,5 +1,10 @@
 'use client';
 
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { fetchMe, hasAccessToken, resumeSession } from '@/lib/api/index';
+import { sessionEstAttendue } from '@/lib/api/session';
+import { memoriserSuite } from '@/lib/suite-connexion';
 import { P01Desktop } from '@/screens/p01/desktop.generated';
 import { P01Mobile } from '@/screens/p01/mobile.generated';
 import { useOnboardingFlow } from '@/screens/onboarding/use-onboarding-flow';
@@ -19,12 +24,41 @@ import { BandeauSuppression } from '@/components/compte/bandeau-suppression';
 export function ConnexionScreen({
   initialError,
   suppressionPrevue,
+  suite = null,
 }: {
+  /** Le chemin interne (déjà validé) où ramener le membre après le code, ou `null`. */
+  readonly suite?: string | null;
   readonly initialError: string | null;
   /** L'échéance (ISO) d'une suppression de compte que le membre vient de demander, ou `null`. */
   readonly suppressionPrevue: string | null;
 }) {
   const { vals, error, levelRequired, dismissLevelRequired } = useOnboardingFlow(1, initialError);
+  const routeur = useRouter();
+
+  /**
+   * ── LA DESTINATION SURVIT AU CODE, ET UN MEMBRE CONNECTÉ N'A RIEN À FAIRE ICI ──
+   *
+   * `suite` est gardée pour la page du code (la navigation change de page entre les
+   * deux). Et un membre dont la session est déjà ouverte — onglet restauré, lien
+   * ancien — est renvoyé à l'accueil (ou à sa destination), au lieu de lui redemander
+   * un numéro de téléphone. S'il n'a pas fini l'inscription il reste : c'est ici
+   * qu'elle reprend.
+   */
+  useEffect(() => {
+    memoriserSuite(suite);
+    let vivant = true;
+    const dejaConnecte = async (): Promise<void> => {
+      if (!hasAccessToken()) {
+        if (!sessionEstAttendue() || !(await resumeSession())) return;
+      }
+      const moi = await fetchMe();
+      if (vivant && moi.onboarding.complete) routeur.replace(suite ?? '/accueil');
+    };
+    void dejaConnecte().catch(() => undefined);
+    return () => {
+      vivant = false;
+    };
+  }, [suite, routeur]);
 
   /**
    * LE PANNEAU DE CHOIX DE L'INDICATIF — le MÊME qu'en O02.

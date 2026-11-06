@@ -23,3 +23,9 @@ test-results/
 # Les worktrees des agents : des dépôts git à part, jamais suivis ici.
 .claude/worktrees/
 dump.rdb
+
+# Compétences et verrou de tâches planifiées de l'assistant : locaux.
+.claude/skills/
+.claude/scheduled_tasks.lock
+prod.env
+/backups/

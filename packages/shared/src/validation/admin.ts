@@ -28,8 +28,14 @@ import {
   type HousingRiskFlag,
 } from './housing.js';
 import {
+  BILLING_PAID_OPTIONS_SETTING_KEY,
+  BILLING_PAYMENT_METHODS_SETTING_KEY,
   BILLING_YEAR_PRICES_SETTING_KEY,
   MONETISATION_ACTIVE_DEFAULT,
+  PAID_OPTIONS_DEFAULT,
+  PAYMENT_METHODS_DEFAULT,
+  paidOptionsSchema,
+  paymentMethodsSchema,
   MONETISATION_SETTING_KEY,
   PLAN_YEAR_PRICES_DEFAULT,
   yearPricesSchema,
@@ -139,10 +145,9 @@ export const AUDIT_RETENTION_YEARS = 5;
  * Mots de passe interdits.
  *
  * §2.1 demande une « vérification contre les listes de mots de passe
- * compromis ». Une vraie vérification exige un service externe (k-anonymat HIBP)
- * ou une liste embarquée de plusieurs mégaoctets : aucun des deux n'est livré, et
- * c'est signalé plutôt que masqué. Cette liste courte n'est PAS un substitut —
- * elle arrête les fautes les plus grossières, rien de plus.
+ * compromis ». La vraie vérification est faite côté API à la création d'un compte
+ * (k-anonymat HIBP, `password-breach.ts`). Cette liste courte n'en est que le REPLI hors ligne et le filtre
+ * synchrone du schéma : elle arrête les fautes les plus grossières, rien de plus.
  */
 export const STAFF_PASSWORD_DENYLIST: readonly string[] = [
   'motdepasse', 'password', 'password123', 'azertyuiop', 'qwertyuiop',
@@ -426,6 +431,18 @@ export const SETTINGS_REGISTRY = {
     role: STAFF_SCOPES.staffAdmin,
     description: 'Prix annuels en centimes d’euro, par plan (14 §3).',
   },
+  [BILLING_PAYMENT_METHODS_SETTING_KEY]: {
+    schema: paymentMethodsSchema,
+    defaultValue: PAYMENT_METHODS_DEFAULT,
+    role: STAFF_SCOPES.staffAdmin,
+    description: 'Moyens de paiement proposés (carte, Mobile Money MTN, Mobile Money Moov) : tous éteints par défaut (14).',
+  },
+  [BILLING_PAID_OPTIONS_SETTING_KEY]: {
+    schema: paidOptionsSchema,
+    defaultValue: PAID_OPTIONS_DEFAULT,
+    role: STAFF_SCOPES.staffAdmin,
+    description: 'Options payantes : offres sponsorisées, encarts partenaires, avantages à quota des plans (14).',
+  },
   [MONETISATION_SETTING_KEY]: {
     schema: z.boolean(),
     defaultValue: MONETISATION_ACTIVE_DEFAULT,
@@ -498,6 +515,8 @@ export const ADMIN_ERROR_CODES = {
   UNKNOWN_SETTING: 404,
   /** La fiche pro n'est pas en attente de décision. */
   PRO_NOT_PENDING: 409,
+  /** Mot de passe retrouvé dans une fuite publique (HIBP, k-anonymat). */
+  STAFF_PASSWORD_COMPROMISED: 422,
   /** Suppression d'un compte équipe : impossible, voir `LAST_SUPER_ADMIN` et le rapport. */
   STAFF_DELETE_UNSUPPORTED: 409,
 } as const;
@@ -520,6 +539,7 @@ export const ADMIN_ERROR_MESSAGES: Record<AdminErrorCode, string> = {
   STAFF_EMAIL_TAKEN: 'Cette adresse est déjà associée à un compte équipe.',
   UNKNOWN_SETTING: 'Ce paramètre n’existe pas.',
   PRO_NOT_PENDING: 'Cette fiche n’attend pas de décision.',
+  STAFF_PASSWORD_COMPROMISED: 'Ce mot de passe figure dans une fuite de données publique. Choisissez-en un autre.',
   STAFF_DELETE_UNSUPPORTED:
     'Un compte équipe qui a déjà agi ne peut pas être supprimé ; désactivez-le.',
 };
@@ -1268,6 +1288,8 @@ export const adminAuditEntrySchema = z
     // `string` : une seule ligne ainsi suffisait à faire tomber tout le journal d'audit
     // sur « Une erreur est survenue » (D15, onglet Journal).
     actorId: z.string().nullable(),
+    /** Le nom affiché du compte équipe, quand l'acteur en est un (jamais pour un membre). */
+    actorName: z.string().nullable().optional(),
     action: z.string(),
     targetType: z.string(),
     targetId: z.string().nullable(),
@@ -1398,6 +1420,6 @@ export type AdminPlan = z.infer<typeof adminPlanSchema>;
  * suivrait le curseur n'y trouverait rien à suivre.
  */
 export const adminPlansResponseSchema = z
-  .object({ items: z.array(adminPlanSchema) })
+  .object({ items: z.array(adminPlanSchema), nextCursor: z.null().optional() })
   .strict();
 export type AdminPlansResponse = z.infer<typeof adminPlansResponseSchema>;

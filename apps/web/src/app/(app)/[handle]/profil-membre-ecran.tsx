@@ -75,6 +75,7 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
        */
       squelette={SQUELETTE_K02}
       charger={charger}
+      cle={`${pseudo}|${onglet}`}
     >
       {(donnees) => (
         <ProfilContactVivant donnees={donnees} pseudo={pseudo} onFermerAjout={onFermer}>

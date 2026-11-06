@@ -34,6 +34,7 @@ export function AgendaEcran({
   return (
     <EcranDonnees
       charger={charger}
+      cle={`${String(jour)}|${String(scope)}|${String(mois)}`}
       attente="Chargement de l’agenda…"
       /*
        * LE CADRE EST SERVI AVANT LA DONNÉE, et c'est mesuré : sans cela, `/agenda`

@@ -1,4 +1,5 @@
-import type { CaptchaProvider } from './providers';
+import { Logger } from '@nestjs/common';
+import type { CaptchaProvider, CaptchaOutcome } from './providers';
 import { callProviderJson, type HttpOptions } from './http';
 
 /**
@@ -20,17 +21,24 @@ import { callProviderJson, type HttpOptions } from './http';
  * n'est configurée (`apps/web/src/components/captcha.tsx`).
  */
 export class TurnstileCaptchaProvider implements CaptchaProvider {
+  private readonly logger = new Logger(TurnstileCaptchaProvider.name);
+
   constructor(
     private readonly secretKey: string,
     private readonly http: HttpOptions & { readonly baseUrl?: string | undefined } = {},
   ) {}
 
   async verify(token: string, ip?: string): Promise<boolean> {
-    if (token.trim() === '' || token.length > 2048) return false;
+    return (await this.check(token, ip)) === 'ok';
+  }
+
+  /** Distingue le REFUS (jeton invalide) de la PANNE (Cloudflare injoignable) : les deux ferment, mais on les journalise. */
+  async check(token: string, ip?: string): Promise<CaptchaOutcome> {
+    if (token.trim() === '' || token.length > 2048) return 'refused';
     const form = new URLSearchParams({ secret: this.secretKey, response: token });
     if (ip !== undefined) form.set('remoteip', ip);
     try {
-      const result = await callProviderJson<{ success?: boolean }>(
+      const result = await callProviderJson<{ success?: boolean; 'error-codes'?: string[] }>(
         'turnstile',
         `${this.http.baseUrl ?? 'https://challenges.cloudflare.com'}/turnstile/v0/siteverify`,
         {
@@ -40,9 +48,18 @@ export class TurnstileCaptchaProvider implements CaptchaProvider {
         },
         { timeoutMs: 5_000, ...this.http },
       );
-      return result.success === true;
-    } catch {
-      return false;
+      if (result.success === true) return 'ok';
+      this.logger.warn(
+        `Captcha refusé par Turnstile : ${(result['error-codes'] ?? []).join(',') || 'sans code'}`,
+      );
+      return 'refused';
+    } catch (error) {
+      this.logger.warn(
+        `Captcha INDISPONIBLE (Turnstile injoignable ou en erreur) — refus par prudence : ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return 'unavailable';
     }
   }
 }

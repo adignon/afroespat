@@ -340,6 +340,11 @@ export const meResponseSchema = z.object({
    * aucune incitation à payer. Défaut faux pour une réponse sans le champ.
    */
   monetisationActive: z.boolean().default(false),
+  /**
+   * Peut-on payer ? Monétisation allumée ET au moins un moyen ET une formule ouverts. Faux :
+   * aucun écran ne propose de payer (lot D).
+   */
+  paiementsDisponibles: z.boolean().default(false),
   kyc: z.object({ status: z.enum(KycStatus) }).nullable(),
   /** Compteurs de réputation, tels que `user_stats` les porte. */
   stats: z

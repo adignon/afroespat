@@ -85,7 +85,8 @@ describe('PROVIDER_MODE=demo', () => {
   it('profil = .env.demo.example = clés du serveur démo', () => {
     const file = readFileSync(resolve(__dirname, '..', '..', '..', '..', '.env.demo.example'), 'utf8');
     const parsed = Object.fromEntries(
-      file.split('\n').filter((l) => /^[A-Z0-9_]+=/.test(l)).map((l) => {
+      // `\r?\n` : sous Windows le fichier peut être en CRLF, et `.` ne couvre pas `\r` (le commentaire de fin resterait).
+      file.split(/\r?\n/).filter((l) => /^[A-Z0-9_]+=/.test(l)).map((l) => {
         const [k, ...rest] = l.split('=');
         return [k, rest.join('=').replace(/\s+#.*$/, '').trim()];
       }),

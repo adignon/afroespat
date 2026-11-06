@@ -1,4 +1,5 @@
-import { type AdminDashboardOverview } from '@app/shared';
+import { type AdminDashboardOverview, type StaffRoleValue } from '@app/shared';
+import { entreeDuChemin, peutOuvrir } from '../navigation-admin';
 
 /**
  * D02 — la mise en forme du tableau de bord, SANS appel : des fonctions pures, éprouvées
@@ -60,7 +61,17 @@ const pluriel = (n: number, un: string, plusieurs: string): string => `${entier(
  * est un FAIT (rien à traiter) et ne fait pas de ligne ; si toutes sont à zéro, la liste est
  * vide et l'écran écrit « Rien à signaler ».
  */
-export function lignesAlertes(a: AdminDashboardOverview['alerts']): AlerteLigne[] {
+export function lignesAlertes(a: AdminDashboardOverview['alerts'], role?: StaffRoleValue | null): AlerteLigne[] {
+  return toutesLesLignes(a).filter((l) => role === undefined || ouvrablePar(role, l.vers));
+}
+
+/** Une ligne d'alerte qui mène à un écran que le rôle ne peut pas ouvrir est une impasse : elle n'est pas montrée. */
+function ouvrablePar(role: StaffRoleValue | null, vers: string): boolean {
+  const e = entreeDuChemin(vers);
+  return e === null || peutOuvrir(role, e.entree);
+}
+
+function toutesLesLignes(a: AdminDashboardOverview['alerts']): AlerteLigne[] {
   const out: AlerteLigne[] = [];
   if (a.moderationOverdue.count > 0) {
     out.push({

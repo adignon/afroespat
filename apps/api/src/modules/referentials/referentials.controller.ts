@@ -170,6 +170,17 @@ export class ReferentialsController {
 
   // ── Villes ────────────────────────────────────────────────────────────────
 
+  @Post('countries/:id/deactivate')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Ferme un pays (refusé s’il reste des villes actives ou s’il est le dernier de son genre)' })
+  async deactivateCountry(
+    @Staff() staff: StaffUser,
+    @Param('id', zodPipe(uuidSchema)) id: string,
+    @Body(zodPipe(refReasonSchema)) body: z.infer<typeof refReasonSchema>,
+  ) {
+    return this.ref.deactivateCountry(staff, id, body);
+  }
+
   @Get('cities')
   @RequiresStaffRole(...STAFF_SCOPES.content)
   @ApiOperation({ summary: 'Les villes, filtrables par pays, état et nom' })

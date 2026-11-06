@@ -3,6 +3,16 @@ import { newId, type Prisma } from '@app/db';
 import {
   BILLING_ERROR_CODES,
   BILLING_ERROR_MESSAGES,
+  BILLING_PAID_OPTIONS_SETTING_KEY,
+  BILLING_PAYMENT_METHODS_SETTING_KEY,
+  BILLING_YEAR_PRICES_SETTING_KEY,
+  JOB_SPONSORED_DAYS,
+  MONETISATION_SETTING_KEY,
+  PAYMENT_PENDING_TIMEOUT_MINUTES,
+  SPONSORED_JOBS_USAGE_METRIC,
+  paidOptionsFrom,
+  paymentMethodCodeOf,
+  paymentMethodsFrom,
   MOBILE_MONEY_GRACE_DAYS,
   MOBILE_MONEY_TIMEOUT_MINUTES,
   PAST_DUE_WINDOW_DAYS,
@@ -14,7 +24,9 @@ import {
   USAGE_METRIC_LIMIT_KEYS,
   type BillingErrorCode,
   type Checkout,
+  type PaidOptionsUpdate,
   type PaidPlanCode,
+  type PaymentMethodsUpdate,
   type PaymentsQuery,
   type PlanCode,
   type PlanInterval,
@@ -28,6 +40,7 @@ import {
   nextMonthStart,
   planFamilyOf,
   planLimitsSchema,
+  yearPricesSchema,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
@@ -37,6 +50,7 @@ import {
   createdAtDescSort,
   decodeCreatedAtDesc,
 } from '../../common/cursor';
+import { monetisationActive } from '../../common/monetisation';
 import { loadEnv } from '../../config/env';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
@@ -147,7 +161,12 @@ export class BillingService {
     const current = rows.filter((r) => r.status === 'ACTIVE' || r.status === 'PAST_DUE');
     const trial = rows.find((r) => isTrialRef(r.providerRef)) ?? null;
 
+    const paiementsDisponibles = await this.plans.paymentsAvailable();
+
     return {
+      /** Lot D : faux = « tout est gratuit », aucun écran ne propose de payer. */
+      paiementsDisponibles,
+      moyensPaiement: paiementsDisponibles ? await this.plans.enabledMethods() : [],
       items: current.map((r) => this.toSubscriptionView(r)),
       /**
        * L'HISTORIQUE est renvoyé aussi : §8 montre l'écran « Compte →
@@ -183,13 +202,37 @@ export class BillingService {
     return {
       periodKey,
       resetsAt: nextMonthStart(now).toISOString(),
-      items: metrics.map((metric) => ({
-        metric,
-        used: counters.find((c) => c.metric === metric)?.count ?? 0,
-        /** `null` = illimité. Le front affiche « illimité », pas « 0 sur null ». */
-        limit: limits[USAGE_METRIC_LIMIT_KEYS[metric]],
-      })),
+      items: [
+        ...metrics.map((metric) => ({
+          metric: metric,
+          used: counters.find((c) => c.metric === metric)?.count ?? 0,
+          /** `null` = illimité. Le front affiche « illimité », pas « 0 sur null ». */
+          limit: limits[USAGE_METRIC_LIMIT_KEYS[metric]],
+        })),
+        {
+          metric: SPONSORED_JOBS_USAGE_METRIC as UsageMetric | typeof SPONSORED_JOBS_USAGE_METRIC,
+          used: await this.sponsoredJobsThisMonth(userId, now),
+          limit: limits.sponsoredJobsPerMonth,
+        },
+      ],
     };
+  }
+
+  /**
+   * Les mises en avant d'offres consommées ce mois-ci — la MÊME déduction que le module
+   * emploi (`sponsored_until`, durée fixe), faute de compteur : voir
+   * `USAGE_METRIC_LIMIT_KEYS`. Les bornes sont en UTC.
+   */
+  private async sponsoredJobsThisMonth(userId: string, now: Date): Promise<number> {
+    const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+    const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+    const shift = JOB_SPONSORED_DAYS * 86_400_000;
+    return this.prisma.jobListing.count({
+      where: {
+        authorUserId: userId,
+        sponsoredUntil: { gte: new Date(monthStart + shift), lt: new Date(monthEnd + shift) },
+      },
+    });
   }
 
   /**
@@ -298,6 +341,19 @@ export class BillingService {
    * membre, et de lui seul.
    */
   async checkout(userId: string, input: Checkout) {
+    // ── Lot D : ce qui est ouvert à la vente ────────────────────────────────
+    // Dans cet ordre, du plus général au plus précis, pour que le membre lise la vraie
+    // raison : tout est gratuit → la formule n'est pas proposée → ce moyen est éteint.
+    if (!(await monetisationActive(this.prisma))) this.fail('PAYMENTS_DISABLED');
+    if (!(await this.plans.isPlanActive(input.planCode))) {
+      this.fail('PLAN_DISABLED', { planCode: input.planCode });
+    }
+    const methodCode = paymentMethodCodeOf(input);
+    const methods = await this.plans.enabledMethods();
+    if (!methods.some((m) => m.code === methodCode)) {
+      this.fail('PAYMENT_METHOD_DISABLED', { method: methodCode });
+    }
+
     const family = planFamilyOf(input.planCode);
 
     if (input.proProfileId !== undefined) {
@@ -358,6 +414,11 @@ export class BillingService {
           method: methodFor(input),
           providerRef,
           status: 'PENDING',
+          // Lot D : ce que ce paiement achète. Le webhook l'utilise tel quel au lieu de le
+          // deviner (il retombait sur PREMIUM pour tout paiement Pro).
+          planCode: input.planCode,
+          period: input.period,
+          proProfileId: input.proProfileId ?? null,
         },
       });
     });
@@ -638,6 +699,9 @@ export class BillingService {
           provider: true,
           status: true,
           subscriptionId: true,
+          planCode: true,
+          period: true,
+          proProfileId: true,
         },
       });
 
@@ -656,11 +720,20 @@ export class BillingService {
        * entre le paiement et le webhook — quelques minutes — est le seul cas où
        * la déduction pourrait se tromper.
        */
-      const planCode = await this.planCodeOfPayment(tx, payment.userId, premiumId);
+      // Lot D : le plan, la période et la fiche sont MÉMORISÉS à l'ouverture du checkout. La
+      // déduction par le montant ne sert plus que pour les paiements d'avant la migration.
+      const planCode: PaidPlanCode =
+        payment.planCode !== null && payment.planCode !== 'FREE'
+          ? payment.planCode
+          : await this.planCodeOfPayment(tx, payment.userId, premiumId);
       const yearEur = yearPrices[planCode];
-      const isYear = payment.currency === 'XOF'
-        ? payment.amountCents >= xofOf(yearEur)
-        : payment.amountCents >= yearEur;
+      const isYear =
+        payment.period !== null
+          ? payment.period === 'YEAR'
+          : payment.currency === 'XOF'
+            ? payment.amountCents >= xofOf(yearEur)
+            : payment.amountCents >= yearEur;
+      const proProfileId = payment.proProfileId;
 
       const now = new Date();
       const planId = planCode === 'PREMIUM' ? premiumId : await this.plans.idOf(planCode);
@@ -668,7 +741,11 @@ export class BillingService {
       const familyIds = await this.planIdsOf(codesInFamily(family));
 
       const existing = await tx.subscription.findFirst({
-        where: { userId: payment.userId, planId: { in: familyIds } },
+        where: {
+          userId: payment.userId,
+          planId: { in: familyIds },
+          ...(proProfileId === null ? {} : { proProfileId }),
+        },
         orderBy: { createdAt: 'desc' },
         select: { id: true, currentPeriodEnd: true, status: true, providerRef: true },
       });
@@ -698,6 +775,7 @@ export class BillingService {
         // §4.2 : Mobile Money n'a pas de récurrence — vrai PAR CONSTRUCTION.
         cancelAtPeriodEnd: payment.provider === 'MOBILE_MONEY',
         cancelledAt: null,
+        ...(proProfileId === null ? {} : { proProfileId }),
       };
 
       const subscriptionId =
@@ -732,6 +810,7 @@ export class BillingService {
         reason: 'ACTIVATED',
         planCode,
         currentPeriodEnd: periodEnd.toISOString(),
+        ...(proProfileId === null ? {} : { proProfileId }),
       });
 
       return { handled: true as const, reason: 'ACTIVATED', subscriptionId };
@@ -888,7 +967,15 @@ export class BillingService {
           },
         ],
       },
-      select: { id: true, userId: true, status: true, cancelAtPeriodEnd: true, provider: true },
+      select: {
+        id: true,
+        userId: true,
+        status: true,
+        cancelAtPeriodEnd: true,
+        provider: true,
+        proProfileId: true,
+        plan: { select: { code: true } },
+      },
       take: 500,
     });
 
@@ -911,7 +998,12 @@ export class BillingService {
         if (applied.count === 0) return;
 
         await this.plans.recomputeUserPlan(tx, row.userId);
-        await this.emitChanged(tx, row.id, { userId: row.userId, reason: next, planCode: 'PREMIUM' });
+        await this.emitChanged(tx, row.id, {
+          userId: row.userId,
+          reason: next,
+          planCode: row.plan.code,
+          ...(row.proProfileId === null ? {} : { proProfileId: row.proProfileId }),
+        });
       });
 
       if (next === 'CANCELLED') cancelled += 1;
@@ -919,6 +1011,59 @@ export class BillingService {
     }
 
     return { expired, cancelled };
+  }
+
+  /**
+   * `billing.expire_pending_payments` — toutes les cinq minutes (lot D).
+   *
+   * Un paiement `PENDING` plus vieux que `PAYMENT_PENDING_TIMEOUT_MINUTES` n'aboutira pas :
+   * carte abandonnée, ordre Mobile Money jamais validé. Il passe `FAILED` (`TIMEOUT`). La
+   * mise à jour est CONDITIONNELLE à `PENDING`, donc rejouable, et un paiement que le
+   * webhook vient de confirmer n'est pas touché.
+   */
+  async expirePendingPayments(now = new Date()): Promise<{ expired: number }> {
+    const cutoff = new Date(now.getTime() - PAYMENT_PENDING_TIMEOUT_MINUTES * 60_000);
+    const result = await this.prisma.payment.updateMany({
+      where: { status: 'PENDING', createdAt: { lte: cutoff } },
+      data: { status: 'FAILED', failureCode: 'TIMEOUT' },
+    });
+    return { expired: result.count };
+  }
+
+  /**
+   * Consommateur de `subscription.changed` (lot D) : pose `pro_profiles.tier` et
+   * `tier_until` d'après les abonnements Pro de la fiche.
+   *
+   * Il RELIT la base au lieu de croire la charge : l'événement est livré « au moins une
+   * fois », sans ordre, et l'état de la fiche doit être celui des abonnements d'AUJOURD'HUI.
+   * Idempotent par construction. Aucun abonnement Pro actif → `FREE`, sans date.
+   */
+  async applyProTier(subscriptionId: string): Promise<{ applied: boolean }> {
+    const sub = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: { proProfileId: true },
+    });
+    if (sub === null || sub.proProfileId === null) return { applied: false };
+    const proProfileId = sub.proProfileId;
+
+    const active = await this.prisma.subscription.findMany({
+      where: {
+        proProfileId,
+        status: { in: ['ACTIVE', 'PAST_DUE'] },
+        plan: { code: { in: ['PRO', 'PRO_PLUS'] } },
+      },
+      select: { currentPeriodEnd: true, plan: { select: { code: true } } },
+    });
+
+    const best = active.some((s) => s.plan.code === 'PRO_PLUS') ? 'PRO_PLUS' : active.length > 0 ? 'PRO' : 'FREE';
+    const ends = active.filter((s) => s.plan.code === best).map((s) => s.currentPeriodEnd.getTime());
+    const tierUntil = ends.length === 0 ? null : new Date(Math.max(...ends));
+
+    await this.prisma.proProfile.updateMany({
+      where: { id: proProfileId },
+      data: { tier: best, tierUntil },
+    });
+    return { applied: true };
   }
 
   /**
@@ -1001,9 +1146,14 @@ export class BillingService {
   }
 
   /** `PUT /admin/billing/plans/:code` (SUPER_ADMIN). */
-  async updatePlan(staffId: string, code: PlanCode, patch: PlanUpdate) {
+  async updatePlan(staffId: string, code: PlanCode, patch: PlanUpdate, reason?: string) {
     const before = await this.prisma.plan.findUnique({ where: { code } });
     if (before === null) throw ApiError.notFound();
+    const yearBefore = await this.plans.yearPrices();
+    // Le plan gratuit n'a pas de prix annuel : l'accepter ici le perdrait en silence.
+    if (patch.yearPriceCents !== undefined && code === 'FREE') {
+      throw ApiError.validation([{ path: 'yearPriceCents', code: 'CUSTOM', message: 'Le plan gratuit n’a pas de prix annuel.' }]);
+    }
 
     // Les limites sont revalidées ici AUSSI, bien que le schéma de route l'ait
     // fait : `plans.limits` est la source unique des quotas de quatre modules, et
@@ -1021,6 +1171,18 @@ export class BillingService {
         },
       });
 
+      // Lot D : `yearPriceCents` était accepté par le schéma et JAMAIS écrit. Le prix annuel
+      // vit dans `system_settings` (une seule ligne par plan dans `plans`) : on y écrit le
+      // tableau complet, revalidé, dans la même transaction que le reste.
+      if (patch.yearPriceCents !== undefined && code !== 'FREE') {
+        const nextYear = yearPricesSchema.parse({ ...yearBefore, [code]: patch.yearPriceCents });
+        await tx.systemSetting.upsert({
+          where: { key: BILLING_YEAR_PRICES_SETTING_KEY },
+          create: { key: BILLING_YEAR_PRICES_SETTING_KEY, value: nextYear, updatedByStaffId: staffId },
+          update: { value: nextYear, updatedByStaffId: staffId },
+        });
+      }
+
       await this.audit.record(tx, {
         actor: { type: 'STAFF', id: staffId },
         action: 'billing.plan_updated',
@@ -1028,8 +1190,13 @@ export class BillingService {
         targetId: before.id,
         metadata: {
           code,
-          before: { priceCents: before.priceCents, isActive: before.isActive },
+          before: {
+            priceCents: before.priceCents,
+            isActive: before.isActive,
+            ...(code === 'FREE' ? {} : { yearPriceCents: yearBefore[code] }),
+          },
           after: patch,
+          ...(reason === undefined ? {} : { reason }),
         },
       });
     });
@@ -1037,6 +1204,96 @@ export class BillingService {
     // Le cache par code, purgé tout de suite sur cette instance.
     this.plans.invalidate();
     return this.adminPlans();
+  }
+
+  // ── Lot D — moyens de paiement, options, activation ───────────────────────
+
+  /** `GET /admin/billing/config` : tout ce que l'écran « Paiements et offres » montre. */
+  async billingConfig() {
+    const monetisation = await monetisationActive(this.prisma);
+    const methods = paymentMethodsFrom(await this.readSetting(BILLING_PAYMENT_METHODS_SETTING_KEY));
+    const options = paidOptionsFrom(await this.readSetting(BILLING_PAID_OPTIONS_SETTING_KEY));
+    return {
+      monetisationActive: monetisation,
+      paymentsAvailable: await this.plans.paymentsAvailable(),
+      methods,
+      options,
+    };
+  }
+
+  private async readSetting(key: string): Promise<unknown> {
+    const row = await this.prisma.systemSetting.findUnique({ where: { key }, select: { value: true } });
+    return row?.value;
+  }
+
+  /** Écrit un réglage ET sa trace d'audit, dans la même transaction. Le motif est déjà validé. */
+  private async writeSetting(
+    staffId: string,
+    key: string,
+    value: Prisma.InputJsonValue,
+    action: string,
+    reason: string,
+  ): Promise<void> {
+    const before = await this.readSetting(key);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.systemSetting.upsert({
+        where: { key },
+        create: { key, value, updatedByStaffId: staffId },
+        update: { value, updatedByStaffId: staffId },
+      });
+      // `audit_logs.target_id` est un UUID : la clé (une chaîne) passe par les métadonnées.
+      await this.audit.record(tx, {
+        actor: { type: 'STAFF', id: staffId },
+        action,
+        targetType: 'system_setting',
+        metadata: { key, before: before === undefined ? null : before, after: value, reason },
+      });
+    });
+  }
+
+  /** `PUT /admin/billing/monetisation` — l'interrupteur global « tout est gratuit ». */
+  async setMonetisation(staffId: string, active: boolean, reason: string) {
+    await this.writeSetting(staffId, MONETISATION_SETTING_KEY, active, 'billing.monetisation_changed', reason);
+    return this.billingConfig();
+  }
+
+  /** `PUT /admin/billing/payment-methods` — allume, éteint ou renomme un moyen de paiement. */
+  async updatePaymentMethods(staffId: string, input: PaymentMethodsUpdate) {
+    const current = paymentMethodsFrom(await this.readSetting(BILLING_PAYMENT_METHODS_SETTING_KEY));
+    const next = current.map((m) => {
+      const patch = input.methods.find((p) => p.code === m.code);
+      if (patch === undefined) return m;
+      return {
+        ...m,
+        ...(patch.enabled === undefined ? {} : { enabled: patch.enabled }),
+        ...(patch.label === undefined ? {} : { label: patch.label }),
+        ...(patch.currencies === undefined ? {} : { currencies: patch.currencies }),
+      };
+    });
+    await this.writeSetting(
+      staffId,
+      BILLING_PAYMENT_METHODS_SETTING_KEY,
+      next,
+      'billing.payment_methods_changed',
+      input.reason,
+    );
+    return this.billingConfig();
+  }
+
+  /** `PUT /admin/billing/paid-options` — allume ou éteint une option payante. */
+  async updatePaidOptions(staffId: string, input: PaidOptionsUpdate) {
+    const current = paidOptionsFrom(await this.readSetting(BILLING_PAID_OPTIONS_SETTING_KEY));
+    const next = { ...current, ...input.options };
+    await this.writeSetting(staffId, BILLING_PAID_OPTIONS_SETTING_KEY, next, 'billing.paid_options_changed', input.reason);
+    return this.billingConfig();
+  }
+
+  /**
+   * `PUT /admin/billing/plans/:code/enabled` — propose ou retire une formule à la souscription.
+   * Les abonnés en cours ne sont PAS coupés : seule la vente est fermée.
+   */
+  async setPlanEnabled(staffId: string, code: PlanCode, isActive: boolean, reason: string) {
+    return this.updatePlan(staffId, code, { isActive }, reason);
   }
 
   /** `GET /admin/billing/subscriptions?status&provider` (§7.2). */
@@ -1111,6 +1368,7 @@ export class BillingService {
         paidAt: true,
         providerRef: true,
         subscriptionId: true,
+        proProfileId: true,
       },
     });
     if (payment === null) throw ApiError.notFound();
@@ -1134,7 +1392,9 @@ export class BillingService {
     }
 
     if (this.card !== null && payment.providerRef !== null && payment.currency === 'EUR') {
-      await this.card.refund(payment.providerRef, payment.amountCents);
+      // Clé d'idempotence : un rejeu (la transaction ci-dessous a échoué, le SUPPORT relance)
+      // ne rembourse pas deux fois chez le fournisseur. Le remboursement réel reste fictif.
+      await this.card.refund(payment.providerRef, payment.amountCents, `refund-${payment.id}`);
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -1143,6 +1403,29 @@ export class BillingService {
         data: { status: 'REFUNDED' },
       });
       if (applied.count === 0) return;
+
+      // Lot D : un remboursement COUPE l'abonnement qu'il payait. Sans cela, le membre
+      // gardait l'accès Premium (ou la fiche Pro) qu'on venait de lui rembourser.
+      // `users.plan` est recalculé dans la même transaction, depuis les abonnements.
+      if (payment.subscriptionId !== null) {
+        const sub = await tx.subscription.findUnique({
+          where: { id: payment.subscriptionId },
+          select: { id: true, status: true, proProfileId: true, plan: { select: { code: true } } },
+        });
+        if (sub !== null && (sub.status === 'ACTIVE' || sub.status === 'PAST_DUE')) {
+          await tx.subscription.update({
+            where: { id: sub.id },
+            data: { status: 'CANCELLED', cancelledAt: new Date() },
+          });
+          await this.emitChanged(tx, sub.id, {
+            userId: payment.userId,
+            reason: 'CANCELLED',
+            planCode: sub.plan.code,
+            ...(sub.proProfileId === null ? {} : { proProfileId: sub.proProfileId }),
+          });
+        }
+      }
+      await this.plans.recomputeUserPlan(tx, payment.userId);
 
       await this.audit.record(tx, {
         actor: { type: 'STAFF', id: staffId },
@@ -1397,6 +1680,8 @@ export class BillingService {
       reason: SubscriptionChangeReason;
       planCode: PlanCode;
       currentPeriodEnd?: string;
+      /** Lot D : la fiche d'un abonnement Pro — lue par `applyProTier`. */
+      proProfileId?: string;
     },
   ): Promise<void> {
     await this.outbox.emit(tx, {

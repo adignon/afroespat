@@ -21,6 +21,7 @@ import {
 } from '@app/shared';
 import { fetchMe, memberApi } from '@/lib/api/index';
 import type { BandeauEntraide, CompteursEntraide, MembreDessine } from './data';
+import { toutesLesPages } from '@/lib/toutes-les-pages';
 import type { EtatVide, FiltreTypeDemande, LigneDemande, PorteeFil } from '../h01/data';
 import type { H01Data } from '../h01/data';
 import type { H02Data, ReponsePublique } from '../h02/data';
@@ -721,14 +722,38 @@ function videDuFil(
 async function listeDuFil(
   portee: PorteeChoisie,
   type: string,
-): Promise<{ readonly items: readonly HelpCard[]; readonly sansCritere: boolean }> {
+): Promise<{
+  readonly items: readonly HelpCard[];
+  readonly sansCritere: boolean;
+  readonly suite: string | null;
+}> {
   if (portee === 'aider') {
     const suggestions = await memberApi.get('/help/can-help?limit=20', helpCanHelpResponseSchema);
-    return { items: suggestions.items, sansCritere: suggestions.meta.reason === 'NO_CRITERIA' };
+    // `can-help` a un curseur TOUJOURS nul : on ne boucle pas.
+    return { items: suggestions.items, sansCritere: suggestions.meta.reason === 'NO_CRITERIA', suite: null };
   }
   const requete = type === '*' ? '?limit=20' : `?type=${encodeURIComponent(type)}&limit=20`;
   const fil = await memberApi.get(`/help${requete}`, helpListResponseSchema);
-  return { items: fil.items, sansCritere: false };
+  return { items: fil.items, sansCritere: false, suite: fil.nextCursor };
+}
+
+/** La page suivante de `GET /help` (« Voir plus », lot E2), avec le même type de demande. */
+export async function chargerDemandesSuivantes(
+  type: string,
+  curseur: string,
+  dejaAffichees: number,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly LigneDemande[]; readonly nextCursor: string | null }> {
+  const filtre = type === '*' ? '' : `&type=${encodeURIComponent(type)}`;
+  const page = await memberApi.get(
+    `/help?limit=20${filtre}&cursor=${encodeURIComponent(curseur)}`,
+    helpListResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return {
+    items: page.items.map((d, i) => ligneDemande(d, dejaAffichees + i)),
+    nextCursor: page.nextCursor,
+  };
 }
 
 /**
@@ -763,6 +788,7 @@ export async function chargerH01({
     avertissement,
     ville,
     demandes: liste.items.map((d, rang) => ligneDemande(d, rang)),
+    suite: liste.suite,
     /**
      * LA RANGÉE DE TYPES S'ÉTEINT SOUS LA PORTÉE « VOUS POUVEZ AIDER », et le
      * raisonnement entier est dans l'en-tête de `filtresType` : `can-help` n'a pas
@@ -1142,7 +1168,13 @@ export async function chargerH06(handle: string): Promise<H06Data> {
 export async function chargerH09(): Promise<H09Data> {
   const [bandeau, mine] = await Promise.all([
     bandeauSeul(),
-    memberApi.get('/help/mine?limit=50', helpMineResponseSchema),
+    // Les compteurs portent sur TOUTES les demandes : on suit `nextCursor` (lot E2).
+    toutesLesPages((c) =>
+      memberApi.get(
+        c === null ? '/help/mine?limit=50' : `/help/mine?limit=50&cursor=${encodeURIComponent(c)}`,
+        helpMineResponseSchema,
+      ),
+    ),
   ]);
 
   return {
@@ -1168,7 +1200,13 @@ export async function chargerH09(): Promise<H09Data> {
 export async function chargerH10(): Promise<H10Data> {
   const [bandeau, mes] = await Promise.all([
     bandeauSeul(),
-    memberApi.get('/help/my-responses?limit=50', helpMyResponsesResponseSchema),
+    // Compteurs et liste portent sur TOUTES les réponses : on suit `nextCursor` (lot E2).
+    toutesLesPages((c) =>
+      memberApi.get(
+        c === null ? '/help/my-responses?limit=50' : `/help/my-responses?limit=50&cursor=${encodeURIComponent(c)}`,
+        helpMyResponsesResponseSchema,
+      ),
+    ),
   ]);
 
   return {

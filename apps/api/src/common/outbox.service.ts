@@ -104,6 +104,9 @@ export type DomainEventType =
   | 'help_request.responded'
   | 'help_request.resolved'
   | 'help_request.reopened'
+  // Consommateur : `search` (réindexation / retrait du document). 06 §6.
+  | 'help_request.updated'
+  | 'help_request.deleted'
   | 'mentorship.requested'
   | 'mentorship.accepted'
   | 'mentorship.ended'
@@ -207,6 +210,10 @@ export type DomainEventType =
   | 'city.activated'
   | 'country.activated'
   | 'city.merged'
+  // Fermeture d'une ville / d'un pays. Consommateurs à brancher : search (retirer les fiches de la
+  // ville), communities. Émis par `ReferentialsService`.
+  | 'city.deactivated'
+  | 'country.deactivated'
   // 07-reseaux.md §6. Consommateurs nommés : search et notifications pour la vie
   // du réseau, notifications et cities pour les adhésions.
   //
@@ -279,6 +286,38 @@ export type DomainEventType =
   | 'moderation.case_opened'
   | 'moderation.case_resolved'
   | 'scam_alert.published';
+
+/**
+ * Types émis SANS abonné, et c'est DÉCIDÉ (pas un oubli) : ce sont des faits de
+ * JOURNAL (consultables dans `domain_events`, utiles à l'analytique future), dont
+ * l'effet métier est déjà produit dans la transaction émettrice.
+ *
+ *   · guide.voted / guide.vote_removed — réputation et compteurs écrits dans la
+ *     transaction du vote (`bumpUserStat`), règle des votes négatifs évaluée en ligne ;
+ *   · phone.added / phone.removed — le niveau de vérification est recalculé en ligne ;
+ *   · content.flagged — le dossier de modération est ouvert par le module émetteur ;
+ *   · city_tip.voted, story.reacted, story.converted — compteurs tenus en ligne ;
+ *   · journey.step_started, blocker.published — aucune notification ni indexation prévue ;
+ *   · community.member_left / community.member_banned — effets appliqués en ligne.
+ *
+ * Le test `catalogue-evenements.test.ts` impose : tout type du catalogue a un abonné
+ * OU figure ici, et rien de ce qui figure ici n'est abonné (liste périmée).
+ */
+export const JOURNAL_ONLY_EVENT_TYPES: readonly string[] = [
+  'guide.voted',
+  'guide.vote_removed',
+  'phone.added',
+  'phone.removed',
+  'country.deactivated',
+  'content.flagged',
+  'city_tip.voted',
+  'story.reacted',
+  'story.converted',
+  'journey.step_started',
+  'blocker.published',
+  'community.member_left',
+  'community.member_banned',
+];
 
 export interface DomainEventInput {
   readonly type: DomainEventType;
@@ -353,6 +392,70 @@ export class OutboxService {
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
     `;
+  }
+
+  /**
+   * Réclame un lot ET le publie DANS LA MÊME TRANSACTION.
+   *
+   * `FOR UPDATE SKIP LOCKED` ne protège que tant que le verrou vit. Hors
+   * transaction, il tombe à la fin de l'instruction : deux workers pouvaient lire
+   * le même lot. Ici les lignes restent verrouillées jusqu'au COMMIT (qui pose
+   * `published_at`), donc un second relais saute ces lignes et prend les
+   * suivantes. Si `publish` lève, la transaction est annulée et le lot sera
+   * repris (livraison au moins une fois, abonnés idempotents).
+   *
+   * Rend le nombre d'événements relayés.
+   */
+  async relayBatch(
+    limit: number,
+    publish: (
+      events: { id: string; type: string; aggregateId: string; payload: unknown; occurredAt: Date }[],
+    ) => Promise<void>,
+  ): Promise<number> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const events = await tx.$queryRaw<
+          { id: string; type: string; aggregateId: string; payload: unknown; occurredAt: Date }[]
+        >`
+          SELECT id, type, aggregate_id AS "aggregateId", payload, occurred_at AS "occurredAt"
+          FROM domain_events
+          WHERE published_at IS NULL
+          ORDER BY created_at ASC
+          LIMIT ${limit}
+          FOR UPDATE SKIP LOCKED
+        `;
+        if (events.length === 0) return 0;
+        await publish(events);
+        await tx.domainEvent.updateMany({
+          where: { id: { in: events.map((e) => e.id) } },
+          data: { publishedAt: new Date() },
+        });
+        return events.length;
+      },
+      { timeout: 20_000, maxWait: 5_000 },
+    );
+  }
+
+  /**
+   * Purge des événements DÉJÀ publiés et plus vieux que `olderThanDays`. Jamais un
+   * événement non publié : il attend encore son relais. Borné (lots) pour ne pas
+   * tenir un verrou long.
+   */
+  async purgePublished(olderThanDays: number, now = new Date()): Promise<number> {
+    const before = new Date(now.getTime() - olderThanDays * 86_400_000);
+    let total = 0;
+    for (let batch = 0; batch < 50; batch += 1) {
+      const removed = await this.prisma.$executeRaw`
+        DELETE FROM domain_events
+        WHERE id IN (
+          SELECT id FROM domain_events
+          WHERE published_at IS NOT NULL AND published_at < ${before}
+          LIMIT 5000
+        )`;
+      total += removed;
+      if (removed < 5000) break;
+    }
+    return total;
   }
 
   /**

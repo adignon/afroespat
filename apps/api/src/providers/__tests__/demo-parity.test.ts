@@ -57,7 +57,7 @@ const PUBLIC: Record<string, string[]> = {
   TwilioSmsProvider: ['send'],
   BrevoEmailProvider: ['send'],
   DiditKycProvider: ['createSession', 'getStatus'],
-  TurnstileCaptchaProvider: ['verify'],
+  TurnstileCaptchaProvider: ['check', 'verify'],
   S3StorageProvider: ['createUploadUrl', 'createDownloadUrl', 'put', 'get', 'delete'],
   ClamAvAntivirusProvider: ['scan'],
   WebPushProvider: ['send'],

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { displayMessageFor } from '@/lib/api/index';
 
 /**
@@ -110,10 +110,16 @@ export function Champ({
   inputMode,
   maxLength,
   nom,
+  erreur,
+  aide,
 }: {
   readonly libelle: string;
   readonly valeur: string;
   readonly onChange: (v: string) => void;
+  /** Message d'erreur du champ : pose aria-invalid et le relie au champ. */
+  readonly erreur?: string | undefined;
+  /** Texte d'aide, relié au champ (aria-describedby). */
+  readonly aide?: string | undefined;
   readonly type?: string;
   readonly placeholder?: string;
   readonly disabled?: boolean;
@@ -122,10 +128,16 @@ export function Champ({
   readonly maxLength?: number;
   readonly nom?: string;
 }) {
+  const id = useId();
+  const idErreur = `${id}-erreur`;
+  const idAide = `${id}-aide`;
+  const decrit = [erreur === undefined ? '' : idErreur, aide === undefined ? '' : idAide].filter(Boolean).join(' ');
   return (
     <label style={{ display: 'block' }}>
       <div style={{ fontSize: '12.5px', fontWeight: 700, marginBottom: '6px' }}>{libelle}</div>
       <input
+        aria-invalid={erreur === undefined ? undefined : true}
+        aria-describedby={decrit === '' ? undefined : decrit}
         name={nom}
         type={type}
         value={valeur}
@@ -137,6 +149,16 @@ export function Champ({
         onChange={(e) => onChange(e.target.value)}
         style={champBase}
       />
+      {aide === undefined ? null : (
+        <div id={idAide} style={{ fontSize: '12px', color: C.gris, marginTop: '4px' }}>
+          {aide}
+        </div>
+      )}
+      {erreur === undefined ? null : (
+        <div id={idErreur} role="alert" style={{ fontSize: '12px', fontWeight: 700, color: C.terre, marginTop: '4px' }}>
+          {erreur}
+        </div>
+      )}
     </label>
   );
 }
@@ -285,24 +307,59 @@ export function Pastille({
   );
 }
 
+/** Les identifiants reliant un onglet à son panneau (`aria-controls` / `aria-labelledby`). */
+export const idOnglet = (base: string, id: string): string => `onglet-${base}-${id}`;
+export const idPanneau = (base: string, id: string): string => `panneau-${base}-${id}`;
+
+/**
+ * Onglets accessibles : `tablist`, un seul onglet dans l'ordre de tabulation (celui qui est actif), flèches gauche/droite
+ * et Début/Fin pour passer de l'un à l'autre. Avec `base`, chaque onglet pointe son panneau (`aria-controls`) ; le
+ * panneau s'écrit avec `PanneauOnglet`.
+ */
 export function Onglets<T extends string>({
   onglets,
   actif,
   onChange,
+  base,
+  libelle,
 }: {
   readonly onglets: readonly { readonly id: T; readonly libelle: string }[];
   readonly actif: T;
   readonly onChange: (id: T) => void;
+  readonly base?: string;
+  readonly libelle?: string;
 }) {
+  const refs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const clavier = (e: React.KeyboardEvent, index: number) => {
+    const n = onglets.length;
+    let cible = -1;
+    if (e.key === 'ArrowRight') cible = (index + 1) % n;
+    else if (e.key === 'ArrowLeft') cible = (index - 1 + n) % n;
+    else if (e.key === 'Home') cible = 0;
+    else if (e.key === 'End') cible = n - 1;
+    if (cible < 0) return;
+    e.preventDefault();
+    const o = onglets[cible];
+    if (o === undefined) return;
+    onChange(o.id);
+    refs.current[o.id]?.focus();
+  };
   return (
-    <div role="tablist" style={{ display: 'flex', gap: '4px', background: C.aplat, borderRadius: '14px', padding: '4px', width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
-      {onglets.map((o) => (
+    <div role="tablist" aria-label={libelle} style={{ display: 'flex', gap: '4px', background: C.aplat, borderRadius: '14px', padding: '4px', width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
+      {onglets.map((o, i) => (
         <button
           key={o.id}
+          ref={(el) => {
+            refs.current[o.id] = el;
+          }}
+          id={base === undefined ? undefined : idOnglet(base, o.id)}
           type="button"
           role="tab"
           aria-selected={o.id === actif}
+          aria-controls={base === undefined ? undefined : idPanneau(base, o.id)}
+          tabIndex={o.id === actif ? 0 : -1}
           onClick={() => onChange(o.id)}
+          onKeyDown={(e) => clavier(e, i)}
           style={{
             padding: '0 16px',
             height: '36px',
@@ -320,6 +377,15 @@ export function Onglets<T extends string>({
           {o.libelle}
         </button>
       ))}
+    </div>
+  );
+}
+
+/** Le panneau d'un onglet : à poser autour du contenu de l'onglet actif, avec le même `base` que `Onglets`. */
+export function PanneauOnglet({ base, id, children }: { readonly base: string; readonly id: string; readonly children: ReactNode }) {
+  return (
+    <div role="tabpanel" id={idPanneau(base, id)} aria-labelledby={idOnglet(base, id)} tabIndex={0} style={{ outline: 'none' }}>
+      {children}
     </div>
   );
 }
@@ -552,13 +618,22 @@ export const nombreFr = (n: number): string => new Intl.NumberFormat('fr-FR').fo
 
 // ─── Fenêtre ─────────────────────────────────────────────────────────────────
 
+/** La pile des fenêtres ouvertes : Échap ne ferme que celle du dessus. */
+const pileFenetres: symbol[] = [];
+
+const FOCALISABLES =
+  'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
 /**
  * Une fenêtre d'édition ou de confirmation d'équipe — le châssis de
  * `FenetreConfirmation` (voile `rgba(22,33,29,.55)`, panneau blanc à rayon 28, retrait
  * 24, trait `#DDE3E0`), mais avec un CONTENU libre : les écrans d'équipe ont des
  * formulaires, que la confirmation du dépôt (un champ de motif) ne porte pas.
  *
- * Échap ferme ; le panneau défile, le voile non ; `role="dialog"` et `aria-modal`.
+ * Accessibilité : le focus entre dans la fenêtre (premier champ, sinon le panneau), Tab et Maj+Tab y restent
+ * (piège), il revient à l'élément qui l'avait avant l'ouverture ; le défilement de la page est verrouillé et le
+ * reste de l'application est inerte (`inert`) tant qu'elle est ouverte. Échap ne ferme que la fenêtre du dessus, et
+ * ni Échap ni le voile ne ferment pendant un envoi (`occupe`).
  */
 export function Fenetre({
   ouverte,
@@ -566,29 +641,105 @@ export function Fenetre({
   onFermer,
   children,
   large,
+  occupe = false,
 }: {
   readonly ouverte: boolean;
   readonly titre: string;
   readonly onFermer: () => void;
   readonly children: ReactNode;
   readonly large?: boolean;
+  /** Un envoi est en cours : la fenêtre ne se ferme pas (Échap, voile, croix). */
+  readonly occupe?: boolean;
 }) {
+  const panneau = useRef<HTMLDivElement>(null);
+  const racine = useRef<HTMLDivElement>(null);
+  const occupeRef = useRef(occupe);
+  occupeRef.current = occupe;
+  const fermerRef = useRef(onFermer);
+  fermerRef.current = onFermer;
+
   useEffect(() => {
     if (!ouverte) return undefined;
+    const marque = Symbol('fenetre');
+    pileFenetres.push(marque);
+    const avant = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const defilement = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    // Le reste de l'application devient inerte (hors fenêtres, rendues en frère du contenu).
+    const inertes: HTMLElement[] = [];
+    // On remonte de la fenêtre à la racine de l'administration et on rend inertes les FRÈRES de chaque ancêtre.
+    let noeud: HTMLElement | null = racine.current;
+    while (noeud !== null && noeud.parentElement !== null && !noeud.hasAttribute('data-admin')) {
+      const parent: HTMLElement = noeud.parentElement;
+      for (const frere of Array.from(parent.children)) {
+        if (frere !== noeud && frere instanceof HTMLElement && !frere.hasAttribute('data-fenetre') && !frere.hasAttribute('inert') && frere.tagName !== 'SCRIPT') {
+          frere.setAttribute('inert', '');
+          inertes.push(frere);
+        }
+      }
+      if (parent.hasAttribute('data-admin')) break;
+      noeud = parent;
+    }
+    const dedans = () => Array.from(panneau.current?.querySelectorAll<HTMLElement>(FOCALISABLES) ?? []);
+    // Focus initial : le premier champ de saisie, sinon le premier focalisable, sinon le panneau.
+    const champs = dedans().filter((e) => e.matches('input,textarea,select'));
+    (champs[0] ?? dedans().find((e) => e.getAttribute('aria-label') !== 'Fermer') ?? panneau.current)?.focus();
+
     const touche = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onFermer();
+      if (pileFenetres[pileFenetres.length - 1] !== marque) return;
+      if (e.key === 'Escape') {
+        if (!occupeRef.current) {
+          e.stopPropagation();
+          fermerRef.current();
+        }
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const liste = dedans();
+      if (liste.length === 0) {
+        e.preventDefault();
+        panneau.current?.focus();
+        return;
+      }
+      const premier = liste[0] as HTMLElement;
+      const dernier = liste[liste.length - 1] as HTMLElement;
+      const actif = document.activeElement;
+      if (e.shiftKey && (actif === premier || actif === panneau.current)) {
+        e.preventDefault();
+        dernier.focus();
+      } else if (!e.shiftKey && actif === dernier) {
+        e.preventDefault();
+        premier.focus();
+      } else if (!panneau.current?.contains(actif)) {
+        e.preventDefault();
+        premier.focus();
+      }
     };
-    window.addEventListener('keydown', touche);
-    return () => window.removeEventListener('keydown', touche);
-  }, [ouverte, onFermer]);
+    document.addEventListener('keydown', touche);
+    return () => {
+      document.removeEventListener('keydown', touche);
+      const i = pileFenetres.indexOf(marque);
+      if (i >= 0) pileFenetres.splice(i, 1);
+      inertes.forEach((el) => el.removeAttribute('inert'));
+      if (pileFenetres.length === 0) document.body.style.overflow = defilement;
+      if (avant?.isConnected === true) avant.focus();
+    };
+  }, [ouverte]);
+
   if (!ouverte) return null;
+  const fermer = () => {
+    if (!occupe) onFermer();
+  };
   return (
-    <>
-      <div onClick={onFermer} style={{ position: 'fixed', inset: 0, background: 'rgba(22,33,29,.55)', zIndex: 'var(--z-fenetre, 80)' }} />
+    <div data-fenetre="" ref={racine}>
+      <div onClick={fermer} style={{ position: 'fixed', inset: 0, background: 'rgba(22,33,29,.55)', zIndex: 'var(--z-fenetre, 80)' }} />
       <div
+        ref={panneau}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={titre}
+        aria-busy={occupe}
         style={{
           position: 'fixed',
           left: '50%',
@@ -605,6 +756,7 @@ export function Fenetre({
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
+          outline: 'none',
           zIndex: 'calc(var(--z-fenetre, 80) + 1)',
         }}
       >
@@ -613,15 +765,16 @@ export function Fenetre({
           <button
             type="button"
             aria-label="Fermer"
-            onClick={onFermer}
-            style={{ width: '40px', height: '40px', borderRadius: '999px', border: 'none', background: '#F2F5F4', cursor: 'pointer', fontSize: '18px', color: C.encre }}
+            disabled={occupe}
+            onClick={fermer}
+            style={{ width: '40px', height: '40px', borderRadius: '999px', border: 'none', background: '#F2F5F4', cursor: occupe ? 'default' : 'pointer', fontSize: '18px', color: C.encre }}
           >
             ×
           </button>
         </div>
         {children}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -680,7 +833,7 @@ export function FenetreMotif({
   }, [ouverte]);
   const suffisant = !motifRequis || motif.trim().length >= min;
   return (
-    <Fenetre ouverte={ouverte} titre={titre} onFermer={onFermer}>
+    <Fenetre ouverte={ouverte} titre={titre} onFermer={onFermer} occupe={occupe}>
       {consigne === undefined ? null : <div style={{ fontSize: '14px', color: C.gris }}>{consigne}</div>}
       {enfants}
       {motifRequis ? (

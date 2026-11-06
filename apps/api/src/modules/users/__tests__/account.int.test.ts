@@ -10,7 +10,8 @@ import { AppModule } from '../../../app.module';
 import { CryptoService } from '../../../common/crypto.service';
 import { ApiErrorFilter } from '../../../common/error.filter';
 import { PrismaService } from '../../../common/prisma.service';
-import { FakeSmsProvider, SMS_PROVIDER } from '../../../providers/providers';
+import { FakeSmsProvider, SMS_PROVIDER, STORAGE_PROVIDER, type StorageProvider } from '../../../providers/providers';
+import { MediaService } from '../../media/media.service';
 import { AuthService } from '../../auth/auth.service';
 import { AccountService } from '../account.service';
 import { VerificationLevelService } from '../verification-level.service';
@@ -631,6 +632,61 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
         where: { aggregateId: me.userId, type: 'user.deleted' },
       }),
     ).toBe(1);
+  });
+
+  it('[RGPD] la suppression efface l’e-mail et sa vérification, retire les octets média et purge les consentements après 3 ans', async () => {
+    const phone = nextPhone();
+    const me = await signIn(phone);
+    await makeL1(me.userId);
+    await prisma.user.update({
+      where: { id: me.userId },
+      data: { emailEncrypted: crypto.encryptEmail('rgpd@exemple.test'), emailVerifiedAt: new Date() },
+    });
+    await prisma.emailVerification.create({
+      data: {
+        id: newId(),
+        userId: me.userId,
+        emailEncrypted: crypto.encryptEmail('rgpd@exemple.test'),
+        codeHash: 'x',
+        expiresAt: new Date(Date.now() + 600_000),
+      },
+    });
+    // Un avatar : ligne + octets dans le stockage objet.
+    const storage = app.get<StorageProvider>(STORAGE_PROVIDER);
+    const media = app.get(MediaService);
+    const assetId = newId();
+    const storageKey = `avatar/test/${assetId}.png`;
+    await storage.put(storageKey, Buffer.from('octets'), 'image/png');
+    await prisma.mediaAsset.create({
+      data: { id: assetId, ownerUserId: me.userId, kind: 'AVATAR', storageKey, mime: 'image/png', sizeBytes: 6n, status: 'READY', exifStripped: true },
+    });
+    await prisma.user.update({ where: { id: me.userId }, data: { avatarAssetId: assetId } });
+
+    const otp = await otpFor(phone, 'DELETE_ACCOUNT');
+    await account.requestDeletion(me.userId, { challengeId: otp.challengeId, code: otp.code });
+    const later = new Date(Date.now() + (ACCOUNT_LIMITS.deletionGraceDays + 1) * 86_400_000);
+    await account.executeDueDeletions(later);
+
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: me.userId } });
+    expect(user.emailEncrypted).toBeNull();
+    expect(user.emailVerifiedAt).toBeNull();
+    expect(await prisma.emailVerification.count({ where: { userId: me.userId } })).toBe(0);
+
+    // L'avatar est marqué supprimé, puis le ramasse-miettes efface les OCTETS et la ligne.
+    expect((await prisma.mediaAsset.findUniqueOrThrow({ where: { id: assetId } })).deletedAt).not.toBeNull();
+    const purge = await media.purgeOrphans(new Date(Date.now() + 2 * 3_600_000));
+    expect(purge.purged).toBeGreaterThanOrEqual(1);
+    expect(await storage.get(storageKey)).toBeNull();
+    expect(await prisma.mediaAsset.count({ where: { id: assetId } })).toBe(0);
+
+    // Consentements : conservés 3 ans, puis purgés.
+    expect(await prisma.consent.count({ where: { userId: me.userId } })).toBeGreaterThan(0);
+    const early = await account.purgeConsentsOfDeletedAccounts(new Date(Date.now() + 2 * 365 * 86_400_000));
+    expect(early.consents).toBe(0);
+    expect(await prisma.consent.count({ where: { userId: me.userId } })).toBeGreaterThan(0);
+    const farLater = new Date(Date.now() + (ACCOUNT_LIMITS.consentRetentionYears * 365 + 30) * 86_400_000);
+    await account.purgeConsentsOfDeletedAccounts(farLater);
+    expect(await prisma.consent.count({ where: { userId: me.userId } })).toBe(0);
   });
 
   it('deux passages CONCURRENTS n’exécutent la suppression qu’une fois', async () => {

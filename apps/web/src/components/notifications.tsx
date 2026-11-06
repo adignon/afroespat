@@ -172,7 +172,9 @@ export function Notifications() {
       containerStyle={{
         left: 16,
         right: 16,
-        bottom: 'max(16px, env(safe-area-inset-bottom))',
+        // Au-dessus de la barre d'onglets mobile (≈ 96 px avec le retrait de sécurité) : une
+        // carte posée dessus cachait la seule navigation du téléphone.
+        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 96px)',
       }}
       // La bibliothèque n'impose aucun style aux cartes `custom` ; celle-ci
       // n'existe que pour l'espacement vertical entre deux cartes empilées.

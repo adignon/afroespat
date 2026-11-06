@@ -1212,6 +1212,12 @@ export class NotificationsService {
     await this.prisma.notification.deleteMany({ where: { userId } });
     await this.prisma.notificationPreferences.deleteMany({ where: { userId } });
     await this.prisma.pushSubscription.deleteMany({ where: { userId } });
+    // RGPD : l'adresse e-mail (et sa vérification en cours) ne survit pas au compte.
+    await this.prisma.emailVerification.deleteMany({ where: { userId } });
+    await this.prisma.user.updateMany({
+      where: { id: userId },
+      data: { emailEncrypted: null, emailVerifiedAt: null },
+    });
     // ANONYMISÉS, pas supprimés : la trace des envois sert la délivrabilité et
     // les rebonds, et `user_id` est en `SetNull`.
     await this.prisma.outboundMessage.updateMany({ where: { userId }, data: { userId: null } });

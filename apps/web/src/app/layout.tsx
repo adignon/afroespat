@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import { Caveat, Plus_Jakarta_Sans } from 'next/font/google';
-import { PRODUCT_NAME, PWA_THEME_COLOR } from '@app/shared';
+import { PWA_THEME_COLOR } from '@app/shared';
 import { Notifications } from '@/components/notifications';
 import { RetourBoutons } from '@/components/retour-boutons';
+import { DESCRIPTION_PUBLIQUE, NOM_PUBLIC, urlDuSite } from '@/lib/seo';
 import './globals.css';
 
 /** Plus Jakarta Sans, les graisses employées par le design (T1 §2.2). */
@@ -16,12 +17,21 @@ const jakarta = Plus_Jakarta_Sans({
 /** L'écriture manuscrite des accents de la page d'accueil publique. */
 const caveat = Caveat({ subsets: ['latin'], weight: ['600', '700'], display: 'swap', variable: '--font-caveat' });
 
+/**
+ * LES MÉTADONNÉES PAR DÉFAUT — ET LEUR PRUDENCE.
+ *
+ * Rien n'est indexable par défaut : `noindex` ici, et seules les pages PUBLIQUES (la page d'accueil, `/p/:slug`)
+ * réclament `index: true` dans leurs propres métadonnées. Un parcours, un profil, un écran membre ou une page
+ * d'administration n'est jamais indexable (règles dures) ; il suffit d'oublier de le dire pour qu'il le reste.
+ */
 export const metadata: Metadata = {
-  title: PRODUCT_NAME,
-  description:
-    'La plateforme communautaire de la diaspora africaine en France : préparer son départ, s’installer, s’intégrer.',
-  // Aucun parcours public, aucun profil privé n'est indexable (règles dures).
-  robots: { index: true, follow: true },
+  metadataBase: new URL(urlDuSite()),
+  title: { default: `${NOM_PUBLIC} — la communauté des diasporas africaines`, template: `%s · ${NOM_PUBLIC}` },
+  description: DESCRIPTION_PUBLIQUE,
+  applicationName: NOM_PUBLIC,
+  robots: { index: false, follow: false },
+  openGraph: { type: 'website', locale: 'fr_FR', siteName: NOM_PUBLIC, title: NOM_PUBLIC, description: DESCRIPTION_PUBLIQUE },
+  twitter: { card: 'summary', title: NOM_PUBLIC, description: DESCRIPTION_PUBLIQUE },
 };
 
 export const viewport: Viewport = {

@@ -558,7 +558,13 @@ export class ConnectionsService {
       await this.outbox.emit(tx, {
         type: 'connection.created',
         aggregateId: requestId,
-        payload: { origin: 'MANUAL', userIds: orderedPair(request.fromUserId, userId) },
+        payload: {
+          origin: 'MANUAL',
+          userIds: orderedPair(request.fromUserId, userId),
+          requestId,
+          requesterUserId: request.fromUserId,
+          accepterUserId: userId,
+        },
       });
     });
 
@@ -651,7 +657,11 @@ export class ConnectionsService {
       await this.outbox.emit(tx, {
         type: 'connection.removed',
         aggregateId: connection.id,
-        payload: { userIds: [userAId, userBId], removedByUserId: userId },
+        payload: {
+          connectionId: connection.id,
+          userIds: [userAId, userBId],
+          removedByUserId: userId,
+        },
       });
     });
     this.mutualCache.clear();
@@ -737,6 +747,10 @@ export class ConnectionsService {
     const now = new Date();
 
     await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.connection.findFirst({
+        where: { userAId, userBId, removedAt: null },
+        select: { id: true },
+      });
       const removed = await tx.connection.updateMany({
         where: { userAId, userBId, removedAt: null },
         data: { removedAt: now },
@@ -766,8 +780,12 @@ export class ConnectionsService {
       if (removed.count > 0) {
         await this.outbox.emit(tx, {
           type: 'connection.removed',
-          aggregateId: userAId,
-          payload: { userIds: [userAId, userBId], reason: 'BLOCKED' },
+          aggregateId: existing?.id ?? userAId,
+          payload: {
+            connectionId: existing?.id ?? null,
+            userIds: [userAId, userBId],
+            reason: 'BLOCKED',
+          },
         });
       }
     });

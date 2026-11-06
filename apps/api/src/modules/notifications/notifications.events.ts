@@ -33,6 +33,9 @@ import { NotificationsService } from './notifications.service';
  * casse le jour où le producteur change, et l'échec surviendrait dans le worker,
  * loin de l'écran.
  */
+/** Taille d'une page de destinataires : un événement n'est plus jamais tronqué à N membres. */
+const RECIPIENT_PAGE = 500;
+
 @Injectable()
 export class NotificationEventsService {
   private readonly logger = new Logger(NotificationEventsService.name);
@@ -542,31 +545,40 @@ export class NotificationEventsService {
      * la moitié des destinataires réels n'aurait jamais été lue. Le filtre est
      * dans le `WHERE`, et l'index `(community_id, status, muted)` est là pour lui.
      */
-    const members = await this.prisma.communityMember.findMany({
-      where: {
-        communityId,
-        status: 'ACTIVE',
-        muted: false,
-        ...(author === null ? {} : { userId: { not: author } }),
-      },
-      select: { userId: true },
-      take: 1_000,
-    });
-
-    const recipients = author === null ? members.map((m) => m.userId) : await this.withoutSeparated(members.map((m) => m.userId), author);
-
     const lien = await this.communityUrl(communityId);
-    await this.notifications.deliverMany(
-      recipients.map((userId) => ({
-        userId,
-        category: 'COMMUNITY' as const,
-        type: 'community.announcement',
-        title: `Annonce dans ${community.name}`,
-        refType: 'COMMUNITY_ANNOUNCEMENT',
-        refId: announcementId,
-        url: lien,
-      })),
-    );
+    // Parcours PAR CURSEUR : aucun plafond silencieux, quelle que soit la taille du réseau.
+    let cursor: string | undefined;
+    for (;;) {
+      const members = await this.prisma.communityMember.findMany({
+        where: {
+          communityId,
+          status: 'ACTIVE',
+          muted: false,
+          ...(author === null ? {} : { userId: { not: author } }),
+        },
+        select: { id: true, userId: true },
+        orderBy: { id: 'asc' },
+        take: RECIPIENT_PAGE,
+        ...(cursor === undefined ? {} : { cursor: { id: cursor }, skip: 1 }),
+      });
+      if (members.length === 0) break;
+      cursor = members[members.length - 1]!.id;
+
+      const ids = members.map((m) => m.userId);
+      const recipients = author === null ? ids : await this.withoutSeparated(ids, author);
+      await this.notifications.deliverMany(
+        recipients.map((userId) => ({
+          userId,
+          category: 'COMMUNITY' as const,
+          type: 'community.announcement',
+          title: `Annonce dans ${community.name}`,
+          refType: 'COMMUNITY_ANNOUNCEMENT',
+          refId: announcementId,
+          url: lien,
+        })),
+      );
+      if (members.length < RECIPIENT_PAGE) break;
+    }
   }
 
   /** « Adhésion acceptée » (§2.1) — le nouveau membre est prévenu. */
@@ -728,12 +740,6 @@ export class NotificationEventsService {
     // Un rappel ne va qu'à ceux qui viennent ; une modification concerne aussi les
     // hésitants, qui doivent pouvoir se décider sur la bonne information.
     const statuses = reminder === null ? (['GOING', 'MAYBE'] as const) : (['GOING'] as const);
-    const attendees = await this.prisma.eventAttendee.findMany({
-      where: { eventId, status: { in: [...statuses] } },
-      select: { userId: true },
-      take: 1_000,
-    });
-
     const type = reminder === 'H_MINUS_2' ? 'event.reminder_h2' : reminder === 'J_MINUS_1' ? 'event.reminder_j1' : 'event.updated';
     const title =
       type === 'event.updated'
@@ -742,17 +748,41 @@ export class NotificationEventsService {
           ? `${event.title} commence bientôt`
           : `${event.title}, c’est demain`;
 
-    await this.notifications.deliverMany(
-      attendees.map((a) => ({
-        userId: a.userId,
-        category: 'EVENT' as const,
-        type,
-        title,
-        refType: 'EVENT',
-        refId: eventId,
-        url: `/agenda/${eventId}`,
-      })),
-    );
+    await this.forEachAttendeePage(eventId, [...statuses], async (userIds) => {
+      await this.notifications.deliverMany(
+        userIds.map((userId) => ({
+          userId,
+          category: 'EVENT' as const,
+          type,
+          title,
+          refType: 'EVENT',
+          refId: eventId,
+          url: `/agenda/${eventId}`,
+        })),
+      );
+    });
+  }
+
+  /** Parcourt les inscrits d'un événement par pages (curseur sur `id`), sans plafond. */
+  private async forEachAttendeePage(
+    eventId: string,
+    statuses: ('GOING' | 'MAYBE' | 'WAITLIST')[],
+    handle: (userIds: string[]) => Promise<void>,
+  ): Promise<void> {
+    let cursor: string | undefined;
+    for (;;) {
+      const page = await this.prisma.eventAttendee.findMany({
+        where: { eventId, status: { in: statuses } },
+        select: { id: true, userId: true },
+        orderBy: { id: 'asc' },
+        take: RECIPIENT_PAGE,
+        ...(cursor === undefined ? {} : { cursor: { id: cursor }, skip: 1 }),
+      });
+      if (page.length === 0) return;
+      cursor = page[page.length - 1]!.id;
+      await handle(page.map((a) => a.userId));
+      if (page.length < RECIPIENT_PAGE) return;
+    }
   }
 
   async onEventCancelled(eventId: string, payload: unknown): Promise<void> {
@@ -763,24 +793,20 @@ export class NotificationEventsService {
     if (event === null) return;
     const reason = readString(payload, 'reason');
 
-    const attendees = await this.prisma.eventAttendee.findMany({
-      where: { eventId, status: { in: ['GOING', 'MAYBE', 'WAITLIST'] } },
-      select: { userId: true },
-      take: 1_000,
+    await this.forEachAttendeePage(eventId, ['GOING', 'MAYBE', 'WAITLIST'], async (userIds) => {
+      await this.notifications.deliverMany(
+        userIds.map((userId) => ({
+          userId,
+          category: 'EVENT' as const,
+          type: 'event.cancelled',
+          title: `${event.title} est annulé`,
+          body: reason,
+          refType: 'EVENT',
+          refId: eventId,
+          url: `/agenda/${eventId}`,
+        })),
+      );
     });
-
-    await this.notifications.deliverMany(
-      attendees.map((a) => ({
-        userId: a.userId,
-        category: 'EVENT' as const,
-        type: 'event.cancelled',
-        title: `${event.title} est annulé`,
-        body: reason,
-        refType: 'EVENT',
-        refId: eventId,
-        url: `/agenda/${eventId}`,
-      })),
-    );
   }
 
   /** Liste d'attente : 09 §3 promeut un membre quand une place se libère. */
@@ -826,19 +852,30 @@ export class NotificationEventsService {
     if (author === null) return;
 
     const cutoff = new Date(Date.now() - ALERT_DISPATCH_INTERVAL_MS);
-    const alerts = await this.prisma.savedAlert.findMany({
-      where: {
-        kind,
-        isActive: true,
-        userId: { not: author },
-        // `notIn`/`lt` sur une colonne NULLABLE élimine les `NULL` : une alerte
-        // jamais notifiée a `last_notified_at` à NULL et doit être servie. D'où le
-        // `OR` explicite, et non un simple `lt`.
-        OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: cutoff } }],
-      },
-      select: { id: true, userId: true, criteria: true },
-      take: 500,
-    });
+    // Parcours par curseur : une alerte au-delà de la 500e n'est plus ignorée.
+    const alerts: { id: string; userId: string; criteria: unknown }[] = [];
+    let alertCursor: string | undefined;
+    for (;;) {
+      const page = await this.prisma.savedAlert.findMany({
+        where: {
+          kind,
+          isActive: true,
+          userId: { not: author },
+          // `notIn`/`lt` sur une colonne NULLABLE élimine les `NULL` : une alerte
+          // jamais notifiée a `last_notified_at` à NULL et doit être servie. D'où le
+          // `OR` explicite, et non un simple `lt`.
+          OR: [{ lastNotifiedAt: null }, { lastNotifiedAt: { lt: cutoff } }],
+        },
+        select: { id: true, userId: true, criteria: true },
+        orderBy: { id: 'asc' },
+        take: RECIPIENT_PAGE,
+        ...(alertCursor === undefined ? {} : { cursor: { id: alertCursor }, skip: 1 }),
+      });
+      if (page.length === 0) break;
+      alertCursor = page[page.length - 1]!.id;
+      alerts.push(...page);
+      if (page.length < RECIPIENT_PAGE) break;
+    }
 
     const matching = alerts.filter((alert) => this.alertMatches(alert.criteria, cityId));
     if (matching.length === 0) return;
@@ -1261,6 +1298,164 @@ export class NotificationEventsService {
         refId: report.id,
       })),
     );
+  }
+
+  /**
+   * Dossier ouvert → le ou les SIGNALEURS savent que leur signalement est pris en
+   * compte (13 §10 : « notifications (signaleur, auteur) »).
+   *
+   * L'AUTEUR n'est PAS prévenu ici, et c'est voulu : quand le contenu est masqué,
+   * `moderation.content_hidden` lui dit déjà « en vérification » ; quand il reste
+   * visible (file `QUEUE`), détailler qu'un dossier existe apprendrait à contourner
+   * (§4.2) et l'exposerait à des représailles envers le signaleur.
+   * Idempotent : `ref_id` est le signalement, donc un rejeu ne double rien.
+   */
+  async onModerationCaseOpened(caseId: string): Promise<void> {
+    const reports = await this.prisma.report.findMany({
+      where: { caseId },
+      select: { id: true, reporterUserId: true },
+      take: 200,
+    });
+    if (reports.length === 0) return;
+
+    await this.notifications.deliverMany(
+      reports.map((report) => ({
+        userId: report.reporterUserId,
+        category: 'MODERATION' as const,
+        type: 'moderation.report_received',
+        title: 'Nous examinons votre signalement',
+        body: 'Merci : notre équipe l’étudie et vous préviendra de la suite.',
+        refType: 'REPORT',
+        refId: report.id,
+      })),
+    );
+  }
+
+  // ══ Services : annuaire professionnel (10 §4.1, §8) ═══════════════════════
+
+  /** `pro.approved` / `pro.rejected` : le membre apprend la décision sur sa fiche. */
+  async onProDecision(decision: 'APPROVED' | 'REJECTED', aggregateId: string, payload: unknown): Promise<void> {
+    const userId = readString(payload, 'userId');
+    if (userId === null) return;
+    const proProfileId = readString(payload, 'proProfileId') ?? aggregateId;
+    const reason = readString(payload, 'reason');
+
+    await this.notifications.deliver({
+      userId,
+      category: 'SERVICES',
+      type: decision === 'APPROVED' ? 'services.pro_approved' : 'services.pro_rejected',
+      title:
+        decision === 'APPROVED'
+          ? 'Votre fiche professionnelle est en ligne'
+          : 'Votre fiche professionnelle n’a pas été validée',
+      body:
+        decision === 'APPROVED'
+          ? 'Elle est désormais visible dans l’annuaire.'
+          : (reason ?? 'Corrigez votre fiche et renvoyez votre justificatif.'),
+      refType: 'PRO_PROFILE',
+      refId: proProfileId,
+      url: '/services/annuaire/ma-fiche',
+    });
+  }
+
+  // ══ Alertes arnaques (13 §8, §10) ═════════════════════════════════════════
+
+  /**
+   * `scam_alert.published` → les membres actifs de la ville ou du pays visé (tous si
+   * l'alerte est globale). Parcours PAR CURSEUR, sans plafond.
+   *
+   * L'alerte `CRITICAL` passe en catégorie `MODERATION` (non désactivable) ; les autres
+   * en `COMMUNITY`, que le membre peut couper. L'« entrée de fil » du §10 n'a pas
+   * de consommateur : l'accueil LIT l'alerte épinglée à la requête (`feed.service`),
+   * y écrire une ligne la doublerait.
+   */
+  async onScamAlertPublished(alertId: string): Promise<void> {
+    const alert = await this.prisma.scamAlert.findUnique({
+      where: { id: alertId },
+      select: { title: true, severity: true, cityId: true, countryId: true, publishedAt: true, expiresAt: true },
+    });
+    if (alert === null || alert.publishedAt === null) return;
+    // Programmée dans le futur ou déjà échue : rien à diffuser maintenant.
+    const now = Date.now();
+    if (alert.publishedAt.getTime() > now) return;
+    if (alert.expiresAt !== null && alert.expiresAt.getTime() <= now) return;
+
+    const audience =
+      alert.cityId !== null
+        ? { cityId: alert.cityId }
+        : alert.countryId !== null
+          ? { OR: [{ originCountryId: alert.countryId }, { city: { countryId: alert.countryId } }] }
+          : {};
+
+    let cursor: string | undefined;
+    for (;;) {
+      const users = await this.prisma.user.findMany({
+        where: { status: 'ACTIVE', deletedAt: null, ...audience },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: RECIPIENT_PAGE,
+        ...(cursor === undefined ? {} : { cursor: { id: cursor }, skip: 1 }),
+      });
+      if (users.length === 0) break;
+      cursor = users[users.length - 1]!.id;
+
+      await this.notifications.deliverMany(
+        users.map((u) => ({
+          userId: u.id,
+          category: alert.severity === 'CRITICAL' ? ('MODERATION' as const) : ('COMMUNITY' as const),
+          type: 'moderation.scam_alert',
+          title: `Alerte arnaque : ${alert.title}`,
+          refType: 'SCAM_ALERT',
+          refId: alertId,
+          url: '/accueil',
+        })),
+      );
+      if (users.length < RECIPIENT_PAGE) break;
+    }
+  }
+
+  // ══ Contacts et parrainage (08 §9) ════════════════════════════════════════
+
+  /**
+   * `connection.created` d'origine MANUELLE : l'auteur de la demande apprend qu'elle a
+   * été acceptée. Les autres origines (aide validée, parrainage, rencontre) ont déjà
+   * leur propre notification, la dupliquer serait du bruit.
+   */
+  async onConnectionCreated(payload: unknown): Promise<void> {
+    if (readString(payload, 'origin') !== 'MANUAL') return;
+    const requester = readString(payload, 'requesterUserId');
+    const accepter = readString(payload, 'accepterUserId');
+    if (requester === null || accepter === null || requester === accepter) return;
+
+    await this.notifications.deliver({
+      userId: requester,
+      category: 'SOCIAL',
+      type: 'social.connection_accepted',
+      title: `${await this.displayName(accepter)} a accepté votre demande de contact`,
+      refType: 'CONNECTION',
+      refId: readString(payload, 'requestId'),
+    });
+  }
+
+  /** `mentorship.extended` : l'autre partie apprend que la relation est prolongée de 90 jours. */
+  async onMentorshipExtended(mentorshipId: string, payload: unknown): Promise<void> {
+    const by = readString(payload, 'extendedByUserId');
+    if (by === null) return;
+    const row = await this.prisma.mentorship.findUnique({
+      where: { id: mentorshipId },
+      select: { mentorUserId: true, menteeUserId: true },
+    });
+    if (row === null) return;
+    const other = by === row.mentorUserId ? row.menteeUserId : row.mentorUserId;
+
+    await this.notifications.deliver({
+      userId: other,
+      category: 'MENTORSHIP',
+      type: 'mentorship.extended',
+      title: `${await this.displayName(by)} a prolongé votre parrainage de 90 jours`,
+      refType: 'MENTORSHIP',
+      refId: mentorshipId,
+    });
   }
 
   // ══ Compte (01) ═══════════════════════════════════════════════════════════

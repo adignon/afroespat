@@ -346,7 +346,8 @@ export class JobsService {
     // Un membre gratuit n'est pas « au-dessus du quota » : la fonction ne lui est pas
     // ouverte. `PLAN_LIMIT_REACHED` porte l'invitation Premium (T4 §3), et `max: 0`
     // dit clairement qu'aucune mise en avant n'est incluse.
-    const plan = await planEffectif(this.prisma, author.plan);
+    // Lot D : la mise en avant a sa propre option payante (`SPONSORED_JOBS`).
+    const plan = await planEffectif(this.prisma, author.plan, 'SPONSORED_JOBS');
     if (plan === 'FREE') throw ApiError.planLimit('sponsoredJobsPerMonth', 0, 0);
 
     const max = await this.sponsoredPerMonth(plan);
@@ -805,7 +806,7 @@ export class JobsService {
   /**
    * La limite mensuelle, lue dans `plans.limits` quand la ligne existe.
    *
-   * `plans` n'est pas amorcée (le module 14 n'existe pas) : on retombe alors sur la
+   * `plans` n'est pas amorcée (ou pas encore configurée) : on retombe alors sur la
    * valeur de la spec, 5. Ne PAS retomber signifierait qu'aucune limite ne
    * s'applique tant que la facturation n'est pas livrée — et « au plus 5 par mois »
    * est une règle, pas une suggestion.

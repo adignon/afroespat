@@ -59,8 +59,9 @@ export interface LandingVals {
   readonly aboutSpan: number;
   readonly backFromCity: () => void;
   readonly backToSearch: () => void;
-  readonly cats: readonly Categorie[];
-  readonly cities: readonly { slot: string; src: string; n: string; s: string; credit: string; href: string }[];
+  readonly annee: number;
+  readonly cats: readonly (Categorie & { open: Evenement })[];
+  readonly cities: readonly { slot: string; src: string; n: string; s: string; credit: string; href: string; open: Evenement }[];
   readonly cityLabel: string;
   readonly cityList: readonly { n: string; s: string; on: boolean; bg: string; pick: () => void }[];
   readonly close: () => void;
@@ -84,6 +85,8 @@ export interface LandingVals {
     readonly rules: readonly { n: number; t: string }[];
     readonly stats: readonly { v: string; l: string }[];
     readonly admins: readonly { img: string; n: string; r: string }[];
+    readonly error: boolean;
+    readonly retry: () => void;
   };
   readonly groups: readonly { title: string; items: readonly ResultatVue[] }[];
   readonly guide: {
@@ -97,24 +100,23 @@ export interface LandingVals {
     readonly sections: readonly { h: string; p: string }[];
     readonly useful: number;
     readonly comments: number;
+    /** Le guide est lisible (ni en erreur) : les actions ne s'affichent qu'alors. */
+    readonly ok: boolean;
+    readonly error: boolean;
+    readonly retry: () => void;
   };
   readonly hasCities: boolean;
   readonly hasEntraide: boolean;
   readonly hasEvents: boolean;
   readonly hasQuotes: boolean;
-  readonly hero3: boolean;
-  readonly heroCols: string;
   readonly heroStat: string;
-  readonly how: readonly { t: string; p: string; cta: string; d: string; bg: string; fg: string; col: string; mw: string }[];
-  readonly howCols: string;
+  readonly how: readonly { t: string; p: string; cta: string; d: string; bg: string; fg: string }[];
   readonly isCity: boolean;
   readonly isGroup: boolean;
   readonly isGuide: boolean;
   readonly isSearch: boolean;
   readonly lockedTabs: readonly string[];
   readonly marquee: ReactNode;
-  readonly narrow: boolean;
-  readonly narrowNav: boolean;
   readonly noResults: boolean;
   readonly onCq: Saisie;
   readonly onQ: Saisie;
@@ -122,19 +124,55 @@ export interface LandingVals {
   readonly openLogin: Evenement;
   readonly openSearch: () => void;
   readonly openSignup: Evenement;
-  readonly otherCities: readonly { n: string; m: string }[];
+  readonly otherCities: readonly { n: string; m: string; open: Evenement }[];
   readonly parcoursPts: typeof POINTS_PARCOURS;
   readonly q: string;
   readonly qRef: RefObject<HTMLInputElement | null>;
   readonly quotes: readonly { t: string; n: string; r: string; img: string; bg: string; accent: string }[];
-  readonly sheetRadius: string;
   readonly showCountries: boolean;
   readonly showHeroStat: boolean;
-  readonly showLogin: boolean;
-  readonly tabs: readonly { label: string; on: () => void; bg: string; fg: string; bd: string }[];
-  readonly textOrder: number;
-  readonly wide: boolean;
+  readonly tabs: readonly { label: string; on: () => void; pressed: boolean; bg: string; fg: string; bd: string }[];
 }
+
+/**
+ * LA MISE EN PAGE QUI RÉPOND À LA LARGEUR VIT EN CSS (`landing.css`, points de rupture 560 / 640 / 900 / 1 080 px) et non
+ * ici : une largeur lue dans `window.innerWidth` n'existe pas sur le serveur, et rendre à 1 280 px puis corriger au
+ * montage faisait SAUTER la page sur mobile. Rien dans ce module ne lit plus la fenêtre pour dessiner.
+ */
+
+/** L'élément qui reçoit le focus à l'ouverture d'une fenêtre sans champ (le premier contrôle utilisable). */
+const FOCALISABLES = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Les controles de la fenêtre ouverte, dans l'ordre du document, ceux qui sont réellement affichés. */
+export function focalisablesDe(racine: ParentNode): HTMLElement[] {
+  return [...racine.querySelectorAll<HTMLElement>(FOCALISABLES)].filter((el) => el.getClientRects().length > 0);
+}
+
+/**
+ * Le piège du focus : Tab sur le dernier contrôle revient au premier, Maj+Tab sur le premier va au dernier ; un focus
+ * qui a quitté la fenêtre y est ramené. Rend l'élément à focaliser, ou `null` quand le navigateur peut faire seul.
+ */
+export function cibleDuPiege(controles: readonly HTMLElement[], actif: Element | null, arriere: boolean): HTMLElement | null {
+  const premier = controles[0];
+  const dernier = controles[controles.length - 1];
+  if (premier === undefined || dernier === undefined) return null;
+  if (actif === null || !controles.includes(actif as HTMLElement)) return arriere ? dernier : premier;
+  if (arriere && actif === premier) return dernier;
+  if (!arriere && actif === dernier) return premier;
+  return null;
+}
+
+/** Ce que chaque rubrique de « Explorer selon votre besoin » cherche : un mot qui figure dans les titres des guides. */
+const TERMES_CATEGORIES: Readonly<Record<string, string>> = {
+  Logement: 'logement',
+  Études: 'études',
+  Travail: 'travail',
+  'Démarches et titres': 'démarches',
+  Santé: 'santé',
+  Famille: 'famille',
+  'Produits du pays': 'produits',
+};
+export const termeDeCategorie = (t: string): string => TERMES_CATEGORIES[t] ?? t.toLowerCase();
 
 /** Les photos des villes que la page sait illustrer (hébergées avec le site) ; les autres villes n'ont pas de photo. */
 const PHOTOS_VILLES: Readonly<Record<string, { src: string; credit: string; href: string }>> = {
@@ -153,10 +191,16 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   const qRef = useRef<HTMLInputElement | null>(null);
   const cqRef = useRef<HTMLInputElement | null>(null);
 
-  const [w, setW] = useState(1280);
   const [faq, setFaq] = useState(0);
   const [couche, setCouche] = useState<Couche>(null);
   const [villeDepuis, setVilleDepuis] = useState<Couche>(null);
+  /** La couche d'où l'on a ouvert un guide ou un réseau : la recherche (retour possible) ou la page. */
+  const [guideDepuis, setGuideDepuis] = useState<Couche>(null);
+  /** Un compteur : le bouton « Réessayer » le fait avancer et relance le chargement. */
+  const [essaiGuide, setEssaiGuide] = useState(0);
+  const [essaiGroupe, setEssaiGroupe] = useState(0);
+  const [erreurGuide, setErreurGuide] = useState(false);
+  const [erreurGroupe, setErreurGroupe] = useState(false);
   const [q, setQ] = useState('');
   const [cq, setCq] = useState('');
   const [ville, setVille] = useState('*');
@@ -171,25 +215,57 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   const [groupeSel, setGroupeSel] = useState<{ id: string; nom: string } | null>(null);
   const [groupeDetail, setGroupeDetail] = useState<PublicCommunityAbout | null>(null);
 
-  // La largeur de la fenêtre : la mise en page de la maquette en dépend (rendu serveur à 1 280 px, corrigé au montage).
-  useEffect(() => {
-    const maj = () => setW(window.innerWidth);
-    maj();
-    window.addEventListener('resize', maj);
-    return () => window.removeEventListener('resize', maj);
-  }, []);
+  /** Le contrôle qui a ouvert la première fenêtre : le focus y revient à la fermeture. */
+  const declencheur = useRef<HTMLElement | null>(null);
+  /** Les gestes de fermeture à jour, lus par l'écouteur clavier sans le recréer à chaque rendu. */
+  const gestes = useRef<{ couche: Couche; fermer: () => void; retourVille: () => void }>({ couche: null, fermer: () => undefined, retourVille: () => undefined });
 
-  // Une fenêtre ouverte fige le défilement de la page et donne le focus à son champ.
+  // Une fenêtre ouverte fige le défilement de la page ; son champ (ou, à défaut, son premier contrôle) prend le focus.
   useEffect(() => {
     document.body.style.overflow = couche === null ? '' : 'hidden';
+    if (couche === null) return;
     const cible = couche === 'search' ? qRef : couche === 'city' ? cqRef : null;
-    if (cible === null) return;
-    const t = setTimeout(() => cible.current?.focus(), 30);
+    const t = setTimeout(() => {
+      const dialogue = document.querySelector<HTMLElement>('[data-lp-dialog]');
+      if (dialogue === null || dialogue.contains(document.activeElement)) return;
+      (cible?.current ?? focalisablesDe(dialogue)[0] ?? dialogue).focus();
+    }, 30);
     return () => clearTimeout(t);
   }, [couche]);
   useEffect(() => () => {
     document.body.style.overflow = '';
   }, []);
+
+  // Le clavier dans une fenêtre : Échap la ferme (la ville revient à la recherche), Tab reste à l'intérieur ; à la
+  // fermeture, le focus retourne au contrôle qui l'avait ouverte.
+  useEffect(() => {
+    if (couche === null) return;
+    if (declencheur.current === null && document.activeElement instanceof HTMLElement) declencheur.current = document.activeElement;
+    const surTouche = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (gestes.current.couche === 'city') gestes.current.retourVille();
+        else gestes.current.fermer();
+        return;
+      }
+      if (e.key !== 'Tab') return;
+      const dialogue = document.querySelector<HTMLElement>('[data-lp-dialog]');
+      if (dialogue === null) return;
+      const cible = cibleDuPiege(focalisablesDe(dialogue), document.activeElement, e.shiftKey);
+      if (cible !== null) {
+        e.preventDefault();
+        cible.focus();
+      }
+    };
+    document.addEventListener('keydown', surTouche);
+    return () => document.removeEventListener('keydown', surTouche);
+  }, [couche]);
+  useEffect(() => {
+    if (couche !== null) return;
+    const retour = declencheur.current;
+    declencheur.current = null;
+    if (retour !== null && document.contains(retour)) retour.focus();
+  }, [couche]);
 
   // La recherche : sans compte, deux caractères au moins, un peu d'attente entre deux frappes.
   useEffect(() => {
@@ -216,17 +292,29 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     };
   }, [q, ville, pays, couche]);
 
+  // Le guide et le réseau s'ouvrent « en chargement » ; un échec laisse un message et « Réessayer », jamais un
+  // « Chargement… » qui ne finit pas.
   useEffect(() => {
     if (guideSel === null) return;
+    const controle = new AbortController();
     setGuideDetail(null);
-    lirePublic(`/guides/${encodeURIComponent(guideSel.slug)}`, guideDetailResponseSchema).then(setGuideDetail, () => undefined);
-  }, [guideSel]);
+    setErreurGuide(false);
+    lirePublic(`/guides/${encodeURIComponent(guideSel.slug)}`, guideDetailResponseSchema, { signal: controle.signal }).then(setGuideDetail, () => {
+      if (!controle.signal.aborted) setErreurGuide(true);
+    });
+    return () => controle.abort();
+  }, [guideSel, essaiGuide]);
 
   useEffect(() => {
     if (groupeSel === null) return;
+    const controle = new AbortController();
     setGroupeDetail(null);
-    lirePublic(`/public/communities/${groupeSel.id}`, publicCommunityAboutSchema).then(setGroupeDetail, () => undefined);
-  }, [groupeSel]);
+    setErreurGroupe(false);
+    lirePublic(`/public/communities/${groupeSel.id}`, publicCommunityAboutSchema, { signal: controle.signal }).then(setGroupeDetail, () => {
+      if (!controle.signal.aborted) setErreurGroupe(true);
+    });
+    return () => controle.abort();
+  }, [groupeSel, essaiGroupe]);
 
   const allerConnexion: Evenement = useCallback(
     (e) => {
@@ -236,9 +324,40 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     [router],
   );
 
-  const wide = w >= 900;
-  const hero3 = w >= 1080;
   const { stats, entraide } = landing;
+
+  const ouvrirGuide = (slug: string, titre: string, depuis: Couche) => {
+    setGuideSel({ slug, titre });
+    setGuideDepuis(depuis);
+    setCouche('guide');
+  };
+  const ouvrirReseau = (id: string, nom: string, depuis: Couche) => {
+    setGroupeSel({ id, nom });
+    setGuideDepuis(depuis);
+    setCouche('group');
+  };
+  /** Une catégorie ouvre la recherche de guides sur son mot. */
+  const ouvrirCategorie = (t: string): Evenement => (e) => {
+    e?.preventDefault?.();
+    setQ(termeDeCategorie(t));
+    setOnglet('guides');
+    setCouche('search');
+  };
+  /**
+   * Une ville ouvre la fiche de son réseau public ; sans réseau, la recherche, restreinte à cette ville. La carte
+   * reste un vrai lien vers la connexion quand JavaScript est absent.
+   */
+  const ouvrirVille = (c: { slug: string; name: string; communityId: string | null }): Evenement => (e) => {
+    e?.preventDefault?.();
+    if (c.communityId !== null) {
+      ouvrirReseau(c.communityId, c.name, null);
+      return;
+    }
+    setVille(c.slug);
+    setQ('');
+    setOnglet('all');
+    setCouche('search');
+  };
   const lieuDuPays = landing.places.find((p) => p.code === pays);
   const nomVille = landing.places.flatMap((p) => p.cities).find((c) => c.slug === ville)?.name ?? ville;
 
@@ -260,10 +379,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
           tag: 'Lecture libre',
           tagBg: '#E3F0EB',
           tagFg: '#0F5C48',
-          open: () => {
-            setGuideSel({ slug: g.slug, titre: g.title });
-            setCouche('guide');
-          },
+          open: () => ouvrirGuide(g.slug, g.title, 'search'),
         })),
       });
     }
@@ -278,10 +394,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
           tag: 'Public',
           tagBg: '#E3F0EB',
           tagFg: '#0F5C48',
-          open: () => {
-            setGroupeSel({ id: c.id, nom: c.name });
-            setCouche('group');
-          },
+          open: () => ouvrirReseau(c.id, c.name, 'search'),
         })),
       });
     }
@@ -383,9 +496,18 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       meta: corps === '' ? '' : `${String(minutesDeLecture(corps))} min de lecture`,
       updated: g === undefined ? '' : `Mis à jour le ${dateLongue(g.lastContentUpdateAt)}`,
       cover: couverture(2),
-      sections: sections.length > 0 ? sections : guideDetail === null ? [{ h: '', p: 'Chargement du guide…' }] : [{ h: '', p: 'Ce guide n’a pas encore de contenu.' }],
+      sections: erreurGuide
+        ? [{ h: 'Ce guide n’a pas pu être chargé', p: 'Vérifiez votre connexion, puis réessayez.' }]
+        : sections.length > 0
+          ? sections
+          : guideDetail === null
+            ? [{ h: '', p: 'Chargement du guide…' }]
+            : [{ h: '', p: 'Ce guide n’a pas encore de contenu.' }],
       useful: g?.helpfulCount ?? 0,
       comments: g?.commentCount ?? 0,
+      ok: !erreurGuide,
+      error: erreurGuide,
+      retry: () => setEssaiGuide((n) => n + 1),
     };
   })();
 
@@ -398,7 +520,11 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       kind: 'Ville',
       name: g?.name ?? groupeSel?.nom ?? '',
       sub: g === null ? '' : [g.cityName, g.memberCount === null ? null : `${String(g.memberCount)} membres`].filter(Boolean).join(' · '),
-      desc: g === null ? 'Chargement…' : (g.description ?? 'Le réseau des membres de cette ville : entraide, démarches, rencontres.'),
+      desc: erreurGroupe
+        ? 'Cette fiche n’a pas pu être chargée. Vérifiez votre connexion, puis réessayez.'
+        : g === null
+          ? 'Chargement…'
+          : (g.description ?? 'Le réseau des membres de cette ville : entraide, démarches, rencontres.'),
       isPublic: true,
       isPrivate: false,
       hasRules: false,
@@ -411,6 +537,8 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
               { v: String(g.foundedYear), l: 'création' },
             ],
       admins: (g?.moderators ?? []).map((m, i) => ({ img: avatarInitiales(m.name, i), n: m.name, r: m.role === 'OWNER' ? 'Admin' : 'Modérateur' })),
+      error: erreurGroupe,
+      retry: () => setEssaiGroupe((n) => n + 1),
     };
   })();
 
@@ -433,18 +561,27 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   );
 
   const entraideStats = [
-    ...(entraide.medianFirstReplyMinutes === null ? [] : [{ v: `${String(entraide.medianFirstReplyMinutes)} min`, l: 'délai médian de première réponse' }]),
-    ...(entraide.resolvedPercent === null ? [] : [{ v: `${String(entraide.resolvedPercent)} %`, l: 'questions résolues' }]),
-    ...(entraide.publishedGuides === null ? [] : [{ v: String(entraide.publishedGuides), l: 'guides publiés' }]),
-  ];
+    entraide.medianFirstReplyMinutes === null ? null : { v: `${String(entraide.medianFirstReplyMinutes)} min`, l: 'délai médian de première réponse' },
+    entraide.resolvedPercent === null ? null : { v: `${String(entraide.resolvedPercent)} %`, l: 'questions résolues' },
+    entraide.publishedGuides === null ? null : { v: String(entraide.publishedGuides), l: 'guides publiés' },
+  ].filter((x): x is { v: string; l: string } => x !== null);
+
+  useEffect(() => {
+    gestes.current = {
+      couche,
+      fermer: () => setCouche(null),
+      retourVille: () => setCouche(villeDepuis === 'search' ? 'search' : null),
+    };
+  });
 
   const [villesCartes, autresVilles] = [landing.cities.slice(0, 2), landing.cities.slice(2)];
 
   return {
     aboutSpan: 1,
     backFromCity: () => setCouche(villeDepuis === 'search' ? 'search' : null),
-    backToSearch: () => setCouche('search'),
-    cats: CATEGORIES,
+    annee: new Date().getFullYear(),
+    backToSearch: () => setCouche(guideDepuis === 'search' ? 'search' : null),
+    cats: CATEGORIES.map((c) => ({ ...c, open: ouvrirCategorie(c.t) })),
     cities: villesCartes.map((c) => ({
       slot: `ville-${c.slug}`,
       src: PHOTOS_VILLES[c.slug]?.src ?? '',
@@ -452,6 +589,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       s: c.memberCount === null ? 'La communauté de la ville' : `${String(c.memberCount)} membres`,
       credit: PHOTOS_VILLES[c.slug]?.credit ?? '',
       href: PHOTOS_VILLES[c.slug]?.href ?? '',
+      open: ouvrirVille(c),
     })),
     cityLabel: ville !== '*' ? nomVille : lieuDuPays !== undefined ? `Tout : ${lieuDuPays.name}` : 'Tous les pays',
     cityList,
@@ -483,28 +621,19 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     hasEntraide: entraideStats.length > 0,
     hasEvents: landing.events.length > 0,
     hasQuotes: landing.quotes.length > 0,
-    hero3,
-    heroCols: hero3 ? '1fr minmax(0,1.5fr) 1fr' : '1fr',
     heroStat:
       stats.members === null
         ? ''
         : stats.cities === null
           ? `${String(stats.members)} membres`
           : `${String(stats.members)} membres dans ${String(stats.cities)} villes`,
-    how: ETAPES.map((e, i) => ({
-      ...e,
-      col: wide ? (i === 0 ? '1' : i === 1 ? '2' : '1 / span 2') : 'auto',
-      mw: wide && i === 2 ? '460px' : '100%',
-    })),
-    howCols: wide ? '1fr 1fr' : '1fr',
+    how: ETAPES.map((e) => ({ ...e })),
     isCity: couche === 'city',
     isGroup: couche === 'group',
     isGuide: couche === 'guide',
     isSearch: couche === 'search',
     lockedTabs: ['Fil', 'Événements', 'Membres', 'Album'],
     marquee,
-    narrow: !hero3,
-    narrowNav: !wide,
     // « Aucun résultat » : une recherche lancée qui ne rend rien (pas pendant la frappe d'un seul caractère).
     noResults: aRecherche && resultats !== null && groups.length === 0,
     onCq: (e) => setCq(e.target.value),
@@ -517,7 +646,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     openLogin: allerConnexion,
     openSearch: () => setCouche('search'),
     openSignup: allerConnexion,
-    otherCities: autresVilles.map((c) => ({ n: c.name, m: c.memberCount === null ? '' : String(c.memberCount) })),
+    otherCities: autresVilles.map((c) => ({ n: c.name, m: c.memberCount === null ? '' : String(c.memberCount), open: ouvrirVille(c) })),
     parcoursPts: POINTS_PARCOURS,
     q,
     qRef,
@@ -529,10 +658,8 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       bg: CITATIONS[i % CITATIONS.length]?.bg ?? '#F2F5F4',
       accent: CITATIONS[i % CITATIONS.length]?.accent ?? '#16785E',
     })),
-    sheetRadius: w < 640 ? '0px' : '28px',
     showCountries: stats.countries !== null && stats.countryNames.length > 0,
     showHeroStat: stats.members !== null,
-    showLogin: w >= 560,
     tabs: (
       [
         ['all', 'Tout'],
@@ -543,11 +670,10 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     ).map(([k, label]) => ({
       label,
       on: () => setOnglet(k),
+      pressed: onglet === k,
       bg: onglet === k ? '#16785E' : '#fff',
       fg: onglet === k ? '#fff' : '#16211D',
       bd: onglet === k ? '#16785E' : '#E6EBE9',
     })),
-    textOrder: wide ? 0 : 1,
-    wide,
   };
 }

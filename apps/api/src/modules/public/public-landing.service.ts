@@ -20,6 +20,9 @@ const sinon = (n: number): number | null => (n >= LANDING_MIN_MEMBERS ? n : null
 
 /** La page d'accueil se recalcule au plus toutes les cinq minutes : c'est une vitrine, pas un tableau de bord. */
 const DUREE_CACHE_MS = 5 * 60_000;
+/** La fenêtre des statistiques d'entraide, et le nombre maximal de demandes lues pour les calculer. */
+export const FENETRE_ENTRAIDE_JOURS = 90;
+export const ECHANTILLON_DEMANDES = 2_000;
 
 /**
  * Ce qu'un visiteur sans compte peut lire (voir `@app/shared` → `public-landing.ts`). Rien ici ne contourne une règle
@@ -55,12 +58,17 @@ export class PublicLandingService {
       where: { id: { in: parPays.map((p) => p.originCountryId) } },
       select: { nameFr: true },
       orderBy: { nameFr: 'asc' },
+      take: 200,
     });
 
-    // ── Entraide : sur les 90 derniers jours, avec un minimum de demandes.
-    const depuis = new Date(now.getTime() - 90 * 86_400_000);
+    // ── Entraide : sur les 90 derniers jours, avec un minimum de demandes. La lecture est BORNÉE : les
+    //    `ECHANTILLON_DEMANDES` demandes les plus récentes de la fenêtre suffisent à une médiane et à un taux ; la page
+    //    d'accueil ne doit jamais charger toute la table (le calcul est mis en cache cinq minutes).
+    const depuis = new Date(now.getTime() - FENETRE_ENTRAIDE_JOURS * 86_400_000);
     const demandes = await this.prisma.helpRequest.findMany({
       where: { createdAt: { gte: depuis }, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      take: ECHANTILLON_DEMANDES,
       select: { id: true, createdAt: true, status: true },
     });
     let delaiMedian: number | null = null;
@@ -81,13 +89,14 @@ export class PublicLandingService {
     }
     const guides = await this.prisma.guide.count({ where: { status: 'PUBLISHED', deletedAt: null } });
 
-    // ── Événements ouverts : à venir, hors réseau privé.
+    // ── Événements ouverts : à venir, et PUBLICS au sens de 09 §3.1 / schéma (`community_id` nul = public ; sinon
+    //    réservé aux membres du réseau, même quand ce réseau est public). Un événement de réseau n'est donc jamais exposé.
     const evenements = await this.prisma.event.findMany({
       where: {
         status: 'SCHEDULED',
         deletedAt: null,
         startsAt: { gte: now },
-        OR: [{ communityId: null }, { community: { is: { visibility: 'PUBLIC' } } }],
+        communityId: null,
       },
       orderBy: { startsAt: 'asc' },
       take: 4,
@@ -98,7 +107,6 @@ export class PublicLandingService {
         startsAt: true,
         attendeeCount: true,
         city: { select: { name: true } },
-        community: { select: { name: true } },
         organizer: { select: { displayName: true } },
       },
     });
@@ -108,8 +116,16 @@ export class PublicLandingService {
       where: { isActive: true, mergedIntoCityId: null },
       orderBy: [{ memberCount: 'desc' }, { name: 'asc' }],
       take: 8,
-      select: { slug: true, name: true, memberCount: true },
+      select: { id: true, slug: true, name: true, memberCount: true },
     });
+    // Le réseau PUBLIC de chaque ville (celui que l'activation crée seule) : la carte de la ville ouvre sa fiche.
+    const reseauxDesVilles = await this.prisma.community.findMany({
+      where: { ...this.reseauPublicDeVille(), cityId: { in: listeVilles.map((v) => v.id) } },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, cityId: true },
+    });
+    const reseauParVille = new Map<string, string>();
+    for (const r of reseauxDesVilles) if (r.cityId !== null && !reseauParVille.has(r.cityId)) reseauParVille.set(r.cityId, r.id);
 
     // ── Les lieux : chaque pays qui a des villes actives, avec ses villes (le sélecteur « pays puis ville »).
     const villesDesPays = await this.prisma.city.findMany({
@@ -161,10 +177,15 @@ export class PublicLandingService {
         startsAt: e.startsAt.toISOString(),
         type: e.type,
         cityName: e.city.name,
-        by: e.community?.name ?? shortName(e.organizer.displayName),
+        by: shortName(e.organizer.displayName),
         attendeeCount: e.attendeeCount,
       })),
-      cities: listeVilles.map((v) => ({ slug: v.slug, name: v.name, memberCount: sinon(v.memberCount) })),
+      cities: listeVilles.map((v) => ({
+        slug: v.slug,
+        name: v.name,
+        memberCount: sinon(v.memberCount),
+        communityId: reseauParVille.get(v.id) ?? null,
+      })),
       places: lieux,
       quotes: citations.map((c) => {
         const auteur = c.guide?.author ?? c.cityTip?.author ?? null;

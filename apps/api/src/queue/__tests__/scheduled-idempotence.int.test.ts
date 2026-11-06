@@ -152,6 +152,7 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'billing.expiry_reminders',
       'billing.expire_subscriptions',
       'billing.trial_end',
+      'billing.expire_pending_payments',
       'usage.reset',
       // ── Module 01 : compte et identité (01 §8) ──────────────────────────────
       //

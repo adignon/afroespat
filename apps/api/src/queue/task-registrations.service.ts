@@ -22,6 +22,9 @@ import { KycService } from '../modules/kyc/kyc.service';
 import { ImpactService } from '../modules/analytics/impact.service';
 import { AnalyticsService } from '../modules/analytics/analytics.service';
 import { DataExportService } from '../modules/exports/data-export.service';
+import { MediaService } from '../modules/media/media.service';
+import { OutboxService } from '../common/outbox.service';
+import { loadEnv } from '../config/env';
 import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, quarterlyAt, weeklyAt } from './scheduled-tasks';
 
 /**
@@ -89,6 +92,8 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly journeys: JourneysService,
     private readonly bookmarks: BookmarksService,
     private readonly notificationEvents: NotificationEventsService,
+    private readonly media: MediaService,
+    private readonly outbox: OutboxService,
   ) {}
 
   onModuleInit(): void {
@@ -464,6 +469,14 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: async ({ now }) => this.notifications.purge(now),
     });
     this.registry.register({
+      name: 'outbox.purge',
+      module: '00',
+      schedule: dailyAt(3, 48),
+      handle: async ({ now }) => ({
+        events: await this.outbox.purgePublished(loadEnv().DOMAIN_EVENTS_RETENTION_DAYS, now),
+      }),
+    });
+    this.registry.register({
       name: 'push.cleanup',
       module: '12',
       schedule: dailyAt(3, 25),
@@ -507,6 +520,16 @@ export class TaskRegistrationsService implements OnModuleInit {
       module: 'billing',
       schedule: hourlyAt(15),
       handle: (ctx) => this.billing.expireSubscriptions(ctx.now),
+    });
+
+    // Lot D : un paiement resté `PENDING` plus de cinq minutes (carte abandonnée, téléphone
+    // jamais validé) est marqué `FAILED` — sinon il restait « en attente » à vie dans
+    // l'historique du membre. Un webhook de succès tardif active quand même l'abonnement.
+    this.registry.register({
+      name: 'billing.expire_pending_payments',
+      module: 'billing',
+      schedule: every(5),
+      handle: (ctx) => this.billing.expirePendingPayments(ctx.now),
     });
 
     this.registry.register({
@@ -613,7 +636,12 @@ export class TaskRegistrationsService implements OnModuleInit {
       name: 'retention.purge',
       module: 'transverse',
       schedule: dailyAt(2, 55),
-      handle: (ctx) => this.account.purgeExpiredSessions(ctx.now),
+      // + consentements de comptes supprimés (3 ans) + ramasse-miettes des médias (octets compris).
+      handle: async (ctx) => ({
+        ...(await this.account.purgeExpiredSessions(ctx.now)),
+        ...(await this.account.purgeConsentsOfDeletedAccounts(ctx.now)),
+        media: await this.media.purgeOrphans(ctx.now),
+      }),
     });
 
     // `bookmark.state_refresh` calcule l'état des contenus enregistrés (01 §2.9).

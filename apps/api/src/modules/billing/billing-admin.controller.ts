@@ -3,6 +3,11 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   PlanCode,
   STAFF_SCOPES,
+  monetisationUpdateSchema,
+  paidOptionsUpdateSchema,
+  paymentMethodsUpdateSchema,
+  planEnabledSchema,
+  planUpdateRouteSchema,
   affiliateImportSchema,
   partnerCreateSchema,
   partnerUpdateSchema,
@@ -10,7 +15,6 @@ import {
   placementCreateSchema,
   placementUpdateSchema,
   placementsQuerySchema,
-  planUpdateSchema,
   refundSchema,
   revenueQuerySchema,
   subscriptionsQuerySchema,
@@ -79,9 +83,72 @@ export class BillingAdminController {
   async updatePlan(
     @Staff() staff: StaffUser,
     @Param('code', zodPipe(planCodeSchema)) code: z.infer<typeof planCodeSchema>,
-    @Body(zodPipe(planUpdateSchema)) body: z.infer<typeof planUpdateSchema>,
+    @Body(zodPipe(planUpdateRouteSchema)) body: z.infer<typeof planUpdateRouteSchema>,
   ) {
-    return this.billing.updatePlan(staff.staffId, code, body);
+    const { reason, ...patch } = body;
+    return this.billing.updatePlan(staff.staffId, code, patch, reason);
+  }
+
+  /**
+   * `PUT /plans/:code/enabled` (lot D) — propose ou retire une formule à la souscription.
+   * Les abonnés en cours ne sont pas coupés. Motif obligatoire, tracé.
+   */
+  @Put('plans/:code/enabled')
+  @RequiresStaffRole(...STAFF_SCOPES.staffAdmin)
+  @ApiOperation({ summary: 'Active ou désactive une formule payante (motif obligatoire)' })
+  async setPlanEnabled(
+    @Staff() staff: StaffUser,
+    @Param('code', zodPipe(planCodeSchema)) code: z.infer<typeof planCodeSchema>,
+    @Body(zodPipe(planEnabledSchema)) body: z.infer<typeof planEnabledSchema>,
+  ) {
+    return this.billing.setPlanEnabled(staff.staffId, code, body.isActive, body.reason);
+  }
+
+  // ── Moyens de paiement, options et interrupteur global (lot D) ─────────────
+
+  /** Lecture ouverte aux rôles qui lisent déjà les revenus ; l'écriture est SUPER_ADMIN. */
+  @Get('config')
+  @RequiresStaffRole(...STAFF_SCOPES.dashboard)
+  @ApiOperation({ summary: 'Monétisation, moyens de paiement et options payantes' })
+  async config() {
+    return this.billing.billingConfig();
+  }
+
+  @Get('payment-methods')
+  @RequiresStaffRole(...STAFF_SCOPES.dashboard)
+  @ApiOperation({ summary: 'Les moyens de paiement et leur état' })
+  async paymentMethods() {
+    return { items: (await this.billing.billingConfig()).methods };
+  }
+
+  @Put('payment-methods')
+  @RequiresStaffRole(...STAFF_SCOPES.staffAdmin)
+  @ApiOperation({ summary: 'Active ou désactive des moyens de paiement (motif obligatoire)' })
+  async updatePaymentMethods(
+    @Staff() staff: StaffUser,
+    @Body(zodPipe(paymentMethodsUpdateSchema)) body: z.infer<typeof paymentMethodsUpdateSchema>,
+  ) {
+    return this.billing.updatePaymentMethods(staff.staffId, body);
+  }
+
+  @Put('paid-options')
+  @RequiresStaffRole(...STAFF_SCOPES.staffAdmin)
+  @ApiOperation({ summary: 'Active ou désactive des options payantes (motif obligatoire)' })
+  async updatePaidOptions(
+    @Staff() staff: StaffUser,
+    @Body(zodPipe(paidOptionsUpdateSchema)) body: z.infer<typeof paidOptionsUpdateSchema>,
+  ) {
+    return this.billing.updatePaidOptions(staff.staffId, body);
+  }
+
+  @Put('monetisation')
+  @RequiresStaffRole(...STAFF_SCOPES.staffAdmin)
+  @ApiOperation({ summary: 'Allume ou éteint la monétisation (motif obligatoire)' })
+  async setMonetisation(
+    @Staff() staff: StaffUser,
+    @Body(zodPipe(monetisationUpdateSchema)) body: z.infer<typeof monetisationUpdateSchema>,
+  ) {
+    return this.billing.setMonetisation(staff.staffId, body.active, body.reason);
   }
 
   // ── Abonnements et paiements ──────────────────────────────────────────────

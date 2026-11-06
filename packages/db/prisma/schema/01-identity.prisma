@@ -110,8 +110,12 @@ enum ConsentType {
 
 enum DataExportStatus {
   PENDING
+  /// Prise par un worker : évite deux générations simultanées de la même archive.
+  GENERATING
   READY
   EXPIRED
+  /// La génération a échoué : le membre peut redemander sans attendre les 30 jours.
+  FAILED
 }
 
 /// Le compte d'un membre. Une ligne par personne.

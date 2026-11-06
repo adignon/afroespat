@@ -28,3 +28,66 @@
     animation: none !important;
   }
 }
+
+/*
+ * LA MISE EN PAGE QUI RÉPOND À LA LARGEUR — des media queries, plus `window.innerWidth`.
+ * Le générateur pose ces classes (voir tools/generate-landing.mjs, adaptations 12). Les blocs `.lp-r-*` sont des
+ * enveloppes `display:contents` : elles ne changent rien à la mise en page, elles ne servent qu'à masquer.
+ * Seuils : 560 (« Se connecter »), 640 (fenêtres plein écran), 900 (barre de recherche, deux colonnes), 1 080 (héros à trois colonnes).
+ */
+@media (max-width: 899px) {
+  .lp-root .lp-r-wide {
+    display: none !important;
+  }
+  .lp-root .lp-text-order {
+    order: 1 !important;
+  }
+}
+@media (min-width: 900px) {
+  .lp-root .lp-r-narrowNav {
+    display: none !important;
+  }
+  .lp-root .lp-how-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .lp-root .lp-how-item:nth-of-type(1) {
+    grid-column: 1 !important;
+  }
+  .lp-root .lp-how-item:nth-of-type(2) {
+    grid-column: 2 !important;
+  }
+  .lp-root .lp-how-item:nth-of-type(3) {
+    grid-column: 1 / span 2 !important;
+    max-width: 460px !important;
+  }
+}
+@media (max-width: 559px) {
+  .lp-root .lp-r-showLogin {
+    display: none !important;
+  }
+}
+@media (max-width: 639px) {
+  .lp-root .lp-sheet {
+    border-radius: 0 !important;
+  }
+}
+@media (max-width: 1079px) {
+  .lp-root .lp-r-hero3 {
+    display: none !important;
+  }
+}
+@media (min-width: 1080px) {
+  .lp-root .lp-r-narrow {
+    display: none !important;
+  }
+  .lp-root .lp-hero-grid {
+    grid-template-columns: 1fr minmax(0, 1.5fr) 1fr !important;
+  }
+}
+/* Le focus clavier reste visible sur la page d'accueil (les styles en ligne retirent le contour par défaut des champs). */
+.lp-root a:focus-visible,
+.lp-root button:focus-visible,
+.lp-root input:focus-visible {
+  outline: 2px solid #16785e;
+  outline-offset: 2px;
+}

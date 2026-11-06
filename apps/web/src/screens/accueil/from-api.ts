@@ -625,6 +625,30 @@ export function onlineFrom(sidebar: FeedSidebarResponse): readonly PersonneCarte
 }
 
 /**
+ * Les contacts de `GET /me/connections`, au format des cartes de partage. La fenêtre
+ * « Partager » ne proposait que les contacts EN LIGNE (`sidebar.onlineContacts`) : un
+ * contact hors ligne n'y était ni listé ni trouvable par la recherche.
+ */
+export function contactsPartageFrom(
+  items: readonly {
+    readonly handle: string;
+    readonly displayName: string;
+    readonly avatarUrl: string | null;
+  }[],
+): readonly PersonneCarte[] {
+  return items.map((c) => {
+    const photo = fondAvatar(c.avatarUrl);
+    return {
+      i: photo === null ? initials(c.displayName) : '',
+      bg: photo === null ? avatarColor(c.handle) : photo,
+      profil: `/@${c.handle}`,
+      name: c.displayName,
+      handle: c.handle,
+    };
+  });
+}
+
+/**
  * ╔════════════════════════════════════════════════════════════════════════════╗
  * ║ LE FILTRE DE « RECHERCHER UN CONTACT » — ET POURQUOI IL REND LES RANGS    ║
  * ╚════════════════════════════════════════════════════════════════════════════╝

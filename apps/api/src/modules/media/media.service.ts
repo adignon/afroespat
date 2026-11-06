@@ -20,7 +20,7 @@ import {
   STORAGE_PROVIDER,
   type StorageProvider,
 } from '../../providers/providers';
-import { sniffType, stripMetadata } from './media-bytes';
+import { applyExifOrientation, sniffType, stripMetadata } from './media-bytes';
 
 /**
  * LES TROIS GENRES QUI NE SORTENT QUE POUR LEUR PROPRIÉTAIRE.
@@ -186,7 +186,8 @@ export class MediaService {
     }
 
     // 5. LES MÉTADONNÉES (§8.1), puis le dépôt, puis la ligne.
-    const { body, stripped } = stripMetadata(file.buffer, sniffed.mime);
+    const oriented = await applyExifOrientation(file.buffer, sniffed.mime);
+    const { body, stripped } = stripMetadata(oriented.body, sniffed.mime);
     await this.storage.put(storageKey, body, sniffed.mime);
 
     const asset = await this.prisma.mediaAsset.create({
@@ -200,8 +201,8 @@ export class MediaService {
         // reçus : le nettoyage en retire, et une taille qui ne correspond pas au
         // fichier servi est une valeur que personne ne peut relire pour vérifier.
         sizeBytes: BigInt(body.length),
-        width: sniffed.width,
-        height: sniffed.height,
+        width: oriented.rotated ? oriented.width : sniffed.width,
+        height: oriented.rotated ? oriented.height : sniffed.height,
         /**
          * `READY` directement, parce que tout ce que §8.3 met « avant
          * publication » est déjà fait : type vérifié, antivirus passé, EXIF
@@ -386,7 +387,7 @@ export class MediaService {
     const storageKey = wantsThumb ? requestedKey.slice(0, -THUMB_SUFFIX.length) : requestedKey;
     const asset = await this.prisma.mediaAsset.findFirst({
       where: { storageKey, deletedAt: null },
-      select: { kind: true, mime: true, status: true, exifStripped: true, ownerUserId: true },
+      select: { id: true, kind: true, mime: true, status: true, exifStripped: true, ownerUserId: true },
     });
 
     const introuvable = (): never => {
@@ -404,6 +405,8 @@ export class MediaService {
     if (PRIVATE_MEDIA_KINDS.has(asset.kind) && (userId === null || asset.ownerUserId !== userId)) {
       return introuvable();
     }
+    // Le média d'un contenu supprimé ou masqué n'est plus servi (sauf à son propriétaire).
+    if (!(await this.containerVisible(userId, asset))) return introuvable();
 
     if (wantsThumb) {
       const thumb = await this.storage.get(requestedKey);
@@ -417,6 +420,96 @@ export class MediaService {
     // Le type vient de `media_assets.mime`, établi par les OCTETS MAGIQUES à
     // l'import (§8.3). Jamais de l'extension, jamais du fournisseur.
     return { body: octets.body, mime: asset.mime };
+  }
+
+  /**
+   * LA VISIBILITÉ DU CONTENEUR. Un média `POST` dont toutes les publications sont supprimées,
+   * masquées, en attente de validation ou retirées par la modération rend le même 404 qu'un
+   * inconnu ; idem pour une photo d'album supprimée. Un média non encore rattaché (téléversé,
+   * pas publié) n'est lisible que par son propriétaire. Les autres genres gardent la règle de
+   * la clé indevinable (voir plus haut).
+   */
+  private async containerVisible(
+    userId: string | null,
+    asset: { id: string; kind: MediaKind; ownerUserId: string | null },
+  ): Promise<boolean> {
+    const isOwner = userId !== null && asset.ownerUserId === userId;
+    if (asset.kind === 'POST') {
+      const attached = await this.prisma.postMedia.count({ where: { mediaAssetId: asset.id } });
+      if (attached === 0) return isOwner;
+      if (isOwner) return true;
+      const visible = await this.prisma.postMedia.count({
+        where: {
+          mediaAssetId: asset.id,
+          post: { deletedAt: null, status: 'PUBLISHED', awaitingApproval: false },
+        },
+      });
+      return visible > 0;
+    }
+    if (asset.kind === 'ALBUM') {
+      const photos = await this.prisma.albumPhoto.count({
+        where: { mediaAssetId: asset.id, deletedAt: null },
+      });
+      return photos > 0 || isOwner;
+    }
+    return true;
+  }
+
+  /**
+   * RAMASSE-MIETTES DES MÉDIAS (tâche `retention.purge`) :
+   *   · les médias marqués supprimés (`deleted_at`) depuis plus d'une heure — avatar remplacé,
+   *     compte supprimé, archive expirée — dont on efface les OCTETS puis la ligne ;
+   *   · les médias `READY`/`REJECTED` JAMAIS rattachés à un contenu depuis plus de 24 h.
+   * Idempotente. Un échec de suppression distante laisse la ligne : le prochain passage réessaie.
+   */
+  async purgeOrphans(now: Date = new Date(), batch = 200): Promise<{ purged: number; failed: number }> {
+    const deletedBefore = new Date(now.getTime() - 3_600_000);
+    const unattachedBefore = new Date(now.getTime() - 24 * 3_600_000);
+    const unattached = {
+      avatarOfUsers: { none: {} },
+      dataExports: { none: {} },
+      postMedia: { none: {} },
+      guideMedia: { none: {} },
+      storyBackgrounds: { none: {} },
+      communityCovers: { none: {} },
+      communityLogos: { none: {} },
+      albumPhotos: { none: {} },
+      messages: { none: {} },
+      eventCovers: { none: {} },
+      housingPhotos: { none: {} },
+      proProofs: { none: {} },
+      partnerLogos: { none: {} },
+      invoices: { none: {} },
+    } as const;
+    const rows = await this.prisma.mediaAsset.findMany({
+      where: {
+        OR: [
+          { deletedAt: { not: null, lte: deletedBefore } },
+          { deletedAt: null, createdAt: { lte: unattachedBefore }, ...unattached },
+        ],
+      },
+      orderBy: { createdAt: 'asc' },
+      take: batch,
+      select: { id: true, storageKey: true },
+    });
+
+    let purged = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        await this.storage.delete(row.storageKey);
+        await this.storage.delete(`${row.storageKey}${THUMB_SUFFIX}`);
+        await this.prisma.mediaAsset.delete({ where: { id: row.id } });
+        purged += 1;
+      } catch (error) {
+        failed += 1;
+        this.logger.warn(
+          `Média ${row.id} : purge impossible (réessai au prochain passage) — ` +
+            `${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return { purged, failed };
   }
 
   /**

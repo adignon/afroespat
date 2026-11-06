@@ -6,10 +6,12 @@ import {
   searchZeroSchema,
   suggestQuerySchema,
   zeroResultsQuerySchema,
+  STAFF_SCOPES,
 } from '@app/shared';
 import type { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
 import { RateLimit, RequiresCapability } from '../../common/capability.decorator';
+import { RequiresStaffRole } from '../../common/staff-role.decorator';
 import { zodPipe } from '../../common/zod.pipe';
 import { SearchService } from './search.service';
 
@@ -73,40 +75,15 @@ export class SearchController {
     return this.searchService.search(auth.userId, query);
   }
 
-  /**
-   * `GET /search/zero-results` — le panneau « GUIDES MANQUANTS » d'A03.
-   *
-   * EN LECTURE, ET SANS AUCUN IDENTIFIANT DE MEMBRE : §2.4 interdit au modèle d'en
-   * porter un, donc l'agrégat n'en a pas à rendre. Le jeton sert au contrôle
-   * d'accès (`content.read`, N0), jamais à filtrer la liste.
-   *
-   * ⚠ LA REQUÊTE NORMALISÉE EST DU TEXTE DE MEMBRE. `normalizeQuery` garde les
-   * lettres et les chiffres : un nom propre ou un numéro tapé dans la barre de
-   * recherche survit à la normalisation. L'arbitrage est celui du porteur, et il
-   * est écrit au long sur `searchZeroResultRowSchema`.
-   *
-   * ⚠ `cityId` RESTE FACULTATIF, ET L'ÉCRAN NE LE PASSE PAS. `zeroResults` filtre
-   * sur l'ÉGALITÉ de `cityId` ; or `recordZeroResult` y écrit la ville DE LA
-   * RECHERCHE (le filtre choisi par le chercheur), `null` quand il n'en a choisi
-   * aucune. Passer une ville exclurait donc toutes les lignes sans ville, c'est-à-dire
-   * la majorité. Le paramètre existe pour l'outil qui en voudra un ; le panneau, lui,
-   * demande la liste entière.
-   */
-  @Get('zero-results')
-  @RequiresCapability('content.read')
-  @ApiOperation({ summary: 'Top des recherches restées sans résultat (§2.4)' })
-  async zeroResults(
-    @Query(zodPipe(zeroResultsQuerySchema)) query: z.infer<typeof zeroResultsQuerySchema>,
-  ) {
-    return this.searchService.zeroResults(query);
-  }
-
   @Get('suggest')
   @RequiresCapability('content.read')
   @RateLimit(SEARCH_RATE_LIMITS.suggest)
   @ApiOperation({ summary: 'Suggestions de titres par préfixe, 6 max (§2.3)' })
-  async suggest(@Query(zodPipe(suggestQuerySchema)) query: z.infer<typeof suggestQuerySchema>) {
-    return this.searchService.suggest(query.q);
+  async suggest(
+    @Auth() auth: AuthContext,
+    @Query(zodPipe(suggestQuerySchema)) query: z.infer<typeof suggestQuerySchema>,
+  ) {
+    return this.searchService.suggest(auth.userId, query.q);
   }
 
   /**
@@ -138,5 +115,26 @@ export class SearchController {
     @Body(zodPipe(searchZeroSchema)) body: z.infer<typeof searchZeroSchema>,
   ) {
     return this.searchService.recordZeroResult(auth.userId, body);
+  }
+}
+
+/**
+ * `GET /v1/admin/search/zero-results` — les requêtes sans résultat (11 §3).
+ *
+ * Réservé à l'ÉQUIPE : la route membre `GET /search/zero-results` est retirée. Les
+ * requêtes des membres, même agrégées, relèvent de l'administration.
+ */
+@ApiTags('admin')
+@Controller('admin/search')
+export class SearchAdminController {
+  constructor(private readonly searchService: SearchService) {}
+
+  @Get('zero-results')
+  @RequiresStaffRole(...STAFF_SCOPES.content)
+  @ApiOperation({ summary: 'Top des recherches restées sans résultat (équipe, 11 §3)' })
+  async zeroResults(
+    @Query(zodPipe(zeroResultsQuerySchema)) query: z.infer<typeof zeroResultsQuerySchema>,
+  ) {
+    return this.searchService.zeroResults(query);
   }
 }

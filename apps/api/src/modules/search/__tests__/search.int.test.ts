@@ -797,7 +797,7 @@ describe('recherche (11)', () => {
       const topicId = await topic(communityId, author, `Prefecture ${tag} sujet ferme`);
       await emit('community.topic_created', topicId, { communityId, topicId, authorUserId: author });
 
-      const suggestions = await search.suggest(`Préfecture ${tag}`);
+      const suggestions = await search.suggest(author, `Préfecture ${tag}`);
       const titles = suggestions.items.map((i) => i.title);
       expect(titles).toContain(`Prefecture ${tag} rendez-vous`);
       // Les suggestions sont MISES EN CACHE, donc partagées : un titre de réseau

@@ -94,6 +94,15 @@ export interface Suggestion {
   readonly url: string | null;
 }
 
+interface SuggestRow {
+  title: string;
+  subject_type: SearchSubjectType;
+  subject_id: string;
+}
+
+/** Borne du cache de suggestions : au-delà, la plus ancienne entrée est évincée. */
+const SUGGEST_CACHE_MAX_ENTRIES = 500;
+
 interface RawHit {
   id: string;
   subject_type: SearchSubjectType;
@@ -147,7 +156,7 @@ export class SearchService {
   private readonly cursorSecret = loadEnv().CURSOR_SECRET;
 
   /** §2.3 : « 6 max, mis en cache ». Une minute suffit : les titres bougent peu. */
-  private readonly suggestCache = new Map<string, { at: number; value: Suggestion[] }>();
+  private readonly suggestCache = new Map<string, { at: number; value: SuggestRow[] }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -310,15 +319,27 @@ export class SearchService {
     const cursor = query.cursor === undefined ? null : decodeCursor(query.cursor, this.cursorSecret, scope);
 
     // Sur-cueillette : trois fois la page, pour que le filtre d'auteur bloqué
-    // laisse assez de lignes. `limit + 1` seul rendrait une page trouée.
-    const rows = await this.rawSearch(query, communityIds, separated, viewerCityId, {
-      mode: 'TYPE',
-      type,
-      take: (query.limit + 1) * 3,
-      ...(cursor === null ? {} : { afterRank: Number(cursor.sort), afterId: cursor.id }),
-    });
+    // laisse assez de lignes. Et si un lot entier est filtré (auteurs séparés), on
+    // CONTINUE au lot suivant au lieu de rendre une page vide sans curseur : sinon
+    // la liste s'arrêterait alors qu'il reste des résultats visibles.
+    const take = (query.limit + 1) * 3;
+    let afterRank = cursor === null ? undefined : Number(cursor.sort);
+    let afterId = cursor === null ? undefined : cursor.id;
+    const visible: RawHit[] = [];
+    for (let pass = 0; pass < 6; pass += 1) {
+      const rows = await this.rawSearch(query, communityIds, separated, viewerCityId, {
+        mode: 'TYPE',
+        type,
+        take,
+        ...(afterRank === undefined || afterId === undefined ? {} : { afterRank, afterId }),
+      });
+      visible.push(...(await this.dropBlockedAuthors(rows, separated)));
+      const last = rows.at(-1);
+      if (visible.length > query.limit || rows.length < take || last === undefined) break;
+      afterRank = Number(last.rank);
+      afterId = last.id;
+    }
 
-    const visible = await this.dropBlockedAuthors(rows, separated);
     const urls = await this.destinations(visible);
     const lignes = await this.sublines(visible);
     const hits = visible.map((row) =>
@@ -478,7 +499,10 @@ export class SearchService {
    * depuis les tables sources, en un lot par type. Les documents `USER` sont déjà
    * écartés en SQL, et `CITY` n'a pas d'auteur.
    */
-  private async dropBlockedAuthors(rows: RawHit[], separated: string[]): Promise<RawHit[]> {
+  private async dropBlockedAuthors<T extends { subject_type: string; subject_id: string }>(
+    rows: T[],
+    separated: string[],
+  ): Promise<T[]> {
     if (separated.length === 0 || rows.length === 0) return rows;
     const blocked = new Set(separated);
 
@@ -650,9 +674,15 @@ export class SearchService {
           break;
         }
         // Les quatre derniers s'ouvrent par leur identifiant : rien à résoudre.
-        case 'HELP_REQUEST':
-          for (const id of ids) poser(id, `/entraide/${id}`);
+        case 'HELP_REQUEST': {
+          // Une demande supprimée (suppression logique) ne mène nulle part.
+          const lignes = await this.prisma.helpRequest.findMany({
+            where: { id: { in: ids }, deletedAt: null },
+            select: { id: true },
+          });
+          for (const h of lignes) poser(h.id, `/entraide/${h.id}`);
           break;
+        }
         case 'HOUSING':
           for (const id of ids) poser(id, `/services/logement/${id}`);
           break;
@@ -864,14 +894,40 @@ export class SearchService {
    * laisse donc une adresse morte pendant au plus la minute du cache, ce qui est
    * le même risque que le titre affiché à côté.
    */
-  async suggest(q: string): Promise<{ items: Suggestion[] }> {
+  async suggest(viewerId: string, q: string): Promise<{ items: Suggestion[] }> {
+    const separated = await this.visibility.separatedFrom(viewerId);
     const key = normalizeQuery(q);
+    // Le cache ne porte que des lignes PUBLIQUES brutes, communes à tous les
+    // lecteurs ; le filtre des auteurs séparés et la résolution des adresses sont
+    // appliqués PAR LECTEUR, après lecture du cache. Aucune réponse filtrée pour un
+    // lecteur n'est donc jamais servie à un autre.
     const cached = this.suggestCache.get(key);
+    let rows: SuggestRow[];
     if (cached !== undefined && Date.now() - cached.at < SUGGEST_CACHE_TTL_MS) {
-      return { items: cached.value };
+      rows = cached.value;
+    } else {
+      rows = await this.loadSuggestRows(q);
+      if (this.suggestCache.size >= SUGGEST_CACHE_MAX_ENTRIES) {
+        const oldest = this.suggestCache.keys().next();
+        if (oldest.done !== true) this.suggestCache.delete(oldest.value);
+      }
+      this.suggestCache.set(key, { at: Date.now(), value: rows });
     }
 
-    const rows = await this.prisma.$queryRaw<{ title: string; subject_type: SearchSubjectType; subject_id: string }[]>(Prisma.sql`
+    const visible = await this.dropBlockedAuthors(rows, separated);
+    const urls = await this.destinations(visible);
+    const items: Suggestion[] = visible
+      .map((r) => ({
+        title: r.title,
+        subjectType: r.subject_type,
+        subjectId: r.subject_id,
+        url: urls.get(r.subject_id) ?? null,
+      }));
+    return { items };
+  }
+
+  private async loadSuggestRows(q: string): Promise<SuggestRow[]> {
+    return await this.prisma.$queryRaw<{ title: string; subject_type: SearchSubjectType; subject_id: string }[]>(Prisma.sql`
       SELECT DISTINCT ON (d.title) d.title, d.subject_type::text AS subject_type, d.subject_id,
              similarity(immutable_unaccent(d.title), immutable_unaccent(${q})) AS sim
       FROM search_documents d
@@ -884,15 +940,6 @@ export class SearchService {
       LIMIT ${SUGGEST_MAX_RESULTS}
     `);
 
-    const urls = await this.destinations(rows);
-    const items: Suggestion[] = rows.map((r) => ({
-      title: r.title,
-      subjectType: r.subject_type,
-      subjectId: r.subject_id,
-      url: urls.get(r.subject_id) ?? null,
-    }));
-    this.suggestCache.set(key, { at: Date.now(), value: items });
-    return { items };
   }
 
   // ══ Recherche infructueuse (§2.4) ═════════════════════════════════════════

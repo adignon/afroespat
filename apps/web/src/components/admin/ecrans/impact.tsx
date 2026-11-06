@@ -13,6 +13,7 @@ import {
 import { staffApi } from '@/lib/api/index';
 import { telechargerCsv, toutesLesVilles } from '../donnees';
 import { useDroit } from '../session-equipe';
+import { Confirmation } from '../confirmation';
 import { Bandeau, Bouton, C, Carte, Colonnes, Etiquette, Lecture, Message, Selecteur, Titre, Vide, ZoneTexte, dateLongue, nombreFr, useCharge, useGeste } from '../ui';
 import { TYPE_CITATION, extraitProposable, libelleTrimestre, nomFichierCsv, optionsTrimestres } from './impact-vue';
 
@@ -280,6 +281,7 @@ function Candidat({
 }) {
   const [texte, setTexte] = useState(c.quote?.quote ?? extraitProposable(c.excerpt, IMPACT_QUOTE_MAX));
   const geste = useGeste();
+  const [retrait, setRetrait] = useState(false);
   const longueur = texte.trim().length;
   const valide = longueur >= IMPACT_QUOTE_MIN && longueur <= IMPACT_QUOTE_MAX;
   return (
@@ -312,21 +314,28 @@ function Candidat({
           {c.quote === null ? 'Approuver la citation' : 'Mettre à jour la citation'}
         </Bouton>
         {c.quote === null ? null : (
-          <Bouton
-            ton="contour"
-            disabled={geste.occupe}
-            onClick={() =>
-              void geste
-                .lancer(() => staffApi.del(`/impact/quotes/${c.quote?.id ?? ''}`, okResponseSchema), 'Citation retirée du rapport.')
-                .then((ok) => {
-                  if (ok) onChange();
-                })
-            }
-          >
+          <Bouton ton="contour" disabled={geste.occupe} onClick={() => { geste.effacer(); setRetrait(true); }}>
             Retirer du rapport
           </Bouton>
         )}
       </div>
+      <Confirmation
+        ouverte={retrait}
+        titre="Retirer la citation du rapport"
+        consigne="La citation n’apparaîtra plus dans le rapport d’impact du trimestre. L’action est tracée ; vous pourrez la réapprouver."
+        libelle="Retirer du rapport"
+        onConfirmer={() =>
+          void geste.lancer(() => staffApi.del(`/impact/quotes/${c.quote?.id ?? ''}`, okResponseSchema), 'Citation retirée du rapport.').then((ok) => {
+            if (ok) {
+              setRetrait(false);
+              onChange();
+            }
+          })
+        }
+        onFermer={() => setRetrait(false)}
+        occupe={geste.occupe}
+        message={geste.message}
+      />
     </div>
   );
 }

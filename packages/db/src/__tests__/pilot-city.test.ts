@@ -148,15 +148,33 @@ describe('le niveau L2 et le référentiel des pays (00 §7.2)', () => {
 
   const attestentUnePresence = COUNTRIES.filter((c) => COMPTENT_COMME_DESTINATION.includes(c.kind));
 
-  it('SEUL le pays de destination du produit peut attester une présence', () => {
+  /**
+   * Les pays de DESTINATION du référentiel : ceux où une personne installée prouve une présence (L2). Depuis le commit
+   * edb4cfc le seed en compte DIX (France, Belgique, Suisse, Canada, Allemagne, Royaume-Uni, États-Unis, Espagne, Italie,
+   * Portugal) : la diaspora s'y installe, et la ville pilote reste Paris. L'ancienne assertion (« la France seule »)
+   * était périmée. La garde reste stricte : la liste est ÉPINGLÉE ici, donc en ajouter un onzième (ou, pire, passer un
+   * pays d'origine en destination) est un choix délibéré qui fait rougir ce test, jamais un effet de bord.
+   */
+  const DESTINATIONS_ATTENDUES = ['BE', 'CA', 'CH', 'DE', 'ES', 'FR', 'GB', 'IT', 'PT', 'US'];
+
+  it('SEULS les pays de destination déclarés peuvent attester une présence, et la ville pilote en fait partie', () => {
     expect(
       attestentUnePresence.map((c) => c.iso2).sort(),
       'Un pays dont `kind` vaut DESTINATION ou BOTH rend `is_destination = true` sur ' +
         'les numéros à son indicatif, donc L2 — « personne présente sur le territoire ». ' +
         'Passer un pays d’ORIGINE en BOTH pour lui donner des villes déplace le niveau : ' +
         'un numéro béninois se met à prouver une présence en France. La règle de ville ' +
-        'et la règle de niveau sont deux choses distinctes.',
-    ).toEqual([PILOT_CITY_COUNTRY_ISO2]);
+        'et la règle de niveau sont deux choses distinctes. Si l’ajout d’un pays de destination ' +
+        'est voulu, mettez à jour DESTINATIONS_ATTENDUES.',
+    ).toEqual(DESTINATIONS_ATTENDUES);
+    expect(DESTINATIONS_ATTENDUES).toContain(PILOT_CITY_COUNTRY_ISO2);
+  });
+
+  it('aucun pays n’est BOTH, et les pays d’ORIGINE (Bénin, Togo) ne comptent jamais comme destination', () => {
+    expect(COUNTRIES.filter((c) => c.kind === 'BOTH').map((c) => c.iso2)).toEqual([]);
+    for (const iso2 of ['BJ', 'TG']) {
+      expect(COUNTRIES.find((c) => c.iso2 === iso2)?.kind, iso2).toBe('ORIGIN');
+    }
   });
 
   it('et ce pays est bien celui de la ville pilote, actif', () => {

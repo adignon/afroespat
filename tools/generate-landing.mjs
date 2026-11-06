@@ -30,8 +30,12 @@
  *      aucune statistique d'entraide, aucune ville) disparaissent au lieu d'afficher du vide ou du faux.
  *   9. Liens « # » : vers `/connexion` (le produit s'ouvre par le téléphone) ; le logo mène à `/`.
  *  10. « RÈGLES » d'un réseau : seulement quand le réseau en publie (la fiche publique n'en a pas).
- *  11. Pied de page : liens légaux vers `/p/cgu`, `/p/confidentialite`, `/p/cookies` ; « Charte de la communauté »
- *      (aucune page) et icônes de réseaux sociaux (aucune adresse) retirés.
+ *  11. Pied de page : liens légaux vers `/p/cgu`, `/p/confidentialite`, `/p/cookies`, `/p/mentions-legales` ; « Charte de la
+ *      communauté » (aucune page) et icônes de réseaux sociaux (aucune adresse) retirés ; année calculée.
+ *  12. Structure et accessibilité : `<main>`, bouton de recherche, fenêtres `role="dialog"`, noms des boutons-icônes, sélecteur
+ *      « Français » retiré (aucun effet), « Réessayer » quand un guide ou un réseau ne charge pas.
+ *  13. Mise en page : points de rupture CSS (`landing.css`) à la place de `window.innerWidth` (plus de saut au montage).
+ *  14. Catégories et villes : elles ouvrent le contenu public correspondant (recherche, fiche du réseau de la ville).
  */
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { remplacerLogo } from './logo-marque.mjs';
@@ -189,6 +193,132 @@ function sectionDe(html, repere) {
   }
 }
 
+// 11. Structure et accessibilité : <main>, boutons nommés, fenêtres (role="dialog"), sélecteur de langue retiré.
+{
+  const h = corps.indexOf('</header>');
+  const f = corps.indexOf('<footer');
+  if (h < 0 || f <= h) echec('adaptation « main » : l’en-tête ou le pied de page est introuvable');
+  const finEntete = h + '</header>'.length;
+  corps = `${corps.slice(0, finEntete)}\n<main id="contenu" style="display:block">${corps.slice(finEntete, f)}</main>\n${corps.slice(f)}`;
+
+  // Le sélecteur « Français » n'a aucun effet (une seule langue) : retiré plutôt qu'un faux contrôle.
+  {
+    const i = corps.indexOf('Français</span>');
+    if (i < 0) echec('adaptation « langue » : le sélecteur « Français » est introuvable');
+    const debut = corps.lastIndexOf('<sc-if', i);
+    corps = retirer(corps, 'langue', debut, debut + finDeBloc(corps.slice(debut), 0, '<sc-if', '</sc-if>'));
+  }
+
+  // L'icône de recherche de l'en-tête était un <span onClick> : un vrai bouton, nommé.
+  {
+    const icone = /<span onClick="\{\{ openSearch \}\}" style="cursor:pointer;(width:36px[^"]*)">((?:(?!<\/span>)[\s\S])*)<\/span>/;
+    if (!icone.test(corps)) echec('adaptation « icône de recherche » : le <span onClick> est introuvable');
+    corps = corps.replace(icone, (_, style, contenu) => `<button type="button" aria-label="Rechercher" onClick="{{ openSearch }}" style="cursor:pointer;border:none;padding:0;${style}">${contenu}</button>`);
+  }
+  corps = remplacerUneFois(corps, 'bouton de recherche mobile', 'title="Rechercher"', 'title="Rechercher" aria-label="Rechercher"');
+
+  // Les boutons-icônes des fenêtres portent un nom ; les champs, une étiquette ; la foire aux questions, son état.
+  {
+    const noms = { close: 'Fermer', backToSearch: 'Retour', backFromCity: 'Fermer' };
+    let n = 0;
+    corps = corps.replace(/<button onClick="\{\{ (close|backToSearch|backFromCity) \}\}"/g, (_, nom) => {
+      n += 1;
+      return `<button type="button" aria-label="${noms[nom]}" onClick="{{ ${nom} }}"`;
+    });
+    if (n !== 6) echec(`adaptation « boutons-icônes » : 6 boutons attendus, ${n} trouvés`);
+  }
+  corps = remplacerUneFois(corps, 'champ de recherche', '<input value="{{ q }}"', '<input aria-label="Rechercher un guide, une communauté ou une ville" value="{{ q }}"');
+  corps = remplacerUneFois(corps, 'champ de ville', '<input value="{{ cq }}"', '<input aria-label="Rechercher une ville" value="{{ cq }}"');
+  corps = remplacerUneFois(corps, 'questions fréquentes', '<button onClick="{{ f.toggle }}"', '<button type="button" aria-expanded="{{ f.open }}" onClick="{{ f.toggle }}"');
+  corps = remplacerUneFois(corps, 'onglets de recherche', '<button onClick="{{ t.on }}"', '<button type="button" aria-pressed="{{ t.pressed }}" onClick="{{ t.on }}"');
+
+  // Les fenêtres : role="dialog", aria-modal, nom (aria-labelledby ou aria-label), repère pour le piège du focus.
+  const fenetre = (nom, apres, ouverture, attributs) => {
+    const i = corps.indexOf(apres);
+    if (i < 0) echec(`adaptation « fenêtre ${nom} » : repère introuvable`);
+    const j = corps.indexOf(ouverture, i);
+    if (j < 0) echec(`adaptation « fenêtre ${nom} » : ouverture introuvable`);
+    const reste = ouverture.slice('<div'.length);
+    corps = `${corps.slice(0, j)}<div ${attributs} data-lp-dialog="${nom}"${reste}${corps.slice(j + ouverture.length)}`;
+  };
+  fenetre('search', '<sc-if value="{{ isSearch }}"', '<div style="position:relative;width:min(720px,100%)', 'role="dialog" aria-modal="true" aria-label="Recherche"');
+  fenetre('city', '<sc-if value="{{ isCity }}"', '<div style="position:relative;width:min(460px,100%)', 'role="dialog" aria-modal="true" aria-labelledby="lp-ville-titre"');
+  fenetre('guide', '<sc-if value="{{ isGuide }}"', '<div style="position:fixed;inset:0;z-index:80', 'role="dialog" aria-modal="true" aria-labelledby="lp-guide-titre"');
+  fenetre('group', '<sc-if value="{{ isGroup }}"', '<div style="position:fixed;inset:0;z-index:80', 'role="dialog" aria-modal="true" aria-labelledby="lp-groupe-titre"');
+  corps = remplacerUneFois(corps, 'titre de la fenêtre des villes', '<span style="flex:1;font-size:19px;font-weight:800;letter-spacing:-0.4px">Choisir une ville</span>', '<span id="lp-ville-titre" style="flex:1;font-size:19px;font-weight:800;letter-spacing:-0.4px">Choisir une ville</span>');
+  corps = remplacerUneFois(corps, 'titre du guide', '<h1 style="margin:14px 0 0;font-size:clamp(28px,4vw,38px)', '<h1 id="lp-guide-titre" style="margin:14px 0 0;font-size:clamp(28px,4vw,38px)');
+  corps = remplacerUneFois(corps, 'titre du réseau', '<div style="font-size:clamp(24px,3.4vw,32px);font-weight:800;letter-spacing:-0.8px">{{ group.name }}</div>', '<div id="lp-groupe-titre" style="font-size:clamp(24px,3.4vw,32px);font-weight:800;letter-spacing:-0.8px">{{ group.name }}</div>');
+  // Les fonds cliquables des fenêtres sont décoratifs (Échap et le bouton de fermeture font le travail au clavier).
+  for (const nom of ['close', 'backFromCity']) {
+    corps = remplacerUneFois(corps, `fond de fenêtre ${nom}`, `<div onClick="{{ ${nom} }}" style="position:absolute;inset:0"></div>`, `<div aria-hidden="true" onClick="{{ ${nom} }}" style="position:absolute;inset:0"></div>`);
+  }
+
+  // Le chargement qui échoue : un message et « Réessayer » au lieu d'un « Chargement… » perpétuel.
+  {
+    const reessayer = (cible, texte) =>
+      `<sc-if value="{{ ${cible}.error }}" hint-placeholder-val="{{ false }}"><button type="button" onClick="{{ ${cible}.retry }}" style="margin-top:14px;height:46px;padding:0 20px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer;align-self:flex-start">${texte}</button></sc-if>`;
+    const actions = '<div style="display:flex;gap:8px;margin-top:28px;flex-wrap:wrap">';
+    const debut = corps.indexOf(actions);
+    if (debut < 0 || corps.indexOf(actions, debut + 1) >= 0) echec('adaptation « actions du guide » : la rangée doit figurer exactement une fois');
+    const fin = debut + finDeBloc(corps.slice(debut), 0, '<div', '</div>');
+    corps = `${corps.slice(0, debut)}${reessayer('guide', 'Réessayer')}<sc-if value="{{ guide.ok }}" hint-placeholder-val="{{ true }}">${corps.slice(debut, fin)}</sc-if>${corps.slice(fin)}`;
+    const desc = '<p style="margin:0;font-size:15px;line-height:1.7;text-wrap:pretty">{{ group.desc }}</p>';
+    corps = remplacerUneFois(corps, 'description du réseau', desc, `${desc}${reessayer('group', 'Réessayer')}`);
+  }
+}
+
+// 12. Mise en page qui répond à la largeur : des points de rupture CSS (landing.css) à la place de `window.innerWidth`.
+//     Le rendu serveur et le premier rendu du navigateur sont désormais identiques à toute largeur : plus de saut.
+{
+  // Les blocs conditionnels par largeur deviennent des enveloppes `display:contents`, masquées par media query.
+  let n = 0;
+  const ouverture = /<sc-if value="\{\{ (wide|narrowNav|showLogin|hero3|narrow) \}\}" hint-placeholder-val="\{\{ (?:true|false) \}\}">/;
+  for (;;) {
+    const m = ouverture.exec(corps);
+    if (m === null) break;
+    const fin = m.index + finDeBloc(corps.slice(m.index), 0, '<sc-if', '</sc-if>');
+    const interieur = corps.slice(m.index + m[0].length, fin - '</sc-if>'.length);
+    corps = `${corps.slice(0, m.index)}<span class="lp-r-${m[1]}" style="display:contents">${interieur}</span>${corps.slice(fin)}`;
+    n += 1;
+  }
+  if (n !== 9) echec(`adaptation « largeurs » : 9 blocs attendus, ${n} trouvés`);
+
+  corps = remplacerUneFois(corps, 'colonnes du héros', '<div style="max-width:1240px;margin:0 auto;padding:48px 20px 64px;display:grid;grid-template-columns:{{ heroCols }};', '<div class="lp-hero-grid" style="max-width:1240px;margin:0 auto;padding:48px 20px 64px;display:grid;grid-template-columns:1fr;');
+  corps = remplacerUneFois(corps, 'colonnes de « Comment ça marche »', '<div style="position:relative;display:grid;grid-template-columns:{{ howCols }};', '<div class="lp-how-grid" style="position:relative;display:grid;grid-template-columns:1fr;');
+  corps = remplacerUneFois(corps, 'étapes de « Comment ça marche »', '<div style="position:relative;background:#fff;border:1px solid #E6EBE9;border-radius:24px;padding:24px;display:flex;gap:16px;align-items:flex-start;grid-column:{{ s.col }};max-width:{{ s.mw }};', '<div class="lp-how-item" style="position:relative;background:#fff;border:1px solid #E6EBE9;border-radius:24px;padding:24px;display:flex;gap:16px;align-items:flex-start;grid-column:auto;max-width:100%;');
+  corps = remplacerUneFois(corps, 'ordre du texte', 'display:flex;flex-direction:column;gap:18px;order:{{ textOrder }}">', 'display:flex;flex-direction:column;gap:18px;order:0">');
+  corps = corps.replace('<div style="display:flex;flex-direction:column;gap:18px;order:0">', '<div class="lp-text-order" style="display:flex;flex-direction:column;gap:18px;order:0">');
+  if (!corps.includes('lp-text-order')) echec('adaptation « ordre du texte » : l’en-tête de colonne est introuvable');
+  {
+    let k = 0;
+    corps = corps.replace(/(<div [^>]*?)style="([^"]*)border-radius:\{\{ sheetRadius \}\}/g, (_, tete, avant) => {
+      k += 1;
+      return `${tete}class="lp-sheet" style="${avant}border-radius:28px`;
+    });
+    if (k !== 2) echec(`adaptation « coins des fenêtres » : 2 fenêtres attendues, ${k} trouvées`);
+  }
+}
+
+// 13. Les cartes qui pointaient toutes vers la connexion ouvrent le contenu public qui leur correspond : la recherche
+//     (catégories), la fiche du réseau de la ville (cartes et pastilles de villes). « href » reste /connexion sans JS.
+{
+  corps = remplacerUneFois(corps, 'catégories', '<a href="#" style="flex:0 0 170px;', '<a href="#" onClick="{{ c.open }}" style="flex:0 0 170px;');
+  corps = remplacerUneFois(corps, 'cartes de villes', '<a href="#" style="position:relative;display:block;border-radius:28px;', '<a href="#" onClick="{{ c.open }}" style="position:relative;display:block;border-radius:28px;');
+  corps = remplacerUneFois(corps, 'pastilles de villes', '<a href="#" style="height:40px;padding:0 16px;border-radius:999px;background:#F2F5F4;', '<a href="#" onClick="{{ c.open }}" style="height:40px;padding:0 16px;border-radius:999px;background:#F2F5F4;');
+}
+
+// 13 bis. La photo d'une ville se décrit par le nom de la ville, pas par « Photo de la ville ».
+corps = remplacerUneFois(corps, 'texte alternatif des villes', 'placeholder="Photo de la ville"', 'placeholder="Photo de {{ c.n }}"');
+
+// 14. Pied de page : l'année est celle du jour, et « Mentions légales » rejoint les liens légaux.
+{
+  corps = remplacerUneFois(corps, 'année', '© 2026 afroexpates.com', '© {{ annee }} afroexpates.com');
+  const cookies = /<a href="#"( style="[^"]*"[^>]*)>Cookies<\/a>/;
+  const m = cookies.exec(corps);
+  if (!m) echec('adaptation « mentions légales » : le lien « Cookies » est introuvable');
+  corps = corps.replace(cookies, () => `${m[0]}<a href="#"${m[1]}>Mentions légales</a>`);
+}
+
 // 9. Les liens « # » : le logo vers l'accueil, les autres vers la connexion (« #how » reste une ancre).
 {
   const logo = '<a href="#" style="display:flex;align-items:center;gap:9px;flex-shrink:0">';
@@ -198,6 +328,7 @@ function sectionDe(html, repere) {
     ['Conditions d’utilisation', '/p/cgu'],
     ['Confidentialité', '/p/confidentialite'],
     ['Cookies', '/p/cookies'],
+    ['Mentions légales', '/p/mentions-legales'],
   ];
   for (const [libelle, chemin] of legaux) {
     const lien = new RegExp(`<a href="#"( style="[^"]*"[^>]*)>${libelle}</a>`);

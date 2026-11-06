@@ -1,5 +1,13 @@
+import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { BandeauHorsConnexion } from '@/components/bandeau-hors-connexion';
 import { GardeSession } from '@/components/garde-session';
+
+/**
+ * Jamais indexé : tout ce groupe est l'espace du membre connecté (règle dure). Dit ici
+ * explicitement, en plus du défaut du layout racine, pour que retirer l'un ne rouvre pas l'autre.
+ */
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 /**
  * LE LAYOUT DU GROUPE `(app)` — il n'existait pas.
@@ -44,6 +52,7 @@ export default function LayoutApplication({
 }) {
   return (
     <GardeSession>
+      <BandeauHorsConnexion />
       {children}
       {fenetre}
     </GardeSession>

@@ -44,6 +44,10 @@ export interface S01Data {
      */
     readonly bandeau: string;
     readonly annonces: readonly CarteAnnonce[];
+    /** `nextCursor` de la première page (lot E2) ; `null` = rien de plus. */
+    readonly suite: string | null;
+    /** Le « Voir plus » posé par l'adaptation S01_VOIR_PLUS. */
+    readonly plus?: import('@/components/voir-plus').PlusListe;
   };
 }
 

@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./image-slot.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FBFCFB;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#16211D;-webkit-font-smoothing:antialiased}
+a{color:#16785E;text-decoration:none}a:hover{color:#0F5C48}
+*{box-sizing:border-box}
+@keyframes lpmarq{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden">
+
+<header style="position:sticky;top:0;z-index:20;background:rgba(251,252,251,.94);backdrop-filter:blur(10px)">
+  <div style="max-width:1240px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:16px">
+    <a href="#" style="display:flex;align-items:center;gap:9px;flex-shrink:0"><span style="width:36px;height:36px;border-radius:12px;background:#0F5C48;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none"></circle></svg></span><sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}"><span style="font-size:18px;font-weight:800;color:#0F5C48;letter-spacing:-0.4px">afroexpates<span style="color:#E0733A">.</span>com</span></sc-if></a>
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+      <div style="flex:1;max-width:440px;height:46px;border-radius:999px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;padding:0 5px 0 18px;gap:10px">
+        <button onClick="{{ openSearch }}" style="flex:1;min-width:0;border:none;background:none;padding:0;font:inherit;font-size:13.5px;color:#8A958F;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left;cursor:pointer;height:100%">Guides, communautés, villes…</button>
+        <span style="width:1px;height:22px;background:#E6EBE9"></span>
+        <button onClick="{{ openCity }}" style="border:none;background:none;padding:0 4px;font:inherit;font-size:13.5px;font-weight:600;color:#16211D;white-space:nowrap;cursor:pointer;display:flex;align-items:center;gap:4px;height:100%">{{ cityLabel }}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2.4" stroke-linecap="round"><path d="m6 9 6 6 6-6"></path></svg></button>
+        <span onClick="{{ openSearch }}" style="cursor:pointer;width:36px;height:36px;border-radius:999px;background:#16785E;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></span>
+      </div>
+    </sc-if>
+    <span style="flex:1"></span>
+    <sc-if value="{{ narrowNav }}" hint-placeholder-val="{{ false }}"><button onClick="{{ openSearch }}" title="Rechercher" style="width:42px;height:42px;border-radius:999px;border:none;background:#EEF2F0;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg></button></sc-if>
+    <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}"><span style="display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:600;white-space:nowrap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="1.8"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg>Français</span></sc-if>
+    <sc-if value="{{ showLogin }}" hint-placeholder-val="{{ true }}"><a href="#" onClick="{{ openLogin }}" style="height:42px;padding:0 14px;border-radius:999px;font-size:14px;font-weight:700;color:#16211D;display:flex;align-items:center;white-space:nowrap" style-hover="background:#EEF2F0;color:#16211D">Se connecter</a></sc-if>
+    <a href="#" onClick="{{ openSignup }}" style="height:42px;padding:0 20px;border-radius:999px;background:#16211D;color:#fff;font-size:14px;font-weight:700;display:flex;align-items:center;white-space:nowrap;flex-shrink:0" style-hover="background:#0F5C48;color:#fff">Rejoindre</a>
+  </div>
+</header>
+
+<section>
+  <div style="max-width:1240px;margin:0 auto;padding:48px 20px 64px;display:grid;grid-template-columns:{{ heroCols }};gap:32px;align-items:center">
+    <sc-if value="{{ hero3 }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:28px;align-items:flex-start">
+      <div style="position:relative;width:230px;height:190px;margin-left:12px">
+        <div style="position:absolute;inset:0;border-radius:48% 52% 44% 56% / 55% 45% 55% 45%;background:#CFE3DA;transform:rotate(-6deg) translate(-8px,6px)"></div>
+        <image-slot id="v4-hero-a" credit="Photo by Sthembile Nobathana on Unsplash" credit-href="https://unsplash.com/@creative_buzz_co" src="https://images.unsplash.com/photo-1711743658461-38c875d37c8e?auto=format&amp;fit=crop&amp;w=600&amp;q=70" placeholder="Photo : membres réunis" style="position:absolute;inset:0;width:100%;height:100%;border-radius:46% 54% 50% 50% / 52% 48% 52% 48%;overflow:hidden"></image-slot>
+        <span style="position:absolute;left:-14px;bottom:-6px;background:#fff;border:1.5px solid #16785E;color:#0F5C48;font-family:Caveat,cursive;font-size:19px;font-weight:700;padding:2px 12px;border-radius:999px;transform:rotate(-8deg)">près de chez vous</span>
+      </div>
+      <div style="position:relative;width:210px;height:180px;margin-left:56px">
+        <div style="position:absolute;inset:0;border-radius:56% 44% 52% 48% / 45% 55% 45% 55%;background:#FBE3D4;transform:rotate(8deg) translate(10px,4px)"></div>
+        <image-slot id="v4-hero-b" credit="Photo by Dwayne joe on Unsplash" credit-href="https://unsplash.com/@spliff_dj_joe" src="https://images.unsplash.com/photo-1744846579749-77b636d7718d?auto=format&amp;fit=crop&amp;w=600&amp;q=70" placeholder="Photo : accueil à l’arrivée" style="position:absolute;inset:0;width:100%;height:100%;border-radius:52% 48% 46% 54% / 50% 52% 48% 50%;overflow:hidden"></image-slot>
+        <span style="position:absolute;left:-20px;bottom:10px;background:#fff;border:1.5px solid #E0733A;color:#B4581F;font-family:Caveat,cursive;font-size:19px;font-weight:700;padding:2px 12px;border-radius:999px;transform:rotate(-4deg)">premier jour à Lyon</span>
+      </div>
+    </div></sc-if>
+    <div style="display:flex;flex-direction:column;align-items:center;text-align:center;gap:22px">
+      <h1 style="margin:0;font-size:clamp(32px,4.4vw,50px);line-height:1.12;font-weight:800;letter-spacing:-1.6px;text-wrap:balance">La communauté des <span style="display:inline-flex;width:.8em;height:.8em;border-radius:999px;background:#E3F0EB;vertical-align:-0.06em;align-items:center;justify-content:center"><svg width="60%" height="60%" viewBox="0 0 24 24" fill="none" stroke="#16785E" stroke-width="2.4" stroke-linecap="round"><circle cx="9" cy="8" r="3"></circle><path d="M3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5"></path></svg></span> diasporas africaines. Où chaque <span style="display:inline-flex;width:.8em;height:.8em;border-radius:999px;background:#FBE3D4;vertical-align:-0.06em;align-items:center;justify-content:center"><svg width="60%" height="60%" viewBox="0 0 24 24" fill="none" stroke="#E0733A" stroke-width="2.4" stroke-linecap="round"><path d="M5 5h6a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h10"></path></svg></span> arrivée devient un chemin <span style="color:#16785E">partagé.</span></h1>
+      <p style="margin:0;max-width:520px;font-size:16px;line-height:1.65;color:#5D6B66;text-wrap:pretty">Logement, études, travail, démarches : des milliers de membres déjà installés en France partagent ce qui a marché pour eux. Suivez votre parcours, posez vos questions, rencontrez les vôtres près de chez vous.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
+        <a href="#" onClick="{{ openSignup }}" style="height:52px;padding:0 26px;border-radius:999px;background:#16785E;color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;white-space:nowrap" style-hover="background:#0F5C48;color:#fff">Rejoindre gratuitement</a>
+        <a href="#how" style="height:52px;padding:0 22px;border-radius:999px;background:#EEF2F0;color:#16211D;font-size:15px;font-weight:700;display:flex;align-items:center;white-space:nowrap" style-hover="background:#E3F0EB;color:#16211D">Voir comment ça marche</a>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:13px;color:#5D6B66"><span style="display:flex;padding-left:8px"><sc-for list="{{ faces }}" as="f" hint-placeholder-count="0"><span style="width:30px;height:30px;border-radius:999px;background:#CFE3DA center/cover no-repeat;background-image:{{ f }};border:2px solid #fff;margin-left:-8px"></span></sc-for></span>12 400 membres dans 38 villes</div>
+      <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;width:100%;margin-top:8px">
+          <image-slot id="v4-hero-m1" credit="Photo by Sthembile Nobathana on Unsplash" credit-href="https://unsplash.com/@creative_buzz_co" src="https://images.unsplash.com/photo-1711743658461-38c875d37c8e?auto=format&amp;fit=crop&amp;w=600&amp;q=70" shape="rounded" radius="28" placeholder="Membres réunis" style="width:100%;min-width:0;aspect-ratio:1"></image-slot>
+          <image-slot id="v4-hero-m2" credit="Photo by Gylain Omer on Unsplash" credit-href="https://unsplash.com/@gullin_omer" src="https://images.unsplash.com/photo-1785502682845-d540abc600ec?auto=format&amp;fit=crop&amp;w=600&amp;q=70" shape="rounded" radius="28" placeholder="Rencontre du jeudi" style="width:100%;min-width:0;aspect-ratio:1;margin-top:28px"></image-slot>
+        </div>
+      </sc-if>
+    </div>
+    <sc-if value="{{ hero3 }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:28px;align-items:flex-end">
+      <div style="position:relative;width:220px;height:180px;margin-right:16px">
+        <div style="position:absolute;inset:0;border-radius:50% 50% 46% 54% / 52% 48% 52% 48%;background:#E8EEEC;transform:rotate(7deg) translate(8px,-4px)"></div>
+        <image-slot id="v4-hero-c" credit="Photo by Gylain Omer on Unsplash" credit-href="https://unsplash.com/@gullin_omer" src="https://images.unsplash.com/photo-1785502682845-d540abc600ec?auto=format&amp;fit=crop&amp;w=600&amp;q=70" placeholder="Photo : rencontre du jeudi" style="position:absolute;inset:0;width:100%;height:100%;border-radius:48% 52% 54% 46% / 50% 46% 54% 50%;overflow:hidden"></image-slot>
+        <span style="position:absolute;right:-10px;bottom:-4px;background:#fff;border:1.5px solid #16785E;color:#0F5C48;font-family:Caveat,cursive;font-size:19px;font-weight:700;padding:2px 12px;border-radius:999px;transform:rotate(6deg)">tous les jeudis</span>
+      </div>
+      <div style="position:relative;width:240px;height:200px;margin-right:48px">
+        <div style="position:absolute;inset:0;border-radius:46% 54% 50% 50% / 55% 45% 55% 45%;background:#CFE3DA;transform:rotate(-7deg) translate(-10px,6px)"></div>
+        <image-slot id="v4-hero-d" credit="Photo by Taylor Turtle on Unsplash" credit-href="https://unsplash.com/@tailorturtle" src="https://images.unsplash.com/photo-1593889026462-18faa8d91e53?auto=format&amp;fit=crop&amp;w=600&amp;q=70" placeholder="Photo : parrainage" style="position:absolute;inset:0;width:100%;height:100%;border-radius:54% 46% 48% 52% / 48% 52% 48% 52%;overflow:hidden"></image-slot>
+        <span style="position:absolute;right:-24px;top:16px;background:#fff;border:1.5px solid #E0733A;color:#B4581F;font-family:Caveat,cursive;font-size:19px;font-weight:700;padding:2px 12px;border-radius:999px;transform:rotate(8deg)">ma parraine</span>
+      </div>
+    </div></sc-if>
+  </div>
+</section>
+
+<section style="border-top:1px solid #EEF2F0;border-bottom:1px solid #EEF2F0;background:#fff;overflow:hidden">
+  <div style="max-width:1240px;margin:0 auto;padding:22px 20px;display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:700;color:#5D6B66;white-space:nowrap">Des membres venus de 24 pays</span>
+    <div style="flex:1;min-width:240px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)">{{ marquee }}</div>
+  </div>
+</section>
+
+<section>
+  <div style="max-width:1100px;margin:0 auto;padding:72px 20px">
+    <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:22px;flex-wrap:wrap"><h2 style="margin:0;font-size:clamp(22px,2.4vw,28px);font-weight:800;letter-spacing:-0.7px;flex:1">Rencontres à venir près de chez vous</h2><a href="#" style="font-size:14px;font-weight:700">Voir tout l’agenda</a></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:20px">
+      <sc-for list="{{ events }}" as="e" hint-placeholder-count="4">
+        <a href="#" style="display:flex;flex-direction:column;gap:10px;color:#16211D" style-hover="color:#16211D">
+          <div style="position:relative;aspect-ratio:16/10;border-radius:18px;overflow:hidden"><image-slot id="{{ e.slot }}" src="{{ e.src }}" credit="{{ e.credit }}" credit-href="{{ e.href }}" shape="rounded" radius="18" placeholder="Photo de l’événement" style="width:100%;height:100%"></image-slot><span style="position:absolute;left:10px;top:10px;background:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap">{{ e.tag }}</span></div>
+          <div style="font-size:15.5px;font-weight:700;line-height:1.35">{{ e.title }}</div>
+          <div style="font-size:12.5px;color:#5D6B66;margin-top:-4px">{{ e.when }}</div>
+          <div style="font-size:12.5px;color:#8A958F;margin-top:-6px">par {{ e.by }}</div>
+          <div style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700"><span style="display:flex;padding-left:6px"><sc-for list="{{ faces }}" as="f" hint-placeholder-count="0"><span style="width:22px;height:22px;border-radius:999px;background:#CFE3DA center/cover no-repeat;background-image:{{ f }};border:2px solid #fff;margin-left:-6px"></span></sc-for></span>{{ e.n }} participants</div>
+        </a>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section style="background:#fff">
+  <div style="max-width:1140px;margin:0 auto;padding:96px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:56px;align-items:center">
+    <div style="position:relative">
+      <image-slot id="v4-parcours" credit="Photo by Divaris Shirichena on Unsplash" credit-href="https://unsplash.com/@divaris" src="https://images.unsplash.com/photo-1686213011642-b25f94b95b96?auto=format&amp;fit=crop&amp;w=1000&amp;q=70" shape="rounded" radius="32" placeholder="Photo : étudiante" style="width:100%;aspect-ratio:4/5;max-height:620px"></image-slot>
+      <div style="position:absolute;left:clamp(12px,4%,28px);right:clamp(12px,4%,28px);bottom:clamp(12px,4%,28px);background:#fff;border-radius:22px;padding:18px;max-width:340px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:10.5px;font-weight:700;letter-spacing:1px;color:#16785E">PARCOURS ÉTUDES · LYON</span><span style="font-size:20px;font-weight:800;white-space:nowrap">58&nbsp;%</span></div>
+        <div style="height:8px;border-radius:999px;background:#EEF2F0;margin-top:10px;overflow:hidden"><div style="width:58%;height:100%;background:#E0733A;border-radius:999px"></div></div>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+          <span style="display:flex;align-items:center;gap:10px;font-size:13px;color:#8A958F"><span style="width:20px;height:20px;border-radius:999px;background:#16785E;display:flex;align-items:center;justify-content:center"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"></path></svg></span>Visa étudiant · 4 semaines</span>
+          <span style="display:flex;align-items:center;gap:10px;font-size:13.5px;font-weight:700"><span style="width:20px;height:20px;border-radius:999px;border:5px solid #E0733A"></span>Logement · dans 9 jours</span>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <span style="font-family:Caveat,cursive;font-size:24px;font-weight:700;color:#E0733A">étape par étape</span>
+      <h2 style="margin:-8px 0 0;font-size:clamp(28px,3.4vw,40px);font-weight:800;letter-spacing:-1.2px;line-height:1.1">Votre installation, découpée en étapes claires</h2>
+      <p style="margin:0;font-size:15.5px;line-height:1.7;color:#5D6B66">Choisissez votre projet — études, travail, famille, régularisation — et recevez un parcours avec des échéances calculées à partir de votre date d’arrivée.</p>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-top:4px">
+        <sc-for list="{{ parcoursPts }}" as="p" hint-placeholder-count="3"><div style="display:flex;gap:14px;align-items:flex-start"><span style="width:40px;height:40px;border-radius:14px;background:#E3F0EB;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#16785E" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ p.d }}"></path></svg></span><div><div style="font-size:15px;font-weight:700">{{ p.t }}</div><div style="font-size:13.5px;color:#5D6B66;line-height:1.55;margin-top:2px">{{ p.s }}</div></div></div></sc-for>
+      </div>
+      <a href="#" onClick="{{ openSignup }}" style="align-self:flex-start;height:50px;padding:0 24px;border-radius:999px;background:#16785E;color:#fff;font-size:14.5px;font-weight:700;display:flex;align-items:center;margin-top:6px;white-space:nowrap" style-hover="background:#0F5C48;color:#fff">Créer mon parcours</a>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div style="max-width:1140px;margin:0 auto;padding:96px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:56px;align-items:center">
+    <div style="display:flex;flex-direction:column;gap:18px;order:{{ textOrder }}">
+      <span style="font-family:Caveat,cursive;font-size:24px;font-weight:700;color:#16785E">l’entraide</span>
+      <h2 style="margin:-8px 0 0;font-size:clamp(28px,3.4vw,40px);font-weight:800;letter-spacing:-1.2px;line-height:1.1">Une question ? Ceux qui sont passés par là répondent</h2>
+      <p style="margin:0;font-size:15.5px;line-height:1.7;color:#5D6B66">Caution, préfecture, banque, CAF : posez votre question à la communauté de votre ville. Les réponses jugées utiles remontent, les guides vérifiés sont proposés automatiquement.</p>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:4px">
+        <sc-for list="{{ entraideStats }}" as="s" hint-placeholder-count="3"><div style="background:#fff;border:1px solid #E6EBE9;border-radius:18px;padding:16px"><div style="font-size:24px;font-weight:800;letter-spacing:-0.6px;color:#0F5C48">{{ s.v }}</div><div style="font-size:12.5px;color:#5D6B66;margin-top:2px;line-height:1.4">{{ s.l }}</div></div></sc-for>
+      </div>
+      <a href="#" onClick="{{ openSignup }}" style="align-self:flex-start;height:50px;padding:0 24px;border-radius:999px;background:#16211D;color:#fff;font-size:14.5px;font-weight:700;display:flex;align-items:center;margin-top:6px;white-space:nowrap" style-hover="background:#0F5C48;color:#fff">Poser une question</a>
+    </div>
+    <div style="position:relative">
+      <image-slot id="v4-entraide" credit="Photo by LinkedIn Sales Solutions on Unsplash" credit-href="https://unsplash.com/@linkedinsalesnavigator" src="https://images.unsplash.com/photo-1507537417841-81e85feb9bd2?auto=format&amp;fit=crop&amp;w=1000&amp;q=70" shape="rounded" radius="32" placeholder="Photo : membre sur son ordinateur" style="width:100%;aspect-ratio:4/5;max-height:620px"></image-slot>
+      <div style="position:absolute;left:clamp(12px,4%,28px);top:clamp(12px,4%,28px);right:clamp(12px,4%,28px);max-width:330px;background:#fff;border-radius:22px;padding:16px">
+        <div style="display:flex;align-items:center;gap:10px"><img src="https://images.unsplash.com/photo-1546525848-3ce03ca516f6?auto=format&amp;fit=crop&amp;w=120&amp;q=70" alt="" style="width:34px;height:34px;border-radius:999px;object-fit:cover"><span style="font-size:13.5px;font-weight:700;flex:1">Kofi B.</span><span style="background:#FBE3D4;color:#B4581F;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px">Question</span></div>
+        <div style="font-size:14px;line-height:1.5;margin-top:10px">Quelqu’un a déjà fait valider son VLS-TS en ligne ? Le site refuse mon numéro de visa.</div>
+      </div>
+      <div style="position:absolute;right:clamp(12px,4%,28px);bottom:clamp(12px,4%,28px);left:clamp(40px,14%,80px);max-width:330px;margin-left:auto;background:#0F5C48;color:#fff;border-radius:22px;padding:16px">
+        <div style="display:flex;align-items:center;gap:10px"><img src="https://images.unsplash.com/photo-1612115958726-9af4b6bd28d1?auto=format&amp;fit=crop&amp;w=120&amp;q=70" alt="" style="width:34px;height:34px;border-radius:999px;object-fit:cover"><span style="font-size:13.5px;font-weight:700;flex:1">Fatou N.</span><span style="font-size:11.5px;color:#A9CDBF">il y a 12 min</span></div>
+        <div style="font-size:14px;line-height:1.5;margin-top:10px">Oui ! Retire les tirets du numéro, ça a marché pour moi. Le guide est ici ↓</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;background:rgba(255,255,255,.12);border-radius:12px;padding:8px 10px;font-size:12.5px;font-weight:700">Valider son VLS-TS sur l’ANEF<span style="flex:1"></span><span style="color:#A9CDBF;font-weight:600">132 utiles</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="background:#fff">
+  <div style="max-width:1100px;margin:0 auto;padding:88px 20px">
+    <h2 style="margin:0 0 24px;font-size:clamp(22px,2.4vw,28px);font-weight:800;letter-spacing:-0.7px">Explorer selon votre besoin</h2>
+    <div style="display:flex;gap:14px;overflow-x:auto;padding:4px 2px 14px;margin-right:-20px;scrollbar-width:none">
+      <sc-for list="{{ cats }}" as="c" hint-placeholder-count="6">
+        <a href="#" style="flex:0 0 170px;height:150px;border-radius:22px;background:#fff;border:1px solid #E6EBE9;border-bottom:4px solid {{ c.color }};padding:16px;display:flex;flex-direction:column;justify-content:space-between;color:#16211D;margin-top:{{ c.offset }}" style-hover="background:#F6F8F7;color:#16211D">
+          <span style="font-size:15px;font-weight:700;line-height:1.3">{{ c.t }}</span>
+          <span style="display:flex;align-items:flex-end;justify-content:space-between"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2" stroke-linecap="round"><path d="M7 17 17 7M9 7h8v8"></path></svg><span style="width:42px;height:42px;border-radius:14px;background:{{ c.bg }};display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{ c.color }}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ c.d }}"></path></svg></span></span>
+        </a>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div style="max-width:1000px;margin:0 auto;padding:96px 20px">
+    <h2 id="how" style="margin:0 0 48px;text-align:center;font-size:clamp(26px,3vw,34px);font-weight:800;letter-spacing:-1px;scroll-margin-top:90px">Comment ça marche</h2>
+    <div style="position:relative;display:grid;grid-template-columns:{{ howCols }};gap:28px 48px">
+      <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}"><svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none" viewBox="0 0 1000 520" preserveAspectRatio="none" fill="none" stroke="#9FB3AB" stroke-width="2" stroke-dasharray="6 8" stroke-linecap="round"><path d="M430 90 C 520 30, 470 140, 540 90"></path><path d="M770 200 C 780 330, 720 380, 600 400"></path></svg></sc-if>
+      <sc-for list="{{ how }}" as="s" hint-placeholder-count="3">
+        <div style="position:relative;background:#fff;border:1px solid #E6EBE9;border-radius:24px;padding:24px;display:flex;gap:16px;align-items:flex-start;grid-column:{{ s.col }};max-width:{{ s.mw }};justify-self:center;width:100%">
+          <span style="width:48px;height:48px;border-radius:16px;background:{{ s.bg }};display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="{{ s.fg }}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="{{ s.d }}"></path></svg></span>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:16px;font-weight:700">{{ s.t }}</span><span style="font-size:14px;line-height:1.55;color:#5D6B66">{{ s.p }}</span><a href="#" style="font-size:13.5px;font-weight:700;margin-top:4px">{{ s.cta }}</a></div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:28px;color:#E0733A"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="9" cy="8" r="3"></circle><path d="M3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5"></path></svg><span style="font-family:Caveat,cursive;font-size:22px;font-weight:700;line-height:1.1;max-width:260px">ceux qui sont passés par là vous ouvrent la route</span></div>
+  </div>
+</section>
+
+<section style="background:#fff">
+  <div style="max-width:1140px;margin:0 auto;padding:96px 20px">
+    <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:28px;flex-wrap:wrap"><div style="flex:1;min-width:260px"><h2 style="margin:0;font-size:clamp(26px,3vw,34px);font-weight:800;letter-spacing:-1px">Une communauté dans votre ville</h2><p style="margin:8px 0 0;font-size:15px;color:#5D6B66">Bons plans, produits du pays, budgets réels : chaque ville a sa fiche, écrite par ceux qui y vivent.</p></div><a href="#" style="font-size:14px;font-weight:700">Toutes les villes</a></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:20px">
+      <sc-for list="{{ cities }}" as="c" hint-placeholder-count="2">
+        <a href="#" style="position:relative;display:block;border-radius:28px;overflow:hidden;aspect-ratio:4/3;color:#fff" style-hover="color:#fff">
+          <image-slot id="{{ c.slot }}" src="{{ c.src }}" credit="{{ c.credit }}" credit-href="{{ c.href }}" shape="rect" placeholder="Photo de la ville" style="position:absolute;inset:0;width:100%;height:100%"></image-slot>
+          <span style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(22,33,29,0) 40%,rgba(22,33,29,.78));pointer-events:none"></span>
+          <span style="position:absolute;left:22px;right:22px;bottom:20px;display:flex;align-items:flex-end;gap:12px;pointer-events:none"><span style="flex:1"><span style="display:block;font-size:26px;font-weight:800;letter-spacing:-0.6px">{{ c.n }}</span><span style="display:block;font-size:13.5px;opacity:.88;margin-top:2px">{{ c.s }}</span></span><span style="background:#fff;color:#0F5C48;font-size:12.5px;font-weight:700;padding:8px 14px;border-radius:999px;white-space:nowrap">Voir la fiche</span></span>
+        </a>
+      </sc-for>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
+      <sc-for list="{{ otherCities }}" as="c" hint-placeholder-count="6"><a href="#" style="height:40px;padding:0 16px;border-radius:999px;background:#F2F5F4;color:#16211D;font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px" style-hover="background:#E3F0EB;color:#16211D">{{ c.n }}<span style="font-weight:600;color:#8A958F">{{ c.m }}</span></a></sc-for>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div style="max-width:1100px;margin:0 auto;padding:96px 20px 88px">
+    <div style="display:flex;justify-content:flex-end;padding-right:12%;margin-bottom:10px"><span style="font-family:Caveat,cursive;font-size:24px;font-weight:700;color:#E0733A;transform:rotate(-3deg)">vous n’êtes pas seul·e ↓</span></div>
+    <div style="position:relative;background:#fff;border:1px solid #E6EBE9;border-radius:32px;padding:clamp(48px,7vw,80px) 24px;overflow:hidden;text-align:center">
+      <div style="position:absolute;left:-40px;top:-30px;width:160px;height:200px;border-radius:50%;background:#CFE3DA;transform:rotate(-20deg)"></div>
+      <div style="position:absolute;right:-30px;top:-40px;width:180px;height:140px;border-radius:50%;background:#FBE3D4;transform:rotate(18deg)"></div>
+      <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+        <img src="https://images.unsplash.com/photo-1492462543947-040389c4a66c?auto=format&amp;fit=crop&amp;w=200&amp;q=70" alt="" style="position:absolute;left:12%;top:22%;width:64px;height:64px;border:3px solid #16785E;border-radius:999px;object-fit:cover">
+        <img src="https://images.unsplash.com/photo-1528980917907-8df7f48f6f2a?auto=format&amp;fit=crop&amp;w=200&amp;q=70" alt="" style="position:absolute;right:15%;top:18%;width:70px;height:70px;border:3px solid #E0733A;border-radius:999px;object-fit:cover">
+        <img src="https://images.unsplash.com/photo-1630163671229-07fdcf23ba71?auto=format&amp;fit=crop&amp;w=200&amp;q=70" alt="" style="position:absolute;right:11%;bottom:20%;width:84px;height:84px;border:3px solid #2FA37D;border-radius:999px;object-fit:cover">
+        <span style="position:absolute;left:16%;bottom:24%;width:52px;height:52px;border-radius:999px;background:#E3F0EB;display:flex;align-items:center;justify-content:center"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16785E" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"></path></svg></span>
+      </sc-if>
+      <div style="position:relative;max-width:500px;margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:16px">
+        <h2 style="margin:0;font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-1px">Rejoindre la communauté</h2>
+        <p style="margin:0;font-size:15.5px;line-height:1.65;color:#5D6B66;text-wrap:pretty">On s’y inscrit pour préparer son départ, trouver un logement, comprendre une démarche ou simplement retrouver des gens qui parlent comme chez soi. L’inscription est gratuite.</p>
+        <a href="#" onClick="{{ openSignup }}" style="height:50px;padding:0 24px;border-radius:999px;background:#16211D;color:#fff;font-size:14.5px;font-weight:700;display:flex;align-items:center;margin-top:4px;white-space:nowrap" style-hover="background:#0F5C48;color:#fff">Créer mon compte gratuitement</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section style="background:#fff">
+  <div style="max-width:1140px;margin:0 auto;padding:96px 20px">
+    <h2 style="margin:0 0 32px;font-size:clamp(26px,3vw,34px);font-weight:800;letter-spacing:-1px;text-align:center">Ils racontent leur arrivée</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px">
+      <sc-for list="{{ quotes }}" as="q" hint-placeholder-count="3">
+        <div style="background:{{ q.bg }};border-radius:28px;padding:26px;display:flex;flex-direction:column;gap:18px">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="{{ q.accent }}" stroke-width="2" stroke-linecap="round"><path d="M7 7h4v4c0 3-2 5-4 5M14 7h4v4c0 3-2 5-4 5"></path></svg>
+          <p style="margin:0;font-size:16px;line-height:1.6;flex:1;text-wrap:pretty">{{ q.t }}</p>
+          <div style="display:flex;align-items:center;gap:12px"><span style="width:48px;height:48px;border-radius:999px;background:#CFE3DA center/cover no-repeat;background-image:{{ q.img }};flex-shrink:0"></span><div><div style="font-size:14px;font-weight:700">{{ q.n }}</div><div style="font-size:12.5px;color:#5D6B66">{{ q.r }}</div></div></div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div style="max-width:1240px;margin:0 auto;padding:88px 20px">
+    <div style="background:#0F5C48;color:#fff;border-radius:36px;overflow:hidden;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr))">
+      <div style="padding:clamp(32px,5vw,64px);display:flex;flex-direction:column;gap:18px;justify-content:center">
+        <span style="font-family:Caveat,cursive;font-size:24px;font-weight:700;color:#F0C3A4">le parrainage</span>
+        <h2 style="margin:-8px 0 0;font-size:clamp(28px,3.4vw,40px);font-weight:800;letter-spacing:-1.2px;line-height:1.1">Un parrain qui connaît déjà la route</h2>
+        <p style="margin:0;font-size:15.5px;line-height:1.7;color:#CFE3DA">Un membre installé dans votre ville vous accompagne pendant vos premiers mois : visites, papiers, bonnes adresses. Une fois arrivé·e, c’est à votre tour.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+          <a href="#" style="height:50px;padding:0 22px;border-radius:999px;background:#fff;color:#0F5C48;font-size:14.5px;font-weight:700;display:flex;align-items:center;white-space:nowrap" style-hover="background:#E3F0EB;color:#0F5C48">Trouver un parrain</a>
+          <a href="#" style="height:50px;padding:0 22px;border-radius:999px;background:rgba(255,255,255,.12);color:#fff;font-size:14.5px;font-weight:700;display:flex;align-items:center;white-space:nowrap" style-hover="background:rgba(255,255,255,.2);color:#fff">Devenir parrain</a>
+        </div>
+      </div>
+      <image-slot id="v4-parrain" credit="Photo by Brian Kungu on Unsplash" credit-href="https://unsplash.com/@oldceltic" src="https://images.unsplash.com/photo-1768244016470-271b210a8407?auto=format&amp;fit=crop&amp;w=1000&amp;q=70" shape="rect" placeholder="Photo : parrain et filleul" style="width:100%;min-height:360px;height:100%"></image-slot>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div style="max-width:1100px;margin:0 auto;padding:24px 20px 96px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px 64px;align-items:start;margin-bottom:40px">
+      <h2 style="margin:0;font-size:clamp(28px,3.4vw,40px);font-weight:800;letter-spacing:-1.2px;line-height:1.1;max-width:420px">Des liens qui se tissent, arrivée après arrivée</h2>
+      <p style="margin:0;font-size:15.5px;line-height:1.7;color:#5D6B66;text-wrap:pretty">Depuis Cotonou, Dakar, Abidjan ou Douala, nos membres préparent leur installation avec ceux qui l’ont déjà faite. Voici quelques histoires.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:28px">
+      <sc-for list="{{ stories }}" as="s" hint-placeholder-count="3">
+        <a href="#" style="display:flex;flex-direction:column;gap:12px;color:#16211D" style-hover="color:#16211D">
+          <image-slot id="{{ s.slot }}" src="{{ s.src }}" credit="{{ s.credit }}" credit-href="{{ s.href }}" shape="rounded" radius="22" placeholder="Photo de l’histoire" style="width:100%;aspect-ratio:4/3"></image-slot>
+          <span style="font-size:17px;font-weight:700;line-height:1.35;letter-spacing:-0.3px">{{ s.t }}</span>
+          <span style="font-size:14px;line-height:1.6;color:#5D6B66">{{ s.p }}</span>
+          <span style="font-size:13.5px;font-weight:700;color:#16785E">Lire l’histoire</span>
+        </a>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section style="background:#fff">
+  <div style="max-width:820px;margin:0 auto;padding:96px 20px">
+    <h2 style="margin:0 0 28px;font-size:clamp(26px,3vw,34px);font-weight:800;letter-spacing:-1px;text-align:center">Questions fréquentes</h2>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <sc-for list="{{ faq }}" as="f" hint-placeholder-count="5">
+        <div style="border-radius:20px;background:{{ f.bg }};border:1px solid #E6EBE9;overflow:hidden">
+          <button onClick="{{ f.toggle }}" style="width:100%;min-height:60px;padding:16px 20px;border:none;background:transparent;font:inherit;font-size:15.5px;font-weight:700;color:#16211D;display:flex;align-items:center;gap:12px;text-align:left;cursor:pointer"><span style="flex:1">{{ f.q }}</span><span style="width:32px;height:32px;border-radius:999px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;justify-content:center;flex-shrink:0;transform:rotate({{ f.rot }})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg></span></button>
+          <sc-if value="{{ f.open }}" hint-placeholder-val="{{ false }}"><div style="padding:0 20px 18px;font-size:14.5px;line-height:1.65;color:#5D6B66;max-width:680px">{{ f.a }}</div></sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div style="max-width:1240px;margin:0 auto;padding:88px 20px">
+    <div style="position:relative;border-radius:36px;overflow:hidden;min-height:420px;display:flex;align-items:flex-end">
+      <image-slot id="v4-final" credit="Photo by Romain Girot on Unsplash" credit-href="https://unsplash.com/@romaingirot" src="https://images.unsplash.com/photo-1569087306794-db9947393580?auto=format&amp;fit=crop&amp;w=1600&amp;q=70" shape="rect" placeholder="Photo : quais de Lyon" style="position:absolute;inset:0;width:100%;height:100%"></image-slot>
+      <span style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,92,72,.92),rgba(15,92,72,.55) 55%,rgba(15,92,72,.1));pointer-events:none"></span>
+      <div style="position:relative;padding:clamp(28px,5vw,64px);max-width:560px;display:flex;flex-direction:column;gap:16px;color:#fff">
+        <h2 style="margin:0;font-size:clamp(28px,3.6vw,44px);font-weight:800;letter-spacing:-1.3px;line-height:1.08">Votre prochaine étape commence ici</h2>
+        <p style="margin:0;font-size:15.5px;line-height:1.65;color:#E3F0EB">Inscription gratuite en deux minutes. Votre parcours, votre ville et votre réseau vous attendent.</p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap"><a href="#" onClick="{{ openSignup }}" style="height:52px;padding:0 26px;border-radius:999px;background:#E0733A;color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;white-space:nowrap" style-hover="background:#B4581F;color:#fff">Rejoindre gratuitement</a><a href="#" style="height:52px;padding:0 22px;border-radius:999px;background:rgba(255,255,255,.16);color:#fff;font-size:15px;font-weight:700;display:flex;align-items:center;white-space:nowrap" style-hover="background:rgba(255,255,255,.26);color:#fff">Télécharger l’application</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer style="padding:0 12px 12px">
+  <div style="max-width:1400px;margin:0 auto;background:#16211D;color:#fff;border-radius:36px;padding:clamp(40px,5vw,64px) clamp(20px,6vw,96px) 36px">
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between;padding-bottom:40px;border-bottom:1px solid rgba(255,255,255,.12)">
+      <div style="display:flex;align-items:center;gap:10px;font-size:20px;font-weight:800;letter-spacing:-0.4px;flex-wrap:wrap"><span style="width:36px;height:36px;border-radius:12px;background:#16785E;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><circle cx="12" cy="12" r="9"></circle><circle cx="12" cy="12" r="4"></circle><circle cx="16.5" cy="7.5" r="1.6" fill="#E0733A" stroke="none"></circle></svg></span>afroexpates. <span style="color:#7FC4A8">La communauté des diasporas</span></div>
+      <a href="#" style="font-size:18px;font-weight:700;color:#fff;display:flex;align-items:center;gap:8px" style-hover="color:#7FC4A8">Commencez votre parcours <span style="color:#8A958F">→</span></a>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:32px;padding:40px 0">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <span style="font-size:13.5px;font-weight:700">Nous suivre</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><sc-for list="{{ socials }}" as="s" hint-placeholder-count="5"><a href="#" title="{{ s.n }}" style="width:40px;height:40px;border-radius:999px;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:800" style-hover="background:#16785E;color:#fff">{{ s.i }}</a></sc-for></div>
+        <span style="font-size:13.5px;font-weight:700;margin-top:8px">Télécharger l’application</span>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><a href="#" style="height:44px;padding:0 14px;border-radius:14px;background:rgba(255,255,255,.08);color:#fff;display:flex;flex-direction:column;justify-content:center;line-height:1.15" style-hover="background:rgba(255,255,255,.14);color:#fff"><span style="font-size:10px;color:#A9B5B0">Disponible sur</span><span style="font-size:13px;font-weight:700">Google Play</span></a><a href="#" style="height:44px;padding:0 14px;border-radius:14px;background:rgba(255,255,255,.08);color:#fff;display:flex;flex-direction:column;justify-content:center;line-height:1.15" style-hover="background:rgba(255,255,255,.14);color:#fff"><span style="font-size:10px;color:#A9B5B0">Télécharger sur l’</span><span style="font-size:13px;font-weight:700">App Store</span></a></div>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px 22px;padding-top:24px;border-top:1px solid rgba(255,255,255,.12);font-size:12.5px;color:#8A958F"><a href="#" style="color:#8A958F" style-hover="color:#fff">Conditions d’utilisation</a><a href="#" style="color:#8A958F" style-hover="color:#fff">Confidentialité</a><a href="#" style="color:#8A958F" style-hover="color:#fff">Cookies</a><a href="#" style="color:#8A958F" style-hover="color:#fff">Charte de la communauté</a><span>Portraits : <a href="https://unsplash.com/@mubarak4show" style="color:#8A958F" style-hover="color:#fff">Mubarak Showole</a>, <a href="https://unsplash.com/@goodfacesagency" style="color:#8A958F" style-hover="color:#fff">Good Faces</a>, <a href="https://unsplash.com/@hyingchou" style="color:#8A958F" style-hover="color:#fff">Yingchou Han</a>, <a href="https://unsplash.com/@dre0316" style="color:#8A958F" style-hover="color:#fff">Andre Hunter</a>, <a href="https://unsplash.com/@abstralofficial" style="color:#8A958F" style-hover="color:#fff">Abstral Official</a>, <a href="https://unsplash.com/@lgnwvr" style="color:#8A958F" style-hover="color:#fff">Logan Weaver</a> sur <a href="https://unsplash.com" style="color:#8A958F" style-hover="color:#fff">Unsplash</a></span><span style="flex:1"></span><span>© 2026 afroexpates.com</span></div>
+  </div>
+</footer>
+
+<sc-if value="{{ isSearch }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:60;background:rgba(22,33,29,.5);display:flex;justify-content:center;align-items:flex-start;padding:clamp(0px,6vh,72px) clamp(0px,3vw,24px) 0">
+    <div onClick="{{ close }}" style="position:absolute;inset:0"></div>
+    <div style="position:relative;width:min(720px,100%);max-height:min(720px,100vh);background:#fff;border-radius:{{ sheetRadius }};display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:16px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #EEF2F0">
+        <div style="flex:1;min-width:0;height:48px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;gap:10px;padding:0 6px 0 16px">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+          <input value="{{ q }}" onChange="{{ onQ }}" ref="{{ qRef }}" placeholder="Visale, préfecture, Béninois…" style="flex:1;min-width:0;border:none;background:transparent;font:inherit;font-size:15px;color:#16211D;outline:none;height:100%">
+          <button onClick="{{ openCity }}" style="height:36px;padding:0 12px;border-radius:999px;border:1px solid #E6EBE9;background:#fff;font:inherit;font-size:13px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;gap:6px;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16785E" stroke-width="2" stroke-linecap="round"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"></path></svg>{{ cityLabel }}</button>
+        </div>
+        <button onClick="{{ close }}" style="width:44px;height:44px;border-radius:999px;border:none;background:#F2F5F4;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+      </div>
+      <div style="display:flex;gap:6px;padding:12px 16px 4px;flex-wrap:wrap">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="4"><button onClick="{{ t.on }}" style="height:36px;padding:0 14px;border-radius:999px;border:1px solid {{ t.bd }};background:{{ t.bg }};color:{{ t.fg }};font:inherit;font-size:13px;font-weight:700;cursor:pointer">{{ t.label }}</button></sc-for>
+      </div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:8px 8px 16px">
+        <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+          <div style="padding:12px 10px 4px;font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">{{ g.title }}</div>
+          <sc-for list="{{ g.items }}" as="r" hint-placeholder-count="3">
+            <button onClick="{{ r.open }}" style="width:100%;border:none;background:transparent;font:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px;border-radius:16px;color:#16211D" style-hover="background:#F6F8F7">
+              <img src="{{ r.img }}" alt="" style="width:48px;height:48px;border-radius:{{ r.radius }};object-fit:cover;flex-shrink:0;background:#E3ECE8">
+              <span style="flex:1;min-width:0"><span style="display:block;font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</span><span style="display:block;font-size:12.5px;color:#5D6B66;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.sub }}</span></span>
+              <span style="background:{{ r.tagBg }};color:{{ r.tagFg }};font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;display:flex;align-items:center;gap:5px">{{ r.tag }}</span>
+            </button>
+          </sc-for>
+        </sc-for>
+        <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}"><div style="padding:40px 20px;text-align:center"><div style="font-size:15px;font-weight:700">Aucun résultat pour « {{ q }} »</div><div style="font-size:13.5px;color:#5D6B66;margin-top:6px">Essayez un autre mot ou une autre ville. Inscrit·e, vous pouvez poser la question à la communauté.</div><button onClick="{{ openSignup }}" style="margin-top:14px;height:44px;padding:0 18px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Poser ma question</button></div></sc-if>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isCity }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:70;background:rgba(22,33,29,.5);display:flex;justify-content:center;align-items:flex-start;padding:clamp(0px,8vh,96px) clamp(0px,3vw,24px) 0">
+    <div onClick="{{ backFromCity }}" style="position:absolute;inset:0"></div>
+    <div style="position:relative;width:min(460px,100%);max-height:min(640px,100vh);background:#fff;border-radius:{{ sheetRadius }};display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:18px 18px 12px;display:flex;align-items:center"><span style="flex:1;font-size:19px;font-weight:800;letter-spacing:-0.4px">Choisir une ville</span><button onClick="{{ backFromCity }}" style="width:40px;height:40px;border-radius:999px;border:none;background:#F2F5F4;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div>
+      <div style="padding:0 18px 10px"><div style="height:46px;border-radius:999px;background:#EEF2F0;display:flex;align-items:center;gap:10px;padding:0 16px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input value="{{ cq }}" onChange="{{ onCq }}" ref="{{ cqRef }}" placeholder="Rechercher une ville" style="flex:1;min-width:0;border:none;background:transparent;font:inherit;font-size:14.5px;outline:none;height:100%"></div></div>
+      <div style="flex:1;min-height:0;overflow-y:auto;padding:4px 8px 16px">
+        <sc-for list="{{ cityList }}" as="c" hint-placeholder-count="6">
+          <button onClick="{{ c.pick }}" style="width:100%;border:none;background:{{ c.bg }};font:inherit;text-align:left;cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px;border-radius:14px;color:#16211D" style-hover="background:#F6F8F7">
+            <span style="width:40px;height:40px;border-radius:12px;background:#E3F0EB;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16785E" stroke-width="1.9" stroke-linecap="round"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11zM12 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"></path></svg></span>
+            <span style="flex:1;min-width:0"><span style="display:block;font-size:14.5px;font-weight:700">{{ c.n }}</span><span style="display:block;font-size:12.5px;color:#5D6B66">{{ c.s }}</span></span>
+            <sc-if value="{{ c.on }}" hint-placeholder-val="{{ false }}"><span style="width:24px;height:24px;border-radius:999px;background:#16785E;display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round"><path d="m5 12 4.5 4.5L19 7"></path></svg></span></sc-if>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isGuide }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:80;background:#FBFCFB;overflow-y:auto">
+    <div style="position:sticky;top:0;z-index:2;background:rgba(251,252,251,.95);backdrop-filter:blur(8px);border-bottom:1px solid #EEF2F0"><div style="max-width:760px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:10px"><button onClick="{{ backToSearch }}" style="width:42px;height:42px;border-radius:999px;border:none;background:#EEF2F0;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"></path></svg></button><span style="flex:1;font-size:13.5px;font-weight:700;color:#5D6B66">Guide · lecture libre</span><button onClick="{{ close }}" style="width:42px;height:42px;border-radius:999px;border:none;background:#EEF2F0;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div></div>
+    <article style="max-width:760px;margin:0 auto;padding:28px 20px 24px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><sc-for list="{{ guide.tags }}" as="t" hint-placeholder-count="2"><span style="background:#F2F5F4;color:#5D6B66;font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px">{{ t }}</span></sc-for></div>
+      <h1 style="margin:14px 0 0;font-size:clamp(28px,4vw,38px);font-weight:800;letter-spacing:-1.2px;line-height:1.12">{{ guide.title }}</h1>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:16px;flex-wrap:wrap"><img src="{{ guide.authorImg }}" alt="" style="width:36px;height:36px;border-radius:999px;object-fit:cover"><span style="font-size:14px;font-weight:700">{{ guide.author }}</span><span style="font-size:13px;color:#8A958F">{{ guide.meta }}</span><span style="font-size:13px;font-weight:700;color:#0F5C48;background:#E3F0EB;padding:5px 11px;border-radius:999px">{{ guide.updated }}</span></div>
+      <img src="{{ guide.cover }}" alt="" style="width:100%;aspect-ratio:16/8;object-fit:cover;border-radius:22px;margin-top:22px;background:#E3ECE8">
+      <sc-for list="{{ guide.sections }}" as="s" hint-placeholder-count="3"><h2 style="margin:28px 0 0;font-size:20px;font-weight:700;letter-spacing:-0.3px">{{ s.h }}</h2><p style="margin:10px 0 0;font-size:16px;line-height:1.75;text-wrap:pretty">{{ s.p }}</p></sc-for>
+      <div style="display:flex;gap:8px;margin-top:28px;flex-wrap:wrap">
+        <button onClick="{{ openSignup }}" style="height:46px;padding:0 16px;border-radius:14px;border:none;background:#F2F5F4;font:inherit;font-size:13.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"></path></svg>Utile · {{ guide.useful }}</button>
+        <button onClick="{{ openSignup }}" style="height:46px;padding:0 16px;border-radius:14px;border:none;background:#F2F5F4;font:inherit;font-size:13.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"></path></svg>Commenter · {{ guide.comments }}</button>
+        <button onClick="{{ openSignup }}" style="height:46px;padding:0 16px;border-radius:14px;border:none;background:#F2F5F4;font:inherit;font-size:13.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"></path></svg>Enregistrer</button>
+        <button onClick="{{ openSignup }}" style="height:46px;padding:0 16px;border-radius:14px;border:none;background:#F2F5F4;font:inherit;font-size:13.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;gap:8px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"></path></svg>Proposer une correction</button>
+      </div>
+    </article>
+    <div style="position:sticky;bottom:0;padding:12px;background:linear-gradient(180deg,rgba(251,252,251,0),#FBFCFB 30%)"><div style="max-width:760px;margin:0 auto;background:#16211D;color:#fff;border-radius:22px;padding:14px 14px 14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span style="flex:1;min-width:200px;font-size:14px;line-height:1.45"><strong>Inscrivez-vous gratuitement</strong> pour commenter, enregistrer ce guide, poser vos questions à l’auteur et suivre votre parcours.</span><button onClick="{{ openSignup }}" style="height:46px;padding:0 20px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap">Créer mon compte</button><button onClick="{{ openLogin }}" style="height:46px;padding:0 14px;border-radius:14px;border:none;background:rgba(255,255,255,.1);color:#fff;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap">Se connecter</button></div></div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isGroup }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:80;background:#FBFCFB;overflow-y:auto">
+    <div style="position:sticky;top:0;z-index:2;background:rgba(251,252,251,.95);backdrop-filter:blur(8px);border-bottom:1px solid #EEF2F0"><div style="max-width:900px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:10px"><button onClick="{{ backToSearch }}" style="width:42px;height:42px;border-radius:999px;border:none;background:#EEF2F0;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"></path></svg></button><span style="flex:1;font-size:13.5px;font-weight:700;color:#5D6B66">Communauté</span><button onClick="{{ close }}" style="width:42px;height:42px;border-radius:999px;border:none;background:#EEF2F0;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div></div>
+    <div style="max-width:900px;margin:0 auto;padding:20px 20px 24px;display:flex;flex-direction:column;gap:16px">
+      <div style="position:relative;border-radius:28px;overflow:hidden;aspect-ratio:16/6;min-height:180px;background:#E3ECE8"><img src="{{ group.cover }}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(22,33,29,0) 30%,rgba(22,33,29,.72))"></span><div style="position:absolute;left:22px;right:22px;bottom:18px;color:#fff;display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div style="display:flex;gap:6px;margin-bottom:8px"><span style="background:#fff;color:#0F5C48;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px">{{ group.vis }}</span><span style="background:rgba(255,255,255,.18);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px">{{ group.kind }}</span></div><div style="font-size:clamp(24px,3.4vw,32px);font-weight:800;letter-spacing:-0.8px">{{ group.name }}</div><div style="font-size:13.5px;opacity:.9;margin-top:2px">{{ group.sub }}</div></div><button onClick="{{ openSignup }}" style="height:46px;padding:0 20px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap">Rejoindre</button></div></div>
+      <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;display:flex;align-items:center;gap:2px;padding:0 10px;overflow-x:auto">
+        <span style="height:52px;display:flex;align-items:center;padding:0 12px;font-size:13.5px;font-weight:700;color:#0F5C48;border-bottom:2.5px solid #16785E;white-space:nowrap">À propos</span>
+        <sc-for list="{{ lockedTabs }}" as="t" hint-placeholder-count="4"><button onClick="{{ openSignup }}" style="height:52px;display:flex;align-items:center;gap:6px;padding:0 12px;font:inherit;font-size:13.5px;font-weight:500;color:#8A958F;border:none;background:none;cursor:pointer;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"></path></svg>{{ t }}</button></sc-for>
+      </div>
+      <sc-if value="{{ group.isPublic }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px;align-items:start">
+          <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:22px;display:flex;flex-direction:column;gap:12px;grid-column:span {{ aboutSpan }}">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">DESCRIPTION</div>
+            <p style="margin:0;font-size:15px;line-height:1.7;text-wrap:pretty">{{ group.desc }}</p>
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F;margin-top:8px">RÈGLES</div>
+            <sc-for list="{{ group.rules }}" as="r" hint-placeholder-count="3"><div style="display:flex;gap:10px;font-size:14px;line-height:1.55"><span style="width:22px;height:22px;border-radius:999px;background:#E3F0EB;color:#0F5C48;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ r.n }}</span>{{ r.t }}</div></sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px;display:grid;grid-template-columns:1fr 1fr;gap:12px"><sc-for list="{{ group.stats }}" as="s" hint-placeholder-count="4"><div><div style="font-size:20px;font-weight:800;letter-spacing:-0.4px">{{ s.v }}</div><div style="font-size:12px;color:#5D6B66">{{ s.l }}</div></div></sc-for></div>
+            <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px"><div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">ANIMÉ PAR</div><sc-for list="{{ group.admins }}" as="a" hint-placeholder-count="2"><div style="display:flex;align-items:center;gap:10px;margin-top:12px"><img src="{{ a.img }}" alt="" style="width:36px;height:36px;border-radius:999px;object-fit:cover"><span style="flex:1;font-size:13.5px;font-weight:700">{{ a.n }}</span><span style="background:#F2F5F4;color:#5D6B66;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px">{{ a.r }}</span></div></sc-for></div>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ group.isPrivate }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:40px 24px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:10px"><span style="width:52px;height:52px;border-radius:16px;background:#F2F5F4;display:flex;align-items:center;justify-content:center;color:#16211D"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"></path></svg></span><div style="font-size:18px;font-weight:800">Communauté réservée aux membres</div><div style="font-size:14px;color:#5D6B66;max-width:440px;line-height:1.6">Seules les communautés publiques des villes sont consultables sans compte. Inscrivez-vous pour découvrir celle-ci et demander à la rejoindre.</div></div>
+      </sc-if>
+    </div>
+    <div style="position:sticky;bottom:0;padding:12px;background:linear-gradient(180deg,rgba(251,252,251,0),#FBFCFB 30%)"><div style="max-width:760px;margin:0 auto;background:#16211D;color:#fff;border-radius:22px;padding:14px 14px 14px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><span style="flex:1;min-width:200px;font-size:14px;line-height:1.45"><strong>Le fil, les événements, les membres et l’album</strong> sont réservés aux inscrits. L’inscription est gratuite.</span><button onClick="{{ openSignup }}" style="height:46px;padding:0 20px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap">Rejoindre gratuitement</button><button onClick="{{ openLogin }}" style="height:46px;padding:0 14px;border-radius:14px;border:none;background:rgba(255,255,255,.1);color:#fff;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap">Se connecter</button></div></div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isSignup }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:90;background:rgba(22,33,29,.55);display:flex;align-items:center;justify-content:center;padding:16px">
+    <div onClick="{{ closeSignup }}" style="position:absolute;inset:0"></div>
+    <div style="position:relative;width:min(440px,100%);background:#fff;border-radius:28px;padding:26px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:flex-start;gap:12px"><div style="flex:1"><div style="font-size:22px;font-weight:800;letter-spacing:-0.6px">{{ authTitle }}</div><div style="font-size:13.5px;color:#5D6B66;margin-top:4px;line-height:1.5">{{ authSub }}</div></div><button onClick="{{ closeSignup }}" style="width:40px;height:40px;border-radius:999px;border:none;background:#F2F5F4;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div>
+      <button style="height:50px;border-radius:14px;border:1px solid #E6EBE9;background:#fff;font:inherit;font-size:14.5px;font-weight:700;color:#16211D;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px"><svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22 12.2c0-.7-.1-1.4-.2-2H12v3.8h5.6a4.8 4.8 0 0 1-2.1 3.1v2.6h3.4c2-1.8 3.1-4.5 3.1-7.5z"></path><path fill="#34A853" d="M12 22c2.8 0 5.2-.9 6.9-2.5l-3.4-2.6c-.9.6-2.1 1-3.5 1-2.7 0-5-1.8-5.8-4.3H2.7v2.7A10 10 0 0 0 12 22z"></path><path fill="#FBBC05" d="M6.2 13.6a6 6 0 0 1 0-3.8V7.1H2.7a10 10 0 0 0 0 9.2z"></path><path fill="#EA4335" d="M12 5.9c1.5 0 2.9.5 4 1.5l3-3A10 10 0 0 0 2.7 7.1l3.5 2.7C7 7.7 9.3 5.9 12 5.9z"></path></svg>Continuer avec Google</button>
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#8A958F"><span style="flex:1;height:1px;background:#E6EBE9"></span>ou<span style="flex:1;height:1px;background:#E6EBE9"></span></div>
+      <input type="email" value="{{ email }}" onChange="{{ onEmail }}" placeholder="Votre adresse e-mail" style="height:50px;border-radius:14px;border:1.5px solid #16785E;padding:0 16px;font:inherit;font-size:15px;outline:none;color:#16211D">
+      <button onClick="{{ submitAuth }}" style="height:50px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:15px;font-weight:700;cursor:pointer">{{ authCta }}</button>
+      <sc-if value="{{ authSent }}" hint-placeholder-val="{{ false }}"><div style="background:#E3F0EB;color:#0F5C48;border-radius:14px;padding:12px 14px;font-size:13px;font-weight:600">Un lien vous a été envoyé à {{ email }}. Ouvrez-le pour continuer.</div></sc-if>
+      <div style="font-size:13px;color:#5D6B66;text-align:center">{{ authSwitchText }} <button onClick="{{ toggleAuth }}" style="border:none;background:none;padding:0;font:inherit;font-weight:700;color:#16785E;cursor:pointer">{{ authSwitchCta }}</button></div>
+    </div>
+  </div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { w: typeof window !== 'undefined' ? window.innerWidth : 1440, faq: 0, layer: null, cityFrom: null, q: '', cq: '', city: 'Lyon', tab: 'all', sel: null, auth: null, email: '', sent: false };
+  qRef = React.createRef(); cqRef = React.createRef();
+  componentDidUpdate(pp, ps) {
+    if (this.state.layer !== ps.layer) {
+      const r = this.state.layer === 'search' ? this.qRef : this.state.layer === 'city' ? this.cqRef : null;
+      if (r && r.current) setTimeout(() => r.current && r.current.focus(), 30);
+      document.body.style.overflow = this.state.layer || this.state.auth ? 'hidden' : '';
+    }
+  }
+  overlayVals(U) {
+    const s = this.state, set = (o) => this.setState(o);
+    const CITIES = [['Lyon','1 400 membres · 3 communautés publiques'],['Paris','4 800 membres · 6 communautés publiques'],['Marseille','620 membres · 2 communautés publiques'],['Bordeaux','410 membres · 1 communauté publique'],['Toulouse','380 membres · 1 communauté publique'],['Lille','340 membres · 1 communauté publique'],['Nantes','190 membres'],['Strasbourg','160 membres'],['Montpellier','150 membres'],['Rennes','120 membres'],['Grenoble','110 membres']];
+    const av = (id) => U(id, 120);
+    const GUIDES = [
+      { id:'visale', title:'Obtenir la garantie Visale sans CDI', city:'Lyon', tags:['Logement','Toutes villes'], author:'Marc K.', authorImg:av('1546525848-3ce03ca516f6'), meta:'Installé · 6 min de lecture', updated:'Mis à jour le 12 mars 2026', useful:84, comments:23, cover:U('1531482615713-2afd69097998', 1200), img:U('1531482615713-2afd69097998', 160), kw:'visale garant caution logement cdi',
+        sections:[{h:'1. Vérifier votre éligibilité',p:'Visale est une caution gratuite proposée par Action Logement. Les étudiants de 18 à 30 ans y ont droit quel que soit leur pays d’origine, dès la validation du VLS-TS sur le site de l’ANEF.'},{h:'2. Constituer le dossier',p:'Créez un compte sur visale.fr, puis déposez votre VLS-TS validé et votre certificat de scolarité. L’attestation arrive en général sous 48 h dans l’onglet « Mes documents ».'},{h:'3. Transmettre au propriétaire',p:'Le propriétaire doit accepter Visale. Mentionnez-la dès la première prise de contact et joignez l’attestation à votre dossier : beaucoup de membres disent que cela a fait la différence.'}] },
+      { id:'vlsts', title:'Valider son VLS-TS sur le site de l’ANEF', city:'*', tags:['Démarches','Toutes villes'], author:'Fatou N.', authorImg:av('1612115958726-9af4b6bd28d1'), meta:'Installée · 5 min de lecture', updated:'Mis à jour le 2 février 2026', useful:132, comments:41, cover:U('1507537417841-81e85feb9bd2', 1200), img:U('1507537417841-81e85feb9bd2', 160), kw:'vls-ts visa anef préfecture titre validation',
+        sections:[{h:'Quand le faire',p:'Dans les trois mois qui suivent votre arrivée en France. Sans validation, votre visa ne vaut pas titre de séjour au-delà de cette période.'},{h:'Pas à pas',p:'Sur le site de l’ANEF, renseignez votre numéro de visa sans tirets, votre date d’entrée et votre adresse en France, puis payez la taxe en ligne.'},{h:'Si le site refuse votre numéro',p:'Vérifiez le format, essayez un autre navigateur, puis contactez le centre de contact citoyen. Les membres partagent leurs solutions dans les commentaires.'}] },
+      { id:'banque', title:'Ouvrir un compte bancaire depuis Cotonou', city:'*', tags:['Banque','Avant le départ'], author:'Sandra M.', authorImg:av('1492462543947-040389c4a66c'), meta:'Installée · 4 min de lecture', updated:'Mis à jour le 18 janvier 2026', useful:41, comments:12, cover:U('1517840933437-c41356892b35', 1200), img:U('1517840933437-c41356892b35', 160), kw:'banque compte avi cotonou bénin',
+        sections:[{h:'Les options',p:'Plusieurs banques proposent l’ouverture à distance avant le départ. Comparez les frais de tenue de compte et le délai d’obtention de l’attestation de virement irrévocable.'},{h:'Les documents',p:'Passeport, justificatif d’admission et justificatif de domicile actuel. Certaines banques demandent aussi un premier versement.'},{h:'À l’arrivée',p:'Prenez rendez-vous en agence dans le mois pour activer la carte et récupérer votre RIB français.'}] },
+      { id:'medecin', title:'Trouver un médecin qui accepte de nouveaux patients', city:'Lyon', tags:['Santé','Lyon'], author:'Aïcha D.', authorImg:av('1528980917907-8df7f48f6f2a'), meta:'Installée · 3 min de lecture', updated:'Mis à jour le 9 mars 2026', useful:57, comments:9, cover:U('1594750852563-5ed8e0421d40', 1200), img:U('1594750852563-5ed8e0421d40', 160), kw:'médecin santé traitant carte vitale',
+        sections:[{h:'Où chercher',p:'Les maisons de santé pluridisciplinaires acceptent plus souvent de nouveaux patients. Appelez tôt le matin.'},{h:'Déclarer votre médecin traitant',p:'Une fois le médecin trouvé, il fait la déclaration en ligne lors de la première consultation.'},{h:'En attendant',p:'Les centres de santé universitaires reçoivent les étudiants sans médecin traitant.'}] },
+    ];
+    const GROUPS = [
+      { id:'lyon', name:'Réseau Lyon et Rhône', city:'Lyon', isPublic:true, kind:'Ville', sub:'Lyon · 1 400 membres', cover:U('1602087594298-706ccc894bfd', 1400), img:U('1602087594298-706ccc894bfd', 160), kw:'lyon rhône réseau ville',
+        desc:'La communauté des Africains installés à Lyon et dans le Rhône. On s’y entraide pour le logement, les démarches et l’emploi, et on se retrouve chaque jeudi au café des nouveaux arrivants.',
+        rules:['Bienveillance : chacun est passé par là.','Pas de publicité ni d’annonce payante sans accord des admins.','Les annonces de logement passent par l’onglet dédié.'],
+        stats:[{v:'1 400',l:'membres'},{v:'38',l:'événements par an'},{v:'212',l:'bons plans'},{v:'2019',l:'création'}],
+        admins:[{n:'Aïcha Diop',r:'Admin',img:av('1528980917907-8df7f48f6f2a')},{n:'Marc Koudou',r:'Modérateur',img:av('1546525848-3ce03ca516f6')}] },
+      { id:'etu-lyon', name:'Étudiants africains de Lyon', city:'Lyon', isPublic:true, kind:'Ville', sub:'Lyon · 640 membres', cover:U('1713450603775-9b4466eb466c', 1400), img:U('1713450603775-9b4466eb466c', 160), kw:'étudiants lyon université campus',
+        desc:'Pour les étudiants des universités et écoles lyonnaises : logement étudiant, jobs, bourses, sorties.',
+        rules:['Réservé aux étudiants et jeunes diplômés.','Partagez vos sources quand vous donnez une info administrative.','Respect de la vie privée : pas de capture d’écran des échanges.'],
+        stats:[{v:'640',l:'membres'},{v:'14',l:'événements par an'},{v:'86',l:'guides liés'},{v:'2021',l:'création'}],
+        admins:[{n:'Fatou Ndiaye',r:'Admin',img:av('1612115958726-9af4b6bd28d1')}] },
+      { id:'paris', name:'Diaspora Paris et Île-de-France', city:'Paris', isPublic:true, kind:'Ville', sub:'Paris · 4 800 membres', cover:U('1503917988258-f87a78e3c995', 1400), img:U('1503917988258-f87a78e3c995', 160), kw:'paris île-de-france réseau ville',
+        desc:'La plus grande communauté de la plateforme : entraide, emploi, événements culturels et parrainage dans toute l’Île-de-France.',
+        rules:['Bienveillance avant tout.','Pas de publicité non autorisée.','Une question = une publication, pour faciliter la recherche.'],
+        stats:[{v:'4 800',l:'membres'},{v:'60',l:'événements par an'},{v:'640',l:'bons plans'},{v:'2018',l:'création'}],
+        admins:[{n:'Sandra Mensah',r:'Admin',img:av('1492462543947-040389c4a66c')}] },
+      { id:'benin', name:'Béninois en France', city:'*', isPublic:false, kind:'Pays', sub:'Toute la France · 2 100 membres', cover:U('1777670881319-d304133879fb', 1400), img:U('1777670881319-d304133879fb', 160), kw:'bénin béninois cotonou pays' },
+      { id:'sen', name:'Sénégalais de Marseille', city:'Marseille', isPublic:false, kind:'Pays', sub:'Marseille · 310 membres', cover:U('1744320911030-1ab998d994d7', 1400), img:U('1744320911030-1ab998d994d7', 160), kw:'sénégal sénégalais marseille dakar' },
+    ];
+    const norm = (t) => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const q = norm(s.q).trim();
+    const inCity = (c) => s.city === '*' || c === '*' || c === s.city;
+    const match = (o) => !q || norm(o.title || o.name).includes(q) || norm(o.kw).includes(q);
+    const g = GUIDES.filter(o => inCity(o.city) && match(o)).map(o => ({ title:o.title, sub:`${o.author} · ${o.useful} ont trouvé utile`, img:o.img, radius:'14px', tag:'Lecture libre', tagBg:'#E3F0EB', tagFg:'#0F5C48', open:() => set({ layer:'guide', sel:o.id }) }));
+    const c = GROUPS.filter(o => inCity(o.city) && match(o)).map(o => ({ title:o.name, sub:o.sub, img:o.img, radius:'999px', tag:o.isPublic ? 'Public' : 'Inscription requise', tagBg:o.isPublic ? '#E3F0EB' : '#F2F5F4', tagFg:o.isPublic ? '#0F5C48' : '#5D6B66', open:() => set({ layer:'group', sel:o.id }) }));
+    const v = CITIES.filter(([n]) => !q || norm(n).includes(q)).slice(0, q ? 6 : 3).map(([n, sub]) => ({ title:n, sub, img:U(n === 'Paris' ? '1503917988258-f87a78e3c995' : '1602087594298-706ccc894bfd', 160), radius:'14px', tag:'Filtrer', tagBg:'#FBE3D4', tagFg:'#B4581F', open:() => set({ city:n, q:'' }) }));
+    const groups = [];
+    if ((s.tab === 'all' || s.tab === 'guides') && g.length) groups.push({ title:'GUIDES', items:g });
+    if ((s.tab === 'all' || s.tab === 'groups') && c.length) groups.push({ title:'COMMUNAUTÉS', items:c });
+    if ((s.tab === 'all' || s.tab === 'cities') && v.length) groups.push({ title:'VILLES', items:v });
+    const tabs = [['all','Tout'],['guides','Guides'],['groups','Communautés'],['cities','Villes']].map(([k, label]) => ({ label, on:() => set({ tab:k }), bg: s.tab === k ? '#16785E' : '#fff', fg: s.tab === k ? '#fff' : '#16211D', bd: s.tab === k ? '#16785E' : '#E6EBE9' }));
+    const cq = norm(s.cq).trim();
+    const cityList = [['*','Toute la France','12 400 membres'], ...CITIES.map(([n, sub]) => [n, n, sub])].filter(([k, n]) => !cq || norm(n).includes(cq)).map(([k, n, sub]) => ({ n, s:sub, on: s.city === k, bg: s.city === k ? '#EFF7F3' : 'transparent', pick:() => set({ city:k, cq:'', layer: s.cityFrom === 'search' ? 'search' : 'search' }) }));
+    const guide = GUIDES.find(o => o.id === s.sel) || GUIDES[0];
+    const grp0 = GROUPS.find(o => o.id === s.sel) || GROUPS[0];
+    const group = { ...grp0, vis: grp0.isPublic ? 'Publique' : 'Privée', isPrivate: !grp0.isPublic, rules:(grp0.rules || []).map((t, i) => ({ n:i + 1, t })), stats: grp0.stats || [], admins: grp0.admins || [] };
+    const signup = s.auth === 'signup';
+    return {
+      isSearch: s.layer === 'search', isCity: s.layer === 'city', isGuide: s.layer === 'guide', isGroup: s.layer === 'group', isSignup: !!s.auth,
+      sheetRadius: s.w < 640 ? '0px' : '28px', aboutSpan: s.w >= 900 ? 1 : 1,
+      q: s.q, cq: s.cq, qRef: this.qRef, cqRef: this.cqRef,
+      onQ: (e) => set({ q: e.target.value }), onCq: (e) => set({ cq: e.target.value }),
+      cityLabel: s.city === '*' ? 'Toute la France' : s.city + ', FR',
+      openSearch: () => set({ layer:'search' }), openCity: () => set({ cityFrom: s.layer, layer:'city' }),
+      backFromCity: () => set({ layer: s.cityFrom === 'search' ? 'search' : null }),
+      close: () => set({ layer:null }), backToSearch: () => set({ layer:'search' }),
+      tabs, groups, noResults: groups.length === 0, cityList, guide, group,
+      lockedTabs: ['Fil','Événements','Membres','Album'],
+      openSignup: (e) => { e && e.preventDefault && e.preventDefault(); set({ auth:'signup', sent:false }); },
+      openLogin: (e) => { e && e.preventDefault && e.preventDefault(); set({ auth:'login', sent:false }); },
+      closeSignup: () => set({ auth:null }), toggleAuth: () => set({ auth: signup ? 'login' : 'signup', sent:false }),
+      email: s.email, onEmail: (e) => set({ email: e.target.value }), authSent: s.sent && !!s.email,
+      submitAuth: () => set({ sent: true }),
+      authTitle: signup ? 'Créer mon compte' : 'Se connecter', authSub: signup ? 'Gratuit. Commentez, posez vos questions, rejoignez votre communauté et suivez votre parcours.' : 'Heureux de vous revoir.',
+      authCta: signup ? 'Créer mon compte' : 'Recevoir un lien de connexion', authSwitchText: signup ? 'Déjà membre ?' : 'Pas encore de compte ?', authSwitchCta: signup ? 'Se connecter' : 'Créer un compte',
+    };
+  }
+  componentDidMount() { this.onR = () => this.setState({ w: window.innerWidth }); window.addEventListener('resize', this.onR); }
+  componentWillUnmount() { window.removeEventListener('resize', this.onR); }
+  renderVals() {
+    const U = (id, w = 800) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${w}&q=70`;
+    const w = this.state.w, wide = w >= 900, hero3 = w >= 1080;
+    const countries = ['Bénin','Sénégal','Côte d’Ivoire','Cameroun','Mali','Togo','Guinée','Burkina Faso','Congo','Gabon','Madagascar','Niger','RD Congo','Tchad'];
+    const chip = (t, i) => React.createElement('span', { key: i, style: { flexShrink: 0, height: 36, padding: '0 16px', borderRadius: 999, background: '#F2F5F4', fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' } },
+      React.createElement('span', { style: { width: 8, height: 8, borderRadius: 999, background: i % 2 ? '#E0733A' : '#16785E' } }), t);
+    const marquee = React.createElement('div', { style: { display: 'flex', gap: 10, width: 'max-content', animation: 'lpmarq 40s linear infinite' } }, [...countries, ...countries].map(chip));
+    const faqs = [
+      ['L’inscription est-elle vraiment gratuite ?', 'Oui. Le parcours, le fil, les réseaux, l’entraide et les guides sont gratuits. Premium ajoute des parcours supplémentaires et l’export PDF.'],
+      ['Puis-je m’inscrire avant mon départ ?', 'C’est même conseillé : la plupart des membres créent leur parcours depuis leur pays, quelques mois avant l’arrivée, pour préparer visa, logement et banque.'],
+      ['Qui écrit les guides ?', 'Des membres installés. Chaque guide peut être corrigé par la communauté, et les auteurs sont prévenus quand une règle change.'],
+      ['Comment fonctionne le parrainage ?', 'Vous demandez un parrain dans votre ville. Un membre vérifié vous accompagne pendant vos premiers mois, à votre rythme.'],
+      ['Mes informations sont-elles visibles ?', 'Votre parcours est privé par défaut. Vous choisissez ce que vous partagez, et vous pouvez tout masquer à tout moment.'],
+    ];
+    return {
+      ...this.overlayVals(U), narrowNav: !wide,
+      wide, hero3, narrow: !hero3, showLogin: w >= 560, marquee,
+      heroCols: hero3 ? '1fr minmax(0,1.5fr) 1fr' : '1fr',
+      howCols: wide ? '1fr 1fr' : '1fr',
+      textOrder: wide ? 0 : 1,
+      faces: [U('1492462543947-040389c4a66c', 120), U('1612115958726-9af4b6bd28d1', 120), U('1546525848-3ce03ca516f6', 120)].map(u => `url("${u}")`),
+      events: [
+        { slot:'v4-ev-1', src:U('1777670881319-d304133879fb', 700), tag:'Gratuit', title:'Café des nouveaux arrivants · Lyon 7e', when:'Jeu. 6 nov. · 18 h 30', by:'Réseau Lyon et Rhône', n:24, credit:'Photo by Christian Agbede on Unsplash', href:'https://unsplash.com/@chriscreations__' },
+        { slot:'v4-ev-2', src:U('1531482615713-2afd69097998', 700), tag:'En ligne', title:'Atelier : obtenir Visale sans CDI', when:'Sam. 8 nov. · 11 h', by:'Marc K., guide vérifié', n:58, credit:'Photo by X on Unsplash', href:'https://unsplash.com/@disruptxn' },
+        { slot:'v4-ev-3', src:U('1713450603775-9b4466eb466c', 700), tag:'Gratuit', title:'Repas partagé béninois', when:'Sam. 15 nov. · 13 h', by:'Béninois en France', n:41, credit:'Photo by Nereid Ndreu on Unsplash', href:'https://unsplash.com/@nereiq' },
+        { slot:'v4-ev-4', src:U('1744320911030-1ab998d994d7', 700), tag:'En ligne', title:'Préparer son départ : visa étudiant', when:'Mar. 18 nov. · 19 h', by:'Fatou N., parraine', n:112, credit:'Photo by Leiada Krözjhen on Unsplash', href:'https://unsplash.com/@leiadakrozjhen' },
+      ],
+      parcoursPts: [
+        { t:'Des échéances réalistes', s:'Calculées à rebours depuis votre date d’arrivée, avec des rappels.', d:'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4' },
+        { t:'Les bons guides au bon moment', s:'Chaque étape propose les guides et annonces utiles de votre ville.', d:'M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z' },
+        { t:'Un bouton « Je suis bloqué·e »', s:'Votre équipe et la communauté sont prévenues, sans rien publier sans votre accord.', d:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z' },
+      ],
+      entraideStats: [{ v:'18 min', l:'délai médian de première réponse' },{ v:'86 %', l:'questions résolues' },{ v:'400+', l:'guides vérifiés' }],
+      cats: [
+        { t:'Logement', color:'#16785E', bg:'#E3F0EB', d:'M4 11 12 4l8 7v9H4z', offset:'0px' },
+        { t:'Études', color:'#E0733A', bg:'#FBE3D4', d:'M2 9 12 4l10 5-10 5zM6 11v5c3 2 9 2 12 0v-5', offset:'12px' },
+        { t:'Travail', color:'#0F5C48', bg:'#E8EEEC', d:'M3 7h18v13H3zM8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2', offset:'0px' },
+        { t:'Démarches et titres', color:'#B4581F', bg:'#FBE3D4', d:'M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h5', offset:'12px' },
+        { t:'Santé', color:'#2FA37D', bg:'#E3F0EB', d:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z', offset:'0px' },
+        { t:'Famille', color:'#E0733A', bg:'#FBE3D4', d:'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5', offset:'12px' },
+        { t:'Produits du pays', color:'#16785E', bg:'#E3F0EB', d:'M5 8h14l-1 12H6zM9 8V6a3 3 0 0 1 6 0v2', offset:'0px' },
+      ],
+      how: [
+        { t:'Créez votre parcours', p:'Études, travail, famille : vos étapes, vos échéances, les guides utiles au bon moment.', cta:'Commencer', d:'M5 5h6a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h10', bg:'#E3F0EB', fg:'#16785E', col: wide ? '1' : 'auto', mw:'100%' },
+        { t:'Trouvez votre communauté', p:'Réseaux par pays et par ville, fil d’entraide, rencontres près de chez vous.', cta:'Explorer les réseaux', d:'M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20a6 6 0 0 1 12 0M17 11a2.5 2.5 0 1 0 0-5M16 20h5a5 5 0 0 0-4-5', bg:'#FBE3D4', fg:'#E0733A', col: wide ? '2' : 'auto', mw:'100%' },
+        { t:'Aidez le suivant', p:'Une fois installé·e, devenez parrain, écrivez un guide ou partagez votre budget réel.', cta:'Devenir parrain', d:'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z', bg:'#E8EEEC', fg:'#0F5C48', col: wide ? '1 / span 2' : 'auto', mw: wide ? '460px' : '100%' },
+      ],
+      cities: [
+        { slot:'v4-city-lyon', src:U('1602087594298-706ccc894bfd', 1000), n:'Lyon', s:'1 400 membres · 212 bons plans', credit:'Photo by Nguyen Dang Hoang Nhu on Unsplash', href:'https://unsplash.com/@nguyendhn' },
+        { slot:'v4-city-paris', src:U('1503917988258-f87a78e3c995', 1000), n:'Paris', s:'4 800 membres · 640 bons plans', credit:'Photo by Ilnur Kalimullin on Unsplash', href:'https://unsplash.com/@kalimullin' },
+      ],
+      otherCities: [{ n:'Marseille', m:'620' },{ n:'Bordeaux', m:'410' },{ n:'Toulouse', m:'380' },{ n:'Lille', m:'340' },{ n:'Nantes', m:'190' },{ n:'Strasbourg', m:'160' }],
+      quotes: [
+        { t:'« J’ai préparé mon arrivée six mois à l’avance. Le jour où j’ai atterri, j’avais déjà une coloc et une parraine qui m’attendait à la gare. »', n:'Amina D.', r:'Étudiante · Cotonou → Lyon', img:'url("https://images.unsplash.com/photo-1528980917907-8df7f48f6f2a?auto=format&fit=crop&w=160&q=70")', bg:'#EFF7F3', accent:'#16785E' },
+        { t:'« La question que je n’osais poser à personne, j’ai eu trois réponses en vingt minutes. Et un guide qui m’a évité un aller-retour à la préfecture. »', n:'Kofi B.', r:'Ingénieur · Accra → Paris', img:'url("https://images.unsplash.com/photo-1584778593223-d1a34df10349?auto=format&fit=crop&w=160&q=70")', bg:'#FFF6EF', accent:'#E0733A' },
+        { t:'« Aujourd’hui je parraine deux étudiantes. C’est ma façon de rendre ce qu’on m’a donné en arrivant. »', n:'Fatou N.', r:'Parraine · Dakar → Lyon', img:'url("https://images.unsplash.com/photo-1630163671229-07fdcf23ba71?auto=format&fit=crop&w=160&q=70")', bg:'#F2F5F4', accent:'#0F5C48' },
+      ],
+      stories: [
+        { slot:'v4-st-1', src:U('1517840933437-c41356892b35', 800), t:'« J’ai trouvé ma coloc en deux semaines grâce au réseau »', p:'Arrivée de Cotonou pour un master, Amina a suivi son parcours étape par étape. Le plus dur : le garant.', credit:'Photo by Thought Catalog on Unsplash', href:'https://unsplash.com/@thoughtcatalog' },
+        { slot:'v4-st-2', src:U('1594750852563-5ed8e0421d40', 800), t:'Du visa au diplôme : le parcours de Moussa', p:'Trois ans, douze étapes, un parrain et beaucoup d’entraide. Il raconte ce qu’il referait différemment.', credit:'Photo by Nqobile Vundla on Unsplash', href:'https://unsplash.com/@nqoe' },
+        { slot:'v4-st-3', src:U('1507537297725-24a1c029d3ca', 800), t:'Les guides écrits par ceux qui sont passés par là', p:'Plus de 400 guides, corrigés par les membres et mis à jour quand les règles changent.', credit:'Photo by LinkedIn Sales Solutions on Unsplash', href:'https://unsplash.com/@linkedinsalesnavigator' },
+      ],
+      faq: faqs.map(([q, a], i) => { const open = this.state.faq === i; return { q, a, open, bg: open ? '#F6F8F7' : '#fff', rot: open ? '45deg' : '0deg', toggle: () => this.setState(s => ({ faq: s.faq === i ? -1 : i })) }; }),
+      socials: [{ n:'Facebook', i:'f' },{ n:'Instagram', i:'ig' },{ n:'TikTok', i:'tk' },{ n:'YouTube', i:'yt' },{ n:'WhatsApp', i:'wa' }],
+    };
+  }
+}
+</script>
+</body>
+</html>

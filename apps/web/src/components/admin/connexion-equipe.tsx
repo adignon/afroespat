@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { staffEnrollResponseSchema, staffLoginResponseSchema, staffOpenedSchema } from '@app/shared';
 import { ApiError, staffApi } from '@/lib/api/index';
+import { MESSAGE_SESSION_EXPIREE, suiteValide } from '@/lib/api/staff-session';
 import { QrCode } from './qr-code';
 import { Bandeau, Bouton, C, Champ, useGeste } from './ui';
 
@@ -49,6 +50,10 @@ export function ConnexionEquipe() {
   const [motDePasse, setMotDePasse] = useState('');
   const [code, setCode] = useState('');
   const geste = useGeste();
+  const [expiree, setExpiree] = useState(false);
+  useEffect(() => {
+    setExpiree(new URLSearchParams(window.location.search).get('expiree') === '1');
+  }, []);
 
   const recommencer = () => {
     setEtape({ nom: 'identifiants' });
@@ -86,7 +91,7 @@ export function ConnexionEquipe() {
         throw erreur;
       }
     });
-    if (ok) router.replace('/admin');
+    if (ok) router.replace(suiteValide(new URLSearchParams(window.location.search).get('suite')) ?? '/admin');
   };
 
   const soumettre = () => (etape.nom === 'identifiants' ? premierFacteur() : secondFacteur());
@@ -147,6 +152,7 @@ export function ConnexionEquipe() {
         </>
       ) : null}
 
+      {expiree && etape.nom === 'identifiants' ? <Bandeau ton="info" role="status">{MESSAGE_SESSION_EXPIREE}</Bandeau> : null}
       {geste.message === null ? null : <Bandeau ton="attention" role="alert">{geste.message.texte}</Bandeau>}
 
       <Bouton type="submit" ton="sombre" plein disabled={!pret || geste.occupe}>

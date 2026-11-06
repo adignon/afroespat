@@ -20,6 +20,7 @@ import { CorpsMarkdown } from '../../markdown-legal';
 import { ContenusMembres } from './contenus-membres';
 import { SelecteursCiblage, depuisCible, versCible, type Selection } from './ciblage';
 import { useDroit } from '../session-equipe';
+import { Confirmation } from '../confirmation';
 import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Fenetre, Lecture, Message, Onglets, Pastille, Titre, Vide, ZoneTexte, dateLongue, useCharge, useGeste } from '../ui';
 
 /**
@@ -166,9 +167,13 @@ function Formulaire({ p, peut, recharger }: { readonly p: AdminPage; readonly pe
     const ok = await geste.lancer(() => staffApi.post(`/pages/${p.id}/publish`, adminPageSchema, { body: {} }), `Version ${prochaine} publiée.`);
     if (ok) recharger();
   };
+  const [suppression, setSuppression] = useState(false);
   const supprimer = async () => {
     const ok = await geste.lancer(() => staffApi.del(`/pages/${p.id}`, okResponseSchema), 'Page supprimée.');
-    if (ok) recharger();
+    if (ok) {
+      setSuppression(false);
+      recharger();
+    }
   };
 
   return (
@@ -201,11 +206,12 @@ function Formulaire({ p, peut, recharger }: { readonly p: AdminPage; readonly pe
           Publier la v{prochaine}
         </Bouton>
         {p.publishedAt === null ? (
-          <Bouton disabled={!peut || geste.occupe} onClick={() => void supprimer()}>
+          <Bouton disabled={!peut || geste.occupe} onClick={() => { geste.effacer(); setSuppression(true); }}>
             Supprimer la page
           </Bouton>
         ) : null}
       </div>
+      <Confirmation ouverte={suppression} titre={`Supprimer « ${p.title} »`} consigne="La page n’a jamais été publiée : son brouillon et ses versions sont supprimés. L’action est tracée et ne se défait pas." libelle="Supprimer la page" onConfirmer={() => void supprimer()} onFermer={() => setSuppression(false)} occupe={geste.occupe} message={geste.message} />
     </Carte>
   );
 }
@@ -283,10 +289,14 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
     });
     if (ok) onFait(id, annonce === null ? 'Annonce publiée : les membres ciblés la voient en tête de l’accueil.' : 'Annonce enregistrée.');
   };
+  const [suppression, setSuppression] = useState(false);
   const supprimer = async () => {
     if (annonce === null) return;
     const ok = await geste.lancer(() => staffApi.del(`/announcements/${annonce.id}`, okResponseSchema));
-    if (ok) onFait(null, 'Annonce supprimée.');
+    if (ok) {
+      setSuppression(false);
+      onFait(null, 'Annonce supprimée.');
+    }
   };
 
   return (
@@ -310,11 +320,12 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
           {annonce === null ? 'Publier l’annonce' : 'Enregistrer'}
         </Bouton>
         {annonce === null ? null : (
-          <Bouton disabled={!peut || geste.occupe} onClick={() => void supprimer()}>
+          <Bouton disabled={!peut || geste.occupe} onClick={() => { geste.effacer(); setSuppression(true); }}>
             Supprimer
           </Bouton>
         )}
       </div>
+      <Confirmation ouverte={suppression} titre="Supprimer l’annonce" consigne="L’annonce disparaît immédiatement de l’accueil des membres ciblés. L’action est tracée et ne se défait pas." libelle="Supprimer l’annonce" onConfirmer={() => void supprimer()} onFermer={() => setSuppression(false)} occupe={geste.occupe} message={geste.message} />
     </Carte>
   );
 }

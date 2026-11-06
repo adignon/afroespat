@@ -45,7 +45,9 @@ export class TestersSmsProvider implements SmsProvider {
   send(to: string): Promise<{ providerRef: string }> {
     // `*` : tous les numéros sont testeurs (voir `OTP_TEST_PHONES` dans config/env.ts).
     if (!this.allowed.includes('*') && !this.allowed.includes(to)) {
-      return Promise.reject(new ProviderError('testers', null, 'numéro hors de la liste de test', false));
+      return Promise.reject(
+        new ProviderError('testers', null, 'numéro hors de la liste de test', false),
+      );
     }
     return Promise.resolve({ providerRef: `testers-${Date.now()}` });
   }
@@ -82,6 +84,11 @@ export class FakeSmsProvider implements SmsProvider {
     return last?.match(/\b(\d{6})\b/)?.[1] ?? null;
   }
 
+  /** Le texte complet du dernier message envoyé, ou `null`. */
+  lastBodySent(): string | null {
+    return this.bodies.at(-1) ?? null;
+  }
+
   sentCount(): number {
     return this.bodies.length;
   }
@@ -90,7 +97,11 @@ export class FakeSmsProvider implements SmsProvider {
 // ── Email ───────────────────────────────────────────────────────────────────
 
 export interface EmailProvider {
-  send(to: string, template: string, variables: Record<string, unknown>): Promise<{ providerRef: string }>;
+  send(
+    to: string,
+    template: string,
+    variables: Record<string, unknown>,
+  ): Promise<{ providerRef: string }>;
 }
 
 export const EMAIL_PROVIDER = Symbol('EmailProvider');
@@ -104,9 +115,16 @@ export class FakeEmailProvider implements EmailProvider {
   private readonly logger = new Logger('FakeEmail');
   private readonly sent: { template: string; variables: Record<string, unknown> }[] = [];
 
-  send(to: string, template: string, variables: Record<string, unknown> = {}): Promise<{ providerRef: string }> {
+  send(
+    to: string,
+    template: string,
+    variables: Record<string, unknown> = {},
+  ): Promise<{ providerRef: string }> {
     const [user, domain] = to.split('@');
-    const code = typeof variables['code'] === 'string' ? ` — code ${maskCodeOutsideDev(variables['code'])}` : '';
+    const code =
+      typeof variables['code'] === 'string'
+        ? ` — code ${maskCodeOutsideDev(variables['code'])}`
+        : '';
     this.logger.log(`Email fictif « ${template} » vers ${user?.slice(0, 2)}…@${domain}${code}`);
     this.sent.push({ template, variables });
     return Promise.resolve({ providerRef: fakeRef('fake-email') });
@@ -168,7 +186,7 @@ export class FakePushProvider implements PushProvider {
 // ── Vérification d'identité ─────────────────────────────────────────────────
 
 export type KycStatusValue =
-  | 'NOT_STARTED' | 'IN_PROGRESS' | 'APPROVED' | 'DECLINED' | 'IN_REVIEW' | 'ABANDONED' | 'EXPIRED';
+  'NOT_STARTED' | 'IN_PROGRESS' | 'APPROVED' | 'DECLINED' | 'IN_REVIEW' | 'ABANDONED' | 'EXPIRED';
 
 export interface KycProvider {
   /** Crée une session hébergée et renvoie l'URL que suit le membre. */
@@ -265,7 +283,7 @@ export interface PaymentProvider {
   /** Le portail client du §4.1 — factures, moyen de paiement, résiliation. */
   createPortalUrl(providerRef: string): Promise<string>;
   /** Remboursement (§4.4), traité par SUPPORT. Montant en centimes. */
-  refund(providerRef: string, amountCents: number): Promise<{ refundRef: string }>;
+  refund(providerRef: string, amountCents: number, idempotencyKey?: string): Promise<{ refundRef: string }>;
 }
 
 export const PAYMENT_PROVIDER = Symbol('PaymentProvider');
@@ -273,7 +291,10 @@ export const PAYMENT_PROVIDER = Symbol('PaymentProvider');
 export class FakePaymentProvider implements PaymentProvider {
   private readonly logger = new Logger('FakePayment');
 
-  createCheckout(input: { userId: string; planCode: string }): Promise<{ providerRef: string; checkoutUrl: string }> {
+  createCheckout(input: {
+    userId: string;
+    planCode: string;
+  }): Promise<{ providerRef: string; checkoutUrl: string }> {
     const providerRef = fakeRef('fake-pay');
     this.logger.log(`Paiement fictif ${input.planCode} — succès immédiat`);
     return Promise.resolve({ providerRef, checkoutUrl: `/dev/paiement/${providerRef}` });
@@ -298,8 +319,8 @@ export class FakePaymentProvider implements PaymentProvider {
     return Promise.resolve(`/dev/portail/${providerRef}`);
   }
 
-  refund(providerRef: string, amountCents: number): Promise<{ refundRef: string }> {
-    this.logger.log(`Remboursement fictif ${providerRef} : ${amountCents}`);
+  refund(providerRef: string, amountCents: number, idempotencyKey?: string): Promise<{ refundRef: string }> {
+    this.logger.log(`Remboursement fictif ${providerRef} : ${amountCents} (${idempotencyKey ?? 'sans clé'})`);
     return Promise.resolve({ refundRef: fakeRef('fake-refund') });
   }
 }
@@ -343,7 +364,9 @@ export const MOBILE_MONEY_PROVIDER = Symbol('MobileMoneyProvider');
 export class FakeMobileMoneyProvider implements MobileMoneyProvider {
   private readonly logger = new Logger('FakeMobileMoney');
 
-  requestPayment(input: { amountCents: number }): Promise<{ providerRef: string; status: 'PENDING' }> {
+  requestPayment(input: {
+    amountCents: number;
+  }): Promise<{ providerRef: string; status: 'PENDING' }> {
     const providerRef = fakeRef('fake-momo');
     this.logger.log(`Mobile Money fictif : ${input.amountCents} (plus petite unité)`);
     return Promise.resolve({ providerRef, status: 'PENDING' });
@@ -357,14 +380,24 @@ export class FakeMobileMoneyProvider implements MobileMoneyProvider {
 // ── Modération IA ───────────────────────────────────────────────────────────
 
 export type ModerationLabel =
-  | 'SCAM' | 'MONEY_REQUEST' | 'HARASSMENT' | 'HATE' | 'SEXUAL' | 'SPAM' | 'SELF_HARM' | 'OFF_TOPIC' | 'OK';
+  | 'SCAM'
+  | 'MONEY_REQUEST'
+  | 'HARASSMENT'
+  | 'HATE'
+  | 'SEXUAL'
+  | 'SPAM'
+  | 'SELF_HARM'
+  | 'OFF_TOPIC'
+  | 'OK';
 
 export interface AiModerationProvider {
   /**
    * Le texte reçu est DÉJÀ masqué : c'est l'appelant qui passe par
    * `redactForModeration` et `assertRedacted` (règle dure 13 §2).
    */
-  classify(redactedText: string): Promise<{ labels: ModerationLabel[]; score: number; model: string; latencyMs: number }>;
+  classify(
+    redactedText: string,
+  ): Promise<{ labels: ModerationLabel[]; score: number; model: string; latencyMs: number }>;
 }
 
 export const AI_MODERATION_PROVIDER = Symbol('AiModerationProvider');
@@ -375,7 +408,9 @@ export const AI_MODERATION_PROVIDER = Symbol('AiModerationProvider');
  * d'argent doit produire un dossier, même sans appeler l'IA.
  */
 export class FakeAiModerationProvider implements AiModerationProvider {
-  classify(redactedText: string): Promise<{ labels: ModerationLabel[]; score: number; model: string; latencyMs: number }> {
+  classify(
+    redactedText: string,
+  ): Promise<{ labels: ModerationLabel[]; score: number; model: string; latencyMs: number }> {
     const lower = redactedText.toLowerCase();
     const labels: ModerationLabel[] = [];
 
@@ -400,16 +435,25 @@ export class FakeAiModerationProvider implements AiModerationProvider {
  * membres et la file de l'équipe, eux, continuent de fonctionner.
  */
 export class DisabledAiModerationProvider implements AiModerationProvider {
-  classify(): Promise<{ labels: ModerationLabel[]; score: number; model: string; latencyMs: number }> {
+  classify(): Promise<{
+    labels: ModerationLabel[];
+    score: number;
+    model: string;
+    latencyMs: number;
+  }> {
     return Promise.resolve({ labels: ['OK'], score: 0, model: 'disabled', latencyMs: 0 });
   }
 }
 
 // ── Captcha ─────────────────────────────────────────────────────────────────
 
+export type CaptchaOutcome = 'ok' | 'refused' | 'unavailable';
+
 export interface CaptchaProvider {
   /** Obligatoire avant tout envoi d'OTP (01 §2.1). */
   verify(token: string, ip?: string): Promise<boolean>;
+  /** Optionnel : distingue refus et panne du fournisseur (les deux ferment l'accès). */
+  check?(token: string, ip?: string): Promise<CaptchaOutcome>;
 }
 
 export const CAPTCHA_PROVIDER = Symbol('CaptchaProvider');
@@ -437,7 +481,10 @@ export class FakeCaptchaProvider implements CaptchaProvider {
 
 export interface StorageProvider {
   /** URL signée pour un import direct : le fichier ne transite pas par l'API. */
-  createUploadUrl(key: string, mime: string): Promise<{ url: string; fields?: Record<string, string> }>;
+  createUploadUrl(
+    key: string,
+    mime: string,
+  ): Promise<{ url: string; fields?: Record<string, string> }>;
   createDownloadUrl(key: string, expiresInSeconds: number): Promise<string>;
   /**
    * Dépose un contenu produit par le SERVEUR.
@@ -591,6 +638,8 @@ export class FakeAntivirusProvider implements AntivirusProvider {
     // Chaîne de test EICAR : permet de vérifier le chemin « fichier rejeté »
     // sans manipuler de vrai logiciel malveillant.
     const isEicar = buffer.includes('EICAR-STANDARD-ANTIVIRUS-TEST-FILE');
-    return Promise.resolve(isEicar ? { clean: false, signature: 'EICAR-Test-File' } : { clean: true });
+    return Promise.resolve(
+      isEicar ? { clean: false, signature: 'EICAR-Test-File' } : { clean: true },
+    );
   }
 }

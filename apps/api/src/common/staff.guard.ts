@@ -16,6 +16,7 @@ import {
   type StaffRoleValue,
 } from '@app/shared';
 import { ApiError } from './api-error';
+import { clientIp } from './client-ip';
 import { CAPABILITY_KEY, PUBLIC_READ_KEY } from './capability.decorator';
 import { CryptoService } from './crypto.service';
 import { PrismaService } from './prisma.service';
@@ -344,28 +345,10 @@ function isAdminSurface(request: Request): boolean {
 /**
  * L'IP du client.
  *
- * `x-forwarded-for` est lu parce qu'en production l'API est derrière un proxy ;
- * on prend la PREMIÈRE entrée, qui est le client d'origine. C'est une valeur
- * qu'un client peut forger, et c'est pourquoi elle ne sert qu'à deux choses
- * sans conséquence de sécurité seule : la trace d'audit, et une restriction
- * réseau qui n'est qu'une couche de défense supplémentaire — jamais l'unique.
+ * Une seule lecture, dans `client-ip.ts` : `request.ip` (trust proxy configuré dans
+ * `main.ts`) validé par `net.isIP`. Plus aucune lecture directe de `x-forwarded-for`.
  */
-export function clientIp(request: Request): string | null {
-  const forwarded = request.headers['x-forwarded-for'];
-  const raw =
-    typeof forwarded === 'string'
-      ? forwarded.split(',')[0]
-      : Array.isArray(forwarded)
-        ? forwarded[0]
-        : request.ip;
-  if (typeof raw !== 'string') return null;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return null;
-  // `::ffff:127.0.0.1` : Node rend les IPv4 sous forme mappée quand la socket
-  // écoute en IPv6. `audit_logs.ip` est un `inet` et l'accepte, mais une
-  // comparaison de CIDR IPv4 échouerait sur cette forme.
-  return trimmed.startsWith('::ffff:') ? trimmed.slice('::ffff:'.length) : trimmed;
-}
+export { clientIp } from './client-ip';
 
 /**
  * L'IP appartient-elle au CIDR ?

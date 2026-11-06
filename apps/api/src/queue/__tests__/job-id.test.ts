@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -78,6 +78,8 @@ describe('jobId BullMQ (queue/job-id.ts)', () => {
 
     const offenders: string[] = [];
     for (const file of files) {
+      // Fichier suivi mais supprimé dans l'arbre de travail : rien à contrôler.
+      if (!existsSync(resolve(root, file))) continue;
       const source = readFileSync(resolve(root, file), 'utf8');
       for (const [index, line] of source.split('\n').entries()) {
         // Un `jobId` dont la valeur est une CHAÎNE ou un GABARIT : la seule

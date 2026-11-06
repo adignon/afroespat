@@ -44,6 +44,7 @@ import { commentCountWhere } from '../../common/comment-visibility';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { ATTACHABLE_KINDS, REQUIRED_MEDIA_STATUS } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
+import { bumpUserStat } from '../../common/user-stats';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
@@ -1487,7 +1488,7 @@ export class GuidesService {
       // l'AUTEUR seul — les contributeurs sont crédités à l'acceptation de leur
       // proposition. Rien pour un guide anonymisé : il n'a plus d'auteur.
       if (value === 'HELPFUL' && guide.authorUserId !== null) {
-        await tx.reputationEvent.createMany({
+        const credited = await tx.reputationEvent.createMany({
           data: [
             {
               id: newId(),
@@ -1502,10 +1503,15 @@ export class GuidesService {
           // transformer un rejeu en erreur.
           skipDuplicates: true,
         });
+        // Le compteur de profil suit les lignes réellement créées.
+        await bumpUserStat(tx, guide.authorUserId, 'guideHelpfulVotes', credited.count);
       } else if (existing?.value === 'HELPFUL') {
-        await tx.reputationEvent.deleteMany({
+        const removed = await tx.reputationEvent.deleteMany({
           where: { sourceType: 'guide_vote', sourceId: voteId, type: 'GUIDE_HELPFUL_VOTE' },
         });
+        if (guide.authorUserId !== null) {
+          await bumpUserStat(tx, guide.authorUserId, 'guideHelpfulVotes', -removed.count);
+        }
       }
 
       await this.outbox.emit(tx, {
@@ -1533,7 +1539,7 @@ export class GuidesService {
 
     const guide = await this.prisma.guide.findUniqueOrThrow({
       where: { id: guideId },
-      select: { helpfulCount: true, lastContentUpdateAt: true },
+      select: { helpfulCount: true, lastContentUpdateAt: true, authorUserId: true },
     });
 
     const now = new Date();
@@ -1551,9 +1557,12 @@ export class GuidesService {
           },
         });
         // §2.2 : « suppression de la ligne ET du reputation_event ».
-        await tx.reputationEvent.deleteMany({
+        const removed = await tx.reputationEvent.deleteMany({
           where: { sourceType: 'guide_vote', sourceId: existing.id, type: 'GUIDE_HELPFUL_VOTE' },
         });
+        if (guide.authorUserId !== null) {
+          await bumpUserStat(tx, guide.authorUserId, 'guideHelpfulVotes', -removed.count);
+        }
       }
       await this.outbox.emit(tx, {
         type: 'guide.vote_removed',
@@ -2162,7 +2171,7 @@ export class GuidesService {
         update: { acceptedCount: { increment: 1 } },
       });
 
-      await tx.reputationEvent.createMany({
+      const contribution = await tx.reputationEvent.createMany({
         data: [
           {
             id: newId(),
@@ -2174,6 +2183,7 @@ export class GuidesService {
         ],
         skipDuplicates: true,
       });
+      await bumpUserStat(tx, proposal.proposerUserId, 'guideContributions', contribution.count);
 
       await this.outbox.emit(tx, {
         type: 'guide.proposal_accepted',
@@ -2908,9 +2918,18 @@ export class GuidesService {
       // concernés ajustée (§8).
       for (const vote of votes) {
         await tx.guideVote.delete({ where: { id: vote.id } });
-        await tx.reputationEvent.deleteMany({
+        const repRemoved = await tx.reputationEvent.deleteMany({
           where: { sourceType: 'guide_vote', sourceId: vote.id },
         });
+        if (repRemoved.count > 0) {
+          const target = await tx.guide.findUnique({
+            where: { id: vote.guideId },
+            select: { authorUserId: true },
+          });
+          if (target?.authorUserId !== null && target?.authorUserId !== undefined) {
+            await bumpUserStat(tx, target.authorUserId, 'guideHelpfulVotes', -repRemoved.count);
+          }
+        }
         if (vote.value === 'HELPFUL') {
           const guide = await tx.guide.update({
             where: { id: vote.guideId },

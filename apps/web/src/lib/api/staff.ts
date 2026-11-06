@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import { API_BASE } from './base';
 import { assertStaffPath, STAFF_PREFIX, type StaffOnly } from './domains';
+import { signalerSessionPerdue } from './staff-session';
 import { createTransport, type RequestOptions } from './transport';
 
 /**
@@ -51,6 +52,7 @@ const transport = createTransport({
   /** Aucune fonction pour obtenir un jeton : voir l'en-tête. */
   credentials: { kind: 'cookie' },
   assertPath: assertStaffPath,
+  onSessionLost: signalerSessionPerdue,
 });
 
 /**

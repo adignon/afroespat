@@ -182,12 +182,46 @@ export function isSessionDead(): boolean {
   return sessionDead;
 }
 
+const ecouteursSessionMorte = new Set<() => void>();
+const ecouteursFinDeSession = new Set<() => void>();
+
+/**
+ * S'abonne à la FIN d'une session, morte (verdict du serveur) ou fermée (déconnexion,
+ * suppression de compte). Les caches de la coquille (nom du membre, compteurs de la
+ * barre) s'y vident : le membre suivant ne doit pas lire le nom du précédent.
+ */
+export function surFinDeSession(ecouteur: () => void): () => void {
+  ecouteursFinDeSession.add(ecouteur);
+  return () => {
+    ecouteursFinDeSession.delete(ecouteur);
+  };
+}
+
+/**
+ * S'abonne au verdict « session morte ». La garde de session (`components/garde-session`)
+ * y renvoie le membre vers la connexion, où qu'il soit : sans écouteur, une session
+ * révoquée en cours de route laissait l'écran en place, avec des erreurs 401 muettes.
+ * Retourne la fonction de désabonnement.
+ */
+export function surSessionMorte(ecouteur: () => void): () => void {
+  ecouteursSessionMorte.add(ecouteur);
+  return () => {
+    ecouteursSessionMorte.delete(ecouteur);
+  };
+}
+
 /** Appelé quand `/auth/refresh` a refusé définitivement. */
 export function markSessionDead(): void {
   sessionDead = true;
   accessToken = null;
   knownMember = null;
   ecrireIndicateur(false);
+  ecouteursFinDeSession.forEach((ecouteur) => {
+    ecouteur();
+  });
+  ecouteursSessionMorte.forEach((ecouteur) => {
+    ecouteur();
+  });
 }
 
 /** Déconnexion : tout part, y compris ce qu'on croyait savoir. */
@@ -197,6 +231,9 @@ export function clearSession(): void {
   sessionDead = false;
   sessionAttendue = false;
   ecrireIndicateur(false);
+  ecouteursFinDeSession.forEach((ecouteur) => {
+    ecouteur();
+  });
 }
 
 /**

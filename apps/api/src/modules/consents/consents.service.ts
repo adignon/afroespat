@@ -158,6 +158,20 @@ export class ConsentsService {
     });
   }
 
+  /**
+   * Refuse CLAIREMENT, avant tout envoi de code ou consommation de défi, une inscription que
+   * `recordSignupConsents` ferait échouer faute de CGU / politique de confidentialité publiées.
+   */
+  async assertSignupDocumentsPublished(): Promise<void> {
+    for (const type of SIGNUP_CONSENTS) {
+      const slug = CONSENT_DOCUMENTS[type];
+      if (slug === undefined) continue;
+      if ((await this.publishedVersion(slug)) === null) {
+        throw ApiError.transverse('CONFLICT', { reason: 'DOCUMENT_NOT_PUBLISHED', slug });
+      }
+    }
+  }
+
   /** Les deux consentements de l'inscription, dans la transaction de création. */
   async recordSignupConsents(
     writer: PrismaService | Prisma.TransactionClient,

@@ -12,7 +12,7 @@ import { CryptoService } from '../../../common/crypto.service';
 import { ApiErrorFilter } from '../../../common/error.filter';
 import { PrismaService } from '../../../common/prisma.service';
 import { loadEnv } from '../../../config/env';
-import { FakeSmsProvider, SMS_PROVIDER } from '../../../providers/providers';
+import { FakeKycProvider, FakeSmsProvider, KYC_PROVIDER, SMS_PROVIDER } from '../../../providers/providers';
 import { AuthService } from '../../auth/auth.service';
 import { VerificationLevelService } from '../../users/verification-level.service';
 import { hashStaffPassword } from '../../admin/staff-password';
@@ -377,12 +377,14 @@ describe('vérification d’identité (01 §2.3, §2.4, §4.3)', () => {
     const session = await kyc.createSession(me.userId);
     const raw = JSON.stringify({ sessionId: session.sessionId, status: 'APPROVED', isAdult: true });
     const secret = loadEnv().DIDIT_WEBHOOK_SECRET as string;
-    const signature = createHmac('sha256', secret).update(Buffer.from(raw, 'utf8')).digest('hex');
-    const send = (timestamp: number) =>
+    // L'horodatage est LIÉ au HMAC : la signature porte sur « <timestamp>.<corps> ».
+    const signFor = (timestamp: number | string) =>
+      createHmac('sha256', secret).update(`${timestamp}.`).update(Buffer.from(raw, 'utf8')).digest('hex');
+    const send = (timestamp: number, signedWith: number | string = timestamp) =>
       request(httpServer(app))
         .post('/v1/webhooks/didit')
         .set('content-type', 'application/json')
-        .set('x-signature', signature)
+        .set('x-signature', signFor(signedWith))
         .set('x-timestamp', String(timestamp))
         .send(raw);
 
@@ -392,9 +394,81 @@ describe('vérification d’identité (01 §2.3, §2.4, §4.3)', () => {
     await send(now + 3600).expect(401);
     await send(Number.NaN).expect(401);
     expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).not.toBe('APPROVED');
+    // REJEU AVEC HORODATAGE RÉÉCRIT : la signature d'un message d'il y a une heure, présentée avec un
+    // en-tête « frais », ne correspond plus au HMAC lié à l'horodatage -> refusé.
+    await send(now - 5, now - 3600).expect(401);
     // Frais : accepté.
     await send(now - 5).expect(200);
     expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).toBe('APPROVED');
+  });
+
+  it('[TRANSITIONS] un IN_REVIEW ou un EXPIRED tardif ne dégrade pas un APPROVED', async () => {
+    const me = await signIn(nextPhone());
+    const sessionId = await approve(me.userId);
+    for (const status of ['IN_REVIEW', 'EXPIRED', 'ABANDONED', 'IN_PROGRESS']) {
+      const res = await postWebhook({ sessionId, status }).expect(200);
+      expect((res.body as { applied: boolean }).applied).toBe(false);
+    }
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: sessionId } })).status).toBe('APPROVED');
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: me.userId } })).verificationLevel).not.toBe('L0');
+  });
+
+  it('[TRANSITIONS] un EXPIRED ou un ABANDONED ne redevient jamais APPROVED', async () => {
+    const me = await signIn(nextPhone());
+    const session = await kyc.createSession(me.userId);
+    await postWebhook({ sessionId: session.sessionId, status: 'EXPIRED' }).expect(200);
+    const res = await postWebhook({ sessionId: session.sessionId, status: 'APPROVED', isAdult: true }).expect(200);
+    expect((res.body as { applied: boolean }).applied).toBe(false);
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).toBe('EXPIRED');
+  });
+
+  it('[HORODATAGE] un message plus ancien que la dernière décision est ignoré', async () => {
+    const me = await signIn(nextPhone());
+    const session = await kyc.createSession(me.userId);
+    const secret = loadEnv().DIDIT_WEBHOOK_SECRET as string;
+    const post = (status: string, ts: number) => {
+      const raw = JSON.stringify({ sessionId: session.sessionId, status, isAdult: true });
+      return request(httpServer(app))
+        .post('/v1/webhooks/didit')
+        .set('content-type', 'application/json')
+        .set('x-timestamp', String(ts))
+        .set('x-signature', createHmac('sha256', secret).update(`${ts}.`).update(Buffer.from(raw, 'utf8')).digest('hex'))
+        .send(raw);
+    };
+    const now = Math.floor(Date.now() / 1000);
+    await post('DECLINED', now - 2).expect(200);
+    const stale = await post('APPROVED', now - 100).expect(200);
+    expect((stale.body as { reason?: string }).reason).toBe('STALE_EVENT');
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).toBe('DECLINED');
+  });
+
+  it('[LOT B] un statut Didit inconnu n’est pas un 400 : il est ramené à IN_REVIEW', async () => {
+    const me = await signIn(nextPhone());
+    const session = await kyc.createSession(me.userId);
+    const res = await postWebhook({ session_id: session.sessionId, status: 'Quelque chose de nouveau' }).expect(200);
+    expect((res.body as { applied: boolean }).applied).toBe(true);
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).toBe('IN_REVIEW');
+  });
+
+  it('[TÂCHE] kyc.expire_sessions interroge le fournisseur avant d’expirer (webhook perdu)', async () => {
+    const me = await signIn(nextPhone());
+    const session = await kyc.createSession(me.userId);
+    // Le fournisseur sait que le membre a été approuvé : le webhook s'est perdu.
+    (app.get<FakeKycProvider>(KYC_PROVIDER)).setStatus(session.sessionId, 'APPROVED');
+    const later = new Date(Date.now() + (ACCOUNT_LIMITS.kycSessionExpiryHours + 1) * 3_600_000);
+    const result = await kyc.expireStaleSessions(later);
+    expect(result.reconciled).toBeGreaterThanOrEqual(1);
+    expect((await prisma.kycVerification.findUniqueOrThrow({ where: { providerSessionId: session.sessionId } })).status).toBe('APPROVED');
+  });
+
+  it('[LOT B] des ouvertures de session simultanées : la limite tient sous verrou', async () => {
+    const me = await signIn(nextPhone());
+    const results = await Promise.allSettled(
+      [1, 2, 3, 4, 5].map(() => kyc.createSession(me.userId)),
+    );
+    const count = await prisma.kycVerification.count({ where: { userId: me.userId } });
+    expect(count).toBeLessThanOrEqual(ACCOUNT_LIMITS.kycMaxAttempts);
+    expect(results.filter((r) => r.status === 'fulfilled').length).toBe(count);
   });
 
   it('le corps RÉEL de Didit (session_id, statut en toutes lettres, décision) est ramené à la forme interne sans rien garder', async () => {

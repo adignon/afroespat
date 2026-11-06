@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { adminStaffAlertsResponseSchema, okResponseSchema, type AdminStaffAlerts } from '@app/shared';
+import { adminStaffAlertsResponseSchema, okResponseSchema } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { useEquipe } from '../session-equipe';
 import { Bandeau, Bouton, C, Carte, Lecture, Message, Onglets, Pastille, Titre, Vide, dateCourte, useCharge, useGeste } from '../ui';
@@ -52,9 +52,19 @@ function Liste() {
     const ok = await geste.lancer(() => staffApi.post(`/moderation/alerts/${id}/read`, okResponseSchema, { body: {} }));
     if (ok) recharger();
   };
-  const toutLire = async (alertes: AdminStaffAlerts['items']) => {
+  /**
+   * « Tout marquer comme lu » couvre TOUTES les alertes non lues, pas seulement les 50 affichées : l'API ne rend que 50
+   * lignes par lecture et n'a pas de route de lot, donc on relit les non lues et on marque, par tours, jusqu'à épuisement
+   * (borné : 40 tours de 50 = 2 000 alertes).
+   */
+  const toutLire = async () => {
     const ok = await geste.lancer(async () => {
-      for (const a of alertes.filter((x) => !x.read)) await staffApi.post(`/moderation/alerts/${a.id}/read`, okResponseSchema, { body: {} });
+      for (let tour = 0; tour < 40; tour += 1) {
+        const restantes = await staffApi.get('/moderation/alerts?unread=true', adminStaffAlertsResponseSchema);
+        const nonLues = restantes.items.filter((x) => !x.read);
+        if (nonLues.length === 0) return;
+        for (const a of nonLues) await staffApi.post(`/moderation/alerts/${a.id}/read`, okResponseSchema, { body: {} });
+      }
     }, 'Toutes les alertes sont marquées lues.');
     if (ok) recharger();
   };
@@ -68,7 +78,7 @@ function Liste() {
             sous={d.unread === 0 ? 'Aucune alerte non lue' : `${d.unread} alerte${d.unread > 1 ? 's' : ''} non lue${d.unread > 1 ? 's' : ''}`}
             action={
               d.unread > 0 ? (
-                <Bouton petit ton="contour" disabled={geste.occupe} onClick={() => void toutLire(d.items)}>
+                <Bouton petit ton="contour" disabled={geste.occupe} onClick={() => void toutLire()}>
                   Tout marquer comme lu
                 </Bouton>
               ) : undefined

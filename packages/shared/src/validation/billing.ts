@@ -65,6 +65,163 @@ import { cursorQuerySchema, uuidSchema } from './pagination.js';
 export const MONETISATION_SETTING_KEY = 'monetisation_active';
 export const MONETISATION_ACTIVE_DEFAULT = false;
 
+// ── Moyens de paiement et options payantes (lot D) ──────────────────────────
+
+/**
+ * QUI PEUT PAYER, ET POUR QUOI — réglé par l'équipe, éteint par défaut.
+ *
+ * Trois moyens, tels que `PaymentMethodKind` les modélise : la carte (Stripe), Mobile
+ * Money MTN et Mobile Money Moov. Chacun s'allume et s'éteint depuis l'administration
+ * (SUPER_ADMIN, motif obligatoire, journal d'audit) sans déploiement. Tout est ÉTEINT par
+ * défaut : tant que rien n'est allumé, `paiementsDisponibles` vaut faux, aucun écran
+ * membre ne propose de payer et le checkout refuse.
+ *
+ * Deux réglages `system_settings`, tous deux au registre :
+ *   · `billing.payment_methods` — la liste des moyens ;
+ *   · `billing.paid_options`    — les options payantes (offres sponsorisées, encarts
+ *     partenaires, avantages à quota des plans).
+ * L'activation d'un PLAN vit, elle, sur `plans.is_active`.
+ */
+export const PAYMENT_METHOD_CODES = ['CARD', 'MOBILE_MONEY_MTN', 'MOBILE_MONEY_MOOV'] as const;
+export type PaymentMethodCode = (typeof PAYMENT_METHOD_CODES)[number];
+
+export const BILLING_PAYMENT_METHODS_SETTING_KEY = 'billing.payment_methods';
+export const BILLING_PAID_OPTIONS_SETTING_KEY = 'billing.paid_options';
+
+export const paymentMethodConfigSchema = z
+  .object({
+    code: z.enum(PAYMENT_METHOD_CODES),
+    enabled: z.boolean(),
+    label: z.string().trim().min(1).max(60),
+    currencies: z.array(z.enum(['EUR', 'XOF'] as const)).min(1).max(2),
+  })
+  .strict();
+export type PaymentMethodConfig = z.infer<typeof paymentMethodConfigSchema>;
+
+export const paymentMethodsSchema = z
+  .array(paymentMethodConfigSchema)
+  .max(PAYMENT_METHOD_CODES.length)
+  .superRefine((list, ctx) => {
+    const seen = new Set<string>();
+    list.forEach((m, i) => {
+      if (seen.has(m.code)) ctx.addIssue({ code: 'custom', path: [i, 'code'], message: 'Moyen de paiement en double.' });
+      seen.add(m.code);
+    });
+  });
+
+export const PAYMENT_METHODS_DEFAULT: readonly PaymentMethodConfig[] = [
+  { code: 'CARD', enabled: false, label: 'Carte bancaire', currencies: ['EUR'] },
+  { code: 'MOBILE_MONEY_MTN', enabled: false, label: 'Mobile Money MTN', currencies: ['XOF'] },
+  { code: 'MOBILE_MONEY_MOOV', enabled: false, label: 'Mobile Money Moov', currencies: ['XOF'] },
+];
+
+/**
+ * La liste effective : le réglage lu, REVALIDÉ, complété par le défaut pour tout moyen
+ * absent (un moyen ajouté au code après coup apparaît éteint, jamais manquant). Une valeur
+ * illisible retombe sur le défaut — tout éteint, la position sûre.
+ */
+export function paymentMethodsFrom(value: unknown): PaymentMethodConfig[] {
+  const parsed = paymentMethodsSchema.safeParse(value);
+  const stored = parsed.success ? parsed.data : [];
+  return PAYMENT_METHODS_DEFAULT.map(
+    (d) => stored.find((m) => m.code === d.code) ?? { ...d, currencies: [...d.currencies] },
+  );
+}
+
+/** Le code du moyen que ce checkout emploie. */
+export function paymentMethodCodeOf(input: {
+  provider: 'STRIPE' | 'MOBILE_MONEY';
+  method?: 'MTN_MOMO' | 'MOOV_MONEY' | undefined;
+}): PaymentMethodCode {
+  if (input.provider === 'STRIPE') return 'CARD';
+  return input.method === 'MOOV_MONEY' ? 'MOBILE_MONEY_MOOV' : 'MOBILE_MONEY_MTN';
+}
+
+/**
+ * Les options payantes.
+ *   · `SPONSORED_JOBS`     — la mise en avant des offres d'emploi n'est réservée aux
+ *     abonnés (quota du plan) que si l'option est allumée ;
+ *   · `PREMIUM_PERKS`      — les avantages à quota des plans (parcours, événements, contacts
+ *     pros, alertes) ne s'appliquent que si l'option est allumée ;
+ *   · `PARTNER_PLACEMENTS` — les encarts partenaires sont affichés. Seule option allumée par
+ *     défaut : les encarts existent déjà et ne sont pas un achat de membre ; les éteindre
+ *     est un geste explicite.
+ */
+export const PAID_OPTION_CODES = ['SPONSORED_JOBS', 'PARTNER_PLACEMENTS', 'PREMIUM_PERKS'] as const;
+export type PaidOptionCode = (typeof PAID_OPTION_CODES)[number];
+
+export const paidOptionsSchema = z
+  .object({ SPONSORED_JOBS: z.boolean(), PARTNER_PLACEMENTS: z.boolean(), PREMIUM_PERKS: z.boolean() })
+  .strict();
+export type PaidOptions = z.infer<typeof paidOptionsSchema>;
+
+export const PAID_OPTIONS_DEFAULT: PaidOptions = {
+  SPONSORED_JOBS: false,
+  PARTNER_PLACEMENTS: true,
+  PREMIUM_PERKS: false,
+};
+
+export const PAID_OPTION_LABELS: Record<PaidOptionCode, string> = {
+  SPONSORED_JOBS: 'Offres d’emploi sponsorisées',
+  PARTNER_PLACEMENTS: 'Encarts partenaires',
+  PREMIUM_PERKS: 'Avantages à quota des plans',
+};
+
+/** Les options effectives : champ par champ, le défaut comble ce qui manque ou est illisible. */
+export function paidOptionsFrom(value: unknown): PaidOptions {
+  const out: PaidOptions = { ...PAID_OPTIONS_DEFAULT };
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    for (const code of PAID_OPTION_CODES) {
+      const v = (value as Record<string, unknown>)[code];
+      if (typeof v === 'boolean') out[code] = v;
+    }
+  }
+  return out;
+}
+
+const motifSchema = z.string().trim().min(10).max(500);
+
+/** `PUT /admin/billing/payment-methods` — tous les moyens, ou une partie. */
+export const paymentMethodsUpdateSchema = z
+  .object({
+    methods: z
+      .array(
+        z
+          .object({
+            code: z.enum(PAYMENT_METHOD_CODES),
+            enabled: z.boolean().optional(),
+            label: z.string().trim().min(1).max(60).optional(),
+            currencies: z.array(z.enum(['EUR', 'XOF'] as const)).min(1).max(2).optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(PAYMENT_METHOD_CODES.length),
+    reason: motifSchema,
+  })
+  .strict();
+export type PaymentMethodsUpdate = z.infer<typeof paymentMethodsUpdateSchema>;
+
+/** `PUT /admin/billing/paid-options`. */
+export const paidOptionsUpdateSchema = z
+  .object({ options: paidOptionsSchema.partial().strict(), reason: motifSchema })
+  .strict()
+  .refine((v) => Object.keys(v.options).length > 0, { message: 'Rien à modifier.' });
+export type PaidOptionsUpdate = z.infer<typeof paidOptionsUpdateSchema>;
+
+/** `PUT /admin/billing/monetisation` et `PUT /admin/billing/plans/:code/enabled`. */
+export const monetisationUpdateSchema = z.object({ active: z.boolean(), reason: motifSchema }).strict();
+export const planEnabledSchema = z.object({ isActive: z.boolean(), reason: motifSchema }).strict();
+
+/** `GET /admin/billing/config` — l'écran « Paiements et offres » en une lecture. */
+export const billingConfigResponseSchema = z.object({
+  monetisationActive: z.boolean(),
+  paymentsAvailable: z.boolean(),
+  methods: z.array(paymentMethodConfigSchema),
+  options: paidOptionsSchema,
+});
+export type BillingConfigResponse = z.infer<typeof billingConfigResponseSchema>;
+
 // ── Prix (§3) ───────────────────────────────────────────────────────────────
 
 /** §1 et §3 : « Premium membre (4 €/mois) ». */
@@ -108,6 +265,9 @@ export const TRIAL_REMINDER_DAYS = 3;
 export const MOBILE_MONEY_GRACE_DAYS = 3;
 /** §4.2 : « Timeout 5 minutes, statut PENDING visible ». */
 export const MOBILE_MONEY_TIMEOUT_MINUTES = 5;
+
+/** Au-delà, un paiement resté `PENDING` (jamais confirmé ni refusé) est marqué `FAILED` (lot D). */
+export const PAYMENT_PENDING_TIMEOUT_MINUTES = 5;
 /** §4.2 : « Rappels J−7 et J−1 avant current_period_end ». */
 export const RENEWAL_REMINDER_DAYS: readonly number[] = [7, 1];
 /** §4.3 : « 3 tentatives Stripe sur 7 jours ». */
@@ -447,16 +607,23 @@ export type WebhookEvent = z.infer<typeof webhookEventSchema>;
 // ── Équipe (§7.2) ───────────────────────────────────────────────────────────
 
 /** `PUT /admin/billing/plans/:code` — prix et limites (SUPER_ADMIN). */
+const planUpdateFields = {
+  priceCents: z.number().int().min(0).optional(),
+  yearPriceCents: z.number().int().min(0).optional(),
+  limits: planLimitsSchema.optional(),
+  isActive: z.boolean().optional(),
+  nameFr: z.string().trim().min(1).max(80).optional(),
+};
 export const planUpdateSchema = z
-  .object({
-    priceCents: z.number().int().min(0).optional(),
-    yearPriceCents: z.number().int().min(0).optional(),
-    limits: planLimitsSchema.optional(),
-    isActive: z.boolean().optional(),
-    nameFr: z.string().trim().min(1).max(80).optional(),
-  })
+  .object(planUpdateFields)
   .strict()
   .refine((v) => Object.keys(v).length > 0, { message: 'Rien à modifier.' });
+/** La forme de ROUTE : le motif est obligatoire, comme pour tout geste sensible. */
+export const planUpdateRouteSchema = z
+  .object({ ...planUpdateFields, reason: motifSchema })
+  .strict()
+  .refine((v) => Object.keys(v).length > 1, { message: 'Rien à modifier.' });
+export type PlanUpdateRoute = z.infer<typeof planUpdateRouteSchema>;
 export type PlanUpdate = z.infer<typeof planUpdateSchema>;
 
 export const subscriptionsQuerySchema = cursorQuerySchema.extend({
@@ -528,6 +695,12 @@ export const BILLING_ERROR_CODES = {
   INVOICE_UNAVAILABLE: 503,
   /** Le fournisseur de paiement visé n'est pas configuré (§4.1, décision D4). */
   PROVIDER_UNAVAILABLE: 503,
+  /** Lot D : la monétisation est éteinte, rien ne se paie (tout est gratuit). */
+  PAYMENTS_DISABLED: 409,
+  /** Lot D : cette formule n'est pas proposée à la souscription. */
+  PLAN_DISABLED: 409,
+  /** Lot D : ce moyen de paiement est désactivé par l'équipe. */
+  PAYMENT_METHOD_DISABLED: 409,
 } as const;
 
 export type BillingErrorCode = keyof typeof BILLING_ERROR_CODES;
@@ -546,6 +719,9 @@ export const BILLING_ERROR_MESSAGES: Record<BillingErrorCode, string> = {
   WEBHOOK_SIGNATURE_INVALID: 'Signature invalide.',
   INVOICE_UNAVAILABLE: 'Votre facture n’est pas encore téléchargeable. Le numéro est déjà attribué.',
   PROVIDER_UNAVAILABLE: 'Ce moyen de paiement n’est pas encore disponible.',
+  PAYMENTS_DISABLED: 'Tout est gratuit pour le moment : aucun paiement n’est possible.',
+  PLAN_DISABLED: 'Cette formule n’est pas proposée pour le moment.',
+  PAYMENT_METHOD_DISABLED: 'Ce moyen de paiement n’est pas disponible pour le moment.',
 };
 
 // ── Métriques d'usage (§4.5) ────────────────────────────────────────────────
@@ -561,6 +737,14 @@ export const USAGE_METRIC_LIMIT_KEYS = {
   EVENTS_CREATED: 'eventsPerMonth',
   PRO_CONTACTS: 'proContactsPerMonth',
 } as const;
+
+/**
+ * `SPONSORED_JOBS` n'est pas une valeur de l'enum `UsageMetric` : le compte est déduit des
+ * offres (`sponsored_until`), pas d'un compteur. `GET /me/usage` l'expose quand même,
+ * adossé à `sponsoredJobsPerMonth`.
+ */
+export const SPONSORED_JOBS_USAGE_METRIC = 'SPONSORED_JOBS' as const;
+export const usageMetricResponseSchema = z.union([z.enum(UsageMetric), z.literal(SPONSORED_JOBS_USAGE_METRIC)]);
 
 /** `AAAA-MM` de la date donnée, en UTC : la clé de `usage_counters.period_key`. */
 export function monthKeyOf(date: Date): string {
@@ -639,6 +823,13 @@ const subscriptionViewSchema = z.object({
  * rend vérifiable.
  */
 export const mySubscriptionResponseSchema = z.object({
+  /**
+   * Lot D — vrai seulement si la monétisation est allumée ET qu'au moins un moyen de paiement
+   * ET une formule payante sont activés. Faux : aucun écran ne propose de payer.
+   */
+  paiementsDisponibles: z.boolean(),
+  /** Les moyens activés (libellés pour l'écran de paiement). Vide quand rien n'est payable. */
+  moyensPaiement: z.array(paymentMethodConfigSchema),
   items: z.array(subscriptionViewSchema),
   history: z.array(subscriptionViewSchema),
   trial: z.object({
@@ -652,7 +843,7 @@ export const mySubscriptionResponseSchema = z.object({
     resetsAt: z.string().datetime(),
     items: z.array(
       z.object({
-        metric: z.enum(UsageMetric),
+        metric: usageMetricResponseSchema,
         used: z.number().int(),
         limit: z.number().int().nullable(),
       }),

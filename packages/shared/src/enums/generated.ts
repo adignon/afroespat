@@ -212,8 +212,10 @@ export type CountryKind = (typeof CountryKind)[number];
 /** Module 01-identity. */
 export const DataExportStatus = [
   'PENDING',
+  'GENERATING',
   'READY',
   'EXPIRED',
+  'FAILED',
 ] as const;
 export type DataExportStatus = (typeof DataExportStatus)[number];
 

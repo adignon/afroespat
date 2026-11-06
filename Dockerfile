@@ -11,7 +11,10 @@
 #
 # ── CE QUI A ÉTÉ VÉRIFIÉ, ET CE QUI NE L'A PAS ÉTÉ ──────────────────────────
 # Ce fichier a été écrit dans un environnement SANS Docker : aucune de ces images
-# n'a été construite ici. Les commandes qu'il contient (installation gelée,
+# n'a été construite ici (dernier essai : le démon Docker n'était pas démarré).
+# Règle : CHAQUE `package.json` de workspace (apps/*, packages/*) est copié dans l'étape `deps`,
+# sinon `pnpm install --frozen-lockfile` échoue (le lockfile les référence) — ex. apps/provider-demo,
+# devDependency de apps/api. Le job CI « docker » construit les images pour le vérifier. Les commandes qu'il contient (installation gelée,
 # `prisma generate`, builds `tsc`) sont celles du dépôt, lancées une à une ; mais la
 # première construction réelle peut demander un ajustement (voir infra/README.md,
 # « Première construction »).
@@ -40,6 +43,7 @@ WORKDIR /app
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/api/package.json apps/api/
+COPY apps/provider-demo/package.json apps/provider-demo/
 COPY apps/worker/package.json apps/worker/
 COPY apps/web/package.json apps/web/
 COPY packages/config/package.json packages/config/

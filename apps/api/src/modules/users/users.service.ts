@@ -1,4 +1,4 @@
-import { monetisationActive } from '../../common/monetisation';
+import { monetisationActive, paiementsDisponibles } from '../../common/monetisation';
 import { Injectable } from '@nestjs/common';
 import { Prisma, newId } from '@app/db';
 import {
@@ -181,6 +181,8 @@ export class UsersService {
         isDestination: phone.isDestination,
       })),
       monetisationActive: await monetisationActive(this.prisma),
+      // Lot D : faux = aucune incitation à payer (aucun moyen ou aucune formule n'est ouvert).
+      paiementsDisponibles: await paiementsDisponibles(this.prisma),
       kyc: latestKyc === undefined ? null : { status: latestKyc.status },
       stats:
         user.stats === null
@@ -244,10 +246,18 @@ export class UsersService {
     }
 
     if (patch.cityId !== undefined) {
-      await this.prisma.city.findUniqueOrThrow({ where: { id: patch.cityId } }).catch(() => {
-        throw ApiError.notFound();
-      });
-      data['cityId'] = patch.cityId;
+      // Une ville fusionnée mène à sa ville d'accueil (jamais d'embranchement mort), et une ville
+      // désactivée n'accepte plus de nouveaux membres.
+      const select = { id: true, isActive: true, mergedIntoCityId: true } as const;
+      let city = await this.prisma.city.findUnique({ where: { id: patch.cityId }, select });
+      for (let hops = 0; city !== null && city.mergedIntoCityId !== null && hops < 5; hops += 1) {
+        city = await this.prisma.city.findUnique({ where: { id: city.mergedIntoCityId }, select });
+      }
+      if (city === null) throw ApiError.notFound();
+      if (!city.isActive || city.mergedIntoCityId !== null) {
+        throw ApiError.validation([{ path: 'cityId', code: 'CITY_INACTIVE' }]);
+      }
+      data['cityId'] = city.id;
     }
 
     if (patch.phase !== undefined && patch.phase !== current.phase) {
@@ -259,7 +269,14 @@ export class UsersService {
       data['phaseSetManuallyAt'] = new Date();
     }
 
-    if (patch.arrivalDate !== undefined) data['arrivalDate'] = new Date(patch.arrivalDate);
+    if (patch.arrivalDate !== undefined) {
+      // Même borne que `declareArrival` : on n'arrive pas dans le futur.
+      const arrival = new Date(patch.arrivalDate);
+      if (Number.isNaN(arrival.getTime()) || arrival.getTime() > Date.now()) {
+        throw ApiError.validation([{ path: 'arrivalDate', code: 'TOO_BIG' }]);
+      }
+      data['arrivalDate'] = arrival;
+    }
     if (patch.plannedDepartureDate !== undefined) {
       data['plannedDepartureDate'] = new Date(patch.plannedDepartureDate);
     }
@@ -287,7 +304,7 @@ export class UsersService {
      * remonte donc tel quel, parce qu'il voudrait dire autre chose.
      */
     try {
-      await this.writeMe(userId, data, current.phase, current.cityId);
+      await this.writeMe(userId, data, current.phase, current.cityId, current.originCountryId);
     } catch (error) {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -308,6 +325,7 @@ export class UsersService {
     data: Record<string, unknown>,
     phaseAvant: string,
     villeAvant: string | null,
+    paysAvant: string,
   ): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: userId }, data });
@@ -331,6 +349,22 @@ export class UsersService {
           });
         }
         await tx.city.update({ where: { id: villeApres }, data: { memberCount: { increment: 1 } } });
+      }
+
+      // Un changement de VILLE ou de PAYS D'ORIGINE réaffecte les réseaux automatiques (07 §6) :
+      // `syncAutoMemberships` est abonné à `user.onboarded_location` (event-subscriptions).
+      const villeChange = typeof villeApres === 'string' && villeApres !== villeAvant;
+      const paysChange = typeof data['originCountryId'] === 'string' && data['originCountryId'] !== paysAvant;
+      if (villeChange || paysChange) {
+        await this.outbox.emit(tx, {
+          type: 'user.onboarded_location',
+          aggregateId: userId,
+          payload: {
+            userId,
+            ...(villeChange ? { cityId: villeApres } : {}),
+            ...(paysChange ? { originCountryId: data['originCountryId'] as string } : {}),
+          },
+        });
       }
 
       await this.audit.record(tx, {

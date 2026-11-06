@@ -124,6 +124,8 @@ export const ACCOUNT_LIMITS = {
   deletionGraceDays: 7,
   /** §2.8 : un compte désactivé depuis plus de six mois est supprimé. */
   deactivatedPurgeMonths: 6,
+  /** §2.8 : les consentements d'un compte supprimé sont conservés 3 ans, puis purgés. */
+  consentRetentionYears: 3,
   /** §2.2 : `RECENT_ARRIVAL` → `SETTLED` six mois après l'arrivée. */
   settledAfterArrivalMonths: 6,
   /** §8.4 : les défis OTP sont purgés après 24 h. */

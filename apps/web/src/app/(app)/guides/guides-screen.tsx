@@ -64,7 +64,7 @@ export function GuidesScreen() {
   const [categorie, setCategorie] = useState('');
   const [pays, setPays] = useState('');
   const [ville, setVille] = useState('');
-  const { guides, chargement, echec } = useGuides(tab, true, {
+  const { guides, chargement, echec, plus } = useGuides(tab, true, {
     category: categorie,
     countryId: pays,
     cityId: ville,
@@ -144,6 +144,7 @@ export function GuidesScreen() {
     guideTabs: guideTabsFor(tab, (_key, index) => setTab(index)),
     guideFilters: filtres,
     guides,
+    plusGuides: plus,
     missing: manquants ?? [],
   };
 

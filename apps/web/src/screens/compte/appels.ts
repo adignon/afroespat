@@ -977,7 +977,7 @@ export async function chargerK06(): Promise<K06Data> {
       derniere: ligneFacture(paiements.items[0]),
       precedente: ligneFacture(paiements.items[1]),
     },
-    gratuit: !me.monetisationActive,
+    gratuit: !me.monetisationActive || premium === undefined,
   };
 }
 

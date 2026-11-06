@@ -94,7 +94,7 @@ export const NAVIGATION_ADMIN: readonly GroupeNavigation[] = [
     entrees: [
       { href: '/admin/services', libelle: 'Services', description: 'Annonces, fiches professionnelles et justificatifs', scope: 'proReview', icone: ICONES.sac, compteur: 'justificatifsPro' },
       { href: '/admin/partenaires', libelle: 'Partenaires', description: 'Partenaires et emplacements', scope: 'content', icone: ICONES.lien },
-      { href: '/admin/revenus', libelle: 'Revenus', description: 'Affiliation et suivi des revenus', scope: 'content', icone: ICONES.piece },
+      { href: '/admin/revenus', libelle: 'Paiements et offres', description: 'Monétisation, moyens de paiement, formules et options payantes', scope: 'staffAdmin', icone: ICONES.piece },
     ],
   },
   {
@@ -102,10 +102,33 @@ export const NAVIGATION_ADMIN: readonly GroupeNavigation[] = [
     titre: 'Configuration',
     entrees: [
       { href: '/admin/referentiels', libelle: 'Référentiels', description: 'Pays, villes, métiers, langues', scope: 'content', icone: ICONES.carte, compteur: 'villesAActiver' },
-      { href: '/admin/reglages', libelle: 'Réglages', description: 'Paramètres, fonctions activables, équipe et journal d’audit', scope: 'settings', icone: ICONES.reglages },
+      { href: '/admin/reglages', libelle: 'Réglages', description: 'Paramètres, fonctions activables, équipe, rôles et journal d’audit', scope: 'dashboard', icone: ICONES.reglages },
     ],
   },
 ];
+
+const NOM_ROLE_COURT: Record<StaffRoleValue, string> = {
+  SUPER_ADMIN: 'administrateurs',
+  CONTENT_ADMIN: 'contenu',
+  MODERATOR: 'modération',
+  SUPPORT: 'support',
+};
+
+/** Les rôles d'un périmètre, dans un ordre stable : métiers d'abord, administrateurs en dernier. */
+export function rolesDuScope(scope: keyof typeof STAFF_SCOPES): readonly StaffRoleValue[] {
+  const liste = [...(STAFF_SCOPES[scope] as readonly StaffRoleValue[])];
+  return liste.sort((a, b) => Number(a === 'SUPER_ADMIN') - Number(b === 'SUPER_ADMIN'));
+}
+
+/** « support et administrateurs » : qui peut employer ce périmètre, en français. */
+export function quiPeut(scope: keyof typeof STAFF_SCOPES): string {
+  const noms = rolesDuScope(scope).map((r) => NOM_ROLE_COURT[r]);
+  if (noms.length <= 1) return noms.join('');
+  return `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1] ?? ''}`;
+}
+
+/** Le texte d'un bouton ou d'une page éteints par le rôle : « Réservé : support et administrateurs ». */
+export const reservePour = (scope: keyof typeof STAFF_SCOPES): string => `Réservé : ${quiPeut(scope)}`;
 
 /** Le rôle peut-il traiter cette page ? */
 export function peutOuvrir(role: StaffRoleValue | null, e: EntreeNavigation): boolean {

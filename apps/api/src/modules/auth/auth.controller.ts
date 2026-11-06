@@ -1,11 +1,18 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
-import { otpRequestSchema, otpVerifySchema, uuidSchema } from '@app/shared';
+import {
+  ACCOUNT_ERROR_CODES,
+  ACCOUNT_ERROR_MESSAGES,
+  otpRequestSchema,
+  otpVerifySchema,
+  uuidSchema,
+} from '@app/shared';
 import { z } from 'zod';
 import { Auth, type AuthContext } from '../../common/auth.guard';
 import { PublicRead, RateLimit, RequiresCapability } from '../../common/capability.decorator';
 import { ApiError } from '../../common/api-error';
+import { clientIp } from '../../common/client-ip';
 import { REFRESH_COOKIE, clearRefreshCookie, setRefreshCookie } from '../../common/refresh-cookie';
 import { zodPipe } from '../../common/zod.pipe';
 import { UsersService } from '../users/users.service';
@@ -57,12 +64,22 @@ export class AuthController {
     @Body(zodPipe(otpRequestSchema)) body: z.infer<typeof otpRequestSchema>,
     @Req() request: Request,
   ) {
+    // ADD_PHONE et DELETE_ACCOUNT se demandent par leurs routes authentifiées (compte, numéros) :
+    // sur cette route publique, ils permettraient d'envoyer des SMS de « suppression » à n'importe qui.
+    if (body.purpose === 'ADD_PHONE' || body.purpose === 'DELETE_ACCOUNT') {
+      throw new ApiError(
+        'OTP_PURPOSE_MISMATCH',
+        ACCOUNT_ERROR_MESSAGES.OTP_PURPOSE_MISMATCH,
+        ACCOUNT_ERROR_CODES.OTP_PURPOSE_MISMATCH,
+        { given: body.purpose },
+      );
+    }
     const result = await this.auth.requestOtp({
       phone: body.phone,
       countryIso2: body.countryIso2,
       captchaToken: body.captchaToken,
       purpose: body.purpose,
-      ip: clientIp(request),
+      ip: clientIpOrUndefined(request),
     });
     return { challengeId: result.challengeId, expiresAt: result.expiresAt.toISOString() };
   }
@@ -81,7 +98,7 @@ export class AuthController {
     const result = await this.auth.verifyOtp({
       challengeId: body.challengeId,
       code: body.code,
-      ip: clientIp(request),
+      ip: clientIpOrUndefined(request),
       userAgent: typeof ua === 'string' ? ua : undefined,
     });
 
@@ -110,7 +127,7 @@ export class AuthController {
     const token = readRefreshCookie(request);
     if (token === null) throw ApiError.transverse('UNAUTHENTICATED');
 
-    const result = await this.auth.refresh(token, clientIp(request));
+    const result = await this.auth.refresh(token, clientIpOrUndefined(request));
     setRefreshCookie(response, result.refreshToken);
 
     return { accessToken: result.accessToken };
@@ -179,11 +196,6 @@ function readRefreshCookie(request: Request): string | null {
  * jamais renvoyée dans une réponse (§8.1 ne collecte aucune position plus fine
  * que la ville, et une IP en est une approximation).
  */
-function clientIp(request: Request): string | undefined {
-  const forwarded = request.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    // Le premier de la liste est le client ; les suivants sont les relais.
-    return forwarded.split(',')[0]?.trim();
-  }
-  return request.ip;
+function clientIpOrUndefined(request: Request): string | undefined {
+  return clientIp(request) ?? undefined;
 }

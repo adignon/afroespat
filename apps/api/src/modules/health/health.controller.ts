@@ -1,9 +1,33 @@
 import { Controller, Get, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
+import { loadEnv } from '../../config/env';
 import { QueueService } from '../../queue/queue.service';
 import { PublicRead } from '../../common/capability.decorator';
+
+/** Santé de la boîte d'envoi : âge (secondes) du plus ancien événement non publié, `null` si aucun. */
+export interface OutboxHealth {
+  oldestPendingSeconds: number | null;
+  stuck: boolean;
+}
+
+/** Pur et exporté pour être éprouvé : `maxSeconds` à 0 désactive le seuil. */
+export function evaluateOutbox(ageMs: number | null, maxSeconds: number): OutboxHealth {
+  if (ageMs === null) return { oldestPendingSeconds: null, stuck: false };
+  const seconds = Math.max(0, Math.round(ageMs / 1000));
+  return { oldestPendingSeconds: seconds, stuck: maxSeconds > 0 && seconds > maxSeconds };
+}
+
+async function outboxHealth(outbox: OutboxService): Promise<OutboxHealth> {
+  try {
+    return evaluateOutbox(await outbox.oldestPendingAge(), loadEnv().OUTBOX_MAX_PENDING_AGE_SECONDS);
+  } catch {
+    // La mesure elle-même échoue : ne pas retirer l'instance du trafic pour un signal secondaire.
+    return { oldestPendingSeconds: null, stuck: false };
+  }
+}
 
 /**
  * Sonde de santé — consommée par l'orchestrateur et par la supervision
@@ -17,6 +41,7 @@ export class HealthController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queues: QueueService,
+    private readonly outbox: OutboxService,
   ) {}
 
   @Get('health')
@@ -37,7 +62,7 @@ export class HealthController {
   @Get('ready')
   @PublicRead()
   @ApiOperation({ summary: 'Le service peut-il traiter du trafic (base et Redis)' })
-  async ready(@Res({ passthrough: true }) res: Response): Promise<{ status: 'ok' | 'degraded'; database: boolean; redis: boolean }> {
+  async ready(@Res({ passthrough: true }) res: Response): Promise<{ status: 'ok' | 'degraded'; database: boolean; redis: boolean; outbox: OutboxHealth }> {
     const within = async (probe: () => Promise<unknown>): Promise<boolean> => {
       let timer: NodeJS.Timeout | undefined;
       try {
@@ -58,8 +83,11 @@ export class HealthController {
       within(() => this.prisma.$queryRaw`SELECT 1`),
       within(() => this.queues.redis.ping()),
     ]);
-    const ok = database && redis;
+    // L'âge du plus ancien événement non publié : un relais arrêté ne casse ni la base ni Redis, mais plus rien ne part
+    // (notifications, e-mails, files). Au-delà du seuil, l'instance est signalée dégradée (503). Sans base, on n'interroge pas.
+    const outbox = database ? await outboxHealth(this.outbox) : { oldestPendingSeconds: null, stuck: false };
+    const ok = database && redis && !outbox.stuck;
     if (!ok) res.status(503);
-    return { status: ok ? 'ok' : 'degraded', database, redis };
+    return { status: ok ? 'ok' : 'degraded', database, redis, outbox };
   }
 }

@@ -131,7 +131,7 @@ export class PhonesService {
 
     const country = await this.prisma.country.findUniqueOrThrow({
       where: { id: challenge.countryId },
-      select: { id: true, kind: true, isActive: true, dialCode: true },
+      select: { id: true, iso2: true, kind: true, isActive: true, dialCode: true },
     });
     // Revérifié : le pays a pu être fermé entre l'envoi du code et sa saisie, et
     // c'est ce pays-là qui décide de `is_destination`, donc du niveau L2.
@@ -190,7 +190,7 @@ export class PhonesService {
       await this.outbox.emit(tx, {
         type: 'phone.added',
         aggregateId: userId,
-        payload: { userId, phoneId, isDestination: true, countryIso2: country.id },
+        payload: { userId, phoneId, isDestination: true, countryIso2: country.iso2 },
       });
 
       // Dans la MÊME transaction : le niveau, les sessions à rafraîchir et

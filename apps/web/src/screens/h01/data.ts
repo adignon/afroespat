@@ -41,6 +41,10 @@ export interface H01Data extends BandeauEntraide {
    * planches.
    */
   readonly vide?: EtatVide | null;
+  /** `nextCursor` de la première page de `GET /help` (lot E2) ; `null` = rien de plus (toujours nul sous « Vous pouvez aider »). */
+  readonly suite?: string | null;
+  /** Le « Voir plus » posé par l'adaptation H01_VOIR_PLUS. */
+  readonly plusDemandes?: import('@/components/voir-plus').PlusListe;
 }
 
 /**

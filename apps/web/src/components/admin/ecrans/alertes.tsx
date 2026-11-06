@@ -5,6 +5,7 @@ import { adminScamAlertsResponseSchema, okResponseSchema, scamAlertWriteSchema }
 import { staffApi } from '@/lib/api/index';
 import { toutesLesVilles } from '../donnees';
 import { useDroit } from '../session-equipe';
+import { Confirmation } from '../confirmation';
 import { Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Interrupteur, Lecture, Message, Onglets, Pastille, Selecteur, Titre, Vide, ZoneTexte, dateLongue, useCharge, useGeste } from '../ui';
 
 /**
@@ -167,10 +168,14 @@ function Editeur({
     });
     if (ok) onFait(id, alerte === null ? 'Alerte publiée : les membres du ciblage la voient.' : 'Alerte enregistrée.');
   };
+  const [retrait, setRetrait] = useState(false);
   const retirer = async () => {
     if (alerte === null) return;
     const ok = await geste.lancer(() => staffApi.post(`/moderation/scam-alerts/${alerte.id}/retire`, okResponseSchema));
-    if (ok) onFait(null, 'Alerte retirée de l’affichage.');
+    if (ok) {
+      setRetrait(false);
+      onFait(null, 'Alerte retirée de l’affichage.');
+    }
   };
 
   return (
@@ -204,11 +209,12 @@ function Editeur({
             {alerte === null ? 'Publier l’alerte' : 'Enregistrer'}
           </Bouton>
           {alerte !== null && alerte.state !== 'ended' ? (
-            <Bouton disabled={!peut || geste.occupe} onClick={() => void retirer()}>
+            <Bouton disabled={!peut || geste.occupe} onClick={() => { geste.effacer(); setRetrait(true); }}>
               Retirer
             </Bouton>
           ) : null}
         </div>
+        <Confirmation ouverte={retrait} titre="Retirer l’alerte arnaque" consigne="L’alerte disparaît aussitôt de l’affichage des membres qu’elle cible. Elle reste dans la liste, comme terminée ; l’action est tracée." libelle="Retirer l’alerte" onConfirmer={() => void retirer()} onFermer={() => setRetrait(false)} occupe={geste.occupe} message={geste.message} />
       </Carte>
       <div>
         <Etiquette>Aperçu membre</Etiquette>

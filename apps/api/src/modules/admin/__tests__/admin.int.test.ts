@@ -467,8 +467,17 @@ describe('administration (15)', () => {
       createdSettings.splice(0, createdSettings.length, ...reste);
     });
 
-    it('rend toutes les clés du registre, défaut du code compris', async () => {
+    it('rend à un rôle sans droit d’écriture uniquement les clés qu’il peut régler, jamais les CIDR', async () => {
       const staff = await as('SUPPORT');
+      const res = await request(httpServer(app)).get('/v1/admin/settings').set('cookie', staff.cookie).expect(200);
+      const keys = (res.body as { items: { key: string }[] }).items.map((i) => i.key);
+      expect(keys).not.toContain('admin_allowed_cidrs');
+      expect(keys).toEqual([]);
+      await request(httpServer(app)).get('/v1/admin/settings/admin_allowed_cidrs').set('cookie', staff.cookie).expect(403);
+    });
+
+    it('rend toutes les clés du registre, défaut du code compris', async () => {
+      const staff = await as('SUPER_ADMIN');
       const res = await request(httpServer(app))
         .get('/v1/admin/settings')
         .set('cookie', staff.cookie)

@@ -30,6 +30,8 @@ import {
 } from './api';
 import { alerteFrom, arrivalsFrom, eventsFrom, feedPostsFrom, onlineFrom, storiesFrom } from './from-api';
 import { ecouterStoriesVues } from '../story/vue';
+import { fusionner, useSuiteCurseur } from '@/lib/use-pages-curseur';
+import { plusDe } from '@/components/voir-plus';
 
 /**
  * L'ÉTAT DU FIL — un seul crochet pour A01, parce que la page n'a qu'un écran.
@@ -117,7 +119,7 @@ export interface FilEtat {
  */
 const TYPE_PAR_FILTRE = ['CONSEIL', 'DECOUVERTE', 'INFORMATION'] as const;
 
-export function useFil(storyFilter: number, postType: number) {
+export function useFil(storyFilter: number, _postType?: number) {
   const [etat, setEtat] = useState<FilEtat>({
     pret: false,
     chargement: true,
@@ -161,7 +163,7 @@ export function useFil(storyFilter: number, postType: number) {
          * d'un cache de cinq minutes et de la ville du membre.
          */
         const [feed, sidebar, bandeau] = await Promise.allSettled([
-          fetchFeed(postType >= 0 ? {} : {}, signal),
+          fetchFeed({}, signal),
           fetchSidebar(signal),
           fetchStoryBand(typeStory === undefined ? {} : { type: typeStory }, signal),
         ]);
@@ -194,7 +196,9 @@ export function useFil(storyFilter: number, postType: number) {
         setEtat((p) => ({ ...p, pret: true, chargement: false, echec: echecDe(error) }));
       }
     },
-    [postType, typeStory],
+    // Le type du composeur n'est PAS une dépendance : il règle ce qu'on publie, pas ce qu'on lit.
+    // L'y mettre rechargeait fil, colonne et stories à chaque clic sur le type.
+    [typeStory],
   );
 
   useEffect(() => {
@@ -513,9 +517,37 @@ export function useFil(storyFilter: number, postType: number) {
     });
   }, []);
 
+  /**
+   * LA SUITE DU FIL (lot E2) : le serveur rend 20 cartes et un curseur ; sans
+   * ceci, la vingt-et-unième publication n'existait pas. La clé suit le seul
+   * filtre qui recharge le fil, pour abandonner une page en vol quand il change.
+   */
+  const curseurFil = etat.feed?.nextCursor ?? null;
+  const suiteFil = useSuiteCurseur<FeedResponse['items'][number]>({
+    curseur: curseurFil,
+    cle: typeStory ?? 'tout',
+    charger: (curseur, signal) => fetchFeed({ cursor: curseur }, signal),
+    surPage: (page) => {
+      setEtat((p) =>
+        p.feed === null
+          ? p
+          : {
+              ...p,
+              feed: {
+                ...p.feed,
+                items: fusionner(p.feed.items, page.items, (carte) => carte.id),
+                nextCursor: page.nextCursor,
+              },
+            },
+      );
+    },
+  });
+  const plus = plusDe(suiteFil, { curseur: curseurFil, affiches: etat.feed?.items.length ?? 0 });
+
   return {
     ...etat,
     ...donnees,
+    plus,
     basculerReaction,
     publier,
     voterSondage,

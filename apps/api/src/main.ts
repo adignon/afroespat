@@ -2,11 +2,12 @@ import 'reflect-metadata';
 import cookieParser from 'cookie-parser';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { ApiErrorFilter } from './common/error.filter';
 import { PinoNestLogger, httpLogger, initSentry } from './common/observability';
-import { loadEnv } from './config/env';
+import { insecureLaunchWarnings, loadEnv } from './config/env';
 
 /**
  * Démarrage de l'API — 00-fondations.md §3.1 et §5.1.
@@ -23,7 +24,10 @@ async function bootstrap(): Promise<void> {
 
   await initSentry();
 
-  const app = await NestFactory.create(AppModule, {
+  // Options dégradées acceptées mais à ne pas oublier (captcha/modération coupés, OTP ouvert…), à chaque démarrage.
+  for (const w of insecureLaunchWarnings(env)) logger.warn(w);
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     // Journaux JSON sur stdout (pino) ; le niveau suit LOG_LEVEL.
     logger: new PinoNestLogger(),
     /**
@@ -39,6 +43,10 @@ async function bootstrap(): Promise<void> {
      */
     rawBody: true,
   });
+
+  // Derrière Caddy (1 relais) : `req.ip` vient de X-Forwarded-For en retirant TRUST_PROXY_HOPS relais par la droite.
+  // Un en-tête forgé par le client ne peut donc pas choisir l'IP vue par les limites de débit (voir common/client-ip.ts).
+  app.set('trust proxy', env.TRUST_PROXY_HOPS);
 
   // Une ligne JSON par requête : méthode, chemin SANS chaîne de requête, statut,
   // durée, identifiant de requête. Ni en-têtes ni corps (voir observability.ts).

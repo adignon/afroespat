@@ -583,7 +583,22 @@ export class MessagingService {
     const now = new Date();
     const sealed = this.crypto.encryptContent(input.firstMessage);
 
-    await this.prisma.$transaction(async (tx) => {
+    const raced = await this.prisma.$transaction(async (tx) => {
+      // Verrou consultatif sur la PAIRE : deux ouvertures simultanées entre les
+      // mêmes membres se suivent. La seconde retrouve la conversation de la
+      // première au lieu d'en créer une deuxième (aucune contrainte d'unicité ne
+      // peut l'exprimer sur une paire de membres sans migration lourde).
+      const [low, high] = actor.userId < target.id ? [actor.userId, target.id] : [target.id, actor.userId];
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'dm:' + low + ':' + high}, 0))`;
+      const concurrent = await tx.conversation.findFirst({
+        where: {
+          kind: 'DIRECT',
+          AND: [{ members: { some: { userId: actor.userId } } }, { members: { some: { userId: target.id } } }],
+        },
+        select: { id: true },
+      });
+      if (concurrent !== null) return concurrent.id;
+
       await tx.conversation.create({
         data: { id: conversationId, kind: 'DIRECT', lastMessageAt: now },
       });
@@ -618,7 +633,23 @@ export class MessagingService {
           recipientUserIds: [target.id],
         },
       });
+      return null;
     });
+
+    if (raced !== null) {
+      // Une ouverture concurrente a gagné : on écrit dans SA conversation.
+      const sent = await this.sendMessage(actor, raced, {
+        body: input.firstMessage,
+        ...(input.mediaId === undefined ? {} : { mediaId: input.mediaId }),
+        ...(input.storyId === undefined ? {} : { storyId: input.storyId }),
+      });
+      const pending = await this.pendingState(raced, actor.userId);
+      return {
+        conversationId: raced,
+        messageId: sent.messageId,
+        pending: pending.pending && pending.initiatorUserId === actor.userId,
+      };
+    }
 
     return {
       conversationId,

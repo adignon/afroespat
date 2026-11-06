@@ -236,6 +236,11 @@ export class EventSubscriptionsService implements OnModuleInit {
       await this.jobs.handleUserDeleted(job.aggregateId);
     });
 
+    // Lot D : une fiche Pro ne monte en gamme qu'à la réception de `subscription.changed`.
+    this.registry.on('subscription.changed', 'pros-tier', async (job) => {
+      await this.billing.applyProTier(job.aggregateId);
+    });
+
     this.registry.on('user.deleted', 'pros', async (job) => {
       await this.pros.handleUserDeleted(job.aggregateId);
     });
@@ -504,6 +509,11 @@ export class EventSubscriptionsService implements OnModuleInit {
      * Les trois événements appellent le MÊME gestionnaire : ils posent la même
      * question, « quels membres doivent voir leurs adhésions recalculées ».
      */
+    // Un commentaire sur un SUJET fait vivre le sujet et le réseau (07 §2.3, §7).
+    this.registry.on('post.commented', 'communities', async (job) => {
+      if ((job.payload as { subjectType?: unknown } | null)?.subjectType !== 'TOPIC') return;
+      await this.communities.handleTopicCommented(job.aggregateId);
+    });
     this.registry.on('city.activated', 'communities', async (job) => {
       await this.communities.handleLocationActivated({ cityId: job.aggregateId });
     });
@@ -712,6 +722,28 @@ export function registerNotificationSubscriptions(
   registry.on('moderation.case_resolved', 'notifications', async (job) => {
     await events.onModerationCaseResolved(job.aggregateId);
   });
+  registry.on('moderation.case_opened', 'notifications', async (job) => {
+    await events.onModerationCaseOpened(job.aggregateId);
+  });
+  registry.on('scam_alert.published', 'notifications', async (job) => {
+    await events.onScamAlertPublished(job.aggregateId);
+  });
+
+  // ── 10 Annuaire professionnel : la décision de l'équipe est dite au membre ──
+  registry.on('pro.approved', 'notifications', async (job) => {
+    await events.onProDecision('APPROVED', job.aggregateId, job.payload);
+  });
+  registry.on('pro.rejected', 'notifications', async (job) => {
+    await events.onProDecision('REJECTED', job.aggregateId, job.payload);
+  });
+
+  // ── 08 Contacts et parrainage ─────────────────────────────────────────────
+  registry.on('connection.created', 'notifications', async (job) => {
+    await events.onConnectionCreated(job.payload);
+  });
+  registry.on('mentorship.extended', 'notifications', async (job) => {
+    await events.onMentorshipExtended(job.aggregateId, job.payload);
+  });
 
   // ── 01 Compte ─────────────────────────────────────────────────────────────
   registry.on('user.registered', 'notifications', async (job) => {
@@ -803,9 +835,27 @@ export function registerSearchSubscriptions(
     });
   }
 
-  for (const type of ['help_request.published', 'help_request.resolved', 'help_request.reopened'] as const) {
+  for (const type of [
+    'help_request.published',
+    'help_request.resolved',
+    'help_request.reopened',
+    'help_request.updated',
+    'help_request.deleted',
+  ] as const) {
     registry.on(type, 'search', async (job) => {
       await search.enqueueReindex('HELP_REQUEST', job.aggregateId);
+    });
+  }
+
+  // Villes : le document CITY suit `isActive` (readSource) ; une fusion retire la
+  // ville absorbée et réindexe la cible.
+  for (const type of ['city.activated', 'city.deactivated', 'city.merged'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('CITY', job.aggregateId);
+      if (type === 'city.merged') {
+        const target = readString(job.payload, 'targetCityId');
+        if (target !== null) await search.enqueueReindex('CITY', target);
+      }
     });
   }
 
@@ -859,9 +909,15 @@ export function registerSearchSubscriptions(
     });
   }
 
-  registry.on('pro.registered', 'search', async (job) => {
-    await search.enqueueReindex('PRO', job.aggregateId);
-  });
+  // La fiche entre dans l'index à l'APPROBATION (`readSource` exige APPROVED) et en
+  // sort au refus : `enqueueReindex` relit la source, donc retire le document d'une
+  // fiche qui n'est plus APPROVED. `pro.registered` reste, pour une fiche
+  // resoumise puis remise en attente.
+  for (const type of ['pro.registered', 'pro.approved', 'pro.rejected'] as const) {
+    registry.on(type, 'search', async (job) => {
+      await search.enqueueReindex('PRO', job.aggregateId);
+    });
+  }
 
   for (const type of [
     'user.onboarded',

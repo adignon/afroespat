@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { ApiError, displayMessageFor } from '@/lib/api/index';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { displayMessageFor } from '@/lib/api/index';
+import { adresseReconnexion, proposeReconnexion } from './reconnexion';
 
 /**
  * LA COQUILLE QUI CHARGE — les trois états obligatoires de T1, et rien de plus.
@@ -62,11 +63,29 @@ type Etat<T> = { readonly phase: 'attente' } | { readonly phase: 'prêt'; readon
  * d'un composant parti — un avertissement que l'on finit par ignorer, donc une
  * vraie erreur que l'on n'aurait plus vue.
  */
-export function useDonnees<T>(charger: () => Promise<T>): Etat<T> {
+export function useDonnees<T>(charger: () => Promise<T>, cle?: string): Etat<T> {
   const [etat, setEtat] = useState<Etat<T>>({ phase: 'attente' });
+  const cleVue = useRef(cle);
 
   useEffect(() => {
     let annule = false;
+    /**
+     * ── REPASSER EN ATTENTE QUAND LA QUESTION CHANGE ───────────────────────
+     *
+     * Un filtre, une recherche, un onglet ou une conversation différente posent une
+     * AUTRE question : tant que la réponse n'est pas là, afficher l'ancienne ferait
+     * lire les résultats d'hier sous le filtre d'aujourd'hui (ou, en messagerie, le
+     * fil d'une autre personne sous le nom de celle qu'on vient d'ouvrir). L'appelant
+     * le dit en passant `cle` : quand elle change, on repasse en « attente » et
+     * l'écran montre son squelette.
+     *
+     * Sans `cle` — ou avec la même — c'est un rechargement après une action
+     * (compteur de relecture) : les données restent affichées, rien ne clignote.
+     */
+    if (cle !== cleVue.current) {
+      cleVue.current = cle;
+      setEtat({ phase: 'attente' });
+    }
     charger().then(
       (donnees) => {
         if (!annule) setEtat({ phase: 'prêt', donnees });
@@ -108,7 +127,7 @@ export function useDonnees<T>(charger: () => Promise<T>): Etat<T> {
      * VISIBLE plutôt que masquée : la boucle se voit tout de suite, un rechargement
      * manqué ne se voit jamais.
      */
-  }, [charger]);
+  }, [charger, cle]);
 
   return etat;
 }
@@ -300,7 +319,8 @@ export function PanneauEchec({
   readonly erreur: unknown;
   readonly onReessayer: () => void;
 }) {
-  const perdue = erreur instanceof ApiError && (erreur.status === 401 || erreur.status === 403);
+  // Seul un 401 propose de se reconnecter : un 403 (niveau requis…) n'y changerait rien.
+  const perdue = proposeReconnexion(erreur);
   return (
     <div style={CADRE} role="alert">
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
@@ -309,7 +329,7 @@ export function PanneauEchec({
           {perdue ? (
             <>
               {' '}
-              <a href="/connexion" style={LIEN}>
+              <a href={adresseReconnexion()} style={LIEN}>
                 Se reconnecter
               </a>
             </>
@@ -368,12 +388,13 @@ export function BandeEchec({
   readonly erreur: unknown;
   readonly onReessayer: () => void;
 }) {
-  const perdue = erreur instanceof ApiError && (erreur.status === 401 || erreur.status === 403);
+  // Seul un 401 propose de se reconnecter : un 403 (niveau requis…) n'y changerait rien.
+  const perdue = proposeReconnexion(erreur);
   return (
     <div style={BANDE} role="alert">
       <span>{displayMessageFor(erreur)}</span>
       {perdue ? (
-        <a href="/connexion" style={{ ...LIEN, ...DANS_LA_BANDE }}>
+        <a href={adresseReconnexion()} style={{ ...LIEN, ...DANS_LA_BANDE }}>
           Se reconnecter
         </a>
       ) : null}
@@ -413,6 +434,12 @@ export function EcranDonnees<T>(proprietes: {
   readonly charger: () => Promise<T>;
   readonly children: (donnees: T) => ReactNode;
   readonly attente?: string;
+  /**
+   * Identité de la QUESTION posée (filtre, recherche, onglet, conversation). Quand
+   * elle change, l'écran repasse en attente au lieu de garder l'ancienne réponse ;
+   * absente, un changement de `charger` recharge sans rien vider.
+   */
+  readonly cle?: string;
   /** Voir `bandeAttente` plus bas : l'écran dit lui-même qu'il attend. */
   readonly bandeAttente?: boolean;
   /**
@@ -461,9 +488,11 @@ function Chargement<T>({
   children,
   attente = 'Chargement de votre compte…',
   bandeAttente = true,
+  cle,
   squelette,
   onReessayer,
 }: {
+  readonly cle?: string;
   readonly charger: () => Promise<T>;
   readonly children: (donnees: T) => ReactNode;
   /**
@@ -510,7 +539,7 @@ function Chargement<T>({
   readonly squelette: T;
   readonly onReessayer: () => void;
 }) {
-  const etat = useDonnees(charger);
+  const etat = useDonnees(charger, cle);
 
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗

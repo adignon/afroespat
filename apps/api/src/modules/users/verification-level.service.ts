@@ -123,7 +123,8 @@ export class VerificationLevelService {
    * numéro d'un pays de destination actif ». Cumulatifs : sans KYC approuvé, un
    * numéro français laisse le membre en L0.
    *
-   * `is_adult = false` NE DONNE PAS L1, même sur un `APPROVED` : §2.3 réserve la
+   * L1 EXIGE `is_adult === true` : un `APPROVED` sans majorité établie (`null`) ne donne rien, et
+   * `is_adult = false` NE DONNE PAS L1 non plus, même sur un `APPROVED` : §2.3 réserve la
    * plateforme aux majeurs, et son compte est désactivé. Le cas ne devrait pas
    * exister — un mineur n'est pas approuvé — mais le fournisseur décide seul de la
    * combinaison qu'il renvoie, et lui faire confiance ici donnerait L1 à un mineur.
@@ -140,7 +141,7 @@ export class VerificationLevelService {
     });
 
     const identityVerified =
-      latestKyc !== null && latestKyc.status === 'APPROVED' && latestKyc.isAdult !== false;
+      latestKyc !== null && latestKyc.status === 'APPROVED' && latestKyc.isAdult === true;
     if (!identityVerified) return 'L0';
 
     /**

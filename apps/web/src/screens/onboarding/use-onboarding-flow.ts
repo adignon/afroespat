@@ -44,6 +44,7 @@ import {
 import type { ChoixItem } from './choix-referentiel';
 import { toTemplateChoices, type JourneyTemplateChoice } from './from-api';
 import { REASON_EXPIRED } from './resume';
+import { oublierSuite, suiteMemorisee } from '@/lib/suite-connexion';
 
 /**
  * Le parcours d'inscription, branché sur l'API — 01-identite.md §5.
@@ -685,8 +686,11 @@ export function useOnboardingFlow(step: number, initialError: string | null = nu
         // On reprend là où le membre s'est arrêté, au lieu de le renvoyer
         // systématiquement à l'écran 2 : c'est toute la raison d'être de
         // `onboarding_step`.
+        // La destination d'avant la connexion (`?suite=`) : revalidée, puis consommée.
+        const suite = suiteMemorisee();
+        oublierSuite();
         const next = session.onboarding.complete
-          ? '/accueil'
+          ? (suite ?? '/accueil')
           : (NEXT_PATH[Math.max(1, session.onboarding.step)] ?? '/bienvenue/phase');
         router.push(next);
       });

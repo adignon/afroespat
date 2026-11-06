@@ -315,6 +315,58 @@ export class ReferentialsService {
     return { countryId: id, isActive: true, communityId: community?.id ?? null };
   }
 
+  /**
+   * `POST /admin/ref/countries/:id/deactivate` — fermeture d'un pays (02 §2.1).
+   *
+   * GARDE-FOUS : un pays ne se ferme pas tant qu'une de ses villes est active (fermez d'abord les
+   * villes : leur désactivation est elle-même tracée), ni s'il est le DERNIER pays actif de son genre
+   * (origine ou destination) : l'inscription n'aurait plus de choix. Les membres et leurs contenus
+   * sont conservés ; seul le pays disparaît des sélecteurs.
+   */
+  async deactivateCountry(staff: StaffUser, id: string, input: RefReason) {
+    const country = await this.prisma.country.findUnique({
+      where: { id },
+      select: { id: true, iso2: true, isActive: true, kind: true },
+    });
+    if (country === null) throw ApiError.notFound();
+    if (!country.isActive) throw ApiError.transverse('CONFLICT', { reason: 'pays déjà inactif' });
+
+    const activeCities = await this.prisma.city.count({
+      where: { countryId: id, isActive: true, mergedIntoCityId: null },
+    });
+    if (activeCities > 0) {
+      throw ApiError.transverse('CONFLICT', {
+        reason: 'des villes de ce pays sont encore actives : fermez-les d’abord',
+        activeCities,
+      });
+    }
+    const kinds: ('ORIGIN' | 'DESTINATION' | 'BOTH')[] =
+      country.kind === 'BOTH' ? ['ORIGIN', 'DESTINATION', 'BOTH'] : [country.kind, 'BOTH'];
+    const others = await this.prisma.country.count({
+      where: { isActive: true, id: { not: id }, kind: { in: kinds } },
+    });
+    if (others === 0) {
+      throw ApiError.transverse('CONFLICT', {
+        reason: 'dernier pays actif de ce genre : l’inscription n’aurait plus de choix',
+        kind: country.kind,
+      });
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.country.update({ where: { id }, data: { isActive: false } });
+      await this.record(tx, staff, 'ref.country_deactivated', 'country', id, {
+        reason: input.reason,
+        iso2: country.iso2,
+      });
+      await this.outbox.emit(tx, {
+        type: 'country.deactivated',
+        aggregateId: id,
+        payload: { countryId: id, iso2: country.iso2, byStaffId: staff.staffId },
+      });
+    });
+    return { countryId: id, isActive: false };
+  }
+
   // ── Villes ─────────────────────────────────────────────────────────────────
 
   /**
@@ -568,6 +620,12 @@ export class ReferentialsService {
      */
     await this.write(staff, 'ref.city_deactivated', 'city', id, { reason: input.reason, slug: city.slug }, async (tx) => {
       await tx.city.update({ where: { id }, data: { isActive: false } });
+      // Consommateurs : la recherche retire les fiches de la ville, les réseaux se resynchronisent.
+      await this.outbox.emit(tx, {
+        type: 'city.deactivated',
+        aggregateId: id,
+        payload: { cityId: id, slug: city.slug, byStaffId: staff.staffId },
+      });
     });
     return { cityId: id, isActive: false };
   }
@@ -623,10 +681,45 @@ export class ReferentialsService {
     }
 
     const moved = await this.prisma.$transaction(async (tx) => {
-      const users = await tx.user.updateMany({
-        where: { cityId: id },
-        data: { cityId: input.targetCityId },
-      });
+      const to = input.targetCityId;
+      const users = await tx.user.updateMany({ where: { cityId: id }, data: { cityId: to } });
+      // TOUS les contenus qui portent un `city_id` suivent (02 §6 : « réécriture des city_id »). Liste
+      // tirée du schéma Prisma ; ajouter ici toute nouvelle table portant une ville.
+      const content: Record<string, number> = {
+        posts: (await tx.post.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        stories: (await tx.story.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        guides: (await tx.guide.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        helpRequests: (await tx.helpRequest.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        cityTips: (await tx.cityTip.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        events: (await tx.event.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        housing: (await tx.housingListing.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        jobs: (await tx.jobListing.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        journeys: (await tx.journey.updateMany({ where: { destinationCityId: id }, data: { destinationCityId: to } })).count,
+        scamAlerts: (await tx.scamAlert.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        impactQuotes: (await tx.impactQuote.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        searchDocuments: (await tx.searchDocument.updateMany({ where: { cityId: id }, data: { cityId: to } })).count,
+        // Réseaux AUTRES que le réseau de ville automatique (celui-ci a son pendant sur la cible) :
+        // les réseaux d'intérêt rattachés à la ville suivent.
+        communities: (await tx.community.updateMany({ where: { cityId: id, kind: { not: 'CITY' } }, data: { cityId: to } })).count,
+        defaultCityOfCountries: (await tx.country.updateMany({ where: { defaultCityId: id }, data: { defaultCityId: to } })).count,
+      };
+      // Villes de couverture d'un pro : clé composite (pro, ville) -> on ne recrée que les couples absents.
+      const proCities = await tx.proProfileCity.findMany({ where: { cityId: id }, select: { proProfileId: true } });
+      if (proCities.length > 0) {
+        await tx.proProfileCity.createMany({
+          data: proCities.map((p) => ({ proProfileId: p.proProfileId, cityId: to })),
+          skipDuplicates: true,
+        });
+        await tx.proProfileCity.deleteMany({ where: { cityId: id } });
+      }
+      content['proCoverage'] = proCities.length;
+      // Médianes de loyer de la ville absorbée : recalculées chaque nuit pour la cible.
+      await tx.housingPriceMedian.deleteMany({ where: { cityId: id } });
+      // Compteurs : la ville absorbée se vide, la cible grossit (le recalcul nocturne reste le filet).
+      await tx.city.update({ where: { id }, data: { memberCount: 0 } });
+      if (users.count > 0) {
+        await tx.city.update({ where: { id: to }, data: { memberCount: { increment: users.count } } });
+      }
       await tx.city.update({
         where: { id },
         data: { mergedIntoCityId: input.targetCityId, isActive: false },
@@ -636,16 +729,17 @@ export class ReferentialsService {
         from: source.slug,
         into: target.slug,
         usersMoved: users.count,
+        contentMoved: content,
       });
       await this.outbox.emit(tx, {
         type: 'city.merged',
         aggregateId: id,
         payload: { cityId: id, targetCityId: input.targetCityId, byStaffId: staff.staffId },
       });
-      return users.count;
+      return { users: users.count, content };
     });
 
-    return { cityId: id, targetCityId: input.targetCityId, usersMoved: moved };
+    return { cityId: id, targetCityId: input.targetCityId, usersMoved: moved.users, contentMoved: moved.content };
   }
 
   /**
@@ -660,6 +754,7 @@ export class ReferentialsService {
    */
   async importCities(staff: StaffUser, input: ImportCities) {
     const lines = input.csv
+      .replace(/^\uFEFF/, '')
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l.length > 0);
@@ -668,6 +763,9 @@ export class ReferentialsService {
     // Un en-tête est toléré et ignoré : un tableur en produit un par défaut.
     const first = lines[0]?.toLowerCase() ?? '';
     const rows = /latitude|longitude|pays/.test(first) ? lines.slice(1) : lines;
+    // Le séparateur se déduit de la PREMIÈRE ligne : « ; » (tableur français, décimales à virgule) ou « , »
+    // (décimales à point). Séparer sur les deux à la fois coupait « 48,85 » en deux colonnes.
+    const delimiter = first.includes(';') ? ';' : ',';
 
     const countries = new Map(
       (await this.prisma.country.findMany({ select: { id: true, iso2: true, kind: true } })).map((c) => [
@@ -683,7 +781,7 @@ export class ReferentialsService {
     const rejected: { line: number; raw: string; reason: string }[] = [];
 
     rows.forEach((raw, index) => {
-      const cells = raw.split(/[;,]/).map((c) => c.trim());
+      const cells = parseCsvLine(raw, delimiter);
       const [name, region, lat, lon, iso2] = cells;
       const at = index + 1;
       if (name === undefined || lat === undefined || lon === undefined || iso2 === undefined) {
@@ -814,4 +912,38 @@ function slugify(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+/**
+ * Découpe UNE ligne CSV : champs entre guillemets (avec `""` pour un guillemet), séparateur au choix.
+ * Les espaces autour d'un champ sont retirés.
+ */
+export function parseCsvLine(line: string, delimiter: ';' | ','): string[] {
+  const cells: string[] = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i] as string;
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          current += '"';
+          i += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === delimiter) {
+      cells.push(current.trim());
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  cells.push(current.trim());
+  return cells;
 }

@@ -81,7 +81,10 @@ export function normalizeDiditWebhook(body: unknown): Record<string, unknown> | 
   if (typeof b['session_id'] !== 'string') return null;
   const status = mapDiditStatus(b['status']);
   const isAdult = isAdultFromDecision(b['decision']);
-  const out: Record<string, unknown> = { sessionId: b['session_id'], status: status ?? b['status'] };
+  // Un statut Didit INCONNU ne doit pas faire rejeter (400) le message : la mise à jour serait perdue et
+  // Didit réessaierait en vain. `IN_REVIEW` est le repli sûr : aucun niveau accordé, un humain regarde,
+  // et la table de transitions l'empêche de dégrader une vérification déjà approuvée.
+  const out: Record<string, unknown> = { sessionId: b['session_id'], status: status ?? 'IN_REVIEW' };
   if (isAdult !== undefined) out['isAdult'] = isAdult;
   // Un CODE seulement, borné : §2.3 interdit d'en garder davantage.
   const reasons = (b['decision'] as Record<string, unknown> | undefined)?.['warnings'];

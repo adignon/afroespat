@@ -31,6 +31,8 @@
  * touche pas aux métadonnées d'un PDF — voir `stripMetadata`.
  */
 
+import sharp from 'sharp';
+
 export interface SniffedType {
   readonly mime: string;
   readonly width: number | null;
@@ -325,3 +327,29 @@ function stripWebp(bytes: Buffer): Buffer {
  */
 export const JPEG_EXIF_MARKER = Buffer.from([0xff, 0xe1]);
 export const EXIF_IDENTIFIER = Buffer.from('Exif\0\0', 'latin1');
+
+/**
+ * L'ORIENTATION EXIF EST APPLIQUÉE AVANT QUE `stripMetadata` RETIRE L'APP1.
+ *
+ * Une photo de téléphone est souvent stockée « couchée » avec un drapeau d'orientation dans l'EXIF.
+ * Retirer l'EXIF sans la faire pivoter d'abord affiche l'image de travers. Seuls les JPEG dont
+ * l'orientation n'est pas la normale sont ré-encodés (pas de perte inutile sur les autres) ; sharp
+ * n'écrit aucune métadonnée en sortie. Rend aussi les dimensions du résultat.
+ */
+export async function applyExifOrientation(
+  bytes: Buffer,
+  mime: string,
+): Promise<{ body: Buffer; rotated: boolean; width: number | null; height: number | null }> {
+  const none = { body: bytes, rotated: false, width: null, height: null };
+  if (mime !== 'image/jpeg') return none;
+  try {
+    const meta = await sharp(bytes).metadata();
+    if (meta.orientation === undefined || meta.orientation <= 1) return none;
+    const body = await sharp(bytes).rotate().jpeg({ quality: 92 }).toBuffer();
+    const out = await sharp(body).metadata();
+    return { body, rotated: true, width: out.width ?? null, height: out.height ?? null };
+  } catch {
+    // Image que sharp ne sait pas décoder : on retombe sur le nettoyage par segments.
+    return none;
+  }
+}

@@ -54,6 +54,36 @@ export function BarreAdmin() {
   const chemin = usePathname() ?? '';
   const ici = entreeDuChemin(chemin);
   const champ = useRef<HTMLInputElement | null>(null);
+  const zoneMenu = useRef<HTMLDivElement | null>(null);
+  const declencheur = useRef<HTMLButtonElement | null>(null);
+
+  // Menu de compte : Échap ferme et rend le focus au bouton, un clic extérieur ferme, flèches haut/bas entre les gestes.
+  useEffect(() => {
+    if (!menu) return undefined;
+    (zoneMenu.current?.querySelector('[role="menuitem"]') as HTMLElement | null)?.focus();
+    const clavier = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setMenu(false);
+        declencheur.current?.focus();
+      } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const items = Array.from(zoneMenu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+        if (items.length === 0) return;
+        e.preventDefault();
+        const i = items.indexOf(document.activeElement as HTMLElement);
+        const suivant = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+        items[suivant]?.focus();
+      }
+    };
+    const dehors = (e: MouseEvent) => {
+      if (zoneMenu.current !== null && e.target instanceof Node && !zoneMenu.current.contains(e.target)) setMenu(false);
+    };
+    document.addEventListener('keydown', clavier);
+    document.addEventListener('mousedown', dehors);
+    return () => {
+      document.removeEventListener('keydown', clavier);
+      document.removeEventListener('mousedown', dehors);
+    };
+  }, [menu]);
 
   // « / » ouvre la recherche, comme partout ailleurs, sauf quand on est déjà en train de saisir.
   useEffect(() => {
@@ -113,10 +143,12 @@ export function BarreAdmin() {
           />
         </label>
       </form>
-      <div style={{ position: 'relative' }}>
+      <div ref={zoneMenu} style={{ position: 'relative' }}>
         <button
+          ref={declencheur}
           type="button"
           aria-label="Mon compte"
+          aria-haspopup="menu"
           aria-expanded={menu}
           onClick={() => setMenu((m) => !m)}
           style={{ width: '36px', height: '36px', borderRadius: '999px', background: C.vertFonce, color: '#fff', fontSize: '11px', fontWeight: 700, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAVIGATION_ADMIN, entreeDuChemin, navigationPour } from './navigation-admin';
+import { NAVIGATION_ADMIN, entreeDuChemin, navigationPour, peutOuvrir, quiPeut, reservePour } from './navigation-admin';
 
 describe('la navigation de l’administration', () => {
   const toutes = NAVIGATION_ADMIN.flatMap((g) => g.entrees);
@@ -14,9 +14,9 @@ describe('la navigation de l’administration', () => {
   it('un rôle ne voit que les écrans qu’il peut traiter', () => {
     const libelles = (r: Parameters<typeof navigationPour>[0]) => navigationPour(r).flatMap((g) => g.entrees.map((e) => e.libelle));
     expect(libelles('SUPER_ADMIN')).toHaveLength(15);
-    // Un modérateur ouvre la modération mais pas les réglages ni les référentiels.
+    // Un modérateur ouvre la modération et le journal d'audit (Réglages), mais pas les référentiels.
     expect(libelles('MODERATOR')).toContain('Modération');
-    expect(libelles('MODERATOR')).not.toContain('Réglages');
+    expect(libelles('MODERATOR')).toContain('Réglages');
     expect(libelles('MODERATOR')).not.toContain('Référentiels');
     // Le support ne modère pas, mais traite les justificatifs pro et les membres.
     expect(libelles('SUPPORT')).not.toContain('Modération');
@@ -27,8 +27,24 @@ describe('la navigation de l’administration', () => {
   });
 
   it('un groupe sans entrée visible disparaît', () => {
-    const titres = navigationPour('SUPPORT').map((g) => g.titre);
-    expect(titres).not.toContain('Configuration');
+    const titres = navigationPour('MODERATOR').map((g) => g.titre);
+    expect(titres).toContain('Configuration'); // Réglages (journal) est ouvert aux quatre rôles
+    expect(navigationPour('SUPPORT').flatMap((g) => g.entrees.map((e) => e.href))).not.toContain('/admin/referentiels');
+  });
+
+  it('la garde de route : peutOuvrir refuse ce que le rail cache', () => {
+    const ref = toutes.find((e) => e.href === '/admin/referentiels');
+    if (ref === undefined) throw new Error('référentiels absents');
+    expect(peutOuvrir('MODERATOR', ref)).toBe(false);
+    expect(peutOuvrir('CONTENT_ADMIN', ref)).toBe(true);
+    expect(peutOuvrir(null, ref)).toBe(false);
+  });
+
+  it('dit en français qui peut employer un périmètre', () => {
+    expect(quiPeut('rgpd')).toBe('support et administrateurs');
+    expect(reservePour('rgpd')).toBe('Réservé : support et administrateurs');
+    expect(quiPeut('staffAdmin')).toBe('administrateurs');
+    expect(quiPeut('moderation')).toBe('modération et administrateurs');
   });
 
   it('la page courante est la plus spécifique', () => {

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Caveat:wght@600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#FBFCFB;font-family:'Plus Jakarta Sans',system-ui,sans-serif;color:#16211D;-webkit-font-smoothing:antialiased}
+a{color:#16785E;text-decoration:none}a:hover{color:#0F5C48}
+*{box-sizing:border-box}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;overflow-x:hidden">
+
+<sc-if value="{{ isArticle }}" hint-placeholder-val="{{ false }}"><div style="position:fixed;top:0;left:0;height:3px;width:{{ progress }};background:#E0733A;z-index:40"></div></sc-if>
+
+<header style="position:sticky;top:0;z-index:30;background:rgba(251,252,251,.94);backdrop-filter:blur(10px);border-bottom:1px solid #EEF2F0">
+  <div style="max-width:1240px;margin:0 auto;padding:12px 20px;display:flex;align-items:center;gap:14px">
+    <a href="Landing Page v4.dc.html" style="display:flex;align-items:center;gap:9px;flex-shrink:0"><svg width="41" height="41" viewBox="-6 -18 60 60" style="flex-shrink:0"><g transform="rotate(-35 24 12)"><path d="M0 0H10V14H34V24H0Z" fill="#16785E"></path><path d="M14 0H48V24H38V10H14Z" fill="#E0733A"></path></g></svg><sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}"><span style="font-size:18px;font-weight:800;color:#0F5C48;letter-spacing:-0.4px">Diaspory<span style="color:#E0733A">plus</span></span></sc-if></a>
+    <a href="#/" style="height:34px;padding:0 12px;border-radius:999px;background:#E3F0EB;color:#0F5C48;font-size:13px;font-weight:700;display:flex;align-items:center;flex-shrink:0">Le blog</a>
+    <span style="flex:1"></span>
+    <sc-if value="{{ showNav }}" hint-placeholder-val="{{ true }}"><nav style="display:flex;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none"><sc-for list="{{ navCats }}" as="c" hint-placeholder-count="5"><a href="{{ c.href }}" style="height:38px;padding:0 12px;border-radius:999px;font-size:13.5px;font-weight:{{ c.fw }};color:{{ c.fg }};background:{{ c.bg }};display:flex;align-items:center;white-space:nowrap" style-hover="background:#EEF2F0;color:#16211D">{{ c.label }}</a></sc-for></nav></sc-if>
+    <a href="Landing Page v4.dc.html" style="height:40px;padding:0 14px;border-radius:999px;font-size:14px;font-weight:700;color:#16211D;display:flex;align-items:center;white-space:nowrap;flex-shrink:0" style-hover="background:#EEF2F0;color:#16211D">Accueil</a>
+    <button onClick="{{ openSignup }}" style="height:40px;padding:0 18px;border-radius:999px;border:none;background:#16211D;color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0">Rejoindre</button>
+  </div>
+</header>
+
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+  <section>
+    <div style="max-width:1140px;margin:0 auto;padding:44px 20px 0;display:flex;flex-direction:column;gap:22px">
+      <div style="display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
+        <div style="flex:1;min-width:260px">
+          <sc-if value="{{ catActive }}" hint-placeholder-val="{{ false }}"><a href="#/" style="font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px;margin-bottom:10px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"></path></svg>Tous les articles</a></sc-if>
+          <span style="display:block;font-family:Caveat,cursive;font-size:24px;font-weight:700;color:#E0733A">{{ listKicker }}</span>
+          <h1 style="margin:2px 0 0;font-size:clamp(30px,4vw,46px);font-weight:800;letter-spacing:-1.4px;line-height:1.08">{{ listTitle }}</h1>
+          <p style="margin:10px 0 0;font-size:15.5px;line-height:1.65;color:#5D6B66;max-width:560px">{{ listSub }}</p>
+        </div>
+        <div style="width:min(100%,340px);height:48px;border-radius:999px;background:#fff;border:1px solid #E6EBE9;display:flex;align-items:center;gap:10px;padding:0 16px">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#5D6B66" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>
+          <input value="{{ q }}" onChange="{{ onQ }}" placeholder="Rechercher un article" style="flex:1;min-width:0;border:none;background:transparent;font:inherit;font-size:14.5px;color:#16211D;outline:none;height:100%">
+          <sc-if value="{{ hasQ }}" hint-placeholder-val="{{ false }}"><button onClick="{{ clearQ }}" style="border:none;background:#F2F5F4;width:26px;height:26px;border-radius:999px;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></sc-if>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none">
+        <sc-for list="{{ chips }}" as="c" hint-placeholder-count="8"><a href="{{ c.href }}" style="flex-shrink:0;height:40px;padding:0 16px;border-radius:999px;border:1px solid {{ c.bd }};background:{{ c.bg }};color:{{ c.fg }};font-size:13.5px;font-weight:700;display:flex;align-items:center;gap:8px;white-space:nowrap">{{ c.label }}<span style="font-size:12px;font-weight:600;opacity:.7">{{ c.n }}</span></a></sc-for>
+      </div>
+    </div>
+  </section>
+
+  <sc-if value="{{ showFeatured }}" hint-placeholder-val="{{ false }}">
+    <section>
+      <div style="max-width:1140px;margin:0 auto;padding:28px 20px 0">
+        <sc-for list="{{ featuredList }}" as="f" hint-placeholder-count="1"><a href="{{ f.href }}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));background:#fff;border:1px solid #E6EBE9;border-radius:32px;overflow:hidden;color:#16211D" style-hover="color:#16211D;border-color:#CFE3DA">
+          <img src="{{ f.img }}" alt="" style="width:100%;height:100%;min-height:300px;max-height:460px;object-fit:cover;display:block;background:#E3ECE8">
+          <div style="padding:clamp(24px,4vw,44px);display:flex;flex-direction:column;gap:14px;justify-content:center">
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="background:#E0733A;color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px">À la une</span><span style="background:{{ f.catBg }};color:{{ f.catFg }};font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px">{{ f.cat }}</span></div>
+            <h2 style="margin:0;font-size:clamp(24px,2.8vw,34px);font-weight:800;letter-spacing:-0.9px;line-height:1.15;text-wrap:balance">{{ f.title }}</h2>
+            <p style="margin:0;font-size:15.5px;line-height:1.65;color:#5D6B66">{{ f.excerpt }}</p>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:6px"><img src="{{ f.authorImg }}" alt="" style="width:38px;height:38px;border-radius:999px;object-fit:cover"><span><span style="display:block;font-size:13.5px;font-weight:700">{{ f.authorName }}</span><span style="display:block;font-size:12.5px;color:#8A958F">{{ f.date }} · {{ f.read }} min de lecture</span></span></div>
+          </div>
+        </a></sc-for>
+      </div>
+    </section>
+  </sc-if>
+
+  <section>
+    <div style="max-width:1140px;margin:0 auto;padding:36px 20px 24px">
+      <sc-if value="{{ hasQ }}" hint-placeholder-val="{{ false }}"><div style="font-size:14px;color:#5D6B66;margin-bottom:18px">{{ resultLabel }}</div></sc-if>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:28px 24px">
+        <sc-for list="{{ cards }}" as="a" hint-placeholder-count="6">
+          <a href="{{ a.href }}" style="display:flex;flex-direction:column;gap:12px;color:#16211D" style-hover="color:#16211D">
+            <div style="position:relative;border-radius:22px;overflow:hidden;aspect-ratio:4/3;background:#E3ECE8"><img src="{{ a.img }}" alt="" style="width:100%;height:100%;object-fit:cover;display:block"><span style="position:absolute;left:12px;top:12px;background:#fff;color:{{ a.catFg }};font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px">{{ a.cat }}</span></div>
+            <span style="font-size:18px;font-weight:700;line-height:1.32;letter-spacing:-0.3px;text-wrap:pretty">{{ a.title }}</span>
+            <span style="font-size:14px;line-height:1.6;color:#5D6B66;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ a.excerpt }}</span>
+            <span style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:#8A958F"><img src="{{ a.authorImg }}" alt="" style="width:24px;height:24px;border-radius:999px;object-fit:cover"><span style="font-weight:700;color:#16211D">{{ a.authorName }}</span>· {{ a.date }} · {{ a.read }} min</span>
+          </a>
+        </sc-for>
+      </div>
+      <sc-if value="{{ empty }}" hint-placeholder-val="{{ false }}"><div style="background:#fff;border:1px solid #E6EBE9;border-radius:24px;padding:48px 24px;text-align:center"><div style="font-size:17px;font-weight:700">Aucun article ne correspond</div><div style="font-size:14px;color:#5D6B66;margin-top:6px">Essayez un autre mot ou une autre catégorie.</div><a href="#/" onClick="{{ clearQ }}" style="display:inline-flex;margin-top:14px;height:42px;padding:0 18px;border-radius:999px;background:#16785E;color:#fff;font-size:13.5px;font-weight:700;align-items:center">Voir tous les articles</a></div></sc-if>
+      <sc-if value="{{ hasMore }}" hint-placeholder-val="{{ false }}"><div style="display:flex;justify-content:center;margin-top:36px"><button onClick="{{ loadMore }}" style="height:48px;padding:0 24px;border-radius:999px;border:1px solid #E6EBE9;background:#fff;font:inherit;font-size:14px;font-weight:700;color:#16211D;cursor:pointer">Voir plus d’articles · {{ remaining }}</button></div></sc-if>
+    </div>
+  </section>
+
+  <sc-if value="{{ showPopular }}" hint-placeholder-val="{{ true }}">
+    <section>
+      <div style="max-width:1140px;margin:0 auto;padding:40px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:40px;align-items:start">
+        <div>
+          <h2 style="margin:0 0 18px;font-size:24px;font-weight:800;letter-spacing:-0.6px">Les plus lus ce mois-ci</h2>
+          <div style="display:flex;flex-direction:column">
+            <sc-for list="{{ popular }}" as="p" hint-placeholder-count="4"><a href="{{ p.href }}" style="display:flex;gap:16px;align-items:center;padding:14px 0;border-top:1px solid #EEF2F0;color:#16211D" style-hover="color:#16785E"><span style="font-size:30px;font-weight:800;color:#CFE3DA;width:36px;letter-spacing:-1px">{{ p.rank }}</span><span style="flex:1;min-width:0"><span style="display:block;font-size:15.5px;font-weight:700;line-height:1.35">{{ p.title }}</span><span style="display:block;font-size:12.5px;color:#8A958F;margin-top:3px">{{ p.cat }} · {{ p.read }} min</span></span><img src="{{ p.img }}" alt="" style="width:64px;height:64px;border-radius:14px;object-fit:cover;flex-shrink:0"></a></sc-for>
+          </div>
+        </div>
+        <div style="background:#0F5C48;color:#fff;border-radius:28px;padding:clamp(24px,4vw,36px);display:flex;flex-direction:column;gap:14px">
+          <span style="font-family:Caveat,cursive;font-size:24px;font-weight:700;color:#F0C3A4">la lettre du dimanche</span>
+          <h2 style="margin:-6px 0 0;font-size:clamp(24px,2.6vw,30px);font-weight:800;letter-spacing:-0.8px;line-height:1.15">Les nouvelles règles, les bons plans et une histoire de membre, chaque dimanche</h2>
+          <p style="margin:0;font-size:14.5px;line-height:1.6;color:#CFE3DA">Un e-mail par semaine, désinscription en un clic.</p>
+          <sc-if value="{{ nlNotDone }}" hint-placeholder-val="{{ true }}"><div style="display:flex;gap:8px;flex-wrap:wrap"><input type="email" value="{{ nlEmail }}" onChange="{{ onNl }}" placeholder="Votre adresse e-mail" style="flex:1;min-width:200px;height:50px;border-radius:14px;border:none;padding:0 16px;font:inherit;font-size:15px;outline:none;color:#16211D"><button onClick="{{ subscribe }}" style="height:50px;padding:0 20px;border-radius:14px;border:none;background:#E0733A;color:#fff;font:inherit;font-size:14.5px;font-weight:700;cursor:pointer;white-space:nowrap">S’abonner</button></div><sc-if value="{{ nlErr }}" hint-placeholder-val="{{ false }}"><div style="font-size:13px;color:#F0C3A4;font-weight:600">Entrez une adresse e-mail valide.</div></sc-if></sc-if>
+          <sc-if value="{{ nlDone }}" hint-placeholder-val="{{ false }}"><div style="background:rgba(255,255,255,.12);border-radius:14px;padding:14px 16px;font-size:14px;font-weight:600">C’est noté ! Première lettre dimanche prochain à {{ nlEmail }}.</div></sc-if>
+        </div>
+      </div>
+    </section>
+  </sc-if>
+</sc-if>
+
+<sc-if value="{{ isArticle }}" hint-placeholder-val="{{ false }}">
+  <article>
+    <div style="max-width:820px;margin:0 auto;padding:36px 20px 0;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#8A958F;flex-wrap:wrap"><a href="#/" style="font-weight:700">Blog</a><span>/</span><a href="{{ art.catHref }}" style="font-weight:700">{{ art.cat }}</a></div>
+      <h1 style="margin:0;font-size:clamp(30px,4.6vw,48px);font-weight:800;letter-spacing:-1.5px;line-height:1.1;text-wrap:balance">{{ art.title }}</h1>
+      <p style="margin:0;font-size:18px;line-height:1.6;color:#5D6B66;text-wrap:pretty">{{ art.excerpt }}</p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px">
+        <a href="{{ art.authorHref }}" style="display:flex;align-items:center;gap:10px;color:#16211D" style-hover="color:#16785E"><img src="{{ art.authorImg }}" alt="" style="width:44px;height:44px;border-radius:999px;object-fit:cover"><span><span style="display:block;font-size:14.5px;font-weight:700">{{ art.authorName }}</span><span style="display:block;font-size:12.5px;color:#8A958F">{{ art.date }} · {{ art.read }} min de lecture</span></span></a>
+        <span style="flex:1"></span>
+        <sc-for list="{{ shares }}" as="s" hint-placeholder-count="4"><a href="{{ s.href }}" onClick="{{ s.on }}" target="{{ s.target }}" title="{{ s.label }}" style="height:40px;padding:0 14px;border-radius:999px;background:#EEF2F0;color:#16211D;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:6px" style-hover="background:#E3F0EB;color:#0F5C48">{{ s.text }}</a></sc-for>
+      </div>
+    </div>
+    <figure style="max-width:1140px;margin:28px auto 0;padding:0 20px">
+      <img src="{{ art.img }}" alt="" style="width:100%;aspect-ratio:16/8;object-fit:cover;border-radius:28px;display:block;background:#E3ECE8">
+      <figcaption style="font-size:12px;color:#8A958F;margin-top:8px;text-align:right">Photo : <a href="{{ art.creditHref }}" style="color:#8A958F">{{ art.credit }}</a> / Unsplash</figcaption>
+    </figure>
+    <div style="max-width:1140px;margin:0 auto;padding:32px 20px 0;display:grid;grid-template-columns:{{ artCols }};gap:56px;align-items:start">
+      <div style="min-width:0;max-width:700px;width:100%;justify-self:center">
+        <p style="margin:0;font-size:19px;line-height:1.75;font-weight:500;text-wrap:pretty">{{ art.intro }}</p>
+        <sc-for list="{{ art.sections }}" as="s" hint-placeholder-count="3">
+          <h2 id="{{ s.id }}" style="margin:36px 0 0;font-size:24px;font-weight:800;letter-spacing:-0.5px;scroll-margin-top:90px">{{ s.h }}</h2>
+          <p style="margin:12px 0 0;font-size:17px;line-height:1.8;text-wrap:pretty">{{ s.p }}</p>
+          <sc-if value="{{ s.quote }}" hint-placeholder-val="{{ false }}"><blockquote style="margin:28px 0 0;padding:22px 24px;border-radius:22px;background:#FFF6EF"><div style="font-size:20px;line-height:1.55;font-weight:600;letter-spacing:-0.2px">« {{ s.quote }} »</div><div style="font-size:13.5px;color:#B4581F;font-weight:700;margin-top:10px">{{ s.quoteBy }}</div></blockquote></sc-if>
+          <sc-if value="{{ s.cta }}" hint-placeholder-val="{{ false }}"><div style="margin-top:28px;background:#EFF7F3;border-radius:22px;padding:20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap"><span style="width:46px;height:46px;border-radius:14px;background:#16785E;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></svg></span><span style="flex:1;min-width:200px"><span style="display:block;font-size:11px;font-weight:700;letter-spacing:1px;color:#16785E">GUIDE DE LA COMMUNAUTÉ</span><span style="display:block;font-size:15.5px;font-weight:700;margin-top:4px">{{ s.cta }}</span></span><a href="Landing Page v4.dc.html" style="height:42px;padding:0 16px;border-radius:12px;background:#16785E;color:#fff;font-size:13.5px;font-weight:700;display:flex;align-items:center;white-space:nowrap">Lire le guide</a></div></sc-if>
+        </sc-for>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:32px"><sc-for list="{{ art.tags }}" as="t" hint-placeholder-count="3"><a href="{{ t.href }}" style="height:34px;padding:0 13px;border-radius:999px;background:#F2F5F4;color:#5D6B66;font-size:12.5px;font-weight:700;display:flex;align-items:center">#{{ t.label }}</a></sc-for></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:28px;padding:18px 0;border-top:1px solid #EEF2F0;border-bottom:1px solid #EEF2F0;flex-wrap:wrap">
+          <span style="font-size:14px;font-weight:700;flex:1;min-width:180px">Cet article vous a aidé ?</span>
+          <button onClick="{{ openSignup }}" style="height:42px;padding:0 16px;border-radius:999px;border:none;background:#E3F0EB;color:#0F5C48;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11v9M7 11l4-7c1.5 0 2.5 1 2.5 2.5V10h5a2 2 0 0 1 2 2l-1.5 6a2 2 0 0 1-2 2H7"></path></svg>Utile · {{ art.useful }}</button>
+          <button onClick="{{ openSignup }}" style="height:42px;padding:0 16px;border-radius:999px;border:none;background:#F2F5F4;color:#16211D;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>Enregistrer</button>
+        </div>
+        <a href="{{ art.authorHref }}" style="margin-top:28px;background:#fff;border:1px solid #E6EBE9;border-radius:24px;padding:22px;display:flex;gap:16px;align-items:flex-start;color:#16211D" style-hover="color:#16211D;border-color:#CFE3DA"><img src="{{ art.authorImg }}" alt="" style="width:64px;height:64px;border-radius:999px;object-fit:cover;flex-shrink:0"><span style="min-width:0"><span style="display:block;font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">ÉCRIT PAR</span><span style="display:block;font-size:17px;font-weight:800;margin-top:4px">{{ art.authorName }}</span><span style="display:block;font-size:13px;color:#16785E;font-weight:700;margin-top:2px">{{ art.authorRole }}</span><span style="display:block;font-size:14px;line-height:1.6;color:#5D6B66;margin-top:8px">{{ art.authorBio }}</span></span></a>
+        <div style="margin-top:36px">
+          <h2 style="margin:0;font-size:22px;font-weight:800;letter-spacing:-0.5px">Commentaires · {{ art.commentCount }}</h2>
+          <div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">
+            <sc-for list="{{ art.comments }}" as="c" hint-placeholder-count="2"><div style="display:flex;gap:12px"><img src="{{ c.img }}" alt="" style="width:38px;height:38px;border-radius:999px;object-fit:cover;flex-shrink:0"><div style="flex:1;background:#fff;border:1px solid #E6EBE9;border-radius:18px;padding:14px 16px"><div style="display:flex;gap:8px;align-items:baseline"><span style="font-size:13.5px;font-weight:700">{{ c.n }}</span><span style="font-size:12px;color:#8A958F">{{ c.when }}</span></div><div style="font-size:14.5px;line-height:1.6;margin-top:4px">{{ c.t }}</div></div></div></sc-for>
+          </div>
+          <button onClick="{{ openSignup }}" style="width:100%;margin-top:14px;min-height:56px;border-radius:18px;border:1.5px dashed #CBD5D1;background:#fff;font:inherit;font-size:14px;color:#5D6B66;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3"></path></svg>Inscrivez-vous gratuitement pour lire les {{ art.commentCount }} commentaires et répondre</button>
+        </div>
+      </div>
+      <sc-if value="{{ wideArt }}" hint-placeholder-val="{{ true }}">
+        <aside style="position:sticky;top:96px;display:flex;flex-direction:column;gap:14px">
+          <div style="background:#fff;border:1px solid #E6EBE9;border-radius:22px;padding:18px">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:#8A958F">DANS CET ARTICLE</div>
+            <div style="display:flex;flex-direction:column;gap:2px;margin-top:10px"><sc-for list="{{ toc }}" as="t" hint-placeholder-count="3"><button onClick="{{ t.go }}" style="border:none;background:{{ t.bg }};text-align:left;font:inherit;font-size:13.5px;font-weight:{{ t.fw }};color:{{ t.fg }};padding:9px 12px;border-radius:12px;cursor:pointer;line-height:1.4">{{ t.h }}</button></sc-for></div>
+          </div>
+          <div style="background:#16211D;color:#fff;border-radius:22px;padding:20px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:16px;font-weight:800;line-height:1.3">Préparez votre arrivée avec ceux qui l’ont faite</div>
+            <div style="font-size:13px;color:#A9B5B0;line-height:1.5">Parcours, entraide, communauté de votre ville. Gratuit.</div>
+            <button onClick="{{ openSignup }}" style="height:44px;border-radius:12px;border:none;background:#16785E;color:#fff;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer;margin-top:4px">Rejoindre gratuitement</button>
+          </div>
+        </aside>
+      </sc-if>
+    </div>
+    <section style="background:#fff;margin-top:64px">
+      <div style="max-width:1140px;margin:0 auto;padding:56px 20px">
+        <div style="display:flex;align-items:baseline;gap:16px;margin-bottom:22px;flex-wrap:wrap"><h2 style="margin:0;font-size:26px;font-weight:800;letter-spacing:-0.7px;flex:1">À lire aussi</h2><a href="{{ art.catHref }}" style="font-size:14px;font-weight:700">Tout {{ art.cat }}</a></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:24px">
+          <sc-for list="{{ related }}" as="a" hint-placeholder-count="3">
+            <a href="{{ a.href }}" style="display:flex;flex-direction:column;gap:10px;color:#16211D" style-hover="color:#16211D"><img src="{{ a.img }}" alt="" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:20px;display:block;background:#E3ECE8"><span style="font-size:12px;font-weight:700;color:{{ a.catFg }}">{{ a.cat }}</span><span style="font-size:17px;font-weight:700;line-height:1.35;margin-top:-4px">{{ a.title }}</span><span style="font-size:12.5px;color:#8A958F">{{ a.date }} · {{ a.read }} min</span></a>
+          </sc-for>
+        </div>
+      </div>
+    </section>
+  </article>
+</sc-if>
+
+<sc-if value="{{ isAuthor }}" hint-placeholder-val="{{ false }}">
+  <section>
+    <div style="max-width:1140px;margin:0 auto;padding:44px 20px 0">
+      <a href="#/" style="font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m15 18-6-6 6-6"></path></svg>Tous les articles</a>
+      <div style="margin-top:18px;background:#fff;border:1px solid #E6EBE9;border-radius:32px;padding:clamp(24px,4vw,40px);display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+        <img src="{{ author.img }}" alt="" style="width:112px;height:112px;border-radius:999px;object-fit:cover">
+        <div style="flex:1;min-width:240px">
+          <div style="font-size:clamp(26px,3vw,34px);font-weight:800;letter-spacing:-0.9px">{{ author.name }}</div>
+          <div style="font-size:14px;color:#16785E;font-weight:700;margin-top:4px">{{ author.role }}</div>
+          <p style="margin:10px 0 0;font-size:15px;line-height:1.65;color:#5D6B66;max-width:620px">{{ author.bio }}</p>
+        </div>
+        <div style="display:flex;gap:24px"><div><div style="font-size:24px;font-weight:800">{{ author.count }}</div><div style="font-size:12.5px;color:#5D6B66">articles</div></div><div><div style="font-size:24px;font-weight:800">{{ author.useful }}</div><div style="font-size:12.5px;color:#5D6B66">« utile »</div></div></div>
+      </div>
+    </div>
+  </section>
+  <section>
+    <div style="max-width:1140px;margin:0 auto;padding:36px 20px 64px">
+      <h2 style="margin:0 0 20px;font-size:24px;font-weight:800;letter-spacing:-0.6px">Ses articles</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:28px 24px">
+        <sc-for list="{{ authorCards }}" as="a" hint-placeholder-count="3">
+          <a href="{{ a.href }}" style="display:flex;flex-direction:column;gap:10px;color:#16211D" style-hover="color:#16211D"><img src="{{ a.img }}" alt="" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:22px;display:block;background:#E3ECE8"><span style="font-size:12px;font-weight:700;color:{{ a.catFg }}">{{ a.cat }}</span><span style="font-size:18px;font-weight:700;line-height:1.32;margin-top:-4px">{{ a.title }}</span><span style="font-size:12.5px;color:#8A958F">{{ a.date }} · {{ a.read }} min</span></a>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+</sc-if>
+
+<div style="height:72px"></div>
+
+<footer style="padding:0 12px 12px;margin-top:auto">
+  <div style="max-width:1400px;margin:0 auto;background:#16211D;color:#fff;border-radius:36px;padding:clamp(36px,5vw,56px) clamp(20px,6vw,96px) 32px">
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between;padding-bottom:32px;border-bottom:1px solid rgba(255,255,255,.12)">
+      <a href="Landing Page v4.dc.html" style="display:flex;align-items:center;gap:10px;font-size:20px;font-weight:800;letter-spacing:-0.4px;color:#fff;flex-wrap:wrap" style-hover="color:#fff"><svg width="41" height="41" viewBox="-6 -18 60 60" style="flex-shrink:0"><g transform="rotate(-35 24 12)"><path d="M0 0H10V14H34V24H0Z" fill="#7FC4A8"></path><path d="M14 0H48V24H38V10H14Z" fill="#E0733A"></path></g></svg>Diaspory<span style="color:#F0C3A4">plus</span> <span style="color:#7FC4A8;font-weight:600">· Le blog</span></a>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><sc-for list="{{ footCats }}" as="c" hint-placeholder-count="6"><a href="{{ c.href }}" style="height:36px;padding:0 14px;border-radius:999px;background:rgba(255,255,255,.08);color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center" style-hover="background:#16785E;color:#fff">{{ c.label }}</a></sc-for></div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px 22px;padding-top:24px;font-size:12.5px;color:#8A958F"><a href="Landing Page v4.dc.html" style="color:#8A958F" style-hover="color:#fff">Accueil</a><a href="#" style="color:#8A958F" style-hover="color:#fff">Conditions d’utilisation</a><a href="#" style="color:#8A958F" style-hover="color:#fff">Confidentialité</a><a href="#" style="color:#8A958F" style-hover="color:#fff">Flux RSS</a><span>Photos : Unsplash (crédits sous chaque article)</span><span style="flex:1"></span><span>© 2026 diasporyplus.com</span></div>
+  </div>
+</footer>
+
+<sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}"><div style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:95;background:#16211D;color:#fff;border-radius:14px;padding:12px 18px;font-size:13.5px;font-weight:600">{{ toast }}</div></sc-if>
+
+<sc-if value="{{ isSignup }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:90;background:rgba(22,33,29,.55);display:flex;align-items:center;justify-content:center;padding:16px">
+    <div onClick="{{ closeSignup }}" style="position:absolute;inset:0"></div>
+    <div style="position:relative;width:min(440px,100%);background:#fff;border-radius:28px;padding:26px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;align-items:flex-start;gap:12px"><div style="flex:1"><div style="font-size:22px;font-weight:800;letter-spacing:-0.6px">Créer mon compte</div><div style="font-size:13.5px;color:#5D6B66;margin-top:4px;line-height:1.5">Gratuit. Commentez, enregistrez des articles, proposez les vôtres et rejoignez votre communauté.</div></div><button onClick="{{ closeSignup }}" style="width:40px;height:40px;border-radius:999px;border:none;background:#F2F5F4;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16211D" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg></button></div>
+      <div style="display:flex;gap:8px"><span style="height:50px;padding:0 12px;border-radius:14px;border:1px solid #E6EBE9;display:flex;align-items:center;font-size:14.5px;font-weight:700;flex-shrink:0">🇫🇷 +33</span><input type="tel" inputmode="tel" value="{{ suEmail }}" onChange="{{ onSu }}" placeholder="6 12 34 56 78" style="flex:1;min-width:0;height:50px;border-radius:14px;border:1.5px solid #16785E;padding:0 16px;font:inherit;font-size:15px;outline:none;color:#16211D"></div><div style="font-size:12px;color:#8A958F;margin-top:-6px">Vous recevrez un code par SMS.</div>
+      <button onClick="{{ submitSu }}" style="height:50px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:15px;font-weight:700;cursor:pointer">Recevoir mon code</button>
+      <sc-if value="{{ suSent }}" hint-placeholder-val="{{ false }}"><div style="background:#E3F0EB;color:#0F5C48;border-radius:14px;padding:12px 14px;font-size:13px;font-weight:600">Un code à 6 chiffres a été envoyé au +33 {{ suEmail }}.</div></sc-if>
+      <div style="font-size:13px;color:#5D6B66;text-align:center">Déjà membre ? <a href="Landing Page v4.dc.html" style="font-weight:700">Se connecter</a></div>
+    </div>
+  </div>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { w: typeof window !== 'undefined' ? window.innerWidth : 1440, route: this.parse(), q: '', shown: 6, progress: 0, active: 0, nlEmail: '', nl: 'idle', su: false, suEmail: '', suSent: false, toast: '' };
+  parse() { const h = (typeof location !== 'undefined' ? location.hash : '').replace(/^#\/?/, ''); const [k, v] = h.split('/'); if (k === 'article' && v) return { name: 'article', id: v }; if (k === 'categorie' && v) return { name: 'cat', id: v }; if (k === 'auteur' && v) return { name: 'author', id: v }; return { name: 'list' }; }
+  componentDidMount() {
+    this.onR = () => this.setState({ w: window.innerWidth });
+    this.onH = () => { this.setState({ route: this.parse(), shown: 6, progress: 0, active: 0 }); window.scrollTo(0, 0); };
+    this.onS = () => {
+      if (this.state.route.name !== 'article') return;
+      const d = document.documentElement, max = d.scrollHeight - window.innerHeight;
+      let active = 0; document.querySelectorAll('[id^="sec-"]').forEach((el, i) => { if (el.getBoundingClientRect().top < 140) active = i; });
+      this.setState({ progress: max > 0 ? Math.min(100, Math.round(window.scrollY / max * 100)) : 0, active });
+    };
+    window.addEventListener('resize', this.onR); window.addEventListener('hashchange', this.onH); window.addEventListener('scroll', this.onS, { passive: true });
+  }
+  componentWillUnmount() { window.removeEventListener('resize', this.onR); window.removeEventListener('hashchange', this.onH); window.removeEventListener('scroll', this.onS); }
+  data() {
+    const U = (id, w = 900) => `https://images.unsplash.com/photo-${id}?auto=format&fit=crop&w=${w}&q=70`;
+    const CATS = { temoignages: ['Témoignages', '#B4581F', '#FBE3D4'], demarches: ['Démarches', '#0F5C48', '#E3F0EB'], logement: ['Logement', '#16785E', '#E3F0EB'], etudes: ['Études', '#B4581F', '#FBE3D4'], travail: ['Travail', '#0F5C48', '#E8EEEC'], 'vie-en-france': ['Vie en France', '#16785E', '#E3F0EB'], communaute: ['Communauté', '#B4581F', '#FBE3D4'] };
+    const AUTH = {
+      amina: { name: 'Amina Diallo', role: 'Étudiante en master · Lyon', img: U('1528980917907-8df7f48f6f2a', 200), bio: 'Arrivée de Cotonou en 2025 pour un master en urbanisme. Elle raconte son installation pas à pas, et répond volontiers aux questions sur le logement étudiant.' },
+      marc: { name: 'Marc Koudou', role: 'Auteur de guides vérifiés · Paris', img: U('1546525848-3ce03ca516f6', 200), bio: 'Installé à Paris depuis 2017, juriste de formation. Il suit de près les changements de règles sur les titres de séjour et les explique simplement.' },
+      fatou: { name: 'Fatou Ndiaye', role: 'Parraine · Lyon', img: U('1612115958726-9af4b6bd28d1', 200), bio: 'Dakaroise installée à Lyon, elle parraine des étudiantes depuis trois ans et anime le café des nouveaux arrivants du jeudi.' },
+      redac: { name: 'Kofi Boateng', role: 'Rédaction Diasporyplus', img: U('1584778593223-d1a34df10349', 200), bio: 'La rédaction recueille les histoires de membres, vérifie les informations pratiques et met à jour les articles quand les règles changent.' },
+    };
+    const A = [
+      { id: 'coloc-deux-semaines', cat: 'temoignages', author: 'amina', featured: true, date: '28 octobre 2026', read: 7, useful: 214, comments: 38, img: '1517840933437-c41356892b35', credit: ['Thought Catalog', 'thoughtcatalog'], title: '« J’ai trouvé ma coloc en deux semaines grâce au réseau »', excerpt: 'Arrivée de Cotonou pour un master, Amina raconte ses premières semaines à Lyon : les refus de dossier, le garant introuvable, puis le message qui a tout débloqué.', intro: 'Quand j’ai atterri à Saint-Exupéry en septembre, j’avais une valise, un hébergement pour dix jours et une liste de quarante annonces. Deux semaines plus tard, je signais pour une chambre en colocation à la Guillotière. Entre les deux, il y a eu beaucoup de refus, et une communauté.', sections: [{ h: 'Les dix premiers jours', p: 'Chaque visite se terminait par la même question : avez-vous un garant en France ? Je n’en avais pas. J’avais pourtant suivi mon parcours étape par étape, mais j’avais repoussé Visale en pensant que ce n’était pas urgent.', quote: 'Le plus dur, ce n’était pas de trouver un logement. C’était de prouver que je pouvais le payer.', quoteBy: 'Amina, étudiante' }, { h: 'Le bouton « Je suis bloquée »', p: 'Un soir, j’ai écrit à la communauté de Lyon. En une heure, trois personnes m’ont répondu, dont Fatou, qui m’a envoyé le guide Visale et proposé de relire mon dossier. Le lendemain, j’avais mon attestation.', cta: 'Obtenir la garantie Visale sans CDI' }, { h: 'Ce que je conseille', p: 'Faites Visale avant même d’arriver, dès que votre VLS-TS est validé. Allez au café du jeudi : c’est là que circulent les colocations qui ne sont jamais publiées. Et n’ayez pas honte de demander.' }], tags: ['logement', 'lyon', 'colocation'] },
+      { id: 'vls-ts-anef-erreurs', cat: 'demarches', author: 'marc', date: '21 octobre 2026', read: 6, useful: 312, comments: 64, img: '1507537417841-81e85feb9bd2', credit: ['LinkedIn Sales Solutions', 'linkedinsalesnavigator'], title: 'VLS-TS : les 5 erreurs qui bloquent la validation sur l’ANEF', excerpt: 'Numéro de visa refusé, date d’entrée incohérente, paiement qui échoue : les erreurs les plus fréquentes et comment les corriger.', intro: 'Depuis que la validation du visa long séjour se fait uniquement en ligne, la question revient chaque semaine dans les communautés. Voici les cinq blocages que nous voyons le plus souvent, et leurs solutions.', sections: [{ h: 'Le numéro de visa refusé', p: 'Saisissez le numéro sans espaces ni tirets, tel qu’il apparaît sur la vignette. Si le refus persiste, essayez un autre navigateur avant de contacter le centre de contact citoyen.' }, { h: 'La date d’entrée', p: 'Indiquez la date du tampon sur votre passeport, pas celle de votre vol. Une incohérence de quelques jours suffit à bloquer le dossier.', cta: 'Valider son VLS-TS sur le site de l’ANEF' }, { h: 'Le paiement de la taxe', p: 'Les cartes étrangères sont parfois refusées. Achetez le timbre fiscal en ligne séparément, puis saisissez son numéro dans le formulaire.' }], tags: ['visa', 'anef', 'titre de séjour'] },
+      { id: 'garant-visale-2026', cat: 'logement', author: 'marc', date: '14 octobre 2026', read: 5, useful: 188, comments: 27, img: '1686213011642-b25f94b95b96', credit: ['Divaris Shirichena', 'divaris'], title: 'Visale en 2026 : ce qui change pour les étudiants étrangers', excerpt: 'Conditions, délais réels observés par les membres, et la façon de présenter Visale à un propriétaire qui ne la connaît pas.', intro: 'Visale reste la solution la plus simple pour les étudiants sans garant en France. Les conditions ont peu bougé, mais la pratique, elle, a changé.', sections: [{ h: 'Qui y a droit', p: 'Les étudiants de 18 à 30 ans, quel que soit leur pays d’origine, dès la validation du VLS-TS. Il n’est plus nécessaire d’avoir déjà un bail.' }, { h: 'Les délais réels', p: 'D’après les membres, l’attestation arrive en 24 à 72 heures. Comptez une semaine si un justificatif manque.', quote: 'Je l’ai jointe à chaque dossier dès la première visite. Trois propriétaires sur quatre l’ont acceptée.', quoteBy: 'Kofi, Lyon 3e' }, { h: 'Convaincre le propriétaire', p: 'Joignez l’attestation au dossier et rappelez que Visale couvre les impayés pendant toute la durée du bail. Une phrase suffit souvent.', cta: 'Obtenir la garantie Visale sans CDI' }], tags: ['visale', 'garant', 'logement'] },
+      { id: 'moussa-visa-diplome', cat: 'temoignages', author: 'redac', date: '7 octobre 2026', read: 8, useful: 156, comments: 22, img: '1594750852563-5ed8e0421d40', credit: ['Nqobile Vundla', 'nqoe'], title: 'Du visa au diplôme : le parcours de Moussa', excerpt: 'Trois ans, douze étapes, un parrain et beaucoup d’entraide. Moussa raconte ce qu’il referait différemment.', intro: 'Moussa est arrivé de Bamako en 2023 pour une licence d’informatique à Grenoble. Il vient d’obtenir son diplôme et parraine à son tour deux étudiants.', sections: [{ h: 'Les débuts', p: 'Sans réseau, il a passé ses deux premiers mois à l’hôtel. C’est son parrain, rencontré sur la plateforme, qui lui a trouvé une chambre en résidence.' }, { h: 'Le tournant', p: 'Le parcours lui a évité de rater l’échéance de renouvellement de son titre. Un rappel, un guide, et une permanence associative recommandée par la communauté.', quote: 'Le parcours ne fait pas les démarches à ta place. Mais il t’empêche d’oublier celles qui comptent.', quoteBy: 'Moussa, Grenoble' }, { h: 'Ce qu’il referait différemment', p: 'Ouvrir son compte bancaire avant le départ, demander un parrain dès l’admission, et partager plus tôt ses difficultés.' }], tags: ['études', 'parrainage', 'grenoble'] },
+      { id: 'budget-etudiant-lyon-2026', cat: 'etudes', author: 'amina', date: '30 septembre 2026', read: 5, useful: 241, comments: 33, img: '1713450603775-9b4466eb466c', credit: ['Nereid Ndreu', 'nereiq'], title: 'Combien coûte vraiment une année d’études à Lyon ?', excerpt: 'Loyer, courses, transport, téléphone : les médianes déclarées par 38 membres, et les postes qu’on oublie toujours.', intro: 'Avant de partir, on m’avait donné un chiffre : 615 euros par mois. La réalité, d’après les budgets partagés par les membres, est plus proche de 1 050 euros.', sections: [{ h: 'Le loyer, premier poste', p: 'Une chambre en colocation coûte en médiane 480 euros, un studio meublé 620 euros. Les APL réduisent la note, mais seulement après trois mois.' }, { h: 'Les postes oubliés', p: 'Assurance habitation, frais de dossier, caution, premiers achats de cuisine : prévoyez 800 euros de plus le premier mois.', cta: 'Ouvrir ses droits CAF quand on est étudiant étranger' }, { h: 'Où économiser', p: 'L’abonnement TCL à 25 euros pour les moins de 26 ans, les paniers anti-gaspillage et les épiceries solidaires des campus.' }], tags: ['budget', 'lyon', 'étudiants'] },
+      { id: 'premier-hiver-lyon', cat: 'vie-en-france', author: 'fatou', date: '23 septembre 2026', read: 4, useful: 98, comments: 15, img: '1569087306794-db9947393580', credit: ['Romain Girot', 'romaingirot'], title: 'Survivre à son premier hiver en France', excerpt: 'Vêtements, chauffage, moral : les conseils des membres pour traverser les mois froids sans se ruiner.', intro: 'Mon premier hiver à Lyon, j’ai eu froid, j’ai été fatiguée, et je me suis sentie seule. Voici ce que j’aurais aimé savoir.', sections: [{ h: 'S’équiper sans se ruiner', p: 'Les friperies et les dons entre membres permettent de s’équiper pour moins de 50 euros. Un bon manteau, des chaussures fermées, des sous-couches.' }, { h: 'Le chauffage et les factures', p: 'Demandez si le chauffage est collectif avant de signer. Le chèque énergie existe aussi pour les étudiants qui paient une taxe d’habitation.' }, { h: 'Garder le moral', p: 'La lumière manque. Sortez en journée, voyez du monde, et venez aux rencontres du jeudi.', quote: 'L’hiver, c’est aussi la saison où la communauté se serre les coudes.', quoteBy: 'Fatou, parraine' }], tags: ['hiver', 'vie quotidienne'] },
+      { id: 'parrainage-comment-ca-marche', cat: 'communaute', author: 'fatou', date: '16 septembre 2026', read: 5, useful: 132, comments: 19, img: '1768244016470-271b210a8407', credit: ['Brian Kungu', 'oldceltic'], title: 'Parrainage : ce qu’un parrain fait (et ne fait pas)', excerpt: 'Accompagner sans faire à la place : comment fonctionne le parrainage, et comment bien le vivre des deux côtés.', intro: 'On me demande souvent ce que veut dire être marraine. Ce n’est ni un service, ni une obligation : c’est une présence pendant les premiers mois.', sections: [{ h: 'Ce que fait un parrain', p: 'Répondre aux questions, partager ses adresses, relire un dossier, accompagner à une visite quand c’est possible.' }, { h: 'Ce qu’il ne fait pas', p: 'Il ne sert pas de garant, ne prête pas d’argent et ne fait pas les démarches à votre place. Ces limites protègent tout le monde.' }, { h: 'Devenir parrain', p: 'Après votre installation, vous pouvez proposer d’accompagner un ou deux nouveaux arrivants. Une courte formation en ligne vous prépare.' }], tags: ['parrainage', 'entraide'] },
+      { id: 'cafe-nouveaux-arrivants', cat: 'communaute', author: 'redac', date: '9 septembre 2026', read: 3, useful: 76, comments: 11, img: '1777670881319-d304133879fb', credit: ['Christian Agbede', 'chriscreations__'], title: 'Le café du jeudi, là où tout commence', excerpt: 'Chaque jeudi, une vingtaine de nouveaux arrivants se retrouvent à Lyon. Reportage dans un rendez-vous devenu incontournable.', intro: 'Il est 18 h 30, la salle du fond se remplit. Certains sont arrivés la veille, d’autres sont là depuis dix ans. Tous viennent pour la même raison : ne pas rester seuls.', sections: [{ h: 'Un rendez-vous simple', p: 'Pas d’inscription, pas d’ordre du jour. On se présente, on pose ses questions, on repart avec un numéro ou une adresse.' }, { h: 'Ce qui s’y échange', p: 'Des colocations jamais publiées, des contacts d’employeurs, des conseils sur la préfecture. Et beaucoup de rires.', quote: 'J’y suis venue pour une question sur la CAF. J’en suis repartie avec trois amies.', quoteBy: 'Sarah, arrivée en août' }, { h: 'Lancer le sien', p: 'Plusieurs villes ont copié le format. Les admins de chaque réseau peuvent créer l’événement en quelques minutes.' }], tags: ['événements', 'lyon', 'rencontres'] },
+      { id: 'emploi-diplome-etranger', cat: 'travail', author: 'marc', date: '2 septembre 2026', read: 6, useful: 167, comments: 29, img: '1531482615713-2afd69097998', credit: ['X', 'disruptxn'], title: 'Trouver un emploi avec un diplôme obtenu à l’étranger', excerpt: 'Reconnaissance du diplôme, attestation de comparabilité, réseau : les étapes qui ont marché pour les membres.', intro: 'Un diplôme obtenu à Dakar ou à Douala a de la valeur en France. Encore faut-il savoir le faire reconnaître et le présenter.', sections: [{ h: 'L’attestation de comparabilité', p: 'Délivrée par le centre ENIC-NARIC, elle situe votre diplôme dans le système français. Comptez quatre mois de délai.' }, { h: 'Adapter son CV', p: 'Traduisez les intitulés, précisez le niveau en années d’études, et mettez en avant les expériences concrètes.', cta: 'Faire reconnaître son diplôme en France' }, { h: 'Le réseau d’abord', p: 'La majorité des membres ont trouvé leur premier poste par recommandation. Les communautés métiers sont un bon point de départ.' }], tags: ['emploi', 'diplôme'] },
+      { id: 'guides-communaute-verification', cat: 'communaute', author: 'redac', date: '26 août 2026', read: 4, useful: 89, comments: 8, img: '1507537297725-24a1c029d3ca', credit: ['LinkedIn Sales Solutions', 'linkedinsalesnavigator'], title: 'Comment sont vérifiés les guides de la communauté', excerpt: 'Plus de 400 guides, corrigés par les membres et mis à jour quand les règles changent. Voici comment nous nous assurons qu’ils restent fiables.', intro: 'Un guide écrit il y a deux ans peut être faux aujourd’hui. C’est pourquoi chaque guide vit, se corrige et se met à jour.', sections: [{ h: 'Les propositions de correction', p: 'Tout membre peut proposer une correction sur un passage. L’auteur a quatorze jours pour l’accepter ou la refuser, en expliquant pourquoi.' }, { h: 'Le badge vérifié', p: 'Les auteurs dont les guides sont régulièrement jugés utiles et à jour reçoivent un badge. Il peut être retiré.' }, { h: 'Quand une règle change', p: 'La rédaction signale les guides concernés à leurs auteurs et affiche un bandeau tant que la mise à jour n’est pas faite.' }], tags: ['guides', 'fiabilité'] },
+    ];
+    return { U, CATS, AUTH, A };
+  }
+  renderVals() {
+    const { U, CATS, AUTH, A } = this.data();
+    const s = this.state, r = s.route, w = s.w;
+    const norm = (t) => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const card = (a) => { const c = CATS[a.cat], au = AUTH[a.author]; return { ...a, href: '#/article/' + a.id, img: U(a.img, 900), cat: c[0], catFg: c[1], catBg: c[2], authorName: au.name, authorImg: au.img }; };
+    const set = (o) => this.setState(o);
+    const catId = r.name === 'cat' && CATS[r.id] ? r.id : null;
+    const q = norm(s.q).trim();
+    const pool = A.filter(a => (!catId || a.cat === catId) && (!q || norm(a.title + ' ' + a.excerpt + ' ' + a.tags.join(' ')).includes(q)));
+    const showFeatured = r.name === 'list' && !q;
+    const list = showFeatured ? pool.filter(a => !a.featured) : pool;
+    const chips = [['', 'Tout', A.length], ...Object.entries(CATS).map(([k, v]) => [k, v[0], A.filter(a => a.cat === k).length])].map(([k, label, n]) => { const on = (k || null) === catId; return { label, n, href: k ? '#/categorie/' + k : '#/', bg: on ? '#16785E' : '#fff', fg: on ? '#fff' : '#16211D', bd: on ? '#16785E' : '#E6EBE9' }; });
+    const art0 = A.find(a => a.id === r.id) || A[0];
+    const au = AUTH[art0.author];
+    const art = { ...card(art0), catHref: '#/categorie/' + art0.cat, authorHref: '#/auteur/' + art0.author, authorRole: au.role, authorBio: au.bio, credit: art0.credit[0], creditHref: 'https://unsplash.com/@' + art0.credit[1], img: U(art0.img, 1600), commentCount: art0.comments,
+      sections: art0.sections.map((x, i) => ({ ...x, id: 'sec-' + i, quote: x.quote || '', quoteBy: x.quoteBy || '', cta: x.cta || '' })),
+      tags: art0.tags.map(t => ({ label: t, href: '#/' })),
+      comments: [{ n: 'Sarah T.', img: U('1492462543947-040389c4a66c', 120), when: 'il y a 2 jours', t: 'Merci pour ce partage, c’est exactement ce que je vis en ce moment. Le passage sur le garant m’a beaucoup aidée.' }, { n: 'Ibrahim S.', img: U('1630163671229-07fdcf23ba71', 120), when: 'il y a 4 jours', t: 'Je confirme pour le café du jeudi, c’est là que j’ai trouvé mon appartement.' }] };
+    const pageUrl = typeof location !== 'undefined' ? location.href : '';
+    const shares = [
+      { label: 'Copier le lien', text: 'Copier le lien', href: '#', target: '_self', on: (e) => { e.preventDefault(); try { navigator.clipboard.writeText(pageUrl); } catch (x) {} set({ toast: 'Lien copié' }); clearTimeout(this.tt); this.tt = setTimeout(() => this.setState({ toast: '' }), 1800); } },
+      { label: 'Partager sur WhatsApp', text: 'WhatsApp', href: 'https://wa.me/?text=' + encodeURIComponent(art0.title + ' ' + pageUrl), target: '_blank', on: () => {} },
+      { label: 'Partager sur Facebook', text: 'Facebook', href: 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(pageUrl), target: '_blank', on: () => {} },
+      { label: 'Partager sur LinkedIn', text: 'LinkedIn', href: 'https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(pageUrl), target: '_blank', on: () => {} },
+    ];
+    const toc = art.sections.map((x, i) => ({ h: x.h, bg: s.active === i ? '#EFF7F3' : 'transparent', fg: s.active === i ? '#0F5C48' : '#5D6B66', fw: s.active === i ? 700 : 500, go: () => { const el = document.getElementById(x.id); if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 90, behavior: 'smooth' }); } }));
+    const related = A.filter(a => a.id !== art0.id).sort((a, b) => (b.cat === art0.cat) - (a.cat === art0.cat)).slice(0, 3).map(card);
+    const authId = r.name === 'author' && AUTH[r.id] ? r.id : 'amina';
+    const authArts = A.filter(a => a.author === authId);
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.nlEmail);
+    return {
+      wide: w >= 900, showNav: w >= 1180, wideArt: w >= 1000, artCols: w >= 1000 ? 'minmax(0,1fr) 280px' : 'minmax(0,1fr)',
+      isList: r.name === 'list' || r.name === 'cat', isArticle: r.name === 'article', isAuthor: r.name === 'author',
+      progress: s.progress + '%',
+      navCats: [['', 'Tous'], ['temoignages', 'Témoignages'], ['demarches', 'Démarches'], ['logement', 'Logement'], ['communaute', 'Communauté']].map(([k, label]) => { const on = r.name === 'cat' ? r.id === k : (r.name === 'list' && !k); return { label, href: k ? '#/categorie/' + k : '#/', fg: on ? '#0F5C48' : '#5D6B66', bg: on ? '#EFF7F3' : 'transparent', fw: on ? 700 : 600 }; }),
+      footCats: Object.entries(CATS).map(([k, v]) => ({ label: v[0], href: '#/categorie/' + k })),
+      catActive: !!catId,
+      listKicker: catId ? 'catégorie' : 'le blog',
+      listTitle: catId ? CATS[catId][0] : 'Histoires et conseils pour bien s’installer',
+      listSub: catId ? `${pool.length} article${pool.length > 1 ? 's' : ''} écrits par les membres et la rédaction.` : 'Témoignages de membres, démarches expliquées simplement, bons plans et vie de la communauté.',
+      q: s.q, hasQ: !!q, onQ: (e) => set({ q: e.target.value, shown: 6 }), clearQ: () => set({ q: '', shown: 6 }),
+      resultLabel: `${pool.length} résultat${pool.length > 1 ? 's' : ''} pour « ${s.q} »`,
+      chips, showFeatured, featuredList: [card(A.find(a => a.featured))],
+      cards: list.slice(0, s.shown).map(card), empty: list.length === 0, hasMore: list.length > s.shown, remaining: list.length - s.shown, loadMore: () => set({ shown: s.shown + 6 }),
+      showPopular: r.name === 'list' && !q,
+      popular: [...A].sort((a, b) => b.useful - a.useful).slice(0, 4).map((a, i) => ({ ...card(a), rank: '0' + (i + 1), img: U(a.img, 200) })),
+      nlEmail: s.nlEmail, onNl: (e) => set({ nlEmail: e.target.value, nl: s.nl === 'err' ? 'idle' : s.nl }), subscribe: () => set({ nl: valid ? 'done' : 'err' }), nlDone: s.nl === 'done', nlNotDone: s.nl !== 'done', nlErr: s.nl === 'err',
+      art, shares, toc, related,
+      author: { ...AUTH[authId], count: authArts.length, useful: authArts.reduce((n, a) => n + a.useful, 0) }, authorCards: authArts.map(card),
+      toast: s.toast,
+      isSignup: s.su, openSignup: () => set({ su: true, suSent: false }), closeSignup: () => set({ su: false }), suEmail: s.suEmail, onSu: (e) => set({ suEmail: e.target.value }), submitSu: () => set({ suSent: true }), suSent: s.suSent && !!s.suEmail,
+    };
+  }
+}
+</script>
+</body>
+</html>

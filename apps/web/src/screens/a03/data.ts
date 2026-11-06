@@ -1,3 +1,4 @@
+import type { PlusListe } from '@/components/voir-plus';
 /**
  * Données de l'écran A03 — « Guides & Démarches », la liste.
  *
@@ -282,5 +283,7 @@ export interface A03Data {
   guideTabs: ReturnType<typeof guideTabsFor>;
   guideFilters: readonly FiltreGuide[];
   guides: readonly GuideCardView[];
+  /** La suite de la liste (« Voir plus »), posée par l'adaptation A03_VOIR_PLUS. */
+  plusGuides?: PlusListe;
   missing: readonly MissingQueryView[];
 }

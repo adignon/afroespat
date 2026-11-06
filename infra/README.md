@@ -4,6 +4,34 @@ Ce dossier tient ce qui n'est pas du code applicatif. Le runbook général (inci
 astreinte) reste `docs/specs/T4-api-runbook-decisions.md` ; ici, les procédures
 techniques que le code suppose.
 
+## 0. Fichier d'environnement : `prod.env`
+
+UN seul nom, partout (`docker-compose.prod.yml`, `infra/*.sh`, ce document) : **`prod.env`**, à la racine du dépôt
+sur le serveur. Il est hors git (`.gitignore`) ; si votre copie locale s'appelle `.env.prod`, envoyez-la sous le nom
+`prod.env`. Modèle : `.env.example`. Variables propres au compose de production :
+
+| variable | rôle |
+|---|---|
+| `POSTGRES_PASSWORD` | mot de passe de Postgres (obligatoire) |
+| `REDIS_PASSWORD` | mot de passe Redis (obligatoire, hexadécimal : `openssl rand -hex 24`) ; le compose en déduit `REDIS_URL` pour api et worker, ne la posez pas à la main |
+| `NEXT_PUBLIC_API_URL` | URL publique de l'API, figée au build du web |
+| `BACKUP_AGE_RECIPIENT` | clé **publique** age pour chiffrer les sauvegardes (obligatoire, voir §2) |
+| `KEEP_DAILY`, `KEEP_WEEKLY`, `KEEP_MONTHLY`, `BACKUP_HOUR`, `BACKUP_S3_*` | rétention, heure (UTC) et copie distante des sauvegardes |
+| `ALLOW_INSECURE_LAUNCH`, `TRUST_PROXY_HOPS`, `OUTBOX_MAX_PENDING_AGE_SECONDS` | voir `.env.example` |
+
+**Garde-fous au démarrage** (`apps/api/src/config/env.ts`, `NODE_ENV=production`) : l'API et le worker REFUSENT de démarrer
+si `OTP_TEST_PHONES` contient `*` ou si `SMS_PROVIDER=testers` garde le code fixe `123456` (sauf
+`ALLOW_INSECURE_LAUNCH=true`, choix explicite et journalisé) ; si `RATE_LIMIT_ENABLED=false` ; si `WEB_ORIGIN`, `ADMIN_ORIGIN`
+ou `S3_ENDPOINT` pointent vers localhost ; si une `*_BASE_URL` est surchargée ; si un secret contient `dev-` ou
+`change-me` ou vaut celui de `.env.example`. En production `ADMIN_ORIGIN` = `WEB_ORIGIN` (le front équipe est servi par le
+même site). `CAPTCHA_PROVIDER=off` et `AI_MODERATION_PROVIDER=off` restent acceptés (usage volontaire) mais un avertissement
+part au journal à chaque démarrage. `ROOT_ADMIN_PASSWORD` ne sert qu'à créer le premier administrateur : retirez-le de `prod.env`
+ensuite.
+
+**Adresse IP des clients** : Caddy est le seul relais devant l'API ; `TRUST_PROXY_HOPS=1` (défaut) fait déduire `req.ip` de
+`X-Forwarded-For` en retirant un relais par la droite. Ne le changez que si la chaîne de relais change (ex. Cloudflare devant
+Caddy : 2).
+
 ## 1. Images (`Dockerfile` à la racine)
 
 | cible | rôle | commande |
@@ -34,12 +62,19 @@ e-mails « envoyés » se lisent sur `http://localhost:3077/__demo/inbox`. En pr
 ### Première construction
 
 Les images n'ont pas été construites au moment de leur écriture (environnement sans
-Docker). À la première construction, vérifier : (1) que `pnpm install --frozen-lockfile`
+Docker) ; le job CI `docker` les construit désormais à chaque modification (étapes `api`, `worker`, `migrate`, `web`).
+Chaque `package.json` de workspace doit être copié dans l'étape `deps` (garde-fou : `tools/__tests__/dockerfile-workspaces.test.mjs`). À la première construction, vérifier : (1) que `pnpm install --frozen-lockfile`
 passe avec le cache de montage ; (2) que `apps/worker` démarre bien depuis `dist/main.js`
 (il importe `@app/api`, dont `dist/` doit exister : l'étape `build` le produit) ;
 (3) la taille — les images finales reprennent l'arbre de build complet, y compris les
 dépendances de développement ; l'amincir (`pnpm deploy --prod`) est la première
 optimisation, à faire une fois la construction validée.
+
+**Pourquoi les images finales ne sont PAS amincies** (décision laissée telle quelle) : le worker et la commande `migrate` lancent du
+TypeScript via `@swc-node/register` (`@app/api` a pour entrée `src/index.ts`) et `prisma migrate deploy` — des dépendances de
+développement. Un `pnpm deploy --prod` ou un étage runtime sans elles casserait leur démarrage, et personne n'a pu le vérifier ici
+(démon Docker indisponible). À tenter seulement avec une construction réelle sous la main : séparer l'image `web` (Next `standalone`)
+est le gain le plus sûr et le plus gros.
 
 ## 2. Sauvegarde
 
@@ -58,7 +93,30 @@ Ce qui doit être sauvegardé, par ordre de gravité de la perte :
    attente (le relais de la boîte d'envoi réémet les événements non consommés) et
    remet les limites de débit à zéro ; aucune donnée membre n'y vit.
 
-### Postgres : sauvegarde logique
+### Sauvegarde planifiée (service `backup` du compose)
+
+Le service `backup` (`infra/backup.Dockerfile`, `infra/backup-cron.sh`) lance `infra/backup-db.sh` chaque nuit à `BACKUP_HOUR`
+(UTC, 03:00 par défaut), plus une fois au démarrage si la dernière réussite a plus de 24 h. Chaque exécution : `pg_dump`
+au format custom, relecture (`pg_restore --list`) **avant** chiffrement, chiffrement par **age** avec la clé publique
+`BACKUP_AGE_RECIPIENT`, rotation (7 quotidiennes, 4 du dimanche, 12 du 1er du mois — `KEEP_*`), copie facultative vers un
+seau S3 **distinct** (`BACKUP_S3_BUCKET`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY`, identifiants
+propres, jamais ceux des médias ; règle de cycle de vie du seau pour la rétention distante). Les archives sont dans
+`./backups` sur l'hôte (`diasporyplus-AAAAMMJJ-HHMMSS.dump.age`). La sonde de santé du service passe au rouge si rien n'a réussi en
+26 h (`docker compose ps`). À la main, hors compose : `bash infra/backup-db.sh` depuis le dépôt (même script, mode hôte).
+
+Mise en place, une fois :
+1. Sur VOTRE poste (pas sur le serveur) : `age-keygen -o diasporyplus-backup.key` ; la ligne `# public key: age1…` va dans
+   `prod.env` (`BACKUP_AGE_RECIPIENT=age1…`). **La clé privée `diasporyplus-backup.key` va dans le coffre**, jamais sur le serveur.
+2. `docker compose --env-file prod.env -f docker-compose.prod.yml up -d --build backup`.
+
+**Sauvegarde des clés de chiffrement** (procédure, aucune valeur dans le dépôt) : à chaque création ou rotation de
+`PHONE_ENCRYPTION_KEY`, `CONTENT_ENCRYPTION_KEY`, `*_KEYS_PREVIOUS`, `PHONE_HMAC_KEY` : (1) les copier depuis `prod.env` vers le coffre
+(gestionnaire de mots de passe d'équipe, entrée « DiasporyPlus — clés de chiffrement », au moins deux détenteurs) ; (2) y joindre la
+clé privée age ; (3) dater l'entrée et conserver les clés retirées aussi longtemps qu'une sauvegarde antérieure à leur
+retrait doit rester restaurable ; (4) vérifier chaque trimestre, lors du test de restauration, que le coffre contient bien les
+bonnes clés (`rotate-keys --dry-run` : « illisibles 0 »). Une sauvegarde de base ne se restaure utilement qu'avec ses clés.
+
+### Postgres : sauvegarde logique manuelle
 
 ```sh
 # format « custom » : compressé, restaurable table par table
@@ -73,6 +131,25 @@ d'audit (`audit_logs`) sont en ajout seul par déclencheur : la restauration les
 reprend tels quels.
 
 ## 3. Restauration
+
+Scripts : `infra/restore-db.sh <archive> [base_cible]` (vers une base **à part**, refuse la base de production et une cible
+existante ; archive `.age` : `BACKUP_AGE_IDENTITY=/chemin/diasporyplus-backup.key`).
+
+### Test de restauration trimestriel (sans toucher à la production)
+
+```sh
+# 1. récupérer la dernière archive (copie S3 ou ./backups) et la clé privée age depuis le coffre
+BACKUP_AGE_IDENTITY=~/diasporyplus-backup.key bash infra/restore-db.sh backups/diasporyplus-AAAAMMJJ-HHMMSS.dump.age app_restore_test
+# 2. le script affiche users / dernier événement / audit_logs : comparer avec la production
+# 3. lecture des colonnes chiffrées avec les clés du coffre (DATABASE_URL pointé sur app_restore_test) :
+DATABASE_URL=postgresql://app:…@localhost:5432/app_restore_test pnpm --filter @app/api rotate-keys --dry-run   # « illisibles 0 »
+# 4. nettoyer : docker compose --env-file prod.env -f docker-compose.prod.yml exec postgres psql -U app -d postgres -c 'drop database app_restore_test'
+```
+
+Noter la date, la durée et le résultat dans le registre d'exploitation. Une étape en échec = la sauvegarde ne vaut rien : corriger
+avant la suivante.
+
+### Reprise après sinistre
 
 À répéter **chaque trimestre sur une base vide** — une sauvegarde jamais restaurée est
 une hypothèse.
@@ -131,4 +208,7 @@ déterministe (unicité des numéros), pas un chiffrement. Y toucher oblige à r
   de corps. Rétention 90 jours chez l'agrégateur (00 §8.4).
 - `SENTRY_DSN` (facultatif) active le suivi d'erreurs ; absent, rien ne change. Les
   événements sont expurgés (cookies, en-têtes, corps, requête, utilisateur).
-- Sondes : `GET /v1/health` (vivacité), `GET /v1/ready` (base + Redis, 503 sinon).
+- Sondes : `GET /v1/health` (vivacité), `GET /v1/ready` (base + Redis + âge du plus ancien événement non publié de la boîte
+  d'envoi, 503 sinon ; seuil `OUTBOX_MAX_PENDING_AGE_SECONDS`, 300 par défaut, 0 = désactivé ; la réponse porte
+  `outbox.oldestPendingSeconds`). Healthchecks du compose : api (`/v1/ready`), worker (processus), web, caddy, backup.
+- Journaux Docker : rotation `json-file` 10 Mo × 5 par conteneur (`x-logging` du compose).

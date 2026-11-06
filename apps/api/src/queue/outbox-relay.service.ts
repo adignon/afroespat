@@ -49,23 +49,22 @@ export class OutboxRelayService implements OnModuleInit, OnModuleDestroy {
     this.running = true;
 
     try {
-      const events = await this.outbox.claimUnpublished(100);
-      if (events.length === 0) return 0;
-
-      const queue = this.queues.get(QUEUES.EVENTS);
-      await queue.addBulk(
-        events.map((e) => ({
-          name: e.type,
-          data: { id: e.id, type: e.type, aggregateId: e.aggregateId, payload: e.payload, occurredAt: e.occurredAt },
-          // L'identifiant de l'événement sert de clé de job : BullMQ déduplique,
-          // ce qui limite l'effet d'un rejeu.
-          opts: { ...EVENT_JOB_OPTIONS, jobId: e.id },
-        })),
-      );
-
-      await this.outbox.markPublished(events.map((e) => e.id));
-      this.logger.debug(`${events.length} événements relayés`);
-      return events.length;
+      // Réclamation + mise en file + marquage dans UNE transaction : les lignes
+      // restent verrouillées (SKIP LOCKED effectif) jusqu'au marquage.
+      const relayed = await this.outbox.relayBatch(100, async (events) => {
+        const queue = this.queues.get(QUEUES.EVENTS);
+        await queue.addBulk(
+          events.map((e) => ({
+            name: e.type,
+            data: { id: e.id, type: e.type, aggregateId: e.aggregateId, payload: e.payload, occurredAt: e.occurredAt },
+            // L'identifiant de l'événement sert de clé de job : BullMQ déduplique,
+            // ce qui limite l'effet d'un rejeu.
+            opts: { ...EVENT_JOB_OPTIONS, jobId: e.id },
+          })),
+        );
+      });
+      if (relayed > 0) this.logger.debug(`${relayed} événements relayés`);
+      return relayed;
     } catch (error) {
       // On ne marque rien : le prochain passage reprendra le lot.
       this.logger.error('Échec du relais', error instanceof Error ? error.stack : String(error));

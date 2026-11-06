@@ -55,7 +55,16 @@ export class BlocksService {
     // Idempotent : bloquer deux fois n'est pas une erreur, c'est le même état.
     if (existing !== null) return { blockedUserId: target.id };
 
-    await this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
+      // Verrou sur la paire : un double clic (deux requêtes parallèles) ne crée
+      // qu'un blocage et n'émet qu'un événement ; la seconde requête voit l'état.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${'block:' + blockerUserId + ':' + target.id}, 0))`;
+      const already = await tx.block.findUnique({
+        where: { blockerUserId_blockedUserId: { blockerUserId, blockedUserId: target.id } },
+        select: { id: true },
+      });
+      if (already !== null) return false;
+
       await tx.block.create({
         data: { id: newId(), blockerUserId, blockedUserId: target.id },
       });
@@ -74,9 +83,10 @@ export class BlocksService {
         // côtés — une conversation, un contact, un parcours partagé.
         payload: { blockerUserId, blockedUserId: target.id },
       });
+      return true;
     });
 
-    await this.flagIfAbusive(blockerUserId);
+    if (created) await this.flagIfAbusive(blockerUserId);
     return { blockedUserId: target.id };
   }
 

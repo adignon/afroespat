@@ -420,8 +420,24 @@ export async function chargerS01(kind: FiltreLogement = null): Promise<S01Data> 
       ville: villeUnique ?? '',
       bandeau: liste.meta.safetyBanner,
       annonces: liste.items.map(carteAnnonce),
+      suite: liste.nextCursor,
     },
   };
+}
+
+/** La page suivante des annonces de logement (« Voir plus », lot E2). */
+export async function chargerAnnoncesSuivantes(
+  kind: FiltreLogement,
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly CarteAnnonce[]; readonly nextCursor: string | null }> {
+  const filtre = kind === null ? '' : `&kind=${kind}`;
+  const page = await memberApi.get(
+    `/housing?limit=20${filtre}&cursor=${encodeURIComponent(curseur)}`,
+    housingListResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map(carteAnnonce), nextCursor: page.nextCursor };
 }
 
 /**
@@ -587,9 +603,23 @@ export async function chargerS04(): Promise<S04Charge> {
       liste: [...offres.sponsored, ...offres.items].map(carteOffre),
       total: offres.meta.total,
       sousTitre: sousTitreOffres(offres.meta.total),
+      suite: offres.nextCursor,
     },
     profils: { liste: profils.items.map(carteProfil), suite: profils.nextCursor },
   };
+}
+
+/** La page suivante des offres d'emploi (« Voir plus », lot E2) : la tête sponsorisée n'est servie qu'une fois. */
+export async function chargerOffresSuivantes(
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly CarteOffre[]; readonly nextCursor: string | null }> {
+  const page = await memberApi.get(
+    `/jobs?limit=20&cursor=${encodeURIComponent(curseur)}`,
+    jobsListResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map(carteOffre), nextCursor: page.nextCursor };
 }
 
 /** Les profils disponibles se lisent par pages de vingt. */
@@ -747,10 +777,8 @@ export async function chargerS06(
     moiEtQuotas(),
     memberApi.get(`/pros?${params.toString()}`, prosListResponseSchema),
     // Le filtre de ville est un confort : sans la liste, la case dit « Toutes les villes ».
-    memberApi
-      .get('/places/cities?limit=100', placesCitiesResponseSchema)
-      .then((l) => l.items.map((c) => ({ valeur: c.id, libelle: c.name })))
-      .catch(() => []),
+    // `limit=100` tronquait la liste : on suit le curseur (cinq pages au plus, 500 villes).
+    toutesLesVilles().catch(() => []),
     // Les pastilles de métier sont un confort aussi : sans la liste, il n'y en a pas.
     memberApi
       .get('/pros/professions', prosProfessionsResponseSchema)
@@ -769,7 +797,49 @@ export async function chargerS06(
       fiches: [...annuaire.featured, ...annuaire.items].map((p, rang) =>
         carteFiche(p, rang, annuaire.meta.featuredLabel),
       ),
+      suite: annuaire.nextCursor,
+      total: null,
     },
+  };
+}
+
+/** Les villes du filtre de l'annuaire, en suivant `nextCursor` (au plus cinq pages de cent). */
+async function toutesLesVilles(): Promise<{ valeur: string; libelle: string }[]> {
+  const villes: { valeur: string; libelle: string }[] = [];
+  let curseur: string | null = null;
+  for (let page = 0; page < 5; page += 1) {
+    const chemin: string =
+      curseur === null
+        ? '/places/cities?limit=100'
+        : `/places/cities?limit=100&cursor=${encodeURIComponent(curseur)}`;
+    const l = await memberApi.get(chemin, placesCitiesResponseSchema);
+    villes.push(...l.items.map((c) => ({ valeur: c.id, libelle: c.name })));
+    curseur = l.nextCursor;
+    if (curseur === null) break;
+  }
+  return villes;
+}
+
+/** La page suivante de l'annuaire, avec les MÊMES filtres que la première (« Voir plus », lot E2). */
+export async function chargerFichesSuivantes(
+  filtres: { readonly recherche: string; readonly ville: string; readonly metier: string },
+  curseur: string,
+  dejaAffichees: number,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly CarteFiche[]; readonly nextCursor: string | null }> {
+  const params = new URLSearchParams({ limit: '20', cursor: curseur });
+  const q = filtres.recherche.trim();
+  if (q.length >= 2) params.set('q', q);
+  if (filtres.ville !== '') params.set('cityId', filtres.ville);
+  if (filtres.metier !== '') params.set('professionId', filtres.metier);
+  const page = await memberApi.get(
+    `/pros?${params.toString()}`,
+    prosListResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return {
+    items: page.items.map((p, i) => carteFiche(p, dejaAffichees + i, page.meta.featuredLabel)),
+    nextCursor: page.nextCursor,
   };
 }
 
@@ -1181,7 +1251,7 @@ export const SQUELETTE_S01: S01Data = {
   },
   onglets: [],
   filtres: [],
-  liste: { total: 0, phrase: '', ville: '', bandeau: HOUSING_SAFETY_BANNER, annonces: [] },
+  liste: { total: 0, phrase: '', ville: '', bandeau: HOUSING_SAFETY_BANNER, annonces: [], suite: null },
 };
 
 /**
@@ -1219,14 +1289,14 @@ export const SQUELETTE_S04: S04Charge = {
   ...SOCLE_SERVICES,
   pret: false,
   onglets: [],
-  offres: { liste: [], total: 0, sousTitre: '' },
+  offres: { liste: [], total: 0, sousTitre: '', suite: null },
   profils: { liste: [], suite: null },
 };
 
 export const SQUELETTE_S06: S06Data = {
   ...SOCLE_SERVICES,
   onglets: [],
-  annuaire: { recherche: '', ville: '', villes: [], metiers: [], fiches: [] },
+  annuaire: { recherche: '', ville: '', villes: [], metiers: [], fiches: [], suite: null, total: null },
 };
 
 export const SQUELETTE_S08: S08Charge = { ...SOCLE_SERVICES, offrePro: { nom: '', prix: '' } };

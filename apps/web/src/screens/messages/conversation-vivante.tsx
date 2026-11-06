@@ -95,9 +95,15 @@ export function ConversationVivante({
   donnees,
   conversationId,
   onRecharger,
+  onPlusAnciens,
+  onPlusConversations,
   children,
 }: {
   readonly donnees: M01Data;
+  /** Charge une page de messages plus anciens (la profondeur vit dans l'écran de données). */
+  readonly onPlusAnciens?: () => void;
+  /** Charge une page de conversations de plus. */
+  readonly onPlusConversations?: () => void;
   /** Celle que l'URL demande — `null` sur `/messages`, qui n'en nomme aucune. */
   readonly conversationId: string | null;
   readonly onRecharger: () => void;
@@ -143,6 +149,11 @@ export function ConversationVivante({
   const [messageSignale, setMessageSignale] = useState<string | null>(null);
   /** Qui est en train d'écrire (prénom), et jusqu'à quand. */
   const [frappe, setFrappe] = useState<{ readonly jusqua: number } | null>(null);
+  /** Une page supplémentaire est demandée ; s'éteint quand les données suivantes arrivent. */
+  const [pagination, setPagination] = useState(false);
+  useEffect(() => {
+    setPagination(false);
+  }, [donnees]);
 
   // ── Temps réel ───────────────────────────────────────────────────────────
   const enAttenteDeVue = useRef(false);
@@ -448,6 +459,25 @@ export function ConversationVivante({
         });
     },
     debloquerBloque: enVol,
+    pagination,
+    ...(donnees.messagesAnterieurs === true && onPlusAnciens !== undefined
+      ? {
+          onPlusAnciens: () => {
+            if (pagination) return;
+            setPagination(true);
+            onPlusAnciens();
+          },
+        }
+      : {}),
+    ...(donnees.conversationsSuivantes === true && onPlusConversations !== undefined
+      ? {
+          onPlusConversations: () => {
+            if (pagination) return;
+            setPagination(true);
+            onPlusConversations();
+          },
+        }
+      : {}),
     composeurTexte: texte,
     onComposeurTexte: (e) => {
       setTexte(e.target.value);

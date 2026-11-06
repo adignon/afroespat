@@ -64,7 +64,7 @@
  * reste signalée, parce que la prouver demanderait de raisonner sur le programme
  * et qu'un garde-fou qui se trompe dans ce sens-là laisse passer le bogue.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -319,6 +319,7 @@ const files = execSync(
 const problems = [];
 
 for (const file of files) {
+  if (!existsSync(resolve(ROOT, file))) continue; // suivi mais supprimé de l'arbre de travail
   const source = readFileSync(resolve(ROOT, file), 'utf8');
   for (const found of scan(source)) {
     problems.push({ file, line: found.line, key: found.key });

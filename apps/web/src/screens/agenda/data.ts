@@ -1,6 +1,5 @@
 import {
   SELF_CHECKIN_WINDOW_MS,
-  USAGE_METRIC_LIMIT_KEYS,
   type CalendarResponse,
   type EventCardResponse,
   type EventDetailResponse,
@@ -831,7 +830,7 @@ export function construirePanneau(
    * jour où l'énumération change, la compilation le dit.
    */
   const usage = abonnement.usage.items.find(
-    (i) => USAGE_METRIC_LIMIT_KEYS[i.metric] === USAGE_METRIC_LIMIT_KEYS.EVENTS_CREATED,
+    (i) => i.metric === 'EVENTS_CREATED',
   );
 
   return {

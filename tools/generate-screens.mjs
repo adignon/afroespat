@@ -31,7 +31,9 @@ import {
 import { ADAPTATIONS_GRATUIT_VIVANT, AJOUTS_GRATUIT_VIVANT } from './adaptations/gratuit-vivant.mjs';
 import { ADAPTATIONS_CHROME_GAUCHE, AJOUTS_CHROME_GAUCHE } from './adaptations/chrome-gauche-vivant.mjs';
 import { ADAPTATIONS_FIL_VIVANT, AJOUTS_FIL_VIVANT } from './adaptations/fil-vivant.mjs';
+import { ADAPTATIONS_VOIR_PLUS, AJOUTS_VOIR_PLUS } from './adaptations/voir-plus-vivant.mjs';
 import { ADAPTATIONS_ENTETE_GLOBAL, FIN_ENTETE } from './adaptations/entete-global.mjs';
+import { ADAPTATIONS_TRANSVERSE_E1 } from './adaptations/transverse-e1.mjs';
 import { ADAPTATIONS_FEUILLES_DESSINEES, AJOUTS_FEUILLES_DESSINEES } from './adaptations/feuilles-dessinees.mjs';
 import { ADAPTATIONS_ADMIN_VIVANTE, AJOUTS_ADMIN_VIVANTE } from './adaptations/administration-vivante.mjs';
 import { ADAPTATIONS_AGENDA_VIVANT, AJOUTS_AGENDA_VIVANT } from './adaptations/agenda-vivant.mjs';
@@ -6115,7 +6117,7 @@ const X03_SIGNALEMENT = {
 const CHEMIN_JALONS = join(ROOT, 'docs', 'template', "Fil d'actualité v2.dc.html");
 
 function fragmentJalons() {
-  const html = readFileSync(CHEMIN_JALONS, 'utf8');
+  const html = readFileSync(CHEMIN_JALONS, 'utf8').replace(/\r\n/g, '\n');
   const ouvre =
     '<div style="display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;height:198px">';
   const i = html.indexOf(ouvre);
@@ -18257,8 +18259,12 @@ function adaptFields(jsx, section) {
     ...ADAPTATIONS_CHROME_GAUCHE,
     // Lot G : A02 (la vraie publication), le fil, les stories, les guides.
     ...ADAPTATIONS_FIL_VIVANT,
+    // Lot E2 : « Voir plus » sous les listes tronquées (tools/adaptations/voir-plus-vivant.mjs).
+    ...ADAPTATIONS_VOIR_PLUS,
     // Lot F : messagerie, notifications, recherche (tools/adaptations/messagerie-vivante.mjs).
     ...ADAPTATIONS_MESSAGERIE_VIVANTE,
+    // Lot E1 : messagerie paginée, boutons morts J09 / J01E (tools/adaptations/transverse-e1.mjs).
+    ...ADAPTATIONS_TRANSVERSE_E1,
     // Lot H : l'administration vivante (D01 à D16), tools/adaptations/administration-vivante.mjs.
     ...ADAPTATIONS_ADMIN_VIVANTE,
     // Lot E (agenda-vivant).
@@ -18629,7 +18635,7 @@ const SOURCES_EMPRUNTEES = new Map();
 const lireSourceEmpruntee = (file) => {
   const deja = SOURCES_EMPRUNTEES.get(file);
   if (deja !== undefined) return deja;
-  const lu = readFileSync(resolve(ROOT, file), 'utf8');
+  const lu = readFileSync(resolve(ROOT, file), 'utf8').replace(/\r\n/g, '\n');
   SOURCES_EMPRUNTEES.set(file, lu);
   return lu;
 };
@@ -19555,6 +19561,7 @@ const AJOUTS = {
   ...AJOUTS_PARCOURS_VIVANT,
   ...AJOUTS_CHROME_GAUCHE,
   ...AJOUTS_FIL_VIVANT,
+  ...AJOUTS_VOIR_PLUS,
   ...AJOUTS_MESSAGERIE_VIVANTE,
   // Lot H — les composants de l'administration vivante.
   ...AJOUTS_ADMIN_VIVANTE,
@@ -19704,7 +19711,7 @@ const TITLE_TESTS = [
       const ids = new Set(titres.map((t) => t.id));
       // Et le titre de chaque volet est bien PROMU dans le JSX de CE volet-là.
       const promus = a12c.frames.map((frame) => {
-        const section = extractSection(readFileSync(resolve(ROOT, a12c.file), 'utf8'), frame.section);
+        const section = extractSection(readFileSync(resolve(ROOT, a12c.file), 'utf8').replace(/\r\n/g, '\n'), frame.section);
         const raw = extractFrame(section, frame.width, frame.occurrence ?? 0, frame.requires ?? '');
         const { adapted } = adaptFrame(transcode(raw.inner), a12c.section, true);
         return promoteTitle(adapted, titleFor(a12c, frame)).promoted;
@@ -19871,7 +19878,7 @@ const FRAME_TESTS = [
     name: 'la maquette elle-même : les trois volets « Contribuer » de A12T, SANS préfixe déclaré',
     run: () => {
       const section = extractSection(
-        readFileSync(resolve(ROOT, 'docs/template/03 Accueil v2.dc.html'), 'utf8'),
+        readFileSync(resolve(ROOT, 'docs/template/03 Accueil v2.dc.html'), 'utf8').replace(/\r\n/g, '\n'),
         'A12T',
       );
       // Chaque volet porte SON titre : c'est ce qui prouve qu'on a bien les trois,
@@ -19885,7 +19892,7 @@ const FRAME_TESTS = [
     name: 'la maquette elle-même : la carte du composeur de A01S est atteignable et transcodable',
     run: () => {
       const section = extractSection(
-        readFileSync(resolve(ROOT, 'docs/template/03 Accueil v2.dc.html'), 'utf8'),
+        readFileSync(resolve(ROOT, 'docs/template/03 Accueil v2.dc.html'), 'utf8').replace(/\r\n/g, '\n'),
         'A01S',
       );
       const col = extractFrame(section, 760);
@@ -20102,7 +20109,7 @@ const DATA_TESTS = [
     name: 'la maquette elle-même : les deux listes de K04 se lient sur le vrai cadre',
     run: () => {
       const compte = SCREENS.find((s) => s.section === 'K04' && s.donnees !== undefined);
-      const section = extractSection(readFileSync(resolve(ROOT, compte.file), 'utf8'), 'K04');
+      const section = extractSection(readFileSync(resolve(ROOT, compte.file), 'utf8').replace(/\r\n/g, '\n'), 'K04');
       const inner = extractFrame(section, 1440).inner;
       const liens = compte.donnees.filter((d) => d.frames?.includes('Desktop') === true);
       const out = applyData(inner, liens, 'K04', 'Desktop');
@@ -20904,7 +20911,7 @@ const NAVIGATION_DECLAREE = new Set();
 const NAVIGATION_RESTANTE = [];
 
 for (const screen of SCREENS) {
-  const html = readFileSync(resolve(ROOT, screen.file), 'utf8');
+  const html = readFileSync(resolve(ROOT, screen.file), 'utf8').replace(/\r\n/g, '\n');
 
   for (const frame of screen.frames) {
     const section = extractSection(html, frame.section ?? screen.section);
@@ -21941,7 +21948,7 @@ ${coupe}
          * recopié a disparu de sa maquette d'origine : sans cette vérification, la
          * recopie dériverait en silence.
          */
-        const source = readFileSync(resolve(ROOT, MODAL_WINDOW_SOURCE.file), 'utf8');
+        const source = readFileSync(resolve(ROOT, MODAL_WINDOW_SOURCE.file), 'utf8').replace(/\r\n/g, '\n');
         if (!source.includes(MODAL_WINDOW_SOURCE.pattern)) {
           throw new Error(
             `${screen.section} : le centrage de fenêtre « ${MODAL_WINDOW_SOURCE.pattern} » ` +

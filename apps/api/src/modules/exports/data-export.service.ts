@@ -39,6 +39,15 @@ import { STORAGE_PROVIDER, type StorageProvider } from '../../providers/provider
  * propriétaire : c'est le seul point de §2.8 qui n'est pas livré tel quel.
  */
 
+/** Plafond de notifications exportées ; au-delà, l'archive le DIT (`notificationsTronquees`). */
+const NOTIFICATIONS_CAP = 5_000;
+
+function omitKeys<T extends object, K extends keyof T>(value: T, keys: readonly K[]): Omit<T, K> {
+  const copy = { ...value };
+  for (const key of keys) delete copy[key];
+  return copy;
+}
+
 /** Ce que la génération produit. Une entrée par module du dossier de specs. */
 type Archive = Record<string, unknown>;
 
@@ -77,7 +86,8 @@ export class DataExportService {
   async request(userId: string, now: Date = new Date()): Promise<{ id: string; status: 'PENDING'; requestedAt: string }> {
     const since = new Date(now.getTime() - ACCOUNT_LIMITS.exportRequestIntervalDays * 86_400_000);
     const recent = await this.prisma.dataExport.findFirst({
-      where: { userId, createdAt: { gte: since } },
+      // Une génération ÉCHOUÉE ne consomme pas le droit : le membre redemande tout de suite.
+      where: { userId, createdAt: { gte: since }, status: { not: 'FAILED' } },
       orderBy: { createdAt: 'desc' },
       select: { createdAt: true },
     });
@@ -165,15 +175,32 @@ export class DataExportService {
    * vingt tables.
    */
   async generate(exportId: string, now: Date = new Date()): Promise<{ genere: boolean; octets?: number }> {
+    // VRAIE PRISE : PENDING -> GENERATING, atomique. Un second passage (livraison « au moins une
+    // fois ») ou un second worker ne réclame rien. (Avant : PENDING -> PENDING, qui ne protégeait de rien.)
     const claimed = await this.prisma.dataExport.updateMany({
       where: { id: exportId, status: 'PENDING' },
-      data: { status: 'PENDING' },
+      data: { status: 'GENERATING' },
     });
     if (claimed.count === 0) return { genere: false };
 
     const row = await this.prisma.dataExport.findUnique({ where: { id: exportId }, select: { userId: true, assetId: true } });
     if (row === null || row.assetId !== null) return { genere: false };
 
+    try {
+      return await this.produce(exportId, row.userId, now);
+    } catch (error) {
+      // L'échec est VISIBLE (FAILED) et le membre peut redemander : une ligne bloquée en GENERATING
+      // l'aurait enfermé trente jours sans archive.
+      await this.prisma.dataExport.update({ where: { id: exportId }, data: { status: 'FAILED' } });
+      this.logger.error(
+        `Archive RGPD ${exportId} : génération échouée — ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { genere: false };
+    }
+  }
+
+  private async produce(exportId: string, userId: string, now: Date): Promise<{ genere: boolean; octets?: number }> {
+    const row = { userId };
     const archive = await this.collect(row.userId);
     const body = Buffer.from(JSON.stringify(archive, null, 2), 'utf8');
 
@@ -286,6 +313,7 @@ export class DataExportService {
           id: true, createdAt: true, handle: true, displayName: true, phase: true,
           verificationLevel: true, originCountryId: true, cityId: true, arrivalDate: true,
           plannedDepartureDate: true, status: true, plan: true, lastSeenAt: true,
+          emailEncrypted: true, emailVerifiedAt: true,
         },
       }),
       this.prisma.userProfile.findUnique({ where: { userId } }),
@@ -335,7 +363,8 @@ export class DataExportService {
     ]);
 
     const [notifications, bookmarks, reputation, sanctions, subscriptions, payments] = await Promise.all([
-      this.prisma.notification.findMany({ where: owned, take: 5_000, orderBy: { createdAt: 'desc' } }),
+      // On lit une de plus que le plafond : la TRONCATURE est déclarée dans l'archive, jamais silencieuse.
+      this.prisma.notification.findMany({ where: owned, take: NOTIFICATIONS_CAP + 1, orderBy: { createdAt: 'desc' } }),
       this.prisma.bookmark.findMany({ where: owned }),
       this.prisma.reputationEvent.findMany({ where: owned }),
       // Les sanctions LE concernant : une décision prise à son sujet est une
@@ -345,13 +374,51 @@ export class DataExportService {
       this.prisma.payment.findMany({ where: owned }),
     ]);
 
+    const [
+      notifPrefs, pushSubs, savedAlerts, blocksGiven, reportsGiven, topics, announcements,
+      cityTips, cityTipVotes, postReactions, storyReactions, mentorshipReviews, proRecommendations,
+      memberRecommendations, pollVotes,
+    ] = await Promise.all([
+      this.prisma.notificationPreferences.findUnique({ where: owned }),
+      // Les clés de chiffrement de l'abonnement (p256dh, auth) sont des secrets techniques : non exportées.
+      this.prisma.pushSubscription.findMany({
+        where: owned,
+        select: { id: true, createdAt: true, endpoint: true, userAgent: true, lastSuccessAt: true },
+      }),
+      this.prisma.savedAlert.findMany({ where: owned }),
+      this.prisma.block.findMany({ where: { blockerUserId: userId }, select: { id: true, createdAt: true, blockedUserId: true } }),
+      this.prisma.report.findMany({
+        where: { reporterUserId: userId },
+        select: { id: true, createdAt: true, subjectType: true, subjectId: true, reason: true, details: true, status: true },
+      }),
+      this.prisma.topic.findMany({ where: { authorUserId: userId } }),
+      this.prisma.communityAnnouncement.findMany({ where: { authorUserId: userId } }),
+      this.prisma.cityTip.findMany({ where: { authorUserId: userId } }),
+      this.prisma.cityTipVote.findMany({ where: owned }),
+      this.prisma.postReaction.findMany({ where: owned }),
+      this.prisma.storyReaction.findMany({ where: owned }),
+      this.prisma.mentorshipReview.findMany({ where: { reviewerUserId: userId } }),
+      this.prisma.proRecommendation.findMany({ where: { authorUserId: userId } }),
+      this.prisma.memberRecommendation.findMany({ where: { fromUserId: userId } }),
+      this.prisma.pollVote.findMany({ where: owned }),
+    ]);
+
+    const notificationsTronquees = notifications.length > NOTIFICATIONS_CAP;
+
     return {
       genereLe: new Date().toISOString(),
       aPropos:
         'Archive de vos données personnelles (RGPD, articles 15 et 20). Une section par module du produit. ' +
         'Les contenus d’autres membres n’y figurent pas.',
       '01-identite': {
-        compte: user,
+        compte:
+          user === null
+            ? null
+            : {
+                ...omitKeys(user, ['emailEncrypted']),
+                // Déchiffré : c'est SON adresse, comme ses numéros.
+                email: user.emailEncrypted === null ? null : this.crypto.decryptEmail(user.emailEncrypted),
+              },
         profil: profile,
         langues: languages,
         competences: skills,
@@ -373,10 +440,16 @@ export class DataExportService {
       '04-fil': { publications: posts, commentaires: comments, stories },
       '05-guides': { guides, votes: guideVotes },
       '06-entraide': { demandes: helpRequests, reponses: helpResponses },
-      '07-reseaux': { adhesions: communityMemberships },
+      '07-reseaux': {
+        adhesions: communityMemberships,
+        sujetsEcrits: topics,
+        annoncesDeReseau: announcements,
+        votesDeSondage: pollVotes,
+      },
       '08-parrainage-messagerie': {
         profilParrain: mentorProfile,
         parrainages: mentorships,
+        avisDeParrainageEcrits: mentorshipReviews,
         contacts: connections,
         messagesEnvoyes: messages.map((m) => ({
           id: m.id,
@@ -386,10 +459,33 @@ export class DataExportService {
           corps: m.bodyEncrypted === null ? null : this.crypto.decryptContent(m.bodyEncrypted),
         })),
       },
-      '09-villes-agenda': { evenementsOrganises: events, participations: attendances },
-      '10-services': { logement: housing, emploi: jobs, fichePro: pro },
-      '12-notifications': notifications,
-      '13-moderation': { sanctions },
+      '09-villes-agenda': {
+        evenementsOrganises: events,
+        participations: attendances,
+        astucesDeVille: cityTips,
+        votesSurAstuces: cityTipVotes,
+      },
+      '10-services': {
+        logement: housing,
+        emploi: jobs,
+        fichePro: pro,
+        alertesEnregistrees: savedAlerts,
+        recommandationsDePros: proRecommendations,
+        recommandationsDeMembres: memberRecommendations,
+      },
+      '12-notifications': {
+        preferences: notifPrefs,
+        abonnementsPush: pushSubs,
+        // Dit EXPLICITEMENT quand la liste est coupée : l'archive ne se tait jamais sur ce qu'elle omet.
+        notifications: notificationsTronquees ? notifications.slice(0, NOTIFICATIONS_CAP) : notifications,
+        notificationsTronquees,
+        ...(notificationsTronquees
+          ? { noteTroncature: `Seules les ${String(NOTIFICATIONS_CAP)} notifications les plus récentes figurent ici ; les plus anciennes peuvent être demandées au support.` }
+          : {}),
+      },
+      '13-moderation': { sanctions, signalementsEmis: reportsGiven },
+      '04-fil-reactions': { reactionsPublications: postReactions, reactionsStories: storyReactions },
+      '08-blocages': blocksGiven,
       '14-monetisation': { abonnements: subscriptions, paiements: payments },
       transverse: { signets: bookmarks, reputation },
     };

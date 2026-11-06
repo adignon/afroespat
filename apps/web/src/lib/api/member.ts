@@ -228,7 +228,15 @@ export async function fetchMe(options: { readonly force?: boolean } = {}): Promi
     const cached = knownMe();
     if (cached !== null) return cached;
   }
-  const me = await memberApi.get('/me', meResponseSchema);
+  const brut = await memberApi.get('/me', meResponseSchema);
+  /**
+   * Lot D : les écrans lisent `monetisationActive` pour « montrer ou non une incitation à
+   * payer ». Allumée mais sans moyen de paiement ni formule ouverts, aucun paiement n'est
+   * possible : la valeur exposée aux écrans est donc FAUSSE, et ils disent « tout est
+   * gratuit » plutôt que d'offrir un bouton qui échouerait. La valeur brute du serveur reste
+   * dans `paiementsDisponibles` et dans l'écran d'administration.
+   */
+  const me = { ...brut, monetisationActive: brut.monetisationActive && brut.paiementsDisponibles };
   rememberMe(me);
   return me;
 }

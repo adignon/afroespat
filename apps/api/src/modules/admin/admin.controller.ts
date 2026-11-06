@@ -129,15 +129,15 @@ export class AdminController {
   @Get('settings')
   @RequiresStaffRole(...STAFF_SCOPES.dashboard)
   @ApiOperation({ summary: 'Tous les paramètres système, valeur effective et défaut du code' })
-  async settings() {
-    return this.admin.listSettings();
+  async settings(@Staff() staff: StaffUser) {
+    return this.admin.listSettings(staff);
   }
 
   @Get('settings/:key')
   @RequiresStaffRole(...STAFF_SCOPES.dashboard)
   @ApiOperation({ summary: 'Un paramètre système' })
-  async setting(@Param('key') key: string) {
-    return this.admin.getSetting(key);
+  async setting(@Staff() staff: StaffUser, @Param('key') key: string) {
+    return this.admin.getSetting(key, staff);
   }
 
   @Put('settings/:key')

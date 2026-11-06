@@ -539,7 +539,7 @@ export const createPlacesSkillSchema = z
           .regex(/^[\p{L}\p{N} '’.\-/+#&()]+$/u, 'Une compétence ne contient que des lettres, des chiffres et quelques signes simples.')
           .refine((v) => /\p{L}/u.test(v), 'Une compétence contient au moins une lettre.')
           .refine(
-            (v) => !/(https?:|www\.|\.(com|fr|net|org)\b)/iu.test(v) && !/\d{6,}/u.test(v.replace(/[\s.\-]/gu, '')),
+            (v) => !/(https?:|www\.|\.(com|fr|net|org)\b)/iu.test(v) && !/\d{6,}/u.test(v.replace(/[\s.-]/gu, '')),
             'Une compétence ne contient ni lien, ni adresse, ni numéro de téléphone.',
           ),
       ),

@@ -1249,7 +1249,12 @@ export interface A01Data extends A01SData {
    * échec et fil vide se disent à la place des cartes, avec les mots du serveur
    * quand il y en a (`echec`) et ceux-ci sinon (`vide`).
    */
-  filEtat: { readonly chargement: boolean; readonly echec: string | null; readonly vide: string };
+  filEtat: {
+    readonly chargement: boolean;
+    readonly echec: string | null;
+    readonly vide: string;
+    readonly plus?: import('@/components/voir-plus').PlusListe;
+  };
   /**
    * L'ALERTE DE VIGILANCE de la colonne de droite (lot W2A) : celle que le serveur
    * publie pour la ville ou le pays du membre (`scamAlert` de `GET /feed/sidebar`),

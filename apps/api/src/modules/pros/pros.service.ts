@@ -880,7 +880,7 @@ export class ProsService {
       const raw = (limits as Record<string, unknown>)['proContactsPerMonth'];
       if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
     }
-    // `plans` n'est pas amorcée (module 14 absent). Retomber sur la spec est
+    // `plans` n'est pas amorcée (ou pas encore configurée). Retomber sur la spec est
     // obligatoire : ne pas le faire signifierait « aucune limite jusqu'au module 14 »,
     // or c'est une règle dure.
     return FREE_PRO_CONTACTS_PER_MONTH;

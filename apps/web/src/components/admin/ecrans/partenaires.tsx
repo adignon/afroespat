@@ -15,6 +15,8 @@ import {
 import { staffApi } from '@/lib/api/index';
 import { toutesLesDefinitions } from '../donnees';
 import { useDroit } from '../session-equipe';
+import { Confirmation } from '../confirmation';
+import { AfficherLaSuite, useListeCurseur } from '../pagination-admin';
 import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, Interrupteur, Lecture, Message, Selecteur, Titre, Vide, dateLongue, nombreFr, useCharge, useGeste } from '../ui';
 
 /**
@@ -54,8 +56,10 @@ const euros = (c: number) => `${nombreFr(Math.round(c / 100))} €`;
 
 export function ContenuPartenaires() {
   const peut = useDroit('content');
-  const partenaires = useCharge(() => staffApi.get('/billing/partners?limit=50', adminPartnersResponseSchema), 'partenaires');
-  const encarts = useCharge(() => staffApi.get('/billing/placements?limit=50', adminPlacementsResponseSchema), 'encarts');
+  const partenaires = useListeCurseur((c) => staffApi.get(`/billing/partners?limit=50${c === null ? '' : `&cursor=${encodeURIComponent(c)}`}`, adminPartnersResponseSchema), 'partenaires');
+  const encarts = useListeCurseur((c) => staffApi.get(`/billing/placements?limit=50${c === null ? '' : `&cursor=${encodeURIComponent(c)}`}`, adminPlacementsResponseSchema), 'encarts');
+  /** Activer ou désactiver change ce que voient les membres (et l'affiliation) : confirmation d'abord. */
+  const [aBasculer, setABasculer] = useState<{ genre: 'partenaire' | 'encart'; id: string; nom: string; actif: boolean } | null>(null);
   const stats = useCharge(() => staffApi.get('/billing/affiliate', adminAffiliateResponseSchema), 'affiliation');
   const geste = useGeste();
   const [nouveau, setNouveau] = useState(false);
@@ -109,7 +113,7 @@ export function ContenuPartenaires() {
   return (
     <>
       <Titre titre="Partenaires" action={<Bouton ton="principal" disabled={!peut} titre={peut ? undefined : 'Réservé : contenu'} onClick={() => setNouveau(true)}>+ Nouveau partenaire</Bouton>} />
-      <Message message={geste.message} />
+      <Message message={aBasculer === null ? geste.message : null} />
       {bilan === null ? null : <Bandeau role="status">{bilan}</Bandeau>}
       <Carte className="admin-table-bureau" style={{ padding: 0, overflow: 'hidden' }}>
         <Lecture etat={partenaires.etat} recharger={partenaires.recharger}>
@@ -118,7 +122,7 @@ export function ContenuPartenaires() {
               <Vide>Aucun partenaire.</Vide>
             ) : (
               <div data-admin-defile="" style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', minWidth: '860px', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <table data-admin-pile="" style={{ width: '100%', minWidth: '860px', borderCollapse: 'collapse', fontSize: '13px' }}>
                   <thead>
                     <tr style={{ textAlign: 'left', color: C.grisClair, fontSize: '10.5px', letterSpacing: '1px', textTransform: 'uppercase' }}>
                       {['Partenaire', 'Catégorie', 'Modèle', 'Contrat', 'Clics', 'Conv.', 'Revenus', 'Actif'].map((h) => (
@@ -131,15 +135,15 @@ export function ContenuPartenaires() {
                       const s = parPartenaire(p.id);
                       return (
                         <tr key={p.id} style={{ borderTop: `1px solid ${C.traitLeger}` }}>
-                          <td style={{ padding: '10px 14px', fontWeight: 700 }}>{p.name}</td>
-                          <td style={{ padding: '10px 14px' }}>{CATEGORIES[p.category] ?? p.category}</td>
-                          <td style={{ padding: '10px 14px' }}>{p.payoutModel}</td>
-                          <td style={{ padding: '10px 14px' }}>{p.contractEnd === null ? 'sans échéance' : `jusqu’au ${dateLongue(p.contractEnd)}`}</td>
-                          <td style={{ padding: '10px 14px' }}>{nombreFr(s.clics)}</td>
-                          <td style={{ padding: '10px 14px' }}>{nombreFr(s.conv)}</td>
-                          <td style={{ padding: '10px 14px' }}>{euros(s.cents)}</td>
-                          <td style={{ padding: '10px 14px' }}>
-                            <Interrupteur actif={p.isActive} onChange={(v) => void basculerPartenaire(p.id, v)} libelle={`Actif : ${p.name}`} disabled={!peut || geste.occupe} />
+                          <td data-etiquette="Partenaire" style={{ padding: '10px 14px', fontWeight: 700 }}>{p.name}</td>
+                          <td data-etiquette="Catégorie" style={{ padding: '10px 14px' }}>{CATEGORIES[p.category] ?? p.category}</td>
+                          <td data-etiquette="Modèle" style={{ padding: '10px 14px' }}>{p.payoutModel}</td>
+                          <td data-etiquette="Contrat" style={{ padding: '10px 14px' }}>{p.contractEnd === null ? 'sans échéance' : `jusqu’au ${dateLongue(p.contractEnd)}`}</td>
+                          <td data-etiquette="Clics" style={{ padding: '10px 14px' }}>{nombreFr(s.clics)}</td>
+                          <td data-etiquette="Conv." style={{ padding: '10px 14px' }}>{nombreFr(s.conv)}</td>
+                          <td data-etiquette="Revenus" style={{ padding: '10px 14px' }}>{euros(s.cents)}</td>
+                          <td data-etiquette="Actif" style={{ padding: '10px 14px' }}>
+                            <Interrupteur actif={p.isActive} onChange={(v) => { geste.effacer(); setABasculer({ genre: 'partenaire', id: p.id, nom: p.name, actif: v }); }} libelle={`Actif : ${p.name}`} disabled={!peut || geste.occupe} />
                           </td>
                         </tr>
                       );
@@ -150,6 +154,7 @@ export function ContenuPartenaires() {
             )
           }
         </Lecture>
+        {partenaires.etat.phase === 'pret' ? <AfficherLaSuite curseur={partenaires.etat.donnees.curseur} affiches={partenaires.etat.donnees.items.length} occupe={partenaires.occupe} message={partenaires.message} onSuite={() => void partenaires.suite()} /> : null}
       </Carte>
 
       {/* Sous 1 024 px : une carte par partenaire, l'interrupteur « Actif » visible sans défilement. */}
@@ -162,7 +167,7 @@ export function ContenuPartenaires() {
                 <Carte key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                     <div style={{ fontWeight: 700, fontSize: '15px' }}>{p.name}</div>
-                    <Interrupteur actif={p.isActive} onChange={(v) => void basculerPartenaire(p.id, v)} libelle={`Actif : ${p.name}`} disabled={!peut || geste.occupe} />
+                    <Interrupteur actif={p.isActive} onChange={(v) => { geste.effacer(); setABasculer({ genre: 'partenaire', id: p.id, nom: p.name, actif: v }); }} libelle={`Actif : ${p.name}`} disabled={!peut || geste.occupe} />
                   </div>
                   <div style={{ fontSize: '13px', color: C.gris }}>
                     {CATEGORIES[p.category] ?? p.category} · {p.payoutModel} · {p.contractEnd === null ? 'sans échéance' : `jusqu’au ${dateLongue(p.contractEnd)}`}
@@ -191,13 +196,14 @@ export function ContenuPartenaires() {
                       <div style={{ fontSize: '14px', fontWeight: 700 }}>{e.step?.nameFr ?? 'Section Logement'}</div>
                       <div style={{ fontSize: '12.5px', color: C.gris }}>{e.partner.name} · « {e.headline} » · {e.clicks} clic{e.clicks > 1 ? 's' : ''}</div>
                     </div>
-                    <Interrupteur actif={e.isActive} onChange={(v) => void basculerEncart(e.id, v)} libelle={`Actif : ${e.headline}`} disabled={!peut || geste.occupe} />
+                    <Interrupteur actif={e.isActive} onChange={(v) => { geste.effacer(); setABasculer({ genre: 'encart', id: e.id, nom: e.headline, actif: v }); }} libelle={`Actif : ${e.headline}`} disabled={!peut || geste.occupe} />
                   </li>
                 ))}
               </ul>
             )
           }
         </Lecture>
+        {encarts.etat.phase === 'pret' ? <AfficherLaSuite curseur={encarts.etat.donnees.curseur} affiches={encarts.etat.donnees.items.length} occupe={encarts.occupe} message={encarts.message} onSuite={() => void encarts.suite()} /> : null}
         <Bandeau>Un seul encart par étape et par pays : l’ajout est refusé si un placement actif existe.</Bandeau>
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <Bouton disabled={!peut} onClick={() => setEncart(true)}>+ Nouvel encart</Bouton>
@@ -209,6 +215,20 @@ export function ContenuPartenaires() {
         <div style={{ fontSize: '12px', color: C.grisClair }}>CSV : identifiant du clic, référence de conversion, rémunération en centimes — une ligne par conversion.</div>
       </Carte>
 
+      <Confirmation
+        ouverte={aBasculer !== null}
+        titre={aBasculer === null ? '' : `${aBasculer.actif ? 'Activer' : 'Désactiver'} ${aBasculer.genre === 'partenaire' ? 'le partenaire' : 'l’encart'} « ${aBasculer.nom} »`}
+        consigne={aBasculer?.actif === true ? 'Il redevient visible des membres. L’action est tracée dans le journal d’audit.' : 'Il n’est plus montré aux membres et ses placements cessent d’être servis. L’action est tracée ; elle se défait en le réactivant.'}
+        libelle={aBasculer?.actif === true ? 'Activer' : 'Désactiver'}
+        onConfirmer={() => {
+          if (aBasculer === null) return;
+          const f = aBasculer.genre === 'partenaire' ? basculerPartenaire : basculerEncart;
+          void f(aBasculer.id, aBasculer.actif).then(() => setABasculer(null));
+        }}
+        onFermer={() => setABasculer(null)}
+        occupe={geste.occupe}
+        message={geste.message}
+      />
       <NouveauPartenaire ouverte={nouveau} onFermer={() => setNouveau(false)} onFait={() => { setNouveau(false); partenaires.recharger(); }} />
       <NouvelEncart ouverte={encart} partenaires={partenaires.etat.phase === 'pret' ? partenaires.etat.donnees.items : []} onFermer={() => setEncart(false)} onFait={() => { setEncart(false); encarts.recharger(); }} />
     </>

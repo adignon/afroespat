@@ -72,6 +72,8 @@ export function RailAdmin() {
                       href={e.href}
                       className="admin-nav-lien"
                       title={e.libelle}
+                      data-libelle={e.libelle}
+                      aria-label={n > 0 ? `${e.libelle}, ${POINT(n)} à traiter` : e.libelle}
                       {...(actif ? { 'aria-current': 'page' as const } : {})}
                     >
                       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -79,7 +81,7 @@ export function RailAdmin() {
                       </svg>
                       <span className="admin-nav-libelle">{e.libelle}</span>
                       {n > 0 ? (
-                        <span className="admin-nav-compte" role="img" aria-label={`${POINT(n)} à traiter`}>
+                        <span className="admin-nav-compte" aria-hidden="true">
                           {n > 99 ? '99+' : POINT(n)}
                         </span>
                       ) : null}

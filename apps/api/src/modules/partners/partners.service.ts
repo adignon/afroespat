@@ -20,6 +20,7 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
+import { optionPayanteActive } from '../../common/monetisation';
 import {
   buildPage,
   createdAtDescAfter,
@@ -113,6 +114,11 @@ export class PartnersService {
     // `placementQuerySchema` garantit l'un des deux ; la garde protège contre un
     // appel interne mal formé, pas contre le client.
     if (stepDefinitionId === undefined) return { placement: null };
+
+    // Lot D : l'option « Encarts partenaires » éteinte par l'équipe, aucun encart n'est servi.
+    if (!(await optionPayanteActive(this.prisma, 'PARTNER_PLACEMENTS'))) {
+      return { placement: null, hiddenByPlan: false };
+    }
 
     // §5.2 : « Masqué pour les membres PREMIUM (limits.hide_partners = true) ».
     // Le masquage vient des LIMITES DU PLAN, jamais d'un test `plan === 'PREMIUM'`

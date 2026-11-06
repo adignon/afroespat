@@ -98,6 +98,7 @@ export function VilleScreen({
   return (
     <EcranDonnees
       charger={charger}
+      cle={`${slug}|${String(onglet)}`}
       attente="Chargement de la fiche…"
       /* LE CADRE EST SERVI AVANT LA DONNÉE : voir `SQUELETTE_VILLE`. */
       squelette={SQUELETTE_VILLE}

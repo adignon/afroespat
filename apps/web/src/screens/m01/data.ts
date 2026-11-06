@@ -265,6 +265,16 @@ export interface M01Data {
    * inerte, et c'est juste.
    */
   readonly conversationOuverte?: string | null;
+  /** Il existe des messages plus anciens que ceux chargés (curseur non épuisé). */
+  readonly messagesAnterieurs?: boolean;
+  /** Il existe d'autres conversations que celles listées. */
+  readonly conversationsSuivantes?: boolean;
+  /** « Messages plus anciens » : charge une page de plus (posé par `ConversationVivante`). */
+  readonly onPlusAnciens?: () => void;
+  /** « Voir plus de conversations » : charge une page de plus. */
+  readonly onPlusConversations?: () => void;
+  /** Vrai pendant le chargement d'une page supplémentaire. */
+  readonly pagination?: boolean;
   /**
    * C'EST MOI QUI AI BLOQUÉ L'INTERLOCUTEUR de la conversation ouverte (lot F2),
    * dérivé de `Conversation.blockedByMe` et non de l'URL : c'est ce qui choisit les
