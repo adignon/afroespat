@@ -236,6 +236,7 @@ export function Bouton({
   return (
     <button
       type={type}
+      className="admin-bouton"
       onClick={onClick}
       disabled={disabled}
       title={titre}
@@ -278,7 +279,7 @@ export function Pastille({
     sombre: { background: C.encre, color: '#fff' },
   }[ton];
   return (
-    <span style={{ ...t, fontSize: '11px', fontWeight: 700, padding: '4px 10px', borderRadius: '999px', whiteSpace: 'nowrap' }}>
+    <span style={{ ...t, fontSize: '11px', fontWeight: 700, padding: '4px 9px', borderRadius: '8px', whiteSpace: 'nowrap' }}>
       {children}
     </span>
   );
@@ -378,8 +379,51 @@ export function Bandeau({
   );
 }
 
-export function Vide({ children }: { readonly children: ReactNode }) {
-  return <div style={{ padding: '22px 8px', textAlign: 'center', fontSize: '14px', color: C.gris }}>{children}</div>;
+/**
+ * Un état vide COMPOSÉ : le message, et — quand il existe un geste qui change la situation — l'action à côté
+ * (« Réinitialiser les filtres », « Créer… »). Un vide sans issue est une impasse ; `titre` pose le constat, les
+ * enfants l'explication.
+ */
+export function Vide({ children, titre, action }: { readonly children: ReactNode; readonly titre?: string; readonly action?: ReactNode }) {
+  return (
+    <div style={{ padding: '24px 12px', textAlign: 'center', fontSize: '14px', color: C.gris, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+      {titre === undefined ? null : <div style={{ fontSize: '15px', fontWeight: 700, color: C.encre }}>{titre}</div>}
+      <div style={{ maxWidth: '52ch', textWrap: 'pretty' }}>{children}</div>
+      {action === undefined ? null : <div style={{ marginTop: '2px' }}>{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * Un SQUELETTE de chargement : des blocs gris à la forme de ce qui va arriver (cartes, lignes d'un tableau), pas un
+ * rond seul. Il tient la place : quand les données arrivent, la page ne saute pas. L'animation ne touche que
+ * l'opacité (`admin-squelette`, dans admin.css) et s'arrête si le système demande moins de mouvement.
+ */
+export function Squelette({ forme = 'lignes' }: { readonly forme?: 'lignes' | 'tableau-de-bord' }) {
+  const bloc = (largeur: string, hauteur: number, rayon = 8): CSSProperties => ({ width: largeur, height: `${hauteur}px`, borderRadius: `${rayon}px` });
+  if (forme === 'tableau-de-bord') {
+    return (
+      <div role="status" aria-live="polite" aria-label="Chargement du tableau de bord" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '14px' }}>
+          <div className="admin-squelette" style={{ ...bloc('100%', 232, 16), background: C.aplat }} />
+          <div className="admin-squelette" style={{ ...bloc('100%', 232, 16), background: C.aplat }} />
+        </div>
+        <div className="admin-squelette" style={{ ...bloc('100%', 168, 16), background: C.aplat }} />
+        <span className="admin-sr-seul">Chargement…</span>
+      </div>
+    );
+  }
+  return (
+    <div role="status" aria-live="polite" aria-label="Chargement" style={{ background: '#fff', border: `1px solid ${C.trait}`, borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      {[78, 92, 64, 85, 70].map((l, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="admin-squelette" style={{ ...bloc('34px', 34, 10), background: C.aplat, flexShrink: 0 }} />
+          <div className="admin-squelette" style={{ ...bloc(`${l}%`, 12), background: C.aplat }} />
+        </div>
+      ))}
+      <span className="admin-sr-seul">Chargement…</span>
+    </div>
+  );
 }
 
 // ─── Chargement ──────────────────────────────────────────────────────────────
@@ -426,18 +470,15 @@ export function Lecture<T>({
   etat,
   recharger,
   children,
+  forme,
 }: {
   readonly etat: Charge<T>;
   readonly recharger: () => void;
   readonly children: (donnees: T) => ReactNode;
+  /** La forme du squelette d'attente : celle de ce qui va s'afficher (voir `Squelette`). */
+  readonly forme?: 'lignes' | 'tableau-de-bord';
 }) {
-  if (etat.phase === 'attente') {
-    return (
-      <div role="status" aria-live="polite" style={{ padding: '18px', color: C.gris, fontSize: '14px' }}>
-        Chargement…
-      </div>
-    );
-  }
+  if (etat.phase === 'attente') return <Squelette forme={forme ?? 'lignes'} />;
   if (etat.phase === 'echec') {
     return (
       <div role="alert" style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -543,7 +584,7 @@ export function Fenetre({
   if (!ouverte) return null;
   return (
     <>
-      <div onClick={onFermer} style={{ position: 'fixed', inset: 0, background: 'rgba(22,33,29,.55)', zIndex: 80 }} />
+      <div onClick={onFermer} style={{ position: 'fixed', inset: 0, background: 'rgba(22,33,29,.55)', zIndex: 'var(--z-fenetre, 80)' }} />
       <div
         role="dialog"
         aria-modal="true"
@@ -564,7 +605,7 @@ export function Fenetre({
           display: 'flex',
           flexDirection: 'column',
           gap: '16px',
-          zIndex: 81,
+          zIndex: 'calc(var(--z-fenetre, 80) + 1)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

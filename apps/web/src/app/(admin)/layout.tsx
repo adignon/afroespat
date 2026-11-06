@@ -57,7 +57,13 @@ export const metadata: Metadata = {
 export default function AdminLayout({ children }: { readonly children: React.ReactNode }) {
   return (
     <FournisseurEquipe>
-      <div data-admin="">{children}</div>
+      <div data-admin="">
+        {/* Premier élément focalisable : un Tab depuis l'adresse mène ici, Entrée saute le rail et la barre. */}
+        <a className="admin-evitement" href="#contenu-admin">
+          Aller au contenu
+        </a>
+        {children}
+      </div>
     </FournisseurEquipe>
   );
 }

@@ -209,8 +209,8 @@ describe('le tableau de bord entier', () => {
 
   it('les REVENUS restent à « — » : le paiement est hors périmètre, la carte le dit', () => {
     const html = renderToStaticMarkup(<TableauDeBord blocs={SQUELETTE_D02} overview={PLEIN} />);
-    const revenus = html.slice(html.indexOf('REVENUS'));
-    expect(revenus.slice(0, revenus.indexOf('GUIDES'))).toContain('Tout est gratuit pour le moment.');
+    const revenus = html.slice(html.indexOf('Revenus'));
+    expect(revenus.slice(0, revenus.indexOf('Guides'))).toContain('Tout est gratuit pour le moment.');
     expect(revenus.slice(0, 600)).not.toMatch(/€/);
   });
 

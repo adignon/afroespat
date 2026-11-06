@@ -1,4 +1,231 @@
 /*
+ * ── ÉCHELLE DES COUCHES ET CHIFFRES ───────────────────────────────────────
+ *
+ * Les `z-index` de l'administration sont NOMMÉS (plus de 20, 30, 81 dispersés dans les composants) :
+ * l'en-tête de tableau, la barre haute collante, ses menus, puis les fenêtres.
+ * Les chiffres s'alignent en colonnes (`tabular-nums`) : les tableaux et les compteurs se lisent d'un coup d'œil.
+ */
+[data-admin] {
+  --z-entete-tableau: 5;
+  --z-barre: 20;
+  --z-menu: 30;
+  --z-fenetre: 80;
+  --admin-focus: #16785e;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le lien d'évitement : invisible jusqu'au premier Tab, puis premier élément focalisable de la page. */
+.admin-evitement {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  z-index: 90;
+  transform: translateY(-160%);
+  background: #16211d;
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: transform 0.18s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.admin-evitement:focus-visible {
+  transform: translateY(0);
+  outline: 2px solid #7fc4a8;
+  outline-offset: 2px;
+}
+[data-admin] main[id='contenu-admin']:focus {
+  outline: none;
+}
+
+/* Un focus visible partout où l'on tape ou clique, au clavier seulement (pas à la souris). */
+[data-admin] a:focus-visible,
+[data-admin] button:focus-visible,
+[data-admin] [role='button']:focus-visible,
+[data-admin] summary:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 2px;
+}
+[data-admin] input:focus-visible,
+[data-admin] select:focus-visible,
+[data-admin] textarea:focus-visible {
+  outline: 2px solid var(--admin-focus);
+  outline-offset: 0;
+  border-color: var(--admin-focus) !important;
+}
+
+/* Les titres de page se coupent à l'équilibre : pas de mot seul sur la dernière ligne. */
+[data-admin] h1,
+[data-admin] h2 {
+  text-wrap: balance;
+}
+
+/*
+ * ── LE RAIL (components/admin/rail-admin.tsx) ─────────────────────────────
+ *
+ * Trois états, par largeur :
+ *   · ≥ 1 200 px   rail déplié : marque, groupes avec titre, libellés, pastilles ;
+ *   · 1 024–1 199  rail replié en icônes (92 px) : le libellé reste LU par les lecteurs d'écran et sort en infobulle ;
+ *   · < 1 024      bande horizontale au-dessus du contenu (voir plus bas).
+ */
+.admin-rail {
+  width: 248px;
+  flex-shrink: 0;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+}
+.admin-marque {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.admin-marque-pastille {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #0f5c48;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.admin-marque-nom {
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f5c48;
+}
+.admin-nav {
+  background: #16211d;
+  border-radius: 22px;
+  padding: 8px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: sticky;
+  top: 8px;
+  max-height: calc(100dvh - 88px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.admin-nav-groupe {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.admin-nav-groupe + .admin-nav-groupe {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 8px;
+}
+.admin-nav-titre {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: #8fa39b;
+}
+.admin-nav-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.admin-nav-lien {
+  position: relative;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #cbd5d1;
+  text-decoration: none;
+  transition: background-color 0.16s ease, color 0.16s ease;
+}
+.admin-nav-lien:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+.admin-nav-lien:active {
+  background: rgba(255, 255, 255, 0.14);
+}
+.admin-nav-lien:focus-visible {
+  outline: 2px solid #7fc4a8;
+  outline-offset: -2px;
+}
+.admin-nav-lien[aria-current='page'] {
+  background: #fff;
+  color: #16211d;
+  font-weight: 700;
+}
+.admin-nav-libelle {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-nav-compte {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #e0733a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .admin-rail {
+    width: 92px;
+  }
+  .admin-marque-nom,
+  .admin-nav-titre,
+  .admin-nav-libelle {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    padding: 0;
+  }
+  .admin-marque {
+    justify-content: center;
+  }
+  .admin-nav-lien {
+    justify-content: center;
+    padding: 0;
+    height: 42px;
+  }
+  .admin-nav-compte {
+    position: absolute;
+    top: 3px;
+    right: 6px;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    padding: 0 4px;
+    font-size: 10px;
+    border-radius: 5px;
+  }
+}
+
+/*
  * L'APPLICATION D'ÉQUIPE SOUS 1 024 px — AJOUT, que la maquette ne dessine pas.
  *
  * `10 Administration` n'a QU'UN cadre de 1 440 px (« application d'ordinateur, plus
@@ -7,42 +234,60 @@
  *
  *   · le cadre passe en colonne : le rail au-dessus, le contenu dessous ;
  *   · le rail devient une BANDE défilante horizontalement (mêmes entrées, même ordre,
- *     mêmes couleurs) — le logo « Admin » reste à gauche ;
+ *     groupes à la suite, sans titres) — la marque reste à gauche ;
  *   · la colonne de contenu perd son retrait de droite et prend 16 px de gouttière ;
  *   · les tableaux denses défilent DANS leur carte (`data-admin-defile`), jamais la page.
  *
- * `!important` est nécessaire : les styles de la maquette sont en ligne, donc plus
- * spécifiques que n'importe quelle feuille.
+ * `!important` est nécessaire pour les styles en ligne de la maquette (le cadre et la colonne de contenu).
  */
 @media (max-width: 1023px) {
   [data-admin] [data-frame='desktop'] {
     flex-direction: column !important;
   }
-  [data-admin] [data-admin-rail] {
-    width: 100% !important;
-    padding: 0 16px !important;
-    flex-direction: row !important;
+  .admin-rail {
+    width: 100%;
+    flex-direction: row;
     align-items: center;
     gap: 8px;
   }
-  [data-admin] [data-admin-rail] > div:first-child {
+  .admin-marque {
     flex-shrink: 0;
   }
-  [data-admin] [data-admin-rail] > div:first-child span {
+  .admin-marque-nom {
     display: none;
   }
-  [data-admin] [data-admin-rail] nav {
-    flex-direction: row !important;
+  .admin-nav {
+    flex-direction: row;
     overflow-x: auto;
-    margin-top: 0 !important;
+    overflow-y: hidden;
+    margin-top: 0;
     flex: 1;
     min-width: 0;
-    border-radius: 16px !important;
+    border-radius: 16px;
+    position: static;
+    max-height: none;
+    padding: 4px;
+    gap: 2px;
   }
-  [data-admin] [data-admin-rail] nav a {
+  .admin-nav-groupe,
+  .admin-nav-liste {
+    display: contents;
+  }
+  .admin-nav-groupe + .admin-nav-groupe {
+    border-top: none;
+    padding-top: 0;
+  }
+  .admin-nav-titre {
+    display: none;
+  }
+  .admin-nav-lien {
     white-space: nowrap;
     flex-shrink: 0;
-    height: 38px !important;
+    height: 40px;
+  }
+  .admin-nav-libelle {
+    flex: none;
+    overflow: visible;
   }
   [data-admin] [data-admin-main] {
     padding: 0 16px 24px 16px !important;
@@ -189,4 +434,77 @@
     padding: 2px 0 !important;
     min-width: 0 !important;
   }
+}
+
+/*
+ * ── ÉTATS ET LISTES ───────────────────────────────────────────────────────
+ *
+ *   · boutons : survol visible (l'état « appuyé » est posé pour tout le produit par `globals.css`) ;
+ *   · squelette de chargement : pulsation d'OPACITÉ seulement, arrêtée si le système demande moins de mouvement ;
+ *   · tableaux : en-tête collant sous la barre haute (grand écran), survol de ligne, cellules à hauteur confortable ;
+ *   · texte réservé aux lecteurs d'écran.
+ */
+.admin-bouton {
+  transition: filter 0.16s ease, transform 0.16s ease, background-color 0.16s ease;
+}
+.admin-bouton:not(:disabled):hover {
+  filter: brightness(0.94);
+}
+.admin-squelette {
+  animation: admin-pulsation 1.4s ease-in-out infinite;
+}
+@keyframes admin-pulsation {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-squelette {
+    animation: none;
+  }
+  .admin-evitement,
+  .admin-nav-lien,
+  .admin-bouton {
+    transition: none;
+  }
+}
+.admin-sr-seul {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (min-width: 1024px) {
+  [data-admin] table thead th {
+    position: sticky;
+    top: 64px;
+    z-index: var(--z-entete-tableau);
+    background: #fff;
+  }
+}
+[data-admin] table tbody tr {
+  transition: background-color 0.14s ease;
+}
+[data-admin] table tbody tr:hover {
+  background: #f6f8f7;
+}
+[data-admin] table td,
+[data-admin] table th {
+  vertical-align: middle;
+}
+
+/* « À traiter » : la ligne entière est le lien, son survol le dit. */
+.admin-ligne-action {
+  transition: background-color 0.14s ease;
+  border-radius: 8px;
+}
+.admin-ligne-action:hover {
+  background: #f6f8f7;
 }

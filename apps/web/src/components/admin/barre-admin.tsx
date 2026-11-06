@@ -1,8 +1,10 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { C, Pastille } from './ui';
+import { entreeDuChemin } from './navigation-admin';
 import { useEquipe } from './session-equipe';
 
 /**
@@ -49,12 +51,42 @@ export function BarreAdmin() {
   const { equipe, deconnecter } = useEquipe();
   const [q, setQ] = useState('');
   const [menu, setMenu] = useState(false);
+  const chemin = usePathname() ?? '';
+  const ici = entreeDuChemin(chemin);
+  const champ = useRef<HTMLInputElement | null>(null);
+
+  // « / » ouvre la recherche, comme partout ailleurs, sauf quand on est déjà en train de saisir.
+  useEffect(() => {
+    const touche = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const cible = e.target;
+      if (cible instanceof HTMLElement && (cible.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(cible.tagName))) return;
+      e.preventDefault();
+      champ.current?.focus();
+    };
+    window.addEventListener('keydown', touche);
+    return () => window.removeEventListener('keydown', touche);
+  }, []);
 
   return (
     <div
       data-admin-bar=""
-      style={{ height: '64px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'sticky', top: 0, zIndex: 20, background: C.fond }}
+      style={{ height: '64px', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, position: 'sticky', top: 0, zIndex: 'var(--z-barre, 20)', background: C.fond }}
     >
+      {ici === null ? null : (
+        <nav aria-label="Fil d’Ariane" style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, fontSize: '13px', color: C.gris, whiteSpace: 'nowrap' }}>
+          <Link href="/admin" style={{ color: C.gris, textDecoration: 'none' }}>Administration</Link>
+          {ici.entree.href === '/admin' ? null : (
+            <>
+              <span aria-hidden="true">/</span>
+              <span>{ici.groupe.titre}</span>
+              <span aria-hidden="true">/</span>
+              <span aria-current="page" style={{ color: C.encre, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{ici.entree.libelle}</span>
+            </>
+          )}
+        </nav>
+      )}
+      <span style={{ flex: '1' }} />
       <form
         role="search"
         onSubmit={(e) => {
@@ -62,7 +94,7 @@ export function BarreAdmin() {
           const v = q.trim();
           if (v.length >= 2) router.push(`/admin/membres?q=${encodeURIComponent(v)}`);
         }}
-        style={{ flex: '0 1 360px', minWidth: 0 }}
+        style={{ flex: '0 1 340px', minWidth: 0 }}
       >
         <label
           style={{ height: '40px', borderRadius: '999px', background: C.aplat, display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px', color: C.grisClair, fontSize: '13px' }}
@@ -71,15 +103,16 @@ export function BarreAdmin() {
             <path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zm9 2-4-4" />
           </svg>
           <input
+            ref={champ}
             aria-label="Rechercher un membre"
+            aria-keyshortcuts="/"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Rechercher un membre"
+            placeholder="Rechercher un membre  ( / )"
             style={{ border: 'none', outline: 'none', background: 'transparent', font: 'inherit', color: C.encre, width: '100%', minWidth: 0 }}
           />
         </label>
       </form>
-      <span style={{ flex: '1' }} />
       <div style={{ position: 'relative' }}>
         <button
           type="button"
@@ -93,7 +126,7 @@ export function BarreAdmin() {
         {menu ? (
           <div
             role="menu"
-            style={{ position: 'absolute', right: 0, top: '44px', width: '240px', background: '#fff', border: `1px solid ${C.trait}`, borderRadius: '18px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', zIndex: 30 }}
+            style={{ position: 'absolute', right: 0, top: '44px', width: '240px', background: '#fff', border: `1px solid ${C.trait}`, borderRadius: '18px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', zIndex: 'var(--z-menu, 30)' }}
           >
             <div style={{ fontSize: '14px', fontWeight: 700 }}>{equipe?.nom ?? '…'}</div>
             {equipe === null ? null : <Pastille ton="vert">{ROLES[equipe.role] ?? equipe.role}</Pastille>}
