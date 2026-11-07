@@ -59,7 +59,9 @@ export class OutboundConsumer implements OnApplicationBootstrap, OnModuleDestroy
       new Worker(
         QUEUES.PUSH,
         async (job) => {
-          await this.notifications.sendPush(job.data as OutboundPushJob);
+          // Dernière tentative : on cesse de rejouer, les échecs comptent et la ligne passe en FAILED.
+          const finalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+          await this.notifications.sendPush(job.data as OutboundPushJob, { finalAttempt });
         },
         { connection: this.connection, concurrency: 10 },
       ),
