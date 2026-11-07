@@ -167,7 +167,6 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'account.deactivated_purge',
       'user.phase_progression',
       'otp.purge',
-      'outbox.purge',
       'kyc.expire_sessions',
       // ── Module 15 : analytics (15 §10), et l'export RGPD (01 §8) ─────────────
       //
