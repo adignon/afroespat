@@ -886,27 +886,44 @@ export function filtresNotifications(choisi: string): readonly FiltreNotificatio
   });
 }
 
+/** Le filtre serveur d'une pastille : les catégories de la pastille, séparées par des virgules. */
+function requeteNotifications(filtre: string): string {
+  const categories = CATEGORIES_DU_FILTRE[filtre] ?? [];
+  return categories.length === 0 ? '?limit=20' : `?categories=${categories.join(',')}&limit=20`;
+}
+
 export async function chargerX02(filtre: string = '*'): Promise<X02Data> {
   const categories = CATEGORIES_DU_FILTRE[filtre] ?? [];
-  const requete =
-    categories.length === 1 ? `?category=${categories[0] ?? ''}&limit=50` : '?limit=50';
 
   const [me, page] = await Promise.all([
     fetchMe(),
-    memberApi.get(`/notifications${requete}`, notificationsResponseSchema),
+    memberApi.get(`/notifications${requeteNotifications(filtre)}`, notificationsResponseSchema),
   ]);
-
-  const retenues =
-    categories.length > 1
-      ? page.items.filter((n) => categories.includes(n.category))
-      : page.items;
 
   return {
     moi: barreHauteDe(me),
-    lignes: retenues.map(ligneDe),
+    lignes: page.items.map(ligneDe),
     nonLusTotal: page.meta.unread,
     filtres: filtresNotifications(categories.length === 0 ? '*' : filtre),
+    suite: page.nextCursor,
   };
+}
+
+/**
+ * « Voir plus » sous les notifications (lot S3A) : la page suivante, avec le MÊME filtre de
+ * catégories — le filtre part au serveur, il ne s'applique pas à la page reçue.
+ */
+export async function chargerNotificationsSuivantes(
+  filtre: string,
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly LigneNotification[]; readonly nextCursor: string | null }> {
+  const page = await memberApi.get(
+    `/notifications${requeteNotifications(filtre)}&cursor=${encodeURIComponent(curseur)}`,
+    notificationsResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map(ligneDe), nextCursor: page.nextCursor };
 }
 
 /** « 1er octobre » — le `1er` que `Intl` écrit « 1 », corrigé comme la maquette l'écrit. */

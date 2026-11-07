@@ -105,6 +105,13 @@ const SUITES = [
     liste: 'demandes',
     prop: 'plusDemandes',
   }),
+  suiteApres({
+    screens: ['X02'],
+    nom: 'X02_VOIR_PLUS',
+    why: 'Les notifications ne montraient qu’une page : « Voir plus » suit `nextCursor` de `GET /notifications`, avec le même filtre de catégories (côté serveur).',
+    liste: 'lignes',
+    prop: 'plusLignes',
+  }),
 ];
 
 export const ADAPTATIONS_VOIR_PLUS = SUITES;

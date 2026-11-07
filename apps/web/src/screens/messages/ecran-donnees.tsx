@@ -299,7 +299,7 @@ export function EcranNotifications({
       squelette={SQUELETTE_X02}
     >
       {(donnees) => (
-        <NotificationsVivantes donnees={donnees} onRecharger={recharger}>
+        <NotificationsVivantes donnees={donnees} filtre={filtre} onRecharger={recharger}>
           {(vivantes) => (
             <ScreenFrames
               screen="X02"
