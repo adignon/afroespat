@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { BoundedMap, CACHE_MAX_ENTRIES } from '../../common/bounded-map';
 import { newId, type Prisma } from '@app/db';
 import {
   CONNECTION_ERROR_CODES,
@@ -83,10 +84,10 @@ export class ConnectionsService {
   private readonly cursorSecret = loadEnv().CURSOR_SECRET;
 
   /** §3.2 : réseau de 2ᵉ degré « calculé à la requête, mis en cache 1 h ». */
-  private readonly mutualCache = new Map<
+  private readonly mutualCache = new BoundedMap<
     string,
-    { at: number; value: { count: number; handles: string[] } }
-  >();
+    { at: number; value: { count: number; handles: string[]; sharedCommunities?: number } }
+  >(CACHE_MAX_ENTRIES);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -540,10 +541,15 @@ export class ConnectionsService {
 
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
-      await tx.connectionRequest.update({
-        where: { id: requestId },
+      // Conditionnel : seule la transition PENDING -> ACCEPTED compte. Deux
+      // acceptations concurrentes ne créent donc qu'un contact (l'autre : 409).
+      const claimed = await tx.connectionRequest.updateMany({
+        where: { id: requestId, status: 'PENDING' },
         data: { status: 'ACCEPTED', decidedAt: now },
       });
+      if (claimed.count !== 1) {
+        throw ApiError.transverse('CONFLICT', { reason: 'REQUEST_ALREADY_DECIDED' });
+      }
       await this.connect(tx, request.fromUserId, userId, {
         origin: 'MANUAL',
         refType: 'connection_request',
