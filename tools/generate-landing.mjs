@@ -34,6 +34,8 @@
  *      communauté » (aucune page) et icônes de réseaux sociaux (aucune adresse) retirés ; année calculée.
  *  12. Structure et accessibilité : `<main>`, bouton de recherche, fenêtres `role="dialog"`, noms des boutons-icônes, sélecteur
  *      « Français » retiré (aucun effet), « Réessayer » quand un guide ou un réseau ne charge pas.
+ *      Ajouts (lot S3c) : message + « Réessayer » quand la page ne peut pas charger ses données publiques (bandeau en tête de
+ *      `<main>`, `home.*`) ou quand la recherche échoue (`searchError.*`, au lieu d'un faux « Aucun résultat »).
  *  13. Mise en page : points de rupture CSS (`landing.css`) à la place de `window.innerWidth` (plus de saut au montage).
  *  14. Catégories et villes : elles ouvrent le contenu public correspondant (recherche, fiche du réseau de la ville).
  */
@@ -264,6 +266,13 @@ function sectionDe(html, repere) {
     corps = `${corps.slice(0, debut)}${reessayer('guide', 'Réessayer')}<sc-if value="{{ guide.ok }}" hint-placeholder-val="{{ true }}">${corps.slice(debut, fin)}</sc-if>${corps.slice(fin)}`;
     const desc = '<p style="margin:0;font-size:15px;line-height:1.7;text-wrap:pretty">{{ group.desc }}</p>';
     corps = remplacerUneFois(corps, 'description du réseau', desc, `${desc}${reessayer('group', 'Réessayer')}`);
+    // La page d'accueil n'a pas pu lire ses données publiques : un bandeau (role="alert") et « Réessayer », en tête de <main>.
+    const bandeau = `<sc-if value="{{ home.error }}" hint-placeholder-val="{{ false }}"><div role="alert" data-lp-erreur="accueil" style="max-width:1240px;margin:12px auto 0;padding:14px 20px;border-radius:16px;background:#FFF6EF;border:1px solid #F0C3A4;display:flex;align-items:center;gap:14px;flex-wrap:wrap;color:#16211D;font-size:14px;line-height:1.5"><span style="flex:1;min-width:220px">Les chiffres, les rencontres et les villes n’ont pas pu être chargés. Le reste de la page est disponible.</span><button type="button" onClick="{{ home.retry }}" style="height:44px;padding:0 20px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:14px;font-weight:700;cursor:pointer">Réessayer</button></div></sc-if>`;
+    corps = remplacerUneFois(corps, 'bandeau d’erreur de la page', '<main id="contenu" style="display:block">', `<main id="contenu" style="display:block">${bandeau}`);
+    // La recherche qui échoue n'est pas « aucun résultat » : un message et « Réessayer ».
+    const echecRecherche = `<sc-if value="{{ searchError.show }}" hint-placeholder-val="{{ false }}"><div role="alert" style="padding:40px 20px;text-align:center"><div style="font-size:15px;font-weight:700">La recherche n’a pas pu aboutir</div><div style="font-size:13.5px;color:#5D6B66;margin-top:6px">Vérifiez votre connexion, puis réessayez.</div><button type="button" onClick="{{ searchError.retry }}" style="margin-top:14px;height:44px;padding:0 18px;border-radius:14px;border:none;background:#16785E;color:#fff;font:inherit;font-size:13.5px;font-weight:700;cursor:pointer">Réessayer</button></div></sc-if>`;
+    const marque = '<sc-if value="{{ noResults }}"';
+    corps = remplacerUneFois(corps, 'recherche en échec', marque, `${echecRecherche}${marque}`);
   }
 }
 

@@ -25,7 +25,8 @@ export function ImageLanding({
   readonly style?: CSSProperties;
 }) {
   const arrondi = shape === 'rounded' ? `${radius ?? '24'}px` : undefined;
-  const aUnePhoto = src !== undefined && src !== '';
+  // Un visuel de repli (data:) n'est pas une photo : il est décoratif.
+  const aUnePhoto = src !== undefined && src !== '' && !src.startsWith('data:');
   // Sans photo, l'emplacement n'est qu'un fond : il n'a rien à annoncer. Avec une photo, il porte son texte alternatif.
   return (
     <div

@@ -40,13 +40,17 @@ const VIDE: PublicLanding = {
 export default async function Root() {
   const jar = await cookies();
   if (jar.get('dp_session')?.value === '1') redirect('/accueil');
-  const landing = await lirePublic('/public/landing', publicLandingSchema, { next: { revalidate: 300 } }).catch(() => VIDE);
+  let indisponible = false;
+  const landing = await lirePublic('/public/landing', publicLandingSchema, { next: { revalidate: 300 } }).catch(() => {
+    indisponible = true;
+    return VIDE;
+  });
   return (
     <>
       {jsonLdAccueil().map((donnees) => (
         <script key={String(donnees['@type'])} type="application/ld+json" dangerouslySetInnerHTML={{ __html: serialiserJsonLd(donnees) }} />
       ))}
-      <LandingPage landing={landing} />
+      <LandingPage landing={landing} indisponible={indisponible} />
     </>
   );
 }

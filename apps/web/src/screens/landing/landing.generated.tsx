@@ -8,7 +8,7 @@ import type { LandingVals } from './data';
 import './landing.generated.css';
 
 export function LandingView(props: LandingVals) {
-  const { aboutSpan, annee, backFromCity, backToSearch, cats, cities, cityLabel, cityList, close, countriesLabel, cq, cqRef, entraideStats, events, faces, faq, group, groups, guide, hasCities, hasEntraide, hasEvents, hasQuotes, heroStat, how, isCity, isGroup, isGuide, isSearch, lockedTabs, marquee, noResults, onCq, onQ, openCity, openLogin, openSearch, openSignup, otherCities, parcoursPts, q, qRef, quotes, showCountries, showHeroStat, tabs } = props;
+  const { aboutSpan, annee, backFromCity, backToSearch, cats, cities, cityLabel, cityList, close, countriesLabel, cq, cqRef, entraideStats, events, faces, faq, group, groups, guide, hasCities, hasEntraide, hasEvents, hasQuotes, heroStat, home, how, isCity, isGroup, isGuide, isSearch, lockedTabs, marquee, noResults, onCq, onQ, openCity, openLogin, openSearch, openSignup, otherCities, parcoursPts, q, qRef, quotes, searchError, showCountries, showHeroStat, tabs } = props;
   return (
     <div className="lp-root">
 
@@ -32,7 +32,7 @@ export function LandingView(props: LandingVals) {
     <a href="/connexion" onClick={openSignup} style={{ height: "42px", padding: "0 20px", borderRadius: "999px", background: "#16211D", color: "#fff", fontSize: "14px", fontWeight: "700", display: "flex", alignItems: "center", whiteSpace: "nowrap", flexShrink: "0" }} className="lp-h-2">Rejoindre</a>
   </div>
 </header>
-<main id="contenu" style={{ display: "block" }}>
+<main id="contenu" style={{ display: "block" }}>{home.error ? (<><div role="alert" data-lp-erreur="accueil" style={{ maxWidth: "1240px", margin: "12px auto 0", padding: "14px 20px", borderRadius: "16px", background: "#FFF6EF", border: "1px solid #F0C3A4", display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap", color: "#16211D", fontSize: "14px", lineHeight: "1.5" }}><span style={{ flex: "1", minWidth: "220px" }}>Les chiffres, les rencontres et les villes n’ont pas pu être chargés. Le reste de la page est disponible.</span><button type="button" onClick={home.retry} style={{ height: "44px", padding: "0 20px", borderRadius: "14px", border: "none", background: "#16785E", color: "#fff", font: "inherit", fontSize: "14px", fontWeight: "700", cursor: "pointer" }}>Réessayer</button></div></>) : null}
 
 <section>
   <div className="lp-hero-grid" style={{ maxWidth: "1240px", margin: "0 auto", padding: "48px 20px 64px", display: "grid", gridTemplateColumns: "1fr", gap: "32px", alignItems: "center" }}>
@@ -317,7 +317,7 @@ export function LandingView(props: LandingVals) {
             </button></Fragment>
 ))}</Fragment>
 ))}
-        {noResults ? (<><div style={{ padding: "40px 20px", textAlign: "center" }}><div style={{ fontSize: "15px", fontWeight: "700" }}>Aucun résultat pour « {q} »</div><div style={{ fontSize: "13.5px", color: "#5D6B66", marginTop: "6px" }}>Essayez un autre mot ou une autre ville. Inscrit·e, vous pouvez poser la question à la communauté.</div><button onClick={openSignup} style={{ marginTop: "14px", height: "44px", padding: "0 18px", borderRadius: "14px", border: "none", background: "#16785E", color: "#fff", font: "inherit", fontSize: "13.5px", fontWeight: "700", cursor: "pointer" }}>Poser ma question</button></div></>) : null}
+        {searchError.show ? (<><div role="alert" style={{ padding: "40px 20px", textAlign: "center" }}><div style={{ fontSize: "15px", fontWeight: "700" }}>La recherche n’a pas pu aboutir</div><div style={{ fontSize: "13.5px", color: "#5D6B66", marginTop: "6px" }}>Vérifiez votre connexion, puis réessayez.</div><button type="button" onClick={searchError.retry} style={{ marginTop: "14px", height: "44px", padding: "0 18px", borderRadius: "14px", border: "none", background: "#16785E", color: "#fff", font: "inherit", fontSize: "13.5px", fontWeight: "700", cursor: "pointer" }}>Réessayer</button></div></>) : null}{noResults ? (<><div style={{ padding: "40px 20px", textAlign: "center" }}><div style={{ fontSize: "15px", fontWeight: "700" }}>Aucun résultat pour « {q} »</div><div style={{ fontSize: "13.5px", color: "#5D6B66", marginTop: "6px" }}>Essayez un autre mot ou une autre ville. Inscrit·e, vous pouvez poser la question à la communauté.</div><button onClick={openSignup} style={{ marginTop: "14px", height: "44px", padding: "0 18px", borderRadius: "14px", border: "none", background: "#16785E", color: "#fff", font: "inherit", fontSize: "13.5px", fontWeight: "700", cursor: "pointer" }}>Poser ma question</button></div></>) : null}
       </div>
     </div>
   </div></>) : null}

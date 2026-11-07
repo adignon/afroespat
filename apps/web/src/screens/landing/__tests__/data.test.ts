@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cibleDuPiege, termeDeCategorie } from '../data';
-import { CATEGORIES } from '../contenu';
+import { cibleDuPiege, photoDeVille, termeDeCategorie } from '../data';
+import { CATEGORIES, visuelVille } from '../contenu';
 
 const el = (nom: string) => ({ nom }) as unknown as HTMLElement;
 
@@ -32,5 +32,27 @@ describe('termeDeCategorie', () => {
   });
   it('retombe sur le libellé en minuscules', () => {
     expect(termeDeCategorie('Autre')).toBe('autre');
+  });
+});
+
+describe('photoDeVille (photo hébergée, sinon visuel de repli)', () => {
+  it('rend la photo hébergée des villes qui en ont une, avec son crédit', () => {
+    const lyon = photoDeVille('lyon', 'Lyon');
+    expect(lyon.src).toMatch(/^\/landing\/.+\.jpg$/);
+    expect(lyon.credit).toContain('Unsplash');
+  });
+  it('rend un visuel de repli propre, sans crédit, pour les autres', () => {
+    const v = photoDeVille('bordeaux', 'Bordeaux');
+    expect(v.src.startsWith('data:image/svg+xml')).toBe(true);
+    expect(decodeURIComponent(v.src)).toContain('>B</text>');
+    expect(v.credit).toBe('');
+  });
+  it('est stable d’un appel à l’autre et varie d’une ville à l’autre', () => {
+    expect(visuelVille('nantes', 'Nantes')).toBe(visuelVille('nantes', 'Nantes'));
+    expect(visuelVille('nantes', 'Nantes')).not.toBe(visuelVille('lille', 'Lille'));
+  });
+  it('neutralise un nom qui casserait le SVG', () => {
+    expect(decodeURIComponent(visuelVille('x', '<script>'))).not.toContain('<script');
+    expect(visuelVille('x', '')).toContain(encodeURIComponent('>?</text>'));
   });
 });

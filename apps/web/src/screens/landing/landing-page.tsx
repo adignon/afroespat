@@ -6,6 +6,6 @@ import { LandingView } from './landing.generated';
 import './landing.css';
 
 /** La page d'accueil des visiteurs : le dessin transcodé de la maquette, alimenté par les données publiques. */
-export function LandingPage({ landing }: { readonly landing: PublicLanding }) {
-  return <LandingView {...useLandingVals(landing)} />;
+export function LandingPage({ landing, indisponible = false }: { readonly landing: PublicLanding; readonly indisponible?: boolean }) {
+  return <LandingView {...useLandingVals(landing, { indisponible })} />;
 }

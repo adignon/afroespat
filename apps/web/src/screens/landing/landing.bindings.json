@@ -23,6 +23,7 @@
   "hasEvents",
   "hasQuotes",
   "heroStat",
+  "home",
   "how",
   "isCity",
   "isGroup",
@@ -42,6 +43,7 @@
   "q",
   "qRef",
   "quotes",
+  "searchError",
   "showCountries",
   "showHeroStat",
   "tabs"

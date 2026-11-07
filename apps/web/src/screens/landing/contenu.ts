@@ -99,6 +99,19 @@ export function couverture(indice = 0): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
+/**
+ * Le visuel de repli d'une ville sans photo : un dégradé vert sombre teinté d'après son identifiant (stable d'un rendu à
+ * l'autre, identique côté serveur et côté navigateur), des collines discrètes et son monogramme. Un SVG, sans requête.
+ */
+export function visuelVille(slug: string, nom: string): string {
+  let h = 0;
+  for (const c of slug) h = (h * 31 + c.charCodeAt(0)) % 360;
+  const teinte = 140 + (h % 70); // vert → bleu-vert : reste dans la charte
+  const lettre = (nom.trim().charAt(0) || '?').toUpperCase().replace(/[<>&"']/g, '');
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="625" viewBox="0 0 1000 625" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${String(teinte)},55%,30%)"/><stop offset="1" stop-color="#16211D"/></linearGradient></defs><rect width="1000" height="625" fill="url(#g)"/><path d="M0 470 Q250 380 500 450 T1000 420 V625 H0Z" fill="#fff" fill-opacity=".07"/><path d="M0 540 Q300 470 600 530 T1000 510 V625 H0Z" fill="#fff" fill-opacity=".08"/><text x="500" y="270" dy=".35em" text-anchor="middle" font-family="system-ui,sans-serif" font-size="220" font-weight="800" fill="#fff" fill-opacity=".22">${lettre}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
 /** Un guide en Markdown → des sections `{ h, p }` pour la lecture libre. Pas de rendu riche : du texte, lisible. */
 export function sectionsDeMarkdown(body: string): { h: string; p: string }[] {
   const nettoyer = (t: string): string =>

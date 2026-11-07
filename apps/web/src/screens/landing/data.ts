@@ -25,6 +25,7 @@ import {
   dateLongue,
   libelleCategorieGuide,
   libelleTypeEvenement,
+  visuelVille,
   minutesDeLecture,
   sectionsDeMarkdown,
   type Categorie,
@@ -105,6 +106,10 @@ export interface LandingVals {
     readonly error: boolean;
     readonly retry: () => void;
   };
+  /** Les données publiques de la page n'ont pas pu être lues : un bandeau et « Réessayer ». */
+  readonly home: { readonly error: boolean; readonly retry: () => void };
+  /** La recherche a échoué (réseau, serveur) : un message et « Réessayer », et non un faux « Aucun résultat ». */
+  readonly searchError: { readonly show: boolean; readonly retry: () => void };
   readonly hasCities: boolean;
   readonly hasEntraide: boolean;
   readonly hasEvents: boolean;
@@ -180,13 +185,27 @@ const PHOTOS_VILLES: Readonly<Record<string, { src: string; credit: string; href
   paris: { src: '/landing/1503917988258-f87a78e3c995-1000.jpg', credit: 'Photo by Ilnur Kalimullin on Unsplash', href: 'https://unsplash.com/@kalimullin' },
 };
 
+/**
+ * La photo d'une ville : celle que la page héberge (`PHOTOS_VILLES`) ; à défaut, un visuel de repli PROPRE et stable —
+ * un dégradé teinté d'après le nom de la ville et son monogramme (jamais une photo d'une autre ville). Le visuel de repli
+ * n'a pas de crédit : il est décoratif.
+ */
+export function photoDeVille(slug: string, nom: string): { src: string; credit: string; href: string } {
+  return PHOTOS_VILLES[slug] ?? { src: visuelVille(slug, nom), credit: '', href: '' };
+}
+
 const CITATIONS = [
   { bg: '#EFF7F3', accent: '#16785E' },
   { bg: '#FFF6EF', accent: '#E0733A' },
   { bg: '#F2F5F4', accent: '#0F5C48' },
 ] as const;
 
-export function useLandingVals(landing: PublicLanding): LandingVals {
+export interface OptionsLanding {
+  /** La lecture de `/public/landing` a échoué côté serveur : la page est montée sans donnée. */
+  readonly indisponible?: boolean;
+}
+
+export function useLandingVals(landing: PublicLanding, options: OptionsLanding = {}): LandingVals {
   const router = useRouter();
   const qRef = useRef<HTMLInputElement | null>(null);
   const cqRef = useRef<HTMLInputElement | null>(null);
@@ -201,6 +220,8 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   const [essaiGroupe, setEssaiGroupe] = useState(0);
   const [erreurGuide, setErreurGuide] = useState(false);
   const [erreurGroupe, setErreurGroupe] = useState(false);
+  const [essaiRecherche, setEssaiRecherche] = useState(0);
+  const [erreurRecherche, setErreurRecherche] = useState(false);
   const [q, setQ] = useState('');
   const [cq, setCq] = useState('');
   const [ville, setVille] = useState('*');
@@ -270,6 +291,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
   // La recherche : sans compte, deux caractères au moins, un peu d'attente entre deux frappes.
   useEffect(() => {
     const terme = q.trim();
+    setErreurRecherche(false);
     if (couche !== 'search' || terme.length < PUBLIC_SEARCH_MIN_CHARS) {
       setResultats(null);
       return;
@@ -282,7 +304,9 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       lirePublic(`/public/search?${params.toString()}`, publicSearchResponseSchema, { signal: controle.signal }).then(
         setResultats,
         () => {
-          if (!controle.signal.aborted) setResultats({ guides: [], communities: [], cities: [] });
+          if (controle.signal.aborted) return;
+          setResultats(null);
+          setErreurRecherche(true);
         },
       );
     }, 250);
@@ -290,7 +314,7 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
       clearTimeout(t);
       controle.abort();
     };
-  }, [q, ville, pays, couche]);
+  }, [q, ville, pays, couche, essaiRecherche]);
 
   // Le guide et le réseau s'ouvrent « en chargement » ; un échec laisse un message et « Réessayer », jamais un
   // « Chargement… » qui ne finit pas.
@@ -584,11 +608,11 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     cats: CATEGORIES.map((c) => ({ ...c, open: ouvrirCategorie(c.t) })),
     cities: villesCartes.map((c) => ({
       slot: `ville-${c.slug}`,
-      src: PHOTOS_VILLES[c.slug]?.src ?? '',
+      src: photoDeVille(c.slug, c.name).src,
       n: c.name,
       s: c.memberCount === null ? 'La communauté de la ville' : `${String(c.memberCount)} membres`,
-      credit: PHOTOS_VILLES[c.slug]?.credit ?? '',
-      href: PHOTOS_VILLES[c.slug]?.href ?? '',
+      credit: photoDeVille(c.slug, c.name).credit,
+      href: photoDeVille(c.slug, c.name).href,
       open: ouvrirVille(c),
     })),
     cityLabel: ville !== '*' ? nomVille : lieuDuPays !== undefined ? `Tout : ${lieuDuPays.name}` : 'Tous les pays',
@@ -635,7 +659,9 @@ export function useLandingVals(landing: PublicLanding): LandingVals {
     lockedTabs: ['Fil', 'Événements', 'Membres', 'Album'],
     marquee,
     // « Aucun résultat » : une recherche lancée qui ne rend rien (pas pendant la frappe d'un seul caractère).
-    noResults: aRecherche && resultats !== null && groups.length === 0,
+    noResults: aRecherche && !erreurRecherche && resultats !== null && groups.length === 0,
+    searchError: { show: aRecherche && erreurRecherche, retry: () => setEssaiRecherche((n) => n + 1) },
+    home: { error: options.indisponible === true, retry: () => router.refresh() },
     onCq: (e) => setCq(e.target.value),
     onQ: (e) => setQ(e.target.value),
     openCity: () => {
