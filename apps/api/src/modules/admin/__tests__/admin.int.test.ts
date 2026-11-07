@@ -1662,6 +1662,104 @@ describe('administration (15)', () => {
   });
 
   // ══════════════════════════════════════════════════════════════════════════
+  describe('gestes destructeurs, référentiel et paiements : trace d’audit', () => {
+    const MOTIF = 'Motif de test suffisamment long pour la trace.';
+    const traces = async (staffId: string, action: string) =>
+      prisma.auditLog.count({ where: { actorId: staffId, action } });
+
+    async function publication(authorUserId: string): Promise<string> {
+      const id = newId();
+      await prisma.post.create({
+        data: {
+          id,
+          authorUserId,
+          type: 'DISCUSSION',
+          body: `Publication de test ${id}`,
+          status: 'PUBLISHED',
+          moderationStatus: 'CLEARED',
+        },
+      });
+      return id;
+    }
+
+    it('retire, rétablit puis supprime définitivement un contenu, chaque geste tracé', async () => {
+      const staff = await as('SUPER_ADMIN');
+      const auteur = await memberId();
+      const id = await publication(auteur);
+      const items = [{ type: 'POST', id }];
+
+      await request(httpServer(app)).post('/v1/admin/contents/remove').set('cookie', staff.cookie)
+        .send({ items, reason: MOTIF }).expect(200);
+      expect((await prisma.post.findUniqueOrThrow({ where: { id } })).deletedAt).not.toBeNull();
+      expect(await traces(staff.staffId, 'content.removed')).toBe(1);
+
+      await request(httpServer(app)).post('/v1/admin/contents/restore').set('cookie', staff.cookie)
+        .send({ items, reason: MOTIF }).expect(200);
+      expect((await prisma.post.findUniqueOrThrow({ where: { id } })).deletedAt).toBeNull();
+      expect(await traces(staff.staffId, 'content.restored')).toBe(1);
+
+      await request(httpServer(app)).post('/v1/admin/contents/erase').set('cookie', staff.cookie)
+        .send({ items, reason: MOTIF, confirmCount: 1 }).expect(200);
+      expect(await prisma.post.count({ where: { id } })).toBe(0);
+      expect(await traces(staff.staffId, 'content.erased')).toBe(1);
+    });
+
+    it('corrige un contenu avec motif et laisse une trace', async () => {
+      const staff = await as('CONTENT_ADMIN');
+      const id = await publication(await memberId());
+      await request(httpServer(app)).patch(`/v1/admin/contents/POST/${id}`).set('cookie', staff.cookie)
+        .send({ reason: MOTIF, changes: { body: 'Texte corrigé par l’équipe.' } }).expect(200);
+      expect((await prisma.post.findUniqueOrThrow({ where: { id } })).body).toBe('Texte corrigé par l’équipe.');
+      expect(await traces(staff.staffId, 'content.updated')).toBe(1);
+    });
+
+    it('supprime définitivement un compte, seul ou par lot, avec une trace par geste', async () => {
+      const staff = await as('SUPER_ADMIN');
+      const seul = await member();
+      const fiche = await prisma.user.findUniqueOrThrow({ where: { id: seul.id }, select: { handle: true } });
+      await request(httpServer(app)).post(`/v1/admin/users/${seul.id}/erase`).set('cookie', staff.cookie)
+        .send({ reason: `${MOTIF} Compte de test.`, confirmHandle: fiche.handle }).expect(200);
+      expect(await prisma.user.count({ where: { id: seul.id } })).toBe(0);
+      expect(await traces(staff.staffId, 'user.erased')).toBe(1);
+
+      const a = await memberId();
+      const b = await memberId();
+      await request(httpServer(app)).post('/v1/admin/users/bulk-erase').set('cookie', staff.cookie)
+        .send({ ids: [a, b], reason: `${MOTIF} Lot de test.`, confirmCount: 2 }).expect(200);
+      expect(await prisma.user.count({ where: { id: { in: [a, b] } } })).toBe(0);
+      expect(await traces(staff.staffId, 'user.erased')).toBe(3);
+    });
+
+    it('ferme un pays sans ville active et trace la fermeture', async () => {
+      const staff = await as('SUPER_ADMIN');
+      const id = newId();
+      await prisma.country.create({
+        data: { id, iso2: `Q${run.slice(0, 5)}`, nameFr: `Pays test ${run}`, dialCode: '+999', kind: 'ORIGIN', isActive: true, sortOrder: 999 },
+      });
+      await request(httpServer(app)).post(`/v1/admin/ref/countries/${id}/deactivate`).set('cookie', staff.cookie)
+        .send({ reason: MOTIF }).expect(201);
+      expect((await prisma.country.findUniqueOrThrow({ where: { id } })).isActive).toBe(false);
+      expect(await prisma.auditLog.count({ where: { actorId: staff.staffId, targetId: id } })).toBe(1);
+    });
+
+    it('les interrupteurs de paiement (plan, moyens, options, monétisation) sont tracés', async () => {
+      const staff = await as('SUPER_ADMIN');
+      const avant = await prisma.auditLog.count({ where: { actorId: staff.staffId } });
+      await request(httpServer(app)).put('/v1/admin/billing/monetisation').set('cookie', staff.cookie)
+        .send({ active: false, reason: MOTIF }).expect(200);
+      await request(httpServer(app)).put('/v1/admin/billing/payment-methods').set('cookie', staff.cookie)
+        .send({ methods: [{ code: 'CARD', enabled: false }], reason: MOTIF }).expect(200);
+      await request(httpServer(app)).put('/v1/admin/billing/paid-options').set('cookie', staff.cookie)
+        .send({ options: { PREMIUM_PERKS: false }, reason: MOTIF }).expect(200);
+      await request(httpServer(app)).put('/v1/admin/billing/plans/PREMIUM/enabled').set('cookie', staff.cookie)
+        .send({ isActive: true, reason: MOTIF }).expect(200);
+      expect(await prisma.auditLog.count({ where: { actorId: staff.staffId } })).toBe(avant + 4);
+      expect(await traces(staff.staffId, 'billing.monetisation_changed')).toBe(1);
+      expect(await traces(staff.staffId, 'billing.payment_methods_changed')).toBe(1);
+      expect(await traces(staff.staffId, 'billing.paid_options_changed')).toBe(1);
+    });
+  });
+
   // §12 — « toute route admin non-GET écrit une ligne d'audit »
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -1693,6 +1791,18 @@ describe('administration (15)', () => {
       'POST /v1/admin/users/{id}/phase',
       'POST /v1/admin/users/{id}/city',
       'POST /v1/admin/search/reindex',
+      // Bloc « gestes destructeurs, référentiel et paiements » ci-dessus.
+      'POST /v1/admin/users/{id}/erase',
+      'POST /v1/admin/users/bulk-erase',
+      'POST /v1/admin/contents/remove',
+      'POST /v1/admin/contents/restore',
+      'POST /v1/admin/contents/erase',
+      'PATCH /v1/admin/contents/{type}/{id}',
+      'POST /v1/admin/ref/countries/{id}/deactivate',
+      'PUT /v1/admin/billing/plans/{code}/enabled',
+      'PUT /v1/admin/billing/payment-methods',
+      'PUT /v1/admin/billing/paid-options',
+      'PUT /v1/admin/billing/monetisation',
     ]);
     /** Vérifiées ailleurs, ou n'écrivant rien. */
     const elsewhere = new Set([

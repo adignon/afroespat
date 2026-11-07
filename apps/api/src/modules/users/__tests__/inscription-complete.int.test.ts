@@ -103,7 +103,10 @@ describe('inscription complète (01 §5, 03 §3.1)', () => {
     auth = new AuthService(prisma, crypto, outbox, new TokenService(), consents, sms, new FakeCaptchaProvider());
 
     lyonId = (await prisma.city.findUniqueOrThrow({ where: { slug: 'lyon' }, select: { id: true } })).id;
+    // Le seed livre les villes inactives : le test active celle dont il a besoin.
+    await prisma.city.update({ where: { id: lyonId }, data: { isActive: true } });
     abomeyId = (await prisma.city.findFirstOrThrow({ where: { name: 'Abomey' }, select: { id: true } })).id;
+    await prisma.city.update({ where: { id: abomeyId }, data: { isActive: true } });
     studiesTemplateId = (
       await prisma.journeyTemplate.findUniqueOrThrow({ where: { code: 'STUDIES' }, select: { id: true } })
     ).id;

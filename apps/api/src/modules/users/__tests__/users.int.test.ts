@@ -59,6 +59,8 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
     prisma = new PrismaService();
     await prisma.$connect();
     lyonId = (await prisma.city.findUniqueOrThrow({ where: { slug: 'lyon' }, select: { id: true } })).id;
+    // Le seed livre les villes inactives : le test active celle dont il a besoin.
+    await prisma.city.update({ where: { id: lyonId }, data: { isActive: true } });
     const crypto = new CryptoService();
     const outbox = new OutboxService(prisma);
     users = new UsersService(prisma, crypto, outbox, new AuditService(prisma), new ConsentsService(prisma));
@@ -648,6 +650,7 @@ describe('compte et profil (01 §2.6, §2.7)', () => {
       where: { id: { not: lyonId }, mergedIntoCityId: null },
       select: { id: true },
     });
+    await prisma.city.update({ where: { id: autre.id }, data: { isActive: true } });
     const compte = async (id: string): Promise<number> =>
       (await prisma.city.findUniqueOrThrow({ where: { id }, select: { memberCount: true } })).memberCount;
     const lyonAvant = await compte(lyonId);

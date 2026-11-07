@@ -674,8 +674,12 @@ describe('cycle de vie du compte (01 §2.5, §2.8, §8)', () => {
 
     // L'avatar est marqué supprimé, puis le ramasse-miettes efface les OCTETS et la ligne.
     expect((await prisma.mediaAsset.findUniqueOrThrow({ where: { id: assetId } })).deletedAt).not.toBeNull();
-    const purge = await media.purgeOrphans(new Date(Date.now() + 2 * 3_600_000));
-    expect(purge.purged).toBeGreaterThanOrEqual(1);
+    // Le ramasse-miettes traite par lots, les plus anciens d'abord : sur une base partagée il faut parfois plusieurs passes.
+    let purgedTotal = 0;
+    for (let passe = 0; passe < 20 && (await prisma.mediaAsset.count({ where: { id: assetId } })) > 0; passe += 1) {
+      purgedTotal += (await media.purgeOrphans(new Date(later.getTime() + 2 * 3_600_000))).purged;
+    }
+    expect(purgedTotal).toBeGreaterThanOrEqual(1);
     expect(await storage.get(storageKey)).toBeNull();
     expect(await prisma.mediaAsset.count({ where: { id: assetId } })).toBe(0);
 

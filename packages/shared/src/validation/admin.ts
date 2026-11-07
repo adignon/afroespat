@@ -293,8 +293,8 @@ export const memberSearchQuerySchema = cursorQuerySchema
     /** `SEED` : comptes créés par un chargement de données de départ. Réservé à l'administration. */
     origin: z.enum(UserOrigin).optional(),
     /** Jours inclus, au format AAAA-MM-JJ (fuseau UTC). */
-    createdFrom: z.string().regex(/^d{4}-d{2}-d{2}$/).optional(),
-    createdTo: z.string().regex(/^d{4}-d{2}-d{2}$/).optional(),
+    createdFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    createdTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     /**
      * `z.enum` et NON `z.string()`.
      *
