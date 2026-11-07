@@ -228,6 +228,15 @@ export interface E01Data {
   readonly nombre: number;
   readonly pluriel: string;
   readonly evenements: readonly CarteEvenement[];
+  /** Le `nextCursor` de la première page du jour (lot S3A) ; `null` quand tout tient sur une page. */
+  readonly suite?: string | null;
+  /** La page suivante du même jour, avec le même filtre (lot S3A). */
+  readonly chargerSuite?: (
+    curseur: string,
+    signal?: AbortSignal,
+  ) => Promise<{ readonly items: readonly CarteEvenement[]; readonly nextCursor: string | null }>;
+  /** « Voir plus » sous les cartes du jour (lot S3A) — posé par l'écran. */
+  readonly plusEvenements?: import('@/components/voir-plus').PlusListe;
   readonly weekEnd: readonly LigneWeekEnd[];
   readonly ville: string;
   readonly bande: readonly JourBande[];

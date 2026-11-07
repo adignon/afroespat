@@ -239,6 +239,9 @@ async function maVille(
 
 // ─── E01 · /agenda ───────────────────────────────────────────────────────────
 
+/** La taille d'une page de cartes du jour (le serveur plafonne à 50). */
+const PAGE_JOUR = 20;
+
 /**
  * L'agenda du jour (§3.5).
  *
@@ -264,7 +267,7 @@ export async function chargerE01(
   const filtreScope = scope === 'all' ? '' : `&scope=${scope}`;
 
   const [jourListe, weekEndListe, reseaux, ville] = await Promise.all([
-    memberApi.get(`/events?date=${jour}${filtreScope}`, eventsResponseSchema),
+    memberApi.get(`/events?date=${jour}${filtreScope}&limit=${String(PAGE_JOUR)}`, eventsResponseSchema),
     memberApi.get(
       `/events?from=${weekEnd.from}&to=${weekEnd.to}&limit=5`,
       eventsResponseSchema,
@@ -283,6 +286,19 @@ export async function chargerE01(
     nombre: jourListe.items.length,
     pluriel: pluriel(jourListe.items.length),
     evenements: jourListe.items.map((e) => construireCarte(e, reseaux)),
+    suite: jourListe.nextCursor,
+    /**
+     * « Voir plus » (lot S3A) : la page suivante du MÊME jour et du même filtre. Les réseaux (noms des
+     * cartes réservées) sont déjà lus : la fermeture les garde, la page suivante n'en relit rien.
+     */
+    chargerSuite: async (curseur, signal) => {
+      const page = await memberApi.get(
+        `/events?date=${jour}${filtreScope}&limit=${String(PAGE_JOUR)}&cursor=${encodeURIComponent(curseur)}`,
+        eventsResponseSchema,
+        signal === undefined ? undefined : { signal },
+      );
+      return { items: page.items.map((e) => construireCarte(e, reseaux)), nextCursor: page.nextCursor };
+    },
     weekEnd: construireWeekEnd(weekEndListe),
     // La maquette écrit « LYON » en capitales : l'intitulé de sa carte de ville.
     ville: ville.nom.toUpperCase(),

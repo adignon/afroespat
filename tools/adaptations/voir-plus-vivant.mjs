@@ -142,6 +142,13 @@ const SUITES = [
     prop: 'plusDecouverte',
     apresConteneur: true,
   }),
+  suiteApres({
+    screens: ['E01'],
+    nom: 'E01_VOIR_PLUS',
+    why: 'Les cartes du jour ne montraient que la première page (20) : « Voir plus » suit `nextCursor` de `GET /events?date=`, pour le même jour et le même filtre.',
+    liste: 'evenements',
+    prop: 'plusEvenements',
+  }),
 ];
 
 export const ADAPTATIONS_VOIR_PLUS = SUITES;
