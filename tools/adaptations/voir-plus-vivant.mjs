@@ -42,7 +42,7 @@ function finAccolade(jsx, debut) {
  * `occurrence` : « derniere » (défaut) pose le bouton après la DERNIÈRE boucle de ce nom
  * dans le cadre ; « toutes » après chacune.
  */
-function suiteApres({ screens, nom, why, liste, prop, libelle }) {
+function suiteApres({ screens, nom, why, liste, prop, libelle, apresConteneur = false }) {
   return {
     screens,
     nom,
@@ -59,8 +59,15 @@ function suiteApres({ screens, nom, why, liste, prop, libelle }) {
         const fin = finAccolade(jsx, debut);
         if (fin < 0) break;
         const attribut = libelle === undefined ? '' : ` libelle=${JSON.stringify(libelle)}`;
-        sortie += jsx.slice(curseur, fin) + `<VoirPlus plus={${prop}}${attribut} />`;
-        curseur = fin;
+        // `apresConteneur` : la liste est dans une grille ou un défilement horizontal — le bouton
+        // y serait UNE CELLULE. On le pose APRÈS la balise fermante du conteneur (qui doit suivre).
+        let finBloc = fin;
+        if (apresConteneur) {
+          if (!jsx.startsWith('</div>', fin)) break;
+          finBloc = fin + '</div>'.length;
+        }
+        sortie += jsx.slice(curseur, finBloc) + `<VoirPlus plus={${prop}}${attribut} />`;
+        curseur = finBloc;
         applied = true;
       }
       if (!applied) return { jsx, applied: false };
@@ -118,6 +125,22 @@ const SUITES = [
     why: 'Les enregistrés ne montraient qu’une page : « Voir plus » suit `nextCursor` de `GET /me/bookmarks`, avec le même onglet (filtre serveur) et « 20 sur N » du compte de l’onglet.',
     liste: 'lignes',
     prop: 'plusEnregistres',
+  }),
+  suiteApres({
+    screens: ['A07'],
+    nom: 'A07_VOIR_PLUS_MES_RESEAUX',
+    why: 'Mes réseaux : « Voir plus » suit `mineNextCursor` de `GET /communities` (les réseaux sont dans une grille / un défilement : le bouton est posé après le conteneur).',
+    liste: 'myNets',
+    prop: 'plusMesReseaux',
+    apresConteneur: true,
+  }),
+  suiteApres({
+    screens: ['A07'],
+    nom: 'A07_VOIR_PLUS_DECOUVRIR',
+    why: 'Découvrir : « Voir plus » suit `discover.nextCursor` de `GET /communities` (grille : le bouton est posé après le conteneur).',
+    liste: 'discover',
+    prop: 'plusDecouverte',
+    apresConteneur: true,
   }),
 ];
 

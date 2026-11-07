@@ -10,10 +10,11 @@ import { PastilleMembre, CarteMembre } from '@/components/barre-haute/membre';
 import { RailSurvol } from '@/components/rail/survol';
 import { CarteMonParcours } from '@/components/carte-mon-parcours';
 import { RaccourcisReseaux } from '@/components/raccourcis-reseaux';
+import { VoirPlus } from '@/components/voir-plus';
 import type { A07Data } from './data';
 
 export function A07Desktop(props: A07Data) {
-  const { discover, myNets, netFilters, onRejoindre, panelReseaux, rail, seuil } = props;
+  const { discover, myNets, netFilters, onRejoindre, panelReseaux, plusDecouverte, plusMesReseaux, rail, seuil } = props;
 
   return (
     <>
@@ -50,13 +51,13 @@ export function A07Desktop(props: A07Data) {
         <div style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F", marginTop: "6px" }}>MES RÉSEAUX</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "12px" }}>{(myNets ?? []).map((n, nIndex) => (
 <Fragment key={nIndex}><a href={n.href} style={{ display: "contents", color: "inherit", textDecoration: "none" }}><div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "20px", padding: "16px" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}><span style={{ width: "44px", height: "44px", borderRadius: "14px", background: n.bg, color: "#fff", fontSize: "13px", fontWeight: "800", display: "flex", alignItems: "center", justifyContent: "center" }}>{n.i}</span>{n.muted ? (<><span style={{ fontSize: "11px", fontWeight: "700", color: "#8A958F", background: "#F2F5F4", padding: "4px 9px", borderRadius: "999px" }}>En sourdine</span></>) : null}</div><div style={{ fontSize: "14.5px", fontWeight: "700", marginTop: "12px", letterSpacing: "-0.2px" }}>{n.name}</div><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}><span style={{ fontSize: "12px", color: "#8A958F" }}>{n.members}</span>{n.unread ? (<><span style={{ fontSize: "11px", fontWeight: "700", color: "#fff", background: "#16785E", padding: "3px 9px", borderRadius: "999px" }}>{n.unread} nouveaux</span></>) : null}</div></div></a></Fragment>
-))}</div>
+))}</div><VoirPlus plus={plusMesReseaux} />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "10px" }}><span style={{ fontSize: "10.5px", fontWeight: "700", letterSpacing: "1px", color: "#8A958F" }}>DÉCOUVRIR</span><div style={{ display: "flex", gap: "6px" }}>{(netFilters ?? []).map((f, fIndex) => (
 <Fragment key={fIndex}><span style={{ padding: "8px 14px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "600", background: f.bg, color: f.fg, border: `1px solid ${f.bd}` }}>{f.label}</span></Fragment>
 ))}</div></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "14px" }}>{(discover ?? []).map((d, dIndex) => (
 <Fragment key={dIndex}><div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "10px" }}><div style={{ height: "110px", borderRadius: "16px", background: d.cover }}></div><div style={{ padding: "14px 8px 8px" }}><div style={{ display: "flex", gap: "6px" }}><span style={{ background: "#F2F5F4", color: "#5D6B66", fontSize: "11px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px" }}>{d.cat}</span></div><div style={{ fontSize: "15px", fontWeight: "700", marginTop: "10px", letterSpacing: "-0.2px" }}><a href={d.href} style={{ color: "inherit", textDecoration: "none" }}>{d.name}</a></div><div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px", lineHeight: "1.5" }}>{d.desc}</div><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px" }}><span style={{ fontSize: "12px", color: "#8A958F" }}>{d.members}</span><button type="button" onClick={() => onRejoindre(d.slug, d.joined)} style={{ height: "38px", padding: "0 16px", borderRadius: "999px", background: d.btnBg, color: d.btnFg, border: "none", font: "inherit", fontSize: "12.5px", fontWeight: "700", cursor: "pointer" }}>{d.cta}</button></div></div></div></Fragment>
-))}</div>
+))}</div><VoirPlus plus={plusDecouverte} />
         {seuil === null ? null : (<div style={{ background: "#F2F5F4", borderRadius: "18px", padding: "14px 18px", fontSize: "13px", color: "#5D6B66" }} data-reseaux-seuil="">{seuil}</div>)}
       </div>
     </div>
