@@ -27,6 +27,21 @@ import { PrismaService } from '../../common/prisma.service';
  * rétablissement lèverait un blocage posé par une autre règle (le risque d'une
  * annonce de logement, par exemple).
  *
+ * ── PARRAINAGE ET RECOMMANDATION (lot S3c) ──────────────────────────────────
+ *
+ * Ces quatre tables n'ont aucun champ de masquage (schéma figé) ; l'effet réutilise
+ * ce que chacune sait déjà exprimer :
+ *   · MENTORSHIP : une demande en attente est ANNULÉE (`CANCELLED`) ; un parrainage
+ *     en cours est TERMINÉ (`ENDED`, motif `ADMIN`) et le compteur du parrain redescend.
+ *     Rétablir remet l'état noté (et remonte le compteur).
+ *   · MENTORSHIP_REVIEW : masquer retire le COMMENTAIRE (la note seule reste) ; retirer
+ *     SUPPRIME l'évaluation et recalcule la moyenne du parrain.
+ *   · MENTOR_PROFILE : masquer vide la présentation et éteint le profil (hors annuaire
+ *     des disponibles) ; la ligne et l'historique sont conservés.
+ *   · MEMBER_RECOMMENDATION : masquer retire le commentaire ; retirer supprime la
+ *     recommandation (le compteur « Recommandé·e par N membres » redescend).
+ * Le texte masqué est gardé dans `moderation_hides.prior_state` (JSON) pour le rétablir.
+ *
  * ── CE QUI N'EST PAS ICI ────────────────────────────────────────────────────
  *
  *   · `POST`, `STORY`, `COMMENT` : leur MASQUAGE appartient au fil
@@ -42,7 +57,18 @@ import { PrismaService } from '../../common/prisma.service';
 export type ModerationEffect = 'hidden' | 'restored' | 'removed';
 
 /** Les types de sujet portés par la table `moderation_hides`. */
-type HideSubject = 'GUIDE' | 'HOUSING' | 'JOB' | 'PRO' | 'CITY_TIP' | 'TOPIC' | 'HELP_REQUEST';
+type HideSubject =
+  | 'GUIDE'
+  | 'HOUSING'
+  | 'JOB'
+  | 'PRO'
+  | 'CITY_TIP'
+  | 'TOPIC'
+  | 'HELP_REQUEST'
+  | 'MENTORSHIP'
+  | 'MENTORSHIP_REVIEW'
+  | 'MENTOR_PROFILE'
+  | 'MEMBER_RECOMMENDATION';
 
 const HIDE_SUBJECTS: readonly string[] = [
   'GUIDE',
@@ -52,6 +78,10 @@ const HIDE_SUBJECTS: readonly string[] = [
   'CITY_TIP',
   'TOPIC',
   'HELP_REQUEST',
+  'MENTORSHIP',
+  'MENTORSHIP_REVIEW',
+  'MENTOR_PROFILE',
+  'MEMBER_RECOMMENDATION',
 ];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -192,6 +222,28 @@ export class ModerationEffectsService {
           select: { moderationStatus: true, deletedAt: true },
         });
         return r !== null && r.deletedAt === null ? r.moderationStatus : null;
+      }
+      case 'MENTORSHIP': {
+        const r = await this.prisma.mentorship.findUnique({ where: { id }, select: { status: true } });
+        // Une relation terminée ou refusée n'a plus rien à masquer.
+        return r !== null && (r.status === 'REQUESTED' || r.status === 'ACCEPTED' || r.status === 'ACTIVE')
+          ? r.status
+          : null;
+      }
+      case 'MENTORSHIP_REVIEW': {
+        const r = await this.prisma.mentorshipReview.findUnique({ where: { id }, select: { comment: true } });
+        return r !== null && r.comment !== null ? JSON.stringify({ comment: r.comment }) : null;
+      }
+      case 'MENTOR_PROFILE': {
+        const r = await this.prisma.mentorProfile.findUnique({
+          where: { userId: id },
+          select: { bio: true, isAvailable: true },
+        });
+        return r === null ? null : JSON.stringify({ bio: r.bio, isAvailable: r.isAvailable });
+      }
+      case 'MEMBER_RECOMMENDATION': {
+        const r = await this.prisma.memberRecommendation.findUnique({ where: { id }, select: { comment: true } });
+        return r !== null && r.comment !== null ? JSON.stringify({ comment: r.comment }) : null;
       }
     }
   }
@@ -342,8 +394,131 @@ export class ModerationEffectsService {
           })
         ).count;
       }
+      case 'MENTORSHIP':
+        return this.writeMentorship(id, action, prior, now);
+      case 'MENTORSHIP_REVIEW': {
+        if (action === 'remove') return this.deleteReview(id);
+        if (action === 'hide') {
+          return (await this.prisma.mentorshipReview.updateMany({ where: { id, comment: { not: null } }, data: { comment: null } })).count;
+        }
+        const comment = readJsonString(prior, 'comment');
+        if (comment === null) return 0;
+        // Rétablir ne touche qu'un commentaire encore vide.
+        return (await this.prisma.mentorshipReview.updateMany({ where: { id, comment: null }, data: { comment } })).count;
+      }
+      case 'MENTOR_PROFILE': {
+        if (action === 'restore') {
+          const bio = readJsonString(prior, 'bio');
+          const available = readJsonBool(prior, 'isAvailable');
+          const base = (await this.prisma.mentorProfile.updateMany({
+            // Seul un profil éteint par la modération revient ; un parrain qui s'est
+            // rallumé ou a réécrit sa présentation entre-temps garde son choix.
+            where: { userId: id, isAvailable: false },
+            data: { isAvailable: available, disabledAt: available ? null : now },
+          })).count;
+          if (bio !== null) {
+            await this.prisma.mentorProfile.updateMany({ where: { userId: id, bio: null }, data: { bio } });
+          }
+          return base;
+        }
+        return (await this.prisma.mentorProfile.updateMany({
+          where: { userId: id },
+          data: { bio: null, isAvailable: false, disabledAt: now },
+        })).count;
+      }
+      case 'MEMBER_RECOMMENDATION': {
+        if (action === 'remove') {
+          return (await this.prisma.memberRecommendation.deleteMany({ where: { id } })).count;
+        }
+        if (action === 'hide') {
+          return (await this.prisma.memberRecommendation.updateMany({ where: { id, comment: { not: null } }, data: { comment: null } })).count;
+        }
+        const comment = readJsonString(prior, 'comment');
+        if (comment === null) return 0;
+        return (await this.prisma.memberRecommendation.updateMany({ where: { id, comment: null }, data: { comment } })).count;
+      }
     }
   }
+  /** Annule une demande, ou termine un parrainage en cours (motif ADMIN) ; rétablit l'inverse. */
+  private async writeMentorship(
+    id: string,
+    action: 'hide' | 'restore' | 'remove',
+    prior: string | null,
+    now: Date,
+  ): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.mentorship.findUnique({
+        where: { id },
+        select: { status: true, endReason: true, mentorUserId: true },
+      });
+      if (row === null) return 0;
+      if (action === 'restore') {
+        if (prior === 'ACTIVE') {
+          if (row.status !== 'ENDED' || row.endReason !== 'ADMIN') return 0;
+          await tx.mentorship.update({ where: { id }, data: { status: 'ACTIVE', endedAt: null, endReason: null } });
+          await tx.mentorProfile.updateMany({
+            where: { userId: row.mentorUserId },
+            data: { activeMenteeCount: { increment: 1 } },
+          });
+          return 1;
+        }
+        if (row.status !== 'CANCELLED') return 0;
+        await tx.mentorship.update({ where: { id }, data: { status: prior === 'ACCEPTED' ? 'ACCEPTED' : 'REQUESTED' } });
+        return 1;
+      }
+      if (row.status === 'ACTIVE') {
+        await tx.mentorship.update({ where: { id }, data: { status: 'ENDED', endedAt: now, endReason: 'ADMIN' } });
+        await tx.mentorProfile.updateMany({
+          where: { userId: row.mentorUserId, activeMenteeCount: { gt: 0 } },
+          data: { activeMenteeCount: { decrement: 1 } },
+        });
+        return 1;
+      }
+      if (row.status === 'REQUESTED' || row.status === 'ACCEPTED') {
+        await tx.mentorship.update({ where: { id }, data: { status: 'CANCELLED' } });
+        return 1;
+      }
+      return 0;
+    });
+  }
+
+  /** Supprime une évaluation et recalcule la moyenne du parrain évalué. */
+  private async deleteReview(id: string): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const row = await tx.mentorshipReview.findUnique({ where: { id }, select: { revieweeUserId: true } });
+      if (row === null) return 0;
+      await tx.mentorshipReview.delete({ where: { id } });
+      const agg = await tx.mentorshipReview.aggregate({
+        where: { revieweeUserId: row.revieweeUserId },
+        _avg: { rating: true },
+        _count: { _all: true },
+      });
+      await tx.mentorProfile.updateMany({
+        where: { userId: row.revieweeUserId },
+        data: { avgRating: agg._count._all === 0 || agg._avg.rating === null ? null : agg._avg.rating.toFixed(2) },
+      });
+      return 1;
+    });
+  }
+}
+
+function readJson(raw: string | null): Record<string, unknown> {
+  if (raw === null) return {};
+  try {
+    const v: unknown = JSON.parse(raw);
+    return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function readJsonString(raw: string | null, key: string): string | null {
+  const v = readJson(raw)[key];
+  return typeof v === 'string' ? v : null;
+}
+
+function readJsonBool(raw: string | null, key: string): boolean {
+  return readJson(raw)[key] === true;
 }
 
 function readSubject(

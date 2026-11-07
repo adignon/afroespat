@@ -327,6 +327,15 @@ export class EventSubscriptionsService implements OnModuleInit {
         await this.moderation.handleContentPublished(subjectType, job.aggregateId);
       });
     }
+    // Une offre MODIFIÉE repasse par le pipeline comme à la publication : sans cela,
+    // on publiait une offre propre puis on y glissait le texte interdit. Seules les
+    // modifications de contenu comptent (`fields`) ; un renouvellement, une mise en
+    // avant ou un retrait n'écrivent aucun texte.
+    this.registry.on('job.updated', 'moderation', async (job) => {
+      const fields = (job.payload as { fields?: unknown } | null)?.fields;
+      if (!Array.isArray(fields) || fields.length === 0) return;
+      await this.moderation.handleContentPublished('JOB', job.aggregateId);
+    });
     // Un commentaire (fil, réponse de sujet de réseau, guide, événement) : le
     // sujet de l'événement est la PUBLICATION, le commentaire est dans la charge.
     this.registry.on('post.commented', 'moderation', async (job) => {
