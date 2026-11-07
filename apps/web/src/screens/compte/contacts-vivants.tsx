@@ -4,6 +4,8 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { ApiError, memberApi } from '@/lib/api/index';
 import { z } from 'zod';
+import { useListeAPages } from '@/lib/use-liste-pages';
+import { chargerContactsSuivants } from './appels';
 import type { K05Data, LigneContact } from './data';
 
 /**
@@ -61,8 +63,22 @@ export function ContactsVivants({
     [onRecharger],
   );
 
+  /**
+   * « VOIR PLUS » (lot S3A) : la page suivante de `GET /me/connections`. La clé suit le premier curseur et
+   * le total : accepter une demande recharge la page et fait oublier les pages ajoutées.
+   */
+  const { items: contacts, plus } = useListeAPages({
+    cle: String(donnees.contacts.total),
+    initiaux: donnees.contacts.liste,
+    curseurInitial: donnees.contacts.suite ?? null,
+    total: donnees.contacts.total,
+    identifiant: (c) => c.cle ?? `${c.nom}|${c.depuis}`,
+    charger: (curseur, signal) => chargerContactsSuivants(curseur, donnees.contacts.liste.length, signal),
+  });
+
   const enrichies: K05Data = {
     ...donnees,
+    contacts: { ...donnees.contacts, liste: contacts, plus },
     contactsOccupe: enVol,
     demandesRecues: donnees.demandesRecues.map(
       (d): LigneContact => ({

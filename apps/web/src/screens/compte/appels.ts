@@ -25,6 +25,7 @@ import {
   type MemberContentResponse,
   type MemberContentType,
   type MeResponse,
+  type MyConnectionsResponse,
   type MyPaymentsResponse,
   type OccupationStatus,
   type Phase,
@@ -961,6 +962,38 @@ export async function chargerK04(): Promise<K04Data> {
 
 // ─── K05 · /compte/contacts ──────────────────────────────────────────────────
 
+/** Un contact de `GET /me/connections` dans la liste de K05 ; `rang` choisit l'aplat d'avatar. */
+function ligneContactK05(
+  c: MyConnectionsResponse['items'][number],
+  rang: number,
+): K05Data['contacts']['liste'][number] {
+  return {
+    cle: c.userId,
+    fond: FONDS_AVATAR[rang % FONDS_AVATAR.length] ?? FONDS_AVATAR[0],
+    initiales: initialesDe(c.displayName),
+    nom: c.displayName,
+    depuis: `En contact depuis le ${jourEtMois(c.connectedAt)}`,
+    origine: ORIGINES_FR[c.origin] ?? c.origin,
+  };
+}
+
+/**
+ * « Voir plus » sous « Mes contacts » (lot S3A) : la page suivante de `GET /me/connections`.
+ * `dejaLus` décale le choix de l'aplat d'avatar pour que les couleurs continuent de tourner.
+ */
+export async function chargerContactsSuivants(
+  curseur: string,
+  dejaLus: number,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly K05Data['contacts']['liste'][number][]; readonly nextCursor: string | null }> {
+  const page = await memberApi.get(
+    `/me/connections?cursor=${encodeURIComponent(curseur)}`,
+    myConnectionsResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map((c, i) => ligneContactK05(c, dejaLus + i)), nextCursor: page.nextCursor };
+}
+
 /**
  * Contacts, demandes et bloqués — quatre routes, parce que la planche montre
  * quatre cartes côte à côte et non quatre onglets.
@@ -993,13 +1026,8 @@ export async function chargerK05(): Promise<K05Data> {
     contacts: {
       total: contacts.meta.count,
       demandes: demandes.items.length,
-      liste: contacts.items.map((c, rang) => ({
-        fond: FONDS_AVATAR[rang % FONDS_AVATAR.length] ?? FONDS_AVATAR[0],
-        initiales: initialesDe(c.displayName),
-        nom: c.displayName,
-        depuis: `En contact depuis le ${jourEtMois(c.connectedAt)}`,
-        origine: ORIGINES_FR[c.origin] ?? c.origin,
-      })),
+      liste: contacts.items.map((c, rang) => ligneContactK05(c, rang)),
+      suite: contacts.nextCursor,
     },
     bloque:
       premierBloque === undefined

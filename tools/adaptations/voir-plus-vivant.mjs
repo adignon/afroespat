@@ -185,6 +185,13 @@ const SUITES = [
     avant: '{contenuVide ? (',
     prop: 'plusContenu',
   }),
+  suiteApres({
+    screens: ['K05'],
+    nom: 'K05_VOIR_PLUS',
+    why: 'Mes contacts ne montraient que la première page (20) alors que le compteur annonce le total : « Voir plus » suit `nextCursor` de `GET /me/connections`, avec « 20 sur N ».',
+    liste: 'contacts.liste',
+    prop: 'contacts.plus',
+  }),
 ];
 
 export const ADAPTATIONS_VOIR_PLUS = SUITES;

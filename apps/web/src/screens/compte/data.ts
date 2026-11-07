@@ -610,7 +610,13 @@ export interface K05Data {
   readonly contacts: {
     readonly total: number;
     readonly demandes: number;
+    /** Le `nextCursor` de la première page (lot S3A) ; `null` quand tous les contacts tiennent sur une page. */
+    readonly suite?: string | null;
+    /** « Voir plus » sous la liste (lot S3A) — posé par `ContactsVivants`. */
+    readonly plus?: import('@/components/voir-plus').PlusListe;
     readonly liste: readonly {
+      /** L'identifiant du contact (lot S3A) : sert à ne jamais répéter une ligne d'une page à l'autre. */
+      readonly cle?: string;
       readonly fond: string;
       readonly initiales: string;
       readonly nom: string;
