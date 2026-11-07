@@ -149,6 +149,13 @@ const SUITES = [
     liste: 'evenements',
     prop: 'plusEvenements',
   }),
+  suiteApres({
+    screens: ['X01'],
+    nom: 'X01_VOIR_PLUS',
+    why: 'Les résultats d’un type ne montraient que la première page (20) : « Voir plus » suit `nextCursor` de `GET /search?type=`, avec la même requête et les mêmes filtres. La forme groupée (aperçu de trois) n’a pas de suite.',
+    liste: 'resultats',
+    prop: 'plusResultats',
+  }),
 ];
 
 export const ADAPTATIONS_VOIR_PLUS = SUITES;

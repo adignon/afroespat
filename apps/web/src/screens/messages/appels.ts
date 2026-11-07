@@ -43,7 +43,7 @@ import type {
   M01Data,
   RangeeConversation,
 } from '../m01/data';
-import type { ValeursFiltresRecherche, X01Data } from '../x01/data';
+import type { ResultatRecherche, ValeursFiltresRecherche, X01Data } from '../x01/data';
 import { FILTRES_VIDES } from '../x01/filtres';
 import {
   glypheDe,
@@ -779,7 +779,31 @@ export async function chargerX01(
     vide: videDe(groupes, q, resultats),
     filtresAvances: filtres,
     typeActif: typeRetenu,
+    // « Voir plus » (lot S3A) : seule la liste d'UN type est paginée ; la forme groupée est un aperçu.
+    suite: plats?.nextCursor ?? null,
   };
+}
+
+/**
+ * « Voir plus » sous les résultats d'un type (lot S3A) : la page suivante de `GET /search?q=&type=`,
+ * avec les mêmes filtres. Le curseur du serveur est lié à la requête : changer de filtre en gardant
+ * l'ancien curseur est refusé, et l'écran abandonne de toute façon les pages ajoutées.
+ */
+export async function chargerResultatsSuivants(
+  q: string,
+  type: string,
+  filtres: ValeursFiltresRecherche,
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly ResultatRecherche[]; readonly nextCursor: string | null }> {
+  const filtre = searchSubjectTypeSchema.safeParse(type);
+  if (!filtre.success) return { items: [], nextCursor: null };
+  const page = await memberApi.get(
+    `/search?q=${encodeURIComponent(q)}&type=${filtre.data}${filtresEnRequete(filtres)}&cursor=${encodeURIComponent(curseur)}`,
+    typedSearchResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: cartesPlates(page, filtre.data), nextCursor: page.nextCursor };
 }
 
 /**

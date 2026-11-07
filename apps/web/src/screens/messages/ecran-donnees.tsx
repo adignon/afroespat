@@ -20,10 +20,12 @@ import { X02DesktopPanneau } from '@/screens/x02/desktoppanneau.generated';
 import { X02Mobile } from '@/screens/x02/mobile.generated';
 import {
   chargerM01,
+  chargerResultatsSuivants,
   chargerX01,
   chargerX02,
   filtresNotifications,
 } from './appels';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import { EcranMessages } from './ecran';
 import { ConversationVivante } from './conversation-vivante';
 import { NotificationsVivantes } from './notifications-vivantes';
@@ -243,15 +245,39 @@ export function EcranRecherche({ requete, type, filtres = FILTRES_VIDES }: {
        */
       squelette={{ ...SQUELETTE_X01, vide: ATTENTE_X01 }}
     >
-      {(donnees) => (
-        <ScreenFrames
-          screen="X01"
-          desktop={<X01Desktop {...donnees} />}
-          mobile={<X01Mobile {...donnees} />}
-        />
-      )}
+      {(donnees) => <X01AvecSuite donnees={donnees} requete={requete} type={type} filtres={filtres} />}
     </EcranDonnees>
   );
+}
+
+/**
+ * X01 avec « Voir plus » (lot S3A) : sous la liste d'UN type, la page suivante de `GET /search`
+ * avec la même requête, le même type et les mêmes filtres. La forme groupée (aperçu de trois
+ * résultats par type) n'a pas de suite : ses groupes mènent au filtre de type.
+ */
+function X01AvecSuite({
+  donnees,
+  requete,
+  type,
+  filtres,
+}: {
+  readonly donnees: X01Data;
+  readonly requete: string;
+  readonly type: string | null;
+  readonly filtres: ValeursFiltresRecherche;
+}) {
+  const { items, plus } = useListeAPages({
+    cle: JSON.stringify([requete, type, filtres]),
+    initiaux: donnees.resultats,
+    curseurInitial: donnees.suite ?? null,
+    identifiant: (r) => r.id,
+    charger: (curseur, signal) =>
+      type === null
+        ? Promise.resolve({ items: [], nextCursor: null })
+        : chargerResultatsSuivants(requete, type, filtres, curseur, signal),
+  });
+  const complet: X01Data = { ...donnees, resultats: items, plusResultats: plus };
+  return <ScreenFrames screen="X01" desktop={<X01Desktop {...complet} />} mobile={<X01Mobile {...complet} />} />;
 }
 
 /**

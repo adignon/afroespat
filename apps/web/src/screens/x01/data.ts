@@ -274,4 +274,8 @@ export interface X01Data {
   /** Les filtres posés (ville, rayon, pays, période, état) et le type retenu. */
   readonly filtresAvances?: ValeursFiltresRecherche;
   readonly typeActif?: string | null;
+  /** Le `nextCursor` de la première page d'un type (lot S3A) ; `null` sans suite, et sur la forme groupée. */
+  readonly suite?: string | null;
+  /** « Voir plus » sous les résultats d'un type (lot S3A) — posé par `EcranRecherche`. */
+  readonly plusResultats?: import('@/components/voir-plus').PlusListe;
 }
