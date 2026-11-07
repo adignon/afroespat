@@ -17,6 +17,8 @@ import {
   type AuthErrorCode,
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
+import { createdAtDescAfter, decodeCreatedAtDesc, encodeCursor } from '../../common/cursor';
+import { loadEnv } from '../../config/env';
 import { AuditService } from '../../common/audit.service';
 import { CryptoService } from '../../common/crypto.service';
 import { OutboxService } from '../../common/outbox.service';
@@ -96,6 +98,8 @@ const jourEtMois = (d: Date): string => JOUR_ET_MOIS.format(d);
 
 @Injectable()
 export class UsersService {
+  private readonly cursorSecret = loadEnv().CURSOR_SECRET;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
@@ -612,9 +616,10 @@ export class UsersService {
    * Sans `type`, on rend les premières cartes de CHAQUE espèce plutôt qu'un
    * mélange trié dans le temps : sept tables n'ont pas de curseur commun, et un
    * tri global demanderait une vue matérialisée. Les onglets, eux, demandent
-   * toujours une espèce — c'est le cas qui compte. `nextCursor` reste `null`
-   * tant que ce tri global n'existe pas, plutôt que de promettre une suite qui
-   * ne viendrait pas. REMONTÉ.
+   * toujours une espèce — c'est le cas qui compte — et AVEC `type` la liste est
+   * paginée par curseur (date décroissante, identifiant en départage ; les
+   * événements sur la date de l'événement). Sans `type`, `nextCursor` reste
+   * `null` plutôt que de promettre une suite qui ne viendrait pas.
    */
   private async profilVisible(handle: string, viewerId: string | null) {
     const user = await this.prisma.user.findUnique({
@@ -643,7 +648,7 @@ export class UsersService {
   async publishedContent(
     handle: string,
     viewerId: string | null,
-    query: { readonly type?: MemberContentType | undefined; readonly limit: number },
+    query: { readonly type?: MemberContentType | undefined; readonly limit: number; readonly cursor?: string | undefined },
   ) {
     const userId = await this.profilVisible(handle, viewerId);
     const take = query.limit;
@@ -651,49 +656,102 @@ export class UsersService {
     /** Une story vit 24 heures (§2.6) : au-delà, elle n'est plus publiée. */
     const vivanteDepuis = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-    const lecteurs: Record<MemberContentType, () => Promise<MemberContentItem[]>> = {
+    /**
+     * LA PAGINATION (lot S3A). Avec `type`, la liste est paginée par curseur sur
+     * l'ordre TOTAL (date décroissante, identifiant décroissant en départage) ; le
+     * curseur est lié au membre et à l'espèce. Sans `type`, aucune page : on rend
+     * les premières cartes de chaque espèce et `nextCursor` reste nul. Un curseur
+     * fourni sans `type` est refusé (le périmètre ne correspond jamais).
+     */
+    const pagine = query.type !== undefined;
+    const scope = `member-content:${userId}:${query.type ?? ''}`;
+    const resume = query.cursor === undefined ? null : decodeCreatedAtDesc(query.cursor, this.cursorSecret, scope);
+    const apres = createdAtDescAfter(resume);
+    /** Une ligne de trop en mode paginé : c'est elle qui dit qu'une page suit. */
+    const lim = pagine ? take + 1 : take;
+
+    /** Ce qu'un membre a publié, par espèce — lu une fois, pour les lignes ET pour les comptes. */
+    const ou = {
+      guide: { authorUserId: userId, deletedAt: null, status: 'PUBLISHED' } satisfies Prisma.GuideWhereInput,
+      /**
+       * `FLAGGED` SEUL : `ModerationStatus` ne connaît que `PENDING`, `CLEARED` et
+       * `FLAGGED` — le retrait, lui, s'écrit dans `status` (`ContentStatus.REMOVED`)
+       * et dans `deletedAt`. Vérifié à l'énumération, pas supposé.
+       */
+      post: {
+        authorUserId: userId,
+        deletedAt: null,
+        status: 'PUBLISHED',
+        moderationStatus: { not: 'FLAGGED' },
+      } satisfies Prisma.PostWhereInput,
+      story: { authorUserId: userId, deletedAt: null, createdAt: { gte: vivanteDepuis } } satisfies Prisma.StoryWhereInput,
+      help: {
+        authorUserId: userId,
+        deletedAt: null,
+        status: { in: ['OPEN', 'RESOLVED'] },
+        moderationStatus: { not: 'FLAGGED' },
+      } satisfies Prisma.HelpRequestWhereInput,
+      logement: { authorUserId: userId, deletedAt: null, status: 'ACTIVE' } satisfies Prisma.HousingListingWhereInput,
+      emploi: { authorUserId: userId, deletedAt: null, status: 'ACTIVE' } satisfies Prisma.JobListingWhereInput,
+      /** Réservé à un réseau = pas sur un profil public (§2.3). */
+      event: {
+        organizerUserId: userId,
+        deletedAt: null,
+        status: { in: ['SCHEDULED', 'DONE'] },
+        communityId: null,
+      } satisfies Prisma.EventWhereInput,
+      /**
+       * ⚠ `PUBLIC` SEULEMENT. `SHARED` veut dire « partagé avec son équipe », pas
+       * « visible de tous » : le confondre publierait le parcours d'installation
+       * de quelqu'un sur son profil. C'est la règle dure de 04 §2.
+       */
+      journey: { ownerUserId: userId, visibility: 'PUBLIC' } satisfies Prisma.JourneyWhereInput,
+    };
+
+    /** Une carte et la valeur de tri qui situe le curseur (la date de l'ordre, pas toujours `createdAt`). */
+    interface Ligne {
+      readonly item: MemberContentItem;
+      readonly tri: Date;
+      readonly id: string;
+    }
+    const ligne = (tri: Date, item: MemberContentItem): Ligne => ({ item, tri, id: item.id });
+
+    const lecteurs: Record<MemberContentType, () => Promise<Ligne[]>> = {
       GUIDE: async () => {
         const lignes = await this.prisma.guide.findMany({
-          where: { authorUserId: userId, deletedAt: null, status: 'PUBLISHED' },
-          orderBy: { createdAt: 'desc' },
-          take,
+          where: { AND: [ou.guide, ...apres] },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: lim,
           select: { id: true, title: true, slug: true, category: true, createdAt: true, helpfulCount: true },
         });
-        return lignes.map((g) => ({
-          id: g.id,
-          type: 'GUIDE' as const,
-          title: g.title,
-          subtitle: `${g.helpfulCount} ${g.helpfulCount > 1 ? 'votes utiles' : 'vote utile'}`,
-          href: `/guides/${g.slug}`,
-          createdAt: g.createdAt.toISOString(),
-        }));
+        return lignes.map((g) =>
+          ligne(g.createdAt, {
+            id: g.id,
+            type: 'GUIDE' as const,
+            title: g.title,
+            subtitle: `${g.helpfulCount} ${g.helpfulCount > 1 ? 'votes utiles' : 'vote utile'}`,
+            href: `/guides/${g.slug}`,
+            createdAt: g.createdAt.toISOString(),
+          }),
+        );
       },
       POST: async () => {
         const lignes = await this.prisma.post.findMany({
-          where: {
-            authorUserId: userId,
-            deletedAt: null,
-            status: 'PUBLISHED',
-            /**
-             * `FLAGGED` SEUL : `ModerationStatus` ne connaît que `PENDING`,
-             * `CLEARED` et `FLAGGED` — le retrait, lui, s'écrit dans `status`
-             * (`ContentStatus.REMOVED`) et dans `deletedAt`, que la condition
-             * au-dessus couvre déjà. Vérifié à l'énumération, pas supposé.
-             */
-            moderationStatus: { not: 'FLAGGED' },
-          },
-          orderBy: { createdAt: 'desc' },
-          take,
+          where: { AND: [ou.post, ...apres] },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: lim,
           select: { id: true, body: true, type: true, createdAt: true },
         });
-        return lignes.map((p) => ({
-          id: p.id,
-          type: 'POST' as const,
-          title: extrait(p.body),
-          subtitle: LIBELLE_POST[p.type] ?? 'Publication',
-          href: `/publications/${p.id}`,
-          createdAt: p.createdAt.toISOString(),
-        }));
+        return lignes.map((p) =>
+          ligne(p.createdAt, {
+            id: p.id,
+            type: 'POST' as const,
+            title: extrait(p.body),
+            subtitle: LIBELLE_POST[p.type] ?? 'Publication',
+            href: `/publications/${p.id}`,
+            createdAt: p.createdAt.toISOString(),
+          }),
+        );
       },
       /**
        * ╔══════════════════════════════════════════════════════════════════╗
@@ -708,9 +766,9 @@ export class UsersService {
        */
       STORY: async () => {
         const lignes = await this.prisma.story.findMany({
-          where: { authorUserId: userId, deletedAt: null, createdAt: { gte: vivanteDepuis } },
-          orderBy: { createdAt: 'desc' },
-          take,
+          where: { AND: [ou.story, ...apres] },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: lim,
           select: {
             id: true,
             body: true,
@@ -722,7 +780,7 @@ export class UsersService {
         });
         return lignes.map((st) => {
           const photo = st.backgroundAsset?.storageKey ?? null;
-          return {
+          return ligne(st.createdAt, {
             id: st.id,
             type: 'STORY' as const,
             title: extrait(st.body),
@@ -735,149 +793,169 @@ export class UsersService {
               etiquette: STORY_TYPE_VOCABULARY[st.type].label,
               texte: st.body,
             },
-          };
+          });
         });
       },
       HELP: async () => {
         const lignes = await this.prisma.helpRequest.findMany({
-          where: {
-            authorUserId: userId,
-            deletedAt: null,
-            status: { in: ['OPEN', 'RESOLVED'] },
-            /**
-             * `FLAGGED` SEUL : `ModerationStatus` ne connaît que `PENDING`,
-             * `CLEARED` et `FLAGGED` — le retrait, lui, s'écrit dans `status`
-             * (`ContentStatus.REMOVED`) et dans `deletedAt`, que la condition
-             * au-dessus couvre déjà. Vérifié à l'énumération, pas supposé.
-             */
-            moderationStatus: { not: 'FLAGGED' },
-          },
-          orderBy: { createdAt: 'desc' },
-          take,
+          where: { AND: [ou.help, ...apres] },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: lim,
           select: { id: true, title: true, status: true, createdAt: true },
         });
-        return lignes.map((h) => ({
-          id: h.id,
-          type: 'HELP' as const,
-          title: h.title,
-          subtitle: h.status === 'RESOLVED' ? 'Résolue' : 'Ouverte',
-          href: `/entraide/${h.id}`,
-          createdAt: h.createdAt.toISOString(),
-        }));
+        return lignes.map((h) =>
+          ligne(h.createdAt, {
+            id: h.id,
+            type: 'HELP' as const,
+            title: h.title,
+            subtitle: h.status === 'RESOLVED' ? 'Résolue' : 'Ouverte',
+            href: `/entraide/${h.id}`,
+            createdAt: h.createdAt.toISOString(),
+          }),
+        );
       },
       /**
-       * « SERVICES » EST UN ONGLET POUR TROIS TABLES — logement, emploi, fiche
-       * pro — exactement comme la feuille « Créer » les range sous une seule
-       * entrée. Elles sont lues ensemble et triées ici.
+       * « SERVICES » EST UN ONGLET POUR DEUX TABLES — logement et emploi — comme la
+       * feuille « Créer » les range sous une seule entrée. Chacune est lue avec le
+       * MÊME prédicat de reprise puis les deux sont fusionnées dans l'ordre total
+       * (date, identifiant) : un identifiant est unique d'une table à l'autre.
        */
       SERVICE: async () => {
         const [logements, emplois] = await Promise.all([
           this.prisma.housingListing.findMany({
-            where: { authorUserId: userId, deletedAt: null, status: 'ACTIVE' },
-            orderBy: { createdAt: 'desc' },
-            take,
+            where: { AND: [ou.logement, ...apres] },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: lim,
             select: { id: true, title: true, createdAt: true },
           }),
           this.prisma.jobListing.findMany({
-            where: { authorUserId: userId, deletedAt: null, status: 'ACTIVE' },
-            orderBy: { createdAt: 'desc' },
-            take,
+            where: { AND: [ou.emploi, ...apres] },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: lim,
             select: { id: true, title: true, createdAt: true },
           }),
         ]);
-        const cartes: MemberContentItem[] = [
-          ...logements.map((l) => ({
-            id: l.id,
-            type: 'SERVICE' as const,
-            title: l.title,
-            subtitle: 'Logement',
-            href: `/services/logement/${l.id}`,
-            createdAt: l.createdAt.toISOString(),
-          })),
-          ...emplois.map((e) => ({
-            id: e.id,
-            type: 'SERVICE' as const,
-            title: e.title,
-            subtitle: 'Emploi',
-            href: `/services/emploi/${e.id}`,
-            createdAt: e.createdAt.toISOString(),
-          })),
+        const cartes: Ligne[] = [
+          ...logements.map((l) =>
+            ligne(l.createdAt, {
+              id: l.id,
+              type: 'SERVICE' as const,
+              title: l.title,
+              subtitle: 'Logement',
+              href: `/services/logement/${l.id}`,
+              createdAt: l.createdAt.toISOString(),
+            }),
+          ),
+          ...emplois.map((e) =>
+            ligne(e.createdAt, {
+              id: e.id,
+              type: 'SERVICE' as const,
+              title: e.title,
+              subtitle: 'Emploi',
+              href: `/services/emploi/${e.id}`,
+              createdAt: e.createdAt.toISOString(),
+            }),
+          ),
         ];
-        return cartes.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, take);
+        return cartes
+          .sort((a, b) => b.tri.getTime() - a.tri.getTime() || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0))
+          .slice(0, lim);
       },
       EVENT: async () => {
+        // Cet onglet se trie sur la DATE DE L'ÉVÉNEMENT, pas sur sa création : le
+        // prédicat de reprise porte donc sur `startsAt`.
         const lignes = await this.prisma.event.findMany({
           where: {
-            organizerUserId: userId,
-            deletedAt: null,
-            status: { in: ['SCHEDULED', 'DONE'] },
-            /** Réservé à un réseau = pas sur un profil public (§2.3). */
-            communityId: null,
+            AND: [
+              ou.event,
+              ...(resume === null
+                ? []
+                : [
+                    {
+                      OR: [
+                        { startsAt: { lt: resume.createdAt } },
+                        { startsAt: resume.createdAt, id: { lt: resume.id } },
+                      ],
+                    },
+                  ]),
+            ],
           },
-          orderBy: { startsAt: 'desc' },
-          take,
+          orderBy: [{ startsAt: 'desc' }, { id: 'desc' }],
+          take: lim,
           select: { id: true, title: true, startsAt: true, createdAt: true, status: true },
         });
-        return lignes.map((ev) => ({
-          id: ev.id,
-          type: 'EVENT' as const,
-          title: ev.title,
-          subtitle: ev.status === 'DONE' ? 'Passé' : jourEtMois(ev.startsAt),
-          href: `/agenda/${ev.id}`,
-          createdAt: ev.createdAt.toISOString(),
-        }));
+        return lignes.map((ev) =>
+          ligne(ev.startsAt, {
+            id: ev.id,
+            type: 'EVENT' as const,
+            title: ev.title,
+            subtitle: ev.status === 'DONE' ? 'Passé' : jourEtMois(ev.startsAt),
+            href: `/agenda/${ev.id}`,
+            createdAt: ev.createdAt.toISOString(),
+          }),
+        );
       },
-      /**
-       * ⚠ `PUBLIC` SEULEMENT. `SHARED` veut dire « partagé avec son équipe », pas
-       * « visible de tous » : le confondre publierait le parcours d'installation
-       * de quelqu'un sur son profil. C'est la règle dure de 04 §2.
-       */
       JOURNEY: async () => {
         const lignes = await this.prisma.journey.findMany({
-          where: { ownerUserId: userId, visibility: 'PUBLIC' },
-          orderBy: { createdAt: 'desc' },
-          take,
+          where: { AND: [ou.journey, ...apres] },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: lim,
           select: { id: true, title: true, status: true, createdAt: true },
         });
-        return lignes.map((j) => ({
-          id: j.id,
-          type: 'JOURNEY' as const,
-          title: j.title,
-          subtitle: 'Parcours public',
-          href: `/parcours/${j.id}`,
-          createdAt: j.createdAt.toISOString(),
-        }));
+        return lignes.map((j) =>
+          ligne(j.createdAt, {
+            id: j.id,
+            type: 'JOURNEY' as const,
+            title: j.title,
+            subtitle: 'Parcours public',
+            href: `/parcours/${j.id}`,
+            createdAt: j.createdAt.toISOString(),
+          }),
+        );
       },
     };
 
-    const especes =
-      query.type === undefined ? MEMBER_CONTENT_TYPES : ([query.type] as const);
-
-    const lots = await Promise.all(especes.map((t) => lecteurs[t]()));
-    const items = lots.flat();
-
     /**
-     * LES COMPTES DES ONGLETS PORTENT TOUJOURS LA COLLECTION ENTIÈRE, quel que
-     * soit le filtre demandé — sinon l'onglet « Guides · 3 » afficherait 3 parce
-     * qu'on en a lu 3, et non parce qu'il y en a 3.
+     * LES COMPTES DES ONGLETS : de vrais `count`, indépendants de la page lue.
+     * Compter les cartes reçues afficherait « Guides · 20 » à qui en a quarante, et
+     * ne pourrait plus servir de « 20 sur 40 » une fois la liste paginée.
      */
+    const comptes: Record<MemberContentType, () => Promise<number>> = {
+      GUIDE: () => this.prisma.guide.count({ where: ou.guide }),
+      POST: () => this.prisma.post.count({ where: ou.post }),
+      STORY: () => this.prisma.story.count({ where: ou.story }),
+      HELP: () => this.prisma.helpRequest.count({ where: ou.help }),
+      SERVICE: async () =>
+        (await this.prisma.housingListing.count({ where: ou.logement })) +
+        (await this.prisma.jobListing.count({ where: ou.emploi })),
+      EVENT: () => this.prisma.event.count({ where: ou.event }),
+      JOURNEY: () => this.prisma.journey.count({ where: ou.journey }),
+    };
+
+    const especes = query.type === undefined ? MEMBER_CONTENT_TYPES : ([query.type] as const);
+    const lots = await Promise.all(especes.map((t) => lecteurs[t]()));
+
+    let items: MemberContentItem[];
+    let nextCursor: string | null = null;
+    if (pagine) {
+      const lot = lots[0] ?? [];
+      const page = lot.slice(0, take);
+      items = page.map((l) => l.item);
+      const dernier = page.at(-1);
+      if (lot.length > take && dernier !== undefined) {
+        nextCursor = encodeCursor({ id: dernier.id, sort: dernier.tri.toISOString(), scope }, this.cursorSecret);
+      }
+    } else {
+      items = lots.flat().map((l) => l.item);
+    }
+
     const parType = Object.fromEntries(
-      await Promise.all(
-        MEMBER_CONTENT_TYPES.map(async (t) => {
-          const lot =
-            query.type === undefined
-              ? lots[MEMBER_CONTENT_TYPES.indexOf(t)]
-              : t === query.type
-                ? items
-                : await lecteurs[t]();
-          return [t, (lot ?? []).length] as const;
-        }),
-      ),
+      await Promise.all(MEMBER_CONTENT_TYPES.map(async (t) => [t, await comptes[t]()] as const)),
     ) as Record<MemberContentType, number>;
 
     return {
       items,
-      nextCursor: null,
+      nextCursor,
       meta: {
         total: Object.values(parType).reduce((somme, n) => somme + n, 0),
         parType,
