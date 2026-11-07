@@ -142,7 +142,10 @@ describe('idempotence des tâches planifiées (§9.3)', () => {
       'city.member_count_recompute',
       'notifications.quiet_hours_flush',
       'notifications.weekly_digest',
+      'notifications.requeue_stale',
       'notifications.purge',
+      'search.zero_purge',
+      'outbox.purge',
       'push.cleanup',
       'staff.session_cleanup',
       // Module 14 (§10). `billing.expiry_reminders` figurait dans la liste

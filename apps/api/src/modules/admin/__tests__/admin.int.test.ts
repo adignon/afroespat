@@ -1570,6 +1570,30 @@ describe('administration (15)', () => {
   // 11 §4 — Reconstruire l'index de recherche
   // ══════════════════════════════════════════════════════════════════════════
 
+  describe('GET /admin/search/zero-results (11 §3)', () => {
+    it('est réservée à la portée « contenu », valide ses paramètres et rend une page', async () => {
+      const staff = await as('CONTENT_ADMIN');
+      const res = await request(httpServer(app))
+        .get('/v1/admin/search/zero-results?weeks=2&limit=5')
+        .set('cookie', staff.cookie)
+        .expect(200);
+      expect(Array.isArray((res.body as { items: unknown[] }).items)).toBe(true);
+      expect(res.body).toHaveProperty('nextCursor');
+
+      await request(httpServer(app))
+        .get('/v1/admin/search/zero-results?limit=0')
+        .set('cookie', staff.cookie)
+        .expect(400);
+
+      const support = await as('SUPPORT');
+      await request(httpServer(app))
+        .get('/v1/admin/search/zero-results')
+        .set('cookie', support.cookie)
+        .expect(403);
+      await request(httpServer(app)).get('/v1/admin/search/zero-results').expect(401);
+    });
+  });
+
   describe('POST /admin/search/reindex (11 §4)', () => {
     /**
      * ╔══════════════════════════════════════════════════════════════════════╗

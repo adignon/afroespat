@@ -24,7 +24,7 @@ import {
   joinGuidePageBodies,
   normalizeQuery,
 } from '@app/shared';
-import { buildPage, decodeCursor } from '../../common/cursor';
+import { buildPage, decodeCursor, encodeCursor } from '../../common/cursor';
 import { PrismaService } from '../../common/prisma.service';
 import { VisibilityService } from '../../common/visibility.service';
 import { loadEnv } from '../../config/env';
@@ -568,6 +568,8 @@ export class SearchService {
     ]);
 
     return rows.filter((row) => {
+      // Une fiche membre a pour « auteur » le membre lui-même.
+      if (row.subject_type === 'USER') return !blocked.has(row.subject_id);
       const author = authorOf.get(`${row.subject_type}:${row.subject_id}`);
       return author === undefined || author === null || !blocked.has(author);
     });
@@ -914,7 +916,9 @@ export class SearchService {
       this.suggestCache.set(key, { at: Date.now(), value: rows });
     }
 
-    const visible = await this.dropBlockedAuthors(rows, separated);
+    // On lit plus que le plafond et on tronque APRÈS le filtre : retirer les auteurs séparés
+    // d'une lecture déjà plafonnée à 6 rendrait une liste plus courte que nécessaire.
+    const visible = (await this.dropBlockedAuthors(rows, separated)).slice(0, SUGGEST_MAX_RESULTS);
     const urls = await this.destinations(visible);
     const items: Suggestion[] = visible
       .map((r) => ({
@@ -937,7 +941,7 @@ export class SearchService {
           OR immutable_unaccent(d.title) % immutable_unaccent(${q})
         )
       ORDER BY d.title, sim DESC
-      LIMIT ${SUGGEST_MAX_RESULTS}
+      LIMIT ${SUGGEST_MAX_RESULTS * 4}
     `);
 
   }
@@ -1105,23 +1109,47 @@ export class SearchService {
    * seconde ne somme les recherches que pour ces quelques requêtes. Une jointure
    * aurait sommé `count` sur toutes, pour n'en garder que `limit`.
    */
-  async zeroResults(query: { weeks: number; cityId?: string | undefined; limit: number }) {
+  async zeroResults(query: {
+    weeks: number;
+    cityId?: string | undefined;
+    limit: number;
+    cursor?: string | undefined;
+  }) {
     const since = new Date(Date.now() - query.weeks * 7 * 86_400_000);
     since.setUTCHours(0, 0, 0, 0);
     // `undefined` ne peut pas être lié à un paramètre SQL ; `null` l'est, et c'est
     // lui qui fait basculer la condition en « toutes les villes ».
     const cityFilter = query.cityId ?? null;
 
-    const passing = await this.prisma.$queryRaw<{ query_normalized: string; seekers: number }[]>`
+    // Pagination par curseur signé sur le couple (personnes DESC, requête ASC) : l'ordre
+    // est total, donc la reprise est exacte. Le curseur est lié à la fenêtre et à la ville.
+    const scope = `zero:${query.weeks}:${query.cityId ?? ''}`;
+    const resume = query.cursor === undefined ? null : decodeCursor(query.cursor, this.cursorSecret, scope);
+    const resumeSeekers = resume === null ? null : Number(resume.sort ?? 0);
+    const resumeQuery = resume === null ? null : resume.id;
+
+    const fetched = await this.prisma.$queryRaw<{ query_normalized: string; seekers: number }[]>`
       SELECT query_normalized, COUNT(DISTINCT seeker_hash)::int AS seekers
       FROM search_zero_result_seekers
       WHERE occurred_on >= ${since}::date
         AND (${cityFilter}::uuid IS NULL OR city_id = ${cityFilter}::uuid)
       GROUP BY query_normalized
       HAVING COUNT(DISTINCT seeker_hash) >= ${SEARCH_ZERO_MIN_DISTINCT_SEEKERS}
+        AND (
+          ${resumeSeekers}::int IS NULL
+          OR COUNT(DISTINCT seeker_hash) < ${resumeSeekers}::int
+          OR (COUNT(DISTINCT seeker_hash) = ${resumeSeekers}::int AND query_normalized > ${resumeQuery})
+        )
       ORDER BY seekers DESC, query_normalized ASC
-      LIMIT ${query.limit}
+      LIMIT ${query.limit + 1}
     `;
+    const hasMore = fetched.length > query.limit;
+    const passing = hasMore ? fetched.slice(0, query.limit) : fetched;
+    const lastPassing = passing.at(-1);
+    const nextCursor =
+      hasMore && lastPassing !== undefined
+        ? encodeCursor({ id: lastPassing.query_normalized, sort: lastPassing.seekers, scope }, this.cursorSecret)
+        : null;
 
     /**
      * Le panneau DISPARAÎT quand il ne reste rien, et c'est ici que ça se décide :
@@ -1155,8 +1183,26 @@ export class SearchService {
         count: countByQuery.get(row.query_normalized) ?? 0,
         seekers: row.seekers,
       })),
-      nextCursor: null,
+      nextCursor,
     };
+  }
+
+  /**
+   * `search.zero_purge` — quotidienne. Supprime les lignes « zéro résultat » (compteurs ET
+   * pseudonymes de chercheurs) dont le jour est antérieur à la rétention. Idempotente ; la
+   * borne est calculée au jour UTC, comme `occurredOn`.
+   */
+  async purgeZeroResults(
+    now: Date,
+    retentionDays: number,
+  ): Promise<{ results: number; seekers: number }> {
+    const cutoff = new Date(now.getTime() - retentionDays * 86_400_000);
+    cutoff.setUTCHours(0, 0, 0, 0);
+    const [seekers, results] = await this.prisma.$transaction([
+      this.prisma.searchZeroResultSeeker.deleteMany({ where: { occurredOn: { lt: cutoff } } }),
+      this.prisma.searchZeroResult.deleteMany({ where: { occurredOn: { lt: cutoff } } }),
+    ]);
+    return { results: results.count, seekers: seekers.count };
   }
 
   // ══ Indexation (§2.5) ═════════════════════════════════════════════════════

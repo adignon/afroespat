@@ -23,6 +23,7 @@ import { ImpactService } from '../modules/analytics/impact.service';
 import { AnalyticsService } from '../modules/analytics/analytics.service';
 import { DataExportService } from '../modules/exports/data-export.service';
 import { MediaService } from '../modules/media/media.service';
+import { SearchService } from '../modules/search/search.service';
 import { OutboxService } from '../common/outbox.service';
 import { loadEnv } from '../config/env';
 import { ScheduledTaskRegistry, dailyAt, every, hourlyAt, quarterlyAt, weeklyAt } from './scheduled-tasks';
@@ -94,6 +95,7 @@ export class TaskRegistrationsService implements OnModuleInit {
     private readonly notificationEvents: NotificationEventsService,
     private readonly media: MediaService,
     private readonly outbox: OutboxService,
+    private readonly search: SearchService,
   ) {}
 
   onModuleInit(): void {
@@ -463,6 +465,12 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: async ({ now }) => this.notifications.weeklyDigest(now),
     });
     this.registry.register({
+      name: 'notifications.requeue_stale',
+      module: '12',
+      schedule: every(10),
+      handle: async ({ now }) => this.notifications.requeueStale(now),
+    });
+    this.registry.register({
       name: 'notifications.purge',
       module: '12',
       schedule: dailyAt(3, 15),
@@ -475,6 +483,12 @@ export class TaskRegistrationsService implements OnModuleInit {
       handle: async ({ now }) => ({
         events: await this.outbox.purgePublished(loadEnv().DOMAIN_EVENTS_RETENTION_DAYS, now),
       }),
+    });
+    this.registry.register({
+      name: 'search.zero_purge',
+      module: '11',
+      schedule: dailyAt(3, 35),
+      handle: async ({ now }) => this.search.purgeZeroResults(now, loadEnv().SEARCH_ZERO_RETENTION_DAYS),
     });
     this.registry.register({
       name: 'push.cleanup',

@@ -162,6 +162,9 @@ export const envSchema = z.object({
   /** Conservation des événements de domaine DÉJÀ publiés (tâche `outbox.purge`). Jamais les non publiés. */
   DOMAIN_EVENTS_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
 
+  /** Conservation des tables « recherche sans résultat » (tâche `search.zero_purge`), en jours. */
+  SEARCH_ZERO_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
+
   /** api : serveur HTTP. worker : mêmes modules, processeurs de files actifs (§3.1). */
   APP_ROLE: z.enum(['api', 'worker']).default('api'),
   APP_NAME: z.string().min(1),
