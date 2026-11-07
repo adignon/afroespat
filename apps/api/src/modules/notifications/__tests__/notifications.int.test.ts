@@ -890,6 +890,35 @@ describe('notifications (12)', () => {
       expect(unreadOnly.items).toHaveLength(0);
     });
 
+    it('plusieurs catégories à la fois (pastille « Parcours »), paginées sans doublon ni trou — lot S3A', async () => {
+      const user = await member();
+      const meme = new Date(Date.now() - 30_000);
+      const cats = ['JOURNEY_DEADLINE', 'JOURNEY_TEAM', 'HELP', 'JOURNEY_DEADLINE', 'JOURNEY_TEAM', 'JOURNEY_DEADLINE', 'HELP'];
+      for (const [i, category] of cats.entries()) {
+        await prisma.notification.create({
+          data: { id: newId(), userId: user, type: `test.s3a.${String(i)}`, title: `Notification ${String(i)}`, category, channelsSent: [], createdAt: meme },
+        });
+      }
+      const attendues = ['JOURNEY_DEADLINE', 'JOURNEY_TEAM'] as const;
+      const vues: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const page = await notifications.list(user, { limit: 2, categories: attendues, ...(cursor === undefined ? {} : { cursor }) });
+        for (const item of page.items) expect(attendues).toContain(item.category);
+        vues.push(...page.items.map((i) => i.id));
+        cursor = page.nextCursor ?? undefined;
+        pages += 1;
+      } while (cursor !== undefined && pages < 10);
+      expect(pages).toBe(3);
+      expect(new Set(vues).size).toBe(5);
+      // Un curseur d'un autre filtre est refusé.
+      const premiere = await notifications.list(user, { limit: 2, categories: attendues });
+      await expect(
+        notifications.list(user, { limit: 2, category: 'HELP', cursor: premiere.nextCursor as string }),
+      ).rejects.toBeDefined();
+    });
+
     it('filtre par catégorie', async () => {
       const user = await member();
       const other = await member();

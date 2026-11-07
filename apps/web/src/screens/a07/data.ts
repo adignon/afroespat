@@ -131,6 +131,10 @@ export interface A07Data {
   netFilters: typeof netFilters;
   myNets: readonly MyNetView[];
   discover: readonly DiscoverView[];
+  /** « Voir plus » sous « Mes réseaux » (lot S3A) — `mineNextCursor` de `GET /communities`. */
+  plusMesReseaux?: import('@/components/voir-plus').PlusListe;
+  /** « Voir plus » sous « Découvrir » (lot S3A) — `discover.nextCursor` de `GET /communities`. */
+  plusDecouverte?: import('@/components/voir-plus').PlusListe;
   /**
    * ── LE GESTE DU BOUTON D'UNE CARTE DE « DÉCOUVRIR » ──────────────────────
    *

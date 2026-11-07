@@ -16,7 +16,9 @@ import {
 } from '@app/shared';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { memberApi, voidResponse } from '@/lib/api/index';
+import { VoirPlus } from '@/components/voir-plus';
 import { useVersionEntraide } from '@/lib/entraide-recharge';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import { ageCourt } from '@/screens/entraide/appels';
 import {
   Compteur,
@@ -80,23 +82,41 @@ export function MesDemandes({ variante }: { readonly variante: 'bureau' | 'mobil
   const version = useVersionEntraide();
   const [filtre, setFiltre] = useState<FiltreDemandes>('ALL');
   const [essai, setEssai] = useState(0);
-  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly HelpCard[] }>({ phase: 'attente', items: [] });
+  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly HelpCard[]; suite: string | null }>({
+    phase: 'attente',
+    items: [],
+    suite: null,
+  });
+  const statut = filtre === 'ALL' ? '' : `&status=${filtre}`;
 
   useEffect(() => {
     let vivant = true;
-    const statut = filtre === 'ALL' ? '' : `&status=${filtre}`;
     void memberApi
-      .get(`/help/mine?limit=50${statut}`, helpMineResponseSchema)
+      .get(`/help/mine?limit=20${statut}`, helpMineResponseSchema)
       .then((r) => {
-        if (vivant) setEtat({ phase: 'pret', items: r.items });
+        if (vivant) setEtat({ phase: 'pret', items: r.items, suite: r.nextCursor });
       })
       .catch(() => {
-        if (vivant) setEtat((e) => ({ phase: 'echec', items: e.items }));
+        if (vivant) setEtat((e) => ({ phase: 'echec', items: e.items, suite: e.suite }));
       });
     return () => {
       vivant = false;
     };
-  }, [filtre, version, essai]);
+  }, [filtre, statut, version, essai]);
+
+  /**
+   * « VOIR PLUS » (lot S3A) : la page suivante de `GET /help/mine`, avec le MÊME filtre d'état.
+   * La clé porte le filtre et la version : un geste (clôture, suppression) recharge la première
+   * page et fait oublier les pages ajoutées, qui pourraient montrer une demande disparue.
+   */
+  const { items, plus } = useListeAPages({
+    cle: `${filtre}|${String(version)}|${String(essai)}`,
+    initiaux: etat.items,
+    curseurInitial: etat.suite,
+    identifiant: (d) => d.id,
+    charger: (curseur, signal) =>
+      memberApi.get(`/help/mine?limit=20${statut}&cursor=${encodeURIComponent(curseur)}`, helpMineResponseSchema, { signal }),
+  });
 
   return (
     <>
@@ -110,8 +130,13 @@ export function MesDemandes({ variante }: { readonly variante: 'bureau' | 'mobil
           { cle: 'ARCHIVED', libelle: 'Expirées' },
         ]}
       />
-      {etat.phase === 'pret' && etat.items.length > 0 ? (
-        etat.items.map((d) => <CarteDemande key={d.id} d={d} mobile={mobile} />)
+      {etat.phase === 'pret' && items.length > 0 ? (
+        <>
+          {items.map((d) => (
+            <CarteDemande key={d.id} d={d} mobile={mobile} />
+          ))}
+          <VoirPlus plus={plus} />
+        </>
       ) : (
         <EtatListe
           etat={etat.phase === 'pret' ? 'vide' : etat.phase}
@@ -229,24 +254,38 @@ export function MesReponses({ variante }: { readonly variante: 'bureau' | 'mobil
   const version = useVersionEntraide();
   const [filtre, setFiltre] = useState<FiltreReponses>('ALL');
   const [essai, setEssai] = useState(0);
-  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly MaReponse[] }>({ phase: 'attente', items: [] });
+  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly MaReponse[]; suite: string | null }>({
+    phase: 'attente',
+    items: [],
+    suite: null,
+  });
 
   useEffect(() => {
     let vivant = true;
     void memberApi
-      .get('/help/my-responses?limit=50', helpMyResponsesResponseSchema)
+      .get('/help/my-responses?limit=20', helpMyResponsesResponseSchema)
       .then((r) => {
-        if (vivant) setEtat({ phase: 'pret', items: r.items });
+        if (vivant) setEtat({ phase: 'pret', items: r.items, suite: r.nextCursor });
       })
       .catch(() => {
-        if (vivant) setEtat((e) => ({ phase: 'echec', items: e.items }));
+        if (vivant) setEtat((e) => ({ phase: 'echec', items: e.items, suite: e.suite }));
       });
     return () => {
       vivant = false;
     };
   }, [version, essai]);
 
-  const visibles = etat.items.filter((r) => (filtre === 'ALL' ? true : filtre === 'USEFUL' ? r.markedHelpful : !r.markedHelpful));
+  /** « VOIR PLUS » (lot S3A) : la page suivante de `GET /help/my-responses`. Le filtre « Utiles / En attente » reste local. */
+  const { items: toutes, plus } = useListeAPages({
+    cle: `${String(version)}|${String(essai)}`,
+    initiaux: etat.items,
+    curseurInitial: etat.suite,
+    identifiant: (r) => r.id,
+    charger: (curseur, signal) =>
+      memberApi.get(`/help/my-responses?limit=20&cursor=${encodeURIComponent(curseur)}`, helpMyResponsesResponseSchema, { signal }),
+  });
+
+  const visibles = toutes.filter((r) => (filtre === 'ALL' ? true : filtre === 'USEFUL' ? r.markedHelpful : !r.markedHelpful));
   return (
     <>
       <Segments
@@ -259,7 +298,12 @@ export function MesReponses({ variante }: { readonly variante: 'bureau' | 'mobil
         ]}
       />
       {etat.phase === 'pret' && visibles.length > 0 ? (
-        visibles.map((r) => <CarteReponse key={r.id} r={r} mobile={mobile} />)
+        <>
+          {visibles.map((r) => (
+            <CarteReponse key={r.id} r={r} mobile={mobile} />
+          ))}
+          <VoirPlus plus={plus} />
+        </>
       ) : (
         <EtatListe
           etat={etat.phase === 'pret' ? 'vide' : etat.phase}
@@ -267,7 +311,7 @@ export function MesReponses({ variante }: { readonly variante: 'bureau' | 'mobil
           vide={
             <>
               <div style={{ fontSize: '14px', fontWeight: 700, color: '#16211D' }}>
-                {etat.items.length === 0 ? 'Vous n’avez pas encore répondu' : 'Aucune réponse dans cet état'}
+                {toutes.length === 0 ? 'Vous n’avez pas encore répondu' : 'Aucune réponse dans cet état'}
               </div>
               <div style={{ marginTop: '4px' }}>Les demandes qui vous correspondent sont dans « Vous pouvez aider ».</div>
               <Link href="/entraide/aider" style={{ ...BOUTON_PLEIN, margin: '12px auto 0', width: 'fit-content', textDecoration: 'none' }}>
@@ -277,6 +321,7 @@ export function MesReponses({ variante }: { readonly variante: 'bureau' | 'mobil
           }
         />
       )}
+      {etat.phase === 'pret' && visibles.length === 0 && toutes.length > 0 ? <VoirPlus plus={plus} /> : null}
     </>
   );
 }

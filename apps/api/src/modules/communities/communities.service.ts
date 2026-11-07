@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { newId, type Prisma } from '@app/db';
+import { CommunityKind, newId, type Prisma } from '@app/db';
 import {
   COMMUNITY_ANNOUNCEMENTS_PER_WEEK,
   COMMUNITY_ARCHIVE_AFTER_DAYS,
@@ -30,7 +30,7 @@ import {
 } from '@app/shared';
 import { ApiError } from '../../common/api-error';
 import { AuditService } from '../../common/audit.service';
-import { buildPage, decodeCursor } from '../../common/cursor';
+import { buildPage, decodeCursor, encodeCursor } from '../../common/cursor';
 import { REQUIRED_MEDIA_STATUS, ownedAttachableWhere } from '../../common/media-attachment';
 import { OutboxService } from '../../common/outbox.service';
 import { PrismaService } from '../../common/prisma.service';
@@ -68,6 +68,23 @@ import { assertLocalRules } from '../../common/content-gate';
  */
 
 const DAY_MS = 86_400_000;
+
+/** L'ordre de déclaration de `CommunityKind` — celui dont PostgreSQL trie une colonne enum. */
+const KIND_ORDRE = Object.values(CommunityKind);
+
+/** Les genres qui suivent `kind` dans l'ordre du tri (Prisma n'offre pas `gt` sur une énumération). */
+function kindsAfter(kind: CommunityKind): CommunityKind[] {
+  return KIND_ORDRE.slice(KIND_ORDRE.indexOf(kind) + 1);
+}
+
+/** Relit le `sort` d'un curseur « Mes réseaux » : `GENRE|nom` — le genre ne contient jamais `|`. */
+function parseMineSort(cursor: { readonly sort?: string | number | undefined }): { kind: CommunityKind; name: string } {
+  const brut = typeof cursor.sort === 'string' ? cursor.sort : '';
+  const coupe = brut.indexOf('|');
+  const kind = KIND_ORDRE.find((k) => k === brut.slice(0, coupe));
+  if (coupe < 0 || kind === undefined) throw ApiError.validation([{ path: 'mineCursor', code: 'MALFORMED' }]);
+  return { kind, name: brut.slice(coupe + 1) };
+}
 
 /** Les deux sortes de réseaux qu'on ne crée ni ne quitte (§2.1). */
 const AUTO_KINDS = ['CITY', 'COUNTRY'] as const;
@@ -558,9 +575,39 @@ export class CommunitiesService {
   async list(userId: string, query: CommunityListQuery) {
     await this.syncAutoMemberships(userId);
 
-    const mine = await this.prisma.communityMember.findMany({
-      where: { userId, status: 'ACTIVE' },
-      orderBy: [{ community: { kind: 'asc' } }, { community: { name: 'asc' } }],
+    /**
+     * « MES RÉSEAUX », paginé à la demande (lot S3A). L'ordre est TOTAL — genre,
+     * nom, puis identifiant en départage : deux réseaux de même nom ne sont plus
+     * ordonnés au hasard, donc un curseur situe exactement la reprise.
+     */
+    const minePagine = query.mineLimit !== undefined || query.mineCursor !== undefined;
+    const mineTaille = query.mineLimit ?? query.limit;
+    const mineScope = `communities-mine:${userId}`;
+    const mineApres =
+      query.mineCursor === undefined ? null : decodeCursor(query.mineCursor, this.cursorSecret, mineScope);
+    const mineReprise = mineApres === null ? null : parseMineSort(mineApres);
+    const mineRows = await this.prisma.communityMember.findMany({
+      where: {
+        userId,
+        status: 'ACTIVE',
+        ...(mineReprise === null || mineApres === null
+          ? {}
+          : {
+              OR: [
+                { community: { kind: { in: kindsAfter(mineReprise.kind) } } },
+                { community: { kind: mineReprise.kind, name: { gt: mineReprise.name } } },
+                {
+                  community: {
+                    kind: mineReprise.kind,
+                    name: mineReprise.name,
+                    id: { gt: mineApres.id },
+                  },
+                },
+              ],
+            }),
+      },
+      orderBy: [{ community: { kind: 'asc' } }, { community: { name: 'asc' } }, { community: { id: 'asc' } }],
+      ...(minePagine ? { take: mineTaille + 1 } : {}),
       select: {
         role: true,
         joinedAt: true,
@@ -569,6 +616,20 @@ export class CommunitiesService {
         community: { select: COMMUNITY_SELECT },
       },
     });
+    const mineHasMore = minePagine && mineRows.length > mineTaille;
+    const mine = mineHasMore ? mineRows.slice(0, mineTaille) : mineRows;
+    const mineLast = mine.at(-1);
+    const mineNextCursor =
+      mineHasMore && mineLast !== undefined
+        ? encodeCursor(
+            {
+              id: mineLast.community.id,
+              sort: `${mineLast.community.kind}|${mineLast.community.name}`,
+              scope: mineScope,
+            },
+            this.cursorSecret,
+          )
+        : null;
 
     const invitations = await this.prisma.communityMember.findMany({
       where: { userId, status: 'INVITED' },
@@ -605,12 +666,16 @@ export class CommunitiesService {
       ...(after === null ? {} : { id: { lt: after.id } }),
     };
 
-    const rows = await this.prisma.community.findMany({
-      where,
-      orderBy: { id: 'desc' },
-      take: query.limit + 1,
-      select: COMMUNITY_SELECT,
-    });
+    // Suite de « Mes réseaux » seule : la découverte n'est pas relue.
+    const rows =
+      query.mineCursor !== undefined
+        ? []
+        : await this.prisma.community.findMany({
+            where,
+            orderBy: { id: 'desc' },
+            take: query.limit + 1,
+            select: COMMUNITY_SELECT,
+          });
 
     const page = buildPage(rows, query.limit, scope, this.cursorSecret);
     const gate = await this.creationGate(userId);
@@ -622,6 +687,7 @@ export class CommunitiesService {
         joinedAt: m.joinedAt,
         muted: m.muted,
       })),
+      mineNextCursor,
       invitations: invitations.map((i) => this.publicShape(i.community)),
       pendingRequests: pending.map((p) => this.publicShape(p.community)),
       discover: {

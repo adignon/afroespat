@@ -443,6 +443,11 @@ export const publicJourneysQuerySchema = z
      * réponse inclut soi-même.
      */
     authorHandle: handleSchema.optional(),
+    /**
+     * (lot S3A) La page suivante des parcours d'UN membre (`nextCursor`). Réservé à `authorHandle` : le
+     * panneau de découverte (sans auteur) est un classement borné, pas une liste que l'on pagine.
+     */
+    cursor: z.string().min(1).max(512).optional(),
   })
   .strict();
 
@@ -1150,12 +1155,15 @@ export type PublicJourney = z.infer<typeof publicJourneySchema>;
 /**
  * `GET /journeys/public` (§3.7) — cinq parcours d'AUTRES membres.
  *
- * SANS `nextCursor`, comme `GET /journeys` : la réserve est bornée et classée en
- * mémoire (l'ordre dépend de MON avancement, donc ce n'est pas un `ORDER BY`), et
- * il n'y a pas de page suivante. Mesuré sur l'API.
+ * SANS SUITE pour le panneau de découverte, comme `GET /journeys` : la réserve est bornée
+ * et classée en mémoire (l'ordre dépend de MON avancement, donc ce n'est pas un `ORDER BY`)
+ * — `nextCursor` y est toujours nul. AVEC `authorHandle` (l'onglet d'un profil), l'ordre est
+ * total (activité, identifiant) et `nextCursor` mène à la page suivante (lot S3A).
  */
 export const publicJourneysResponseSchema = z.object({
   items: z.array(publicJourneySchema),
+  /** Non nul seulement pour les parcours d'un membre (`authorHandle`) ; le panneau de découverte n'a pas de suite. */
+  nextCursor: z.string().nullable(),
   meta: journeyMetaSchema,
 });
 

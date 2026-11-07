@@ -6,6 +6,7 @@ import type { CommunitiesResponse } from '@app/shared';
 import { hasAccessToken, resumeSession } from '@/lib/api/index';
 import { fetchCommunities, joinCommunity, type CommunityFilters } from './api';
 import { discoversFrom, myNetsFrom } from './from-api';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import { echecDe, type ReseauEchec } from './echec';
 import type { A07Data, DiscoverView, MyNetView } from '../a07/data';
 import { netFiltersFor, shortcuts } from '../a07/data';
@@ -58,6 +59,9 @@ export interface ReseauxEtat {
   readonly recharger: () => void;
 }
 
+/** La taille d'une page de « Mes réseaux » (le serveur plafonne à 50). */
+const TAILLE_PAGE = 20;
+
 export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): ReseauxEtat {
   const router = useRouter();
   const [reponse, setReponse] = useState<CommunitiesResponse | null>(null);
@@ -89,7 +93,8 @@ export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): Rese
           reprise.current ??= resumeSession();
           await reprise.current;
         }
-        const r = await fetchCommunities(JSON.parse(cle) as CommunityFilters, ac.signal);
+        // « Mes réseaux » est paginé (lot S3A) : la première page, et `mineNextCursor` pour la suite.
+        const r = await fetchCommunities({ ...(JSON.parse(cle) as CommunityFilters), mineLimit: String(TAILLE_PAGE) }, ac.signal);
         if (!vivant) return;
         setReponse(r);
         setEchec(null);
@@ -110,14 +115,38 @@ export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): Rese
     };
   }, [cle, tick]);
 
-  const myNets = useMemo(
-    () => (reponse === null ? [] : myNetsFrom(reponse.mine)),
-    [reponse],
-  );
-  const discover = useMemo(
-    () => (reponse === null ? [] : discoversFrom(reponse.discover.items)),
-    [reponse],
-  );
+  /**
+   * « VOIR PLUS » (lot S3A), deux fois : la suite de « Mes réseaux » (`mineNextCursor`, la découverte
+   * n'est pas relue) et celle de « Découvrir » (`discover.nextCursor`, avec les mêmes filtres). Les pages
+   * ajoutées sont oubliées quand le filtre change ou quand on recharge (rejoindre).
+   */
+  const cleListes = `${cle}|${String(tick)}`;
+  const suiteMine = useListeAPages({
+    cle: cleListes,
+    initiaux: reponse?.mine ?? [],
+    curseurInitial: reponse?.mineNextCursor ?? null,
+    identifiant: (c) => c.id,
+    charger: async (curseur, signal) => {
+      const r = await fetchCommunities(
+        { ...(JSON.parse(cle) as CommunityFilters), mineLimit: String(TAILLE_PAGE), mineCursor: curseur },
+        signal,
+      );
+      return { items: r.mine, nextCursor: r.mineNextCursor };
+    },
+  });
+  const suiteDecouverte = useListeAPages({
+    cle: cleListes,
+    initiaux: reponse?.discover.items ?? [],
+    curseurInitial: reponse?.discover.nextCursor ?? null,
+    identifiant: (c) => c.id,
+    charger: async (curseur, signal) => {
+      // `mineLimit: 1` : la route relit « Mes réseaux » à chaque appel, autant n'en lire qu'un.
+      const r = await fetchCommunities({ ...(JSON.parse(cle) as CommunityFilters), cursor: curseur, mineLimit: '1' }, signal);
+      return r.discover;
+    },
+  });
+  const myNets = useMemo(() => myNetsFrom(suiteMine.items), [suiteMine.items]);
+  const discover = useMemo(() => discoversFrom(suiteDecouverte.items), [suiteDecouverte.items]);
 
   const seuilPhrase = useMemo(() => {
     const g = reponse?.creationGate;
@@ -176,10 +205,12 @@ export function useReseaux(filters: CommunityFilters = {}, kindFilter = 0): Rese
       netFilters: netFiltersFor(kindFilter),
       myNets,
       discover,
+      plusMesReseaux: suiteMine.plus,
+      plusDecouverte: suiteDecouverte.plus,
       onRejoindre: ouvrirOuRejoindre,
       seuil: seuilPhrase,
     }),
-    [myNets, discover, kindFilter, ouvrirOuRejoindre, seuilPhrase],
+    [myNets, discover, kindFilter, ouvrirOuRejoindre, seuilPhrase, suiteMine.plus, suiteDecouverte.plus],
   );
 
   return {

@@ -11,7 +11,7 @@ import {
   TopicPinKind,
   TopicStatus,
 } from '../enums/generated.js';
-import { cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
+import { MAX_PAGE_LIMIT, cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Schémas des réseaux — 07-reseaux.md §2, §3 et §4.
@@ -243,6 +243,15 @@ export const communityListQuerySchema = cursorQuerySchema.extend({
   category: communityCategorySchema.optional(),
   cityId: uuidSchema.optional(),
   q: z.string().trim().min(1).max(80).optional(),
+  /**
+   * « MES RÉSEAUX » PAGINÉ (lot S3A). Absents, `mine` rend TOUS les réseaux du membre —
+   * les écrans qui ont besoin du dictionnaire complet (agenda, raccourcis) n'ont rien à
+   * suivre. Présent, `mineLimit` (1 à 50) borne la page et `mineNextCursor` dit s'il en
+   * reste ; `mineCursor` reprend après le dernier réseau vu. Avec `mineCursor`, la
+   * découverte n'est pas relue : la page ne sert que la suite de « Mes réseaux ».
+   */
+  mineLimit: z.coerce.number().int().min(1).max(MAX_PAGE_LIMIT).optional(),
+  mineCursor: z.string().min(1).max(512).optional(),
 });
 
 export type CommunityListQuery = z.infer<typeof communityListQuerySchema>;
@@ -885,6 +894,8 @@ export const communitiesResponseSchema = z
     mine: z.array(myCommunitySchema),
     invitations: z.array(communityPublicSchema),
     pendingRequests: z.array(communityPublicSchema),
+    /** Null en fin de « Mes réseaux » — toujours nul quand `mineLimit` et `mineCursor` sont absents. */
+    mineNextCursor: z.string().nullable(),
     discover: pageSchema(discoverCommunitySchema),
     creationGate: communityCreationGateSchema,
   })

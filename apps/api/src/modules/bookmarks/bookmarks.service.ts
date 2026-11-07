@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { newId } from '@app/db';
-import type { BookmarkState, BookmarkSubjectType } from '@app/db';
+import type { BookmarkState, BookmarkSubjectType, Prisma } from '@app/db';
 import { ApiError } from '../../common/api-error';
 import {
   buildPage,
@@ -141,17 +141,25 @@ export class BookmarksService {
      */
     query: {
       readonly subjectType?: BookmarkSubjectType | undefined;
+      readonly subjectTypes?: readonly BookmarkSubjectType[] | undefined;
       readonly limit: number;
       readonly cursor?: string | undefined;
     },
   ) {
-    const ou = {
+    // `subjectType` l'emporte sur `subjectTypes` ; une liste vide n'est pas un filtre.
+    const types =
+      query.subjectType !== undefined
+        ? [query.subjectType]
+        : [...new Set(query.subjectTypes ?? [])].sort();
+    const ou: Prisma.BookmarkWhereInput = {
       userId,
-      ...(query.subjectType === undefined ? {} : { subjectType: query.subjectType }),
+      ...(types.length === 0 ? {} : { subjectType: types.length === 1 ? types[0] : { in: types } }),
     };
+    /** Le curseur ne vaut que pour le filtre qui l'a produit. */
+    const scope = types.length === 0 ? CURSOR_SCOPE : `${CURSOR_SCOPE}:${types.join('+')}`;
 
     // Pagination HONNÊTE par curseur (createdAt desc, id desc) : `nextCursor` n'est plus écrit en dur.
-    const resume = decodeCreatedAtDesc(query.cursor, this.cursorSecret, CURSOR_SCOPE);
+    const resume = decodeCreatedAtDesc(query.cursor, this.cursorSecret, scope);
     const [rawLignes, total, groupes] = await Promise.all([
       this.prisma.bookmark.findMany({
         where: { AND: [ou, ...createdAtDescAfter(resume)] },
@@ -173,7 +181,7 @@ export class BookmarksService {
       }),
     ]);
 
-    const page = buildPage(rawLignes, query.limit, CURSOR_SCOPE, this.cursorSecret, createdAtDescSort);
+    const page = buildPage(rawLignes, query.limit, scope, this.cursorSecret, createdAtDescSort);
     const lignes = page.items;
     const apercus = await this.apercus(lignes);
     const parType: Record<string, number> = {};

@@ -43,7 +43,7 @@ import {
  *
  * Ils ont chacun leur cas nommé, plus bas. Résumé : `POST /help` rend le détail
  * complet et non `{ id }` ; `dueDate` est une colonne `@db.Date` qui se sérialise
- * en horodatage complet ; `GET /me/mentorships` n'a pas de `nextCursor`.
+ * en horodatage complet ; `GET /me/mentorships` porte `nextCursor` (lot S3A).
  */
 
 const FIXTURES = join(import.meta.dirname, 'fixtures');
@@ -455,18 +455,18 @@ describe('ce que les charges relevées ont appris', () => {
     expect(helpCardSchema.shape.dueDate.safeParse(corps.request.dueDate).success).toBe(true);
   });
 
-  it('`GET /me/mentorships` n’a PAS de `nextCursor` : il borne à cent lignes', () => {
+  it('`GET /me/mentorships` porte `nextCursor` (lot S3A) : nul en fin de liste, jamais absent', () => {
     const corps = charge('parrainage_mes_parrainages_actif') as Record<string, unknown>;
-    expect(Object.keys(corps).sort()).toEqual(['items', 'meta']);
-    expect(corps['nextCursor']).toBeUndefined();
+    expect(Object.keys(corps).sort()).toEqual(['items', 'meta', 'nextCursor']);
+    expect(corps['nextCursor']).toBeNull();
     /**
-     * `pageSchema` ici ferait REFUSER la réponse réelle — c'est l'erreur que
-     * `myBlocksResponseSchema` a commise une fois, et qui n'a été trouvée qu'au
-     * navigateur, sur un écran resté en attente.
+     * `nextCursor` est REQUIS et nullable (§5.3) : une réponse sans le champ prendrait une pagination
+     * muette pour une fin de liste — le schéma la refuse.
      */
-    expect(myMentorshipsResponseSchema.safeParse({ ...corps, nextCursor: null }).success).toBe(
-      false,
-    );
+    const { nextCursor: _retire, ...sans } = corps;
+    void _retire;
+    expect(myMentorshipsResponseSchema.safeParse(sans).success).toBe(false);
+    expect(myMentorshipsResponseSchema.safeParse(corps).success).toBe(true);
   });
 
   /**

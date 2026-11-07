@@ -7,7 +7,8 @@ import { useAutresOnglets } from '@/lib/entre-onglets';
 import { relireCompteursBarre } from '@/components/barre-haute/compteurs';
 import { useEvenements, useRepliPolling } from '@/lib/use-temps-reel';
 import type { X02Data } from '../x02/data';
-import { marquerLues } from './appels';
+import { useListeAPages } from '@/lib/use-liste-pages';
+import { chargerNotificationsSuivantes, marquerLues } from './appels';
 
 /**
  * LES GESTES DE LA PAGE « NOTIFICATIONS » (X02, 12 §2.7 et §4).
@@ -24,10 +25,13 @@ const LIGNE_LUE = { fond: '#F6F8F7', fondIcone: '#F2F5F4' } as const;
 
 export function NotificationsVivantes({
   donnees,
+  filtre = '*',
   onRecharger,
   children,
 }: {
   readonly donnees: X02Data;
+  /** La pastille choisie : « Voir plus » demande la page suivante avec la même. */
+  readonly filtre?: string;
   readonly onRecharger: () => void;
   readonly children: (enrichies: X02Data) => ReactNode;
 }) {
@@ -69,14 +73,27 @@ export function NotificationsVivantes({
       });
   }, [enVol, onRecharger]);
 
-  const lignes = donnees.lignes.map((l) => {
+  /**
+   * « VOIR PLUS » (lot S3A) : les pages suivantes de `GET /notifications`, recollées à la première
+   * sans doublon. L'identifiant d'une ligne est celui de la notification ; une ligne sans
+   * identifiant (cadre de repli) n'est jamais dédoublonnée contre une autre.
+   */
+  const { items: suite, plus } = useListeAPages({
+    cle: filtre,
+    initiaux: donnees.lignes,
+    curseurInitial: donnees.suite ?? null,
+    identifiant: (l) => l.id ?? `sans-id:${l.titre}:${l.quand}`,
+    charger: (curseur, signal) => chargerNotificationsSuivantes(filtre, curseur, signal),
+  });
+
+  const lignes = suite.map((l) => {
     const lue = toutLu || (l.id !== undefined && ouvertes.has(l.id));
     const base = lue && l.nonLu ? { ...l, ...LIGNE_LUE, nonLu: false } : l;
     return { ...base, onOuvrir: () => { if (base.nonLu || l.nonLu) ouvrir(l.id); } };
   });
   // Le total vient du serveur ; on en retire les lignes que je viens d'ouvrir (le
   // serveur ne l'a pas encore relu), sans jamais descendre sous zéro.
-  const ouvertesNonLues = donnees.lignes.filter((l) => l.nonLu && l.id !== undefined && ouvertes.has(l.id)).length;
+  const ouvertesNonLues = suite.filter((l) => l.nonLu && l.id !== undefined && ouvertes.has(l.id)).length;
   const nonLusTotal = toutLu ? 0 : Math.max(0, donnees.nonLusTotal - ouvertesNonLues);
 
   return (
@@ -84,6 +101,7 @@ export function NotificationsVivantes({
       {children({
         ...donnees,
         lignes,
+        plusLignes: plus,
         nonLusTotal,
         onToutLire: toutLire,
         toutLuBloque: enVol || nonLusTotal === 0,

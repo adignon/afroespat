@@ -58,6 +58,7 @@
       "muted": false
     }
   ],
+  "mineNextCursor": null,
   "invitations": [],
   "pendingRequests": [],
   "discover": {

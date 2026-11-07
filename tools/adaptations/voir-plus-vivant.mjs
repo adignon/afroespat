@@ -42,7 +42,7 @@ function finAccolade(jsx, debut) {
  * `occurrence` : « derniere » (défaut) pose le bouton après la DERNIÈRE boucle de ce nom
  * dans le cadre ; « toutes » après chacune.
  */
-function suiteApres({ screens, nom, why, liste, prop, libelle }) {
+function suiteApres({ screens, nom, why, liste, prop, libelle, apresConteneur = false }) {
   return {
     screens,
     nom,
@@ -59,12 +59,41 @@ function suiteApres({ screens, nom, why, liste, prop, libelle }) {
         const fin = finAccolade(jsx, debut);
         if (fin < 0) break;
         const attribut = libelle === undefined ? '' : ` libelle=${JSON.stringify(libelle)}`;
-        sortie += jsx.slice(curseur, fin) + `<VoirPlus plus={${prop}}${attribut} />`;
-        curseur = fin;
+        // `apresConteneur` : la liste est dans une grille ou un défilement horizontal — le bouton
+        // y serait UNE CELLULE. On le pose APRÈS la balise fermante du conteneur (qui doit suivre).
+        let finBloc = fin;
+        if (apresConteneur) {
+          if (!jsx.startsWith('</div>', fin)) break;
+          finBloc = fin + '</div>'.length;
+        }
+        sortie += jsx.slice(curseur, finBloc) + `<VoirPlus plus={${prop}}${attribut} />`;
+        curseur = finBloc;
         applied = true;
       }
       if (!applied) return { jsx, applied: false };
       return { jsx: sortie + jsx.slice(curseur), applied: true };
+    },
+  };
+}
+
+/**
+ * Pose « Voir plus » JUSTE AVANT un motif unique du cadre (`avant`), pour les écrans dont la liste
+ * change de forme selon l'onglet : le bouton ne suit alors aucune boucle précise, il suit le bloc
+ * entier — ici, la chaîne de conditions des sept onglets du profil.
+ */
+function suiteAvant({ screens, nom, why, avant, prop }) {
+  return {
+    screens,
+    nom,
+    why,
+    provides: [prop],
+    apply(jsx) {
+      const premier = jsx.indexOf(avant);
+      if (premier < 0 || jsx.indexOf(avant, premier + 1) >= 0) return { jsx, applied: false };
+      return {
+        jsx: jsx.slice(0, premier) + `<VoirPlus plus={${prop}} />` + jsx.slice(premier),
+        applied: true,
+      };
     },
   };
 }
@@ -104,6 +133,64 @@ const SUITES = [
     why: 'Le fil d’entraide ne montrait que la première page (20) : « Voir plus » suit `nextCursor` de `GET /help`. Absent sous « Vous pouvez aider » (`/help/can-help` a un curseur toujours nul).',
     liste: 'demandes',
     prop: 'plusDemandes',
+  }),
+  suiteApres({
+    screens: ['X02'],
+    nom: 'X02_VOIR_PLUS',
+    why: 'Les notifications ne montraient qu’une page : « Voir plus » suit `nextCursor` de `GET /notifications`, avec le même filtre de catégories (côté serveur).',
+    liste: 'lignes',
+    prop: 'plusLignes',
+  }),
+  suiteApres({
+    screens: ['K10'],
+    nom: 'K10_VOIR_PLUS',
+    why: 'Les enregistrés ne montraient qu’une page : « Voir plus » suit `nextCursor` de `GET /me/bookmarks`, avec le même onglet (filtre serveur) et « 20 sur N » du compte de l’onglet.',
+    liste: 'lignes',
+    prop: 'plusEnregistres',
+  }),
+  suiteApres({
+    screens: ['A07'],
+    nom: 'A07_VOIR_PLUS_MES_RESEAUX',
+    why: 'Mes réseaux : « Voir plus » suit `mineNextCursor` de `GET /communities` (les réseaux sont dans une grille / un défilement : le bouton est posé après le conteneur).',
+    liste: 'myNets',
+    prop: 'plusMesReseaux',
+    apresConteneur: true,
+  }),
+  suiteApres({
+    screens: ['A07'],
+    nom: 'A07_VOIR_PLUS_DECOUVRIR',
+    why: 'Découvrir : « Voir plus » suit `discover.nextCursor` de `GET /communities` (grille : le bouton est posé après le conteneur).',
+    liste: 'discover',
+    prop: 'plusDecouverte',
+    apresConteneur: true,
+  }),
+  suiteApres({
+    screens: ['E01'],
+    nom: 'E01_VOIR_PLUS',
+    why: 'Les cartes du jour ne montraient que la première page (20) : « Voir plus » suit `nextCursor` de `GET /events?date=`, pour le même jour et le même filtre.',
+    liste: 'evenements',
+    prop: 'plusEvenements',
+  }),
+  suiteApres({
+    screens: ['X01'],
+    nom: 'X01_VOIR_PLUS',
+    why: 'Les résultats d’un type ne montraient que la première page (20) : « Voir plus » suit `nextCursor` de `GET /search?type=`, avec la même requête et les mêmes filtres. La forme groupée (aperçu de trois) n’a pas de suite.',
+    liste: 'resultats',
+    prop: 'plusResultats',
+  }),
+  suiteAvant({
+    screens: ['K02'],
+    nom: 'K02_VOIR_PLUS',
+    why: 'Le contenu publié d’un membre ne montrait que la première page (20) de l’onglet ouvert : « Voir plus » suit `nextCursor` de la route de CET onglet (stories/entraide, fil, guides, événements, annonces, parcours), avec le même filtre d’auteur.',
+    avant: '{contenuVide ? (',
+    prop: 'plusContenu',
+  }),
+  suiteApres({
+    screens: ['K05'],
+    nom: 'K05_VOIR_PLUS',
+    why: 'Mes contacts ne montraient que la première page (20) alors que le compteur annonce le total : « Voir plus » suit `nextCursor` de `GET /me/connections`, avec « 20 sur N ».',
+    liste: 'contacts.liste',
+    prop: 'contacts.plus',
   }),
 ];
 

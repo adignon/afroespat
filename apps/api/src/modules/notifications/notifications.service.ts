@@ -672,14 +672,24 @@ export class NotificationsService {
 
   async list(
     userId: string,
-    query: { cursor?: string | undefined; limit: number; unread?: boolean | undefined; category?: NotificationCategory | undefined },
+    query: {
+      cursor?: string | undefined;
+      limit: number;
+      unread?: boolean | undefined;
+      category?: NotificationCategory | undefined;
+      categories?: readonly NotificationCategory[] | undefined;
+    },
   ) {
-    const scope = `notifications:${userId}:${query.unread === true ? 'unread' : 'all'}:${query.category ?? '*'}`;
+    // `category` l'emporte sur `categories` ; une liste vide n'est pas un filtre.
+    const categories =
+      query.category !== undefined ? [query.category] : (query.categories ?? []).length > 0 ? [...new Set(query.categories)].sort() : [];
+    const scope = `notifications:${userId}:${query.unread === true ? 'unread' : 'all'}:${categories.length === 0 ? '*' : categories.join('+')}`;
     const cursor = query.cursor === undefined ? null : decodeCursor(query.cursor, this.cursorSecret, scope);
 
     const conditions: Prisma.NotificationWhereInput[] = [{ userId }];
     if (query.unread === true) conditions.push({ readAt: null });
-    if (query.category !== undefined) conditions.push({ category: query.category });
+    if (categories.length === 1) conditions.push({ category: categories[0] as NotificationCategory });
+    else if (categories.length > 1) conditions.push({ category: { in: categories } });
 
     // Keyset sur (`created_at`, `id`) : le tri n'est PAS l'identifiant, donc
     // `buildPage` reçoit un `sortOf`. Sans lui, une notification regroupée — dont

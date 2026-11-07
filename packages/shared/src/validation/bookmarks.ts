@@ -81,6 +81,16 @@ export const bookmarksQuerySchema = cursorQuerySchema.extend({
    * `type`, et l'onglet « Villes » rendait la liste entière sans erreur.
    */
   subjectType: bookmarkSubjectTypeSchema.optional(),
+  /**
+   * (lot S3A) Plusieurs types à la fois, séparés par des virgules — l'onglet « Annonces » couvre le
+   * logement, l'emploi et les fiches pros. Le filtre est SERVEUR : filtrer la page reçue ferait un
+   * onglet maigre avec un « Voir plus » trompeur. Ignoré quand `subjectType` est présent.
+   */
+  subjectTypes: z
+    .string()
+    .transform((v) => v.split(',').map((t) => t.trim()).filter((t) => t !== ''))
+    .pipe(z.array(bookmarkSubjectTypeSchema).min(1).max(12))
+    .optional(),
 });
 
 export type BookmarksQuery = z.infer<typeof bookmarksQuerySchema>;

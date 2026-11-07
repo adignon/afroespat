@@ -2,7 +2,8 @@
 
 import { useCallback } from 'react';
 import { chargerE01, SQUELETTE_E01 } from '@/screens/agenda/appels';
-import type { ScopeAgenda } from '@/screens/agenda/data';
+import type { E01Data, ScopeAgenda } from '@/screens/agenda/data';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { ScreenFrames } from '@/screens/frames';
 import { E01Desktop } from '@/screens/e01/desktop.generated';
@@ -42,13 +43,35 @@ export function AgendaEcran({
        */
       squelette={SQUELETTE_E01}
     >
-      {(donnees) => (
-        <ScreenFrames
-          screen="E01"
-          desktop={<E01Desktop {...donnees} />}
-          mobile={<E01Mobile {...donnees} />}
-        />
-      )}
+      {(donnees) => <E01AvecSuite donnees={donnees} cle={`${String(jour)}|${String(scope)}|${String(mois)}`} />}
     </EcranDonnees>
   );
+}
+
+/**
+ * E01 avec « Voir plus » (lot S3A) : la page suivante des cartes du MÊME jour et du même filtre,
+ * recollée à la première sans doublon. « N événements » suit ce qui est chargé.
+ *
+ * ⚠ « Mes participations en tête » est un tri du serveur, PAR PAGE : une participation qui tombe en
+ * page deux s'affiche à sa place chronologique de cette page, pas au-dessus de la première.
+ */
+function E01AvecSuite({ donnees, cle }: { readonly donnees: E01Data; readonly cle: string }) {
+  const { items, plus } = useListeAPages({
+    cle,
+    initiaux: donnees.evenements,
+    curseurInitial: donnees.suite ?? null,
+    identifiant: (c) => c.href ?? `${c.titre}|${c.heure}`,
+    charger: (curseur, signal) =>
+      donnees.chargerSuite === undefined
+        ? Promise.resolve({ items: [], nextCursor: null })
+        : donnees.chargerSuite(curseur, signal),
+  });
+  const complet: E01Data = {
+    ...donnees,
+    evenements: items,
+    nombre: items.length,
+    pluriel: items.length > 1 ? 's' : '',
+    plusEvenements: plus,
+  };
+  return <ScreenFrames screen="E01" desktop={<E01Desktop {...complet} />} mobile={<E01Mobile {...complet} />} />;
 }

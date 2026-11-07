@@ -1371,6 +1371,47 @@ describe('parcours (03 §2, §3, §5, §10)', () => {
     expect(consent?.granted).toBe(true);
   });
 
+  it('les parcours publics d’UN membre se paginent (lot S3A) : ni doublon ni trou, le panneau de découverte reste sans suite', async () => {
+    const viewer = await newMember();
+    const author = await newMember();
+    // Un membre gratuit n'a qu'un parcours actif : le quota ne s'applique pas au plan payant.
+    await prisma.user.update({ where: { id: author.userId }, data: { plan: 'PREMIUM' } });
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      const id = await journeyFor(author, `Parcours paginé ${String(i)}`);
+      await journeys.update(author.userId, id, { visibility: 'PUBLIC' });
+      ids.push(id);
+    }
+    // Même instant d'activité pour tous : seul l'identifiant les départage.
+    await prisma.journey.updateMany({ where: { id: { in: ids } }, data: { lastActivityAt: new Date(Date.now() - 60_000) } });
+
+    const tout = await journeys.publicList(viewer.userId, { authorHandle: author.handle, limit: 50 });
+    expect(tout.items).toHaveLength(5);
+    expect(tout.nextCursor).toBeNull();
+
+    const vus: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const page = await journeys.publicList(viewer.userId, {
+        authorHandle: author.handle,
+        limit: 2,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      vus.push(...page.items.map((j) => j.id));
+      cursor = page.nextCursor ?? undefined;
+      pages += 1;
+    } while (cursor !== undefined && pages < 10);
+    expect(pages).toBe(3);
+    expect(new Set(vus).size).toBe(5);
+    expect(vus).toEqual(tout.items.map((j) => j.id));
+
+    // Le panneau (sans auteur) n'a pas de suite : `nextCursor` nul, et un curseur y est refusé.
+    const panneau = await journeys.publicList(viewer.userId, { limit: 2 });
+    expect(panneau.nextCursor).toBeNull();
+    await expect(journeys.publicList(viewer.userId, { limit: 2, cursor: 'x.y' })).rejects.toBeDefined();
+  });
+
   /**
    * RÈGLE DURE §3.7 : « Jamais : titre personnel, notes, checklist, équipe,
    * discussion, motifs de pause, demandes privées, dates cibles. »

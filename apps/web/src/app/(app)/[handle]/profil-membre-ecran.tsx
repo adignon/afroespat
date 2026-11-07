@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import type { MemberContentType } from '@app/shared';
 import { SQUELETTE_K02, chargerK02 } from '@/screens/compte/appels';
+import type { K02Data } from '@/screens/compte/data';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { K02Desktop } from '@/screens/k02/desktop.generated';
@@ -61,10 +63,7 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
    * paginée et qu'un tri local donnerait un onglet vide sur une page deux.
    */
   const [onglet, setOnglet] = useState<MemberContentType>('GUIDE');
-  const charger = useCallback(
-    () => chargerK02(pseudo, onglet, setOnglet),
-    [pseudo, onglet],
-  );
+  const charger = useCallback(() => chargerK02(pseudo, onglet, setOnglet), [pseudo, onglet]);
 
   return (
     <EcranDonnees
@@ -77,45 +76,87 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
       charger={charger}
       cle={`${pseudo}|${onglet}`}
     >
-      {(donnees) => (
-        <ProfilContactVivant donnees={donnees} pseudo={pseudo} onFermerAjout={onFermer}>
-          {(vivantes) => (
-            /**
-             * ╔══════════════════════════════════════════════════════════════╗
-             * ║ LA CARTE DU FIL GARDE SES GESTES SUR LE PROFIL              ║
-             * ╚══════════════════════════════════════════════════════════════╝
-             *
-             * Le porteur : « les actions de la carte de fil d'actualité ne
-             * marchent pas (like, comment, partager, bookmarks). Normalement tu
-             * dois ramener toute leur interactivité aussi. »
-             *
-             * Le DESSIN était extrait, pas les GESTES : une carte qui ressemble à
-             * la bonne et ne fait rien. `CartesFilVivantes` les attache — réaction,
-             * signet, commentaires, partage — en appelant LES MÊMES fonctions que
-             * la page du fil.
-             */
-            <CartesFilVivantes cartes={vivantes.contenuPublications ?? []}>
-              {(cartes) => (
-                <EcranCompte
-                  screen="K02"
-                  desktop={<K02Desktop {...vivantes} contenuPublications={cartes} />}
-                  mobile={<K02Mobile {...vivantes} contenuPublications={cartes} />}
-                  ouverte={ouverte}
-                  onOuvrir={onOuvrir}
-                  onFermer={onFermer}
-                  /**
-                   * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut :
-                   * son titre nomme le membre visité (« Ajouter Fatou aux
-                   * contacts »). Figé, il disait « Fatou » sur le profil de Kofi — la
-                   * fenêtre aurait menti par-dessus un écran qui, lui, disait vrai.
-                   */
-                  modales={{ K02C: { desktop: <K02Ajout {...vivantes} />, mobile: <K02AjoutFeuille {...vivantes} /> } }}
-                />
+      {(chargees) => (
+        <AvecSuiteContenu donnees={chargees} cle={`${pseudo}|${onglet}`}>
+          {(donnees) => (
+            <ProfilContactVivant donnees={donnees} pseudo={pseudo} onFermerAjout={onFermer}>
+              {(vivantes) => (
+                /**
+                 * ╔══════════════════════════════════════════════════════════════╗
+                 * ║ LA CARTE DU FIL GARDE SES GESTES SUR LE PROFIL              ║
+                 * ╚══════════════════════════════════════════════════════════════╝
+                 *
+                 * Le porteur : « les actions de la carte de fil d'actualité ne
+                 * marchent pas (like, comment, partager, bookmarks). Normalement tu
+                 * dois ramener toute leur interactivité aussi. »
+                 *
+                 * Le DESSIN était extrait, pas les GESTES : une carte qui ressemble à
+                 * la bonne et ne fait rien. `CartesFilVivantes` les attache — réaction,
+                 * signet, commentaires, partage — en appelant LES MÊMES fonctions que
+                 * la page du fil.
+                 */
+                <CartesFilVivantes cartes={vivantes.contenuPublications ?? []}>
+                  {(cartes) => (
+                    <EcranCompte
+                      screen="K02"
+                      desktop={<K02Desktop {...vivantes} contenuPublications={cartes} />}
+                      mobile={<K02Mobile {...vivantes} contenuPublications={cartes} />}
+                      ouverte={ouverte}
+                      onOuvrir={onOuvrir}
+                      onFermer={onFermer}
+                      /**
+                       * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut :
+                       * son titre nomme le membre visité (« Ajouter Fatou aux
+                       * contacts »). Figé, il disait « Fatou » sur le profil de Kofi — la
+                       * fenêtre aurait menti par-dessus un écran qui, lui, disait vrai.
+                       */
+                      modales={{
+                        K02C: {
+                          desktop: <K02Ajout {...vivantes} />,
+                          mobile: <K02AjoutFeuille {...vivantes} />,
+                        },
+                      }}
+                    />
+                  )}
+                </CartesFilVivantes>
               )}
-            </CartesFilVivantes>
+            </ProfilContactVivant>
           )}
-        </ProfilContactVivant>
+        </AvecSuiteContenu>
       )}
     </EcranDonnees>
   );
+}
+
+/**
+ * « VOIR PLUS » SOUS L'ONGLET OUVERT (lot S3A) : prolonge la liste de l'onglet (`suiteContenu.champ`)
+ * avec la page suivante de SA route, sans doublon, puis rend les données complétées à la chaîne
+ * habituelle (gestes du contact, cartes du fil vivantes, cadres). Changer d'onglet ou de profil
+ * abandonne les pages ajoutées (la clé).
+ */
+function AvecSuiteContenu({
+  donnees,
+  cle,
+  children,
+}: {
+  readonly donnees: K02Data;
+  readonly cle: string;
+  readonly children: (complet: K02Data) => ReactNode;
+}) {
+  const suite = donnees.suiteContenu;
+  const champ = suite?.champ ?? 'contenus';
+  const initiaux: readonly unknown[] = donnees[champ] ?? [];
+  const { items, plus } = useListeAPages<unknown>({
+    cle,
+    initiaux,
+    curseurInitial: suite?.curseur ?? null,
+    identifiant: suite?.identifiant ?? (() => ''),
+    charger: (curseur, signal) =>
+      suite === undefined
+        ? Promise.resolve({ items: [], nextCursor: null })
+        : suite.charger(curseur, signal),
+  });
+  // Les éléments de `items` sont ceux de la liste `champ` : la suite les a convertis avec le même convertisseur.
+  const complet = { ...donnees, [champ]: items, plusContenu: plus } as K02Data;
+  return <>{children(complet)}</>;
 }

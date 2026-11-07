@@ -34,6 +34,7 @@
       }
     }
   ],
+  "nextCursor": null,
   "meta": {
     "moneyBanner": "Un parrainage est gratuit et bénévole. Aucun parrain ne doit vous demander d’argent, ni vous garantir un visa, un logement ou un emploi. Signalez immédiatement toute demande de ce type."
   }

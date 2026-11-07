@@ -12,6 +12,7 @@ import {
   mySanctionsResponseSchema,
   mySubscriptionResponseSchema,
   bookmarksResponseSchema,
+  type BookmarksResponse,
   MEMBER_CONTENT_LABELS_FR,
   MEMBER_CONTENT_TYPES,
   memberContentResponseSchema,
@@ -21,8 +22,10 @@ import {
   type MutualConnectionsResponse,
   type BookmarkState,
   type BookmarkSubjectType,
+  type MemberContentResponse,
   type MemberContentType,
   type MeResponse,
+  type MyConnectionsResponse,
   type MyPaymentsResponse,
   type OccupationStatus,
   type Phase,
@@ -36,7 +39,9 @@ import { fetchFeed } from '@/screens/accueil/api';
 import { feedPostsFrom } from '@/screens/accueil/from-api';
 import { fetchGuides } from '@/screens/guides/api';
 import { guideCardsFrom } from '@/screens/guides/from-api';
-import { construireCarte } from '@/screens/agenda/data';
+import { construireCarte, type CarteEvenement } from '@/screens/agenda/data';
+import type { FeedPostView } from '@/screens/a01/data';
+import type { GuideCardView } from '@/screens/a03/data';
 import { eventsResponseSchema, housingListResponseSchema } from '@app/shared';
 import type { HousingCardView } from '@app/shared';
 import type { CarteAnnonce } from '@/screens/s01/data';
@@ -120,7 +125,10 @@ import type {
   K08Data,
   K09Data,
   K10Data,
+  LigneEnregistree,
   OngletContenu,
+  CarteContenu,
+  SuiteContenuK02,
   OngletEnregistres,
   PastilleNiveau,
 } from './data';
@@ -503,6 +511,36 @@ function ongletsContenu(
   });
 }
 
+/**
+ * UNE LIGNE DE `GET /users/:handle/content` en carte du profil. LE FOND EST UNE VALEUR CSS, pas
+ * une adresse : le serveur rend `/media/<clé>` pour une photo et un aplat sinon ; `photoFondFor` en
+ * fait le `background` que `ApercuStory` attend — la même fabrique que le composeur de story emploie.
+ */
+function carteContenu(c: MemberContentResponse['items'][number]): CarteContenu {
+  return {
+    id: c.id,
+    titre: c.title,
+    sous: c.subtitle,
+    href: c.href,
+    ...(c.apercu === undefined
+      ? {}
+      : {
+          apercu: {
+            ...c.apercu,
+            fond: c.apercu.photo ? photoFondFor(urlMedia(c.apercu.fond), false) : c.apercu.fond,
+          },
+        }),
+  };
+}
+
+/** Une page d'un onglet du profil : ses cartes et le curseur de la suivante. */
+interface PageOnglet<T> {
+  readonly items: readonly T[];
+  readonly nextCursor: string | null;
+}
+
+const AUCUNE_PAGE: PageOnglet<never> = { items: [], nextCursor: null };
+
 export async function chargerK02(
   pseudo: string,
   onglet: MemberContentType = 'GUIDE',
@@ -563,18 +601,18 @@ export async function chargerK02(
      */
     onglet === 'POST'
       ? fetchFeed({ authorHandle: sansArobase(pseudo), limit: 20 })
-          .then(feedPostsFrom)
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: feedPostsFrom(page), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     /**
      * LES GUIDES, MÊME PRINCIPE : `GET /guides?authorHandle=…`, puis le
      * convertisseur du module Guides. La carte vient de sa page d'origine.
      */
     onglet === 'GUIDE'
       ? fetchGuides({ tab: 'recent', authorHandle: sansArobase(pseudo) })
-          .then((page) => guideCardsFrom(page))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: guideCardsFrom(page), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     /**
      * LES ÉVÉNEMENTS ORGANISÉS et LES ANNONCES, mêmes principes : la liste
      * d'origine filtrée par auteur, puis le convertisseur du module. Chaque
@@ -593,27 +631,30 @@ export async function chargerK02(
            * que les événements SANS réseau — voir la règle de visibilité du
            * service — donc elle n'a rien à nommer.
            */
-          .then((page) => page.items.map((e) => construireCarte(e, new Map())))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({
+            items: page.items.map((e) => construireCarte(e, new Map())),
+            nextCursor: page.nextCursor,
+          }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     onglet === 'SERVICE'
       ? memberApi
           .get(
             `/housing?authorHandle=${encodeURIComponent(sansArobase(pseudo))}&limit=20`,
             housingListResponseSchema,
           )
-          .then((page) => page.items.map(carteAnnoncePublique))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: page.items.map(carteAnnoncePublique), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     onglet === 'JOURNEY'
       ? memberApi
           .get(
             `/journeys/public?authorHandle=${encodeURIComponent(sansArobase(pseudo))}&limit=20`,
             publicJourneysResponseSchema,
           )
-          .then((page) => page.items.map(carteParcoursPublic))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: page.items.map(carteParcoursPublic), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     /**
      * CE QUE NOUS AVONS EN COMMUN — contacts et réseaux. `null` en cas d'échec :
      * la ligne se tait plutôt que d'affirmer « 0 en commun ».
@@ -634,34 +675,21 @@ export async function chargerK02(
     options: [],
     optionsMobile: [],
     contenuOnglets: ongletsContenu(onglet, contenu.meta.parType, onChoisir),
-    contenus: contenu.items.map((c) => ({
-      id: c.id,
-      titre: c.title,
-      sous: c.subtitle,
-      href: c.href,
-      /**
-       * LE FOND EST UNE VALEUR CSS, pas une adresse. Le serveur rend
-       * `/media/<clé>` pour une photo et un aplat sinon ; `photoFondFor` en fait
-       * le `background` que `ApercuStory` attend — la même fabrique que le
-       * composeur de story emploie, pour que les deux se ressemblent.
-       */
-      ...(c.apercu === undefined
-        ? {}
-        : {
-            apercu: {
-              ...c.apercu,
-              fond: c.apercu.photo
-                ? photoFondFor(urlMedia(c.apercu.fond), false)
-                : c.apercu.fond,
-            },
-          }),
-    })),
+    contenus: contenu.items.map(carteContenu),
     contenuEspece: onglet,
-    contenuPublications: publications,
-    contenuGuides: guidesPublies,
-    contenuEvenements: evenements,
-    contenuAnnonces: annonces,
-    contenuParcours: parcours,
+    contenuPublications: publications.items,
+    contenuGuides: guidesPublies.items,
+    contenuEvenements: evenements.items,
+    contenuAnnonces: annonces.items,
+    contenuParcours: parcours.items,
+    suiteContenu: suiteContenuK02(onglet, pseudo, {
+      contenu: contenu.nextCursor,
+      publications: publications.nextCursor,
+      guides: guidesPublies.nextCursor,
+      evenements: evenements.nextCursor,
+      annonces: annonces.nextCursor,
+      parcours: parcours.nextCursor,
+    }, { annonces: annonces.items.length }),
     /**
      * LE TITRE DE LA CARTE EST CELUI DE L'ONGLET, EN CAPITALES — c'est la forme
      * que la maquette donne à ses intitulés de carte (« GUIDES PUBLIÉS »,
@@ -670,6 +698,114 @@ export async function chargerK02(
     contenuTitre: MEMBER_CONTENT_LABELS_FR[onglet].toLocaleUpperCase('fr-FR'),
     contenuVide: contenu.items.length === 0,
   };
+}
+
+/**
+ * « VOIR PLUS » SOUS L'ONGLET OUVERT DU PROFIL (lot S3A).
+ *
+ * Chaque onglet a sa route (`/users/:handle/content` pour les stories, l'entraide…, `/feed`, `/guides`,
+ * `/events`, `/housing`, `/journeys/public` avec `authorHandle`) et donc sa carte : la page suivante est
+ * demandée à LA MÊME route que la première, avec le même filtre d'auteur, et convertie par le même
+ * convertisseur. Le curseur de chaque route est lié à son filtre d'auteur côté serveur.
+ */
+function suiteContenuK02(
+  onglet: MemberContentType,
+  pseudo: string,
+  curseurs: {
+    readonly contenu: string | null;
+    readonly publications: string | null;
+    readonly guides: string | null;
+    readonly evenements: string | null;
+    readonly annonces: string | null;
+    readonly parcours: string | null;
+  },
+  deja: { annonces: number },
+): SuiteContenuK02 {
+  const auteur = sansArobase(pseudo);
+  const signalDe = (signal?: AbortSignal) => (signal === undefined ? undefined : { signal });
+  // Les annonces alternent quatre aplats selon leur rang : la page suivante reprend où la précédente s'est arrêtée.
+  let rangAnnonce = deja.annonces;
+  switch (onglet) {
+    case 'POST':
+      return {
+        champ: 'contenuPublications',
+        curseur: curseurs.publications,
+        identifiant: (e) => (e as FeedPostView).postId ?? JSON.stringify(e).slice(0, 80),
+        charger: async (curseur, signal) => {
+          const page = await fetchFeed({ authorHandle: auteur, limit: 20, cursor: curseur }, signal);
+          return { items: feedPostsFrom(page), nextCursor: page.nextCursor };
+        },
+      };
+    case 'GUIDE':
+      return {
+        champ: 'contenuGuides',
+        curseur: curseurs.guides,
+        identifiant: (e) => (e as GuideCardView).href ?? (e as GuideCardView).title,
+        charger: async (curseur, signal) => {
+          const page = await fetchGuides({ tab: 'recent', authorHandle: auteur, cursor: curseur }, signal);
+          return { items: guideCardsFrom(page), nextCursor: page.nextCursor };
+        },
+      };
+    case 'EVENT':
+      return {
+        champ: 'contenuEvenements',
+        curseur: curseurs.evenements,
+        identifiant: (e) => (e as CarteEvenement).href ?? (e as CarteEvenement).titre,
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/events?authorHandle=${encodeURIComponent(auteur)}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            eventsResponseSchema,
+            signalDe(signal),
+          );
+          return { items: page.items.map((e) => construireCarte(e, new Map())), nextCursor: page.nextCursor };
+        },
+      };
+    case 'SERVICE':
+      return {
+        champ: 'contenuAnnonces',
+        curseur: curseurs.annonces,
+        identifiant: (e) => (e as CarteAnnonce).id,
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/housing?authorHandle=${encodeURIComponent(auteur)}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            housingListResponseSchema,
+            signalDe(signal),
+          );
+          const items = page.items.map((a, i) => carteAnnoncePublique(a, rangAnnonce + i));
+          rangAnnonce += items.length;
+          return { items, nextCursor: page.nextCursor };
+        },
+      };
+    case 'JOURNEY':
+      return {
+        champ: 'contenuParcours',
+        curseur: curseurs.parcours,
+        identifiant: (e) => (e as CarteParcoursView).href ?? JSON.stringify(e).slice(0, 80),
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/journeys/public?authorHandle=${encodeURIComponent(auteur)}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            publicJourneysResponseSchema,
+            signalDe(signal),
+          );
+          return { items: page.items.map(carteParcoursPublic), nextCursor: page.nextCursor };
+        },
+      };
+    case 'STORY':
+    case 'HELP':
+      return {
+        champ: 'contenus',
+        curseur: curseurs.contenu,
+        identifiant: (e) => (e as CarteContenu).id,
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/users/${encodeURIComponent(pseudo)}/content?type=${onglet}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            memberContentResponseSchema,
+            signalDe(signal),
+          );
+          return { items: page.items.map(carteContenu), nextCursor: page.nextCursor };
+        },
+      };
+  }
 }
 
 function vueMembre(
@@ -826,6 +962,38 @@ export async function chargerK04(): Promise<K04Data> {
 
 // ─── K05 · /compte/contacts ──────────────────────────────────────────────────
 
+/** Un contact de `GET /me/connections` dans la liste de K05 ; `rang` choisit l'aplat d'avatar. */
+function ligneContactK05(
+  c: MyConnectionsResponse['items'][number],
+  rang: number,
+): K05Data['contacts']['liste'][number] {
+  return {
+    cle: c.userId,
+    fond: FONDS_AVATAR[rang % FONDS_AVATAR.length] ?? FONDS_AVATAR[0],
+    initiales: initialesDe(c.displayName),
+    nom: c.displayName,
+    depuis: `En contact depuis le ${jourEtMois(c.connectedAt)}`,
+    origine: ORIGINES_FR[c.origin] ?? c.origin,
+  };
+}
+
+/**
+ * « Voir plus » sous « Mes contacts » (lot S3A) : la page suivante de `GET /me/connections`.
+ * `dejaLus` décale le choix de l'aplat d'avatar pour que les couleurs continuent de tourner.
+ */
+export async function chargerContactsSuivants(
+  curseur: string,
+  dejaLus: number,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly K05Data['contacts']['liste'][number][]; readonly nextCursor: string | null }> {
+  const page = await memberApi.get(
+    `/me/connections?cursor=${encodeURIComponent(curseur)}`,
+    myConnectionsResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map((c, i) => ligneContactK05(c, dejaLus + i)), nextCursor: page.nextCursor };
+}
+
 /**
  * Contacts, demandes et bloqués — quatre routes, parce que la planche montre
  * quatre cartes côte à côte et non quatre onglets.
@@ -858,13 +1026,8 @@ export async function chargerK05(): Promise<K05Data> {
     contacts: {
       total: contacts.meta.count,
       demandes: demandes.items.length,
-      liste: contacts.items.map((c, rang) => ({
-        fond: FONDS_AVATAR[rang % FONDS_AVATAR.length] ?? FONDS_AVATAR[0],
-        initiales: initialesDe(c.displayName),
-        nom: c.displayName,
-        depuis: `En contact depuis le ${jourEtMois(c.connectedAt)}`,
-        origine: ORIGINES_FR[c.origin] ?? c.origin,
-      })),
+      liste: contacts.items.map((c, rang) => ligneContactK05(c, rang)),
+      suite: contacts.nextCursor,
     },
     bloque:
       premierBloque === undefined
@@ -1341,15 +1504,11 @@ export async function chargerK10(
   onChoisir: (cle: string) => void = () => undefined,
 ): Promise<K10Data> {
   const types = typesDeLOnglet(onglet);
-  const requete = types.length === 1 ? `?subjectType=${types[0] ?? ''}&limit=50` : '?limit=50';
 
   const [moi, enregistres] = await Promise.all([
     chargerBandeau(),
-    memberApi.get(`/me/bookmarks${requete}`, bookmarksResponseSchema),
+    memberApi.get(`/me/bookmarks${requeteEnregistres(onglet)}`, bookmarksResponseSchema),
   ]);
-
-  const retenues =
-    types.length > 1 ? enregistres.items.filter((b) => types.includes(b.subjectType)) : enregistres.items;
 
   /**
    * LE COMPTE AFFICHÉ SUIT L'ONGLET. « 14 enregistrés » sous le titre d'un
@@ -1366,30 +1525,60 @@ export async function chargerK10(
     moi,
     compte: `${totalOnglet} enregistré${totalOnglet > 1 ? 's' : ''}`,
     onglets: ongletsEnregistres(onglet, enregistres.meta.parType, onChoisir),
-    vide: retenues.length === 0,
-    lignes: retenues.map((b) => {
-      const teinte = TEINTE_ETAT[b.state];
-      return {
-        cle: `${b.subjectType}:${b.subjectId}`,
-        icone: ICONE_PAR_TYPE[b.subjectType],
-        titre: b.title,
-        etat: ETAT_ENREGISTRE[b.state],
-        etatFond: teinte.fond,
-        etatTexte: teinte.texte,
-        opacite: teinte.opacite,
-        depuis: `enregistré ${depuisQuand(b.createdAt)}`,
-        /**
-         * LE CONTENU RETIRÉ N'A PLUS D'ADRESSE. Le serveur compose `href` à
-         * partir de la source, et la ligne reste dans la liste après sa
-         * disparition — c'est tout le sens de l'état `REMOVED`. Un lien mort
-         * vaudrait moins qu'un titre nu.
-         */
-        href: b.state === 'REMOVED' ? '' : (b.href ?? ''),
-        /** Attaché par l'écran vivant, qui seul sait recharger après le retrait. */
-        onRetirer: () => undefined,
-      };
-    }),
+    vide: enregistres.items.length === 0,
+    lignes: enregistres.items.map(ligneEnregistree),
+    suite: enregistres.nextCursor,
+    totalOnglet,
   };
+}
+
+/**
+ * LE FILTRE D'ONGLET PART AU SERVEUR, même pour « Annonces » (trois types) : `subjectTypes=` (lot S3A).
+ * Filtrer la page reçue montrerait un onglet maigre — voire vide — avec un « Voir plus » trompeur.
+ */
+function requeteEnregistres(onglet: string): string {
+  const types = typesDeLOnglet(onglet);
+  if (types.length === 0) return '?limit=20';
+  return types.length === 1
+    ? `?subjectType=${types[0] ?? ''}&limit=20`
+    : `?subjectTypes=${types.join(',')}&limit=20`;
+}
+
+function ligneEnregistree(b: BookmarksResponse['items'][number]): LigneEnregistree {
+  const teinte = TEINTE_ETAT[b.state];
+  return {
+    cle: `${b.subjectType}:${b.subjectId}`,
+    icone: ICONE_PAR_TYPE[b.subjectType],
+    titre: b.title,
+    etat: ETAT_ENREGISTRE[b.state],
+    etatFond: teinte.fond,
+    etatTexte: teinte.texte,
+    opacite: teinte.opacite,
+    depuis: `enregistré ${depuisQuand(b.createdAt)}`,
+    /**
+     * LE CONTENU RETIRÉ N'A PLUS D'ADRESSE. Le serveur compose `href` à
+     * partir de la source, et la ligne reste dans la liste après sa
+     * disparition — c'est tout le sens de l'état `REMOVED`. Un lien mort
+     * vaudrait moins qu'un titre nu.
+     */
+    href: b.state === 'REMOVED' ? '' : (b.href ?? ''),
+    /** Attaché par l'écran vivant, qui seul sait recharger après le retrait. */
+    onRetirer: () => undefined,
+  };
+}
+
+/** « Voir plus » sous « Enregistrés » (lot S3A) : la page suivante, avec le même onglet. */
+export async function chargerEnregistresSuivants(
+  onglet: string,
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly LigneEnregistree[]; readonly nextCursor: string | null }> {
+  const page = await memberApi.get(
+    `/me/bookmarks${requeteEnregistres(onglet)}&cursor=${encodeURIComponent(curseur)}`,
+    bookmarksResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map(ligneEnregistree), nextCursor: page.nextCursor };
 }
 
 /**

@@ -9,13 +9,14 @@ import Link from 'next/link';
 import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { RailSurvol } from '@/components/rail/survol';
 import { EtatVide } from '@/components/etat-vide';
+import { VoirPlus } from '@/components/voir-plus';
 import { LigneNotification } from '@/components/messagerie/notifications';
 import { ToutMarquerLu } from '@/components/messagerie/notifications';
 import { CompteurNonLues } from '@/components/messagerie/notifications';
 import type { X02Data } from './data';
 
 export function X02Desktop(props: X02Data) {
-  const { filtres, lignes, moi, nonLusTotal, onToutLire, toutLuBloque } = props;
+  const { filtres, lignes, moi, nonLusTotal, onToutLire, plusLignes, toutLuBloque } = props;
 
   return (
     <>
@@ -24,7 +25,7 @@ export function X02Desktop(props: X02Data) {
 <Fragment key={ftIndex}><Link href={ft.href} data-notif-filtre={ft.cle} aria-current={ft.actif ? "page" : undefined} style={{ padding: "8px 13px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", background: ft.fond, color: ft.texte, border: `1px solid ${ft.bord}`, textDecoration: "none" }}>{ft.libelle}</Link></Fragment>
 ))}</div><div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "8px", flexShrink: "0", display: "flex", flexDirection: "column", gap: "6px" }}>{(lignes ?? []).map((n, nIndex) => (
 <Fragment key={nIndex}><LigneNotification href={n.href ?? null} onOuvrir={n.onOuvrir ?? (() => undefined)} style={{ display: "flex", gap: "12px", alignItems: "center", padding: "12px 14px", borderRadius: "14px", background: n.fond }}><span style={{ width: "38px", height: "38px", borderRadius: "12px", background: n.fondIcone, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{n.glyphe ? (<><path d={n.glyphe} /></>) : null}</svg></span><div style={{ flex: "1", minWidth: "0", fontSize: "13.5px", lineHeight: "1.4" }}><strong>{n.titre}</strong>{n.corps}</div><span style={{ fontSize: "11.5px", color: "#8A958F", whiteSpace: "nowrap" }}>{n.quand}</span>{n.nonLu ? (<><span style={{ width: "8px", height: "8px", borderRadius: "999px", background: "#16785E" }}></span></>) : null}</LigneNotification></Fragment>
-))}{(lignes ?? []).length === 0 ? <EtatVide texte="Aucune notification pour le moment." /> : null}</div></main></div></div>
+))}{(lignes ?? []).length === 0 ? <EtatVide texte="Aucune notification pour le moment." /> : null}<VoirPlus plus={plusLignes} /></div></main></div></div>
     </>
   );
 }

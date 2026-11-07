@@ -95,6 +95,10 @@ export interface X02Data {
    * `?vue=panneau` fonctionne.
    */
   readonly filtres: readonly FiltreNotification[];
+  /** Le `nextCursor` de la première page (lot S3A) ; `null` quand tout tient sur une page. */
+  readonly suite?: string | null;
+  /** « Voir plus » sous la liste (lot S3A) — posé par `NotificationsVivantes`. */
+  readonly plusLignes?: import('@/components/voir-plus').PlusListe;
   /** `POST /notifications/read { all: true }` — posé par `NotificationsVivantes`. */
   readonly onToutLire?: () => void;
   /** Vrai quand tout est déjà lu ou pendant l'appel : le bouton s'éteint. */

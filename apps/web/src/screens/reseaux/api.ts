@@ -165,7 +165,12 @@ export interface CommunityFilters {
   readonly category?: string;
   readonly cityId?: string;
   readonly q?: string;
+  /** La page suivante de la DÉCOUVERTE (`discover.nextCursor`). */
   readonly cursor?: string;
+  /** (lot S3A) « Mes réseaux » paginé : taille de page. Absent, tous les réseaux du membre. */
+  readonly mineLimit?: string;
+  /** (lot S3A) La page suivante de « Mes réseaux » (`mineNextCursor`) ; la découverte n'est pas relue. */
+  readonly mineCursor?: string;
 }
 
 // ── A07 · mes réseaux, la découverte, le seuil de création ─────────────────

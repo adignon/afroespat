@@ -43,7 +43,7 @@ import type {
   M01Data,
   RangeeConversation,
 } from '../m01/data';
-import type { ValeursFiltresRecherche, X01Data } from '../x01/data';
+import type { ResultatRecherche, ValeursFiltresRecherche, X01Data } from '../x01/data';
 import { FILTRES_VIDES } from '../x01/filtres';
 import {
   glypheDe,
@@ -779,7 +779,31 @@ export async function chargerX01(
     vide: videDe(groupes, q, resultats),
     filtresAvances: filtres,
     typeActif: typeRetenu,
+    // « Voir plus » (lot S3A) : seule la liste d'UN type est paginée ; la forme groupée est un aperçu.
+    suite: plats?.nextCursor ?? null,
   };
+}
+
+/**
+ * « Voir plus » sous les résultats d'un type (lot S3A) : la page suivante de `GET /search?q=&type=`,
+ * avec les mêmes filtres. Le curseur du serveur est lié à la requête : changer de filtre en gardant
+ * l'ancien curseur est refusé, et l'écran abandonne de toute façon les pages ajoutées.
+ */
+export async function chargerResultatsSuivants(
+  q: string,
+  type: string,
+  filtres: ValeursFiltresRecherche,
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly ResultatRecherche[]; readonly nextCursor: string | null }> {
+  const filtre = searchSubjectTypeSchema.safeParse(type);
+  if (!filtre.success) return { items: [], nextCursor: null };
+  const page = await memberApi.get(
+    `/search?q=${encodeURIComponent(q)}&type=${filtre.data}${filtresEnRequete(filtres)}&cursor=${encodeURIComponent(curseur)}`,
+    typedSearchResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: cartesPlates(page, filtre.data), nextCursor: page.nextCursor };
 }
 
 /**
@@ -886,27 +910,44 @@ export function filtresNotifications(choisi: string): readonly FiltreNotificatio
   });
 }
 
+/** Le filtre serveur d'une pastille : les catégories de la pastille, séparées par des virgules. */
+function requeteNotifications(filtre: string): string {
+  const categories = CATEGORIES_DU_FILTRE[filtre] ?? [];
+  return categories.length === 0 ? '?limit=20' : `?categories=${categories.join(',')}&limit=20`;
+}
+
 export async function chargerX02(filtre: string = '*'): Promise<X02Data> {
   const categories = CATEGORIES_DU_FILTRE[filtre] ?? [];
-  const requete =
-    categories.length === 1 ? `?category=${categories[0] ?? ''}&limit=50` : '?limit=50';
 
   const [me, page] = await Promise.all([
     fetchMe(),
-    memberApi.get(`/notifications${requete}`, notificationsResponseSchema),
+    memberApi.get(`/notifications${requeteNotifications(filtre)}`, notificationsResponseSchema),
   ]);
-
-  const retenues =
-    categories.length > 1
-      ? page.items.filter((n) => categories.includes(n.category))
-      : page.items;
 
   return {
     moi: barreHauteDe(me),
-    lignes: retenues.map(ligneDe),
+    lignes: page.items.map(ligneDe),
     nonLusTotal: page.meta.unread,
     filtres: filtresNotifications(categories.length === 0 ? '*' : filtre),
+    suite: page.nextCursor,
   };
+}
+
+/**
+ * « Voir plus » sous les notifications (lot S3A) : la page suivante, avec le MÊME filtre de
+ * catégories — le filtre part au serveur, il ne s'applique pas à la page reçue.
+ */
+export async function chargerNotificationsSuivantes(
+  filtre: string,
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly LigneNotification[]; readonly nextCursor: string | null }> {
+  const page = await memberApi.get(
+    `/notifications${requeteNotifications(filtre)}&cursor=${encodeURIComponent(curseur)}`,
+    notificationsResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map(ligneDe), nextCursor: page.nextCursor };
 }
 
 /** « 1er octobre » — le `1er` que `Intl` écrit « 1 », corrigé comme la maquette l'écrit. */
