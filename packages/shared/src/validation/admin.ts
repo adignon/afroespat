@@ -760,8 +760,20 @@ export const IMPACT_METRICS = {
  * que la distinction est juste : ici on valide la forme, là-bas on exige le
  * contenu dont l'écran dépend.
  */
+/** `GET /admin/dashboard?period=` : « current » (défaut) ou les chiffres arrêtés il y a 7, 30 ou 90 jours. */
+export const DASHBOARD_PERIODS = ['current', '7d', '30d', '90d'] as const;
+export type DashboardPeriod = (typeof DASHBOARD_PERIODS)[number];
+export const DASHBOARD_PERIOD_DAYS: Readonly<Record<DashboardPeriod, number | null>> = { current: null, '7d': 7, '30d': 30, '90d': 90 };
+export const adminDashboardQuerySchema = z.object({ period: z.enum(DASHBOARD_PERIODS).default('current') }).strict();
+export type AdminDashboardQuery = z.infer<typeof adminDashboardQuerySchema>;
+
 export const adminDashboardResponseSchema = z
-  .object({ blocks: z.record(z.array(metricPointSchema)) })
+  .object({
+    blocks: z.record(z.array(metricPointSchema)),
+    /** La période demandée, et la date à laquelle les chiffres sont arrêtés (nulle pour « current »). */
+    period: z.enum(['current', '7d', '30d', '90d']).optional(),
+    asOf: z.string().datetime().nullable().optional(),
+  })
   .strict();
 export type AdminDashboardResponse = z.infer<typeof adminDashboardResponseSchema>;
 
@@ -1122,6 +1134,33 @@ export const adminMemberConsentSchema = z
   })
   .strict();
 
+export const adminMemberSanctionSchema = z
+  .object({
+    id: z.string().uuid(),
+    type: z.enum(['WARNING', 'SUSPENSION', 'BAN']),
+    reason: z.string(),
+    startsAt: z.string().datetime(),
+    endsAt: z.string().datetime().nullable(),
+    liftedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type AdminMemberSanction = z.infer<typeof adminMemberSanctionSchema>;
+
+export const adminMemberCountsSchema = z
+  .object({
+    posts: z.number().int(),
+    comments: z.number().int(),
+    helpRequests: z.number().int(),
+    helpResponses: z.number().int(),
+    guides: z.number().int(),
+    reportsMade: z.number().int(),
+    moderationCases: z.number().int(),
+    openModerationCases: z.number().int(),
+    reportedMessages: z.number().int(),
+  })
+  .strict();
+export type AdminMemberCounts = z.infer<typeof adminMemberCountsSchema>;
+
 /**
  * La fiche membre complète — `GET /v1/admin/users/:id` (§3.1).
  *
@@ -1167,12 +1206,15 @@ export const adminMemberDetailSchema = z
     consents: z.array(adminMemberConsentSchema),
     /** Relevés VIDES : seule leur longueur est lue, donc seule elle est promise. */
     kycVerifications: z.array(z.unknown()),
-    sanctions: z.array(z.unknown()),
+    /** Sanctions, les plus récentes d'abord ; `liftedAt` posé = levée ; `endsAt` nul = définitive (bannissement). */
+    sanctions: z.array(adminMemberSanctionSchema),
     dataExports: z.array(z.unknown()),
     deletionRequests: z.array(z.unknown()),
     activeSessions: z.array(z.unknown()),
     moderationCases: z.array(z.unknown()),
     stats: z.unknown(),
+    /** Compteurs de la fiche (publications, demandes, messages signalés…). Nombres seuls. */
+    counts: adminMemberCountsSchema.optional(),
     /** Notes internes (15 §3.2), visibles de l'équipe seulement. Ajout du lot « administration ». */
     notes: z
       .array(

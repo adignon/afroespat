@@ -3,6 +3,9 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { z } from 'zod';
 import {
   ADMIN_CONTENT_AUDIT_ACTIONS,
+  DASHBOARD_PERIOD_DAYS,
+  adminDashboardQuerySchema,
+  type AdminDashboardQuery,
   STAFF_SCOPES,
   impactQuarterQuerySchema,
   impactQuoteApproveSchema,
@@ -82,12 +85,16 @@ export class AnalyticsAdminController {
   @Get('dashboard')
   @RequiresStaffRole(...STAFF_ALL)
   @ApiOperation({ summary: 'Tableau de bord principal — derniers instantanés de chaque bloc (§5.1)' })
-  async dashboard() {
+  async dashboard(@Query(zodPipe(adminDashboardQuerySchema)) query: AdminDashboardQuery) {
+    // Période : « current » = les derniers instantanés ; « 7d », « 30d », « 90d » = les chiffres tels qu'ils étaient
+    // il y a ce nombre de jours (le dernier instantané connu à cette date). Un instantané plus récent n'est jamais mêlé.
+    const days = DASHBOARD_PERIOD_DAYS[query.period];
+    const asOf = days === null ? undefined : new Date(Date.now() - days * 86_400_000);
     const blocks: Record<string, unknown> = {};
     for (const [name, metrics] of Object.entries(DASHBOARD_BLOCKS)) {
-      blocks[name] = await this.analytics.latest(metrics);
+      blocks[name] = await this.analytics.latest(metrics, asOf);
     }
-    return { blocks };
+    return { blocks, period: query.period, asOf: asOf === undefined ? null : asOf.toISOString() };
   }
 
   /**
