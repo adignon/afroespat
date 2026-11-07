@@ -1177,28 +1177,67 @@ export class JourneysService {
     // `ORDER BY` : il dépend de mon propre avancement. On prend donc une réserve
     // bornée, et on classe en mémoire. `take` reste borné pour qu'une base pleine
     // de parcours publics ne charge pas la table.
+    const select = {
+      id: true,
+      status: true,
+      progressPct: true,
+      currentStepId: true,
+      destinationCityId: true,
+      originCountryId: true,
+      lastActivityAt: true,
+      owner: { select: MEMBER_USER_SELECT },
+      templateVersion: { select: { template: { select: { code: true, nameFr: true, icon: true } } } },
+      destinationCity: { select: { id: true, name: true } },
+      originCountry: { select: { id: true, iso2: true, nameFr: true } },
+      steps: {
+        where: { status: 'DONE' },
+        orderBy: { position: 'asc' },
+        select: { id: true, title: true, position: true, durationDays: true, completedAt: true },
+      },
+    } satisfies Prisma.JourneySelect;
+
+    /**
+     * LE PROFIL D'UN MEMBRE (`authorHandle`, lot S3A) : la question n'est plus « que découvrir ? » mais
+     * « qu'a publié cette personne ? ». Pas de classement par proximité avec MON parcours — il n'a pas
+     * de sens ici et n'est pas un `ORDER BY` — mais un ordre TOTAL (activité décroissante, identifiant
+     * en départage) et un curseur, pour que « Voir plus » ne saute ni ne répète aucune ligne.
+     */
+    if (query.authorHandle !== undefined) {
+      const scope = `journeys-public:${query.authorHandle}`;
+      const after =
+        query.cursor === undefined ? null : decodeCursor(query.cursor, this.cursorSecret, scope);
+      const at = after === null ? null : new Date(String(after.sort));
+      if (after !== null && (at === null || Number.isNaN(at.getTime()))) {
+        throw ApiError.validation([{ path: 'cursor', code: 'MALFORMED' }]);
+      }
+      const page = buildPage(
+        await this.prisma.journey.findMany({
+          where: {
+            AND: [
+              ...conditions,
+              ...(after === null || at === null
+                ? []
+                : [{ OR: [{ lastActivityAt: { lt: at } }, { lastActivityAt: at, id: { lt: after.id } }] }]),
+            ],
+          },
+          orderBy: [{ lastActivityAt: 'desc' }, { id: 'desc' }],
+          take: query.limit + 1,
+          select,
+        }),
+        query.limit,
+        scope,
+        this.cursorSecret,
+        (row) => row.lastActivityAt.toISOString(),
+      );
+      return { items: page.items.map((row) => this.publicView(row)), nextCursor: page.nextCursor, meta: this.meta() };
+    }
+    if (query.cursor !== undefined) throw ApiError.validation([{ path: 'cursor', code: 'NOT_PAGINATED' }]);
+
     const rows = await this.prisma.journey.findMany({
       where: { AND: conditions },
       orderBy: [{ lastActivityAt: 'desc' }, { id: 'desc' }],
       take: Math.min(query.limit * 8, PUBLIC_JOURNEYS_MAX_LIMIT * 8),
-      select: {
-        id: true,
-        status: true,
-        progressPct: true,
-        currentStepId: true,
-        destinationCityId: true,
-        originCountryId: true,
-        lastActivityAt: true,
-        owner: { select: MEMBER_USER_SELECT },
-        templateVersion: { select: { template: { select: { code: true, nameFr: true, icon: true } } } },
-        destinationCity: { select: { id: true, name: true } },
-        originCountry: { select: { id: true, iso2: true, nameFr: true } },
-        steps: {
-          where: { status: 'DONE' },
-          orderBy: { position: 'asc' },
-          select: { id: true, title: true, position: true, durationDays: true, completedAt: true },
-        },
-      },
+      select,
     });
 
     // Mon parcours de référence : il donne le type à mettre en avant (« même
@@ -1233,7 +1272,7 @@ export class JourneysService {
       .slice(0, query.limit)
       .map(({ row }) => this.publicView(row));
 
-    return { items: scored, meta: this.meta() };
+    return { items: scored, nextCursor: null, meta: this.meta() };
   }
 
   /**
