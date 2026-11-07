@@ -304,6 +304,13 @@ describe('référentiels, administration (02 §4.2)', () => {
       // perdu leurs sujets et leurs annonces.
       expect(await prisma.community.count({ where: { kind: 'CITY', cityId: id } })).toBe(1);
     });
+
+    it('créer et modifier une ville émettent city.created et city.updated (consommés par la recherche)', async () => {
+      const id = await city();
+      expect(await prisma.domainEvent.count({ where: { type: 'city.created', aggregateId: id } })).toBe(1);
+      await ref.updateCity(staff, id, { name: `Renommée ${run}` });
+      expect(await prisma.domainEvent.count({ where: { type: 'city.updated', aggregateId: id } })).toBe(1);
+    });
   });
 
   /**

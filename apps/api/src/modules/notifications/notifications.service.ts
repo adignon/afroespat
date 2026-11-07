@@ -34,6 +34,7 @@ import { ApiError } from '../../common/api-error';
 import { buildPage, decodeCursor } from '../../common/cursor';
 import { PrismaService } from '../../common/prisma.service';
 import { loadEnv } from '../../config/env';
+import { ProviderError } from '../../providers/http';
 import { vapidPublicKeyFor } from '../../providers/webpush.provider';
 import { EMAIL_PROVIDER, PUSH_PROVIDER, type EmailProvider, type PushProvider } from '../../providers/providers';
 import { RealtimeRelayService } from '../realtime/realtime.relay';
@@ -188,6 +189,31 @@ interface PreferenceState {
   readonly quietHours: QuietHours | null;
 }
 
+/**
+ * Statuts de compte qui ne reçoivent plus RIEN (ni in-app, ni push, ni e-mail, ni résumé).
+ * `SUSPENDED` et `DELETION_PENDING` restent joignables : la sanction et l'annulation de la
+ * suppression passent par ces canaux.
+ */
+const UNREACHABLE_STATUSES: readonly string[] = ['DEACTIVATED', 'DELETED'];
+
+/** Un envoi en file depuis plus longtemps est relancé ; au-delà de l'âge maximal il est abandonné. */
+export const OUTBOUND_STALE_AFTER_MINUTES = 15;
+export const OUTBOUND_STALE_MAX_AGE_HOURS = 24;
+const DIGEST_PAGE_SIZE = 500;
+const REQUEUE_PAGE_SIZE = 200;
+
+/** Panne transitoire du service push : lève pour que la file rejoue (repli exponentiel borné). */
+export class PushTransientError extends Error {
+  constructor(readonly failed: number) {
+    super(`push : panne transitoire sur ${failed} abonnement(s)`);
+    this.name = 'PushTransientError';
+  }
+}
+
+function isUnreachable(user: { status: string; deletedAt: Date | null } | null): boolean {
+  return user === null || user.deletedAt !== null || UNREACHABLE_STATUSES.includes(user.status);
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -227,7 +253,7 @@ export class NotificationsService {
     // d'une livraison « au moins une fois » retardée. Lever ici ferait échouer
     // dix tentatives sur une clé étrangère — un agent l'a trouvé ainsi sur un
     // autre module, et c'est exactement ce qu'on évite.
-    if (user === null || user.deletedAt !== null || user.status === 'DELETED') {
+    if (isUnreachable(user) || user === null) {
       return { outcome: 'SKIPPED', notificationId: null, channels: [] };
     }
 
@@ -503,6 +529,13 @@ export class NotificationsService {
    * le membre a pu se désabonner ou supprimer son adresse.
    */
   async sendEmail(job: OutboundEmailJob): Promise<'SENT' | 'FAILED'> {
+    if (!(await this.isReachable(job.userId))) {
+      await this.prisma.outboundMessage.updateMany({
+        where: { id: job.outboundId },
+        data: { status: 'FAILED', error: 'ACCOUNT_INACTIVE' },
+      });
+      return 'FAILED';
+    }
     const to = await this.addresses.resolve(job.userId);
     if (to === null) {
       await this.prisma.outboundMessage.update({
@@ -541,7 +574,20 @@ export class NotificationsService {
    * remis à zéro par un succès — sinon un abonnement vivant finirait supprimé au
    * bout de cinq coupures réseau étalées sur un an.
    */
-  async sendPush(job: OutboundPushJob): Promise<{ delivered: number; removed: number }> {
+  async sendPush(
+    job: OutboundPushJob,
+    options: { finalAttempt?: boolean } = {},
+  ): Promise<{ delivered: number; removed: number }> {
+    const finalAttempt = options.finalAttempt ?? true;
+
+    if (!(await this.isReachable(job.userId))) {
+      await this.prisma.outboundMessage.updateMany({
+        where: { id: job.outboundId },
+        data: { status: 'FAILED', error: 'ACCOUNT_INACTIVE' },
+      });
+      return { delivered: 0, removed: 0 };
+    }
+
     const subscriptions = await this.prisma.pushSubscription.findMany({
       where: { userId: job.userId },
       select: { id: true, endpoint: true, p256dh: true, auth: true, failureCount: true },
@@ -549,6 +595,21 @@ export class NotificationsService {
 
     let delivered = 0;
     let removed = 0;
+    /** Pannes que la file peut guérir : réseau, délai, 429, 5xx. */
+    const transient: { id: string; failureCount: number }[] = [];
+
+    const recordFailure = async (sub: { id: string; failureCount: number }): Promise<void> => {
+      const failures = sub.failureCount + 1;
+      if (failures >= PUSH_MAX_FAILURES) {
+        await this.prisma.pushSubscription.delete({ where: { id: sub.id } });
+        removed += 1;
+      } else {
+        await this.prisma.pushSubscription.update({
+          where: { id: sub.id },
+          data: { failureCount: failures },
+        });
+      }
+    };
 
     for (const sub of subscriptions) {
       try {
@@ -564,25 +625,28 @@ export class NotificationsService {
           removed += 1;
           continue;
         }
-        if (!result.delivered) throw new Error('non délivré');
+        if (!result.delivered) throw new ProviderError('push', 400, 'non délivré', false);
         delivered += 1;
         await this.prisma.pushSubscription.update({
           where: { id: sub.id },
           data: { lastSuccessAt: new Date(), failureCount: 0 },
         });
-      } catch {
-        const failures = sub.failureCount + 1;
-        if (failures >= PUSH_MAX_FAILURES) {
-          await this.prisma.pushSubscription.delete({ where: { id: sub.id } });
-          removed += 1;
-        } else {
-          await this.prisma.pushSubscription.update({
-            where: { id: sub.id },
-            data: { failureCount: failures },
-          });
-        }
+      } catch (error) {
+        // Un 4xx définitif (hors 404/410, traités plus haut) ne se rejoue pas : il compte
+        // contre l'abonnement. Une panne transitoire (ou une erreur inconnue) est rejouée.
+        const definitive = error instanceof ProviderError && !error.retryable;
+        if (definitive) await recordFailure(sub);
+        else transient.push(sub);
       }
     }
+
+    // Rejouer seulement si RIEN n'est parti : rejouer après un succès partiel enverrait un
+    // doublon aux appareils déjà servis. Tant que la file rejoue, ni compteur d'échecs ni
+    // statut final : la ligne reste « en file ».
+    if (transient.length > 0 && delivered === 0 && !finalAttempt) {
+      throw new PushTransientError(transient.length);
+    }
+    for (const sub of transient) await recordFailure(sub);
 
     await this.prisma.outboundMessage.update({
       where: { id: job.outboundId },
@@ -593,6 +657,15 @@ export class NotificationsService {
     });
 
     return { delivered, removed };
+  }
+
+  /** Le compte peut-il encore recevoir quelque chose ? (ni désactivé, ni supprimé) */
+  private async isReachable(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { status: true, deletedAt: true },
+    });
+    return !isUnreachable(user);
   }
 
   // ══ Lecture in-app (§2.7 et §4) ═══════════════════════════════════════════
@@ -1004,7 +1077,7 @@ export class NotificationsService {
     curseur = pending[pending.length - 1]?.id ?? curseur;
 
     for (const row of pending) {
-      if (row.user.deletedAt !== null || row.user.status === 'DELETED') continue;
+      if (isUnreachable(row.user)) continue;
       const prefs = await this.preferenceState(row.userId);
       if (
         prefs.quietHours !== null &&
@@ -1075,56 +1148,196 @@ export class NotificationsService {
    * colonne vide pour `DIGEST`. Sa seule trace est `outbound_messages`, ce qui
    * sert aussi de dé-duplication : un membre déjà servi cette semaine est ignoré.
    */
-  async weeklyDigest(now = new Date()): Promise<{ sent: number; skipped: number }> {
-    const candidates = await this.prisma.user.findMany({
-      where: {
-        status: 'ACTIVE',
-        deletedAt: null,
-        // `notIn` sur une colonne NULLABLE élimine aussi les `NULL`. Ici la
-        // relation est optionnelle, donc l'absence de ligne de préférences doit
-        // valoir « résumé activé » (défaut oui, §2.6) : d'où le `OR`.
-        OR: [{ notificationPreferences: null }, { notificationPreferences: { weeklyDigest: true } }],
-      },
-      select: { id: true, timezone: true, cityId: true },
-      take: 2_000,
-    });
-
+  async weeklyDigest(
+    now = new Date(),
+    options: { pageSize?: number } = {},
+  ): Promise<{ sent: number; skipped: number }> {
+    const pageSize = options.pageSize ?? DIGEST_PAGE_SIZE;
     let sent = 0;
     let skipped = 0;
     const weekStart = new Date(now.getTime() - 7 * 86_400_000);
 
-    for (const user of candidates) {
-      if (!this.isDigestHour(now, user.timezone)) {
-        skipped += 1;
-        continue;
-      }
-
-      const already = await this.prisma.outboundMessage.findFirst({
-        where: { userId: user.id, template: 'weekly_digest', createdAt: { gte: weekStart } },
-        select: { id: true },
+    // PAR PAGES (curseur sur `id`), jamais toute la table en mémoire. Les destinataires sont
+    // filtrés en base : compte ACTIF, adresse VÉRIFIÉE (sans quoi l'envoi échouerait en
+    // NO_EMAIL_ADDRESS après avoir écrit une ligne), résumé non coupé.
+    let after = '';
+    for (;;) {
+      const candidates = await this.prisma.user.findMany({
+        where: {
+          status: 'ACTIVE',
+          deletedAt: null,
+          emailEncrypted: { not: null },
+          emailVerifiedAt: { not: null },
+          ...(after === '' ? {} : { id: { gt: after } }),
+          // `notIn` sur une colonne NULLABLE élimine aussi les `NULL`. Ici la
+          // relation est optionnelle, donc l'absence de ligne de préférences doit
+          // valoir « résumé activé » (défaut oui, §2.6) : d'où le `OR`.
+          OR: [{ notificationPreferences: null }, { notificationPreferences: { weeklyDigest: true } }],
+        },
+        select: { id: true, timezone: true, cityId: true },
+        orderBy: { id: 'asc' },
+        take: pageSize,
       });
-      if (already !== null) {
-        skipped += 1;
-        continue;
-      }
+      if (candidates.length === 0) break;
+      after = candidates[candidates.length - 1]?.id ?? after;
 
-      const content = await this.digestContent(user.id, user.cityId, now);
-      if (!content.hasSomethingToSay) {
-        skipped += 1;
-        continue;
-      }
+      for (const user of candidates) {
+        if (!this.isDigestHour(now, user.timezone)) {
+          skipped += 1;
+          continue;
+        }
 
-      const outboundId = newId();
-      await this.prisma.outboundMessage.create({
-        data: { id: outboundId, channel: 'EMAIL', userId: user.id, template: 'weekly_digest', status: 'QUEUED' },
-      });
-      await this.enqueue({
-        email: { outboundId, userId: user.id, template: 'weekly_digest', variables: { ...content } },
-      });
-      sent += 1;
+        const already = await this.prisma.outboundMessage.findFirst({
+          where: { userId: user.id, template: 'weekly_digest', createdAt: { gte: weekStart } },
+          select: { id: true },
+        });
+        if (already !== null) {
+          skipped += 1;
+          continue;
+        }
+
+        const content = await this.digestContent(user.id, user.cityId, now);
+        if (!content.hasSomethingToSay) {
+          skipped += 1;
+          continue;
+        }
+
+        const outboundId = newId();
+        await this.prisma.outboundMessage.create({
+          data: { id: outboundId, channel: 'EMAIL', userId: user.id, template: 'weekly_digest', status: 'QUEUED' },
+        });
+        await this.enqueue({
+          email: { outboundId, userId: user.id, template: 'weekly_digest', variables: { ...content } },
+        });
+        sent += 1;
+      }
+      if (candidates.length < pageSize) break;
     }
 
     return { sent, skipped };
+  }
+
+  /**
+   * `notifications.requeue_stale` — relance des envois restés « en file ».
+   *
+   * Une ligne `QUEUED` plus vieille que `staleAfterMinutes` n'a jamais été traitée : la mise
+   * en file a échoué après le COMMIT (Redis indisponible), ou le travail s'est perdu. Le
+   * schéma n'a pas de colonne de charge utile : elle est RECOMPOSÉE depuis la notification
+   * d'origine (push, e-mail) ou recalculée (résumé). Ce qui ne peut pas l'être, un compte
+   * devenu inactif ou une ligne plus vieille que `maxAgeHours` passent en `FAILED` avec
+   * un motif — c'est ce qui borne la relance, sans compteur de tentatives. `jobId` par
+   * envoi : un travail encore présent dans la file n'est pas dupliqué.
+   */
+  async requeueStale(
+    now = new Date(),
+    options: { staleAfterMinutes?: number; maxAgeHours?: number } = {},
+  ): Promise<{ requeued: number; failed: number }> {
+    const staleBefore = new Date(
+      now.getTime() - (options.staleAfterMinutes ?? OUTBOUND_STALE_AFTER_MINUTES) * 60_000,
+    );
+    const tooOld = new Date(
+      now.getTime() - (options.maxAgeHours ?? OUTBOUND_STALE_MAX_AGE_HOURS) * 3_600_000,
+    );
+    let requeued = 0;
+    let failed = 0;
+    const fail = async (id: string, error: string): Promise<void> => {
+      await this.prisma.outboundMessage.updateMany({ where: { id, status: 'QUEUED' }, data: { status: 'FAILED', error } });
+      failed += 1;
+    };
+
+    let after = '';
+    for (let page = 0; page < 50; page += 1) {
+      const rows = await this.prisma.outboundMessage.findMany({
+        where: {
+          status: 'QUEUED',
+          createdAt: { lt: staleBefore },
+          ...(after === '' ? {} : { id: { gt: after } }),
+        },
+        orderBy: { id: 'asc' },
+        take: REQUEUE_PAGE_SIZE,
+      });
+      if (rows.length === 0) break;
+      after = rows[rows.length - 1]?.id ?? after;
+
+      for (const row of rows) {
+        if (row.createdAt < tooOld) {
+          await fail(row.id, 'STALE_EXPIRED');
+          continue;
+        }
+        if (row.userId === null || !(await this.isReachable(row.userId))) {
+          await fail(row.id, 'ACCOUNT_INACTIVE');
+          continue;
+        }
+        if (this.queue === null) continue;
+
+        try {
+          if (row.channel === 'PUSH') {
+            const n = await this.originalNotification(row.userId, row.template, row.createdAt);
+            if (n === null) {
+              await fail(row.id, 'STALE_NOT_RECOVERABLE');
+              continue;
+            }
+            await this.queue.enqueuePush({
+              outboundId: row.id,
+              userId: row.userId,
+              title: n.title,
+              body: (n.body ?? '').slice(0, PUSH_BODY_MAX),
+              ...(n.url === null ? {} : { url: n.url }),
+            });
+          } else if (row.channel === 'EMAIL') {
+            if (!(await this.addresses.has(row.userId))) {
+              await fail(row.id, 'NO_EMAIL_ADDRESS');
+              continue;
+            }
+            const template = row.template as EmailTemplate;
+            let variables: Record<string, unknown>;
+            if (row.template === 'weekly_digest') {
+              const user = await this.prisma.user.findUnique({
+                where: { id: row.userId },
+                select: { cityId: true },
+              });
+              const content = await this.digestContent(row.userId, user?.cityId ?? null, now);
+              if (!content.hasSomethingToSay) {
+                await fail(row.id, 'STALE_NOT_RECOVERABLE');
+                continue;
+              }
+              variables = { ...content };
+            } else {
+              const n = await this.originalNotification(row.userId, undefined, row.createdAt);
+              if (n === null) {
+                await fail(row.id, 'STALE_NOT_RECOVERABLE');
+                continue;
+              }
+              variables = { title: n.title, ...(n.body === null ? {} : { body: n.body }) };
+            }
+            await this.queue.enqueueEmail({ outboundId: row.id, userId: row.userId, template, variables });
+          } else {
+            await fail(row.id, 'STALE_NOT_RECOVERABLE');
+            continue;
+          }
+          requeued += 1;
+        } catch (error) {
+          this.logger.error(
+            `relance impossible ${row.id} : ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+      if (rows.length < REQUEUE_PAGE_SIZE) break;
+    }
+    return { requeued, failed };
+  }
+
+  /** La notification dont un envoi découle : la plus proche, juste avant la ligne sortante. */
+  private async originalNotification(userId: string, type: string | undefined, around: Date) {
+    return this.prisma.notification.findFirst({
+      where: {
+        userId,
+        ...(type === undefined ? {} : { type }),
+        createdAt: { gte: new Date(around.getTime() - 3 * 86_400_000), lte: new Date(around.getTime() + 60_000) },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { title: true, body: true, url: true },
+    });
   }
 
   private isDigestHour(now: Date, timezone: string): boolean {
@@ -1159,7 +1372,18 @@ export class NotificationsService {
       cityId === null
         ? Promise.resolve([])
         : this.prisma.event.findMany({
-            where: { cityId, status: 'SCHEDULED', startsAt: { gte: now, lt: weekAhead } },
+            where: {
+              cityId,
+              status: 'SCHEDULED',
+              deletedAt: null,
+              startsAt: { gte: now, lt: weekAhead },
+              // « Null = public ; sinon réservé aux membres du réseau » : un événement d'un
+              // réseau dont le destinataire n'est pas membre ACTIF n'a rien à faire dans son résumé.
+              OR: [
+                { communityId: null },
+                { community: { members: { some: { userId, status: 'ACTIVE' } } } },
+              ],
+            },
             select: { id: true, title: true, startsAt: true },
             orderBy: { startsAt: 'asc' },
             take: 5,

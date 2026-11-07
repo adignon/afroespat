@@ -849,7 +849,13 @@ export function registerSearchSubscriptions(
 
   // Villes : le document CITY suit `isActive` (readSource) ; une fusion retire la
   // ville absorbée et réindexe la cible.
-  for (const type of ['city.activated', 'city.deactivated', 'city.merged'] as const) {
+  for (const type of [
+    'city.created',
+    'city.updated',
+    'city.activated',
+    'city.deactivated',
+    'city.merged',
+  ] as const) {
     registry.on(type, 'search', async (job) => {
       await search.enqueueReindex('CITY', job.aggregateId);
       if (type === 'city.merged') {

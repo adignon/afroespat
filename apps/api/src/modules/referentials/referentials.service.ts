@@ -510,6 +510,11 @@ export class ReferentialsService {
           ...(input.postalPrefix === undefined ? {} : { postalPrefix: input.postalPrefix }),
         },
       });
+      await this.outbox.emit(tx, {
+        type: 'city.created',
+        aggregateId: id,
+        payload: { cityId: id, slug: input.slug, byStaffId: staff.staffId },
+      });
     });
     return { id, ...input, isActive: false };
   }
@@ -532,6 +537,11 @@ export class ReferentialsService {
           ...(input.latitude === undefined ? {} : { latitude: new Prisma.Decimal(input.latitude) }),
           ...(input.longitude === undefined ? {} : { longitude: new Prisma.Decimal(input.longitude) }),
         },
+      });
+      await this.outbox.emit(tx, {
+        type: 'city.updated',
+        aggregateId: id,
+        payload: { cityId: id, byStaffId: staff.staffId },
       });
     });
     return { id };

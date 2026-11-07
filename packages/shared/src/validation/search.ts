@@ -228,6 +228,8 @@ export const zeroResultsQuerySchema = z.object({
   weeks: z.coerce.number().int().min(1).max(12).default(1),
   cityId: uuidSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
+  /** Curseur signé rendu par la page précédente. */
+  cursor: z.string().min(1).max(512).optional(),
 });
 
 // ── Textes (§2.4 et §4) ───────────────────────────────────────────────────────
@@ -505,6 +507,8 @@ export const searchZeroResultRowSchema = z
     query: z.string(),
     /** La somme des occurrences sur la fenêtre demandée. */
     count: z.number().int().nonnegative(),
+    /** Le nombre de personnes distinctes (route d'administration). */
+    seekers: z.number().int().nonnegative().optional(),
   })
   .strict();
 

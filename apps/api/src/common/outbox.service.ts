@@ -213,6 +213,9 @@ export type DomainEventType =
   // Fermeture d'une ville / d'un pays. Consommateurs à brancher : search (retirer les fiches de la
   // ville), communities. Émis par `ReferentialsService`.
   | 'city.deactivated'
+  // Création et modification d'une fiche ville (nom, région…) : consommateur search, qui relit la source.
+  | 'city.created'
+  | 'city.updated'
   | 'country.deactivated'
   // 07-reseaux.md §6. Consommateurs nommés : search et notifications pour la vie
   // du réseau, notifications et cities pour les adhésions.
