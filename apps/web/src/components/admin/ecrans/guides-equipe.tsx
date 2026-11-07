@@ -10,6 +10,7 @@ import {
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { useDroit } from '../session-equipe';
+import { Confirmation } from '../confirmation';
 import { Bouton, C, Carte, Etiquette, FenetreMotif, Interrupteur, Lecture, Message, Onglets, Pastille, Selecteur, Titre, Vide, dateCourte, useCharge, useGeste } from '../ui';
 
 /**
@@ -58,6 +59,8 @@ export function ContenuGuidesEquipe() {
     action.effacer();
     setGeste(g);
   };
+  /** Accepter une proposition ou changer « maintenu par la communauté » attendent une confirmation. */
+  const [aConfirmer, setAConfirmer] = useState<{ kind: 'accepter'; id: string } | { kind: 'maintenu'; id: string; valeur: boolean } | null>(null);
   const [versionId, setVersionId] = useState('');
   const versions = useCharge(
     () => (geste?.kind === 'retour' ? staffApi.get(`/guides/${geste.id}/versions`, adminGuideVersionsSchema) : Promise.resolve(null)),
@@ -146,7 +149,7 @@ export function ContenuGuidesEquipe() {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <Bouton ton="principal" disabled={!peut || action.occupe} onClick={() => void decider(p.id, { decision: 'ACCEPT' })}>
+                      <Bouton ton="principal" disabled={!peut || action.occupe} onClick={() => { action.effacer(); setAConfirmer({ kind: 'accepter', id: p.id }); }}>
                         Accepter
                       </Bouton>
                       <Bouton disabled={!peut || action.occupe} onClick={() => ouvrir({ kind: 'refuser', id: p.id })}>
@@ -155,7 +158,7 @@ export function ContenuGuidesEquipe() {
                       <span style={{ flex: 1 }} />
                       <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13.5px', fontWeight: 700 }}>
                         Maintenu par la communauté
-                        <Interrupteur actif={p.maintainedByCommunity} onChange={(v) => void maintenu(p.guideId, v)} libelle="Maintenu par la communauté" disabled={!peut || action.occupe} />
+                        <Interrupteur actif={p.maintainedByCommunity} onChange={(v) => { action.effacer(); setAConfirmer({ kind: 'maintenu', id: p.guideId, valeur: v }); }} libelle="Maintenu par la communauté" disabled={!peut || action.occupe} />
                       </span>
                     </div>
                     <div style={{ fontSize: '12.5px', color: C.gris }}>Motif du proposant : {p.reason}</div>
@@ -193,7 +196,7 @@ export function ContenuGuidesEquipe() {
                       </div>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', fontWeight: 700 }}>
                         Communauté
-                        <Interrupteur actif={g.maintainedByCommunity} onChange={(v) => void maintenu(g.id, v)} libelle={`Maintenu par la communauté : ${g.title}`} disabled={!peut || action.occupe} />
+                        <Interrupteur actif={g.maintainedByCommunity} onChange={(v) => { action.effacer(); setAConfirmer({ kind: 'maintenu', id: g.id, valeur: v }); }} libelle={`Maintenu par la communauté : ${g.title}`} disabled={!peut || action.occupe} />
                       </span>
                       {g.status === 'PUBLISHED' ? null : (
                         <Bouton petit disabled={!peut} onClick={() => ouvrir({ kind: 'statut', id: g.id, statut: 'PUBLISHED', titre: g.title })}>
@@ -217,6 +220,26 @@ export function ContenuGuidesEquipe() {
         </Carte>
       )}
 
+      <Confirmation
+        ouverte={aConfirmer !== null}
+        titre={aConfirmer?.kind === 'accepter' ? 'Accepter la proposition' : aConfirmer?.kind === 'maintenu' && aConfirmer.valeur ? 'Marquer « maintenu par la communauté »' : 'Reprendre le guide par l’équipe'}
+        consigne={
+          aConfirmer?.kind === 'accepter'
+            ? 'Le texte proposé devient aussitôt la version publiée du guide, visible de tous les membres. Une nouvelle version est créée ; l’historique reste intact. L’action est tracée.'
+            : aConfirmer?.kind === 'maintenu' && aConfirmer.valeur
+              ? 'Le guide est présenté comme maintenu par la communauté : l’équipe ne le relit plus. L’action est tracée.'
+              : 'Le guide n’est plus présenté comme maintenu par la communauté ; l’équipe le reprend. L’action est tracée.'
+        }
+        libelle={aConfirmer?.kind === 'accepter' ? 'Accepter' : 'Confirmer'}
+        onConfirmer={() => {
+          if (aConfirmer === null) return;
+          const a = aConfirmer;
+          void (a.kind === 'accepter' ? decider(a.id, { decision: 'ACCEPT' }) : maintenu(a.id, a.valeur)).then(() => setAConfirmer(null));
+        }}
+        onFermer={() => setAConfirmer(null)}
+        occupe={action.occupe}
+        message={action.message}
+      />
       <FenetreMotif
         ouverte={geste !== null && geste.kind !== 'retour'}
         titre={geste?.kind === 'refuser' ? 'Refuser la proposition' : geste?.kind === 'statut' ? (geste.statut === 'PUBLISHED' ? `Forcer la publication` : 'Dépublier le guide') : ''}

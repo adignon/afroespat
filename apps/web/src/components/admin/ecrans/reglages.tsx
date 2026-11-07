@@ -19,6 +19,7 @@ import { displayMessageFor, staffApi } from '@/lib/api/index';
 import { PHASES, telechargerCsv, toutesLesVilles } from '../donnees';
 import { reservePour } from '../navigation-admin';
 import { AfficherLaSuite, useListeCurseur } from '../pagination-admin';
+import { Confirmation } from '../confirmation';
 import { useDroit, useEquipe } from '../session-equipe';
 import { premierDefaut, Bandeau, Bouton, C, Carte, Champ, Etiquette, Fenetre, FenetreMotif, Interrupteur, Lecture, Message, Onglets, PanneauOnglet, Pastille, Selecteur, Titre, Vide, ZoneTexte, dateCourte, useCharge, useGeste } from '../ui';
 import { MatriceRoles } from './matrice-roles';
@@ -387,8 +388,12 @@ function Seuils() {
   const enregistrer = async () => {
     if (!valide.success) return;
     const ok = await geste.lancer(() => staffApi.put('/moderation/settings', okResponseSchema, { body: valide.data }), 'Seuils enregistrés.');
-    if (ok) recharger();
+    if (ok) {
+      setConfirmerSeuils(false);
+      recharger();
+    }
   };
+  const [confirmerSeuils, setConfirmerSeuils] = useState(false);
   return (
     <Lecture etat={etat} recharger={recharger}>
       {() => (
@@ -404,10 +409,20 @@ function Seuils() {
           </div>
           {!valide.success ? <Bandeau ton="attention">{premierDefaut(valide.error.issues, Object.fromEntries(SEUILS.map((x) => [x.cle, x.libelle])))}</Bandeau> : null}
           {peut ? null : <Bandeau>Les seuils se modifient avec le rôle contenu ou super-administrateur.</Bandeau>}
-          <Message message={geste.message} />
+          <Message message={confirmerSeuils ? null : geste.message} />
           <div>
-            <Bouton ton="principal" disabled={!peut || !valide.success || geste.occupe} onClick={() => void enregistrer()}>Enregistrer</Bouton>
+            <Bouton ton="principal" disabled={!peut || !valide.success || geste.occupe} onClick={() => { geste.effacer(); setConfirmerSeuils(true); }}>Enregistrer</Bouton>
           </div>
+          <Confirmation
+            ouverte={confirmerSeuils}
+            titre="Modifier les seuils de modération"
+            consigne="Les nouveaux seuils s’appliquent tout de suite à ce qui est bloqué, mis en file ou publié automatiquement. L’action est tracée dans le journal d’audit."
+            libelle="Enregistrer les seuils"
+            onConfirmer={() => void enregistrer()}
+            onFermer={() => { if (!geste.occupe) setConfirmerSeuils(false); }}
+            occupe={geste.occupe}
+            message={geste.message}
+          />
         </Carte>
       )}
     </Lecture>

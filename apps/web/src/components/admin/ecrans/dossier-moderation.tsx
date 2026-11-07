@@ -13,6 +13,7 @@ import {
   type AdminModerationCaseDetail,
 } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
+import { Confirmation } from '../confirmation';
 import { useEquipe } from '../session-equipe';
 import { libelleSujet } from './file-moderation';
 import { Bandeau, Bouton, C, Carte, Colonnes, Etiquette, Lecture, Message, Pastille, Titre, ZoneTexte, dateCourte, useCharge, useGeste } from '../ui';
@@ -78,6 +79,7 @@ function Dossier({ d, recharger }: { readonly d: AdminModerationCaseDetail; read
   const [choix, setChoix] = useState<Choix | null>(null);
   const [motif, setMotif] = useState('');
   const [conversation, setConversation] = useState(false);
+  const [confirmation, setConfirmation] = useState(false);
 
   const sanctionnante = choix !== null && (SANCTIONING_ACTIONS as readonly string[]).includes(choix.action);
   const min = sanctionnante ? SANCTION_REASON_MIN : ACTION_REASON_MIN;
@@ -100,6 +102,7 @@ function Dossier({ d, recharger }: { readonly d: AdminModerationCaseDetail; read
       'Action appliquée et tracée.',
     );
     if (ok) {
+      setConfirmation(false);
       setChoix(null);
       setMotif('');
       recharger();
@@ -235,10 +238,20 @@ function Dossier({ d, recharger }: { readonly d: AdminModerationCaseDetail; read
           <div style={{ fontSize: '12px', fontWeight: 700, color: suffisant ? C.vertFonce : C.gris }}>
             {motif.trim().length} / {min}
           </div>
-          <Bouton ton="principal" plein disabled={!suffisant || geste.occupe || resolu} onClick={() => void appliquer()}>
+          <Bouton ton="principal" plein disabled={!suffisant || geste.occupe || resolu} onClick={() => { geste.effacer(); setConfirmation(true); }}>
             {geste.occupe ? 'Un instant…' : 'Appliquer'}
           </Bouton>
-          <Message message={geste.message} />
+          <Message message={confirmation ? null : geste.message} />
+          <Confirmation
+            ouverte={confirmation}
+            titre={`${ACTIONS.find((a) => a.action === choix?.action && a.duree === choix?.duree)?.libelle ?? 'Appliquer'} ?`}
+            consigne={`Cette décision s’applique tout de suite${sanctionnante ? ' et sanctionne le membre, qui en est prévenu' : ' au contenu signalé'}. Votre motif est conservé au journal d’audit : « ${motif.trim().slice(0, 120)}${motif.trim().length > 120 ? '…' : ''} »`}
+            libelle="Appliquer la décision"
+            onConfirmer={() => void appliquer()}
+            onFermer={() => { if (!geste.occupe) setConfirmation(false); }}
+            occupe={geste.occupe}
+            message={geste.message}
+          />
           {choix === null ? <div style={{ fontSize: '12.5px', color: C.grisClair }}>Choisissez une action, puis écrivez le motif.</div> : null}
           <Pastille ton="neutre">{d.status === 'RESOLVED' ? 'Résolu' : d.assignedName === null || d.assignedName === undefined ? 'Non assigné' : `Assigné à ${d.assignedName}`}</Pastille>
         </Carte>

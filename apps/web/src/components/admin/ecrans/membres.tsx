@@ -2,6 +2,7 @@
 
 import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
+import { z } from 'zod';
 import {
   MAX_PAGE_LIMIT,
   VerificationLevel,
@@ -11,6 +12,7 @@ import {
   memberNoteSchema,
   okResponseSchema,
   type AdminMemberDetail,
+  type AdminMemberSanction,
   type AdminMemberRow,
   type MemberBulkEraseResult,
 } from '@app/shared';
@@ -35,6 +37,7 @@ import {
   ZoneTexte,
   dateCourte,
   dateLongue,
+  nombreFr,
   useCharge,
   useGeste,
 } from '../ui';
@@ -59,10 +62,14 @@ import {
  *   (SUPPORT) · désactiver/réactiver (MODERATOR) · note interne (tous les rôles).
  */
 
-type Action = 'retrograder' | 'corriger' | 'revoquer' | 'desactiver' | 'reactiver' | 'exporter' | 'supprimer';
+type Action = 'retrograder' | 'corriger' | 'revoquer' | 'desactiver' | 'reactiver' | 'exporter' | 'supprimer' | 'debannir';
+
+/** `POST /admin/users/:id/unban` rend la sanction levée, pas `{ ok }`. */
+const debannissementSchema = z.object({ userId: z.string(), sanctionId: z.string() }).passthrough();
 
 /** Ce que l'équipe lit une fois la fenêtre de motif refermée. */
-const CONFIRMATIONS: Record<'retrograder' | 'revoquer' | 'desactiver' | 'reactiver' | 'exporter' | 'supprimer' | 'corriger', string> = {
+const CONFIRMATIONS: Record<Action, string> = {
+  debannir: 'Bannissement levé : le compte est réactivé et le numéro retiré de la liste noire.',
   retrograder: 'Niveau rétrogradé : le KYC est marqué refusé et le niveau recalculé.',
   revoquer: 'Sessions révoquées : le membre devra se reconnecter.',
   desactiver: 'Compte désactivé.',
@@ -398,6 +405,13 @@ function Fiche({ id }: { readonly id: string }) {
   );
 }
 
+const LIBELLE_SANCTION: Record<AdminMemberSanction['type'], string> = { WARNING: 'Avertissement', SUSPENSION: 'Suspension', BAN: 'Bannissement' };
+
+/** En cours : ni levée, ni échue. Un bannissement (fin nulle) l'est tant qu'il n'est pas levé ; un avertissement n'a pas de durée. */
+export function sanctionEnCours(x: Pick<AdminMemberSanction, 'type' | 'endsAt' | 'liftedAt'>, maintenant: number = Date.now()): boolean {
+  return x.liftedAt === null && (x.endsAt === null ? x.type !== 'WARNING' : new Date(x.endsAt).getTime() > maintenant);
+}
+
 function Case({ titre, children }: { readonly titre: string; readonly children: React.ReactNode }) {
   return (
     <div style={{ background: C.fond, borderRadius: '14px', padding: '10px 14px', minWidth: 0 }}>
@@ -410,6 +424,8 @@ function Case({ titre, children }: { readonly titre: string; readonly children: 
 function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly recharger: () => void }) {
   const peutModerer = useDroit('moderation');
   const peutRgpd = useDroit('rgpd');
+  /** Lever un bannissement : SUPER_ADMIN seul, comme `POST /admin/users/:id/unban`. */
+  const peutDebannir = useDroit('staffAdmin');
   const geste = useGeste();
   const [action, setAction] = useState<Action | null>(null);
   const [note, setNote] = useState('');
@@ -443,6 +459,9 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
           break;
         case 'reactiver':
           await staffApi.post(`/users/${m.id}/reactivate`, okResponseSchema, { body: { reason: motif } });
+          break;
+        case 'debannir':
+          await staffApi.post(`/users/${m.id}/unban`, debannissementSchema, { body: { reason: motif } });
           break;
         case 'exporter':
           await staffApi.post(`/users/${m.id}/export`, okResponseSchema, { body: { reason: motif } });
@@ -481,6 +500,8 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
   const titreDroit = (ok: boolean, role: string) => (ok ? undefined : `Réservé : ${role}`);
   const kyc = m.kycVerifications.length;
   const sanctions = m.sanctions.length;
+  const enCours = m.sanctions.filter((x) => sanctionEnCours(x));
+  const banActif = m.sanctions.some((x) => x.type === 'BAN' && x.liftedAt === null);
 
   return (
     <Carte style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -501,12 +522,58 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
       <div className="admin-cases" style={{ display: 'grid', gap: '8px' }}>
         <Case titre="Numéros">{m.phones.length === 0 ? '—' : m.phones.map((p) => p.masked).join(' · ')}</Case>
         <Case titre="KYC">{kyc === 0 ? 'Aucune vérification' : `${m.kycVerifications.length} vérification${kyc > 1 ? 's' : ''}`}</Case>
-        <Case titre="Sanctions">{sanctions === 0 ? 'Aucune' : `${sanctions} sanction${sanctions > 1 ? 's' : ''}`}</Case>
+        <Case titre="Sanctions">{sanctions === 0 ? 'Aucune' : `${enCours.length} en cours · ${sanctions} au total`}</Case>
         <Case titre="Sessions">{m.activeSessions.length} active{m.activeSessions.length > 1 ? 's' : ''}</Case>
         <Case titre="Consentements">
           {m.consents.length === 0 ? '—' : [...new Map(m.consents.map((c) => [c.type, c])).values()].map((c) => `${c.type === 'TERMS' ? 'CGU' : c.type === 'PRIVACY' ? 'confidentialité' : c.type} v${c.version}${c.granted ? '' : ' (refusé)'}`).join(' · ')}
         </Case>
         <Case titre="Inscription">{dateLongue(m.createdAt)}</Case>
+      </div>
+
+      {m.counts === undefined ? null : (
+        <div data-compteurs-membre="" className="admin-cases" style={{ display: 'grid', gap: '8px' }}>
+          <Case titre="Publications">{nombreFr(m.counts.posts)}</Case>
+          <Case titre="Commentaires">{nombreFr(m.counts.comments)}</Case>
+          <Case titre="Demandes d’aide">{nombreFr(m.counts.helpRequests)}</Case>
+          <Case titre="Réponses d’aide">{nombreFr(m.counts.helpResponses)}</Case>
+          <Case titre="Guides">{nombreFr(m.counts.guides)}</Case>
+          <Case titre="Messages signalés">{nombreFr(m.counts.reportedMessages)}</Case>
+          <Case titre="Dossiers de modération">
+            {nombreFr(m.counts.moderationCases)}
+            {m.counts.openModerationCases > 0 ? ` · ${nombreFr(m.counts.openModerationCases)} ouvert${m.counts.openModerationCases > 1 ? 's' : ''}` : ''}
+          </Case>
+          <Case titre="Signalements faits">{nombreFr(m.counts.reportsMade)}</Case>
+        </div>
+      )}
+
+      <div data-sanctions-membre="" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <Etiquette>Sanctions · en cours et historique</Etiquette>
+        {sanctions === 0 ? (
+          <div style={{ fontSize: '13px', color: C.gris }}>Aucune sanction.</div>
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {m.sanctions.map((x) => (
+              <li key={x.id} style={{ background: C.fond, borderRadius: '12px', padding: '8px 12px', fontSize: '13px', display: 'flex', gap: '10px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <Pastille ton={sanctionEnCours(x) ? 'terre' : 'neutre'}>{sanctionEnCours(x) ? 'En cours' : x.liftedAt !== null ? 'Levée' : 'Terminée'}</Pastille>
+                <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                  <strong>{LIBELLE_SANCTION[x.type]}</strong> · {x.reason}
+                  <div style={{ fontSize: '11.5px', color: C.grisClair, marginTop: '2px' }}>
+                    Du {dateCourte(x.startsAt)} {x.endsAt === null ? '· définitive' : `au ${dateCourte(x.endsAt)}`}
+                    {x.liftedAt === null ? '' : ` · levée le ${dateCourte(x.liftedAt)}`}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {banActif ? (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <Bouton petit disabled={!peutDebannir || supprime} titre={titreDroit(peutDebannir, 'administrateurs')} onClick={() => setAction('debannir')}>
+              Lever le bannissement
+            </Bouton>
+            {peutDebannir ? null : <span style={{ fontSize: '12px', color: C.gris }}>Réservé : administrateurs</span>}
+          </div>
+        ) : null}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -573,6 +640,7 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
             desactiver: 'Désactiver le compte',
             reactiver: 'Réactiver le compte',
             exporter: 'Générer un export',
+            debannir: 'Lever le bannissement',
             corriger: '',
             supprimer: '',
           }[action ?? 'exporter']
@@ -582,7 +650,9 @@ function FicheMembre({ m, recharger }: { readonly m: AdminMemberDetail; readonly
             ? 'Le KYC est marqué refusé et le niveau recalculé. Le motif est conservé au journal d’audit.'
             : action === 'exporter'
               ? 'L’archive est préparée sans le délai de 30 jours ; le membre la retrouve dans son compte.'
-              : undefined
+              : action === 'debannir'
+                ? 'Le bannissement est levé, le compte redevient actif et son numéro quitte la liste noire : il pourra se réinscrire. L’action est tracée au journal d’audit.'
+                : undefined
         }
         min={action === 'retrograder' ? 20 : 10}
         libelleConfirmer="Confirmer"

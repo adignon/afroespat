@@ -15,6 +15,7 @@ import {
   SETTING_KEYS,
   STAFF_IDLE_MINUTES,
   STAFF_SESSION_COOKIE,
+  adminMemberDetailSchema,
   type StaffRoleValue,
 } from '@app/shared';
 import { AppModule } from '../../../app.module';
@@ -1010,6 +1011,60 @@ describe('administration (15)', () => {
       expect(body.phones[0]?.masked).toContain('•');
       // Les deux derniers chiffres seuls demeurent (01 §2.1).
       expect(body.phones[0]?.masked.endsWith(phone.slice(-2))).toBe(true);
+    });
+
+    /**
+     * Fiche complète : les compteurs (publications, commentaires, demandes, dossiers, messages signalés) et les
+     * sanctions, en cours ou levées. Des NOMBRES seulement ; les contenus supprimés ne comptent pas.
+     */
+    it('la fiche rend les compteurs et les sanctions, en cours ou levées', async () => {
+      const staff = await as('SUPPORT');
+      const userId = await memberId();
+      const now = new Date();
+      for (const deletedAt of [null, null, now]) {
+        await prisma.post.create({
+          data: {
+            id: newId(),
+            authorUserId: userId,
+            type: 'DISCUSSION',
+            body: 'Bonjour à toutes et à tous.',
+            status: 'PUBLISHED',
+            moderationStatus: 'CLEARED',
+            deletedAt,
+          },
+        });
+      }
+      await prisma.helpRequest.create({
+        data: {
+          id: newId(),
+          authorUserId: userId,
+          kind: 'REQUEST',
+          type: 'PAPERWORK',
+          title: 'Un papier',
+          body: 'Comment faire ?',
+          cityId,
+          status: 'OPEN',
+          moderationStatus: 'CLEARED',
+        },
+      });
+      await prisma.sanction.createMany({
+        data: [
+          { id: newId(), userId, type: 'WARNING', reason: 'Premier avertissement', startsAt: new Date(now.getTime() - 5 * 86_400_000), endsAt: null, issuedByStaffId: staff.staffId, liftedAt: now },
+          { id: newId(), userId, type: 'SUSPENSION', reason: 'Suspension en cours', startsAt: now, endsAt: new Date(now.getTime() + 86_400_000), issuedByStaffId: staff.staffId },
+        ],
+      });
+
+      const res = await request(httpServer(app)).get(`/v1/admin/users/${userId}`).set('cookie', staff.cookie).expect(200);
+      const body = res.body as {
+        counts: Record<string, number>;
+        sanctions: { type: string; liftedAt: string | null; endsAt: string | null }[];
+      };
+      expect(body.counts).toMatchObject({ posts: 2, helpRequests: 1, comments: 0, reportedMessages: 0, moderationCases: 0, openModerationCases: 0 });
+      expect(body.sanctions.map((x) => x.type)).toEqual(['SUSPENSION', 'WARNING']);
+      expect(body.sanctions[0]?.liftedAt).toBeNull();
+      expect(body.sanctions[1]?.liftedAt).not.toBeNull();
+      const parsed = adminMemberDetailSchema.safeParse(res.body);
+      expect(parsed.success ? null : parsed.error.issues).toBeNull();
     });
 
     /** §3.1 : « saisie du numéro → HMAC → recherche, le numéro n'est jamais affiché ». */

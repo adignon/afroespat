@@ -143,9 +143,11 @@ export function paymentMethodCodeOf(input: {
  *     abonnés (quota du plan) que si l'option est allumée ;
  *   · `PREMIUM_PERKS`      — les avantages à quota des plans (parcours, événements, contacts
  *     pros, alertes) ne s'appliquent que si l'option est allumée ;
- *   · `PARTNER_PLACEMENTS` — les encarts partenaires sont affichés. Seule option allumée par
- *     défaut : les encarts existent déjà et ne sont pas un achat de membre ; les éteindre
- *     est un geste explicite.
+ *   · `PARTNER_PLACEMENTS` — les encarts partenaires sont affichés.
+ *
+ * TOUT EST ÉTEINT PAR DÉFAUT (décision du porteur : « tout sera gratuit pour le moment ») : les
+ * encarts partenaires, branchés sur l'affiliation, s'allument par un geste explicite de
+ * SUPER_ADMIN, avec motif, comme le reste de l'écran « Paiements et offres ».
  */
 export const PAID_OPTION_CODES = ['SPONSORED_JOBS', 'PARTNER_PLACEMENTS', 'PREMIUM_PERKS'] as const;
 export type PaidOptionCode = (typeof PAID_OPTION_CODES)[number];
@@ -157,7 +159,7 @@ export type PaidOptions = z.infer<typeof paidOptionsSchema>;
 
 export const PAID_OPTIONS_DEFAULT: PaidOptions = {
   SPONSORED_JOBS: false,
-  PARTNER_PLACEMENTS: true,
+  PARTNER_PLACEMENTS: false,
   PREMIUM_PERKS: false,
 };
 

@@ -467,14 +467,19 @@ export class AnalyticsService {
   // ───────────────────────────────────────────────────────────────────────────
 
   /** Les derniers points connus d'un ensemble de métriques. Le tableau de bord. */
-  async latest(metrics: readonly string[]): Promise<{ metric: string; dimension: string; value: number; periodStart: string }[]> {
+  async latest(
+    metrics: readonly string[],
+    asOf?: Date,
+  ): Promise<{ metric: string; dimension: string; value: number; periodStart: string }[]> {
     if (metrics.length === 0) return [];
+    // `asOf` : le dernier point connu À CETTE DATE (filtre « période » du tableau de bord) ; sans lui, le plus récent.
     const rows = await this.prisma.$queryRaw<
       { metric: string; dimension: string; value: Prisma.Decimal; period_start: Date }[]
     >`
       SELECT DISTINCT ON (metric, dimension) metric, dimension, value, period_start
         FROM metric_snapshots
        WHERE metric IN (${Prisma.join(metrics)})
+         ${asOf === undefined ? Prisma.empty : Prisma.sql`AND period_start <= ${asOf}`}
        ORDER BY metric, dimension, period_start DESC
     `;
     return rows.map((r) => ({

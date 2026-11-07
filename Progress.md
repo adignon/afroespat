@@ -66,9 +66,14 @@ pour savoir « où on en est ».
 ### Étape 3 — Produit et ergonomie (P2)
 
 - Pagination restante : réseaux, mes demandes/réponses, notifications, enregistrés, agenda, recherche, profils publics.
-- Administration : confirmations sur les gestes destructeurs, garde de route par rôle, fiche membre complète
-  (compteurs, sanctions, « lever le bannissement »), onglets pays/langues/compétences/métiers, filtres du tableau de
-  bord et du journal d'audit, piège du focus des fenêtres, écran Revenus complet.
+- Administration — **faite** (lot s3b) : confirmations sur tous les gestes destructeurs ou visibles des membres
+  (dossier de modération, publication de page/annonce, proposition de guide, « maintenu par la communauté », durée
+  d'étape, seuils de modération, en plus de celles de l'étape 0) ; garde de route par rôle alignée sur l'API
+  (« Alertes d'équipe » : pas le support) ; fiche membre complète (compteurs `counts`, sanctions en cours/historique,
+  « Lever le bannissement », SUPER_ADMIN) ; onglets pays/langues/compétences/métiers ; filtre de période du tableau de
+  bord (`GET /admin/dashboard?period=current|7d|30d|90d`) ; journal d'audit déjà filtrable (acteur, action, cible,
+  dates) et paginé ; piège du focus testé (`fenetre.test.tsx`) ; écran Revenus : tout éteint par défaut (formules
+  payantes inactives au seed, encarts partenaires éteints), chaque bascule avec motif et confirmation.
 - Landing : état d'erreur avec « Réessayer », accessibilité des superpositions, points de rupture CSS, photos de villes.
 - Boutons encore inertes : « Découvrir Premium » (J11, E03), « Je suis bloqué·e » (J09), « Aider le suivant » (J01e).
 - Garde-fou **mouvement** (`@app/config`) : trancher entre exemptions (spinners, marquee) et correction ; le contrôle

@@ -12,6 +12,7 @@ import {
   STAFF_MAX_FAILED_ATTEMPTS,
   STAFF_SESSION_COOKIE,
   adminDashboardOverviewSchema,
+  adminDashboardResponseSchema,
   adminStaffAlertsResponseSchema,
   type StaffRoleValue,
 } from '@app/shared';
@@ -168,6 +169,43 @@ describe('tableau de bord complet et alertes d’équipe (15 §5.1)', () => {
     const staff = await as('SUPPORT');
     const raw = JSON.stringify(await overview(staff.cookie));
     expect(raw).not.toMatch(/userId|handle|displayName|phone/i);
+  });
+
+  // ══ Le filtre de période ══════════════════════════════════════════════════
+
+  it('période : « 7d », « 30d », « 90d » rendent les chiffres arrêtés à cette date, jamais un instantané plus récent', async () => {
+    const staff = await as('MODERATOR');
+    const dimension = `periode-${run}`;
+    const points = [
+      { delta: 40 * DAY, value: 5 },
+      { delta: 10 * DAY, value: 7 },
+      { delta: 3_600_000, value: 9 },
+    ];
+    for (const p of points) {
+      await prisma.metricSnapshot.create({
+        data: { id: newId(), metric: 'members.by_city', dimension, value: p.value, periodStart: new Date(Date.now() - p.delta) },
+      });
+    }
+    try {
+      const lire = async (query: string): Promise<{ value: number | null; period: string | undefined; asOf: string | null | undefined }> => {
+        const res = await request(srv(app)).get(`/v1/admin/dashboard${query}`).set('cookie', staff.cookie).expect(200);
+        const parsed = adminDashboardResponseSchema.safeParse(res.body);
+        expect(parsed.success ? null : parsed.error.issues).toBeNull();
+        const body = res.body as { blocks: { membres: { dimension: string; value: number }[] }; period?: string; asOf?: string | null };
+        const point = body.blocks.membres.find((x) => x.dimension === dimension);
+        return { value: point?.value ?? null, period: body.period, asOf: body.asOf };
+      };
+      expect(await lire('')).toMatchObject({ value: 9, period: 'current', asOf: null });
+      expect(await lire('?period=current')).toMatchObject({ value: 9 });
+      expect(await lire('?period=7d')).toMatchObject({ value: 7, period: '7d' });
+      expect((await lire('?period=7d')).asOf).not.toBeNull();
+      expect(await lire('?period=30d')).toMatchObject({ value: 5 });
+      // Aucun instantané n'existait il y a 90 jours : « pas de mesure », pas le plus récent.
+      expect(await lire('?period=90d')).toMatchObject({ value: null, period: '90d' });
+      await request(srv(app)).get('/v1/admin/dashboard?period=1y').set('cookie', staff.cookie).expect(400);
+    } finally {
+      await prisma.metricSnapshot.deleteMany({ where: { dimension } });
+    }
   });
 
   // ══ Le bandeau d’alertes ══════════════════════════════════════════════════

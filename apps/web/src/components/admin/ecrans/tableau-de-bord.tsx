@@ -1,14 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { adminDashboardResponseSchema, type AdminDashboardOverview } from '@app/shared';
+import { useState } from 'react';
+import { adminDashboardResponseSchema, type AdminDashboardOverview, type DashboardPeriod } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { vueD02 } from '@/screens/administration/appels';
 import type { D02Data } from '@/screens/administration/data';
 import { lireOverview } from '../a-traiter';
 import { peutOuvrir } from '../navigation-admin';
 import { useEquipe } from '../session-equipe';
-import { C, Lecture, useCharge } from '../ui';
+import { C, Lecture, Selecteur, dateLongue, useCharge } from '../ui';
 import { ABSENT, cartesOverview, courbe, lignesAlertes, objectif, pourcentage, pourcentageEntier, variation, type AlerteLigne, type Rangee } from './tableau-de-bord-vue';
 
 /**
@@ -42,31 +43,63 @@ const titreSection = { margin: '6px 0 -2px', fontSize: '15px', fontWeight: 800, 
 interface Donnees {
   readonly blocs: D02Data;
   readonly overview: AdminDashboardOverview;
+  readonly asOf: string | null;
 }
 
-async function charger(): Promise<Donnees> {
-  const [blocs, overview] = await Promise.all([staffApi.get('/dashboard', adminDashboardResponseSchema), lireOverview()]);
-  return { blocs: vueD02(blocs), overview };
+/** La période des instantanés : « Actuel » (les derniers) ou les chiffres arrêtés il y a 7, 30 ou 90 jours. */
+export const PERIODES: readonly { readonly valeur: DashboardPeriod; readonly libelle: string }[] = [
+  { valeur: 'current', libelle: 'Actuel' },
+  { valeur: '7d', libelle: 'Il y a 7 jours' },
+  { valeur: '30d', libelle: 'Il y a 30 jours' },
+  { valeur: '90d', libelle: 'Il y a 90 jours' },
+];
+
+async function charger(periode: DashboardPeriod): Promise<Donnees> {
+  const [blocs, overview] = await Promise.all([staffApi.get(`/dashboard?period=${periode}`, adminDashboardResponseSchema), lireOverview()]);
+  return { blocs: vueD02(blocs), overview, asOf: blocs.asOf ?? null };
 }
 
 export function ContenuTableauDeBord() {
-  const { etat, recharger } = useCharge(charger, 'tableau-de-bord');
+  const [periode, setPeriode] = useState<DashboardPeriod>('current');
+  const { etat, recharger } = useCharge(() => charger(periode), `tableau-de-bord-${periode}`);
+  const filtre = (
+    <div data-filtre-periode="" style={{ maxWidth: '240px' }}>
+      <Selecteur libelle="Période des instantanés" valeur={periode} onChange={(v) => setPeriode(v as DashboardPeriod)} options={PERIODES.map((p) => ({ valeur: p.valeur, libelle: p.libelle }))} />
+    </div>
+  );
   return (
     <Lecture etat={etat} recharger={recharger} forme="tableau-de-bord">
-      {(d) => <TableauDeBord blocs={d.blocs} overview={d.overview} />}
+      {(d) => <TableauDeBord blocs={d.blocs} overview={d.overview} filtre={filtre} asOf={d.asOf} />}
     </Lecture>
   );
 }
 
-export function TableauDeBord({ blocs, overview }: { readonly blocs: D02Data; readonly overview: AdminDashboardOverview }) {
+export function TableauDeBord({
+  blocs,
+  overview,
+  filtre,
+  asOf = null,
+}: {
+  readonly blocs: D02Data;
+  readonly overview: AdminDashboardOverview;
+  readonly filtre?: React.ReactNode;
+  /** Date d'arrêt des instantanés quand une période est choisie ; `null` = les plus récents. */
+  readonly asOf?: string | null;
+}) {
   const cartes = cartesOverview(overview);
   const aucunInstantane = blocs.aucuneMesure;
   return (
     <>
       <h1 style={{ margin: 0, fontSize: '26px', fontWeight: 800, letterSpacing: '-0.8px' }}>Tableau de bord</h1>
+      {filtre ?? null}
+      {asOf === null ? null : (
+        <div role="status" data-periode-arret="" style={{ fontSize: '13px', color: C.gris }}>
+          Instantanés arrêtés au {dateLongue(asOf)}. « À traiter » et l’indicateur clé restent ceux d’aujourd’hui.
+        </div>
+      )}
       {aucunInstantane ? (
         <div role="status" style={{ fontSize: '13px', color: C.gris }}>
-          Pas encore de mesure : les indicateurs d’instantané apparaissent après le premier calcul horaire.
+          {asOf === null ? 'Pas encore de mesure : les indicateurs d’instantané apparaissent après le premier calcul horaire.' : 'Aucune mesure à cette date : la plateforme n’avait pas encore calculé ses indicateurs.'}
         </div>
       ) : null}
       <div data-admin-d02-haut="" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 5fr) minmax(0, 7fr)', gap: '14px', alignItems: 'stretch' }}>

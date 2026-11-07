@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { okResponseSchema, type AdminCity } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
 import { toutesLesVilles } from '../donnees';
 import { useDroit } from '../session-equipe';
-import { Bouton, C, Carte, Champ, Etiquette, Fenetre, FenetreMotif, Lecture, Message, Pastille, Selecteur, Titre, ZoneTexte, nombreFr, useCharge, useGeste } from '../ui';
+import { Bouton, C, Carte, Champ, Etiquette, Fenetre, FenetreMotif, Lecture, Message, Onglets, PanneauOnglet, Pastille, Selecteur, Titre, ZoneTexte, nombreFr, useCharge, useGeste } from '../ui';
+import { OngletListe, OngletPays } from './referentiels-listes';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -36,7 +37,32 @@ function Statut({ v }: { readonly v: AdminCity }) {
   return <Pastille ton="terre">Bientôt</Pastille>;
 }
 
+type OngletRef = 'villes' | 'pays' | 'langues' | 'competences' | 'metiers';
+const ONGLETS_REF: readonly { id: OngletRef; libelle: string }[] = [
+  { id: 'villes', libelle: 'Villes' },
+  { id: 'pays', libelle: 'Pays' },
+  { id: 'langues', libelle: 'Langues' },
+  { id: 'competences', libelle: 'Compétences' },
+  { id: 'metiers', libelle: 'Métiers' },
+];
+
+/** Le référentiel complet : les villes (D08) et, à côté, pays, langues, compétences et métiers (02 §4.2). */
 export function ContenuVilles() {
+  const [onglet, setOnglet] = useState<OngletRef>('villes');
+  const barre = <Onglets base="referentiels" libelle="Listes du référentiel" actif={onglet} onChange={setOnglet} onglets={ONGLETS_REF} />;
+  if (onglet === 'villes') return <Villes barre={barre} />;
+  return (
+    <>
+      <Titre titre="Référentiels" sous="Listes fermées : un membre les suggère, l’équipe les tient." />
+      {barre}
+      <PanneauOnglet base="referentiels" id={onglet}>
+        {onglet === 'pays' ? <OngletPays /> : <OngletListe liste={onglet} />}
+      </PanneauOnglet>
+    </>
+  );
+}
+
+function Villes({ barre }: { readonly barre: ReactNode }) {
   const peut = useDroit('content');
   const { etat, recharger } = useCharge(() => toutesLesVilles(), 'villes');
   const [filtre, setFiltre] = useState('');
@@ -116,6 +142,8 @@ export function ContenuVilles() {
   return (
     <>
       <Titre titre="Référentiels" sous={etat.phase === 'pret' ? `${villes.length} villes · ${nActives} ${nActives > 1 ? 'actives' : 'active'}` : 'Villes'} />
+      {barre}
+      <PanneauOnglet base="referentiels" id="villes">
       {geste === null ? <Message message={action.message} /> : null}
       <Lecture etat={etat} recharger={recharger}>
         {() => (
@@ -235,6 +263,7 @@ export function ContenuVilles() {
           </>
         )}
       </Lecture>
+      </PanneauOnglet>
     </>
   );
 }

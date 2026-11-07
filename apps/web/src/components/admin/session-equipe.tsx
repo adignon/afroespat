@@ -101,7 +101,7 @@ export function FournisseurEquipe({ children }: { readonly children: ReactNode }
    */
   const ici = entreeDuChemin(chemin);
   const interdit = !surConnexion && equipe !== null && ici !== null && !peutOuvrir(equipe.role, ici.entree);
-  const contenu = surConnexion ? children : equipe === null ? <AttenteSession /> : interdit && ici !== null ? <AccesReserve libelle={ici.entree.libelle} qui={quiPeut(ici.entree.scope)} /> : children;
+  const contenu = surConnexion ? children : equipe === null ? <AttenteSession /> : interdit && ici !== null ? <AccesReserve libelle={ici.entree.libelle} qui={quiPeut(ici.entree.roles ?? ici.entree.scope)} /> : children;
   return <Ctx.Provider value={valeur}>{contenu}</Ctx.Provider>;
 }
 

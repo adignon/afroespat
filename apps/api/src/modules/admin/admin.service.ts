@@ -939,6 +939,43 @@ export class AdminService {
         orderBy: { id: 'desc' },
         take: 20,
       }),
+      counts: await this.memberCounts(userId),
+    };
+  }
+
+  /**
+   * Les compteurs de la fiche membre (15 §3.1) : ce que la personne a publié, demandé, répondu, et ce que les autres
+   * ont signalé chez elle. Des NOMBRES seulement : aucun contenu ni identifiant d'autre membre ne sort ici.
+   * `reportedMessages` = messages envoyés par ce membre qui ont fait l'objet d'au moins un signalement.
+   */
+  private async memberCounts(userId: string) {
+    const [posts, comments, helpRequests, helpResponses, guides, reportsMade, moderationCases, openCases, reportedRows] =
+      await Promise.all([
+        this.prisma.post.count({ where: { authorUserId: userId, deletedAt: null } }),
+        this.prisma.comment.count({ where: { authorUserId: userId, deletedAt: null } }),
+        this.prisma.helpRequest.count({ where: { authorUserId: userId, deletedAt: null } }),
+        this.prisma.helpResponse.count({ where: { authorUserId: userId, deletedAt: null } }),
+        this.prisma.guide.count({ where: { authorUserId: userId } }),
+        this.prisma.report.count({ where: { reporterUserId: userId } }),
+        this.prisma.moderationCase.count({ where: { subjectAuthorUserId: userId } }),
+        this.prisma.moderationCase.count({ where: { subjectAuthorUserId: userId, status: { in: ['OPEN', 'IN_REVIEW'] } } }),
+        this.prisma.$queryRaw<{ n: bigint }[]>`
+          SELECT count(DISTINCT m.id) AS n
+            FROM messages m
+            JOIN reports r ON r.subject_type = 'MESSAGE' AND r.subject_id = m.id
+           WHERE m.sender_user_id = ${userId}::uuid
+        `,
+      ]);
+    return {
+      posts,
+      comments,
+      helpRequests,
+      helpResponses,
+      guides,
+      reportsMade,
+      moderationCases,
+      openModerationCases: openCases,
+      reportedMessages: Number(reportedRows[0]?.n ?? 0),
     };
   }
 
