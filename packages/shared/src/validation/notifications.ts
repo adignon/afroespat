@@ -364,6 +364,16 @@ export const notificationListQuerySchema = cursorQuerySchema.extend({
     .optional(),
   /** §5 : « page Notifications (filtres par catégorie) ». */
   category: notificationCategorySchema.optional(),
+  /**
+   * (lot S3A) Plusieurs catégories à la fois, séparées par des virgules — la pastille « Parcours » de la
+   * page couvre deux catégories. Le filtre est SERVEUR : filtrer la page reçue montrerait une page maigre
+   * (voire vide) avec un « Voir plus » alors que la suite existe. Ignoré quand `category` est présent.
+   */
+  categories: z
+    .string()
+    .transform((v) => v.split(',').map((c) => c.trim()).filter((c) => c !== ''))
+    .pipe(z.array(notificationCategorySchema).min(1).max(NOTIFICATION_CATEGORIES.length))
+    .optional(),
 });
 
 /**
