@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { CITY_COUNT_PRIVACY_THRESHOLD, DEFAULT_RADIUS_KM, Phase } from '@app/shared';
-import { conversationAvec, ouvrirConversation, prenomDe } from '@/components/ecrire';
+import { conversationAvec, prenomDe, saluerParDemande } from '@/components/ecrire';
 import { FenetreEcrire } from '@/components/fenetre-ecrire';
-import { notifyError } from '@/components/notifications';
+import { notifyError, notifySuccess } from '@/components/notifications';
 import { ApiError, fetchMe } from '@/lib/api/index';
 import { assurerSession, lireCarte, lireMembres, lirePays } from './appels';
 import type { FiltreVivant, MembreVivant, PointCarte, VillesVivantes, VueVilles } from './data';
@@ -239,13 +239,18 @@ export function useVilles(options: {
     (message: string): void => {
       if (salut === null) return;
       setEnVol(true);
-      ouvrirConversation(salut, message)
-        .then((id) => {
+      saluerParDemande(salut, message)
+        .then(() => {
           setSalut(null);
-          router.push(`/messages/${id}`);
+          notifySuccess('Votre demande de contact est partie.');
         })
         .catch((cause: unknown) => {
-          notifyError(cause instanceof ApiError ? cause.displayMessage : 'Le message n’a pas pu partir.');
+          if (cause instanceof ApiError && (cause.code === 'ALREADY_CONNECTED' || cause.code === 'REQUEST_PENDING')) {
+            setSalut(null);
+            notifySuccess(cause.code === 'ALREADY_CONNECTED' ? 'Vous êtes déjà en contact.' : 'Votre demande est déjà en attente.');
+            return;
+          }
+          notifyError(cause instanceof ApiError ? cause.displayMessage : 'La demande n’a pas pu partir.');
         })
         .finally(() => {
           setEnVol(false);

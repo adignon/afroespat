@@ -83,7 +83,7 @@ Le bandeau de jalons n'existe plus : « Partager un jalon » reste proposé depu
 
 ### 2.7 Colonne droite de l'accueil
 
-Quatre blocs, tous calculés : Événements dans ma ville (module 09, 3 prochains) · Nouveaux arrivants (membres `RECENT_ARRIVAL` de ma ville, 14 derniers jours, 3 max, bouton « Saluer » = message privé pré-adressé, si L1) · Alerte vigilance (module 13, `scam_alerts` épinglée pour ma ville ou mon pays) · Parrains et contacts en ligne (contacts avec `last_seen_at` < 10 min).
+Quatre blocs, tous calculés : Événements dans ma ville (module 09, 3 prochains) · Nouveaux arrivants (membres `RECENT_ARRIVAL` de ma ville, 14 derniers jours, 3 max, bouton « Saluer » = demande de contact avec mot d’accueil, ouverte dès N0 (décision du porteur)) · Alerte vigilance (module 13, `scam_alerts` épinglée pour ma ville ou mon pays) · Parrains et contacts en ligne (contacts avec `last_seen_at` < 10 min).
 
 ---
 

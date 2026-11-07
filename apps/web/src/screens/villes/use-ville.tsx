@@ -5,11 +5,11 @@ import { useRouter } from 'next/navigation';
 import { z } from 'zod';
 import { CITY_TIP_MAX_BODY, createCityTipSchema } from '@app/shared';
 import { useGeste } from '@/components/entraide/geste';
-import { conversationAvec, ouvrirConversation, prenomDe } from '@/components/ecrire';
+import { conversationAvec, prenomDe, saluerParDemande } from '@/components/ecrire';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { FenetreEcrire } from '@/components/fenetre-ecrire';
 import { FenetreSignalement } from '@/components/fenetre-signalement';
-import { notifyError } from '@/components/notifications';
+import { notifyError, notifySuccess } from '@/components/notifications';
 import { centimesDe } from '@/lib/centimes';
 import { ApiError, memberApi } from '@/lib/api/index';
 import type {
@@ -113,14 +113,24 @@ export function useGestesVille(recharger: () => void): {
     (message: string): void => {
       if (salut === null) return;
       setEnVol(true);
-      ouvrirConversation(salut.handle, message)
-        .then((conversationId) => {
+      saluerParDemande(salut.handle, message)
+        .then(() => {
           setSalut(null);
-          router.push(`/messages/${conversationId}`);
+          notifySuccess('Votre demande de contact est partie.');
         })
         .catch((cause: unknown) => {
+          if (cause instanceof ApiError && cause.code === 'ALREADY_CONNECTED') {
+            setSalut(null);
+            notifySuccess('Vous êtes déjà en contact.');
+            return;
+          }
+          if (cause instanceof ApiError && cause.code === 'REQUEST_PENDING') {
+            setSalut(null);
+            notifySuccess('Votre demande est déjà en attente.');
+            return;
+          }
           notifyError(
-            cause instanceof ApiError ? cause.displayMessage : 'Le message n’a pas pu partir.',
+            cause instanceof ApiError ? cause.displayMessage : 'La demande n’a pas pu partir.',
           );
         })
         .finally(() => {

@@ -1,6 +1,7 @@
 'use client';
 
-import { conversationsResponseSchema, openDirectConversationResponseSchema } from '@app/shared';
+import { z } from 'zod';
+import { CONNECTION_MESSAGE_MIN, conversationsResponseSchema, openDirectConversationResponseSchema } from '@app/shared';
 import { memberApi } from '@/lib/api/index';
 
 /**
@@ -91,4 +92,17 @@ export function prenomDe(nomAffiche: string, pseudo: string): string {
   const nom = nomAffiche.trim();
   if (nom === '') return `@${handleNu(pseudo)}`;
   return nom.split(/\s+/)[0] ?? nom;
+}
+
+/**
+ * « SALUER » = UNE DEMANDE DE CONTACT (décision du porteur, 04 §2.7).
+ *
+ * `POST /connection-requests` est ouverte dès le niveau 0 ; un message direct demande le
+ * niveau 1. Saluer ne doit pas être refusé à celui qu'on veut accueillir. Le mot d'accueil
+ * est complété s'il est plus court que le minimum du serveur.
+ */
+export async function saluerParDemande(pseudo: string, mot: string): Promise<void> {
+  const propre = mot.trim();
+  const message = propre.length >= CONNECTION_MESSAGE_MIN ? propre : `${propre} Bienvenue dans la communauté !`.trim();
+  await memberApi.post('/connection-requests', z.unknown(), { body: { toHandle: handleNu(pseudo), message } });
 }

@@ -2021,3 +2021,13 @@ Retirer **une** occurrence de « Aucun versement entre membres » laissait le te
 vert : la règle est **dessinée trois fois** sur le même écran. Il a fallu retirer les
 trois. Même mécanisme que le filtre de trop — une seconde occurrence répondait à la
 place de celle qu'on croyait mesurer.
+
+## Décisions du porteur — novembre 2026
+
+* **Tout est gratuit pour le moment.** Aucun paiement réel ; moyens de paiement, plans et options sont des interrupteurs d'administration, tous éteints par défaut (le seed crée les formules payantes inactives).
+* **« Saluer » = une demande de contact avec mot d'accueil**, ouverte dès le niveau 0 (04 §2.7). Même geste sur l'accueil (A01) et sur les écrans Villes ; si on est déjà en contact, le fil existant s'ouvre.
+* **« Demander » (O05) = le formulaire de parrainage**, sans envoi automatique.
+* **Journal d'audit jamais supprimé** ; historique complet des rapports d'impact et témoignages conservés.
+* **Auto-école retiré**, textes légaux laissés en brouillon, OpenStreetMap pour la carte des villes.
+* **Garde-fou mouvement** : une animation en boucle (`infinite`, ou ligne marquée `motion:loop`) est jugée sur sa période, pas sur le plafond de 300 ms des transitions ; les courbes restent celles de la table.
+* **Rejeu de refresh-token** : strict (spec 01 §13), délai de grâce non retenu tant que le porteur ne le demande pas.

@@ -303,7 +303,7 @@ const VI_A12_BUDGETS = {
 const VI_ARRIVANTS_SALUER = {
   screens: ['A12', 'A12T'],
   nom: 'VI_ARRIVANTS_SALUER',
-  why: '« Saluer » un nouvel arrivant ne faisait rien : il ouvre la conversation directe pré-adressée (ou rouvre celle qui existe).',
+  why: '« Saluer » un nouvel arrivant ne faisait rien : il envoie une demande de contact avec un mot d’accueil (décision du porteur ; ouvre le fil existant si on est déjà en contact).',
   provides: ['arrivals', 'vivant'],
   apply(jsx) {
     const geste =
