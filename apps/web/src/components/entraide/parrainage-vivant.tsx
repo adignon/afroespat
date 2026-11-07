@@ -30,7 +30,9 @@ import {
 } from '@app/shared';
 import { FenetreConfirmation } from '@/components/fenetre-confirmation';
 import { ApiError, fetchMe, memberApi, voidResponse } from '@/lib/api/index';
+import { VoirPlus } from '@/components/voir-plus';
 import { useVersionEntraide } from '@/lib/entraide-recharge';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import { Alerte, BOUTON_DISCRET, BOUTON_PLEIN, CHAMP, Compteur, EtatListe, Feuille, LIBELLE, Pastille, Segments, eteint, initiales } from './atomes';
 import { useGeste } from './geste';
 
@@ -243,7 +245,11 @@ export function ListeParrains({ variante }: { readonly variante: 'bureau' | 'mob
   const [langues, setLangues] = useState<readonly { id: string; nom: string }[]>([]);
   const [payss, setPayss] = useState<readonly { id: string; nom: string }[]>([]);
   const [modeles, setModeles] = useState<readonly { id: string; code: string; nom: string }[]>([]);
-  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly MentorCard[] }>({ phase: 'attente', items: [] });
+  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly MentorCard[]; suite: string | null }>({
+    phase: 'attente',
+    items: [],
+    suite: null,
+  });
   const [essai, setEssai] = useState(0);
 
   // Les référentiels des filtres, une fois. Un échec laisse le filtre sans options.
@@ -274,8 +280,8 @@ export function ListeParrains({ variante }: { readonly variante: 'bureau' | 'mob
 
   useEffect(() => {
     let vivant = true;
-    setEtat((e) => ({ phase: 'attente', items: e.items }));
-    const requete = new URLSearchParams({ limit: '50' });
+    setEtat((e) => ({ phase: 'attente', items: e.items, suite: e.suite }));
+    const requete = new URLSearchParams({ limit: '20' });
     if (ville !== '') requete.set('cityId', ville);
     if (langue !== '') requete.set('languageId', langue);
     if (pays !== '') requete.set('countryId', pays);
@@ -283,15 +289,35 @@ export function ListeParrains({ variante }: { readonly variante: 'bureau' | 'mob
     void memberApi
       .get(`/mentors?${requete.toString()}`, mentorsResponseSchema)
       .then((r) => {
-        if (vivant) setEtat({ phase: 'pret', items: r.items });
+        if (vivant) setEtat({ phase: 'pret', items: r.items, suite: r.nextCursor });
       })
       .catch(() => {
-        if (vivant) setEtat({ phase: 'echec', items: [] });
+        if (vivant) setEtat({ phase: 'echec', items: [], suite: null });
       });
     return () => {
       vivant = false;
     };
   }, [ville, langue, pays, modele, essai]);
+
+  /**
+   * « VOIR PLUS » (lot S3A) : la page suivante de `GET /mentors` avec les MÊMES filtres. Le tri du
+   * serveur (disponibles, note, parrainages menés, identifiant) est déterministe : le curseur situe la
+   * reprise sans doublon. Les pages ajoutées sont oubliées dès qu'un filtre change.
+   */
+  const { items: parrains, plus } = useListeAPages({
+    cle: [ville, langue, pays, modele, essai].join('|'),
+    initiaux: etat.items,
+    curseurInitial: etat.suite,
+    identifiant: (m) => m.userId,
+    charger: (curseur, signal) => {
+      const requete = new URLSearchParams({ limit: '20', cursor: curseur });
+      if (ville !== '') requete.set('cityId', ville);
+      if (langue !== '') requete.set('languageId', langue);
+      if (pays !== '') requete.set('countryId', pays);
+      if (modele !== '') requete.set('templateCode', modele);
+      return memberApi.get(`/mentors?${requete.toString()}`, mentorsResponseSchema, { signal });
+    },
+  });
 
   const noms = new Map(modeles.map((m) => [m.id, m.nom]));
   const mobile = variante === 'mobile';
@@ -319,12 +345,15 @@ export function ListeParrains({ variante }: { readonly variante: 'bureau' | 'mob
           </button>
         )}
       </div>
-      {etat.phase === 'pret' && etat.items.length > 0 ? (
-        <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
-          {etat.items.map((m) => (
-            <CarteParrain key={m.userId} m={m} noms={noms} mobile={mobile} />
-          ))}
-        </div>
+      {etat.phase === 'pret' && parrains.length > 0 ? (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: '12px' }}>
+            {parrains.map((m) => (
+              <CarteParrain key={m.userId} m={m} noms={noms} mobile={mobile} />
+            ))}
+          </div>
+          <VoirPlus plus={plus} />
+        </>
       ) : (
         <EtatListe
           etat={etat.phase === 'pret' ? 'vide' : etat.phase}
@@ -431,27 +460,45 @@ export function MesParrainagesVivants({ variante }: { readonly variante: 'bureau
   const mobile = variante === 'mobile';
   const [role, setRole] = useState<'mentee' | 'mentor'>('mentee');
   const version = useVersionEntraide();
-  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly Parrainage[] }>({ phase: 'attente', items: [] });
+  const [etat, setEtat] = useState<{ phase: 'attente' | 'echec' | 'pret'; items: readonly Parrainage[]; suite: string | null }>({
+    phase: 'attente',
+    items: [],
+    suite: null,
+  });
   const [essai, setEssai] = useState(0);
 
   useEffect(() => {
     let vivant = true;
     void memberApi
-      .get(`/me/mentorships?role=${role}&state=all`, myMentorshipsResponseSchema)
+      .get(`/me/mentorships?role=${role}&state=all&limit=20`, myMentorshipsResponseSchema)
       .then((r) => {
-        if (vivant) setEtat({ phase: 'pret', items: r.items });
+        if (vivant) setEtat({ phase: 'pret', items: r.items, suite: r.nextCursor });
       })
       .catch(() => {
-        if (vivant) setEtat((e) => ({ phase: 'echec', items: e.items }));
+        if (vivant) setEtat((e) => ({ phase: 'echec', items: e.items, suite: e.suite }));
       });
     return () => {
       vivant = false;
     };
   }, [role, version, essai]);
 
-  const actifs = etat.items.filter((p) => p.status === 'ACTIVE');
-  const attente = etat.items.filter((p) => p.status === 'REQUESTED');
-  const termines = etat.items.filter((p) => p.status === 'ENDED' || p.status === 'DECLINED' || p.status === 'CANCELLED');
+  /**
+   * « VOIR PLUS » (lot S3A) : la page suivante de `GET /me/mentorships`, pour le même rôle. Les trois
+   * groupes (en cours, terminés, en attente) sont faits sur ce qui est chargé : le bouton est au pied de
+   * la liste entière. La clé porte le rôle, la version et l'essai — un geste recharge la première page.
+   */
+  const { items: parrainages, plus } = useListeAPages({
+    cle: `${role}|${String(version)}|${String(essai)}`,
+    initiaux: etat.items,
+    curseurInitial: etat.suite,
+    identifiant: (p) => p.id,
+    charger: (curseur, signal) =>
+      memberApi.get(`/me/mentorships?role=${role}&state=all&limit=20&cursor=${encodeURIComponent(curseur)}`, myMentorshipsResponseSchema, { signal }),
+  });
+
+  const actifs = parrainages.filter((p) => p.status === 'ACTIVE');
+  const attente = parrainages.filter((p) => p.status === 'REQUESTED');
+  const termines = parrainages.filter((p) => p.status === 'ENDED' || p.status === 'DECLINED' || p.status === 'CANCELLED');
 
   const titre = (texte: string): ReactNode => (
     <div style={{ fontSize: '10.5px', fontWeight: 700, letterSpacing: '1px', color: '#8A958F', marginTop: '6px' }}>{texte}</div>
@@ -467,9 +514,9 @@ export function MesParrainagesVivants({ variante }: { readonly variante: 'bureau
           { cle: 'mentor', libelle: mobile ? 'Parrain' : 'Comme parrain' },
         ]}
       />
-      {etat.phase !== 'pret' && etat.items.length === 0 ? (
+      {etat.phase !== 'pret' && parrainages.length === 0 ? (
         <EtatListe etat={etat.phase === 'echec' ? 'echec' : 'attente'} vide={null} onReessayer={() => setEssai((n) => n + 1)} />
-      ) : etat.items.length === 0 ? (
+      ) : parrainages.length === 0 ? (
         <EtatListe
           etat="vide"
           onReessayer={() => undefined}
@@ -501,6 +548,7 @@ export function MesParrainagesVivants({ variante }: { readonly variante: 'bureau
       {attente.map((p) => (
         <CarteParrainage key={p.id} p={p} mobile={mobile} />
       ))}
+      <VoirPlus plus={plus} />
     </>
   );
 }
