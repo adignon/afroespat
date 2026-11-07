@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { adminStatsPointsSchema, okResponseSchema, stepDefinitionWriteSchema, type AdminStepDefinition } from '@app/shared';
 import { staffApi } from '@/lib/api/index';
+import { Confirmation } from '../confirmation';
 import { toutesLesDefinitions } from '../donnees';
 import { useDroit } from '../session-equipe';
 import { Bandeau, Bouton, C, Carte, Champ, Colonnes, Etiquette, Fenetre, Interrupteur, Lecture, Message, Pastille, Selecteur, Titre, Vide, ZoneTexte, useCharge, useGeste } from '../ui';
@@ -170,6 +171,7 @@ function Editeur({ def, peut, points, onChange }: { readonly def: AdminStepDefin
     const ok = await geste.lancer(() => staffApi.patch(`/journey-templates/step-definitions/${def.id}`, okResponseSchema, { body: corps }), 'Étape enregistrée.');
     if (ok) onChange();
   };
+  const [application, setApplication] = useState(false);
   const appliquer = async () => {
     if (mediane === null) return;
     const jours = Math.max(1, Math.round(mediane));
@@ -228,9 +230,19 @@ function Editeur({ def, peut, points, onChange }: { readonly def: AdminStepDefin
           </div>
         )}
         {sautees === null ? null : <div style={{ fontSize: '12.5px', color: C.gris }}>{sautees} étape{sautees > 1 ? 's' : ''} sautée{sautees > 1 ? 's' : ''} par les membres{sautees > 3 ? ' : à rendre optionnelle ?' : '.'}</div>}
-        <Bouton ton="principal" plein disabled={!peut || mediane === null || geste.occupe} onClick={() => void appliquer()}>
+        <Bouton ton="principal" plein disabled={!peut || mediane === null || geste.occupe} onClick={() => { geste.effacer(); setApplication(true); }}>
           Appliquer comme durée indicative
         </Bouton>
+        <Confirmation
+          ouverte={application}
+          titre="Appliquer la durée indicative"
+          consigne={`La durée indicative de « ${def?.nameFr ?? 'cette étape'} » devient ${mediane === null ? '…' : `${Math.max(1, Math.round(mediane))} jours`} : les membres la voient sur leurs parcours. L’action est tracée.`}
+          libelle="Appliquer"
+          onConfirmer={() => void appliquer().then(() => setApplication(false))}
+          onFermer={() => setApplication(false)}
+          occupe={geste.occupe}
+          message={geste.message}
+        />
       </Carte>
     </Colonnes>
   );

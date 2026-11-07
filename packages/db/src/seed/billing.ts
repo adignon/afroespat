@@ -45,7 +45,9 @@ export async function seedBilling(prisma: PrismaClient): Promise<{
         // `InputJsonValue`. La diffusion en objet nu le donne sans perdre le
         // contrôle de type à l'écriture, qui a lieu dans PLAN_SEED.
         limits: { ...plan.limits },
-        isActive: true,
+        // Tout est gratuit pour le moment : seule la formule gratuite est proposée. Les formules payantes
+        // s'ouvrent depuis l'administration (« Paiements et offres », SUPER_ADMIN, avec motif).
+        isActive: plan.code === 'FREE',
       },
     });
   }

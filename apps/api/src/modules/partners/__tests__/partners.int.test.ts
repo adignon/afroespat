@@ -1,5 +1,6 @@
 import { newId } from '@app/db';
 import {
+  BILLING_PAID_OPTIONS_SETTING_KEY,
   CLICK_ID_TOKEN,
   HOUSING_SECTION_STEP_CODE,
   PARTNER_BADGE_LABEL,
@@ -117,6 +118,8 @@ describe('partenaires (14 §5, §12)', () => {
     return created.id;
   }
 
+  let optionsAvant: { value: unknown } | null = null;
+
   beforeAll(async () => {
     prisma = new PrismaService();
     await prisma.$connect();
@@ -134,6 +137,15 @@ describe('partenaires (14 §5, §12)', () => {
       sms,
       new FakeCaptchaProvider(),
     );
+
+    // Les encarts sont ÉTEINTS par défaut (tout est gratuit) : ces épreuves portent sur leur résolution, donc on les
+    // allume le temps du fichier, et `afterAll` rétablit l'état d'avant.
+    optionsAvant = await prisma.systemSetting.findUnique({ where: { key: BILLING_PAID_OPTIONS_SETTING_KEY } });
+    await prisma.systemSetting.upsert({
+      where: { key: BILLING_PAID_OPTIONS_SETTING_KEY },
+      create: { key: BILLING_PAID_OPTIONS_SETTING_KEY, value: { SPONSORED_JOBS: false, PARTNER_PLACEMENTS: true, PREMIUM_PERKS: false } },
+      update: { value: { ...((optionsAvant?.value ?? {}) as object), PARTNER_PLACEMENTS: true } },
+    });
 
     benin = (await prisma.country.findUniqueOrThrow({ where: { iso2: 'BJ' } })).id;
     france = (await prisma.country.findUniqueOrThrow({ where: { iso2: 'FR' } })).id;
@@ -160,6 +172,8 @@ describe('partenaires (14 §5, §12)', () => {
   });
 
   afterAll(async () => {
+    if (optionsAvant === null) await prisma.systemSetting.deleteMany({ where: { key: BILLING_PAID_OPTIONS_SETTING_KEY } });
+    else await prisma.systemSetting.update({ where: { key: BILLING_PAID_OPTIONS_SETTING_KEY }, data: { value: optionsAvant.value as object } });
     if (createdUserIds.length > 0) {
       await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
     }

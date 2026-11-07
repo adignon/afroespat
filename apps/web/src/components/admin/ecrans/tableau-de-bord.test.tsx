@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { adminDashboardOverviewSchema, type AdminDashboardOverview } from '@app/shared';
 import { SQUELETTE_D02 } from '@/screens/administration/data';
-import { Alertes, Carte, IndicateurCle, TableauDeBord } from './tableau-de-bord';
+import { Alertes, Carte, IndicateurCle, PERIODES, TableauDeBord } from './tableau-de-bord';
 import {
   ABSENT,
   cartesOverview,
@@ -246,5 +246,20 @@ describe('lignesAlertes — filtrées par rôle', () => {
     expect(vers('MODERATOR')).toEqual(['/admin/moderation']);
     expect(vers('SUPPORT')).toEqual(['/admin/services']);
     expect(lignesAlertes(alertes)).toHaveLength(3);
+  });
+});
+
+describe('D02 — le filtre de période', () => {
+  it('liste Actuel puis 7, 30 et 90 jours, dans les valeurs de l’API', () => {
+    expect(PERIODES.map((p) => p.valeur)).toEqual(['current', '7d', '30d', '90d']);
+  });
+
+  it('sans période, aucune mention d’arrêt ; avec une date, elle est dite', () => {
+    const sans = renderToStaticMarkup(<TableauDeBord blocs={SQUELETTE_D02} overview={VIDE} filtre={<div data-filtre-periode="" />} />);
+    expect(sans).toContain('data-filtre-periode');
+    expect(sans).not.toContain('Instantanés arrêtés');
+    const avec = renderToStaticMarkup(<TableauDeBord blocs={SQUELETTE_D02} overview={VIDE} asOf="2026-10-08T00:00:00.000Z" />);
+    expect(avec).toContain('Instantanés arrêtés au');
+    expect(avec).toContain('8 octobre 2026');
   });
 });

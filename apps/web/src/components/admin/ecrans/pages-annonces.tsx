@@ -167,6 +167,7 @@ function Formulaire({ p, peut, recharger }: { readonly p: AdminPage; readonly pe
     const ok = await geste.lancer(() => staffApi.post(`/pages/${p.id}/publish`, adminPageSchema, { body: {} }), `Version ${prochaine} publiée.`);
     if (ok) recharger();
   };
+  const [publication, setPublication] = useState(false);
   const [suppression, setSuppression] = useState(false);
   const supprimer = async () => {
     const ok = await geste.lancer(() => staffApi.del(`/pages/${p.id}`, okResponseSchema), 'Page supprimée.');
@@ -202,7 +203,7 @@ function Formulaire({ p, peut, recharger }: { readonly p: AdminPage; readonly pe
         <Bouton ton="contour" disabled={!peut || !sale || geste.occupe || corps.trim() === ''} onClick={() => void enregistrer()}>
           Enregistrer le brouillon
         </Bouton>
-        <Bouton ton="principal" disabled={!peut || geste.occupe || corps.trim() === '' || (!sale && p.draft === null)} onClick={() => void publier()}>
+        <Bouton ton="principal" disabled={!peut || geste.occupe || corps.trim() === '' || (!sale && p.draft === null)} onClick={() => { geste.effacer(); setPublication(true); }}>
           Publier la v{prochaine}
         </Bouton>
         {p.publishedAt === null ? (
@@ -211,6 +212,16 @@ function Formulaire({ p, peut, recharger }: { readonly p: AdminPage; readonly pe
           </Bouton>
         ) : null}
       </div>
+      <Confirmation
+        ouverte={publication}
+        titre={`Publier « ${p.title} » en v${prochaine}`}
+        consigne={`La version v${prochaine} remplace aussitôt la version en vigueur pour tous les membres.${p.asksConsent ? ' Leur consentement leur sera redemandé à leur prochain chargement de l’application.' : ''} L’action est tracée.`}
+        libelle={`Publier la v${prochaine}`}
+        onConfirmer={() => void publier().then(() => setPublication(false))}
+        onFermer={() => setPublication(false)}
+        occupe={geste.occupe}
+        message={geste.message}
+      />
       <Confirmation ouverte={suppression} titre={`Supprimer « ${p.title} »`} consigne="La page n’a jamais été publiée : son brouillon et ses versions sont supprimés. L’action est tracée et ne se défait pas." libelle="Supprimer la page" onConfirmer={() => void supprimer()} onFermer={() => setSuppression(false)} occupe={geste.occupe} message={geste.message} />
     </Carte>
   );
@@ -289,6 +300,7 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
     });
     if (ok) onFait(id, annonce === null ? 'Annonce publiée : les membres ciblés la voient en tête de l’accueil.' : 'Annonce enregistrée.');
   };
+  const [publication, setPublication] = useState(false);
   const [suppression, setSuppression] = useState(false);
   const supprimer = async () => {
     if (annonce === null) return;
@@ -316,7 +328,7 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
       {!valide.success && (titre !== '' || texte !== '') ? <Bandeau ton="attention">{premierDefaut(valide.error.issues, { title: 'Titre', body: 'Texte', startsAt: 'Début', endsAt: 'Fin' })}</Bandeau> : null}
       <Message message={geste.message} />
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        <Bouton ton="principal" disabled={!peut || !valide.success || geste.occupe} onClick={() => void enregistrer()}>
+        <Bouton ton="principal" disabled={!peut || !valide.success || geste.occupe} onClick={() => { geste.effacer(); setPublication(true); }}>
           {annonce === null ? 'Publier l’annonce' : 'Enregistrer'}
         </Bouton>
         {annonce === null ? null : (
@@ -325,6 +337,16 @@ function FormulaireAnnonce({ annonce, peut, onFait }: { readonly annonce: AdminA
           </Bouton>
         )}
       </div>
+      <Confirmation
+        ouverte={publication}
+        titre={annonce === null ? 'Publier l’annonce' : 'Enregistrer l’annonce'}
+        consigne="L’annonce est visible en tête de l’accueil des membres ciblés dès l’enregistrement. L’action est tracée."
+        libelle={annonce === null ? 'Publier' : 'Enregistrer'}
+        onConfirmer={() => void enregistrer().then(() => setPublication(false))}
+        onFermer={() => setPublication(false)}
+        occupe={geste.occupe}
+        message={geste.message}
+      />
       <Confirmation ouverte={suppression} titre="Supprimer l’annonce" consigne="L’annonce disparaît immédiatement de l’accueil des membres ciblés. L’action est tracée et ne se défait pas." libelle="Supprimer l’annonce" onConfirmer={() => void supprimer()} onFermer={() => setSuppression(false)} occupe={geste.occupe} message={geste.message} />
     </Carte>
   );

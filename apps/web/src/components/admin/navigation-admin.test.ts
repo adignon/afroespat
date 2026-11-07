@@ -40,6 +40,27 @@ describe('la navigation de l’administration', () => {
     expect(peutOuvrir(null, ref)).toBe(false);
   });
 
+  it('Alertes d’équipe suit la liste de rôles de l’API (modération, contenu, administrateurs), pas le support', () => {
+    const entree = toutes.find((e) => e.href === '/admin/alertes-equipe');
+    if (entree === undefined) throw new Error('alertes d’équipe absentes');
+    expect(peutOuvrir('MODERATOR', entree)).toBe(true);
+    expect(peutOuvrir('CONTENT_ADMIN', entree)).toBe(true);
+    expect(peutOuvrir('SUPER_ADMIN', entree)).toBe(true);
+    expect(peutOuvrir('SUPPORT', entree)).toBe(false);
+    expect(navigationPour('SUPPORT').flatMap((g) => g.entrees.map((e) => e.href))).not.toContain('/admin/alertes-equipe');
+    expect(quiPeut(entree.roles ?? entree.scope)).toBe('contenu, modération et administrateurs');
+  });
+
+  it('chaque entrée est ouverte à au moins un rôle, et le super-administrateur ouvre tout', () => {
+    for (const e of toutes) {
+      expect(peutOuvrir('SUPER_ADMIN', e)).toBe(true);
+      expect((['CONTENT_ADMIN', 'MODERATOR', 'SUPPORT'] as const).some((r) => peutOuvrir(r, e)) || e.scope === 'staffAdmin').toBe(true);
+    }
+    // Revenus : SUPER_ADMIN seul, comme `PUT /admin/billing/*`.
+    const revenus = toutes.find((e) => e.href === '/admin/revenus');
+    expect((['CONTENT_ADMIN', 'MODERATOR', 'SUPPORT'] as const).some((r) => revenus !== undefined && peutOuvrir(r, revenus))).toBe(false);
+  });
+
   it('dit en français qui peut employer un périmètre', () => {
     expect(quiPeut('rgpd')).toBe('support et administrateurs');
     expect(reservePour('rgpd')).toBe('Réservé : support et administrateurs');

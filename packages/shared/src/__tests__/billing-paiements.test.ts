@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BILLING_ERROR_CODES,
+  MONETISATION_ACTIVE_DEFAULT,
   PAID_OPTIONS_DEFAULT,
   PAYMENT_METHODS_DEFAULT,
   SETTINGS_REGISTRY,
@@ -48,6 +49,10 @@ describe('moyens de paiement (lot D)', () => {
     expect(paidOptionsFrom(undefined)).toEqual(PAID_OPTIONS_DEFAULT);
     expect(PAID_OPTIONS_DEFAULT.PREMIUM_PERKS).toBe(false);
     expect(PAID_OPTIONS_DEFAULT.SPONSORED_JOBS).toBe(false);
+    // Tout est éteint par défaut : monétisation, moyens de paiement, options.
+    expect(Object.values(PAID_OPTIONS_DEFAULT).every((v) => v === false)).toBe(true);
+    expect(PAYMENT_METHODS_DEFAULT.every((m) => !m.enabled)).toBe(true);
+    expect(MONETISATION_ACTIVE_DEFAULT).toBe(false);
     expect(paidOptionsFrom({ PREMIUM_PERKS: true, SPONSORED_JOBS: 'x' })).toEqual({
       ...PAID_OPTIONS_DEFAULT,
       PREMIUM_PERKS: true,

@@ -29,6 +29,11 @@ export interface EntreeNavigation {
   /** Description courte, sous le titre de la page et en infobulle du rail replié. */
   readonly description: string;
   readonly scope: keyof typeof STAFF_SCOPES;
+  /**
+   * Les rôles qui ouvrent la page quand l'API ne la sert pas à un périmètre de `STAFF_SCOPES` mais à une liste à elle
+   * (`GET /admin/moderation/alerts` : modération, contenu, administrateurs — pas le support). Prime sur `scope`.
+   */
+  readonly roles?: readonly StaffRoleValue[];
   /** Tracé d'icône (viewBox 24, trait de 1,8). */
   readonly icone: string;
   /** Le compteur « à traiter » que l'API de pilotage donne déjà pour cette page. */
@@ -74,7 +79,7 @@ export const NAVIGATION_ADMIN: readonly GroupeNavigation[] = [
     entrees: [
       { href: '/admin/membres', libelle: 'Membres', description: 'Rechercher, filtrer, modérer, supprimer des comptes et leurs contenus', scope: 'memberRead', icone: ICONES.membres },
       { href: '/admin/moderation', libelle: 'Modération', description: 'La file des signalements et des annonces à vérifier', scope: 'moderation', icone: ICONES.bouclier, compteur: 'moderation' },
-      { href: '/admin/alertes-equipe', libelle: 'Alertes d’équipe', description: 'Ce que la plateforme remonte à l’équipe', scope: 'dashboard', icone: ICONES.cloche, compteur: 'alertesEquipe' },
+      { href: '/admin/alertes-equipe', libelle: 'Alertes d’équipe', description: 'Ce que la plateforme remonte à l’équipe', scope: 'dashboard', roles: ['SUPER_ADMIN', 'CONTENT_ADMIN', 'MODERATOR'], icone: ICONES.cloche, compteur: 'alertesEquipe' },
       { href: '/admin/alertes', libelle: 'Alertes arnaques', description: 'Les arnaques signalées et les alertes publiées aux membres', scope: 'dashboard', icone: ICONES.alerte },
     ],
   },
@@ -114,6 +119,13 @@ const NOM_ROLE_COURT: Record<StaffRoleValue, string> = {
   SUPPORT: 'support',
 };
 
+const NOM_ROLE_COURT_ORDRE = (a: StaffRoleValue, b: StaffRoleValue): number => Number(a === 'SUPER_ADMIN') - Number(b === 'SUPER_ADMIN');
+
+/** Les rôles qui ouvrent cette entrée : sa liste propre si elle en a une, sinon ceux de son périmètre. */
+export function rolesDeLEntree(e: Pick<EntreeNavigation, 'scope' | 'roles'>): readonly StaffRoleValue[] {
+  return e.roles !== undefined ? [...e.roles].sort(NOM_ROLE_COURT_ORDRE) : rolesDuScope(e.scope);
+}
+
 /** Les rôles d'un périmètre, dans un ordre stable : métiers d'abord, administrateurs en dernier. */
 export function rolesDuScope(scope: keyof typeof STAFF_SCOPES): readonly StaffRoleValue[] {
   const liste = [...(STAFF_SCOPES[scope] as readonly StaffRoleValue[])];
@@ -121,8 +133,8 @@ export function rolesDuScope(scope: keyof typeof STAFF_SCOPES): readonly StaffRo
 }
 
 /** « support et administrateurs » : qui peut employer ce périmètre, en français. */
-export function quiPeut(scope: keyof typeof STAFF_SCOPES): string {
-  const noms = rolesDuScope(scope).map((r) => NOM_ROLE_COURT[r]);
+export function quiPeut(scope: keyof typeof STAFF_SCOPES | readonly StaffRoleValue[]): string {
+  const noms = (typeof scope === 'string' ? rolesDuScope(scope) : [...scope].sort(NOM_ROLE_COURT_ORDRE)).map((r) => NOM_ROLE_COURT[r]);
   if (noms.length <= 1) return noms.join('');
   return `${noms.slice(0, -1).join(', ')} et ${noms[noms.length - 1] ?? ''}`;
 }
@@ -132,7 +144,7 @@ export const reservePour = (scope: keyof typeof STAFF_SCOPES): string => `Réser
 
 /** Le rôle peut-il traiter cette page ? */
 export function peutOuvrir(role: StaffRoleValue | null, e: EntreeNavigation): boolean {
-  return role !== null && (STAFF_SCOPES[e.scope] as readonly string[]).includes(role);
+  return role !== null && (rolesDeLEntree(e) as readonly string[]).includes(role);
 }
 
 /** Les groupes visibles pour ce rôle ; un groupe sans entrée disparaît. */
