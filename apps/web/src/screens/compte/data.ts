@@ -221,6 +221,22 @@ export interface EntreeOptionProfil {
   readonly onClick?: (() => void) | undefined;
 }
 
+/**
+ * La suite d'un onglet du profil public (lot S3A). `champ` dit QUELLE liste de `K02Data` se prolonge ;
+ * les éléments sont déjà convertis en cartes, et `identifiant` sert à ne jamais répéter une carte
+ * qu'une page précédente a déjà montrée.
+ */
+export interface SuiteContenuK02 {
+  readonly champ: 'contenus' | 'contenuPublications' | 'contenuGuides' | 'contenuEvenements' | 'contenuAnnonces' | 'contenuParcours';
+  /** Le `nextCursor` de la première page ; `null` quand tout tient sur une page. */
+  readonly curseur: string | null;
+  readonly charger: (
+    curseur: string,
+    signal?: AbortSignal,
+  ) => Promise<{ readonly items: readonly unknown[]; readonly nextCursor: string | null }>;
+  readonly identifiant: (element: unknown) => string;
+}
+
 export interface K02Data {
   readonly moi: Bandeau;
   readonly membre: {
@@ -343,6 +359,10 @@ export interface K02Data {
   readonly contenuParcours?: readonly CarteParcours[];
   /** Le titre de la carte, qui suit l'onglet : « GUIDES », « STORIES »… */
   readonly contenuTitre?: string;
+  /** La suite de l'onglet ouvert (lot S3A) : sa route, son convertisseur, le curseur de la page suivante. */
+  readonly suiteContenu?: SuiteContenuK02;
+  /** « Voir plus » sous la carte de l'onglet (lot S3A) — posé par l'écran. */
+  readonly plusContenu?: import('@/components/voir-plus').PlusListe;
   readonly contenuVide?: boolean;
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗

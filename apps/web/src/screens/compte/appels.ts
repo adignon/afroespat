@@ -22,6 +22,7 @@ import {
   type MutualConnectionsResponse,
   type BookmarkState,
   type BookmarkSubjectType,
+  type MemberContentResponse,
   type MemberContentType,
   type MeResponse,
   type MyPaymentsResponse,
@@ -37,7 +38,9 @@ import { fetchFeed } from '@/screens/accueil/api';
 import { feedPostsFrom } from '@/screens/accueil/from-api';
 import { fetchGuides } from '@/screens/guides/api';
 import { guideCardsFrom } from '@/screens/guides/from-api';
-import { construireCarte } from '@/screens/agenda/data';
+import { construireCarte, type CarteEvenement } from '@/screens/agenda/data';
+import type { FeedPostView } from '@/screens/a01/data';
+import type { GuideCardView } from '@/screens/a03/data';
 import { eventsResponseSchema, housingListResponseSchema } from '@app/shared';
 import type { HousingCardView } from '@app/shared';
 import type { CarteAnnonce } from '@/screens/s01/data';
@@ -123,6 +126,8 @@ import type {
   K10Data,
   LigneEnregistree,
   OngletContenu,
+  CarteContenu,
+  SuiteContenuK02,
   OngletEnregistres,
   PastilleNiveau,
 } from './data';
@@ -505,6 +510,36 @@ function ongletsContenu(
   });
 }
 
+/**
+ * UNE LIGNE DE `GET /users/:handle/content` en carte du profil. LE FOND EST UNE VALEUR CSS, pas
+ * une adresse : le serveur rend `/media/<clé>` pour une photo et un aplat sinon ; `photoFondFor` en
+ * fait le `background` que `ApercuStory` attend — la même fabrique que le composeur de story emploie.
+ */
+function carteContenu(c: MemberContentResponse['items'][number]): CarteContenu {
+  return {
+    id: c.id,
+    titre: c.title,
+    sous: c.subtitle,
+    href: c.href,
+    ...(c.apercu === undefined
+      ? {}
+      : {
+          apercu: {
+            ...c.apercu,
+            fond: c.apercu.photo ? photoFondFor(urlMedia(c.apercu.fond), false) : c.apercu.fond,
+          },
+        }),
+  };
+}
+
+/** Une page d'un onglet du profil : ses cartes et le curseur de la suivante. */
+interface PageOnglet<T> {
+  readonly items: readonly T[];
+  readonly nextCursor: string | null;
+}
+
+const AUCUNE_PAGE: PageOnglet<never> = { items: [], nextCursor: null };
+
 export async function chargerK02(
   pseudo: string,
   onglet: MemberContentType = 'GUIDE',
@@ -565,18 +600,18 @@ export async function chargerK02(
      */
     onglet === 'POST'
       ? fetchFeed({ authorHandle: sansArobase(pseudo), limit: 20 })
-          .then(feedPostsFrom)
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: feedPostsFrom(page), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     /**
      * LES GUIDES, MÊME PRINCIPE : `GET /guides?authorHandle=…`, puis le
      * convertisseur du module Guides. La carte vient de sa page d'origine.
      */
     onglet === 'GUIDE'
       ? fetchGuides({ tab: 'recent', authorHandle: sansArobase(pseudo) })
-          .then((page) => guideCardsFrom(page))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: guideCardsFrom(page), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     /**
      * LES ÉVÉNEMENTS ORGANISÉS et LES ANNONCES, mêmes principes : la liste
      * d'origine filtrée par auteur, puis le convertisseur du module. Chaque
@@ -595,27 +630,30 @@ export async function chargerK02(
            * que les événements SANS réseau — voir la règle de visibilité du
            * service — donc elle n'a rien à nommer.
            */
-          .then((page) => page.items.map((e) => construireCarte(e, new Map())))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({
+            items: page.items.map((e) => construireCarte(e, new Map())),
+            nextCursor: page.nextCursor,
+          }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     onglet === 'SERVICE'
       ? memberApi
           .get(
             `/housing?authorHandle=${encodeURIComponent(sansArobase(pseudo))}&limit=20`,
             housingListResponseSchema,
           )
-          .then((page) => page.items.map(carteAnnoncePublique))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: page.items.map(carteAnnoncePublique), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     onglet === 'JOURNEY'
       ? memberApi
           .get(
             `/journeys/public?authorHandle=${encodeURIComponent(sansArobase(pseudo))}&limit=20`,
             publicJourneysResponseSchema,
           )
-          .then((page) => page.items.map(carteParcoursPublic))
-          .catch(() => [])
-      : Promise.resolve([]),
+          .then((page) => ({ items: page.items.map(carteParcoursPublic), nextCursor: page.nextCursor }))
+          .catch(() => AUCUNE_PAGE)
+      : Promise.resolve(AUCUNE_PAGE),
     /**
      * CE QUE NOUS AVONS EN COMMUN — contacts et réseaux. `null` en cas d'échec :
      * la ligne se tait plutôt que d'affirmer « 0 en commun ».
@@ -636,34 +674,21 @@ export async function chargerK02(
     options: [],
     optionsMobile: [],
     contenuOnglets: ongletsContenu(onglet, contenu.meta.parType, onChoisir),
-    contenus: contenu.items.map((c) => ({
-      id: c.id,
-      titre: c.title,
-      sous: c.subtitle,
-      href: c.href,
-      /**
-       * LE FOND EST UNE VALEUR CSS, pas une adresse. Le serveur rend
-       * `/media/<clé>` pour une photo et un aplat sinon ; `photoFondFor` en fait
-       * le `background` que `ApercuStory` attend — la même fabrique que le
-       * composeur de story emploie, pour que les deux se ressemblent.
-       */
-      ...(c.apercu === undefined
-        ? {}
-        : {
-            apercu: {
-              ...c.apercu,
-              fond: c.apercu.photo
-                ? photoFondFor(urlMedia(c.apercu.fond), false)
-                : c.apercu.fond,
-            },
-          }),
-    })),
+    contenus: contenu.items.map(carteContenu),
     contenuEspece: onglet,
-    contenuPublications: publications,
-    contenuGuides: guidesPublies,
-    contenuEvenements: evenements,
-    contenuAnnonces: annonces,
-    contenuParcours: parcours,
+    contenuPublications: publications.items,
+    contenuGuides: guidesPublies.items,
+    contenuEvenements: evenements.items,
+    contenuAnnonces: annonces.items,
+    contenuParcours: parcours.items,
+    suiteContenu: suiteContenuK02(onglet, pseudo, {
+      contenu: contenu.nextCursor,
+      publications: publications.nextCursor,
+      guides: guidesPublies.nextCursor,
+      evenements: evenements.nextCursor,
+      annonces: annonces.nextCursor,
+      parcours: parcours.nextCursor,
+    }, { annonces: annonces.items.length }),
     /**
      * LE TITRE DE LA CARTE EST CELUI DE L'ONGLET, EN CAPITALES — c'est la forme
      * que la maquette donne à ses intitulés de carte (« GUIDES PUBLIÉS »,
@@ -672,6 +697,114 @@ export async function chargerK02(
     contenuTitre: MEMBER_CONTENT_LABELS_FR[onglet].toLocaleUpperCase('fr-FR'),
     contenuVide: contenu.items.length === 0,
   };
+}
+
+/**
+ * « VOIR PLUS » SOUS L'ONGLET OUVERT DU PROFIL (lot S3A).
+ *
+ * Chaque onglet a sa route (`/users/:handle/content` pour les stories, l'entraide…, `/feed`, `/guides`,
+ * `/events`, `/housing`, `/journeys/public` avec `authorHandle`) et donc sa carte : la page suivante est
+ * demandée à LA MÊME route que la première, avec le même filtre d'auteur, et convertie par le même
+ * convertisseur. Le curseur de chaque route est lié à son filtre d'auteur côté serveur.
+ */
+function suiteContenuK02(
+  onglet: MemberContentType,
+  pseudo: string,
+  curseurs: {
+    readonly contenu: string | null;
+    readonly publications: string | null;
+    readonly guides: string | null;
+    readonly evenements: string | null;
+    readonly annonces: string | null;
+    readonly parcours: string | null;
+  },
+  deja: { annonces: number },
+): SuiteContenuK02 {
+  const auteur = sansArobase(pseudo);
+  const signalDe = (signal?: AbortSignal) => (signal === undefined ? undefined : { signal });
+  // Les annonces alternent quatre aplats selon leur rang : la page suivante reprend où la précédente s'est arrêtée.
+  let rangAnnonce = deja.annonces;
+  switch (onglet) {
+    case 'POST':
+      return {
+        champ: 'contenuPublications',
+        curseur: curseurs.publications,
+        identifiant: (e) => (e as FeedPostView).postId ?? JSON.stringify(e).slice(0, 80),
+        charger: async (curseur, signal) => {
+          const page = await fetchFeed({ authorHandle: auteur, limit: 20, cursor: curseur }, signal);
+          return { items: feedPostsFrom(page), nextCursor: page.nextCursor };
+        },
+      };
+    case 'GUIDE':
+      return {
+        champ: 'contenuGuides',
+        curseur: curseurs.guides,
+        identifiant: (e) => (e as GuideCardView).href ?? (e as GuideCardView).title,
+        charger: async (curseur, signal) => {
+          const page = await fetchGuides({ tab: 'recent', authorHandle: auteur, cursor: curseur }, signal);
+          return { items: guideCardsFrom(page), nextCursor: page.nextCursor };
+        },
+      };
+    case 'EVENT':
+      return {
+        champ: 'contenuEvenements',
+        curseur: curseurs.evenements,
+        identifiant: (e) => (e as CarteEvenement).href ?? (e as CarteEvenement).titre,
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/events?authorHandle=${encodeURIComponent(auteur)}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            eventsResponseSchema,
+            signalDe(signal),
+          );
+          return { items: page.items.map((e) => construireCarte(e, new Map())), nextCursor: page.nextCursor };
+        },
+      };
+    case 'SERVICE':
+      return {
+        champ: 'contenuAnnonces',
+        curseur: curseurs.annonces,
+        identifiant: (e) => (e as CarteAnnonce).id,
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/housing?authorHandle=${encodeURIComponent(auteur)}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            housingListResponseSchema,
+            signalDe(signal),
+          );
+          const items = page.items.map((a, i) => carteAnnoncePublique(a, rangAnnonce + i));
+          rangAnnonce += items.length;
+          return { items, nextCursor: page.nextCursor };
+        },
+      };
+    case 'JOURNEY':
+      return {
+        champ: 'contenuParcours',
+        curseur: curseurs.parcours,
+        identifiant: (e) => (e as CarteParcoursView).href ?? JSON.stringify(e).slice(0, 80),
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/journeys/public?authorHandle=${encodeURIComponent(auteur)}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            publicJourneysResponseSchema,
+            signalDe(signal),
+          );
+          return { items: page.items.map(carteParcoursPublic), nextCursor: page.nextCursor };
+        },
+      };
+    case 'STORY':
+    case 'HELP':
+      return {
+        champ: 'contenus',
+        curseur: curseurs.contenu,
+        identifiant: (e) => (e as CarteContenu).id,
+        charger: async (curseur, signal) => {
+          const page = await memberApi.get(
+            `/users/${encodeURIComponent(pseudo)}/content?type=${onglet}&limit=20&cursor=${encodeURIComponent(curseur)}`,
+            memberContentResponseSchema,
+            signalDe(signal),
+          );
+          return { items: page.items.map(carteContenu), nextCursor: page.nextCursor };
+        },
+      };
+  }
 }
 
 function vueMembre(

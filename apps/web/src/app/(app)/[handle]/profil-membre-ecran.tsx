@@ -1,8 +1,10 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import type { MemberContentType } from '@app/shared';
 import { SQUELETTE_K02, chargerK02 } from '@/screens/compte/appels';
+import type { K02Data } from '@/screens/compte/data';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import { EcranDonnees } from '@/screens/compte/ecran-donnees';
 import { EcranCompte, useCompte } from '@/screens/compte/ecran';
 import { K02Desktop } from '@/screens/k02/desktop.generated';
@@ -118,4 +120,35 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
       )}
     </EcranDonnees>
   );
+}
+
+/**
+ * « VOIR PLUS » SOUS L'ONGLET OUVERT (lot S3A) : prolonge la liste de l'onglet (`suiteContenu.champ`)
+ * avec la page suivante de SA route, sans doublon, puis rend les données complétées à la chaîne
+ * habituelle (gestes du contact, cartes du fil vivantes, cadres). Changer d'onglet ou de profil
+ * abandonne les pages ajoutées (la clé).
+ */
+function AvecSuiteContenu({
+  donnees,
+  cle,
+  children,
+}: {
+  readonly donnees: K02Data;
+  readonly cle: string;
+  readonly children: (complet: K02Data) => ReactNode;
+}) {
+  const suite = donnees.suiteContenu;
+  const champ = suite?.champ ?? 'contenus';
+  const initiaux: readonly unknown[] = donnees[champ] ?? [];
+  const { items, plus } = useListeAPages<unknown>({
+    cle,
+    initiaux,
+    curseurInitial: suite?.curseur ?? null,
+    identifiant: suite?.identifiant ?? (() => ''),
+    charger: (curseur, signal) =>
+      suite === undefined ? Promise.resolve({ items: [], nextCursor: null }) : suite.charger(curseur, signal),
+  });
+  // Les éléments de `items` sont ceux de la liste `champ` : la suite les a convertis avec le même convertisseur.
+  const complet = { ...donnees, [champ]: items, plusContenu: plus } as K02Data;
+  return <>{children(complet)}</>;
 }

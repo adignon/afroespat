@@ -76,6 +76,28 @@ function suiteApres({ screens, nom, why, liste, prop, libelle, apresConteneur = 
   };
 }
 
+/**
+ * Pose « Voir plus » JUSTE AVANT un motif unique du cadre (`avant`), pour les écrans dont la liste
+ * change de forme selon l'onglet : le bouton ne suit alors aucune boucle précise, il suit le bloc
+ * entier — ici, la chaîne de conditions des sept onglets du profil.
+ */
+function suiteAvant({ screens, nom, why, avant, prop }) {
+  return {
+    screens,
+    nom,
+    why,
+    provides: [prop],
+    apply(jsx) {
+      const premier = jsx.indexOf(avant);
+      if (premier < 0 || jsx.indexOf(avant, premier + 1) >= 0) return { jsx, applied: false };
+      return {
+        jsx: jsx.slice(0, premier) + `<VoirPlus plus={${prop}} />` + jsx.slice(premier),
+        applied: true,
+      };
+    },
+  };
+}
+
 const SUITES = [
   suiteApres({
     screens: ['A03'],
@@ -155,6 +177,13 @@ const SUITES = [
     why: 'Les résultats d’un type ne montraient que la première page (20) : « Voir plus » suit `nextCursor` de `GET /search?type=`, avec la même requête et les mêmes filtres. La forme groupée (aperçu de trois) n’a pas de suite.',
     liste: 'resultats',
     prop: 'plusResultats',
+  }),
+  suiteAvant({
+    screens: ['K02'],
+    nom: 'K02_VOIR_PLUS',
+    why: 'Le contenu publié d’un membre ne montrait que la première page (20) de l’onglet ouvert : « Voir plus » suit `nextCursor` de la route de CET onglet (stories/entraide, fil, guides, événements, annonces, parcours), avec le même filtre d’auteur.',
+    avant: '{contenuVide ? (',
+    prop: 'plusContenu',
   }),
 ];
 
