@@ -723,6 +723,29 @@ export class ReferentialsService {
         await tx.proProfileCity.deleteMany({ where: { cityId: id } });
       }
       content['proCoverage'] = proCities.length;
+      // Recherches sans résultat (compteur par requête, ville et jour) : l'unicité (requête, ville, jour)
+      // impose de FUSIONNER les compteurs là où la cible a déjà une ligne, et non de réécrire la clé.
+      const zeroCount = await tx.$executeRaw`
+        INSERT INTO search_zero_results (id, created_at, query_normalized, city_id, occurred_on, count)
+        SELECT gen_random_uuid(), created_at, query_normalized, ${to}::uuid, occurred_on, count
+          FROM search_zero_results WHERE city_id = ${id}::uuid
+        ON CONFLICT (query_normalized, city_id, occurred_on)
+        DO UPDATE SET count = search_zero_results.count + EXCLUDED.count`;
+      await tx.searchZeroResult.deleteMany({ where: { cityId: id } });
+      content['searchZeroResults'] = zeroCount;
+      // Pseudonymes de chercheurs : `city_id` sans clé étrangère, donc rien ne les déplacerait seul.
+      const seekers = await tx.searchZeroResultSeeker.findMany({
+        where: { cityId: id },
+        select: { queryNormalized: true, occurredOn: true, seekerHash: true },
+      });
+      if (seekers.length > 0) {
+        await tx.searchZeroResultSeeker.createMany({
+          data: seekers.map((r) => ({ id: newId(), ...r, cityId: to })),
+          skipDuplicates: true,
+        });
+        await tx.searchZeroResultSeeker.deleteMany({ where: { cityId: id } });
+      }
+      content['searchZeroResultSeekers'] = seekers.length;
       // Médianes de loyer de la ville absorbée : recalculées chaque nuit pour la cible.
       await tx.housingPriceMedian.deleteMany({ where: { cityId: id } });
       // Compteurs : la ville absorbée se vide, la cible grossit (le recalcul nocturne reste le filet).

@@ -185,6 +185,9 @@ export class MentorshipService {
     const now = new Date();
 
     const profile = await this.prisma.$transaction(async (tx) => {
+      // Verrou de ligne : une acceptation concurrente ne glisse pas entre la lecture
+      // du compteur et l'abaissement de `max_mentees`.
+      await tx.$executeRaw`SELECT 1 FROM mentor_profiles WHERE user_id = ${userId}::uuid FOR UPDATE`;
       const existing = await tx.mentorProfile.findUnique({
         where: { userId },
         select: { userId: true, activeMenteeCount: true },
@@ -228,6 +231,13 @@ export class MentorshipService {
         targetType: 'mentor_profile',
         targetId: userId,
       });
+      if (input.bio !== undefined && input.bio !== null && input.bio !== '') {
+        await this.outbox.emit(tx, {
+          type: 'mentor_profile.updated',
+          aggregateId: userId,
+          payload: { userId },
+        });
+      }
 
       return row;
     });
@@ -607,16 +617,7 @@ export class MentorshipService {
     const endsAt = new Date(now.getTime() + MENTORSHIP_DURATION_MS);
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const profile = await tx.mentorProfile.findUnique({
-        where: { userId: mentorUserId },
-        select: { maxMentees: true, activeMenteeCount: true, isAvailable: true },
-      });
-      if (profile === null) throw ApiError.notFound();
-      // La règle dure. `active_mentee_count >= max_mentees` refuse, quel que soit
-      // `is_available` : un parrain saturé est « Complet », pas « indisponible ».
-      if (profile.activeMenteeCount >= profile.maxMentees) this.fail('MENTOR_FULL');
-
-      // `updateMany` conditionné au statut : deux acceptations concurrentes ne
+      // `updateMany` conditionné au statut : deux acceptations de la MÊME demande ne
       // peuvent pas incrémenter le compteur deux fois.
       const moved = await tx.mentorship.updateMany({
         where: { id: mentorshipId, status: 'REQUESTED' },
@@ -624,10 +625,23 @@ export class MentorshipService {
       });
       if (moved.count === 0) this.fail('MENTORSHIP_STATE');
 
-      await tx.mentorProfile.update({
-        where: { userId: mentorUserId },
-        data: { activeMenteeCount: { increment: 1 } },
-      });
+      // La règle dure, appliquée ATOMIQUEMENT : l'incrément est conditionné à la
+      // capacité dans la même instruction (verrou de ligne). Lire le compteur puis
+      // l'incrémenter laissait deux demandes DIFFÉRENTES passer ensemble au-delà de
+      // `max_mentees`. `active_mentee_count >= max_mentees` refuse, quel que soit
+      // `is_available` : un parrain saturé est « Complet », pas « indisponible ».
+      const taken = await tx.$executeRaw`
+        UPDATE mentor_profiles
+           SET active_mentee_count = active_mentee_count + 1, updated_at = now()
+         WHERE user_id = ${mentorUserId}::uuid AND active_mentee_count < max_mentees`;
+      if (taken === 0) {
+        const exists = await tx.mentorProfile.findUnique({
+          where: { userId: mentorUserId },
+          select: { userId: true },
+        });
+        if (exists === null) throw ApiError.notFound();
+        this.fail('MENTOR_FULL');
+      }
 
       const conversationId = await this.messaging.ensureMentorshipConversation(tx, mentorshipId, [
         mentorship.mentorUserId,
@@ -801,6 +815,13 @@ export class MentorshipService {
         },
       });
       await this.recomputeRating(tx, revieweeUserId);
+      if (input.comment !== undefined && input.comment !== null && input.comment !== '') {
+        await this.outbox.emit(tx, {
+          type: 'mentorship.reviewed',
+          aggregateId: id,
+          payload: { mentorshipId, reviewerUserId: userId },
+        });
+      }
     });
 
     return { id, rating: input.rating, meta: this.meta() };

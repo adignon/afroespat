@@ -111,7 +111,8 @@ export interface ModerationCheckInput {
 export type SubjectType =
   | 'POST' | 'COMMENT' | 'TOPIC' | 'GUIDE' | 'HELP_REQUEST' | 'HELP_RESPONSE'
   | 'HOUSING' | 'JOB' | 'PRO' | 'EVENT' | 'MESSAGE' | 'USER' | 'COMMUNITY'
-  | 'STORY' | 'CITY_TIP';
+  | 'STORY' | 'CITY_TIP' | 'MENTORSHIP' | 'MENTORSHIP_REVIEW' | 'MENTOR_PROFILE'
+  | 'MEMBER_RECOMMENDATION';
 
 /**
  * Ce que `check()` rend. `blocked` est redondant avec `verdict` : c'est
@@ -268,7 +269,15 @@ export class ModerationService {
       // Aucun port de file : le contenu part, et l'équipe relira. Silencieux
       // serait pire — un module entier cesserait d'être analysé sans trace.
       this.logger.warn('File de modération absente : analyse IA non planifiée.');
-      return { verdict: 'ALLOW', blocked: false, source: 'NONE', labels: [], score: null, caseId: null, notice: null };
+      const caseId = await this.openCase({
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        subjectAuthorUserId: input.authorUserId,
+        source: 'AI',
+        priority: 3,
+        note: 'File de modération absente : relecture humaine.',
+      });
+      return { verdict: 'ALLOW', blocked: false, source: 'NONE', labels: [], score: null, caseId, notice: null };
     }
 
     try {
@@ -869,6 +878,14 @@ export class ModerationService {
         });
         return row === null || row.deletedAt !== null ? null : row.authorUserId;
       }
+      case 'MENTORSHIP':
+        return (await this.prisma.mentorship.findUnique({ where: { id: subjectId }, select: { menteeUserId: true } }))?.menteeUserId ?? null;
+      case 'MENTORSHIP_REVIEW':
+        return (await this.prisma.mentorshipReview.findUnique({ where: { id: subjectId }, select: { reviewerUserId: true } }))?.reviewerUserId ?? null;
+      case 'MENTOR_PROFILE':
+        return (await this.prisma.mentorProfile.findUnique({ where: { userId: subjectId }, select: { userId: true } }))?.userId ?? null;
+      case 'MEMBER_RECOMMENDATION':
+        return (await this.prisma.memberRecommendation.findUnique({ where: { id: subjectId }, select: { fromUserId: true } }))?.fromUserId ?? null;
       default:
         return null;
     }
@@ -942,6 +959,22 @@ export class ModerationService {
       }
       case 'MESSAGE':
         return { title: 'Message privé', text: null };
+      case 'MENTORSHIP': {
+        const r = await this.prisma.mentorship.findUnique({ where: { id }, select: { requestMessage: true } });
+        return { title: 'Demande de parrainage', text: cut(r?.requestMessage) };
+      }
+      case 'MENTORSHIP_REVIEW': {
+        const r = await this.prisma.mentorshipReview.findUnique({ where: { id }, select: { comment: true } });
+        return { title: 'Évaluation de parrainage', text: cut(r?.comment) };
+      }
+      case 'MENTOR_PROFILE': {
+        const r = await this.prisma.mentorProfile.findUnique({ where: { userId: id }, select: { bio: true } });
+        return { title: 'Présentation de parrain', text: cut(r?.bio) };
+      }
+      case 'MEMBER_RECOMMENDATION': {
+        const r = await this.prisma.memberRecommendation.findUnique({ where: { id }, select: { comment: true } });
+        return { title: 'Recommandation', text: cut(r?.comment) };
+      }
       default:
         return { title: null, text: null };
     }
@@ -2099,6 +2132,34 @@ export class ModerationService {
         return row === null || row.deletedAt !== null
           ? null
           : { text: `${row.title}\n\n${row.body}`, authorUserId: row.authorUserId };
+      }
+      case 'MENTORSHIP': {
+        const row = await this.prisma.mentorship.findUnique({
+          where: { id: subjectId },
+          select: { requestMessage: true, menteeUserId: true },
+        });
+        return row === null ? null : { text: row.requestMessage, authorUserId: row.menteeUserId };
+      }
+      case 'MENTORSHIP_REVIEW': {
+        const row = await this.prisma.mentorshipReview.findUnique({
+          where: { id: subjectId },
+          select: { comment: true, reviewerUserId: true },
+        });
+        return row === null || row.comment === null ? null : { text: row.comment, authorUserId: row.reviewerUserId };
+      }
+      case 'MENTOR_PROFILE': {
+        const row = await this.prisma.mentorProfile.findUnique({
+          where: { userId: subjectId },
+          select: { bio: true, userId: true },
+        });
+        return row === null || row.bio === null ? null : { text: row.bio, authorUserId: row.userId };
+      }
+      case 'MEMBER_RECOMMENDATION': {
+        const row = await this.prisma.memberRecommendation.findUnique({
+          where: { id: subjectId },
+          select: { comment: true, fromUserId: true },
+        });
+        return row === null || row.comment === null ? null : { text: row.comment, authorUserId: row.fromUserId };
       }
       default:
         return null;

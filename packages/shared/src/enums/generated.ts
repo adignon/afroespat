@@ -711,6 +711,10 @@ export const ReportSubjectType = [
   'COMMUNITY',
   'STORY',
   'CITY_TIP',
+  'MENTORSHIP',
+  'MENTORSHIP_REVIEW',
+  'MENTOR_PROFILE',
+  'MEMBER_RECOMMENDATION',
 ] as const;
 export type ReportSubjectType = (typeof ReportSubjectType)[number];
 

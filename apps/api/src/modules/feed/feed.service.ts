@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { BoundedMap, CACHE_MAX_ENTRIES } from '../../common/bounded-map';
 import { newId, type Prisma } from '@app/db';
 import {
   COMMUNITY_ERROR_CODES,
@@ -269,7 +270,9 @@ export class FeedService {
    * membre. La conséquence : avec N instances, jusqu'à N calculs au lieu d'un.
    * À rebrancher sur Redis le jour où le nombre d'instances le justifie.
    */
-  private readonly sidebarCache = new Map<string, { at: number; value: unknown }>();
+  private readonly sidebarCache = new BoundedMap<string, { at: number; value: unknown }>(
+    CACHE_MAX_ENTRIES,
+  );
 
   constructor(
     private readonly prisma: PrismaService,

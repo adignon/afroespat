@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { BoundedMap, CACHE_MAX_ENTRIES } from '../../common/bounded-map';
 import { newId, type Prisma } from '@app/db';
 import {
   CITY_ACTIVATION_SUGGEST_MEMBERS,
@@ -137,7 +138,9 @@ export class CitiesService {
   private readonly defaultTimeZone = loadEnv().DEFAULT_TIMEZONE;
 
   /** §2.3 : « Calculé à la requête, cache 5 minutes. Rien n'est stocké. » */
-  private readonly desksCache = new Map<string, { at: number; items: unknown[] }>();
+  private readonly desksCache = new BoundedMap<string, { at: number; items: unknown[] }>(
+    CACHE_MAX_ENTRIES,
+  );
 
   constructor(
     private readonly prisma: PrismaService,

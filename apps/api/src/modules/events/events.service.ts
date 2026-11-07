@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { BoundedMap, CACHE_MAX_ENTRIES } from '../../common/bounded-map';
 import { newId, type Prisma } from '@app/db';
 import {
   type AttendeeStatus,
@@ -161,7 +162,10 @@ export class EventsService {
   private readonly defaultTimeZone = loadEnv().DEFAULT_TIMEZONE;
 
   /** §5 : « Cache 5 min par (membre, ville) » pour le calendrier. */
-  private readonly calendarCache = new Map<string, { at: number; days: CalendarDay[] }>();
+  private readonly calendarCache = new BoundedMap<
+    string,
+    { at: number; days: CalendarDay[] }
+  >(CACHE_MAX_ENTRIES);
 
   constructor(
     private readonly prisma: PrismaService,

@@ -417,7 +417,6 @@ export class HelpService {
 
     const type = this.assertHelpType(input.type);
     this.assertPublishable(input.title, input.body);
-    await this.assertQuota(actor.userId);
 
     const city = await this.prisma.city.findUnique({
       where: { id: input.cityId },
@@ -435,6 +434,8 @@ export class HelpService {
 
     const id = newId();
     await this.prisma.$transaction(async (tx) => {
+      // Quota vérifié SOUS verrou : lire-puis-écrire laissait passer N appels concurrents.
+      await this.assertQuota(actor.userId, tx);
       await tx.helpRequest.create({
         data: {
           id,
@@ -526,10 +527,10 @@ export class HelpService {
     if (request.status !== 'OPEN') this.fail('REQUEST_CLOSED');
 
     this.assertPublishable(null, input.body);
-    await this.assertResponseQuota(actor.userId);
 
     const responseId = newId();
     await this.prisma.$transaction(async (tx) => {
+      await this.assertResponseQuota(actor.userId, tx);
       await tx.helpResponse.create({
         data: {
           id: responseId,
@@ -1086,9 +1087,10 @@ export class HelpService {
   }
 
   /** §4 : 5 demandes par jour. Compte les supprimées aussi — sinon la limite se remet à zéro d'un clic. */
-  private async assertQuota(userId: string): Promise<void> {
+  private async assertQuota(userId: string, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`help.quota:${userId}`}, 0))`;
     const since = new Date(Date.now() - 86_400_000);
-    const count = await this.prisma.helpRequest.count({
+    const count = await tx.helpRequest.count({
       where: { authorUserId: userId, createdAt: { gte: since } },
     });
     if (count >= HELP_LIMITS.requestsPerDay) {
@@ -1101,9 +1103,10 @@ export class HelpService {
   }
 
   /** §2.3 et §4 : 30 réponses par heure. */
-  private async assertResponseQuota(userId: string): Promise<void> {
+  private async assertResponseQuota(userId: string, tx: Prisma.TransactionClient): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`help.respquota:${userId}`}, 0))`;
     const since = new Date(Date.now() - 3_600_000);
-    const count = await this.prisma.helpResponse.count({
+    const count = await tx.helpResponse.count({
       where: { authorUserId: userId, createdAt: { gte: since } },
     });
     if (count >= HELP_LIMITS.responsesPerHour) {
