@@ -351,11 +351,22 @@ export class JobsService {
     if (plan === 'FREE') throw ApiError.planLimit('sponsoredJobsPerMonth', 0, 0);
 
     const max = await this.sponsoredPerMonth(plan);
-    const used = await this.sponsoredThisMonth(authorUserId);
-    if (used >= max) this.fail('SPONSORED_LIMIT', { current: used, max });
 
     const sponsoredUntil = new Date(Date.now() + JOB_SPONSORED_DAYS * 86_400_000);
     const row = await this.prisma.$transaction(async (tx) => {
+      // Quota vérifié SOUS verrou (par auteur) : lire-puis-écrire laissait passer
+      // des mises en avant concurrentes au-delà du plafond mensuel.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`job.sponsor:${authorUserId}`}, 0))`;
+      const fresh = await tx.jobListing.findUniqueOrThrow({
+        where: { id: jobId },
+        select: { sponsoredUntil: true },
+      });
+      if (fresh.sponsoredUntil !== null && fresh.sponsoredUntil.getTime() > Date.now()) {
+        this.fail('ALREADY_SPONSORED');
+      }
+      const used = await this.sponsoredThisMonth(authorUserId, new Date(), tx);
+      if (used >= max) this.fail('SPONSORED_LIMIT', { current: used, max });
+
       const updated = await tx.jobListing.update({
         where: { id: jobId },
         data: { isSponsored: true, sponsoredUntil },
@@ -790,12 +801,16 @@ export class JobsService {
    * [début + 14 j, fin + 14 j). Aucune arithmétique de date en SQL, donc aucune
    * surprise de fuseau : les deux bornes sont calculées en UTC ici.
    */
-  private async sponsoredThisMonth(authorUserId: string, now = new Date()): Promise<number> {
+  private async sponsoredThisMonth(
+    authorUserId: string,
+    now = new Date(),
+    db: Prisma.TransactionClient | PrismaService = this.prisma,
+  ): Promise<number> {
     const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
     const monthEnd = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
     const shift = JOB_SPONSORED_DAYS * 86_400_000;
 
-    return this.prisma.jobListing.count({
+    return db.jobListing.count({
       where: {
         authorUserId,
         sponsoredUntil: { gte: new Date(monthStart + shift), lt: new Date(monthEnd + shift) },
