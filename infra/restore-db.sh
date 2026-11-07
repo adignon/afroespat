@@ -49,7 +49,12 @@ lire() {
 
 echo "Création de la base « $CIBLE » puis restauration de $FICHIER …"
 psql_ -d postgres -c "create database \"$CIBLE\""
-if ! lire | restaurer; then
+# Seul le code de pg_restore compte : `cat`/`age` peuvent finir en SIGPIPE (141) quand pg_restore a lu tout ce dont il a besoin.
+set +e +o pipefail
+lire | restaurer
+RESTAURE=("${PIPESTATUS[@]}")
+set -eo pipefail
+if [ "${RESTAURE[1]}" -ne 0 ]; then
   echo "ERREUR : la restauration a échoué ; la base « $CIBLE » est laissée en l'état pour examen." >&2
   exit 1
 fi
