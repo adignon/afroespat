@@ -180,7 +180,7 @@ button[aria-busy='true']::after,
 @media (prefers-reduced-motion: reduce) {
   button[aria-busy='true']::after,
   [role='button'][aria-busy='true']::after {
-    animation-duration: 2s;
+    animation-duration: 2s; /* motion:loop */
   }
 }
 

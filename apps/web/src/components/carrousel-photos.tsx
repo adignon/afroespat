@@ -357,7 +357,7 @@ export function CarrouselPhotos({
             width: '100%',
             height: '100%',
             transform: `translateX(calc(12.5% - ${String(rang * 75)}%))`,
-            transition: 'transform .35s ease',
+            transition: 'transform .3s ease',
           }}
         >
           {urls.map((url, i) => (
@@ -382,7 +382,7 @@ export function CarrouselPhotos({
                   cursor: 'pointer',
                   /** La voisine s'efface : c'est elle qui dit « il y en a d'autres ». */
                   opacity: i === rang ? '1' : '.45',
-                  transition: 'opacity .35s ease',
+                  transition: 'opacity .3s ease',
                 }}
               />
             </div>

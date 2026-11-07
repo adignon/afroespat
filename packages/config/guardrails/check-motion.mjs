@@ -118,10 +118,15 @@ for (const root of ROOTS) {
         violations.push(`${where} — animation décorative : ${line.trim().slice(0, 70)}`);
       }
 
-      for (const m of line.matchAll(/(\d+(?:\.\d+)?)m?s\b/g)) {
+      // Une boucle (`infinite`, ou ligne marquée `motion:loop`) : le chiffre est la PÉRIODE d'un
+      // cycle (spinner, bandeau défilant), pas la durée d'une transition. Elle reste sous
+      // le contrôle des animations décoratives ci-dessus.
+      const isLoop = /\binfinite\b|motion:loop/.test(line);
+      for (const m of line.matchAll(/(?<![\w.])(\d*\.?\d+)(ms|s)\b/g)) {
         const raw = m[0];
         if (!/duration|transition|animation/i.test(line)) continue;
-        const ms = raw.endsWith('ms') ? Number(m[1]) : Number(m[1]) * 1000;
+        if (isLoop) continue;
+        const ms = m[2] === 'ms' ? Number(m[1]) : Number(m[1]) * 1000;
         durations += 1;
         if (ms <= MAX_DURATION_MS || ms <= 1) continue;
 
