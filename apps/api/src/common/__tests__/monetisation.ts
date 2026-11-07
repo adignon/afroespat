@@ -25,6 +25,7 @@ export async function reglerMonetisation(
       upsert(args: unknown): Promise<unknown>;
       deleteMany(args: unknown): Promise<unknown>;
     };
+    plan?: { updateMany(args: unknown): Promise<unknown> };
   },
   actif: boolean | null,
 ): Promise<void> {
@@ -40,6 +41,8 @@ export async function reglerMonetisation(
   }
   const ecrire = (key: string, value: unknown) =>
     prisma.systemSetting.upsert({ where: { key }, create: { key, value }, update: { value } });
+  // Le seed livre les formules payantes éteintes (tout gratuit) : un banc qui teste le payant les allume.
+  if (actif && prisma.plan !== undefined) await prisma.plan.updateMany({ data: { isActive: true } });
   await ecrire(MONETISATION_SETTING_KEY, actif);
   await ecrire(
     BILLING_PAYMENT_METHODS_SETTING_KEY,
