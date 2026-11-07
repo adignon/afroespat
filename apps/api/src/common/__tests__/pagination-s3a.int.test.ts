@@ -341,6 +341,56 @@ describe('pagination « Voir plus » : deux pages, ni doublon ni trou (lot S3A)'
     expect(pages).toBe(3);
     expect(new Set(ids).size).toBe(5);
     expect(ids).toEqual(tout.items.map((b) => b.subjectId));
+
+    // L'onglet « Annonces » couvre plusieurs types : le filtre est serveur, le curseur lui est lié.
+    for (let i = 0; i < 3; i += 1) {
+      await prisma.bookmark.create({
+        data: {
+          id: newId(),
+          userId: moi.id,
+          subjectType: 'JOB',
+          subjectId: newId(),
+          createdAt: meme,
+        },
+      });
+    }
+    await prisma.bookmark.create({
+      data: {
+        id: newId(),
+        userId: moi.id,
+        subjectType: 'USER',
+        subjectId: newId(),
+        createdAt: meme,
+      },
+    });
+    const types = ['HELP_REQUEST', 'JOB'] as const;
+    const multi = await bookmarks.list(moi.id, { subjectTypes: types, limit: 50 });
+    expect(multi.items).toHaveLength(8);
+    expect(
+      multi.items.every((b) => b.subjectType === 'HELP_REQUEST' || b.subjectType === 'JOB'),
+    ).toBe(true);
+    const suiteMulti = await suivre(
+      (cursor) =>
+        bookmarks.list(moi.id, {
+          subjectTypes: types,
+          limit: 3,
+          ...(cursor === undefined ? {} : { cursor }),
+        }),
+      (b) => b.id,
+    );
+    expect(suiteMulti.pages).toBe(3);
+    expect(new Set(suiteMulti.ids).size).toBe(8);
+    expect(suiteMulti.ids).toEqual(multi.items.map((b) => b.id));
+    // Les comptes d'onglets restent ceux de TOUTE la collection.
+    expect(multi.meta.total).toBe(9);
+    const premiere = await bookmarks.list(moi.id, { subjectTypes: types, limit: 3 });
+    await expect(
+      bookmarks.list(moi.id, {
+        subjectType: 'JOB',
+        limit: 3,
+        cursor: premiere.nextCursor as string,
+      }),
+    ).rejects.toBeDefined();
   });
 
   // ── Agenda ──────────────────────────────────────────────────────────────────
