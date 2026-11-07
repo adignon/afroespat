@@ -12,6 +12,7 @@ import {
   mySanctionsResponseSchema,
   mySubscriptionResponseSchema,
   bookmarksResponseSchema,
+  type BookmarksResponse,
   MEMBER_CONTENT_LABELS_FR,
   MEMBER_CONTENT_TYPES,
   memberContentResponseSchema,
@@ -120,6 +121,7 @@ import type {
   K08Data,
   K09Data,
   K10Data,
+  LigneEnregistree,
   OngletContenu,
   OngletEnregistres,
   PastilleNiveau,
@@ -1341,15 +1343,11 @@ export async function chargerK10(
   onChoisir: (cle: string) => void = () => undefined,
 ): Promise<K10Data> {
   const types = typesDeLOnglet(onglet);
-  const requete = types.length === 1 ? `?subjectType=${types[0] ?? ''}&limit=50` : '?limit=50';
 
   const [moi, enregistres] = await Promise.all([
     chargerBandeau(),
-    memberApi.get(`/me/bookmarks${requete}`, bookmarksResponseSchema),
+    memberApi.get(`/me/bookmarks${requeteEnregistres(onglet)}`, bookmarksResponseSchema),
   ]);
-
-  const retenues =
-    types.length > 1 ? enregistres.items.filter((b) => types.includes(b.subjectType)) : enregistres.items;
 
   /**
    * LE COMPTE AFFICHÉ SUIT L'ONGLET. « 14 enregistrés » sous le titre d'un
@@ -1366,30 +1364,60 @@ export async function chargerK10(
     moi,
     compte: `${totalOnglet} enregistré${totalOnglet > 1 ? 's' : ''}`,
     onglets: ongletsEnregistres(onglet, enregistres.meta.parType, onChoisir),
-    vide: retenues.length === 0,
-    lignes: retenues.map((b) => {
-      const teinte = TEINTE_ETAT[b.state];
-      return {
-        cle: `${b.subjectType}:${b.subjectId}`,
-        icone: ICONE_PAR_TYPE[b.subjectType],
-        titre: b.title,
-        etat: ETAT_ENREGISTRE[b.state],
-        etatFond: teinte.fond,
-        etatTexte: teinte.texte,
-        opacite: teinte.opacite,
-        depuis: `enregistré ${depuisQuand(b.createdAt)}`,
-        /**
-         * LE CONTENU RETIRÉ N'A PLUS D'ADRESSE. Le serveur compose `href` à
-         * partir de la source, et la ligne reste dans la liste après sa
-         * disparition — c'est tout le sens de l'état `REMOVED`. Un lien mort
-         * vaudrait moins qu'un titre nu.
-         */
-        href: b.state === 'REMOVED' ? '' : (b.href ?? ''),
-        /** Attaché par l'écran vivant, qui seul sait recharger après le retrait. */
-        onRetirer: () => undefined,
-      };
-    }),
+    vide: enregistres.items.length === 0,
+    lignes: enregistres.items.map(ligneEnregistree),
+    suite: enregistres.nextCursor,
+    totalOnglet,
   };
+}
+
+/**
+ * LE FILTRE D'ONGLET PART AU SERVEUR, même pour « Annonces » (trois types) : `subjectTypes=` (lot S3A).
+ * Filtrer la page reçue montrerait un onglet maigre — voire vide — avec un « Voir plus » trompeur.
+ */
+function requeteEnregistres(onglet: string): string {
+  const types = typesDeLOnglet(onglet);
+  if (types.length === 0) return '?limit=20';
+  return types.length === 1
+    ? `?subjectType=${types[0] ?? ''}&limit=20`
+    : `?subjectTypes=${types.join(',')}&limit=20`;
+}
+
+function ligneEnregistree(b: BookmarksResponse['items'][number]): LigneEnregistree {
+  const teinte = TEINTE_ETAT[b.state];
+  return {
+    cle: `${b.subjectType}:${b.subjectId}`,
+    icone: ICONE_PAR_TYPE[b.subjectType],
+    titre: b.title,
+    etat: ETAT_ENREGISTRE[b.state],
+    etatFond: teinte.fond,
+    etatTexte: teinte.texte,
+    opacite: teinte.opacite,
+    depuis: `enregistré ${depuisQuand(b.createdAt)}`,
+    /**
+     * LE CONTENU RETIRÉ N'A PLUS D'ADRESSE. Le serveur compose `href` à
+     * partir de la source, et la ligne reste dans la liste après sa
+     * disparition — c'est tout le sens de l'état `REMOVED`. Un lien mort
+     * vaudrait moins qu'un titre nu.
+     */
+    href: b.state === 'REMOVED' ? '' : (b.href ?? ''),
+    /** Attaché par l'écran vivant, qui seul sait recharger après le retrait. */
+    onRetirer: () => undefined,
+  };
+}
+
+/** « Voir plus » sous « Enregistrés » (lot S3A) : la page suivante, avec le même onglet. */
+export async function chargerEnregistresSuivants(
+  onglet: string,
+  curseur: string,
+  signal?: AbortSignal,
+): Promise<{ readonly items: readonly LigneEnregistree[]; readonly nextCursor: string | null }> {
+  const page = await memberApi.get(
+    `/me/bookmarks${requeteEnregistres(onglet)}&cursor=${encodeURIComponent(curseur)}`,
+    bookmarksResponseSchema,
+    signal === undefined ? undefined : { signal },
+  );
+  return { items: page.items.map(ligneEnregistree), nextCursor: page.nextCursor };
 }
 
 /**

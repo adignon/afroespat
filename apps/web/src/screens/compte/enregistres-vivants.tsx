@@ -4,6 +4,8 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { notifyError, notifySuccess } from '@/components/notifications';
 import { ApiError, memberApi } from '@/lib/api/index';
 import { z } from 'zod';
+import { useListeAPages } from '@/lib/use-liste-pages';
+import { chargerEnregistresSuivants } from './appels';
 import type { K10Data, LigneEnregistree } from './data';
 
 /**
@@ -43,6 +45,22 @@ export function EnregistresVivants({
 }) {
   const [enVol, setEnVol] = useState(false);
 
+  /**
+   * « VOIR PLUS » (lot S3A) : la page suivante de `GET /me/bookmarks`, avec le même onglet. Un retrait
+   * recharge la première page ; les pages ajoutées sont alors oubliées (clé = onglet + premier curseur +
+   * nombre de retraits) pour ne pas remontrer un signet qui n'existe plus.
+   */
+  const onglet = donnees.onglets.find((o) => o.actif)?.cle ?? '*';
+  const [retraits, setRetraits] = useState(0);
+  const { items, plus } = useListeAPages({
+    cle: `${onglet}|${String(retraits)}`,
+    initiaux: donnees.lignes,
+    curseurInitial: donnees.suite ?? null,
+    total: donnees.totalOnglet ?? null,
+    identifiant: (l) => l.cle,
+    charger: (curseur, signal) => chargerEnregistresSuivants(onglet, curseur, signal),
+  });
+
   const retirer = useCallback(
     (cle: string, titre: string) => {
       const coupe = cle.indexOf(':');
@@ -55,6 +73,7 @@ export function EnregistresVivants({
         .del(`/me/bookmarks/${type}/${id}`, z.unknown())
         .then(() => {
           notifySuccess(`« ${titre} » a été retiré de vos enregistrés.`);
+          setRetraits((n) => n + 1);
           onRecharger();
         })
         .catch((cause: unknown) => {
@@ -72,7 +91,9 @@ export function EnregistresVivants({
   const enrichies: K10Data = {
     ...donnees,
     enregistresOccupe: enVol,
-    lignes: donnees.lignes.map(
+    plusEnregistres: plus,
+    vide: items.length === 0,
+    lignes: items.map(
       (l): LigneEnregistree => ({
         ...l,
         onRetirer: () => {

@@ -8,10 +8,11 @@ import { Fragment } from 'react';
 import Link from 'next/link';
 import { BoutonCreer, ChampRecherche, LienMessages, LienNotifications } from '@/components/barre-haute/controles';
 import { RailSurvol } from '@/components/rail/survol';
+import { VoirPlus } from '@/components/voir-plus';
 import type { K10Data } from '../compte/data';
 
 export function K10Desktop(props: K10Data) {
-  const { compte, enregistresOccupe, lignes, moi, onglets, vide } = props;
+  const { compte, enregistresOccupe, lignes, moi, onglets, plusEnregistres, vide } = props;
 
   return (
     <>
@@ -20,7 +21,7 @@ export function K10Desktop(props: K10Data) {
 <Fragment key={oIndex}><button type="button" onClick={o.onChoisir} aria-pressed={o.actif} data-enregistres-onglet={o.cle} style={{ padding: "8px 13px", borderRadius: "999px", fontSize: "12.5px", fontWeight: "700", whiteSpace: "nowrap", background: o.fond, color: o.texte, border: `1px solid ${o.bord}`, fontFamily: "inherit", cursor: "pointer" }}>{o.libelle}</button></Fragment>
 ))}</div>{(lignes ?? []).map((l, lIndex) => (
 <Fragment key={lIndex}><div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "12px 14px", borderRadius: "18px", background: "#fff", border: "1px solid #E6EBE9", opacity: l.opacite }}><span style={{ width: "44px", height: "44px", borderRadius: "12px", background: "#E3F0EB", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F5C48" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={l.icone} /></svg></span><div style={{ flex: "1", minWidth: "0" }}><div style={{ fontSize: "14px", fontWeight: "700", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.href ? (<Link href={l.href} data-enregistres-lien={l.cle} style={{ color: "inherit", textDecoration: "none" }}>{l.titre}</Link>) : l.titre}</div><div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "4px" }}>{l.etat ? (<><span style={{ background: l.etatFond, color: l.etatTexte, fontSize: "11px", fontWeight: "700", padding: "4px 10px", borderRadius: "999px", whiteSpace: "nowrap" }}>{l.etat}</span></>) : null}<span style={{ fontSize: "11.5px", color: "#8A958F" }}>{l.depuis}</span></div></div><button type="button" onClick={l.onRetirer} disabled={enregistresOccupe} aria-label={`Retirer ${l.titre} des enregistrés`} title="Retirer" data-enregistres-retirer={l.cle} style={{ minWidth: "44px", minHeight: "44px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: "0", background: "transparent", border: "none", padding: 0, cursor: enregistresOccupe ? "default" : "pointer" }}><svg width="18" height="18" viewBox="0 0 24 24" fill="#16785E" stroke="#16785E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg></button></div></Fragment>
-))}{vide ? (<><div style={{ textAlign: "center" }}><div style={{ fontSize: "14px", fontWeight: "700" }}>Vous n’avez rien enregistré</div><div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>Touchez le signet sur un contenu pour le retrouver ici.</div></div></>) : null}</main></div></div>
+))}<VoirPlus plus={plusEnregistres} />{vide ? (<><div style={{ textAlign: "center" }}><div style={{ fontSize: "14px", fontWeight: "700" }}>Vous n’avez rien enregistré</div><div style={{ fontSize: "12.5px", color: "#5D6B66", marginTop: "4px" }}>Touchez le signet sur un contenu pour le retrouver ici.</div></div></>) : null}</main></div></div>
     </>
   );
 }

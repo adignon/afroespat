@@ -835,6 +835,12 @@ export interface K10Data {
   readonly vide: boolean;
   /** Vrai pendant un retrait : le signet s'éteint plutôt que de partir deux fois. */
   readonly enregistresOccupe?: boolean;
+  /** Le `nextCursor` de la première page (lot S3A) ; `null` quand tout tient sur une page. */
+  readonly suite?: string | null;
+  /** Le total de l'onglet courant, pour « 20 sur N » (lot S3A). */
+  readonly totalOnglet?: number;
+  /** « Voir plus » sous la liste (lot S3A) — posé par `EnregistresVivants`. */
+  readonly plusEnregistres?: import('@/components/voir-plus').PlusListe;
 }
 
 /**

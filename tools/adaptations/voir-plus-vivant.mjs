@@ -112,6 +112,13 @@ const SUITES = [
     liste: 'lignes',
     prop: 'plusLignes',
   }),
+  suiteApres({
+    screens: ['K10'],
+    nom: 'K10_VOIR_PLUS',
+    why: 'Les enregistrés ne montraient qu’une page : « Voir plus » suit `nextCursor` de `GET /me/bookmarks`, avec le même onglet (filtre serveur) et « 20 sur N » du compte de l’onglet.',
+    liste: 'lignes',
+    prop: 'plusEnregistres',
+  }),
 ];
 
 export const ADAPTATIONS_VOIR_PLUS = SUITES;
