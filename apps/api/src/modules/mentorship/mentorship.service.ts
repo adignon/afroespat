@@ -437,20 +437,28 @@ export class MentorshipService {
             ? { status: { in: ['ENDED', 'DECLINED', 'CANCELLED'] } }
             : {};
 
-    const rows = await this.prisma.mentorship.findMany({
-      where: { AND: [roleFilter, stateFilter] },
+    // Pagination par curseur (lot S3A) : `id` UUID v7 décroissant — un ordre total. Le curseur ne vaut que
+    // pour le rôle et l'état qui l'ont produit. Sans `limit`, jusqu'à cent lignes comme avant.
+    const taille = query.limit ?? 100;
+    const scope = `mentorships:${userId}:${query.role}:${query.state}`;
+    const apres = query.cursor === undefined ? null : decodeCursor(query.cursor, this.cursorSecret, scope);
+    const lues = await this.prisma.mentorship.findMany({
+      where: { AND: [roleFilter, stateFilter, ...(apres === null ? [] : [{ id: { lt: apres.id } }])] },
       orderBy: { id: 'desc' },
-      take: 100,
+      take: taille + 1,
       include: {
         mentor: { select: MENTOR_USER_SELECT },
         mentee: { select: MENTOR_USER_SELECT },
         reviews: { select: { reviewerUserId: true, rating: true, comment: true, createdAt: true } },
       },
     });
+    const page = buildPage(lues, taille, scope, this.cursorSecret);
+    const rows = page.items;
 
     const separated = new Set(await this.visibility.separatedFrom(userId));
 
     return {
+      nextCursor: page.nextCursor,
       items: rows.map((row) => {
         const isMentor = row.mentorUserId === userId;
         const other = isMentor ? row.mentee : row.mentor;

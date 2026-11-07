@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { MentorshipEndReason, MentorshipStatus } from '../enums/generated.js';
-import { cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
+import { MAX_PAGE_LIMIT, cursorQuerySchema, handleSchema, pageSchema, uuidSchema } from './pagination.js';
 
 /**
  * Parrainage — 08-parrainage-messagerie.md §2.
@@ -173,6 +173,12 @@ export const myMentorshipsQuerySchema = z
   .object({
     role: z.enum(['mentor', 'mentee', 'all']).default('all'),
     state: z.enum(['pending', 'active', 'past', 'all']).default('all'),
+    /**
+     * (lot S3A) Taille de page (1 à 50) et reprise. Sans `limit`, la route rend jusqu'à cent
+     * parrainages comme avant ; `nextCursor` dit alors honnêtement s'il en reste au-delà.
+     */
+    limit: z.coerce.number().int().min(1).max(MAX_PAGE_LIMIT).optional(),
+    cursor: z.string().min(1).max(512).optional(),
   })
   .strict();
 
@@ -185,10 +191,11 @@ export type MyMentorshipsQuery = z.infer<typeof myMentorshipsQuerySchema>;
 // évalué des deux côtés. Trois choses se sont révélées en appelant, et aucune des
 // trois n'aurait été devinée en lisant le service :
 //
-//   1. `GET /me/mentorships` N'A PAS DE `nextCursor`. Le service rend
-//      `{ items, meta }` et borne à cent lignes — `pageSchema` ici aurait fait
-//      REFUSER la réponse réelle, exactement comme `myBlocksResponseSchema` l'a
-//      fait une fois dans `connections.ts`.
+//   1. `GET /me/mentorships` N'AVAIT PAS DE `nextCursor` (il en a un depuis le lot S3A :
+//      `limit` / `cursor`, tri `id` décroissant, cent lignes au plus sans `limit`).
+//      Le service rendait `{ items, meta }` — `pageSchema` aurait fait REFUSER la
+//      réponse d'alors, exactement comme `myBlocksResponseSchema` l'a fait une fois
+//      dans `connections.ts`.
 //   2. `avatarUrl` de la fiche parrain est la CLÉ DE STOCKAGE BRUTE
 //      (`profile.user.avatarAsset?.storageKey`), alors que `helpMemberSchema`
 //      reçoit un chemin `/media/<clé>` composé par son service. Les deux modules
@@ -365,6 +372,8 @@ export const myMentorshipsResponseSchema = z
         })
         .strict(),
     ),
+    /** Null en fin de liste (lot S3A) ; les cartes sont triées de la plus récente à la plus ancienne. */
+    nextCursor: z.string().nullable(),
     meta: mentorshipMetaSchema,
   })
   .strict();

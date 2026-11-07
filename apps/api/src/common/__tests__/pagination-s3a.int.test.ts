@@ -13,6 +13,7 @@ import { BookmarksService } from '../../modules/bookmarks/bookmarks.service';
 import { HelpService } from '../../modules/help/help.service';
 import { EventsService } from '../../modules/events/events.service';
 import { UsersService } from '../../modules/users/users.service';
+import { MentorshipService } from '../../modules/mentorship/mentorship.service';
 import { ConsentsService } from '../../modules/consents/consents.service';
 import { villeActiveDeTest } from './villes-de-test';
 
@@ -53,6 +54,7 @@ describe('pagination « Voir plus » : deux pages, ni doublon ni trou (lot S3A)'
   let events: EventsService;
   let connections: ConnectionsService;
   let users: UsersService;
+  let mentorship: MentorshipService;
 
   const marker = `S3A${newId().slice(-9)}`;
   const userIds: string[] = [];
@@ -95,6 +97,13 @@ describe('pagination « Voir plus » : deux pages, ni doublon ni trou (lot S3A)'
       visibility,
       new MessagingService(prisma, crypto, outbox, audit, visibility, connections),
     );
+    mentorship = new MentorshipService(
+      prisma,
+      outbox,
+      audit,
+      visibility,
+      new MessagingService(prisma, crypto, outbox, audit, visibility, connections),
+    );
     help = new HelpService(prisma, outbox, audit, visibility);
     bookmarks = new BookmarksService(prisma);
     events = new EventsService(prisma, outbox, audit, visibility);
@@ -117,6 +126,10 @@ describe('pagination « Voir plus » : deux pages, ni doublon ni trou (lot S3A)'
     await prisma.post.deleteMany({ where: { authorUserId: { in: userIds } } });
     await prisma.housingListing.deleteMany({ where: { authorUserId: { in: userIds } } });
     await prisma.jobListing.deleteMany({ where: { authorUserId: { in: userIds } } });
+    await prisma.mentorProfile.deleteMany({ where: { userId: { in: userIds } } });
+    await prisma.mentorship.deleteMany({
+      where: { OR: [{ mentorUserId: { in: userIds } }, { menteeUserId: { in: userIds } }] },
+    });
     await prisma.connection.deleteMany({
       where: { OR: [{ userAId: { in: userIds } }, { userBId: { in: userIds } }] },
     });
@@ -423,6 +436,93 @@ describe('pagination « Voir plus » : deux pages, ni doublon ni trou (lot S3A)'
     expect(pages).toBe(3);
     expect(new Set(ids).size).toBe(5);
     expect([...ids].sort()).toEqual(tout.items.map((e) => e.id).sort());
+  });
+
+  // ── Parrainages ─────────────────────────────────────────────────────────────
+
+  it('parrainages : « Mes parrainages » se pagine (id décroissant), le curseur est lié au rôle', async () => {
+    const filleul = await membre('Filleul');
+    for (let i = 0; i < 5; i += 1) {
+      const parrain = await membre(`Parrain ${String(i)}`);
+      await prisma.mentorship.create({
+        data: {
+          id: newId(),
+          mentorUserId: parrain.id,
+          menteeUserId: filleul.id,
+          status: i % 2 === 0 ? 'ENDED' : 'DECLINED',
+          requestMessage: `Demande ${String(i)}`,
+        },
+      });
+    }
+    const requete = { role: 'mentee', state: 'all' } as const;
+    const tout = await mentorship.myMentorships(filleul.id, requete);
+    expect(tout.items).toHaveLength(5);
+    expect(tout.nextCursor).toBeNull();
+    const { ids, pages } = await suivre(
+      (cursor) =>
+        mentorship.myMentorships(filleul.id, {
+          ...requete,
+          limit: 2,
+          ...(cursor === undefined ? {} : { cursor }),
+        }),
+      (m) => m.id,
+    );
+    expect(pages).toBe(3);
+    expect(new Set(ids).size).toBe(5);
+    expect(ids).toEqual(tout.items.map((m) => m.id));
+    const premiere = await mentorship.myMentorships(filleul.id, { ...requete, limit: 2 });
+    await expect(
+      mentorship.myMentorships(filleul.id, {
+        role: 'mentor',
+        state: 'all',
+        limit: 2,
+        cursor: premiere.nextCursor as string,
+      }),
+    ).rejects.toBeDefined();
+  });
+
+  it('parrainage : l’annuaire des parrains se pagine (tri déterministe, égalités départagées par id)', async () => {
+    const ville = await prisma.city.create({
+      data: {
+        id: newId(),
+        countryId,
+        name: `${marker} parrains`,
+        slug: `${marker.toLowerCase()}-parrains`,
+        isActive: false,
+        latitude: 45.8,
+        longitude: 4.9,
+      },
+    });
+    cityIds.push(ville.id);
+    const lecteur = await membre('Lecteur parrains');
+    for (let i = 0; i < 5; i += 1) {
+      const parrain = await membre(`Parrain annuaire ${String(i)}`);
+      await prisma.user.update({ where: { id: parrain.id }, data: { cityId: ville.id } });
+      // Même disponibilité, même note, même nombre de parrainages : seul l'identifiant les sépare.
+      await prisma.mentorProfile.create({
+        data: {
+          userId: parrain.id,
+          isAvailable: true,
+          journeyTemplateIds: [],
+          enabledAt: new Date(),
+        },
+      });
+    }
+    const requete = { cityId: ville.id };
+    const tout = await mentorship.listMentors({ ...requete, limit: 50 }, lecteur.id);
+    expect(tout.items).toHaveLength(5);
+    expect(tout.nextCursor).toBeNull();
+    const { ids, pages } = await suivre(
+      (cursor) =>
+        mentorship.listMentors(
+          { ...requete, limit: 2, ...(cursor === undefined ? {} : { cursor }) },
+          lecteur.id,
+        ),
+      (m) => m.userId,
+    );
+    expect(pages).toBe(3);
+    expect(new Set(ids).size).toBe(5);
+    expect(ids).toEqual(tout.items.map((m) => m.userId));
   });
 
   // ── Contacts ────────────────────────────────────────────────────────────────
