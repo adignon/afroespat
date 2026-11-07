@@ -44,12 +44,14 @@ export function codeTotp(secret: string, at = Date.now()): string {
   return String(binary % 1_000_000).padStart(6, '0');
 }
 
+export type RoleEquipe = 'SUPER_ADMIN' | 'CONTENT_ADMIN' | 'MODERATOR' | 'SUPPORT';
+
 /** Un compte d'équipe NEUF (jamais enrôlé), créé par le CLI de test de l'API. */
-export function creerCompteEquipe(): { readonly email: string; readonly password: string } {
+export function creerCompteEquipe(role?: RoleEquipe): { readonly email: string; readonly password: string } {
   const api = resolve(__dirname, '../../api');
   const sortie = execFileSync(
     'node',
-    ['-r', '@swc-node/register', 'src/modules/admin/staff-e2e.cli.ts'],
+    ['-r', '@swc-node/register', 'src/modules/admin/staff-e2e.cli.ts', ...(role === undefined ? [] : [role])],
     { cwd: api, encoding: 'utf8', env: process.env },
   );
   return JSON.parse(sortie.trim().split('\n').pop() ?? '{}') as { email: string; password: string };
@@ -66,8 +68,9 @@ export function creerCompteEquipe(): { readonly email: string; readonly password
 export async function ouvrirSessionEquipe(
   context: BrowserContext,
   request: APIRequestContext,
+  role?: RoleEquipe,
 ): Promise<{ readonly email: string }> {
-  const { email } = await ouvrirSessionEquipeApi(request);
+  const { email } = await ouvrirSessionEquipeApi(request, role);
   const cookies = await request.storageState();
   const equipe = cookies.cookies.find((c) => c.name === 'dp_staff');
   if (equipe === undefined) throw new Error('le cookie dp_staff n’a pas été posé.');
@@ -78,8 +81,9 @@ export async function ouvrirSessionEquipe(
 /** La même session, SANS navigateur : le contexte d'API porte alors le cookie `dp_staff`. */
 export async function ouvrirSessionEquipeApi(
   request: APIRequestContext,
+  role?: RoleEquipe,
 ): Promise<{ readonly email: string }> {
-  const { email, password } = creerCompteEquipe();
+  const { email, password } = creerCompteEquipe(role);
 
   const login = await request.post(`${API}/admin/auth/login`, { data: { email, password } });
   if (!login.ok()) throw new Error(`admin/auth/login ${login.status()} : ${await login.text()}`);
