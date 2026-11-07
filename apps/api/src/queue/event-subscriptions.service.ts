@@ -317,6 +317,10 @@ export class EventSubscriptionsService implements OnModuleInit {
       ['CITY_TIP', 'city_tip.published'],
       ['PRO', 'pro.registered'],
       ['TOPIC', 'community.topic_created'],
+      ['MENTORSHIP', 'mentorship.requested'],
+      ['MENTORSHIP_REVIEW', 'mentorship.reviewed'],
+      ['MENTOR_PROFILE', 'mentor_profile.updated'],
+      ['MEMBER_RECOMMENDATION', 'member.recommended'],
     ];
     for (const [subjectType, eventType] of published) {
       this.registry.on(eventType, 'moderation', async (job) => {

@@ -36,6 +36,14 @@ enum ReportSubjectType {
   /// 09 §2.3 : une contribution de fiche ville (bon plan, produit, budget,
   /// témoignage) est « signalable ». Son auteur est `city_tips.author_user_id`.
   CITY_TIP
+  /// Message de demande de parrainage (`mentorships.request_message`), auteur : le filleul.
+  MENTORSHIP
+  /// Commentaire d'une évaluation de parrainage (`mentorship_reviews.comment`).
+  MENTORSHIP_REVIEW
+  /// Présentation d'un parrain (`mentor_profiles.bio`) ; l'identifiant est celui du membre.
+  MENTOR_PROFILE
+  /// Commentaire d'une recommandation de membre (`member_recommendations.comment`).
+  MEMBER_RECOMMENDATION
 }
 
 enum ReportReason {

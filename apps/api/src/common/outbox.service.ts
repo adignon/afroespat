@@ -108,6 +108,9 @@ export type DomainEventType =
   | 'help_request.updated'
   | 'help_request.deleted'
   | 'mentorship.requested'
+  // Consommateur : `moderation` (commentaire d'évaluation, présentation du parrain).
+  | 'mentorship.reviewed'
+  | 'mentor_profile.updated'
   | 'mentorship.accepted'
   | 'mentorship.ended'
   // Module 09 §7. `event.created` et `event.attended` figuraient ici depuis le

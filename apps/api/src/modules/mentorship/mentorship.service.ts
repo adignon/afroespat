@@ -231,6 +231,13 @@ export class MentorshipService {
         targetType: 'mentor_profile',
         targetId: userId,
       });
+      if (input.bio !== undefined && input.bio !== null && input.bio !== '') {
+        await this.outbox.emit(tx, {
+          type: 'mentor_profile.updated',
+          aggregateId: userId,
+          payload: { userId },
+        });
+      }
 
       return row;
     });
@@ -808,6 +815,13 @@ export class MentorshipService {
         },
       });
       await this.recomputeRating(tx, revieweeUserId);
+      if (input.comment !== undefined && input.comment !== null && input.comment !== '') {
+        await this.outbox.emit(tx, {
+          type: 'mentorship.reviewed',
+          aggregateId: id,
+          payload: { mentorshipId, reviewerUserId: userId },
+        });
+      }
     });
 
     return { id, rating: input.rating, meta: this.meta() };
