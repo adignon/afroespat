@@ -63,10 +63,7 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
    * paginée et qu'un tri local donnerait un onglet vide sur une page deux.
    */
   const [onglet, setOnglet] = useState<MemberContentType>('GUIDE');
-  const charger = useCallback(
-    () => chargerK02(pseudo, onglet, setOnglet),
-    [pseudo, onglet],
-  );
+  const charger = useCallback(() => chargerK02(pseudo, onglet, setOnglet), [pseudo, onglet]);
 
   return (
     <EcranDonnees
@@ -79,44 +76,53 @@ export function ProfilMembreEcran({ pseudo }: { readonly pseudo: string }) {
       charger={charger}
       cle={`${pseudo}|${onglet}`}
     >
-      {(donnees) => (
-        <ProfilContactVivant donnees={donnees} pseudo={pseudo} onFermerAjout={onFermer}>
-          {(vivantes) => (
-            /**
-             * ╔══════════════════════════════════════════════════════════════╗
-             * ║ LA CARTE DU FIL GARDE SES GESTES SUR LE PROFIL              ║
-             * ╚══════════════════════════════════════════════════════════════╝
-             *
-             * Le porteur : « les actions de la carte de fil d'actualité ne
-             * marchent pas (like, comment, partager, bookmarks). Normalement tu
-             * dois ramener toute leur interactivité aussi. »
-             *
-             * Le DESSIN était extrait, pas les GESTES : une carte qui ressemble à
-             * la bonne et ne fait rien. `CartesFilVivantes` les attache — réaction,
-             * signet, commentaires, partage — en appelant LES MÊMES fonctions que
-             * la page du fil.
-             */
-            <CartesFilVivantes cartes={vivantes.contenuPublications ?? []}>
-              {(cartes) => (
-                <EcranCompte
-                  screen="K02"
-                  desktop={<K02Desktop {...vivantes} contenuPublications={cartes} />}
-                  mobile={<K02Mobile {...vivantes} contenuPublications={cartes} />}
-                  ouverte={ouverte}
-                  onOuvrir={onOuvrir}
-                  onFermer={onFermer}
-                  /**
-                   * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut :
-                   * son titre nomme le membre visité (« Ajouter Fatou aux
-                   * contacts »). Figé, il disait « Fatou » sur le profil de Kofi — la
-                   * fenêtre aurait menti par-dessus un écran qui, lui, disait vrai.
-                   */
-                  modales={{ K02C: { desktop: <K02Ajout {...vivantes} />, mobile: <K02AjoutFeuille {...vivantes} /> } }}
-                />
+      {(chargees) => (
+        <AvecSuiteContenu donnees={chargees} cle={`${pseudo}|${onglet}`}>
+          {(donnees) => (
+            <ProfilContactVivant donnees={donnees} pseudo={pseudo} onFermerAjout={onFermer}>
+              {(vivantes) => (
+                /**
+                 * ╔══════════════════════════════════════════════════════════════╗
+                 * ║ LA CARTE DU FIL GARDE SES GESTES SUR LE PROFIL              ║
+                 * ╚══════════════════════════════════════════════════════════════╝
+                 *
+                 * Le porteur : « les actions de la carte de fil d'actualité ne
+                 * marchent pas (like, comment, partager, bookmarks). Normalement tu
+                 * dois ramener toute leur interactivité aussi. »
+                 *
+                 * Le DESSIN était extrait, pas les GESTES : une carte qui ressemble à
+                 * la bonne et ne fait rien. `CartesFilVivantes` les attache — réaction,
+                 * signet, commentaires, partage — en appelant LES MÊMES fonctions que
+                 * la page du fil.
+                 */
+                <CartesFilVivantes cartes={vivantes.contenuPublications ?? []}>
+                  {(cartes) => (
+                    <EcranCompte
+                      screen="K02"
+                      desktop={<K02Desktop {...vivantes} contenuPublications={cartes} />}
+                      mobile={<K02Mobile {...vivantes} contenuPublications={cartes} />}
+                      ouverte={ouverte}
+                      onOuvrir={onOuvrir}
+                      onFermer={onFermer}
+                      /**
+                       * LA FENÊTRE REÇOIT LES MÊMES DONNÉES QUE L'ÉCRAN, et il le faut :
+                       * son titre nomme le membre visité (« Ajouter Fatou aux
+                       * contacts »). Figé, il disait « Fatou » sur le profil de Kofi — la
+                       * fenêtre aurait menti par-dessus un écran qui, lui, disait vrai.
+                       */
+                      modales={{
+                        K02C: {
+                          desktop: <K02Ajout {...vivantes} />,
+                          mobile: <K02AjoutFeuille {...vivantes} />,
+                        },
+                      }}
+                    />
+                  )}
+                </CartesFilVivantes>
               )}
-            </CartesFilVivantes>
+            </ProfilContactVivant>
           )}
-        </ProfilContactVivant>
+        </AvecSuiteContenu>
       )}
     </EcranDonnees>
   );
@@ -146,7 +152,9 @@ function AvecSuiteContenu({
     curseurInitial: suite?.curseur ?? null,
     identifiant: suite?.identifiant ?? (() => ''),
     charger: (curseur, signal) =>
-      suite === undefined ? Promise.resolve({ items: [], nextCursor: null }) : suite.charger(curseur, signal),
+      suite === undefined
+        ? Promise.resolve({ items: [], nextCursor: null })
+        : suite.charger(curseur, signal),
   });
   // Les éléments de `items` sont ceux de la liste `champ` : la suite les a convertis avec le même convertisseur.
   const complet = { ...donnees, [champ]: items, plusContenu: plus } as K02Data;
