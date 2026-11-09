@@ -196,3 +196,35 @@ button[aria-busy='true']::after,
 header[data-entete-globale] {
   grid-template-columns: minmax(max-content, 1fr) minmax(0, 560px) minmax(max-content, 1fr) !important;
 }
+
+/*
+ * ╔══════════════════════════════════════════════════════════════════════════╗
+ * ║ L'ONGLET « MEMBRES » : LA LISTE ET L'APERÇU SE REMPLACENT EN GLISSANT      ║
+ * ╚══════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « On peut ajouter une animation au changement. »
+ *
+ * Le mouvement n'est pas inventé : c'est `moments.panelAdvance` de
+ * `packages/config/motion.js` — 240 ms, la courbe `out`, seize pixels de glissement
+ * latéral et un fondu. `dp-panel-advance` (`packages/ui/src/styles.css`) le porte déjà.
+ *
+ *   · l'aperçu ARRIVE par la droite (on avance vers un membre) ;
+ *   · la liste REVIENT par la gauche — la même image-clé, en miroir : seul le sens
+ *     change, pas la durée ni la courbe. Elle ne rejoue pas au premier affichage
+ *     (`data-membres-retour-anime` n'est posé qu'après un aperçu).
+ *
+ * `translate` et non `transform`, comme `dp-panel-advance`. `prefers-reduced-motion`
+ * coupe tout : la règle générale de `packages/ui/src/styles.css` ramène durée à 0,01 ms.
+ */
+@keyframes membres-retour {
+  from { opacity: 0; translate: -16px 0; }
+  to   { opacity: 1; translate: 0 0; }
+}
+
+[data-membres-vue='profil'] {
+  animation: dp-panel-advance 240ms cubic-bezier(0.16, 1, 0.3, 1) both; /* motion:panelAdvance */
+}
+
+[data-membres-vue='liste'][data-membres-retour-anime] {
+  animation: membres-retour 240ms cubic-bezier(0.16, 1, 0.3, 1) both; /* motion:panelAdvance */
+}

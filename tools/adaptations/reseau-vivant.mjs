@@ -799,6 +799,143 @@ export const RV_MEMBRES = {
   },
 };
 
+// ─── A08T — MEMBRES : LA LISTE À DROITE, L'APERÇU AU CLIC, ET LES PAGES ──────
+
+/**
+ * LA LISTE DES MEMBRES SE PLACE À DROITE, ET UN CLIC OUVRE L'APERÇU DU MEMBRE.
+ *
+ * Le porteur : « Sur la page des membres je préfère que les membres s'affichent sur
+ * le côté droit sur PC et le clic affiche leur profil avec l'option back. On peut
+ * ajouter une animation au changement. Aussi la liste ne doit pas être aussi longue,
+ * il faut une pagination. »
+ *
+ * ── CE QUE LA PLANCHE DESSINE ───────────────────────────────────────────────
+ *
+ * Quatre planches (membre et propriétaire, ordinateur et téléphone). Sur ordinateur :
+ * une rangée « liste · colonne de 300 px » — la colonne porte « RÔLES » et « À PROPOS ».
+ * Cette colonne est une section du CONTENU de l'onglet, pas une colonne de page :
+ * `zones-mise-en-page.mjs` le dit en toutes lettres (elle n'est PAS `data-zone="droite"`,
+ * qui est la colonne pleine hauteur au bord de l'écran, absente ici). La liste passe donc
+ * à droite DANS la rangée : l'ordre est inversé (`row-reverse`, qui garde la liste en
+ * premier quand la place manque et que la rangée se replie) et la colonne « RÔLES · À
+ * PROPOS » prend le reste, à gauche.
+ *
+ * ── CE QUI EST POSÉ ─────────────────────────────────────────────────────────
+ *
+ *   · `<PanneauMembres>` (`components/panneau-membres.tsx`) enveloppe la carte de la
+ *     liste — recherche et pastilles comprises : elles restent avec ce qu'elles
+ *     filtrent — et la REMPLACE par l'aperçu du membre choisi (`?membre=`). Sur
+ *     téléphone il enveloppe recherche, pastilles et carte : l'aperçu prend la page ;
+ *   · l'identité de chaque rangée (rond et nom) devient un BOUTON qui ouvre l'aperçu ;
+ *     « Écrire » et le menu de rôle restent des boutons à part, intacts ;
+ *   · « Voir plus » (`VoirPlus`) suit la boucle : la liste va par pages de 12.
+ *
+ * Elle passe APRÈS `RV_MEMBRES` : elle cherche le champ et les pastilles qu'il a posés.
+ */
+export const RV_MEMBRES_PANNEAU = {
+  screens: ['A08T'],
+  nom: 'RV_MEMBRES_PANNEAU',
+  why: 'La liste des membres s’étirait dans la colonne de contenu, sans suite ni profil : elle passe à droite sur ordinateur, un clic ouvre l’aperçu du membre (Retour, Échap, ?membre=), et la liste va par pages de 12.',
+  provides: ['filtreMembres', 'gerer'],
+  apply(jsx) {
+    if (!jsx.includes('data-membres-recherche=""') || jsx.includes('<PanneauMembres')) return { jsx, applied: false };
+    let out = jsx;
+    let compte = 0;
+
+    const entourer = (variante, contenu) =>
+      `<PanneauMembres variante="${variante}" choix={filtreMembres.choix} membres={gerer.membres ?? []} occupe={gerer.occupe} onEcrire={gerer.onEcrire} liste={(${contenu})} />`;
+
+    // 1. L'identité de chaque rangée → un bouton qui ouvre l'aperçu.
+    const bouton = (taille) =>
+      `<button type="button" onClick={() => filtreMembres.choix.onOuvrir(m.handle)} data-membre-ligne={m.handle} style={{ flex: "1", minWidth: "0", display: "flex", alignItems: "center", gap: "${taille}", background: "none", border: "none", padding: "0", font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}>`;
+    const ouvrirOrdi = remplacerTous(
+      out,
+      /(<span style=\{\{ width: "40px", height: "40px", borderRadius: "999px", background: m\.bg[^}]*\}\}>\{m\.i\}<\/span>)(<div style=\{\{ flex: "1", minWidth: "0" \}\}>)/,
+      (a) => `${bouton('12px')}${a[1]}${a[2]}`,
+    );
+    out = ouvrirOrdi.out;
+    // La fermeture du bouton suit le bloc du nom : on la pose en comptant les balises.
+    const fermer = (ouverture, apres) => {
+      let curseur = 0;
+      for (;;) {
+        const at = out.indexOf(ouverture, curseur);
+        if (at === -1) break;
+        const bloc = out.indexOf(apres, at);
+        const fin = bloc === -1 ? -1 : finElement(out, bloc);
+        if (fin === -1) break;
+        out = out.slice(0, fin) + '</button>' + out.slice(fin);
+        curseur = fin + '</button>'.length;
+        compte += 1;
+      }
+    };
+    if (ouvrirOrdi.compte > 0) fermer(bouton('12px'), '<div style={{ flex: "1", minWidth: "0" }}>');
+
+    const ouvrirMobile = remplacerTous(
+      out,
+      /(<span style=\{\{ width: "38px", height: "38px", borderRadius: "999px", background: m\.bg[^}]*\}\}>\{m\.i\}<\/span>)(<span style=\{\{ flex: "1", minWidth: "0" \}\}>)/,
+      (a) => `${bouton('10px')}${a[1]}${a[2]}`,
+    );
+    out = ouvrirMobile.out;
+    if (ouvrirMobile.compte > 0) fermer(bouton('10px'), '<span style={{ flex: "1", minWidth: "0" }}>');
+
+    // 2. « Voir plus » à la fin de la liste, dans la carte.
+    const vide = '{(gerer.membres ?? []).length === 0 ? (<EtatVide texte={vides.membres} />) : null}';
+    const aVide = out.indexOf(vide);
+    if (aVide !== -1) {
+      out = out.slice(0, aVide + vide.length) + '<VoirPlus plus={filtreMembres.plus} />' + out.slice(aVide + vide.length);
+      compte += 1;
+    }
+
+    // 3a. Ordinateur : l'enveloppe, puis la rangée inversée.
+    const carte =
+      '<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "22px", padding: "16px" }}><div style={{ display: "flex", gap: "10px", alignItems: "center" }}><div style={{ flex: "1", height: "44px"';
+    const aCarte = out.indexOf(carte);
+    if (aCarte !== -1) {
+      const finCarte = finElement(out, aCarte);
+      if (finCarte !== -1) {
+        out = out.slice(0, aCarte) + entourer('ordinateur', out.slice(aCarte, finCarte)) + out.slice(finCarte);
+        compte += 1;
+      }
+      const rangee =
+        '<div style={{ display: "flex", gap: "24px", alignItems: "flex-start" }}><div style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", gap: "14px" }}>';
+      const aRangee = out.indexOf(rangee);
+      if (aRangee !== -1 && aRangee < out.indexOf('<PanneauMembres')) {
+        out =
+          out.slice(0, aRangee) +
+          '<div style={{ display: "flex", flexDirection: "row-reverse", flexWrap: "wrap", gap: "24px", alignItems: "flex-start" }}><div style={{ flex: "1 1 420px", maxWidth: "560px", minWidth: "0", display: "flex", flexDirection: "column", gap: "14px" }}>' +
+          out.slice(aRangee + rangee.length);
+        compte += 1;
+      }
+      const colonne = out.indexOf('<aside style={{ width: "300px", display: "flex"');
+      if (colonne !== -1) {
+        out =
+          out.slice(0, colonne) +
+          '<aside style={{ flex: "1 1 240px", minWidth: "0", display: "flex"' +
+          out.slice(colonne + '<aside style={{ width: "300px", display: "flex"'.length).replace(' flexShrink: "0",', '');
+        compte += 1;
+      }
+    }
+
+    // 3b. Téléphone : recherche + pastilles + carte, enveloppés ensemble.
+    const champMobile = '<div style={{ height: "42px", borderRadius: "999px", background: "#fff", border: "1px solid #E6EBE9"';
+    const aChamp = out.indexOf(champMobile);
+    if (aChamp !== -1 && aCarte === -1) {
+      const aCarteMobile = out.indexOf('<div style={{ background: "#fff", border: "1px solid #E6EBE9", borderRadius: "20px", padding: "4px 14pxpx"', aChamp);
+      const finCarteMobile = aCarteMobile === -1 ? -1 : finElement(out, aCarteMobile);
+      if (finCarteMobile !== -1) {
+        const bloc = out.slice(aChamp, finCarteMobile);
+        out =
+          out.slice(0, aChamp) +
+          entourer('mobile', `<div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>${bloc}</div>`) +
+          out.slice(finCarteMobile);
+        compte += 1;
+      }
+    }
+
+    return compte === 0 ? { jsx, applied: false } : { jsx: out, applied: true };
+  },
+};
+
 // ─── A08T — ALBUM : L'ÉTAT VIDE DANS LA GRILLE ───────────────────────────────
 
 export const RV_ALBUM_VIDE = {
@@ -2245,6 +2382,7 @@ export const ADAPTATIONS_RESEAU_VIVANT = [
   RV_COLONNE,
   RV_EVENEMENTS,
   RV_MEMBRES,
+  RV_MEMBRES_PANNEAU,
   RV_ALBUM_VIDE,
   RV_ALBUM_OUVERT,
   RV_ALBUM_SELECTION,
@@ -2270,6 +2408,7 @@ export const ADAPTATIONS_RESEAU_VIVANT = [
 export const AJOUTS_RESEAU_VIVANT = {
   ActionsReseau: '@/components/actions-reseau',
   EtatVide: '@/components/etat-vide',
+  PanneauMembres: '@/components/panneau-membres',
   MenuRond: '@/components/menu-rond',
   CarteMonParcours: '@/components/carte-mon-parcours',
   PorteeValidation: '@/components/parametres-reseau',
