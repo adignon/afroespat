@@ -1036,6 +1036,41 @@ describe('réseaux (07 §2, §9)', () => {
     expect(seenByOwner.map((m) => m.userId)).toContain(b);
   });
 
+  it('pagine les membres par curseur : deux pages, ni doublon ni trou, tri total', async () => {
+    const owner = await newMember();
+    const community = await createInterest(owner);
+    for (let i = 0; i < 7; i += 1) {
+      await communities.join(community.id, await newMember());
+    }
+
+    // Référence : tout, d'un coup (limite maximale de la route).
+    const tout = await communities.members(community.id, owner, { limit: 50 });
+    expect(tout.nextCursor).toBeNull();
+    expect(tout.items.length).toBeGreaterThanOrEqual(8);
+
+    // Pages de 3 : on suit `nextCursor` jusqu'au bout.
+    const pages: string[][] = [];
+    let cursor: string | undefined;
+    for (let garde = 0; garde < 20; garde += 1) {
+      const page = await communities.members(community.id, owner, {
+        limit: 3,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
+      pages.push(page.items.map((m) => m.userId));
+      if (page.nextCursor === null) break;
+      expect(page.items).toHaveLength(3);
+      cursor = page.nextCursor;
+    }
+
+    expect(pages.length).toBeGreaterThanOrEqual(3);
+    const aplati = pages.flat();
+    // Aucun doublon d'une page à l'autre…
+    expect(new Set(aplati).size).toBe(aplati.length);
+    // …aucun trou, et le MÊME ordre que la lecture d'un coup : le tri est total
+    // (l'identifiant de l'adhésion départage), donc la coupe ne change rien.
+    expect(aplati).toEqual(tout.items.map((m) => m.userId));
+  });
+
   it('masque un sujet écrit par un membre bloqué, liste et accès direct', async () => {
     const owner = await newMember();
     const community = await createInterest(owner);
