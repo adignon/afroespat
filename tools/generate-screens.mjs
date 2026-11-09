@@ -10784,6 +10784,53 @@ const O04_CHOIX_REFERENTIEL = {
   },
 };
 
+/**
+ * ╔════════════════════════════════════════════════════════════════════════════╗
+ * ║ O04 SUR TÉLÉPHONE — LE PORTRAIT ET LES DEUX CHAMPS QUE LA PLANCHE N'A PAS ║
+ * ╚════════════════════════════════════════════════════════════════════════════╝
+ *
+ * Le porteur : « sur mobile, l'ajout d'image ne marche pas, et compétences et langues ne
+ * sont pas là. » MESURÉ : la planche de 390 px dessine un rond de 76 px en `<div>` (aucun
+ * bouton) et ne dessine NI compétences NI langues — alors que l'ordinateur les porte et que
+ * l'API les attend. Le porteur demande explicitement les deux : on les ajoute, dans le style
+ * du cadre d'ordinateur (même titre, même boîte), au-dessus du bouton « Continuer ».
+ * Les contrôles sont montés par la page (`competencesChamp`, `languesChamp`, `onAvatar`).
+ */
+const O04_AVATAR_MOBILE = {
+  screens: ['O04'],
+  nom: 'O04_AVATAR_MOBILE',
+  why: 'Sur téléphone, le rond de portrait (76 px) devient un bouton qui ouvre le choisisseur de fichier.',
+  provides: ['onAvatar', 'avatarFond', 'avatarIconDisplay'],
+  apply(jsx) {
+    const m = /<div style=\{\{ width: "76px", height: "76px", borderRadius: "999px", background: "#fff", border: "1.5px dashed #CBD5D1" \}\}><\/div>/.exec(jsx);
+    if (m === null) return { jsx, applied: false };
+    const bouton =
+      '<button type="button" onClick={onAvatar} aria-label="Choisir une photo de profil" style={{ width: "76px", height: "76px", borderRadius: "999px", background: "#fff", border: "1.5px dashed #CBD5D1", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#8A958F", flexShrink: 0, backgroundImage: avatarFond, backgroundSize: "cover", backgroundPosition: "center" }}>' +
+      '<svg aria-hidden="true" style={{ display: avatarIconDisplay }} width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8h4l2-3h6l2 3h4v11H3z" /><circle cx="12" cy="13" r="3.5" /></svg></button>';
+    return { jsx: jsx.slice(0, m.index) + bouton + jsx.slice(m.index + m[0].length), applied: true };
+  },
+};
+
+const O04_CHAMPS_MOBILE = {
+  screens: ['O04'],
+  nom: 'O04_CHAMPS_MOBILE',
+  why: 'Sur téléphone, les champs « Compétences » et « Langues » (absents de la planche) prennent place avant « Continuer ».',
+  provides: ['competencesChamp', 'languesChamp'],
+  apply(jsx) {
+    const ancre = '<div style={{ flex: "1" }}></div>\n      <button style={{ width: "100%", height: "52px"';
+    const i = jsx.indexOf(ancre);
+    if (i === -1) return { jsx, applied: false };
+    const bloc = (titre, prise) =>
+      `<div><div style={{ fontSize: "12.5px", fontWeight: "700", marginBottom: "8px" }}>${titre}</div>` +
+      '<div style={{ minHeight: "48px", padding: "6px", borderRadius: "14px", background: "#F2F5F4", border: "1px solid #EAEEEC", display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", position: "relative" }}>' +
+      `{${prise}}</div></div>\n      `;
+    return {
+      jsx: jsx.slice(0, i) + bloc('Compétences', 'competencesChamp') + bloc('Langues', 'languesChamp') + jsx.slice(i),
+      applied: true,
+    };
+  },
+};
+
 const K01_COMPETENCES_LANGUES = {
   screens: ['K01'],
   nom: 'K01_COMPETENCES_LANGUES',
@@ -18096,6 +18143,8 @@ function adaptFields(jsx, section) {
     A06_DECISIONS,
     A06_RETOUR_GUIDE,
     O04_CHOIX_REFERENTIEL,
+    O04_AVATAR_MOBILE,
+    O04_CHAMPS_MOBILE,
     K01_COMPETENCES_LANGUES,
     K03_ETATS_KYC,
     K03_VERIFICATION,

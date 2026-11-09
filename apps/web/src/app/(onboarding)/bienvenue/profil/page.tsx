@@ -34,9 +34,9 @@ export default function Page() {
    * place (`{{ competencesChamp }}`, `{{ languesChamp }}`) à l'intérieur des
    * boîtes que la maquette dessine ; la page y pose le contrôle.
    *
-   * LE CADRE MOBILE N'EN REÇOIT PAS, et ce n'est pas un oubli : la planche de
-   * 390 px ne dessine NI compétences NI langues. Leur ajouter un champ serait
-   * dessiner à la place du porteur. REMONTÉ.
+   * LE CADRE MOBILE LES REÇOIT AUSSI (décision du porteur : « compétences et langue
+   * n'est pas là ») : la planche de 390 px ne les dessine pas, les adaptations
+   * `O04_AVATAR_MOBILE` et `O04_CHAMPS_MOBILE` les ajoutent.
    */
   /**
    * ╔══════════════════════════════════════════════════════════════════════════╗
@@ -141,7 +141,7 @@ export default function Page() {
        */
       direction="column"
         desktop={<O04Desktop {...vals} {...champs} {...avatar} />}
-        mobile={<O04Mobile {...vals} />}
+        mobile={<O04Mobile {...vals} {...champs} {...avatar} />}
       />
       {/*
         LE CHOISISSEUR DE FICHIER — INVISIBLE, ET HORS DES CADRES.

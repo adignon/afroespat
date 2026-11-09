@@ -34,6 +34,7 @@ import { connecter } from './session';
  */
 
 const cadre = (page: Page) => page.locator('[data-frame="desktop"]');
+const cadreMobile = (page: Page) => page.locator('[data-frame="mobile"]');
 
 /**
  * LES SUGGESTIONS D'UNE BOÎTE, ET PAS DE L'AUTRE.
@@ -207,5 +208,52 @@ test.describe('O04 — se présenter', () => {
     // Et le reste de l'écran part toujours : on n'a rien cassé en ajoutant.
     expect(charge['occupationStatus']).toBe('STUDENT');
     expect(charge['availableToHelp']).toBe(true);
+  });
+});
+
+/**
+ * O04 SUR TÉLÉPHONE — « l'ajout d'image ne marche pas, et compétences et langue ne sont pas
+ * là » (porteur). La planche de 390 px ne dessinait ni bouton de portrait, ni compétences, ni
+ * langues : les adaptations `O04_AVATAR_MOBILE` et `O04_CHAMPS_MOBILE` les ajoutent.
+ */
+test.describe('O04 — se présenter, sur téléphone', () => {
+  test.skip(({ viewport }) => (viewport?.width ?? 0) >= 1024, 'cadre de téléphone seulement');
+
+  test('le rond de portrait est un bouton, et envoyer une photo la montre', async ({ page, request }) => {
+    await connecter(page.context(), request);
+    await page.goto('/bienvenue/profil');
+    const rond = cadreMobile(page).getByRole('button', { name: 'Choisir une photo de profil' });
+    await expect(rond).toHaveCount(1);
+    expect((await rond.boundingBox())?.height).toBe(76);
+
+    const reponse = page.waitForResponse((r) => r.url().includes('/me/avatar'));
+    await page.locator('input[type="file"]').setInputFiles({ name: 'portrait.png', mimeType: 'image/png', buffer: PNG });
+    expect((await reponse).status()).toBe(200);
+    await expect
+      .poll(async () => rond.evaluate((e) => getComputedStyle(e).backgroundImage))
+      .toContain('/media/avatar/');
+  });
+
+  test('compétences et langues s’ajoutent et se retirent', async ({ page, request }) => {
+    await connecter(page.context(), request);
+    await page.goto('/bienvenue/profil');
+
+    const comp = cadreMobile(page).getByLabel('Ajouter compétences');
+    await expect(comp).toHaveCount(1);
+    await comp.fill('compta');
+    const optionsC = cadreMobile(page).locator('div:has(> input[aria-label="Ajouter compétences"]) [role="option"]');
+    await expect(optionsC.first()).toBeVisible();
+    await optionsC.first().click();
+    await expect(cadreMobile(page).getByRole('button', { name: 'Retirer Comptabilité' })).toHaveCount(1);
+
+    const lang = cadreMobile(page).getByLabel('Ajouter langues');
+    await lang.fill('fran');
+    const optionsL = cadreMobile(page).locator('div:has(> input[aria-label="Ajouter langues"]) [role="option"]');
+    await expect(optionsL.first()).toBeVisible();
+    await optionsL.first().click();
+    await expect(cadreMobile(page).getByRole('button', { name: 'Retirer Français' })).toHaveCount(1);
+
+    await cadreMobile(page).getByRole('button', { name: 'Retirer Comptabilité' }).click();
+    await expect(cadreMobile(page).getByRole('button', { name: 'Retirer Comptabilité' })).toHaveCount(0);
   });
 });
