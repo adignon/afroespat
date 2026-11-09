@@ -86,6 +86,8 @@ import { echecDe, type ReseauEchec } from './echec';
  * liste des membres et l'état du menu, qui sont tous deux ici.
  */
 import { useEcrireMembre, type EcrireMembreEtat } from './use-ecrire-membre';
+import { useMembreChoisi } from './use-membre-choisi';
+import { useListeAPages } from '@/lib/use-liste-pages';
 import {
   netTabsFor,
   panelReseaux,
@@ -307,6 +309,9 @@ export interface ReseauEtat {
   }) => void;
 }
 
+/** La taille d'une page de membres (le serveur accepte 1 à 50). */
+const TAILLE_PAGE_MEMBRES = '12';
+
 export function useReseau(
   slug: string,
   ongletActif = 1,
@@ -453,6 +458,8 @@ export function useReseau(
    * MEMBRE voit en arrivant sur le réseau ».
    */
   const [membres, setMembres] = useState<readonly CommunityMember[]>([]);
+  /** Le `nextCursor` de la première page des membres — la suite est suivie par `useListeAPages`. */
+  const [curseurMembres, setCurseurMembres] = useState<string | null>(null);
   /**
    * ── LA FILE DE SIGNALEMENTS ET L'ANNONCE ÉPINGLÉE ───────────────────────
    *
@@ -610,6 +617,7 @@ export function useReseau(
    * revenir dans le désordre — l'`AbortController` de l'effet annule la
    * précédente, mais seulement si elle n'est pas déjà arrivée.
    */
+  const membreChoisi = useMembreChoisi();
   const [rechercheMembres, setRechercheMembres] = useState('');
   const [rechercheDifferee, setRechercheDifferee] = useState('');
   const [seulsModerateurs, setSeulsModerateurs] = useState(false);
@@ -622,25 +630,30 @@ export function useReseau(
     };
   }, [rechercheMembres]);
 
+  const filtresMembres = useMemo(
+    () => ({
+      ...(rechercheDifferee === '' ? {} : { q: rechercheDifferee.slice(0, 40) }),
+      ...(seulsModerateurs ? { role: 'MODERATOR' as const } : {}),
+    }),
+    [rechercheDifferee, seulsModerateurs],
+  );
+
   useEffect(() => {
     const actif = reseau !== null && reseau.myStatus === 'ACTIVE';
     if (!actif || ongletActif !== RANG_ONGLET_MEMBRES) {
       setMembres([]);
+      setCurseurMembres(null);
       return;
     }
     const ac = new AbortController();
     let vivant = true;
     void (async () => {
       try {
-        const tous = await fetchMembers(
-          slug,
-          {
-            ...(rechercheDifferee === '' ? {} : { q: rechercheDifferee.slice(0, 40) }),
-            ...(seulsModerateurs ? { role: 'MODERATOR' as const } : {}),
-          },
-          ac.signal,
-        );
-        if (vivant) setMembres(tous.items);
+        const tous = await fetchMembers(slug, { ...filtresMembres, limit: TAILLE_PAGE_MEMBRES }, ac.signal);
+        if (vivant) {
+          setMembres(tous.items);
+          setCurseurMembres(tous.nextCursor);
+        }
       } catch {
         /**
          * UN ÉCHEC NE CASSE PAS L'ONGLET, et il ne remonte pas dans `echec` :
@@ -648,14 +661,34 @@ export function useReseau(
          * d'onglets et son contexte restent parfaitement lisibles. L'écran dit
          * qu'il n'a aucun membre à montrer — voir la bande de `reseau-screen`.
          */
-        if (vivant) setMembres([]);
+        if (vivant) {
+          setMembres([]);
+          setCurseurMembres(null);
+        }
       }
     })();
     return () => {
       vivant = false;
       ac.abort();
     };
-  }, [slug, reseau, ongletActif, tick, rechercheDifferee, seulsModerateurs]);
+  }, [slug, reseau, ongletActif, tick, filtresMembres]);
+
+  /**
+   * ── LA LISTE VA PAR PAGES DE 12 ───────────────────────────────────────────
+   *
+   * Le porteur : « la liste ne doit pas être aussi longue, il faut une
+   * pagination. » La première page vient de l'effet ci-dessus ; « Voir plus »
+   * suit `nextCursor` (tri total sur l'identifiant de l'adhésion : ni doublon ni
+   * trou d'une page à l'autre). Chercher ou filtrer change la clé, donc
+   * abandonne les pages ajoutées — on ne recolle jamais deux requêtes.
+   */
+  const suiteMembres = useListeAPages<CommunityMember>({
+    cle: `${slug}|${tick}|${rechercheDifferee}|${seulsModerateurs ? 'M' : 'T'}`,
+    initiaux: membres,
+    curseurInitial: curseurMembres,
+    identifiant: (m) => m.userId,
+    charger: (curseur, signal) => fetchMembers(slug, { ...filtresMembres, limit: TAILLE_PAGE_MEMBRES, cursor: curseur }, signal),
+  });
 
   /**
    * ╔═══════════════════════════════════════════════════════════════════════╗
@@ -1350,7 +1383,7 @@ export function useReseau(
     [occupe],
   );
 
-  const membresVues = useMemo(() => membres.map(membreAdminRowFrom), [membres]);
+  const membresVues = useMemo(() => suiteMembres.items.map(membreAdminRowFrom), [suiteMembres.items]);
 
   /**
    * ── « ÉCRIRE À UN MEMBRE » ────────────────────────────────────────────────
@@ -2185,8 +2218,10 @@ export function useReseau(
       modBg: seulsModerateurs ? '#16785E' : '#fff',
       modFg: seulsModerateurs ? '#fff' : '#16211D',
       modBd: seulsModerateurs ? '#16785E' : '#E6EBE9',
+      plus: suiteMembres.plus,
+      choix: membreChoisi,
     }),
-    [rechercheMembres, seulsModerateurs],
+    [rechercheMembres, seulsModerateurs, suiteMembres.plus, membreChoisi],
   );
 
   // ── « À propos » : règles, équipe, et l'édition ─────────────────────────────

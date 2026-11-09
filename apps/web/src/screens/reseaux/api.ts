@@ -114,6 +114,8 @@ import {
   type UpdateAnnouncementResponse,
   type UpdateMember,
   type UpdateTopic,
+  publicProfileResponseSchema,
+  type PublicProfileResponse,
 } from '@app/shared';
 /**
  * `@/lib/api/index` ET NON `@/lib/api`.
@@ -230,7 +232,12 @@ export function fetchCommunityFeed(
 
 export function fetchMembers(
   idOrSlug: string,
-  filters: { readonly q?: string; readonly role?: string; readonly cursor?: string } = {},
+  filters: {
+    readonly q?: string;
+    readonly role?: string;
+    readonly cursor?: string;
+    readonly limit?: string;
+  } = {},
   signal?: AbortSignal,
 ): Promise<CommunityMembersResponse> {
   return memberApi.get(
@@ -869,4 +876,12 @@ export function decidePendingPost(
     pendingPostDecisionResponseSchema,
     { body: pendingPostDecisionSchema.parse({ decision }) },
   );
+}
+
+/**
+ * L'APERÇU D'UN MEMBRE, dans l'onglet « Membres » : `GET /users/:handle`, la même
+ * route que le profil complet. Rien n'est recomposé ici — l'aperçu en lit une partie.
+ */
+export function fetchProfilMembre(handle: string, signal?: AbortSignal): Promise<PublicProfileResponse> {
+  return memberApi.get(`/users/${encodeURIComponent(handle)}`, publicProfileResponseSchema, opts(signal));
 }

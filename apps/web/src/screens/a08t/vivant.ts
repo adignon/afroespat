@@ -1,6 +1,8 @@
 import type { A01SData } from '../a01/data';
 import type { A01GData } from '../a01g/data';
 import type { FenetrePiece } from '../a01/use-sondage-guides';
+import type { PlusListe } from '@/components/voir-plus';
+import { AUCUNE_SUITE } from '@/components/voir-plus';
 
 /**
  * ╔════════════════════════════════════════════════════════════════════════════╗
@@ -243,6 +245,24 @@ export interface FiltreMembresView {
   readonly modBg: string;
   readonly modFg: string;
   readonly modBd: string;
+  /** La suite de la liste (pages de 12) : « Voir plus ». */
+  readonly plus: PlusListe;
+  /** Le membre dont l'aperçu est ouvert, et les gestes pour l'ouvrir et en revenir. */
+  readonly choix: MembreChoisiView;
+}
+
+/**
+ * LE MEMBRE CHOISI DANS L'ONGLET « MEMBRES » — `?membre=<handle>`.
+ *
+ * Sur ordinateur la liste est la colonne de droite et l'aperçu la remplace ; sur
+ * téléphone l'aperçu prend la place de la liste. Dans les deux cas le choix est
+ * dans l'URL : le retour du navigateur est le même geste que « Retour ».
+ */
+export interface MembreChoisiView {
+  /** Le pseudo (sans arobase) du membre ouvert ; `null` = la liste. */
+  readonly handle: string | null;
+  readonly onOuvrir: (handle: string) => void;
+  readonly onRetour: () => void;
 }
 
 /**
@@ -516,6 +536,8 @@ export const filtreMembresVide: FiltreMembresView = {
   modBg: '#fff',
   modFg: '#16211D',
   modBd: '#E6EBE9',
+  plus: AUCUNE_SUITE,
+  choix: { handle: null, onOuvrir: () => {}, onRetour: () => {} },
 };
 
 export const editionVide: EditionAProposView = {
