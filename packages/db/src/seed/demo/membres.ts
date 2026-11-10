@@ -76,6 +76,18 @@ const BIOS: Readonly<Record<Phase, readonly string[]>> = {
   ],
 };
 
+/**
+ * Un pseudo VALIDE au sens de `handleSchema` (minuscules, chiffres, `_` ou `-`, 3 à 30 signes) :
+ * un point le faisait refuser par les écrans qui relisent la réponse de l'API (annonces, emplois).
+ */
+export function pseudoDemo(prenom: string, nom: string, pris: ReadonlySet<string>): string {
+  const base = `${SANS_ACCENT(prenom)}_${SANS_ACCENT(nom)}`.replace(/[^a-z0-9_-]/g, '').slice(0, 26);
+  let handle = base;
+  let n = 1;
+  while (pris.has(handle)) handle = `${base}${++n}`;
+  return handle;
+}
+
 const SANS_ACCENT = (t: string): string =>
   t
     .normalize('NFD')
@@ -156,9 +168,7 @@ export async function genererMembres(c: Contexte): Promise<void> {
       const feminin = rng.chance(0.52);
       const prenom = rng.pick(feminin ? PRENOMS_F : PRENOMS_M);
       const nom = rng.pick(NOMS);
-      let handle = `${SANS_ACCENT(prenom)}.${SANS_ACCENT(nom)}`;
-      let n = 1;
-      while (pris.has(handle)) handle = `${SANS_ACCENT(prenom)}.${SANS_ACCENT(nom)}${++n}`;
+      const handle = pseudoDemo(prenom, nom, pris);
       pris.add(handle);
 
       const phase = rng.weighted<Phase>([

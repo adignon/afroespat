@@ -4,6 +4,7 @@ import { dernierTrimestreClos } from '../activite.js';
 import { creerRng, dansJours, ilYa } from '../prng.js';
 import { cleDepuisEnv, sceller } from '../scellement.js';
 import { paquets } from '../types.js';
+import { pseudoDemo } from '../membres.js';
 
 describe('creerRng', () => {
   it('rejoue la même suite avec la même graine, et une autre suite avec une autre', () => {
@@ -74,5 +75,20 @@ describe('paquets', () => {
   it('coupe sans perdre ni répéter', () => {
     expect(paquets([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
     expect(paquets([], 2)).toEqual([]);
+  });
+});
+
+describe('pseudoDemo', () => {
+  it('rend toujours un pseudo valide (jamais de point), et départage les homonymes', () => {
+    const regle = /^[a-z0-9](?:[a-z0-9]|[_-](?![_-]))*[a-z0-9]$/;
+    const pris = new Set<string>();
+    for (const [p, n] of [['Hortense', 'Biyong'], ['Hortense', 'Biyong'], ['Aïcha', "N'Diaye"], ['Jean-Marc', 'Ouédraogo']] as const) {
+      const h = pseudoDemo(p, n, pris);
+      expect(h).toMatch(regle);
+      expect(h.length).toBeGreaterThanOrEqual(3);
+      expect(h.length).toBeLessThanOrEqual(30);
+      expect(pris.has(h)).toBe(false);
+      pris.add(h);
+    }
   });
 });

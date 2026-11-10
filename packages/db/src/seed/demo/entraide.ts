@@ -8,6 +8,15 @@ import { JOUR, incr, type Contexte, type Membre } from './types.js';
  * partie marquée « ça m'a aidé » — ce qui crée aussi la connexion (`HELP_VALIDATED`), comme le produit.
  */
 
+/**
+ * Les demandes d'entraide ne portent que cinq types côté API (`helpCardSchema`) : le logement et l'emploi
+ * ont leurs services, l'accueil rejoint « autre ». Les gabarits gardent leur thème (pour choisir les
+ * réponses) ; c'est le type ÉCRIT en base qui est ramené aux cinq. Un type hors liste faisait échouer
+ * les écrans qui relisent la réponse de l'API.
+ */
+const typeServi = (t: TypeAide): 'PAPERWORK' | 'SERVICE' | 'RIDE' | 'MATERIAL' | 'OTHER' =>
+  t === 'HOUSING' || t === 'WELCOME' ? 'OTHER' : t === 'JOB' ? 'SERVICE' : t;
+
 type TypeAide = 'PAPERWORK' | 'HOUSING' | 'JOB' | 'WELCOME' | 'SERVICE' | 'RIDE' | 'MATERIAL' | 'OTHER';
 
 interface Modele {
@@ -161,7 +170,7 @@ export async function genererEntraide(c: Contexte): Promise<void> {
       createdAt: ouvertLe,
       authorUserId: auteur.id,
       kind: offre ? 'OFFER' : 'REQUEST',
-      type: modele.type,
+      type: typeServi(modele.type),
       title: offre ? modele.titre.replace('Je cherche', 'Je propose') : modele.titre,
       body: modele.corps,
       cityId: auteur.cityId,
